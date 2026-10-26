@@ -22,6 +22,22 @@ class ImageController extends Controller
         return response()->json(['data' => Image::withCount('websites')->orderBy('name')->get()->map(fn (Image $i) => self::present($i))]);
     }
 
+    /**
+     * The images that the user can select for a new website. A customer or a reseller sees
+     * the official images only. An administrator also sees the images that they added.
+     */
+    public function runtimes(Request $request): JsonResponse
+    {
+        $images = Image::where('family', '!=', 'edge')
+            ->when(! $request->user()->isAdministrator(), fn ($q) => $q->where('custom', false))
+            ->orderBy('name')->get();
+
+        return response()->json(['data' => $images->map(fn (Image $i) => [
+            'id' => $i->id, 'name' => $i->name, 'family' => $i->family, 'tag' => $i->tag,
+            'phpVersion' => $i->php_version, 'custom' => $i->custom, 'supportEndsAt' => $i->support_ends_at?->toIso8601String(),
+        ])]);
+    }
+
     /** FR-307: an administrator adds an OCI image of their choice. */
     public function store(Request $request): JsonResponse
     {

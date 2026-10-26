@@ -25,7 +25,7 @@ function UsageCards() {
   const state = useStore();
   const u = accountUsage(state);
   const cards = [
-    { label: "Websites", value: String(u.websites.used), of: `of ${u.websites.limit} on your plan`, ratio: ratio(u.websites.used, u.websites.limit) },
+    { label: "Websites", value: String(u.websites.used), of: u.websites.limit === undefined ? "on the panel" : `of ${u.websites.limit} on your plan`, ratio: u.websites.limit ? ratio(u.websites.used, u.websites.limit) : 0 },
     { label: "CPU", value: `${u.cpuPercent}%`, of: `of ${u.vcpus} vCPU`, ratio: u.cpuPercent / 100 },
     { label: "Memory", value: bytes(u.memoryBytes.used), of: `of ${bytes(u.memoryBytes.limit)}`, ratio: ratio(u.memoryBytes.used, u.memoryBytes.limit) },
     { label: "Disk", value: bytes(u.diskBytes.used), of: `of ${bytes(u.diskBytes.limit)}`, ratio: ratio(u.diskBytes.used, u.diskBytes.limit) },

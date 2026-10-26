@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useAction, useStore } from "../api/hooks";
+import { features } from "../api/mode";
 import { addCustomer, savePlan, setBranding, setCustomer } from "../api/store";
 import type { Customer, Plan } from "../api/types";
 import { GB, MB } from "../api/seed";
@@ -14,7 +15,7 @@ export function CustomersPage() {
       <Topbar placeholder="Search servers, images, customers and jobs" />
       <main id="main" className="content content-wide">
         <PageHeader title="Customers and plans" description="Resellers add website owners and set their limits. A plan sets the default limits for each website." />
-        <Tabs label="Sections" current={tab} onSelect={setTab} items={[{ id: "customers", label: "Customers" }, { id: "plans", label: "Plans" }, { id: "branding", label: "Branding" }]} />
+        <Tabs label="Sections" current={tab} onSelect={setTab} items={[{ id: "customers", label: "Customers" }, { id: "plans", label: "Plans" }, ...(features.branding ? [{ id: "branding", label: "Branding" }] : [])]} />
         {tab === "customers" && <Customers />}
         {tab === "plans" && <Plans />}
         {tab === "branding" && <Branding />}

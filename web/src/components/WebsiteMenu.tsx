@@ -1,6 +1,7 @@
 import { MoreHorizontal } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { features } from "../api/mode";
 import { createStagingCopy, deleteWebsite, setPower } from "../api/store";
 import type { Website } from "../api/types";
 import { Modal } from "./ui";
@@ -61,14 +62,14 @@ export function WebsiteMenu({ website, bordered = false }: { website: Website; b
       {open && (
         <ul className="context-menu menu-list" role="menu">
           {item("Open", () => navigate(`/websites/${website.id}`))}
-          {item("File manager", () => navigate(`/websites/${website.id}/files`))}
+          {features.files && item("File manager", () => navigate(`/websites/${website.id}/files`))}
           {running
             ? item("Stop", () => setConfirm("stop"), busy)
             : item("Start", () => void setPower(website.id, "start"), busy)}
           {item("Restart", () => void setPower(website.id, "restart"), !running)}
-          {item("Make staging copy", () => {
+          {item("Make staging copy", async () => {
             try {
-              const { websiteId } = createStagingCopy(website.id);
+              const { websiteId } = await createStagingCopy(website.id);
               navigate(`/websites/${websiteId}`);
             } catch (e) {
               setError((e as Error).message);

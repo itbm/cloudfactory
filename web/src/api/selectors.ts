@@ -64,16 +64,19 @@ export function attention(s: State): AttentionItem[] {
   return items;
 }
 
+/** The use of the shown websites against their limits. A website's CPU use is a percentage of one vCPU. */
 export function accountUsage(s: State) {
   const sites = visibleWebsites(s);
   const customer = s.customers.find((c) => c.id === s.session.contextId);
   const plan = s.plans.find((p) => p.id === customer?.planId);
+  const sum = (f: (w: Website) => number) => sites.reduce((n, w) => n + f(w), 0);
+  const vcpus = sum((w) => w.limits.vcpus);
   return {
-    websites: { used: sites.length, limit: plan?.websites ?? sites.length },
-    cpuPercent: 23,
-    vcpus: 8,
-    memoryBytes: { used: 9.4 * 1024 ** 3, limit: 16 * 1024 ** 3 },
-    diskBytes: { used: 118 * 1024 ** 3, limit: 400 * 1024 ** 3 },
+    websites: { used: sites.length, limit: plan?.websites },
+    cpuPercent: vcpus ? Math.round(sum((w) => w.use.cpuPercent) / vcpus) : 0,
+    vcpus,
+    memoryBytes: { used: sum((w) => w.use.memoryBytes), limit: sum((w) => w.limits.memoryBytes) },
+    diskBytes: { used: sum((w) => w.use.diskBytes), limit: sum((w) => w.limits.diskBytes) },
   };
 }
 

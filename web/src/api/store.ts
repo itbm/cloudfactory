@@ -1,9 +1,13 @@
-// An in-memory panel API. It follows the flow of a change in spec section 6.3:
-// the API checks the input, writes the desired state, and puts a job in the queue.
-// A simulated agent then runs the job step by step and reports the result.
-// The real client (generated from openapi/openapi.yaml) replaces this file.
+// The state of the panel and the actions that change it.
+//
+// In live mode (mode.ts), each action calls the panel API through live.ts, and the state comes
+// from the API. In mock mode, this file is an in-memory panel API with demonstration data. It
+// follows the flow of a change in spec section 6.3: the API checks the input, writes the
+// desired state, and puts a job in the queue. A simulated agent then runs the job step by step.
 
 import { validateRecord, type RecordInput } from "../lib/dns";
+import * as live from "./live";
+import { LIVE } from "./mode";
 import { DAY, GB, MB, seed } from "./seed";
 import type {
   AlertChannel,
@@ -38,7 +42,19 @@ export class ApiError extends Error {
 
 type Listener = () => void;
 
-let state: State = seed();
+/** The state before the first load from the API: no data, and signed out. */
+function emptyState(): State {
+  const s = seed();
+  return {
+    ...s,
+    session: { ...s.session, signedIn: false, user: { id: "", name: "", email: "", role: "owner" }, contextId: "" },
+    contexts: [], websites: [], jobs: [], activity: [], notifications: [], servers: [], images: [], rollout: undefined,
+    zones: [], mailboxes: [], aliases: [], databases: [], databaseUsers: [], files: {}, snapshots: [], plans: [], customers: [],
+    tokens: [], passkeys: [], totpEnabled: false, audit: [], alertChannels: [], joinToken: "",
+  };
+}
+
+let state: State = LIVE ? emptyState() : seed();
 const listeners = new Set<Listener>();
 let seq = 1000;
 
@@ -149,11 +165,87 @@ const touch = (w: Website, summary: string, ref?: string) => {
   w.lastChange = { at: now(), summary, ref };
 };
 
+// Live mode
+
+function replace(next: State) {
+  state = next;
+  listeners.forEach((l) => l());
+}
+
+/** Runs a request and gives an ApiError for the form when it fails. */
+async function call<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (e) {
+    if (e instanceof live.LiveError) throw new ApiError(e.message, e.fields);
+    throw e;
+  }
+}
+
+let loading: Promise<void> | null = null;
+
+/** Loads the state from the API again. Calls at the same time share one load. */
+export function refresh(): Promise<void> {
+  if (!LIVE || !live.hasSession()) return Promise.resolve();
+  loading ??= live.load(state).then(replace)
+    .catch(() => {
+      // Keep the data that the panel has. A failed first load shows an empty panel.
+      if (state.session.loading) replace({ ...state, session: { ...state.session, loading: false } });
+    })
+    .finally(() => (loading = null));
+  return loading;
+}
+
+/** Follows a job that the API made. The promise resolves when the agent has finished it. */
+function track(job: live.ApiJob | null | undefined): Promise<Job> {
+  if (!job) {
+    void refresh();
+    return Promise.resolve({ id: "", title: "", state: "succeeded", steps: [], step: 0, createdAt: now() });
+  }
+  const first = live.toJob(job);
+  update((d) => {
+    d.jobs = [first, ...d.jobs.filter((j) => j.id !== first.id)];
+  });
+  void refresh();
+  return live.waitForJob(job, () => void refresh()).then(async (done) => {
+    await refresh();
+    return done;
+  });
+}
+
+/** For an area that the API of release 0.1 does not have yet. The UI hides these areas. */
+function notInRelease(): never {
+  throw new ApiError("The panel API of this release does not have this feature yet.");
+}
+
+const q = (s: string) => encodeURIComponent(s);
+type JobAnswer = { job: live.ApiJob | null };
+
+if (LIVE) {
+  live.setUnauthorisedHandler(() => replace(emptyState()));
+  if (live.hasSession()) {
+    state = { ...state, session: { ...state.session, signedIn: true, loading: true } };
+    void refresh();
+  }
+  // Read changes from agents and other users. The browser slows timers in hidden tabs.
+  setInterval(() => {
+    if (state.session.signedIn && document.visibilityState === "visible") void refresh();
+  }, 15000);
+}
+
 const hex = () => Math.random().toString(16).slice(2, 9).padEnd(7, "0");
 
 // Session
 
-export function signIn(method: "passkey" | "password", totp?: string) {
+export function signIn(method: "passkey" | "password", totp?: string, credentials?: { email: string; password: string }) {
+  if (LIVE) {
+    if (method === "passkey") notInRelease();
+    return call(async () => {
+      await live.signIn(credentials?.email ?? "", credentials?.password ?? "", totp ?? "");
+      replace({ ...state, session: { ...state.session, signedIn: true, loading: true } });
+      await refresh();
+    });
+  }
   if (method === "password" && !/^\d{6}$/.test(totp ?? "")) {
     throw new ApiError("Type the 6-digit code from your authenticator app.", { totp: "Type the 6-digit code." });
   }
@@ -164,6 +256,11 @@ export function signIn(method: "passkey" | "password", totp?: string) {
 }
 
 export function signOut() {
+  if (LIVE) {
+    live.signOut();
+    replace(emptyState());
+    return;
+  }
   update((d) => {
     d.session.signedIn = false;
   });
@@ -190,7 +287,19 @@ export interface NewWebsite {
   customerId: string;
 }
 
-export function createWebsite(input: NewWebsite): { websiteId: string; job: Promise<Job> } {
+export function createWebsite(input: NewWebsite): Promise<{ websiteId: string; job: Promise<Job> }> | { websiteId: string; job: Promise<Job> } {
+  if (LIVE) {
+    return call(async () => {
+      const r = await live.request<{ website: live.ApiWebsite; job: live.ApiJob }>("POST", "/websites", {
+        name: input.name.trim().toLowerCase(), application: input.application, imageId: input.imageId, planId: input.planId,
+        serverId: input.serverId || undefined, customerId: input.customerId && input.customerId !== "platform" ? input.customerId : undefined,
+      });
+      update((d) => {
+        d.websites = [live.toWebsite(r.website), ...d.websites.filter((w) => w.id !== r.website.id)];
+      });
+      return { websiteId: r.website.id, job: track(r.job) };
+    });
+  }
   const name = input.name.trim().toLowerCase();
   const errors: Record<string, string> = {};
   if (!/^(?!-)[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(name)) errors.name = "Type a domain name, for example example.com.";
@@ -252,6 +361,7 @@ export function createWebsite(input: NewWebsite): { websiteId: string; job: Prom
 }
 
 export function setPower(websiteId: string, action: "start" | "stop" | "restart") {
+  if (LIVE) return call(() => live.request<JobAnswer>("POST", `/websites/${websiteId}/power`, { action })).then((r) => track(r.job));
   const w = state.websites.find((x) => x.id === websiteId)!;
   const label = { start: "Start", stop: "Stop", restart: "Restart" }[action];
   return runJob({
@@ -279,7 +389,16 @@ export function setPower(websiteId: string, action: "start" | "stop" | "restart"
   });
 }
 
-export function createStagingCopy(websiteId: string): { websiteId: string; job: Promise<Job> } {
+export function createStagingCopy(websiteId: string): Promise<{ websiteId: string; job: Promise<Job> }> | { websiteId: string; job: Promise<Job> } {
+  if (LIVE) {
+    return call(async () => {
+      const r = await live.request<{ website: live.ApiWebsite; job: live.ApiJob }>("POST", `/websites/${websiteId}/staging`);
+      update((d) => {
+        d.websites = [live.toWebsite(r.website), ...d.websites.filter((w) => w.id !== r.website.id)];
+      });
+      return { websiteId: r.website.id, job: track(r.job) };
+    });
+  }
   const src = state.websites.find((x) => x.id === websiteId)!;
   const name = `staging.${src.name.replace(/^www\./, "")}`.replace(/^staging\.staging\./, "staging.");
   if (state.websites.some((w) => w.name === name)) throw new ApiError(`${name} exists. Remove it first, or refresh it from the website.`);
@@ -317,6 +436,7 @@ export function createStagingCopy(websiteId: string): { websiteId: string; job: 
 }
 
 export function deleteWebsite(websiteId: string) {
+  if (LIVE) return call(() => live.request<JobAnswer>("DELETE", `/websites/${websiteId}`)).then((r) => track(r.job));
   const w = state.websites.find((x) => x.id === websiteId)!;
   return runJob({
     title: `Remove website ${w.name}`,
@@ -333,6 +453,7 @@ export function deleteWebsite(websiteId: string) {
 }
 
 export function setLimits(websiteId: string, limits: Website["limits"]) {
+  if (LIVE) return call(() => live.request<Partial<JobAnswer>>("PATCH", `/websites/${websiteId}`, { limits })).then((r) => track(r.job));
   if (Object.values(limits).some((v) => !(v > 0))) throw new ApiError("Each limit must be more than 0.");
   update((d) => {
     const w = site(d, websiteId);
@@ -343,6 +464,7 @@ export function setLimits(websiteId: string, limits: Website["limits"]) {
 }
 
 export function setWebsitePlan(websiteId: string, planId: string) {
+  if (LIVE) return call(() => live.request<Partial<JobAnswer>>("PATCH", `/websites/${websiteId}`, { planId })).then((r) => track(r.job));
   update((d) => {
     const w = site(d, websiteId);
     const plan = d.plans.find((p) => p.id === planId)!;
@@ -357,6 +479,7 @@ export function setWebsitePlan(websiteId: string, planId: string) {
 // Domains
 
 export function addDomain(websiteId: string, name: string, kind: DomainKind) {
+  if (LIVE) return call(() => live.request<JobAnswer>("POST", `/websites/${websiteId}/domains`, { name: name.trim().toLowerCase(), kind })).then((r) => track(r.job));
   const domain = name.trim().toLowerCase();
   if (!/^(?!-)[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(domain)) throw new ApiError("Type a domain name.", { name: "Type a domain name, for example www.example.com." });
   if (state.websites.some((w) => w.domains.some((d) => d.name === domain))) throw new ApiError("A website already uses this domain.", { name: "A website already uses this domain." });
@@ -384,6 +507,7 @@ export function addDomain(websiteId: string, name: string, kind: DomainKind) {
 }
 
 export function removeDomain(websiteId: string, name: string) {
+  if (LIVE) return call(() => live.request<JobAnswer>("DELETE", `/websites/${websiteId}/domains/${q(name)}`)).then((r) => track(r.job));
   update((d) => {
     const w = site(d, websiteId);
     const dm = w.domains.find((x) => x.name === name);
@@ -394,6 +518,7 @@ export function removeDomain(websiteId: string, name: string) {
 }
 
 export function makePrimary(websiteId: string, name: string) {
+  if (LIVE) notInRelease();
   update((d) => {
     const w = site(d, websiteId);
     w.domains.forEach((x) => {
@@ -408,6 +533,7 @@ export function makePrimary(websiteId: string, name: string) {
 
 /** FR-403: check again if the DNS of a domain points to the correct server. */
 export function checkDns(websiteId: string, name: string) {
+  if (LIVE) return refresh();
   return runJob({
     title: `Check DNS for ${name}`,
     websiteId,
@@ -426,6 +552,7 @@ export function checkDns(websiteId: string, name: string) {
 // Runtime
 
 export function changeRuntime(websiteId: string, imageId: string) {
+  if (LIVE) return call(() => live.request<JobAnswer>("PUT", `/websites/${websiteId}/runtime`, { imageId })).then((r) => track(r.job));
   const image = state.images.find((i) => i.id === imageId)!;
   const w = state.websites.find((x) => x.id === websiteId)!;
   const plan = state.plans.find((p) => p.id === w.planId);
@@ -451,12 +578,14 @@ export function changeRuntime(websiteId: string, imageId: string) {
 
 /** FR-303: go back to the previous image in one action. */
 export function revertRuntime(websiteId: string) {
+  if (LIVE) return call(() => live.request<JobAnswer>("POST", `/websites/${websiteId}/runtime/revert`)).then((r) => track(r.job));
   const w = state.websites.find((x) => x.id === websiteId)!;
   if (!w.runtime.previous) throw new ApiError("There is no previous image.");
   return changeRuntime(websiteId, w.runtime.previous.imageId);
 }
 
 export function setWorkerMode(websiteId: string, on: boolean) {
+  if (LIVE) return call(() => live.request<JobAnswer>("PUT", `/websites/${websiteId}/runtime`, { workerMode: on })).then((r) => track(r.job));
   update((d) => {
     const w = site(d, websiteId);
     if (w.runtime.kind !== "frankenphp") throw new ApiError("Worker mode is only for FrankenPHP.");
@@ -467,6 +596,7 @@ export function setWorkerMode(websiteId: string, on: boolean) {
 }
 
 export function setPhpSettings(websiteId: string, extensions: string[], phpIni: Record<string, string>) {
+  if (LIVE) return call(() => live.request<JobAnswer>("PUT", `/websites/${websiteId}/runtime`, { extensions, phpIni })).then((r) => track(r.job));
   const w = state.websites.find((x) => x.id === websiteId)!;
   const plan = state.plans.find((p) => p.id === w.planId)!;
   const notAllowed = extensions.filter((e) => !plan.phpExtensions.includes(e));
@@ -492,6 +622,7 @@ export function setPhpSettings(websiteId: string, extensions: string[], phpIni: 
 
 /** Test the image update on a copy first, then switch with no downtime. */
 export function applyImageUpdate(websiteId: string) {
+  if (LIVE) throw new ApiError("Image updates go to all websites in stages. Start the rollout on the Updates page.");
   const w = state.websites.find((x) => x.id === websiteId)!;
   const image = state.images.find((i) => i.id === w.runtime.imageId)!;
   return runJob({
@@ -512,6 +643,7 @@ export function applyImageUpdate(websiteId: string) {
 }
 
 export function scheduleImageUpdate(websiteId: string, at: string) {
+  if (LIVE) notInRelease();
   update((d) => {
     const w = site(d, websiteId);
     w.updateScheduledAt = at;
@@ -522,6 +654,7 @@ export function scheduleImageUpdate(websiteId: string, at: string) {
 // Deploys (FR-1001 to FR-1010)
 
 export function setGitSource(websiteId: string, git: Website["git"]) {
+  if (LIVE) notInRelease();
   if (git && !/^(git@[\w.-]+:[\w./-]+|https:\/\/[\w.-]+\/[\w./-]+)$/.test(git.repository)) {
     throw new ApiError("Type a Git URL.", { repository: "Use an SSH or HTTPS Git URL." });
   }
@@ -537,6 +670,7 @@ export function setGitSource(websiteId: string, git: Website["git"]) {
 }
 
 export function deployNow(websiteId: string, opts: { fail?: boolean; migration?: boolean } = {}) {
+  if (LIVE) notInRelease();
   const w = state.websites.find((x) => x.id === websiteId)!;
   if (!w.git) throw new ApiError("Connect a Git repository first.");
   const ref = hex();
@@ -568,6 +702,7 @@ export function deployNow(websiteId: string, opts: { fail?: boolean; migration?:
 }
 
 export function rollbackRelease(websiteId: string, releaseId: string) {
+  if (LIVE) notInRelease();
   const w = state.websites.find((x) => x.id === websiteId)!;
   const rel = w.releases.find((r) => r.id === releaseId)!;
   return runJob({
@@ -590,6 +725,7 @@ export function rollbackRelease(websiteId: string, releaseId: string) {
 const CRON_FIELD = /^(\*|\d+|\d+-\d+)(\/\d+)?(,(\*|\d+|\d+-\d+)(\/\d+)?)*$/;
 
 export function addCron(websiteId: string, schedule: string, command: string) {
+  if (LIVE) notInRelease();
   const fields = schedule.trim().split(/\s+/);
   const errors: Record<string, string> = {};
   if (fields.length !== 5 || !fields.every((f) => CRON_FIELD.test(f))) errors.schedule = "Use five fields, for example */5 * * * *.";
@@ -603,6 +739,7 @@ export function addCron(websiteId: string, schedule: string, command: string) {
 }
 
 export function setCron(websiteId: string, cronId: string, change: Partial<CronJob>) {
+  if (LIVE) notInRelease();
   update((d) => {
     const c = site(d, websiteId).cron.find((x) => x.id === cronId)!;
     Object.assign(c, change);
@@ -610,6 +747,7 @@ export function setCron(websiteId: string, cronId: string, change: Partial<CronJ
 }
 
 export function removeCron(websiteId: string, cronId: string) {
+  if (LIVE) notInRelease();
   update((d) => {
     const w = site(d, websiteId);
     w.cron = w.cron.filter((x) => x.id !== cronId);
@@ -618,6 +756,7 @@ export function removeCron(websiteId: string, cronId: string) {
 }
 
 export function runCron(websiteId: string, cronId: string) {
+  if (LIVE) notInRelease();
   const c = state.websites.find((x) => x.id === websiteId)!.cron.find((x) => x.id === cronId)!;
   return runJob({
     title: "Run cron job",
@@ -635,6 +774,7 @@ export function runCron(websiteId: string, cronId: string) {
 // SFTP and SSH
 
 export function addSshKey(websiteId: string, name: string, key: string) {
+  if (LIVE) notInRelease();
   if (!/^(ssh-(ed25519|rsa)|ecdsa-sha2-nistp\d+|sk-ssh-ed25519@openssh\.com) [A-Za-z0-9+/=]{20,}/.test(key.trim())) {
     throw new ApiError("This is not an SSH public key.", { key: "Paste a public key that starts with ssh-ed25519 or ssh-rsa." });
   }
@@ -646,6 +786,7 @@ export function addSshKey(websiteId: string, name: string, key: string) {
 }
 
 export function removeSshKey(websiteId: string, keyId: string) {
+  if (LIVE) notInRelease();
   update((d) => {
     const w = site(d, websiteId);
     w.sshKeys = w.sshKeys.filter((k) => k.id !== keyId);
@@ -654,6 +795,7 @@ export function removeSshKey(websiteId: string, keyId: string) {
 }
 
 export function setAccess(websiteId: string, change: { shellEnabled?: boolean; sftpPasswordEnabled?: boolean }) {
+  if (LIVE) notInRelease();
   update((d) => {
     const w = site(d, websiteId);
     Object.assign(w, change);
@@ -664,6 +806,7 @@ export function setAccess(websiteId: string, change: { shellEnabled?: boolean; s
 // Backups (FR-901 to FR-903)
 
 export function backupNow(websiteId: string) {
+  if (LIVE) return call(() => live.request<JobAnswer>("POST", `/websites/${websiteId}/snapshots`)).then((r) => track(r.job));
   const w = state.websites.find((x) => x.id === websiteId)!;
   return runJob({
     title: `Back up ${w.name}`,
@@ -689,6 +832,12 @@ export function backupNow(websiteId: string) {
 export type RestoreScope = { kind: "website" } | { kind: "database"; name: string } | { kind: "mailbox"; name: string } | { kind: "file"; path: string };
 
 export function restore(snapshotId: string, scope: RestoreScope) {
+  if (LIVE) {
+    const snapshot = state.snapshots.find((x) => x.id === snapshotId);
+    if (!snapshot) throw new ApiError("The snapshot does not exist.");
+    const item = scope.kind === "website" ? undefined : scope.kind === "file" ? scope.path : scope.name;
+    return call(() => live.request<JobAnswer>("POST", `/websites/${snapshot.websiteId}/snapshots/${snapshotId}/restore`, { scope: scope.kind, item })).then((r) => track(r.job));
+  }
   const snap = state.snapshots.find((s) => s.id === snapshotId)!;
   const w = state.websites.find((x) => x.id === snap.websiteId)!;
   const what = scope.kind === "website" ? "full website" : scope.kind === "file" ? scope.path : scope.name;
@@ -702,6 +851,7 @@ export function restore(snapshotId: string, scope: RestoreScope) {
 }
 
 export function setBackupPolicy(policy: BackupPolicy) {
+  if (LIVE) return call(() => live.request<BackupPolicy>("PUT", "/backup-policy", policy)).then(() => refresh());
   const errors: Record<string, string> = {};
   (["daily", "weekly", "monthly"] as const).forEach((k) => {
     if (!Number.isInteger(policy[k]) || policy[k] < 0 || policy[k] > 365) errors[k] = "Use a number from 0 to 365.";
@@ -718,6 +868,7 @@ export function setBackupPolicy(policy: BackupPolicy) {
 // DNS
 
 export function addZone(name: string) {
+  if (LIVE) notInRelease();
   const zone = name.trim().toLowerCase();
   if (!/^(?!-)[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(zone)) throw new ApiError("Type a domain name.", { name: "Type a domain name, for example example.com." });
   if (state.zones.some((z) => z.name === zone)) throw new ApiError("This zone exists.", { name: "This zone exists." });
@@ -738,6 +889,7 @@ export function addZone(name: string) {
 }
 
 export function saveRecord(zoneName: string, input: RecordInput, recordId?: string) {
+  if (LIVE) notInRelease();
   const zone = state.zones.find((z) => z.name === zoneName)!;
   const errors = validateRecord(input, zone.records, recordId);
   if (Object.keys(errors).length) throw new ApiError("Correct the record and try again.", errors as Record<string, string>);
@@ -752,6 +904,7 @@ export function saveRecord(zoneName: string, input: RecordInput, recordId?: stri
 }
 
 export function deleteRecord(zoneName: string, recordId: string) {
+  if (LIVE) notInRelease();
   update((d) => {
     const z = d.zones.find((x) => x.name === zoneName)!;
     const r = z.records.find((x) => x.id === recordId)!;
@@ -762,6 +915,7 @@ export function deleteRecord(zoneName: string, recordId: string) {
 
 /** FR-602: make the SPF, DKIM and DMARC records for a zone. */
 export function addMailRecords(zoneName: string) {
+  if (LIVE) notInRelease();
   update((d) => {
     const z = d.zones.find((x) => x.name === zoneName)!;
     z.records = z.records.filter((r) => r.managed !== "mail");
@@ -778,6 +932,7 @@ export function addMailRecords(zoneName: string) {
 // Email
 
 export function addMailbox(address: string, quotaGb: number) {
+  if (LIVE) notInRelease();
   const a = address.trim().toLowerCase();
   const errors: Record<string, string> = {};
   if (!/^[a-z0-9._%+-]+@[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(a)) errors.address = "Type an email address, for example hello@example.com.";
@@ -794,6 +949,7 @@ export function addMailbox(address: string, quotaGb: number) {
 }
 
 export function removeMailbox(mailboxId: string) {
+  if (LIVE) notInRelease();
   update((d) => {
     const m = d.mailboxes.find((x) => x.id === mailboxId)!;
     d.mailboxes = d.mailboxes.filter((x) => x.id !== mailboxId);
@@ -802,6 +958,7 @@ export function removeMailbox(mailboxId: string) {
 }
 
 export function setMailboxQuota(mailboxId: string, quotaGb: number) {
+  if (LIVE) notInRelease();
   update((d) => {
     const m = d.mailboxes.find((x) => x.id === mailboxId)!;
     if (quotaGb * GB < m.usedBytes) throw new ApiError("The size is smaller than the mail in the mailbox.");
@@ -811,6 +968,7 @@ export function setMailboxQuota(mailboxId: string, quotaGb: number) {
 }
 
 export function addAlias(kind: MailAlias["kind"], source: string, destinations: string[]) {
+  if (LIVE) notInRelease();
   const s = source.trim().toLowerCase();
   const dest = destinations.map((x) => x.trim().toLowerCase()).filter(Boolean);
   const errors: Record<string, string> = {};
@@ -827,6 +985,7 @@ export function addAlias(kind: MailAlias["kind"], source: string, destinations: 
 }
 
 export function removeAlias(aliasId: string) {
+  if (LIVE) notInRelease();
   update((d) => {
     const a = d.aliases.find((x) => x.id === aliasId)!;
     d.aliases = d.aliases.filter((x) => x.id !== aliasId);
@@ -839,6 +998,7 @@ export function removeAlias(aliasId: string) {
 const DB_NAME = /^[a-z][a-z0-9_]{1,62}$/;
 
 export function createDatabase(websiteId: string, engine: DatabaseEngine, name: string) {
+  if (LIVE) return call(() => live.request<JobAnswer>("POST", `/websites/${websiteId}/databases`, { engine, name: name.trim() })).then((r) => track(r.job));
   const n = name.trim();
   if (!DB_NAME.test(n)) throw new ApiError("Correct the name.", { name: "Start with a letter. Use lower-case letters, digits and underscores." });
   if (state.databases.some((x) => x.name === n && x.engine === engine)) throw new ApiError("This database exists.", { name: "This database exists." });
@@ -857,6 +1017,11 @@ export function createDatabase(websiteId: string, engine: DatabaseEngine, name: 
 }
 
 export function deleteDatabase(databaseId: string) {
+  if (LIVE) {
+    const db = state.databases.find((x) => x.id === databaseId);
+    if (!db) throw new ApiError("The database does not exist.");
+    return call(() => live.request<JobAnswer>("DELETE", `/websites/${db.websiteId}/databases/${databaseId}`)).then((r) => track(r.job));
+  }
   update((d) => {
     const db = d.databases.find((x) => x.id === databaseId)!;
     d.databases = d.databases.filter((x) => x.id !== databaseId);
@@ -866,6 +1031,7 @@ export function deleteDatabase(databaseId: string) {
 }
 
 export function createDatabaseUser(websiteId: string, engine: DatabaseEngine, name: string, databases: string[]): string {
+  if (LIVE) notInRelease();
   const n = name.trim();
   if (!DB_NAME.test(n)) throw new ApiError("Correct the name.", { name: "Start with a letter. Use lower-case letters, digits and underscores." });
   if (state.databaseUsers.some((x) => x.name === n && x.engine === engine)) throw new ApiError("This user exists.", { name: "This user exists." });
@@ -878,6 +1044,7 @@ export function createDatabaseUser(websiteId: string, engine: DatabaseEngine, na
 }
 
 export function setDatabaseUser(userId: string, change: { databases?: string[]; access?: "website" | "anywhere" }) {
+  if (LIVE) notInRelease();
   update((d) => {
     const u = d.databaseUsers.find((x) => x.id === userId)!;
     Object.assign(u, change);
@@ -886,6 +1053,7 @@ export function setDatabaseUser(userId: string, change: { databases?: string[]; 
 }
 
 export function deleteDatabaseUser(userId: string) {
+  if (LIVE) notInRelease();
   update((d) => {
     const u = d.databaseUsers.find((x) => x.id === userId)!;
     d.databaseUsers = d.databaseUsers.filter((x) => x.id !== userId);
@@ -898,6 +1066,7 @@ export function deleteDatabaseUser(userId: string) {
 const parentOf = (path: string) => path.slice(0, path.lastIndexOf("/")) || "";
 
 export function createNode(websiteId: string, dir: string, name: string, type: FileNode["type"], content = "") {
+  if (LIVE) notInRelease();
   const n = name.trim();
   if (!n || n.includes("/") || n === "." || n === "..") throw new ApiError("Type a name with no slash.", { name: "Type a name with no slash." });
   const path = `${dir}/${n}`.replace(/^\/\//, "/");
@@ -909,6 +1078,7 @@ export function createNode(websiteId: string, dir: string, name: string, type: F
 }
 
 export function saveFile(websiteId: string, path: string, content: string) {
+  if (LIVE) notInRelease();
   update((d) => {
     const f = d.files[websiteId].find((x) => x.path === path)!;
     f.content = content;
@@ -919,6 +1089,7 @@ export function saveFile(websiteId: string, path: string, content: string) {
 }
 
 export function renameNode(websiteId: string, path: string, name: string) {
+  if (LIVE) notInRelease();
   const n = name.trim();
   if (!n || n.includes("/")) throw new ApiError("Type a name with no slash.");
   const target = `${parentOf(path)}/${n}`;
@@ -937,6 +1108,7 @@ export function renameNode(websiteId: string, path: string, name: string) {
 }
 
 export function deleteNode(websiteId: string, path: string) {
+  if (LIVE) notInRelease();
   update((d) => {
     d.files[websiteId] = d.files[websiteId].filter((f) => f.path !== path && !f.path.startsWith(`${path}/`));
     audit(d, "Removed file", `${site(d, websiteId).name} ${path}`);
@@ -946,6 +1118,7 @@ export function deleteNode(websiteId: string, path: string) {
 // Images and updates (FR-1101 to FR-1110)
 
 export function addImage(name: string, reference: string, tag: string, policy: UpdatePolicy) {
+  if (LIVE) return call(() => live.request("POST", "/images", { name: name.trim(), reference: reference.trim(), tag: tag.trim(), policy })).then(() => refresh()).then(() => undefined);
   const errors: Record<string, string> = {};
   if (!name.trim()) errors.name = "Type a name.";
   if (!/^([a-z0-9.-]+(:\d+)?\/)?[a-z0-9._/-]+$/.test(reference.trim())) errors.reference = "Type an image reference, for example docker.io/library/node.";
@@ -964,6 +1137,7 @@ export function addImage(name: string, reference: string, tag: string, policy: U
 }
 
 export function setImagePolicy(imageId: string, policy: UpdatePolicy) {
+  if (LIVE) return call(() => live.request("PATCH", `/images/${imageId}`, { policy })).then(() => refresh());
   update((d) => {
     const i = d.images.find((x) => x.id === imageId)!;
     i.policy = policy;
@@ -972,6 +1146,7 @@ export function setImagePolicy(imageId: string, policy: UpdatePolicy) {
 }
 
 export function startRollout(imageId: string) {
+  if (LIVE) return call(() => live.request("POST", "/rollouts", { imageId })).then(() => refresh());
   if (state.rollout && (state.rollout.state === "running" || state.rollout.state === "paused")) {
     throw new ApiError("A rollout is in progress. Wait until it is complete, or roll it back.");
   }
@@ -1014,6 +1189,11 @@ export function startRollout(imageId: string) {
 }
 
 export function pauseRollout(paused: boolean) {
+  if (LIVE) {
+    const r = state.rollout;
+    if (!r) throw new ApiError("No rollout is running.");
+    return call(() => live.request("POST", `/rollouts/${r.id}/${paused ? "pause" : "resume"}`)).then(() => refresh());
+  }
   update((d) => {
     if (!d.rollout) return;
     d.rollout.state = paused ? "paused" : "running";
@@ -1022,6 +1202,11 @@ export function pauseRollout(paused: boolean) {
 }
 
 export function rollBackAll() {
+  if (LIVE) {
+    const r = state.rollout;
+    if (!r) throw new ApiError("No rollout is running.");
+    return call(() => live.request("POST", `/rollouts/${r.id}/roll-back`)).then(() => refresh());
+  }
   const r = state.rollout!;
   update((d) => {
     d.rollout!.state = "rolled_back";
@@ -1090,7 +1275,11 @@ export const _rolloutTick = rolloutTick;
 
 // Servers (FR-1112 to FR-1118, FR-1201)
 
-export function addServer(name: string, location: string, roles: ServerRole[]) {
+export function addServer(name: string, location: string, roles: ServerRole[]): Promise<{ serverId: string; job?: Promise<Job> }> | { serverId: string; job?: Promise<Job> } {
+  if (LIVE) {
+    // The server joins when the install script runs on it. The panel then shows it.
+    return refresh().then(() => ({ serverId: "" }));
+  }
   const n = name.trim().toLowerCase();
   const errors: Record<string, string> = {};
   if (!/^[a-z][a-z0-9-]{1,30}$/.test(n)) errors.name = "Use lower-case letters, digits and hyphens.";
@@ -1126,6 +1315,7 @@ export function addServer(name: string, location: string, roles: ServerRole[]) {
 }
 
 export function setServer(serverId: string, change: { updatePolicy?: HostUpdatePolicy; maintenanceWindow?: string; gvisorPlatform?: "systrap" | "kvm"; roles?: ServerRole[] }) {
+  if (LIVE) return call(() => live.request("PATCH", `/servers/${serverId}`, change)).then(() => refresh());
   const srv = state.servers.find((s) => s.id === serverId)!;
   if (change.gvisorPlatform === "kvm" && !srv.bareMetal) throw new ApiError("The KVM platform needs a bare-metal server.");
   update((d) => {
@@ -1136,6 +1326,7 @@ export function setServer(serverId: string, change: { updatePolicy?: HostUpdateP
 }
 
 export function installUpdates(serverId: string) {
+  if (LIVE) return call(() => live.request<JobAnswer>("POST", `/servers/${serverId}/install-updates`)).then((r) => track(r.job));
   const srv = state.servers.find((s) => s.id === serverId)!;
   const kernel = srv.pendingUpdates.some((p) => p.name.startsWith("linux-image"));
   return runJob({
@@ -1155,6 +1346,7 @@ export function installUpdates(serverId: string) {
 
 /** FR-1116: reboot only one server of each role at a time. */
 export function rebootServer(serverId: string) {
+  if (LIVE) return call(() => live.request<JobAnswer>("POST", `/servers/${serverId}/reboot`)).then((r) => track(r.job));
   const srv = state.servers.find((s) => s.id === serverId)!;
   const busy = state.servers.find((s) => s.id !== serverId && s.state === "rebooting" && s.roles.some((r) => srv.roles.includes(r)));
   if (busy) throw new ApiError(`${busy.name} has the same role and is rebooting. Wait until it is healthy.`);
@@ -1180,6 +1372,7 @@ export function rebootServer(serverId: string) {
 }
 
 export function updateAgent(serverId: string) {
+  if (LIVE) return call(() => live.request<JobAnswer>("POST", `/servers/${serverId}/update-agent`)).then((r) => track(r.job));
   const srv = state.servers.find((s) => s.id === serverId)!;
   return runJob({
     title: `Update agent on ${srv.name}`,
@@ -1196,6 +1389,11 @@ export function updateAgent(serverId: string) {
 }
 
 export function newJoinToken() {
+  if (LIVE) {
+    return call(() => live.request<{ token: string }>("POST", "/servers/join-tokens")).then((r) => update((d) => {
+      d.joinToken = r.token;
+    }));
+  }
   update((d) => {
     d.joinToken = `cfj_${hex()}${hex()}`;
     audit(d, "Made new server join token", "");
@@ -1205,6 +1403,7 @@ export function newJoinToken() {
 // Customers, plans and branding (FR-102, FR-106, FR-202)
 
 export function addCustomer(input: Pick<Customer, "name" | "email" | "planId" | "role">) {
+  if (LIVE) return call(() => live.request("POST", "/customers", { name: input.name.trim(), email: input.email.trim(), planId: input.planId, role: input.role })).then(() => refresh());
   const errors: Record<string, string> = {};
   if (!input.name.trim()) errors.name = "Type a name.";
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(input.email)) errors.email = "Type an email address.";
@@ -1216,6 +1415,7 @@ export function addCustomer(input: Pick<Customer, "name" | "email" | "planId" | 
 }
 
 export function setCustomer(customerId: string, change: Partial<Pick<Customer, "planId" | "suspended">>) {
+  if (LIVE) return call(() => live.request("PATCH", `/customers/${customerId}`, change)).then(() => refresh());
   update((d) => {
     const c = d.customers.find((x) => x.id === customerId)!;
     Object.assign(c, change);
@@ -1224,6 +1424,11 @@ export function setCustomer(customerId: string, change: Partial<Pick<Customer, "
 }
 
 export function savePlan(plan: Plan) {
+  if (LIVE) {
+    const exists = state.plans.some((p) => p.id === plan.id);
+    const body = { name: plan.name.trim(), websites: plan.websites, mailboxes: plan.mailboxes, databases: plan.databases, phpExtensions: plan.phpExtensions, limits: plan.limits };
+    return call(() => live.request(exists ? "PATCH" : "POST", exists ? `/plans/${plan.id}` : "/plans", body)).then(() => refresh());
+  }
   const errors: Record<string, string> = {};
   if (!plan.name.trim()) errors.name = "Type a name.";
   if (Object.values(plan.limits).some((v) => !(v > 0))) errors.limits = "Each limit must be more than 0.";
@@ -1237,6 +1442,7 @@ export function savePlan(plan: Plan) {
 }
 
 export function setBranding(branding: Branding) {
+  if (LIVE) notInRelease();
   const errors: Record<string, string> = {};
   if (!/^#[0-9a-f]{6}$/i.test(branding.colour)) errors.colour = "Use a hex colour, for example #1d5fd6.";
   if (!/^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(branding.panelDomain)) errors.panelDomain = "Type a domain name.";
@@ -1249,7 +1455,15 @@ export function setBranding(branding: Branding) {
 
 // Settings (FR-103, FR-104, FR-1303, FR-1813)
 
-export function createToken(name: string, scopes: TokenScope[], days: number): { token: ApiToken; secret: string } {
+export function createToken(name: string, scopes: TokenScope[], days: number): Promise<{ token: ApiToken; secret: string }> | { token: ApiToken; secret: string } {
+  if (LIVE) {
+    return call(async () => {
+      const r = await live.request<{ id: number; token: string; scopes: TokenScope[]; expiresAt: string }>("POST", "/tokens", { name: name.trim(), scopes, expiresInDays: days });
+      await refresh();
+      const token: ApiToken = { id: String(r.id), name: name.trim(), scopes: r.scopes, createdAt: now(), expiresAt: r.expiresAt, prefix: `${r.id}|` };
+      return { token, secret: r.token };
+    });
+  }
   const errors: Record<string, string> = {};
   if (!name.trim()) errors.name = "Type a name.";
   if (!scopes.length) errors.scopes = "Select one or more scopes.";
@@ -1266,6 +1480,7 @@ export function createToken(name: string, scopes: TokenScope[], days: number): {
 }
 
 export function revokeToken(tokenId: string) {
+  if (LIVE) return call(() => live.request("DELETE", `/tokens/${tokenId}`)).then(() => refresh());
   update((d) => {
     const t = d.tokens.find((x) => x.id === tokenId)!;
     d.tokens = d.tokens.filter((x) => x.id !== tokenId);
@@ -1274,6 +1489,7 @@ export function revokeToken(tokenId: string) {
 }
 
 export function addPasskey(name: string) {
+  if (LIVE) notInRelease();
   update((d) => {
     d.passkeys.push({ id: id("pk"), name: name.trim() || "Passkey", addedAt: now() });
     audit(d, "Added passkey", name);
@@ -1281,6 +1497,7 @@ export function addPasskey(name: string) {
 }
 
 export function removePasskey(passkeyId: string) {
+  if (LIVE) notInRelease();
   if (state.passkeys.length === 1 && !state.totpEnabled) throw new ApiError("Keep one passkey, or set up TOTP first.");
   update((d) => {
     d.passkeys = d.passkeys.filter((p) => p.id !== passkeyId);
@@ -1289,6 +1506,7 @@ export function removePasskey(passkeyId: string) {
 }
 
 export function setTotp(enabled: boolean, code?: string) {
+  if (LIVE) notInRelease();
   if (enabled && !/^\d{6}$/.test(code ?? "")) throw new ApiError("Type the 6-digit code.", { code: "Type the 6-digit code from the app." });
   if (!enabled && state.passkeys.length === 0) throw new ApiError("Add a passkey before you remove TOTP.");
   update((d) => {
@@ -1298,6 +1516,7 @@ export function setTotp(enabled: boolean, code?: string) {
 }
 
 export function addAlertChannel(kind: AlertChannel["kind"], target: string, events: string[]) {
+  if (LIVE) notInRelease();
   const errors: Record<string, string> = {};
   if (kind === "email" && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(target)) errors.target = "Type an email address.";
   if (kind === "webhook" && !/^https:\/\/\S+$/.test(target)) errors.target = "Type an HTTPS URL.";
@@ -1310,6 +1529,7 @@ export function addAlertChannel(kind: AlertChannel["kind"], target: string, even
 }
 
 export function removeAlertChannel(channelId: string) {
+  if (LIVE) notInRelease();
   update((d) => {
     d.alertChannels = d.alertChannels.filter((c) => c.id !== channelId);
     audit(d, "Removed alert", "");
@@ -1317,11 +1537,13 @@ export function removeAlertChannel(channelId: string) {
 }
 
 export function testAlertChannel(channelId: string) {
+  if (LIVE) notInRelease();
   const c = state.alertChannels.find((x) => x.id === channelId)!;
   return runJob({ title: `Send test alert to ${c.target}`, steps: ["Send"] });
 }
 
 export function setSystem(system: SystemSettings) {
+  if (LIVE) notInRelease();
   if (system.registryMirror && !/^[a-z0-9.-]+(:\d+)?(\/[\w./-]+)?$/.test(system.registryMirror)) {
     throw new ApiError("Correct the mirror.", { registryMirror: "Type a registry host, for example registry.example.com/cloudfactory." });
   }

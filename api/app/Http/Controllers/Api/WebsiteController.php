@@ -71,6 +71,11 @@ class WebsiteController extends Controller
         }
 
         $image = Image::findOrFail($data['imageId']);
+        if (! $user->isAdministrator() && ($image->custom || isset($data['serverId']))) {
+            throw ValidationException::withMessages($image->custom
+                ? ['imageId' => 'Select an official image.']
+                : ['serverId' => 'Only an administrator can select the server.']);
+        }
         $plan = Plan::findOrFail($data['planId']);
         $server = isset($data['serverId'])
             ? Server::findOrFail($data['serverId'])

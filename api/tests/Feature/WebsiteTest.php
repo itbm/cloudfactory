@@ -31,6 +31,23 @@ class WebsiteTest extends TestCase
         $this->assertDatabaseHas('audit_entries', ['action' => 'Created website', 'target' => 'acme.example']);
     }
 
+    public function test_a_customer_selects_an_official_image_and_no_server(): void
+    {
+        $customer = $this->customer();
+        $server = $this->server();
+        $official = $this->image();
+        $custom = $this->image(['name' => 'Mine', 'reference' => 'ghcr.io/me/app', 'family' => 'custom', 'custom' => true]);
+        $this->actingWith($this->user(Role::Owner, $customer));
+
+        $this->getJson('/api/v1/runtime-images')->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $official->id);
+        $this->postJson('/api/v1/websites', ['name' => 'a.example', 'imageId' => $custom->id, 'planId' => $customer->plan_id])
+            ->assertUnprocessable()->assertJsonValidationErrors('imageId');
+        $this->postJson('/api/v1/websites', ['name' => 'a.example', 'imageId' => $official->id, 'planId' => $customer->plan_id, 'serverId' => $server->id])
+            ->assertUnprocessable()->assertJsonValidationErrors('serverId');
+    }
+
     public function test_the_website_name_must_be_a_domain_that_is_not_in_use(): void
     {
         $customer = $this->customer();

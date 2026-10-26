@@ -43,6 +43,7 @@ Route::prefix('v1')->group(function () {
             Route::delete('websites/{websiteId}/domains/{name}', [DomainController::class, 'destroy']);
             Route::put('websites/{websiteId}/runtime', [RuntimeController::class, 'update']);
             Route::post('websites/{websiteId}/runtime/revert', [RuntimeController::class, 'revert']);
+            Route::get('runtime-images', [ImageController::class, 'runtimes']);
             Route::get('jobs', [JobController::class, 'index']);
             Route::get('jobs/{id}', [JobController::class, 'show']);
         });

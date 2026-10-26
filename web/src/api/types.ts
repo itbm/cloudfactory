@@ -148,6 +148,8 @@ export interface Website {
   managedByTerraform: boolean;
   /** The image tag that the website uses. When it is not set, the website uses the running tag of its image. */
   imageTag?: string;
+  /** The full image reference with its tag, in live mode. */
+  imageReference?: string;
   updateScheduledAt?: string;
 }
 
@@ -405,7 +407,10 @@ export type TokenScope =
   | "email:read" | "email:write"
   | "databases:read" | "databases:write"
   | "backups:read" | "backups:write"
-  | "servers:read" | "servers:write";
+  | "servers:read" | "servers:write"
+  | "images:read" | "images:write"
+  | "customers:read" | "customers:write"
+  | "audit:read";
 
 export interface ApiToken {
   id: string;
@@ -455,7 +460,8 @@ export interface SearchResult {
 }
 
 export interface State {
-  session: { signedIn: boolean; user: User; contextId: string };
+  /** loading: in live mode, the panel has a session but has not loaded the data yet. */
+  session: { signedIn: boolean; loading?: boolean; user: User; contextId: string };
   contexts: AccountContext[];
   websites: Website[];
   jobs: Job[];

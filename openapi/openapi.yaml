@@ -602,6 +602,35 @@ paths:
       responses:
         '202': { $ref: '#/components/responses/JobOnly' }
 
+  /v1/runtime-images:
+    get:
+      tags: [Images]
+      summary: List the images for a new website
+      description: >-
+        Needs the websites:read scope. A customer or a reseller gets the official images
+        only. An administrator also gets the images that they added.
+      responses:
+        '200':
+          description: The images.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, name, family, tag, custom]
+                      properties:
+                        id: { type: string }
+                        name: { type: string }
+                        family: { type: string }
+                        tag: { type: string }
+                        phpVersion: { type: [string, 'null'] }
+                        custom: { type: boolean }
+                        supportEndsAt: { type: [string, 'null'], format: date-time }
+
   /v1/images:
     get:
       tags: [Images]
@@ -1219,7 +1248,13 @@ components:
         lastUpdateAt: { type: [string, 'null'], format: date-time }
         rebootRequired: { type: boolean }
         services: { type: array, items: { type: object } }
-        usage: { type: [object, 'null'] }
+        usage:
+          type: [object, 'null']
+          description: The use of the host in percent.
+          properties:
+            cpuPercent: { type: number, description: The load average of one minute for each CPU. }
+            memoryPercent: { type: number }
+            diskPercent: { type: number, description: The file system of the website files. }
         websites: { type: [integer, 'null'] }
         lastSeenAt: { type: [string, 'null'], format: date-time }
     Image:
@@ -1334,7 +1369,13 @@ components:
             properties:
               name: { type: string }
               state: { type: string, enum: [running, stopped, failed] }
-        usage: { type: object }
+        usage:
+          type: object
+          description: The use of the host in percent.
+          properties:
+            cpuPercent: { type: number, description: The load average of one minute for each CPU. }
+            memoryPercent: { type: number }
+            diskPercent: { type: number, description: The file system of the website files. }
         websites:
           type: array
           items:

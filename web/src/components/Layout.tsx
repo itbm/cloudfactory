@@ -20,6 +20,7 @@ import {
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useStore } from "../api/hooks";
+import { features } from "../api/mode";
 import { markNotificationsRead, setContext, signOut } from "../api/store";
 import type { AccountContext, Tone } from "../api/types";
 import { relativeTime } from "../lib/format";
@@ -57,13 +58,14 @@ function ContextSwitcher() {
     document.addEventListener("mousedown", close);
     return () => document.removeEventListener("mousedown", close);
   }, [open]);
+  if (!shown) return null;
 
   const summary = (c: AccountContext) => {
     if (c.role === "administrator") return `Administrator · ${state.servers.length} servers`;
     const customer = state.customers.find((x) => x.id === c.id);
     const plan = state.plans.find((p) => p.id === customer?.planId);
     const count = state.websites.filter((w) => w.customerId === c.id).length;
-    return `Reseller · ${count} of ${plan?.websites ?? count} websites`;
+    return `${c.role === "reseller" ? "Reseller" : "Website owner"} · ${count} of ${plan?.websites ?? count} websites`;
   };
 
   return (
@@ -164,10 +166,10 @@ type NavItem = { to: string; label: string; icon: ReactNode; count?: number };
 
 const hosting: NavItem[] = [
   { to: "/websites", label: "Websites", icon: <Globe size={18} /> },
-  { to: "/dns", label: "Domains and DNS", icon: <Signpost size={18} /> },
-  { to: "/email", label: "Email", icon: <Mail size={18} /> },
+  ...(features.dns ? [{ to: "/dns", label: "Domains and DNS", icon: <Signpost size={18} /> }] : []),
+  ...(features.email ? [{ to: "/email", label: "Email", icon: <Mail size={18} /> }] : []),
   { to: "/databases", label: "Databases", icon: <Database size={18} /> },
-  { to: "/files", label: "Files", icon: <Folder size={18} /> },
+  ...(features.files ? [{ to: "/files", label: "Files", icon: <Folder size={18} /> }] : []),
   { to: "/backups", label: "Backups", icon: <History size={18} /> },
   { to: "/apps", label: "Apps", icon: <Boxes size={18} /> },
 ];
@@ -260,7 +262,7 @@ export function Layout() {
             <span className="avatar" aria-hidden="true">{initials}</span>
             <span style={{ flex: 1 }}>
               <span className="name" style={{ display: "block" }}>{user.name}</span>
-              <span className="role">Administrator</span>
+              <span className="role">{isAdmin ? "Administrator" : user.role === "reseller" ? "Reseller" : "Website owner"}</span>
             </span>
             <button
               type="button"

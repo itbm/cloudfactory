@@ -1,25 +1,29 @@
 import { useState } from "react";
 import { useAction, useStore } from "../api/hooks";
 import { addAlertChannel, addPasskey, createToken, removeAlertChannel, removePasskey, revokeToken, setSystem, setTotp, testAlertChannel } from "../api/store";
+import { features, LIVE } from "../api/mode";
 import type { AlertChannel, TokenScope } from "../api/types";
 import { Topbar } from "../components/Layout";
 import { Card, ConfirmButton, Field, FormError, Modal, PageHeader, Status, Tabs } from "../components/ui";
 import { daysUntil, longDate, relativeTime, shortDate } from "../lib/format";
 import { CopyField } from "./website/AccessTab";
 
-const SCOPES: TokenScope[] = ["websites:read", "websites:write", "dns:read", "dns:write", "email:read", "email:write", "databases:read", "databases:write", "backups:read", "backups:write", "servers:read", "servers:write"];
+// The live API has no DNS or email scopes in release 0.1 (FR-104).
+const SCOPES: TokenScope[] = LIVE
+  ? ["websites:read", "websites:write", "databases:read", "databases:write", "backups:read", "backups:write", "servers:read", "servers:write", "images:read", "images:write", "customers:read", "customers:write", "audit:read"]
+  : ["websites:read", "websites:write", "dns:read", "dns:write", "email:read", "email:write", "databases:read", "databases:write", "backups:read", "backups:write", "servers:read", "servers:write"];
 const EVENTS = ["Server health", "Failed update", "Failed deploy", "Failed backup", "Mailbox 90% full", "Certificate failed", "PHP support ends"];
 
 export function SettingsPage() {
   const state = useStore();
-  const [tab, setTab] = useState("security");
+  const [tab, setTab] = useState(features.security ? "security" : "tokens");
   const isAdmin = state.session.user.role === "administrator";
   const tabs = [
-    { id: "security", label: "Sign-in and security" },
+    ...(features.security ? [{ id: "security", label: "Sign-in and security" }] : []),
     { id: "tokens", label: "API tokens" },
     { id: "audit", label: "Audit log" },
-    { id: "alerts", label: "Alerts" },
-    ...(isAdmin ? [{ id: "system", label: "System" }] : []),
+    ...(features.alerts ? [{ id: "alerts", label: "Alerts" }] : []),
+    ...(isAdmin && features.system ? [{ id: "system", label: "System" }] : []),
   ];
   return (
     <>
@@ -122,7 +126,7 @@ function Tokens() {
                 <tr key={t.id}>
                   <td><strong>{t.name}</strong><span className="cell-sub mono">{t.prefix}…</span></td>
                   <td><ul className="tag-list">{t.scopes.map((s) => <li key={s}><span className="tag">{s}</span></li>)}</ul></td>
-                  <td>{shortDate(t.expiresAt)}{left <= 14 && <span className="cell-sub note-warning">Expires in {left} days</span>}</td>
+                  <td>{shortDate(t.expiresAt)}{left <= 14 && <span className="cell-sub note-warning">{left < 1 ? "Expires today" : left === 1 ? "Expires in 1 day" : `Expires in ${left} days`}</span>}</td>
                   <td>{t.lastUsedAt ? relativeTime(t.lastUsedAt) : "Never"}</td>
                   <td className="cell-actions" style={{ width: 110 }}>
                     <ConfirmButton className="btn btn-sm btn-danger" title={`Revoke ${t.name}?`} confirm="Revoke token" message={<p>Scripts and tools that use this token stop working now.</p>} onConfirm={() => revokeToken(t.id)}>Revoke</ConfirmButton>

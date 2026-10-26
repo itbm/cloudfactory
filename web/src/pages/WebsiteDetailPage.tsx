@@ -1,5 +1,6 @@
 import { ArrowUpRight, ShieldCheck } from "lucide-react";
 import { useState } from "react";
+import { features } from "../api/mode";
 import { Link, useParams } from "react-router-dom";
 import { useAction, useStore } from "../api/hooks";
 import { imageOf, runtimeLabel, supportEnds, tagOf, updateReady } from "../api/selectors";
@@ -22,20 +23,23 @@ import { LogsTab } from "./website/LogsTab";
 import { RuntimeTab } from "./website/RuntimeTab";
 import { SettingsTab } from "./website/SettingsTab";
 
-const TABS = [
-  ["overview", "Overview"],
-  ["domains", "Domains"],
-  ["runtime", "Runtime"],
-  ["databases", "Databases"],
-  ["email", "Email"],
-  ["files", "Files"],
-  ["cron", "Cron jobs"],
-  ["backups", "Backups"],
-  ["logs", "Logs"],
-  ["deploys", "Deploys"],
-  ["access", "SFTP and SSH"],
-  ["settings", "Settings"],
+const ALL_TABS = [
+  ["overview", "Overview", true],
+  ["domains", "Domains", true],
+  ["runtime", "Runtime", true],
+  ["databases", "Databases", true],
+  ["email", "Email", features.email],
+  ["files", "Files", features.files],
+  ["cron", "Cron jobs", features.cron],
+  ["backups", "Backups", true],
+  ["logs", "Logs", features.logs],
+  ["deploys", "Deploys", features.deploys],
+  ["access", "SFTP and SSH", features.access],
+  ["settings", "Settings", true],
 ] as const;
+
+// In live mode the panel shows only the sections that the API of this release has.
+const TABS = ALL_TABS.filter(([, , shown]) => shown).map(([id, label]) => [id, label] as const);
 
 function UpdateBanner({ website }: { website: Website }) {
   const state = useStore();
@@ -86,7 +90,7 @@ function RuntimeCard({ website }: { website: Website }) {
           <tbody>
             <tr><th scope="row">Engine</th><td>{runtimeLabel(state, website).split(" · ")[0]} {tagOf(state, website)}{website.runtime.kind === "frankenphp" ? ` · ${website.runtime.workerMode ? "worker mode" : "classic mode"}` : ""}</td></tr>
             {website.runtime.phpVersion && <tr><th scope="row">PHP</th><td>{website.runtime.phpVersion}{supportEnds(state, website) && <span className="note-warning"> · support ends {longDate(supportEnds(state, website)!)}</span>}</td></tr>}
-            <tr><th scope="row">Image</th><td><code>{image?.reference}:{tagOf(state, website)}{website.runtime.phpVersion && image?.family !== "apache-php-fpm" ? `-php${website.runtime.phpVersion}` : ""}</code></td></tr>
+            <tr><th scope="row">Image</th><td><code>{website.imageReference ?? `${image?.reference}:${tagOf(state, website)}${website.runtime.phpVersion && image?.family !== "apache-php-fpm" ? `-php${website.runtime.phpVersion}` : ""}`}</code></td></tr>
             <tr>
               <th scope="row">Digest</th>
               <td>
@@ -237,12 +241,12 @@ function Overview({ website }: { website: Website }) {
         <div className="stack">
           <RuntimeCard website={website} />
           <ResourcesCard website={website} />
-          <DeploysCard website={website} />
+          {features.deploys && <DeploysCard website={website} />}
         </div>
         <div className="stack">
           <JobsCard website={website} />
           <DomainsCard website={website} />
-          <SshCard website={website} />
+          {features.access && <SshCard website={website} />}
           <BackupsCard website={website} />
         </div>
       </div>
@@ -251,7 +255,8 @@ function Overview({ website }: { website: Website }) {
 }
 
 export function WebsiteDetailPage() {
-  const { id = "", tab = "overview" } = useParams();
+  const { id = "", tab: asked = "overview" } = useParams();
+  const tab = TABS.some(([t]) => t === asked) ? asked : "overview";
   const state = useStore();
   const website = state.websites.find((w) => w.id === id);
   const restart = useAction(setPower);
@@ -297,7 +302,7 @@ export function WebsiteDetailPage() {
               Visit site <ArrowUpRight size={16} aria-hidden="true" />
               <span className="visually-hidden">(opens in a new tab)</span>
             </a>
-            <Link className="btn" to={`/websites/${website.id}/files`}>File manager</Link>
+            {features.files && <Link className="btn" to={`/websites/${website.id}/files`}>File manager</Link>}
             <button type="button" className="btn" disabled={website.status !== "running" || restart.busy} onClick={() => void restart.run(website.id, "restart")}>Restart</button>
             <WebsiteMenu website={website} bordered />
           </div>

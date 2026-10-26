@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useAction, useStore } from "../api/hooks";
+import { LIVE } from "../api/mode";
 import { addImage } from "../api/store";
 import type { UpdatePolicy } from "../api/types";
 import { Topbar } from "../components/Layout";
@@ -8,12 +9,12 @@ import { Card, Field, FormError, Modal, PageHeader, Status } from "../components
 import { POLICY_LABEL } from "../lib/labels";
 
 const CATALOGUE = [
-  { name: "WordPress", runtime: "FrankenPHP · PHP 8.5", text: "Blog and content site. Install in one action is planned for a later release.", later: true },
-  { name: "WooCommerce", runtime: "FrankenPHP · PHP 8.4", text: "WordPress with a shop. Uses MariaDB and Redis.", later: true },
-  { name: "Laravel", runtime: "FrankenPHP worker · PHP 8.5", text: "Deploy from Git. Worker mode is available for Laravel Octane." },
-  { name: "Symfony", runtime: "FrankenPHP · PHP 8.5", text: "Deploy from Git. Uses composer install in a build container." },
-  { name: "Static site", runtime: "Caddy · static files", text: "The edge proxy serves the files directly. Build with npm in a build container." },
-  { name: "Node.js app", runtime: "Node.js 24 · OCI image", text: "Runs your own OCI image. Set the port and the start command." },
+  { name: "WordPress", family: "frankenphp", runtime: "FrankenPHP · PHP 8.5", text: "Blog and content site. Install in one action is planned for a later release.", later: true },
+  { name: "WooCommerce", family: "frankenphp", runtime: "FrankenPHP · PHP 8.4", text: "WordPress with a shop. Uses MariaDB and Redis.", later: true },
+  { name: "Laravel", family: "frankenphp", runtime: "FrankenPHP worker · PHP 8.5", text: "Deploy from Git. Worker mode is available for Laravel Octane." },
+  { name: "Symfony", family: "frankenphp", runtime: "FrankenPHP · PHP 8.5", text: "Deploy from Git. Uses composer install in a build container." },
+  { name: "Static site", family: "edge", runtime: "Caddy · static files", text: "The edge proxy serves the files directly. Build with npm in a build container." },
+  { name: "Node.js app", family: "node", runtime: "Node.js 24 · OCI image", text: "Runs your own OCI image. Set the port and the start command." },
 ];
 
 /** Apps and own OCI images (FR-307, FR-1110). */
@@ -31,7 +32,8 @@ export function AppsPage() {
       <main id="main" className="content">
         <PageHeader title="Apps" description="Start points for common applications, and the OCI images that administrators added." actions={isAdmin && <button type="button" className="btn btn-primary" onClick={() => setOpen(true)}>Add your own image</button>} />
         <div className="grid-3">
-          {CATALOGUE.map((a) => (
+          {/* In live mode, show only the apps that have an image on this panel. */}
+          {CATALOGUE.filter((a) => !LIVE || state.images.some((i) => i.family === a.family)).map((a) => (
             <section key={a.name} className="card app-tile" aria-labelledby={`app-${a.name}`}>
               <h2 id={`app-${a.name}`}>{a.name}</h2>
               <span className="tag" style={{ alignSelf: "flex-start" }}>{a.runtime}</span>
@@ -51,7 +53,7 @@ export function AppsPage() {
                     <td><code>{i.reference}</code></td>
                     <td><code>{i.running}</code></td>
                     <td>{i.signatureVerified ? <Status tone="success">Verified</Status> : <Status tone="warning">No signature</Status>}</td>
-                    <td>{POLICY_LABEL[i.policy]}<span className="cell-sub">The agent checks the registry for a new digest of the same tag.</span></td>
+                    <td>{POLICY_LABEL[i.policy]}<span className="cell-sub">The panel checks the registry each hour for a new digest of the same tag.</span></td>
                   </tr>
                 ))}
                 {pending.map((j) => <tr key={j.id}><td colSpan={5} className="muted">{j.title}: {j.steps[Math.min(j.step, j.steps.length - 1)]}…</td></tr>)}

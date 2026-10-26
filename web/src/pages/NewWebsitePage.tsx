@@ -2,11 +2,23 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAction, useStore } from "../api/hooks";
 import { createWebsite } from "../api/store";
+import type { RuntimeImage } from "../api/types";
 import { Topbar } from "../components/Layout";
 import { Card, Field, FormError, PageHeader } from "../components/ui";
 import { bytes } from "../lib/format";
 
 const APPLICATIONS = ["WordPress", "WooCommerce", "Laravel", "Symfony", "Custom PHP", "Node.js app", "Static site"];
+
+/** The usual image family for each application. */
+const FAMILY: Record<string, RuntimeImage["family"]> = { "Static site": "edge", "Node.js app": "node", "Custom PHP": "apache-php-fpm" };
+
+/** The image of a family with the newest PHP version that still has support, or the first image. */
+export function defaultImage(images: RuntimeImage[], family: RuntimeImage["family"]): string {
+  const ofFamily = images.filter((i) => i.family === family);
+  const pool = ofFamily.length ? ofFamily : images.filter((i) => i.family === "frankenphp");
+  const sorted = [...pool].sort((a, b) => (b.phpVersion ?? "").localeCompare(a.phpVersion ?? ""));
+  return (sorted.find((i) => !i.supportEndsAt || new Date(i.supportEndsAt) > new Date()) ?? sorted[0] ?? images[0])?.id ?? "";
+}
 
 export function NewWebsitePage() {
   const state = useStore();
@@ -15,10 +27,11 @@ export function NewWebsitePage() {
   const webServers = state.servers.filter((s) => s.roles.includes("web"));
   const [name, setName] = useState("");
   const [application, setApplication] = useState("WordPress");
-  const [imageId, setImageId] = useState("img_fp85");
-  const [planId, setPlanId] = useState("plan_standard");
+  const platform = state.session.contextId === "platform";
+  const [imageId, setImageId] = useState(() => defaultImage(runtimes, "frankenphp"));
+  const [customerId, setCustomerId] = useState(platform ? state.customers.find((c) => c.role !== "reseller")?.id ?? state.customers[0]?.id ?? "" : state.session.contextId);
+  const [planId, setPlanId] = useState(() => state.customers.find((c) => c.id === customerId)?.planId ?? state.plans[0]?.id ?? "");
   const [serverId, setServerId] = useState(webServers[0]?.id ?? "");
-  const customerId = state.session.contextId === "platform" ? "cus_acme" : state.session.contextId;
   const action = useAction(createWebsite);
 
   const submit = async (e: React.FormEvent) => {
@@ -49,15 +62,25 @@ export function NewWebsitePage() {
                 {(p) => (
                   <select {...p} className="select" value={application} onChange={(e) => {
                     setApplication(e.target.value);
-                    if (e.target.value === "Static site") setImageId("img_caddy");
-                    else if (e.target.value === "Node.js app") setImageId("img_node24");
-                    else if (e.target.value === "Custom PHP") setImageId("img_ap84");
-                    else setImageId("img_fp85");
+                    setImageId(defaultImage(runtimes, FAMILY[e.target.value] ?? "frankenphp"));
                   }}>
                     {APPLICATIONS.map((a) => <option key={a}>{a}</option>)}
                   </select>
                 )}
               </Field>
+              {platform && (
+                <Field label="Customer" error={err.customerId}>
+                  {(p) => (
+                    <select {...p} className="select" value={customerId} onChange={(e) => {
+                      setCustomerId(e.target.value);
+                      const plan = state.customers.find((c) => c.id === e.target.value)?.planId;
+                      if (plan) setPlanId(plan);
+                    }}>
+                      {state.customers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                  )}
+                </Field>
+              )}
             </div>
           </Card>
           <Card title="Runtime">
@@ -94,15 +117,15 @@ export function NewWebsitePage() {
                   </label>
                 ))}
               </fieldset>
-              <div style={{ marginTop: 16 }}>
-                <Field label="Server">
+              {webServers.length > 0 && <div style={{ marginTop: 16 }}>
+                <Field label="Server" error={err.serverId}>
                   {(p) => (
                     <select {...p} className="select" value={serverId} onChange={(e) => setServerId(e.target.value)}>
                       {webServers.map((s) => <option key={s.id} value={s.id}>{s.name} ({s.location}) · CPU {s.cpuPercent}%</option>)}
                     </select>
                   )}
                 </Field>
-              </div>
+              </div>}
             </div>
           </Card>
           <div className="btn-group" style={{ marginTop: 24, justifyContent: "flex-end" }}>

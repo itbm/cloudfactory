@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useAction, useStore } from "../api/hooks";
+import { LIVE } from "../api/mode";
 import { addServer, installUpdates, newJoinToken, rebootServer, setServer, updateAgent } from "../api/store";
 import type { HostUpdatePolicy, Server, ServerRole } from "../api/types";
 import { Topbar } from "../components/Layout";
@@ -46,7 +47,12 @@ function AddServerDialog({ onClose }: { onClose: () => void }) {
   const [location, setLocation] = useState("");
   const [roles, setRoles] = useState<ServerRole[]>(["web"]);
   const add = useAction(addServer);
-  const cmd = `curl -fsSL https://get.cloudfactory.io | sh -s -- --join ${state.joinToken}`;
+  // In live mode each dialog gets a new token, because the panel shows a token only once.
+  useEffect(() => { if (LIVE) void newJoinToken(); }, []);
+  const name_ = name.trim().toLowerCase();
+  const cmd = LIVE
+    ? `curl -fsSL https://get.cloudfactory.io | sh -s -- --join ${state.joinToken || "…"} --panel https://${window.location.host}${name_ ? ` --name ${name_}` : ""} --roles ${roles.join(",") || "web"}`
+    : `curl -fsSL https://get.cloudfactory.io | sh -s -- --join ${state.joinToken}`;
   return (
     <Modal
       title="Add server"
@@ -57,17 +63,18 @@ function AddServerDialog({ onClose }: { onClose: () => void }) {
       <form id="srv" noValidate onSubmit={async (e) => {
         e.preventDefault();
         const r = await add.run(name, location, roles);
-        if (r.ok) navigate(`/servers/${r.value.serverId}`);
+        if (r.ok) navigate(r.value.serverId ? `/servers/${r.value.serverId}` : "/servers");
       }}>
         <FormError error={add.error} />
         <p>1. Get a new server with Debian 13 or Ubuntu 26.04 LTS, on x86-64 or ARM64.</p>
-        <p>2. Sign in to the server as root and run this command. The script checks the system first. It does not change the system until all checks pass.</p>
+        {LIVE && <p>2. Give the server a name and roles. The command below changes to match.</p>}
+        <p>{LIVE ? "3" : "2"}. Sign in to the server as root and run this command. The script checks the system first. It does not change the system until all checks pass.</p>
         <CopyField value={cmd} label="Join command" />
-        <p className="muted small">The token is for one server and expires in 24 hours. <button type="button" className="btn-link" onClick={newJoinToken}>Make a new token</button></p>
-        <p>3. Give the server a name and roles. The panel shows it when the agent connects.</p>
+        <p className="muted small">The token is for one server and expires in 24 hours. <button type="button" className="btn-link" onClick={() => void newJoinToken()}>Make a new token</button></p>
+        {!LIVE && <p>3. Give the server a name and roles. The panel shows it when the agent connects.</p>}
         <div className="form-row">
           <Field label="Name" error={add.error?.fields.name}>{(p) => <input {...p} className="input mono" value={name} onChange={(e) => setName(e.target.value)} placeholder="web-03" autoCapitalize="none" />}</Field>
-          <Field label="Location">{(p) => <input {...p} className="input" value={location} onChange={(e) => setLocation(e.target.value)} placeholder="London" />}</Field>
+          {!LIVE && <Field label="Location">{(p) => <input {...p} className="input" value={location} onChange={(e) => setLocation(e.target.value)} placeholder="London" />}</Field>}
         </div>
         <fieldset className="checkbox-list">
           <legend>Roles</legend>
