@@ -1145,6 +1145,12 @@ export function setImagePolicy(imageId: string, policy: UpdatePolicy) {
   });
 }
 
+/** FR-1110: checks the registry for a new signed version of the image now. */
+export function checkImage(imageId: string) {
+  if (!LIVE) return;
+  return call(() => live.request("POST", `/images/${imageId}/check`)).then(() => refresh());
+}
+
 export function startRollout(imageId: string) {
   if (LIVE) return call(() => live.request("POST", "/rollouts", { imageId })).then(() => refresh());
   if (state.rollout && (state.rollout.state === "running" || state.rollout.state === "paused")) {

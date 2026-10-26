@@ -1,6 +1,7 @@
 # Screenshots
 
-These screenshots show the web panel of release 0.1 with the mock API.
+These screenshots show the web panel of release 0.1 with the mock API. For the panel on the
+real API, refer to [live/README.md](live/README.md).
 
 ## 01-websites
 

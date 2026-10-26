@@ -2,7 +2,8 @@ import { Check } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useAction, useStore } from "../api/hooks";
-import { pauseRollout, rollBackAll, setImagePolicy, startRollout } from "../api/store";
+import { LIVE } from "../api/mode";
+import { checkImage, pauseRollout, rollBackAll, setImagePolicy, startRollout } from "../api/store";
 import type { Rollout, UpdatePolicy } from "../api/types";
 import { Topbar } from "../components/Layout";
 import { Card, ConfirmButton, FormError, PageHeader, Status } from "../components/ui";
@@ -75,6 +76,7 @@ function RolloutCard({ rollout }: { rollout: Rollout }) {
 export function UpdatesPage() {
   const state = useStore();
   const start = useAction(startRollout);
+  const check = useAction(checkImage);
   const [editing, setEditing] = useState<string | null>(null);
   const rollout = state.rollout;
   const active = rollout && (rollout.state === "running" || rollout.state === "paused");
@@ -87,7 +89,7 @@ export function UpdatesPage() {
         <PageHeader title="Updates" description="Every runtime is a signed container image. Roll it out in stages, check each website's health, and roll back on its own if a check fails." />
         {rollout && <RolloutCard rollout={rollout} />}
         <Card title="Runtime images" className="mt" actions={<Link className="btn" to="/apps">Add your own image</Link>}>
-          <FormError error={start.error} />
+          <FormError error={start.error ?? check.error} />
           <div className="table-wrap">
             <table>
               <thead><tr><th scope="col">Image</th><th scope="col">Running</th><th scope="col">Available</th><th scope="col">Websites</th><th scope="col">Update policy</th><th scope="col"><span className="visually-hidden">Actions</span></th></tr></thead>
@@ -125,6 +127,7 @@ export function UpdatesPage() {
                       {i.available && i.availableNote !== "rolling_out" && (
                         <button type="button" className="btn btn-sm" disabled={!!active} onClick={() => void start.run(i.id)}>Start rollout</button>
                       )}
+                      {LIVE && !i.available && <button type="button" className="btn btn-sm" disabled={check.busy} onClick={() => void check.run(i.id)}>Check now</button>}
                     </td>
                   </tr>
                 ))}

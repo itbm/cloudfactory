@@ -22,8 +22,29 @@ npm test
 npm run build
 ```
 
-In release 0.1, the web panel uses a mock API in `web/src/api/`. The mock API has the same
-shapes as the OpenAPI document. Refer to [status.md](status.md).
+The web panel has two modes:
+
+| Mode | API | Used by |
+| ---- | --- | ------- |
+| live | The panel API at `/api/v1` (`web/src/api/live.ts`) | The production build |
+| mock | An API in memory with sample data (`web/src/api/store.ts`) | `npm run dev`, the tests and the screenshots |
+
+Set `VITE_API_MODE=live` or `VITE_API_MODE=mock` to select a mode. In live mode, the panel
+hides the areas that the API of release 0.1 does not have. Refer to [status.md](status.md).
+
+To use live mode with a local API:
+
+```sh
+cd api
+php artisan migrate:fresh --seed
+php artisan serve                      # http://127.0.0.1:8000
+
+cd ../web
+VITE_API_MODE=live npm run dev         # sends /api to port 8000
+```
+
+Sign in as `admin@example.com`, `reseller@example.com` or `owner@example.com`. The password
+is `password`. The sample users have no TOTP, so leave the code empty.
 
 ## Panel API
 

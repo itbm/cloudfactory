@@ -8,6 +8,9 @@ shows what this repository has now.
 | Item | Where |
 | ---- | ----- |
 | Web panel with all screens of the specification, section 9, and their actions | `web/` |
+| Web panel on the real API (live mode). The production build uses it. | `web/src/api/live.ts` |
+| New image tags from the registry: the panel checks each hour and accepts a tag only with a good signature (FR-1110) | `api/app/Services/ImageUpdateChecker.php` |
+| Host CPU, memory and disk use in the agent report | `agent/internal/status` |
 | Panel API: accounts, scoped tokens, TOTP, customers, plans, websites, domains, runtimes, databases, backups, servers, images, rollouts, jobs and audit events | `api/` |
 | OpenAPI 3.1 document, with a test that compares it to the routes | `openapi/`, `api/tests/Feature/OpenApiTest.php` |
 | Agent: websites, limits, runtime changes without downtime, domains and TLS, MariaDB and PostgreSQL databases, backups and restores, host security updates, reboots, gVisor install and rollback, signed self-update with rollback | `agent/` |
@@ -22,11 +25,11 @@ shows what this repository has now.
 
 | Item | Notes |
 | ---- | ----- |
-| Web panel on the real API | The web panel uses a mock API with the same shapes. The next step is to replace `web/src/api/store.ts` with calls to the API. |
+| Areas without an API | The API of release 0.1 has no DNS, email, files, cron, deploys, SSH access, logs, passkeys, alerts, branding or system settings. In live mode the web panel hides these areas. In mock mode it shows them with sample data. |
+| Use of each website | The agent does not report the CPU, memory and disk use of each website yet. The panel shows 0 for each website. |
 | SFTP | The web panel shows SFTP access. The agent has no SFTP service yet. |
 | gVisor benchmark | Release 0.1 must measure websites, MariaDB and DNS in gVisor (R-08). This is not done. |
 | Passkeys | The web panel shows passkeys. The API does not support passkeys yet. Users sign in with a password and TOTP. |
-| New image tags from the registry | The panel does not read the registry for new tags yet (FR-1110). An operator adds the tag. |
 | Signing key | The maintainers must make the cosign key and commit `cosign.pub`. Refer to [releasing.md](releasing.md). |
 | Tests on real servers | The tests use fakes for the system commands. The Caddy routes have a test with a real edge container. Nobody has installed release 0.1 on a real Debian 13 or Ubuntu 26.04 server yet. |
 | DNS, email, Git deploys, migration, Terraform | These are in releases 0.2 to 1.0. |

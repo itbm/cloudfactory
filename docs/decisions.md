@@ -33,3 +33,17 @@ The reasons:
 
 Release 0.3 (email) and release 0.2 (DNS) will add redirects for ports 25 and 53 in the same
 method.
+
+## Who checks the registry for new image tags
+
+The panel checks the registry, not the agent (FR-1110). The reasons:
+
+- One check is sufficient for all servers. The panel decides when a rollout starts, so it
+  must know about a new tag first.
+- The panel verifies the cosign signature of each new tag with the release public key before
+  it shows the tag. Each agent verifies the signature again when it pulls the image, through
+  the Podman signature policy (FR-1101).
+- The agents do not need access to the registry API for tags. They only pull images.
+
+The scheduler container (`cf-panel-scheduler`) runs `php artisan cloudfactory:check-images`
+each hour. An administrator can also check one image now on the Updates page.
