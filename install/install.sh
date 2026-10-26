@@ -71,7 +71,10 @@ fail() {
 
 # value gives the value of an option, or stops when the option has no value.
 value() {
-	[ $# -ge 2 ] && [ -n "$2" ] || { usage >&2; fail "the option $1 needs a value."; }
+	if [ $# -lt 2 ] || [ -z "$2" ]; then
+		usage >&2
+		fail "the option $1 needs a value."
+	fi
 	printf '%s' "$2"
 }
 

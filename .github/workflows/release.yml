@@ -84,7 +84,7 @@ jobs:
           # The agent and the panel use the version with no "v", for example 0.1.0.
           tags: ${{ env.REGISTRY }}/${{ matrix.image }}:${{ steps.tag.outputs.tag }}
       - name: Scan for known vulnerabilities (FR-1102)
-        uses: aquasecurity/trivy-action@0.33.1
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: ${{ env.REGISTRY }}/${{ matrix.image }}@${{ steps.build.outputs.digest }}
           severity: CRITICAL
