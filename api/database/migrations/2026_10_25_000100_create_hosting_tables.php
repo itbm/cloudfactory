@@ -43,6 +43,8 @@ return new class extends Migration
             $table->string('agent_url')->nullable();
             $table->string('agent_version')->nullable();
             $table->string('certificate_fingerprint')->nullable();
+            // The self-signed certificate of the agent port. The panel trusts only this certificate.
+            $table->text('certificate_pem')->nullable();
             $table->string('agent_token_hash')->nullable();
             $table->string('os')->nullable();
             $table->string('kernel')->nullable();

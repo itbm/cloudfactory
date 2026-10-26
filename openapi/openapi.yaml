@@ -912,12 +912,13 @@ paths:
           application/json:
             schema:
               type: object
-              required: [token, name, agentUrl, certificateSha256, agentVersion, os, arch]
+              required: [token, name, agentUrl, certificateSha256, certificatePem, agentVersion, os, arch]
               properties:
                 token: { type: string }
                 name: { type: string, pattern: '^[a-z][a-z0-9-]{1,30}$' }
                 agentUrl: { type: string, format: uri }
                 certificateSha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+                certificatePem: { type: string, description: The self-signed certificate of the agent port. The panel trusts only this certificate for the server. }
                 agentVersion: { type: string }
                 os: { type: string, enum: [debian-13, ubuntu-26.04] }
                 osName: { type: string }
@@ -1163,7 +1164,7 @@ components:
         id: { type: string }
         kind: { type: string, enum: [daily, weekly, monthly, manual] }
         sizeBytes: { type: integer }
-        databases: { type: array, items: { type: string } }
+        databases: { type: array, items: { type: string }, description: For example "mariadb:shop". Use this value as the restore item. }
         mailboxes: { type: array, items: { type: string } }
         createdAt: { type: string, format: date-time }
     BackupPolicy:

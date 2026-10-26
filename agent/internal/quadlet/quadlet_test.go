@@ -1,0 +1,91 @@
+package quadlet
+
+import (
+	"strings"
+	"testing"
+)
+
+func website() Website {
+	return Website{
+		ID: "01JBQ3Z5K8N6T4W2X9Y7R5P3M1", Name: "acme.example", UnixUser: "acme_x7k2",
+		Image: "ghcr.io/cloudfactory/frankenphp-php8.4:8.4.0-1@sha256:abc", Port: 20001,
+		SiteDir: "/srv/cloudfactory/sites/acme_x7k2/app", IniFile: "/srv/cloudfactory/sites/acme_x7k2/php.ini",
+		Runtime: "frankenphp", Limits: Limits{VCPUs: 1.5, MemoryBytes: 1 << 30, Processes: 100},
+		Gvisor: Runtime{RunscPath: "/usr/local/bin/runsc", Platform: "systrap"},
+	}
+}
+
+func TestContainerUnitUsesGvisorAndNoHostNetwork(t *testing.T) {
+	u := ContainerUnit(website())
+	for _, want := range []string{
+		"GlobalArgs=--runtime=/usr/local/bin/runsc --runtime-flag=platform=systrap --runtime-flag=network=sandbox",
+		"Network=cf-acme_x7k2.network",
+		"PublishPort=127.0.0.1:20001:8080",
+		"NoNewPrivileges=true",
+		"DropCapability=all",
+		"PidsLimit=100",
+		"PodmanArgs=--cpus=1.5 --memory=1073741824 --memory-swap=1073741824",
+		"Pull=never",
+	} {
+		if !strings.Contains(u, want+"\n") {
+			t.Errorf("unit does not contain %q:\n%s", want, u)
+		}
+	}
+	if strings.Contains(u, "Network=host") || strings.Contains(u, "AddCapability") || strings.Contains(u, "FRANKENPHP_CONFIG") {
+		t.Errorf("unexpected setting:\n%s", u)
+	}
+}
+
+func TestWorkerModeAndApache(t *testing.T) {
+	w := website()
+	w.WorkerMode = true
+	if !strings.Contains(ContainerUnit(w), "Environment=FRANKENPHP_CONFIG=worker /app/public/index.php\n") {
+		t.Error("worker mode is not on")
+	}
+	w.Runtime = "apache-php-fpm"
+	u := ContainerUnit(w)
+	if strings.Contains(u, "FRANKENPHP_CONFIG") || !strings.Contains(u, "AddCapability=CHOWN SETUID SETGID\n") {
+		t.Errorf("apache unit:\n%s", u)
+	}
+}
+
+func TestDiskLimitNeedsADevice(t *testing.T) {
+	w := website()
+	w.Limits.DiskIOBytesPerSecond = 1000
+	if strings.Contains(ContainerUnit(w), "device-write-bps") {
+		t.Error("I/O limit with no device")
+	}
+	w.Limits.BlockDevice = "/dev/vda"
+	if !strings.Contains(ContainerUnit(w), "--device-write-bps=/dev/vda:1000") {
+		t.Error("no I/O limit")
+	}
+}
+
+func TestPHPIni(t *testing.T) {
+	got := PHPIni([]string{"redis", "opcache"}, map[string]string{"memory_limit": "256M", "date.timezone": "Europe/London"})
+	want := "; Managed by the Cloudfactory agent. Change these values in the panel.\n" +
+		"zend_extension=opcache\nextension=redis\n" +
+		"date.timezone = \"Europe/London\"\nmemory_limit = \"256M\"\n"
+	if got != want {
+		t.Errorf("got:\n%s\nwant:\n%s", got, want)
+	}
+}
+
+func TestEdgeUnitIsReadOnlyOnSites(t *testing.T) {
+	u := EdgeUnit(Edge{Image: "ghcr.io/cloudfactory/edge:2.10", SitesDir: "/srv/cloudfactory/sites", DataDir: "/var/lib/cloudfactory", Gvisor: Runtime{"/usr/local/bin/runsc", "kvm"}, HTTPPort: 8080, HTTPSPort: 8443, AdminPort: 2019})
+	for _, want := range []string{"Volume=/srv/cloudfactory/sites:/srv/sites:ro,z", "PublishPort=127.0.0.1:2019:2019", "--runtime-flag=platform=kvm"} {
+		if !strings.Contains(u, want) {
+			t.Errorf("edge unit does not contain %q", want)
+		}
+	}
+}
+
+func TestPanelUnits(t *testing.T) {
+	units := PanelUnits(Panel{Registry: "ghcr.io/cloudfactory", Version: "0.1.0", Domain: "panel.example.com", DataDir: "/var/lib/cloudfactory/panel", Gvisor: Runtime{"/usr/local/bin/runsc", "systrap"}, APIPort: 19080, WebPort: 19081})
+	if len(units) != 4 {
+		t.Fatalf("units = %d", len(units))
+	}
+	if !strings.Contains(units["cf-panel-queue.container"], "Exec=php artisan queue:work") || !strings.Contains(units["cf-panel-api.container"], "--runtime=/usr/local/bin/runsc") {
+		t.Error(units)
+	}
+}

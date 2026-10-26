@@ -58,7 +58,7 @@ Set these values in `.env`:
 | --------------------- | -------------------------- | ------------------------------------------------------ |
 | `CF_AGENT_CLIENT_CERT` | `storage/pki/panel.crt`   | The client certificate that the panel sends to agents. |
 | `CF_AGENT_CLIENT_KEY`  | `storage/pki/panel.key`   | The private key of the client certificate.             |
-| `CF_AGENT_CA`          | `storage/pki/ca.crt`      | The certificate authority that signed the agent certificates. |
+| `CF_AGENT_CERTIFICATES` | `storage/pki/agents`     | The panel keeps the certificate of each agent here. It trusts only that certificate for the server. |
 | `CF_AGENT_LATEST`      | `0.1.0`                   | The latest agent version.                              |
 | `CF_REGISTRY`          | `ghcr.io/cloudfactory`    | The registry of the runtime images.                    |
 | `CF_PANEL_DOMAIN`      | `panel.cloudfactory.io`   | The domain of the panel.                               |

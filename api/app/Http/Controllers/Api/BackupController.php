@@ -70,6 +70,7 @@ class BackupController extends Controller
             'snapshotId' => $snapshot->restic_id ?? $snapshot->id,
             'scope' => $data['scope'],
             'item' => $data['item'] ?? null,
+            'target' => self::policy()['target'],
         ], "Restore {$what}", $website);
         Audit::record($request, 'Restored from backup', "{$website->name} {$what}", $website->customer_id);
 

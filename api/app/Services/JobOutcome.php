@@ -72,7 +72,8 @@ class JobOutcome
                 'kind' => $p['kind'] ?? 'manual',
                 'restic_id' => $result['snapshotId'] ?? null,
                 'size_bytes' => (int) ($result['sizeBytes'] ?? 0),
-                'databases' => $website->databases()->pluck('name')->all(),
+                // The agent restores a database by "engine:name".
+                'databases' => $website->databases()->get()->map(fn ($d) => "{$d->engine}:{$d->name}")->all(),
                 'mailboxes' => [],
             ]),
             AgentAction::InstallHostUpdates => $job->server->update([

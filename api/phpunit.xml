@@ -19,6 +19,7 @@
     </source>
     <php>
         <env name="APP_ENV" value="testing"/>
+        <env name="CF_AGENT_CERTIFICATES" value="/tmp/cloudfactory-test-pki"/>
         <env name="APP_KEY" value="base64:dGVzdGluZy1rZXktZm9yLWNsb3VkZmFjdG9yeS0zMmI="/>
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>
         <env name="BCRYPT_ROUNDS" value="4"/>

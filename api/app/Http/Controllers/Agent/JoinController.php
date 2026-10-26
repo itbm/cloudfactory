@@ -24,6 +24,7 @@ class JoinController extends Controller
             'name' => ['required', 'regex:/^[a-z][a-z0-9-]{1,30}$/', 'unique:servers,name'],
             'agentUrl' => ['required', 'url:https'],
             'certificateSha256' => ['required', 'regex:/^[0-9a-f]{64}$/'],
+            'certificatePem' => ['required', 'string', 'max:8000'],
             'agentVersion' => ['required', 'string', 'max:32'],
             'os' => ['required', Rule::in(['debian-13', 'ubuntu-26.04'])],
             'osName' => ['nullable', 'string', 'max:100'],
@@ -35,6 +36,11 @@ class JoinController extends Controller
             'roles' => ['nullable', 'array'],
             'roles.*' => [Rule::in(['web', 'database', 'email', 'dns', 'backup'])],
         ]);
+
+        // The fingerprint must be the fingerprint of the certificate that the agent sent.
+        if (self::fingerprint($data['certificatePem']) !== $data['certificateSha256']) {
+            return response()->json(['message' => 'The certificate does not agree with its fingerprint.'], 422);
+        }
 
         return DB::transaction(function () use ($data) {
             $join = JoinToken::where('token_hash', hash('sha256', $data['token']))
@@ -52,6 +58,7 @@ class JoinController extends Controller
                 'agent_url' => $data['agentUrl'],
                 'agent_version' => $data['agentVersion'],
                 'certificate_fingerprint' => $data['certificateSha256'],
+                'certificate_pem' => $data['certificatePem'],
                 'agent_token_hash' => hash('sha256', $agentToken),
                 'os' => $data['osName'] ?? $data['os'],
                 'kernel' => $data['kernel'] ?? null,
@@ -70,11 +77,18 @@ class JoinController extends Controller
     private static function panelFingerprint(): ?string
     {
         $path = config('cloudfactory.agent.client_certificate');
-        if (! is_readable($path)) {
+
+        return is_readable($path) ? self::fingerprint(file_get_contents($path)) : null;
+    }
+
+    /** The SHA-256 fingerprint of the first certificate in a PEM text. */
+    public static function fingerprint(string $pem): ?string
+    {
+        if (! preg_match('/-----BEGIN CERTIFICATE-----(.+?)-----END CERTIFICATE-----/s', $pem, $m)) {
             return null;
         }
-        $der = base64_decode(preg_replace('/-----[^-]+-----|\s/', '', file_get_contents($path)));
+        $der = base64_decode(preg_replace('/\s/', '', $m[1]), true);
 
-        return hash('sha256', $der);
+        return $der === false ? null : hash('sha256', $der);
     }
 }

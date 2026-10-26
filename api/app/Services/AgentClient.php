@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\AgentJob;
+use App\Models\Server;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Http;
@@ -31,7 +32,8 @@ class AgentClient
             ->withOptions([
                 'cert' => $config['client_certificate'],
                 'ssl_key' => $config['client_key'],
-                'verify' => $config['ca'],
+                // Trust only the certificate that this agent sent when it joined.
+                'verify' => self::trustFile($server),
             ])
             ->acceptJson()
             ->withHeaders(['Connect-Protocol-Version' => '1'])
@@ -40,5 +42,23 @@ class AgentClient
                 ...$job->payload,
             ])
             ->throw();
+    }
+
+    /** Writes the certificate of the agent to a file for cURL, once. */
+    public static function trustFile(Server $server): string
+    {
+        if (! $server->certificate_pem) {
+            throw new \RuntimeException("The server {$server->name} has no agent certificate. Join it again.");
+        }
+        $dir = config('cloudfactory.agent.certificates');
+        $path = $dir.'/'.$server->id.'-'.substr($server->certificate_fingerprint, 0, 16).'.crt';
+        if (! is_file($path)) {
+            if (! is_dir($dir)) {
+                mkdir($dir, 0700, true);
+            }
+            file_put_contents($path, $server->certificate_pem);
+        }
+
+        return $path;
     }
 }

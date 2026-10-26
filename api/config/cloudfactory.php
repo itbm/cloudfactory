@@ -5,7 +5,8 @@ return [
     'agent' => [
         'client_certificate' => env('CF_AGENT_CLIENT_CERT', storage_path('pki/panel.crt')),
         'client_key' => env('CF_AGENT_CLIENT_KEY', storage_path('pki/panel.key')),
-        'ca' => env('CF_AGENT_CA', storage_path('pki/ca.crt')),
+        // The panel keeps the certificate of each agent here (from the join request).
+        'certificates' => env('CF_AGENT_CERTIFICATES', storage_path('pki/agents')),
         'timeout' => (int) env('CF_AGENT_TIMEOUT', 10),
         // The latest agent version. Servers with an older agent show "Agent update ready".
         'latest_version' => env('CF_AGENT_LATEST', '0.1.0'),

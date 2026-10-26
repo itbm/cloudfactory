@@ -1,0 +1,204 @@
+syntax = "proto3";
+
+// The API of the Cloudfactory agent (spec section 6.4).
+//
+// The agent accepts only these typed actions. It does not accept shell commands.
+// The panel calls the agent over mutual TLS. The agent accepts the job, runs it,
+// and reports each step to the panel at /api/agent/v1/jobs/{id}/events.
+// Thus each method returns as soon as the agent has accepted the job.
+//
+// The panel uses the Connect protocol with JSON. The field names in JSON are
+// lowerCamelCase, for example "jobId".
+package cloudfactory.agent.v1;
+
+option go_package = "github.com/itbm/cloudfactory/agent/gen/cloudfactory/agent/v1;agentv1";
+
+service AgentService {
+  rpc CreateWebsite(WebsiteRequest) returns (JobAccepted);
+  rpc DeleteWebsite(DeleteWebsiteRequest) returns (JobAccepted);
+  rpc SetWebsitePower(SetWebsitePowerRequest) returns (JobAccepted);
+  rpc SetLimits(SetLimitsRequest) returns (JobAccepted);
+  rpc SetRuntime(WebsiteRequest) returns (JobAccepted);
+  rpc AddDomain(DomainRequest) returns (JobAccepted);
+  rpc RemoveDomain(DomainRequest) returns (JobAccepted);
+  rpc CreateDatabase(CreateDatabaseRequest) returns (JobAccepted);
+  rpc DeleteDatabase(DeleteDatabaseRequest) returns (JobAccepted);
+  rpc Backup(BackupRequest) returns (JobAccepted);
+  rpc Restore(RestoreRequest) returns (JobAccepted);
+  rpc InstallHostUpdates(HostRequest) returns (JobAccepted);
+  rpc Reboot(HostRequest) returns (JobAccepted);
+  rpc UpdateAgent(UpdateAgentRequest) returns (JobAccepted);
+
+  // Returns the actual state of the server at once. This method does not make a job.
+  rpc GetStatus(GetStatusRequest) returns (HostStatus);
+}
+
+message JobAccepted {
+  string job_id = 1;
+  // True when the agent already ran this job. The agent then reports the same result again.
+  bool duplicate = 2;
+}
+
+message Limits {
+  double vcpus = 1;
+  int64 memory_bytes = 2;
+  int64 disk_bytes = 3;
+  int64 disk_io_bytes_per_second = 4;
+  int64 processes = 5;
+}
+
+message Domain {
+  string name = 1;
+  // "primary", "redirect" or "alias".
+  string kind = 2;
+}
+
+message Website {
+  string id = 1;
+  string unix_user = 2;
+  // The image reference with the tag, for example "ghcr.io/cloudfactory/frankenphp-php8.4:8.4.0-1".
+  string image = 3;
+  // The digest that the agent pulls, for example "sha256:...". Empty for a custom image.
+  string image_digest = 4;
+  // "frankenphp", "apache-php-fpm" or "custom".
+  string runtime = 5;
+  string php_version = 6;
+  bool worker_mode = 7;
+  repeated string extensions = 8;
+  map<string, string> php_ini = 9;
+  Limits limits = 10;
+  repeated Domain domains = 11;
+}
+
+message HealthCheck {
+  int32 status = 1;
+  double max_error_rate = 2;
+  int32 seconds = 3;
+}
+
+// For CreateWebsite and SetRuntime.
+message WebsiteRequest {
+  string job_id = 1;
+  Website website = 2;
+  // SetRuntime: the agent goes back to this tag when the health check fails.
+  string previous_tag = 3;
+  string previous_image_id = 4;
+  HealthCheck health_check = 5;
+  // CreateWebsite: copy the files and databases of this website (a staging copy).
+  string copy_from = 6;
+  string copy_from_unix_user = 7;
+}
+
+message DeleteWebsiteRequest {
+  string job_id = 1;
+  string website_id = 2;
+  string unix_user = 3;
+}
+
+message SetWebsitePowerRequest {
+  string job_id = 1;
+  string website_id = 2;
+  string unix_user = 3;
+  // "start", "stop" or "restart".
+  string power = 4;
+}
+
+message SetLimitsRequest {
+  string job_id = 1;
+  string website_id = 2;
+  string unix_user = 3;
+  Limits limits = 4;
+}
+
+message DomainRequest {
+  string job_id = 1;
+  string website_id = 2;
+  string unix_user = 3;
+  string domain = 4;
+  string kind = 5;
+  string primary = 6;
+}
+
+message CreateDatabaseRequest {
+  string job_id = 1;
+  string website_id = 2;
+  string unix_user = 3;
+  // "mariadb" or "postgresql".
+  string engine = 4;
+  string name = 5;
+  string user = 6;
+  string password = 7;
+  // "website": only the website container can connect.
+  string access = 8;
+}
+
+message DeleteDatabaseRequest {
+  string job_id = 1;
+  string website_id = 2;
+  string engine = 3;
+  string name = 4;
+}
+
+message DatabaseRef {
+  string engine = 1;
+  string name = 2;
+}
+
+message BackupRequest {
+  string job_id = 1;
+  string website_id = 2;
+  string unix_user = 3;
+  string kind = 4;
+  repeated DatabaseRef databases = 5;
+  // The restic repository, for example "s3://bucket/path".
+  string target = 6;
+}
+
+message RestoreRequest {
+  string job_id = 1;
+  string website_id = 2;
+  string unix_user = 3;
+  string snapshot_id = 4;
+  // "website", "database", "mailbox" or "file".
+  string scope = 5;
+  // The database ("mariadb:name" or "postgresql:name"), the mailbox, or the file path.
+  string item = 6;
+  // The restic repository, for example "s3://bucket/path".
+  string target = 7;
+}
+
+message HostRequest {
+  string job_id = 1;
+  // InstallHostUpdates: "security", "all" or "manual".
+  string policy = 2;
+}
+
+message UpdateAgentRequest {
+  string job_id = 1;
+  string version = 2;
+}
+
+message GetStatusRequest {}
+
+message PendingUpdate {
+  string name = 1;
+  string from = 2;
+  string to = 3;
+  bool security = 4;
+}
+
+message Service {
+  string name = 1;
+  // "running", "stopped" or "failed".
+  string state = 2;
+}
+
+message HostStatus {
+  string agent_version = 1;
+  string kernel = 2;
+  string podman_version = 3;
+  string gvisor_version = 4;
+  repeated PendingUpdate pending_updates = 5;
+  bool reboot_required = 6;
+  repeated Service services = 7;
+}
