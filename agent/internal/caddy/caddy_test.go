@@ -13,9 +13,10 @@ import (
 
 // fakeCaddy keeps routes by their @id, like the admin API.
 type fakeCaddy struct {
-	mu     sync.Mutex
-	loaded bool
-	routes []map[string]any
+	mu       sync.Mutex
+	loaded   bool
+	routes   []map[string]any
+	policies string
 }
 
 func (f *fakeCaddy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -35,6 +36,9 @@ func (f *fakeCaddy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		b, _ := io.ReadAll(r.Body)
 		json.Unmarshal(b, &route)
 		f.routes = append(f.routes, route)
+	case r.URL.Path == "/config/apps/http/servers/edge/tls_connection_policies":
+		b, _ := io.ReadAll(r.Body)
+		f.policies = string(b)
 	case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/id/"):
 		id := strings.TrimPrefix(r.URL.Path, "/id/")
 		for i, route := range f.routes {
@@ -84,5 +88,24 @@ func TestSiteRouteServesStaticFilesButNotPHP(t *testing.T) {
 	b, _ = json.Marshal(RedirectRoute(Site{WebsiteID: "W1", Redirects: []string{"www.acme.example"}, Primary: "acme.example"}))
 	if !strings.Contains(string(b), `"Location":["https://acme.example{http.request.uri}"]`) || !strings.Contains(string(b), `"status_code":308`) {
 		t.Errorf("redirect route: %s", b)
+	}
+}
+
+func TestPanelRouteSetsTheEdgeHeaders(t *testing.T) {
+	fake := &fakeCaddy{loaded: true}
+	srv := httptest.NewServer(fake)
+	defer srv.Close()
+
+	if err := New(srv.URL).ApplyPanel(context.Background(), "panel.example.com", 19080, 19081); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := json.Marshal(fake.routes)
+	for _, want := range []string{`"X-Client-Cert-Sha256":["{http.request.tls.client.fingerprint}"]`, `"X-Cloudfactory-Edge":["1"]`, `"/api/*"`} {
+		if !strings.Contains(string(b), want) {
+			t.Errorf("route does not contain %s: %s", want, b)
+		}
+	}
+	if !strings.Contains(fake.policies, `"mode":"request"`) {
+		t.Errorf("policies = %s", fake.policies)
 	}
 }

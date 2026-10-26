@@ -230,18 +230,21 @@ type Panel struct {
 }
 
 // PanelUnits gives the units of the panel: the API, the queue worker and the web UI.
+// The API container publishes its port only on 127.0.0.1. Thus only the edge proxy and the
+// agent on the panel server can connect to it.
 // The API keeps its data in SQLite in DataDir, for an installation on one server.
 func PanelUnits(p Panel) map[string]string {
 	api := p.Registry + "/panel-api:" + p.Version
 	common := []string{
 		"Pull=never",
 		"GlobalArgs=" + p.Gvisor.GlobalArgs(),
-		"Network=cf-panel.network",
+		// pasta maps the gateway address to the host, so that the API can reach the agent port.
+		"Network=pasta:--map-gw",
 		"NoNewPrivileges=true",
 		"DropCapability=all",
 	}
 	unit := func(desc string, lines ...string) string {
-		body := append([]string{"[Unit]", "Description=" + desc, "After=cf-panel-network.service", "", "[Container]"}, lines...)
+		body := append([]string{"[Unit]", "Description=" + desc, "", "[Container]"}, lines...)
 		body = append(body, common...)
 		body = append(body, "", "[Service]", "Restart=always", "", "[Install]", "WantedBy=default.target", "")
 		return Header + strings.Join(body, "\n")
@@ -257,7 +260,6 @@ func PanelUnits(p Panel) map[string]string {
 		"Volume=" + p.DataDir + ":/data:Z",
 	}
 	return map[string]string{
-		"cf-panel.network": Header + "[Network]\nNetworkName=cf-panel\n",
 		"cf-panel-api.container": unit("Cloudfactory panel API",
 			append([]string{"ContainerName=cf-panel-api", "Image=" + api, fmt.Sprintf("PublishPort=127.0.0.1:%d:8080", p.APIPort)}, env...)...),
 		"cf-panel-queue.container": unit("Cloudfactory panel queue worker",

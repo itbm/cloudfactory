@@ -199,14 +199,34 @@ func (c *Client) ApplyPanel(ctx context.Context, domain string, apiPort, webPort
 		return err
 	}
 	dial := func(port int) []any { return []any{map[string]any{"dial": c.Upstream + ":" + strconv.Itoa(port)}} }
+	api := map[string]any{
+		"handler":   "reverse_proxy",
+		"upstreams": dial(apiPort),
+		// The API knows that the request came through the edge proxy, and sees the fingerprint
+		// of the client certificate. These values replace the values that a client sends.
+		"headers": map[string]any{"request": map[string]any{"set": map[string]any{
+			"X-Cloudfactory-Edge":  []string{"1"},
+			"X-Client-Cert-Sha256": []string{"{http.request.tls.client.fingerprint}"},
+		}}},
+	}
 	route := map[string]any{
 		"@id":   "cf-panel",
 		"match": []any{map[string]any{"host": []string{domain}}},
 		"handle": []any{map[string]any{"handler": "subroute", "routes": []any{
-			map[string]any{"match": []any{map[string]any{"path": []string{"/api/*", "/up"}}}, "handle": []any{map[string]any{"handler": "reverse_proxy", "upstreams": dial(apiPort)}}},
+			map[string]any{"match": []any{map[string]any{"path": []string{"/api/*", "/up"}}}, "handle": []any{api}},
 			map[string]any{"handle": []any{map[string]any{"handler": "reverse_proxy", "upstreams": dial(webPort)}}},
 		}}},
 		"terminal": true,
+	}
+	// Ask for a client certificate on the panel domain, but do not require it. Agents send one.
+	policies := []any{
+		map[string]any{"match": map[string]any{"sni": []string{domain}}, "client_authentication": map[string]any{"mode": "request"}},
+		map[string]any{},
+	}
+	if err := c.expect(ctx, http.MethodPatch, "/config/apps/http/servers/"+serverName+"/tls_connection_policies", policies, http.StatusOK); err != nil {
+		if err := c.expect(ctx, http.MethodPut, "/config/apps/http/servers/"+serverName+"/tls_connection_policies", policies, http.StatusOK); err != nil {
+			return err
+		}
 	}
 	return c.expect(ctx, http.MethodPost, "/config/apps/http/servers/"+serverName+"/routes", route, http.StatusOK)
 }

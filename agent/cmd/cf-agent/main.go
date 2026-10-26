@@ -116,7 +116,12 @@ func join(ctx context.Context, args []string) error {
 
 	cfg := config.Defaults()
 	cfg.PanelURL = strings.TrimRight(*panelURL, "/")
-	if err := pki.Generate(cfg.CertFile(), cfg.KeyFile(), []string{*address}, 10*365*24*time.Hour); err != nil {
+	// The panel on the same server reaches the agent through the gateway of its container.
+	hosts := []string{*address, "127.0.0.1", "host.containers.internal"}
+	if hostname != *address {
+		hosts = append(hosts, hostname)
+	}
+	if err := pki.Generate(cfg.CertFile(), cfg.KeyFile(), hosts, 10*365*24*time.Hour); err != nil {
 		return fmt.Errorf("make certificate: %w", err)
 	}
 	fp, certPEM, err := pki.FileFingerprint(cfg.CertFile())

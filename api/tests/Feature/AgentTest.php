@@ -67,12 +67,21 @@ class AgentTest extends TestCase
         $this->postJson('/api/agent/v1/join', $this->joinBody('cfj_old'))->assertUnauthorized();
     }
 
+    public function test_the_agent_on_the_panel_server_does_not_go_through_the_edge_proxy(): void
+    {
+        $this->server(['certificate_fingerprint' => str_repeat('ab', 32), 'agent_token_hash' => hash('sha256', 'cfa_local')]);
+
+        $this->withToken('cfa_local')->postJson('/api/agent/v1/report', ['agentVersion' => '0.1.0'])->assertOk();
+        $this->withToken('cfa_wrong')->postJson('/api/agent/v1/report', ['agentVersion' => '0.1.0'])->assertUnauthorized();
+    }
+
     public function test_the_agent_must_send_the_certificate_that_it_joined_with(): void
     {
         $server = $this->server(['certificate_fingerprint' => str_repeat('ab', 32), 'agent_token_hash' => hash('sha256', 'cfa_secret')]);
 
-        $this->withToken('cfa_secret')->postJson('/api/agent/v1/report', ['agentVersion' => '0.1.0'])->assertUnauthorized();
-        $this->withToken('cfa_secret')->withHeader('X-Client-Cert-Sha256', str_repeat('ab', 32))
+        $this->withToken('cfa_secret')->withHeader('X-Cloudfactory-Edge', '1')->postJson('/api/agent/v1/report', ['agentVersion' => '0.1.0'])->assertUnauthorized();
+        $this->withToken('cfa_secret')->withHeader('X-Cloudfactory-Edge', '1')->withHeader('X-Client-Cert-Sha256', str_repeat('cd', 32))->postJson('/api/agent/v1/report', ['agentVersion' => '0.1.0'])->assertUnauthorized();
+        $this->withToken('cfa_secret')->withHeader('X-Cloudfactory-Edge', '1')->withHeader('X-Client-Cert-Sha256', str_repeat('AB', 32))
             ->postJson('/api/agent/v1/report', [
                 'agentVersion' => '0.1.1',
                 'pendingUpdates' => [['name' => 'openssl', 'from' => '3.5.1-1', 'to' => '3.5.1-2', 'security' => true]],

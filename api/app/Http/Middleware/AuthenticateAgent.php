@@ -9,12 +9,19 @@ use Symfony\Component\HttpFoundation\Response;
 
 /**
  * Authenticates an agent that reports to the panel. The agent sends the token that it got when it
- * joined. The edge proxy also checks the client certificate of the agent and sends its SHA-256
- * fingerprint in a header. When the server has a fingerprint, the two must agree.
+ * joined. The edge proxy also asks for the client certificate of the agent and sends its SHA-256
+ * fingerprint in a header. The edge proxy sets both headers on each request, and replaces the
+ * values that a client sends.
+ *
+ * A request through the edge proxy must have the fingerprint of the server. A request that does not
+ * come through the edge proxy can only come from the panel host itself, because the API port listens
+ * only on 127.0.0.1. The agent on the panel server uses this path.
  */
 class AuthenticateAgent
 {
     public const FINGERPRINT_HEADER = 'X-Client-Cert-Sha256';
+
+    public const EDGE_HEADER = 'X-Cloudfactory-Edge';
 
     public function handle(Request $request, Closure $next): Response
     {
@@ -24,8 +31,9 @@ class AuthenticateAgent
             return response()->json(['message' => 'Unknown agent.'], 401);
         }
 
-        $fingerprint = $request->header(self::FINGERPRINT_HEADER);
-        if ($server->certificate_fingerprint && ! hash_equals($server->certificate_fingerprint, (string) $fingerprint)) {
+        $fingerprint = (string) $request->header(self::FINGERPRINT_HEADER);
+        $viaEdge = $request->hasHeader(self::EDGE_HEADER);
+        if ($viaEdge && ! hash_equals((string) $server->certificate_fingerprint, strtolower($fingerprint))) {
             return response()->json(['message' => 'The client certificate does not agree with this agent.'], 401);
         }
 
