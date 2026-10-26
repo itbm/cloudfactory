@@ -75,6 +75,7 @@ Route::prefix('v1')->group(function () {
             Route::get('images', [ImageController::class, 'index']);
             Route::post('images', [ImageController::class, 'store']);
             Route::patch('images/{id}', [ImageController::class, 'update']);
+            Route::post('images/{id}/check', [ImageController::class, 'check']);
             Route::get('rollouts', [RolloutController::class, 'index']);
             Route::post('rollouts', [RolloutController::class, 'store']);
             Route::get('rollouts/{id}', [RolloutController::class, 'show']);

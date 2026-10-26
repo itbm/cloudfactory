@@ -26,4 +26,10 @@ class Audit
             'customer_id' => $customerId ?? $user?->customer_id,
         ]);
     }
+
+    /** Records a change that the panel made by itself, for example an automatic update. */
+    public static function system(string $action, string $target = ''): void
+    {
+        AuditEntry::create(['actor' => 'System', 'ip' => null, 'action' => $action, 'target' => $target]);
+    }
 }

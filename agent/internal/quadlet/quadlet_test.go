@@ -85,10 +85,12 @@ func TestEdgeUnitIsReadOnlyOnSites(t *testing.T) {
 
 func TestPanelUnits(t *testing.T) {
 	units := PanelUnits(Panel{Registry: "ghcr.io/cloudfactory", Version: "0.1.0", Domain: "panel.example.com", DataDir: "/var/lib/cloudfactory/panel", Gvisor: Runtime{"/usr/local/bin/runsc", "systrap"}, APIPort: 19080, WebPort: 19081})
-	if len(units) != 3 {
+	if len(units) != 4 {
 		t.Fatalf("units = %d", len(units))
 	}
-	if !strings.Contains(units["cf-panel-queue.container"], "Exec=php artisan queue:work") || !strings.Contains(units["cf-panel-api.container"], "--runtime=/usr/local/bin/runsc") {
+	if !strings.Contains(units["cf-panel-queue.container"], "Exec=php artisan queue:work") || !strings.Contains(units["cf-panel-api.container"], "--runtime=/usr/local/bin/runsc") ||
+		!strings.Contains(units["cf-panel-scheduler.container"], "Exec=php artisan schedule:work") ||
+		!strings.Contains(units["cf-panel-scheduler.container"], "Volume=/etc/cloudfactory/cosign.pub:/run/cloudfactory/cosign.pub:ro") {
 		t.Error(units)
 	}
 }

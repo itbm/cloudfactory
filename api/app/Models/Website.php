@@ -96,8 +96,14 @@ class Website extends Model
     /** True when a newer signed image is ready for this website. */
     public function updateReady(): bool
     {
-        return $this->image->available_tag !== null
-            && $this->currentTag() !== $this->image->available_tag
-            && $this->status !== WebsiteStatus::Stopped;
+        $available = $this->image->available_tag;
+        if ($available === null || $this->status === WebsiteStatus::Stopped) {
+            return false;
+        }
+        // FR-1110: an image that an administrator added can get a new digest for the same tag.
+        // A rollout sets image_tag on each website that it updates.
+        $sameTag = $available === $this->image->tag && $this->image_tag === null;
+
+        return $this->currentTag() !== $available || $sameTag;
     }
 }

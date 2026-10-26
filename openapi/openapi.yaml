@@ -661,6 +661,24 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Image' }
 
+  /v1/images/{id}/check:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [Images]
+      summary: Check the registry for a new version of an image now
+      description: |
+        FR-1110. The scheduler does this check each hour for all images. For an official image, the
+        panel takes the newest release tag with a good signature from the release key. For an image
+        that an administrator added, the panel looks for a new digest of the same tag. The update
+        policy of the image then decides if a rollout starts.
+      responses:
+        '200':
+          description: Checked. `checkError` tells why a check failed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Image' }
+
   /v1/rollouts:
     get:
       tags: [Images]
@@ -1214,11 +1232,14 @@ components:
         tag: { type: string }
         digest: { type: [string, 'null'] }
         availableTag: { type: [string, 'null'] }
+        availableDigest: { type: [string, 'null'] }
         phpVersion: { type: [string, 'null'] }
         supportEndsAt: { type: [string, 'null'], format: date }
         policy: { type: string, enum: [automatic, security_automatic, manual] }
         custom: { type: boolean }
         signatureVerified: { type: boolean }
+        checkedAt: { type: [string, 'null'], format: date-time, description: The time of the last registry check. }
+        checkError: { type: [string, 'null'], description: Why the last registry check failed. }
         websites: { type: [integer, 'null'] }
     Rollout:
       type: object

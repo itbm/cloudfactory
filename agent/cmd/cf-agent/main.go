@@ -325,7 +325,7 @@ func panelCmd(ctx context.Context, args []string) error {
 	if _, err := h.Systemctl(ctx, panelUser, "daemon-reload"); err != nil {
 		return err
 	}
-	for _, svc := range []string{"cf-panel-api.service", "cf-panel-queue.service", "cf-panel-web.service"} {
+	for _, svc := range []string{"cf-panel-api.service", "cf-panel-queue.service", "cf-panel-scheduler.service", "cf-panel-web.service"} {
 		if _, err := h.Systemctl(ctx, panelUser, "start", svc); err != nil {
 			return err
 		}

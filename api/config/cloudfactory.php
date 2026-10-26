@@ -14,6 +14,10 @@ return [
 
     'registry' => env('CF_REGISTRY', 'ghcr.io/cloudfactory'),
 
+    // FR-1101 and FR-1110: the release public key. The panel accepts a new tag of an official
+    // image only when the tag has a good signature from this key.
+    'cosign_public_key' => env('CF_COSIGN_PUBLIC_KEY', '/run/cloudfactory/cosign.pub'),
+
     'panel_domain' => env('CF_PANEL_DOMAIN', 'panel.cloudfactory.io'),
 
     // FR-902: the default retention policy.

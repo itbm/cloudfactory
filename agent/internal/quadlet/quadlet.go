@@ -233,7 +233,11 @@ type Panel struct {
 	APIPort, WebPort int
 }
 
-// PanelUnits gives the units of the panel: the API, the queue worker and the web UI.
+// CosignPublicKey is the release public key on each server. The install script writes it.
+const CosignPublicKey = "/etc/cloudfactory/cosign.pub"
+
+// PanelUnits gives the units of the panel: the API, the queue worker, the scheduler and
+// the web UI. The scheduler checks the registry for new image tags (FR-1110).
 // The API container publishes its port only on 127.0.0.1. Thus only the edge proxy and the
 // agent on the panel server can connect to it.
 // The API keeps its data in SQLite in DataDir, for an installation on one server.
@@ -262,12 +266,17 @@ func PanelUnits(p Panel) map[string]string {
 		"Environment=CF_REGISTRY=" + p.Registry,
 		"EnvironmentFile=" + p.DataDir + "/panel.env",
 		"Volume=" + p.DataDir + ":/data:Z",
+		// The panel checks the signatures of new image tags with the release key.
+		"Environment=CF_COSIGN_PUBLIC_KEY=/run/cloudfactory/cosign.pub",
+		"Volume=" + CosignPublicKey + ":/run/cloudfactory/cosign.pub:ro",
 	}
 	return map[string]string{
 		"cf-panel-api.container": unit("Cloudfactory panel API",
 			append([]string{"ContainerName=cf-panel-api", "Image=" + api, fmt.Sprintf("PublishPort=127.0.0.1:%d:8080", p.APIPort)}, env...)...),
 		"cf-panel-queue.container": unit("Cloudfactory panel queue worker",
 			append([]string{"ContainerName=cf-panel-queue", "Image=" + api, "Exec=php artisan queue:work --tries=5"}, env...)...),
+		"cf-panel-scheduler.container": unit("Cloudfactory panel scheduler",
+			append([]string{"ContainerName=cf-panel-scheduler", "Image=" + api, "Exec=php artisan schedule:work"}, env...)...),
 		"cf-panel-web.container": unit("Cloudfactory panel web UI",
 			"ContainerName=cf-panel-web", "Image="+p.Registry+"/panel-web:"+p.Version, fmt.Sprintf("PublishPort=127.0.0.1:%d:8080", p.WebPort), "ReadOnly=true", "Tmpfs=/tmp"),
 	}

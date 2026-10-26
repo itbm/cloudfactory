@@ -11,7 +11,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 #[Fillable([
     'name', 'family', 'reference', 'tag', 'digest', 'available_tag', 'available_digest', 'php_version',
-    'support_ends_at', 'policy', 'custom', 'signature_verified',
+    'support_ends_at', 'policy', 'custom', 'signature_verified', 'checked_at', 'check_error',
 ])]
 class Image extends Model
 {
@@ -24,6 +24,7 @@ class Image extends Model
             'support_ends_at' => 'date',
             'custom' => 'boolean',
             'signature_verified' => 'boolean',
+            'checked_at' => 'datetime',
         ];
     }
 

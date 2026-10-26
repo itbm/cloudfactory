@@ -6,6 +6,10 @@ use App\Enums\UpdatePolicy;
 use App\Http\Controllers\Controller;
 use App\Models\Image;
 use App\Services\Audit;
+use App\Services\ImageUpdateChecker;
+use App\Services\Registry\CosignVerifier;
+use App\Services\Registry\RegistryClient;
+use App\Services\RolloutEngine;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -44,6 +48,17 @@ class ImageController extends Controller
         return response()->json(self::present($image));
     }
 
+    /** FR-1110: check the registry for a new version of this image now. */
+    public function check(Request $request, string $id, RolloutEngine $rollouts): JsonResponse
+    {
+        $image = Image::findOrFail($id);
+        $checker = new ImageUpdateChecker(new RegistryClient, CosignVerifier::fromConfig(), $rollouts);
+        $checker->check($image);
+        Audit::record($request, 'Checked image for updates', $image->name);
+
+        return response()->json(self::present($image->fresh()));
+    }
+
     public static function present(Image $i): array
     {
         return [
@@ -54,11 +69,14 @@ class ImageController extends Controller
             'tag' => $i->tag,
             'digest' => $i->digest,
             'availableTag' => $i->available_tag,
+            'availableDigest' => $i->available_digest,
             'phpVersion' => $i->php_version,
             'supportEndsAt' => $i->support_ends_at?->toDateString(),
             'policy' => $i->policy->value,
             'custom' => $i->custom,
             'signatureVerified' => $i->signature_verified,
+            'checkedAt' => $i->checked_at?->toIso8601String(),
+            'checkError' => $i->check_error,
             'websites' => $i->websites_count ?? null,
         ];
     }
