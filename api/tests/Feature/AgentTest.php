@@ -109,6 +109,20 @@ class AgentTest extends TestCase
         $this->assertSame(count(AgentAction::CreateWebsite->steps()), $job->fresh()->step);
     }
 
+    public function test_the_report_sets_the_use_of_the_server_and_its_websites(): void
+    {
+        $server = $this->server(['agent_token_hash' => hash('sha256', 'cfa_secret')]);
+        $website = $this->website($this->customer(), $server, $this->image());
+        $report = ['agentVersion' => '0.1.0', 'usage' => ['cpuPercent' => 12.5, 'memoryPercent' => 40, 'diskPercent' => 7], 'websites' => [['id' => $website->id, 'cpuPercent' => 3, 'memoryBytes' => 1024]]];
+
+        $this->withToken('cfa_secret')->postJson('/api/agent/v1/report', $report)->assertOk();
+        $this->assertSame(['cpuPercent' => 12.5, 'memoryPercent' => 40, 'diskPercent' => 7], $server->fresh()->usage);
+        $this->assertSame(1024, $website->fresh()->usage['memoryBytes']);
+
+        $report['usage']['diskPercent'] = 101;
+        $this->withToken('cfa_secret')->postJson('/api/agent/v1/report', $report)->assertUnprocessable()->assertJsonValidationErrors('usage.diskPercent');
+    }
+
     public function test_an_agent_cannot_report_the_job_of_a_different_server(): void
     {
         $this->server(['agent_token_hash' => hash('sha256', 'cfa_one')]);

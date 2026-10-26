@@ -2,7 +2,9 @@ package status
 
 import (
 	"context"
+	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/itbm/cloudfactory/agent/internal/execx"
@@ -16,7 +18,10 @@ func TestReport(t *testing.T) {
 		{Prefix: "systemctl is-active cf-agent", Output: "active\n"},
 		{Prefix: "systemctl --user --machine=cf-edge@ is-active cf-edge", Output: "failed\n"},
 	}}
-	c := Collector{Run: f, Apt: hostupdate.Apt{Run: f, RebootFile: filepath.Join(t.TempDir(), "none")}, AgentVersion: "0.1.0",
+	proc := t.TempDir()
+	os.WriteFile(filepath.Join(proc, "loadavg"), []byte("0.50 0.40 0.30 1/200 1234\n"), 0o644)
+	os.WriteFile(filepath.Join(proc, "meminfo"), []byte("MemTotal:       4000000 kB\nMemFree:  100 kB\nMemAvailable:   1000000 kB\n"), 0o644)
+	c := Collector{Run: f, ProcDir: proc, DiskPath: t.TempDir(), Apt: hostupdate.Apt{Run: f, RebootFile: filepath.Join(t.TempDir(), "none")}, AgentVersion: "0.1.0",
 		GVisorVersion: func() string { return "20261019.0" }, Services: []string{"cf-agent"}, UserServices: []string{"cf-edge:cf-edge"}}
 
 	r := c.Report(context.Background())
@@ -25,5 +30,11 @@ func TestReport(t *testing.T) {
 	}
 	if r.Services[0].State != "running" || r.Services[1].State != "failed" {
 		t.Errorf("services = %+v", r.Services)
+	}
+	if r.Usage == nil || r.Usage.MemoryPercent != 75 || r.Usage.DiskPercent <= 0 {
+		t.Errorf("usage = %+v", r.Usage)
+	}
+	if want := percent(0.5, float64(runtime.NumCPU())); r.Usage.CPUPercent != want {
+		t.Errorf("cpu = %v, want %v", r.Usage.CPUPercent, want)
 	}
 }

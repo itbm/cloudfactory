@@ -56,7 +56,15 @@ type Report struct {
 	PendingUpdates []any     `json:"pendingUpdates"`
 	RebootRequired bool      `json:"rebootRequired"`
 	Services       []Service `json:"services"`
+	Usage          *HostUse  `json:"usage,omitempty"`
 	Websites       []Usage   `json:"websites"`
+}
+
+// HostUse is the resource use of the host, in percent (FR-1301).
+type HostUse struct {
+	CPUPercent    float64 `json:"cpuPercent"`
+	MemoryPercent float64 `json:"memoryPercent"`
+	DiskPercent   float64 `json:"diskPercent"`
 }
 
 type Service struct {

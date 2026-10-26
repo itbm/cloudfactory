@@ -205,7 +205,7 @@ func serve(ctx context.Context) error {
 	if job, ok := deps.ResumeReboot(); ok {
 		runner.Resume(job)
 	}
-	collector := status.Collector{Run: run, Apt: apt, AgentVersion: version, GVisorVersion: gv.Current, Services: []string{"cf-agent", "nftables"}, UserServices: []string{host.EdgeUser + ":cf-edge.service"}}
+	collector := status.Collector{Run: run, Apt: apt, AgentVersion: version, GVisorVersion: gv.Current, Services: []string{"cf-agent", "nftables"}, UserServices: []string{host.EdgeUser + ":cf-edge.service"}, DiskPath: cfg.SitesDir}
 
 	go reportLoop(ctx, reporter, collector, time.Duration(cfg.ReportSeconds)*time.Second)
 	go func() {
