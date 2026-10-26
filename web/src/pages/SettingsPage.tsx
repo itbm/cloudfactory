@@ -156,7 +156,7 @@ function Tokens() {
               {SCOPES.map((s) => <label key={s} className="check"><input type="checkbox" checked={scopes.includes(s)} onChange={(e) => setScopes(e.target.checked ? [...scopes, s] : scopes.filter((x) => x !== s))} /><code>{s}</code></label>)}
             </fieldset>
             {create.error?.fields.scopes && <p className="error text-danger">{create.error.fields.scopes}</p>}
-            {/* CF-07: a stolen session cannot make a token without the password. */}
+            {/* CF-02: a stolen session cannot make a token without the password. */}
             <div style={{ marginTop: 14 }}>
               <Field label="Your password" hint="Type your password again to make a token." error={create.error?.fields.password}>{(p) => <input {...p} className="input" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />}</Field>
             </div>

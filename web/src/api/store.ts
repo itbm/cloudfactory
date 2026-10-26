@@ -294,7 +294,7 @@ export function createWebsite(input: NewWebsite): Promise<{ websiteId: string; j
   if (LIVE) {
     return call(async () => {
       const r = await live.request<{ website: live.ApiWebsite; job: live.ApiJob }>("POST", "/websites", {
-        // CF-15: only an administrator or a reseller can select the plan. The panel uses the plan of the customer.
+        // CF-07: only an administrator selects the plan here. The panel uses the plan of the customer.
         name: input.name.trim().toLowerCase(), application: input.application, imageId: input.imageId, planId: state.session.contextId === "platform" || state.session.user.role === "administrator" ? input.planId : undefined,
         serverId: input.serverId || undefined, customerId: input.customerId && input.customerId !== "platform" ? input.customerId : undefined,
       });
@@ -1579,7 +1579,7 @@ export function setBranding(branding: Branding) {
 
 // Settings (FR-103, FR-104, FR-1303, FR-1813)
 
-/** CF-07: a new token needs the password of the user and, if set, a TOTP code. */
+/** CF-02: a new token needs the password of the user and, if set, a TOTP code. */
 export function createToken(name: string, scopes: TokenScope[], days: number, password: string, totp = ""): Promise<{ token: ApiToken; secret: string }> | { token: ApiToken; secret: string } {
   if (LIVE) {
     return call(async () => {

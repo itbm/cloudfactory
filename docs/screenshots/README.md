@@ -131,6 +131,6 @@ A domain that is not verified. The edge proxy serves it only after the TXT recor
 
 ## 30-new-token
 
-A new API token needs the password and the TOTP code of the user (CF-07).
+A new API token needs the password and the TOTP code of the user (CF-02).
 
 ![30-new-token](30-new-token.png)

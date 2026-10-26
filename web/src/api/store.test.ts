@@ -52,7 +52,7 @@ describe("domains (CF-03)", () => {
   });
 });
 
-describe("tokens (CF-07)", () => {
+describe("tokens (CF-02)", () => {
   it("needs the password and the TOTP code", () => {
     expect(() => createToken("ci", ["websites:read"], 30, "")).toThrow(ApiError);
     expect(() => createToken("ci", ["websites:read"], 30, "secret", "")).toThrow(ApiError);

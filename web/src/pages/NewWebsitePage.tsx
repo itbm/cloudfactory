@@ -28,7 +28,7 @@ export function NewWebsitePage() {
   const [name, setName] = useState("");
   const [application, setApplication] = useState("WordPress");
   const platform = state.session.contextId === "platform";
-  // CF-15: only an administrator can select the plan here. Other users get the plan of the account.
+  // CF-07: only an administrator can select the plan here. Other users get the plan of the account.
   const choosePlan = platform || state.session.user.role === "administrator";
   const [imageId, setImageId] = useState(() => defaultImage(runtimes, "frankenphp"));
   const [customerId, setCustomerId] = useState(platform ? state.customers.find((c) => c.role !== "reseller")?.id ?? state.customers[0]?.id ?? "" : state.session.contextId);
@@ -121,7 +121,7 @@ export function NewWebsitePage() {
                 ))}
               </fieldset>
               ) : (
-                // CF-15: an owner gets the plan of the account. Only an administrator or a reseller can select a different plan.
+                // CF-07: an owner gets the plan of the account. Only an administrator or a reseller can select a different plan.
                 <p>Plan: <strong>{state.plans.find((p) => p.id === planId)?.name ?? "The plan of your account"}</strong>. <span className="muted">Only an administrator or your reseller can change the plan.</span></p>
               )}
               {webServers.length > 0 && <div style={{ marginTop: 16 }}>

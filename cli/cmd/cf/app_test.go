@@ -233,7 +233,7 @@ func TestANewDomainShowsTheTXTRecord(t *testing.T) {
 	}
 }
 
-// CF-07: a new token needs the password.
+// CF-02: a new token needs the password.
 func TestANewTokenSendsThePassword(t *testing.T) {
 	srv, _ := securityPanel(t)
 	defer srv.Close()

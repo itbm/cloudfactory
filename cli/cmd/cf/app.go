@@ -853,7 +853,7 @@ func (a *app) tokens(ctx context.Context, sub string, args []string) error {
 		if err := fs.Parse(args); err != nil {
 			return err
 		}
-		// CF-07: a new token needs the password of the user.
+		// CF-02: a new token needs the password of the user.
 		password, err := a.password()
 		if err != nil {
 			return err
