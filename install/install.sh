@@ -23,7 +23,7 @@ set -eu
 CF_VERSION="${CF_VERSION:-__CF_VERSION__}"
 GVISOR_VERSION="${GVISOR_VERSION:-__GVISOR_VERSION__}"
 REPOSITORY="${CF_REPOSITORY:-itbm/cloudfactory}"
-REGISTRY="${CF_REGISTRY:-ghcr.io/cloudfactory}"
+REGISTRY="${CF_REGISTRY:-__CF_REGISTRY__}"
 RELEASE_URL="${CF_RELEASE_URL:-https://github.com/${REPOSITORY}/releases/download}"
 GVISOR_URL="${CF_GVISOR_URL:-https://storage.googleapis.com/gvisor/releases/release}"
 # Tests set CF_TEST_ROOT to read fake system files.
@@ -453,7 +453,7 @@ fi
 
 step "Join the panel and start the agent"
 if [ ! -f "$CF_ETC/agent.json" ]; then
-	set -- --panel "$PANEL_URL" --token "$JOIN_TOKEN" --roles "${ROLES:-web}"
+	set -- --panel "$PANEL_URL" --token "$JOIN_TOKEN" --roles "${ROLES:-web}" --registry "$REGISTRY"
 	[ -n "$NAME" ] && set -- "$@" --name "$NAME"
 	[ -n "$ADDRESS" ] && set -- "$@" --address "$ADDRESS"
 	/usr/local/bin/cf-agent join "$@"

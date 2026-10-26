@@ -137,11 +137,12 @@ jobs:
         run: |
           set -eu
           test -s cosign.pub || { echo "cosign.pub is missing. See docs/releasing.md."; exit 1; }
-          python3 - "$VERSION" "$GVISOR_VERSION" <<'PY'
+          python3 - "$VERSION" "$GVISOR_VERSION" "$REGISTRY" <<'PY'
           import sys
-          version, gvisor = sys.argv[1].lstrip("v"), sys.argv[2]
+          version, gvisor, registry = sys.argv[1].lstrip("v"), sys.argv[2], sys.argv[3]
           script = open("install/install.sh").read()
           script = script.replace("__CF_VERSION__", version).replace("__GVISOR_VERSION__", gvisor)
+          script = script.replace("__CF_REGISTRY__", registry)
           script = script.replace("__COSIGN_PUBLIC_KEY__", open("cosign.pub").read().strip())
           open("dist/install.sh", "w").write(script)
           PY

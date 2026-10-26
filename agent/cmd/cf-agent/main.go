@@ -103,6 +103,7 @@ func join(ctx context.Context, args []string) error {
 	name := fs.String("name", strings.Split(hostname, ".")[0], "the name of this server in the panel")
 	roles := fs.String("roles", "web", "the roles of this server, separated by commas")
 	address := fs.String("address", hostname, "the host name or IP address that the panel uses to reach this server")
+	registry := fs.String("registry", config.Defaults().Registry, "the registry of the images, for example a mirror")
 	configPath := fs.String("config", config.DefaultPath, "the settings file")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -116,6 +117,7 @@ func join(ctx context.Context, args []string) error {
 
 	cfg := config.Defaults()
 	cfg.PanelURL = strings.TrimRight(*panelURL, "/")
+	cfg.Registry = strings.TrimRight(*registry, "/")
 	// The panel on the same server reaches the agent through the gateway of its container.
 	hosts := []string{*address, "127.0.0.1", "host.containers.internal"}
 	if hostname != *address {
