@@ -34,7 +34,7 @@ var versionRE = regexp.MustCompile(`^[0-9]{8}(\.[0-9]+)?$`)
 // this agent knows (CF-16). The checksum file next to the archive comes from the same server
 // as the archive, so it does not prove who made the archive. A new gVisor version needs a new
 // agent release, or the --sha512 option of "cf-agent gvisor install".
-// install/install.sh has the same values.
+// The release workflow puts the same values in install/install.sh.
 var Checksums = map[string]string{
 	"20261019.0/x86_64":  "7cbc2aeeee809dcccfb40e612504a1b76f2c119790cee59e482f7b35428cccc4f71705e7e322442d07d1f7d29b5d9e72e31319fc3088d6dcbec9fc7c1f0d8881",
 	"20261019.0/aarch64": "6b14b582cd3185169df54275eed8721d94c9b40e6cb1533d0d0c46573271c6d2d03db586ea1caac46a45e805797f00b115bead9fb93636a1ffa69f2430958977",

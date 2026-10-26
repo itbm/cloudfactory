@@ -374,4 +374,18 @@ class SecurityTest extends TestCase
         $this->patchJson("/api/v1/customers/{$reseller->id}", ['branding' => ['panelDomain' => config('cloudfactory.panel_domain')]])->assertJsonValidationErrors('branding.panelDomain');
         $this->patchJson("/api/v1/customers/{$reseller->id}", ['branding' => ['panelDomain' => 'panel.agency.example']])->assertOk();
     }
+
+    /** CF-16: the agent refuses an older version unless an administrator allows it. */
+    public function test_an_agent_update_sends_the_downgrade_choice(): void
+    {
+        $server = $this->server();
+        $this->actingWith($this->user());
+
+        $this->postJson("/api/v1/servers/{$server->id}/update-agent")->assertAccepted();
+        $this->assertFalse(AgentJob::sole()->payload['allowDowngrade']);
+
+        $this->postJson("/api/v1/servers/{$server->id}/update-agent", ['allowDowngrade' => 'yes'])->assertJsonValidationErrors('allowDowngrade');
+        $this->postJson("/api/v1/servers/{$server->id}/update-agent", ['allowDowngrade' => true])->assertAccepted();
+        $this->assertSame([false, true], AgentJob::all()->map(fn ($job) => $job->payload['allowDowngrade'])->sort()->values()->all());
+    }
 }

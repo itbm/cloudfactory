@@ -16,20 +16,26 @@ on:
         type: boolean
         default: true
 
+# CF-17: each job gets only the permissions that it needs.
 permissions:
-  contents: write
-  packages: write
-  id-token: write
+  contents: read
 
 env:
   REGISTRY: ghcr.io/${{ github.repository_owner }}
   # The gVisor release that the installation script installs. Change it here.
   GVISOR_VERSION: '20261019.0'
+  # CF-16: the SHA-512 checksums of this gVisor release. They must agree with
+  # agent/internal/gvisor/gvisor.go. The installation script does not download a checksum.
+  GVISOR_SHA512_X86_64: 7cbc2aeeee809dcccfb40e612504a1b76f2c119790cee59e482f7b35428cccc4f71705e7e322442d07d1f7d29b5d9e72e31319fc3088d6dcbec9fc7c1f0d8881
+  GVISOR_SHA512_AARCH64: 6b14b582cd3185169df54275eed8721d94c9b40e6cb1533d0d0c46573271c6d2d03db586ea1caac46a45e805797f00b115bead9fb93636a1ffa69f2430958977
 
 jobs:
   images:
     name: Image ${{ matrix.image }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     strategy:
       fail-fast: false
       matrix:
@@ -48,8 +54,9 @@ jobs:
           - { image: panel-api, context: ., file: images/panel-api/Containerfile, args: '' }
           - { image: panel-web, context: ., file: images/panel-web/Containerfile, args: '' }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
+          persist-credentials: false
           fetch-depth: 0
       - name: Find the image tag
         id: tag
@@ -62,20 +69,20 @@ jobs:
             git checkout -q "$latest"
             echo "tag=${latest#v}-r${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
           fi
-      - uses: docker/setup-qemu-action@v3
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
       # Cosign 2 stores signatures as ".sig" tags. Podman and the panel read this format.
-      - uses: sigstore/cosign-installer@v3
+      - uses: sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5 # v3.10.1
         with:
           cosign-release: v2.5.2
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Build and push for x86-64 and ARM64
         id: build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.file }}
@@ -94,7 +101,7 @@ jobs:
           ignore-unfixed: true
           exit-code: '1'
       - name: Attach the SBOM (FR-1102)
-        uses: anchore/sbom-action@v0
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
           image: ${{ env.REGISTRY }}/${{ matrix.image }}@${{ steps.build.outputs.digest }}
           format: spdx-json
@@ -112,13 +119,17 @@ jobs:
     name: Agent, CLI and installation script
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version-file: agent/go.mod
       # Cosign 2 stores signatures as ".sig" tags. Podman and the panel read this format.
-      - uses: sigstore/cosign-installer@v3
+      - uses: sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5 # v3.10.1
         with:
           cosign-release: v2.5.2
       - name: Build
@@ -143,12 +154,18 @@ jobs:
         run: |
           set -eu
           test -s cosign.pub || { echo "cosign.pub is missing. See docs/releasing.md."; exit 1; }
-          python3 - "$VERSION" "$GVISOR_VERSION" "$REGISTRY" <<'PY'
+          for arch in x86_64:$GVISOR_SHA512_X86_64 aarch64:$GVISOR_SHA512_AARCH64; do
+            if ! grep -q "\"$GVISOR_VERSION/${arch%%:*}\": *\"${arch#*:}\"" agent/internal/gvisor/gvisor.go; then
+              echo "agent/internal/gvisor/gvisor.go has no checksum for gVisor $GVISOR_VERSION ${arch%%:*}."; exit 1
+            fi
+          done
+          python3 - "$VERSION" "$GVISOR_VERSION" "$REGISTRY" "$GVISOR_SHA512_X86_64" "$GVISOR_SHA512_AARCH64" <<'PY'
           import sys
           version, gvisor, registry = sys.argv[1].lstrip("v"), sys.argv[2], sys.argv[3]
           script = open("install/install.sh").read()
           script = script.replace("__CF_VERSION__", version).replace("__GVISOR_VERSION__", gvisor)
           script = script.replace("__CF_REGISTRY__", registry)
+          script = script.replace("__GVISOR_SHA512_X86_64__", sys.argv[4]).replace("__GVISOR_SHA512_AARCH64__", sys.argv[5])
           script = script.replace("__COSIGN_PUBLIC_KEY__", open("cosign.pub").read().strip())
           open("dist/install.sh", "w").write(script)
           PY

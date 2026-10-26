@@ -701,7 +701,17 @@ paths:
     post:
       tags: [Servers]
       summary: Update the agent
-      description: The agent keeps the previous binary. It goes back to it if the new binary does not start.
+      description: >-
+        The agent keeps the previous binary. It goes back to it if the new binary does not start.
+        The agent refuses a version that is older than its version, unless allowDowngrade is true.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                allowDowngrade: { type: boolean, default: false }
       responses:
         '202': { $ref: '#/components/responses/JobOnly' }
 

@@ -22,6 +22,10 @@ set -eu
 # The release pipeline replaces these values.
 CF_VERSION="${CF_VERSION:-__CF_VERSION__}"
 GVISOR_VERSION="${GVISOR_VERSION:-__GVISOR_VERSION__}"
+# CF-16: the SHA-512 checksums of the gVisor archive for GVISOR_VERSION. The script does not
+# download the checksum from the same server as the archive.
+GVISOR_SHA512_X86_64='__GVISOR_SHA512_X86_64__'
+GVISOR_SHA512_AARCH64='__GVISOR_SHA512_AARCH64__'
 REPOSITORY="${CF_REPOSITORY:-itbm/cloudfactory}"
 REGISTRY="${CF_REGISTRY:-__CF_REGISTRY__}"
 RELEASE_URL="${CF_RELEASE_URL:-https://github.com/${REPOSITORY}/releases/download}"
@@ -43,6 +47,7 @@ ROLES=""
 ADDRESS=""
 PANEL_IP=""
 CHECK_ONLY=0
+UNSIGNED_REGISTRIES=""
 
 usage() {
 	cat <<'USAGE'
@@ -58,6 +63,10 @@ Options:
   --address HOST       The host name or IP address that the panel uses to reach this server.
   --panel-ip IP        Accept the agent port only from this IP address (the panel).
   --registry URL       Use a different image registry, for example a mirror (FR-1813).
+  --allow-unsigned REGISTRY
+                       Let Podman pull images with no signature from REGISTRY, for example
+                       docker.io. Podman refuses all other unsigned images. You can give
+                       this option more than one time.
   --check              Do only the checks. Do not change the system.
   --help               Show this help.
 USAGE
@@ -89,6 +98,7 @@ while [ $# -gt 0 ]; do
 	--address) ADDRESS=$(value "$@"); shift ;;
 	--panel-ip) PANEL_IP=$(value "$@"); shift ;;
 	--registry) REGISTRY=$(value "$@"); shift ;;
+	--allow-unsigned) UNSIGNED_REGISTRIES="$UNSIGNED_REGISTRIES $(value "$@")"; shift ;;
 	--check) CHECK_ONLY=1 ;;
 	--help | -h) usage; exit 0 ;;
 	*) usage >&2; fail "unknown option: $1" ;;
@@ -121,8 +131,8 @@ check_os() {
 
 check_arch() {
 	case "$(uname -m)" in
-	x86_64 | amd64) ARCH=amd64; GVISOR_ARCH=x86_64 ;;
-	aarch64 | arm64) ARCH=arm64; GVISOR_ARCH=aarch64 ;;
+	x86_64 | amd64) ARCH=amd64; GVISOR_ARCH=x86_64; GVISOR_SHA512=$GVISOR_SHA512_X86_64 ;;
+	aarch64 | arm64) ARCH=arm64; GVISOR_ARCH=aarch64; GVISOR_SHA512=$GVISOR_SHA512_AARCH64 ;;
 	*) problem "the CPU architecture $(uname -m) is not supported. Use x86-64 or ARM64." ;;
 	esac
 }
@@ -173,6 +183,19 @@ check_arguments() {
 	case "$COSIGN_PUBLIC_KEY" in
 	__*) problem "this script has no signing key. Download it from a GitHub release." ;;
 	esac
+	case "${GVISOR_SHA512:-}" in
+	__* | "") ;;
+	*[!0-9a-f]*) problem "the gVisor checksum is not a SHA-512 value." ;;
+	*) [ "${#GVISOR_SHA512}" -eq 128 ] || problem "the gVisor checksum is not a SHA-512 value." ;;
+	esac
+	case "${GVISOR_SHA512:-}" in
+	__*) problem "this script has no gVisor checksum. Download it from a GitHub release." ;;
+	esac
+	for registry in $UNSIGNED_REGISTRIES; do
+		case "$registry" in
+		*[!A-Za-z0-9.:/_-]* | "$REGISTRY" | "$REGISTRY"/*) problem "--allow-unsigned $registry is not permitted." ;;
+		esac
+	done
 }
 
 check_ports() {
@@ -263,7 +286,7 @@ step "Install gVisor $GVISOR_VERSION"
 # the Sentry from gvisor-bin, so the script keeps the whole archive in one directory.
 dir="$GVISOR_ROOT/$GVISOR_VERSION"
 download "$GVISOR_URL/$GVISOR_VERSION/$GVISOR_ARCH/gvisor.tar.bz2" "$TMP/gvisor.tar.bz2"
-download "$GVISOR_URL/$GVISOR_VERSION/$GVISOR_ARCH/gvisor.tar.bz2.sha512" "$TMP/gvisor.tar.bz2.sha512"
+printf '%s  gvisor.tar.bz2\n' "$GVISOR_SHA512" >"$TMP/gvisor.tar.bz2.sha512"
 (cd "$TMP" && sha512sum -c gvisor.tar.bz2.sha512 >/dev/null) || fail "the SHA-512 checksum of gvisor.tar.bz2 is not correct."
 mkdir -p "$GVISOR_ROOT"
 rm -rf "$dir.new"
@@ -308,14 +331,22 @@ step "Set the image signature policy"
 mkdir -p "$CF_ETC" /etc/containers/registries.d
 umask 022
 printf '%s\n' "$COSIGN_PUBLIC_KEY" >"$CF_ETC/cosign.pub"
-# FR-1101: Podman pulls a Cloudfactory image only when its signature is valid.
+# FR-1101, CF-11: Podman pulls a Cloudfactory image only when its signature is valid. Podman
+# refuses all other images, except from a registry that the administrator gave with
+# --allow-unsigned. Images that are already in the local storage stay usable.
+unsigned=""
+for registry in $UNSIGNED_REGISTRIES; do
+	unsigned="$unsigned
+      \"$registry\": [{ \"type\": \"insecureAcceptAnything\" }],"
+done
 cat >/etc/containers/policy.json <<POLICY
 {
-  "default": [{ "type": "insecureAcceptAnything" }],
+  "default": [{ "type": "reject" }],
   "transports": {
-    "docker": {
+    "docker": {$unsigned
       "$REGISTRY": [{ "type": "sigstoreSigned", "keyPath": "$CF_ETC/cosign.pub", "signedIdentity": { "type": "matchRepository" } }]
-    }
+    },
+    "containers-storage": { "": [{ "type": "insecureAcceptAnything" }] }
   }
 }
 POLICY
@@ -336,6 +367,8 @@ done
 install -d -m 0755 /srv/cloudfactory/sites
 install -d -m 0700 "$CF_DATA"
 install -d -o cf-edge -g cf-edge -m 0700 "$CF_DATA/caddy"
+# CF-13: the admin API of Caddy listens on a Unix socket in this directory, not on a TCP port.
+install -d -o cf-edge -g cf-edge -m 0700 "$CF_DATA/caddy-admin"
 [ -f "$CF_ETC/restic.key" ] || (umask 077 && openssl rand -base64 48 >"$CF_ETC/restic.key")
 
 step "Set the firewall"

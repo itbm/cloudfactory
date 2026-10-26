@@ -97,7 +97,9 @@ class ServerController extends Controller
     {
         $server = Server::findOrFail($id);
         $version = config('cloudfactory.agent.latest_version');
-        $job = $this->jobs->dispatch($server, AgentAction::UpdateAgent, ['version' => $version], "Update agent on {$server->name}", ref: $version);
+        // CF-16: the agent refuses an older version unless an administrator allows it.
+        $allowDowngrade = $request->validate(['allowDowngrade' => ['sometimes', 'boolean']])['allowDowngrade'] ?? false;
+        $job = $this->jobs->dispatch($server, AgentAction::UpdateAgent, ['version' => $version, 'allowDowngrade' => $allowDowngrade], "Update agent on {$server->name}", ref: $version);
         Audit::record($request, 'Updated agent', "{$server->name} {$version}");
 
         return response()->json(['job' => new JobResource($job)], 202);

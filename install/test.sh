@@ -13,6 +13,7 @@ FAIL=0
 
 # A release copy of the script, with a version and a key.
 sed -e 's/__CF_VERSION__/0.1.0/' -e 's/__GVISOR_VERSION__/20261019.0/' -e 's#__CF_REGISTRY__#ghcr.io/itbm#' \
+	-e "s/__GVISOR_SHA512_X86_64__/$(printf '%0128d' 1)/" -e "s/__GVISOR_SHA512_AARCH64__/$(printf '%0128d' 2)/" \
 	-e "s/__COSIGN_PUBLIC_KEY__/-----BEGIN PUBLIC KEY-----/" "$HERE/install.sh" >"$WORK/install.sh"
 
 # fake makes a fake system: an OS, a CPU architecture, and the root user.
@@ -58,6 +59,30 @@ expect "panel needs a domain" 1 "Give the domain of the panel with --domain" "$(
 expect "no options: the host name is the domain" 0 "All checks passed." "$(fake debian 13 x86_64 panel.example.com)"
 expect "option needs a value" 1 "the option --join needs a value." "$(fake debian 13)" --join
 expect "unknown option" 1 "unknown option: --force" "$(fake debian 13)" --force
+
+expect "an unsigned registry is permitted" 0 "All checks passed." "$(fake debian 13)" $panel --allow-unsigned docker.io --allow-unsigned quay.io
+expect "the release registry must stay signed" 1 "--allow-unsigned ghcr.io/itbm is not permitted." "$(fake debian 13)" $panel --allow-unsigned ghcr.io/itbm
+expect "a registry name is checked" 1 'is not permitted.' "$(fake debian 13)" $panel --allow-unsigned 'docker.io"'
+
+# CF-16: the script has a pinned gVisor checksum and does not download it.
+sed 's/^GVISOR_SHA512_X86_64=.*/GVISOR_SHA512_X86_64='"'"'__GVISOR_SHA512_X86_64__'"'"'/' "$WORK/install.sh" >"$WORK/nosum.sh"
+out=$(CF_TEST_ROOT="$(fake debian 13)" PATH="$WORK/root-debian-13/bin:$PATH" sh "$WORK/nosum.sh" --check $panel 2>&1)
+if printf '%s' "$out" | grep -qF "this script has no gVisor checksum"; then PASS=$((PASS + 1)); else FAIL=$((FAIL + 1)); printf 'FAIL: no gVisor checksum\n%s\n' "$out"; fi
+if grep -q 'gvisor.tar.bz2.sha512"' "$HERE/install.sh" && ! grep -q '^download .*\.sha512' "$HERE/install.sh"; then PASS=$((PASS + 1)); else FAIL=$((FAIL + 1)); echo 'FAIL: the checksum is downloaded'; fi
+
+# CF-11: the signature policy refuses unknown images and is valid JSON.
+policy() {
+	{
+		# shellcheck disable=SC2016 # $1 expands in policy.sh.
+		echo 'set -eu; CF_ETC=/etc/cloudfactory; REGISTRY=ghcr.io/itbm; UNSIGNED_REGISTRIES="$1"'
+		sed -n '/^unsigned=""/,/^POLICY$/p' "$HERE/install.sh" | sed "s#/etc/containers/policy.json#$WORK/policy.json#"
+	} >"$WORK/policy.sh"
+	sh "$WORK/policy.sh" "$1" && python3 -c 'import json,sys; p=json.load(open(sys.argv[1])); print(p["default"][0]["type"], sorted(p["transports"]["docker"]))' "$WORK/policy.json"
+}
+for case in "|reject ['ghcr.io/itbm']" "docker.io|reject ['docker.io', 'ghcr.io/itbm']"; do
+	got=$(policy "${case%%|*}" 2>&1)
+	if [ "$got" = "${case#*|}" ]; then PASS=$((PASS + 1)); else FAIL=$((FAIL + 1)); printf 'FAIL: policy %s: %s\n' "${case%%|*}" "$got"; fi
+done
 
 root=$(fake debian 13)
 rm "$root/sys/fs/cgroup/cgroup.controllers"
