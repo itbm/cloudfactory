@@ -28,6 +28,5 @@ shows what this repository has now.
 | Passkeys | The web panel shows passkeys. The API does not support passkeys yet. Users sign in with a password and TOTP. |
 | New image tags from the registry | The panel does not read the registry for new tags yet (FR-1110). An operator adds the tag. |
 | Signing key | The maintainers must make the cosign key and commit `cosign.pub`. Refer to [releasing.md](releasing.md). |
-| gVisor version | `20261020.0` is a placeholder. Set a real release before the first release. |
 | Tests on real servers | The tests use fakes for the system commands. The Caddy routes have a test with a real edge container. Nobody has installed release 0.1 on a real Debian 13 or Ubuntu 26.04 server yet. |
 | DNS, email, Git deploys, migration, Terraform | These are in releases 0.2 to 1.0. |

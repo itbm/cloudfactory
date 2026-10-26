@@ -28,7 +28,7 @@ type Config struct {
 	Registry string `json:"registry"`
 	// GVisorPlatform is "systrap" (the default) or "kvm" on bare metal (FR-310).
 	GVisorPlatform string `json:"gvisorPlatform"`
-	// GVisorVersion is the gVisor release that the agent installs, for example "20261020.0".
+	// GVisorVersion is the gVisor release that the agent installs, for example "20261019.0".
 	GVisorVersion string `json:"gvisorVersion"`
 	// DataDir holds the state of the agent: certificates and finished jobs.
 	DataDir string `json:"dataDir"`
@@ -48,7 +48,7 @@ func Defaults() Config {
 		Listen:         ":7443",
 		Registry:       "ghcr.io/cloudfactory",
 		GVisorPlatform: "systrap",
-		GVisorVersion:  "20261020.0",
+		GVisorVersion:  "20261019.0",
 		DataDir:        "/var/lib/cloudfactory",
 		SitesDir:       "/srv/cloudfactory/sites",
 		CaddyAdmin:     "http://127.0.0.1:2019",

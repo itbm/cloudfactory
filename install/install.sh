@@ -252,22 +252,27 @@ apt-get update -q
 apt-get install -y -q --no-install-recommends \
 	podman passt uidmap netavark aardvark-dns conmon crun fuse-overlayfs \
 	nftables unattended-upgrades needrestart restic apparmor apparmor-utils \
-	systemd-container dbus-user-session ca-certificates curl openssl
+	systemd-container dbus-user-session ca-certificates curl openssl bzip2
 
 step "Hold the container packages"
 # FR-1207: only the agent updates these packages (FR-1113).
 apt-mark hold podman conmon netavark aardvark-dns passt crun >/dev/null
 
 step "Install gVisor $GVISOR_VERSION"
-# FR-1206: the official release binaries, with a check of the SHA-512 checksum.
+# FR-1206: the official release archive, with a check of the SHA-512 checksum. runsc starts
+# the Sentry from gvisor-bin, so the script keeps the whole archive in one directory.
 dir="$GVISOR_ROOT/$GVISOR_VERSION"
-mkdir -p "$dir"
-for bin in runsc containerd-shim-runsc-v1; do
-	download "$GVISOR_URL/$GVISOR_VERSION/$GVISOR_ARCH/$bin" "$TMP/$bin"
-	download "$GVISOR_URL/$GVISOR_VERSION/$GVISOR_ARCH/$bin.sha512" "$TMP/$bin.sha512"
-	(cd "$TMP" && sha512sum -c "$bin.sha512" >/dev/null) || fail "the SHA-512 checksum of $bin is not correct."
-	install -m 0755 "$TMP/$bin" "$dir/$bin"
-done
+download "$GVISOR_URL/$GVISOR_VERSION/$GVISOR_ARCH/gvisor.tar.bz2" "$TMP/gvisor.tar.bz2"
+download "$GVISOR_URL/$GVISOR_VERSION/$GVISOR_ARCH/gvisor.tar.bz2.sha512" "$TMP/gvisor.tar.bz2.sha512"
+(cd "$TMP" && sha512sum -c gvisor.tar.bz2.sha512 >/dev/null) || fail "the SHA-512 checksum of gvisor.tar.bz2 is not correct."
+mkdir -p "$GVISOR_ROOT"
+rm -rf "$dir.new"
+mkdir -p "$dir.new"
+tar -xjf "$TMP/gvisor.tar.bz2" -C "$dir.new" --no-same-owner --no-same-permissions
+[ -f "$dir.new/runsc" ] && [ -f "$dir.new/containerd-shim-runsc-v1" ] || fail "gvisor.tar.bz2 has no runsc."
+chmod 0755 "$dir.new/runsc" "$dir.new/containerd-shim-runsc-v1"
+rm -rf "$dir"
+mv "$dir.new" "$dir"
 # Keep the previous version for rollback.
 if [ -L /usr/local/bin/runsc ] && [ "$(readlink /usr/local/bin/runsc)" != "$dir/runsc" ]; then
 	ln -sfn "$(readlink /usr/local/bin/runsc)" /usr/local/bin/runsc.previous
@@ -288,7 +293,7 @@ PROFILE
 cat >/etc/apparmor.d/cloudfactory-runsc <<'PROFILE'
 abi <abi/4.0>,
 include <tunables/global>
-profile cloudfactory-runsc /usr/local/lib/cloudfactory/gvisor/*/runsc flags=(unconfined) {
+profile cloudfactory-runsc /usr/local/lib/cloudfactory/gvisor/*/{runsc,gvisor-bin/*} flags=(unconfined) {
   userns,
   include if exists <local/cloudfactory-runsc>
 }

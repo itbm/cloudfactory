@@ -24,7 +24,7 @@ permissions:
 env:
   REGISTRY: ghcr.io/${{ github.repository_owner }}
   # The gVisor release that the installation script installs. Change it here.
-  GVISOR_VERSION: '20261020.0'
+  GVISOR_VERSION: '20261019.0'
 
 jobs:
   images:

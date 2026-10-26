@@ -12,7 +12,7 @@ PASS=0
 FAIL=0
 
 # A release copy of the script, with a version and a key.
-sed -e 's/__CF_VERSION__/0.1.0/' -e 's/__GVISOR_VERSION__/20261020.0/' -e 's#__CF_REGISTRY__#ghcr.io/itbm#' \
+sed -e 's/__CF_VERSION__/0.1.0/' -e 's/__GVISOR_VERSION__/20261019.0/' -e 's#__CF_REGISTRY__#ghcr.io/itbm#' \
 	-e "s/__COSIGN_PUBLIC_KEY__/-----BEGIN PUBLIC KEY-----/" "$HERE/install.sh" >"$WORK/install.sh"
 
 # fake makes a fake system: an OS, a CPU architecture, and the root user.

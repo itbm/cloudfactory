@@ -17,10 +17,10 @@ func TestReport(t *testing.T) {
 		{Prefix: "systemctl --user --machine=cf-edge@ is-active cf-edge", Output: "failed\n"},
 	}}
 	c := Collector{Run: f, Apt: hostupdate.Apt{Run: f, RebootFile: filepath.Join(t.TempDir(), "none")}, AgentVersion: "0.1.0",
-		GVisorVersion: func() string { return "20261020.0" }, Services: []string{"cf-agent"}, UserServices: []string{"cf-edge:cf-edge"}}
+		GVisorVersion: func() string { return "20261019.0" }, Services: []string{"cf-agent"}, UserServices: []string{"cf-edge:cf-edge"}}
 
 	r := c.Report(context.Background())
-	if r.PodmanVersion != "5.4.2" || r.GVisorVersion != "20261020.0" || len(r.PendingUpdates) != 1 || r.RebootRequired {
+	if r.PodmanVersion != "5.4.2" || r.GVisorVersion != "20261019.0" || len(r.PendingUpdates) != 1 || r.RebootRequired {
 		t.Errorf("report = %+v", r)
 	}
 	if r.Services[0].State != "running" || r.Services[1].State != "failed" {

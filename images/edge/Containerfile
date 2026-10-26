@@ -1,6 +1,8 @@
 # The edge proxy (spec section 6.2). The agent sets its routes through the admin API.
 # SPDX-License-Identifier: AGPL-3.0-only
-FROM docker.io/library/caddy:2.10-alpine
+FROM docker.io/library/caddy:2.11-alpine
+# Take the security fixes of Alpine that are newer than the base image.
+RUN apk upgrade --no-cache
 
 COPY base.json /etc/caddy/base.json
 # Caddy keeps the configuration from the agent in /data, and loads it again at start.

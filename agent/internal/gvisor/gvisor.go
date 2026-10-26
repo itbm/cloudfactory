@@ -1,4 +1,8 @@
-// Package gvisor installs runsc from the official gVisor release binaries (FR-1206).
+// Package gvisor installs runsc from the official gVisor release archive (FR-1206).
+//
+// Each release has one archive for each architecture, gvisor.tar.bz2, with runsc,
+// containerd-shim-runsc-v1 and the directory gvisor-bin. runsc starts the Sentry from
+// gvisor-bin, so gvisor-bin must stay next to runsc.
 //
 // Each version goes in its own directory. The link /usr/local/bin/runsc points to the
 // current version, and the link runsc.previous points to the version before it, so that
@@ -6,6 +10,8 @@
 package gvisor
 
 import (
+	"archive/tar"
+	"compress/bzip2"
 	"context"
 	"crypto/sha512"
 	"encoding/hex"
@@ -48,19 +54,30 @@ func (i Installer) Link() string { return filepath.Join(i.BinDir, "runsc") }
 
 func (i Installer) previousLink() string { return filepath.Join(i.BinDir, "runsc.previous") }
 
-// Install downloads one version, checks the SHA-512 checksum of each binary, and makes it
-// the current version. The old current version becomes the previous version.
+// Archive is the name of the release archive in each architecture directory.
+const Archive = "gvisor.tar.bz2"
+
+// checksumFile is the file in the version directory that records the checksum of the
+// archive that the agent extracted.
+const checksumFile = ".archive.sha512"
+
+// Install downloads the archive of one version, checks its SHA-512 checksum, extracts it
+// and makes it the current version. The old current version becomes the previous version.
 func (i Installer) Install(ctx context.Context, version, arch string) error {
 	if !versionRE.MatchString(version) {
 		return fmt.Errorf("gvisor: the version %q is not valid", version)
 	}
-	dir := filepath.Join(i.Root, version)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(i.Root, 0o755); err != nil {
 		return err
 	}
-	for _, name := range []string{"runsc", "containerd-shim-runsc-v1"} {
-		url := fmt.Sprintf("%s/%s/%s/%s", strings.TrimRight(i.BaseURL, "/"), version, arch, name)
-		if err := i.download(ctx, url, filepath.Join(dir, name)); err != nil {
+	dir := filepath.Join(i.Root, version)
+	url := fmt.Sprintf("%s/%s/%s/%s", strings.TrimRight(i.BaseURL, "/"), version, arch, Archive)
+	want, err := i.fetchChecksum(ctx, url+".sha512")
+	if err != nil {
+		return err
+	}
+	if got, err := os.ReadFile(filepath.Join(dir, checksumFile)); err != nil || strings.TrimSpace(string(got)) != want {
+		if err := i.downloadAndExtract(ctx, url, want, dir); err != nil {
 			return err
 		}
 	}
@@ -76,7 +93,7 @@ func (i Installer) Rollback() error {
 	return i.switchTo(prev)
 }
 
-// Current gives the version of the current link, for example "20261020.0".
+// Current gives the version of the current link, for example "20261019.0".
 func (i Installer) Current() string {
 	target, err := os.Readlink(i.Link())
 	if err != nil {
@@ -104,14 +121,9 @@ func replaceLink(target, link string) error {
 	return os.Rename(tmp, link)
 }
 
-func (i Installer) download(ctx context.Context, url, dest string) error {
-	want, err := i.fetchChecksum(ctx, url+".sha512")
-	if err != nil {
-		return err
-	}
-	if sum, err := fileSHA512(dest); err == nil && sum == want {
-		return nil // This version is already installed.
-	}
+// downloadAndExtract downloads the archive to a temporary file, checks its checksum, and
+// extracts it into a new directory. Then it puts the new directory in the place of dir.
+func (i Installer) downloadAndExtract(ctx context.Context, url, want, dir string) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return err
@@ -124,26 +136,95 @@ func (i Installer) download(ctx context.Context, url, dest string) error {
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("gvisor: download %s: status %d", url, resp.StatusCode)
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(dest), ".download-*")
+	archive, err := os.CreateTemp(i.Root, ".download-*")
 	if err != nil {
 		return err
 	}
-	defer os.Remove(tmp.Name())
+	defer os.Remove(archive.Name())
+	defer archive.Close()
 	h := sha512.New()
-	if _, err := io.Copy(io.MultiWriter(tmp, h), resp.Body); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
+	if _, err := io.Copy(io.MultiWriter(archive, h), resp.Body); err != nil {
+		return fmt.Errorf("gvisor: download %s: %w", url, err)
 	}
 	if got := hex.EncodeToString(h.Sum(nil)); got != want {
-		return fmt.Errorf("gvisor: the SHA-512 checksum of %s is not correct", filepath.Base(dest))
+		return fmt.Errorf("gvisor: the SHA-512 checksum of %s is not correct", Archive)
 	}
-	if err := os.Chmod(tmp.Name(), 0o755); err != nil {
+	if _, err := archive.Seek(0, io.SeekStart); err != nil {
 		return err
 	}
-	return os.Rename(tmp.Name(), dest)
+
+	tmp, err := os.MkdirTemp(i.Root, ".extract-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(tmp)
+	if err := extract(archive, tmp); err != nil {
+		return err
+	}
+	for _, name := range []string{"runsc", "containerd-shim-runsc-v1"} {
+		if st, err := os.Stat(filepath.Join(tmp, name)); err != nil || !st.Mode().IsRegular() {
+			return fmt.Errorf("gvisor: %s has no %s", Archive, name)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(tmp, checksumFile), []byte(want+"\n"), 0o644); err != nil {
+		return err
+	}
+	if err := os.Chmod(tmp, 0o755); err != nil {
+		return err
+	}
+	// The current version never uses dir here: a version with the same checksum is not
+	// extracted again. A directory from a failed or different download is replaced.
+	if err := os.RemoveAll(dir); err != nil {
+		return err
+	}
+	return os.Rename(tmp, dir)
+}
+
+// extract writes the regular files and directories of a bzip2 tar archive into dest. It
+// refuses links, devices, absolute paths and paths that go out of dest.
+func extract(r io.Reader, dest string) error {
+	tr := tar.NewReader(bzip2.NewReader(r))
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("gvisor: read %s: %w", Archive, err)
+		}
+		name := filepath.Clean(hdr.Name)
+		if filepath.IsAbs(name) || name == ".." || strings.HasPrefix(name, "../") {
+			return fmt.Errorf("gvisor: %s has a bad path %q", Archive, hdr.Name)
+		}
+		path := filepath.Join(dest, name)
+		switch hdr.Typeflag {
+		case tar.TypeDir:
+			if err := os.MkdirAll(path, 0o755); err != nil {
+				return err
+			}
+		case tar.TypeReg:
+			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				return err
+			}
+			mode := os.FileMode(0o644)
+			if hdr.Mode&0o111 != 0 {
+				mode = 0o755
+			}
+			f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, mode)
+			if err != nil {
+				return err
+			}
+			if _, err := io.Copy(f, tr); err != nil {
+				f.Close()
+				return err
+			}
+			if err := f.Close(); err != nil {
+				return err
+			}
+		default:
+			return fmt.Errorf("gvisor: %s has an entry of a type that is not permitted: %q", Archive, hdr.Name)
+		}
+	}
 }
 
 func (i Installer) fetchChecksum(ctx context.Context, url string) (string, error) {
@@ -176,17 +257,4 @@ func (i Installer) client() *http.Client {
 		return i.HTTP
 	}
 	return http.DefaultClient
-}
-
-func fileSHA512(path string) (string, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-	h := sha512.New()
-	if _, err := io.Copy(h, f); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(h.Sum(nil)), nil
 }
