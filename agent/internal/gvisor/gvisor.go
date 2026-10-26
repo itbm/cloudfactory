@@ -30,12 +30,24 @@ const ReleaseURL = "https://storage.googleapis.com/gvisor/releases/release"
 
 var versionRE = regexp.MustCompile(`^[0-9]{8}(\.[0-9]+)?$`)
 
+// Checksums are the SHA-512 checksums of gvisor.tar.bz2 for each "version/architecture" that
+// this agent knows (CF-16). The checksum file next to the archive comes from the same server
+// as the archive, so it does not prove who made the archive. A new gVisor version needs a new
+// agent release, or the --sha512 option of "cf-agent gvisor install".
+// install/install.sh has the same values.
+var Checksums = map[string]string{
+	"20261019.0/x86_64":  "7cbc2aeeee809dcccfb40e612504a1b76f2c119790cee59e482f7b35428cccc4f71705e7e322442d07d1f7d29b5d9e72e31319fc3088d6dcbec9fc7c1f0d8881",
+	"20261019.0/aarch64": "6b14b582cd3185169df54275eed8721d94c9b40e6cb1533d0d0c46573271c6d2d03db586ea1caac46a45e805797f00b115bead9fb93636a1ffa69f2430958977",
+}
+
 // Installer installs and switches gVisor versions.
 type Installer struct {
 	BaseURL string // ReleaseURL, or a test server
 	Root    string // for example "/usr/local/lib/cloudfactory/gvisor"
 	BinDir  string // for example "/usr/local/bin"
 	HTTP    *http.Client
+	// Checksums replaces the package Checksums when it is not nil.
+	Checksums map[string]string
 }
 
 // Arch gives the gVisor name of a Go architecture.
@@ -61,7 +73,7 @@ const Archive = "gvisor.tar.bz2"
 // archive that the agent extracted.
 const checksumFile = ".archive.sha512"
 
-// Install downloads the archive of one version, checks its SHA-512 checksum, extracts it
+// Install downloads the archive of one version, checks its pinned SHA-512 checksum, extracts it
 // and makes it the current version. The old current version becomes the previous version.
 func (i Installer) Install(ctx context.Context, version, arch string) error {
 	if !versionRE.MatchString(version) {
@@ -72,7 +84,7 @@ func (i Installer) Install(ctx context.Context, version, arch string) error {
 	}
 	dir := filepath.Join(i.Root, version)
 	url := fmt.Sprintf("%s/%s/%s/%s", strings.TrimRight(i.BaseURL, "/"), version, arch, Archive)
-	want, err := i.fetchChecksum(ctx, url+".sha512")
+	want, err := i.checksum(version, arch)
 	if err != nil {
 		return err
 	}
@@ -227,30 +239,20 @@ func extract(r io.Reader, dest string) error {
 	}
 }
 
-func (i Installer) fetchChecksum(ctx context.Context, url string) (string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return "", err
+// checksum gives the pinned checksum of a version and an architecture.
+func (i Installer) checksum(version, arch string) (string, error) {
+	sums := i.Checksums
+	if sums == nil {
+		sums = Checksums
 	}
-	resp, err := i.client().Do(req)
-	if err != nil {
-		return "", fmt.Errorf("gvisor: download %s: %w", url, err)
+	sum := strings.ToLower(sums[version+"/"+arch])
+	if !sha512RE.MatchString(sum) {
+		return "", fmt.Errorf("gvisor: this agent has no SHA-512 checksum for version %s on %s; give it with --sha512", version, arch)
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("gvisor: download %s: status %d", url, resp.StatusCode)
-	}
-	b, err := io.ReadAll(io.LimitReader(resp.Body, 4096))
-	if err != nil {
-		return "", err
-	}
-	// The file has the format "<checksum>  <name>".
-	fields := strings.Fields(string(b))
-	if len(fields) == 0 || len(fields[0]) != 128 {
-		return "", fmt.Errorf("gvisor: %s is not a SHA-512 checksum file", url)
-	}
-	return strings.ToLower(fields[0]), nil
+	return sum, nil
 }
+
+var sha512RE = regexp.MustCompile(`^[0-9a-f]{128}$`)
 
 func (i Installer) client() *http.Client {
 	if i.HTTP != nil {

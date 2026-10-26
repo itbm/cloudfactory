@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/itbm/cloudfactory/agent/internal/signature"
@@ -24,6 +25,63 @@ type Updater struct {
 	Binary string
 	Key    *ecdsa.PublicKey
 	HTTP   *http.Client
+	// Current is the version of the running agent, for example "0.1.0".
+	Current string
+}
+
+// CheckVersion refuses a version that is older than the current version, unless the
+// administrator asks for a downgrade on purpose (CF-16). A signed old version can have
+// security problems that a newer version fixed.
+func (u Updater) CheckVersion(version string, allowDowngrade bool) error {
+	if err := validate.Version(version); err != nil {
+		return err
+	}
+	if !allowDowngrade && u.Current != "" && Older(version, u.Current) {
+		return fmt.Errorf("selfupdate: the version %s is older than the current version %s", strings.TrimPrefix(version, "v"), strings.TrimPrefix(u.Current, "v"))
+	}
+	return nil
+}
+
+// Older reports whether version a is older than version b. It compares the major, minor and
+// patch numbers, and then a version with no suffix is newer than a version with a suffix
+// (for example "0.2.0" is newer than "0.2.0-rc.1"). A version that it cannot read is older.
+func Older(a, b string) bool {
+	pa, sa, okA := parseVersion(a)
+	pb, sb, okB := parseVersion(b)
+	if !okA || !okB {
+		return !okA && okB
+	}
+	for i := range 3 {
+		if pa[i] != pb[i] {
+			return pa[i] < pb[i]
+		}
+	}
+	switch {
+	case sa == sb:
+		return false
+	case sa == "":
+		return false
+	case sb == "":
+		return true
+	}
+	return sa < sb
+}
+
+func parseVersion(v string) (nums [3]int, suffix string, ok bool) {
+	v = strings.TrimPrefix(v, "v")
+	v, suffix, _ = strings.Cut(v, "-")
+	parts := strings.Split(v, ".")
+	if len(parts) != 3 {
+		return nums, "", false
+	}
+	for i, p := range parts {
+		n, err := strconv.Atoi(p)
+		if err != nil || n < 0 {
+			return nums, "", false
+		}
+		nums[i] = n
+	}
+	return nums, suffix, true
 }
 
 // AssetName is the name of the binary in a release, for example "cf-agent_linux_arm64".
@@ -86,7 +144,10 @@ func (u Updater) Replace(bin []byte) error {
 
 // Install downloads a version, checks its signature, keeps the current binary as the
 // previous binary, and puts the new binary in its place. The caller then restarts the agent.
-func (u Updater) Install(ctx context.Context, version, goarch string) error {
+func (u Updater) Install(ctx context.Context, version, goarch string, allowDowngrade bool) error {
+	if err := u.CheckVersion(version, allowDowngrade); err != nil {
+		return err
+	}
 	bin, sig, err := u.Fetch(ctx, version, goarch)
 	if err != nil {
 		return err

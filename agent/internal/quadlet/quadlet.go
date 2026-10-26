@@ -174,15 +174,17 @@ func PHPIni(phpVersion string, extensions []string, values map[string]string) st
 
 // Edge is the input for the unit of the edge proxy.
 type Edge struct {
-	Image    string
-	SitesDir string
-	DataDir  string
-	Gvisor   Runtime
+	Image   string
+	DataDir string
+	Gvisor  Runtime
 	// HTTPPort and HTTPSPort are the high ports that the container publishes. The host
 	// firewall redirects 80 and 443 to them, because rootless containers cannot open
 	// ports below 1024 (spec section 15, question 7).
-	HTTPPort, HTTPSPort, AdminPort int
+	HTTPPort, HTTPSPort int
 }
+
+// EdgeAdminDir is the host directory of the admin socket of the edge proxy, in DataDir.
+const EdgeAdminDir = "caddy-admin"
 
 // EdgeUnit gives the container unit of the edge proxy (Caddy).
 func EdgeUnit(e Edge) string {
@@ -194,20 +196,19 @@ func EdgeUnit(e Edge) string {
 		"ContainerName=cf-edge",
 		"Image=" + e.Image,
 		"Pull=never",
-		"GlobalArgs=" + e.Gvisor.GlobalArgs(),
+		// host-uds=create lets Caddy make its admin socket in the mounted directory (CF-13).
+		"GlobalArgs=" + e.Gvisor.GlobalArgs() + " --runtime-flag=host-uds=create",
 		// pasta maps the gateway address to the host, so that Caddy can reach the website
 		// ports on 127.0.0.1. Caddy sees the real client address (FR-1707).
 		"Network=pasta:--map-gw",
 		fmt.Sprintf("PublishPort=%d:8080", e.HTTPPort),
 		fmt.Sprintf("PublishPort=%d:8443", e.HTTPSPort),
 		fmt.Sprintf("PublishPort=%d:8443/udp", e.HTTPSPort),
-		fmt.Sprintf("PublishPort=127.0.0.1:%d:2019", e.AdminPort),
-		// Read-only access to the files of each website (spec section 6.4).
-		"Volume=" + e.SitesDir + ":/srv/sites:ro,z",
+		// CF-04: the edge proxy has no access to the files of the websites. Each website
+		// container serves its own static files.
 		"Volume=" + e.DataDir + "/caddy:/data:Z",
-		// The user cf-edge is in the group of each website user. Keep these groups in the container.
-		"GroupAdd=keep-groups",
-		"Environment=CADDY_ADMIN=0.0.0.0:2019",
+		// CF-13: the admin API is a Unix socket in this directory, not a TCP port.
+		"Volume=" + e.DataDir + "/" + EdgeAdminDir + ":/run/caddy-admin:Z",
 		"NoNewPrivileges=true",
 		"DropCapability=all",
 		"ReadOnly=true",

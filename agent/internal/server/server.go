@@ -77,6 +77,14 @@ func (s *Service) DeleteDatabase(_ context.Context, r *connect.Request[agentv1.D
 	return s.submit(s.Deps.DeleteDatabase(r.Msg))
 }
 
+func (s *Service) SetDatabaseUser(_ context.Context, r *connect.Request[agentv1.SetDatabaseUserRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.SetDatabaseUser(r.Msg))
+}
+
+func (s *Service) DeleteDatabaseUser(_ context.Context, r *connect.Request[agentv1.DeleteDatabaseUserRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.DeleteDatabaseUser(r.Msg))
+}
+
 func (s *Service) Backup(_ context.Context, r *connect.Request[agentv1.BackupRequest]) (*connect.Response[agentv1.JobAccepted], error) {
 	return s.submit(s.Deps.Backup(r.Msg))
 }

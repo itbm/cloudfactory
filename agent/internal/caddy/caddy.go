@@ -1,8 +1,11 @@
 // Package caddy sets the routes of the edge proxy through the Caddy admin API.
 //
-// Each website has one route with the ID "cf-<website ID>". The route serves static files
-// directly and sends all other requests to the website container (FR-309). Redirect domains
-// have a second route with the ID "cf-<website ID>-redirect" (FR-402).
+// Each website has one route with the ID "cf-<website ID>". The route sends all requests to the
+// website container, which also serves the static files (FR-309). The edge proxy cannot read the
+// files of the websites, so a link in one website cannot show the files of a different website
+// (CF-04). Redirect domains have a second route with the ID "cf-<website ID>-redirect" (FR-402).
+//
+// The admin API listens on a Unix socket that only the edge user and root can open (CF-13).
 package caddy
 
 import (
@@ -11,6 +14,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -19,32 +23,42 @@ import (
 
 const serverName = "edge"
 
+// AdminSocket is the path of the admin socket in the edge container. The host directory of the
+// socket is mounted at /run/caddy-admin.
+const AdminSocket = "/run/caddy-admin/admin.sock"
+
 // Client calls the admin API of Caddy.
 type Client struct {
-	// Admin is the address of the admin API, for example "http://127.0.0.1:2019".
+	// Admin is the base address of the admin API, for example "http://caddy" for a Unix socket
+	// or "http://127.0.0.1:2019" in a test.
 	Admin string
 	HTTP  *http.Client
 	// Upstream is the host name that Caddy uses to reach the website ports on the host.
 	Upstream string
 }
 
-// New gives a client with a short timeout.
+// New gives a client with a short timeout. The address is "unix:///path/to/admin.sock" or an
+// HTTP address.
 func New(admin string) *Client {
-	return &Client{Admin: strings.TrimRight(admin, "/"), HTTP: &http.Client{Timeout: 15 * time.Second}, Upstream: "host.containers.internal"}
+	c := &Client{Admin: strings.TrimRight(admin, "/"), HTTP: &http.Client{Timeout: 15 * time.Second}, Upstream: "host.containers.internal"}
+	if path, ok := strings.CutPrefix(admin, "unix://"); ok {
+		c.Admin = "http://caddy"
+		c.HTTP.Transport = &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			return (&net.Dialer{}).DialContext(ctx, "unix", path)
+		}}
+	}
+	return c
 }
 
 // Site is the input for the routes of one website.
 type Site struct {
 	WebsiteID string
-	UnixUser  string
 	Port      int
 	// Hosts are the primary domain and the aliases. Caddy gets a TLS certificate for each.
 	Hosts []string
 	// Redirects go to the primary domain with status 308.
 	Redirects []string
 	Primary   string
-	// Static is false for a custom image, which serves all requests itself.
-	Static bool
 }
 
 // EnsureBase loads the base configuration when Caddy has no "edge" server.
@@ -62,7 +76,8 @@ func (c *Client) EnsureBase(ctx context.Context) error {
 // BaseConfig is the configuration of a new edge proxy. It logs requests as JSON.
 func BaseConfig() map[string]any {
 	return map[string]any{
-		"admin": map[string]any{"listen": "0.0.0.0:2019"},
+		// CF-13: a Unix socket, not a TCP port. Only the edge user and root can open it.
+		"admin": map[string]any{"listen": "unix/" + AdminSocket},
 		"logging": map[string]any{"logs": map[string]any{
 			"access": map[string]any{"encoder": map[string]any{"format": "json"}, "include": []string{"http.log.access"}},
 		}},
@@ -82,11 +97,15 @@ func BaseConfig() map[string]any {
 }
 
 // Apply sets the routes of a website. It is idempotent: it removes the old routes first.
+// A website with no verified domain has no route. A route with no host would match all hosts.
 func (c *Client) Apply(ctx context.Context, s Site) error {
 	if err := c.Remove(ctx, s.WebsiteID); err != nil {
 		return err
 	}
 	routes := "/config/apps/http/servers/" + serverName + "/routes"
+	if len(s.Hosts) == 0 {
+		return nil
+	}
 	if len(s.Redirects) > 0 {
 		if err := c.expect(ctx, http.MethodPost, routes, RedirectRoute(s), http.StatusOK); err != nil {
 			return err
@@ -114,32 +133,13 @@ func unknownID(body []byte) bool { return bytes.Contains(body, []byte("unknown o
 
 // SiteRoute is the route of the primary domain and the aliases.
 func SiteRoute(s Site, upstream string) map[string]any {
-	proxy := map[string]any{
-		"handler":   "reverse_proxy",
-		"upstreams": []any{map[string]any{"dial": upstream + ":" + strconv.Itoa(s.Port)}},
-	}
-	var handle []any
-	if s.Static {
-		root := "/srv/sites/" + s.UnixUser + "/app/public"
-		handle = []any{map[string]any{"handler": "subroute", "routes": []any{
-			map[string]any{
-				// Serve a file directly when it exists. PHP files, hidden files and
-				// directories always go to the container.
-				"match": []any{map[string]any{
-					"file": map[string]any{"root": root, "try_files": []string{"{http.request.uri.path}"}},
-					"not":  []any{map[string]any{"path": []string{"*.php", "*/", "/.*", "*/.*"}}},
-				}},
-				"handle": []any{map[string]any{"handler": "file_server", "root": root}},
-			},
-			map[string]any{"handle": []any{proxy}},
-		}}}
-	} else {
-		handle = []any{proxy}
-	}
 	return map[string]any{
-		"@id":      "cf-" + s.WebsiteID,
-		"match":    []any{map[string]any{"host": s.Hosts}},
-		"handle":   handle,
+		"@id":   "cf-" + s.WebsiteID,
+		"match": []any{map[string]any{"host": s.Hosts}},
+		"handle": []any{map[string]any{
+			"handler":   "reverse_proxy",
+			"upstreams": []any{map[string]any{"dial": upstream + ":" + strconv.Itoa(s.Port)}},
+		}},
 		"terminal": true,
 	}
 }
@@ -230,5 +230,7 @@ func (c *Client) ApplyPanel(ctx context.Context, domain string, apiPort, webPort
 			return err
 		}
 	}
-	return c.expect(ctx, http.MethodPost, "/config/apps/http/servers/"+serverName+"/routes", route, http.StatusOK)
+	// CF-03: the panel route is always the first route, so that no website route for the
+	// same domain can come before it. A PUT on an index of a list puts the value at that index.
+	return c.expect(ctx, http.MethodPut, "/config/apps/http/servers/"+serverName+"/routes/0", route, http.StatusOK)
 }

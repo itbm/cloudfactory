@@ -13,6 +13,21 @@ import (
 	"testing"
 )
 
+// pinned gives the checksums of testdata/<archive> for the versions of the tests.
+func pinned(t *testing.T, archive string) map[string]string {
+	t.Helper()
+	body, err := os.ReadFile(filepath.Join("testdata", archive))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := sha512.Sum512(body)
+	out := map[string]string{}
+	for _, v := range []string{"20261012.0/x86_64", "20261019.0/x86_64", "20261019.0/aarch64"} {
+		out[v] = hex.EncodeToString(sum[:])
+	}
+	return out
+}
+
 // releaseServer serves testdata/<archive> as gvisor.tar.bz2 for each version and
 // architecture, with its checksum file. It counts the downloads of the archive.
 func releaseServer(t *testing.T, archive string, badChecksum bool, downloads *atomic.Int32) *httptest.Server {
@@ -46,7 +61,7 @@ func TestInstallKeepsThePreviousVersion(t *testing.T) {
 	var downloads atomic.Int32
 	srv := releaseServer(t, "good.tar.bz2", false, &downloads)
 	dir := t.TempDir()
-	in := Installer{BaseURL: srv.URL, Root: filepath.Join(dir, "lib"), BinDir: dir}
+	in := Installer{BaseURL: srv.URL, Root: filepath.Join(dir, "lib"), BinDir: dir, Checksums: pinned(t, "good.tar.bz2")}
 	ctx := context.Background()
 
 	if err := in.Install(ctx, "20261012.0", "x86_64"); err != nil {
@@ -87,10 +102,12 @@ func TestInstallKeepsThePreviousVersion(t *testing.T) {
 	}
 }
 
+// CF-16: the agent uses its own checksum, not the checksum file from the download server.
 func TestInstallRefusesABadChecksum(t *testing.T) {
-	srv := releaseServer(t, "good.tar.bz2", true, nil)
+	srv := releaseServer(t, "good.tar.bz2", false, nil)
 	dir := t.TempDir()
-	in := Installer{BaseURL: srv.URL, Root: filepath.Join(dir, "lib"), BinDir: dir}
+	sums := pinned(t, "escape.tar.bz2")
+	in := Installer{BaseURL: srv.URL, Root: filepath.Join(dir, "lib"), BinDir: dir, Checksums: sums}
 
 	err := in.Install(context.Background(), "20261019.0", "aarch64")
 	if err == nil || !strings.Contains(err.Error(), "SHA-512") {
@@ -102,6 +119,17 @@ func TestInstallRefusesABadChecksum(t *testing.T) {
 	if err := in.Install(context.Background(), "../../etc", "x86_64"); err == nil {
 		t.Error("bad version accepted")
 	}
+	if err := in.Install(context.Background(), "20990101.0", "x86_64"); err == nil || !strings.Contains(err.Error(), "no SHA-512 checksum") {
+		t.Errorf("a version with no pinned checksum: %v", err)
+	}
+}
+
+func TestTheReleaseChecksumsArePinned(t *testing.T) {
+	for _, arch := range []string{"x86_64", "aarch64"} {
+		if _, err := (Installer{}).checksum("20261019.0", arch); err != nil {
+			t.Error(err)
+		}
+	}
 }
 
 func TestInstallRefusesUnsafeArchives(t *testing.T) {
@@ -109,7 +137,7 @@ func TestInstallRefusesUnsafeArchives(t *testing.T) {
 		t.Run(archive, func(t *testing.T) {
 			srv := releaseServer(t, archive, false, nil)
 			dir := t.TempDir()
-			in := Installer{BaseURL: srv.URL, Root: filepath.Join(dir, "lib"), BinDir: dir}
+			in := Installer{BaseURL: srv.URL, Root: filepath.Join(dir, "lib"), BinDir: dir, Checksums: pinned(t, archive)}
 			if err := in.Install(context.Background(), "20261019.0", "x86_64"); err == nil {
 				t.Fatal("unsafe archive accepted")
 			}

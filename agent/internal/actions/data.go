@@ -2,6 +2,9 @@ package actions
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -50,73 +53,363 @@ func (d *Deps) sql(ctx context.Context, engine, statements string) (string, erro
 	return d.Run.RunInput(ctx, statements, "runuser", args...)
 }
 
-// CreateDatabase makes a database and a user with access to that database only (FR-501, FR-502).
-// The names are checked, so they are safe in SQL. The password has only letters and digits.
+// mariaHost is the host part of a MariaDB user (CF-19). "website" users can connect only from
+// the address that the database server sees for the website containers. "anywhere" users can
+// connect from any address, with TLS.
+func (d *Deps) mariaHost(access string) (string, error) {
+	switch access {
+	case "", "website":
+		host := d.DatabaseClientHost
+		if host == "" {
+			host = "127.0.0.1"
+		}
+		if !clientHostRE.MatchString(host) {
+			return "", fmt.Errorf("the database client host %q is not valid", host)
+		}
+		return host, nil
+	case "anywhere":
+		return "%", nil
+	}
+	return "", fmt.Errorf("the database access %q is not valid", access)
+}
+
+var clientHostRE = regexp.MustCompile(`^[A-Za-z0-9.:%/_-]{1,255}$`)
+
+// mariaDB gives a database name for GRANT. In GRANT, "_" and "%" are patterns, so the agent
+// escapes "_". Then a grant on "acme_x7k2_shop" never matches a different database.
+func mariaDB(name string) string { return "`" + strings.ReplaceAll(name, "_", `\_`) + "`" }
+
+func mariaRequire(access string) string {
+	if access == "anywhere" {
+		return "REQUIRE SSL"
+	}
+	return "REQUIRE NONE"
+}
+
+// mariaPrivileges gives the MariaDB privileges for "readonly" and "readwrite".
+func mariaPrivileges(p string) (string, error) {
+	switch p {
+	case "readonly":
+		return "SELECT, SHOW VIEW", nil
+	case "readwrite":
+		return "ALL PRIVILEGES", nil
+	}
+	return "", fmt.Errorf("the database privileges %q are not valid", p)
+}
+
+// pgRole gives the group role of a PostgreSQL database for "readonly" or "readwrite". The
+// read-write role owns the database. A read-write user takes this role when it connects, so that
+// all objects have one owner. The ":" cannot be in a user name, so a user cannot have these names.
+func pgRole(database, privileges string) string {
+	if privileges == "readonly" {
+		return database + ":ro"
+	}
+	return database + ":rw"
+}
+
+// exists runs a query that gives one row for each object, and reports whether it gave a row.
+func (d *Deps) exists(ctx context.Context, engine, query string) (bool, error) {
+	out, err := d.sql(ctx, engine, query)
+	return strings.TrimSpace(out) != "", err
+}
+
+// CreateDatabase makes a database, and optionally a user with read-write access to it (FR-501,
+// FR-502). The names are checked, so they are safe in SQL. The password has only letters and
+// digits. CF-01: each name starts with the Unix user of the website, and the job fails when the
+// database or the user exists.
 func (d *Deps) CreateDatabase(req *agentv1.CreateDatabaseRequest) (jobs.Job, error) {
-	if err := errors.Join(validate.ID(req.GetWebsiteId()), validate.DatabaseName(req.GetName()), validate.DatabaseName(req.GetUser())); err != nil {
+	unixUser, name, user, pass, engine := req.GetUnixUser(), req.GetName(), req.GetUser(), req.GetPassword(), req.GetEngine()
+	if err := errors.Join(validate.ID(req.GetWebsiteId()), validate.TenantDatabaseName(unixUser, name)); err != nil {
 		return jobs.Job{}, err
 	}
-	if _, err := dbContainer(req.GetEngine()); err != nil {
+	if _, err := dbContainer(engine); err != nil {
 		return jobs.Job{}, err
 	}
-	if !passwordRE.MatchString(req.GetPassword()) {
-		return jobs.Job{}, errors.New("the database password must have 16 to 64 letters and digits")
+	if user != "" {
+		if err := validate.TenantDatabaseName(unixUser, user); err != nil {
+			return jobs.Job{}, err
+		}
+		if !passwordRE.MatchString(pass) {
+			return jobs.Job{}, errors.New("the database password must have 16 to 64 letters and digits")
+		}
 	}
-	name, user, pass, engine := req.GetName(), req.GetUser(), req.GetPassword(), req.GetEngine()
+	host, err := d.mariaHost(req.GetAccess())
+	if err != nil {
+		return jobs.Job{}, err
+	}
 	maria := engine == "mariadb"
-	return jobs.Job{ID: req.GetJobId(), Key: req.GetWebsiteId(), Steps: []jobs.Step{
+	steps := []jobs.Step{
 		{Name: "Create database", Do: func(ctx context.Context) error {
 			if maria {
-				_, err := d.sql(ctx, engine, fmt.Sprintf("CREATE DATABASE IF NOT EXISTS `%s` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;\n", name))
+				// No "IF NOT EXISTS": the job fails when the database exists.
+				_, err := d.sql(ctx, engine, fmt.Sprintf("CREATE DATABASE `%s` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;\n", name))
 				return err
 			}
-			out, err := d.sql(ctx, engine, fmt.Sprintf("SELECT 1 FROM pg_database WHERE datname = '%s';\n", name))
-			if err != nil || strings.TrimSpace(out) == "1" {
+			found, err := d.exists(ctx, engine, fmt.Sprintf("SELECT 1 FROM pg_database WHERE datname = '%[1]s' UNION ALL SELECT 1 FROM pg_roles WHERE rolname IN ('%[1]s:rw', '%[1]s:ro');\n", name))
+			if err != nil {
 				return err
 			}
-			_, err = d.sql(ctx, engine, fmt.Sprintf("CREATE DATABASE \"%s\";\n", name))
+			if found {
+				return fmt.Errorf("the database %s exists", name)
+			}
+			_, err = d.sql(ctx, engine, pgCreateDatabase(name))
 			return err
 		}},
-		{Name: "Create user", Do: func(ctx context.Context) error {
-			if maria {
-				_, err := d.sql(ctx, engine, fmt.Sprintf("CREATE USER IF NOT EXISTS '%[1]s'@'%%' IDENTIFIED BY '%[2]s';\nALTER USER '%[1]s'@'%%' IDENTIFIED BY '%[2]s';\n", user, pass))
+	}
+	if user != "" {
+		steps = append(steps,
+			jobs.Step{Name: "Create user", Do: func(ctx context.Context) error {
+				return d.createUser(ctx, engine, user, pass, host, req.GetAccess())
+			}},
+			jobs.Step{Name: "Allow the website container only", Do: func(ctx context.Context) error {
+				_, err := d.sql(ctx, engine, grantSQL(engine, user, host, name, "readwrite"))
+				return err
+			}},
+		)
+	}
+	return jobs.Job{ID: req.GetJobId(), Key: req.GetWebsiteId(), Steps: steps}, nil
+}
+
+// pgCreateDatabase makes the database and its two group roles. Only the roles can connect.
+func pgCreateDatabase(name string) string {
+	return fmt.Sprintf(`CREATE ROLE "%[1]s:rw" NOLOGIN;
+CREATE ROLE "%[1]s:ro" NOLOGIN;
+CREATE DATABASE "%[1]s" OWNER "%[1]s:rw";
+REVOKE ALL ON DATABASE "%[1]s" FROM PUBLIC;
+GRANT CONNECT, TEMPORARY ON DATABASE "%[1]s" TO "%[1]s:ro";
+\connect "%[1]s"
+REVOKE ALL ON SCHEMA public FROM PUBLIC;
+GRANT USAGE ON SCHEMA public TO "%[1]s:ro";
+ALTER DEFAULT PRIVILEGES FOR ROLE "%[1]s:rw" IN SCHEMA public GRANT SELECT ON TABLES TO "%[1]s:ro";
+ALTER DEFAULT PRIVILEGES FOR ROLE "%[1]s:rw" IN SCHEMA public GRANT SELECT ON SEQUENCES TO "%[1]s:ro";
+`, name)
+}
+
+// createUser makes a user. It fails when a user with the name exists, with any host.
+func (d *Deps) createUser(ctx context.Context, engine, user, pass, host, access string) error {
+	if engine == "mariadb" {
+		found, err := d.exists(ctx, engine, fmt.Sprintf("SELECT 1 FROM mysql.user WHERE User = '%s';\n", user))
+		if err != nil {
+			return err
+		}
+		if found {
+			return fmt.Errorf("the database user %s exists", user)
+		}
+		_, err = d.sql(ctx, engine, fmt.Sprintf("CREATE USER '%s'@'%s' IDENTIFIED BY '%s' %s;\n", user, host, pass, mariaRequire(access)))
+		return err
+	}
+	found, err := d.exists(ctx, engine, fmt.Sprintf("SELECT 1 FROM pg_roles WHERE rolname = '%s';\n", user))
+	if err != nil {
+		return err
+	}
+	if found {
+		return fmt.Errorf("the database user %s exists", user)
+	}
+	_, err = d.sql(ctx, engine, fmt.Sprintf("CREATE ROLE \"%s\" LOGIN PASSWORD '%s';\n", user, pass))
+	return err
+}
+
+// grantSQL gives one database to a user with "readonly" or "readwrite" privileges.
+func grantSQL(engine, user, host, database, privileges string) string {
+	if engine == "mariadb" {
+		p, _ := mariaPrivileges(privileges)
+		return fmt.Sprintf("GRANT %s ON %s.* TO '%s'@'%s';\n", p, mariaDB(database), user, host)
+	}
+	if privileges == "readwrite" {
+		return fmt.Sprintf("GRANT \"%[1]s\" TO \"%[2]s\";\nALTER ROLE \"%[2]s\" IN DATABASE \"%[3]s\" SET role = '%[1]s';\n", pgRole(database, privileges), user, database)
+	}
+	return fmt.Sprintf("GRANT \"%[1]s\" TO \"%[2]s\";\n", pgRole(database, privileges), user)
+}
+
+// pgRevokeSQL removes the access of a PostgreSQL user to one database.
+func pgRevokeSQL(user, database string) string {
+	return fmt.Sprintf("REVOKE \"%[2]s:rw\" FROM \"%[1]s\";\nREVOKE \"%[2]s:ro\" FROM \"%[1]s\";\nALTER ROLE \"%[1]s\" IN DATABASE \"%[2]s\" RESET role;\n", user, database)
+}
+
+// mariaCurrentHost gives the host part of a MariaDB user.
+func (d *Deps) mariaCurrentHost(ctx context.Context, user string) (string, error) {
+	out, err := d.sql(ctx, "mariadb", fmt.Sprintf("SELECT Host FROM mysql.user WHERE User = '%s';\n", user))
+	if err != nil {
+		return "", err
+	}
+	hosts := strings.Fields(out)
+	if len(hosts) != 1 || !clientHostRE.MatchString(hosts[0]) {
+		return "", fmt.Errorf("the database user %s has %d hosts, not 1", user, len(hosts))
+	}
+	return hosts[0], nil
+}
+
+// SetDatabaseUser sets the full state of a database user: its password, where it can connect
+// from, and its access to each database of the website (FR-502). A user can read one database
+// and change a different database, for example.
+func (d *Deps) SetDatabaseUser(req *agentv1.SetDatabaseUserRequest) (jobs.Job, error) {
+	unixUser, user, engine := req.GetUnixUser(), req.GetName(), req.GetEngine()
+	errs := []error{validate.ID(req.GetWebsiteId()), validate.TenantDatabaseName(unixUser, user)}
+	if _, err := dbContainer(engine); err != nil {
+		errs = append(errs, err)
+	}
+	all := map[string]bool{}
+	for _, db := range req.GetWebsiteDatabases() {
+		errs = append(errs, validate.TenantDatabaseName(unixUser, db))
+		all[db] = true
+	}
+	for _, g := range req.GetGrants() {
+		errs = append(errs, validate.TenantDatabaseName(unixUser, g.GetDatabase()))
+		if _, err := mariaPrivileges(g.GetPrivileges()); err != nil {
+			errs = append(errs, err)
+		}
+		if !all[g.GetDatabase()] {
+			errs = append(errs, fmt.Errorf("the database %s is not a database of the website", g.GetDatabase()))
+		}
+	}
+	pass := req.GetPassword()
+	if (pass != "" || req.GetCreate()) && !passwordRE.MatchString(pass) {
+		errs = append(errs, errors.New("the database password must have 16 to 64 letters and digits"))
+	}
+	host, err := d.mariaHost(req.GetAccess())
+	errs = append(errs, err)
+	if err := errors.Join(errs...); err != nil {
+		return jobs.Job{}, err
+	}
+	maria := engine == "mariadb"
+	return jobs.Job{ID: req.GetJobId(), Key: req.GetWebsiteId(), Steps: []jobs.Step{
+		{Name: "Set user and password", Do: func(ctx context.Context) error {
+			if req.GetCreate() {
+				return d.createUser(ctx, engine, user, pass, host, req.GetAccess())
+			}
+			if !maria {
+				if pass == "" {
+					return nil
+				}
+				_, err := d.sql(ctx, engine, fmt.Sprintf("ALTER ROLE \"%s\" WITH LOGIN PASSWORD '%s';\n", user, pass))
 				return err
 			}
-			_, err := d.sql(ctx, engine, fmt.Sprintf("DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '%[1]s') THEN CREATE ROLE \"%[1]s\" LOGIN; END IF; END $$;\nALTER ROLE \"%[1]s\" WITH LOGIN PASSWORD '%[2]s';\n", user, pass))
+			old, err := d.mariaCurrentHost(ctx, user)
+			if err != nil {
+				return err
+			}
+			var b strings.Builder
+			if old != host {
+				fmt.Fprintf(&b, "RENAME USER '%s'@'%s' TO '%s'@'%s';\n", user, old, user, host)
+			}
+			fmt.Fprintf(&b, "ALTER USER '%s'@'%s' %s;\n", user, host, mariaRequire(req.GetAccess()))
+			if pass != "" {
+				fmt.Fprintf(&b, "ALTER USER '%s'@'%s' IDENTIFIED BY '%s';\n", user, host, pass)
+			}
+			_, err = d.sql(ctx, engine, b.String())
 			return err
 		}},
-		{Name: "Allow the website container only", Do: func(ctx context.Context) error {
-			// The database port listens only on the host. Each user has access to its own
-			// database only.
+		{Name: "Set access to databases", Do: func(ctx context.Context) error {
+			var b strings.Builder
 			if maria {
-				_, err := d.sql(ctx, engine, fmt.Sprintf("GRANT ALL PRIVILEGES ON `%s`.* TO '%s'@'%%';\nFLUSH PRIVILEGES;\n", name, user))
-				return err
+				// Remove all grants, then give the grants of the request.
+				fmt.Fprintf(&b, "REVOKE ALL PRIVILEGES, GRANT OPTION FROM '%s'@'%s';\n", user, host)
+			} else {
+				for _, db := range req.GetWebsiteDatabases() {
+					b.WriteString(pgRevokeSQL(user, db))
+				}
 			}
-			_, err := d.sql(ctx, engine, fmt.Sprintf("REVOKE ALL ON DATABASE \"%[1]s\" FROM PUBLIC;\nALTER DATABASE \"%[1]s\" OWNER TO \"%[2]s\";\n", name, user))
+			for _, g := range req.GetGrants() {
+				b.WriteString(grantSQL(engine, user, host, g.GetDatabase(), g.GetPrivileges()))
+			}
+			_, err := d.sql(ctx, engine, b.String())
 			return err
 		}},
 	}}, nil
 }
 
-// DeleteDatabase removes a database and its user.
-func (d *Deps) DeleteDatabase(req *agentv1.DeleteDatabaseRequest) (jobs.Job, error) {
-	if err := errors.Join(validate.ID(req.GetWebsiteId()), validate.DatabaseName(req.GetName())); err != nil {
+// DeleteDatabaseUser removes a database user.
+func (d *Deps) DeleteDatabaseUser(req *agentv1.DeleteDatabaseUserRequest) (jobs.Job, error) {
+	unixUser, user, engine := req.GetUnixUser(), req.GetName(), req.GetEngine()
+	if err := errors.Join(validate.ID(req.GetWebsiteId()), validate.TenantDatabaseName(unixUser, user)); err != nil {
 		return jobs.Job{}, err
 	}
-	if _, err := dbContainer(req.GetEngine()); err != nil {
+	if _, err := dbContainer(engine); err != nil {
 		return jobs.Job{}, err
 	}
-	name, engine := req.GetName(), req.GetEngine()
 	return jobs.Job{ID: req.GetJobId(), Key: req.GetWebsiteId(), Steps: []jobs.Step{
-		{Name: "Remove database", Do: func(ctx context.Context) error {
+		{Name: "Remove user", Do: func(ctx context.Context) error { return d.dropUser(ctx, engine, user) }},
+	}}, nil
+}
+
+func (d *Deps) dropUser(ctx context.Context, engine, user string) error {
+	if engine == "mariadb" {
+		out, err := d.sql(ctx, engine, fmt.Sprintf("SELECT Host FROM mysql.user WHERE User = '%s';\n", user))
+		if err != nil {
+			return err
+		}
+		var b strings.Builder
+		for _, h := range strings.Fields(out) {
+			if clientHostRE.MatchString(h) {
+				fmt.Fprintf(&b, "DROP USER IF EXISTS '%s'@'%s';\n", user, h)
+			}
+		}
+		if b.Len() == 0 {
+			return nil
+		}
+		_, err = d.sql(ctx, engine, b.String())
+		return err
+	}
+	// The group roles own all objects, so the user owns nothing. DROP ROLE also removes the
+	// memberships and the settings of the user.
+	_, err := d.sql(ctx, engine, fmt.Sprintf("DROP ROLE IF EXISTS \"%s\";\n", user))
+	return err
+}
+
+// DeleteDatabase removes the access of all users to a database, then the database.
+func (d *Deps) DeleteDatabase(req *agentv1.DeleteDatabaseRequest) (jobs.Job, error) {
+	unixUser, name, engine := req.GetUnixUser(), req.GetName(), req.GetEngine()
+	errs := []error{validate.ID(req.GetWebsiteId()), validate.TenantDatabaseName(unixUser, name)}
+	for _, u := range req.GetUsers() {
+		errs = append(errs, validate.TenantDatabaseName(unixUser, u))
+	}
+	if _, err := dbContainer(engine); err != nil {
+		errs = append(errs, err)
+	}
+	if err := errors.Join(errs...); err != nil {
+		return jobs.Job{}, err
+	}
+	return jobs.Job{ID: req.GetJobId(), Key: req.GetWebsiteId(), Steps: []jobs.Step{
+		{Name: "Remove access of users", Do: func(ctx context.Context) error {
 			if engine == "mariadb" {
-				_, err := d.sql(ctx, engine, fmt.Sprintf("DROP DATABASE IF EXISTS `%[1]s`;\nDROP USER IF EXISTS '%[1]s'@'%%';\n", name))
+				_, err := d.sql(ctx, engine, mariaRevokeDatabase(name))
 				return err
 			}
-			_, err := d.sql(ctx, engine, fmt.Sprintf("DROP DATABASE IF EXISTS \"%[1]s\" WITH (FORCE);\nDROP ROLE IF EXISTS \"%[1]s\";\n", name))
+			var b strings.Builder
+			for _, u := range req.GetUsers() {
+				b.WriteString(pgRevokeSQL(u, name))
+			}
+			if b.Len() == 0 {
+				return nil
+			}
+			_, err := d.sql(ctx, engine, b.String())
 			return err
 		}},
+		{Name: "Remove database", Do: func(ctx context.Context) error {
+			return d.dropDatabase(ctx, engine, name)
+		}},
 	}}, nil
+}
+
+// mariaRevokeDatabase removes all grants on one database, for all users. MariaDB keeps the
+// grants of a database that it drops, so a later database with the same name would get them.
+func mariaRevokeDatabase(name string) string {
+	escaped := strings.ReplaceAll(name, "_", `\\_`)
+	var b strings.Builder
+	for _, table := range []string{"db", "tables_priv", "columns_priv", "procs_priv"} {
+		fmt.Fprintf(&b, "DELETE FROM mysql.%s WHERE Db IN ('%s', '%s');\n", table, name, escaped)
+	}
+	b.WriteString("FLUSH PRIVILEGES;\n")
+	return b.String()
+}
+
+func (d *Deps) dropDatabase(ctx context.Context, engine, name string) error {
+	if engine == "mariadb" {
+		_, err := d.sql(ctx, engine, fmt.Sprintf("DROP DATABASE IF EXISTS `%s`;\n", name))
+		return err
+	}
+	_, err := d.sql(ctx, engine, fmt.Sprintf("DROP DATABASE IF EXISTS \"%[1]s\" WITH (FORCE);\nDROP ROLE IF EXISTS \"%[1]s:rw\";\nDROP ROLE IF EXISTS \"%[1]s:ro\";\n", name))
+	return err
 }
 
 var targetRE = regexp.MustCompile(`^(s3|b2|azure|gs):\S+$`)
@@ -126,9 +419,14 @@ func (d *Deps) restic(ctx context.Context, target string, args ...string) (strin
 	return d.Run.Run(ctx, "restic", append(base, args...)...)
 }
 
-func dumpDir(home string) string { return filepath.Join(home, ".cloudfactory", "dumps") }
+// dumpDir holds the database dumps of one website. Only root can read it, and the website
+// cannot change it (CF-06). Each backup snapshot includes it.
+func (d *Deps) dumpDir(unixUser string) string { return filepath.Join(d.DataDir, "dumps", unixUser) }
+
+func dumpFile(engine, name string) string { return engine + "-" + name + ".dump" }
 
 // Backup makes an encrypted, incremental snapshot of the files and databases of a website (FR-901).
+// The result has the SHA-256 hash of each dump. The panel keeps it, and a restore checks it.
 func (d *Deps) Backup(req *agentv1.BackupRequest) (jobs.Job, error) {
 	if err := errors.Join(validate.ID(req.GetWebsiteId()), validate.UnixUser(req.GetUnixUser())); err != nil {
 		return jobs.Job{}, err
@@ -141,20 +439,26 @@ func (d *Deps) Backup(req *agentv1.BackupRequest) (jobs.Job, error) {
 		if _, err := dbContainer(db.GetEngine()); err != nil {
 			return jobs.Job{}, err
 		}
-		if err := validate.DatabaseName(db.GetName()); err != nil {
+		if err := validate.TenantDatabaseName(req.GetUnixUser(), db.GetName()); err != nil {
 			return jobs.Job{}, err
 		}
 	}
-	home := d.Host.Home(req.GetUnixUser())
+	app := filepath.Join(d.Host.Home(req.GetUnixUser()), "app")
+	dumps := d.dumpDir(req.GetUnixUser())
+	hashes := map[string]any{}
 	var snapshotID string
 	var size float64
 	return jobs.Job{ID: req.GetJobId(), Key: req.GetWebsiteId(), Steps: []jobs.Step{
 		{Name: "Snapshot files", Do: func(context.Context) error {
-			_, err := os.Stat(filepath.Join(home, "app"))
+			_, err := os.Stat(app)
 			return err
 		}},
 		{Name: "Dump databases", Do: func(ctx context.Context) error {
-			if err := os.MkdirAll(dumpDir(home), 0o700); err != nil {
+			// A new directory for each backup, so that the snapshot has no old dumps.
+			if err := os.RemoveAll(dumps); err != nil {
+				return err
+			}
+			if err := os.MkdirAll(dumps, 0o700); err != nil {
 				return err
 			}
 			for _, db := range req.GetDatabases() {
@@ -162,14 +466,16 @@ func (d *Deps) Backup(req *agentv1.BackupRequest) (jobs.Job, error) {
 				if err != nil {
 					return err
 				}
-				if err := os.WriteFile(filepath.Join(dumpDir(home), db.GetEngine()+"-"+db.GetName()+".sql"), []byte(out), 0o600); err != nil {
+				if err := os.WriteFile(filepath.Join(dumps, dumpFile(db.GetEngine(), db.GetName())), []byte(out), 0o600); err != nil {
 					return err
 				}
+				sum := sha256.Sum256([]byte(out))
+				hashes[db.GetEngine()+":"+db.GetName()] = hex.EncodeToString(sum[:])
 			}
 			return nil
 		}},
 		{Name: "Upload to object storage", Do: func(ctx context.Context) error {
-			out, err := d.restic(ctx, target, "backup", home, "--tag", "website="+req.GetWebsiteId(), "--tag", "kind="+req.GetKind())
+			out, err := d.restic(ctx, target, "backup", app, dumps, "--tag", "website="+req.GetWebsiteId(), "--tag", "kind="+req.GetKind())
 			if err != nil {
 				return err
 			}
@@ -179,9 +485,13 @@ func (d *Deps) Backup(req *agentv1.BackupRequest) (jobs.Job, error) {
 			}
 			return nil
 		}},
-	}, Result: func() map[string]any { return map[string]any{"snapshotId": snapshotID, "sizeBytes": int64(size)} }}, nil
+	}, Result: func() map[string]any {
+		return map[string]any{"snapshotId": snapshotID, "sizeBytes": int64(size), "dumps": hashes}
+	}}, nil
 }
 
+// dump gives a dump that a database user can restore: no owners and no privileges. The
+// PostgreSQL dump uses the custom format, which pg_restore reads. It has no psql commands.
 func (d *Deps) dump(ctx context.Context, engine, name string) (string, error) {
 	c, _ := dbContainer(engine)
 	uid, err := d.Host.LookupUID(DBUser)
@@ -192,7 +502,7 @@ func (d *Deps) dump(ctx context.Context, engine, name string) (string, error) {
 	if engine == "mariadb" {
 		args = append(args, "mariadb-dump", "--user=root", "--single-transaction", "--routines", name)
 	} else {
-		args = append(args, "pg_dump", "--username=postgres", "--clean", "--if-exists", name)
+		args = append(args, "pg_dump", "--username=postgres", "--format=custom", "--no-owner", "--no-privileges", name)
 	}
 	return d.Run.Run(ctx, "runuser", args...)
 }
@@ -213,8 +523,17 @@ func parseResticSummary(out string) (id string, size float64) {
 }
 
 // Restore puts back a full website, one database or one file from a snapshot (FR-903).
+//
+// CF-05: restic restores as root into a new, empty directory that only root can read. Then the
+// website user copies the files into place, so that a link in the website cannot make root
+// write outside the website.
+//
+// CF-06: the agent restores a dump only when its hash agrees with the hash from the backup. It
+// restores the dump as a temporary database user with access to that database only, not as the
+// superuser, and the client cannot run commands on the database server.
 func (d *Deps) Restore(req *agentv1.RestoreRequest) (jobs.Job, error) {
-	if err := errors.Join(validate.ID(req.GetWebsiteId()), validate.UnixUser(req.GetUnixUser())); err != nil {
+	unixUser := req.GetUnixUser()
+	if err := errors.Join(validate.ID(req.GetJobId()), validate.ID(req.GetWebsiteId()), validate.UnixUser(unixUser)); err != nil {
 		return jobs.Job{}, err
 	}
 	if !regexp.MustCompile(`^[0-9a-f]{8,64}$`).MatchString(req.GetSnapshotId()) {
@@ -224,56 +543,64 @@ func (d *Deps) Restore(req *agentv1.RestoreRequest) (jobs.Job, error) {
 	if !targetRE.MatchString(target) {
 		return jobs.Job{}, errors.New("no backup target is set")
 	}
-	home := d.Host.Home(req.GetUnixUser())
-	var include string
+	app := filepath.Join(d.Host.Home(unixUser), "app")
+	// include is the absolute path in the snapshot. rel is the path in the app directory.
+	var include, rel string
 	var dbEngine, dbName string
 	switch req.GetScope() {
 	case "website":
-		include = home
+		include, rel = app, "."
 	case "file":
 		if err := validate.RestorePath(req.GetItem()); err != nil {
 			return jobs.Job{}, err
 		}
-		include = filepath.Join(home, "app") + req.GetItem()
+		include, rel = app+req.GetItem(), strings.TrimPrefix(req.GetItem(), "/")
 	case "database":
 		engine, name, ok := strings.Cut(req.GetItem(), ":")
 		if !ok {
-			engine, name = "mariadb", req.GetItem()
+			return jobs.Job{}, errors.New(`the database must be "engine:name"`)
 		}
 		if _, err := dbContainer(engine); err != nil {
 			return jobs.Job{}, err
 		}
-		if err := validate.DatabaseName(name); err != nil {
+		if err := errors.Join(validate.TenantDatabaseName(unixUser, name), validate.SHA256(req.GetDumpSha256())); err != nil {
 			return jobs.Job{}, err
 		}
 		dbEngine, dbName = engine, name
-		include = filepath.Join(dumpDir(home), engine+"-"+name+".sql")
+		include = filepath.Join(d.dumpDir(unixUser), dumpFile(engine, name))
 	default:
 		return jobs.Job{}, fmt.Errorf("the restore scope %q is not valid", req.GetScope())
 	}
+	staging := filepath.Join(d.DataDir, "restore", req.GetJobId())
+	cleanup := func(context.Context) { _ = os.RemoveAll(staging) }
 	return jobs.Job{ID: req.GetJobId(), Key: req.GetWebsiteId(), Steps: []jobs.Step{
 		{Name: "Download snapshot", Do: func(ctx context.Context) error {
 			_, err := d.restic(ctx, target, "snapshots", req.GetSnapshotId())
 			return err
 		}},
 		{Name: "Restore", Do: func(ctx context.Context) error {
-			if _, err := d.restic(ctx, target, "restore", req.GetSnapshotId(), "--target", "/", "--include", include); err != nil {
+			defer cleanup(ctx)
+			if err := os.RemoveAll(staging); err != nil {
+				return err
+			}
+			if err := os.MkdirAll(staging, 0o700); err != nil {
+				return err
+			}
+			if _, err := d.restic(ctx, target, "restore", req.GetSnapshotId(), "--target", staging, "--include", include); err != nil {
 				return err
 			}
 			if dbName == "" {
-				return nil
+				return d.copyAsUser(ctx, filepath.Join(staging, app), rel, unixUser, app)
 			}
-			sql, err := os.ReadFile(include)
+			dump, err := os.ReadFile(filepath.Join(staging, include))
 			if err != nil {
 				return err
 			}
-			if dbEngine == "mariadb" {
-				sql = append([]byte("USE `"+dbName+"`;\n"), sql...)
-			} else {
-				sql = append([]byte("\\connect \""+dbName+"\"\n"), sql...)
+			sum := sha256.Sum256(dump)
+			if hex.EncodeToString(sum[:]) != req.GetDumpSha256() {
+				return errors.New("the dump does not agree with the hash from the backup")
 			}
-			_, err = d.sql(ctx, dbEngine, string(sql))
-			return err
+			return d.restoreDump(ctx, dbEngine, dbName, dump)
 		}},
 		{Name: "Health check", Do: func(ctx context.Context) error {
 			site, err := d.State.Get(req.GetWebsiteId())
@@ -288,5 +615,93 @@ func (d *Deps) Restore(req *agentv1.RestoreRequest) (jobs.Job, error) {
 			}
 			return d.waitReady(ctx, site.Port, primaryDomain(site.Website))
 		}},
-	}}, nil
+	}, OnFailure: cleanup}, nil
+}
+
+// copyAsUser copies rel from the directory src (that only root can read) into dst, as the
+// website user. root only reads. The website user writes, so it cannot write outside the
+// files that it can already change.
+func (d *Deps) copyAsUser(ctx context.Context, src, rel, unixUser, dst string) error {
+	return d.Run.Pipe(ctx,
+		[]string{"tar", "--create", "--file=-", "--directory=" + src, "--", rel},
+		[]string{"runuser", "-u", unixUser, "--", "tar", "--extract", "--file=-", "--directory=" + dst, "--no-same-owner", "--preserve-permissions"},
+	)
+}
+
+// restoreDump loads a dump as a temporary user that can use only this database. The password
+// goes to the client in a file that only the database service user can read.
+func (d *Deps) restoreDump(ctx context.Context, engine, name string, dump []byte) error {
+	c, _ := dbContainer(engine)
+	tmpUser := "cfrestore_" + randomHex(8)
+	pass := randomHex(24)
+	maria := engine == "mariadb"
+	var create, drop string
+	if maria {
+		create = fmt.Sprintf("CREATE USER '%[1]s'@'localhost' IDENTIFIED BY '%[2]s';\nGRANT ALL PRIVILEGES ON %[3]s.* TO '%[1]s'@'localhost';\n", tmpUser, pass, mariaDB(name))
+		drop = fmt.Sprintf("DROP USER IF EXISTS '%s'@'localhost';\n", tmpUser)
+	} else {
+		create = fmt.Sprintf("CREATE ROLE \"%[1]s\" LOGIN PASSWORD '%[2]s';\nGRANT \"%[3]s\" TO \"%[1]s\";\n", tmpUser, pass, pgRole(name, "readwrite"))
+		drop = fmt.Sprintf("DROP ROLE IF EXISTS \"%s\";\n", tmpUser)
+	}
+	if _, err := d.sql(ctx, engine, create); err != nil {
+		return err
+	}
+	defer d.sql(context.WithoutCancel(ctx), engine, drop)
+
+	envFile, err := d.secretFile(ctx, map[bool]string{true: "MYSQL_PWD", false: "PGPASSWORD"}[maria]+"="+pass+"\n")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(envFile)
+	uid, err := d.Host.LookupUID(DBUser)
+	if err != nil {
+		return err
+	}
+	args := []string{"-u", DBUser, "--", "env", fmt.Sprintf("XDG_RUNTIME_DIR=/run/user/%d", uid), "podman", "exec", "-i", "--env-file", envFile, c}
+	if maria {
+		// --sandbox refuses client commands such as "system" and "source".
+		args = append(args, "mariadb", "--sandbox", "--user="+tmpUser, "--batch", name)
+	} else {
+		args = append(args, "pg_restore", "--host=127.0.0.1", "--username="+tmpUser, "--role="+pgRole(name, "readwrite"), "--dbname="+name, "--no-owner", "--no-privileges", "--clean", "--if-exists", "--exit-on-error")
+	}
+	_, err = d.Run.RunInput(ctx, string(dump), "runuser", args...)
+	return err
+}
+
+// secretFile writes a file that only the database service user can read, and gives its path.
+func (d *Deps) secretFile(ctx context.Context, content string) (string, error) {
+	dir := d.SecretsDir
+	if dir == "" {
+		dir = "/run/cloudfactory/secrets"
+	}
+	// Other users can go through the directory, but cannot list it. The file has a random name.
+	if err := os.MkdirAll(dir, 0o711); err != nil {
+		return "", err
+	}
+	f, err := os.CreateTemp(dir, "env-*")
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	if _, err := f.WriteString(content); err != nil {
+		os.Remove(f.Name())
+		return "", err
+	}
+	if err := f.Chmod(0o400); err != nil {
+		os.Remove(f.Name())
+		return "", err
+	}
+	if _, err := d.Run.Run(ctx, "chown", DBUser, f.Name()); err != nil {
+		os.Remove(f.Name())
+		return "", err
+	}
+	return f.Name(), nil
+}
+
+func randomHex(n int) string {
+	b := make([]byte, n/2)
+	if _, err := rand.Read(b); err != nil {
+		panic(err)
+	}
+	return hex.EncodeToString(b)
 }

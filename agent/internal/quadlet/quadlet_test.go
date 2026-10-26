@@ -74,11 +74,18 @@ func TestPHPIni(t *testing.T) {
 	}
 }
 
-func TestEdgeUnitIsReadOnlyOnSites(t *testing.T) {
-	u := EdgeUnit(Edge{Image: "ghcr.io/cloudfactory/edge:2.10", SitesDir: "/srv/cloudfactory/sites", DataDir: "/var/lib/cloudfactory", Gvisor: Runtime{"/usr/local/bin/runsc", "kvm"}, HTTPPort: 8080, HTTPSPort: 8443, AdminPort: 2019})
-	for _, want := range []string{"Volume=/srv/cloudfactory/sites:/srv/sites:ro,z", "PublishPort=127.0.0.1:2019:2019", "--runtime-flag=platform=kvm"} {
+// CF-04 and CF-13: the edge proxy cannot read the files of the websites, and its admin API is a
+// Unix socket, not a port.
+func TestEdgeUnitHasNoSitesAndNoAdminPort(t *testing.T) {
+	u := EdgeUnit(Edge{Image: "ghcr.io/cloudfactory/edge:2.10", DataDir: "/var/lib/cloudfactory", Gvisor: Runtime{"/usr/local/bin/runsc", "kvm"}, HTTPPort: 8080, HTTPSPort: 8443})
+	for _, want := range []string{"Volume=/var/lib/cloudfactory/caddy-admin:/run/caddy-admin:Z", "--runtime-flag=host-uds=create", "--runtime-flag=platform=kvm"} {
 		if !strings.Contains(u, want) {
 			t.Errorf("edge unit does not contain %q", want)
+		}
+	}
+	for _, bad := range []string{"/srv/sites", "keep-groups", "2019", "CADDY_ADMIN"} {
+		if strings.Contains(u, bad) {
+			t.Errorf("edge unit contains %q:\n%s", bad, u)
 		}
 	}
 }

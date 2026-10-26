@@ -16,7 +16,7 @@ import (
 	"github.com/itbm/cloudfactory/agent/internal/validate"
 )
 
-// EdgeUser is the Unix user of the edge proxy. It reads the static files of each website.
+// EdgeUser is the Unix user of the edge proxy. It cannot read the files of the websites (CF-04).
 const EdgeUser = "cf-edge"
 
 // Host changes the host.
@@ -63,10 +63,9 @@ func (h *Host) EnsureUser(ctx context.Context, unixUser string) error {
 		}
 	}
 	for _, args := range [][]string{
-		{"chmod", "0750", h.Home(unixUser)},
+		// CF-04: only the website user can read its files. The edge proxy does not read them.
+		{"chmod", "0700", h.Home(unixUser)},
 		{"install", "-d", "-o", unixUser, "-g", unixUser, "-m", "0750", filepath.Join(h.Home(unixUser), "app"), filepath.Join(h.Home(unixUser), "app", "public")},
-		// The edge proxy reads static files through the group of the user (spec section 6.4).
-		{"usermod", "--append", "--groups", unixUser, EdgeUser},
 		{"loginctl", "enable-linger", unixUser},
 	} {
 		if _, err := h.Run.Run(ctx, args[0], args[1:]...); err != nil {

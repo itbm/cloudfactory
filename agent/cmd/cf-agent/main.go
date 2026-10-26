@@ -55,7 +55,7 @@ const (
 	usageString = `Usage:
   cf-agent join --panel URL --token TOKEN [--name NAME] [--roles web] [--address HOST]
   cf-agent serve
-  cf-agent gvisor install|rollback
+  cf-agent gvisor install [--sha512 SUM] [VERSION] | rollback
   cf-agent panel install --domain DOMAIN
   cf-agent rollback
   cf-agent version`
@@ -184,7 +184,7 @@ func serve(ctx context.Context) error {
 
 	deps := &actions.Deps{
 		Host: host.New(run, cfg.SitesDir), Run: run, Edge: caddy.New(cfg.CaddyAdmin), Apt: apt,
-		Updater: &selfupdate.Updater{ReleaseURL: cfg.ReleaseURL, Binary: binaryPath, Key: key},
+		Updater: &selfupdate.Updater{ReleaseURL: cfg.ReleaseURL, Binary: binaryPath, Key: key, Current: version},
 		Gvisor:  quadlet.Runtime{RunscPath: gv.Link(), Platform: cfg.GVisorPlatform},
 		State:   actions.NewState(cfg.DataDir), Health: actions.HTTPHealth, DNSPointsHere: actions.LocalDNS(),
 		Reboot: func(ctx context.Context) error {
@@ -196,6 +196,8 @@ func serve(ctx context.Context) error {
 		Arch:               runtime.GOARCH,
 		MaxWatch:           5 * time.Minute,
 		ResticPasswordFile: resticKey,
+		DataDir:            cfg.DataDir,
+		DatabaseClientHost: cfg.DatabaseClientHost,
 	}
 	// The edge proxy operates in gVisor like all other containers. Its image is signed (FR-1101).
 	if err := deps.EnsureEdge(ctx, cfg.Registry+"/edge:"+version, cfg.DataDir); err != nil {
@@ -247,15 +249,23 @@ func gvisorCmd(ctx context.Context, args []string) error {
 		return gv.Rollback()
 	}
 	if len(args) < 1 || args[0] != "install" {
-		return errors.New("usage: cf-agent gvisor install [VERSION] | rollback")
+		return errors.New("usage: cf-agent gvisor install [--sha512 SUM] [VERSION] | rollback")
+	}
+	fs := flag.NewFlagSet("gvisor install", flag.ContinueOnError)
+	sum := fs.String("sha512", "", "the SHA-512 checksum of gvisor.tar.bz2, for a version that this agent does not know")
+	if err := fs.Parse(args[1:]); err != nil {
+		return err
 	}
 	v := cfg.GVisorVersion
-	if len(args) > 1 {
-		v = args[1]
+	if fs.NArg() > 0 {
+		v = fs.Arg(0)
 	}
 	arch, err := gvisor.Arch(runtime.GOARCH)
 	if err != nil {
 		return err
+	}
+	if *sum != "" {
+		gv.Checksums = map[string]string{v + "/" + arch: *sum}
 	}
 	if err := gv.Install(ctx, v, arch); err != nil {
 		return err

@@ -34,8 +34,11 @@ type Config struct {
 	DataDir string `json:"dataDir"`
 	// SitesDir holds the files of each website, one directory for each Unix user.
 	SitesDir string `json:"sitesDir"`
-	// CaddyAdmin is the address of the Caddy admin API.
+	// CaddyAdmin is the address of the Caddy admin API: a Unix socket (CF-13).
 	CaddyAdmin string `json:"caddyAdmin"`
+	// DatabaseClientHost is the host part of the MariaDB users that only the website containers
+	// can use (CF-19). The default is "127.0.0.1".
+	DatabaseClientHost string `json:"databaseClientHost"`
 	// ReleaseURL is where the agent downloads new agent binaries.
 	ReleaseURL string `json:"releaseUrl"`
 	// ReportSeconds is the time between two host reports.
@@ -51,7 +54,7 @@ func Defaults() Config {
 		GVisorVersion:  "20261019.0",
 		DataDir:        "/var/lib/cloudfactory",
 		SitesDir:       "/srv/cloudfactory/sites",
-		CaddyAdmin:     "http://127.0.0.1:2019",
+		CaddyAdmin:     "unix:///var/lib/cloudfactory/caddy-admin/admin.sock",
 		ReleaseURL:     "https://github.com/itbm/cloudfactory/releases/download",
 		ReportSeconds:  60,
 	}

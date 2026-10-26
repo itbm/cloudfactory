@@ -52,6 +52,15 @@ type Deps struct {
 	MaxWatch time.Duration
 	// ResticPasswordFile holds the encryption key of the backups.
 	ResticPasswordFile string
+	// DataDir holds the state of the agent. Only root can read it. The agent keeps database
+	// dumps and restores there, not in the home directory of a website (CF-05, CF-06).
+	DataDir string
+	// SecretsDir holds short-lived files with passwords for the database clients. The
+	// default is "/run/cloudfactory/secrets".
+	SecretsDir string
+	// DatabaseClientHost is the host part of a MariaDB user that can connect from the website
+	// containers only, for example "10.89.%" (CF-19). The default is "127.0.0.1".
+	DatabaseClientHost string
 }
 
 // Site is what the agent knows about one website.

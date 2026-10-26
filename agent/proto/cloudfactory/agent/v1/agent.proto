@@ -23,6 +23,8 @@ service AgentService {
   rpc RemoveDomain(DomainRequest) returns (JobAccepted);
   rpc CreateDatabase(CreateDatabaseRequest) returns (JobAccepted);
   rpc DeleteDatabase(DeleteDatabaseRequest) returns (JobAccepted);
+  rpc SetDatabaseUser(SetDatabaseUserRequest) returns (JobAccepted);
+  rpc DeleteDatabaseUser(DeleteDatabaseUserRequest) returns (JobAccepted);
   rpc Backup(BackupRequest) returns (JobAccepted);
   rpc Restore(RestoreRequest) returns (JobAccepted);
   rpc InstallHostUpdates(HostRequest) returns (JobAccepted);
@@ -93,6 +95,9 @@ message DeleteWebsiteRequest {
   string job_id = 1;
   string website_id = 2;
   string unix_user = 3;
+  // The agent also removes the databases and the database users of the website.
+  repeated DatabaseRef databases = 4;
+  repeated DatabaseRef database_users = 5;
 }
 
 message SetWebsitePowerRequest {
@@ -119,6 +124,7 @@ message DomainRequest {
   string primary = 6;
 }
 
+// Each database and user name starts with the Unix user of the website and "_".
 message CreateDatabaseRequest {
   string job_id = 1;
   string website_id = 2;
@@ -126,9 +132,10 @@ message CreateDatabaseRequest {
   // "mariadb" or "postgresql".
   string engine = 4;
   string name = 5;
+  // Optional: a new user with read-write access to the database.
   string user = 6;
   string password = 7;
-  // "website": only the website container can connect.
+  // "website": only the website container can connect. "anywhere": any address, with TLS.
   string access = 8;
 }
 
@@ -137,6 +144,42 @@ message DeleteDatabaseRequest {
   string website_id = 2;
   string engine = 3;
   string name = 4;
+  string unix_user = 5;
+  // The users with access to the database. The agent removes their access first.
+  repeated string users = 6;
+}
+
+message DatabaseGrant {
+  string database = 1;
+  // "readonly" or "readwrite".
+  string privileges = 2;
+}
+
+// Sets the full state of a database user: its password, where it can connect from, and its
+// access to each database of the website.
+message SetDatabaseUserRequest {
+  string job_id = 1;
+  string website_id = 2;
+  string unix_user = 3;
+  string engine = 4;
+  string name = 5;
+  // Empty: keep the password.
+  string password = 6;
+  string access = 7;
+  // True: make a new user. The job fails when the user exists.
+  bool create = 8;
+  repeated DatabaseGrant grants = 9;
+  // All databases of the website with this engine. The user has no access to the others.
+  repeated string website_databases = 10;
+}
+
+message DeleteDatabaseUserRequest {
+  string job_id = 1;
+  string website_id = 2;
+  string unix_user = 3;
+  string engine = 4;
+  string name = 5;
+  repeated string website_databases = 6;
 }
 
 message DatabaseRef {
@@ -165,6 +208,8 @@ message RestoreRequest {
   string item = 6;
   // The restic repository, for example "s3://bucket/path".
   string target = 7;
+  // Scope "database": the SHA-256 hash of the dump at backup time.
+  string dump_sha256 = 8;
 }
 
 message HostRequest {
@@ -176,6 +221,8 @@ message HostRequest {
 message UpdateAgentRequest {
   string job_id = 1;
   string version = 2;
+  // The agent refuses a version that is older than its own version, unless this is true.
+  bool allow_downgrade = 3;
 }
 
 message GetStatusRequest {}

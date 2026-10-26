@@ -1,5 +1,5 @@
 {
-  "admin": { "listen": "0.0.0.0:2019" },
+  "admin": { "listen": "unix//run/caddy-admin/admin.sock" },
   "logging": {
     "logs": {
       "access": { "encoder": { "format": "json" }, "include": ["http.log.access"] }

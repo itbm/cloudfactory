@@ -4,8 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -36,6 +39,11 @@ func (f *fakeCaddy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		b, _ := io.ReadAll(r.Body)
 		json.Unmarshal(b, &route)
 		f.routes = append(f.routes, route)
+	case r.Method == http.MethodPut && r.URL.Path == "/config/apps/http/servers/edge/routes/0":
+		var route map[string]any
+		b, _ := io.ReadAll(r.Body)
+		json.Unmarshal(b, &route)
+		f.routes = append([]map[string]any{route}, f.routes...)
 	case r.URL.Path == "/config/apps/http/servers/edge/tls_connection_policies":
 		b, _ := io.ReadAll(r.Body)
 		f.policies = string(b)
@@ -63,7 +71,7 @@ func TestApplyIsIdempotent(t *testing.T) {
 	if err := c.EnsureBase(ctx); err != nil || !fake.loaded {
 		t.Fatalf("EnsureBase: %v, loaded=%v", err, fake.loaded)
 	}
-	site := Site{WebsiteID: "W1", UnixUser: "acme_x7k2", Port: 20001, Hosts: []string{"acme.example"}, Redirects: []string{"www.acme.example"}, Primary: "acme.example", Static: true}
+	site := Site{WebsiteID: "W1", Port: 20001, Hosts: []string{"acme.example"}, Redirects: []string{"www.acme.example"}, Primary: "acme.example"}
 	for range 3 {
 		if err := c.Apply(ctx, site); err != nil {
 			t.Fatal(err)
@@ -77,12 +85,18 @@ func TestApplyIsIdempotent(t *testing.T) {
 	}
 }
 
-func TestSiteRouteServesStaticFilesButNotPHP(t *testing.T) {
-	b, _ := json.Marshal(SiteRoute(Site{WebsiteID: "W1", UnixUser: "acme_x7k2", Port: 20001, Hosts: []string{"acme.example"}, Static: true}, "host.containers.internal"))
+// CF-04: the edge proxy does not serve files from the disk. The website container serves them.
+func TestSiteRouteSendsAllRequestsToTheContainer(t *testing.T) {
+	b, _ := json.Marshal(SiteRoute(Site{WebsiteID: "W1", Port: 20001, Hosts: []string{"acme.example"}}, "host.containers.internal"))
 	s := string(b)
-	for _, want := range []string{`"@id":"cf-W1"`, `"root":"/srv/sites/acme_x7k2/app/public"`, `"*.php"`, `"dial":"host.containers.internal:20001"`} {
+	for _, want := range []string{`"@id":"cf-W1"`, `"dial":"host.containers.internal:20001"`, `"host":["acme.example"]`} {
 		if !strings.Contains(s, want) {
 			t.Errorf("route does not contain %s: %s", want, s)
+		}
+	}
+	for _, bad := range []string{"file_server", "/srv/sites", `"file"`} {
+		if strings.Contains(s, bad) {
+			t.Errorf("route contains %s: %s", bad, s)
 		}
 	}
 	b, _ = json.Marshal(RedirectRoute(Site{WebsiteID: "W1", Redirects: []string{"www.acme.example"}, Primary: "acme.example"}))
@@ -107,5 +121,64 @@ func TestPanelRouteSetsTheEdgeHeaders(t *testing.T) {
 	}
 	if !strings.Contains(fake.policies, `"mode":"request"`) {
 		t.Errorf("policies = %s", fake.policies)
+	}
+}
+
+// CF-03: a website with no verified domain gets no route. A route with no host matches all hosts.
+func TestAWebsiteWithNoDomainHasNoRoute(t *testing.T) {
+	fake := &fakeCaddy{loaded: true}
+	srv := httptest.NewServer(fake)
+	defer srv.Close()
+
+	if err := New(srv.URL).Apply(context.Background(), Site{WebsiteID: "W1", Port: 20001}); err != nil {
+		t.Fatal(err)
+	}
+	if len(fake.routes) != 0 {
+		t.Errorf("routes = %v", fake.routes)
+	}
+}
+
+// CF-03: the panel route is first, so that a website route for the same domain cannot come before it.
+func TestThePanelRouteIsFirst(t *testing.T) {
+	fake := &fakeCaddy{loaded: true}
+	srv := httptest.NewServer(fake)
+	defer srv.Close()
+	c := New(srv.URL)
+	ctx := context.Background()
+
+	if err := c.Apply(ctx, Site{WebsiteID: "W1", Port: 20001, Hosts: []string{"panel.example.com"}, Primary: "panel.example.com"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.ApplyPanel(ctx, "panel.example.com", 19080, 19081); err != nil {
+		t.Fatal(err)
+	}
+	if len(fake.routes) != 2 || fake.routes[0]["@id"] != "cf-panel" {
+		t.Errorf("routes = %v", fake.routes)
+	}
+}
+
+// CF-13: the admin API is a Unix socket.
+func TestTheClientUsesTheAdminSocket(t *testing.T) {
+	dir, err := os.MkdirTemp("", "caddy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
+	sock := filepath.Join(dir, "admin.sock")
+	l, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Skip("no Unix sockets:", err)
+	}
+	fake := &fakeCaddy{}
+	srv := &http.Server{Handler: fake}
+	go srv.Serve(l)
+	defer srv.Close()
+
+	if err := New("unix://" + sock).EnsureBase(context.Background()); err != nil || !fake.loaded {
+		t.Fatalf("EnsureBase: %v, loaded=%v", err, fake.loaded)
+	}
+	b, _ := json.Marshal(BaseConfig())
+	if !strings.Contains(string(b), `"admin":{"listen":"unix//run/caddy-admin/admin.sock"}`) {
+		t.Errorf("base config: %s", b)
 	}
 }

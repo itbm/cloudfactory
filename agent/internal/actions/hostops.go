@@ -105,7 +105,7 @@ func (d *Deps) ResumeReboot() (jobs.Job, bool) {
 
 // UpdateAgent installs a new agent binary and restarts the agent (FR-1812).
 func (d *Deps) UpdateAgent(req *agentv1.UpdateAgentRequest) (jobs.Job, error) {
-	if err := validate.Version(req.GetVersion()); err != nil {
+	if err := d.Updater.CheckVersion(req.GetVersion(), req.GetAllowDowngrade()); err != nil {
 		return jobs.Job{}, err
 	}
 	var bin, sig []byte
@@ -129,7 +129,11 @@ func (d *Deps) EnsureEdge(ctx context.Context, image string, dataDir string) err
 			return err
 		}
 	}
-	unit := quadlet.EdgeUnit(quadlet.Edge{Image: image, SitesDir: d.Host.SitesDir, DataDir: dataDir, Gvisor: d.Gvisor, HTTPPort: 8080, HTTPSPort: 8443, AdminPort: 2019})
+	// The admin socket directory: only the edge user (and root) can open it (CF-13).
+	if _, err := d.Run.Run(ctx, "install", "-d", "-o", host.EdgeUser, "-g", host.EdgeUser, "-m", "0700", filepath.Join(dataDir, quadlet.EdgeAdminDir)); err != nil {
+		return err
+	}
+	unit := quadlet.EdgeUnit(quadlet.Edge{Image: image, DataDir: dataDir, Gvisor: d.Gvisor, HTTPPort: 8080, HTTPSPort: 8443})
 	changed, err := d.Host.WriteUnit(host.EdgeUser, "cf-edge.container", unit)
 	if err != nil {
 		return err

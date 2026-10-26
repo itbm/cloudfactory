@@ -2,6 +2,8 @@ package actions
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"os"
 	"path/filepath"
@@ -54,6 +56,8 @@ func deps(t *testing.T) (*Deps, *execx.Fake, *fakeEdge) {
 		Health:        func(context.Context, int, string) (int, error) { return 200, nil },
 		DNSPointsHere: func(context.Context, string) bool { return true },
 		Reboot:        func(context.Context) error { return nil },
+		DataDir:       filepath.Join(dir, "data"),
+		SecretsDir:    filepath.Join(dir, "secrets"),
 	}
 	return d, run, edge
 }
@@ -98,7 +102,10 @@ func TestCheckWebsiteRefusesBadValues(t *testing.T) {
 		func(w *agentv1.Website) { w.Runtime = "runc" },
 		func(w *agentv1.Website) { w.PhpIni["x"] = "1\nextension=/tmp/evil.so" },
 		func(w *agentv1.Website) { w.Extensions = append(w.Extensions, "../evil") },
-		func(w *agentv1.Website) { w.Domains = nil },
+		func(w *agentv1.Website) { w.Domains = []*agentv1.Domain{{Name: "x.example", Kind: "alias"}} },
+		func(w *agentv1.Website) {
+			w.Domains = append(w.Domains, &agentv1.Domain{Name: "y.example", Kind: "primary"})
+		},
 		func(w *agentv1.Website) { w.Domains[0].Name = "acme.example\nevil" },
 	} {
 		w := website("ghcr.io/cloudfactory/frankenphp-php8.4:8.4.0-1")
@@ -200,14 +207,14 @@ func TestDomainsChangeTheEdgeRoute(t *testing.T) {
 	if got := edge.sites[websiteID].Redirects; len(got) != 0 {
 		t.Errorf("redirects after remove = %v", got)
 	}
-	if _, err := d.AddDomain(&agentv1.DomainRequest{JobId: jobID2, WebsiteId: websiteID, Domain: "x.example", Kind: "primary"}); err == nil {
+	if err := run(t)(d.AddDomain(&agentv1.DomainRequest{JobId: jobID2, WebsiteId: websiteID, Domain: "x.example", Kind: "primary"})); err == nil {
 		t.Error("a second primary domain was accepted")
 	}
 }
 
 func TestCreateDatabaseSendsThePasswordOnStdin(t *testing.T) {
 	d, f, _ := deps(t)
-	req := &agentv1.CreateDatabaseRequest{JobId: jobID, WebsiteId: websiteID, Engine: "mariadb", Name: "shop", User: "shop", Password: "Abcdefghijklmnop1234"}
+	req := &agentv1.CreateDatabaseRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Engine: "mariadb", Name: "acme_x7k2_shop", User: "acme_x7k2_shop", Password: "Abcdefghijklmnop1234", Access: "website"}
 	if err := run(t)(d.CreateDatabase(req)); err != nil {
 		t.Fatal(err)
 	}
@@ -216,8 +223,18 @@ func TestCreateDatabaseSendsThePasswordOnStdin(t *testing.T) {
 			t.Fatalf("the password is in the arguments: %s", c)
 		}
 	}
-	if !strings.Contains(strings.Join(f.Inputs, ""), "IDENTIFIED BY 'Abcdefghijklmnop1234'") {
-		t.Errorf("inputs = %v", f.Inputs)
+	in := strings.Join(f.Inputs, "")
+	for _, want := range []string{
+		"CREATE DATABASE `acme_x7k2_shop` CHARACTER SET",
+		"CREATE USER 'acme_x7k2_shop'@'127.0.0.1' IDENTIFIED BY 'Abcdefghijklmnop1234' REQUIRE NONE;",
+		"GRANT ALL PRIVILEGES ON `acme\\_x7k2\\_shop`.* TO 'acme_x7k2_shop'@'127.0.0.1';",
+	} {
+		if !strings.Contains(in, want) {
+			t.Errorf("inputs do not contain %s:\n%s", want, in)
+		}
+	}
+	if strings.Contains(in, "IF NOT EXISTS") || strings.Contains(in, "'%'") {
+		t.Errorf("inputs = %s", in)
 	}
 	req.Password = "short'; DROP"
 	if _, err := d.CreateDatabase(req); err == nil {
@@ -225,23 +242,295 @@ func TestCreateDatabaseSendsThePasswordOnStdin(t *testing.T) {
 	}
 }
 
+// CF-01: the agent refuses a name that does not start with the Unix user of the website, and a
+// system name, even when the panel sends it.
+func TestCreateDatabaseRefusesSystemAndForeignNames(t *testing.T) {
+	d, _, _ := deps(t)
+	for _, name := range []string{"mysql", "postgres", "sys", "information_schema", "template1", "other_x7k2_shop", "acme_x7k2_", "acme_x7k2"} {
+		req := &agentv1.CreateDatabaseRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Engine: "mariadb", Name: name}
+		if _, err := d.CreateDatabase(req); err == nil {
+			t.Errorf("the name %q was accepted", name)
+		}
+		req = &agentv1.CreateDatabaseRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Engine: "mariadb", Name: "acme_x7k2_shop", User: name, Password: "Abcdefghijklmnop1234"}
+		if _, err := d.CreateDatabase(req); err == nil {
+			t.Errorf("the user %q was accepted", name)
+		}
+	}
+}
+
+// CF-01: the job fails when the database or the user exists, so that a tenant cannot get access
+// to an object that exists.
+func TestCreateDatabaseFailsWhenTheDatabaseExists(t *testing.T) {
+	d, f, _ := deps(t)
+	f.Rules = []execx.Rule{{Prefix: "runuser -u cf-db -- env XDG_RUNTIME_DIR=/run/user/1001 podman exec -i cf-postgresql", Output: "1\n"}}
+	err := run(t)(d.CreateDatabase(&agentv1.CreateDatabaseRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Engine: "postgresql", Name: "acme_x7k2_shop"}))
+	if err == nil || !strings.Contains(err.Error(), "exists") {
+		t.Fatalf("err = %v", err)
+	}
+	for _, in := range f.Inputs {
+		if strings.Contains(in, "CREATE DATABASE") || strings.Contains(in, "GRANT") {
+			t.Errorf("the agent changed the database server: %s", in)
+		}
+	}
+}
+
+func TestPostgreSQLDatabaseHasGroupRoles(t *testing.T) {
+	d, f, _ := deps(t)
+	req := &agentv1.CreateDatabaseRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Engine: "postgresql", Name: "acme_x7k2_shop", User: "acme_x7k2_shop", Password: "Abcdefghijklmnop1234"}
+	if err := run(t)(d.CreateDatabase(req)); err != nil {
+		t.Fatal(err)
+	}
+	in := strings.Join(f.Inputs, "")
+	for _, want := range []string{
+		`CREATE DATABASE "acme_x7k2_shop" OWNER "acme_x7k2_shop:rw";`,
+		`REVOKE ALL ON DATABASE "acme_x7k2_shop" FROM PUBLIC;`,
+		`ALTER DEFAULT PRIVILEGES FOR ROLE "acme_x7k2_shop:rw" IN SCHEMA public GRANT SELECT ON TABLES TO "acme_x7k2_shop:ro";`,
+		`CREATE ROLE "acme_x7k2_shop" LOGIN PASSWORD`,
+		`GRANT "acme_x7k2_shop:rw" TO "acme_x7k2_shop";`,
+		`ALTER ROLE "acme_x7k2_shop" IN DATABASE "acme_x7k2_shop" SET role = 'acme_x7k2_shop:rw';`,
+	} {
+		if !strings.Contains(in, want) {
+			t.Errorf("inputs do not contain %s", want)
+		}
+	}
+}
+
+// The user's example: one sync user with read-only access to production and read-write access
+// to staging.
+func TestSetDatabaseUserGivesAPermissionForEachDatabase(t *testing.T) {
+	for _, engine := range []string{"mariadb", "postgresql"} {
+		d, f, _ := deps(t)
+		f.Rules = []execx.Rule{{Prefix: "runuser -u cf-db -- env XDG_RUNTIME_DIR=/run/user/1001 podman exec -i cf-mariadb mariadb", Output: "127.0.0.1\n"}}
+		req := &agentv1.SetDatabaseUserRequest{
+			JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Engine: engine, Name: "acme_x7k2_sync", Access: "anywhere",
+			Grants: []*agentv1.DatabaseGrant{
+				{Database: "acme_x7k2_prod", Privileges: "readonly"},
+				{Database: "acme_x7k2_staging", Privileges: "readwrite"},
+			},
+			WebsiteDatabases: []string{"acme_x7k2_old", "acme_x7k2_prod", "acme_x7k2_staging"},
+		}
+		if err := run(t)(d.SetDatabaseUser(req)); err != nil {
+			t.Fatal(err)
+		}
+		in := strings.Join(f.Inputs, "")
+		want := []string{
+			"RENAME USER 'acme_x7k2_sync'@'127.0.0.1' TO 'acme_x7k2_sync'@'%';",
+			"ALTER USER 'acme_x7k2_sync'@'%' REQUIRE SSL;",
+			"REVOKE ALL PRIVILEGES, GRANT OPTION FROM 'acme_x7k2_sync'@'%';",
+			"GRANT SELECT, SHOW VIEW ON `acme\\_x7k2\\_prod`.* TO 'acme_x7k2_sync'@'%';",
+			"GRANT ALL PRIVILEGES ON `acme\\_x7k2\\_staging`.* TO 'acme_x7k2_sync'@'%';",
+		}
+		if engine == "postgresql" {
+			want = []string{
+				`REVOKE "acme_x7k2_old:rw" FROM "acme_x7k2_sync";`,
+				`GRANT "acme_x7k2_prod:ro" TO "acme_x7k2_sync";`,
+				`GRANT "acme_x7k2_staging:rw" TO "acme_x7k2_sync";`,
+				`ALTER ROLE "acme_x7k2_sync" IN DATABASE "acme_x7k2_staging" SET role = 'acme_x7k2_staging:rw';`,
+			}
+			if strings.Contains(in, `GRANT "acme_x7k2_prod:rw"`) {
+				t.Error("the sync user can change production")
+			}
+		}
+		for _, w := range want {
+			if !strings.Contains(in, w) {
+				t.Errorf("%s: inputs do not contain %s:\n%s", engine, w, in)
+			}
+		}
+	}
+}
+
+func TestSetDatabaseUserRefusesADatabaseOfADifferentWebsite(t *testing.T) {
+	d, _, _ := deps(t)
+	for _, g := range []*agentv1.DatabaseGrant{
+		{Database: "other_x7k2_prod", Privileges: "readonly"},
+		{Database: "acme_x7k2_prod", Privileges: "superuser"},
+		{Database: "acme_x7k2_notlisted", Privileges: "readonly"},
+	} {
+		_, err := d.SetDatabaseUser(&agentv1.SetDatabaseUserRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Engine: "mariadb", Name: "acme_x7k2_sync",
+			Grants: []*agentv1.DatabaseGrant{g}, WebsiteDatabases: []string{"acme_x7k2_prod", "other_x7k2_prod"}})
+		if err == nil {
+			t.Errorf("accepted %v", g)
+		}
+	}
+}
+
+// CF-01: MariaDB keeps the grants of a database that it drops. The agent removes them first.
+func TestDeleteDatabaseRemovesTheGrants(t *testing.T) {
+	d, f, _ := deps(t)
+	if err := run(t)(d.DeleteDatabase(&agentv1.DeleteDatabaseRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Engine: "mariadb", Name: "acme_x7k2_shop", Users: []string{"acme_x7k2_sync"}})); err != nil {
+		t.Fatal(err)
+	}
+	in := strings.Join(f.Inputs, "")
+	if !strings.Contains(in, `DELETE FROM mysql.db WHERE Db IN ('acme_x7k2_shop', 'acme\\_x7k2\\_shop');`) || !strings.Contains(in, "DROP DATABASE IF EXISTS `acme_x7k2_shop`;") {
+		t.Errorf("inputs = %s", in)
+	}
+	if strings.Index(in, "DELETE FROM mysql.db") > strings.Index(in, "DROP DATABASE") {
+		t.Error("the agent dropped the database before it removed the grants")
+	}
+}
+
 func TestBackupGivesTheSnapshotID(t *testing.T) {
 	d, f, _ := deps(t)
 	os.MkdirAll(filepath.Join(d.Host.Home("acme_x7k2"), "app"), 0o755)
-	f.Rules = []execx.Rule{{Prefix: "restic", Output: `{"message_type":"status"}` + "\n" + `{"message_type":"summary","snapshot_id":"1a2b3c4d","total_bytes_processed":2048}`}}
+	f.Rules = []execx.Rule{
+		{Prefix: "restic", Output: `{"message_type":"status"}` + "\n" + `{"message_type":"summary","snapshot_id":"1a2b3c4d","total_bytes_processed":2048}`},
+		{Prefix: "runuser -u cf-db -- env XDG_RUNTIME_DIR=/run/user/1001 podman exec cf-mariadb mariadb-dump", Output: "CREATE TABLE t (id int);\n"},
+	}
 
-	job, err := d.Backup(&agentv1.BackupRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Kind: "manual", Target: "s3://backups/cf", Databases: []*agentv1.DatabaseRef{{Engine: "mariadb", Name: "shop"}}})
+	job, err := d.Backup(&agentv1.BackupRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Kind: "manual", Target: "s3://backups/cf", Databases: []*agentv1.DatabaseRef{{Engine: "mariadb", Name: "acme_x7k2_shop"}}})
 	if err := run(t)(job, err); err != nil {
 		t.Fatal(err)
 	}
-	if r := job.Result(); r["snapshotId"] != "1a2b3c4d" || r["sizeBytes"] != int64(2048) {
+	sum := sha256.Sum256([]byte("CREATE TABLE t (id int);\n"))
+	r := job.Result()
+	if r["snapshotId"] != "1a2b3c4d" || r["sizeBytes"] != int64(2048) || r["dumps"].(map[string]any)["mariadb:acme_x7k2_shop"] != hex.EncodeToString(sum[:]) {
 		t.Errorf("result = %v", r)
 	}
-	if !f.Called("runuser -u cf-db -- env XDG_RUNTIME_DIR=/run/user/1001 podman exec cf-mariadb mariadb-dump") || !f.Called("restic --repo s3:backups/cf") {
+	// CF-06: the dumps are in the data directory of the agent, not in the home of the website.
+	dumps := filepath.Join(d.DataDir, "dumps", "acme_x7k2")
+	if info, err := os.Stat(dumps); err != nil || info.Mode().Perm() != 0o700 {
+		t.Errorf("dump directory: %v %v", info, err)
+	}
+	if _, err := os.Stat(filepath.Join(d.Host.Home("acme_x7k2"), ".cloudfactory")); !os.IsNotExist(err) {
+		t.Error("the agent wrote a dump in the home of the website")
+	}
+	if !f.Called("restic --repo s3:backups/cf --password-file  --json backup " + filepath.Join(d.Host.Home("acme_x7k2"), "app") + " " + dumps) {
 		t.Errorf("calls = %v", f.Calls)
 	}
 	if _, err := d.Backup(&agentv1.BackupRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Target: "/tmp"}); err == nil {
 		t.Error("a local target was accepted")
+	}
+}
+
+// CF-05: restic restores into an empty directory of root, and the website user copies the files.
+func TestRestoreCopiesFilesAsTheWebsiteUser(t *testing.T) {
+	d, f, _ := deps(t)
+	err := run(t)(d.Restore(&agentv1.RestoreRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", SnapshotId: "1a2b3c4d", Scope: "file", Item: "/public/index.php", Target: "s3://b/c"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	staging := filepath.Join(d.DataDir, "restore", jobID)
+	app := filepath.Join(d.Host.Home("acme_x7k2"), "app")
+	if !f.Called("restic --repo s3:b/c --password-file  --json restore 1a2b3c4d --target " + staging + " --include " + app + "/public/index.php") {
+		t.Errorf("calls = %v", f.Calls)
+	}
+	want := "tar --create --file=- --directory=" + staging + app + " -- public/index.php | runuser -u acme_x7k2 -- tar --extract --file=- --directory=" + app + " --no-same-owner"
+	if !f.Called(want) {
+		t.Errorf("not called: %s\ncalls: %v", want, f.Calls)
+	}
+	for _, c := range f.Calls {
+		if strings.Contains(c, "--target /") && !strings.Contains(c, "--target "+staging) {
+			t.Errorf("restic restored to the root: %s", c)
+		}
+	}
+	if _, err := os.Stat(staging); !os.IsNotExist(err) {
+		t.Error("the agent did not remove the staging directory")
+	}
+}
+
+// CF-06: the agent restores a dump only when its hash agrees, and as a temporary user of that
+// database only, with no client commands.
+func TestRestoreDatabaseChecksTheHashAndUsesATemporaryUser(t *testing.T) {
+	d, f, _ := deps(t)
+	dump := []byte("CREATE TABLE t (id int);\n")
+	sum := sha256.Sum256(dump)
+	staging := filepath.Join(d.DataDir, "restore", jobID)
+	file := filepath.Join(staging, d.DataDir, "dumps", "acme_x7k2", "mariadb-acme_x7k2_shop.dump")
+	// The fake restic "restores" the dump.
+	f.Rules = []execx.Rule{{Prefix: "restic --repo s3:b/c --password-file  --json restore", Do: func() error { return writeFile(file, dump) }}}
+	req := &agentv1.RestoreRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", SnapshotId: "1a2b3c4d", Scope: "database", Item: "mariadb:acme_x7k2_shop", Target: "s3://b/c", DumpSha256: hex.EncodeToString(sum[:])}
+	if err := run(t)(d.Restore(req)); err != nil {
+		t.Fatal(err)
+	}
+	var restore string
+	for _, c := range f.Calls {
+		if strings.Contains(c, "--env-file") {
+			restore = c
+		}
+	}
+	if !strings.Contains(restore, "mariadb --sandbox --user=cfrestore_") || strings.Contains(restore, "--user=root") || !strings.HasSuffix(restore, "--batch acme_x7k2_shop") {
+		t.Errorf("restore command = %q", restore)
+	}
+	in := strings.Join(f.Inputs, "")
+	if !strings.Contains(in, "GRANT ALL PRIVILEGES ON `acme\\_x7k2\\_shop`.* TO 'cfrestore_") || !strings.Contains(in, "DROP USER IF EXISTS 'cfrestore_") {
+		t.Errorf("inputs = %s", in)
+	}
+	if entries, _ := os.ReadDir(d.SecretsDir); len(entries) != 0 {
+		t.Errorf("the agent did not remove the password file: %v", entries)
+	}
+
+	// A dump that the hash does not agree with is not restored.
+	f.Rules = []execx.Rule{{Prefix: "restic --repo s3:b/c --password-file  --json restore", Do: func() error { return writeFile(file, []byte("DROP DATABASE mysql;\n")) }}}
+	f.Calls, f.Inputs = nil, nil
+	if err := run(t)(d.Restore(req)); err == nil || !strings.Contains(err.Error(), "hash") {
+		t.Fatalf("err = %v", err)
+	}
+	if f.Called("runuser -u cf-db") {
+		t.Errorf("the agent sent a changed dump to the database server: %v", f.Calls)
+	}
+	req.DumpSha256 = ""
+	if _, err := d.Restore(req); err == nil {
+		t.Error("a restore with no hash was accepted")
+	}
+}
+
+// writeFile makes the file that a fake command makes.
+func writeFile(path string, b []byte) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	return os.WriteFile(path, b, 0o600)
+}
+
+// CF-05: a staging copy does not run cp as root in the files of a tenant.
+func TestStagingCopyCopiesAsTheWebsiteUsers(t *testing.T) {
+	d, f, _ := deps(t)
+	w := website("ghcr.io/cloudfactory/frankenphp-php8.4:8.4.0-1")
+	w.UnixUser = "staging_ab12"
+	if err := run(t)(d.CreateWebsite(&agentv1.WebsiteRequest{JobId: jobID, Website: w, CopyFrom: "01JBQ3Z5K8N6T4W2X9Y7R5P3M9", CopyFromUnixUser: "acme_x7k2"})); err != nil {
+		t.Fatal(err)
+	}
+	want := "runuser -u acme_x7k2 -- tar --create --file=- --directory=" + filepath.Join(d.Host.Home("acme_x7k2"), "app") + " -- . | runuser -u staging_ab12 -- tar --extract"
+	if !f.Called(want) || f.Called("cp ") || f.Called("chown -R") {
+		t.Errorf("calls = %v", f.Calls)
+	}
+}
+
+// CF-01: a website that the panel removes takes its databases and users with it.
+func TestDeleteWebsiteRemovesItsDatabases(t *testing.T) {
+	d, f, _ := deps(t)
+	req := &agentv1.DeleteWebsiteRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2",
+		Databases:     []*agentv1.DatabaseRef{{Engine: "postgresql", Name: "acme_x7k2_shop"}},
+		DatabaseUsers: []*agentv1.DatabaseRef{{Engine: "postgresql", Name: "acme_x7k2_sync"}}}
+	if err := run(t)(d.DeleteWebsite(req)); err != nil {
+		t.Fatal(err)
+	}
+	in := strings.Join(f.Inputs, "")
+	if !strings.Contains(in, `DROP ROLE IF EXISTS "acme_x7k2_sync";`) || !strings.Contains(in, `DROP DATABASE IF EXISTS "acme_x7k2_shop" WITH (FORCE);`) {
+		t.Errorf("inputs = %s", in)
+	}
+	req.Databases[0].Name = "mysql"
+	if _, err := d.DeleteWebsite(req); err == nil {
+		t.Error("the agent accepted a system database")
+	}
+}
+
+// CF-03: a website with no verified domain starts, and gets its primary domain later.
+func TestAWebsiteCanStartWithNoDomain(t *testing.T) {
+	d, _, edge := deps(t)
+	w := website("ghcr.io/cloudfactory/frankenphp-php8.4:8.4.0-1")
+	w.Domains = nil
+	if err := run(t)(d.CreateWebsite(&agentv1.WebsiteRequest{JobId: jobID, Website: w})); err != nil {
+		t.Fatal(err)
+	}
+	if len(edge.sites[websiteID].Hosts) != 0 {
+		t.Errorf("edge = %+v", edge.sites[websiteID])
+	}
+	if err := run(t)(d.AddDomain(&agentv1.DomainRequest{JobId: jobID2, WebsiteId: websiteID, Domain: "acme.example", Kind: "primary"})); err != nil {
+		t.Fatal(err)
+	}
+	if got := edge.sites[websiteID]; len(got.Hosts) != 1 || got.Primary != "acme.example" {
+		t.Errorf("edge = %+v", got)
 	}
 }
 

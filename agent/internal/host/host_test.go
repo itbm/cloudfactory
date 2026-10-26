@@ -27,8 +27,12 @@ func TestEnsureUserMakesTheUserOnce(t *testing.T) {
 	if err := h.EnsureUser(context.Background(), "acme_x7k2"); err != nil {
 		t.Fatal(err)
 	}
-	if !f.Called("useradd --create-home --home-dir "+h.Home("acme_x7k2")+" --shell /usr/sbin/nologin") || !f.Called("loginctl enable-linger acme_x7k2") || !f.Called("usermod --append --groups acme_x7k2 cf-edge") {
+	if !f.Called("useradd --create-home --home-dir "+h.Home("acme_x7k2")+" --shell /usr/sbin/nologin") || !f.Called("loginctl enable-linger acme_x7k2") || !f.Called("chmod 0700 "+h.Home("acme_x7k2")) {
 		t.Errorf("calls = %v", f.Calls)
+	}
+	// CF-04: the edge proxy is not in the group of the website user.
+	if f.Called("usermod") {
+		t.Errorf("the edge user got the group of the website: %v", f.Calls)
 	}
 
 	h, f = fakeHost(t, true)

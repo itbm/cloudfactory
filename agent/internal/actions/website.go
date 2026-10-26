@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
+	"slices"
 	"time"
 
 	"google.golang.org/protobuf/proto"
@@ -45,8 +47,12 @@ func CheckWebsite(w *agentv1.Website) error {
 			errs = append(errs, fmt.Errorf("the domain kind %q is not valid", d.GetKind()))
 		}
 	}
-	if primary != 1 {
+	// CF-03: the panel sends only verified domains, so a new website can have no domain yet.
+	if primary > 1 {
 		errs = append(errs, errors.New("a website must have one primary domain"))
+	}
+	if primary == 0 && len(w.GetDomains()) > 0 {
+		errs = append(errs, errors.New("a website with domains must have a primary domain"))
 	}
 	return errors.Join(errs...)
 }
@@ -82,7 +88,7 @@ func (d *Deps) unit(w *agentv1.Website, port int, suffix string) quadlet.Website
 }
 
 func (d *Deps) site(w *agentv1.Website, port int) caddy.Site {
-	s := caddy.Site{WebsiteID: w.GetId(), UnixUser: w.GetUnixUser(), Port: port, Primary: primaryDomain(w), Static: w.GetRuntime() != "custom"}
+	s := caddy.Site{WebsiteID: w.GetId(), Port: port, Primary: primaryDomain(w)}
 	for _, dom := range w.GetDomains() {
 		if dom.GetKind() == "redirect" {
 			s.Redirects = append(s.Redirects, dom.GetName())
@@ -217,14 +223,15 @@ func (d *Deps) CreateWebsite(req *agentv1.WebsiteRequest) (jobs.Job, error) {
 			if req.GetCopyFrom() == "" {
 				return nil
 			}
-			// A staging copy (FR-205) starts with the files of the source website.
-			from := filepath.Join(d.Host.Home(req.GetCopyFromUnixUser()), "app") + "/."
+			// A staging copy (FR-205) starts with the files of the source website. CF-05: the
+			// source user reads and the new user writes, so root never follows a link that a
+			// tenant made.
+			from := filepath.Join(d.Host.Home(req.GetCopyFromUnixUser()), "app")
 			to := filepath.Join(d.Host.Home(user), "app")
-			if _, err := d.Run.Run(ctx, "cp", "-a", "--no-preserve=ownership", from, to); err != nil {
-				return err
-			}
-			_, err := d.Run.Run(ctx, "chown", "-R", user+":"+user, to)
-			return err
+			return d.Run.Pipe(ctx,
+				[]string{"runuser", "-u", req.GetCopyFromUnixUser(), "--", "tar", "--create", "--file=-", "--directory=" + from, "--", "."},
+				[]string{"runuser", "-u", user, "--", "tar", "--extract", "--file=-", "--directory=" + to, "--no-same-owner", "--preserve-permissions"},
+			)
 		}},
 		{Name: "Create container network", Do: func(ctx context.Context) error {
 			if _, err := d.Host.WriteUnit(user, quadlet.NetworkName(user)+".network", quadlet.NetworkUnit(user)); err != nil {
@@ -335,9 +342,16 @@ func (d *Deps) SetRuntime(req *agentv1.WebsiteRequest) (jobs.Job, error) {
 	}}, nil
 }
 
-// DeleteWebsite removes the container, the network, the edge route and the user.
+// DeleteWebsite removes the container, the network, the edge route, the databases and the user.
 func (d *Deps) DeleteWebsite(req *agentv1.DeleteWebsiteRequest) (jobs.Job, error) {
-	if err := errors.Join(validate.ID(req.GetWebsiteId()), validate.UnixUser(req.GetUnixUser())); err != nil {
+	errs := []error{validate.ID(req.GetWebsiteId()), validate.UnixUser(req.GetUnixUser())}
+	for _, db := range append(slices.Clone(req.GetDatabases()), req.GetDatabaseUsers()...) {
+		errs = append(errs, validate.TenantDatabaseName(req.GetUnixUser(), db.GetName()))
+		if _, err := dbContainer(db.GetEngine()); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if err := errors.Join(errs...); err != nil {
 		return jobs.Job{}, err
 	}
 	user := req.GetUnixUser()
@@ -360,6 +374,26 @@ func (d *Deps) DeleteWebsite(req *agentv1.DeleteWebsiteRequest) (jobs.Job, error
 			return d.Edge.Remove(ctx, req.GetWebsiteId())
 		}},
 		{Name: "Remove Unix user", Do: func(ctx context.Context) error {
+			// The names of the databases start with the Unix user. Remove them, so that a later
+			// website with the same Unix user does not get them (CF-01).
+			for _, u := range req.GetDatabaseUsers() {
+				if err := d.dropUser(ctx, u.GetEngine(), u.GetName()); err != nil {
+					return err
+				}
+			}
+			for _, db := range req.GetDatabases() {
+				if db.GetEngine() == "mariadb" {
+					if _, err := d.sql(ctx, db.GetEngine(), mariaRevokeDatabase(db.GetName())); err != nil {
+						return err
+					}
+				}
+				if err := d.dropDatabase(ctx, db.GetEngine(), db.GetName()); err != nil {
+					return err
+				}
+			}
+			if err := os.RemoveAll(d.dumpDir(user)); err != nil {
+				return err
+			}
 			if err := d.Host.RemoveUser(ctx, user); err != nil {
 				return err
 			}
@@ -451,7 +485,7 @@ func (d *Deps) changeDomain(req *agentv1.DomainRequest, add bool) (jobs.Job, err
 	if err := errors.Join(validate.ID(req.GetWebsiteId()), validate.Domain(req.GetDomain())); err != nil {
 		return jobs.Job{}, err
 	}
-	if add && req.GetKind() != "redirect" && req.GetKind() != "alias" {
+	if add && req.GetKind() != "redirect" && req.GetKind() != "alias" && req.GetKind() != "primary" {
 		return jobs.Job{}, fmt.Errorf("the domain kind %q is not valid", req.GetKind())
 	}
 	route := jobs.Step{Name: "Add edge proxy route", Do: func(ctx context.Context) error {
@@ -468,6 +502,11 @@ func (d *Deps) changeDomain(req *agentv1.DomainRequest, add bool) (jobs.Job, err
 			if dom.GetName() != req.GetDomain() {
 				domains = append(domains, dom)
 			}
+		}
+		// The panel adds the primary domain after the owner verifies it (CF-03). A website
+		// has only one primary domain.
+		if add && req.GetKind() == "primary" && primaryDomain(&agentv1.Website{Domains: domains}) != "" {
+			return errors.New("the website has a primary domain")
 		}
 		if add {
 			domains = append(domains, &agentv1.Domain{Name: req.GetDomain(), Kind: req.GetKind()})

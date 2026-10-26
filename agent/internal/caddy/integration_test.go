@@ -11,8 +11,9 @@ import (
 
 // Run against a real edge image:
 //
-//	podman run -d -p 127.0.0.1:12019:2019 -p 127.0.0.1:18080:8080 ghcr.io/cloudfactory/edge:VERSION
-//	CF_CADDY_ADMIN=http://127.0.0.1:12019 CF_CADDY_HTTP=http://127.0.0.1:18080 go test -tags integration ./internal/caddy/
+//	mkdir -p /tmp/cf-caddy-admin
+//	podman run -d -v /tmp/cf-caddy-admin:/run/caddy-admin -p 127.0.0.1:18080:8080 ghcr.io/cloudfactory/edge:VERSION
+//	CF_CADDY_ADMIN=unix:///tmp/cf-caddy-admin/admin.sock CF_CADDY_HTTP=http://127.0.0.1:18080 go test -tags integration ./internal/caddy/
 func TestRealCaddy(t *testing.T) {
 	admin, web := os.Getenv("CF_CADDY_ADMIN"), os.Getenv("CF_CADDY_HTTP")
 	if admin == "" || web == "" {
@@ -23,7 +24,7 @@ func TestRealCaddy(t *testing.T) {
 	if err := c.EnsureBase(ctx); err != nil {
 		t.Fatal(err)
 	}
-	site := Site{WebsiteID: "ITEST", UnixUser: "acme_x7k2", Port: 20001, Hosts: []string{"acme.example"}, Redirects: []string{"www.acme.example"}, Primary: "acme.example", Static: true}
+	site := Site{WebsiteID: "ITEST", Port: 20001, Hosts: []string{"acme.example"}, Redirects: []string{"www.acme.example"}, Primary: "acme.example"}
 	// Remove before Apply checks the answer of Caddy for an ID that does not exist.
 	if err := c.Remove(ctx, site.WebsiteID); err != nil {
 		t.Fatal(err)

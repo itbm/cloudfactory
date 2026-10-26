@@ -18,6 +18,7 @@ var (
 	digest    = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
 	extension = regexp.MustCompile(`^[a-z0-9_]{1,40}$`)
 	iniKey    = regexp.MustCompile(`^[a-z_.]{1,64}$`)
+	sha256Hex = regexp.MustCompile(`^[0-9a-f]{64}$`)
 	version   = regexp.MustCompile(`^v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$`)
 )
 
@@ -37,6 +38,31 @@ func ID(s string) error { return match(id, s, "ID") }
 
 // DatabaseName checks a database or database user name.
 func DatabaseName(s string) error { return match(dbName, s, "database name") }
+
+// reservedDatabaseNames are names of the shared database servers (CF-01).
+var reservedDatabaseNames = map[string]bool{
+	"mysql": true, "sys": true, "information_schema": true, "performance_schema": true,
+	"postgres": true, "template0": true, "template1": true, "root": true, "mariadb.sys": true, "healthcheck": true,
+}
+
+// TenantDatabaseName checks the name of a database or a database user of a website. The name
+// must start with the Unix user of the website and "_", so that a tenant cannot use a system
+// name or a name of a different tenant (CF-01).
+func TenantDatabaseName(unixUser, s string) error {
+	if err := UnixUser(unixUser); err != nil {
+		return err
+	}
+	if err := DatabaseName(s); err != nil {
+		return err
+	}
+	if !strings.HasPrefix(s, unixUser+"_") || len(s) == len(unixUser)+1 {
+		return fmt.Errorf("the database name %q does not start with %q", s, unixUser+"_")
+	}
+	if reservedDatabaseNames[s] || strings.HasPrefix(s, "pg_") {
+		return fmt.Errorf("the database name %q is reserved", s)
+	}
+	return nil
+}
 
 // Image checks an image reference with a tag.
 func Image(s string) error { return match(image, s, "image") }
@@ -62,6 +88,9 @@ func IniValue(s string) error {
 	}
 	return nil
 }
+
+// SHA256 checks a lower-case SHA-256 hash in hexadecimal.
+func SHA256(s string) error { return match(sha256Hex, s, "SHA-256 hash") }
 
 // Version checks an agent version, for example "0.1.0".
 func Version(s string) error { return match(version, s, "version") }

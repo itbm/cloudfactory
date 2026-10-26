@@ -17,6 +17,9 @@ type Runner interface {
 	// RunInput sends stdin to the command. Use it for secrets, so that they are not in the
 	// process list.
 	RunInput(ctx context.Context, stdin, name string, args ...string) (string, error)
+	// Pipe sends the standard output of the first command to the standard input of the
+	// second command, like "from | to" in a shell. Each command is a program and its arguments.
+	Pipe(ctx context.Context, from, to []string) error
 }
 
 // Host runs commands on the host.
@@ -50,6 +53,43 @@ func (h Host) RunInput(ctx context.Context, stdin, name string, args ...string) 
 	return stdout.String(), nil
 }
 
+func (h Host) Pipe(ctx context.Context, from, to []string) error {
+	if len(from) == 0 || len(to) == 0 {
+		return fmt.Errorf("execx: pipe needs two commands")
+	}
+	src := exec.CommandContext(ctx, from[0], from[1:]...)
+	dst := exec.CommandContext(ctx, to[0], to[1:]...)
+	if len(h.Env) > 0 {
+		src.Env = append(src.Environ(), h.Env...)
+		dst.Env = append(dst.Environ(), h.Env...)
+	}
+	out, err := src.StdoutPipe()
+	if err != nil {
+		return err
+	}
+	var srcErr, dstErr bytes.Buffer
+	src.Stderr = &srcErr
+	dst.Stdin = out
+	dst.Stderr = &dstErr
+	if err := src.Start(); err != nil {
+		return err
+	}
+	if err := dst.Start(); err != nil {
+		_ = src.Process.Kill()
+		_ = src.Wait()
+		return err
+	}
+	errDst := dst.Wait()
+	errSrc := src.Wait()
+	if errSrc != nil {
+		return fmt.Errorf("%s: %w: %s", strings.Join(from, " "), errSrc, strings.TrimSpace(srcErr.String()))
+	}
+	if errDst != nil {
+		return fmt.Errorf("%s: %w: %s", strings.Join(to, " "), errDst, strings.TrimSpace(dstErr.String()))
+	}
+	return nil
+}
+
 // Fake records commands and the stdin of each command. It returns the output or error of the first rule whose prefix agrees.
 type Fake struct {
 	mu     sync.Mutex
@@ -63,6 +103,9 @@ type Rule struct {
 	Prefix string
 	Output string
 	Err    error
+	// Do runs when the rule agrees, for example to make the files that a command makes.
+	// Its error replaces Err.
+	Do func() error
 }
 
 func (f *Fake) Run(ctx context.Context, name string, args ...string) (string, error) {
@@ -77,10 +120,28 @@ func (f *Fake) RunInput(_ context.Context, stdin, name string, args ...string) (
 	f.Inputs = append(f.Inputs, stdin)
 	for _, r := range f.Rules {
 		if strings.HasPrefix(line, r.Prefix) {
+			if r.Do != nil {
+				return r.Output, r.Do()
+			}
 			return r.Output, r.Err
 		}
 	}
 	return "", nil
+}
+
+// Pipe records the two commands as one line, "from | to".
+func (f *Fake) Pipe(ctx context.Context, from, to []string) error {
+	line := strings.Join(from, " ") + " | " + strings.Join(to, " ")
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.Calls = append(f.Calls, line)
+	f.Inputs = append(f.Inputs, "")
+	for _, r := range f.Rules {
+		if strings.HasPrefix(line, r.Prefix) {
+			return r.Err
+		}
+	}
+	return nil
 }
 
 // Called reports whether a command that starts with prefix ran.

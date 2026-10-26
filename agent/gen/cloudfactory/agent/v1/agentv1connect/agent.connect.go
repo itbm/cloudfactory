@@ -66,6 +66,12 @@ const (
 	// AgentServiceDeleteDatabaseProcedure is the fully-qualified name of the AgentService's
 	// DeleteDatabase RPC.
 	AgentServiceDeleteDatabaseProcedure = "/cloudfactory.agent.v1.AgentService/DeleteDatabase"
+	// AgentServiceSetDatabaseUserProcedure is the fully-qualified name of the AgentService's
+	// SetDatabaseUser RPC.
+	AgentServiceSetDatabaseUserProcedure = "/cloudfactory.agent.v1.AgentService/SetDatabaseUser"
+	// AgentServiceDeleteDatabaseUserProcedure is the fully-qualified name of the AgentService's
+	// DeleteDatabaseUser RPC.
+	AgentServiceDeleteDatabaseUserProcedure = "/cloudfactory.agent.v1.AgentService/DeleteDatabaseUser"
 	// AgentServiceBackupProcedure is the fully-qualified name of the AgentService's Backup RPC.
 	AgentServiceBackupProcedure = "/cloudfactory.agent.v1.AgentService/Backup"
 	// AgentServiceRestoreProcedure is the fully-qualified name of the AgentService's Restore RPC.
@@ -93,6 +99,8 @@ type AgentServiceClient interface {
 	RemoveDomain(context.Context, *connect.Request[v1.DomainRequest]) (*connect.Response[v1.JobAccepted], error)
 	CreateDatabase(context.Context, *connect.Request[v1.CreateDatabaseRequest]) (*connect.Response[v1.JobAccepted], error)
 	DeleteDatabase(context.Context, *connect.Request[v1.DeleteDatabaseRequest]) (*connect.Response[v1.JobAccepted], error)
+	SetDatabaseUser(context.Context, *connect.Request[v1.SetDatabaseUserRequest]) (*connect.Response[v1.JobAccepted], error)
+	DeleteDatabaseUser(context.Context, *connect.Request[v1.DeleteDatabaseUserRequest]) (*connect.Response[v1.JobAccepted], error)
 	Backup(context.Context, *connect.Request[v1.BackupRequest]) (*connect.Response[v1.JobAccepted], error)
 	Restore(context.Context, *connect.Request[v1.RestoreRequest]) (*connect.Response[v1.JobAccepted], error)
 	InstallHostUpdates(context.Context, *connect.Request[v1.HostRequest]) (*connect.Response[v1.JobAccepted], error)
@@ -167,6 +175,18 @@ func NewAgentServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(agentServiceMethods.ByName("DeleteDatabase")),
 			connect.WithClientOptions(opts...),
 		),
+		setDatabaseUser: connect.NewClient[v1.SetDatabaseUserRequest, v1.JobAccepted](
+			httpClient,
+			baseURL+AgentServiceSetDatabaseUserProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("SetDatabaseUser")),
+			connect.WithClientOptions(opts...),
+		),
+		deleteDatabaseUser: connect.NewClient[v1.DeleteDatabaseUserRequest, v1.JobAccepted](
+			httpClient,
+			baseURL+AgentServiceDeleteDatabaseUserProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("DeleteDatabaseUser")),
+			connect.WithClientOptions(opts...),
+		),
 		backup: connect.NewClient[v1.BackupRequest, v1.JobAccepted](
 			httpClient,
 			baseURL+AgentServiceBackupProcedure,
@@ -217,6 +237,8 @@ type agentServiceClient struct {
 	removeDomain       *connect.Client[v1.DomainRequest, v1.JobAccepted]
 	createDatabase     *connect.Client[v1.CreateDatabaseRequest, v1.JobAccepted]
 	deleteDatabase     *connect.Client[v1.DeleteDatabaseRequest, v1.JobAccepted]
+	setDatabaseUser    *connect.Client[v1.SetDatabaseUserRequest, v1.JobAccepted]
+	deleteDatabaseUser *connect.Client[v1.DeleteDatabaseUserRequest, v1.JobAccepted]
 	backup             *connect.Client[v1.BackupRequest, v1.JobAccepted]
 	restore            *connect.Client[v1.RestoreRequest, v1.JobAccepted]
 	installHostUpdates *connect.Client[v1.HostRequest, v1.JobAccepted]
@@ -270,6 +292,16 @@ func (c *agentServiceClient) DeleteDatabase(ctx context.Context, req *connect.Re
 	return c.deleteDatabase.CallUnary(ctx, req)
 }
 
+// SetDatabaseUser calls cloudfactory.agent.v1.AgentService.SetDatabaseUser.
+func (c *agentServiceClient) SetDatabaseUser(ctx context.Context, req *connect.Request[v1.SetDatabaseUserRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return c.setDatabaseUser.CallUnary(ctx, req)
+}
+
+// DeleteDatabaseUser calls cloudfactory.agent.v1.AgentService.DeleteDatabaseUser.
+func (c *agentServiceClient) DeleteDatabaseUser(ctx context.Context, req *connect.Request[v1.DeleteDatabaseUserRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return c.deleteDatabaseUser.CallUnary(ctx, req)
+}
+
 // Backup calls cloudfactory.agent.v1.AgentService.Backup.
 func (c *agentServiceClient) Backup(ctx context.Context, req *connect.Request[v1.BackupRequest]) (*connect.Response[v1.JobAccepted], error) {
 	return c.backup.CallUnary(ctx, req)
@@ -311,6 +343,8 @@ type AgentServiceHandler interface {
 	RemoveDomain(context.Context, *connect.Request[v1.DomainRequest]) (*connect.Response[v1.JobAccepted], error)
 	CreateDatabase(context.Context, *connect.Request[v1.CreateDatabaseRequest]) (*connect.Response[v1.JobAccepted], error)
 	DeleteDatabase(context.Context, *connect.Request[v1.DeleteDatabaseRequest]) (*connect.Response[v1.JobAccepted], error)
+	SetDatabaseUser(context.Context, *connect.Request[v1.SetDatabaseUserRequest]) (*connect.Response[v1.JobAccepted], error)
+	DeleteDatabaseUser(context.Context, *connect.Request[v1.DeleteDatabaseUserRequest]) (*connect.Response[v1.JobAccepted], error)
 	Backup(context.Context, *connect.Request[v1.BackupRequest]) (*connect.Response[v1.JobAccepted], error)
 	Restore(context.Context, *connect.Request[v1.RestoreRequest]) (*connect.Response[v1.JobAccepted], error)
 	InstallHostUpdates(context.Context, *connect.Request[v1.HostRequest]) (*connect.Response[v1.JobAccepted], error)
@@ -381,6 +415,18 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(agentServiceMethods.ByName("DeleteDatabase")),
 		connect.WithHandlerOptions(opts...),
 	)
+	agentServiceSetDatabaseUserHandler := connect.NewUnaryHandler(
+		AgentServiceSetDatabaseUserProcedure,
+		svc.SetDatabaseUser,
+		connect.WithSchema(agentServiceMethods.ByName("SetDatabaseUser")),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentServiceDeleteDatabaseUserHandler := connect.NewUnaryHandler(
+		AgentServiceDeleteDatabaseUserProcedure,
+		svc.DeleteDatabaseUser,
+		connect.WithSchema(agentServiceMethods.ByName("DeleteDatabaseUser")),
+		connect.WithHandlerOptions(opts...),
+	)
 	agentServiceBackupHandler := connect.NewUnaryHandler(
 		AgentServiceBackupProcedure,
 		svc.Backup,
@@ -437,6 +483,10 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 			agentServiceCreateDatabaseHandler.ServeHTTP(w, r)
 		case AgentServiceDeleteDatabaseProcedure:
 			agentServiceDeleteDatabaseHandler.ServeHTTP(w, r)
+		case AgentServiceSetDatabaseUserProcedure:
+			agentServiceSetDatabaseUserHandler.ServeHTTP(w, r)
+		case AgentServiceDeleteDatabaseUserProcedure:
+			agentServiceDeleteDatabaseUserHandler.ServeHTTP(w, r)
 		case AgentServiceBackupProcedure:
 			agentServiceBackupHandler.ServeHTTP(w, r)
 		case AgentServiceRestoreProcedure:
@@ -492,6 +542,14 @@ func (UnimplementedAgentServiceHandler) CreateDatabase(context.Context, *connect
 
 func (UnimplementedAgentServiceHandler) DeleteDatabase(context.Context, *connect.Request[v1.DeleteDatabaseRequest]) (*connect.Response[v1.JobAccepted], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.DeleteDatabase is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) SetDatabaseUser(context.Context, *connect.Request[v1.SetDatabaseUserRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.SetDatabaseUser is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) DeleteDatabaseUser(context.Context, *connect.Request[v1.DeleteDatabaseUserRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.DeleteDatabaseUser is not implemented"))
 }
 
 func (UnimplementedAgentServiceHandler) Backup(context.Context, *connect.Request[v1.BackupRequest]) (*connect.Response[v1.JobAccepted], error) {

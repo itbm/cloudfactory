@@ -43,7 +43,7 @@ func TestInstallChecksTheSignatureAndKeepsThePreviousBinary(t *testing.T) {
 	u := Updater{ReleaseURL: srv.URL, Binary: bin, Key: &key.PublicKey}
 
 	tamper = true
-	if err := u.Install(context.Background(), "0.2.0", "amd64"); err == nil {
+	if err := u.Install(context.Background(), "0.2.0", "amd64", false); err == nil {
 		t.Fatal("a changed binary was accepted")
 	}
 	if b, _ := os.ReadFile(bin); string(b) != "old agent" {
@@ -51,7 +51,7 @@ func TestInstallChecksTheSignatureAndKeepsThePreviousBinary(t *testing.T) {
 	}
 
 	tamper = false
-	if err := u.Install(context.Background(), "0.2.0", "amd64"); err != nil {
+	if err := u.Install(context.Background(), "0.2.0", "amd64", false); err != nil {
 		t.Fatal(err)
 	}
 	if b, _ := os.ReadFile(bin); string(b) != "new agent" {
@@ -66,7 +66,28 @@ func TestInstallChecksTheSignatureAndKeepsThePreviousBinary(t *testing.T) {
 	if b, _ := os.ReadFile(bin); string(b) != "old agent" {
 		t.Errorf("after rollback = %q", b)
 	}
-	if err := u.Install(context.Background(), "latest", "amd64"); err == nil {
+	if err := u.Install(context.Background(), "latest", "amd64", false); err == nil {
 		t.Error("bad version accepted")
+	}
+}
+
+// CF-16: a signed older version is refused unless the administrator asks for it.
+func TestAnOlderVersionNeedsADowngradeOnPurpose(t *testing.T) {
+	u := Updater{Current: "0.2.0"}
+	if err := u.CheckVersion("0.1.9", false); err == nil {
+		t.Error("an older version was accepted")
+	}
+	if err := u.CheckVersion("0.1.9", true); err != nil {
+		t.Errorf("a downgrade on purpose: %v", err)
+	}
+	for _, v := range []string{"0.2.0", "0.2.1", "v0.10.0", "1.0.0"} {
+		if err := u.CheckVersion(v, false); err != nil {
+			t.Errorf("%s: %v", v, err)
+		}
+	}
+	for a, b := range map[string]string{"0.2.0-rc.1": "0.2.0", "0.9.9": "0.10.0", "0.2.0-rc.1x": "0.2.0-rc.2"} {
+		if !Older(a, b) || Older(b, a) {
+			t.Errorf("Older(%s, %s) is wrong", a, b)
+		}
 	}
 }
