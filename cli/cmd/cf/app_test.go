@@ -137,3 +137,122 @@ func TestNoWaitAndJSON(t *testing.T) {
 		t.Errorf("json output: %s", out)
 	}
 }
+
+// securityPanel records the body of each change for the tests of the security fixes.
+func securityPanel(t *testing.T) (*httptest.Server, *[]map[string]any) {
+	var bodies []map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		var body map[string]any
+		json.NewDecoder(r.Body).Decode(&body)
+		if r.Method != http.MethodGet {
+			bodies = append(bodies, map[string]any{"call": r.Method + " " + r.URL.Path, "body": body})
+		}
+		switch {
+		case r.URL.Path == "/api/v1/websites":
+			w.Write([]byte(`{"data":[{"id":"W1","name":"shop.example","status":"running"}]}`))
+		case r.URL.Path == "/api/v1/websites/W1/databases" && r.Method == http.MethodGet:
+			w.Write([]byte(`{"prefix":"u1a2_","databases":[{"id":"D1","engine":"mariadb","name":"u1a2_prod"},{"id":"D2","engine":"mariadb","name":"u1a2_staging"}],` +
+				`"users":[{"id":"U1","engine":"mariadb","name":"u1a2_sync","access":"website","grants":[{"databaseId":"D1","database":"u1a2_prod","privileges":"readonly"}]}]}`))
+		case r.URL.Path == "/api/v1/websites/W1/domains":
+			w.WriteHeader(http.StatusAccepted)
+			w.Write([]byte(`{"domain":{"name":"new.example","verified":false,"verification":{"type":"TXT","name":"_cloudfactory-challenge.new.example","value":"cf-abc"}},"job":null}`))
+		case r.URL.Path == "/api/v1/tokens":
+			if body["password"] != "secret" {
+				w.WriteHeader(http.StatusUnprocessableEntity)
+				w.Write([]byte(`{"message":"invalid","errors":{"password":["The password is not correct."]}}`))
+				return
+			}
+			w.Write([]byte(`{"id":7,"token":"7|abc","expiresAt":"2027-01-01"}`))
+		default:
+			w.WriteHeader(http.StatusAccepted)
+			w.Write([]byte(`{"password":"pw-1","job":null}`))
+		}
+	}))
+	return srv, &bodies
+}
+
+// CF-01: a sync user can read the production database and change the staging database.
+func TestDatabaseUserGrantsUseTheDatabaseIDs(t *testing.T) {
+	srv, bodies := securityPanel(t)
+	defer srv.Close()
+	a, out := testApp(srv)
+
+	err := a.dispatch(context.Background(), []string{"database-users", "create", "shop.example", "--name", "deploy", "--grant", "prod=readonly", "--grant", "u1a2_staging=readwrite"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := json.Marshal((*bodies)[0])
+	want := `{"body":{"access":"website","engine":"mariadb","grants":[{"databaseId":"D1","privileges":"readonly"},{"databaseId":"D2","privileges":"readwrite"}],"name":"deploy"},"call":"POST /api/v1/websites/W1/database-users"}`
+	if string(got) != want {
+		t.Errorf("request = %s", got)
+	}
+	if !strings.Contains(out.String(), "Password: pw-1") {
+		t.Errorf("output: %s", out)
+	}
+
+	if err := a.dispatch(context.Background(), []string{"database-users", "set", "shop.example", "sync", "--grant", "staging=readwrite"}); err != nil {
+		t.Fatal(err)
+	}
+	if (*bodies)[1]["call"] != "PATCH /api/v1/websites/W1/database-users/U1" {
+		t.Errorf("call = %v", (*bodies)[1]["call"])
+	}
+	if err := a.dispatch(context.Background(), []string{"database-users", "create", "shop.example", "--name", "x", "--grant", "other=readonly"}); err == nil || !strings.Contains(err.Error(), `no database "other"`) {
+		t.Errorf("err = %v", err)
+	}
+	if err := a.dispatch(context.Background(), []string{"database-users", "create", "shop.example", "--name", "x", "--grant", "prod=all"}); err == nil {
+		t.Error("an unknown permission must be an error")
+	}
+
+	out.Reset()
+	if err := a.dispatch(context.Background(), []string{"database-users", "list", "shop.example"}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "u1a2_prod=readonly") {
+		t.Errorf("output: %s", out)
+	}
+}
+
+// CF-03: a new domain shows the TXT record to add.
+func TestANewDomainShowsTheTXTRecord(t *testing.T) {
+	srv, bodies := securityPanel(t)
+	defer srv.Close()
+	a, out := testApp(srv)
+
+	if err := a.dispatch(context.Background(), []string{"domains", "add", "shop.example", "new.example", "--kind", "alias"}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), `_cloudfactory-challenge.new.example TXT "cf-abc"`) {
+		t.Errorf("output: %s", out)
+	}
+	if err := a.dispatch(context.Background(), []string{"domains", "verify", "shop.example", "new.example"}); err != nil {
+		t.Fatal(err)
+	}
+	if (*bodies)[1]["call"] != "POST /api/v1/websites/W1/domains/new.example/verify" {
+		t.Errorf("call = %v", (*bodies)[1]["call"])
+	}
+}
+
+// CF-07: a new token needs the password.
+func TestANewTokenSendsThePassword(t *testing.T) {
+	srv, _ := securityPanel(t)
+	defer srv.Close()
+	a, out := testApp(srv)
+	t.Setenv("CF_PASSWORD", "")
+
+	a.in = strings.NewReader("wrong\n")
+	if err := a.dispatch(context.Background(), []string{"tokens", "create", "--name", "ci", "--scope", "websites:read"}); err == nil || !strings.Contains(err.Error(), "password") {
+		t.Errorf("err = %v", err)
+	}
+	a.in = strings.NewReader("secret\n")
+	if err := a.dispatch(context.Background(), []string{"tokens", "create", "--name", "ci", "--scope", "websites:read"}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "Token: 7|abc") {
+		t.Errorf("output: %s", out)
+	}
+	a.in = strings.NewReader("")
+	if err := a.dispatch(context.Background(), []string{"tokens", "create", "--name", "ci", "--scope", "websites:read"}); err == nil {
+		t.Error("an empty password must be an error")
+	}
+}

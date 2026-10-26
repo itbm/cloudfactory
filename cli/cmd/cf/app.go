@@ -29,11 +29,19 @@ Usage:
   cf websites create NAME --image ID --plan ID [--customer ID] [--server ID] [--app NAME]
   cf websites delete WEBSITE
   cf websites start|stop|restart|staging WEBSITE
-  cf domains add WEBSITE DOMAIN --kind redirect|alias
+  cf domains add WEBSITE DOMAIN --kind redirect|alias  A new domain needs a DNS TXT record. The command shows it.
+  cf domains verify WEBSITE DOMAIN                     Check the TXT record. Then the edge proxy serves the domain.
   cf domains remove WEBSITE DOMAIN
   cf runtime set WEBSITE [--image ID] [--worker-mode on|off] [--extensions a,b] [--ini key=value]...
   cf runtime revert WEBSITE
-  cf databases list|create WEBSITE [--engine mariadb|postgresql --name NAME]
+  cf databases list WEBSITE
+  cf databases create WEBSITE --engine mariadb|postgresql --name NAME [--no-user]
+  cf databases delete WEBSITE DATABASE
+  cf database-users list WEBSITE
+  cf database-users create WEBSITE --engine mariadb|postgresql --name NAME [--grant DATABASE=readonly|readwrite]...
+  cf database-users set WEBSITE USER [--grant DATABASE=readonly|readwrite]... [--no-grants]
+                        [--access website|anywhere] [--reset-password]
+  cf database-users delete WEBSITE USER
   cf backups list|create WEBSITE
   cf jobs list [--website WEBSITE]
   cf jobs get|wait JOB
@@ -44,20 +52,24 @@ Usage:
   cf rollouts start IMAGE_ID
   cf rollouts pause|resume|roll-back ROLLOUT_ID
   cf tokens list
-  cf tokens create --name NAME --scope SCOPE[,SCOPE] --days DAYS
+  cf tokens create --name NAME --scope SCOPE[,SCOPE] --days DAYS [--totp CODE]
+                       The password is read from CF_PASSWORD or stdin.
   cf tokens revoke ID
   cf version
 
-A WEBSITE is a name (for example acme.example) or an ID.
+A WEBSITE is a name (for example acme.example) or an ID. A DATABASE or USER is a name, with or without
+the prefix of the website (for example shop or u1a2b3c_shop), or an ID.
 Add --json to see the answer of the API. A change waits for its job; add --no-wait to return at once.
 The settings CF_PANEL and CF_TOKEN replace the saved panel and token.
 `
 
 type app struct {
 	out, err io.Writer
-	api      *client.Client
-	json     bool
-	noWait   bool
+	// in gives the password when CF_PASSWORD is not set.
+	in     io.Reader
+	api    *client.Client
+	json   bool
+	noWait bool
 	// poll is the time between two job checks.
 	poll time.Duration
 }
@@ -153,6 +165,8 @@ func (a *app) dispatch(ctx context.Context, args []string) error {
 		return a.runtime(ctx, sub, rest)
 	case "databases", "database":
 		return a.databases(ctx, sub, rest)
+	case "database-users", "database-user", "db-users":
+		return a.databaseUsers(ctx, sub, rest)
 	case "backups", "backup":
 		return a.backups(ctx, sub, rest)
 	case "jobs", "job":
@@ -181,14 +195,9 @@ func (a *app) login(ctx context.Context, args []string) error {
 	if *panel == "" || *email == "" {
 		return errors.New("login needs --panel and --email")
 	}
-	password := os.Getenv("CF_PASSWORD")
-	if password == "" {
-		fmt.Fprint(a.err, "Password: ")
-		b, err := io.ReadAll(io.LimitReader(os.Stdin, 4096))
-		if err != nil {
-			return err
-		}
-		password = strings.TrimRight(string(b), "\r\n")
+	password, err := a.password()
+	if err != nil {
+		return err
 	}
 	c := client.New(*panel, "")
 	var out struct {
@@ -207,6 +216,27 @@ func (a *app) login(ctx context.Context, args []string) error {
 	}
 	fmt.Fprintf(a.out, "Signed in. The session expires at %s.\n", out.ExpiresAt)
 	return nil
+}
+
+// password reads the password of the user from CF_PASSWORD or from stdin.
+func (a *app) password() (string, error) {
+	if v := os.Getenv("CF_PASSWORD"); v != "" {
+		return v, nil
+	}
+	in := a.in
+	if in == nil {
+		in = os.Stdin
+	}
+	fmt.Fprint(a.err, "Password: ")
+	b, err := io.ReadAll(io.LimitReader(in, 4096))
+	if err != nil {
+		return "", err
+	}
+	password := strings.TrimRight(string(b), "\r\n")
+	if password == "" {
+		return "", errors.New("give the password in CF_PASSWORD or on stdin")
+	}
+	return password, nil
 }
 
 func (a *app) use(args []string) error {
@@ -236,10 +266,23 @@ func (a *app) change(ctx context.Context, method, path string, body any) error {
 	if raw, ok := out["job"]; ok && string(raw) != "null" {
 		json.Unmarshal(raw, &job)
 	}
-	if raw, ok := out["password"]; ok {
+	if raw, ok := out["password"]; ok && string(raw) != "null" {
 		var pw string
 		json.Unmarshal(raw, &pw)
 		fmt.Fprintf(a.out, "Password: %s\nCopy it now. The panel does not show it again.\n", pw)
+	}
+	if raw, ok := out["domain"]; ok {
+		var d struct {
+			Name         string `json:"name"`
+			Verification *struct {
+				Type, Name, Value string
+			} `json:"verification"`
+		}
+		json.Unmarshal(raw, &d)
+		// CF-03: the edge proxy serves the domain only after the TXT record is correct.
+		if d.Verification != nil {
+			fmt.Fprintf(a.out, "Add this DNS record to prove that you control %s:\n  %s %s %q\nThen run: cf domains verify WEBSITE %s\n", d.Name, d.Verification.Name, d.Verification.Type, d.Verification.Value, d.Name)
+		}
 	}
 	if job.ID == "" {
 		fmt.Fprintln(a.out, "Done.")
@@ -425,6 +468,8 @@ func (a *app) domains(ctx context.Context, sub string, args []string) error {
 			return err
 		}
 		return a.change(ctx, http.MethodPost, "/websites/"+w.ID+"/domains", map[string]string{"name": args[1], "kind": *kind})
+	case "verify":
+		return a.change(ctx, http.MethodPost, "/websites/"+w.ID+"/domains/"+url.PathEscape(args[1])+"/verify", nil)
 	case "remove", "rm":
 		return a.change(ctx, http.MethodDelete, "/websites/"+w.ID+"/domains/"+url.PathEscape(args[1]), nil)
 	}
@@ -493,6 +538,45 @@ func (a *app) runtime(ctx context.Context, sub string, args []string) error {
 	return fmt.Errorf("unknown command runtime %s", sub)
 }
 
+type dbList struct {
+	Prefix    string           `json:"prefix"`
+	Databases []map[string]any `json:"databases"`
+	Users     []map[string]any `json:"users"`
+}
+
+func (a *app) dbList(ctx context.Context, websiteID string) (dbList, error) {
+	var out dbList
+	err := a.api.Do(ctx, http.MethodGet, "/websites/"+websiteID+"/databases", nil, nil, &out)
+	return out, err
+}
+
+// find gives the ID of a database or a user. The name can have the prefix of the website or not.
+func (l dbList) find(rows []map[string]any, ref, what string) (map[string]any, error) {
+	for _, r := range rows {
+		if r["id"] == ref || r["name"] == ref || r["name"] == l.Prefix+ref {
+			return r, nil
+		}
+	}
+	return nil, fmt.Errorf("the website has no %s %q", what, ref)
+}
+
+// grants reads --grant DATABASE=readonly|readwrite values.
+func (l dbList) grants(values []string) ([]map[string]string, error) {
+	out := []map[string]string{}
+	for _, v := range values {
+		name, privileges, ok := strings.Cut(v, "=")
+		if !ok || (privileges != "readonly" && privileges != "readwrite") {
+			return nil, fmt.Errorf("--grant %s: use DATABASE=readonly or DATABASE=readwrite", v)
+		}
+		db, err := l.find(l.Databases, name, "database")
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, map[string]string{"databaseId": fmt.Sprint(db["id"]), "privileges": privileges})
+	}
+	return out, nil
+}
+
 func (a *app) databases(ctx context.Context, sub string, args []string) error {
 	if err := need(args, 1, "a website"); err != nil {
 		return err
@@ -503,27 +587,137 @@ func (a *app) databases(ctx context.Context, sub string, args []string) error {
 	}
 	switch sub {
 	case "list", "ls":
-		var out struct {
-			Databases []map[string]any `json:"databases"`
-		}
-		if err := a.api.Do(ctx, http.MethodGet, "/websites/"+w.ID+"/databases", nil, nil, &out); err != nil {
+		out, err := a.dbList(ctx, w.ID)
+		if err != nil {
 			return err
 		}
 		if a.json {
 			return a.printJSON(out)
 		}
+		fmt.Fprintf(a.out, "Each name starts with %s\n", out.Prefix)
 		a.table(out.Databases, []string{"name", "engine", "sizeBytes", "id"})
 		return nil
 	case "create":
 		fs := flag.NewFlagSet("create", flag.ContinueOnError)
 		engine := fs.String("engine", "mariadb", "mariadb or postgresql")
-		name := fs.String("name", "", "the database name")
+		name := fs.String("name", "", "the database name, with or without the prefix of the website")
+		noUser := fs.Bool("no-user", false, "do not make a user with the same name")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
-		return a.change(ctx, http.MethodPost, "/websites/"+w.ID+"/databases", map[string]string{"engine": *engine, "name": *name})
+		return a.change(ctx, http.MethodPost, "/websites/"+w.ID+"/databases", map[string]any{"engine": *engine, "name": *name, "createUser": !*noUser})
+	case "delete", "rm":
+		if err := need(args, 2, "a website and a database"); err != nil {
+			return err
+		}
+		l, err := a.dbList(ctx, w.ID)
+		if err != nil {
+			return err
+		}
+		db, err := l.find(l.Databases, args[1], "database")
+		if err != nil {
+			return err
+		}
+		return a.change(ctx, http.MethodDelete, fmt.Sprintf("/websites/%s/databases/%v", w.ID, db["id"]), nil)
 	}
 	return fmt.Errorf("unknown command databases %s", sub)
+}
+
+// databaseUsers manages database users. CF-01: a user can have a different permission on
+// each database of the website, for example readonly on shop and readwrite on staging.
+func (a *app) databaseUsers(ctx context.Context, sub string, args []string) error {
+	if err := need(args, 1, "a website"); err != nil {
+		return err
+	}
+	w, err := a.api.FindWebsite(ctx, args[0])
+	if err != nil {
+		return err
+	}
+	l, err := a.dbList(ctx, w.ID)
+	if err != nil {
+		return err
+	}
+	base := "/websites/" + w.ID + "/database-users"
+	switch sub {
+	case "list", "ls":
+		if a.json {
+			return a.printJSON(l.Users)
+		}
+		rows := make([]map[string]any, 0, len(l.Users))
+		for _, u := range l.Users {
+			var grants []string
+			if gs, ok := u["grants"].([]any); ok {
+				for _, g := range gs {
+					if m, ok := g.(map[string]any); ok {
+						grants = append(grants, fmt.Sprintf("%v=%v", m["database"], m["privileges"]))
+					}
+				}
+			}
+			rows = append(rows, map[string]any{"name": u["name"], "engine": u["engine"], "access": u["access"], "grants": strings.Join(grants, " "), "id": u["id"]})
+		}
+		a.table(rows, []string{"name", "engine", "grants", "access", "id"})
+		return nil
+	case "create":
+		fs := flag.NewFlagSet("create", flag.ContinueOnError)
+		engine := fs.String("engine", "mariadb", "mariadb or postgresql")
+		name := fs.String("name", "", "the user name, with or without the prefix of the website")
+		access := fs.String("access", "website", "website or anywhere")
+		var grant multi
+		fs.Var(&grant, "grant", "DATABASE=readonly or DATABASE=readwrite. You can give it more than one time.")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		grants, err := l.grants(grant)
+		if err != nil {
+			return err
+		}
+		return a.change(ctx, http.MethodPost, base, map[string]any{"engine": *engine, "name": *name, "access": *access, "grants": grants})
+	case "set":
+		if err := need(args, 2, "a website and a user"); err != nil {
+			return err
+		}
+		u, err := l.find(l.Users, args[1], "database user")
+		if err != nil {
+			return err
+		}
+		fs := flag.NewFlagSet("set", flag.ContinueOnError)
+		access := fs.String("access", "", "website or anywhere")
+		reset := fs.Bool("reset-password", false, "make a new password")
+		noGrants := fs.Bool("no-grants", false, "remove access to all databases")
+		var grant multi
+		fs.Var(&grant, "grant", "DATABASE=readonly or DATABASE=readwrite. The list replaces the permissions of the user.")
+		if err := fs.Parse(args[2:]); err != nil {
+			return err
+		}
+		body := map[string]any{}
+		if *access != "" {
+			body["access"] = *access
+		}
+		if *reset {
+			body["resetPassword"] = true
+		}
+		if len(grant) > 0 || *noGrants {
+			grants, err := l.grants(grant)
+			if err != nil {
+				return err
+			}
+			body["grants"] = grants
+		}
+		if len(body) == 0 {
+			return errors.New("set needs --grant, --no-grants, --access or --reset-password")
+		}
+		return a.change(ctx, http.MethodPatch, fmt.Sprintf("%s/%v", base, u["id"]), body)
+	case "delete", "rm":
+		if err := need(args, 2, "a website and a user"); err != nil {
+			return err
+		}
+		u, err := l.find(l.Users, args[1], "database user")
+		if err != nil {
+			return err
+		}
+		return a.change(ctx, http.MethodDelete, fmt.Sprintf("%s/%v", base, u["id"]), nil)
+	}
+	return fmt.Errorf("unknown command database-users %s", sub)
 }
 
 func (a *app) backups(ctx context.Context, sub string, args []string) error {
@@ -655,15 +849,25 @@ func (a *app) tokens(ctx context.Context, sub string, args []string) error {
 		name := fs.String("name", "", "a name for the token")
 		scope := fs.String("scope", "", "the scopes, separated by commas, for example websites:read")
 		days := fs.Int("days", 90, "the number of days until the token expires")
+		totp := fs.String("totp", "", "the code from your authenticator app")
 		if err := fs.Parse(args); err != nil {
 			return err
+		}
+		// CF-07: a new token needs the password of the user.
+		password, err := a.password()
+		if err != nil {
+			return err
+		}
+		body := map[string]any{"name": *name, "scopes": strings.Split(*scope, ","), "expiresInDays": *days, "password": password}
+		if *totp != "" {
+			body["totp"] = *totp
 		}
 		var out struct {
 			ID        int    `json:"id"`
 			Token     string `json:"token"`
 			ExpiresAt string `json:"expiresAt"`
 		}
-		if err := a.api.Do(ctx, http.MethodPost, "/tokens", nil, map[string]any{"name": *name, "scopes": strings.Split(*scope, ","), "expiresInDays": *days}, &out); err != nil {
+		if err := a.api.Do(ctx, http.MethodPost, "/tokens", nil, body, &out); err != nil {
 			return err
 		}
 		if a.json {
