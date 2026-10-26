@@ -1,0 +1,166 @@
+# Publishes a release when a maintainer pushes a tag such as v0.1.0 (spec section 7.18).
+#
+# Secrets:
+#   COSIGN_PRIVATE_KEY  The private key that matches cosign.pub in the repository root.
+#   COSIGN_PASSWORD     The password of the private key.
+name: Release
+
+on:
+  push:
+    tags: ['v*.*.*']
+  # FR-1109: the rebuild workflow starts this workflow to build the images again.
+  workflow_dispatch:
+    inputs:
+      images_only:
+        description: Build only the images, with a new tag such as 0.1.0-r42.
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+
+env:
+  REGISTRY: ghcr.io/${{ github.repository_owner }}
+  # The gVisor release that the installation script installs. Change it here.
+  GVISOR_VERSION: '20261020.0'
+
+jobs:
+  images:
+    name: Image ${{ matrix.image }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { image: frankenphp-php8.2, context: images/frankenphp, file: images/frankenphp/Containerfile, args: PHP_VERSION=8.2 }
+          - { image: frankenphp-php8.3, context: images/frankenphp, file: images/frankenphp/Containerfile, args: PHP_VERSION=8.3 }
+          - { image: frankenphp-php8.4, context: images/frankenphp, file: images/frankenphp/Containerfile, args: PHP_VERSION=8.4 }
+          - { image: frankenphp-php8.5, context: images/frankenphp, file: images/frankenphp/Containerfile, args: PHP_VERSION=8.5 }
+          - { image: apache-php8.2, context: images/apache-php-fpm, file: images/apache-php-fpm/Containerfile, args: PHP_VERSION=8.2 }
+          - { image: apache-php8.3, context: images/apache-php-fpm, file: images/apache-php-fpm/Containerfile, args: PHP_VERSION=8.3 }
+          - { image: apache-php8.4, context: images/apache-php-fpm, file: images/apache-php-fpm/Containerfile, args: PHP_VERSION=8.4 }
+          - { image: apache-php8.5, context: images/apache-php-fpm, file: images/apache-php-fpm/Containerfile, args: PHP_VERSION=8.5 }
+          - { image: edge, context: images/edge, file: images/edge/Containerfile, args: '' }
+          - { image: mariadb, context: images/mariadb, file: images/mariadb/Containerfile, args: '' }
+          - { image: postgresql, context: images/postgresql, file: images/postgresql/Containerfile, args: '' }
+          - { image: panel-api, context: ., file: images/panel-api/Containerfile, args: '' }
+          - { image: panel-web, context: ., file: images/panel-web/Containerfile, args: '' }
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Find the image tag
+        id: tag
+        run: |
+          set -eu
+          latest=$(git describe --tags --abbrev=0 --match 'v*.*.*')
+          if [ "$GITHUB_EVENT_NAME" = push ]; then
+            echo "tag=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            git checkout -q "$latest"
+            echo "tag=${latest#v}-r${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: sigstore/cosign-installer@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push for x86-64 and ARM64
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.file }}
+          build-args: ${{ matrix.args }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          provenance: mode=max
+          sbom: true
+          # The agent and the panel use the version with no "v", for example 0.1.0.
+          tags: ${{ env.REGISTRY }}/${{ matrix.image }}:${{ steps.tag.outputs.tag }}
+      - name: Scan for known vulnerabilities (FR-1102)
+        uses: aquasecurity/trivy-action@0.33.1
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ matrix.image }}@${{ steps.build.outputs.digest }}
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+      - name: Attach the SBOM (FR-1102)
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ env.REGISTRY }}/${{ matrix.image }}@${{ steps.build.outputs.digest }}
+          format: spdx-json
+          output-file: sbom.spdx.json
+      - name: Sign the image and the SBOM (FR-1101)
+        env:
+          COSIGN_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+          IMAGE: ${{ env.REGISTRY }}/${{ matrix.image }}@${{ steps.build.outputs.digest }}
+        run: |
+          cosign sign --yes --key env://COSIGN_KEY "$IMAGE"
+          cosign attest --yes --key env://COSIGN_KEY --type spdxjson --predicate sbom.spdx.json "$IMAGE"
+
+  binaries:
+    name: Agent, CLI and installation script
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: agent/go.mod
+      - uses: sigstore/cosign-installer@v3
+      - name: Build
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          set -eu
+          v="${VERSION#v}"
+          mkdir -p dist
+          for arch in amd64 arm64; do
+            (cd agent && CGO_ENABLED=0 GOARCH=$arch go build -trimpath -ldflags "-s -w -X main.version=$v" -o "../dist/cf-agent_linux_$arch" ./cmd/cf-agent)
+          done
+          for os in linux darwin windows; do
+            for arch in amd64 arm64; do
+              ext=""; [ "$os" = windows ] && ext=".exe"
+              (cd cli && CGO_ENABLED=0 GOOS=$os GOARCH=$arch go build -trimpath -ldflags "-s -w -X main.version=$v" -o "../dist/cf_${os}_${arch}${ext}" ./cmd/cf)
+            done
+          done
+      - name: Put the release values in the installation script
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          set -eu
+          test -s cosign.pub || { echo "cosign.pub is missing. See docs/releasing.md."; exit 1; }
+          python3 - "$VERSION" "$GVISOR_VERSION" <<'PY'
+          import sys
+          version, gvisor = sys.argv[1].lstrip("v"), sys.argv[2]
+          script = open("install/install.sh").read()
+          script = script.replace("__CF_VERSION__", version).replace("__GVISOR_VERSION__", gvisor)
+          script = script.replace("__COSIGN_PUBLIC_KEY__", open("cosign.pub").read().strip())
+          open("dist/install.sh", "w").write(script)
+          PY
+          cp cosign.pub dist/cosign.pub
+      - name: Sign each file (FR-1810, FR-1812)
+        env:
+          COSIGN_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+        run: |
+          set -eu
+          cd dist
+          for f in cf-agent_* cf_* install.sh; do
+            cosign sign-blob --yes --key env://COSIGN_KEY --tlog-upload=false --output-signature "$f.sig" "$f"
+            sha256sum "$f" > "$f.sha256"
+          done
+          # Check one signature as the installation script does.
+          base64 -d install.sh.sig > /tmp/sig.der
+          openssl dgst -sha256 -verify cosign.pub -signature /tmp/sig.der install.sh
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --title "$GITHUB_REF_NAME" --generate-notes --verify-tag

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	agentv1 "github.com/itbm/cloudfactory/agent/gen/cloudfactory/agent/v1"
 	"github.com/itbm/cloudfactory/agent/internal/caddy"
@@ -50,7 +51,7 @@ func deps(t *testing.T) (*Deps, *execx.Fake, *fakeEdge) {
 	d := &Deps{
 		Host: h, Run: run, Edge: edge, State: NewState(dir),
 		Gvisor:        quadlet.Runtime{RunscPath: "/usr/local/bin/runsc", Platform: "systrap"},
-		Health:        func(context.Context, int, string) error { return nil },
+		Health:        func(context.Context, int, string) (int, error) { return 200, nil },
 		DNSPointsHere: func(context.Context, string) bool { return true },
 		Reboot:        func(context.Context) error { return nil },
 	}
@@ -164,11 +165,11 @@ func TestSetRuntimeKeepsTheOldContainerWhenTheHealthCheckFails(t *testing.T) {
 	d, f, edge := deps(t)
 	run(t)(d.CreateWebsite(&agentv1.WebsiteRequest{JobId: jobID, Website: website("ghcr.io/cloudfactory/frankenphp-php8.4:8.4.0-1")}))
 	d.ReadyTimeout = 1
-	d.Health = func(_ context.Context, port int, _ string) error {
+	d.Health = func(_ context.Context, port int, _ string) (int, error) {
 		if port == 20001 {
-			return errors.New("status 502")
+			return 0, errors.New("connection refused")
 		}
-		return nil
+		return 200, nil
 	}
 	f.Calls = nil
 
@@ -269,5 +270,26 @@ func TestRebootResumesAfterTheReboot(t *testing.T) {
 	}
 	if _, ok := d.ResumeReboot(); ok {
 		t.Error("the reboot resumed two times")
+	}
+}
+
+func TestTheWatchNeedsTheExpectedStatus(t *testing.T) {
+	d, _, edge := deps(t)
+	run(t)(d.CreateWebsite(&agentv1.WebsiteRequest{JobId: jobID, Website: website("ghcr.io/cloudfactory/frankenphp-php8.4:8.4.0-1")}))
+	d.MaxWatch = 50 * time.Millisecond
+	// The new container answers, but with status 500 on each check after the switch.
+	d.Health = func(_ context.Context, port int, _ string) (int, error) {
+		if port == 20001 && edge.sites[websiteID].Port == 20001 {
+			return 500, nil
+		}
+		return 200, nil
+	}
+
+	err := run(t)(d.SetRuntime(&agentv1.WebsiteRequest{JobId: jobID2, Website: website("ghcr.io/cloudfactory/frankenphp-php8.5:8.5.0-1"), HealthCheck: &agentv1.HealthCheck{Status: 200, MaxErrorRate: 0.01, Seconds: 300}}))
+	if err == nil || !strings.Contains(err.Error(), "health checks failed") {
+		t.Fatalf("err = %v", err)
+	}
+	if edge.sites[websiteID].Port != 20000 {
+		t.Errorf("traffic did not go back to the old container: %+v", edge.sites[websiteID])
 	}
 }

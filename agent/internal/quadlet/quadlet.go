@@ -152,12 +152,16 @@ func podmanLimitArgs(l Limits) string {
 
 // PHPIni gives the php.ini file for a website: the extensions and the values of the plan.
 // The caller must check the keys and values with the validate package first.
-func PHPIni(extensions []string, values map[string]string) string {
+// From PHP 8.5, OPcache is always part of PHP, so the file does not load it.
+func PHPIni(phpVersion string, extensions []string, values map[string]string) string {
 	var b strings.Builder
 	b.WriteString("; Managed by the Cloudfactory agent. Change these values in the panel.\n")
+	builtinOpcache := phpVersion >= "8.5"
 	for _, ext := range slices.Sorted(slices.Values(extensions)) {
 		if ext == "opcache" {
-			b.WriteString("zend_extension=opcache\n")
+			if !builtinOpcache {
+				b.WriteString("zend_extension=opcache\n")
+			}
 			continue
 		}
 		fmt.Fprintf(&b, "extension=%s\n", ext)

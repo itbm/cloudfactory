@@ -62,7 +62,10 @@ func TestDiskLimitNeedsADevice(t *testing.T) {
 }
 
 func TestPHPIni(t *testing.T) {
-	got := PHPIni([]string{"redis", "opcache"}, map[string]string{"memory_limit": "256M", "date.timezone": "Europe/London"})
+	if strings.Contains(PHPIni("8.5", []string{"opcache"}, nil), "opcache") {
+		t.Error("PHP 8.5 loads OPcache itself")
+	}
+	got := PHPIni("8.4", []string{"redis", "opcache"}, map[string]string{"memory_limit": "256M", "date.timezone": "Europe/London"})
 	want := "; Managed by the Cloudfactory agent. Change these values in the panel.\n" +
 		"zend_extension=opcache\nextension=redis\n" +
 		"date.timezone = \"Europe/London\"\nmemory_limit = \"256M\"\n"

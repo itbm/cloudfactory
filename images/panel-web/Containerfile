@@ -1,0 +1,18 @@
+# The web panel (spec section 6.2). Build from the repository root:
+#   podman build -f images/panel-web/Containerfile -t panel-web .
+# SPDX-License-Identifier: AGPL-3.0-only
+FROM docker.io/library/node:22-alpine AS build
+WORKDIR /web
+COPY web/package.json web/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY web/ ./
+RUN npm run build
+
+FROM docker.io/library/caddy:2.10-alpine
+COPY --from=build /web/dist /srv
+COPY images/panel-web/Caddyfile /etc/caddy/Caddyfile
+ENV XDG_CONFIG_HOME=/tmp/config XDG_DATA_HOME=/tmp/data
+EXPOSE 8080
+LABEL org.opencontainers.image.source="https://github.com/itbm/cloudfactory" \
+      org.opencontainers.image.licenses="AGPL-3.0-only" \
+      org.opencontainers.image.description="Cloudfactory web panel"

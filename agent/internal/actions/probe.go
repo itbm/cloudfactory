@@ -2,33 +2,32 @@ package actions
 
 import (
 	"context"
-	"fmt"
 	"net"
 	"net/http"
 	"strconv"
 	"time"
 )
 
-// HTTPHealth checks a website on its host port. A status below 500 is healthy.
-func HTTPHealth(ctx context.Context, port int, hostname string) error {
+// HTTPHealth requests the home page of a website on its host port, as the edge proxy does.
+// It gives the HTTP status. An error means that the website did not answer.
+func HTTPHealth(ctx context.Context, port int, hostname string) (int, error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://127.0.0.1:"+strconv.Itoa(port)+"/", nil)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	req.Host = hostname
 	req.Header.Set("User-Agent", "cloudfactory-agent/health")
+	// The edge proxy terminates TLS. Without this header, many applications redirect to https.
+	req.Header.Set("X-Forwarded-Proto", "https")
 	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	resp, err := client.Do(req)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	resp.Body.Close()
-	if resp.StatusCode >= 500 {
-		return fmt.Errorf("status %d", resp.StatusCode)
-	}
-	return nil
+	return resp.StatusCode, nil
 }
 
 // LocalDNS reports whether a domain resolves to an address of this server. It also

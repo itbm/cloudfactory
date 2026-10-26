@@ -36,8 +36,8 @@ type Deps struct {
 	Updater *selfupdate.Updater
 	Gvisor  quadlet.Runtime
 	State   *State
-	// Health checks a website port. It returns an error when the website does not answer.
-	Health func(ctx context.Context, port int, hostname string) error
+	// Health requests the home page of a website port and gives the HTTP status.
+	Health func(ctx context.Context, port int, hostname string) (int, error)
 	// DNSPointsHere reports whether a domain resolves to this server.
 	DNSPointsHere func(ctx context.Context, domain string) bool
 	// Reboot reboots the host. Restart restarts the agent.

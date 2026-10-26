@@ -67,11 +67,13 @@ func BaseConfig() map[string]any {
 			"access": map[string]any{"encoder": map[string]any{"format": "json"}, "include": []string{"http.log.access"}},
 		}},
 		"apps": map[string]any{"http": map[string]any{
-			// The host firewall redirects 80 and 443 to these ports.
+			// The host firewall redirects 80 and 443 to these ports. The "edge" server listens
+			// for HTTPS. Caddy adds a server on the HTTP port that redirects to HTTPS and
+			// answers ACME HTTP challenges.
 			"http_port":  8080,
 			"https_port": 8443,
 			"servers": map[string]any{serverName: map[string]any{
-				"listen": []string{":8080", ":8443"},
+				"listen": []string{":8443"},
 				"routes": []any{},
 				"logs":   map[string]any{"default_logger_name": "access"},
 			}},

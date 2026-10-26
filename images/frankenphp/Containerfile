@@ -1,0 +1,33 @@
+# FrankenPHP runtime image (FR-301). Build one image for each PHP version:
+#   podman build --build-arg PHP_VERSION=8.4 -t frankenphp-php8.4 images/frankenphp
+#
+# The image has all extensions of the largest plan, but turns none on. The agent writes
+# /usr/local/etc/php/conf.d/zz-cloudfactory.ini with the extensions of the plan of each
+# website (FR-304). Worker mode is off by default (FR-305).
+# SPDX-License-Identifier: AGPL-3.0-only
+ARG PHP_VERSION=8.4
+FROM docker.io/dunglas/frankenphp:1-php${PHP_VERSION}-trixie
+
+ARG PHP_VERSION
+ARG EXTENSIONS="intl gd zip exif bcmath mysqli pdo_mysql pdo_pgsql redis imagick soap"
+RUN install-php-extensions ${EXTENSIONS} \
+ && if [ "${PHP_VERSION}" != "8.5" ]; then install-php-extensions opcache; fi \
+ && mkdir -p /usr/local/etc/php/available \
+ && for f in /usr/local/etc/php/conf.d/docker-php-ext-*.ini; do \
+      name=$(basename "$f" .ini | sed 's/^docker-php-ext-//'); \
+      case "$name" in sodium) ;; *) mv "$f" /usr/local/etc/php/available/ ;; esac; \
+    done \
+ && cp "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini"
+
+COPY Caddyfile /etc/frankenphp/Caddyfile
+COPY index.php /app/public/index.php
+
+# The container root file system is read-only. Caddy keeps its state in /tmp.
+ENV SERVER_NAME=:8080 \
+    XDG_CONFIG_HOME=/tmp/config \
+    XDG_DATA_HOME=/tmp/data
+
+EXPOSE 8080
+LABEL org.opencontainers.image.source="https://github.com/itbm/cloudfactory" \
+      org.opencontainers.image.licenses="AGPL-3.0-only" \
+      org.opencontainers.image.description="Cloudfactory FrankenPHP runtime"

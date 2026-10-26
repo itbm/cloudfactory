@@ -1,0 +1,27 @@
+# The panel API (spec section 6.2) on FrankenPHP. Build from the repository root:
+#   podman build -f images/panel-api/Containerfile -t panel-api .
+# SPDX-License-Identifier: AGPL-3.0-only
+FROM docker.io/library/composer:2 AS vendor
+WORKDIR /app
+COPY api/composer.json api/composer.lock ./
+RUN composer install --no-dev --no-scripts --no-autoloader --prefer-dist --no-interaction
+COPY api/ ./
+RUN composer dump-autoload --optimize --classmap-authoritative --no-dev
+
+FROM docker.io/dunglas/frankenphp:1-php8.4-trixie
+RUN install-php-extensions pdo_sqlite pdo_pgsql intl opcache pcntl \
+ && cp "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini"
+WORKDIR /app
+COPY --from=vendor /app /app
+COPY openapi/openapi.yaml /app/public/openapi.yaml
+COPY images/panel-api/start.sh /usr/local/bin/panel-start
+RUN rm -rf tests .env \
+ && chown -R www-data:www-data storage bootstrap/cache
+
+ENV APP_ENV=production APP_DEBUG=false LOG_CHANNEL=stderr \
+    SERVER_NAME=:8080 XDG_CONFIG_HOME=/tmp/config XDG_DATA_HOME=/tmp/data
+EXPOSE 8080
+CMD ["/usr/local/bin/panel-start"]
+LABEL org.opencontainers.image.source="https://github.com/itbm/cloudfactory" \
+      org.opencontainers.image.licenses="AGPL-3.0-only" \
+      org.opencontainers.image.description="Cloudfactory panel API"

@@ -1,0 +1,5 @@
+# The shared PostgreSQL service image. The release pipeline signs it like all other images (FR-1101).
+# SPDX-License-Identifier: AGPL-3.0-only
+FROM docker.io/library/postgres:17
+LABEL org.opencontainers.image.source="https://github.com/itbm/cloudfactory" \
+      org.opencontainers.image.description="Cloudfactory PostgreSQL service"

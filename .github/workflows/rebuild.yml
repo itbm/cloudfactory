@@ -1,0 +1,38 @@
+# FR-1109: build the runtime images again when a base image or a package changes.
+# The workflow compares the digest of each base image with the digest in the last build.
+name: Rebuild images
+
+on:
+  schedule:
+    - cron: '17 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compare base image digests
+        id: digests
+        run: |
+          set -eu
+          for ref in dunglas/frankenphp:1-php8.4-trixie library/php:8.4-fpm-trixie library/caddy:2.10-alpine library/mariadb:11.8 library/postgres:17; do
+            docker buildx imagetools inspect "docker.io/$ref" --format '{{json .Manifest.Digest}}'
+          done > digests.txt
+          sha256sum digests.txt | cut -d' ' -f1 > key.txt
+          echo "key=$(cat key.txt)" >> "$GITHUB_OUTPUT"
+      - name: Remember the digests
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: digests.txt
+          key: base-images-${{ steps.digests.outputs.key }}
+      - name: Build the images again when a base image changed
+        if: steps.cache.outputs.cache-hit != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run release.yml --ref main -f images_only=true

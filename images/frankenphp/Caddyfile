@@ -1,0 +1,23 @@
+# The edge proxy terminates TLS and serves static files. This server gets only dynamic requests.
+{
+	frankenphp
+	auto_https off
+	admin off
+	servers {
+		trusted_proxies static private_ranges
+		client_ip_headers X-Forwarded-For
+	}
+	{$CADDY_GLOBAL_OPTIONS}
+}
+
+{$SERVER_NAME::8080} {
+	root * /app/public
+	encode zstd br gzip
+	log {
+		output stdout
+		format json
+	}
+	php_server {
+		{$FRANKENPHP_SERVER_OPTIONS}
+	}
+}

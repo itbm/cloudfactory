@@ -1,0 +1,38 @@
+# Apache and PHP-FPM runtime image, for websites that use .htaccess files (FR-302).
+#   podman build --build-arg PHP_VERSION=8.4 -t apache-php8.4 images/apache-php-fpm
+# SPDX-License-Identifier: AGPL-3.0-only
+ARG PHP_VERSION=8.4
+FROM docker.io/library/php:${PHP_VERSION}-fpm-trixie
+
+ARG PHP_VERSION
+ARG EXTENSIONS="intl gd zip exif bcmath mysqli pdo_mysql pdo_pgsql redis imagick soap"
+COPY --from=ghcr.io/mlocati/php-extension-installer:2 /usr/bin/install-php-extensions /usr/local/bin/
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends apache2 \
+ && rm -rf /var/lib/apt/lists/* \
+ && install-php-extensions ${EXTENSIONS} \
+ && if [ "${PHP_VERSION}" != "8.5" ]; then install-php-extensions opcache; fi \
+ && mkdir -p /usr/local/etc/php/available \
+ && for f in /usr/local/etc/php/conf.d/docker-php-ext-*.ini; do \
+      name=$(basename "$f" .ini | sed 's/^docker-php-ext-//'); \
+      case "$name" in sodium) ;; *) mv "$f" /usr/local/etc/php/available/ ;; esac; \
+    done \
+ && cp "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini" \
+ && a2enmod proxy_fcgi rewrite headers remoteip setenvif \
+ && a2dissite 000-default \
+ && rm -f /etc/apache2/ports.conf
+
+COPY apache.conf /etc/apache2/sites-enabled/cloudfactory.conf
+COPY php-fpm.conf /usr/local/etc/php-fpm.d/zz-cloudfactory.conf
+COPY start.sh /usr/local/bin/cloudfactory-start
+COPY index.php /app/public/index.php
+
+# The container root file system is read-only. Apache and PHP-FPM keep their state in /tmp.
+ENV APACHE_RUN_DIR=/tmp/apache APACHE_PID_FILE=/tmp/apache/apache2.pid APACHE_LOCK_DIR=/tmp/apache \
+    APACHE_LOG_DIR=/tmp/apache APACHE_RUN_USER=www-data APACHE_RUN_GROUP=www-data
+
+EXPOSE 8080
+CMD ["/usr/local/bin/cloudfactory-start"]
+LABEL org.opencontainers.image.source="https://github.com/itbm/cloudfactory" \
+      org.opencontainers.image.licenses="AGPL-3.0-only" \
+      org.opencontainers.image.description="Cloudfactory Apache and PHP-FPM runtime"

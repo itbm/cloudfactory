@@ -69,7 +69,7 @@ func TestOnlyThePanelCertificateIsAccepted(t *testing.T) {
 	ev := &events{got: map[string][]panel.Event{}}
 	runner := &jobs.Runner{Dir: filepath.Join(dir, "jobs"), Reporter: ev}
 	deps := &actions.Deps{Host: h, Run: run, Edge: nopEdge{}, State: actions.NewState(dir), Gvisor: quadlet.Runtime{RunscPath: "runsc", Platform: "systrap"},
-		Health: func(context.Context, int, string) error { return nil }, DNSPointsHere: func(context.Context, string) bool { return false }}
+		Health: func(context.Context, int, string) (int, error) { return 200, nil }, DNSPointsHere: func(context.Context, string) bool { return false }}
 	svc := &Service{Deps: deps, Runner: runner, Status: status.Collector{Run: run}}
 
 	ln, err := tls.Listen("tcp", "127.0.0.1:0", TLSConfig(agentCert, panelFP))

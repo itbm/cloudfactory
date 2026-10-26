@@ -97,7 +97,7 @@ func (d *Deps) site(w *agentv1.Website, port int) caddy.Site {
 func (d *Deps) startContainer(ctx context.Context, w *agentv1.Website, port int, suffix string) error {
 	u := d.unit(w, port, suffix)
 	if w.GetRuntime() != "custom" {
-		if _, err := host.WriteFile(u.IniFile, quadlet.PHPIni(w.GetExtensions(), w.GetPhpIni()), 0o644); err != nil {
+		if _, err := host.WriteFile(u.IniFile, quadlet.PHPIni(w.GetPhpVersion(), w.GetExtensions(), w.GetPhpIni()), 0o644); err != nil {
 			return err
 		}
 	}
@@ -123,6 +123,19 @@ func (d *Deps) stopContainer(ctx context.Context, unixUser, suffix string) error
 	return err
 }
 
+// ready reports whether a website answers. Any status below 500 means that the container
+// operates. The application can still need setup, for example a new WordPress.
+func (d *Deps) ready(ctx context.Context, port int, hostname string) error {
+	status, err := d.Health(ctx, port, hostname)
+	if err != nil {
+		return err
+	}
+	if status >= 500 {
+		return fmt.Errorf("status %d", status)
+	}
+	return nil
+}
+
 // waitReady waits until the website answers on its port.
 func (d *Deps) waitReady(ctx context.Context, port int, hostname string) error {
 	timeout := d.ReadyTimeout
@@ -132,7 +145,7 @@ func (d *Deps) waitReady(ctx context.Context, port int, hostname string) error {
 	deadline := time.Now().Add(timeout)
 	var err error
 	for {
-		if err = d.Health(ctx, port, hostname); err == nil {
+		if err = d.ready(ctx, port, hostname); err == nil {
 			return nil
 		}
 		if time.Now().After(deadline) {
@@ -146,8 +159,9 @@ func (d *Deps) waitReady(ctx context.Context, port int, hostname string) error {
 	}
 }
 
-// watch checks the website for some time after a change. It fails when the share of
-// failed checks is more than maxErrorRate (FR-1105).
+// watch checks the website for some time after a change. A check passes when the website
+// gives the expected status, for example 200. The watch fails when the share of failed checks
+// is more than maxErrorRate (FR-1104, FR-1105).
 func (d *Deps) watch(ctx context.Context, port int, hostname string, hc *agentv1.HealthCheck) error {
 	seconds := time.Duration(hc.GetSeconds()) * time.Second
 	if d.MaxWatch > 0 && seconds > d.MaxWatch {
@@ -161,7 +175,11 @@ func (d *Deps) watch(ctx context.Context, port int, hostname string, hc *agentv1
 	var last error
 	for end := time.Now().Add(seconds); time.Now().Before(end); {
 		checks++
-		if err := d.Health(ctx, port, hostname); err != nil {
+		status, err := d.Health(ctx, port, hostname)
+		if err == nil && hc.GetStatus() != 0 && int32(status) != hc.GetStatus() {
+			err = fmt.Errorf("status %d, not %d", status, hc.GetStatus())
+		}
+		if err != nil {
 			failed++
 			last = err
 		}

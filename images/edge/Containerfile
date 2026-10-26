@@ -1,0 +1,12 @@
+# The edge proxy (spec section 6.2). The agent sets its routes through the admin API.
+# SPDX-License-Identifier: AGPL-3.0-only
+FROM docker.io/library/caddy:2.10-alpine
+
+COPY base.json /etc/caddy/base.json
+# Caddy keeps the configuration from the agent in /data, and loads it again at start.
+ENV XDG_CONFIG_HOME=/data/config XDG_DATA_HOME=/data
+EXPOSE 8080 8443 8443/udp 2019
+CMD ["caddy", "run", "--config", "/etc/caddy/base.json", "--resume"]
+LABEL org.opencontainers.image.source="https://github.com/itbm/cloudfactory" \
+      org.opencontainers.image.licenses="AGPL-3.0-only" \
+      org.opencontainers.image.description="Cloudfactory edge proxy"

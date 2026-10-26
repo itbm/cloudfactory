@@ -1,0 +1,45 @@
+# Builds the images on a pull request that changes them. The release workflow publishes them.
+name: Images
+
+on:
+  pull_request:
+    paths:
+      - images/**
+      - api/**
+      - web/**
+      - .github/workflows/images.yml
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.image }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { image: frankenphp-php8.4, context: images/frankenphp, file: images/frankenphp/Containerfile, args: PHP_VERSION=8.4 }
+          - { image: frankenphp-php8.5, context: images/frankenphp, file: images/frankenphp/Containerfile, args: PHP_VERSION=8.5 }
+          - { image: apache-php8.4, context: images/apache-php-fpm, file: images/apache-php-fpm/Containerfile, args: PHP_VERSION=8.4 }
+          - { image: edge, context: images/edge, file: images/edge/Containerfile, args: '' }
+          - { image: panel-api, context: ., file: images/panel-api/Containerfile, args: '' }
+          - { image: panel-web, context: ., file: images/panel-web/Containerfile, args: '' }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.file }}
+          build-args: ${{ matrix.args }}
+          load: true
+          tags: ${{ matrix.image }}:test
+      - name: Scan for known vulnerabilities (FR-1102)
+        uses: aquasecurity/trivy-action@0.33.1
+        with:
+          image-ref: ${{ matrix.image }}:test
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
