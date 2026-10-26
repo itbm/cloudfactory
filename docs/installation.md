@@ -62,6 +62,7 @@ certificate.
 | `--address HOST`   | The host name or IP address that the panel uses to reach the server.     |
 | `--panel-ip IP`    | Accept the agent port only from this IP address.                         |
 | `--registry URL`   | Use a different image registry, for example a mirror.                    |
+| `--allow-unsigned REGISTRY` | Let Podman pull unsigned images from this registry. You can use this option more than one time. |
 | `--check`          | Do only the checks. Do not change the system.                            |
 
 ## What the script does
@@ -73,9 +74,10 @@ Then the script does these steps:
 
 1. Install Podman and the system packages.
 2. Hold the container packages, so that a host update cannot change them.
-3. Install gVisor and check its SHA-512 sum.
+3. Install gVisor. Compare its SHA-512 sum with the sum in the script.
 4. Install the AppArmor profiles for Podman and gVisor.
-5. Set the image signature policy.
+5. Set the image signature policy. Podman refuses all images that have no valid signature,
+   except from a registry that you give with `--allow-unsigned`.
 6. Make the service users.
 7. Set the firewall.
 8. Download the agent and check its signature.
