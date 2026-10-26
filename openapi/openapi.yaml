@@ -1,0 +1,1325 @@
+openapi: 3.1.0
+info:
+  title: Cloudfactory panel API
+  version: 0.1.0
+  summary: The public API of the Cloudfactory panel.
+  description: |
+    The web panel and the `cf` command line tool use only this API (FR-103).
+
+    A change does not happen at once. The panel records the desired state, puts a job
+    in the queue, and returns the job with status 202. The agent on the server applies the
+    change and reports each step. Get the job to see its progress (spec section 6.3).
+
+    Each API token has scopes and an expiry date (FR-104). A GET request needs the
+    `<area>:read` scope. Other methods need `<area>:write`. A write scope also gives read access.
+  license:
+    name: AGPL-3.0-only
+    identifier: AGPL-3.0-only
+servers:
+  - url: https://panel.example.com/api
+security:
+  - token: []
+tags:
+  - name: Auth
+  - name: Websites
+  - name: Databases
+  - name: Backups
+  - name: Jobs
+  - name: Servers
+    description: Administrators only.
+  - name: Images
+    description: Administrators only.
+  - name: Customers
+  - name: Audit
+  - name: Agent
+    description: Only the agent on a server uses these routes. They use the agent token, not a user token.
+
+paths:
+  /v1/auth/login:
+    post:
+      tags: [Auth]
+      summary: Sign in
+      description: Sign in with an email address, a password and a TOTP code. The token expires after 12 hours.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
+                totp: { type: string, pattern: '^[0-9]{6}$', description: Necessary when TOTP is on for the user. }
+      responses:
+        '200':
+          description: Signed in.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { type: string }
+                  expiresAt: { type: string, format: date-time }
+        '422': { $ref: '#/components/responses/Invalid' }
+        '429': { description: Too many attempts. Wait one minute. }
+
+  /v1/me:
+    get:
+      tags: [Auth]
+      summary: Get the user of the token
+      responses:
+        '200':
+          description: The user.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/User' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+
+  /v1/tokens:
+    get:
+      tags: [Auth]
+      summary: List your API tokens
+      responses:
+        '200':
+          description: The tokens. The secret part is not shown again.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/Token' } }
+    post:
+      tags: [Auth]
+      summary: Make an API token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, scopes, expiresInDays]
+              properties:
+                name: { type: string, maxLength: 100 }
+                scopes: { type: array, minItems: 1, items: { $ref: '#/components/schemas/Scope' } }
+                expiresInDays: { type: integer, minimum: 1, maximum: 365 }
+      responses:
+        '201':
+          description: The token. Copy it now. The panel shows it only once.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: integer }
+                  token: { type: string }
+                  scopes: { type: array, items: { $ref: '#/components/schemas/Scope' } }
+                  expiresAt: { type: string, format: date-time }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/tokens/{id}:
+    delete:
+      tags: [Auth]
+      summary: Revoke an API token
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '204': { description: Revoked. }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/websites:
+    get:
+      tags: [Websites]
+      summary: List websites
+      description: Administrators see all websites. Resellers see the websites of their customers. Owners see their own websites.
+      parameters:
+        - { name: status, in: query, schema: { $ref: '#/components/schemas/WebsiteStatus' } }
+        - { name: q, in: query, description: Part of the website name., schema: { type: string } }
+        - { name: perPage, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 25 } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1 } }
+      responses:
+        '200':
+          description: One page of websites.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/Website' } }
+                  meta: { type: object }
+                  links: { type: object }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Websites]
+      summary: Create a website
+      description: FR-201. The panel selects the web server with the fewest websites when you do not give `serverId`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, imageId, planId]
+              properties:
+                name: { type: string, description: The primary domain. Lower case. }
+                application: { type: string, maxLength: 100 }
+                imageId: { type: string }
+                planId: { type: string }
+                serverId: { type: string }
+                customerId: { type: string, description: Necessary for administrators and resellers. }
+      responses:
+        '202': { $ref: '#/components/responses/WebsiteJob' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/websites/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    get:
+      tags: [Websites]
+      summary: Get a website
+      responses:
+        '200':
+          description: The website.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Website' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Websites]
+      summary: Change a website
+      description: Only administrators can set `limits` (FR-202).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                application: { type: string }
+                planId: { type: string }
+                limits: { $ref: '#/components/schemas/Limits' }
+                managedByTerraform: { type: boolean }
+      responses:
+        '200':
+          description: Changed. `job` is null when the agent does not have to do anything.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  website: { $ref: '#/components/schemas/Website' }
+                  job: { oneOf: [{ $ref: '#/components/schemas/Job' }, { type: 'null' }] }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Invalid' }
+    delete:
+      tags: [Websites]
+      summary: Remove a website
+      responses:
+        '202': { $ref: '#/components/responses/JobOnly' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/websites/{id}/power:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [Websites]
+      summary: Start, stop or restart a website
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action]
+              properties:
+                action: { type: string, enum: [start, stop, restart] }
+      responses:
+        '202': { $ref: '#/components/responses/JobOnly' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/websites/{id}/staging:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [Websites]
+      summary: Make a staging copy
+      description: FR-205. The copy has the name `staging.<domain>`.
+      responses:
+        '202': { $ref: '#/components/responses/WebsiteJob' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/websites/{websiteId}/domains:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+    post:
+      tags: [Websites]
+      summary: Add a redirect or an alias
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, kind]
+              properties:
+                name: { type: string }
+                kind: { type: string, enum: [redirect, alias] }
+      responses:
+        '202': { $ref: '#/components/responses/JobOnly' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/websites/{websiteId}/domains/{name}:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+      - { name: name, in: path, required: true, schema: { type: string } }
+    delete:
+      tags: [Websites]
+      summary: Remove a domain
+      description: You cannot remove the primary domain.
+      responses:
+        '202': { $ref: '#/components/responses/JobOnly' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/websites/{websiteId}/runtime:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+    put:
+      tags: [Websites]
+      summary: Change the runtime
+      description: |
+        FR-303 to FR-305. Change the image, the PHP extensions, php.ini values or worker mode.
+        The agent starts the new container, does a health check, and only then sends traffic to it.
+        If the health check fails, the website stays on the previous image.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                imageId: { type: string }
+                workerMode: { type: boolean, description: Only for FrankenPHP. }
+                extensions: { type: array, items: { type: string }, description: Only the extensions of the plan. }
+                phpIni:
+                  type: object
+                  description: 'Permitted keys: memory_limit, upload_max_filesize, post_max_size, max_execution_time, max_input_vars, display_errors, date.timezone, opcache.memory_consumption.'
+                  additionalProperties: { type: string }
+      responses:
+        '202': { $ref: '#/components/responses/WebsiteJob' }
+        '200': { description: Nothing changed. `job` is null. }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/websites/{websiteId}/runtime/revert:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+    post:
+      tags: [Websites]
+      summary: Go back to the previous image
+      responses:
+        '202': { $ref: '#/components/responses/WebsiteJob' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/websites/{websiteId}/databases:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+    get:
+      tags: [Databases]
+      summary: List the databases and database users of a website
+      responses:
+        '200':
+          description: The databases and users.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  databases:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string }
+                        engine: { $ref: '#/components/schemas/Engine' }
+                        name: { type: string }
+                        sizeBytes: { type: integer }
+                  users:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string }
+                        engine: { $ref: '#/components/schemas/Engine' }
+                        name: { type: string }
+                        databases: { type: array, items: { type: string } }
+                        access: { type: string, enum: [website, remote] }
+    post:
+      tags: [Databases]
+      summary: Create a database
+      description: FR-501 and FR-502. The panel also makes a user. Only the website container can connect.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [engine, name]
+              properties:
+                engine: { $ref: '#/components/schemas/Engine' }
+                name: { type: string, pattern: '^[a-z][a-z0-9_]{1,62}$' }
+      responses:
+        '202':
+          description: The password is shown only once. The panel does not keep it.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  user: { type: string }
+                  password: { type: string }
+                  job: { $ref: '#/components/schemas/Job' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/websites/{websiteId}/databases/{databaseId}:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+      - { name: databaseId, in: path, required: true, schema: { type: string } }
+    delete:
+      tags: [Databases]
+      summary: Remove a database
+      responses:
+        '202': { $ref: '#/components/responses/JobOnly' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/websites/{websiteId}/snapshots:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+    get:
+      tags: [Backups]
+      summary: List snapshots
+      responses:
+        '200':
+          description: The newest 100 snapshots.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/Snapshot' } }
+    post:
+      tags: [Backups]
+      summary: Back up now
+      responses:
+        '202': { $ref: '#/components/responses/JobOnly' }
+
+  /v1/websites/{websiteId}/snapshots/{snapshotId}/restore:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+      - { name: snapshotId, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [Backups]
+      summary: Restore from a snapshot
+      description: FR-903. Restore the full website, one database, one mailbox or one file.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [scope]
+              properties:
+                scope: { type: string, enum: [website, database, mailbox, file] }
+                item: { type: string, description: 'The database name, mailbox or file path. A file path starts with "/" and cannot contain "..".' }
+      responses:
+        '202': { $ref: '#/components/responses/JobOnly' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/backup-policy:
+    get:
+      tags: [Backups]
+      summary: Get the backup policy
+      responses:
+        '200':
+          description: The policy.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BackupPolicy' }
+    put:
+      tags: [Backups]
+      summary: Change the backup policy
+      description: Administrators only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BackupPolicy' }
+      responses:
+        '200':
+          description: Changed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BackupPolicy' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/jobs:
+    get:
+      tags: [Jobs]
+      summary: List jobs
+      parameters:
+        - { name: websiteId, in: query, schema: { type: string } }
+        - { name: serverId, in: query, schema: { type: string } }
+        - { name: perPage, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 25 } }
+        - { name: state, in: query, schema: { $ref: '#/components/schemas/JobState' } }
+      responses:
+        '200':
+          description: One page of jobs. The newest job is first.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/Job' } }
+
+  /v1/jobs/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    get:
+      tags: [Jobs]
+      summary: Get a job
+      responses:
+        '200':
+          description: The job.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/Job' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/servers:
+    get:
+      tags: [Servers]
+      summary: List servers
+      responses:
+        '200':
+          description: The servers.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/Server' } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /v1/servers/join-tokens:
+    post:
+      tags: [Servers]
+      summary: Make a join token
+      description: FR-1201. Give the token to the install script with `--join`. The token works once and expires after one day.
+      responses:
+        '201':
+          description: The token and the install command.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { type: string }
+                  expiresAt: { type: string, format: date-time }
+                  command: { type: string }
+
+  /v1/servers/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    get:
+      tags: [Servers]
+      summary: Get a server
+      responses:
+        '200':
+          description: The server.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Server' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Servers]
+      summary: Change a server
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, pattern: '^[a-z][a-z0-9-]{1,30}$' }
+                location: { type: string }
+                roles: { type: array, minItems: 1, items: { $ref: '#/components/schemas/ServerRole' } }
+                gvisorPlatform: { type: string, enum: [systrap, kvm], description: KVM needs a bare-metal server. }
+                updatePolicy: { type: string, enum: [security, all, manual] }
+                maintenanceWindow: { type: string, pattern: '^[0-2][0-9]:[0-5][0-9]-[0-2][0-9]:[0-5][0-9]$' }
+      responses:
+        '200':
+          description: Changed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Server' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/servers/{id}/install-updates:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [Servers]
+      summary: Install host updates now
+      description: FR-1117. The agent restarts only the services that changed.
+      responses:
+        '202': { $ref: '#/components/responses/JobOnly' }
+
+  /v1/servers/{id}/reboot:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [Servers]
+      summary: Reboot a server
+      responses:
+        '202': { $ref: '#/components/responses/JobOnly' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/servers/{id}/update-agent:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [Servers]
+      summary: Update the agent
+      description: The agent keeps the previous binary. It goes back to it if the new binary does not start.
+      responses:
+        '202': { $ref: '#/components/responses/JobOnly' }
+
+  /v1/images:
+    get:
+      tags: [Images]
+      summary: List images
+      responses:
+        '200':
+          description: The images.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/Image' } }
+    post:
+      tags: [Images]
+      summary: Add a custom image
+      description: FR-1108. The panel accepts only an image with a valid signature.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, reference, tag, policy]
+              properties:
+                name: { type: string, maxLength: 100 }
+                reference: { type: string, description: 'For example "registry.example.com/team/app".' }
+                tag: { type: string }
+                policy: { type: string, enum: [automatic, manual] }
+      responses:
+        '201':
+          description: Added.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Image' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/images/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    patch:
+      tags: [Images]
+      summary: Change the update policy of an image
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [policy]
+              properties:
+                policy: { type: string, enum: [automatic, security_automatic, manual] }
+      responses:
+        '200':
+          description: Changed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Image' }
+
+  /v1/rollouts:
+    get:
+      tags: [Images]
+      summary: List rollouts
+      responses:
+        '200':
+          description: The newest 20 rollouts.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/Rollout' } }
+    post:
+      tags: [Images]
+      summary: Start a rollout
+      description: |
+        FR-1103. Update all websites on an image in stages: one canary website, 10%, 50%, then everyone.
+        A website that fails its health check goes back to the previous image. If the canary fails,
+        the rollout pauses. Only one rollout runs at a time.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [imageId]
+              properties:
+                imageId: { type: string }
+      responses:
+        '201':
+          description: Started.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Rollout' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/rollouts/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    get:
+      tags: [Images]
+      summary: Get a rollout
+      responses:
+        '200':
+          description: The rollout.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Rollout' }
+
+  /v1/rollouts/{id}/pause:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [Images]
+      summary: Pause a rollout
+      description: Jobs that run now complete. The next stage does not start.
+      responses:
+        '200':
+          description: Paused.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Rollout' }
+
+  /v1/rollouts/{id}/resume:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [Images]
+      summary: Resume a rollout
+      responses:
+        '200':
+          description: Resumed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Rollout' }
+
+  /v1/rollouts/{id}/roll-back:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [Images]
+      summary: Roll back a rollout
+      description: FR-1107. Put all updated websites back on the previous image.
+      responses:
+        '200':
+          description: Rolled back.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Rollout' }
+
+  /v1/customers:
+    get:
+      tags: [Customers]
+      summary: List customers
+      responses:
+        '200':
+          description: The customers that you can see.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/Customer' } }
+    post:
+      tags: [Customers]
+      summary: Add a customer
+      description: Administrators add resellers and owners. Resellers add owners only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email, role, planId]
+              properties:
+                name: { type: string }
+                email: { type: string, format: email }
+                role: { type: string, enum: [reseller, owner] }
+                planId: { type: string }
+                resellerId: { type: string, description: Administrators only. }
+      responses:
+        '201':
+          description: Added.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Customer' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/customers/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    patch:
+      tags: [Customers]
+      summary: Change a customer
+      description: A reseller sets the branding (FR-106).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+                planId: { type: string }
+                suspended: { type: boolean }
+                branding: { $ref: '#/components/schemas/Branding' }
+      responses:
+        '200':
+          description: Changed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Customer' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /v1/plans:
+    get:
+      tags: [Customers]
+      summary: List plans
+      responses:
+        '200':
+          description: The plans.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/Plan' } }
+    post:
+      tags: [Customers]
+      summary: Add a plan
+      description: Administrators only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PlanInput' }
+      responses:
+        '201':
+          description: Added.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Plan' }
+
+  /v1/plans/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    patch:
+      tags: [Customers]
+      summary: Change a plan
+      description: Administrators only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PlanInput' }
+      responses:
+        '200':
+          description: Changed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Plan' }
+
+  /v1/audit:
+    get:
+      tags: [Audit]
+      summary: Read the audit log
+      description: FR-105. Each change, with who made it, when, and from which IP address.
+      parameters:
+        - { name: q, in: query, description: Text in the actor, action or target, or an exact IP address., schema: { type: string } }
+        - { name: perPage, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1 } }
+      responses:
+        '200':
+          description: One page of entries. The newest entry is first.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: integer }
+                        at: { type: string, format: date-time }
+                        actor: { type: string }
+                        ip: { type: [string, 'null'] }
+                        action: { type: string }
+                        target: { type: string }
+                  meta:
+                    type: object
+                    properties:
+                      currentPage: { type: integer }
+                      lastPage: { type: integer }
+                      total: { type: integer }
+
+  /agent/v1/join:
+    post:
+      tags: [Agent]
+      summary: Join a server to the panel
+      description: The command `cf-agent join` calls this route. The join token works once.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, name, agentUrl, certificateSha256, agentVersion, os, arch]
+              properties:
+                token: { type: string }
+                name: { type: string, pattern: '^[a-z][a-z0-9-]{1,30}$' }
+                agentUrl: { type: string, format: uri }
+                certificateSha256: { type: string, pattern: '^[0-9a-f]{64}$' }
+                agentVersion: { type: string }
+                os: { type: string, enum: [debian-13, ubuntu-26.04] }
+                osName: { type: string }
+                kernel: { type: string }
+                arch: { type: string, enum: [x86-64, arm64] }
+                bareMetal: { type: boolean }
+                podmanVersion: { type: string }
+                gvisorVersion: { type: string }
+                roles: { type: array, items: { $ref: '#/components/schemas/ServerRole' } }
+      responses:
+        '201':
+          description: Joined. Keep the agent token. The panel shows it only once.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  serverId: { type: string }
+                  agentToken: { type: string }
+                  panelCertificateSha256: { type: [string, 'null'] }
+        '401': { description: The join token is not valid or has expired. }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /agent/v1/jobs/{id}/events:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [Agent]
+      summary: Report the progress or the result of a job
+      security:
+        - agentToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [state]
+              properties:
+                state: { type: string, enum: [running, succeeded, failed] }
+                step: { type: integer, minimum: 0 }
+                error: { type: string, maxLength: 4000 }
+                result: { type: object }
+      responses:
+        '200': { description: Recorded. }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /agent/v1/report:
+    post:
+      tags: [Agent]
+      summary: Report the state of the host
+      description: FR-1118. The agent sends this report every minute.
+      security:
+        - agentToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/HostReport' }
+      responses:
+        '200': { description: Recorded. }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+
+components:
+  securitySchemes:
+    token:
+      type: http
+      scheme: bearer
+      description: A session token from /v1/auth/login, or an API token.
+    agentToken:
+      type: http
+      scheme: bearer
+      description: |
+        The agent token from /agent/v1/join. The edge proxy also checks the client certificate
+        and sends its SHA-256 fingerprint in the `X-Client-Cert-Sha256` header.
+
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
+    WebsiteId:
+      name: websiteId
+      in: path
+      required: true
+      schema: { type: string }
+
+  responses:
+    Unauthenticated:
+      description: No token, or the token has expired.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Forbidden:
+      description: The token does not have the necessary scope or role.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: The item does not exist, or you cannot see it.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Invalid:
+      description: One or more fields are not correct.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ValidationError' }
+    JobOnly:
+      description: The job is in the queue.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              job: { $ref: '#/components/schemas/Job' }
+    WebsiteJob:
+      description: The panel recorded the change. The job is in the queue.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              website: { $ref: '#/components/schemas/Website' }
+              job: { $ref: '#/components/schemas/Job' }
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        message: { type: string }
+    ValidationError:
+      type: object
+      properties:
+        message: { type: string }
+        errors:
+          type: object
+          additionalProperties: { type: array, items: { type: string } }
+    Scope:
+      type: string
+      enum: [websites:read, websites:write, databases:read, databases:write, backups:read, backups:write, servers:read, servers:write, images:read, images:write, customers:read, customers:write, audit:read]
+    User:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        email: { type: string }
+        role: { type: string, enum: [administrator, reseller, owner] }
+        customerId: { type: [string, 'null'] }
+        totpEnabled: { type: boolean }
+    Token:
+      type: object
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        scopes: { type: array, items: { type: string } }
+        createdAt: { type: string, format: date-time }
+        expiresAt: { type: [string, 'null'], format: date-time }
+        lastUsedAt: { type: [string, 'null'], format: date-time }
+    WebsiteStatus:
+      type: string
+      enum: [starting, running, stopping, stopped, failed]
+    Limits:
+      type: object
+      required: [vcpus, memoryBytes, diskBytes, diskIoBytesPerSecond, processes]
+      properties:
+        vcpus: { type: number }
+        memoryBytes: { type: integer }
+        diskBytes: { type: integer }
+        diskIoBytesPerSecond: { type: integer }
+        processes: { type: integer }
+    Website:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        application: { type: string }
+        customerId: { type: string }
+        serverId: { type: string }
+        planId: { type: string }
+        unixUser: { type: string }
+        status: { $ref: '#/components/schemas/WebsiteStatus' }
+        runtime:
+          type: object
+          properties:
+            imageId: { type: string }
+            family: { type: string }
+            image: { type: string }
+            digest: { type: [string, 'null'] }
+            signatureVerified: { type: boolean }
+            phpVersion: { type: [string, 'null'] }
+            workerMode: { type: boolean }
+            extensions: { type: array, items: { type: string } }
+            phpIni: { type: object, additionalProperties: { type: string } }
+            previousImageId: { type: [string, 'null'] }
+            supportEndsAt: { type: [string, 'null'], format: date }
+        updateReady: { type: boolean }
+        limits: { $ref: '#/components/schemas/Limits' }
+        usage: { type: [object, 'null'] }
+        domains:
+          type: array
+          items:
+            type: object
+            properties:
+              name: { type: string }
+              kind: { type: string, enum: [primary, redirect, alias] }
+              dnsPointsHere: { type: boolean }
+              certificate:
+                type: object
+                properties:
+                  state: { type: string, enum: [pending, valid, failed] }
+                  expiresAt: { type: [string, 'null'], format: date-time }
+        stagingOf: { type: [string, 'null'] }
+        managedByTerraform: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    JobState:
+      type: string
+      enum: [queued, running, succeeded, failed]
+    Job:
+      type: object
+      properties:
+        id: { type: string }
+        title: { type: string }
+        ref: { type: [string, 'null'] }
+        action: { type: string }
+        state: { $ref: '#/components/schemas/JobState' }
+        steps: { type: array, items: { type: string } }
+        step: { type: integer, description: The number of steps that are complete. }
+        error: { type: [string, 'null'] }
+        websiteId: { type: [string, 'null'] }
+        serverId: { type: string }
+        createdAt: { type: string, format: date-time }
+        finishedAt: { type: [string, 'null'], format: date-time }
+    Engine:
+      type: string
+      enum: [mariadb, postgresql]
+    Snapshot:
+      type: object
+      properties:
+        id: { type: string }
+        kind: { type: string, enum: [daily, weekly, monthly, manual] }
+        sizeBytes: { type: integer }
+        databases: { type: array, items: { type: string } }
+        mailboxes: { type: array, items: { type: string } }
+        createdAt: { type: string, format: date-time }
+    BackupPolicy:
+      type: object
+      required: [daily, weekly, monthly, time, target]
+      properties:
+        daily: { type: integer, minimum: 0, maximum: 365 }
+        weekly: { type: integer, minimum: 0, maximum: 520 }
+        monthly: { type: integer, minimum: 0, maximum: 240 }
+        time: { type: string, pattern: '^[0-2][0-9]:[0-5][0-9]$' }
+        target: { type: string, description: 'Object storage, for example "s3://bucket/path".' }
+    ServerRole:
+      type: string
+      enum: [web, database, email, dns, backup]
+    Server:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        location: { type: string }
+        roles: { type: array, items: { $ref: '#/components/schemas/ServerRole' } }
+        state: { type: string, enum: [joining, healthy, agent_update, degraded, offline, rebooting] }
+        agentVersion: { type: [string, 'null'] }
+        os: { type: [string, 'null'] }
+        kernel: { type: [string, 'null'] }
+        arch: { type: [string, 'null'] }
+        podmanVersion: { type: [string, 'null'] }
+        gvisorVersion: { type: [string, 'null'] }
+        gvisorPlatform: { type: string, enum: [systrap, kvm] }
+        bareMetal: { type: boolean }
+        updatePolicy: { type: string, enum: [security, all, manual] }
+        maintenanceWindow: { type: string }
+        pendingUpdates: { type: array, items: { type: object } }
+        lastUpdateAt: { type: [string, 'null'], format: date-time }
+        rebootRequired: { type: boolean }
+        services: { type: array, items: { type: object } }
+        usage: { type: [object, 'null'] }
+        websites: { type: [integer, 'null'] }
+        lastSeenAt: { type: [string, 'null'], format: date-time }
+    Image:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        family: { type: string }
+        reference: { type: string }
+        tag: { type: string }
+        digest: { type: [string, 'null'] }
+        availableTag: { type: [string, 'null'] }
+        phpVersion: { type: [string, 'null'] }
+        supportEndsAt: { type: [string, 'null'], format: date }
+        policy: { type: string, enum: [automatic, security_automatic, manual] }
+        custom: { type: boolean }
+        signatureVerified: { type: boolean }
+        websites: { type: [integer, 'null'] }
+    Rollout:
+      type: object
+      properties:
+        id: { type: string }
+        imageId: { type: string }
+        title: { type: string }
+        fromTag: { type: string }
+        toTag: { type: string }
+        severity: { type: string }
+        state: { type: string, enum: [running, paused, done, rolled_back] }
+        stages:
+          type: array
+          items:
+            type: object
+            properties:
+              name: { type: string }
+              websites: { type: integer }
+              state: { type: string, enum: [waiting, in_progress, done] }
+        websites: { type: integer }
+        healthy: { type: integer }
+        rolledBack: { type: integer }
+        running: { type: integer }
+        rollbacks:
+          type: array
+          items:
+            type: object
+            properties:
+              website: { type: string }
+              reason: { type: string }
+        startedAt: { type: string, format: date-time }
+    Branding:
+      type: object
+      properties:
+        name: { type: string }
+        colour: { type: string, pattern: '^#[0-9a-fA-F]{6}$' }
+        panelDomain: { type: string }
+        supportEmail: { type: string, format: email }
+    Customer:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        email: { type: string }
+        role: { type: string, enum: [reseller, owner] }
+        planId: { type: string }
+        resellerId: { type: [string, 'null'] }
+        branding: { oneOf: [{ $ref: '#/components/schemas/Branding' }, { type: 'null' }] }
+        suspended: { type: boolean }
+        websites: { type: [integer, 'null'] }
+        createdAt: { type: string, format: date-time }
+    PlanInput:
+      type: object
+      required: [name, websites, mailboxes, databases, phpExtensions, limits]
+      properties:
+        name: { type: string }
+        websites: { type: integer, minimum: 1 }
+        mailboxes: { type: integer, minimum: 0 }
+        databases: { type: integer, minimum: 0 }
+        phpExtensions: { type: array, items: { type: string } }
+        limits: { $ref: '#/components/schemas/Limits' }
+    Plan:
+      allOf:
+        - { $ref: '#/components/schemas/PlanInput' }
+        - type: object
+          properties:
+            id: { type: string }
+    HostReport:
+      type: object
+      required: [agentVersion]
+      properties:
+        agentVersion: { type: string }
+        kernel: { type: string }
+        podmanVersion: { type: string }
+        gvisorVersion: { type: string }
+        pendingUpdates:
+          type: array
+          items:
+            type: object
+            required: [name, to]
+            properties:
+              name: { type: string }
+              from: { type: string }
+              to: { type: string }
+              security: { type: boolean }
+        rebootRequired: { type: boolean }
+        lastUpdateAt: { type: string, format: date-time }
+        services:
+          type: array
+          items:
+            type: object
+            properties:
+              name: { type: string }
+              state: { type: string, enum: [running, stopped, failed] }
+        usage: { type: object }
+        websites:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              cpuPercent: { type: number }
+              memoryBytes: { type: integer }
+              diskBytes: { type: integer }
+              processes: { type: integer }

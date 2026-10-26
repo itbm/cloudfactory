@@ -1,4 +1,4 @@
-// Types for the panel API. They follow the schemas in api/openapi.yaml.
+// Types for the panel API. They follow the schemas in openapi/openapi.yaml.
 // Replace this file with the generated client when the panel API exists.
 
 export type Role = "administrator" | "reseller" | "owner";

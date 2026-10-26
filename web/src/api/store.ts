@@ -1,7 +1,7 @@
 // An in-memory panel API. It follows the flow of a change in spec section 6.3:
 // the API checks the input, writes the desired state, and puts a job in the queue.
 // A simulated agent then runs the job step by step and reports the result.
-// The real client (generated from api/openapi.yaml) replaces this file.
+// The real client (generated from openapi/openapi.yaml) replaces this file.
 
 import { validateRecord, type RecordInput } from "../lib/dns";
 import { DAY, GB, MB, seed } from "./seed";

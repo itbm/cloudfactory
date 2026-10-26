@@ -1,0 +1,46 @@
+<?php
+
+namespace App\Enums;
+
+/**
+ * Spec section 6.4: the agent accepts only typed actions. It never accepts shell commands.
+ * Each value is a method of the agent service in agent/proto/cloudfactory/agent/v1/agent.proto.
+ */
+enum AgentAction: string
+{
+    case CreateWebsite = 'CreateWebsite';
+    case DeleteWebsite = 'DeleteWebsite';
+    case SetWebsitePower = 'SetWebsitePower';
+    case SetLimits = 'SetLimits';
+    case SetRuntime = 'SetRuntime';
+    case AddDomain = 'AddDomain';
+    case RemoveDomain = 'RemoveDomain';
+    case CreateDatabase = 'CreateDatabase';
+    case DeleteDatabase = 'DeleteDatabase';
+    case Backup = 'Backup';
+    case Restore = 'Restore';
+    case InstallHostUpdates = 'InstallHostUpdates';
+    case Reboot = 'Reboot';
+    case UpdateAgent = 'UpdateAgent';
+
+    /** The steps that the agent reports for this action. */
+    public function steps(): array
+    {
+        return match ($this) {
+            self::CreateWebsite => ['Create Unix user', 'Create container network', 'Pull and check image signature', 'Start container in gVisor', 'Configure edge proxy', 'Get TLS certificate'],
+            self::DeleteWebsite => ['Stop container', 'Remove container and network', 'Remove edge proxy route', 'Remove Unix user'],
+            self::SetWebsitePower => ['Change container state', 'Health check'],
+            self::SetLimits => ['Update cgroup limits'],
+            self::SetRuntime => ['Check image signature', 'Start new container on a copy', 'Health check', 'Switch traffic', 'Stop old container'],
+            self::AddDomain => ['Add edge proxy route', 'Check DNS', 'Get TLS certificate'],
+            self::RemoveDomain => ['Remove edge proxy route'],
+            self::CreateDatabase => ['Create database', 'Create user', 'Allow the website container only'],
+            self::DeleteDatabase => ['Remove database'],
+            self::Backup => ['Snapshot files', 'Dump databases', 'Upload to object storage'],
+            self::Restore => ['Download snapshot', 'Restore', 'Health check'],
+            self::InstallHostUpdates => ['Download packages', 'Install packages', 'Restart changed services only'],
+            self::Reboot => ['Drain the edge proxy', 'Stop containers', 'Reboot', 'Start containers', 'Check all services'],
+            self::UpdateAgent => ['Download agent binary', 'Check signature', 'Keep previous binary for rollback', 'Restart agent'],
+        };
+    }
+}
