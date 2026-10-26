@@ -17,6 +17,8 @@ enum AgentAction: string
     case RemoveDomain = 'RemoveDomain';
     case CreateDatabase = 'CreateDatabase';
     case DeleteDatabase = 'DeleteDatabase';
+    case SetDatabaseUser = 'SetDatabaseUser';
+    case DeleteDatabaseUser = 'DeleteDatabaseUser';
     case Backup = 'Backup';
     case Restore = 'Restore';
     case InstallHostUpdates = 'InstallHostUpdates';
@@ -35,7 +37,9 @@ enum AgentAction: string
             self::AddDomain => ['Add edge proxy route', 'Check DNS', 'Get TLS certificate'],
             self::RemoveDomain => ['Remove edge proxy route'],
             self::CreateDatabase => ['Create database', 'Create user', 'Allow the website container only'],
-            self::DeleteDatabase => ['Remove database'],
+            self::DeleteDatabase => ['Remove access of users', 'Remove database'],
+            self::SetDatabaseUser => ['Set user and password', 'Set access to databases'],
+            self::DeleteDatabaseUser => ['Remove user'],
             self::Backup => ['Snapshot files', 'Dump databases', 'Upload to object storage'],
             self::Restore => ['Download snapshot', 'Restore', 'Health check'],
             self::InstallHostUpdates => ['Download packages', 'Install packages', 'Restart changed services only'],

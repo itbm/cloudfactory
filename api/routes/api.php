@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BackupController;
 use App\Http\Controllers\Api\CustomerController;
 use App\Http\Controllers\Api\DatabaseController;
+use App\Http\Controllers\Api\DatabaseUserController;
 use App\Http\Controllers\Api\DomainController;
 use App\Http\Controllers\Api\ImageController;
 use App\Http\Controllers\Api\JobController;
@@ -25,11 +26,13 @@ use Illuminate\Support\Facades\Route;
 Route::prefix('v1')->group(function () {
     Route::post('auth/login', [AuthController::class, 'login'])->middleware('throttle:10,1');
 
-    Route::middleware('auth:sanctum')->group(function () {
+    Route::middleware(['auth:sanctum', 'active'])->group(function () {
         Route::get('me', [AuthController::class, 'me']);
-        Route::get('tokens', [AuthController::class, 'tokens']);
-        Route::post('tokens', [AuthController::class, 'createToken']);
-        Route::delete('tokens/{id}', [AuthController::class, 'revokeToken'])->whereNumber('id');
+        Route::middleware('scope:tokens')->group(function () {
+            Route::get('tokens', [AuthController::class, 'tokens']);
+            Route::post('tokens', [AuthController::class, 'createToken'])->middleware('throttle:10,1');
+            Route::delete('tokens/{id}', [AuthController::class, 'revokeToken'])->whereNumber('id');
+        });
 
         Route::middleware('scope:websites')->group(function () {
             Route::get('websites', [WebsiteController::class, 'index']);
@@ -40,6 +43,7 @@ Route::prefix('v1')->group(function () {
             Route::post('websites/{id}/power', [WebsiteController::class, 'power']);
             Route::post('websites/{id}/staging', [WebsiteController::class, 'staging']);
             Route::post('websites/{websiteId}/domains', [DomainController::class, 'store']);
+            Route::post('websites/{websiteId}/domains/{name}/verify', [DomainController::class, 'verify']);
             Route::delete('websites/{websiteId}/domains/{name}', [DomainController::class, 'destroy']);
             Route::put('websites/{websiteId}/runtime', [RuntimeController::class, 'update']);
             Route::post('websites/{websiteId}/runtime/revert', [RuntimeController::class, 'revert']);
@@ -52,6 +56,9 @@ Route::prefix('v1')->group(function () {
             Route::get('websites/{websiteId}/databases', [DatabaseController::class, 'index']);
             Route::post('websites/{websiteId}/databases', [DatabaseController::class, 'store']);
             Route::delete('websites/{websiteId}/databases/{databaseId}', [DatabaseController::class, 'destroy']);
+            Route::post('websites/{websiteId}/database-users', [DatabaseUserController::class, 'store']);
+            Route::patch('websites/{websiteId}/database-users/{userId}', [DatabaseUserController::class, 'update']);
+            Route::delete('websites/{websiteId}/database-users/{userId}', [DatabaseUserController::class, 'destroy']);
         });
 
         Route::middleware('scope:backups')->group(function () {

@@ -56,7 +56,8 @@ class JobDispatcher
                 'extensions' => $website->extensions,
                 'phpIni' => (object) $website->php_ini,
                 'limits' => $website->limits,
-                'domains' => $website->domains->map(fn ($d) => ['name' => $d->name, 'kind' => $d->kind->value])->values()->all(),
+                // CF-03: the edge proxy serves only the domains that the customer verified.
+                'domains' => $website->domains->filter(fn ($d) => $d->verified())->map(fn ($d) => ['name' => $d->name, 'kind' => $d->kind->value])->values()->all(),
             ],
         ];
     }

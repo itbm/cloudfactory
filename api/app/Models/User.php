@@ -13,7 +13,7 @@ use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
 
 #[Fillable(['name', 'email', 'password', 'role', 'customer_id'])]
-#[Hidden(['password', 'remember_token', 'totp_secret'])]
+#[Hidden(['password', 'remember_token', 'totp_secret', 'totp_last_step'])]
 class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */
@@ -58,6 +58,12 @@ class User extends Authenticatable
         }
 
         return [$this->customer_id];
+    }
+
+    /** CF-08: the user belongs to a suspended customer, or to a customer of a suspended reseller. */
+    public function isSuspended(): bool
+    {
+        return $this->customer_id !== null && ($this->customer?->isSuspended() ?? false);
     }
 
     public function canSeeCustomer(?string $customerId): bool

@@ -5,10 +5,13 @@ namespace App\Http\Controllers\Api;
 use App\Enums\Role;
 use App\Http\Controllers\Controller;
 use App\Models\Customer;
+use App\Models\Domain;
 use App\Services\Audit;
+use App\Services\DomainPolicy;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 /** FR-102 and FR-106: resellers make website owners, set their limits and set their brand. */
 class CustomerController extends Controller
@@ -60,8 +63,18 @@ class CustomerController extends Controller
             'branding.panelDomain' => ['sometimes', 'regex:'.WebsiteController::DOMAIN],
             'branding.supportEmail' => ['sometimes', 'email'],
         ]);
-        if ($customer->id === $request->user()->customer_id && (isset($data['planId']) || isset($data['suspended']))) {
+        $user = $request->user();
+        if ($customer->id === $user->customer_id && (isset($data['planId']) || isset($data['suspended']))) {
             return response()->json(['message' => 'You cannot change your own plan or status.'], 403);
+        }
+        // CF-20: the brand is for resellers. An administrator or the reseller itself sets it.
+        if (isset($data['branding'])) {
+            if ($customer->role !== 'reseller' || ! ($user->isAdministrator() || $customer->id === $user->customer_id)) {
+                return response()->json(['message' => 'Only a reseller has a brand.'], 403);
+            }
+            if (isset($data['branding']['panelDomain'])) {
+                $this->checkPanelDomain($data['branding']['panelDomain'], $customer);
+            }
         }
         $customer->update(array_filter([
             'name' => $data['name'] ?? null,
@@ -69,9 +82,26 @@ class CustomerController extends Controller
             'suspended' => $data['suspended'] ?? null,
             'branding' => isset($data['branding']) ? [...($customer->branding ?? []), ...$data['branding']] : null,
         ], fn ($v) => $v !== null));
+        // CF-08: a suspension takes effect at once.
+        if ($data['suspended'] ?? false) {
+            $customer->revokeTokens();
+        }
         Audit::record($request, 'Changed customer', $customer->name, $customer->id);
 
         return response()->json(self::present($customer->fresh()));
+    }
+
+    /**
+     * A reseller panel domain must not be reserved, and must not be a domain of a website of a
+     * different customer (CF-03, CF-20).
+     */
+    private function checkPanelDomain(string $domain, Customer $reseller): void
+    {
+        $policy = app(DomainPolicy::class);
+        $inUse = Domain::where('name', $domain)->whereHas('website', fn ($q) => $q->where('customer_id', '!=', $reseller->id))->exists();
+        if ($policy->isReserved($domain, $reseller->id) || $inUse) {
+            throw ValidationException::withMessages(['branding.panelDomain' => 'This domain is reserved or in use.']);
+        }
     }
 
     private function find(Request $request, string $id): Customer

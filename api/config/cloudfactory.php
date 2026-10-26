@@ -10,6 +10,8 @@ return [
         'timeout' => (int) env('CF_AGENT_TIMEOUT', 10),
         // The latest agent version. Servers with an older agent show "Agent update ready".
         'latest_version' => env('CF_AGENT_LATEST', '0.1.0'),
+        // CF-10: the addresses from which the agent on the panel server calls the API directly.
+        'direct_addresses' => array_filter(explode(',', env('CF_AGENT_DIRECT_ADDRESSES', '127.0.0.1,::1'))),
     ],
 
     'registry' => env('CF_REGISTRY', 'ghcr.io/cloudfactory'),
@@ -38,5 +40,7 @@ return [
         'images:read', 'images:write',
         'customers:read', 'customers:write',
         'audit:read',
+        // CF-02: only a token with this scope, or a session token, can see and change tokens.
+        'tokens:read', 'tokens:write',
     ],
 ];

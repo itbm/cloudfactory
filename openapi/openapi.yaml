@@ -39,7 +39,7 @@ paths:
     post:
       tags: [Auth]
       summary: Sign in
-      description: Sign in with an email address, a password and a TOTP code. The token expires after 12 hours.
+      description: Sign in with an email address, a password and a TOTP code. The token expires after 12 hours. A TOTP code is good one time only. After 5 failed attempts the account is locked for 30 seconds, and the time doubles after each further failure, up to one hour.
       security: []
       requestBody:
         required: true
@@ -63,7 +63,8 @@ paths:
                   token: { type: string }
                   expiresAt: { type: string, format: date-time }
         '422': { $ref: '#/components/responses/Invalid' }
-        '429': { description: Too many attempts. Wait one minute. }
+        '403': { description: The customer of the user is suspended. }
+        '429': { description: Too many attempts from this address, or too many failed attempts for this account. The Retry-After header gives the number of seconds to wait. }
 
   /v1/me:
     get:
@@ -81,6 +82,7 @@ paths:
     get:
       tags: [Auth]
       summary: List your API tokens
+      description: Needs a session token or the tokens:read scope.
       responses:
         '200':
           description: The tokens. The secret part is not shown again.
@@ -93,17 +95,20 @@ paths:
     post:
       tags: [Auth]
       summary: Make an API token
+      description: Needs a session token or the tokens:write scope. The new token can have only the scopes of the token that makes it. Give your password, and your TOTP code when TOTP is on.
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [name, scopes, expiresInDays]
+              required: [name, scopes, expiresInDays, password]
               properties:
                 name: { type: string, maxLength: 100 }
                 scopes: { type: array, minItems: 1, items: { $ref: '#/components/schemas/Scope' } }
                 expiresInDays: { type: integer, minimum: 1, maximum: 365 }
+                password: { type: string, description: The password of the user. }
+                totp: { type: string, pattern: '^[0-9]{6}$', description: Necessary when TOTP is on for the user. }
       responses:
         '201':
           description: The token. Copy it now. The panel shows it only once.
@@ -116,12 +121,14 @@ paths:
                   token: { type: string }
                   scopes: { type: array, items: { $ref: '#/components/schemas/Scope' } }
                   expiresAt: { type: string, format: date-time }
+        '403': { description: The token does not have the tokens:write scope, or it does not have a scope that the new token asks for. }
         '422': { $ref: '#/components/responses/Invalid' }
 
   /v1/tokens/{id}:
     delete:
       tags: [Auth]
       summary: Revoke an API token
+      description: Needs a session token or the tokens:write scope.
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
       responses:
@@ -153,19 +160,22 @@ paths:
     post:
       tags: [Websites]
       summary: Create a website
-      description: FR-201. The panel selects the web server with the fewest websites when you do not give `serverId`.
+      description: >-
+        FR-201. The panel selects the web server with the fewest websites when you do not give
+        `serverId`. The edge proxy serves the primary domain only after it is verified (refer to
+        "Add a redirect or an alias").
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [name, imageId, planId]
+              required: [name, imageId]
               properties:
                 name: { type: string, description: The primary domain. Lower case. }
                 application: { type: string, maxLength: 100 }
                 imageId: { type: string }
-                planId: { type: string }
+                planId: { type: string, description: The plan of the customer when you do not give it. Only an administrator or the reseller of the customer can give a different plan. }
                 serverId: { type: string }
                 customerId: { type: string, description: Necessary for administrators and resellers. }
       responses:
@@ -192,7 +202,7 @@ paths:
     patch:
       tags: [Websites]
       summary: Change a website
-      description: Only administrators can set `limits` (FR-202).
+      description: Only administrators can set `limits` (FR-202). Only an administrator or the reseller of the customer can change `planId`.
       requestBody:
         required: true
         content:
@@ -259,6 +269,12 @@ paths:
     post:
       tags: [Websites]
       summary: Add a redirect or an alias
+      description: >-
+        You cannot add the panel domain, a reseller panel domain, the host name of a server, or a
+        sub-domain of one of these. The edge proxy serves the domain only after you prove that you
+        control it. Add the TXT record in "verification", then verify the domain. A domain is
+        verified at once when you are an administrator, or when it is a sub-domain of a verified
+        domain of the same customer.
       requestBody:
         required: true
         content:
@@ -270,8 +286,37 @@ paths:
                 name: { type: string }
                 kind: { type: string, enum: [redirect, alias] }
       responses:
-        '202': { $ref: '#/components/responses/JobOnly' }
+        '202':
+          description: The domain. The job is null until the domain is verified.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  domain: { $ref: '#/components/schemas/Domain' }
+                  job: { oneOf: [{ $ref: '#/components/schemas/Job' }, { type: 'null' }] }
         '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/websites/{websiteId}/domains/{name}/verify:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+      - { name: name, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [Websites]
+      summary: Verify a domain
+      description: The panel reads the TXT record of the domain. When it holds the token, the edge proxy starts to serve the domain.
+      responses:
+        '202':
+          description: The domain is verified. The job adds the domain to the edge proxy.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  domain: { $ref: '#/components/schemas/Domain' }
+                  job: { oneOf: [{ $ref: '#/components/schemas/Job' }, { type: 'null' }] }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { description: The TXT record does not have the token. }
 
   /v1/websites/{websiteId}/domains/{name}:
     parameters:
@@ -280,7 +325,7 @@ paths:
     delete:
       tags: [Websites]
       summary: Remove a domain
-      description: You cannot remove the primary domain.
+      description: You cannot remove the primary domain. The job is null when the domain was not verified.
       responses:
         '202': { $ref: '#/components/responses/JobOnly' }
         '422': { $ref: '#/components/responses/Invalid' }
@@ -307,7 +352,12 @@ paths:
                 extensions: { type: array, items: { type: string }, description: Only the extensions of the plan. }
                 phpIni:
                   type: object
-                  description: 'Permitted keys: memory_limit, upload_max_filesize, post_max_size, max_execution_time, max_input_vars, display_errors, date.timezone, opcache.memory_consumption.'
+                  description: >-
+                    Permitted keys and values: memory_limit (16M to the memory limit of the website),
+                    upload_max_filesize and post_max_size (a size up to 16G), max_execution_time (1 to
+                    3600), max_input_vars (100 to 100000), display_errors (On or Off), date.timezone (a
+                    time zone), opcache.memory_consumption (8 to the memory limit in megabytes). The
+                    panel refuses -1 (no limit).
                   additionalProperties: { type: string }
       responses:
         '202': { $ref: '#/components/responses/WebsiteJob' }
@@ -338,6 +388,7 @@ paths:
               schema:
                 type: object
                 properties:
+                  prefix: { type: string, description: 'The start of each database and user name: the Unix user of the website and an underscore.' }
                   databases:
                     type: array
                     items:
@@ -347,20 +398,14 @@ paths:
                         engine: { $ref: '#/components/schemas/Engine' }
                         name: { type: string }
                         sizeBytes: { type: integer }
-                  users:
-                    type: array
-                    items:
-                      type: object
-                      properties:
-                        id: { type: string }
-                        engine: { $ref: '#/components/schemas/Engine' }
-                        name: { type: string }
-                        databases: { type: array, items: { type: string } }
-                        access: { type: string, enum: [website, remote] }
+                  users: { type: array, items: { $ref: '#/components/schemas/DatabaseUser' } }
     post:
       tags: [Databases]
       summary: Create a database
-      description: FR-501 and FR-502. The panel also makes a user. Only the website container can connect.
+      description: >-
+        FR-501 and FR-502. The full name is the prefix of the website and the name that you give,
+        for example "acme_x7k2_shop". By default the panel also makes a user with the same name and
+        read-write access. Only the website container can connect.
       requestBody:
         required: true
         content:
@@ -370,7 +415,8 @@ paths:
               required: [engine, name]
               properties:
                 engine: { $ref: '#/components/schemas/Engine' }
-                name: { type: string, pattern: '^[a-z][a-z0-9_]{1,62}$' }
+                name: { type: string, pattern: '^[a-z0-9][a-z0-9_]{0,31}$', description: The name after the prefix. You can also give the full name. }
+                createUser: { type: boolean, default: true }
       responses:
         '202':
           description: The password is shown only once. The panel does not keep it.
@@ -380,8 +426,9 @@ paths:
                 type: object
                 properties:
                   id: { type: string }
-                  user: { type: string }
-                  password: { type: string }
+                  name: { type: string }
+                  user: { type: [string, 'null'] }
+                  password: { type: [string, 'null'] }
                   job: { $ref: '#/components/schemas/Job' }
         '422': { $ref: '#/components/responses/Invalid' }
 
@@ -392,6 +439,62 @@ paths:
     delete:
       tags: [Databases]
       summary: Remove a database
+      description: The agent removes the access of each user to the database, then the database. The users stay.
+      responses:
+        '202': { $ref: '#/components/responses/JobOnly' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/websites/{websiteId}/database-users:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+    post:
+      tags: [Databases]
+      summary: Create a database user
+      description: >-
+        A user can have access to more than one database of the website, with a permission for each
+        database. For example, a sync user can have read-only access to production and read-write
+        access to staging.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [engine, name]
+              properties:
+                engine: { $ref: '#/components/schemas/Engine' }
+                name: { type: string, pattern: '^[a-z0-9][a-z0-9_]{0,31}$', description: The name after the prefix. }
+                access: { type: string, enum: [website, anywhere], default: website }
+                grants: { type: array, items: { $ref: '#/components/schemas/GrantInput' } }
+      responses:
+        '202': { $ref: '#/components/responses/DatabaseUserJob' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/websites/{websiteId}/database-users/{userId}:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+      - { name: userId, in: path, required: true, schema: { type: string } }
+    patch:
+      tags: [Databases]
+      summary: Change a database user
+      description: '"grants" replaces all grants of the user. "resetPassword" makes a new password.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                access: { type: string, enum: [website, anywhere] }
+                grants: { type: array, items: { $ref: '#/components/schemas/GrantInput' } }
+                resetPassword: { type: boolean }
+      responses:
+        '202': { $ref: '#/components/responses/DatabaseUserJob' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+    delete:
+      tags: [Databases]
+      summary: Remove a database user
       responses:
         '202': { $ref: '#/components/responses/JobOnly' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -1056,6 +1159,16 @@ components:
       schema: { type: string }
 
   responses:
+    DatabaseUserJob:
+      description: The user. The password is shown only once, and only when the panel made a new one.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              user: { $ref: '#/components/schemas/DatabaseUser' }
+              password: { type: [string, 'null'] }
+              job: { $ref: '#/components/schemas/Job' }
     Unauthenticated:
       description: No token, or the token has expired.
       content:
@@ -1108,7 +1221,7 @@ components:
           additionalProperties: { type: array, items: { type: string } }
     Scope:
       type: string
-      enum: [websites:read, websites:write, databases:read, databases:write, backups:read, backups:write, servers:read, servers:write, images:read, images:write, customers:read, customers:write, audit:read]
+      enum: [websites:read, websites:write, databases:read, databases:write, backups:read, backups:write, servers:read, servers:write, images:read, images:write, customers:read, customers:write, audit:read, tokens:read, tokens:write]
     User:
       type: object
       properties:
@@ -1169,17 +1282,7 @@ components:
         usage: { type: [object, 'null'] }
         domains:
           type: array
-          items:
-            type: object
-            properties:
-              name: { type: string }
-              kind: { type: string, enum: [primary, redirect, alias] }
-              dnsPointsHere: { type: boolean }
-              certificate:
-                type: object
-                properties:
-                  state: { type: string, enum: [pending, valid, failed] }
-                  expiresAt: { type: [string, 'null'], format: date-time }
+          items: { $ref: '#/components/schemas/Domain' }
         stagingOf: { type: [string, 'null'] }
         managedByTerraform: { type: boolean }
         createdAt: { type: string, format: date-time }
@@ -1313,6 +1416,47 @@ components:
         colour: { type: string, pattern: '^#[0-9a-fA-F]{6}$' }
         panelDomain: { type: string }
         supportEmail: { type: string, format: email }
+    Domain:
+      type: object
+      properties:
+        name: { type: string }
+        kind: { type: string, enum: [primary, redirect, alias] }
+        verified: { type: boolean, description: The edge proxy serves only verified domains. }
+        verification:
+          description: The TXT record that proves control of the domain. Null when the domain is verified.
+          oneOf:
+            - type: 'null'
+            - type: object
+              properties:
+                type: { type: string, enum: [TXT] }
+                name: { type: string, example: _cloudfactory-challenge.example.com }
+                value: { type: string }
+        dnsPointsHere: { type: boolean }
+        certificate:
+          type: object
+          properties:
+            state: { type: string, enum: [pending, valid, failed] }
+            expiresAt: { type: [string, 'null'], format: date-time }
+    DatabaseUser:
+      type: object
+      properties:
+        id: { type: string }
+        engine: { $ref: '#/components/schemas/Engine' }
+        name: { type: string, description: Starts with the Unix user of the website and an underscore. }
+        access: { type: string, enum: [website, anywhere], description: '"website": only the website container can connect. "anywhere": any address, with TLS.' }
+        grants: { type: array, items: { $ref: '#/components/schemas/DatabaseGrant' } }
+    DatabaseGrant:
+      type: object
+      properties:
+        databaseId: { type: string }
+        database: { type: string }
+        privileges: { type: string, enum: [readonly, readwrite] }
+    GrantInput:
+      type: object
+      required: [databaseId, privileges]
+      properties:
+        databaseId: { type: string, description: A database of the same website, with the same engine. }
+        privileges: { type: string, enum: [readonly, readwrite] }
     Customer:
       type: object
       properties:

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Agent;
 
 use App\Http\Controllers\Controller;
+use App\Http\Middleware\AuthenticateAgent;
 use App\Models\JoinToken;
 use App\Models\Server;
 use Illuminate\Http\JsonResponse;
@@ -42,7 +43,10 @@ class JoinController extends Controller
             return response()->json(['message' => 'The certificate does not agree with its fingerprint.'], 422);
         }
 
-        return DB::transaction(function () use ($data) {
+        // CF-10: only the agent on the panel server joins directly, not through the edge proxy.
+        $local = ! AuthenticateAgent::viaEdge($request) && AuthenticateAgent::fromLoopback($request);
+
+        return DB::transaction(function () use ($data, $local) {
             $join = JoinToken::where('token_hash', hash('sha256', $data['token']))
                 ->whereNull('used_at')->where('expires_at', '>', now())->lockForUpdate()->first();
             if (! $join) {
@@ -67,6 +71,7 @@ class JoinController extends Controller
                 'podman_version' => $data['podmanVersion'] ?? null,
                 'gvisor_version' => $data['gvisorVersion'] ?? null,
                 'last_seen_at' => now(),
+                'local' => $local,
             ]);
 
             return response()->json(['serverId' => $server->id, 'agentToken' => $agentToken, 'panelCertificateSha256' => self::panelFingerprint()], 201);

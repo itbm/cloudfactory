@@ -12,7 +12,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 #[Fillable([
     'name', 'location', 'roles', 'state', 'agent_url', 'agent_version', 'certificate_fingerprint', 'certificate_pem', 'agent_token_hash',
     'os', 'kernel', 'arch', 'podman_version', 'gvisor_version', 'gvisor_platform', 'bare_metal', 'update_policy',
-    'maintenance_window', 'pending_updates', 'reboot_required', 'services', 'usage', 'last_update_at', 'last_seen_at',
+    'maintenance_window', 'pending_updates', 'reboot_required', 'services', 'usage', 'last_update_at', 'last_seen_at', 'local',
 ])]
 #[Hidden(['agent_token_hash'])]
 class Server extends Model
@@ -28,6 +28,7 @@ class Server extends Model
             'usage' => 'array',
             'bare_metal' => 'boolean',
             'reboot_required' => 'boolean',
+            'local' => 'boolean',
             'last_update_at' => 'datetime',
             'last_seen_at' => 'datetime',
         ];

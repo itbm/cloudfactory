@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\AuthenticateAgent;
+use App\Http\Middleware\EnsureActive;
 use App\Http\Middleware\EnsureAdministrator;
 use App\Http\Middleware\EnsureScope;
 use Illuminate\Foundation\Application;
@@ -20,6 +21,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'scope' => EnsureScope::class,
             'admin' => EnsureAdministrator::class,
             'agent' => AuthenticateAgent::class,
+            'active' => EnsureActive::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

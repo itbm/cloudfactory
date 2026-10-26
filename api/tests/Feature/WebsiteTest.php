@@ -26,7 +26,10 @@ class WebsiteTest extends TestCase
 
         $job = AgentJob::findOrFail($response->json('job.id'));
         $this->assertSame($server->id, $job->server_id);
-        $this->assertSame('acme.example', $job->payload['website']['domains'][0]['name']);
+        // CF-03: the edge proxy does not serve the domain until the owner verifies it.
+        $this->assertSame([], $job->payload['website']['domains']);
+        $response->assertJsonPath('website.domains.0.verified', false)
+            ->assertJsonPath('website.domains.0.verification.name', '_cloudfactory-challenge.acme.example');
         Queue::assertPushed(SendJobToAgent::class, fn ($q) => $q->jobId === $job->id);
         $this->assertDatabaseHas('audit_entries', ['action' => 'Created website', 'target' => 'acme.example']);
     }

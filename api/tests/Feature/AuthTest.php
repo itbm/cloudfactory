@@ -41,7 +41,7 @@ class AuthTest extends TestCase
             ->assertJsonValidationErrors('expiresInDays');
         $this->postJson('/api/v1/tokens', ['name' => 'Terraform', 'scopes' => ['everything'], 'expiresInDays' => 30])
             ->assertJsonValidationErrors('scopes.0');
-        $this->postJson('/api/v1/tokens', ['name' => 'Terraform', 'scopes' => ['websites:read'], 'expiresInDays' => 30])
+        $this->postJson('/api/v1/tokens', ['name' => 'Terraform', 'scopes' => ['websites:read'], 'expiresInDays' => 30, 'password' => 'password'])
             ->assertCreated()->assertJsonPath('scopes', ['websites:read']);
     }
 

@@ -75,6 +75,8 @@ class JobOutcome
                 // The agent restores a database by "engine:name".
                 'databases' => $website->databases()->get()->map(fn ($d) => "{$d->engine}:{$d->name}")->all(),
                 'mailboxes' => [],
+                // CF-06: the restore checks each dump against the hash from the backup.
+                'dump_hashes' => self::dumpHashes($result['dumps'] ?? []),
             ]),
             AgentAction::InstallHostUpdates => $job->server->update([
                 'pending_updates' => [],
@@ -102,5 +104,15 @@ class JobOutcome
             AgentAction::Reboot => $job->server->update(['state' => 'degraded']),
             default => null,
         };
+    }
+
+    /** @return array<string, string> "engine:name" => SHA-256 */
+    private static function dumpHashes(mixed $dumps): array
+    {
+        if (! is_array($dumps)) {
+            return [];
+        }
+
+        return array_filter($dumps, fn ($hash, $key) => is_string($key) && is_string($hash) && preg_match('/^[0-9a-f]{64}$/', $hash), ARRAY_FILTER_USE_BOTH);
     }
 }

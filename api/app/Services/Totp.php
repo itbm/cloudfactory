@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use App\Models\User;
+
 /** RFC 6238 time-based one-time passwords with SHA-1, 6 digits and 30-second steps. */
 class Totp
 {
@@ -31,14 +33,47 @@ class Totp
     /** Accepts the current code and the codes of one step before and after, for clock drift. */
     public static function verify(string $secret, string $code, ?int $time = null): bool
     {
+        return self::step($secret, $code, $time) !== null;
+    }
+
+    /**
+     * Gives the time step of the code, or null when the code is not correct. A caller that
+     * records the step can refuse the same code a second time (CF-12).
+     */
+    public static function step(string $secret, string $code, ?int $time = null): ?int
+    {
         $time ??= time();
         foreach ([-30, 0, 30] as $drift) {
             if (hash_equals(self::code($secret, $time + $drift), $code)) {
-                return true;
+                return intdiv($time + $drift, 30);
             }
         }
 
-        return false;
+        return null;
+    }
+
+    /**
+     * Checks the code of a user and records its step. A code is good one time only: the
+     * panel refuses the step of the last code and all older steps (CF-12).
+     */
+    public static function consume(User $user, string $code, ?int $time = null): bool
+    {
+        if (! $user->totp_secret) {
+            return true;
+        }
+        $step = self::step($user->totp_secret, $code, $time);
+        if ($step === null) {
+            return false;
+        }
+        // One update with a condition, so that two requests with the same code cannot both pass.
+        $updated = User::whereKey($user->id)
+            ->where(fn ($q) => $q->whereNull('totp_last_step')->orWhere('totp_last_step', '<', $step))
+            ->update(['totp_last_step' => $step]);
+        if ($updated === 1) {
+            $user->totp_last_step = $step;
+        }
+
+        return $updated === 1;
     }
 
     private static function decode(string $secret): string

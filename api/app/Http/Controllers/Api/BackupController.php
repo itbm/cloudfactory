@@ -11,6 +11,7 @@ use App\Services\JobDispatcher;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 /** FR-901 to FR-903: backups and restore. */
 class BackupController extends Controller
@@ -57,8 +58,14 @@ class BackupController extends Controller
             'scope' => ['required', Rule::in(['website', 'database', 'mailbox', 'file'])],
             'item' => ['required_unless:scope,website', 'nullable', 'string', 'max:1024'],
         ]);
+        $dumpHash = null;
         if ($data['scope'] === 'database') {
             $request->validate(['item' => [Rule::in($snapshot->databases)]]);
+            // CF-06: the agent restores a dump only when its hash agrees with the hash from the backup.
+            $dumpHash = $snapshot->dump_hashes[$data['item']] ?? null;
+            if (! $dumpHash) {
+                throw ValidationException::withMessages(['item' => 'This backup has no checked dump of the database.']);
+            }
         }
         if ($data['scope'] === 'file') {
             $request->validate(['item' => ['regex:#^/[^\0]*$#', 'not_regex:#(^|/)\.\.(/|$)#']]);
@@ -70,6 +77,7 @@ class BackupController extends Controller
             'snapshotId' => $snapshot->restic_id ?? $snapshot->id,
             'scope' => $data['scope'],
             'item' => $data['item'] ?? null,
+            'dumpSha256' => $dumpHash,
             'target' => self::policy()['target'],
         ], "Restore {$what}", $website);
         Audit::record($request, 'Restored from backup', "{$website->name} {$what}", $website->customer_id);

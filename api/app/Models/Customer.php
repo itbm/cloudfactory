@@ -28,4 +28,30 @@ class Customer extends Model
     {
         return $this->hasMany(Website::class);
     }
+
+    public function users(): HasMany
+    {
+        return $this->hasMany(User::class);
+    }
+
+    public function reseller(): BelongsTo
+    {
+        return $this->belongsTo(Customer::class, 'reseller_id');
+    }
+
+    /** CF-08: suspended by itself, or through its reseller. */
+    public function isSuspended(): bool
+    {
+        return $this->suspended || ($this->reseller_id !== null && ($this->reseller?->suspended ?? false));
+    }
+
+    /**
+     * Removes all tokens of the users of this customer and, for a reseller, of the users of
+     * its customers. Then a suspension takes effect at once.
+     */
+    public function revokeTokens(): void
+    {
+        $customerIds = Customer::where('id', $this->id)->orWhere('reseller_id', $this->id)->pluck('id');
+        User::whereIn('customer_id', $customerIds)->each(fn (User $user) => $user->tokens()->delete());
+    }
 }

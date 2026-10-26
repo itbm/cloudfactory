@@ -6,32 +6,61 @@ use App\Enums\AgentAction;
 use App\Enums\DomainKind;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\JobResource;
+use App\Http\Resources\WebsiteResource;
+use App\Models\Domain;
+use App\Models\Website;
 use App\Services\Audit;
+use App\Services\DomainPolicy;
 use App\Services\JobDispatcher;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
-/** FR-401 to FR-403: a primary domain, redirects and aliases. */
+/**
+ * FR-401 to FR-403: a primary domain, redirects and aliases.
+ *
+ * CF-03: the edge proxy serves a domain only after the customer proves that they control it.
+ * The panel gives a token. The customer puts it in a TXT record, and then asks the panel to verify.
+ */
 class DomainController extends Controller
 {
     use Concerns;
 
-    public function __construct(private JobDispatcher $jobs) {}
+    public function __construct(private JobDispatcher $jobs, private DomainPolicy $policy) {}
 
     public function store(Request $request, string $websiteId): JsonResponse
     {
         $website = $this->findWebsite($request, $websiteId);
         $data = $request->validate([
-            'name' => ['required', 'string', 'lowercase', 'regex:'.WebsiteController::DOMAIN, 'unique:domains,name'],
+            'name' => ['required', 'string', 'lowercase', 'regex:'.WebsiteController::DOMAIN],
             'kind' => ['required', Rule::in([DomainKind::Redirect->value, DomainKind::Alias->value])],
         ]);
-        $website->domains()->create(['name' => $data['name'], 'kind' => $data['kind']]);
-        $job = $this->jobs->dispatch($website->server, AgentAction::AddDomain, ['websiteId' => $website->id, 'unixUser' => $website->unix_user, 'domain' => $data['name'], 'kind' => $data['kind'], 'primary' => $website->name], "Add domain {$data['name']}", $website);
+        self::checkName($this->policy, $data['name'], $website->customer_id);
+        $domain = $website->domains()->create(self::newDomain($this->policy, $request, $website->customer_id, $data['name'], DomainKind::from($data['kind'])));
+        $job = $domain->verified() ? $this->addRoute($website, $domain) : null;
         Audit::record($request, 'Added domain', "{$website->name} {$data['name']}", $website->customer_id);
 
-        return response()->json(['job' => new JobResource($job)], 202);
+        return response()->json(['domain' => WebsiteResource::domain($domain), 'job' => $job ? new JobResource($job) : null], 202);
+    }
+
+    /** Checks the TXT record of the domain. When it agrees, the edge proxy starts to serve the domain. */
+    public function verify(Request $request, string $websiteId, string $name): JsonResponse
+    {
+        $website = $this->findWebsite($request, $websiteId);
+        $domain = $website->domains()->where('name', $name)->firstOrFail();
+        if ($domain->verified()) {
+            return response()->json(['domain' => WebsiteResource::domain($domain), 'job' => null]);
+        }
+        if (! $this->policy->check($domain)) {
+            throw ValidationException::withMessages(['name' => "The TXT record {$domain->verificationRecord()} does not have the value {$domain->verification_token}. DNS changes can take some minutes."]);
+        }
+        $domain->update(['verified_at' => now()]);
+        $job = $this->addRoute($website, $domain);
+        Audit::record($request, 'Verified domain', "{$website->name} {$domain->name}", $website->customer_id);
+
+        return response()->json(['domain' => WebsiteResource::domain($domain), 'job' => new JobResource($job)], 202);
     }
 
     public function destroy(Request $request, string $websiteId, string $name): JsonResponse
@@ -42,9 +71,55 @@ class DomainController extends Controller
             throw ValidationException::withMessages(['name' => 'Make a different domain primary first.']);
         }
         $domain->delete();
-        $job = $this->jobs->dispatch($website->server, AgentAction::RemoveDomain, ['websiteId' => $website->id, 'domain' => $name], "Remove domain {$name}", $website);
+        $job = $domain->verified()
+            ? $this->jobs->dispatch($website->server, AgentAction::RemoveDomain, ['websiteId' => $website->id, 'domain' => $name], "Remove domain {$name}", $website)
+            : null;
         Audit::record($request, 'Removed domain', "{$website->name} {$name}", $website->customer_id);
 
-        return response()->json(['job' => new JobResource($job)], 202);
+        return response()->json(['job' => $job ? new JobResource($job) : null], 202);
+    }
+
+    /**
+     * Refuses a reserved domain and a domain of a different website. A domain that a different
+     * customer added but did not verify does not block the customer that can verify it.
+     *
+     * @throws ValidationException
+     */
+    public static function checkName(DomainPolicy $policy, string $name, string $customerId, string $field = 'name'): void
+    {
+        if ($policy->isReserved($name)) {
+            throw ValidationException::withMessages([$field => 'This domain is reserved for the panel or a server.']);
+        }
+        $existing = Domain::with('website')->where('name', $name)->first();
+        if (! $existing) {
+            return;
+        }
+        $claimOfOther = ! $existing->verified() && $existing->kind !== DomainKind::Primary && $existing->website->customer_id !== $customerId;
+        if (! $claimOfOther) {
+            throw ValidationException::withMessages([$field => 'This domain is in use.']);
+        }
+        $existing->delete();
+    }
+
+    /** The attributes of a new domain, verified at once when the policy permits. */
+    public static function newDomain(DomainPolicy $policy, Request $request, string $customerId, string $name, DomainKind $kind): array
+    {
+        return [
+            'name' => $name,
+            'kind' => $kind,
+            'verification_token' => 'cf-'.Str::lower(Str::random(40)),
+            'verified_at' => $policy->preVerified($request->user(), $customerId, $name) ? now() : null,
+        ];
+    }
+
+    private function addRoute(Website $website, Domain $domain)
+    {
+        return $this->jobs->dispatch($website->server, AgentAction::AddDomain, [
+            'websiteId' => $website->id,
+            'unixUser' => $website->unix_user,
+            'domain' => $domain->name,
+            'kind' => $domain->kind->value,
+            'primary' => $website->name,
+        ], "Add domain {$domain->name}", $website);
     }
 }

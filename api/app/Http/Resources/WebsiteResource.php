@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Models\Domain;
 use App\Models\Website;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -38,16 +39,24 @@ class WebsiteResource extends JsonResource
             'updateReady' => $this->updateReady(),
             'limits' => $this->limits,
             'usage' => $this->usage,
-            'domains' => $this->whenLoaded('domains', fn () => $this->domains->map(fn ($d) => [
-                'name' => $d->name,
-                'kind' => $d->kind->value,
-                'dnsPointsHere' => $d->dns_points_here,
-                'certificate' => ['state' => $d->certificate_state, 'expiresAt' => $d->certificate_expires_at?->toIso8601String()],
-            ])),
+            'domains' => $this->whenLoaded('domains', fn () => $this->domains->map(fn (Domain $d) => self::domain($d))),
             'stagingOf' => $this->staging_of,
             'managedByTerraform' => $this->managed_by_terraform,
             'createdAt' => $this->created_at?->toIso8601String(),
             'updatedAt' => $this->updated_at?->toIso8601String(),
+        ];
+    }
+
+    /** CF-03: a domain that is not verified shows the TXT record that the customer must add. */
+    public static function domain(Domain $d): array
+    {
+        return [
+            'name' => $d->name,
+            'kind' => $d->kind->value,
+            'verified' => $d->verified(),
+            'verification' => $d->verified() ? null : ['type' => 'TXT', 'name' => $d->verificationRecord(), 'value' => $d->verification_token],
+            'dnsPointsHere' => $d->dns_points_here,
+            'certificate' => ['state' => $d->certificate_state, 'expiresAt' => $d->certificate_expires_at?->toIso8601String()],
         ];
     }
 }

@@ -49,7 +49,7 @@ trait Hosting
             'image_id' => $image->id, 'unix_user' => substr(str_replace('.', '', $name), 0, 8).'_'.substr(md5($name), 0, 4),
             'status' => 'running', 'extensions' => ['opcache'], 'php_ini' => [], 'limits' => $customer->plan->limits,
         ]);
-        $website->domains()->create(['name' => $name, 'kind' => DomainKind::Primary]);
+        $website->domains()->create(['name' => $name, 'kind' => DomainKind::Primary, 'verification_token' => 'cf-test', 'verified_at' => now()]);
 
         return $website;
     }

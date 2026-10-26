@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Enums\AgentAction;
 use App\Enums\DomainKind;
+use App\Enums\Role;
 use App\Enums\WebsiteStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\JobResource;
@@ -12,8 +13,10 @@ use App\Models\Customer;
 use App\Models\Image;
 use App\Models\Plan;
 use App\Models\Server;
+use App\Models\User;
 use App\Models\Website;
 use App\Services\Audit;
+use App\Services\DomainPolicy;
 use App\Services\JobDispatcher;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -30,7 +33,7 @@ class WebsiteController extends Controller
 
     public const DOMAIN = '/^(?!-)[a-z0-9-]{1,63}(\.[a-z0-9-]{1,63})+$/';
 
-    public function __construct(private JobDispatcher $jobs) {}
+    public function __construct(private JobDispatcher $jobs, private DomainPolicy $domains) {}
 
     public function index(Request $request): AnonymousResourceCollection
     {
@@ -53,10 +56,10 @@ class WebsiteController extends Controller
     public function store(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'name' => ['required', 'string', 'lowercase', 'regex:'.self::DOMAIN, 'unique:websites,name', 'unique:domains,name'],
+            'name' => ['required', 'string', 'lowercase', 'regex:'.self::DOMAIN, 'unique:websites,name'],
             'application' => ['nullable', 'string', 'max:100'],
             'imageId' => ['required', 'exists:images,id'],
-            'planId' => ['required', 'exists:plans,id'],
+            'planId' => ['nullable', 'exists:plans,id'],
             'serverId' => ['nullable', 'exists:servers,id'],
             'customerId' => ['nullable', 'exists:customers,id'],
         ]);
@@ -66,8 +69,10 @@ class WebsiteController extends Controller
             throw ValidationException::withMessages(['customerId' => 'Select a customer that you control.']);
         }
         $customer = Customer::with('plan')->findOrFail($customerId);
-        if ($customer->websites()->count() >= $customer->plan->websites) {
-            throw ValidationException::withMessages(['name' => "The {$customer->plan->name} plan allows {$customer->plan->websites} websites."]);
+        // CF-07: only an administrator, or the reseller of the customer, selects a different plan.
+        $planId = $data['planId'] ?? $customer->plan_id;
+        if ($planId !== $customer->plan_id && ! self::canChoosePlan($user, $customer)) {
+            throw ValidationException::withMessages(['planId' => 'Only an administrator or your reseller can select the plan.']);
         }
 
         $image = Image::findOrFail($data['imageId']);
@@ -76,15 +81,18 @@ class WebsiteController extends Controller
                 ? ['imageId' => 'Select an official image.']
                 : ['serverId' => 'Only an administrator can select the server.']);
         }
-        $plan = Plan::findOrFail($data['planId']);
+        $plan = Plan::findOrFail($planId);
         $server = isset($data['serverId'])
             ? Server::findOrFail($data['serverId'])
             : Server::whereJsonContains('roles', 'web')->where('state', 'healthy')->withCount('websites')->orderBy('websites_count')->first();
         if (! $server || ! in_array('web', $server->roles, true)) {
             throw ValidationException::withMessages(['serverId' => 'Select a server with the web role.']);
         }
+        DomainController::checkName($this->domains, $data['name'], $customer->id);
+        $domain = DomainController::newDomain($this->domains, $request, $customer->id, $data['name'], DomainKind::Primary);
 
-        $website = DB::transaction(function () use ($data, $customer, $image, $plan, $server) {
+        $website = DB::transaction(function () use ($data, $customer, $image, $plan, $server, $domain) {
+            self::checkWebsiteLimit($customer);
             $website = Website::create([
                 'name' => $data['name'],
                 'application' => $data['application'] ?? '',
@@ -98,7 +106,7 @@ class WebsiteController extends Controller
                 'php_ini' => $image->isPhp() ? ['memory_limit' => '256M', 'upload_max_filesize' => '64M', 'max_execution_time' => '60'] : [],
                 'limits' => $plan->limits,
             ]);
-            $website->domains()->create(['name' => $data['name'], 'kind' => DomainKind::Primary]);
+            $website->domains()->create($domain);
 
             return $website;
         });
@@ -127,6 +135,10 @@ class WebsiteController extends Controller
         if (isset($data['limits']) && ! $request->user()->isAdministrator()) {
             return response()->json(['message' => 'Only administrators can set resource limits.'], 403);
         }
+        // CF-07: a website owner cannot move their website to a different plan.
+        if (isset($data['planId']) && $data['planId'] !== $website->plan_id && ! self::canChoosePlan($request->user(), $website->customer)) {
+            return response()->json(['message' => 'Only an administrator or your reseller can change the plan.'], 403);
+        }
 
         $changes = array_filter([
             'application' => $data['application'] ?? null,
@@ -153,7 +165,14 @@ class WebsiteController extends Controller
     public function destroy(Request $request, string $id): JsonResponse
     {
         $website = $this->findWebsite($request, $id);
-        $job = $this->jobs->dispatch($website->server, AgentAction::DeleteWebsite, ['websiteId' => $website->id, 'unixUser' => $website->unix_user], "Remove website {$website->name}", $website);
+        // The agent also removes the databases and the database users of the website, so that a
+        // later website with the same Unix user does not get them.
+        $job = $this->jobs->dispatch($website->server, AgentAction::DeleteWebsite, [
+            'websiteId' => $website->id,
+            'unixUser' => $website->unix_user,
+            'databases' => $website->databases()->orderBy('name')->get(['engine', 'name'])->map(fn ($d) => ['engine' => $d->engine, 'name' => $d->name])->all(),
+            'databaseUsers' => $website->databaseUsers()->orderBy('name')->get(['engine', 'name'])->map(fn ($u) => ['engine' => $u->engine, 'name' => $u->name])->all(),
+        ], "Remove website {$website->name}", $website);
         Audit::record($request, 'Removed website', $website->name, $website->customer_id);
 
         return response()->json(['job' => new JobResource($job)], 202);
@@ -183,7 +202,11 @@ class WebsiteController extends Controller
         if (Website::where('name', $name)->exists()) {
             throw ValidationException::withMessages(['name' => "{$name} exists."]);
         }
-        $copy = DB::transaction(function () use ($source, $name) {
+        DomainController::checkName($this->domains, $name, $source->customer_id);
+        $domain = DomainController::newDomain($this->domains, $request, $source->customer_id, $name, DomainKind::Primary);
+        $copy = DB::transaction(function () use ($source, $name, $domain) {
+            // CF-09: a staging copy is a website, so the plan limit applies.
+            self::checkWebsiteLimit($source->customer);
             $copy = $source->replicate(['usage', 'managed_by_terraform']);
             $copy->fill([
                 'name' => $name,
@@ -193,7 +216,7 @@ class WebsiteController extends Controller
                 'staging_of' => $source->id,
                 'managed_by_terraform' => false,
             ])->save();
-            $copy->domains()->create(['name' => $name, 'kind' => DomainKind::Primary]);
+            $copy->domains()->create($domain);
 
             return $copy;
         });
@@ -202,6 +225,26 @@ class WebsiteController extends Controller
         Audit::record($request, 'Made staging copy', "{$source->name} → {$name}", $source->customer_id);
 
         return response()->json(['website' => new WebsiteResource($copy->fresh(['image', 'domains'])), 'job' => new JobResource($job)], 202);
+    }
+
+    /**
+     * CF-09: the plan limits the number of websites of a customer. The caller runs this in a
+     * transaction. The lock on the customer row stops two requests from passing at the same time.
+     *
+     * @throws ValidationException
+     */
+    private static function checkWebsiteLimit(Customer $customer): void
+    {
+        $customer = Customer::with('plan')->lockForUpdate()->findOrFail($customer->id);
+        if ($customer->websites()->count() >= $customer->plan->websites) {
+            throw ValidationException::withMessages(['name' => "The {$customer->plan->name} plan allows {$customer->plan->websites} websites."]);
+        }
+    }
+
+    /** CF-07: an administrator, or the reseller of the customer, can select the plan. */
+    private static function canChoosePlan(User $user, Customer $customer): bool
+    {
+        return $user->isAdministrator() || ($user->role === Role::Reseller && $customer->reseller_id !== null && $customer->reseller_id === $user->customer_id);
     }
 
     /** A Unix user name: up to 8 letters from the domain, then 4 random characters. */

@@ -62,11 +62,11 @@ class RuntimeController extends Controller
                 if (! in_array($key, self::INI_KEYS, true)) {
                     throw ValidationException::withMessages(["phpIni.{$key}" => "You cannot set {$key}."]);
                 }
-                if ($key === 'memory_limit' && self::bytes((string) $value) > ($website->limits['memoryBytes'] ?? PHP_INT_MAX)) {
-                    throw ValidationException::withMessages(['phpIni.memory_limit' => 'The value is more than the memory limit of the website.']);
+                if ($error = self::checkIni($key, $value, $website->limits['memoryBytes'] ?? PHP_INT_MAX)) {
+                    throw ValidationException::withMessages(["phpIni.{$key}" => $error]);
                 }
             }
-            $changes['php_ini'] = $data['phpIni'];
+            $changes['php_ini'] = array_map(fn ($v) => (string) $v, $data['phpIni']);
         }
         if (! $changes) {
             return response()->json(['website' => new WebsiteResource($website), 'job' => null]);
@@ -91,6 +91,34 @@ class RuntimeController extends Controller
         $request->merge(['imageId' => $website->previous_image_id]);
 
         return $this->update($request, $websiteId);
+    }
+
+    private const SIZE = '/^[1-9][0-9]{0,5}[KMG]?$/';
+
+    /**
+     * CF-15: each php.ini key has its own format and range. The panel refuses "-1" (no limit),
+     * because the website must stay in its limits.
+     */
+    private static function checkIni(string $key, mixed $value, int $memoryBytes): ?string
+    {
+        if (! is_string($value) && ! is_int($value)) {
+            return 'Enter a value.';
+        }
+        $value = (string) $value;
+        $int = fn (int $min, int $max) => preg_match('/^[0-9]{1,7}$/', $value) && (int) $value >= $min && (int) $value <= $max;
+
+        return match ($key) {
+            'memory_limit' => ! preg_match(self::SIZE, $value) ? 'Enter a size, for example 256M.'
+                : (self::bytes($value) > $memoryBytes ? 'The value is more than the memory limit of the website.'
+                : (self::bytes($value) < 16 * 1024 ** 2 ? 'The value must be 16M or more.' : null)),
+            'upload_max_filesize', 'post_max_size' => preg_match(self::SIZE, $value) && self::bytes($value) <= 16 * 1024 ** 3 ? null : 'Enter a size from 1 to 16G, for example 64M.',
+            'max_execution_time' => $int(1, 3600) ? null : 'Enter a number of seconds from 1 to 3600.',
+            'max_input_vars' => $int(100, 100000) ? null : 'Enter a number from 100 to 100000.',
+            'display_errors' => in_array($value, ['On', 'Off', '0', '1'], true) ? null : 'Enter On or Off.',
+            'date.timezone' => in_array($value, timezone_identifiers_list(), true) ? null : 'Enter a time zone, for example Europe/London.',
+            'opcache.memory_consumption' => $int(8, max(8, intdiv($memoryBytes, 1024 ** 2))) ? null : 'Enter a number of megabytes from 8 to the memory limit of the website.',
+            default => 'You cannot set this value.',
+        };
     }
 
     private static function bytes(string $value): int

@@ -71,7 +71,7 @@ class DatabaseSeeder extends Seeder
                 'plan_id' => $plan->id, 'image_id' => $images[$image]->id, 'unix_user' => substr(str_replace('.', '', $name), 0, 8).'_'.substr(md5($name), 0, 4),
                 'status' => 'running', 'extensions' => ['opcache', 'intl', 'gd'], 'php_ini' => ['memory_limit' => '256M'], 'limits' => $plan->limits,
             ]);
-            $website->domains()->create(['name' => $name, 'kind' => DomainKind::Primary, 'dns_points_here' => true, 'certificate_state' => 'valid', 'certificate_expires_at' => now()->addDays(60)]);
+            $website->domains()->create(['name' => $name, 'kind' => DomainKind::Primary, 'verification_token' => 'cf-sample', 'verified_at' => now(), 'dns_points_here' => true, 'certificate_state' => 'valid', 'certificate_expires_at' => now()->addDays(60)]);
         }
     }
 
