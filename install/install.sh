@@ -269,7 +269,9 @@ mkdir -p "$GVISOR_ROOT"
 rm -rf "$dir.new"
 mkdir -p "$dir.new"
 tar -xjf "$TMP/gvisor.tar.bz2" -C "$dir.new" --no-same-owner --no-same-permissions
-[ -f "$dir.new/runsc" ] && [ -f "$dir.new/containerd-shim-runsc-v1" ] || fail "gvisor.tar.bz2 has no runsc."
+if [ ! -f "$dir.new/runsc" ] || [ ! -f "$dir.new/containerd-shim-runsc-v1" ]; then
+	fail "gvisor.tar.bz2 has no runsc."
+fi
 chmod 0755 "$dir.new/runsc" "$dir.new/containerd-shim-runsc-v1"
 rm -rf "$dir"
 mv "$dir.new" "$dir"
