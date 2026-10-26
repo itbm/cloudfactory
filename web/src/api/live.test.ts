@@ -65,6 +65,22 @@ describe("mappers", () => {
     expect(w.domains[0]).toEqual({ name: "acme.example", kind: "primary", dnsPointsHere: true, certificate: { state: "valid", expiresAt: undefined } });
   });
 
+  it("keeps the TXT record of a domain that is not verified (CF-03)", () => {
+    const verification = { type: "TXT" as const, name: "_cloudfactory-challenge.new.example", value: "cf-abc" };
+    const w = toWebsite({
+      id: "w1", name: "acme.example", application: "", customerId: "c1", serverId: "s1", planId: "p1", unixUser: "acmeexam_1a2b", status: "running",
+      runtime: { imageId: "i1", family: "frankenphp", image: "ghcr.io/itbm/frankenphp-php8.4:0.1.0", phpVersion: "8.4", workerMode: false, extensions: [], phpIni: {}, previousImageId: null },
+      limits: { vcpus: 1, memoryBytes: 1, diskBytes: 1, diskIoBytesPerSecond: 1, processes: 100 }, usage: {},
+      domains: [
+        { name: "acme.example", kind: "primary", dnsPointsHere: true, certificate: { state: "valid", expiresAt: null }, verified: true, verification: null },
+        { name: "new.example", kind: "alias", dnsPointsHere: false, certificate: { state: "pending", expiresAt: null }, verified: false, verification },
+      ],
+      stagingOf: null, managedByTerraform: false, createdAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-02T00:00:00Z",
+    });
+    expect(w.domains[0].verification).toBeUndefined();
+    expect(w.domains[1].verification).toEqual(verification);
+  });
+
   it("maps an image for a new website", () => {
     expect(toRuntimeImage({ id: "i1", name: "FrankenPHP · PHP 8.4", family: "frankenphp", tag: "0.1.0", custom: false, supportEndsAt: null }))
       .toMatchObject({ id: "i1", running: "0.1.0", custom: false, signatureVerified: true, supportEndsAt: undefined });

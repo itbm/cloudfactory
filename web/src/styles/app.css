@@ -688,3 +688,21 @@ tbody tr:hover { background: #fafbfc; }
 .mt { margin-top: 24px; }
 .text-info { color: var(--primary); font-weight: 500; }
 h1.mono { font-size: 26px; }
+
+/* CF-01: database names start with the Unix user of the website. */
+.input-prefix { display: flex; align-items: stretch; }
+.input-prefix > span {
+  display: flex; align-items: center; padding: 0 10px;
+  border: 1px solid var(--border-strong); border-right: 0; border-radius: var(--radius-sm) 0 0 var(--radius-sm);
+  background: var(--surface-muted); color: var(--text-muted); font-family: var(--font-mono); font-size: 13.5px; white-space: nowrap;
+}
+.input-prefix > .input { border-radius: 0 var(--radius-sm) var(--radius-sm) 0; min-width: 0; }
+.grant { display: flex; align-items: center; gap: 6px; margin: 2px 0; white-space: nowrap; }
+.grant-list { margin: 0; padding: 0; border: 0; }
+.grant-list legend { font-weight: 600; font-size: 14px; margin-bottom: 6px; }
+.grant-row { display: grid; grid-template-columns: minmax(0, 1fr) 180px; align-items: center; gap: 12px; padding: 4px 0; border-bottom: 1px solid var(--border); }
+.grant-row label code { overflow-wrap: anywhere; }
+.verify-record { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 12px; margin: 8px 0; font-size: 13.5px; }
+.verify-record dt { color: var(--text-muted); }
+.verify-record dd { margin: 0; overflow-wrap: anywhere; }
+@media (max-width: 560px) { .grant-row { grid-template-columns: 1fr; } }

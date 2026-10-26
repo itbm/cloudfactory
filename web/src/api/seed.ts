@@ -99,6 +99,7 @@ export const websites: Website[] = [
   site({
     id: "web_example",
     name: "example.com",
+    unixUser: "example_9c1d",
     application: "WordPress",
     runtime: { kind: "frankenphp", imageId: "img_fp85", phpVersion: "8.5", workerMode: false, extensions: ["opcache", "intl", "gd", "imagick", "zip"], phpIni: { ...PHP_INI } },
     use: { cpuPercent: 6, memoryBytes: 288 * MB, diskBytes: 4.2 * GB, processes: 22, diskIoBytesPerSecond: 1.2 * MB },
@@ -131,7 +132,7 @@ export const websites: Website[] = [
     domains: [
       { name: "shop.example.net", kind: "primary", certificate: { state: "valid", expiresAt: ahead(41 * DAY) }, dnsPointsHere: true },
       { name: "www.shop.example.net", kind: "redirect", certificate: { state: "valid", expiresAt: ahead(41 * DAY) }, dnsPointsHere: true },
-      { name: "shop-old.example.org", kind: "alias", certificate: { state: "pending" }, dnsPointsHere: false },
+      { name: "shop-old.example.org", kind: "alias", certificate: { state: "pending" }, dnsPointsHere: false, verification: { type: "TXT", name: "_cloudfactory-challenge.shop-old.example.org", value: "cf-k3v9q2m7r4t8p1w6z5r0b2n8c4d7f1g3h6j9l2" } },
     ],
     git: {
       repository: "git@example.com:acme/shop.git",
@@ -163,6 +164,7 @@ export const websites: Website[] = [
   site({
     id: "web_app",
     name: "app.example.com",
+    unixUser: "app_4e8b",
     application: "Laravel · worker mode",
     runtime: { kind: "frankenphp", imageId: "img_fp85", phpVersion: "8.5", workerMode: true, extensions: ["opcache", "intl", "redis", "zip", "bcmath"], phpIni: { ...PHP_INI } },
     planId: "plan_business",
@@ -376,7 +378,7 @@ export const snapshots: Snapshot[] = websites.flatMap((w) =>
     kind: "nightly",
     sizeBytes: Math.round((w.use.diskBytes * 0.22 + d * 3 * MB)),
     websiteId: w.id,
-    databases: w.id === "web_shop" ? ["shop_wp", "shop_reports"] : w.runtime.kind === "frankenphp" ? [`${w.unixUser}_db`] : [],
+    databases: w.id === "web_shop" ? ["shop_7f2a_wp", "shop_7f2a_reports"] : w.runtime.kind === "frankenphp" ? [`${w.unixUser}_db`] : [],
     mailboxes: w.id === "web_shop" ? ["orders@shop.example.net"] : w.id === "web_example" ? ["hello@example.com"] : [],
   })),
 );
@@ -465,16 +467,19 @@ export function seed(): State {
       { id: "als_2", kind: "forwarder", source: "billing@shop.example.net", destinations: ["accounts@acme.example", "orders@shop.example.net"] },
     ],
     databases: [
-      { id: "db_1", name: "shop_wp", engine: "mariadb", websiteId: "web_shop", sizeBytes: 820 * MB, serverId: "srv_web01" },
-      { id: "db_2", name: "shop_reports", engine: "postgresql", websiteId: "web_shop", sizeBytes: 140 * MB, serverId: "srv_web01" },
-      { id: "db_3", name: "example_wp", engine: "mariadb", websiteId: "web_example", sizeBytes: 310 * MB, serverId: "srv_web01" },
-      { id: "db_4", name: "app_main", engine: "postgresql", websiteId: "web_app", sizeBytes: 1.1 * GB, serverId: "srv_web01" },
+      { id: "db_1", name: "shop_7f2a_wp", engine: "mariadb", websiteId: "web_shop", sizeBytes: 820 * MB, serverId: "srv_web01" },
+      { id: "db_5", name: "shop_7f2a_staging", engine: "mariadb", websiteId: "web_shop", sizeBytes: 790 * MB, serverId: "srv_web01" },
+      { id: "db_2", name: "shop_7f2a_reports", engine: "postgresql", websiteId: "web_shop", sizeBytes: 140 * MB, serverId: "srv_web01" },
+      { id: "db_3", name: "example_9c1d_wp", engine: "mariadb", websiteId: "web_example", sizeBytes: 310 * MB, serverId: "srv_web01" },
+      { id: "db_4", name: "app_4e8b_main", engine: "postgresql", websiteId: "web_app", sizeBytes: 1.1 * GB, serverId: "srv_web01" },
     ],
     databaseUsers: [
-      { id: "dbu_1", name: "shop_wp", engine: "mariadb", websiteId: "web_shop", databases: ["shop_wp"], access: "website" },
-      { id: "dbu_2", name: "shop_reports", engine: "postgresql", websiteId: "web_shop", databases: ["shop_reports"], access: "website" },
-      { id: "dbu_3", name: "example_wp", engine: "mariadb", websiteId: "web_example", databases: ["example_wp"], access: "website" },
-      { id: "dbu_4", name: "app", engine: "postgresql", websiteId: "web_app", databases: ["app_main"], access: "website" },
+      { id: "dbu_1", name: "shop_7f2a_wp", engine: "mariadb", websiteId: "web_shop", grants: [{ databaseId: "db_1", database: "shop_7f2a_wp", privileges: "readwrite" }], access: "website" },
+      // CF-01: one user with a different permission on each database.
+      { id: "dbu_5", name: "shop_7f2a_sync", engine: "mariadb", websiteId: "web_shop", grants: [{ databaseId: "db_1", database: "shop_7f2a_wp", privileges: "readonly" }, { databaseId: "db_5", database: "shop_7f2a_staging", privileges: "readwrite" }], access: "website" },
+      { id: "dbu_2", name: "shop_7f2a_reports", engine: "postgresql", websiteId: "web_shop", grants: [{ databaseId: "db_2", database: "shop_7f2a_reports", privileges: "readwrite" }], access: "website" },
+      { id: "dbu_3", name: "example_9c1d_wp", engine: "mariadb", websiteId: "web_example", grants: [{ databaseId: "db_3", database: "example_9c1d_wp", privileges: "readwrite" }], access: "website" },
+      { id: "dbu_4", name: "app_4e8b_app", engine: "postgresql", websiteId: "web_app", grants: [{ databaseId: "db_4", database: "app_4e8b_main", privileges: "readwrite" }], access: "website" },
     ],
     files,
     snapshots,

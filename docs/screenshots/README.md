@@ -99,3 +99,38 @@ real API, refer to [live/README.md](live/README.md).
 
 ![24-websites-phone](24-websites-phone.png)
 
+## 25-database-user-permissions
+
+The permissions of one database user on each database of the website (CF-01).
+
+![25-database-user-permissions](25-database-user-permissions.png)
+
+## 26-new-database-user
+
+A new database user: the name starts with the Unix user of the website, and each database has its own permission.
+
+![26-new-database-user](26-new-database-user.png)
+
+## 27-database-user-password
+
+The panel shows the password of a new database user one time only.
+
+![27-database-user-password](27-database-user-password.png)
+
+## 28-new-database
+
+A new database, with the prefix of the website.
+
+![28-new-database](28-new-database.png)
+
+## 29-domain-not-verified
+
+A domain that is not verified. The edge proxy serves it only after the TXT record is correct (CF-03).
+
+![29-domain-not-verified](29-domain-not-verified.png)
+
+## 30-new-token
+
+A new API token needs the password and the TOTP code of the user (CF-07).
+
+![30-new-token](30-new-token.png)

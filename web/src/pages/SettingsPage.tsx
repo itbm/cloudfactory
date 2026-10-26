@@ -10,7 +10,7 @@ import { CopyField } from "./website/AccessTab";
 
 // The live API has no DNS or email scopes in release 0.1 (FR-104).
 const SCOPES: TokenScope[] = LIVE
-  ? ["websites:read", "websites:write", "databases:read", "databases:write", "backups:read", "backups:write", "servers:read", "servers:write", "images:read", "images:write", "customers:read", "customers:write", "audit:read"]
+  ? ["websites:read", "websites:write", "databases:read", "databases:write", "backups:read", "backups:write", "servers:read", "servers:write", "images:read", "images:write", "customers:read", "customers:write", "audit:read", "tokens:read", "tokens:write"]
   : ["websites:read", "websites:write", "dns:read", "dns:write", "email:read", "email:write", "databases:read", "databases:write", "backups:read", "backups:write", "servers:read", "servers:write"];
 const EVENTS = ["Server health", "Failed update", "Failed deploy", "Failed backup", "Mailbox 90% full", "Certificate failed", "PHP support ends"];
 
@@ -111,6 +111,8 @@ function Tokens() {
   const [name, setName] = useState("");
   const [scopes, setScopes] = useState<TokenScope[]>(["websites:read"]);
   const [days, setDays] = useState("90");
+  const [password, setPassword] = useState("");
+  const [totp, setTotpCode] = useState("");
   const [secret, setSecret] = useState<string | null>(null);
   const create = useAction(createToken);
   return (
@@ -138,10 +140,12 @@ function Tokens() {
         </table>
       </div>
       {open && (
-        <Modal title="New API token" onClose={() => { setOpen(false); create.clear(); }} footer={<><button type="button" className="btn" onClick={() => setOpen(false)}>Cancel</button><button type="submit" form="tok" className="btn btn-primary">Create token</button></>}>
+        <Modal title="New API token" onClose={() => { setOpen(false); setPassword(""); setTotpCode(""); create.clear(); }} footer={<><button type="button" className="btn" onClick={() => { setOpen(false); setPassword(""); setTotpCode(""); }}>Cancel</button><button type="submit" form="tok" className="btn btn-primary">Create token</button></>}>
           <form id="tok" noValidate onSubmit={async (e) => {
             e.preventDefault();
-            const r = await create.run(name, scopes, Number(days));
+            const r = await create.run(name, scopes, Number(days), password, totp);
+            setPassword("");
+            setTotpCode("");
             if (r.ok) { setOpen(false); setSecret(r.value.secret); setName(""); }
           }}>
             <FormError error={create.error} />
@@ -152,6 +156,15 @@ function Tokens() {
               {SCOPES.map((s) => <label key={s} className="check"><input type="checkbox" checked={scopes.includes(s)} onChange={(e) => setScopes(e.target.checked ? [...scopes, s] : scopes.filter((x) => x !== s))} /><code>{s}</code></label>)}
             </fieldset>
             {create.error?.fields.scopes && <p className="error text-danger">{create.error.fields.scopes}</p>}
+            {/* CF-07: a stolen session cannot make a token without the password. */}
+            <div style={{ marginTop: 14 }}>
+              <Field label="Your password" hint="Type your password again to make a token." error={create.error?.fields.password}>{(p) => <input {...p} className="input" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />}</Field>
+            </div>
+            {(state.totpEnabled || LIVE) && (
+              <div style={{ marginTop: 14 }}>
+              <Field label="6-digit code" hint={LIVE ? "Open your authenticator app. Leave it empty if your account has no TOTP." : "Open your authenticator app."} error={create.error?.fields.totp}>{(p) => <input {...p} className="input" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={totp} onChange={(e) => setTotpCode(e.target.value)} />}</Field>
+              </div>
+            )}
           </form>
         </Modal>
       )}

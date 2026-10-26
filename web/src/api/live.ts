@@ -9,7 +9,9 @@ import type {
   BackupPolicy,
   Customer,
   Database,
+  DatabaseGrant,
   DatabaseUser,
+  DomainVerification,
   Job,
   Limits,
   Plan,
@@ -109,7 +111,7 @@ interface ApiWebsite {
   id: string; name: string; application: string; customerId: string; serverId: string; planId: string; unixUser: string; status: Website["status"];
   runtime: { imageId: string; family: string; image: string; phpVersion: string | null; workerMode: boolean; extensions: string[]; phpIni: Record<string, string>; previousImageId: string | null };
   limits: Limits; usage: Partial<Website["use"]> | null;
-  domains?: { name: string; kind: Website["domains"][number]["kind"]; dnsPointsHere: boolean; certificate: { state: Website["domains"][number]["certificate"]["state"]; expiresAt: string | null } }[];
+  domains?: { name: string; kind: Website["domains"][number]["kind"]; dnsPointsHere: boolean; certificate: { state: Website["domains"][number]["certificate"]["state"]; expiresAt: string | null }; verified?: boolean; verification?: DomainVerification | null }[];
   stagingOf: string | null; managedByTerraform: boolean; createdAt: string; updatedAt: string;
 }
 interface ApiServer {
@@ -159,7 +161,10 @@ export function toWebsite(w: ApiWebsite): Website {
       previous: w.runtime.previousImageId ? { imageId: w.runtime.previousImageId, tag: "" } : undefined,
     },
     use: { cpuPercent: 0, memoryBytes: 0, diskBytes: 0, processes: 0, diskIoBytesPerSecond: 0, ...(w.usage ?? {}) },
-    domains: (w.domains ?? []).map((d) => ({ name: d.name, kind: d.kind, dnsPointsHere: d.dnsPointsHere, certificate: { state: d.certificate.state, expiresAt: d.certificate.expiresAt ?? undefined } })),
+    domains: (w.domains ?? []).map((d) => ({
+      name: d.name, kind: d.kind, dnsPointsHere: d.dnsPointsHere, certificate: { state: d.certificate.state, expiresAt: d.certificate.expiresAt ?? undefined },
+      ...(d.verified === false && d.verification ? { verification: d.verification } : {}),
+    })),
     releases: [], previews: [], cron: [], sshKeys: [], sftpPasswordEnabled: false, shellEnabled: false,
     lastChange: { at: w.updatedAt, summary: "Last change" },
     stagingOf: w.stagingOf ?? undefined, managedByTerraform: w.managedByTerraform, imageTag: tagOfReference(w.runtime.image) || undefined, imageReference: w.runtime.image || undefined,
@@ -240,12 +245,12 @@ export async function load(previous: State): Promise<State> {
   // Databases and snapshots belong to each website.
   const perSite = await Promise.all(websites.map(async (w) => {
     const [db, snaps] = await Promise.all([
-      optional(request<{ databases: { id: string; engine: Database["engine"]; name: string; sizeBytes: number }[]; users: { id: string; engine: Database["engine"]; name: string; databases: string[]; access: DatabaseUser["access"] }[] }>("GET", `/websites/${w.id}/databases`), { databases: [], users: [] }),
+      optional(request<{ databases: { id: string; engine: Database["engine"]; name: string; sizeBytes: number }[]; users: { id: string; engine: Database["engine"]; name: string; grants: DatabaseGrant[]; access: DatabaseUser["access"] }[] }>("GET", `/websites/${w.id}/databases`), { databases: [], users: [] }),
       optional(request<{ data: ApiSnapshot[] }>("GET", `/websites/${w.id}/snapshots`).then((r) => r.data), []),
     ]);
     return {
       databases: db.databases.map((d): Database => ({ id: d.id, name: d.name, engine: d.engine, websiteId: w.id, sizeBytes: d.sizeBytes ?? 0, serverId: w.serverId })),
-      users: db.users.map((u): DatabaseUser => ({ id: u.id, name: u.name, engine: u.engine, websiteId: w.id, databases: u.databases, access: u.access })),
+      users: db.users.map((u): DatabaseUser => ({ id: u.id, name: u.name, engine: u.engine, websiteId: w.id, grants: u.grants ?? [], access: u.access })),
       snapshots: snaps.map((s): Snapshot => ({ id: s.id, at: s.createdAt, kind: s.kind, sizeBytes: s.sizeBytes ?? 0, websiteId: w.id, databases: s.databases ?? [], mailboxes: s.mailboxes ?? [] })),
     };
   }));

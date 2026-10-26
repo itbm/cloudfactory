@@ -55,11 +55,20 @@ export interface LastChange {
 
 export type DomainKind = "primary" | "redirect" | "alias";
 
+/** CF-03: the DNS record that proves that the customer controls the domain. */
+export interface DomainVerification {
+  type: "TXT";
+  name: string;
+  value: string;
+}
+
 export interface Domain {
   name: string;
   kind: DomainKind;
   certificate: Certificate;
   dnsPointsHere: boolean;
+  /** Set while the domain is not verified. The edge proxy does not serve the domain yet. */
+  verification?: DomainVerification;
 }
 
 export interface Release {
@@ -336,12 +345,21 @@ export interface Database {
   serverId: string;
 }
 
+export type DatabasePrivileges = "readonly" | "readwrite";
+
+/** CF-01: the permission of one database user on one database of the same website. */
+export interface DatabaseGrant {
+  databaseId: string;
+  database: string;
+  privileges: DatabasePrivileges;
+}
+
 export interface DatabaseUser {
   id: string;
   name: string;
   engine: DatabaseEngine;
   websiteId: string;
-  databases: string[];
+  grants: DatabaseGrant[];
   /** FR-502: by default only the website container can connect. */
   access: "website" | "anywhere";
 }
@@ -407,6 +425,7 @@ export type TokenScope =
   | "email:read" | "email:write"
   | "databases:read" | "databases:write"
   | "backups:read" | "backups:write"
+  | "tokens:read" | "tokens:write"
   | "servers:read" | "servers:write"
   | "images:read" | "images:write"
   | "customers:read" | "customers:write"

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useAction, useStore } from "../../api/hooks";
-import { addDomain, checkDns, makePrimary, removeDomain } from "../../api/store";
+import { addDomain, checkDns, makePrimary, removeDomain, verifyDomain } from "../../api/store";
 import type { DomainKind, Website } from "../../api/types";
 import { Card, ConfirmButton, Field, FormError, Status } from "../../components/ui";
 import { certificateUntil } from "../../lib/labels";
@@ -18,6 +18,7 @@ export function DomainsTab({ website }: { website: Website }) {
     return job;
   });
   const remove = useAction(removeDomain);
+  const verify = useAction(verifyDomain);
   const server = state.servers.find((s) => s.id === website.serverId);
   const checking = (d: string) => state.jobs.some((j) => j.websiteId === website.id && j.state === "running" && j.title === `Check DNS for ${d}`);
 
@@ -25,7 +26,7 @@ export function DomainsTab({ website }: { website: Website }) {
     <div className="stack">
       <Card title="Domains of this website">
         <div className="card-body" style={{ paddingBottom: 0 }}>
-          <FormError error={remove.error} />
+          <FormError error={remove.error ?? verify.error} />
         </div>
         <div className="table-wrap">
           <table>
@@ -43,7 +44,18 @@ export function DomainsTab({ website }: { website: Website }) {
                     </td>
                     <td>{KIND_LABEL[d.kind]}{d.kind === "redirect" && <span className="cell-sub">301 to the primary domain</span>}</td>
                     <td>
-                      {d.dnsPointsHere
+                      {d.verification ? (
+                        <>
+                          {/* CF-03: the edge proxy serves the domain only after this check. */}
+                          <Status tone="warning">Not verified</Status>
+                          <span className="cell-sub">Add this DNS record to prove that you control the domain:</span>
+                          <dl className="verify-record">
+                            <dt>Type</dt><dd><code>{d.verification.type}</code></dd>
+                            <dt>Name</dt><dd><code>{d.verification.name}</code></dd>
+                            <dt>Value</dt><dd><code>{d.verification.value}</code></dd>
+                          </dl>
+                        </>
+                      ) : d.dnsPointsHere
                         ? <Status tone="success">Points here</Status>
                         : (
                           <>
@@ -56,12 +68,17 @@ export function DomainsTab({ website }: { website: Website }) {
                     <td className="muted">{certificateUntil(d.certificate).replace(/^./, (c) => c.toUpperCase())}</td>
                     <td>
                       <div className="btn-group" style={{ justifyContent: "flex-end" }}>
-                        {!d.dnsPointsHere && (
+                        {d.verification && (
+                          <button type="button" className="btn btn-sm btn-primary" disabled={verify.busy} onClick={() => void verify.run(website.id, d.name)}>
+                            {verify.busy ? "Checking…" : "Verify"}
+                          </button>
+                        )}
+                        {!d.verification && !d.dnsPointsHere && (
                           <button type="button" className="btn btn-sm" disabled={checking(d.name)} onClick={() => void checkDns(website.id, d.name)}>
                             {checking(d.name) ? "Checking…" : "Check DNS"}
                           </button>
                         )}
-                        {d.kind !== "primary" && <button type="button" className="btn btn-sm" onClick={() => makePrimary(website.id, d.name)}>Make primary</button>}
+                        {d.kind !== "primary" && !d.verification && <button type="button" className="btn btn-sm" onClick={() => makePrimary(website.id, d.name)}>Make primary</button>}
                         {d.kind !== "primary" && (
                           <ConfirmButton className="btn btn-sm btn-danger" title={`Remove ${d.name}?`} confirm="Remove domain" message={<p>The edge proxy stops sending traffic for {d.name} to this website.</p>} onConfirm={() => void remove.run(website.id, d.name)}>
                             Remove
@@ -103,7 +120,7 @@ export function DomainsTab({ website }: { website: Website }) {
               <button type="submit" className="btn btn-primary">Add domain</button>
             </div>
           </div>
-          <p className="hint" style={{ marginTop: 10 }}>The edge proxy gets a TLS certificate through ACME when the DNS points to this server. If the panel controls the DNS zone, the panel adds the record.</p>
+          <p className="hint" style={{ marginTop: 10 }}>Before the edge proxy serves a new domain, you must prove that you control it with a DNS TXT record. A sub-domain of a verified domain does not need a new record. The edge proxy gets a TLS certificate through ACME when the DNS points to this server.</p>
         </form>
       </Card>
     </div>

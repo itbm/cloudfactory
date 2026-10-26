@@ -1,36 +1,49 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useAction, useStore } from "../api/hooks";
-import { createDatabase, createDatabaseUser, deleteDatabase, deleteDatabaseUser, setDatabaseUser } from "../api/store";
-import type { DatabaseEngine } from "../api/types";
+import { createDatabase, createDatabaseUser, deleteDatabase, deleteDatabaseUser, setDatabaseUser, type GrantInput } from "../api/store";
+import type { DatabaseEngine, DatabasePrivileges, DatabaseUser } from "../api/types";
 import { Card, ConfirmButton, Field, FormError, Modal } from "../components/ui";
 import { bytes } from "../lib/format";
 
 const ENGINE: Record<DatabaseEngine, string> = { mariadb: "MariaDB", postgresql: "PostgreSQL" };
+const PRIVILEGES: Record<DatabasePrivileges, string> = { readonly: "Read only", readwrite: "Read and write" };
 
-/** Databases and database users (FR-501, FR-502). With websiteId, it shows one website only. */
+/**
+ * Databases and database users (FR-501, FR-502). With websiteId, it shows one website only.
+ * CF-01: a user can have access to more than one database, with a permission for each database.
+ */
 export function DatabasesPanel({ websiteId }: { websiteId?: string }) {
   const state = useStore();
   const sites = state.websites;
   const dbs = state.databases.filter((d) => !websiteId || d.websiteId === websiteId);
   const users = state.databaseUsers.filter((u) => !websiteId || u.websiteId === websiteId);
-  const [dialog, setDialog] = useState<null | "db" | "user">(null);
+  const [dialog, setDialog] = useState<null | "db" | "user" | DatabaseUser>(null);
   const [engine, setEngine] = useState<DatabaseEngine>("mariadb");
   const [name, setName] = useState("");
   const [site, setSite] = useState(websiteId ?? sites[0]?.id ?? "");
-  const [grant, setGrant] = useState<string[]>([]);
-  const [password, setPassword] = useState<string | null>(null);
+  const [withUser, setWithUser] = useState(true);
+  const [grants, setGrants] = useState<GrantInput[]>([]);
+  const [password, setPassword] = useState<{ user: string; value: string } | null>(null);
   const createDb = useAction(createDatabase);
   const createUser = useAction(createDatabaseUser);
+  const changeUser = useAction(setDatabaseUser);
   const siteName = (id: string) => sites.find((w) => w.id === id)?.name ?? "Removed website";
+  const prefix = (id: string) => `${sites.find((w) => w.id === id)?.unixUser ?? ""}_`;
   const pending = state.jobs.filter((j) => j.state === "running" && j.title.startsWith("Create ") && j.title.includes("database") && (!websiteId || j.websiteId === websiteId));
 
   const close = () => {
     setDialog(null);
     setName("");
-    setGrant([]);
+    setGrants([]);
+    setWithUser(true);
     createDb.clear();
     createUser.clear();
+    changeUser.clear();
+  };
+  const edit = (u: DatabaseUser) => {
+    setGrants(u.grants.map((g) => ({ databaseId: g.databaseId, privileges: g.privileges })));
+    setDialog(u);
   };
 
   return (
@@ -42,50 +55,72 @@ export function DatabasesPanel({ websiteId }: { websiteId?: string }) {
         <div className="table-wrap">
           <table>
             <thead>
-              <tr><th scope="col">Name</th><th scope="col">Engine</th>{!websiteId && <th scope="col">Website</th>}<th scope="col">Size</th><th scope="col">Host</th><th scope="col"><span className="visually-hidden">Actions</span></th></tr>
+              <tr><th scope="col">Name</th><th scope="col">Engine</th>{!websiteId && <th scope="col">Website</th>}<th scope="col">Users</th><th scope="col">Size</th><th scope="col">Host</th><th scope="col"><span className="visually-hidden">Actions</span></th></tr>
             </thead>
             <tbody>
-              {dbs.map((d) => (
-                <tr key={d.id}>
-                  <td><code>{d.name}</code></td>
-                  <td>{ENGINE[d.engine]}</td>
-                  {!websiteId && <td><Link to={`/websites/${d.websiteId}/databases`}>{siteName(d.websiteId)}</Link></td>}
-                  <td>{bytes(d.sizeBytes)}</td>
-                  <td><code>{d.engine === "mariadb" ? "mariadb.internal:3306" : "postgres.internal:5432"}</code></td>
-                  <td className="cell-actions" style={{ width: 120 }}>
-                    <ConfirmButton className="btn btn-sm btn-danger" title={`Remove database ${d.name}?`} confirm="Remove database" message={<p>The data is removed now. You can restore it from a backup for the retention period.</p>} onConfirm={() => deleteDatabase(d.id)}>Remove</ConfirmButton>
-                  </td>
-                </tr>
-              ))}
+              {dbs.map((d) => {
+                const access = state.databaseUsers.flatMap((u) => u.grants.filter((g) => g.databaseId === d.id).map((g) => ({ user: u.name, privileges: g.privileges })));
+                return (
+                  <tr key={d.id}>
+                    <td><code>{d.name}</code></td>
+                    <td>{ENGINE[d.engine]}</td>
+                    {!websiteId && <td><Link to={`/websites/${d.websiteId}/databases`}>{siteName(d.websiteId)}</Link></td>}
+                    <td>
+                      {access.length
+                        ? access.map((a) => <span key={a.user} className="grant"><code>{a.user}</code> <span className={`badge ${a.privileges === "readonly" ? "badge-neutral" : "badge-info"}`}>{PRIVILEGES[a.privileges]}</span></span>)
+                        : <span className="muted">No users</span>}
+                    </td>
+                    <td>{bytes(d.sizeBytes)}</td>
+                    <td><code>{d.engine === "mariadb" ? "mariadb.internal:3306" : "postgres.internal:5432"}</code></td>
+                    <td className="cell-actions" style={{ width: 120 }}>
+                      <ConfirmButton className="btn btn-sm btn-danger" title={`Remove database ${d.name}?`} confirm="Remove database" message={<p>The data is removed now. The users of this database lose access to it. You can restore it from a backup for the retention period.</p>} onConfirm={() => deleteDatabase(d.id)}>Remove</ConfirmButton>
+                    </td>
+                  </tr>
+                );
+              })}
               {pending.map((j) => (
-                <tr key={j.id}><td colSpan={6} className="muted">{j.title}: {j.steps[Math.min(j.step, j.steps.length - 1)]}…</td></tr>
+                <tr key={j.id}><td colSpan={7} className="muted">{j.title}: {j.steps[Math.min(j.step, j.steps.length - 1)]}…</td></tr>
               ))}
-              {dbs.length === 0 && pending.length === 0 && <tr><td colSpan={6} className="muted">No databases.</td></tr>}
+              {dbs.length === 0 && pending.length === 0 && <tr><td colSpan={7} className="muted">No databases.</td></tr>}
             </tbody>
           </table>
         </div>
       </Card>
       <Card title="Database users" actions={<button type="button" className="btn" onClick={() => setDialog("user")}>New user</button>}>
+        <div className="card-body" style={{ paddingBottom: 0 }}>
+          <FormError error={changeUser.error} />
+        </div>
         <div className="table-wrap">
           <table>
             <thead>
-              <tr><th scope="col">User</th><th scope="col">Engine</th><th scope="col">Databases</th><th scope="col">Can connect from</th><th scope="col"><span className="visually-hidden">Actions</span></th></tr>
+              <tr><th scope="col">User</th><th scope="col">Engine</th><th scope="col">Permissions</th><th scope="col">Can connect from</th><th scope="col"><span className="visually-hidden">Actions</span></th></tr>
             </thead>
             <tbody>
               {users.map((u) => (
                 <tr key={u.id}>
                   <td><code>{u.name}</code>{!websiteId && <span className="cell-sub">{siteName(u.websiteId)}</span>}</td>
                   <td>{ENGINE[u.engine]}</td>
-                  <td>{u.databases.length ? u.databases.map((d) => <code key={d} style={{ marginRight: 6 }}>{d}</code>) : <span className="muted">None</span>}</td>
+                  <td>
+                    {u.grants.length
+                      ? u.grants.map((g) => <span key={g.databaseId} className="grant"><code>{g.database}</code> <span className={`badge ${g.privileges === "readonly" ? "badge-neutral" : "badge-info"}`}>{PRIVILEGES[g.privileges]}</span></span>)
+                      : <span className="muted">No databases</span>}
+                  </td>
                   <td>
                     <label className="visually-hidden" htmlFor={`access-${u.id}`}>Can connect from</label>
-                    <select id={`access-${u.id}`} className="select" value={u.access} onChange={(e) => setDatabaseUser(u.id, { access: e.target.value as "website" | "anywhere" })}>
-                      <option value="website">The website container only</option>
+                    <select id={`access-${u.id}`} className="select" style={{ maxWidth: 210 }} value={u.access} onChange={(e) => void changeUser.run(u.id, { access: e.target.value as "website" | "anywhere" })}>
+                      <option value="website">Website container only</option>
                       <option value="anywhere">Anywhere, with TLS</option>
                     </select>
                   </td>
-                  <td className="cell-actions" style={{ width: 120 }}>
-                    <ConfirmButton className="btn btn-sm btn-danger" title={`Remove user ${u.name}?`} confirm="Remove user" message={<p>Apps that use this user cannot connect.</p>} onConfirm={() => deleteDatabaseUser(u.id)}>Remove</ConfirmButton>
+                  <td className="cell-actions">
+                    <div className="btn-group" style={{ justifyContent: "flex-end", flexWrap: "nowrap" }}>
+                      <button type="button" className="btn btn-sm" onClick={() => edit(u)}>Permissions</button>
+                      <ConfirmButton className="btn btn-sm" danger={false} title={`Make a new password for ${u.name}?`} confirm="Make new password" message={<p>Apps that use the old password cannot connect.</p>} onConfirm={async () => {
+                        const r = await changeUser.run(u.id, { resetPassword: true });
+                        if (r.ok && r.value) setPassword({ user: u.name, value: r.value });
+                      }}>New password</ConfirmButton>
+                      <ConfirmButton className="btn btn-sm btn-danger" title={`Remove user ${u.name}?`} confirm="Remove user" message={<p>Apps that use this user cannot connect.</p>} onConfirm={() => deleteDatabaseUser(u.id)}>Remove</ConfirmButton>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -93,7 +128,7 @@ export function DatabasesPanel({ websiteId }: { websiteId?: string }) {
             </tbody>
           </table>
         </div>
-        <p className="card-body muted small" style={{ paddingTop: 12 }}>By default, only the container of the website can connect to its databases.</p>
+        <p className="card-body muted small" style={{ paddingTop: 12 }}>By default, only the container of the website can connect to its databases. A user can have access only to the databases of its website.</p>
       </Card>
 
       {dialog === "db" && (
@@ -102,10 +137,21 @@ export function DatabasesPanel({ websiteId }: { websiteId?: string }) {
           onClose={close}
           footer={<><button type="button" className="btn" onClick={close}>Cancel</button><button type="submit" form="new-db" className="btn btn-primary">Create database</button></>}
         >
-          <form id="new-db" noValidate onSubmit={async (e) => { e.preventDefault(); if ((await createDb.run(site, engine, name)).ok) close(); }}>
+          <form id="new-db" noValidate onSubmit={async (e) => {
+            e.preventDefault();
+            const full = prefix(site) + name.trim();
+            const result = await createDb.run(site, engine, name, withUser);
+            if (result.ok) {
+              close();
+              if (result.value) setPassword({ user: full, value: result.value });
+            }
+          }}>
             <FormError error={createDb.error} />
-            <DbFields engine={engine} setEngine={setEngine} name={name} setName={setName} site={site} setSite={setSite} showSite={!websiteId} error={createDb.error?.fields.name} />
-            <p className="hint" style={{ marginTop: 12 }}>The panel also makes a user with the same name that can connect from the website container only.</p>
+            <DbFields engine={engine} setEngine={setEngine} name={name} setName={setName} site={site} setSite={setSite} showSite={!websiteId} prefix={prefix(site)} error={createDb.error?.fields.name} />
+            <label className="check" style={{ marginTop: 12 }}>
+              <input type="checkbox" checked={withUser} onChange={(e) => setWithUser(e.target.checked)} />
+              Also make a user with the same name, with read and write access
+            </label>
           </form>
         </Modal>
       )}
@@ -117,29 +163,37 @@ export function DatabasesPanel({ websiteId }: { websiteId?: string }) {
         >
           <form id="new-user" noValidate onSubmit={async (e) => {
             e.preventDefault();
-            const result = await createUser.run(site, engine, name, grant);
-            if (result.ok) { close(); setPassword(result.value); }
+            const full = prefix(site) + name.trim();
+            const result = await createUser.run(site, engine, name, grants);
+            if (result.ok) { close(); setPassword({ user: full, value: result.value }); }
           }}>
             <FormError error={createUser.error} />
-            <DbFields engine={engine} setEngine={setEngine} name={name} setName={setName} site={site} setSite={setSite} showSite={!websiteId} error={createUser.error?.fields.name} />
-            <fieldset className="checkbox-list" style={{ marginTop: 14 }}>
-              <legend>Databases</legend>
-              {state.databases.filter((d) => d.websiteId === site && d.engine === engine).map((d) => (
-                <label key={d.id} className="check">
-                  <input type="checkbox" checked={grant.includes(d.name)} onChange={(e) => setGrant(e.target.checked ? [...grant, d.name] : grant.filter((x) => x !== d.name))} />
-                  <code>{d.name}</code>
-                </label>
-              ))}
-            </fieldset>
+            <DbFields engine={engine} setEngine={(e) => { setEngine(e); setGrants([]); }} name={name} setName={setName} site={site} setSite={(s) => { setSite(s); setGrants([]); }} showSite={!websiteId} prefix={prefix(site)} error={createUser.error?.fields.name} />
+            <GrantEditor websiteId={site} engine={engine} grants={grants} setGrants={setGrants} />
+          </form>
+        </Modal>
+      )}
+      {dialog && typeof dialog === "object" && (
+        <Modal
+          title={`Permissions of ${dialog.name}`}
+          onClose={close}
+          footer={<><button type="button" className="btn" onClick={close}>Cancel</button><button type="submit" form="edit-user" className="btn btn-primary">Save permissions</button></>}
+        >
+          <form id="edit-user" noValidate onSubmit={async (e) => {
+            e.preventDefault();
+            if ((await changeUser.run(dialog.id, { grants })).ok) close();
+          }}>
+            <FormError error={changeUser.error} />
+            <GrantEditor websiteId={dialog.websiteId} engine={dialog.engine} grants={grants} setGrants={setGrants} />
           </form>
         </Modal>
       )}
       {password && (
         <Modal title="Copy the password" onClose={() => setPassword(null)} footer={<button type="button" className="btn btn-primary" onClick={() => setPassword(null)}>I copied the password</button>}>
-          <p>The panel shows this password one time only.</p>
+          <p>The password of <code>{password.user}</code>. The panel shows it one time only.</p>
           <div className="copy-field">
-            <code>{password}</code>
-            <button type="button" className="btn" onClick={() => void navigator.clipboard?.writeText(password)}>Copy</button>
+            <code>{password.value}</code>
+            <button type="button" className="btn" onClick={() => void navigator.clipboard?.writeText(password.value)}>Copy</button>
           </div>
         </Modal>
       )}
@@ -147,7 +201,34 @@ export function DatabasesPanel({ websiteId }: { websiteId?: string }) {
   );
 }
 
-function DbFields(props: { engine: DatabaseEngine; setEngine: (e: DatabaseEngine) => void; name: string; setName: (n: string) => void; site: string; setSite: (s: string) => void; showSite: boolean; error?: string }) {
+/** One row for each database of the website with the same engine: no access, read only, or read and write. */
+function GrantEditor({ websiteId, engine, grants, setGrants }: { websiteId: string; engine: DatabaseEngine; grants: GrantInput[]; setGrants: (g: GrantInput[]) => void }) {
+  const state = useStore();
+  const dbs = state.databases.filter((d) => d.websiteId === websiteId && d.engine === engine);
+  const set = (databaseId: string, value: DatabasePrivileges | "") => {
+    const rest = grants.filter((g) => g.databaseId !== databaseId);
+    setGrants(value ? [...rest, { databaseId, privileges: value }] : rest);
+  };
+  return (
+    <fieldset className="grant-list" style={{ marginTop: 14 }}>
+      <legend>Permissions</legend>
+      {dbs.length === 0 && <p className="muted small">This website has no {ENGINE[engine]} databases.</p>}
+      {dbs.map((d) => (
+        <div key={d.id} className="grant-row">
+          <label htmlFor={`grant-${d.id}`}><code>{d.name}</code></label>
+          <select id={`grant-${d.id}`} className="select" value={grants.find((g) => g.databaseId === d.id)?.privileges ?? ""} onChange={(e) => set(d.id, e.target.value as DatabasePrivileges | "")}>
+            <option value="">No access</option>
+            <option value="readonly">{PRIVILEGES.readonly}</option>
+            <option value="readwrite">{PRIVILEGES.readwrite}</option>
+          </select>
+        </div>
+      ))}
+      <p className="hint" style={{ marginTop: 8 }}>Read only: SELECT and SHOW VIEW. Read and write: all permissions on the database.</p>
+    </fieldset>
+  );
+}
+
+function DbFields(props: { engine: DatabaseEngine; setEngine: (e: DatabaseEngine) => void; name: string; setName: (n: string) => void; site: string; setSite: (s: string) => void; showSite: boolean; prefix: string; error?: string }) {
   const state = useStore();
   return (
     <>
@@ -170,8 +251,13 @@ function DbFields(props: { engine: DatabaseEngine; setEngine: (e: DatabaseEngine
         ))}
       </fieldset>
       <div style={{ marginTop: 14 }}>
-        <Field label="Name" hint="Start with a letter. Use lower-case letters, digits and underscores." error={props.error}>
-          {(p) => <input {...p} className="input" value={props.name} onChange={(e) => props.setName(e.target.value)} autoCapitalize="none" spellCheck={false} />}
+        <Field label="Name" hint={<>Each name starts with <code>{props.prefix}</code>, the Unix user of the website. Use lower-case letters, digits and underscores.</>} error={props.error}>
+          {(p) => (
+            <div className="input-prefix">
+              <span aria-hidden="true">{props.prefix}</span>
+              <input {...p} className="input" value={props.name} onChange={(e) => props.setName(e.target.value)} autoCapitalize="none" spellCheck={false} />
+            </div>
+          )}
         </Field>
       </div>
     </>

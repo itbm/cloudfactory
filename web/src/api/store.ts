@@ -17,7 +17,10 @@ import type {
   CronJob,
   Customer,
   DatabaseEngine,
+  DatabaseGrant,
+  DatabasePrivileges,
   DnsRecord,
+  Domain,
   DomainKind,
   FileNode,
   HostUpdatePolicy,
@@ -291,7 +294,8 @@ export function createWebsite(input: NewWebsite): Promise<{ websiteId: string; j
   if (LIVE) {
     return call(async () => {
       const r = await live.request<{ website: live.ApiWebsite; job: live.ApiJob }>("POST", "/websites", {
-        name: input.name.trim().toLowerCase(), application: input.application, imageId: input.imageId, planId: input.planId,
+        // CF-15: only an administrator or a reseller can select the plan. The panel uses the plan of the customer.
+        name: input.name.trim().toLowerCase(), application: input.application, imageId: input.imageId, planId: state.session.contextId === "platform" || state.session.user.role === "administrator" ? input.planId : undefined,
         serverId: input.serverId || undefined, customerId: input.customerId && input.customerId !== "platform" ? input.customerId : undefined,
       });
       update((d) => {
@@ -332,7 +336,7 @@ export function createWebsite(input: NewWebsite): Promise<{ websiteId: string; j
         planId: plan!.id,
         limits: { ...plan!.limits },
         use: { cpuPercent: 0, memoryBytes: 0, diskBytes: 0, processes: 0, diskIoBytesPerSecond: 0 },
-        domains: [{ name, kind: "primary", certificate: { state: "pending" }, dnsPointsHere: true }],
+        domains: [{ name, kind: "primary", certificate: { state: "pending" }, dnsPointsHere: true, verification: verificationFor(d, input.customerId, name) }],
         releases: [],
         previews: [],
         cron: [],
@@ -478,12 +482,68 @@ export function setWebsitePlan(websiteId: string, planId: string) {
 
 // Domains
 
+/**
+ * CF-03: a domain needs a DNS TXT record before the edge proxy serves it. An administrator, or a
+ * sub-domain of a verified domain of the same customer, does not need one.
+ */
+function verificationFor(d: State, customerId: string, domain: string): Domain["verification"] {
+  if (d.session.contextId === "platform") return undefined;
+  const verified = d.websites.filter((w) => w.customerId === customerId).flatMap((w) => w.domains).filter((x) => !x.verification);
+  if (verified.some((x) => domain.endsWith(`.${x.name}`))) return undefined;
+  const value = `cf-${Array.from(crypto.getRandomValues(new Uint8Array(40)), (b) => "abcdefghijklmnopqrstuvwxyz0123456789"[b % 36]).join("")}`;
+  return { type: "TXT", name: `_cloudfactory-challenge.${domain}`, value };
+}
+
+export function verifyDomain(websiteId: string, name: string) {
+  if (LIVE) {
+    return call(() => live.request<JobAnswer>("POST", `/websites/${websiteId}/domains/${q(name)}/verify`)).then(async (r) => {
+      await refresh();
+      if (r.job) await track(r.job);
+    });
+  }
+  const dm = site(state, websiteId).domains.find((x) => x.name === name);
+  if (!dm?.verification) return Promise.resolve();
+  const want = dm.verification;
+  const zone = state.zones.find((z) => want.name.endsWith(`.${z.name}`));
+  const label = zone ? want.name.slice(0, -(zone.name.length + 1)) : "";
+  if (!zone?.records.some((r) => r.type === "TXT" && r.name === label && r.value === want.value)) {
+    throw new ApiError(`The TXT record ${want.name} does not have the value ${want.value}. DNS changes can take some minutes.`, { name: "The TXT record is not correct." });
+  }
+  return runJob({
+    title: `Add domain ${name}`,
+    websiteId,
+    steps: ["Check TXT record", "Add edge proxy route", "Get TLS certificate"],
+    activity: `Verified domain ${name}`,
+    begin: (d) => {
+      const x = site(d, websiteId).domains.find((y) => y.name === name)!;
+      delete x.verification;
+      audit(d, "Verified domain", `${site(d, websiteId).name} ${name}`);
+    },
+    apply: (d) => {
+      const x = site(d, websiteId).domains.find((y) => y.name === name)!;
+      if (x.dnsPointsHere) x.certificate = { state: "valid", expiresAt: new Date(Date.now() + 90 * DAY).toISOString() };
+    },
+  }).then(() => undefined);
+}
+
 export function addDomain(websiteId: string, name: string, kind: DomainKind) {
-  if (LIVE) return call(() => live.request<JobAnswer>("POST", `/websites/${websiteId}/domains`, { name: name.trim().toLowerCase(), kind })).then((r) => track(r.job));
+  if (LIVE) return call(() => live.request<Partial<JobAnswer>>("POST", `/websites/${websiteId}/domains`, { name: name.trim().toLowerCase(), kind })).then(async (r) => {
+    await refresh();
+    if (r.job) await track(r.job);
+  });
   const domain = name.trim().toLowerCase();
   if (!/^(?!-)[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(domain)) throw new ApiError("Type a domain name.", { name: "Type a domain name, for example www.example.com." });
   if (state.websites.some((w) => w.domains.some((d) => d.name === domain))) throw new ApiError("A website already uses this domain.", { name: "A website already uses this domain." });
   const ours = state.zones.find((z) => domain === z.name || domain.endsWith(`.${z.name}`));
+  const verification = verificationFor(state, site(state, websiteId).customerId, domain);
+  if (verification) {
+    update((d) => {
+      const w = site(d, websiteId);
+      w.domains.push({ name: domain, kind, certificate: { state: "pending" }, dnsPointsHere: !!ours, verification });
+      audit(d, "Added domain", `${w.name} ${domain}`);
+    });
+    return Promise.resolve();
+  }
   return runJob({
     title: `Add domain ${domain}`,
     websiteId,
@@ -503,11 +563,14 @@ export function addDomain(websiteId: string, name: string, kind: DomainKind) {
       const dm = site(d, websiteId).domains.find((x) => x.name === domain)!;
       if (dm.dnsPointsHere) dm.certificate = { state: "valid", expiresAt: new Date(Date.now() + 90 * DAY).toISOString() };
     },
-  });
+  }).then(() => undefined);
 }
 
 export function removeDomain(websiteId: string, name: string) {
-  if (LIVE) return call(() => live.request<JobAnswer>("DELETE", `/websites/${websiteId}/domains/${q(name)}`)).then((r) => track(r.job));
+  if (LIVE) return call(() => live.request<JobAnswer>("DELETE", `/websites/${websiteId}/domains/${q(name)}`)).then(async (r) => {
+    await refresh();
+    if (r.job) await track(r.job);
+  });
   update((d) => {
     const w = site(d, websiteId);
     const dm = w.domains.find((x) => x.name === name);
@@ -995,69 +1058,124 @@ export function removeAlias(aliasId: string) {
 
 // Databases (FR-501, FR-502)
 
-const DB_NAME = /^[a-z][a-z0-9_]{1,62}$/;
+/** CF-01: each database and database user name starts with the Unix user of the website. */
+export function databasePrefix(websiteId: string) {
+  return `${site(state, websiteId).unixUser}_`;
+}
 
-export function createDatabase(websiteId: string, engine: DatabaseEngine, name: string) {
-  if (LIVE) return call(() => live.request<JobAnswer>("POST", `/websites/${websiteId}/databases`, { engine, name: name.trim() })).then((r) => track(r.job));
-  const n = name.trim();
-  if (!DB_NAME.test(n)) throw new ApiError("Correct the name.", { name: "Start with a letter. Use lower-case letters, digits and underscores." });
+const DB_SUFFIX = /^[a-z0-9][a-z0-9_]{0,31}$/;
+
+function databaseName(websiteId: string, name: string) {
+  const prefix = databasePrefix(websiteId);
+  const suffix = name.trim().startsWith(prefix) ? name.trim().slice(prefix.length) : name.trim();
+  if (!DB_SUFFIX.test(suffix)) throw new ApiError("Correct the name.", { name: "Use 1 to 32 lower-case letters, digits and underscores." });
+  return prefix + suffix;
+}
+
+const newPassword = () => Array.from(crypto.getRandomValues(new Uint8Array(24)), (b) => "abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789"[b % 56]).join("");
+
+export type GrantInput = { databaseId: string; privileges: DatabasePrivileges };
+
+/** Makes a database. With createUser, it also makes a user with readwrite access, and gives its password. */
+export function createDatabase(websiteId: string, engine: DatabaseEngine, name: string, createUser = true): Promise<string | null> {
+  if (LIVE) {
+    return call(async () => {
+      const r = await live.request<{ password: string | null; job: live.ApiJob }>("POST", `/websites/${websiteId}/databases`, { engine, name: name.trim(), createUser });
+      void track(r.job).then(() => refresh());
+      await refresh();
+      return r.password;
+    });
+  }
+  const n = databaseName(websiteId, name);
   if (state.databases.some((x) => x.name === n && x.engine === engine)) throw new ApiError("This database exists.", { name: "This database exists." });
+  if (createUser && state.databaseUsers.some((x) => x.name === n && x.engine === engine)) throw new ApiError("A database user with this name exists.", { name: "A database user with this name exists. Make the database with no user." });
   const w = state.websites.find((x) => x.id === websiteId)!;
-  return runJob({
+  const dbId = id("db");
+  void runJob({
     title: `Create ${engine === "mariadb" ? "MariaDB" : "PostgreSQL"} database ${n}`,
     websiteId,
-    steps: ["Create database", "Create user", "Allow the website container only"],
+    steps: createUser ? ["Create database", "Create user", "Allow the website container only"] : ["Create database"],
     activity: `Created database ${n} for ${w.name}`,
     begin: (d) => audit(d, "Created database", `${w.name} ${n}`),
     apply: (d) => {
-      d.databases.push({ id: id("db"), name: n, engine, websiteId, sizeBytes: 0, serverId: w.serverId });
-      d.databaseUsers.push({ id: id("dbu"), name: n, engine, websiteId, databases: [n], access: "website" });
+      d.databases.push({ id: dbId, name: n, engine, websiteId, sizeBytes: 0, serverId: w.serverId });
+      if (createUser) d.databaseUsers.push({ id: id("dbu"), name: n, engine, websiteId, grants: [{ databaseId: dbId, database: n, privileges: "readwrite" }], access: "website" });
     },
   });
+  return Promise.resolve(createUser ? newPassword() : null);
 }
 
 export function deleteDatabase(databaseId: string) {
   if (LIVE) {
     const db = state.databases.find((x) => x.id === databaseId);
     if (!db) throw new ApiError("The database does not exist.");
-    return call(() => live.request<JobAnswer>("DELETE", `/websites/${db.websiteId}/databases/${databaseId}`)).then((r) => track(r.job));
+    return call(() => live.request<JobAnswer>("DELETE", `/websites/${db.websiteId}/databases/${databaseId}`)).then((r) => track(r.job)).then(() => refresh());
   }
   update((d) => {
     const db = d.databases.find((x) => x.id === databaseId)!;
     d.databases = d.databases.filter((x) => x.id !== databaseId);
-    d.databaseUsers.forEach((u) => (u.databases = u.databases.filter((n) => n !== db.name)));
+    d.databaseUsers.forEach((u) => (u.grants = u.grants.filter((g) => g.databaseId !== databaseId)));
     audit(d, "Removed database", db.name);
   });
 }
 
-export function createDatabaseUser(websiteId: string, engine: DatabaseEngine, name: string, databases: string[]): string {
-  if (LIVE) notInRelease();
-  const n = name.trim();
-  if (!DB_NAME.test(n)) throw new ApiError("Correct the name.", { name: "Start with a letter. Use lower-case letters, digits and underscores." });
-  if (state.databaseUsers.some((x) => x.name === n && x.engine === engine)) throw new ApiError("This user exists.", { name: "This user exists." });
-  const password = Array.from(crypto.getRandomValues(new Uint8Array(18)), (b) => "abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789"[b % 56]).join("");
-  update((d) => {
-    d.databaseUsers.push({ id: id("dbu"), name: n, engine, websiteId, databases, access: "website" });
-    audit(d, "Created database user", n);
-  });
-  return password;
+function checkGrants(websiteId: string, engine: DatabaseEngine, grants: GrantInput[]) {
+  return grants.map((g, i): DatabaseGrant => {
+    const db = state.databases.find((x) => x.id === g.databaseId && x.websiteId === websiteId && x.engine === engine);
+    if (!db) throw new ApiError("Correct the databases.", { [`grants.${i}.databaseId`]: "Select a database of this website with the same engine." });
+    return { databaseId: db.id, database: db.name, privileges: g.privileges };
+  }).sort((a, b) => a.database.localeCompare(b.database));
 }
 
-export function setDatabaseUser(userId: string, change: { databases?: string[]; access?: "website" | "anywhere" }) {
-  if (LIVE) notInRelease();
+/** Makes a database user with a permission for each database, and gives its password. */
+export function createDatabaseUser(websiteId: string, engine: DatabaseEngine, name: string, grants: GrantInput[]): Promise<string> {
+  if (LIVE) {
+    return call(async () => {
+      const r = await live.request<{ password: string; job: live.ApiJob }>("POST", `/websites/${websiteId}/database-users`, { engine, name: name.trim(), grants });
+      void track(r.job);
+      await refresh();
+      return r.password;
+    });
+  }
+  const n = databaseName(websiteId, name);
+  if (state.databaseUsers.some((x) => x.name === n && x.engine === engine)) throw new ApiError("This user exists.", { name: "This user exists." });
+  const checked = checkGrants(websiteId, engine, grants);
+  update((d) => {
+    d.databaseUsers.push({ id: id("dbu"), name: n, engine, websiteId, grants: checked, access: "website" });
+    audit(d, "Created database user", n);
+  });
+  return Promise.resolve(newPassword());
+}
+
+/** Changes the permissions of a user, where it can connect from, or its password. Gives the new password. */
+export function setDatabaseUser(userId: string, change: { grants?: GrantInput[]; access?: "website" | "anywhere"; resetPassword?: boolean }): Promise<string | null> {
+  const user = state.databaseUsers.find((x) => x.id === userId);
+  if (!user) throw new ApiError("The database user does not exist.");
+  if (LIVE) {
+    return call(async () => {
+      const r = await live.request<{ password: string | null; job: live.ApiJob }>("PATCH", `/websites/${user.websiteId}/database-users/${userId}`, change);
+      void track(r.job);
+      await refresh();
+      return r.password;
+    });
+  }
+  const grants = change.grants && checkGrants(user.websiteId, user.engine, change.grants);
   update((d) => {
     const u = d.databaseUsers.find((x) => x.id === userId)!;
-    Object.assign(u, change);
+    if (grants) u.grants = grants;
+    if (change.access) u.access = change.access;
     audit(d, "Changed database user", u.name);
   });
+  return Promise.resolve(change.resetPassword ? newPassword() : null);
 }
 
 export function deleteDatabaseUser(userId: string) {
-  if (LIVE) notInRelease();
+  const user = state.databaseUsers.find((x) => x.id === userId);
+  if (!user) throw new ApiError("The database user does not exist.");
+  if (LIVE) return call(() => live.request<JobAnswer>("DELETE", `/websites/${user.websiteId}/database-users/${userId}`)).then((r) => track(r.job)).then(() => refresh());
   update((d) => {
-    const u = d.databaseUsers.find((x) => x.id === userId)!;
     d.databaseUsers = d.databaseUsers.filter((x) => x.id !== userId);
-    audit(d, "Removed database user", u.name);
+    audit(d, "Removed database user", user.name);
   });
 }
 
@@ -1461,10 +1579,11 @@ export function setBranding(branding: Branding) {
 
 // Settings (FR-103, FR-104, FR-1303, FR-1813)
 
-export function createToken(name: string, scopes: TokenScope[], days: number): Promise<{ token: ApiToken; secret: string }> | { token: ApiToken; secret: string } {
+/** CF-07: a new token needs the password of the user and, if set, a TOTP code. */
+export function createToken(name: string, scopes: TokenScope[], days: number, password: string, totp = ""): Promise<{ token: ApiToken; secret: string }> | { token: ApiToken; secret: string } {
   if (LIVE) {
     return call(async () => {
-      const r = await live.request<{ id: number; token: string; scopes: TokenScope[]; expiresAt: string }>("POST", "/tokens", { name: name.trim(), scopes, expiresInDays: days });
+      const r = await live.request<{ id: number; token: string; scopes: TokenScope[]; expiresAt: string }>("POST", "/tokens", { name: name.trim(), scopes, expiresInDays: days, password, totp: totp.trim() || undefined });
       await refresh();
       const token: ApiToken = { id: String(r.id), name: name.trim(), scopes: r.scopes, createdAt: now(), expiresAt: r.expiresAt, prefix: `${r.id}|` };
       return { token, secret: r.token };
@@ -1474,6 +1593,8 @@ export function createToken(name: string, scopes: TokenScope[], days: number): P
   if (!name.trim()) errors.name = "Type a name.";
   if (!scopes.length) errors.scopes = "Select one or more scopes.";
   if (!(days >= 1 && days <= 365)) errors.days = "Use from 1 to 365 days.";
+  if (!password) errors.password = "Type your password.";
+  if (state.totpEnabled && !/^\d{6}$/.test(totp.trim())) errors.totp = "Type the 6-digit code from your authenticator app.";
   if (Object.keys(errors).length) throw new ApiError("Correct the token.", errors);
   const prefix = `cf_live_${hex().slice(0, 4)}`;
   const secret = `${prefix}${hex()}${hex()}${hex()}`;
