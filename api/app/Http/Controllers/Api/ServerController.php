@@ -64,7 +64,8 @@ class ServerController extends Controller
         return response()->json([
             'token' => $token,
             'expiresAt' => now()->addDay()->toIso8601String(),
-            'command' => "curl -fsSL https://get.cloudfactory.io | sh -s -- --join {$token} --panel https://".config('cloudfactory.panel_domain'),
+            // R-14: the same signed installation script from GitHub Releases as in the README.
+            'command' => 'curl -fsSL '.config('cloudfactory.install_url')." | sh -s -- --join {$token} --panel https://".config('cloudfactory.panel_domain'),
         ], 201);
     }
 

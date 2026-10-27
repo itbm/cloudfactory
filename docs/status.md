@@ -29,7 +29,7 @@ shows what this repository has now.
 | Use of each website | The agent does not report the CPU, memory and disk use of each website yet. The panel shows 0 for each website. |
 | SFTP | The web panel shows SFTP access. The agent has no SFTP service yet. |
 | gVisor benchmark | Release 0.1 must measure websites, MariaDB and DNS in gVisor (R-08). This is not done. |
-| Passkeys | The web panel shows passkeys. The API does not support passkeys yet. Users sign in with a password and TOTP. |
+| Passkeys | The web panel shows passkeys. The API does not support passkeys yet. Users sign in with a password and TOTP, and set up TOTP and change the password in Settings. |
 | Signing key | The maintainers must make the cosign key and commit `cosign.pub`. Refer to [releasing.md](releasing.md). |
 | Tests on real servers | The tests use fakes for the system commands. The Caddy routes have a test with a real edge container. Nobody has installed release 0.1 on a real Debian 13 or Ubuntu 26.04 server yet. Test these items on a real server: the Caddy admin socket in gVisor (`--runtime-flag=host-uds=create`), the MariaDB client host of a website container (`databaseClientHost`), and a restore with the PostgreSQL group roles. |
 | DNS, email, Git deploys, migration, Terraform | These are in releases 0.2 to 1.0. |

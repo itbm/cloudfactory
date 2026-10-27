@@ -6,6 +6,7 @@ use App\Enums\Role;
 use App\Http\Controllers\Controller;
 use App\Models\Customer;
 use App\Models\Domain;
+use App\Models\User;
 use App\Services\Audit;
 use App\Services\DomainPolicy;
 use Illuminate\Http\JsonResponse;
@@ -38,6 +39,7 @@ class CustomerController extends Controller
             'role' => ['required', Rule::in($user->isAdministrator() ? ['reseller', 'owner'] : ['owner'])],
             'planId' => ['required', 'exists:plans,id'],
         ]);
+        self::checkPlan($user, $data['planId']);
         $customer = Customer::create([
             'name' => $data['name'],
             'email' => $data['email'],
@@ -62,26 +64,43 @@ class CustomerController extends Controller
             'branding.colour' => ['sometimes', 'regex:/^#[0-9a-fA-F]{6}$/'],
             'branding.panelDomain' => ['sometimes', 'regex:'.WebsiteController::DOMAIN],
             'branding.supportEmail' => ['sometimes', 'email'],
+            'allowedPlanIds' => ['sometimes', 'array'],
+            'allowedPlanIds.*' => ['distinct', 'exists:plans,id'],
         ]);
         $user = $request->user();
         if ($customer->id === $user->customer_id && (isset($data['planId']) || isset($data['suspended']))) {
             return response()->json(['message' => 'You cannot change your own plan or status.'], 403);
+        }
+        // R-07: only an administrator sets the plans of a reseller.
+        if (isset($data['allowedPlanIds']) && (! $user->isAdministrator() || $customer->role !== 'reseller')) {
+            return response()->json(['message' => 'Only an administrator can set the plans of a reseller.'], 403);
+        }
+        if (isset($data['planId']) && $data['planId'] !== $customer->plan_id) {
+            self::checkPlan($user, $data['planId']);
+        }
+        // R-06: a reseller cannot lift a suspension that an administrator set.
+        if (($data['suspended'] ?? null) === false && $customer->suspended && $customer->suspended_by === 'administrator' && ! $user->isAdministrator()) {
+            return response()->json(['message' => 'An administrator suspended this customer. Only an administrator can lift the suspension.'], 403);
         }
         // CF-20: the brand is for resellers. An administrator or the reseller itself sets it.
         if (isset($data['branding'])) {
             if ($customer->role !== 'reseller' || ! ($user->isAdministrator() || $customer->id === $user->customer_id)) {
                 return response()->json(['message' => 'Only a reseller has a brand.'], 403);
             }
-            if (isset($data['branding']['panelDomain'])) {
-                $this->checkPanelDomain($data['branding']['panelDomain'], $customer);
+            if (isset($data['branding']['panelDomain']) && $data['branding']['panelDomain'] !== ($customer->branding['panelDomain'] ?? null)) {
+                $this->checkPanelDomain($data['branding']['panelDomain'], $customer, $user);
             }
+        }
+        $suspension = [];
+        if (isset($data['suspended']) && $data['suspended'] !== $customer->suspended) {
+            $suspension = ['suspended' => $data['suspended'], 'suspended_by' => $data['suspended'] ? ($user->isAdministrator() ? 'administrator' : 'reseller') : null];
         }
         $customer->update(array_filter([
             'name' => $data['name'] ?? null,
             'plan_id' => $data['planId'] ?? null,
-            'suspended' => $data['suspended'] ?? null,
             'branding' => isset($data['branding']) ? [...($customer->branding ?? []), ...$data['branding']] : null,
-        ], fn ($v) => $v !== null));
+            'plan_ids' => isset($data['allowedPlanIds']) ? array_values($data['allowedPlanIds']) : null,
+        ], fn ($v) => $v !== null) + $suspension);
         // CF-08: a suspension takes effect at once.
         if ($data['suspended'] ?? false) {
             $customer->revokeTokens();
@@ -93,14 +112,30 @@ class CustomerController extends Controller
 
     /**
      * A reseller panel domain must not be reserved, and must not be a domain of a website of a
-     * different customer (CF-03, CF-20).
+     * different customer (CF-03, CF-20). R-03: a reseller must also prove that it controls the
+     * domain, with a verified domain of its own or a DNS TXT record.
      */
-    private function checkPanelDomain(string $domain, Customer $reseller): void
+    private function checkPanelDomain(string $domain, Customer $reseller, User $user): void
     {
         $policy = app(DomainPolicy::class);
         $inUse = Domain::where('name', $domain)->whereHas('website', fn ($q) => $q->where('customer_id', '!=', $reseller->id))->exists();
         if ($policy->isReserved($domain, $reseller->id) || $inUse) {
             throw ValidationException::withMessages(['branding.panelDomain' => 'This domain is reserved or in use.']);
+        }
+        if (! $policy->preVerified($user, $reseller->id, $domain) && ! $policy->proves($reseller->id, $domain)) {
+            throw ValidationException::withMessages(['branding.panelDomain' => "Prove that you control this domain. Add a TXT record _cloudfactory-challenge.{$domain} with the value {$policy->claimToken($reseller->id, $domain)}, and then save again. DNS changes can take some minutes."]);
+        }
+    }
+
+    /**
+     * R-07: a reseller gives its customers only the plans that the administrator set for it.
+     *
+     * @throws ValidationException
+     */
+    private static function checkPlan(User $user, string $planId): void
+    {
+        if ($user->role === Role::Reseller && ! in_array($planId, $user->customer->allowedPlanIds(), true)) {
+            throw ValidationException::withMessages(['planId' => 'Select a plan that your provider gives you.']);
         }
     }
 
@@ -122,7 +157,9 @@ class CustomerController extends Controller
             'planId' => $c->plan_id,
             'resellerId' => $c->reseller_id,
             'branding' => $c->branding,
+            'allowedPlanIds' => $c->role === 'reseller' ? $c->allowedPlanIds() : null,
             'suspended' => $c->suspended,
+            'suspendedBy' => $c->suspended_by,
             'websites' => $c->websites_count ?? null,
             'createdAt' => $c->created_at?->toIso8601String(),
         ];

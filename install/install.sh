@@ -522,7 +522,8 @@ if [ "$MODE" = panel ]; then
 	info "Point the DNS of $DOMAIN to this server, so that the panel can get a TLS certificate."
 	if [ -n "${PASSWORD:-}" ]; then
 		info "Sign in as $EMAIL with this password: $PASSWORD"
-		info "Change the password and turn on two-factor authentication after you sign in."
+		info "After you sign in, open Settings, change this password and set up an authenticator app (TOTP)."
+		info "This password is also in your terminal history and in any log of this script."
 	fi
 else
 	info "This server joined the panel. It shows in the panel under Servers."

@@ -39,7 +39,7 @@ paths:
     post:
       tags: [Auth]
       summary: Sign in
-      description: Sign in with an email address, a password and a TOTP code. The token expires after 12 hours. A TOTP code is good one time only. After 5 failed attempts the account is locked for 30 seconds, and the time doubles after each further failure, up to one hour.
+      description: Sign in with an email address, a password and a TOTP code. The token expires after 12 hours. A TOTP code is good one time only. A wrong password and a wrong code give the same error. After 5 failed attempts from one address, the account is locked for that address for 30 seconds, and the time doubles after each further failure, up to one hour. After 100 failed attempts in one hour from all addresses, the account is locked for all addresses.
       security: []
       requestBody:
         required: true
@@ -77,6 +77,87 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/User' }
         '401': { $ref: '#/components/responses/Unauthenticated' }
+
+  /v1/me/password:
+    put:
+      tags: [Auth]
+      summary: Change your password
+      description: Needs a sign-in session token. An API token cannot change the password. Give the current password, and your TOTP code when TOTP is on. The panel signs out all other sessions of the user.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [currentPassword, password, password_confirmation]
+              properties:
+                currentPassword: { type: string }
+                password: { type: string, minLength: 12 }
+                password_confirmation: { type: string }
+                totp: { type: string, pattern: '^[0-9]{6}$' }
+      responses:
+        '204': { description: Changed. }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/me/totp/setup:
+    post:
+      tags: [Auth]
+      summary: Start to set up TOTP
+      description: Needs a sign-in session token. The panel makes a new TOTP key and keeps it for 10 minutes. TOTP is on only after you confirm a code with /v1/me/totp/enable.
+      responses:
+        '200':
+          description: The new key, and an otpauth URI for a QR code.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  secret: { type: string }
+                  uri: { type: string }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { description: TOTP is already on. }
+
+  /v1/me/totp/enable:
+    post:
+      tags: [Auth]
+      summary: Turn on TOTP
+      description: Needs a sign-in session token. Give your password and a code from the app for the key from /v1/me/totp/setup.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password, code]
+              properties:
+                password: { type: string }
+                code: { type: string, pattern: '^[0-9]{6}$' }
+      responses:
+        '204': { description: TOTP is on. }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { description: TOTP is already on. }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/me/totp/disable:
+    post:
+      tags: [Auth]
+      summary: Turn off TOTP
+      description: Needs a sign-in session token. Give your password and a code from the app.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password, code]
+              properties:
+                password: { type: string }
+                code: { type: string, pattern: '^[0-9]{6}$' }
+      responses:
+        '204': { description: TOTP is off. }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Invalid' }
 
   /v1/tokens:
     get:
@@ -957,7 +1038,7 @@ paths:
     patch:
       tags: [Customers]
       summary: Change a customer
-      description: A reseller sets the branding (FR-106).
+      description: A reseller sets the branding (FR-106). A reseller that sets a new panel domain must prove that it controls the domain, with a verified domain of its own or a DNS TXT record that the error message gives. A reseller can give only the plans in its allowedPlanIds, and cannot lift a suspension that an administrator set.
       requestBody:
         required: true
         content:
@@ -969,6 +1050,7 @@ paths:
                 planId: { type: string }
                 suspended: { type: boolean }
                 branding: { $ref: '#/components/schemas/Branding' }
+                allowedPlanIds: { type: array, items: { type: string }, description: Only an administrator, for a reseller. The plans that the reseller can give to its customers, in addition to its own plan. }
       responses:
         '200':
           description: Changed.
@@ -1477,7 +1559,9 @@ components:
         planId: { type: string }
         resellerId: { type: [string, 'null'] }
         branding: { oneOf: [{ $ref: '#/components/schemas/Branding' }, { type: 'null' }] }
+        allowedPlanIds: { type: [array, 'null'], items: { type: string }, description: For a reseller, the plans that it can give to its customers. }
         suspended: { type: boolean }
+        suspendedBy: { type: [string, 'null'], enum: [administrator, reseller, null] }
         websites: { type: [integer, 'null'] }
         createdAt: { type: string, format: date-time }
     PlanInput:

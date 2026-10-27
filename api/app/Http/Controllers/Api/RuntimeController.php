@@ -40,6 +40,11 @@ class RuntimeController extends Controller
             if ($image->isPhp() !== $website->image->isPhp()) {
                 throw ValidationException::withMessages(['imageId' => 'Select an image of the same kind.']);
             }
+            // R-02: as for a new website, only an administrator selects a custom image. The owner
+            // can go back to the previous image, which only an administrator could select.
+            if ($image->custom && ! $request->user()->isAdministrator() && $image->id !== $website->previous_image_id) {
+                throw ValidationException::withMessages(['imageId' => 'Select an official image.']);
+            }
             // FR-303: keep the previous image, so that the owner can go back in one action.
             $changes += ['previous_image_id' => $website->image_id, 'previous_image_tag' => $website->currentTag(), 'image_id' => $image->id, 'image_tag' => null];
         }

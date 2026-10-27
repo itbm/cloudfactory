@@ -10,9 +10,11 @@ use App\Services\Totp;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Rules\Password;
 use Illuminate\Validation\ValidationException;
 
 /** FR-103 and FR-104: sign in, and API tokens with scopes and an expiry date. */
@@ -24,6 +26,8 @@ class AuthController extends Controller
      * CF-12: each account has its own limit of failed attempts. CF-14: the panel checks a
      * password hash also when the email is not known, so that the time does not show which
      * emails have accounts. CF-08: the users of a suspended customer cannot sign in.
+     * R-08: the panel checks the password and the code together, and gives one error for both,
+     * so that the answer does not show that a password is correct.
      */
     public function login(Request $request): JsonResponse
     {
@@ -32,29 +36,145 @@ class AuthController extends Controller
             'password' => ['required', 'string'],
             'totp' => ['nullable', 'digits:6'],
         ]);
-        if ($seconds = LoginThrottle::lockedFor($data['email'])) {
+        $ip = (string) $request->ip();
+        if ($seconds = LoginThrottle::lockedFor($data['email'], $ip)) {
             return response()->json(['message' => "Too many failed attempts. Try again in {$seconds} seconds."], 429)
                 ->header('Retry-After', (string) $seconds);
         }
         $user = User::where('email', $data['email'])->first();
-        if (! Hash::check($data['password'], $user?->password ?? self::dummyHash()) || ! $user) {
-            LoginThrottle::fail($data['email']);
-            throw ValidationException::withMessages(['email' => 'The email or the password is not correct.']);
-        }
-        if (! Totp::consume($user, $data['totp'] ?? '')) {
-            LoginThrottle::fail($data['email']);
-            throw ValidationException::withMessages(['totp' => 'The code is not correct.']);
+        $passwordOk = Hash::check($data['password'], $user?->password ?? self::dummyHash()) && $user;
+        // The code is checked (and used up) only after a correct password.
+        if (! $passwordOk || ! Totp::consume($user, $data['totp'] ?? '')) {
+            if (LoginThrottle::fail($data['email'], $ip)) {
+                Audit::system('Locked sign-in after failed attempts', "{$data['email']} from {$ip}");
+            }
+            throw ValidationException::withMessages(['email' => 'The email, the password or the code is not correct.']);
         }
         if ($user->isSuspended()) {
             return response()->json(['message' => 'This account is suspended. Contact your provider.'], 403);
         }
-        LoginThrottle::clear($data['email']);
+        LoginThrottle::clear($data['email'], $ip);
 
-        $token = $user->createToken('Web session', ['*'], now()->addHours(12));
+        $token = $user->createToken(self::SESSION, ['*'], now()->addHours(12));
         $request->setUserResolver(fn () => $user);
-        Audit::record($request, 'Signed in with password and TOTP', $user->email);
+        Audit::record($request, $user->totp_secret ? 'Signed in with password and TOTP' : 'Signed in with password', $user->email);
 
         return response()->json(['token' => $token->plainTextToken, 'expiresAt' => $token->accessToken->expires_at?->toIso8601String()]);
+    }
+
+    /** The name of the token of a sign-in. */
+    public const SESSION = 'Web session';
+
+    /**
+     * R-01: change the password. The user gives the current password and, when TOTP is on, a
+     * code. The panel then signs out all other sessions of the user.
+     */
+    public function changePassword(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'currentPassword' => ['required', 'string'],
+            'password' => ['required', 'string', 'confirmed', 'different:currentPassword', Password::min(12)],
+            'totp' => ['nullable', 'digits:6'],
+        ]);
+        $user = self::sessionUser($request);
+        self::checkSecondFactor($user, $data['currentPassword'], $data['totp'] ?? '', 'currentPassword');
+        $user->forceFill(['password' => $data['password']])->save();
+        $current = $user->currentAccessToken();
+        $user->tokens()->where('name', self::SESSION)->when($current?->id, fn ($q, $id) => $q->where('id', '!=', $id))->delete();
+        Audit::record($request, 'Changed password', $user->email);
+
+        return response()->json(null, 204);
+    }
+
+    /**
+     * R-01: the first step to turn on TOTP. The panel makes a new key and keeps it for 10 minutes.
+     * TOTP is on only after the user confirms a code from the app (enableTotp).
+     */
+    public function setupTotp(Request $request): JsonResponse
+    {
+        $user = self::sessionUser($request);
+        if ($user->totp_secret) {
+            return response()->json(['message' => 'TOTP is already on. Turn it off first.'], 409);
+        }
+        $secret = Totp::generateSecret();
+        Cache::put(self::pendingTotpKey($user), Crypt::encryptString($secret), now()->addMinutes(10));
+        $issuer = rawurlencode((string) config('app.name', 'Cloudfactory'));
+
+        return response()->json([
+            'secret' => $secret,
+            'uri' => "otpauth://totp/{$issuer}:".rawurlencode($user->email)."?secret={$secret}&issuer={$issuer}&algorithm=SHA1&digits=6&period=30",
+        ]);
+    }
+
+    /** R-01: turns on TOTP with the key from setupTotp, the password and a code from the app. */
+    public function enableTotp(Request $request): JsonResponse
+    {
+        $data = $request->validate(['password' => ['required', 'string'], 'code' => ['required', 'digits:6']]);
+        $user = self::sessionUser($request);
+        if ($user->totp_secret) {
+            return response()->json(['message' => 'TOTP is already on. Turn it off first.'], 409);
+        }
+        if (! Hash::check($data['password'], $user->password)) {
+            throw ValidationException::withMessages(['password' => 'The password is not correct.']);
+        }
+        $pending = Cache::get(self::pendingTotpKey($user));
+        if (! $pending) {
+            throw ValidationException::withMessages(['code' => 'Start the setup again. The key is valid for 10 minutes.']);
+        }
+        $secret = Crypt::decryptString($pending);
+        $step = Totp::step($secret, $data['code']);
+        if ($step === null) {
+            throw ValidationException::withMessages(['code' => 'The code is not correct. Check the time on your device.']);
+        }
+        $user->forceFill(['totp_secret' => $secret, 'totp_last_step' => $step])->save();
+        Cache::forget(self::pendingTotpKey($user));
+        Audit::record($request, 'Set up TOTP', $user->email);
+
+        return response()->json(null, 204);
+    }
+
+    /** R-01: turns off TOTP. The user gives the password and a code. */
+    public function disableTotp(Request $request): JsonResponse
+    {
+        $data = $request->validate(['password' => ['required', 'string'], 'code' => ['required', 'digits:6']]);
+        $user = self::sessionUser($request);
+        if (! $user->totp_secret) {
+            return response()->json(null, 204);
+        }
+        self::checkSecondFactor($user, $data['password'], $data['code'], 'password', 'code');
+        $user->forceFill(['totp_secret' => null, 'totp_last_step' => null])->save();
+        Audit::record($request, 'Removed TOTP', $user->email);
+
+        return response()->json(null, 204);
+    }
+
+    /**
+     * R-01: only a sign-in session can change how the user signs in. An API token cannot, also
+     * when it has all scopes.
+     */
+    private static function sessionUser(Request $request): User
+    {
+        $user = $request->user();
+        $token = $user->currentAccessToken();
+        abort_unless($token && method_exists($token, 'can') && $token->can('*') && $token->getAttribute('name') === self::SESSION, 403, 'Sign in to the panel to change your sign-in settings. An API token cannot change them.');
+
+        return $user;
+    }
+
+    /** @throws ValidationException */
+    private static function checkSecondFactor(User $user, string $password, string $code, string $passwordField, string $codeField = 'totp'): void
+    {
+        if (! Hash::check($password, $user->password)) {
+            throw ValidationException::withMessages([$passwordField => 'The password is not correct.']);
+        }
+        if (! Totp::consume($user, $code)) {
+            throw ValidationException::withMessages([$codeField => 'The code is not correct.']);
+        }
+    }
+
+    private static function pendingTotpKey(User $user): string
+    {
+        return "totp-setup:{$user->id}";
     }
 
     /**

@@ -56,7 +56,7 @@ class WebsiteController extends Controller
     public function store(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'name' => ['required', 'string', 'lowercase', 'regex:'.self::DOMAIN, 'unique:websites,name'],
+            'name' => ['required', 'string', 'lowercase', 'regex:'.self::DOMAIN],
             'application' => ['nullable', 'string', 'max:100'],
             'imageId' => ['required', 'exists:images,id'],
             'planId' => ['nullable', 'exists:plans,id'],
@@ -71,7 +71,7 @@ class WebsiteController extends Controller
         $customer = Customer::with('plan')->findOrFail($customerId);
         // CF-07: only an administrator, or the reseller of the customer, selects a different plan.
         $planId = $data['planId'] ?? $customer->plan_id;
-        if ($planId !== $customer->plan_id && ! self::canChoosePlan($user, $customer)) {
+        if ($planId !== $customer->plan_id && ! self::canChoosePlan($user, $customer, $planId)) {
             throw ValidationException::withMessages(['planId' => 'Only an administrator or your reseller can select the plan.']);
         }
 
@@ -88,8 +88,11 @@ class WebsiteController extends Controller
         if (! $server || ! in_array('web', $server->roles, true)) {
             throw ValidationException::withMessages(['serverId' => 'Select a server with the web role.']);
         }
-        DomainController::checkName($this->domains, $data['name'], $customer->id);
-        $domain = DomainController::newDomain($this->domains, $request, $customer->id, $data['name'], DomainKind::Primary);
+        $proved = DomainController::checkName($this->domains, $data['name'], $customer->id, $request);
+        if (Website::where('name', $data['name'])->exists()) {
+            throw ValidationException::withMessages(['name' => 'The name has already been taken.']);
+        }
+        $domain = DomainController::newDomain($this->domains, $request, $customer->id, $data['name'], DomainKind::Primary, $proved);
 
         $website = DB::transaction(function () use ($data, $customer, $image, $plan, $server, $domain) {
             self::checkWebsiteLimit($customer);
@@ -136,7 +139,7 @@ class WebsiteController extends Controller
             return response()->json(['message' => 'Only administrators can set resource limits.'], 403);
         }
         // CF-07: a website owner cannot move their website to a different plan.
-        if (isset($data['planId']) && $data['planId'] !== $website->plan_id && ! self::canChoosePlan($request->user(), $website->customer)) {
+        if (isset($data['planId']) && $data['planId'] !== $website->plan_id && ! self::canChoosePlan($request->user(), $website->customer, $data['planId'])) {
             return response()->json(['message' => 'Only an administrator or your reseller can change the plan.'], 403);
         }
 
@@ -202,8 +205,8 @@ class WebsiteController extends Controller
         if (Website::where('name', $name)->exists()) {
             throw ValidationException::withMessages(['name' => "{$name} exists."]);
         }
-        DomainController::checkName($this->domains, $name, $source->customer_id);
-        $domain = DomainController::newDomain($this->domains, $request, $source->customer_id, $name, DomainKind::Primary);
+        $proved = DomainController::checkName($this->domains, $name, $source->customer_id, $request);
+        $domain = DomainController::newDomain($this->domains, $request, $source->customer_id, $name, DomainKind::Primary, $proved);
         $copy = DB::transaction(function () use ($source, $name, $domain) {
             // CF-09: a staging copy is a website, so the plan limit applies.
             self::checkWebsiteLimit($source->customer);
@@ -239,12 +242,24 @@ class WebsiteController extends Controller
         if ($customer->websites()->count() >= $customer->plan->websites) {
             throw ValidationException::withMessages(['name' => "The {$customer->plan->name} plan allows {$customer->plan->websites} websites."]);
         }
+        // R-07: the websites of the customers of a reseller count against the plan of the reseller.
+        if ($customer->reseller_id) {
+            $reseller = Customer::with('plan')->lockForUpdate()->findOrFail($customer->reseller_id);
+            $ids = Customer::where('id', $reseller->id)->orWhere('reseller_id', $reseller->id)->pluck('id');
+            if (Website::whereIn('customer_id', $ids)->count() >= $reseller->plan->websites) {
+                throw ValidationException::withMessages(['name' => "The {$reseller->plan->name} plan of your provider allows {$reseller->plan->websites} websites in total."]);
+            }
+        }
     }
 
-    /** CF-07: an administrator, or the reseller of the customer, can select the plan. */
-    private static function canChoosePlan(User $user, Customer $customer): bool
+    /**
+     * CF-07: an administrator, or the reseller of the customer, can select the plan. R-07: a
+     * reseller can select only the plans that the administrator set for it.
+     */
+    private static function canChoosePlan(User $user, Customer $customer, string $planId): bool
     {
-        return $user->isAdministrator() || ($user->role === Role::Reseller && $customer->reseller_id !== null && $customer->reseller_id === $user->customer_id);
+        return $user->isAdministrator() || ($user->role === Role::Reseller && $customer->reseller_id !== null && $customer->reseller_id === $user->customer_id
+            && in_array($planId, $user->customer->allowedPlanIds(), true));
     }
 
     /** A Unix user name: up to 8 letters from the domain, then 4 random characters. */

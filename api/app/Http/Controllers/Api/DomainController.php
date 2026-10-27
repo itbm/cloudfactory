@@ -37,8 +37,8 @@ class DomainController extends Controller
             'name' => ['required', 'string', 'lowercase', 'regex:'.WebsiteController::DOMAIN],
             'kind' => ['required', Rule::in([DomainKind::Redirect->value, DomainKind::Alias->value])],
         ]);
-        self::checkName($this->policy, $data['name'], $website->customer_id);
-        $domain = $website->domains()->create(self::newDomain($this->policy, $request, $website->customer_id, $data['name'], DomainKind::from($data['kind'])));
+        $proved = self::checkName($this->policy, $data['name'], $website->customer_id, $request);
+        $domain = $website->domains()->create(self::newDomain($this->policy, $request, $website->customer_id, $data['name'], DomainKind::from($data['kind']), $proved));
         $job = $domain->verified() ? $this->addRoute($website, $domain) : null;
         Audit::record($request, 'Added domain', "{$website->name} {$data['name']}", $website->customer_id);
 
@@ -83,32 +83,57 @@ class DomainController extends Controller
      * Refuses a reserved domain and a domain of a different website. A domain that a different
      * customer added but did not verify does not block the customer that can verify it.
      *
+     * R-04: when that domain is the primary domain of a website of a different customer, the
+     * customer must first prove control of it, with a verified domain of its own or a DNS TXT
+     * record. Then the panel parks the other website under an internal name. The method returns
+     * true when the customer proved control here, so that the new domain is verified at once.
+     *
      * @throws ValidationException
      */
-    public static function checkName(DomainPolicy $policy, string $name, string $customerId, string $field = 'name'): void
+    public static function checkName(DomainPolicy $policy, string $name, string $customerId, Request $request, string $field = 'name'): bool
     {
         if ($policy->isReserved($name)) {
             throw ValidationException::withMessages([$field => 'This domain is reserved for the panel or a server.']);
         }
         $existing = Domain::with('website')->where('name', $name)->first();
         if (! $existing) {
-            return;
+            return false;
         }
-        $claimOfOther = ! $existing->verified() && $existing->kind !== DomainKind::Primary && $existing->website->customer_id !== $customerId;
-        if (! $claimOfOther) {
+        if ($existing->verified() || $existing->website->customer_id === $customerId) {
             throw ValidationException::withMessages([$field => 'This domain is in use.']);
         }
-        $existing->delete();
+        if ($existing->kind !== DomainKind::Primary) {
+            $existing->delete();
+
+            return false;
+        }
+        $preVerified = $policy->preVerified($request->user(), $customerId, $name);
+        if (! $preVerified && ! $policy->proves($customerId, $name)) {
+            throw ValidationException::withMessages([$field => "A different website uses this domain but has not proved control of it. If you control the domain, add a TXT record _cloudfactory-challenge.{$name} with the value {$policy->claimToken($customerId, $name)}, and then try again. DNS changes can take some minutes."]);
+        }
+        self::park($existing->website, $request);
+
+        return true;
     }
 
-    /** The attributes of a new domain, verified at once when the policy permits. */
-    public static function newDomain(DomainPolicy $policy, Request $request, string $customerId, string $name, DomainKind $kind): array
+    /** R-04: gives a website an internal name, because a different customer proved control of its domain. */
+    private static function park(Website $website, Request $request): void
+    {
+        $old = $website->name;
+        $parked = 'parked-'.strtolower($website->id).'.invalid';
+        $website->domains()->where('name', $old)->update(['name' => $parked]);
+        $website->update(['name' => $parked]);
+        Audit::record($request, 'Parked website with a domain that it did not verify', "{$old} → {$parked}", $website->customer_id);
+    }
+
+    /** The attributes of a new domain, verified at once when the policy permits or when the customer proved control. */
+    public static function newDomain(DomainPolicy $policy, Request $request, string $customerId, string $name, DomainKind $kind, bool $proved = false): array
     {
         return [
             'name' => $name,
             'kind' => $kind,
             'verification_token' => 'cf-'.Str::lower(Str::random(40)),
-            'verified_at' => $policy->preVerified($request->user(), $customerId, $name) ? now() : null,
+            'verified_at' => $proved || $policy->preVerified($request->user(), $customerId, $name) ? now() : null,
         ];
     }
 

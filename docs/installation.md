@@ -35,7 +35,9 @@ If you do not give `--domain`, the script uses the full host name of the server.
 give `--email`, the script uses `admin@` and the domain.
 
 At the end, the script shows the address of the panel and the password of the first
-administrator. Change the password and set two-factor authentication after you sign in.
+administrator. After you sign in, open **Settings**, change the password and set up an
+authenticator app (TOTP). The first password is also in your terminal history and in any log of
+the script.
 
 Point the DNS record of the panel domain to the server. The edge proxy then gets a TLS
 certificate.

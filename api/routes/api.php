@@ -28,6 +28,13 @@ Route::prefix('v1')->group(function () {
 
     Route::middleware(['auth:sanctum', 'active'])->group(function () {
         Route::get('me', [AuthController::class, 'me']);
+        // R-01: the user changes the password and turns TOTP on or off. Only a sign-in session can.
+        Route::middleware('throttle:10,1')->group(function () {
+            Route::put('me/password', [AuthController::class, 'changePassword']);
+            Route::post('me/totp/setup', [AuthController::class, 'setupTotp']);
+            Route::post('me/totp/enable', [AuthController::class, 'enableTotp']);
+            Route::post('me/totp/disable', [AuthController::class, 'disableTotp']);
+        });
         Route::middleware('scope:tokens')->group(function () {
             Route::get('tokens', [AuthController::class, 'tokens']);
             Route::post('tokens', [AuthController::class, 'createToken'])->middleware('throttle:10,1');

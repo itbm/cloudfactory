@@ -27,7 +27,7 @@ class AuthTest extends TestCase
         $user->forceFill(['totp_secret' => $secret])->save();
 
         $this->postJson('/api/v1/auth/login', ['email' => $user->email, 'password' => 'password', 'totp' => '000000'])
-            ->assertUnprocessable()->assertJsonValidationErrors('totp');
+            ->assertUnprocessable()->assertJsonValidationErrors(['email' => 'The email, the password or the code is not correct.']);
         $this->postJson('/api/v1/auth/login', ['email' => $user->email, 'password' => 'password', 'totp' => Totp::code($secret)])
             ->assertOk();
         $this->assertDatabaseHas('audit_entries', ['action' => 'Signed in with password and TOTP', 'user_id' => $user->id]);

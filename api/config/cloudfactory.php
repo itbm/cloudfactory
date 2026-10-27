@@ -22,6 +22,10 @@ return [
 
     'panel_domain' => env('CF_PANEL_DOMAIN', 'panel.cloudfactory.io'),
 
+    // R-14: the address of the installation script in the "Add server" command. Each GitHub
+    // release has the script with its signature (docs/installation.md).
+    'install_url' => env('CF_INSTALL_URL', 'https://github.com/itbm/cloudfactory/releases/latest/download/install.sh'),
+
     // FR-902: the default retention policy.
     'backups' => [
         'daily' => 7,

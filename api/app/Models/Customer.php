@@ -9,14 +9,14 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['name', 'email', 'role', 'plan_id', 'reseller_id', 'branding', 'suspended'])]
+#[Fillable(['name', 'email', 'role', 'plan_id', 'reseller_id', 'branding', 'suspended', 'suspended_by', 'plan_ids'])]
 class Customer extends Model
 {
     use HasFactory, HasUlids;
 
     protected function casts(): array
     {
-        return ['branding' => 'array', 'suspended' => 'boolean'];
+        return ['branding' => 'array', 'suspended' => 'boolean', 'plan_ids' => 'array'];
     }
 
     public function plan(): BelongsTo
@@ -37,6 +37,17 @@ class Customer extends Model
     public function reseller(): BelongsTo
     {
         return $this->belongsTo(Customer::class, 'reseller_id');
+    }
+
+    /**
+     * R-07: the plans that this reseller can give to its customers. The administrator sets them.
+     * With no list, the reseller can give only its own plan.
+     *
+     * @return list<string>
+     */
+    public function allowedPlanIds(): array
+    {
+        return array_values(array_unique([$this->plan_id, ...($this->plan_ids ?? [])]));
     }
 
     /** CF-08: suspended by itself, or through its reseller. */

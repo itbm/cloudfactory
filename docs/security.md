@@ -62,7 +62,14 @@ The product specification, section 6.4, gives the requirements.
 - The agent installs only gVisor archives with a SHA-512 sum that is in the agent or in the
   `--sha512` option. It does not download the sum from the archive server.
 - The agent refuses to update to an older version. An administrator can allow it for one update
-  (`allowDowngrade`).
+  (`allowDowngrade`). Each agent release has a signed manifest that names the version, the file
+  and the SHA-256 hash of the binary. The agent and the installation script refuse a binary
+  that does not agree with the manifest of the version that they asked for.
+- The agent checks the panel certificate on each connection, also for a resumed TLS session.
+- `cf-agent join` accepts only an `https://` panel address, except a loopback address.
+- The agent writes the php.ini of each website in `/etc/cloudfactory/websites/<user>/`, which
+  only root can change, not in the home directory of the website user. It does not follow a
+  symbolic link when it writes a file.
 
 ## The panel
 
@@ -81,10 +88,18 @@ The product specification, section 6.4, gives the requirements.
 ## Users and API tokens
 
 - Users sign in with a password and, if they set it, a TOTP code. A TOTP code works only one
-  time.
-- After 5 failed sign-in attempts, the panel locks the account for 30 seconds. Each new failure
-  doubles the time, to a maximum of 1 hour. The panel checks a password hash also for an
-  unknown email address, so the response time does not show which accounts exist.
+  time. The panel checks the password and the code together and gives one error for both, so
+  the answer does not show that a password is correct.
+- In **Settings**, a user changes the password and turns TOTP on or off. Each change needs the
+  current password and, when TOTP is on, a code. Only a sign-in session can do this, not an API
+  token. A password change signs out the other sessions of the user. A new password has 12 or
+  more characters.
+- After 5 failed sign-in attempts from one address, the panel locks the account for that
+  address for 30 seconds. Each new failure doubles the time, to a maximum of 1 hour. Somebody
+  who knows an email address cannot lock the real user out from a different address. After 100
+  failures in one hour from all addresses, the panel locks the account for all addresses. Each
+  lock is an audit event. The panel checks a password hash also for an unknown email address,
+  so the response time does not show which accounts exist.
 - Each API token has scopes, for example `websites:read` or `websites:write`. A write scope
   also gives the read scope. A token can have an expiry date.
 - To make a token, the user must give the password and, if set, a TOTP code. A token needs the
@@ -94,9 +109,20 @@ The product specification, section 6.4, gives the requirements.
   reseller's customers. Only an administrator can change servers and images.
 - Only an administrator or the reseller of the customer can change the plan of a website. The
   panel checks the website limit of the plan in a database transaction, also for staging copies.
+- A reseller can give its customers only its own plan and the plans that an administrator sets
+  for it (`allowedPlanIds`). The websites of all customers of a reseller also count against the
+  website limit of the plan of the reseller.
 - When an administrator suspends a customer, the panel deletes the API tokens of the customer.
-  A suspended user cannot use the API.
-- Only a reseller can set a brand. The panel domain of the brand cannot be a reserved domain.
+  A suspended user cannot use the API. Only an administrator can lift a suspension that an
+  administrator set.
+- Only an administrator selects a custom image, for a new website and for a runtime change. The
+  owner can go back to the previous image.
+- Only a reseller can set a brand. The panel domain of the brand cannot be a reserved domain. A
+  reseller must prove that it controls the panel domain, with a verified domain of its own or a
+  DNS TXT record. The brand reserves only that exact name, not the names below it.
+- A website that has not verified its primary domain does not block the real owner of the
+  domain. When the real owner proves control with a DNS TXT record, the panel gives the other
+  website an internal name (`parked-<id>.invalid`) and records an audit event.
 - The panel checks each PHP setting of a runtime separately. It refuses `-1` (no limit) and a
   memory limit above the memory of the website.
 - The panel writes an audit event for each change.
@@ -110,8 +136,23 @@ The product specification, section 6.4, gives the requirements.
   `--allow-unsigned`. The file `/etc/containers/policy.json` sets this rule.
 - The release pipeline signs the agent binary, the CLI and the installation script. Each
   release has a `.sig` file and a `.sha256` file for each file.
+- The agent and the CLI build with the Go release in the `toolchain` line of `go.mod`. CI runs
+  `govulncheck`, `composer audit` and `npm audit` on each pull request.
+- The edge and panel-web images build Caddy from source with a patched Go release, in place of
+  the binary in the upstream Caddy image. The Debian and Ubuntu based images install the
+  security updates of the operating system at build time. The daily rebuild reads the list of
+  base images from the Containerfiles.
+- The PHP runtime images have an ImageMagick policy that turns off coders that websites rarely
+  need (EXR, PostScript, PDF, MSVG, URL) and all external programs.
 - Each GitHub workflow uses actions at a fixed commit SHA. Each job has only the permissions
   that it needs. Dependabot proposes updates to the actions.
+
+## Web panel
+
+- The panel and its edge route send `Strict-Transport-Security`, a Content Security Policy,
+  `X-Content-Type-Options` and `Referrer-Policy`.
+- The "Add server" command downloads the signed installation script from GitHub Releases
+  (`CF_INSTALL_URL`).
 
 ## Firewall
 

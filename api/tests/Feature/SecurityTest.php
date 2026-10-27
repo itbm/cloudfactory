@@ -222,7 +222,7 @@ class SecurityTest extends TestCase
     public function test_the_reseller_of_the_customer_can_change_the_plan(): void
     {
         $agency = $this->plan(['name' => 'Agency']);
-        $reseller = $this->customer(attributes: ['role' => 'reseller']);
+        $reseller = $this->customer(attributes: ['role' => 'reseller', 'plan_ids' => [$agency->id]]);
         $customer = $this->customer(attributes: ['reseller_id' => $reseller->id]);
         $website = $this->website($customer, $this->server(), $this->image());
         $this->actingWith($this->user(Role::Reseller, $reseller));
@@ -270,24 +270,30 @@ class SecurityTest extends TestCase
         $code = Totp::code($secret);
 
         $this->postJson('/api/v1/auth/login', ['email' => $user->email, 'password' => 'password', 'totp' => $code])->assertOk();
-        $this->postJson('/api/v1/auth/login', ['email' => $user->email, 'password' => 'password', 'totp' => $code])->assertJsonValidationErrors('totp');
+        $this->postJson('/api/v1/auth/login', ['email' => $user->email, 'password' => 'password', 'totp' => $code])->assertJsonValidationErrors('email');
         // An older code is refused too.
-        $this->postJson('/api/v1/auth/login', ['email' => $user->email, 'password' => 'password', 'totp' => Totp::code($secret, time() - 30)])->assertJsonValidationErrors('totp');
+        $this->postJson('/api/v1/auth/login', ['email' => $user->email, 'password' => 'password', 'totp' => Totp::code($secret, time() - 30)])->assertJsonValidationErrors('email');
     }
 
-    /** CF-12: each account has a limit of failed attempts, also from many addresses. */
+    /**
+     * CF-12: each account has a limit of failed attempts. R-09: the lock is for the account and
+     * the address together, so the real user can still sign in from a different address.
+     */
     public function test_an_account_locks_after_failed_attempts(): void
     {
         $user = $this->user();
+        $attacker = fn () => $this->withServerVariables(['REMOTE_ADDR' => '10.0.0.9']);
         for ($i = 0; $i < LoginThrottle::FREE_FAILURES; $i++) {
-            $this->withServerVariables(['REMOTE_ADDR' => "10.0.0.{$i}"])
-                ->postJson('/api/v1/auth/login', ['email' => $user->email, 'password' => 'wrong'])->assertUnprocessable();
+            $attacker()->postJson('/api/v1/auth/login', ['email' => $user->email, 'password' => 'wrong'])->assertUnprocessable();
         }
-        $this->postJson('/api/v1/auth/login', ['email' => $user->email, 'password' => 'password'])
+        $attacker()->postJson('/api/v1/auth/login', ['email' => $user->email, 'password' => 'password'])
             ->assertStatus(429)->assertHeader('Retry-After', (string) LoginThrottle::FIRST_LOCK_SECONDS);
+        $this->assertDatabaseHas('audit_entries', ['action' => 'Locked sign-in after failed attempts', 'target' => "{$user->email} from 10.0.0.9"]);
+        $this->withServerVariables(['REMOTE_ADDR' => '192.0.2.1'])
+            ->postJson('/api/v1/auth/login', ['email' => $user->email, 'password' => 'password'])->assertOk();
 
         $this->travel(LoginThrottle::FIRST_LOCK_SECONDS + 1)->seconds();
-        $this->postJson('/api/v1/auth/login', ['email' => $user->email, 'password' => 'password'])->assertOk();
+        $attacker()->postJson('/api/v1/auth/login', ['email' => $user->email, 'password' => 'password'])->assertOk();
     }
 
     /** CF-14: the panel checks a password hash also for an email that it does not know. */
@@ -374,6 +380,8 @@ class SecurityTest extends TestCase
         $reseller = $this->customer(attributes: ['role' => 'reseller']);
         $this->actingWith($this->user(Role::Reseller, $reseller));
         $this->patchJson("/api/v1/customers/{$reseller->id}", ['branding' => ['panelDomain' => config('cloudfactory.panel_domain')]])->assertJsonValidationErrors('branding.panelDomain');
+        $this->patchJson("/api/v1/customers/{$reseller->id}", ['branding' => ['panelDomain' => 'panel.agency.example']])->assertJsonValidationErrors('branding.panelDomain');
+        $this->actingWith($this->user());
         $this->patchJson("/api/v1/customers/{$reseller->id}", ['branding' => ['panelDomain' => 'panel.agency.example']])->assertOk();
     }
 
