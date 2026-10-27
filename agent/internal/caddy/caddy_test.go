@@ -114,7 +114,7 @@ func TestPanelRouteSetsTheEdgeHeaders(t *testing.T) {
 		t.Fatal(err)
 	}
 	b, _ := json.Marshal(fake.routes)
-	for _, want := range []string{`"X-Client-Cert-Sha256":["{http.request.tls.client.fingerprint}"]`, `"X-Cloudfactory-Edge":["1"]`, `"/api/*"`} {
+	for _, want := range []string{`"X-Client-Cert-Sha256":["{http.request.tls.client.fingerprint}"]`, `"X-Cloudfactory-Edge":["1"]`, `"/api/*"`, `"Strict-Transport-Security":["max-age=31536000"]`} {
 		if !strings.Contains(string(b), want) {
 			t.Errorf("route does not contain %s: %s", want, b)
 		}

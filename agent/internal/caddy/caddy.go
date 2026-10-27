@@ -215,6 +215,10 @@ func (c *Client) ApplyPanel(ctx context.Context, domain string, apiPort, webPort
 		"@id":   "cf-panel",
 		"match": []any{map[string]any{"host": []string{domain}}},
 		"handle": []any{map[string]any{"handler": "subroute", "routes": []any{
+			// R-17: browsers use only HTTPS for the panel domain after the first visit.
+			map[string]any{"handle": []any{map[string]any{"handler": "headers", "response": map[string]any{"set": map[string]any{
+				"Strict-Transport-Security": []string{"max-age=31536000"},
+			}}}}},
 			map[string]any{"match": []any{map[string]any{"path": []string{"/api/*", "/up"}}}, "handle": []any{api}},
 			map[string]any{"handle": []any{map[string]any{"handler": "reverse_proxy", "upstreams": dial(webPort)}}},
 		}}},

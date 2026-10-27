@@ -16,9 +16,13 @@ import (
 
 func TestInstallChecksTheSignatureAndKeepsThePreviousBinary(t *testing.T) {
 	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	sign := func(b []byte) string {
+		digest := sha256.Sum256(b)
+		sig, _ := ecdsa.SignASN1(rand.Reader, key, digest[:])
+		return base64.StdEncoding.EncodeToString(sig)
+	}
 	newBin := []byte("new agent")
-	digest := sha256.Sum256(newBin)
-	sig, _ := ecdsa.SignASN1(rand.Reader, key, digest[:])
+	manifest := []byte(Manifest("0.2.0", "cf-agent_linux_amd64", newBin))
 	tamper := false
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -30,7 +34,11 @@ func TestInstallChecksTheSignatureAndKeepsThePreviousBinary(t *testing.T) {
 			}
 			w.Write(newBin)
 		case "/v0.2.0/cf-agent_linux_amd64.sig":
-			w.Write([]byte(base64.StdEncoding.EncodeToString(sig)))
+			w.Write([]byte(sign(newBin)))
+		case "/v0.2.0/cf-agent_linux_amd64.manifest":
+			w.Write(manifest)
+		case "/v0.2.0/cf-agent_linux_amd64.manifest.sig":
+			w.Write([]byte(sign(manifest)))
 		default:
 			http.NotFound(w, r)
 		}
@@ -68,6 +76,42 @@ func TestInstallChecksTheSignatureAndKeepsThePreviousBinary(t *testing.T) {
 	}
 	if err := u.Install(context.Background(), "latest", "amd64", false); err == nil {
 		t.Error("bad version accepted")
+	}
+}
+
+// R-13: a signed binary of an older version cannot pass as a newer version, because the
+// signed manifest names the version and the hash of the binary.
+func TestTheManifestBindsTheBinaryToItsVersion(t *testing.T) {
+	key, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	sign := func(b []byte) []byte {
+		digest := sha256.Sum256(b)
+		sig, _ := ecdsa.SignASN1(rand.Reader, key, digest[:])
+		return []byte(base64.StdEncoding.EncodeToString(sig))
+	}
+	u := Updater{Key: &key.PublicKey}
+	oldBin, newBin := []byte("agent 0.1.0"), []byte("agent 0.2.0")
+	release := func(version string, bin []byte, manifest string) Release {
+		return Release{Version: version, Asset: "cf-agent_linux_amd64", Binary: bin, Signature: sign(bin), Manifest: []byte(manifest), ManifestSig: sign([]byte(manifest))}
+	}
+
+	if err := u.Verify(release("0.2.0", newBin, Manifest("0.2.0", "cf-agent_linux_amd64", newBin))); err != nil {
+		t.Fatalf("a good release was refused: %v", err)
+	}
+	// The old binary and its own manifest, served under the path of the new version.
+	if err := u.Verify(release("0.2.0", oldBin, Manifest("0.1.0", "cf-agent_linux_amd64", oldBin))); err == nil {
+		t.Error("an old binary was accepted as a newer version")
+	}
+	// The old binary with the manifest of the new version.
+	if err := u.Verify(release("0.2.0", oldBin, Manifest("0.2.0", "cf-agent_linux_amd64", newBin))); err == nil {
+		t.Error("a binary that does not agree with the manifest was accepted")
+	}
+	if err := u.Verify(release("0.2.0", newBin, Manifest("0.2.0", "cf-agent_linux_arm64", newBin))); err == nil {
+		t.Error("a manifest for a different asset was accepted")
+	}
+	bad := release("0.2.0", newBin, Manifest("0.2.0", "cf-agent_linux_amd64", newBin))
+	bad.ManifestSig = sign([]byte("other"))
+	if err := u.Verify(bad); err == nil {
+		t.Error("a manifest with a bad signature was accepted")
 	}
 }
 

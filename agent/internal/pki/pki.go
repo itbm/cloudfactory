@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
+	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/hex"
@@ -84,6 +85,19 @@ func FileFingerprint(certFile string) (string, []byte, error) {
 		return "", nil, fmt.Errorf("%s does not hold a PEM certificate", certFile)
 	}
 	return Fingerprint(block.Bytes), b, nil
+}
+
+// PinnedConnection gives a function for tls.Config.VerifyConnection. Go calls it for each
+// connection, also for a resumed TLS session, so the pin is checked every time (R-12).
+func PinnedConnection(fingerprint string) func(tls.ConnectionState) error {
+	check := PinnedClient(fingerprint)
+	return func(cs tls.ConnectionState) error {
+		raw := make([][]byte, 0, len(cs.PeerCertificates))
+		for _, c := range cs.PeerCertificates {
+			raw = append(raw, c.Raw)
+		}
+		return check(raw, nil)
+	}
 }
 
 // PinnedClient gives a function for tls.Config.VerifyPeerCertificate. It accepts only a

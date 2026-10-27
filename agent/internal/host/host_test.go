@@ -13,7 +13,7 @@ import (
 func fakeHost(t *testing.T, exists bool) (*Host, *execx.Fake) {
 	f := &execx.Fake{}
 	dir := t.TempDir()
-	h := &Host{Run: f, SitesDir: filepath.Join(dir, "sites"), UnitRoot: filepath.Join(dir, "units"), LookupUID: func(name string) (int, error) {
+	h := &Host{Run: f, SitesDir: filepath.Join(dir, "sites"), UnitRoot: filepath.Join(dir, "units"), ConfigRoot: filepath.Join(dir, "config"), LookupUID: func(name string) (int, error) {
 		if !exists {
 			return 0, user.UnknownUserError(name)
 		}

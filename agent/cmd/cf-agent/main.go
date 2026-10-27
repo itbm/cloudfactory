@@ -111,6 +111,9 @@ func join(ctx context.Context, args []string) error {
 	if *panelURL == "" || *token == "" {
 		return errors.New("join needs --panel and --token")
 	}
+	if err := validate.PanelURL(*panelURL); err != nil {
+		return err
+	}
 	if _, err := os.Stat(*configPath); err == nil {
 		return fmt.Errorf("%s exists; this server has already joined a panel", *configPath)
 	}

@@ -11,6 +11,7 @@ import (
 	"github.com/itbm/cloudfactory/agent/internal/host"
 	"github.com/itbm/cloudfactory/agent/internal/jobs"
 	"github.com/itbm/cloudfactory/agent/internal/quadlet"
+	"github.com/itbm/cloudfactory/agent/internal/selfupdate"
 	"github.com/itbm/cloudfactory/agent/internal/validate"
 )
 
@@ -108,15 +109,15 @@ func (d *Deps) UpdateAgent(req *agentv1.UpdateAgentRequest) (jobs.Job, error) {
 	if err := d.Updater.CheckVersion(req.GetVersion(), req.GetAllowDowngrade()); err != nil {
 		return jobs.Job{}, err
 	}
-	var bin, sig []byte
+	var rel selfupdate.Release
 	return jobs.Job{ID: req.GetJobId(), Key: "agent", Steps: []jobs.Step{
 		{Name: "Download agent binary", Do: func(ctx context.Context) (err error) {
-			bin, sig, err = d.Updater.Fetch(ctx, req.GetVersion(), d.Arch)
+			rel, err = d.Updater.Fetch(ctx, req.GetVersion(), d.Arch)
 			return err
 		}},
-		{Name: "Check signature", Do: func(context.Context) error { return d.Updater.Verify(bin, sig) }},
+		{Name: "Check signature", Do: func(context.Context) error { return d.Updater.Verify(rel) }},
 		{Name: "Keep previous binary for rollback", Do: func(context.Context) error { return d.Updater.KeepPrevious() }},
-		{Name: "Restart agent", Do: func(context.Context) error { return d.Updater.Replace(bin) }},
+		{Name: "Restart agent", Do: func(context.Context) error { return d.Updater.Replace(rel.Binary) }},
 	}, Result: func() map[string]any { return map[string]any{"version": strings.TrimPrefix(req.GetVersion(), "v")} },
 		// systemd starts the new binary. If it does not start, systemd runs "cf-agent rollback".
 		After: d.Restart}, nil

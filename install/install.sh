@@ -2,11 +2,11 @@
 # Cloudfactory installation script (spec section 7.18).
 #
 # Install a new panel (FR-1802):
-#   curl -fsSL https://get.cloudfactory.io | sh
-#   curl -fsSL https://get.cloudfactory.io | sh -s -- --domain panel.example.com --email you@example.com
+#   curl -fsSL https://github.com/itbm/cloudfactory/releases/latest/download/install.sh | sh
+#   curl -fsSL https://github.com/itbm/cloudfactory/releases/latest/download/install.sh | sh -s -- --domain panel.example.com --email you@example.com
 #
 # Add a server to a panel:
-#   curl -fsSL https://get.cloudfactory.io | sh -s -- --join <TOKEN> --panel https://panel.example.com
+#   curl -fsSL https://github.com/itbm/cloudfactory/releases/latest/download/install.sh | sh -s -- --join <TOKEN> --panel https://panel.example.com
 #
 # The script first does all checks. It does not change the system until all checks pass
 # (FR-1804). If a step fails, the script stops and shows the step that failed.
@@ -412,6 +412,18 @@ download "$RELEASE_URL/v$CF_VERSION/$asset.sig" "$TMP/cf-agent.sig"
 base64 -d "$TMP/cf-agent.sig" >"$TMP/cf-agent.sig.der"
 openssl dgst -sha256 -verify "$CF_ETC/cosign.pub" -signature "$TMP/cf-agent.sig.der" "$TMP/cf-agent" >/dev/null ||
 	fail "the signature of the agent binary is not valid."
+# R-13: the signed manifest names the version and the hash of the binary, so an older signed
+# binary cannot pass as this version.
+download "$RELEASE_URL/v$CF_VERSION/$asset.manifest" "$TMP/cf-agent.manifest"
+download "$RELEASE_URL/v$CF_VERSION/$asset.manifest.sig" "$TMP/cf-agent.manifest.sig"
+base64 -d "$TMP/cf-agent.manifest.sig" >"$TMP/cf-agent.manifest.sig.der"
+openssl dgst -sha256 -verify "$CF_ETC/cosign.pub" -signature "$TMP/cf-agent.manifest.sig.der" "$TMP/cf-agent.manifest" >/dev/null ||
+	fail "the signature of the agent manifest is not valid."
+agent_sha256=$(sha256sum "$TMP/cf-agent" | cut -d' ' -f1)
+grep -qx "version=$CF_VERSION" "$TMP/cf-agent.manifest" &&
+	grep -qx "asset=$asset" "$TMP/cf-agent.manifest" &&
+	grep -qx "sha256=$agent_sha256" "$TMP/cf-agent.manifest" ||
+	fail "the agent binary does not agree with the signed manifest of version $CF_VERSION."
 install -m 0755 "$TMP/cf-agent" /usr/local/bin/cf-agent
 
 step "Install the agent service"

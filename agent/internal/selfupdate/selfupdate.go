@@ -5,6 +5,9 @@ package selfupdate
 import (
 	"context"
 	"crypto/ecdsa"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -90,28 +93,82 @@ func AssetName(goarch string) string { return "cf-agent_linux_" + goarch }
 // Previous is the path of the previous binary.
 func (u Updater) Previous() string { return u.Binary + ".previous" }
 
-// Fetch downloads the binary and the signature of a version.
-func (u Updater) Fetch(ctx context.Context, version, goarch string) (bin, sig []byte, err error) {
-	if err := validate.Version(version); err != nil {
-		return nil, nil, err
-	}
-	tag := "v" + strings.TrimPrefix(version, "v")
-	base := fmt.Sprintf("%s/%s/%s", strings.TrimRight(u.ReleaseURL, "/"), tag, AssetName(goarch))
-	if bin, err = u.get(ctx, base, 200<<20); err != nil {
-		return nil, nil, err
-	}
-	if sig, err = u.get(ctx, base+".sig", 4096); err != nil {
-		return nil, nil, err
-	}
-	return bin, sig, nil
+// Release is a downloaded agent binary with its signed manifest.
+type Release struct {
+	Version     string
+	Asset       string
+	Binary      []byte
+	Signature   []byte
+	Manifest    []byte
+	ManifestSig []byte
 }
 
-// Verify checks the signature of a binary.
-func (u Updater) Verify(bin, sig []byte) error {
-	if err := signature.Verify(u.Key, bin, string(sig)); err != nil {
-		return fmt.Errorf("selfupdate: %w", err)
+// Fetch downloads the binary of a version, its signature, and its signed manifest.
+func (u Updater) Fetch(ctx context.Context, version, goarch string) (Release, error) {
+	if err := validate.Version(version); err != nil {
+		return Release{}, err
+	}
+	r := Release{Version: strings.TrimPrefix(version, "v"), Asset: AssetName(goarch)}
+	base := fmt.Sprintf("%s/v%s/%s", strings.TrimRight(u.ReleaseURL, "/"), r.Version, r.Asset)
+	var err error
+	if r.Binary, err = u.get(ctx, base, 200<<20); err != nil {
+		return Release{}, err
+	}
+	if r.Signature, err = u.get(ctx, base+".sig", 4096); err != nil {
+		return Release{}, err
+	}
+	if r.Manifest, err = u.get(ctx, base+".manifest", 4096); err != nil {
+		return Release{}, err
+	}
+	if r.ManifestSig, err = u.get(ctx, base+".manifest.sig", 4096); err != nil {
+		return Release{}, err
+	}
+	return r, nil
+}
+
+// Verify checks the signature of the binary and of its manifest. R-13: the signature of the
+// binary does not say which version the binary is. The manifest names the version, the asset
+// and the SHA-256 hash of the binary, so a signed older binary cannot pass as a newer version.
+func (u Updater) Verify(r Release) error {
+	if err := signature.Verify(u.Key, r.Binary, string(r.Signature)); err != nil {
+		return fmt.Errorf("selfupdate: binary: %w", err)
+	}
+	if err := signature.Verify(u.Key, r.Manifest, string(r.ManifestSig)); err != nil {
+		return fmt.Errorf("selfupdate: manifest: %w", err)
+	}
+	m := ParseManifest(r.Manifest)
+	sum := sha256.Sum256(r.Binary)
+	switch {
+	case m["version"] != r.Version:
+		return fmt.Errorf("selfupdate: the manifest is for version %q, not %q", m["version"], r.Version)
+	case m["asset"] != r.Asset:
+		return fmt.Errorf("selfupdate: the manifest is for %q, not %q", m["asset"], r.Asset)
+	case m["sha256"] != hex.EncodeToString(sum[:]):
+		return errors.New("selfupdate: the binary does not agree with the manifest")
 	}
 	return nil
+}
+
+// Manifest gives the manifest of a release asset. The release workflow writes the same format.
+func Manifest(version, asset string, bin []byte) string {
+	sum := sha256.Sum256(bin)
+	return fmt.Sprintf("version=%s\nasset=%s\nsha256=%s\n", strings.TrimPrefix(version, "v"), asset, hex.EncodeToString(sum[:]))
+}
+
+// ParseManifest reads the "key=value" lines of a release manifest. The release workflow
+// writes it, for example:
+//
+//	version=0.2.0
+//	asset=cf-agent_linux_amd64
+//	sha256=9f86d0...
+func ParseManifest(b []byte) map[string]string {
+	m := map[string]string{}
+	for _, line := range strings.Split(string(b), "\n") {
+		if k, v, ok := strings.Cut(strings.TrimSpace(line), "="); ok {
+			m[k] = v
+		}
+	}
+	return m
 }
 
 // KeepPrevious copies the current binary to the previous binary.
@@ -148,17 +205,17 @@ func (u Updater) Install(ctx context.Context, version, goarch string, allowDowng
 	if err := u.CheckVersion(version, allowDowngrade); err != nil {
 		return err
 	}
-	bin, sig, err := u.Fetch(ctx, version, goarch)
+	r, err := u.Fetch(ctx, version, goarch)
 	if err != nil {
 		return err
 	}
-	if err := u.Verify(bin, sig); err != nil {
+	if err := u.Verify(r); err != nil {
 		return err
 	}
 	if err := u.KeepPrevious(); err != nil {
 		return err
 	}
-	return u.Replace(bin)
+	return u.Replace(r.Binary)
 }
 
 // Rollback puts the previous binary back. systemd runs "cf-agent rollback" when the

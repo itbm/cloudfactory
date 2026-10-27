@@ -67,7 +67,8 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
-          go-version-file: agent/go.mod
+          # R-05: the same Go release as the toolchain line in go.mod.
+          go-version: '1.27.3'
           cache-dependency-path: agent/go.sum
       - uses: bufbuild/buf-action@85aebf73123b5c15fd5528aaecbf9129cddf7fa7 # v1.6.0
         with:
@@ -99,10 +100,42 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
-          go-version-file: cli/go.mod
+          go-version: '1.27.3'
       - run: test -z "$(gofmt -l .)"
       - run: go vet ./...
       - run: go test -race ./...
+
+  # R-10: known vulnerabilities in the dependencies and the Go standard library. The image scans
+  # do not see the Go binaries clearly, so the source code is checked here.
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version: '1.27.3'
+          cache-dependency-path: agent/go.sum
+      - name: govulncheck (agent and CLI)
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
+          (cd agent && govulncheck ./...)
+          (cd cli && govulncheck ./...)
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        with:
+          php-version: '8.4'
+          coverage: none
+      - name: composer audit (panel API)
+        working-directory: api
+        run: composer audit --locked --no-interaction
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+      - name: npm audit (web panel)
+        working-directory: web
+        run: npm audit --package-lock-only
 
   install:
     name: Installation script

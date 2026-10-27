@@ -26,13 +26,17 @@ type Host struct {
 	SitesDir string
 	// UnitRoot holds the rootless Quadlet units of each user, in a directory named by the UID.
 	UnitRoot string
+	// ConfigRoot holds the files that the agent makes for each website user, for example the
+	// php.ini (R-16). Only root can write in it, so the agent never writes as root in a
+	// directory that the website user controls.
+	ConfigRoot string
 	// LookupUID gives the UID of a user. Tests replace it.
 	LookupUID func(name string) (int, error)
 }
 
 // New gives a Host with the standard paths.
 func New(run execx.Runner, sitesDir string) *Host {
-	return &Host{Run: run, SitesDir: sitesDir, UnitRoot: "/etc/containers/systemd/users", LookupUID: lookupUID}
+	return &Host{Run: run, SitesDir: sitesDir, UnitRoot: "/etc/containers/systemd/users", ConfigRoot: "/etc/cloudfactory/websites", LookupUID: lookupUID}
 }
 
 func lookupUID(name string) (int, error) {
@@ -45,6 +49,9 @@ func lookupUID(name string) (int, error) {
 
 // Home is the home directory of a website user.
 func (h *Host) Home(unixUser string) string { return filepath.Join(h.SitesDir, unixUser) }
+
+// ConfigDir is the directory of the generated files of a website user. Root owns it.
+func (h *Host) ConfigDir(unixUser string) string { return filepath.Join(h.ConfigRoot, unixUser) }
 
 // EnsureUser makes the Unix user of a website if it does not exist. The user has no
 // password and no login shell. systemd keeps the user services on when the user is not
@@ -86,8 +93,10 @@ func (h *Host) RemoveUser(ctx context.Context, unixUser string) error {
 	if _, err := h.Run.Run(ctx, "loginctl", "disable-linger", unixUser); err != nil {
 		return err
 	}
-	_, err := h.Run.Run(ctx, "userdel", "--remove", unixUser)
-	return err
+	if _, err := h.Run.Run(ctx, "userdel", "--remove", unixUser); err != nil {
+		return err
+	}
+	return os.RemoveAll(h.ConfigDir(unixUser))
 }
 
 // UnitDir is the directory of the Quadlet units of a user.
@@ -140,15 +149,32 @@ func (h *Host) Podman(ctx context.Context, unixUser string, args ...string) (str
 
 // WriteFile writes a file in one step. It returns true when the content changed.
 func WriteFile(path, content string, mode os.FileMode) (bool, error) {
+	// R-16: never follow a symbolic link that somebody put in place of the file.
+	if fi, err := os.Lstat(path); err == nil && fi.Mode()&os.ModeSymlink != 0 {
+		return false, fmt.Errorf("host: %s is a symbolic link", path)
+	}
 	if old, err := os.ReadFile(path); err == nil && string(old) == content {
 		return false, nil
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return false, err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, []byte(content), mode); err != nil {
+	// A new temporary file with a random name, so that a link with a known name cannot
+	// redirect the write.
+	f, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*")
+	if err != nil {
 		return false, err
 	}
-	return true, os.Rename(tmp, path)
+	defer os.Remove(f.Name())
+	if _, err := f.WriteString(content); err != nil {
+		f.Close()
+		return false, err
+	}
+	if err := f.Close(); err != nil {
+		return false, err
+	}
+	if err := os.Chmod(f.Name(), mode); err != nil {
+		return false, err
+	}
+	return true, os.Rename(f.Name(), path)
 }

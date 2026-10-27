@@ -130,11 +130,12 @@ func Handler(s *Service) http.Handler {
 // TLSConfig accepts only the panel certificate with the given fingerprint.
 func TLSConfig(cert tls.Certificate, panelFingerprint string) *tls.Config {
 	return &tls.Config{
-		MinVersion:            tls.VersionTLS13,
-		Certificates:          []tls.Certificate{cert},
-		ClientAuth:            tls.RequireAnyClientCert,
-		VerifyPeerCertificate: pki.PinnedClient(panelFingerprint),
-		NextProtos:            []string{"h2", "http/1.1"},
+		MinVersion:   tls.VersionTLS13,
+		Certificates: []tls.Certificate{cert},
+		ClientAuth:   tls.RequireAnyClientCert,
+		// R-12: VerifyConnection runs also for a resumed session. VerifyPeerCertificate does not.
+		VerifyConnection: pki.PinnedConnection(panelFingerprint),
+		NextProtos:       []string{"h2", "http/1.1"},
 	}
 }
 

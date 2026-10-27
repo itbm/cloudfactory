@@ -4,6 +4,8 @@ package validate
 
 import (
 	"fmt"
+	"net"
+	"net/url"
 	"path"
 	"regexp"
 	"strings"
@@ -101,6 +103,26 @@ func RestorePath(s string) error {
 		return fmt.Errorf("the path %q is not permitted", s)
 	}
 	return nil
+}
+
+// PanelURL accepts an https:// address. It accepts http:// only for a loopback address, where
+// the panel and the agent are on the same server (R-15). Over plain HTTP, somebody between the
+// server and the panel could change the join token and the panel certificate fingerprint.
+func PanelURL(s string) error {
+	u, err := url.Parse(s)
+	if err != nil || u.Host == "" || u.User != nil {
+		return fmt.Errorf("the panel address %q is not valid", s)
+	}
+	switch u.Scheme {
+	case "https":
+		return nil
+	case "http":
+		host := u.Hostname()
+		if ip := net.ParseIP(host); host == "localhost" || (ip != nil && ip.IsLoopback()) {
+			return nil
+		}
+	}
+	return fmt.Errorf("the panel address %q must start with https://", s)
 }
 
 func match(re *regexp.Regexp, s, what string) error {

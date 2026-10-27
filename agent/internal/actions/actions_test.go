@@ -48,7 +48,7 @@ func (f *fakeEdge) Remove(_ context.Context, id string) error {
 func deps(t *testing.T) (*Deps, *execx.Fake, *fakeEdge) {
 	dir := t.TempDir()
 	run := &execx.Fake{}
-	h := &host.Host{Run: run, SitesDir: filepath.Join(dir, "sites"), UnitRoot: filepath.Join(dir, "units"), LookupUID: func(string) (int, error) { return 1001, nil }}
+	h := &host.Host{Run: run, SitesDir: filepath.Join(dir, "sites"), UnitRoot: filepath.Join(dir, "units"), ConfigRoot: filepath.Join(dir, "config"), LookupUID: func(string) (int, error) { return 1001, nil }}
 	edge := &fakeEdge{sites: map[string]caddy.Site{}}
 	d := &Deps{
 		Host: h, Run: run, Edge: edge, State: NewState(dir),
@@ -140,7 +140,7 @@ func TestCreateWebsite(t *testing.T) {
 	if err != nil || !strings.Contains(string(unit), "--runtime=/usr/local/bin/runsc") {
 		t.Errorf("unit: %v\n%s", err, unit)
 	}
-	if ini, _ := os.ReadFile(filepath.Join(d.Host.Home("acme_x7k2"), "php.ini")); !strings.Contains(string(ini), `memory_limit = "256M"`) {
+	if ini, _ := os.ReadFile(filepath.Join(d.Host.ConfigDir("acme_x7k2"), "php.ini")); !strings.Contains(string(ini), `memory_limit = "256M"`) {
 		t.Errorf("php.ini = %s", ini)
 	}
 	if edge.sites[websiteID].Port != 20000 {

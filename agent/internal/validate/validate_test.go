@@ -53,3 +53,17 @@ func TestValues(t *testing.T) {
 		}
 	}
 }
+
+// R-15: the join command refuses a plain HTTP panel address, except on the same server.
+func TestPanelURL(t *testing.T) {
+	for _, good := range []string{"https://panel.example.com", "https://panel.example.com:8443/", "http://127.0.0.1:8080", "http://localhost", "http://[::1]:8080"} {
+		if err := PanelURL(good); err != nil {
+			t.Errorf("%s: %v", good, err)
+		}
+	}
+	for _, bad := range []string{"http://panel.example.com", "http://10.0.0.5", "ftp://panel.example.com", "panel.example.com", "https://", "https://user:pw@panel.example.com"} {
+		if err := PanelURL(bad); err == nil {
+			t.Errorf("%s was accepted", bad)
+		}
+	}
+}

@@ -74,7 +74,7 @@ func primaryDomain(w *agentv1.Website) string {
 }
 
 func (d *Deps) iniPath(unixUser, suffix string) string {
-	return filepath.Join(d.Host.Home(unixUser), "php"+suffix+".ini")
+	return filepath.Join(d.Host.ConfigDir(unixUser), "php"+suffix+".ini")
 }
 
 func (d *Deps) unit(w *agentv1.Website, port int, suffix string) quadlet.Website {

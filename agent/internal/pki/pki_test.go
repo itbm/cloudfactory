@@ -1,6 +1,8 @@
 package pki
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/pem"
 	"os"
 	"path/filepath"
@@ -43,5 +45,18 @@ func TestGenerateAndPin(t *testing.T) {
 	}
 	if err := PinnedClient("")([][]byte{block.Bytes}, nil); err == nil {
 		t.Error("an empty pin accepted a certificate")
+	}
+
+	// R-12: the same check for each connection, also for a resumed TLS session.
+	good, _ := x509.ParseCertificate(block.Bytes)
+	bad, _ := x509.ParseCertificate(ob.Bytes)
+	if err := PinnedConnection(fp)(tls.ConnectionState{PeerCertificates: []*x509.Certificate{good}}); err != nil {
+		t.Errorf("pinned certificate refused on the connection: %v", err)
+	}
+	if err := PinnedConnection(fp)(tls.ConnectionState{PeerCertificates: []*x509.Certificate{bad}}); err == nil {
+		t.Error("a different certificate was accepted on the connection")
+	}
+	if err := PinnedConnection(fp)(tls.ConnectionState{DidResume: true}); err == nil {
+		t.Error("a resumed connection with no certificate was accepted")
 	}
 }

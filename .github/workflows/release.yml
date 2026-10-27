@@ -100,6 +100,10 @@ jobs:
           severity: CRITICAL
           ignore-unfixed: true
           exit-code: '1'
+          # CVE scan, finding 4: gosu in the mariadb and postgresql bases only changes the user at
+          # start. It does no TLS, HTTP or parsing, so the Go standard-library CVEs that Trivy
+          # reports in it do not apply. The gosu project treats them as false positives.
+          skip-files: /usr/local/bin/gosu
       - name: Attach the SBOM (FR-1102)
         uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
@@ -127,7 +131,8 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
-          go-version-file: agent/go.mod
+          # R-05: the same Go release as the toolchain line in go.mod.
+          go-version: '1.27.3'
       # Cosign 2 stores signatures as ".sig" tags. Podman and the panel read this format.
       - uses: sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5 # v3.10.1
         with:
@@ -141,6 +146,8 @@ jobs:
           mkdir -p dist
           for arch in amd64 arm64; do
             (cd agent && CGO_ENABLED=0 GOARCH=$arch go build -trimpath -ldflags "-s -w -X main.version=$v" -o "../dist/cf-agent_linux_$arch" ./cmd/cf-agent)
+            # R-13: a signed manifest binds the binary to its version (selfupdate.Manifest).
+            printf 'version=%s\nasset=%s\nsha256=%s\n' "$v" "cf-agent_linux_$arch" "$(sha256sum "dist/cf-agent_linux_$arch" | cut -d' ' -f1)" > "dist/cf-agent_linux_$arch.manifest"
           done
           for os in linux darwin windows; do
             for arch in amd64 arm64; do

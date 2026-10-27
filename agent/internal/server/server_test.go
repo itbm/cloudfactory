@@ -65,7 +65,7 @@ func TestOnlyThePanelCertificateIsAccepted(t *testing.T) {
 	otherCert, _ := cert(t, dir, "other")
 
 	run := &execx.Fake{}
-	h := &host.Host{Run: run, SitesDir: filepath.Join(dir, "sites"), UnitRoot: filepath.Join(dir, "units"), LookupUID: func(string) (int, error) { return 1001, nil }}
+	h := &host.Host{Run: run, SitesDir: filepath.Join(dir, "sites"), UnitRoot: filepath.Join(dir, "units"), ConfigRoot: filepath.Join(dir, "config"), LookupUID: func(string) (int, error) { return 1001, nil }}
 	ev := &events{got: map[string][]panel.Event{}}
 	runner := &jobs.Runner{Dir: filepath.Join(dir, "jobs"), Reporter: ev}
 	deps := &actions.Deps{Host: h, Run: run, Edge: nopEdge{}, State: actions.NewState(dir), Gvisor: quadlet.Runtime{RunscPath: "runsc", Platform: "systrap"},
