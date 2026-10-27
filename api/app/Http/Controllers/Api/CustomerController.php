@@ -2,13 +2,17 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Enums\AgentAction;
 use App\Enums\Role;
+use App\Enums\WebsiteStatus;
 use App\Http\Controllers\Controller;
 use App\Models\Customer;
 use App\Models\Domain;
 use App\Models\User;
+use App\Models\Website;
 use App\Services\Audit;
 use App\Services\DomainPolicy;
+use App\Services\JobDispatcher;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -17,6 +21,8 @@ use Illuminate\Validation\ValidationException;
 /** FR-102 and FR-106: resellers make website owners, set their limits and set their brand. */
 class CustomerController extends Controller
 {
+    public function __construct(private JobDispatcher $jobs) {}
+
     public function index(Request $request): JsonResponse
     {
         $ids = $request->user()->visibleCustomerIds();
@@ -105,9 +111,34 @@ class CustomerController extends Controller
         if ($data['suspended'] ?? false) {
             $customer->revokeTokens();
         }
+        if ($suspension) {
+            $this->applySuspension($customer->fresh());
+        }
         Audit::record($request, 'Changed customer', $customer->name, $customer->id);
 
         return response()->json(self::present($customer->fresh()));
+    }
+
+    /**
+     * A suspension stops the websites of the customer, and of the customers of a reseller. When it
+     * ends, only the websites that the suspension stopped start again.
+     */
+    private function applySuspension(Customer $customer): void
+    {
+        $ids = Customer::where('id', $customer->id)->orWhere('reseller_id', $customer->id)->get()
+            // A customer of a reseller stays stopped while its own suspension continues.
+            ->filter(fn (Customer $c) => $customer->suspended || ! $c->isSuspended())
+            ->pluck('id');
+        $websites = Website::with('server')->whereIn('customer_id', $ids)->get();
+        foreach ($websites as $website) {
+            if ($customer->suspended && in_array($website->status, [WebsiteStatus::Running, WebsiteStatus::Starting], true)) {
+                $website->update(['status' => WebsiteStatus::Stopping, 'stopped_by_suspension' => true]);
+                $this->jobs->dispatch($website->server, AgentAction::SetWebsitePower, ['websiteId' => $website->id, 'unixUser' => $website->unix_user, 'power' => 'stop'], "Stop {$website->name} (suspended)", $website);
+            } elseif (! $customer->suspended && $website->stopped_by_suspension) {
+                $website->update(['status' => WebsiteStatus::Starting, 'stopped_by_suspension' => false]);
+                $this->jobs->dispatch($website->server, AgentAction::SetWebsitePower, ['websiteId' => $website->id, 'unixUser' => $website->unix_user, 'power' => 'start'], "Start {$website->name} (suspension ended)", $website);
+            }
+        }
     }
 
     /**

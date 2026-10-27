@@ -3,9 +3,11 @@
 namespace App\Http\Controllers\Api;
 
 use App\Enums\AgentAction;
+use App\Enums\JobState;
 use App\Enums\ServerRole;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\JobResource;
+use App\Models\AgentJob;
 use App\Models\JoinToken;
 use App\Models\Server;
 use App\Services\Audit;
@@ -48,10 +50,18 @@ class ServerController extends Controller
         if (($data['gvisorPlatform'] ?? null) === 'kvm' && ! $server->bare_metal) {
             throw ValidationException::withMessages(['gvisorPlatform' => 'The KVM platform needs a bare-metal server.']);
         }
+        // The agent writes the units again and restarts the containers. The panel records the new
+        // platform when the job succeeds.
+        $platform = $data['gvisorPlatform'] ?? null;
+        unset($data['gvisorPlatform']);
         $server->update(collect($data)->mapWithKeys(fn ($v, $k) => [Str::snake($k) => $v])->all());
+        $job = null;
+        if ($platform !== null && $platform !== $server->gvisor_platform) {
+            $job = $this->jobs->dispatch($server, AgentAction::ConfigureHost, ['gvisorPlatform' => $platform], "Change gVisor platform of {$server->name} to {$platform}");
+        }
         Audit::record($request, 'Changed server settings', $server->name);
 
-        return response()->json(self::present($server->fresh()));
+        return response()->json(self::present($server->fresh()) + ['job' => $job ? new JobResource($job) : null]);
     }
 
     /** FR-1201: a token for "install.sh --join". It works for one server, for 24 hours. */
@@ -69,11 +79,24 @@ class ServerController extends Controller
         ], 201);
     }
 
+    /**
+     * FR-1111: installs the updates now. "tools" updates only the container tools (FR-1113). The
+     * administrator updates them on one server, checks it, and then updates the other servers.
+     */
     public function installUpdates(Request $request, string $id): JsonResponse
     {
         $server = Server::findOrFail($id);
-        $job = $this->jobs->dispatch($server, AgentAction::InstallHostUpdates, ['policy' => $server->update_policy], "Install updates on {$server->name}");
-        Audit::record($request, 'Installed host updates', $server->name);
+        $policy = $request->validate(['policy' => ['sometimes', Rule::in(['security', 'all', 'tools'])]])['policy'] ?? null;
+        $policy ??= $server->update_policy === 'all' ? 'all' : 'security';
+        if ($policy === 'tools') {
+            $busy = AgentJob::where('action', AgentAction::InstallHostUpdates->value)->whereIn('state', [JobState::Queued->value, JobState::Running->value])->get()
+                ->first(fn (AgentJob $j) => ($j->payload['policy'] ?? null) === 'tools');
+            if ($busy) {
+                throw ValidationException::withMessages(['policy' => 'The container tools are being updated on a different server. Wait until that update is complete.']);
+            }
+        }
+        $job = $this->jobs->dispatch($server, AgentAction::InstallHostUpdates, ['policy' => $policy], $policy === 'tools' ? "Update container tools on {$server->name}" : "Install updates on {$server->name}");
+        Audit::record($request, $policy === 'tools' ? 'Updated container tools' : 'Installed host updates', $server->name);
 
         return response()->json(['job' => new JobResource($job)], 202);
     }

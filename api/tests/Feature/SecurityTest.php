@@ -103,7 +103,10 @@ class SecurityTest extends TestCase
         // Removing a database removes the access of its users first.
         $jobId = $this->deleteJson("/api/v1/websites/{$website->id}/databases/{$staging}")->assertAccepted()->json('job.id');
         $this->assertSame([$website->unix_user.'_sync'], AgentJob::findOrFail($jobId)->payload['users']);
-        $this->getJson("/api/v1/websites/{$website->id}/databases")->assertJsonPath('users.1.grants', []);
+        // Batch 1, finding 4: the database stays in the panel until the agent removed it.
+        $this->getJson("/api/v1/websites/{$website->id}/databases")->assertJsonCount(3, 'databases');
+        app(JobOutcome::class)->finish(AgentJob::findOrFail($jobId), JobState::Succeeded);
+        $this->getJson("/api/v1/websites/{$website->id}/databases")->assertJsonCount(2, 'databases')->assertJsonPath('users.1.grants', []);
 
         $this->deleteJson("/api/v1/websites/{$website->id}/database-users/{$user}")->assertAccepted()->assertJsonPath('job.action', 'DeleteDatabaseUser');
     }

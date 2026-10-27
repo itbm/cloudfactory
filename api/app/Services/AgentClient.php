@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Http\Controllers\Api\BackupController;
 use App\Models\AgentJob;
 use App\Models\Server;
 use Illuminate\Http\Client\ConnectionException;
@@ -40,6 +41,9 @@ class AgentClient
             ->post('/'.self::SERVICE.'/'.$job->action->value, [
                 'jobId' => $job->id,
                 ...$job->payload,
+                // The credentials of the object storage are not in the job. The panel adds the
+                // current credentials each time that it sends the job.
+                ...($job->action->usesBackupRepository() ? ['credentials' => (object) BackupController::credentials()] : []),
             ])
             ->throw();
     }

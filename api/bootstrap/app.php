@@ -23,6 +23,14 @@ return Application::configure(basePath: dirname(__DIR__))
             'agent' => AuthenticateAgent::class,
             'active' => EnsureActive::class,
         ]);
+        // Audit batch 3, finding 1: all requests come through the edge proxy, which sets
+        // X-Forwarded-For to the address of the client. The API port is open only on the host
+        // loopback address (CF-10), so only the edge proxy and the local agent can connect. The
+        // agent checks (AuthenticateAgent::fromLoopback) use the real peer address.
+        $middleware->trustProxies(
+            at: array_filter(explode(',', (string) env('CF_TRUSTED_PROXIES', '127.0.0.1,::1,169.254.0.0/16'))),
+            headers: Request::HEADER_X_FORWARDED_FOR | Request::HEADER_X_FORWARDED_PROTO,
+        );
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(

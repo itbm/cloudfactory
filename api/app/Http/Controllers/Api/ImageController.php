@@ -47,8 +47,9 @@ class ImageController extends Controller
             'tag' => ['required', 'regex:/^[\w][\w.-]{0,127}$/'],
             // FR-1110: automatic or manual updates for each image.
             'policy' => ['required', Rule::in([UpdatePolicy::Automatic->value, UpdatePolicy::Manual->value])],
+            ...self::runRules(),
         ]);
-        $image = Image::create([...$data, 'family' => 'custom', 'custom' => true]);
+        $image = Image::create([...self::fields($data), 'family' => 'custom', 'custom' => true]);
         Audit::record($request, 'Added image', "{$data['reference']}:{$data['tag']}");
 
         return response()->json(self::present($image), 201);
@@ -57,9 +58,9 @@ class ImageController extends Controller
     public function update(Request $request, string $id): JsonResponse
     {
         $image = Image::findOrFail($id);
-        $data = $request->validate(['policy' => ['required', Rule::enum(UpdatePolicy::class)]]);
-        $image->update($data);
-        Audit::record($request, 'Changed update policy', "{$image->name}: {$data['policy']}");
+        $data = $request->validate(['policy' => ['sometimes', Rule::enum(UpdatePolicy::class)], ...($image->custom ? self::runRules() : [])]);
+        $image->update(self::fields($data));
+        Audit::record($request, 'Changed image', $image->name.(isset($data['policy']) ? ": {$data['policy']}" : ''));
 
         return response()->json(self::present($image));
     }
@@ -73,6 +74,29 @@ class ImageController extends Controller
         Audit::record($request, 'Checked image for updates', $image->name);
 
         return response()->json(self::present($image->fresh()));
+    }
+
+    /** FR-307: the HTTP port and the start command of a custom image. The agent checks the same limits. */
+    private static function runRules(): array
+    {
+        return [
+            'containerPort' => ['sometimes', 'nullable', 'integer', 'between:1,65535'],
+            'command' => ['sometimes', 'nullable', 'array', 'max:32'],
+            'command.*' => ['string', 'min:1', 'max:1024', 'not_regex:/[\x00-\x1f\x7f]/'],
+        ];
+    }
+
+    private static function fields(array $data): array
+    {
+        $out = array_diff_key($data, ['containerPort' => true, 'command' => true]);
+        if (array_key_exists('containerPort', $data)) {
+            $out['container_port'] = $data['containerPort'];
+        }
+        if (array_key_exists('command', $data)) {
+            $out['command'] = $data['command'] ?: null;
+        }
+
+        return $out;
     }
 
     public static function present(Image $i): array
@@ -93,6 +117,8 @@ class ImageController extends Controller
             'signatureVerified' => $i->signature_verified,
             'checkedAt' => $i->checked_at?->toIso8601String(),
             'checkError' => $i->check_error,
+            'containerPort' => $i->custom ? ($i->container_port ?? 8080) : 8080,
+            'command' => $i->command ?? [],
             'websites' => $i->websites_count ?? null,
         ];
     }

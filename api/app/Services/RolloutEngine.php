@@ -20,8 +20,9 @@ class RolloutEngine
 
     public function start(Image $image): Rollout
     {
+        // Batch 1, finding 5: a stopped website gets the new image too. The agent writes its unit
+        // and does not start it.
         $ids = Website::where('image_id', $image->id)
-            ->where('status', '!=', 'stopped')
             ->orderBy('created_at')
             ->pluck('id')
             ->all();
@@ -131,6 +132,10 @@ class RolloutEngine
                 'available_digest' => null,
             ]);
             Website::whereIn('id', $rollout->updated_ids)->update(['image_tag' => null]);
+            // A website that the rollout did not update keeps the old tag, so that the panel
+            // shows what its container runs.
+            Website::where('image_id', $rollout->image_id)->whereNull('image_tag')->whereNotIn('id', $rollout->updated_ids)
+                ->update(['image_tag' => $rollout->from_tag]);
 
             return;
         }
@@ -140,6 +145,13 @@ class RolloutEngine
 
     private function startStage(Rollout $rollout): void
     {
+        // Batch 1, finding 5: websites made during the rollout are part of the later stages.
+        $new = Website::where('image_id', $rollout->image_id)->whereNotIn('id', $rollout->website_ids)
+            ->where(fn ($q) => $q->whereNull('image_tag')->orWhere('image_tag', $rollout->from_tag))
+            ->orderBy('created_at')->pluck('id')->all();
+        if ($new) {
+            $rollout->update(['website_ids' => [...$rollout->website_ids, ...$new]]);
+        }
         $done = count($rollout->updated_ids) + count($rollout->rolled_back);
         $target = $rollout->stageTarget($rollout->stage);
         $handled = [...$rollout->updated_ids, ...array_column($rollout->rolled_back, 'websiteId')];
@@ -158,7 +170,9 @@ class RolloutEngine
             $payload['website']['imageDigest'] = $image->available_digest;
             $payload['previousImageId'] = $image->id;
             $payload['previousTag'] = $website->currentTag();
-            $payload['healthCheck'] = ['status' => 200, 'maxErrorRate' => 0.01, 'seconds' => 300];
+            // Batch 1, finding 6: status 0 accepts each answer below 500, for example a redirect
+            // to a login page. The agent makes about 30 checks in 5 minutes.
+            $payload['healthCheck'] = ['status' => 0, 'maxErrorRate' => 0.05, 'seconds' => 300];
             $website->update(['image_tag' => $rollout->to_tag]);
             $this->dispatcher->dispatch($website->server, AgentAction::SetRuntime, $payload, "Update {$image->name} to {$rollout->to_tag}", $website, $rollout->to_tag, $rollout->id);
         }

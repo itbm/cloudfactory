@@ -56,6 +56,11 @@ class JobDispatcher
                 'extensions' => $website->extensions,
                 'phpIni' => (object) $website->php_ini,
                 'limits' => $website->limits,
+                // Batch 1, finding 11: the directory in /app that the web server serves.
+                'documentRoot' => $website->document_root ?? 'public',
+                // FR-307: the port and the start command of a custom image.
+                'containerPort' => $website->image->custom ? (int) $website->image->container_port : 0,
+                'command' => $website->image->custom ? ($website->image->command ?? []) : [],
                 // CF-03: the edge proxy serves only the domains that the customer verified.
                 'domains' => $website->domains->filter(fn ($d) => $d->verified())->map(fn ($d) => ['name' => $d->name, 'kind' => $d->kind->value])->values()->all(),
             ],

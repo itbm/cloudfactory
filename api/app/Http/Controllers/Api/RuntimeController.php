@@ -31,9 +31,20 @@ class RuntimeController extends Controller
             'extensions' => ['sometimes', 'array'],
             'extensions.*' => ['string'],
             'phpIni' => ['sometimes', 'array'],
+            // Batch 1, finding 11: the directory in /app that the web server serves, for example
+            // "web". "." is /app itself.
+            'documentRoot' => ['sometimes', 'string', 'max:200', 'regex:#^(\.|[A-Za-z0-9_-][A-Za-z0-9._-]*(/[A-Za-z0-9_-][A-Za-z0-9._-]*)*)$#', 'not_regex:#(^|/)\.\.(/|$)#'],
         ]);
         $plan = $website->plan;
         $changes = [];
+        // Batch 1, finding 3: on failure, the panel puts these values back.
+        $revert = [
+            'image_id' => $website->image_id, 'image_tag' => $website->image_tag, 'previous_image_id' => $website->previous_image_id,
+            'previous_image_tag' => $website->previous_image_tag, 'worker_mode' => $website->worker_mode, 'extensions' => $website->extensions,
+            'php_ini' => $website->php_ini, 'document_root' => $website->document_root,
+        ];
+        // Batch 3, finding 6: worker mode is checked against the image after the change.
+        $newImage = $website->image;
 
         if (isset($data['imageId']) && $data['imageId'] !== $website->image_id) {
             $image = Image::findOrFail($data['imageId']);
@@ -47,12 +58,19 @@ class RuntimeController extends Controller
             }
             // FR-303: keep the previous image, so that the owner can go back in one action.
             $changes += ['previous_image_id' => $website->image_id, 'previous_image_tag' => $website->currentTag(), 'image_id' => $image->id, 'image_tag' => null];
+            $newImage = $image;
         }
         if (isset($data['workerMode'])) {
-            if ($website->image->family !== 'frankenphp') {
+            if ($data['workerMode'] && $newImage->family !== 'frankenphp') {
                 throw ValidationException::withMessages(['workerMode' => 'Worker mode is only for FrankenPHP.']);
             }
             $changes['worker_mode'] = $data['workerMode'];
+        } elseif ($newImage->family !== 'frankenphp' && $website->worker_mode) {
+            // A different runtime has no worker mode.
+            $changes['worker_mode'] = false;
+        }
+        if (isset($data['documentRoot']) && $data['documentRoot'] !== $website->document_root) {
+            $changes['document_root'] = $data['documentRoot'];
         }
         if (isset($data['extensions'])) {
             // FR-304: only the extensions of the plan.
@@ -79,7 +97,12 @@ class RuntimeController extends Controller
 
         $website->update($changes);
         $website->refresh()->load(['image', 'domains']);
-        $payload = JobDispatcher::websitePayload($website) + ['previousImageId' => $website->previous_image_id, 'previousTag' => $website->previous_image_tag];
+        // The agent goes back to the image of before the change when the health check fails.
+        $payload = JobDispatcher::websitePayload($website) + [
+            'previousImageId' => $revert['image_id'],
+            'previousTag' => $revert['image_tag'] ?? Image::find($revert['image_id'])?->tag,
+            'revert' => $revert,
+        ];
         $job = $this->jobs->dispatch($website->server, AgentAction::SetRuntime, $payload, isset($changes['image_id']) ? "Change runtime to {$website->image->name}" : 'Apply PHP settings', $website);
         Audit::record($request, 'Changed runtime', $website->name, $website->customer_id);
 

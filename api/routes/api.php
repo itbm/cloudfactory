@@ -15,6 +15,7 @@ use App\Http\Controllers\Api\PlanController;
 use App\Http\Controllers\Api\RolloutController;
 use App\Http\Controllers\Api\RuntimeController;
 use App\Http\Controllers\Api\ServerController;
+use App\Http\Controllers\Api\SftpController;
 use App\Http\Controllers\Api\WebsiteController;
 use Illuminate\Support\Facades\Route;
 
@@ -51,7 +52,10 @@ Route::prefix('v1')->group(function () {
             Route::post('websites/{id}/staging', [WebsiteController::class, 'staging']);
             Route::post('websites/{websiteId}/domains', [DomainController::class, 'store']);
             Route::post('websites/{websiteId}/domains/{name}/verify', [DomainController::class, 'verify']);
+            Route::post('websites/{websiteId}/domains/{name}/primary', [DomainController::class, 'makePrimary']);
+            Route::post('websites/{websiteId}/domains/{name}/check', [DomainController::class, 'check']);
             Route::delete('websites/{websiteId}/domains/{name}', [DomainController::class, 'destroy']);
+            Route::put('websites/{websiteId}/sftp', [SftpController::class, 'update']);
             Route::put('websites/{websiteId}/runtime', [RuntimeController::class, 'update']);
             Route::post('websites/{websiteId}/runtime/revert', [RuntimeController::class, 'revert']);
             Route::get('runtime-images', [ImageController::class, 'runtimes']);

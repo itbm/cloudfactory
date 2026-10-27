@@ -17,7 +17,7 @@ class AuditController extends Controller
             ->when($ids !== null, fn ($q) => $q->whereIn('customer_id', $ids))
             ->when($request->query('q'), fn ($q, $s) => $q->where(fn ($w) => $w->where('actor', 'like', "%{$s}%")->orWhere('action', 'like', "%{$s}%")->orWhere('target', 'like', "%{$s}%")->orWhere('ip', $s)))
             ->latest('id')
-            ->paginate(min(200, (int) $request->query('perPage', 50)));
+            ->paginate(self::perPage($request, 50, 200));
 
         return response()->json([
             'data' => collect($page->items())->map(fn (AuditEntry $a) => [

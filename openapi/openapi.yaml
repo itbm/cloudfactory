@@ -339,9 +339,29 @@ paths:
     post:
       tags: [Websites]
       summary: Make a staging copy
-      description: FR-205. The copy has the name `staging.<domain>`.
+      description: >-
+        FR-205. The copy has the name `staging.<domain>`. It gets a copy of each database of the
+        website, and one new database user for each engine with read-write access to the copies.
+        The response shows the passwords of the new users once.
       responses:
-        '202': { $ref: '#/components/responses/WebsiteJob' }
+        '202':
+          description: The job makes the copy.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  website: { $ref: '#/components/schemas/Website' }
+                  job: { $ref: '#/components/schemas/Job' }
+                  databaseCredentials:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        engine: { $ref: '#/components/schemas/Engine' }
+                        user: { type: string }
+                        password: { type: string }
+                        databases: { type: array, items: { type: string } }
         '422': { $ref: '#/components/responses/Invalid' }
 
   /v1/websites/{websiteId}/domains:
@@ -399,6 +419,80 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { description: The TXT record does not have the token. }
 
+  /v1/websites/{websiteId}/domains/{name}/primary:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+      - { name: name, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [Websites]
+      summary: Make a domain the primary domain
+      description: >-
+        FR-401. The domain must be verified. The old primary domain becomes an alias. The website
+        takes the name of the new primary domain.
+      responses:
+        '202': { $ref: '#/components/responses/WebsiteJob' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/websites/{websiteId}/domains/{name}/check:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+      - { name: name, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [Websites]
+      summary: Check the DNS of a domain again
+      description: >-
+        FR-402 and FR-403. The agent checks the DNS of the domain. When the domain points to the
+        server, the edge proxy gets a certificate.
+      responses:
+        '202':
+          description: The job checks the domain.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  domain: { $ref: '#/components/schemas/Domain' }
+                  job: { $ref: '#/components/schemas/Job' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/websites/{websiteId}/sftp:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+    put:
+      tags: [Websites]
+      summary: Set the SFTP access of a website
+      description: >-
+        Spec section 10. The owner signs in with the user name of the website, with a password or
+        an SSH key. The server allows only SFTP, in the directory of the website. The response
+        shows a new password once.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled]
+              properties:
+                enabled: { type: boolean }
+                newPassword: { type: boolean, description: True makes a new password. }
+                removePassword: { type: boolean, description: True removes the password. Only the SSH keys can sign in. }
+                authorizedKeys: { type: array, maxItems: 20, items: { type: string, description: 'One OpenSSH public key, for example "ssh-ed25519 AAAA... me@laptop".' } }
+      responses:
+        '202':
+          description: The job sets the access.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sftp: { $ref: '#/components/schemas/Sftp' }
+                  password: { type: [string, 'null'] }
+                  job: { $ref: '#/components/schemas/Job' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
   /v1/websites/{websiteId}/domains/{name}:
     parameters:
       - { $ref: '#/components/parameters/WebsiteId' }
@@ -430,6 +524,7 @@ paths:
               properties:
                 imageId: { type: string }
                 workerMode: { type: boolean, description: Only for FrankenPHP. }
+                documentRoot: { type: string, maxLength: 200, description: 'Batch 1, finding 11. The directory in /app that the web server serves, for example "web". "." is /app. The default is "public".' }
                 extensions: { type: array, items: { type: string }, description: Only the extensions of the plan. }
                 phpIni:
                   type: object
@@ -750,10 +845,17 @@ paths:
                 maintenanceWindow: { type: string, pattern: '^[0-2][0-9]:[0-5][0-9]-[0-2][0-9]:[0-5][0-9]$' }
       responses:
         '200':
-          description: Changed.
+          description: >-
+            Changed. A change of the gVisor platform starts a job that writes the units again and
+            restarts the containers. The server shows the new platform when the job succeeds.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/Server' }
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/Server' }
+                  - type: object
+                    properties:
+                      job: { oneOf: [{ $ref: '#/components/schemas/Job' }, { type: 'null' }] }
         '422': { $ref: '#/components/responses/Invalid' }
 
   /v1/servers/{id}/install-updates:
@@ -762,9 +864,22 @@ paths:
     post:
       tags: [Servers]
       summary: Install host updates now
-      description: FR-1117. The agent restarts only the services that changed.
+      description: >-
+        FR-1117. The agent restarts only the services that changed. With the policy "tools", the
+        agent updates only the container tools (FR-1113). Update them on one server, check it,
+        and then update the other servers. The panel refuses a second "tools" update while one
+        is in progress.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                policy: { type: string, enum: [security, all, tools], description: The default is the update policy of the server. }
       responses:
         '202': { $ref: '#/components/responses/JobOnly' }
+        '422': { $ref: '#/components/responses/Invalid' }
 
   /v1/servers/{id}/reboot:
     parameters:
@@ -854,6 +969,8 @@ paths:
                 reference: { type: string, description: 'For example "registry.example.com/team/app".' }
                 tag: { type: string }
                 policy: { type: string, enum: [automatic, manual] }
+                containerPort: { type: [integer, 'null'], minimum: 1, maximum: 65535, description: FR-307. The HTTP port in the container. The default is 8080. }
+                command: { type: [array, 'null'], maxItems: 32, items: { type: string, maxLength: 1024 }, description: The start command as a list of arguments. Null uses the command of the image. }
       responses:
         '201':
           description: Added.
@@ -867,16 +984,18 @@ paths:
       - { $ref: '#/components/parameters/Id' }
     patch:
       tags: [Images]
-      summary: Change the update policy of an image
+      summary: Change an image
+      description: The update policy. For a custom image, also the port and the start command.
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [policy]
               properties:
                 policy: { type: string, enum: [automatic, security_automatic, manual] }
+                containerPort: { type: [integer, 'null'], minimum: 1, maximum: 65535 }
+                command: { type: [array, 'null'], maxItems: 32, items: { type: string, maxLength: 1024 } }
       responses:
         '200':
           description: Changed.
@@ -1368,6 +1487,7 @@ components:
             extensions: { type: array, items: { type: string } }
             phpIni: { type: object, additionalProperties: { type: string } }
             previousImageId: { type: [string, 'null'] }
+            documentRoot: { type: string, description: 'The directory in /app that the web server serves. "." is /app.' }
             supportEndsAt: { type: [string, 'null'], format: date }
         updateReady: { type: boolean }
         limits: { $ref: '#/components/schemas/Limits' }
@@ -1375,10 +1495,20 @@ components:
         domains:
           type: array
           items: { $ref: '#/components/schemas/Domain' }
+        sftp: { $ref: '#/components/schemas/Sftp' }
         stagingOf: { type: [string, 'null'] }
         managedByTerraform: { type: boolean }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
+    Sftp:
+      type: object
+      properties:
+        enabled: { type: boolean }
+        host: { type: [string, 'null'] }
+        port: { type: integer }
+        username: { type: string }
+        passwordSet: { type: boolean }
+        authorizedKeys: { type: array, items: { type: string } }
     JobState:
       type: string
       enum: [queued, running, succeeded, failed]
@@ -1404,7 +1534,7 @@ components:
       type: object
       properties:
         id: { type: string }
-        kind: { type: string, enum: [daily, weekly, monthly, manual] }
+        kind: { type: string, enum: [scheduled, manual] }
         sizeBytes: { type: integer }
         databases: { type: array, items: { type: string }, description: For example "mariadb:shop". Use this value as the restore item. }
         mailboxes: { type: array, items: { type: string } }
@@ -1416,8 +1546,17 @@ components:
         daily: { type: integer, minimum: 0, maximum: 365 }
         weekly: { type: integer, minimum: 0, maximum: 520 }
         monthly: { type: integer, minimum: 0, maximum: 240 }
-        time: { type: string, pattern: '^[0-2][0-9]:[0-5][0-9]$' }
-        target: { type: string, description: 'Object storage, for example "s3://bucket/path".' }
+        time: { type: string, pattern: '^[0-2][0-9]:[0-5][0-9]$', description: The time of the nightly backups, in UTC. }
+        target: { type: string, description: 'A restic repository in object storage, for example "s3:s3.amazonaws.com/bucket/path" or "b2:bucket:path".' }
+        credentials:
+          type: [object, 'null']
+          writeOnly: true
+          description: >-
+            The restic environment variables of the object storage, for example AWS_ACCESS_KEY_ID
+            and AWS_SECRET_ACCESS_KEY. The panel keeps them encrypted and never shows them. Leave
+            out to keep them. An empty object removes them.
+          additionalProperties: { type: string }
+        credentialNames: { type: array, readOnly: true, items: { type: string }, description: The names of the credentials that are set. }
     ServerRole:
       type: string
       enum: [web, database, email, dns, backup]
@@ -1470,6 +1609,8 @@ components:
         signatureVerified: { type: boolean }
         checkedAt: { type: [string, 'null'], format: date-time, description: The time of the last registry check. }
         checkError: { type: [string, 'null'], description: Why the last registry check failed. }
+        containerPort: { type: integer }
+        command: { type: array, items: { type: string } }
         websites: { type: [integer, 'null'] }
     Rollout:
       type: object
@@ -1527,7 +1668,7 @@ components:
         certificate:
           type: object
           properties:
-            state: { type: string, enum: [pending, valid, failed] }
+            state: { type: string, enum: [pending, valid, expired, failed] }
             expiresAt: { type: [string, 'null'], format: date-time }
     DatabaseUser:
       type: object
@@ -1598,6 +1739,7 @@ components:
               from: { type: string }
               to: { type: string }
               security: { type: boolean }
+              containerTool: { type: boolean, description: A held container tool. The policy "tools" updates it (FR-1113). }
         rebootRequired: { type: boolean }
         lastUpdateAt: { type: string, format: date-time }
         services:
@@ -1624,3 +1766,22 @@ components:
               memoryBytes: { type: integer }
               diskBytes: { type: integer }
               processes: { type: integer }
+        domains:
+          type: [array, 'null']
+          description: The DNS and the certificate of each domain of the websites on the server.
+          items:
+            type: object
+            properties:
+              name: { type: string }
+              dnsPointsHere: { type: boolean }
+              certificate: { type: string, enum: [pending, valid, expired, failed] }
+              expiresAt: { type: string, format: date-time }
+        databases:
+          type: [array, 'null']
+          description: The size of each database in the shared database containers.
+          items:
+            type: object
+            properties:
+              engine: { $ref: '#/components/schemas/Engine' }
+              name: { type: string }
+              sizeBytes: { type: integer }

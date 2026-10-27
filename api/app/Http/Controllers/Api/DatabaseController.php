@@ -89,7 +89,7 @@ class DatabaseController extends Controller
         $website = $this->findWebsite($request, $websiteId);
         $database = $website->databases()->with('users')->findOrFail($databaseId);
         $users = $database->users->pluck('name')->sort()->values()->all();
-        $database->delete();
+        // Batch 1, finding 4: the panel removes the row when the job succeeds (JobOutcome).
         // The agent removes the access of each user to the database, then the database.
         $job = $this->jobs->dispatch($website->server, AgentAction::DeleteDatabase, [
             'websiteId' => $website->id,

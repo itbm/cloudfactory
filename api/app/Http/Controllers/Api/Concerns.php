@@ -18,6 +18,6 @@ trait Concerns
 
     protected function findWebsite(Request $request, string $id): Website
     {
-        return $this->visibleWebsites($request)->with(['image', 'domains'])->findOrFail($id);
+        return $this->visibleWebsites($request)->with(['image', 'domains', 'server'])->findOrFail($id);
     }
 }

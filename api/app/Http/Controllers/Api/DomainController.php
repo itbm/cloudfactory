@@ -14,6 +14,7 @@ use App\Services\DomainPolicy;
 use App\Services\JobDispatcher;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -61,6 +62,45 @@ class DomainController extends Controller
         Audit::record($request, 'Verified domain', "{$website->name} {$domain->name}", $website->customer_id);
 
         return response()->json(['domain' => WebsiteResource::domain($domain), 'job' => new JobResource($job)], 202);
+    }
+
+    /**
+     * FR-401: makes a verified domain the primary domain. The old primary domain becomes an
+     * alias. The website takes the name of its primary domain.
+     */
+    public function makePrimary(Request $request, string $websiteId, string $name): JsonResponse
+    {
+        $website = $this->findWebsite($request, $websiteId);
+        $domain = $website->domains()->where('name', $name)->firstOrFail();
+        if ($domain->kind === DomainKind::Primary) {
+            return response()->json(['website' => new WebsiteResource($website), 'job' => null]);
+        }
+        if (! $domain->verified()) {
+            throw ValidationException::withMessages(['name' => 'Verify the domain first.']);
+        }
+        DB::transaction(function () use ($website, $domain) {
+            $website->domains()->where('kind', DomainKind::Primary->value)->update(['kind' => DomainKind::Alias->value]);
+            $domain->update(['kind' => DomainKind::Primary]);
+            $website->update(['name' => $domain->name]);
+        });
+        $job = $this->addRoute($website->fresh(), $domain->fresh());
+        Audit::record($request, 'Made domain primary', "{$website->name} {$name}", $website->customer_id);
+
+        return response()->json(['website' => new WebsiteResource($website->fresh(['image', 'domains', 'server'])), 'job' => new JobResource($job)], 202);
+    }
+
+    /** FR-402 and FR-403: checks the DNS of a domain again, and asks for a certificate if it is ready. */
+    public function check(Request $request, string $websiteId, string $name): JsonResponse
+    {
+        $website = $this->findWebsite($request, $websiteId);
+        $domain = $website->domains()->where('name', $name)->firstOrFail();
+        if (! $domain->verified()) {
+            throw ValidationException::withMessages(['name' => 'Verify the domain first.']);
+        }
+        $domain->update(['certificate_state' => 'pending']);
+        $job = $this->addRoute($website, $domain);
+
+        return response()->json(['domain' => WebsiteResource::domain($domain->fresh()), 'job' => new JobResource($job)], 202);
     }
 
     public function destroy(Request $request, string $websiteId, string $name): JsonResponse
@@ -139,6 +179,10 @@ class DomainController extends Controller
 
     private function addRoute(Website $website, Domain $domain)
     {
+        if ($domain->certificate_state !== 'pending') {
+            $domain->update(['certificate_state' => 'pending']);
+        }
+
         return $this->jobs->dispatch($website->server, AgentAction::AddDomain, [
             'websiteId' => $website->id,
             'unixUser' => $website->unix_user,

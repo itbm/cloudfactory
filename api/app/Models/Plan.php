@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 #[Fillable(['name', 'limits', 'websites', 'mailboxes', 'databases', 'php_extensions'])]
 class Plan extends Model
@@ -15,5 +16,10 @@ class Plan extends Model
     protected function casts(): array
     {
         return ['limits' => 'array', 'php_extensions' => 'array'];
+    }
+
+    public function websites(): HasMany
+    {
+        return $this->hasMany(Website::class);
     }
 }

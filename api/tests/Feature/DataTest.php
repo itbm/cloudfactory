@@ -36,6 +36,9 @@ class DataTest extends TestCase
         $customer = $this->customer();
         $website = $this->website($customer, $this->server(), $this->image());
         $this->actingWith($this->user());
+        // With no backup target, the panel refuses the backup at once.
+        $this->postJson("/api/v1/websites/{$website->id}/snapshots")->assertJsonValidationErrors('target');
+        $this->putJson('/api/v1/backup-policy', ['daily' => 7, 'weekly' => 4, 'monthly' => 6, 'time' => '03:00', 'target' => 's3:s3.amazonaws.com/backups'])->assertOk();
 
         $jobId = $this->postJson("/api/v1/websites/{$website->id}/snapshots")->assertAccepted()->json('job.id');
         app(JobOutcome::class)->finish(AgentJob::findOrFail($jobId), JobState::Succeeded, result: ['snapshotId' => 'abc123', 'sizeBytes' => 1024]);

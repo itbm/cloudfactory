@@ -86,7 +86,7 @@ class DatabaseUserController extends Controller
     {
         $website = $this->findWebsite($request, $websiteId);
         $user = $website->databaseUsers()->findOrFail($userId);
-        $user->delete();
+        // Batch 1, finding 4: the panel removes the row when the job succeeds (JobOutcome).
         $job = $this->jobs->dispatch($website->server, AgentAction::DeleteDatabaseUser, [
             'websiteId' => $website->id,
             'unixUser' => $website->unix_user,

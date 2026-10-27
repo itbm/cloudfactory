@@ -13,7 +13,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 #[Fillable([
     'name', 'application', 'customer_id', 'server_id', 'plan_id', 'image_id', 'image_tag', 'previous_image_id',
     'previous_image_tag', 'unix_user', 'status', 'worker_mode', 'extensions', 'php_ini', 'limits', 'usage',
-    'staging_of', 'managed_by_terraform',
+    'staging_of', 'managed_by_terraform', 'document_root', 'sftp_enabled', 'sftp_keys', 'sftp_password_set',
+    'stopped_by_suspension',
 ])]
 class Website extends Model
 {
@@ -29,6 +30,10 @@ class Website extends Model
             'limits' => 'array',
             'usage' => 'array',
             'managed_by_terraform' => 'boolean',
+            'sftp_enabled' => 'boolean',
+            'sftp_keys' => 'array',
+            'sftp_password_set' => 'boolean',
+            'stopped_by_suspension' => 'boolean',
         ];
     }
 

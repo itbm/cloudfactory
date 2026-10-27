@@ -29,7 +29,7 @@ class JobController extends Controller
             ->when($request->query('serverId'), fn ($q, $id) => $q->where('server_id', $id))
             ->when($request->query('state'), fn ($q, $s) => $q->where('state', $s))
             ->latest()
-            ->paginate(min(100, (int) $request->query('perPage', 25))));
+            ->paginate(self::perPage($request)));
     }
 
     public function show(Request $request, string $id): JobResource

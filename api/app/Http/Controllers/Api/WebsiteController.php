@@ -16,6 +16,7 @@ use App\Models\Server;
 use App\Models\User;
 use App\Models\Website;
 use App\Services\Audit;
+use App\Services\DatabaseNames;
 use App\Services\DomainPolicy;
 use App\Services\JobDispatcher;
 use Illuminate\Http\JsonResponse;
@@ -39,11 +40,11 @@ class WebsiteController extends Controller
     {
         $request->validate(['status' => ['nullable', Rule::enum(WebsiteStatus::class)], 'q' => ['nullable', 'string']]);
         $websites = $this->visibleWebsites($request)
-            ->with(['image', 'domains'])
+            ->with(['image', 'domains', 'server'])
             ->when($request->query('status'), fn ($q, $s) => $q->where('status', $s))
             ->when($request->query('q'), fn ($q, $s) => $q->where('name', 'like', '%'.$s.'%'))
             ->orderBy('name')
-            ->paginate(min(100, (int) $request->query('perPage', 25)));
+            ->paginate(self::perPage($request));
 
         return WebsiteResource::collection($websites);
     }
@@ -147,9 +148,10 @@ class WebsiteController extends Controller
             'application' => $data['application'] ?? null,
             'managed_by_terraform' => $data['managedByTerraform'] ?? null,
         ], fn ($v) => $v !== null);
-        if (isset($data['planId'])) {
+        $plan = null;
+        if (isset($data['planId']) && $data['planId'] !== $website->plan_id) {
             $plan = Plan::findOrFail($data['planId']);
-            $changes += ['plan_id' => $plan->id, 'limits' => $plan->limits, 'extensions' => array_values(array_intersect($website->extensions, $plan->php_extensions))];
+            $changes['plan_id'] = $plan->id;
         }
         if (isset($data['limits'])) {
             $changes['limits'] = $data['limits'];
@@ -157,7 +159,12 @@ class WebsiteController extends Controller
         $website->update($changes);
 
         $job = null;
-        if (isset($changes['limits'])) {
+        if ($plan) {
+            // Batch 1, finding 8: the limits and the extensions of the new plan reach the server.
+            PlanController::applyPlan($this->jobs, $website, $plan, ! isset($data['limits']));
+            $job = $website->jobs()->first();
+        }
+        if (isset($data['limits'])) {
             $job = $this->jobs->dispatch($website->server, AgentAction::SetLimits, ['websiteId' => $website->id, 'unixUser' => $website->unix_user, 'limits' => $website->limits], 'Apply resource limits', $website);
         }
         Audit::record($request, 'Changed website', $website->name, $website->customer_id);
@@ -223,11 +230,56 @@ class WebsiteController extends Controller
 
             return $copy;
         });
-        $payload = JobDispatcher::websitePayload($copy) + ['copyFrom' => $source->id, 'copyFromUnixUser' => $source->unix_user];
+        [$copies, $users, $credentials] = $this->copyDatabases($source, $copy);
+        $payload = JobDispatcher::websitePayload($copy) + [
+            'copyFrom' => $source->id,
+            'copyFromUnixUser' => $source->unix_user,
+            // FR-205: the copy has its own databases and its own user. It never uses the
+            // databases of the live website.
+            'copyDatabases' => $copies,
+            'copyUsers' => $users,
+        ];
         $job = $this->jobs->dispatch($copy->server, AgentAction::CreateWebsite, $payload, "Make staging copy of {$source->name}", $copy);
+        // The passwords are in the payload for the agent only. The panel removes them when the job ends.
         Audit::record($request, 'Made staging copy', "{$source->name} → {$name}", $source->customer_id);
 
-        return response()->json(['website' => new WebsiteResource($copy->fresh(['image', 'domains'])), 'job' => new JobResource($job)], 202);
+        return response()->json([
+            'website' => new WebsiteResource($copy->fresh(['image', 'domains', 'server'])),
+            // Shown once. The application of the copy needs these values in place of the live ones.
+            'databaseCredentials' => $credentials,
+            'job' => new JobResource($job),
+        ], 202);
+    }
+
+    /**
+     * FR-205: each database of the source gets a copy with the prefix of the copy, and each engine
+     * gets one new user with read-write access to its copies.
+     *
+     * @return array{0: list<array>, 1: list<array>, 2: list<array>}
+     */
+    private function copyDatabases(Website $source, Website $copy): array
+    {
+        $copies = $users = $credentials = [];
+        $from = DatabaseNames::prefix($source);
+        $to = DatabaseNames::prefix($copy);
+        DB::transaction(function () use ($source, $copy, $from, $to, &$copies, &$users, &$credentials) {
+            foreach ($source->databases()->orderBy('name')->get()->groupBy('engine') as $engine => $databases) {
+                $user = $copy->databaseUsers()->create(['engine' => $engine, 'name' => $to.'app', 'access' => 'website']);
+                $password = Str::password(24, symbols: false);
+                $names = [];
+                foreach ($databases as $database) {
+                    $name = $to.substr($database->name, strlen($from));
+                    $new = $copy->databases()->create(['engine' => $engine, 'name' => $name]);
+                    $user->databases()->attach($new->id, ['privileges' => 'readwrite']);
+                    $copies[] = ['engine' => $engine, 'from' => $database->name, 'to' => $name];
+                    $names[] = $name;
+                }
+                $users[] = ['engine' => $engine, 'name' => $user->name, 'password' => $password];
+                $credentials[] = ['engine' => $engine, 'user' => $user->name, 'password' => $password, 'databases' => $names];
+            }
+        });
+
+        return [$copies, $users, $credentials];
     }
 
     /**

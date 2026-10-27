@@ -38,6 +38,13 @@ class SendJobToAgent implements ShouldQueue
     public function failed(Throwable $e): void
     {
         $job = AgentJob::find($this->jobId);
+        // The agent accepted this job before. The panel sent it again because it had no news.
+        // The job stays open until the agent reports, or until it is 3 hours old.
+        if ($job && $job->resent_at !== null && $job->state === JobState::Queued) {
+            $job->update(['state' => JobState::Running]);
+
+            return;
+        }
         if ($job) {
             app(JobOutcome::class)->finish($job, JobState::Failed, 'The agent is not available: '.$e->getMessage());
         }
