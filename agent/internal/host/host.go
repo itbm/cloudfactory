@@ -19,11 +19,19 @@ import (
 // EdgeUser is the Unix user of the edge proxy. It cannot read the files of the websites (CF-04).
 const EdgeUser = "cf-edge"
 
+// SitesGroup is the group of all website users. The SSH service allows only SFTP for this
+// group, in the directory of the user (the installer writes the configuration).
+const SitesGroup = "cf-sites"
+
 // Host changes the host.
 type Host struct {
 	Run execx.Runner
-	// SitesDir holds one home directory for each website user.
+	// SitesDir holds one directory for each website user, with the files of the website in
+	// "app". Root owns the directory of each user, so that SFTP can lock the user in it.
 	SitesDir string
+	// HomesDir holds the home directory of each website user, with its rootless Podman storage.
+	// SFTP cannot reach it. The default is "homes" next to SitesDir.
+	HomesDir string
 	// UnitRoot holds the rootless Quadlet units of each user, in a directory named by the UID.
 	UnitRoot string
 	// ConfigRoot holds the files that the agent makes for each website user, for example the
@@ -48,7 +56,20 @@ func lookupUID(name string) (int, error) {
 }
 
 // Home is the home directory of a website user.
-func (h *Host) Home(unixUser string) string { return filepath.Join(h.SitesDir, unixUser) }
+func (h *Host) Home(unixUser string) string {
+	dir := h.HomesDir
+	if dir == "" {
+		dir = filepath.Join(filepath.Dir(h.SitesDir), "homes")
+	}
+	return filepath.Join(dir, unixUser)
+}
+
+// SiteRoot is the directory of a website user in SitesDir. Root owns it. The SFTP service
+// locks the user in it (ChrootDirectory).
+func (h *Host) SiteRoot(unixUser string) string { return filepath.Join(h.SitesDir, unixUser) }
+
+// AppDir holds the files of a website. The container mounts it at /app.
+func (h *Host) AppDir(unixUser string) string { return filepath.Join(h.SiteRoot(unixUser), "app") }
 
 // ConfigDir is the directory of the generated files of a website user. Root owns it.
 func (h *Host) ConfigDir(unixUser string) string { return filepath.Join(h.ConfigRoot, unixUser) }
@@ -60,19 +81,25 @@ func (h *Host) EnsureUser(ctx context.Context, unixUser string) error {
 	if err := validate.UnixUser(unixUser); err != nil {
 		return err
 	}
+	// Other users can go through the directories, but cannot list them.
+	if _, err := h.Run.Run(ctx, "install", "-d", "-m", "0711", filepath.Dir(h.Home(unixUser)), h.SitesDir); err != nil {
+		return err
+	}
 	if _, err := h.LookupUID(unixUser); err != nil {
 		var unknown user.UnknownUserError
 		if !errors.As(err, &unknown) {
 			return err
 		}
-		if _, err := h.Run.Run(ctx, "useradd", "--create-home", "--home-dir", h.Home(unixUser), "--shell", "/usr/sbin/nologin", "--user-group", unixUser); err != nil {
+		if _, err := h.Run.Run(ctx, "useradd", "--create-home", "--home-dir", h.Home(unixUser), "--shell", "/usr/sbin/nologin", "--user-group", "--groups", SitesGroup, unixUser); err != nil {
 			return err
 		}
 	}
 	for _, args := range [][]string{
 		// CF-04: only the website user can read its files. The edge proxy does not read them.
 		{"chmod", "0700", h.Home(unixUser)},
-		{"install", "-d", "-o", unixUser, "-g", unixUser, "-m", "0750", filepath.Join(h.Home(unixUser), "app"), filepath.Join(h.Home(unixUser), "app", "public")},
+		// SFTP needs a directory that root owns and that the user cannot change (ChrootDirectory).
+		{"install", "-d", "-o", "root", "-g", unixUser, "-m", "0750", h.SiteRoot(unixUser)},
+		{"install", "-d", "-o", unixUser, "-g", unixUser, "-m", "0750", h.AppDir(unixUser), filepath.Join(h.AppDir(unixUser), "public")},
 		{"loginctl", "enable-linger", unixUser},
 	} {
 		if _, err := h.Run.Run(ctx, args[0], args[1:]...); err != nil {
@@ -94,6 +121,10 @@ func (h *Host) RemoveUser(ctx context.Context, unixUser string) error {
 		return err
 	}
 	if _, err := h.Run.Run(ctx, "userdel", "--remove", unixUser); err != nil {
+		return err
+	}
+	// os.RemoveAll removes a link, not the file that the link points to.
+	if err := os.RemoveAll(h.SiteRoot(unixUser)); err != nil {
 		return err
 	}
 	return os.RemoveAll(h.ConfigDir(unixUser))
@@ -177,4 +208,56 @@ func WriteFile(path, content string, mode os.FileMode) (bool, error) {
 		return false, err
 	}
 	return true, os.Rename(f.Name(), path)
+}
+
+// BlockDevice gives the disk of the file system of dir, for example "/dev/vda" for "/dev/vda1".
+// The I/O limit of cgroup v2 needs a whole disk or a device-mapper volume, not a partition.
+func (h *Host) BlockDevice(ctx context.Context, dir string) (string, error) {
+	out, err := h.Run.Run(ctx, "findmnt", "--noheadings", "--output", "SOURCE", "--target", dir)
+	if err != nil {
+		return "", err
+	}
+	source := strings.TrimSpace(out)
+	if !strings.HasPrefix(source, "/dev/") {
+		return "", fmt.Errorf("host: the file system of %s is not on a block device (%s)", dir, source)
+	}
+	if strings.HasPrefix(source, "/dev/mapper/") {
+		return source, nil
+	}
+	parent, err := h.Run.Run(ctx, "lsblk", "--noheadings", "--nodeps", "--output", "PKNAME", source)
+	if err != nil {
+		return "", err
+	}
+	if p := strings.TrimSpace(parent); p != "" {
+		return "/dev/" + p, nil
+	}
+	return source, nil
+}
+
+// QuotaMount gives the mount point of dir when user quotas are on there, or "".
+func (h *Host) QuotaMount(ctx context.Context, dir string) string {
+	out, err := h.Run.Run(ctx, "findmnt", "--noheadings", "--output", "TARGET", "--target", dir)
+	if err != nil {
+		return ""
+	}
+	mount := strings.TrimSpace(out)
+	// "quotaon -p" prints "user quota on / (/dev/vda1) is on" and has a non-zero exit status
+	// when a quota is on, so the agent reads only the output.
+	state, _ := h.Run.Run(ctx, "quotaon", "--print-state", "--user", mount)
+	if strings.Contains(state, "is on") {
+		return mount
+	}
+	return ""
+}
+
+// SetDiskQuota limits the disk space of a website user on the file system at mount (FR-202).
+// The hard limit is the plan limit. The soft limit is 95% of it.
+func (h *Host) SetDiskQuota(ctx context.Context, unixUser, mount string, bytes int64) error {
+	if err := validate.UnixUser(unixUser); err != nil {
+		return err
+	}
+	hard := bytes / 1024
+	soft := hard * 95 / 100
+	_, err := h.Run.Run(ctx, "setquota", "--user", unixUser, strconv.FormatInt(soft, 10), strconv.FormatInt(hard, 10), "0", "0", mount)
+	return err
 }

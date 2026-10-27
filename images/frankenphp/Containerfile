@@ -33,6 +33,7 @@ COPY index.php /app/public/index.php
 
 # The container root file system is read-only. Caddy keeps its state in /tmp.
 ENV SERVER_NAME=:8080 \
+    CF_DOCUMENT_ROOT=/app/public \
     XDG_CONFIG_HOME=/tmp/config \
     XDG_DATA_HOME=/tmp/data
 

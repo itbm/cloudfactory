@@ -30,6 +30,9 @@ service AgentService {
   rpc InstallHostUpdates(HostRequest) returns (JobAccepted);
   rpc Reboot(HostRequest) returns (JobAccepted);
   rpc UpdateAgent(UpdateAgentRequest) returns (JobAccepted);
+  rpc PruneBackups(PruneBackupsRequest) returns (JobAccepted);
+  rpc SetSftp(SetSftpRequest) returns (JobAccepted);
+  rpc ConfigureHost(ConfigureHostRequest) returns (JobAccepted);
 
   // Returns the actual state of the server at once. This method does not make a job.
   rpc GetStatus(GetStatusRequest) returns (HostStatus);
@@ -70,6 +73,13 @@ message Website {
   map<string, string> php_ini = 9;
   Limits limits = 10;
   repeated Domain domains = 11;
+  // Runtime "custom": the port in the container that serves HTTP. 0 means 8080 (FR-307).
+  int32 container_port = 12;
+  // Runtime "custom": the start command, as a list of arguments. Empty means the command of the image.
+  repeated string command = 13;
+  // The directory in /app that the web server serves, for example "web". Empty means "public",
+  // and "." means /app itself.
+  string document_root = 14;
 }
 
 message HealthCheck {
@@ -89,6 +99,23 @@ message WebsiteRequest {
   // CreateWebsite: copy the files and databases of this website (a staging copy).
   string copy_from = 6;
   string copy_from_unix_user = 7;
+  // CreateWebsite with copy_from: the databases to copy, and a new user for the copies.
+  repeated DatabaseCopy copy_databases = 8;
+  repeated DatabaseUserCopy copy_users = 9;
+}
+
+// A staging copy copies the database "from" of the source website into the new database "to".
+message DatabaseCopy {
+  string engine = 1;
+  string from = 2;
+  string to = 3;
+}
+
+// A new database user of the staging copy, with read-write access to all copies of its engine.
+message DatabaseUserCopy {
+  string engine = 1;
+  string name = 2;
+  string password = 3;
 }
 
 message DeleteWebsiteRequest {
@@ -195,6 +222,23 @@ message BackupRequest {
   repeated DatabaseRef databases = 5;
   // The restic repository, for example "s3://bucket/path".
   string target = 6;
+  // The environment variables of restic for the object storage, for example AWS_ACCESS_KEY_ID.
+  map<string, string> credentials = 7;
+  // When set, the agent removes the snapshots of the website that the policy does not keep (FR-902).
+  Retention retention = 8;
+}
+
+message Retention {
+  int32 daily = 1;
+  int32 weekly = 2;
+  int32 monthly = 3;
+}
+
+// Removes the data that no snapshot uses from the repository (FR-902).
+message PruneBackupsRequest {
+  string job_id = 1;
+  string target = 2;
+  map<string, string> credentials = 3;
 }
 
 message RestoreRequest {
@@ -210,6 +254,30 @@ message RestoreRequest {
   string target = 7;
   // Scope "database": the SHA-256 hash of the dump at backup time.
   string dump_sha256 = 8;
+  map<string, string> credentials = 9;
+}
+
+// Sets the SFTP access of a website. The owner signs in as the Unix user of the website and sees
+// only the files of the website.
+message SetSftpRequest {
+  string job_id = 1;
+  string website_id = 2;
+  string unix_user = 3;
+  bool enabled = 4;
+  // A new password. Empty: keep the password.
+  string password = 5;
+  // True: remove the password, so that only the SSH keys can sign in.
+  bool remove_password = 6;
+  // The public SSH keys, one OpenSSH key in each item.
+  repeated string authorized_keys = 7;
+}
+
+// Changes the settings of the host. The agent writes the units of all containers again and
+// restarts them.
+message ConfigureHostRequest {
+  string job_id = 1;
+  // "systrap" or "kvm" (FR-310).
+  string gvisor_platform = 2;
 }
 
 message HostRequest {

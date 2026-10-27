@@ -6,6 +6,7 @@ package quadlet
 import (
 	"fmt"
 	"maps"
+	"path"
 	"slices"
 	"strconv"
 	"strings"
@@ -54,7 +55,22 @@ type Website struct {
 	Gvisor     Runtime
 	// Suffix makes a second container name for a runtime change with no stop (FR-1108).
 	Suffix string
+	// DocumentRoot is the directory that the web server serves, for example "/app/public".
+	DocumentRoot string
+	// ContainerPort is the HTTP port in the container. 0 means 8080. Only a custom image sets it.
+	ContainerPort int
+	// Command replaces the start command of a custom image. Empty means the command of the image.
+	Command []string
+	// Stopped is true when the owner stopped the website. Then systemd does not start it at boot.
+	Stopped bool
 }
+
+// Database host names in each website container. They point to the host, where the shared
+// database containers publish their ports (DatabasePort).
+const (
+	MariaDBHost    = "mariadb.internal"
+	PostgreSQLHost = "postgres.internal"
+)
 
 // ContainerName is the name of the Podman container.
 func (w Website) ContainerName() string { return "cf-" + w.UnixUser + w.Suffix }
@@ -98,15 +114,31 @@ func ContainerUnit(w Website) string {
 	line("Pull", "never")
 	line("GlobalArgs", w.Gvisor.GlobalArgs())
 	line("Network", NetworkName(w.UnixUser)+".network")
-	line("PublishPort", "127.0.0.1:"+strconv.Itoa(w.Port)+":8080")
+	containerPort := 8080
+	if w.Runtime == "custom" && w.ContainerPort > 0 {
+		containerPort = w.ContainerPort
+	}
+	line("PublishPort", "127.0.0.1:"+strconv.Itoa(w.Port)+":"+strconv.Itoa(containerPort))
+	// "host-gateway" is the address of the host. The database containers publish their
+	// ports there. The host firewall does not let other computers connect to these ports.
+	line("AddHost", MariaDBHost+":host-gateway")
+	line("AddHost", PostgreSQLHost+":host-gateway")
 	line("Volume", w.SiteDir+":/app:Z")
 	if w.IniFile != "" && w.Runtime != "custom" {
 		line("Volume", w.IniFile+":/usr/local/etc/php/conf.d/zz-cloudfactory.ini:ro,Z")
 	}
 	line("Label", "io.cloudfactory.website="+w.ID)
 	line("Environment", "SERVER_NAME=:8080")
+	root := w.DocumentRoot
+	if root == "" {
+		root = "/app/public"
+	}
+	if w.Runtime != "custom" {
+		line("Environment", "CF_DOCUMENT_ROOT="+root)
+	}
 	if w.Runtime == "frankenphp" && w.WorkerMode {
-		line("Environment", "FRANKENPHP_CONFIG=worker /app/public/index.php")
+		// The value has a space, so it is in quotes. systemd splits Environment at spaces.
+		line("Environment", `"FRANKENPHP_CONFIG=worker `+path.Join(root, "index.php")+`"`)
 	}
 	// Spec section 6.4: no new privileges, and only the capabilities that the container needs.
 	line("NoNewPrivileges", "true")
@@ -124,13 +156,30 @@ func ContainerUnit(w Website) string {
 		line("PodmanArgs", args)
 	}
 
+	if w.Runtime == "custom" && len(w.Command) > 0 {
+		line("Exec", execLine(w.Command))
+	}
+
 	b.WriteString("\n[Service]\n")
 	line("Restart", "always")
 	line("TimeoutStartSec", "300")
 
-	b.WriteString("\n[Install]\n")
-	line("WantedBy", "default.target")
+	if !w.Stopped {
+		b.WriteString("\n[Install]\n")
+		line("WantedBy", "default.target")
+	}
 	return b.String()
+}
+
+// execLine quotes each argument for the Exec line of a unit. systemd splits the line at
+// spaces and reads C-style escapes in double quotes. "%" and "$" are also special in units.
+func execLine(args []string) string {
+	q := make([]string, len(args))
+	for i, a := range args {
+		a = strings.NewReplacer(`\`, `\\`, `"`, `\"`, "%", "%%", "$", "$$").Replace(a)
+		q[i] = `"` + a + `"`
+	}
+	return strings.Join(q, " ")
 }
 
 func podmanLimitArgs(l Limits) string {
@@ -221,6 +270,90 @@ func EdgeUnit(e Edge) string {
 		"WantedBy=default.target",
 		"",
 	}, "\n")
+}
+
+// Database is the input for the unit of a shared database container (FR-501). The user
+// cf-db runs the containers. Each website connects with its own database user.
+type Database struct {
+	// Engine is "mariadb" or "postgresql".
+	Engine string
+	Image  string
+	// DataDir holds the data files on the host.
+	DataDir string
+	// EnvFile holds the password of the PostgreSQL superuser. Only cf-db can read it.
+	EnvFile string
+	Gvisor  Runtime
+}
+
+// DatabaseContainer is the name of the shared container of an engine.
+func DatabaseContainer(engine string) string { return "cf-" + engine }
+
+// DatabasePort is the host port of an engine. The website containers connect to it
+// through the host names MariaDBHost and PostgreSQLHost.
+func DatabasePort(engine string) int {
+	if engine == "postgresql" {
+		return 5432
+	}
+	return 3306
+}
+
+// DatabaseUnit gives the container unit of a shared database.
+//
+// The superuser can connect only through the socket in the container, with "podman exec".
+// The agent uses it. Each connection on the published port needs a password: MariaDB has no
+// root user for TCP, and PostgreSQL uses scram-sha-256 for all TCP connections.
+func DatabaseUnit(d Database) string {
+	name := DatabaseContainer(d.Engine)
+	port := strconv.Itoa(DatabasePort(d.Engine))
+	lines := []string{
+		"[Unit]",
+		"Description=Cloudfactory " + map[string]string{"mariadb": "MariaDB", "postgresql": "PostgreSQL"}[d.Engine] + " service",
+		"",
+		"[Container]",
+		"ContainerName=" + name,
+		"Image=" + d.Image,
+		"Pull=never",
+		"GlobalArgs=" + d.Gvisor.GlobalArgs(),
+		"PublishPort=" + port + ":" + port,
+		"Label=io.cloudfactory.service=" + d.Engine,
+		"NoNewPrivileges=true",
+		"DropCapability=all",
+		// The entry point of the image sets the owner of the data files, and then changes to
+		// the database user.
+		"AddCapability=CHOWN DAC_OVERRIDE FOWNER SETUID SETGID",
+		"ReadOnly=true",
+		"Tmpfs=/tmp",
+	}
+	if d.Engine == "mariadb" {
+		lines = append(lines,
+			"Volume="+d.DataDir+":/var/lib/mysql:Z",
+			"Tmpfs=/run/mysqld",
+			// root@localhost uses the socket in the container. No root user can use TCP.
+			"Environment=MARIADB_RANDOM_ROOT_PASSWORD=1",
+			"Environment=MARIADB_ROOT_HOST=localhost",
+			"Environment=MARIADB_AUTO_UPGRADE=1",
+		)
+	} else {
+		lines = append(lines,
+			"Volume="+d.DataDir+":/var/lib/postgresql/data:Z",
+			"Environment=PGDATA=/var/lib/postgresql/data/pgdata",
+			"Tmpfs=/var/run/postgresql",
+			"ShmSize=256m",
+			"EnvironmentFile="+d.EnvFile,
+			`Environment="POSTGRES_INITDB_ARGS=--auth-host=scram-sha-256 --auth-local=trust"`,
+		)
+	}
+	lines = append(lines,
+		"",
+		"[Service]",
+		"Restart=always",
+		"TimeoutStartSec=900",
+		"",
+		"[Install]",
+		"WantedBy=default.target",
+		"",
+	)
+	return Header + strings.Join(lines, "\n")
 }
 
 // Panel is the input for the units of the panel (FR-1808).

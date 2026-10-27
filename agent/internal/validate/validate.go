@@ -3,6 +3,7 @@
 package validate
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"net/url"
@@ -128,6 +129,62 @@ func PanelURL(s string) error {
 func match(re *regexp.Regexp, s, what string) error {
 	if !re.MatchString(s) {
 		return fmt.Errorf("the %s %q is not valid", what, s)
+	}
+	return nil
+}
+
+var docRootPart = regexp.MustCompile(`^[A-Za-z0-9._-]{1,100}$`)
+
+// DocumentRoot checks a directory in /app, for example "public" or "web/htdocs". "." is /app.
+func DocumentRoot(s string) error {
+	if s == "" || s == "." {
+		return nil
+	}
+	parts := strings.Split(s, "/")
+	if len(parts) > 8 {
+		return fmt.Errorf("the document root %q is not valid", s)
+	}
+	for _, p := range parts {
+		if !docRootPart.MatchString(p) || p == "." || p == ".." {
+			return fmt.Errorf("the document root %q is not valid", s)
+		}
+	}
+	return nil
+}
+
+// Command checks the start command of a custom image: at most 32 arguments with no control
+// characters.
+func Command(args []string) error {
+	if len(args) > 32 {
+		return errors.New("the start command has more than 32 arguments")
+	}
+	for _, a := range args {
+		if a == "" || len(a) > 1024 {
+			return errors.New("each argument of the start command must have 1 to 1024 characters")
+		}
+		for _, r := range a {
+			if r < 0x20 || r == 0x7f {
+				return errors.New("the start command has a control character")
+			}
+		}
+	}
+	return nil
+}
+
+// Port checks a TCP port.
+func Port(p int32) error {
+	if p < 0 || p > 65535 {
+		return fmt.Errorf("the port %d is not valid", p)
+	}
+	return nil
+}
+
+var sshKey = regexp.MustCompile(`^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp256|ecdsa-sha2-nistp384|ecdsa-sha2-nistp521|sk-ssh-ed25519@openssh\.com|sk-ecdsa-sha2-nistp256@openssh\.com) [A-Za-z0-9+/]+={0,3}( [ -~]{0,200})?$`)
+
+// SSHKey checks one public key in the format of authorized_keys, with no options.
+func SSHKey(s string) error {
+	if len(s) > 8192 || !sshKey.MatchString(s) {
+		return errors.New("the SSH key is not a valid public key")
 	}
 	return nil
 }

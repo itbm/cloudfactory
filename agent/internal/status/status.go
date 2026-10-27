@@ -30,11 +30,14 @@ type Collector struct {
 	ProcDir string
 	// DiskPath is the file system to measure, for example "/srv/cloudfactory".
 	DiskPath string
+	// Extra adds the parts of the report that the actions know, for example the use of each
+	// website.
+	Extra func(ctx context.Context, r *panel.Report)
 }
 
 // Report gives the report for the panel. A part that the agent cannot read stays empty.
 func (c Collector) Report(ctx context.Context) panel.Report {
-	r := panel.Report{AgentVersion: c.AgentVersion, PendingUpdates: []any{}, Services: []panel.Service{}, Websites: []panel.Usage{}}
+	r := panel.Report{AgentVersion: c.AgentVersion, PendingUpdates: []any{}, Services: []panel.Service{}, Websites: []panel.Usage{}, Domains: []panel.DomainState{}, Databases: []panel.DatabaseSize{}}
 	if b, err := os.ReadFile("/proc/sys/kernel/osrelease"); err == nil {
 		r.Kernel = strings.TrimSpace(string(b))
 	}
@@ -58,6 +61,9 @@ func (c Collector) Report(ctx context.Context) panel.Report {
 		r.Services = append(r.Services, panel.Service{Name: svc, State: c.state(ctx, "systemctl", "--user", "--machine="+user+"@", "is-active", svc)})
 	}
 	r.Usage = c.hostUse()
+	if c.Extra != nil {
+		c.Extra(ctx, &r)
+	}
 	return r
 }
 

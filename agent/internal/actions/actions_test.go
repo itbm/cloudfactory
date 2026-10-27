@@ -58,6 +58,7 @@ func deps(t *testing.T) (*Deps, *execx.Fake, *fakeEdge) {
 		Reboot:        func(context.Context) error { return nil },
 		DataDir:       filepath.Join(dir, "data"),
 		SecretsDir:    filepath.Join(dir, "secrets"),
+		DBHome:        filepath.Join(dir, "cf-db"),
 	}
 	return d, run, edge
 }
@@ -120,7 +121,7 @@ func TestCreateWebsite(t *testing.T) {
 	d, f, edge := deps(t)
 	w := website("ghcr.io/cloudfactory/frankenphp-php8.4:8.4.0-1")
 	job, err := d.CreateWebsite(&agentv1.WebsiteRequest{JobId: jobID, Website: w})
-	if len(job.Steps) != 6 {
+	if len(job.Steps) != 7 {
 		t.Fatalf("steps = %d, want 6 (the panel shows 6)", len(job.Steps))
 	}
 	if err := run(t)(job, err); err != nil {
@@ -207,8 +208,17 @@ func TestDomainsChangeTheEdgeRoute(t *testing.T) {
 	if got := edge.sites[websiteID].Redirects; len(got) != 0 {
 		t.Errorf("redirects after remove = %v", got)
 	}
-	if err := run(t)(d.AddDomain(&agentv1.DomainRequest{JobId: jobID2, WebsiteId: websiteID, Domain: "x.example", Kind: "primary"})); err == nil {
-		t.Error("a second primary domain was accepted")
+	// A new primary domain makes the old primary domain an alias. Redirects go to the new one.
+	run(t)(d.AddDomain(&agentv1.DomainRequest{JobId: jobID2, WebsiteId: websiteID, Domain: "www.acme.example", Kind: "redirect"}))
+	if err := run(t)(d.AddDomain(&agentv1.DomainRequest{JobId: jobID2, WebsiteId: websiteID, Domain: "x.example", Kind: "primary"})); err != nil {
+		t.Fatal(err)
+	}
+	site, _ := d.State.Get(websiteID)
+	if err := CheckWebsite(site.Website); err != nil {
+		t.Fatal(err)
+	}
+	if got := edge.sites[websiteID]; got.Primary != "x.example" || len(got.Hosts) != 2 || got.Redirects[0] != "www.acme.example" {
+		t.Errorf("edge site = %+v", got)
 	}
 }
 
@@ -371,13 +381,13 @@ func TestDeleteDatabaseRemovesTheGrants(t *testing.T) {
 
 func TestBackupGivesTheSnapshotID(t *testing.T) {
 	d, f, _ := deps(t)
-	os.MkdirAll(filepath.Join(d.Host.Home("acme_x7k2"), "app"), 0o755)
+	os.MkdirAll(d.Host.AppDir("acme_x7k2"), 0o755)
 	f.Rules = []execx.Rule{
 		{Prefix: "restic", Output: `{"message_type":"status"}` + "\n" + `{"message_type":"summary","snapshot_id":"1a2b3c4d","total_bytes_processed":2048}`},
 		{Prefix: "runuser -u cf-db -- env XDG_RUNTIME_DIR=/run/user/1001 podman exec cf-mariadb mariadb-dump", Output: "CREATE TABLE t (id int);\n"},
 	}
 
-	job, err := d.Backup(&agentv1.BackupRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Kind: "manual", Target: "s3://backups/cf", Databases: []*agentv1.DatabaseRef{{Engine: "mariadb", Name: "acme_x7k2_shop"}}})
+	job, err := d.Backup(&agentv1.BackupRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Kind: "manual", Target: "s3:backups/cf", Databases: []*agentv1.DatabaseRef{{Engine: "mariadb", Name: "acme_x7k2_shop"}}})
 	if err := run(t)(job, err); err != nil {
 		t.Fatal(err)
 	}
@@ -391,10 +401,10 @@ func TestBackupGivesTheSnapshotID(t *testing.T) {
 	if info, err := os.Stat(dumps); err != nil || info.Mode().Perm() != 0o700 {
 		t.Errorf("dump directory: %v %v", info, err)
 	}
-	if _, err := os.Stat(filepath.Join(d.Host.Home("acme_x7k2"), ".cloudfactory")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(d.Host.SiteRoot("acme_x7k2"), ".cloudfactory")); !os.IsNotExist(err) {
 		t.Error("the agent wrote a dump in the home of the website")
 	}
-	if !f.Called("restic --repo s3:backups/cf --password-file  --json backup " + filepath.Join(d.Host.Home("acme_x7k2"), "app") + " " + dumps) {
+	if !f.Called("restic --repo s3:backups/cf --password-file  --json --retry-lock 30m backup " + d.Host.AppDir("acme_x7k2") + " " + dumps) {
 		t.Errorf("calls = %v", f.Calls)
 	}
 	if _, err := d.Backup(&agentv1.BackupRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Target: "/tmp"}); err == nil {
@@ -405,13 +415,13 @@ func TestBackupGivesTheSnapshotID(t *testing.T) {
 // CF-05: restic restores into an empty directory of root, and the website user copies the files.
 func TestRestoreCopiesFilesAsTheWebsiteUser(t *testing.T) {
 	d, f, _ := deps(t)
-	err := run(t)(d.Restore(&agentv1.RestoreRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", SnapshotId: "1a2b3c4d", Scope: "file", Item: "/public/index.php", Target: "s3://b/c"}))
+	err := run(t)(d.Restore(&agentv1.RestoreRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", SnapshotId: "1a2b3c4d", Scope: "file", Item: "/public/index.php", Target: "s3:b/c"}))
 	if err != nil {
 		t.Fatal(err)
 	}
 	staging := filepath.Join(d.DataDir, "restore", jobID)
-	app := filepath.Join(d.Host.Home("acme_x7k2"), "app")
-	if !f.Called("restic --repo s3:b/c --password-file  --json restore 1a2b3c4d --target " + staging + " --include " + app + "/public/index.php") {
+	app := d.Host.AppDir("acme_x7k2")
+	if !f.Called("restic --repo s3:b/c --password-file  --json --retry-lock 30m restore 1a2b3c4d --target " + staging + " --include " + app + "/public/index.php") {
 		t.Errorf("calls = %v", f.Calls)
 	}
 	want := "tar --create --file=- --directory=" + staging + app + " -- public/index.php | runuser -u acme_x7k2 -- tar --extract --file=- --directory=" + app + " --no-same-owner"
@@ -437,8 +447,8 @@ func TestRestoreDatabaseChecksTheHashAndUsesATemporaryUser(t *testing.T) {
 	staging := filepath.Join(d.DataDir, "restore", jobID)
 	file := filepath.Join(staging, d.DataDir, "dumps", "acme_x7k2", "mariadb-acme_x7k2_shop.dump")
 	// The fake restic "restores" the dump.
-	f.Rules = []execx.Rule{{Prefix: "restic --repo s3:b/c --password-file  --json restore", Do: func() error { return writeFile(file, dump) }}}
-	req := &agentv1.RestoreRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", SnapshotId: "1a2b3c4d", Scope: "database", Item: "mariadb:acme_x7k2_shop", Target: "s3://b/c", DumpSha256: hex.EncodeToString(sum[:])}
+	f.Rules = []execx.Rule{{Prefix: "restic --repo s3:b/c --password-file  --json --retry-lock 30m restore", Do: func() error { return writeFile(file, dump) }}}
+	req := &agentv1.RestoreRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", SnapshotId: "1a2b3c4d", Scope: "database", Item: "mariadb:acme_x7k2_shop", Target: "s3:b/c", DumpSha256: hex.EncodeToString(sum[:])}
 	if err := run(t)(d.Restore(req)); err != nil {
 		t.Fatal(err)
 	}
@@ -460,7 +470,7 @@ func TestRestoreDatabaseChecksTheHashAndUsesATemporaryUser(t *testing.T) {
 	}
 
 	// A dump that the hash does not agree with is not restored.
-	f.Rules = []execx.Rule{{Prefix: "restic --repo s3:b/c --password-file  --json restore", Do: func() error { return writeFile(file, []byte("DROP DATABASE mysql;\n")) }}}
+	f.Rules = []execx.Rule{{Prefix: "restic --repo s3:b/c --password-file  --json --retry-lock 30m restore", Do: func() error { return writeFile(file, []byte("DROP DATABASE mysql;\n")) }}}
 	f.Calls, f.Inputs = nil, nil
 	if err := run(t)(d.Restore(req)); err == nil || !strings.Contains(err.Error(), "hash") {
 		t.Fatalf("err = %v", err)
@@ -490,7 +500,7 @@ func TestStagingCopyCopiesAsTheWebsiteUsers(t *testing.T) {
 	if err := run(t)(d.CreateWebsite(&agentv1.WebsiteRequest{JobId: jobID, Website: w, CopyFrom: "01JBQ3Z5K8N6T4W2X9Y7R5P3M9", CopyFromUnixUser: "acme_x7k2"})); err != nil {
 		t.Fatal(err)
 	}
-	want := "runuser -u acme_x7k2 -- tar --create --file=- --directory=" + filepath.Join(d.Host.Home("acme_x7k2"), "app") + " -- . | runuser -u staging_ab12 -- tar --extract"
+	want := "runuser -u acme_x7k2 -- tar --create --file=- --directory=" + d.Host.AppDir("acme_x7k2") + " -- . | runuser -u staging_ab12 -- tar --extract"
 	if !f.Called(want) || f.Called("cp ") || f.Called("chown -R") {
 		t.Errorf("calls = %v", f.Calls)
 	}
@@ -536,7 +546,7 @@ func TestAWebsiteCanStartWithNoDomain(t *testing.T) {
 
 func TestRestoreRefusesAPathOutsideTheWebsite(t *testing.T) {
 	d, _, _ := deps(t)
-	_, err := d.Restore(&agentv1.RestoreRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", SnapshotId: "1a2b3c4d", Scope: "file", Item: "/../../etc/shadow", Target: "s3://b/c"})
+	_, err := d.Restore(&agentv1.RestoreRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", SnapshotId: "1a2b3c4d", Scope: "file", Item: "/../../etc/shadow", Target: "s3:b/c"})
 	if err == nil {
 		t.Error("a path outside the website was accepted")
 	}

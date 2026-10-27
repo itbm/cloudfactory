@@ -58,6 +58,26 @@ type Report struct {
 	Services       []Service `json:"services"`
 	Usage          *HostUse  `json:"usage,omitempty"`
 	Websites       []Usage   `json:"websites"`
+	// Domains are the DNS and certificate state of each domain on this server.
+	Domains []DomainState `json:"domains"`
+	// Databases are the sizes of the databases in the shared database containers.
+	Databases []DatabaseSize `json:"databases"`
+}
+
+// DomainState is what the agent sees for one domain (FR-402, FR-403).
+type DomainState struct {
+	Name          string `json:"name"`
+	DNSPointsHere bool   `json:"dnsPointsHere"`
+	// Certificate is "valid", "pending", "failed" or "expired".
+	Certificate string `json:"certificate"`
+	ExpiresAt   string `json:"expiresAt,omitempty"`
+}
+
+// DatabaseSize is the size of one database.
+type DatabaseSize struct {
+	Engine    string `json:"engine"`
+	Name      string `json:"name"`
+	SizeBytes int64  `json:"sizeBytes"`
 }
 
 // HostUse is the resource use of the host, in percent (FR-1301).

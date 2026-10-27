@@ -11,7 +11,7 @@
 }
 
 {$SERVER_NAME::8080} {
-	root * /app/public
+	root * {$CF_DOCUMENT_ROOT:/app/public}
 	encode zstd br gzip
 	log {
 		output stdout

@@ -1,6 +1,7 @@
 // Package jobs runs the jobs from the panel. A job is a list of steps. The runner reports
 // each step to the panel, and keeps the result on disk, so that a job that the panel sends
-// two times runs only once.
+// two times runs only once. When the agent stops during a job, the panel sends the job again
+// (it checks the jobs that take too long), and the job runs again.
 package jobs
 
 import (
@@ -84,11 +85,12 @@ func (r *Runner) Submit(job Job) (duplicate bool, err error) {
 		r.mu.Unlock()
 		return true, nil
 	}
-	if rec, err := r.load(job.ID); err == nil {
+	// A record of a finished job: report the result again. A record that is not finished is
+	// from a job that stopped when the agent stopped. This agent does not run it (it is not
+	// in r.known), so the job runs again from its first step. Each step is idempotent.
+	if rec, err := r.load(job.ID); err == nil && (rec.State == "succeeded" || rec.State == "failed") {
 		r.mu.Unlock()
-		if rec.State == "succeeded" || rec.State == "failed" {
-			go r.Reporter.JobEvent(context.Background(), job.ID, panel.Event{State: rec.State, Step: rec.Step, Error: rec.Error, Result: rec.Result})
-		}
+		go r.Reporter.JobEvent(context.Background(), job.ID, panel.Event{State: rec.State, Step: rec.Step, Error: rec.Error, Result: rec.Result})
 		return true, nil
 	}
 	r.known[job.ID] = true

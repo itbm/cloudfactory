@@ -8,9 +8,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
 	agentv1 "github.com/itbm/cloudfactory/agent/gen/cloudfactory/agent/v1"
@@ -34,8 +36,17 @@ func dbContainer(engine string) (string, error) {
 	return "", fmt.Errorf("the database engine %q is not valid", engine)
 }
 
-// sql sends statements on stdin to the database client in the shared container.
+// sql sends statements on stdin to the database client in the shared container. It starts the
+// container first if it does not operate.
 func (d *Deps) sql(ctx context.Context, engine, statements string) (string, error) {
+	if err := d.EnsureDatabaseService(ctx, engine); err != nil {
+		return "", err
+	}
+	return d.sqlNow(ctx, engine, statements)
+}
+
+// sqlNow is sql with no start of the container.
+func (d *Deps) sqlNow(ctx context.Context, engine, statements string) (string, error) {
 	c, err := dbContainer(engine)
 	if err != nil {
 		return "", err
@@ -414,9 +425,121 @@ func (d *Deps) dropDatabase(ctx context.Context, engine, name string) error {
 
 var targetRE = regexp.MustCompile(`^(s3|b2|azure|gs):\S+$`)
 
-func (d *Deps) restic(ctx context.Context, target string, args ...string) (string, error) {
-	base := []string{"--repo", target, "--password-file", d.ResticPasswordFile, "--json"}
-	return d.Run.Run(ctx, "restic", append(base, args...)...)
+// resticEnv are the environment variables of restic that the panel can set for the object
+// storage. The agent refuses all other names, so that the panel cannot change how restic runs.
+var resticEnv = map[string]bool{
+	"AWS_ACCESS_KEY_ID": true, "AWS_SECRET_ACCESS_KEY": true, "AWS_DEFAULT_REGION": true,
+	"B2_ACCOUNT_ID": true, "B2_ACCOUNT_KEY": true,
+	"AZURE_ACCOUNT_NAME": true, "AZURE_ACCOUNT_KEY": true, "AZURE_ACCOUNT_SAS": true,
+	"GOOGLE_PROJECT_ID": true, "GOOGLE_ACCESS_TOKEN": true,
+}
+
+// checkCredentials checks the names and the values of the object storage credentials.
+func checkCredentials(creds map[string]string) error {
+	for k, v := range creds {
+		if !resticEnv[k] {
+			return fmt.Errorf("the backup credential %q is not allowed", k)
+		}
+		if len(v) > 4096 || strings.ContainsAny(v, "\x00\n\r") {
+			return fmt.Errorf("the backup credential %s is not valid", k)
+		}
+	}
+	return nil
+}
+
+// repo is a restic repository and the credentials of its object storage.
+type repo struct {
+	target string
+	creds  map[string]string
+}
+
+func newRepo(target string, creds map[string]string) (repo, error) {
+	target = strings.Replace(target, "://", ":", 1)
+	if !targetRE.MatchString(target) {
+		return repo{}, errors.New("no valid backup target is set; an administrator sets it in Backups")
+	}
+	if err := checkCredentials(creds); err != nil {
+		return repo{}, err
+	}
+	return repo{target: target, creds: creds}, nil
+}
+
+// restic runs restic on the repository. The credentials go in the environment, not in the
+// arguments. restic waits for a lock of a different job, for example a prune.
+func (d *Deps) restic(ctx context.Context, r repo, args ...string) (string, error) {
+	base := []string{"--repo", r.target, "--password-file", d.ResticPasswordFile, "--json", "--retry-lock", "30m"}
+	env := make([]string, 0, len(r.creds))
+	for _, k := range slices.Sorted(maps.Keys(r.creds)) {
+		env = append(env, k+"="+r.creds[k])
+	}
+	return d.Run.RunEnv(ctx, env, "", "restic", append(base, args...)...)
+}
+
+// ensureRepo makes the repository when it does not exist, for example in a new bucket.
+// restic gives exit code 10 when there is no repository at the target.
+func (d *Deps) ensureRepo(ctx context.Context, r repo) error {
+	_, err := d.restic(ctx, r, "cat", "config")
+	if err == nil {
+		return nil
+	}
+	if !strings.Contains(err.Error(), "exit status 10") && !strings.Contains(err.Error(), "repository does not exist") {
+		return err
+	}
+	_, err = d.restic(ctx, r, "init")
+	return err
+}
+
+// forget removes the snapshots of a website that the retention policy does not keep
+// (FR-902). It gives the IDs of the removed snapshots. The policy is for all snapshots of the
+// website together. The data stays in the repository until PruneBackups.
+func (d *Deps) forget(ctx context.Context, r repo, websiteID string, keep *agentv1.Retention) ([]string, error) {
+	if keep.GetDaily() <= 0 && keep.GetWeekly() <= 0 && keep.GetMonthly() <= 0 {
+		return nil, nil
+	}
+	out, err := d.restic(ctx, r, "forget", "--tag", "website="+websiteID, "--group-by", "",
+		"--keep-daily", fmt.Sprint(keep.GetDaily()), "--keep-weekly", fmt.Sprint(keep.GetWeekly()), "--keep-monthly", fmt.Sprint(keep.GetMonthly()))
+	if err != nil {
+		return nil, err
+	}
+	var groups []struct {
+		Remove []struct {
+			ID string `json:"id"`
+		} `json:"remove"`
+	}
+	if err := json.Unmarshal([]byte(lastJSONLine(out)), &groups); err != nil {
+		return nil, fmt.Errorf("read the output of restic forget: %w", err)
+	}
+	ids := []string{}
+	for _, g := range groups {
+		for _, s := range g.Remove {
+			ids = append(ids, s.ID)
+		}
+	}
+	return ids, nil
+}
+
+// lastJSONLine gives the last line of the output that is not empty.
+func lastJSONLine(out string) string {
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	return lines[len(lines)-1]
+}
+
+// PruneBackups removes the data that no snapshot uses from the repository (FR-902). The panel
+// sends it to one server after the nightly backups.
+func (d *Deps) PruneBackups(req *agentv1.PruneBackupsRequest) (jobs.Job, error) {
+	r, err := newRepo(req.GetTarget(), req.GetCredentials())
+	if err != nil {
+		return jobs.Job{}, err
+	}
+	return jobs.Job{ID: req.GetJobId(), Key: "backup-repository", Steps: []jobs.Step{
+		{Name: "Remove unused data", Do: func(ctx context.Context) error {
+			if err := d.ensureRepo(ctx, r); err != nil {
+				return err
+			}
+			_, err := d.restic(ctx, r, "prune")
+			return err
+		}},
+	}}, nil
 }
 
 // dumpDir holds the database dumps of one website. Only root can read it, and the website
@@ -431,9 +554,9 @@ func (d *Deps) Backup(req *agentv1.BackupRequest) (jobs.Job, error) {
 	if err := errors.Join(validate.ID(req.GetWebsiteId()), validate.UnixUser(req.GetUnixUser())); err != nil {
 		return jobs.Job{}, err
 	}
-	target := strings.Replace(req.GetTarget(), "://", ":", 1)
-	if !targetRE.MatchString(target) {
-		return jobs.Job{}, fmt.Errorf("the backup target %q is not valid", req.GetTarget())
+	r, err := newRepo(req.GetTarget(), req.GetCredentials())
+	if err != nil {
+		return jobs.Job{}, err
 	}
 	for _, db := range req.GetDatabases() {
 		if _, err := dbContainer(db.GetEngine()); err != nil {
@@ -443,11 +566,12 @@ func (d *Deps) Backup(req *agentv1.BackupRequest) (jobs.Job, error) {
 			return jobs.Job{}, err
 		}
 	}
-	app := filepath.Join(d.Host.Home(req.GetUnixUser()), "app")
+	app := d.Host.AppDir(req.GetUnixUser())
 	dumps := d.dumpDir(req.GetUnixUser())
 	hashes := map[string]any{}
 	var snapshotID string
 	var size float64
+	forgotten := []string{}
 	return jobs.Job{ID: req.GetJobId(), Key: req.GetWebsiteId(), Steps: []jobs.Step{
 		{Name: "Snapshot files", Do: func(context.Context) error {
 			_, err := os.Stat(app)
@@ -475,7 +599,10 @@ func (d *Deps) Backup(req *agentv1.BackupRequest) (jobs.Job, error) {
 			return nil
 		}},
 		{Name: "Upload to object storage", Do: func(ctx context.Context) error {
-			out, err := d.restic(ctx, target, "backup", app, dumps, "--tag", "website="+req.GetWebsiteId(), "--tag", "kind="+req.GetKind())
+			if err := d.ensureRepo(ctx, r); err != nil {
+				return err
+			}
+			out, err := d.restic(ctx, r, "backup", app, dumps, "--tag", "website="+req.GetWebsiteId(), "--tag", "kind="+req.GetKind())
 			if err != nil {
 				return err
 			}
@@ -485,8 +612,16 @@ func (d *Deps) Backup(req *agentv1.BackupRequest) (jobs.Job, error) {
 			}
 			return nil
 		}},
+		{Name: "Apply retention", Do: func(ctx context.Context) error {
+			if req.GetRetention() == nil {
+				return nil
+			}
+			ids, err := d.forget(ctx, r, req.GetWebsiteId(), req.GetRetention())
+			forgotten = ids
+			return err
+		}},
 	}, Result: func() map[string]any {
-		return map[string]any{"snapshotId": snapshotID, "sizeBytes": int64(size), "dumps": hashes}
+		return map[string]any{"snapshotId": snapshotID, "sizeBytes": int64(size), "dumps": hashes, "forgotten": forgotten}
 	}}, nil
 }
 
@@ -494,6 +629,9 @@ func (d *Deps) Backup(req *agentv1.BackupRequest) (jobs.Job, error) {
 // PostgreSQL dump uses the custom format, which pg_restore reads. It has no psql commands.
 func (d *Deps) dump(ctx context.Context, engine, name string) (string, error) {
 	c, _ := dbContainer(engine)
+	if err := d.EnsureDatabaseService(ctx, engine); err != nil {
+		return "", err
+	}
 	uid, err := d.Host.LookupUID(DBUser)
 	if err != nil {
 		return "", err
@@ -539,11 +677,11 @@ func (d *Deps) Restore(req *agentv1.RestoreRequest) (jobs.Job, error) {
 	if !regexp.MustCompile(`^[0-9a-f]{8,64}$`).MatchString(req.GetSnapshotId()) {
 		return jobs.Job{}, errors.New("the snapshot ID is not valid")
 	}
-	target := strings.Replace(req.GetTarget(), "://", ":", 1)
-	if !targetRE.MatchString(target) {
-		return jobs.Job{}, errors.New("no backup target is set")
+	r, err := newRepo(req.GetTarget(), req.GetCredentials())
+	if err != nil {
+		return jobs.Job{}, err
 	}
-	app := filepath.Join(d.Host.Home(unixUser), "app")
+	app := d.Host.AppDir(unixUser)
 	// include is the absolute path in the snapshot. rel is the path in the app directory.
 	var include, rel string
 	var dbEngine, dbName string
@@ -575,7 +713,7 @@ func (d *Deps) Restore(req *agentv1.RestoreRequest) (jobs.Job, error) {
 	cleanup := func(context.Context) { _ = os.RemoveAll(staging) }
 	return jobs.Job{ID: req.GetJobId(), Key: req.GetWebsiteId(), Steps: []jobs.Step{
 		{Name: "Download snapshot", Do: func(ctx context.Context) error {
-			_, err := d.restic(ctx, target, "snapshots", req.GetSnapshotId())
+			_, err := d.restic(ctx, r, "snapshots", req.GetSnapshotId())
 			return err
 		}},
 		{Name: "Restore", Do: func(ctx context.Context) error {
@@ -586,7 +724,7 @@ func (d *Deps) Restore(req *agentv1.RestoreRequest) (jobs.Job, error) {
 			if err := os.MkdirAll(staging, 0o700); err != nil {
 				return err
 			}
-			if _, err := d.restic(ctx, target, "restore", req.GetSnapshotId(), "--target", staging, "--include", include); err != nil {
+			if _, err := d.restic(ctx, r, "restore", req.GetSnapshotId(), "--target", staging, "--include", include); err != nil {
 				return err
 			}
 			if dbName == "" {

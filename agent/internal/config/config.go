@@ -43,6 +43,9 @@ type Config struct {
 	ReleaseURL string `json:"releaseUrl"`
 	// ReportSeconds is the time between two host reports.
 	ReportSeconds int `json:"reportSeconds"`
+	// PublicAddresses are the public IP addresses of a server behind NAT, for example on a
+	// cloud provider. The DNS check accepts them as addresses of this server.
+	PublicAddresses []string `json:"publicAddresses,omitempty"`
 }
 
 // Defaults gives the values for the settings that the file does not set.

@@ -35,7 +35,8 @@ COPY index.php /app/public/index.php
 
 # The container root file system is read-only. Apache and PHP-FPM keep their state in /tmp.
 ENV APACHE_RUN_DIR=/tmp/apache APACHE_PID_FILE=/tmp/apache/apache2.pid APACHE_LOCK_DIR=/tmp/apache \
-    APACHE_LOG_DIR=/tmp/apache APACHE_RUN_USER=www-data APACHE_RUN_GROUP=www-data
+    APACHE_LOG_DIR=/tmp/apache APACHE_RUN_USER=www-data APACHE_RUN_GROUP=www-data \
+    CF_DOCUMENT_ROOT=/app/public
 
 EXPOSE 8080
 CMD ["/usr/local/bin/cloudfactory-start"]

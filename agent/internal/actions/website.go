@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"slices"
+	"strings"
 	"time"
 
 	"google.golang.org/protobuf/proto"
@@ -24,7 +26,8 @@ func CheckWebsite(w *agentv1.Website) error {
 	if w == nil {
 		return errors.New("the request has no website")
 	}
-	errs := []error{validate.ID(w.GetId()), validate.UnixUser(w.GetUnixUser()), validate.Image(w.GetImage()), validate.Digest(w.GetImageDigest())}
+	errs := []error{validate.ID(w.GetId()), validate.UnixUser(w.GetUnixUser()), validate.Image(w.GetImage()), validate.Digest(w.GetImageDigest()),
+		validate.DocumentRoot(w.GetDocumentRoot()), validate.Command(w.GetCommand()), validate.Port(w.GetContainerPort())}
 	switch w.GetRuntime() {
 	case "frankenphp", "apache-php-fpm", "custom":
 	default:
@@ -73,6 +76,14 @@ func primaryDomain(w *agentv1.Website) string {
 	return ""
 }
 
+// documentRoot gives the directory in the container that the web server serves.
+func documentRoot(w *agentv1.Website) string {
+	if w.GetDocumentRoot() == "" {
+		return "/app/public"
+	}
+	return path.Join("/app", w.GetDocumentRoot())
+}
+
 func (d *Deps) iniPath(unixUser, suffix string) string {
 	return filepath.Join(d.Host.ConfigDir(unixUser), "php"+suffix+".ini")
 }
@@ -81,8 +92,9 @@ func (d *Deps) unit(w *agentv1.Website, port int, suffix string) quadlet.Website
 	l := w.GetLimits()
 	return quadlet.Website{
 		ID: w.GetId(), Name: primaryDomain(w), UnixUser: w.GetUnixUser(), Image: imageRef(w), Port: port,
-		SiteDir: filepath.Join(d.Host.Home(w.GetUnixUser()), "app"), IniFile: d.iniPath(w.GetUnixUser(), suffix),
-		Runtime: w.GetRuntime(), WorkerMode: w.GetWorkerMode(), Gvisor: d.Gvisor, Suffix: suffix,
+		SiteDir: d.Host.AppDir(w.GetUnixUser()), IniFile: d.iniPath(w.GetUnixUser(), suffix),
+		Runtime: w.GetRuntime(), WorkerMode: w.GetWorkerMode(), Gvisor: d.runtime(), Suffix: suffix,
+		DocumentRoot: documentRoot(w), ContainerPort: int(w.GetContainerPort()), Command: w.GetCommand(),
 		Limits: quadlet.Limits{VCPUs: l.GetVcpus(), MemoryBytes: l.GetMemoryBytes(), Processes: l.GetProcesses(), DiskIOBytesPerSecond: l.GetDiskIoBytesPerSecond(), BlockDevice: d.BlockDevice},
 	}
 }
@@ -212,6 +224,9 @@ func (d *Deps) CreateWebsite(req *agentv1.WebsiteRequest) (jobs.Job, error) {
 			return jobs.Job{}, err
 		}
 	}
+	if err := checkCopies(req); err != nil {
+		return jobs.Job{}, err
+	}
 	user := w.GetUnixUser()
 	var port int
 	var dnsHere bool
@@ -220,18 +235,24 @@ func (d *Deps) CreateWebsite(req *agentv1.WebsiteRequest) (jobs.Job, error) {
 			if err := d.Host.EnsureUser(ctx, user); err != nil {
 				return err
 			}
+			if err := d.applyDiskQuota(ctx, user, w.GetLimits()); err != nil {
+				return err
+			}
 			if req.GetCopyFrom() == "" {
 				return nil
 			}
 			// A staging copy (FR-205) starts with the files of the source website. CF-05: the
 			// source user reads and the new user writes, so root never follows a link that a
 			// tenant made.
-			from := filepath.Join(d.Host.Home(req.GetCopyFromUnixUser()), "app")
-			to := filepath.Join(d.Host.Home(user), "app")
+			from := d.Host.AppDir(req.GetCopyFromUnixUser())
+			to := d.Host.AppDir(user)
 			return d.Run.Pipe(ctx,
 				[]string{"runuser", "-u", req.GetCopyFromUnixUser(), "--", "tar", "--create", "--file=-", "--directory=" + from, "--", "."},
 				[]string{"runuser", "-u", user, "--", "tar", "--extract", "--file=-", "--directory=" + to, "--no-same-owner", "--preserve-permissions"},
 			)
+		}},
+		{Name: "Copy databases", Do: func(ctx context.Context) error {
+			return d.copyDatabases(ctx, req)
 		}},
 		{Name: "Create container network", Do: func(ctx context.Context) error {
 			if _, err := d.Host.WriteUnit(user, quadlet.NetworkName(user)+".network", quadlet.NetworkUnit(user)); err != nil {
@@ -278,6 +299,95 @@ func (d *Deps) CreateWebsite(req *agentv1.WebsiteRequest) (jobs.Job, error) {
 	}, Result: func() map[string]any { return map[string]any{"port": port, "dnsPointsHere": dnsHere} }}, nil
 }
 
+// checkCopies checks the databases and the users of a staging copy. Each source database
+// belongs to the source website, and each new name starts with the Unix user of the copy.
+func checkCopies(req *agentv1.WebsiteRequest) error {
+	if (len(req.GetCopyDatabases()) > 0 || len(req.GetCopyUsers()) > 0) && req.GetCopyFrom() == "" {
+		return errors.New("only a staging copy copies databases")
+	}
+	var errs []error
+	user := req.GetWebsite().GetUnixUser()
+	for _, c := range req.GetCopyDatabases() {
+		if _, err := dbContainer(c.GetEngine()); err != nil {
+			errs = append(errs, err)
+		}
+		errs = append(errs, validate.TenantDatabaseName(req.GetCopyFromUnixUser(), c.GetFrom()), validate.TenantDatabaseName(user, c.GetTo()))
+	}
+	for _, u := range req.GetCopyUsers() {
+		if _, err := dbContainer(u.GetEngine()); err != nil {
+			errs = append(errs, err)
+		}
+		errs = append(errs, validate.TenantDatabaseName(user, u.GetName()))
+		if !passwordRE.MatchString(u.GetPassword()) {
+			errs = append(errs, errors.New("the database password must have 16 to 64 letters and digits"))
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// copyDatabases copies each database of the source website into a new database of the staging
+// copy (FR-205), and makes the users of the copy. The copy never uses the databases of the
+// source. The dump loads as a temporary user with access to the new database only (CF-06).
+func (d *Deps) copyDatabases(ctx context.Context, req *agentv1.WebsiteRequest) error {
+	host, err := d.mariaHost("website")
+	if err != nil {
+		return err
+	}
+	for _, c := range req.GetCopyDatabases() {
+		engine := c.GetEngine()
+		if engine == "mariadb" {
+			found, err := d.exists(ctx, engine, fmt.Sprintf("SHOW DATABASES LIKE '%s';\n", strings.ReplaceAll(c.GetTo(), "_", `\\_`)))
+			if err != nil {
+				return err
+			}
+			// A job that runs again after a restart finds the database of its first run.
+			if !found {
+				if _, err := d.sql(ctx, engine, fmt.Sprintf("CREATE DATABASE `%s` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;\n", c.GetTo())); err != nil {
+					return err
+				}
+			}
+		} else {
+			found, err := d.exists(ctx, engine, fmt.Sprintf("SELECT 1 FROM pg_database WHERE datname = '%s';\n", c.GetTo()))
+			if err != nil {
+				return err
+			}
+			if !found {
+				if _, err := d.sql(ctx, engine, pgCreateDatabase(c.GetTo())); err != nil {
+					return err
+				}
+			}
+		}
+		dump, err := d.dump(ctx, engine, c.GetFrom())
+		if err != nil {
+			return err
+		}
+		if err := d.restoreDump(ctx, engine, c.GetTo(), []byte(dump)); err != nil {
+			return fmt.Errorf("copy %s to %s: %w", c.GetFrom(), c.GetTo(), err)
+		}
+	}
+	for _, u := range req.GetCopyUsers() {
+		engine := u.GetEngine()
+		if err := d.dropUser(ctx, engine, u.GetName()); err != nil {
+			return err
+		}
+		if err := d.createUser(ctx, engine, u.GetName(), u.GetPassword(), host, "website"); err != nil {
+			return err
+		}
+		var b strings.Builder
+		for _, c := range req.GetCopyDatabases() {
+			if c.GetEngine() == engine {
+				b.WriteString(grantSQL(engine, u.GetName(), host, c.GetTo(), "readwrite"))
+			}
+		}
+		if b.Len() > 0 {
+			if _, err := d.sql(ctx, engine, b.String()); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 // SetRuntime changes the image or the PHP settings with no stop (FR-1108). The agent starts
 // a second container, checks it, sends traffic to it, and only then stops the old container.
 // If a check fails, the old container continues to serve the website (FR-1105).
@@ -305,6 +415,25 @@ func (d *Deps) SetRuntime(req *agentv1.WebsiteRequest) (jobs.Job, error) {
 			return err
 		}},
 		{Name: "Start new container on a copy", Do: func(ctx context.Context) error {
+			if old.Stopped {
+				// Batch 1, finding 7: a stopped website stays stopped. The agent writes the new
+				// unit, and the website uses it at the next start.
+				newPort, newSuffix = old.Port, old.Suffix
+				u := d.unit(w, newPort, newSuffix)
+				u.Stopped = true
+				if w.GetRuntime() != "custom" {
+					if _, err := host.WriteFile(u.IniFile, quadlet.PHPIni(w.GetPhpVersion(), w.GetExtensions(), w.GetPhpIni()), 0o644); err != nil {
+						return err
+					}
+				}
+				if _, err := d.Host.WriteUnit(user, u.UnitName(), quadlet.ContainerUnit(u)); err != nil {
+					return err
+				}
+				if _, err := d.Host.Systemctl(ctx, user, "daemon-reload"); err != nil {
+					return err
+				}
+				return d.State.Put(&Site{ID: w.GetId(), UnixUser: user, Port: newPort, Suffix: newSuffix, Website: w, Stopped: true})
+			}
 			newSuffix = "-b"
 			if old.Suffix == "-b" {
 				newSuffix = ""
@@ -316,9 +445,15 @@ func (d *Deps) SetRuntime(req *agentv1.WebsiteRequest) (jobs.Job, error) {
 			return d.startContainer(ctx, w, newPort, newSuffix)
 		}},
 		{Name: "Health check", Do: func(ctx context.Context) error {
+			if old.Stopped {
+				return nil
+			}
 			return d.waitReady(ctx, newPort, hostname)
 		}},
 		{Name: "Switch traffic", Do: func(ctx context.Context) error {
+			if old.Stopped {
+				return nil
+			}
 			if err := d.Edge.Apply(ctx, d.site(w, newPort)); err != nil {
 				return err
 			}
@@ -326,13 +461,16 @@ func (d *Deps) SetRuntime(req *agentv1.WebsiteRequest) (jobs.Job, error) {
 			return d.watch(ctx, newPort, hostname, req.GetHealthCheck())
 		}},
 		{Name: "Stop old container", Do: func(ctx context.Context) error {
+			if old.Stopped {
+				return nil
+			}
 			if err := d.State.Put(&Site{ID: w.GetId(), UnixUser: user, Port: newPort, Suffix: newSuffix, Website: w}); err != nil {
 				return err
 			}
 			return d.stopContainer(ctx, user, old.Suffix)
 		}},
 	}, OnFailure: func(ctx context.Context) {
-		if old == nil || newPort == 0 {
+		if old == nil || newPort == 0 || old.Stopped {
 			return
 		}
 		if switched {
@@ -394,6 +532,9 @@ func (d *Deps) DeleteWebsite(req *agentv1.DeleteWebsiteRequest) (jobs.Job, error
 			if err := os.RemoveAll(d.dumpDir(user)); err != nil {
 				return err
 			}
+			if err := os.Remove(filepath.Join(d.sftpKeysDir(), user+".keys")); err != nil && !os.IsNotExist(err) {
+				return err
+			}
 			if err := d.Host.RemoveUser(ctx, user); err != nil {
 				return err
 			}
@@ -421,9 +562,21 @@ func (d *Deps) SetWebsitePower(req *agentv1.SetWebsitePowerRequest) (jobs.Job, e
 			if site == nil {
 				return errors.New("the agent does not know this website")
 			}
-			u := quadlet.Website{UnixUser: site.UnixUser, Suffix: site.Suffix}
-			_, err = d.Host.Systemctl(ctx, site.UnixUser, action, u.ServiceName())
-			return err
+			// The unit of a stopped website has no [Install] section, so that systemd does not
+			// start it at boot.
+			site.Stopped = action == "stop"
+			u := d.unit(site.Website, site.Port, site.Suffix)
+			u.Stopped = site.Stopped
+			if _, err := d.Host.WriteUnit(site.UnixUser, u.UnitName(), quadlet.ContainerUnit(u)); err != nil {
+				return err
+			}
+			if _, err := d.Host.Systemctl(ctx, site.UnixUser, "daemon-reload"); err != nil {
+				return err
+			}
+			if _, err = d.Host.Systemctl(ctx, site.UnixUser, action, u.ServiceName()); err != nil {
+				return err
+			}
+			return d.State.Put(site)
 		}},
 		{Name: "Health check", Do: func(ctx context.Context) error {
 			if action == "stop" {
@@ -456,20 +609,41 @@ func (d *Deps) SetLimits(req *agentv1.SetLimitsRequest) (jobs.Job, error) {
 			w := proto.Clone(site.Website).(*agentv1.Website)
 			w.Limits = l
 			u := d.unit(w, site.Port, site.Suffix)
+			u.Stopped = site.Stopped
 			if _, err := d.Host.WriteUnit(site.UnixUser, u.UnitName(), quadlet.ContainerUnit(u)); err != nil {
 				return err
 			}
 			if _, err := d.Host.Systemctl(ctx, site.UnixUser, "daemon-reload"); err != nil {
 				return err
 			}
-			mem := fmt.Sprint(l.GetMemoryBytes())
-			if _, err := d.Host.Podman(ctx, site.UnixUser, "update", "--cpus="+fmt.Sprint(l.GetVcpus()), "--memory="+mem, "--memory-swap="+mem, "--pids-limit="+fmt.Sprint(l.GetProcesses()), u.ContainerName()); err != nil {
+			if err := d.applyDiskQuota(ctx, site.UnixUser, l); err != nil {
 				return err
+			}
+			// A stopped website has no container. It gets the limits from the unit at the next start.
+			if !site.Stopped {
+				mem := fmt.Sprint(l.GetMemoryBytes())
+				args := []string{"update", "--cpus=" + fmt.Sprint(l.GetVcpus()), "--memory=" + mem, "--memory-swap=" + mem, "--pids-limit=" + fmt.Sprint(l.GetProcesses())}
+				if io := l.GetDiskIoBytesPerSecond(); io > 0 && d.BlockDevice != "" {
+					v := d.BlockDevice + ":" + fmt.Sprint(io)
+					args = append(args, "--device-read-bps="+v, "--device-write-bps="+v)
+				}
+				if _, err := d.Host.Podman(ctx, site.UnixUser, append(args, u.ContainerName())...); err != nil {
+					return err
+				}
 			}
 			site.Website = w
 			return d.State.Put(site)
 		}},
 	}}, nil
+}
+
+// applyDiskQuota sets the disk limit of a website user (FR-202), when the server has user
+// quotas. The status report tells the panel when it does not.
+func (d *Deps) applyDiskQuota(ctx context.Context, unixUser string, l *agentv1.Limits) error {
+	if d.QuotaMount == "" || l.GetDiskBytes() <= 0 {
+		return nil
+	}
+	return d.Host.SetDiskQuota(ctx, unixUser, d.QuotaMount, l.GetDiskBytes())
 }
 
 // AddDomain and RemoveDomain change the domains of a website (FR-401 to FR-403).
@@ -504,9 +678,13 @@ func (d *Deps) changeDomain(req *agentv1.DomainRequest, add bool) (jobs.Job, err
 			}
 		}
 		// The panel adds the primary domain after the owner verifies it (CF-03). A website
-		// has only one primary domain.
-		if add && req.GetKind() == "primary" && primaryDomain(&agentv1.Website{Domains: domains}) != "" {
-			return errors.New("the website has a primary domain")
+		// has only one primary domain: a new primary domain makes the old one an alias.
+		if add && req.GetKind() == "primary" {
+			for i, dom := range domains {
+				if dom.GetKind() == "primary" {
+					domains[i] = &agentv1.Domain{Name: dom.GetName(), Kind: "alias"}
+				}
+			}
 		}
 		if add {
 			domains = append(domains, &agentv1.Domain{Name: req.GetDomain(), Kind: req.GetKind()})

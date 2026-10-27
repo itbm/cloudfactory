@@ -39,7 +39,7 @@ func TestContainerUnitUsesGvisorAndNoHostNetwork(t *testing.T) {
 func TestWorkerModeAndApache(t *testing.T) {
 	w := website()
 	w.WorkerMode = true
-	if !strings.Contains(ContainerUnit(w), "Environment=FRANKENPHP_CONFIG=worker /app/public/index.php\n") {
+	if !strings.Contains(ContainerUnit(w), "Environment=\"FRANKENPHP_CONFIG=worker /app/public/index.php\"\n") {
 		t.Error("worker mode is not on")
 	}
 	w.Runtime = "apache-php-fpm"

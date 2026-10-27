@@ -20,6 +20,9 @@ type Runner interface {
 	// Pipe sends the standard output of the first command to the standard input of the
 	// second command, like "from | to" in a shell. Each command is a program and its arguments.
 	Pipe(ctx context.Context, from, to []string) error
+	// RunEnv is RunInput with more environment variables, for example the credentials of
+	// restic. The values are not in the process list.
+	RunEnv(ctx context.Context, env []string, stdin, name string, args ...string) (string, error)
 }
 
 // Host runs commands on the host.
@@ -33,12 +36,16 @@ func (h Host) Run(ctx context.Context, name string, args ...string) (string, err
 }
 
 func (h Host) RunInput(ctx context.Context, stdin, name string, args ...string) (string, error) {
+	return h.RunEnv(ctx, nil, stdin, name, args...)
+}
+
+func (h Host) RunEnv(ctx context.Context, env []string, stdin, name string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
 	if stdin != "" {
 		cmd.Stdin = strings.NewReader(stdin)
 	}
-	if len(h.Env) > 0 {
-		cmd.Env = append(cmd.Environ(), h.Env...)
+	if len(h.Env) > 0 || len(env) > 0 {
+		cmd.Env = append(append(cmd.Environ(), h.Env...), env...)
 	}
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -95,7 +102,9 @@ type Fake struct {
 	mu     sync.Mutex
 	Calls  []string
 	Inputs []string
-	Rules  []Rule
+	// Envs has the extra environment of each command.
+	Envs  [][]string
+	Rules []Rule
 }
 
 // Rule gives the result of each command that starts with Prefix.
@@ -112,12 +121,17 @@ func (f *Fake) Run(ctx context.Context, name string, args ...string) (string, er
 	return f.RunInput(ctx, "", name, args...)
 }
 
-func (f *Fake) RunInput(_ context.Context, stdin, name string, args ...string) (string, error) {
+func (f *Fake) RunInput(ctx context.Context, stdin, name string, args ...string) (string, error) {
+	return f.RunEnv(ctx, nil, stdin, name, args...)
+}
+
+func (f *Fake) RunEnv(_ context.Context, env []string, stdin, name string, args ...string) (string, error) {
 	line := strings.TrimSpace(name + " " + strings.Join(args, " "))
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.Calls = append(f.Calls, line)
 	f.Inputs = append(f.Inputs, stdin)
+	f.Envs = append(f.Envs, env)
 	for _, r := range f.Rules {
 		if strings.HasPrefix(line, r.Prefix) {
 			if r.Do != nil {
@@ -136,6 +150,7 @@ func (f *Fake) Pipe(ctx context.Context, from, to []string) error {
 	defer f.mu.Unlock()
 	f.Calls = append(f.Calls, line)
 	f.Inputs = append(f.Inputs, "")
+	f.Envs = append(f.Envs, nil)
 	for _, r := range f.Rules {
 		if strings.HasPrefix(line, r.Prefix) {
 			return r.Err

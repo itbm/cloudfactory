@@ -46,6 +46,9 @@ type Deps struct {
 	Arch    string
 	// BlockDevice is the disk for the I/O limit of each website.
 	BlockDevice string
+	// QuotaMount is the mount point of SitesDir when user quotas are on there. Empty means that
+	// the agent cannot apply the disk limit of a website.
+	QuotaMount string
 	// ReadyTimeout is the maximum time for a new container to answer.
 	ReadyTimeout time.Duration
 	// MaxWatch is the maximum time that the agent watches a website after a runtime change.
@@ -61,6 +64,34 @@ type Deps struct {
 	// DatabaseClientHost is the host part of a MariaDB user that can connect from the website
 	// containers only, for example "10.89.%" (CF-19). The default is "127.0.0.1".
 	DatabaseClientHost string
+	// ServiceImage gives the image of a service, for example ServiceImage("mariadb").
+	ServiceImage func(name string) string
+	// DBHome is the home directory of cf-db. The default is "/var/lib/cf-db".
+	DBHome string
+	// SftpKeysDir holds the SSH keys of each website user. The default is "/etc/cloudfactory/sftp".
+	SftpKeysDir string
+
+	// SavePlatform keeps the gVisor platform in the settings of the agent (ConfigureHost).
+	SavePlatform func(platform string) error
+	// EdgeImage is the image of the edge proxy of this agent version.
+	EdgeImage string
+
+	// CgroupRoot is "/sys/fs/cgroup". Tests use a different directory.
+	CgroupRoot string
+	// Certificate gives the expiry time of the certificate of a domain. Tests replace it.
+	Certificate func(ctx context.Context, domain string) (time.Time, error)
+
+	dbMu    sync.Mutex
+	dbReady map[string]bool
+	rtMu    sync.RWMutex
+	obs     observer
+}
+
+// runtime gives the gVisor settings. ConfigureHost can change the platform.
+func (d *Deps) runtime() quadlet.Runtime {
+	d.rtMu.RLock()
+	defer d.rtMu.RUnlock()
+	return d.Gvisor
 }
 
 // Site is what the agent knows about one website.
@@ -72,6 +103,9 @@ type Site struct {
 	Website  *agentv1.Website  `json:"-"`
 	Raw      json.RawMessage   `json:"website"`
 	Extra    map[string]string `json:"extra,omitempty"`
+	// Stopped is true when the owner stopped the website. Then a change of the runtime does not
+	// start it.
+	Stopped bool `json:"stopped,omitempty"`
 }
 
 // State keeps the sites and their ports in a file, so that the agent knows them after a restart.

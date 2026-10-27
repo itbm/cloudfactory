@@ -91,3 +91,25 @@ func TestBadJobIDIsRefused(t *testing.T) {
 		t.Error("bad ID accepted")
 	}
 }
+
+// Batch 1, finding 1: a job that stopped when the agent stopped runs again when the panel sends
+// it again.
+func TestAnInterruptedJobRunsAgainAfterARestart(t *testing.T) {
+	rec := &recorder{}
+	dir := t.TempDir()
+	r := &Runner{Dir: dir, Reporter: rec}
+	// The record of the first agent: the job was at step 1 when the agent stopped.
+	if err := r.save(Record{ID: id, State: "running", Step: 1}); err != nil {
+		t.Fatal(err)
+	}
+	runs := 0
+	job := Job{ID: id, Key: "w", Steps: []Step{{"one", func(context.Context) error { runs++; return nil }}}}
+	r2 := &Runner{Dir: dir, Reporter: rec}
+	if dup, err := r2.Submit(job); dup || err != nil {
+		t.Fatalf("Submit: %v %v", dup, err)
+	}
+	r2.Wait()
+	if runs != 1 || rec.last().State != "succeeded" {
+		t.Errorf("runs = %d, last event = %+v", runs, rec.last())
+	}
+}

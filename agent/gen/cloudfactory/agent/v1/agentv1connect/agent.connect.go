@@ -84,6 +84,14 @@ const (
 	// AgentServiceUpdateAgentProcedure is the fully-qualified name of the AgentService's UpdateAgent
 	// RPC.
 	AgentServiceUpdateAgentProcedure = "/cloudfactory.agent.v1.AgentService/UpdateAgent"
+	// AgentServicePruneBackupsProcedure is the fully-qualified name of the AgentService's PruneBackups
+	// RPC.
+	AgentServicePruneBackupsProcedure = "/cloudfactory.agent.v1.AgentService/PruneBackups"
+	// AgentServiceSetSftpProcedure is the fully-qualified name of the AgentService's SetSftp RPC.
+	AgentServiceSetSftpProcedure = "/cloudfactory.agent.v1.AgentService/SetSftp"
+	// AgentServiceConfigureHostProcedure is the fully-qualified name of the AgentService's
+	// ConfigureHost RPC.
+	AgentServiceConfigureHostProcedure = "/cloudfactory.agent.v1.AgentService/ConfigureHost"
 	// AgentServiceGetStatusProcedure is the fully-qualified name of the AgentService's GetStatus RPC.
 	AgentServiceGetStatusProcedure = "/cloudfactory.agent.v1.AgentService/GetStatus"
 )
@@ -106,6 +114,9 @@ type AgentServiceClient interface {
 	InstallHostUpdates(context.Context, *connect.Request[v1.HostRequest]) (*connect.Response[v1.JobAccepted], error)
 	Reboot(context.Context, *connect.Request[v1.HostRequest]) (*connect.Response[v1.JobAccepted], error)
 	UpdateAgent(context.Context, *connect.Request[v1.UpdateAgentRequest]) (*connect.Response[v1.JobAccepted], error)
+	PruneBackups(context.Context, *connect.Request[v1.PruneBackupsRequest]) (*connect.Response[v1.JobAccepted], error)
+	SetSftp(context.Context, *connect.Request[v1.SetSftpRequest]) (*connect.Response[v1.JobAccepted], error)
+	ConfigureHost(context.Context, *connect.Request[v1.ConfigureHostRequest]) (*connect.Response[v1.JobAccepted], error)
 	// Returns the actual state of the server at once. This method does not make a job.
 	GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.HostStatus], error)
 }
@@ -217,6 +228,24 @@ func NewAgentServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(agentServiceMethods.ByName("UpdateAgent")),
 			connect.WithClientOptions(opts...),
 		),
+		pruneBackups: connect.NewClient[v1.PruneBackupsRequest, v1.JobAccepted](
+			httpClient,
+			baseURL+AgentServicePruneBackupsProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("PruneBackups")),
+			connect.WithClientOptions(opts...),
+		),
+		setSftp: connect.NewClient[v1.SetSftpRequest, v1.JobAccepted](
+			httpClient,
+			baseURL+AgentServiceSetSftpProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("SetSftp")),
+			connect.WithClientOptions(opts...),
+		),
+		configureHost: connect.NewClient[v1.ConfigureHostRequest, v1.JobAccepted](
+			httpClient,
+			baseURL+AgentServiceConfigureHostProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("ConfigureHost")),
+			connect.WithClientOptions(opts...),
+		),
 		getStatus: connect.NewClient[v1.GetStatusRequest, v1.HostStatus](
 			httpClient,
 			baseURL+AgentServiceGetStatusProcedure,
@@ -244,6 +273,9 @@ type agentServiceClient struct {
 	installHostUpdates *connect.Client[v1.HostRequest, v1.JobAccepted]
 	reboot             *connect.Client[v1.HostRequest, v1.JobAccepted]
 	updateAgent        *connect.Client[v1.UpdateAgentRequest, v1.JobAccepted]
+	pruneBackups       *connect.Client[v1.PruneBackupsRequest, v1.JobAccepted]
+	setSftp            *connect.Client[v1.SetSftpRequest, v1.JobAccepted]
+	configureHost      *connect.Client[v1.ConfigureHostRequest, v1.JobAccepted]
 	getStatus          *connect.Client[v1.GetStatusRequest, v1.HostStatus]
 }
 
@@ -327,6 +359,21 @@ func (c *agentServiceClient) UpdateAgent(ctx context.Context, req *connect.Reque
 	return c.updateAgent.CallUnary(ctx, req)
 }
 
+// PruneBackups calls cloudfactory.agent.v1.AgentService.PruneBackups.
+func (c *agentServiceClient) PruneBackups(ctx context.Context, req *connect.Request[v1.PruneBackupsRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return c.pruneBackups.CallUnary(ctx, req)
+}
+
+// SetSftp calls cloudfactory.agent.v1.AgentService.SetSftp.
+func (c *agentServiceClient) SetSftp(ctx context.Context, req *connect.Request[v1.SetSftpRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return c.setSftp.CallUnary(ctx, req)
+}
+
+// ConfigureHost calls cloudfactory.agent.v1.AgentService.ConfigureHost.
+func (c *agentServiceClient) ConfigureHost(ctx context.Context, req *connect.Request[v1.ConfigureHostRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return c.configureHost.CallUnary(ctx, req)
+}
+
 // GetStatus calls cloudfactory.agent.v1.AgentService.GetStatus.
 func (c *agentServiceClient) GetStatus(ctx context.Context, req *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.HostStatus], error) {
 	return c.getStatus.CallUnary(ctx, req)
@@ -350,6 +397,9 @@ type AgentServiceHandler interface {
 	InstallHostUpdates(context.Context, *connect.Request[v1.HostRequest]) (*connect.Response[v1.JobAccepted], error)
 	Reboot(context.Context, *connect.Request[v1.HostRequest]) (*connect.Response[v1.JobAccepted], error)
 	UpdateAgent(context.Context, *connect.Request[v1.UpdateAgentRequest]) (*connect.Response[v1.JobAccepted], error)
+	PruneBackups(context.Context, *connect.Request[v1.PruneBackupsRequest]) (*connect.Response[v1.JobAccepted], error)
+	SetSftp(context.Context, *connect.Request[v1.SetSftpRequest]) (*connect.Response[v1.JobAccepted], error)
+	ConfigureHost(context.Context, *connect.Request[v1.ConfigureHostRequest]) (*connect.Response[v1.JobAccepted], error)
 	// Returns the actual state of the server at once. This method does not make a job.
 	GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.HostStatus], error)
 }
@@ -457,6 +507,24 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(agentServiceMethods.ByName("UpdateAgent")),
 		connect.WithHandlerOptions(opts...),
 	)
+	agentServicePruneBackupsHandler := connect.NewUnaryHandler(
+		AgentServicePruneBackupsProcedure,
+		svc.PruneBackups,
+		connect.WithSchema(agentServiceMethods.ByName("PruneBackups")),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentServiceSetSftpHandler := connect.NewUnaryHandler(
+		AgentServiceSetSftpProcedure,
+		svc.SetSftp,
+		connect.WithSchema(agentServiceMethods.ByName("SetSftp")),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentServiceConfigureHostHandler := connect.NewUnaryHandler(
+		AgentServiceConfigureHostProcedure,
+		svc.ConfigureHost,
+		connect.WithSchema(agentServiceMethods.ByName("ConfigureHost")),
+		connect.WithHandlerOptions(opts...),
+	)
 	agentServiceGetStatusHandler := connect.NewUnaryHandler(
 		AgentServiceGetStatusProcedure,
 		svc.GetStatus,
@@ -497,6 +565,12 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 			agentServiceRebootHandler.ServeHTTP(w, r)
 		case AgentServiceUpdateAgentProcedure:
 			agentServiceUpdateAgentHandler.ServeHTTP(w, r)
+		case AgentServicePruneBackupsProcedure:
+			agentServicePruneBackupsHandler.ServeHTTP(w, r)
+		case AgentServiceSetSftpProcedure:
+			agentServiceSetSftpHandler.ServeHTTP(w, r)
+		case AgentServiceConfigureHostProcedure:
+			agentServiceConfigureHostHandler.ServeHTTP(w, r)
 		case AgentServiceGetStatusProcedure:
 			agentServiceGetStatusHandler.ServeHTTP(w, r)
 		default:
@@ -570,6 +644,18 @@ func (UnimplementedAgentServiceHandler) Reboot(context.Context, *connect.Request
 
 func (UnimplementedAgentServiceHandler) UpdateAgent(context.Context, *connect.Request[v1.UpdateAgentRequest]) (*connect.Response[v1.JobAccepted], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.UpdateAgent is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) PruneBackups(context.Context, *connect.Request[v1.PruneBackupsRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.PruneBackups is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) SetSftp(context.Context, *connect.Request[v1.SetSftpRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.SetSftp is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) ConfigureHost(context.Context, *connect.Request[v1.ConfigureHostRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.ConfigureHost is not implemented"))
 }
 
 func (UnimplementedAgentServiceHandler) GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.HostStatus], error) {

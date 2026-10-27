@@ -3,6 +3,7 @@ package actions
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -41,6 +42,9 @@ func (d *Deps) allServices(ctx context.Context, verb string) error {
 	}
 	var errs []error
 	for _, s := range sites {
+		if s.Stopped && verb == "start" {
+			continue
+		}
 		u := quadlet.Website{UnixUser: s.UnixUser, Suffix: s.Suffix}
 		if _, err := d.Host.Systemctl(ctx, s.UnixUser, verb, u.ServiceName()); err != nil {
 			errs = append(errs, err)
@@ -64,6 +68,9 @@ func (d *Deps) rebootSteps() []jobs.Step {
 			}
 			var errs []error
 			for _, s := range sites {
+				if s.Stopped {
+					continue
+				}
 				if err := d.waitReady(ctx, s.Port, primaryDomain(s.Website)); err != nil {
 					errs = append(errs, errors.New(primaryDomain(s.Website)+": "+err.Error()))
 				}
@@ -134,7 +141,7 @@ func (d *Deps) EnsureEdge(ctx context.Context, image string, dataDir string) err
 	if _, err := d.Run.Run(ctx, "install", "-d", "-o", host.EdgeUser, "-g", host.EdgeUser, "-m", "0700", filepath.Join(dataDir, quadlet.EdgeAdminDir)); err != nil {
 		return err
 	}
-	unit := quadlet.EdgeUnit(quadlet.Edge{Image: image, DataDir: dataDir, Gvisor: d.Gvisor, HTTPPort: 8080, HTTPSPort: 8443})
+	unit := quadlet.EdgeUnit(quadlet.Edge{Image: image, DataDir: dataDir, Gvisor: d.runtime(), HTTPPort: 8080, HTTPSPort: 8443})
 	changed, err := d.Host.WriteUnit(host.EdgeUser, "cf-edge.container", unit)
 	if err != nil {
 		return err
@@ -148,4 +155,78 @@ func (d *Deps) EnsureEdge(ctx context.Context, image string, dataDir string) err
 		return err
 	}
 	return d.Edge.EnsureBase(ctx)
+}
+
+// ConfigureHost changes the gVisor platform of the server (FR-310). The agent writes the units
+// of all containers again and restarts them, one at a time.
+func (d *Deps) ConfigureHost(req *agentv1.ConfigureHostRequest) (jobs.Job, error) {
+	if err := validate.ID(req.GetJobId()); err != nil {
+		return jobs.Job{}, err
+	}
+	platform := req.GetGvisorPlatform()
+	if platform != "systrap" && platform != "kvm" {
+		return jobs.Job{}, errors.New("the gVisor platform must be systrap or kvm")
+	}
+	return jobs.Job{ID: req.GetJobId(), Key: "host", Steps: []jobs.Step{
+		{Name: "Save settings", Do: func(ctx context.Context) error {
+			if platform == "kvm" {
+				if _, err := os.Stat("/dev/kvm"); err != nil {
+					return errors.New("the KVM platform needs /dev/kvm, which this server does not have")
+				}
+			}
+			if d.SavePlatform != nil {
+				if err := d.SavePlatform(platform); err != nil {
+					return err
+				}
+			}
+			d.rtMu.Lock()
+			d.Gvisor.Platform = platform
+			d.rtMu.Unlock()
+			return nil
+		}},
+		{Name: "Restart websites", Do: func(ctx context.Context) error {
+			sites, err := d.State.All()
+			if err != nil {
+				return err
+			}
+			var errs []error
+			for _, s := range sites {
+				if err := d.restartWithUnit(ctx, s); err != nil {
+					errs = append(errs, fmt.Errorf("%s: %w", primaryDomain(s.Website), err))
+				}
+			}
+			return errors.Join(errs...)
+		}},
+		{Name: "Restart services", Do: func(ctx context.Context) error {
+			var errs []error
+			if d.EdgeImage != "" {
+				errs = append(errs, d.EnsureEdge(ctx, d.EdgeImage, d.DataDir))
+			}
+			d.dbMu.Lock()
+			d.dbReady = nil
+			d.dbMu.Unlock()
+			errs = append(errs, d.RefreshDatabaseServices(ctx))
+			return errors.Join(errs...)
+		}},
+	}}, nil
+}
+
+// restartWithUnit writes the unit of a website again and restarts it, if it operates. A
+// stopped website stays stopped.
+func (d *Deps) restartWithUnit(ctx context.Context, s *Site) error {
+	u := d.unit(s.Website, s.Port, s.Suffix)
+	u.Stopped = s.Stopped
+	if _, err := d.Host.WriteUnit(s.UnixUser, u.UnitName(), quadlet.ContainerUnit(u)); err != nil {
+		return err
+	}
+	if _, err := d.Host.Systemctl(ctx, s.UnixUser, "daemon-reload"); err != nil {
+		return err
+	}
+	if s.Stopped {
+		return nil
+	}
+	if _, err := d.Host.Systemctl(ctx, s.UnixUser, "restart", u.ServiceName()); err != nil {
+		return err
+	}
+	return d.waitReady(ctx, s.Port, primaryDomain(s.Website))
 }

@@ -17,10 +17,12 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -53,7 +55,7 @@ const (
 	gvisorRoot  = "/usr/local/lib/cloudfactory/gvisor"
 	gvisorBin   = "/usr/local/bin"
 	usageString = `Usage:
-  cf-agent join --panel URL --token TOKEN [--name NAME] [--roles web] [--address HOST]
+  cf-agent join --panel URL --token TOKEN [--name NAME] [--roles web] [--address HOST] [--public-ip IP]
   cf-agent serve
   cf-agent gvisor install [--sha512 SUM] [VERSION] | rollback
   cf-agent panel install --domain DOMAIN
@@ -105,6 +107,7 @@ func join(ctx context.Context, args []string) error {
 	address := fs.String("address", hostname, "the host name or IP address that the panel uses to reach this server")
 	registry := fs.String("registry", config.Defaults().Registry, "the registry of the images, for example a mirror")
 	configPath := fs.String("config", config.DefaultPath, "the settings file")
+	public := fs.String("public-ip", "", "the public IP addresses of this server behind NAT, separated by commas")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -121,6 +124,16 @@ func join(ctx context.Context, args []string) error {
 	cfg := config.Defaults()
 	cfg.PanelURL = strings.TrimRight(*panelURL, "/")
 	cfg.Registry = strings.TrimRight(*registry, "/")
+	// Batch 1, finding 10: behind NAT the public address is not on an interface. The DNS check
+	// accepts the address that the panel uses.
+	if ip := net.ParseIP(*address); ip != nil && !ip.IsLoopback() {
+		cfg.PublicAddresses = []string{ip.String()}
+	}
+	for _, a := range strings.Split(*public, ",") {
+		if ip := net.ParseIP(strings.TrimSpace(a)); ip != nil && !slices.Contains(cfg.PublicAddresses, ip.String()) {
+			cfg.PublicAddresses = append(cfg.PublicAddresses, ip.String())
+		}
+	}
 	// The panel on the same server reaches the agent through the gateway of its container.
 	hosts := []string{*address, "127.0.0.1", "host.containers.internal"}
 	if hostname != *address {
@@ -185,11 +198,12 @@ func serve(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
+	h := host.New(run, cfg.SitesDir)
 	deps := &actions.Deps{
-		Host: host.New(run, cfg.SitesDir), Run: run, Edge: caddy.New(cfg.CaddyAdmin), Apt: apt,
+		Host: h, Run: run, Edge: caddy.New(cfg.CaddyAdmin), Apt: apt,
 		Updater: &selfupdate.Updater{ReleaseURL: cfg.ReleaseURL, Binary: binaryPath, Key: key, Current: version},
 		Gvisor:  quadlet.Runtime{RunscPath: gv.Link(), Platform: cfg.GVisorPlatform},
-		State:   actions.NewState(cfg.DataDir), Health: actions.HTTPHealth, DNSPointsHere: actions.LocalDNS(),
+		State:   actions.NewState(cfg.DataDir), Health: actions.HTTPHealth, DNSPointsHere: actions.LocalDNS(cfg.PublicAddresses...),
 		Reboot: func(ctx context.Context) error {
 			_, err := run.Run(ctx, "systemctl", "reboot")
 			return err
@@ -201,16 +215,41 @@ func serve(ctx context.Context) error {
 		ResticPasswordFile: resticKey,
 		DataDir:            cfg.DataDir,
 		DatabaseClientHost: cfg.DatabaseClientHost,
+		// The images of the services have the version of the agent. The release signs them.
+		ServiceImage: func(name string) string { return cfg.Registry + "/" + name + ":" + version },
+		EdgeImage:    cfg.Registry + "/edge:" + version,
+		SavePlatform: func(platform string) error {
+			c, err := config.Load(config.DefaultPath)
+			if err != nil {
+				return err
+			}
+			c.GVisorPlatform = platform
+			return config.Save(config.DefaultPath, c)
+		},
+	}
+	// FR-202: the disk I/O limit needs the disk of the websites, and the disk limit needs
+	// user quotas on its file system.
+	if dev, err := h.BlockDevice(ctx, cfg.SitesDir); err == nil {
+		deps.BlockDevice = dev
+	} else {
+		slog.Warn("no disk I/O limits", "err", err)
+	}
+	if deps.QuotaMount = h.QuotaMount(ctx, cfg.SitesDir); deps.QuotaMount == "" {
+		slog.Warn("no disk limits: user quotas are off on the file system of the websites", "dir", cfg.SitesDir)
 	}
 	// The edge proxy operates in gVisor like all other containers. Its image is signed (FR-1101).
-	if err := deps.EnsureEdge(ctx, cfg.Registry+"/edge:"+version, cfg.DataDir); err != nil {
+	if err := deps.EnsureEdge(ctx, deps.EdgeImage, cfg.DataDir); err != nil {
 		slog.Error("start edge proxy", "err", err)
+	}
+	// The database containers get the images of this agent version.
+	if err := deps.RefreshDatabaseServices(ctx); err != nil {
+		slog.Error("start database containers", "err", err)
 	}
 	runner := &jobs.Runner{Dir: filepath.Join(cfg.DataDir, "jobs"), Reporter: reporter}
 	if job, ok := deps.ResumeReboot(); ok {
 		runner.Resume(job)
 	}
-	collector := status.Collector{Run: run, Apt: apt, AgentVersion: version, GVisorVersion: gv.Current, Services: []string{"cf-agent", "nftables"}, UserServices: []string{host.EdgeUser + ":cf-edge.service"}, DiskPath: cfg.SitesDir}
+	collector := status.Collector{Run: run, Apt: apt, AgentVersion: version, GVisorVersion: gv.Current, Services: []string{"cf-agent", "nftables", "ssh"}, UserServices: []string{host.EdgeUser + ":cf-edge.service"}, DiskPath: cfg.SitesDir, Extra: deps.FillReport}
 
 	go reportLoop(ctx, reporter, collector, time.Duration(cfg.ReportSeconds)*time.Second)
 	go func() {

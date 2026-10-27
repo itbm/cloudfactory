@@ -105,6 +105,18 @@ func (s *Service) UpdateAgent(_ context.Context, r *connect.Request[agentv1.Upda
 	return s.submit(s.Deps.UpdateAgent(r.Msg))
 }
 
+func (s *Service) PruneBackups(_ context.Context, r *connect.Request[agentv1.PruneBackupsRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.PruneBackups(r.Msg))
+}
+
+func (s *Service) SetSftp(_ context.Context, r *connect.Request[agentv1.SetSftpRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.SetSftp(r.Msg))
+}
+
+func (s *Service) ConfigureHost(_ context.Context, r *connect.Request[agentv1.ConfigureHostRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.ConfigureHost(r.Msg))
+}
+
 func (s *Service) GetStatus(ctx context.Context, _ *connect.Request[agentv1.GetStatusRequest]) (*connect.Response[agentv1.HostStatus], error) {
 	r := s.Status.Report(ctx)
 	out := &agentv1.HostStatus{AgentVersion: r.AgentVersion, Kernel: r.Kernel, PodmanVersion: r.PodmanVersion, GvisorVersion: r.GVisorVersion, RebootRequired: r.RebootRequired}
