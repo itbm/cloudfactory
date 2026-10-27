@@ -29,7 +29,7 @@ export function LoginPage() {
         <p className="muted" style={{ marginBottom: 18 }}>
           {features.passkeys ? "Use a passkey, or your password and a code from your authenticator app." : "Use your email, your password and a code from your authenticator app."}
         </p>
-        <FormError error={passkey.error ?? pw.error} />
+        <FormError error={passkey.error ?? pw.error} shown={step === "start" ? ["email", "password"] : ["totp"]} />
         {features.passkeys && <>
         <button type="button" className="btn btn-primary" style={{ width: "100%" }} onClick={async () => { if ((await passkey.run()).ok) go(); }}>
           <KeyRound size={18} aria-hidden="true" /> Sign in with a passkey

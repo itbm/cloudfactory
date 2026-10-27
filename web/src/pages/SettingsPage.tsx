@@ -112,7 +112,7 @@ function Security() {
           footer={<><button type="button" className="btn" onClick={closeTotp}>Cancel</button><button type="submit" form="totp" className={totpMode === "on" ? "btn btn-primary" : "btn btn-danger"}>{totpMode === "on" ? "Turn on" : "Turn off"}</button></>}
         >
           <form id="totp" noValidate onSubmit={async (e) => { e.preventDefault(); if ((await totp.run(totpMode === "on", code, password)).ok) closeTotp(); }}>
-            <FormError error={totp.error} />
+            <FormError error={totp.error} shown={["password", "code"]} />
             {totpMode === "on" && setup && <>
               <p>Add this key to your authenticator app, for example 1Password, Google Authenticator or Microsoft Authenticator. On a phone, you can <a href={setup.uri}>open the key in the app</a>.</p>
               <CopyField value={setup.secret.replace(/(.{4})/g, "$1 ").trim()} label="TOTP key" />
@@ -144,7 +144,7 @@ function PasswordCard() {
         setDone(false);
         if ((await change.run(current, next, confirm, code)).ok) { setCurrent(""); setNext(""); setConfirm(""); setCode(""); setDone(true); }
       }}>
-        <FormError error={change.error} />
+        <FormError error={change.error} shown={["currentPassword", "password", "password_confirmation", "totp"]} />
         {done && <p role="status" style={{ marginBottom: 12 }}><Status tone="success">Changed</Status> Your other sessions are signed out.</p>}
         <Field label="Current password" error={change.error?.fields.currentPassword}>{(p) => <input {...p} className="input" type="password" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} />}</Field>
         <Field label="New password" hint="Use 12 or more characters." error={change.error?.fields.password}>{(p) => <input {...p} className="input" type="password" autoComplete="new-password" value={next} onChange={(e) => setNext(e.target.value)} />}</Field>

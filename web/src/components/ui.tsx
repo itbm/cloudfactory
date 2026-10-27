@@ -144,8 +144,15 @@ export function Field({ label, hint, error, children, id }: { label: string; hin
   );
 }
 
-export function FormError({ error }: { error: ApiError | null }) {
+/**
+ * The message of an error. "shown" lists the fields that the form shows next to their inputs.
+ * When all fields of the error are in it, the form already shows each message once, so the
+ * banner does not repeat them.
+ */
+export function FormError({ error, shown }: { error: ApiError | null; shown?: string[] }) {
   if (!error) return null;
+  const keys = Object.keys(error.fields ?? {});
+  if (shown && keys.length > 0 && keys.every((k) => shown.includes(k))) return null;
   return (
     <div className="alert alert-danger" role="alert">
       <p>{error.message}</p>
