@@ -20,11 +20,26 @@ jobs:
           persist-credentials: false
       - name: Compare base image digests
         id: digests
+        shell: bash
         run: |
-          set -eu
-          for ref in dunglas/frankenphp:1-php8.4-trixie library/php:8.4-fpm-trixie library/caddy:2.10-alpine library/mariadb:11.8 library/postgres:17; do
-            docker buildx imagetools inspect "docker.io/$ref" --format '{{json .Manifest.Digest}}'
-          done > digests.txt
+          set -euo pipefail
+          # R-11: read the base images from the Containerfiles, so that the list is always
+          # complete. ${PHP_VERSION} becomes each PHP version that the release workflow builds.
+          php_versions=$(grep -o 'PHP_VERSION=[0-9.]*' .github/workflows/release.yml | cut -d= -f2 | sort -u)
+          {
+            grep -h -E '^FROM ' images/*/Containerfile | sed -E 's/^FROM +(--[^ ]+ +)*//; s/ .*//'
+            grep -h -o -E 'COPY --from=[^ ]+' images/*/Containerfile | sed 's/^COPY --from=//'
+          } | grep / | while read -r ref; do
+            case "$ref" in
+              *'${PHP_VERSION}'*) for v in $php_versions; do printf '%s\n' "${ref//'${PHP_VERSION}'/$v}"; done ;;
+              *) printf '%s\n' "$ref" ;;
+            esac
+          done | sort -u > refs.txt
+          cat refs.txt
+          while read -r ref; do
+            printf '%s ' "$ref"
+            docker buildx imagetools inspect "$ref" --format '{{json .Manifest.Digest}}'
+          done < refs.txt > digests.txt
           sha256sum digests.txt | cut -d' ' -f1 > key.txt
           echo "key=$(cat key.txt)" >> "$GITHUB_OUTPUT"
       - name: Remember the digests

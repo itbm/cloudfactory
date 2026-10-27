@@ -1,5 +1,10 @@
 # The shared PostgreSQL service image. The release pipeline signs it like all other images (FR-1101).
 # SPDX-License-Identifier: AGPL-3.0-only
 FROM docker.io/library/postgres:17
+# CVE scan, finding 3: take the security fixes that are newer than the base image.
+ARG DEBIAN_FRONTEND=noninteractive
+RUN apt-get update \
+ && apt-get upgrade -y --no-install-recommends \
+ && rm -rf /var/lib/apt/lists/*
 LABEL org.opencontainers.image.source="https://github.com/itbm/cloudfactory" \
       org.opencontainers.image.description="Cloudfactory PostgreSQL service"

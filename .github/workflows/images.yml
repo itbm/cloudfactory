@@ -45,3 +45,7 @@ jobs:
           severity: CRITICAL
           ignore-unfixed: true
           exit-code: '1'
+          # CVE scan, finding 4: gosu in the mariadb and postgresql bases only changes the user at
+          # start. It does no TLS, HTTP or parsing, so the Go standard-library CVEs that Trivy
+          # reports in it do not apply. The gosu project treats them as false positives.
+          skip-files: /usr/local/bin/gosu
