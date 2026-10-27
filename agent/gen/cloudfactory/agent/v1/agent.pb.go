@@ -369,10 +369,11 @@ func (x *Website) GetDocumentRoot() string {
 }
 
 type HealthCheck struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Status        int32                  `protobuf:"varint,1,opt,name=status,proto3" json:"status,omitempty"`
-	MaxErrorRate  float64                `protobuf:"fixed64,2,opt,name=max_error_rate,json=maxErrorRate,proto3" json:"max_error_rate,omitempty"`
-	Seconds       int32                  `protobuf:"varint,3,opt,name=seconds,proto3" json:"seconds,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// The status that each check expects. 0 accepts each status below 500, for example a redirect.
+	Status        int32   `protobuf:"varint,1,opt,name=status,proto3" json:"status,omitempty"`
+	MaxErrorRate  float64 `protobuf:"fixed64,2,opt,name=max_error_rate,json=maxErrorRate,proto3" json:"max_error_rate,omitempty"`
+	Seconds       int32   `protobuf:"varint,3,opt,name=seconds,proto3" json:"seconds,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1950,7 +1951,8 @@ func (x *ConfigureHostRequest) GetGvisorPlatform() string {
 type HostRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	JobId string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
-	// InstallHostUpdates: "security", "all" or "manual".
+	// InstallHostUpdates: "security", "all", "manual" or "tools". "tools" updates only the
+	// held container tools (FR-1113).
 	Policy        string `protobuf:"bytes,2,opt,name=policy,proto3" json:"policy,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

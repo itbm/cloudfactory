@@ -22,13 +22,23 @@ func (d *Deps) InstallHostUpdates(req *agentv1.HostRequest) (jobs.Job, error) {
 	if policy == "" {
 		policy = "security"
 	}
-	if policy != "security" && policy != "all" && policy != "manual" {
+	if policy != "security" && policy != "all" && policy != "manual" && policy != "tools" {
 		return jobs.Job{}, errors.New("the update policy is not valid")
 	}
 	return jobs.Job{ID: req.GetJobId(), Key: "host", Steps: []jobs.Step{
 		{Name: "Download packages", Do: d.Apt.Download},
 		{Name: "Install packages", Do: func(ctx context.Context) error { return d.Apt.Install(ctx, policy) }},
-		{Name: "Restart changed services only", Do: d.Apt.RestartServices},
+		{Name: "Restart changed services only", Do: func(ctx context.Context) error {
+			if err := d.Apt.RestartServices(ctx); err != nil {
+				return err
+			}
+			if policy != "tools" {
+				return nil
+			}
+			// New container tools: each website must still answer, or the job fails and the
+			// panel stops the update before the other servers (FR-1113).
+			return d.checkAllWebsites(ctx)
+		}},
 	}, Result: func() map[string]any { return map[string]any{"rebootRequired": d.Apt.RebootRequired()} }}, nil
 }
 
@@ -53,6 +63,24 @@ func (d *Deps) allServices(ctx context.Context, verb string) error {
 	return errors.Join(errs...)
 }
 
+// checkAllWebsites waits until each website that is not stopped answers.
+func (d *Deps) checkAllWebsites(ctx context.Context) error {
+	sites, err := d.State.All()
+	if err != nil {
+		return err
+	}
+	var errs []error
+	for _, s := range sites {
+		if s.Stopped {
+			continue
+		}
+		if err := d.waitReady(ctx, s.Port, primaryDomain(s.Website)); err != nil {
+			errs = append(errs, errors.New(primaryDomain(s.Website)+": "+err.Error()))
+		}
+	}
+	return errors.Join(errs...)
+}
+
 func (d *Deps) rebootSteps() []jobs.Step {
 	return []jobs.Step{
 		// Caddy finishes the open requests when its container stops.
@@ -61,22 +89,7 @@ func (d *Deps) rebootSteps() []jobs.Step {
 		{Name: "Reboot", Do: func(ctx context.Context) error { return d.Reboot(ctx) }},
 		{Name: "Start containers", Do: func(ctx context.Context) error { return d.allServices(ctx, "start") }},
 		// FR-1117: after a reboot, all containers and services must operate.
-		{Name: "Check all services", Do: func(ctx context.Context) error {
-			sites, err := d.State.All()
-			if err != nil {
-				return err
-			}
-			var errs []error
-			for _, s := range sites {
-				if s.Stopped {
-					continue
-				}
-				if err := d.waitReady(ctx, s.Port, primaryDomain(s.Website)); err != nil {
-					errs = append(errs, errors.New(primaryDomain(s.Website)+": "+err.Error()))
-				}
-			}
-			return errors.Join(errs...)
-		}},
+		{Name: "Check all services", Do: d.checkAllWebsites},
 	}
 }
 

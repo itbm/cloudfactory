@@ -502,7 +502,8 @@ ENV
 	[ -n "$JOIN_TOKEN" ] || fail "the panel did not give a join token."
 	# The agent on the panel server reports directly to the API on 127.0.0.1.
 	PANEL_URL=http://127.0.0.1:19080
-	[ -n "$ADDRESS" ] || ADDRESS=host.containers.internal
+	# pasta maps this address in the panel containers to 127.0.0.1 on the host.
+	[ -n "$ADDRESS" ] || ADDRESS=169.254.1.3
 	[ -n "$ROLES" ] || ROLES=web,database,email,dns,backup
 fi
 

@@ -8,6 +8,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"time"
 
 	agentv1 "github.com/itbm/cloudfactory/agent/gen/cloudfactory/agent/v1"
 	"github.com/itbm/cloudfactory/agent/internal/execx"
@@ -23,6 +24,8 @@ type Update struct {
 	From     string `json:"from"`
 	To       string `json:"to"`
 	Security bool   `json:"security"`
+	// ContainerTool is true for a held package (FR-1113). The policy "tools" installs it.
+	ContainerTool bool `json:"containerTool,omitempty"`
 }
 
 // Proto gives the update in the format of the agent API.
@@ -35,10 +38,16 @@ type Apt struct {
 	Run execx.Runner
 	// RebootFile exists when the host needs a reboot.
 	RebootFile string
+	// ListsFile changes at each "apt-get update". Pending reads the package lists again when
+	// the file is older than ListsMaxAge (audit batch 2, finding 9).
+	ListsFile   string
+	ListsMaxAge time.Duration
 }
 
 // New gives an Apt with the paths of Debian and Ubuntu.
-func New(run execx.Runner) Apt { return Apt{Run: run, RebootFile: "/var/run/reboot-required"} }
+func New(run execx.Runner) Apt {
+	return Apt{Run: run, RebootFile: "/var/run/reboot-required", ListsFile: "/var/cache/apt/pkgcache.bin", ListsMaxAge: 6 * time.Hour}
+}
 
 // "Inst openssl [3.5.1-1] (3.5.1-2 Debian-Security:13/stable-security [amd64])"
 var instRE = regexp.MustCompile(`^Inst (\S+) (?:\[(\S+)\] )?\((\S+) ([^\[]*)`)
@@ -56,13 +65,32 @@ func Parse(out string) []Update {
 	return updates
 }
 
-// Pending gives the updates that apt can install now.
+// Pending gives the updates that apt can install now, and the updates of the held container
+// tools. It gets new package lists first when the lists are old.
 func (a Apt) Pending(ctx context.Context) ([]Update, error) {
+	if a.ListsFile != "" {
+		if fi, err := os.Stat(a.ListsFile); err != nil || time.Since(fi.ModTime()) > a.ListsMaxAge {
+			if _, err := a.Run.Run(ctx, "apt-get", "-qq", "update"); err != nil {
+				return nil, err
+			}
+		}
+	}
 	out, err := a.Run.Run(ctx, "apt-get", "-s", "-o", "Debug::NoLocking=1", "upgrade", "--with-new-pkgs")
 	if err != nil {
 		return nil, err
 	}
-	return Parse(out), nil
+	updates := Parse(out)
+	// A held package is not in the upgrade. A simulated install of the held packages shows
+	// their new versions.
+	out, err = a.Run.Run(ctx, "apt-get", append([]string{"-s", "-o", "Debug::NoLocking=1", "install", "--only-upgrade", "--allow-change-held-packages"}, Held...)...)
+	if err != nil {
+		return updates, nil
+	}
+	for _, u := range Parse(out) {
+		u.ContainerTool = true
+		updates = append(updates, u)
+	}
+	return updates, nil
 }
 
 // RebootRequired reports whether an update needs a reboot.
@@ -88,7 +116,8 @@ func (a Apt) Download(ctx context.Context) error {
 
 // Install installs updates with the policy of the server (FR-1112).
 // "security" installs only security updates. "all" installs all updates except the
-// held packages. A manual install from the panel uses the security policy.
+// held packages. "tools" installs only the held container tools. A manual install from the
+// panel uses the security policy.
 func (a Apt) Install(ctx context.Context, policy string) error {
 	switch policy {
 	case "security", "manual":
@@ -98,6 +127,16 @@ func (a Apt) Install(ctx context.Context, policy string) error {
 		}
 	case "all":
 		if _, err := a.Run.Run(ctx, "apt-get", "-y", "-o", "Dpkg::Options::=--force-confold", "upgrade", "--with-new-pkgs"); err != nil {
+			return err
+		}
+	case "tools":
+		// FR-1113: the panel updates the container tools on one server first, then on the
+		// other servers. The packages stay held after the update.
+		args := append([]string{"-y", "-o", "Dpkg::Options::=--force-confold", "install", "--only-upgrade", "--allow-change-held-packages"}, Held...)
+		if _, err := a.Run.Run(ctx, "apt-get", args...); err != nil {
+			return err
+		}
+		if err := a.Hold(ctx); err != nil {
 			return err
 		}
 	default:

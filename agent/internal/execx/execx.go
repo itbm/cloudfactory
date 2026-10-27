@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os/exec"
 	"strings"
 	"sync"
@@ -23,6 +24,9 @@ type Runner interface {
 	// RunEnv is RunInput with more environment variables, for example the credentials of
 	// restic. The values are not in the process list.
 	RunEnv(ctx context.Context, env []string, stdin, name string, args ...string) (string, error)
+	// Stream connects stdin and stdout of the command to a reader and a writer, so that large
+	// data, for example a database dump, does not stay in memory (NFR-02). Both can be nil.
+	Stream(ctx context.Context, stdin io.Reader, stdout io.Writer, name string, args ...string) error
 }
 
 // Host runs commands on the host.
@@ -58,6 +62,25 @@ func (h Host) RunEnv(ctx context.Context, env []string, stdin, name string, args
 		return stdout.String(), fmt.Errorf("%s %s: %w: %s", name, strings.Join(args, " "), err, msg)
 	}
 	return stdout.String(), nil
+}
+
+func (h Host) Stream(ctx context.Context, stdin io.Reader, stdout io.Writer, name string, args ...string) error {
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Stdin = stdin
+	cmd.Stdout = stdout
+	if len(h.Env) > 0 {
+		cmd.Env = append(cmd.Environ(), h.Env...)
+	}
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		msg := strings.TrimSpace(stderr.String())
+		if len(msg) > 2000 {
+			msg = msg[len(msg)-2000:]
+		}
+		return fmt.Errorf("%s %s: %w: %s", name, strings.Join(args, " "), err, msg)
+	}
+	return nil
 }
 
 func (h Host) Pipe(ctx context.Context, from, to []string) error {
@@ -141,6 +164,25 @@ func (f *Fake) RunEnv(_ context.Context, env []string, stdin, name string, args 
 		}
 	}
 	return "", nil
+}
+
+// Stream records the command and its stdin, and writes the output of the rule to stdout.
+func (f *Fake) Stream(ctx context.Context, stdin io.Reader, stdout io.Writer, name string, args ...string) error {
+	in := ""
+	if stdin != nil {
+		b, err := io.ReadAll(stdin)
+		if err != nil {
+			return err
+		}
+		in = string(b)
+	}
+	out, err := f.RunEnv(ctx, nil, in, name, args...)
+	if stdout != nil && out != "" {
+		if _, werr := io.WriteString(stdout, out); werr != nil {
+			return werr
+		}
+	}
+	return err
 }
 
 // Pipe records the two commands as one line, "from | to".

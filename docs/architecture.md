@@ -60,8 +60,9 @@ The firewall redirects port 80 to 8080 and port 443 to 8443 (refer to
 [decisions.md](decisions.md)).
 
 The agent changes the Caddy routes through the Caddy admin API. Each website has one route.
-The route sends traffic to `host.containers.internal:<port>`. Caddy gets the TLS certificates
-automatically.
+The route sends traffic to `169.254.1.3:<port>`. pasta maps this link-local address in the
+edge container to `127.0.0.1` on the host (`--map-host-loopback`). The website ports are open
+only on `127.0.0.1`. Caddy gets the TLS certificates automatically.
 
 ## Change of runtime without downtime
 
@@ -104,4 +105,4 @@ listens on `127.0.0.1:19080` and the web panel on `127.0.0.1:19081`. The edge pr
 panel domain to these ports.
 
 The agent on the panel server also joins the panel. The panel reaches this agent through
-`host.containers.internal`.
+`169.254.1.3`, which pasta maps to `127.0.0.1` on the host.

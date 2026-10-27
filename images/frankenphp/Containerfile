@@ -28,6 +28,15 @@ RUN apt-get update \
  && ls -d /etc/ImageMagick-* >/dev/null \
  && for d in /etc/ImageMagick-*; do cp /usr/local/share/cloudfactory/imagemagick-policy.xml "$d/policy.xml"; done
 
+# Audit batch 2, finding 1: the base image gives frankenphp the file capability
+# cap_net_bind_service. The units drop all capabilities, and Linux does not run a file with a
+# capability that the process cannot get. The server listens on 8080, so it does not need it.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends libcap2-bin \
+ && setcap -r /usr/local/bin/frankenphp \
+ && test -z "$(getcap /usr/local/bin/frankenphp)" \
+ && apt-get purge -y libcap2-bin \
+ && rm -rf /var/lib/apt/lists/*
 COPY Caddyfile /etc/frankenphp/Caddyfile
 COPY index.php /app/public/index.php
 

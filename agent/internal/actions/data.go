@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"os"
 	"path/filepath"
@@ -586,15 +587,11 @@ func (d *Deps) Backup(req *agentv1.BackupRequest) (jobs.Job, error) {
 				return err
 			}
 			for _, db := range req.GetDatabases() {
-				out, err := d.dump(ctx, db.GetEngine(), db.GetName())
+				sum, err := d.dumpToFile(ctx, db.GetEngine(), db.GetName(), filepath.Join(dumps, dumpFile(db.GetEngine(), db.GetName())))
 				if err != nil {
 					return err
 				}
-				if err := os.WriteFile(filepath.Join(dumps, dumpFile(db.GetEngine(), db.GetName())), []byte(out), 0o600); err != nil {
-					return err
-				}
-				sum := sha256.Sum256([]byte(out))
-				hashes[db.GetEngine()+":"+db.GetName()] = hex.EncodeToString(sum[:])
+				hashes[db.GetEngine()+":"+db.GetName()] = sum
 			}
 			return nil
 		}},
@@ -625,24 +622,62 @@ func (d *Deps) Backup(req *agentv1.BackupRequest) (jobs.Job, error) {
 	}}, nil
 }
 
-// dump gives a dump that a database user can restore: no owners and no privileges. The
-// PostgreSQL dump uses the custom format, which pg_restore reads. It has no psql commands.
-func (d *Deps) dump(ctx context.Context, engine, name string) (string, error) {
+// dumpCommand gives the command of a dump that a database user can restore: no owners and no
+// privileges. The PostgreSQL dump uses the custom format, which pg_restore reads. It has no
+// psql commands. The command writes the dump to its stdout.
+func (d *Deps) dumpCommand(ctx context.Context, engine, name string) ([]string, error) {
 	c, _ := dbContainer(engine)
 	if err := d.EnsureDatabaseService(ctx, engine); err != nil {
-		return "", err
+		return nil, err
 	}
 	uid, err := d.Host.LookupUID(DBUser)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	args := []string{"-u", DBUser, "--", "env", fmt.Sprintf("XDG_RUNTIME_DIR=/run/user/%d", uid), "podman", "exec", c}
+	args := []string{"runuser", "-u", DBUser, "--", "env", fmt.Sprintf("XDG_RUNTIME_DIR=/run/user/%d", uid), "podman", "exec", c}
 	if engine == "mariadb" {
 		args = append(args, "mariadb-dump", "--user=root", "--single-transaction", "--routines", name)
 	} else {
 		args = append(args, "pg_dump", "--username=postgres", "--format=custom", "--no-owner", "--no-privileges", name)
 	}
-	return d.Run.Run(ctx, "runuser", args...)
+	return args, nil
+}
+
+// dumpToFile writes a dump to a file and gives its SHA-256 hash. The dump goes from the
+// client to the file, so that a large database does not stay in the memory of the agent
+// (audit batch 2, finding 6).
+func (d *Deps) dumpToFile(ctx context.Context, engine, name, path string) (string, error) {
+	args, err := d.dumpCommand(ctx, engine, name)
+	if err != nil {
+		return "", err
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+	if err != nil {
+		return "", err
+	}
+	h := sha256.New()
+	err = d.Run.Stream(ctx, nil, io.MultiWriter(f, h), args[0], args[1:]...)
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// fileHash gives the SHA-256 hash of a file. It reads the file in parts.
+func fileHash(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 // parseResticSummary reads the "summary" line of "restic backup --json".
@@ -730,15 +765,22 @@ func (d *Deps) Restore(req *agentv1.RestoreRequest) (jobs.Job, error) {
 			if dbName == "" {
 				return d.copyAsUser(ctx, filepath.Join(staging, app), rel, unixUser, app)
 			}
-			dump, err := os.ReadFile(filepath.Join(staging, include))
+			path := filepath.Join(staging, include)
+			sum, err := fileHash(path)
 			if err != nil {
 				return err
 			}
-			sum := sha256.Sum256(dump)
-			if hex.EncodeToString(sum[:]) != req.GetDumpSha256() {
+			if sum != req.GetDumpSha256() {
 				return errors.New("the dump does not agree with the hash from the backup")
 			}
-			return d.restoreDump(ctx, dbEngine, dbName, dump)
+			return d.restoreDump(ctx, dbEngine, dbName, func(ctx context.Context, client []string) error {
+				f, err := os.Open(path)
+				if err != nil {
+					return err
+				}
+				defer f.Close()
+				return d.Run.Stream(ctx, f, nil, client[0], client[1:]...)
+			})
 		}},
 		{Name: "Health check", Do: func(ctx context.Context) error {
 			site, err := d.State.Get(req.GetWebsiteId())
@@ -767,8 +809,12 @@ func (d *Deps) copyAsUser(ctx context.Context, src, rel, unixUser, dst string) e
 }
 
 // restoreDump loads a dump as a temporary user that can use only this database. The password
-// goes to the client in a file that only the database service user can read.
-func (d *Deps) restoreDump(ctx context.Context, engine, name string, dump []byte) error {
+// goes to the client in a file that only the database service user can read. feed runs the
+// client command with the dump on its stdin.
+//
+// Audit batch 2, finding 5: the database is empty before the restore, so that the result is
+// the database of the backup, with no tables that the website made later.
+func (d *Deps) restoreDump(ctx context.Context, engine, name string, feed func(ctx context.Context, client []string) error) error {
 	c, _ := dbContainer(engine)
 	tmpUser := "cfrestore_" + randomHex(8)
 	pass := randomHex(24)
@@ -785,6 +831,9 @@ func (d *Deps) restoreDump(ctx context.Context, engine, name string, dump []byte
 		return err
 	}
 	defer d.sql(context.WithoutCancel(ctx), engine, drop)
+	if _, err := d.sql(ctx, engine, emptyDatabaseSQL(engine, name)); err != nil {
+		return err
+	}
 
 	envFile, err := d.secretFile(ctx, map[bool]string{true: "MYSQL_PWD", false: "PGPASSWORD"}[maria]+"="+pass+"\n")
 	if err != nil {
@@ -795,15 +844,37 @@ func (d *Deps) restoreDump(ctx context.Context, engine, name string, dump []byte
 	if err != nil {
 		return err
 	}
-	args := []string{"-u", DBUser, "--", "env", fmt.Sprintf("XDG_RUNTIME_DIR=/run/user/%d", uid), "podman", "exec", "-i", "--env-file", envFile, c}
+	args := []string{"runuser", "-u", DBUser, "--", "env", fmt.Sprintf("XDG_RUNTIME_DIR=/run/user/%d", uid), "podman", "exec", "-i", "--env-file", envFile, c}
 	if maria {
 		// --sandbox refuses client commands such as "system" and "source".
 		args = append(args, "mariadb", "--sandbox", "--user="+tmpUser, "--batch", name)
 	} else {
 		args = append(args, "pg_restore", "--host=127.0.0.1", "--username="+tmpUser, "--role="+pgRole(name, "readwrite"), "--dbname="+name, "--no-owner", "--no-privileges", "--clean", "--if-exists", "--exit-on-error")
 	}
-	_, err = d.Run.RunInput(ctx, string(dump), "runuser", args...)
-	return err
+	return feed(ctx, args)
+}
+
+// emptyDatabaseSQL removes all data of a database, and keeps the database, its users and their
+// privileges. MariaDB keeps the privileges on a database when the database is dropped. In
+// PostgreSQL, the schemas of the website and the schema public go, and public comes back with
+// the privileges of pgCreateDatabase.
+func emptyDatabaseSQL(engine, name string) string {
+	if engine == "mariadb" {
+		return fmt.Sprintf("DROP DATABASE IF EXISTS `%[1]s`;\nCREATE DATABASE `%[1]s` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;\n", name)
+	}
+	return fmt.Sprintf(`\connect "%[1]s"
+DO $$DECLARE s name; BEGIN
+  FOR s IN SELECT nspname FROM pg_namespace WHERE nspowner = '"%[1]s:rw"'::regrole AND nspname <> 'public' LOOP
+    EXECUTE format('DROP SCHEMA %%I CASCADE', s);
+  END LOOP;
+END$$;
+DROP SCHEMA IF EXISTS public CASCADE;
+CREATE SCHEMA public AUTHORIZATION pg_database_owner;
+REVOKE ALL ON SCHEMA public FROM PUBLIC;
+GRANT USAGE ON SCHEMA public TO "%[1]s:ro";
+ALTER DEFAULT PRIVILEGES FOR ROLE "%[1]s:rw" IN SCHEMA public GRANT SELECT ON TABLES TO "%[1]s:ro";
+ALTER DEFAULT PRIVILEGES FOR ROLE "%[1]s:rw" IN SCHEMA public GRANT SELECT ON SEQUENCES TO "%[1]s:ro";
+`, name)
 }
 
 // secretFile writes a file that only the database service user can read, and gives its path.

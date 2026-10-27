@@ -38,6 +38,30 @@ jobs:
           build-args: ${{ matrix.args }}
           load: true
           tags: ${{ matrix.image }}:test
+      # Audit batch 2, findings 1 and 2: start the image with the limits of its unit, and send a
+      # request. A file capability or a missing configuration file stops the container.
+      - name: Start the image with no capabilities
+        env:
+          IMAGE: ${{ matrix.image }}
+        run: |
+          set -eu
+          case "$IMAGE" in
+            frankenphp-*|apache-*) args="--read-only --tmpfs /tmp --user 1001:1001" want=200 ;;
+            panel-web) args="--read-only --tmpfs /tmp" want=200 ;;
+            panel-api) args="--tmpfs /data -e APP_KEY=base64:$(openssl rand -base64 32) -e DB_DATABASE=/data/panel.sqlite" want=200 path=/up ;;
+            edge) args="--read-only --tmpfs /data --tmpfs /run/caddy-admin" want=any ;;
+          esac
+          # shellcheck disable=SC2086 # args holds several options.
+          docker run -d --name smoke --cap-drop=all --security-opt no-new-privileges -p 127.0.0.1:18080:8080 $args "$IMAGE:test"
+          code=000
+          for _ in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:18080${path:-/}" || true)
+            [ "$code" != 000 ] && break
+            sleep 2
+          done
+          docker logs smoke
+          docker inspect -f '{{.State.Running}}' smoke | grep -q true
+          if [ "$want" = any ]; then [ "$code" != 000 ]; else [ "$code" = "$want" ]; fi
       - name: Scan for known vulnerabilities (FR-1102)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:

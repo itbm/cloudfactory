@@ -134,8 +134,9 @@ func join(ctx context.Context, args []string) error {
 			cfg.PublicAddresses = append(cfg.PublicAddresses, ip.String())
 		}
 	}
-	// The panel on the same server reaches the agent through the gateway of its container.
-	hosts := []string{*address, "127.0.0.1", "host.containers.internal"}
+	// The panel on the same server reaches the agent through the host loopback address that
+	// pasta maps in its container.
+	hosts := []string{*address, "127.0.0.1", quadlet.HostLoopback}
 	if hostname != *address {
 		hosts = append(hosts, hostname)
 	}
@@ -236,6 +237,20 @@ func serve(ctx context.Context) error {
 	}
 	if deps.QuotaMount = h.QuotaMount(ctx, cfg.SitesDir); deps.QuotaMount == "" {
 		slog.Warn("no disk limits: user quotas are off on the file system of the websites", "dir", cfg.SitesDir)
+	}
+	// An agent update brings the gVisor version of the new agent. Containers that start after
+	// the switch use it. Containers that operate keep the old version until they restart.
+	if gvisor.Newer(gvisor.Version, cfg.GVisorVersion) {
+		if arch, err := gvisor.Arch(runtime.GOARCH); err == nil {
+			if err := gv.Install(ctx, gvisor.Version, arch); err != nil {
+				slog.Error("update gVisor", "version", gvisor.Version, "err", err)
+			} else if c, err := config.Load(config.DefaultPath); err == nil {
+				c.GVisorVersion = gvisor.Version
+				if err := config.Save(config.DefaultPath, c); err != nil {
+					slog.Error("save the gVisor version", "err", err)
+				}
+			}
+		}
 	}
 	// The edge proxy operates in gVisor like all other containers. Its image is signed (FR-1101).
 	if err := deps.EnsureEdge(ctx, deps.EdgeImage, cfg.DataDir); err != nil {

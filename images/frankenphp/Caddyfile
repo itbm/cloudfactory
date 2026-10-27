@@ -1,4 +1,5 @@
-# The edge proxy terminates TLS and serves static files. This server gets only dynamic requests.
+# The edge proxy terminates TLS and sends all requests here. This server also serves the static
+# files of the website, because the edge proxy cannot read them (CF-04).
 {
 	frankenphp
 	auto_https off

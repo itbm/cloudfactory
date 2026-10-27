@@ -81,6 +81,16 @@ func (w Website) UnitName() string { return w.ContainerName() + ".container" }
 // ServiceName is the systemd service that Quadlet makes from the unit.
 func (w Website) ServiceName() string { return w.ContainerName() + ".service" }
 
+// HostLoopback is the address in the edge and panel containers that pasta maps to 127.0.0.1
+// on the host (audit batch 2, finding 3). host.containers.internal is the address of the
+// host interface, so it cannot reach the ports that the website containers publish on
+// 127.0.0.1. The address is link-local, so it is not on a real network.
+const HostLoopback = "169.254.1.3"
+
+// PastaNetwork is the Network value of the edge and panel containers. The option
+// --map-host-loopback is in passt 2024_08_21 and later (Debian 13 and Ubuntu 26.04 have it).
+const PastaNetwork = "pasta:--map-host-loopback=" + HostLoopback
+
 // NetworkName is the network of the hosting account (FR-1703).
 func NetworkName(unixUser string) string { return "cf-" + unixUser }
 
@@ -143,9 +153,6 @@ func ContainerUnit(w Website) string {
 	// Spec section 6.4: no new privileges, and only the capabilities that the container needs.
 	line("NoNewPrivileges", "true")
 	line("DropCapability", "all")
-	if w.Runtime == "apache-php-fpm" {
-		line("AddCapability", "CHOWN SETUID SETGID")
-	}
 	line("ReadOnly", "true")
 	line("Tmpfs", "/tmp")
 	line("UserNS", "keep-id")
@@ -205,7 +212,7 @@ func podmanLimitArgs(l Limits) string {
 func PHPIni(phpVersion string, extensions []string, values map[string]string) string {
 	var b strings.Builder
 	b.WriteString("; Managed by the Cloudfactory agent. Change these values in the panel.\n")
-	builtinOpcache := phpVersion >= "8.5"
+	builtinOpcache := phpAtLeast(phpVersion, 8, 5)
 	for _, ext := range slices.Sorted(slices.Values(extensions)) {
 		if ext == "opcache" {
 			if !builtinOpcache {
@@ -247,9 +254,9 @@ func EdgeUnit(e Edge) string {
 		"Pull=never",
 		// host-uds=create lets Caddy make its admin socket in the mounted directory (CF-13).
 		"GlobalArgs=" + e.Gvisor.GlobalArgs() + " --runtime-flag=host-uds=create",
-		// pasta maps the gateway address to the host, so that Caddy can reach the website
-		// ports on 127.0.0.1. Caddy sees the real client address (FR-1707).
-		"Network=pasta:--map-gw",
+		// pasta maps HostLoopback to the host loopback address, so that Caddy can reach the
+		// website ports on 127.0.0.1. Caddy sees the real client address (FR-1707).
+		"Network=" + PastaNetwork,
 		fmt.Sprintf("PublishPort=%d:8080", e.HTTPPort),
 		fmt.Sprintf("PublishPort=%d:8443", e.HTTPSPort),
 		fmt.Sprintf("PublishPort=%d:8443/udp", e.HTTPSPort),
@@ -280,7 +287,7 @@ type Database struct {
 	Image  string
 	// DataDir holds the data files on the host.
 	DataDir string
-	// EnvFile holds the password of the PostgreSQL superuser. Only cf-db can read it.
+	// EnvFile holds the password of the superuser. Only cf-db can read it.
 	EnvFile string
 	Gvisor  Runtime
 }
@@ -328,8 +335,10 @@ func DatabaseUnit(d Database) string {
 		lines = append(lines,
 			"Volume="+d.DataDir+":/var/lib/mysql:Z",
 			"Tmpfs=/run/mysqld",
-			// root@localhost uses the socket in the container. No root user can use TCP.
-			"Environment=MARIADB_RANDOM_ROOT_PASSWORD=1",
+			// Audit batch 2, finding 4: the image does not let root use the socket with no
+			// password. The env file gives the root password to the server at the first start,
+			// and to the client (MYSQL_PWD) in each "podman exec". No root user can use TCP.
+			"EnvironmentFile="+d.EnvFile,
 			"Environment=MARIADB_ROOT_HOST=localhost",
 			"Environment=MARIADB_AUTO_UPGRADE=1",
 		)
@@ -380,8 +389,8 @@ func PanelUnits(p Panel) map[string]string {
 	common := []string{
 		"Pull=never",
 		"GlobalArgs=" + p.Gvisor.GlobalArgs(),
-		// pasta maps the gateway address to the host, so that the API can reach the agent port.
-		"Network=pasta:--map-gw",
+		// pasta maps HostLoopback to the host, so that the API can reach the agent port.
+		"Network=" + PastaNetwork,
 		"NoNewPrivileges=true",
 		"DropCapability=all",
 	}
@@ -414,4 +423,15 @@ func PanelUnits(p Panel) map[string]string {
 		"cf-panel-web.container": unit("Cloudfactory panel web UI",
 			"ContainerName=cf-panel-web", "Image="+p.Registry+"/panel-web:"+p.Version, fmt.Sprintf("PublishPort=127.0.0.1:%d:8080", p.WebPort), "ReadOnly=true", "Tmpfs=/tmp"),
 	}
+}
+
+// phpAtLeast compares a PHP version such as "8.10" as numbers, not as text (audit batch 3).
+func phpAtLeast(version string, major, minor int) bool {
+	a, b, _ := strings.Cut(version, ".")
+	x, err1 := strconv.Atoi(a)
+	y, err2 := strconv.Atoi(strings.SplitN(b, ".", 2)[0])
+	if err1 != nil || err2 != nil {
+		return false
+	}
+	return x > major || (x == major && y >= minor)
 }

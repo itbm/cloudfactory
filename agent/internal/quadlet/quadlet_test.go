@@ -44,7 +44,8 @@ func TestWorkerModeAndApache(t *testing.T) {
 	}
 	w.Runtime = "apache-php-fpm"
 	u := ContainerUnit(w)
-	if strings.Contains(u, "FRANKENPHP_CONFIG") || !strings.Contains(u, "AddCapability=CHOWN SETUID SETGID\n") {
+	// Audit batch 2: Apache and PHP-FPM run as the website user and need no capabilities.
+	if strings.Contains(u, "FRANKENPHP_CONFIG") || strings.Contains(u, "AddCapability") {
 		t.Errorf("apache unit:\n%s", u)
 	}
 }
@@ -99,5 +100,25 @@ func TestPanelUnits(t *testing.T) {
 		!strings.Contains(units["cf-panel-scheduler.container"], "Exec=php artisan schedule:work") ||
 		!strings.Contains(units["cf-panel-scheduler.container"], "Volume=/etc/cloudfactory/cosign.pub:/run/cloudfactory/cosign.pub:ro") {
 		t.Error(units)
+	}
+}
+
+// Audit batch 2, finding 3: the edge and the panel reach the ports on the host loopback address
+// through an address that pasta maps.
+func TestEdgeAndPanelMapTheHostLoopback(t *testing.T) {
+	units := PanelUnits(Panel{Registry: "r", Version: "1"})
+	units["edge"] = EdgeUnit(Edge{Image: "e", HTTPPort: 8080, HTTPSPort: 8443})
+	for name, u := range units {
+		if !strings.Contains(u, "Network=pasta:--map-host-loopback=169.254.1.3\n") || strings.Contains(u, "--map-gw") {
+			t.Errorf("%s:\n%s", name, u)
+		}
+	}
+}
+
+func TestPHPVersionsCompareAsNumbers(t *testing.T) {
+	for v, want := range map[string]bool{"8.4": false, "8.5": true, "8.10": true, "9.0": true, "10.1": true, "7.4": false, "x": false} {
+		if got := phpAtLeast(v, 8, 5); got != want {
+			t.Errorf("phpAtLeast(%q) = %v", v, got)
+		}
 	}
 }

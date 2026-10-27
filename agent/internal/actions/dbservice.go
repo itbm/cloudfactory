@@ -68,10 +68,8 @@ func (d *Deps) EnsureDatabaseService(ctx context.Context, engine string) error {
 	if _, err := d.Run.Run(ctx, "install", "-d", "-o", DBUser, "-g", DBUser, "-m", "0700", u.DataDir); err != nil {
 		return err
 	}
-	if engine == "postgresql" {
-		if err := d.writeSuperuserSecret(ctx, u.EnvFile); err != nil {
-			return err
-		}
+	if err := d.writeSuperuserSecret(ctx, engine, u.EnvFile); err != nil {
+		return err
 	}
 	changed, err := d.Host.WriteUnit(DBUser, quadlet.DatabaseContainer(engine)+".container", quadlet.DatabaseUnit(u))
 	if err != nil {
@@ -114,13 +112,20 @@ func (d *Deps) RefreshDatabaseServices(ctx context.Context) error {
 	return nil
 }
 
-// writeSuperuserSecret makes the password of the PostgreSQL superuser once. The entry point
-// of the image needs it. The agent does not use it: it connects through the socket.
-func (d *Deps) writeSuperuserSecret(ctx context.Context, path string) error {
+// writeSuperuserSecret makes the password of the superuser once. The entry point of the image
+// sets it at the first start. The agent connects to PostgreSQL through the socket with no
+// password. MariaDB needs the password, so the client gets it in MYSQL_PWD from the
+// environment of the container.
+func (d *Deps) writeSuperuserSecret(ctx context.Context, engine, path string) error {
 	if _, err := os.Stat(path); err == nil {
 		return nil
 	}
-	if _, err := host.WriteFile(path, "POSTGRES_PASSWORD="+randomHex(48)+"\n", 0o600); err != nil {
+	pass := randomHex(48)
+	content := "POSTGRES_PASSWORD=" + pass + "\n"
+	if engine == "mariadb" {
+		content = "MARIADB_ROOT_PASSWORD=" + pass + "\nMYSQL_PWD=" + pass + "\n"
+	}
+	if _, err := host.WriteFile(path, content, 0o600); err != nil {
 		return err
 	}
 	_, err := d.Run.Run(ctx, "chown", DBUser+":"+DBUser, path)

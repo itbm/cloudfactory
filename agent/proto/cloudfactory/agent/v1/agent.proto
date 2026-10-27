@@ -83,6 +83,7 @@ message Website {
 }
 
 message HealthCheck {
+  // The status that each check expects. 0 accepts each status below 500, for example a redirect.
   int32 status = 1;
   double max_error_rate = 2;
   int32 seconds = 3;
@@ -282,7 +283,8 @@ message ConfigureHostRequest {
 
 message HostRequest {
   string job_id = 1;
-  // InstallHostUpdates: "security", "all" or "manual".
+  // InstallHostUpdates: "security", "all", "manual" or "tools". "tools" updates only the
+  // held container tools (FR-1113).
   string policy = 2;
 }
 

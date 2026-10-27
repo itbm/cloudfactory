@@ -150,3 +150,14 @@ func TestInstallRefusesUnsafeArchives(t *testing.T) {
 		})
 	}
 }
+
+func TestNewer(t *testing.T) {
+	for _, c := range []struct {
+		a, b string
+		want bool
+	}{{"20261019.0", "20260901.0", true}, {"20261019.1", "20261019.0", true}, {"20261019.0", "20261019.0", false}, {"20260901.0", "20261019.0", false}, {"20261019.0", "", true}} {
+		if got := Newer(c.a, c.b); got != c.want {
+			t.Errorf("Newer(%q, %q) = %v", c.a, c.b, got)
+		}
+	}
+}

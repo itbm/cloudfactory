@@ -14,6 +14,7 @@ import (
 func TestReport(t *testing.T) {
 	f := &execx.Fake{Rules: []execx.Rule{
 		{Prefix: "podman version", Output: "5.4.2\n"},
+		{Prefix: "apt-get -s -o Debug::NoLocking=1 install", Output: ""},
 		{Prefix: "apt-get -s", Output: "Inst openssl [3.5.1-1] (3.5.1-2 Debian-Security:13/stable-security [amd64])\n"},
 		{Prefix: "systemctl is-active cf-agent", Output: "active\n"},
 		{Prefix: "systemctl --user --machine=cf-edge@ is-active cf-edge", Output: "failed\n"},

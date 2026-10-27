@@ -24,10 +24,15 @@ func fakeHost(t *testing.T, exists bool) (*Host, *execx.Fake) {
 
 func TestEnsureUserMakesTheUserOnce(t *testing.T) {
 	h, f := fakeHost(t, false)
+	// useradd makes the user.
+	f.Rules = []execx.Rule{{Prefix: "useradd", Do: func() error {
+		h.LookupUID = func(string) (int, error) { return 1001, nil }
+		return nil
+	}}}
 	if err := h.EnsureUser(context.Background(), "acme_x7k2"); err != nil {
 		t.Fatal(err)
 	}
-	if !f.Called("useradd --create-home --home-dir "+h.Home("acme_x7k2")+" --shell /usr/sbin/nologin") || !f.Called("loginctl enable-linger acme_x7k2") || !f.Called("chmod 0700 "+h.Home("acme_x7k2")) {
+	if !f.Called("useradd --create-home --home-dir "+h.Home("acme_x7k2")+" --shell /usr/sbin/nologin") || !f.Called("loginctl enable-linger acme_x7k2") || !f.Called("chmod 0700 "+h.Home("acme_x7k2")) || !f.Called("systemctl start user@1001.service") {
 		t.Errorf("calls = %v", f.Calls)
 	}
 	// CF-04: the edge proxy is not in the group of the website user.

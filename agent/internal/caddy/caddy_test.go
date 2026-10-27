@@ -20,11 +20,14 @@ type fakeCaddy struct {
 	loaded   bool
 	routes   []map[string]any
 	policies string
+	// calls are the method and path of each request.
+	calls []string
 }
 
 func (f *fakeCaddy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.calls = append(f.calls, r.Method+" "+r.URL.Path)
 	switch {
 	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/config/apps/http/servers/edge"):
 		if !f.loaded {
@@ -47,6 +50,18 @@ func (f *fakeCaddy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case r.URL.Path == "/config/apps/http/servers/edge/tls_connection_policies":
 		b, _ := io.ReadAll(r.Body)
 		f.policies = string(b)
+	case r.Method == http.MethodPatch && strings.HasPrefix(r.URL.Path, "/id/"):
+		id := strings.TrimPrefix(r.URL.Path, "/id/")
+		var route map[string]any
+		b, _ := io.ReadAll(r.Body)
+		json.Unmarshal(b, &route)
+		for i, old := range f.routes {
+			if old["@id"] == id {
+				f.routes[i] = route
+				return
+			}
+		}
+		http.Error(w, `{"error":"unknown object ID '`+id+`'"}`, http.StatusNotFound)
 	case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/id/"):
 		id := strings.TrimPrefix(r.URL.Path, "/id/")
 		for i, route := range f.routes {
@@ -82,6 +97,44 @@ func TestApplyIsIdempotent(t *testing.T) {
 	}
 	if err := c.Remove(ctx, "W1"); err != nil || len(fake.routes) != 0 {
 		t.Fatalf("Remove: %v, routes=%d", err, len(fake.routes))
+	}
+}
+
+// Audit batch 2, finding 7: a change of the routes replaces each route in one request. The
+// website has a route at all times.
+func TestApplyReplacesARouteWithNoGap(t *testing.T) {
+	fake := &fakeCaddy{loaded: true}
+	srv := httptest.NewServer(fake)
+	defer srv.Close()
+	c := New(srv.URL)
+	ctx := context.Background()
+
+	site := Site{WebsiteID: "W1", Port: 20001, Hosts: []string{"acme.example"}, Primary: "acme.example"}
+	if err := c.Apply(ctx, site); err != nil {
+		t.Fatal(err)
+	}
+	fake.calls = nil
+	site.Port = 20002
+	if err := c.Apply(ctx, site); err != nil {
+		t.Fatal(err)
+	}
+	for _, call := range fake.calls {
+		if call == "DELETE /id/cf-W1" || strings.HasPrefix(call, "POST") {
+			t.Errorf("the route was removed and added again: %v", fake.calls)
+		}
+	}
+	b, _ := json.Marshal(fake.routes)
+	if len(fake.routes) != 1 || !strings.Contains(string(b), "169.254.1.3:20002") {
+		t.Errorf("routes = %s", b)
+	}
+	// A redirect domain that the website no longer has loses its route.
+	site.Redirects = []string{"www.acme.example"}
+	if err := c.Apply(ctx, site); err != nil || len(fake.routes) != 2 {
+		t.Fatalf("Apply: %v, routes=%d", err, len(fake.routes))
+	}
+	site.Redirects = nil
+	if err := c.Apply(ctx, site); err != nil || len(fake.routes) != 1 {
+		t.Fatalf("Apply: %v, routes=%d", err, len(fake.routes))
 	}
 }
 

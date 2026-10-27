@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/itbm/cloudfactory/agent/internal/gvisor"
 )
 
 // DefaultPath is where "cf-agent join" writes the settings.
@@ -54,7 +56,7 @@ func Defaults() Config {
 		Listen:         ":7443",
 		Registry:       "ghcr.io/cloudfactory",
 		GVisorPlatform: "systrap",
-		GVisorVersion:  "20261019.0",
+		GVisorVersion:  gvisor.Version,
 		DataDir:        "/var/lib/cloudfactory",
 		SitesDir:       "/srv/cloudfactory/sites",
 		CaddyAdmin:     "unix:///var/lib/cloudfactory/caddy-admin/admin.sock",

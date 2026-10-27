@@ -54,6 +54,15 @@ func TestTheFirstDatabaseStartsTheDatabaseContainer(t *testing.T) {
 	if err != nil || !strings.HasPrefix(string(secret), "POSTGRES_PASSWORD=") {
 		t.Errorf("superuser secret: %q %v", secret, err)
 	}
+	// Audit batch 2, finding 4: the MariaDB client gets the root password from the container.
+	run(t)(d.CreateDatabase(&agentv1.CreateDatabaseRequest{JobId: "01JBQ3Z5K8N6T4W2X9Y7R5P3M4", WebsiteId: websiteID, UnixUser: "acme_x7k2", Engine: "mariadb", Name: "acme_x7k2_blog"}))
+	secret, err = os.ReadFile(filepath.Join(d.DBHome, "mariadb.env"))
+	if err != nil || !strings.Contains(string(secret), "MARIADB_ROOT_PASSWORD=") || !strings.Contains(string(secret), "\nMYSQL_PWD=") {
+		t.Errorf("root secret: %q %v", secret, err)
+	}
+	if u := unitFile(t, d, DBUser, "cf-mariadb.container"); !strings.Contains(u, "EnvironmentFile="+filepath.Join(d.DBHome, "mariadb.env")) || strings.Contains(u, "RANDOM_ROOT") {
+		t.Errorf("mariadb unit:\n%s", u)
+	}
 	// The container starts once. Later statements use it.
 	n := len(f.Calls)
 	run(t)(d.DeleteDatabase(&agentv1.DeleteDatabaseRequest{JobId: jobID2, WebsiteId: websiteID, UnixUser: "acme_x7k2", Engine: "postgresql", Name: "acme_x7k2_shop"}))
@@ -164,7 +173,6 @@ func TestSetSftp(t *testing.T) {
 // FR-205: a staging copy gets its own copies of the databases and its own user.
 func TestStagingCopyCopiesTheDatabases(t *testing.T) {
 	d, f, _ := deps(t)
-	f.Rules = []execx.Rule{{Prefix: "runuser -u cf-db -- env XDG_RUNTIME_DIR=/run/user/1001 podman exec cf-mariadb mariadb-dump", Output: "INSERT INTO t VALUES (1);\n"}}
 	w := website("ghcr.io/cloudfactory/frankenphp-php8.4:8.4.0-1")
 	w.UnixUser = "staging_ab12"
 	req := &agentv1.WebsiteRequest{JobId: jobID, Website: w, CopyFrom: "01JBQ3Z5K8N6T4W2X9Y7R5P3M9", CopyFromUnixUser: "acme_x7k2",
@@ -174,13 +182,15 @@ func TestStagingCopyCopiesTheDatabases(t *testing.T) {
 		t.Fatal(err)
 	}
 	all := strings.Join(f.Inputs, "")
-	for _, want := range []string{"CREATE DATABASE `staging_ab12_shop`", "INSERT INTO t VALUES (1);", "CREATE USER 'staging_ab12_app'@'127.0.0.1'", "GRANT ALL PRIVILEGES ON `staging\\_ab12\\_shop`.* TO 'staging_ab12_app'@'127.0.0.1'"} {
+	for _, want := range []string{"CREATE DATABASE `staging_ab12_shop`", "CREATE USER 'staging_ab12_app'@'127.0.0.1'", "GRANT ALL PRIVILEGES ON `staging\\_ab12\\_shop`.* TO 'staging_ab12_app'@'127.0.0.1'"} {
 		if !strings.Contains(all, want) {
 			t.Errorf("no %q in the SQL:\n%s", want, all)
 		}
 	}
-	if !f.Called("runuser -u cf-db -- env XDG_RUNTIME_DIR=/run/user/1001 podman exec cf-mariadb mariadb-dump --user=root --single-transaction --routines acme_x7k2_shop") {
-		t.Errorf("no dump of the source: %v", f.Calls)
+	// The dump goes from one client to the other, not through the memory of the agent.
+	if !f.Called("runuser -u cf-db -- env XDG_RUNTIME_DIR=/run/user/1001 podman exec cf-mariadb mariadb-dump --user=root --single-transaction --routines acme_x7k2_shop | runuser -u cf-db") ||
+		!strings.Contains(strings.Join(f.Calls, "\n"), "mariadb --sandbox --user=cfrestore_") {
+		t.Errorf("no copy of the source: %v", f.Calls)
 	}
 	// The copy cannot name a database of a different website.
 	req.CopyDatabases[0].From = "other_zz99_shop"
@@ -295,5 +305,46 @@ func TestCustomImagePortAndCommand(t *testing.T) {
 	w.Command, w.DocumentRoot = nil, "../etc"
 	if err := CheckWebsite(w); err == nil {
 		t.Error("a document root outside /app was accepted")
+	}
+}
+
+// Audit batch 2, finding 5: a restore empties the database first, so that tables that the
+// website made after the backup go. Finding 6: the dump goes from a file to the client.
+func TestRestoreEmptiesTheDatabaseFirst(t *testing.T) {
+	for engine, want := range map[string]string{
+		"mariadb":    "DROP DATABASE IF EXISTS `acme_x7k2_shop`;\nCREATE DATABASE `acme_x7k2_shop`",
+		"postgresql": "DROP SCHEMA IF EXISTS public CASCADE;\nCREATE SCHEMA public AUTHORIZATION pg_database_owner;",
+	} {
+		d, f, _ := deps(t)
+		dump := filepath.Join(t.TempDir(), "dump.sql")
+		os.WriteFile(dump, []byte("CREATE TABLE t (id int);\n"), 0o600)
+		err := d.restoreDump(context.Background(), engine, "acme_x7k2_shop", func(ctx context.Context, client []string) error {
+			r, _ := os.Open(dump)
+			defer r.Close()
+			return d.Run.Stream(ctx, r, nil, client[0], client[1:]...)
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		all := strings.Join(f.Inputs, "")
+		empty, load := strings.Index(all, want), strings.Index(all, "CREATE TABLE t")
+		if empty < 0 || load < empty {
+			t.Errorf("%s: the database is not empty before the restore:\n%s", engine, all)
+		}
+	}
+}
+
+// Batch 1, finding 6: with no expected status, a redirect passes and a server error fails.
+func TestWatchWithNoStatusAcceptsARedirect(t *testing.T) {
+	d, _, _ := deps(t)
+	status := 302
+	d.Health = func(context.Context, int, string) (int, error) { return status, nil }
+	hc := &agentv1.HealthCheck{Seconds: 1, MaxErrorRate: 0.01}
+	if err := d.watch(context.Background(), 20001, "acme.example", hc); err != nil {
+		t.Errorf("302: %v", err)
+	}
+	status = 502
+	if err := d.watch(context.Background(), 20001, "acme.example", hc); err == nil {
+		t.Error("502 passed")
 	}
 }

@@ -19,6 +19,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/itbm/cloudfactory/agent/internal/quadlet"
 )
 
 const serverName = "edge"
@@ -40,7 +42,7 @@ type Client struct {
 // New gives a client with a short timeout. The address is "unix:///path/to/admin.sock" or an
 // HTTP address.
 func New(admin string) *Client {
-	c := &Client{Admin: strings.TrimRight(admin, "/"), HTTP: &http.Client{Timeout: 15 * time.Second}, Upstream: "host.containers.internal"}
+	c := &Client{Admin: strings.TrimRight(admin, "/"), HTTP: &http.Client{Timeout: 15 * time.Second}, Upstream: quadlet.HostLoopback}
 	if path, ok := strings.CutPrefix(admin, "unix://"); ok {
 		c.Admin = "http://caddy"
 		c.HTTP.Transport = &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
@@ -96,34 +98,56 @@ func BaseConfig() map[string]any {
 	}
 }
 
-// Apply sets the routes of a website. It is idempotent: it removes the old routes first.
+// Apply sets the routes of a website. It is idempotent. It replaces a route that exists in one
+// request, so that the website has a route at all times (FR-1108, audit batch 2, finding 7).
 // A website with no verified domain has no route. A route with no host would match all hosts.
 func (c *Client) Apply(ctx context.Context, s Site) error {
-	if err := c.Remove(ctx, s.WebsiteID); err != nil {
-		return err
-	}
-	routes := "/config/apps/http/servers/" + serverName + "/routes"
 	if len(s.Hosts) == 0 {
-		return nil
+		return c.Remove(ctx, s.WebsiteID)
 	}
+	redirect := "cf-" + s.WebsiteID + "-redirect"
 	if len(s.Redirects) > 0 {
-		if err := c.expect(ctx, http.MethodPost, routes, RedirectRoute(s), http.StatusOK); err != nil {
+		if err := c.put(ctx, redirect, RedirectRoute(s)); err != nil {
 			return err
 		}
+	} else if err := c.remove(ctx, redirect); err != nil {
+		return err
 	}
-	return c.expect(ctx, http.MethodPost, routes, SiteRoute(s, c.Upstream), http.StatusOK)
+	return c.put(ctx, "cf-"+s.WebsiteID, SiteRoute(s, c.Upstream))
+}
+
+// put replaces the route with an ID, or adds it to the edge server when it does not exist.
+func (c *Client) put(ctx context.Context, id string, route map[string]any) error {
+	status, body, err := c.do(ctx, http.MethodPatch, "/id/"+id, route)
+	if err != nil {
+		return err
+	}
+	switch {
+	case status == http.StatusOK:
+		return nil
+	case status == http.StatusNotFound || unknownID(body):
+		return c.expect(ctx, http.MethodPost, "/config/apps/http/servers/"+serverName+"/routes", route, http.StatusOK)
+	}
+	return fmt.Errorf("caddy: patch %s: status %d: %s", id, status, body)
 }
 
 // Remove deletes the routes of a website. A route that does not exist is not an error.
 func (c *Client) Remove(ctx context.Context, websiteID string) error {
 	for _, id := range []string{"cf-" + websiteID, "cf-" + websiteID + "-redirect"} {
-		status, body, err := c.do(ctx, http.MethodDelete, "/id/"+id, nil)
-		if err != nil {
+		if err := c.remove(ctx, id); err != nil {
 			return err
 		}
-		if status != http.StatusOK && status != http.StatusNotFound && !unknownID(body) {
-			return fmt.Errorf("caddy: delete %s: status %d: %s", id, status, body)
-		}
+	}
+	return nil
+}
+
+func (c *Client) remove(ctx context.Context, id string) error {
+	status, body, err := c.do(ctx, http.MethodDelete, "/id/"+id, nil)
+	if err != nil {
+		return err
+	}
+	if status != http.StatusOK && status != http.StatusNotFound && !unknownID(body) {
+		return fmt.Errorf("caddy: delete %s: status %d: %s", id, status, body)
 	}
 	return nil
 }
@@ -197,9 +221,6 @@ func (c *Client) do(ctx context.Context, method, path string, body any) (int, []
 // ApplyPanel sets the route of the panel: /api/* goes to the API, and all other paths
 // go to the web UI.
 func (c *Client) ApplyPanel(ctx context.Context, domain string, apiPort, webPort int) error {
-	if err := c.Remove(ctx, "panel"); err != nil {
-		return err
-	}
 	dial := func(port int) []any { return []any{map[string]any{"dial": c.Upstream + ":" + strconv.Itoa(port)}} }
 	api := map[string]any{
 		"handler":   "reverse_proxy",
@@ -233,6 +254,17 @@ func (c *Client) ApplyPanel(ctx context.Context, domain string, apiPort, webPort
 		if err := c.expect(ctx, http.MethodPut, "/config/apps/http/servers/"+serverName+"/tls_connection_policies", policies, http.StatusOK); err != nil {
 			return err
 		}
+	}
+	// A route that exists is replaced in place, with no gap. It is already the first route.
+	status, body, err := c.do(ctx, http.MethodPatch, "/id/cf-panel", route)
+	if err != nil {
+		return err
+	}
+	if status == http.StatusOK {
+		return nil
+	}
+	if status != http.StatusNotFound && !unknownID(body) {
+		return fmt.Errorf("caddy: patch cf-panel: status %d: %s", status, body)
 	}
 	// CF-03: the panel route is always the first route, so that no website route for the
 	// same domain can come before it. A PUT on an index of a list puts the value at that index.

@@ -26,7 +26,7 @@ RUN apt-get update \
  && for d in /etc/ImageMagick-*; do cp /usr/local/share/cloudfactory/imagemagick-policy.xml "$d/policy.xml"; done \
  && a2enmod proxy_fcgi rewrite headers remoteip setenvif \
  && a2dissite 000-default \
- && rm -f /etc/apache2/ports.conf
+ && : > /etc/apache2/ports.conf
 
 COPY apache.conf /etc/apache2/sites-enabled/cloudfactory.conf
 COPY php-fpm.conf /usr/local/etc/php-fpm.d/zz-cloudfactory.conf

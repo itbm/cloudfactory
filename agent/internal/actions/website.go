@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path"
 	"path/filepath"
@@ -188,14 +189,20 @@ func (d *Deps) watch(ctx context.Context, port int, hostname string, hc *agentv1
 	if seconds <= 0 {
 		return nil
 	}
-	interval := seconds / 10
+	// Batch 1, finding 6: about 30 checks, so that one slow answer does not fail the watch.
+	interval := max(seconds/30, time.Second)
 	var checks, failed int
 	var last error
 	for end := time.Now().Add(seconds); time.Now().Before(end); {
 		checks++
 		status, err := d.Health(ctx, port, hostname)
-		if err == nil && hc.GetStatus() != 0 && int32(status) != hc.GetStatus() {
+		switch {
+		case err != nil:
+		case hc.GetStatus() != 0 && status != int(hc.GetStatus()):
 			err = fmt.Errorf("status %d, not %d", status, hc.GetStatus())
+		case hc.GetStatus() == 0 && status >= 500:
+			// With no expected status, a redirect or a login page passes. A server error fails.
+			err = fmt.Errorf("status %d", status)
 		}
 		if err != nil {
 			failed++
@@ -357,11 +364,16 @@ func (d *Deps) copyDatabases(ctx context.Context, req *agentv1.WebsiteRequest) e
 				}
 			}
 		}
-		dump, err := d.dump(ctx, engine, c.GetFrom())
+		from := c.GetFrom()
+		// The dump goes from the dump client to the restore client, not through the agent.
+		err := d.restoreDump(ctx, engine, c.GetTo(), func(ctx context.Context, client []string) error {
+			dump, err := d.dumpCommand(ctx, engine, from)
+			if err != nil {
+				return err
+			}
+			return d.Run.Pipe(ctx, dump, client)
+		})
 		if err != nil {
-			return err
-		}
-		if err := d.restoreDump(ctx, engine, c.GetTo(), []byte(dump)); err != nil {
 			return fmt.Errorf("copy %s to %s: %w", c.GetFrom(), c.GetTo(), err)
 		}
 	}
@@ -473,10 +485,15 @@ func (d *Deps) SetRuntime(req *agentv1.WebsiteRequest) (jobs.Job, error) {
 		if old == nil || newPort == 0 || old.Stopped {
 			return
 		}
+		// The job has failed already. The agent logs an error of the rollback.
 		if switched {
-			d.Edge.Apply(ctx, d.site(old.Website, old.Port))
+			if err := d.Edge.Apply(ctx, d.site(old.Website, old.Port)); err != nil {
+				slog.Error("send the website to the old container again", "website", w.GetId(), "err", err)
+			}
 		}
-		d.stopContainer(ctx, user, newSuffix)
+		if err := d.stopContainer(ctx, user, newSuffix); err != nil {
+			slog.Error("stop the new container", "website", w.GetId(), "err", err)
+		}
 	}}, nil
 }
 
@@ -505,7 +522,10 @@ func (d *Deps) DeleteWebsite(req *agentv1.DeleteWebsiteRequest) (jobs.Job, error
 			if err := d.Host.RemoveUnit(user, quadlet.NetworkName(user)+".network"); err != nil {
 				return err
 			}
-			d.Host.Podman(ctx, user, "network", "rm", "--force", quadlet.NetworkName(user))
+			// The network can be gone already. A network that stays has no container.
+			if _, err := d.Host.Podman(ctx, user, "network", "rm", "--force", quadlet.NetworkName(user)); err != nil {
+				slog.Warn("remove the network", "user", user, "err", err)
+			}
 			return nil
 		}},
 		{Name: "Remove edge proxy route", Do: func(ctx context.Context) error {

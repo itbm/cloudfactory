@@ -133,6 +133,15 @@ func (r *Runner) start(job Job, lock *sync.Mutex) {
 // Wait waits for all jobs. Tests and a clean stop use it.
 func (r *Runner) Wait() { r.wg.Wait() }
 
+// saveOrLog saves the record of a job. A record that the agent cannot save does not stop the
+// job: the panel still gets the events. After a restart, the job can run again (audit batch 2,
+// finding 14).
+func (r *Runner) saveOrLog(log *slog.Logger, rec Record) {
+	if err := r.save(rec); err != nil {
+		log.Error("save job record", "state", rec.State, "err", err)
+	}
+}
+
 func (r *Runner) run(job Job) {
 	timeout := r.Timeout
 	if timeout == 0 {
@@ -148,7 +157,7 @@ func (r *Runner) run(job Job) {
 			continue
 		}
 		rec.Step = i
-		r.save(rec)
+		r.saveOrLog(log, rec)
 		r.report(ctx, job.ID, panel.Event{State: "running", Step: i})
 		log.Info("step", "n", i+1, "name", step.Name)
 		if err := step.Do(ctx); err != nil {
@@ -157,7 +166,7 @@ func (r *Runner) run(job Job) {
 				job.OnFailure(context.WithoutCancel(ctx))
 			}
 			rec.State, rec.Error, rec.Finished = "failed", fmt.Sprintf("%s: %v", step.Name, err), time.Now()
-			r.save(rec)
+			r.saveOrLog(log, rec)
 			r.report(context.WithoutCancel(ctx), job.ID, panel.Event{State: "failed", Step: i, Error: rec.Error})
 			return
 		}
@@ -166,7 +175,7 @@ func (r *Runner) run(job Job) {
 	if job.Result != nil {
 		rec.Result = job.Result()
 	}
-	r.save(rec)
+	r.saveOrLog(log, rec)
 	r.report(ctx, job.ID, panel.Event{State: "succeeded", Step: rec.Step, Result: rec.Result})
 	if job.After != nil {
 		job.After()

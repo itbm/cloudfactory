@@ -161,6 +161,7 @@ jobs:
         run: |
           set -eu
           test -s cosign.pub || { echo "cosign.pub is missing. See docs/releasing.md."; exit 1; }
+          grep -q "^const Version = \"$GVISOR_VERSION\"" agent/internal/gvisor/gvisor.go || { echo "agent/internal/gvisor/gvisor.go: Version is not $GVISOR_VERSION."; exit 1; }
           for arch in x86_64:$GVISOR_SHA512_X86_64 aarch64:$GVISOR_SHA512_AARCH64; do
             if ! grep -q "\"$GVISOR_VERSION/${arch%%:*}\": *\"${arch#*:}\"" agent/internal/gvisor/gvisor.go; then
               echo "agent/internal/gvisor/gvisor.go has no checksum for gVisor $GVISOR_VERSION ${arch%%:*}."; exit 1

@@ -106,7 +106,14 @@ func (h *Host) EnsureUser(ctx context.Context, unixUser string) error {
 			return err
 		}
 	}
-	return nil
+	// Audit batch 2, finding 12: enable-linger starts the user manager, but does not wait. The
+	// start of user@<uid>.service waits until the manager and /run/user/<uid> are ready.
+	uid, err := h.LookupUID(unixUser)
+	if err != nil {
+		return err
+	}
+	_, err = h.Run.Run(ctx, "systemctl", "start", fmt.Sprintf("user@%d.service", uid))
+	return err
 }
 
 // RemoveUser stops the user services and removes the user and its files.

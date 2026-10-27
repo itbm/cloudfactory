@@ -22,6 +22,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -29,6 +30,24 @@ import (
 const ReleaseURL = "https://storage.googleapis.com/gvisor/releases/release"
 
 var versionRE = regexp.MustCompile(`^[0-9]{8}(\.[0-9]+)?$`)
+
+// Version is the gVisor release of this agent version. An agent update installs it on each
+// server (audit batch 2, finding 8). So the panel updates gVisor with the agent, one server
+// first, then the other servers (FR-1113).
+const Version = "20261019.0"
+
+// Newer reports whether the version a is newer than the version b. The versions have the
+// format "YYYYMMDD.N".
+func Newer(a, b string) bool {
+	ad, an, _ := strings.Cut(a, ".")
+	bd, bn, _ := strings.Cut(b, ".")
+	if ad != bd {
+		return ad > bd
+	}
+	x, _ := strconv.Atoi(an)
+	y, _ := strconv.Atoi(bn)
+	return x > y
+}
 
 // Checksums are the SHA-512 checksums of gvisor.tar.bz2 for each "version/architecture" that
 // this agent knows (CF-16). The checksum file next to the archive comes from the same server
