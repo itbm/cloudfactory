@@ -9,6 +9,7 @@ use App\Services\LoginThrottle;
 use App\Services\Totp;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -56,12 +57,26 @@ class AuthController extends Controller
         return response()->json(['token' => $token->plainTextToken, 'expiresAt' => $token->accessToken->expires_at?->toIso8601String()]);
     }
 
-    /** A hash of a random password, with the same cost as the real hashes (CF-14). */
-    private static function dummyHash(): string
-    {
-        static $hash = null;
+    /**
+     * CF-14: a fixed hash of a random password that nobody knows. It has the default cost
+     * (BCRYPT_ROUNDS=12), so a check for an unknown email takes the same time as a check for a
+     * real account. The panel does not make a new hash for each request, because that takes more
+     * time than a check.
+     */
+    public const DUMMY_HASH = '$2y$12$XePybNj9/.6zjnbETTpgDOEnx7ObhvG05470wrnl1SEGb3vnQR9bW';
 
-        return $hash ??= Hash::make(Str::random(40));
+    /**
+     * The dummy hash for the current hash settings. If the settings are not the default, the panel
+     * makes one hash with these settings and keeps it in the cache for all later requests.
+     */
+    public static function dummyHash(): string
+    {
+        if (! Hash::needsRehash(self::DUMMY_HASH)) {
+            return self::DUMMY_HASH;
+        }
+        $key = 'auth:dummy-hash:'.hash('sha256', json_encode([config('hashing.driver'), config('hashing.bcrypt'), config('hashing.argon')]));
+
+        return Cache::rememberForever($key, fn () => Hash::make(Str::random(40)));
     }
 
     public function me(Request $request): JsonResponse

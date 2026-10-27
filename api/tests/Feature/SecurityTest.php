@@ -4,8 +4,10 @@ namespace Tests\Feature;
 
 use App\Enums\JobState;
 use App\Enums\Role;
+use App\Http\Controllers\Api\AuthController;
 use App\Models\AgentJob;
 use App\Models\Domain;
+use App\Models\User;
 use App\Services\DomainPolicy;
 use App\Services\JobOutcome;
 use App\Services\LoginThrottle;
@@ -387,5 +389,56 @@ class SecurityTest extends TestCase
         $this->postJson("/api/v1/servers/{$server->id}/update-agent", ['allowDowngrade' => 'yes'])->assertJsonValidationErrors('allowDowngrade');
         $this->postJson("/api/v1/servers/{$server->id}/update-agent", ['allowDowngrade' => true])->assertAccepted();
         $this->assertSame([false, true], AgentJob::all()->map(fn ($job) => $job->payload['allowDowngrade'])->sort()->values()->all());
+    }
+
+    /** CF-14: the dummy hash is fixed, so an unknown email does not make a new hash for each request. */
+    public function test_the_dummy_hash_is_fixed_and_has_the_default_cost(): void
+    {
+        $this->assertTrue(password_verify('x', AuthController::DUMMY_HASH) === false);
+        $this->assertSame(12, password_get_info(AuthController::DUMMY_HASH)['options']['cost']);
+        $this->bcryptRounds(12);
+        $this->assertSame(AuthController::DUMMY_HASH, AuthController::dummyHash());
+
+        // With other settings, the panel makes the hash one time and then uses it again.
+        $this->bcryptRounds(5);
+        $first = AuthController::dummyHash();
+        $this->assertSame(5, password_get_info($first)['options']['cost']);
+        $this->assertSame($first, AuthController::dummyHash());
+    }
+
+    /** CF-14: the sign-in time does not show whether an email has an account. */
+    public function test_an_unknown_email_takes_the_same_time_as_a_known_email(): void
+    {
+        $this->bcryptRounds(12);
+        User::factory()->create(['email' => 'known@example.com', 'password' => Hash::make('the-real-password')]);
+        $time = function (string $email): float {
+            $start = hrtime(true);
+            $this->postJson('/api/v1/auth/login', ['email' => $email, 'password' => 'wrong-password'])->assertJsonValidationErrors('email');
+
+            return (hrtime(true) - $start) / 1e9;
+        };
+        $time('warm-up@example.com');
+
+        // Fewer attempts than the lock-out limit for the known account.
+        $known = $unknown = [];
+        for ($i = 0; $i < 4; $i++) {
+            $known[] = $time('known@example.com');
+            $unknown[] = $time("nobody{$i}@example.com");
+        }
+        sort($known);
+        sort($unknown);
+        $knownMedian = ($known[1] + $known[2]) / 2;
+        $unknownMedian = ($unknown[1] + $unknown[2]) / 2;
+
+        $ratio = $unknownMedian / $knownMedian;
+        $this->assertTrue($ratio > 0.67 && $ratio < 1.5, sprintf('known %.3f s, unknown %.3f s', $knownMedian, $unknownMedian));
+    }
+
+    /** The hasher reads its settings when it starts, so start it again with the new cost. */
+    private function bcryptRounds(int $rounds): void
+    {
+        config(['hashing.bcrypt.rounds' => $rounds]);
+        $this->app->forgetInstance('hash');
+        Hash::clearResolvedInstances();
     }
 }
