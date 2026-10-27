@@ -86,3 +86,37 @@ The new website of the owner.
 Updates, after "Check now". The local panel has no release public key, so the check gives an error.
 
 ![14-updates](14-updates.png)
+
+## 15-sign-in-one-error
+
+R-08: a wrong password and a wrong code give the same error, so the answer does not show that
+a password is correct.
+
+![15-sign-in-one-error](15-sign-in-one-error.png)
+
+## 16-sign-in-settings
+
+R-01: Settings, Sign-in and security. The user changes the password and sets up an
+authenticator app.
+
+![16-sign-in-settings](16-sign-in-settings.png)
+
+## 17-set-up-totp
+
+R-01: the panel makes a new TOTP key. TOTP is on only after the user gives the password and a
+code from the app.
+
+![17-set-up-totp](17-set-up-totp.png)
+
+## 18-password-changed
+
+R-01: TOTP is on, so a password change also needs a code. The panel signs out the other
+sessions.
+
+![18-password-changed](18-password-changed.png)
+
+## 19-add-server-github
+
+R-14: the "Add server" command downloads the signed installation script from GitHub Releases.
+
+![19-add-server-github](19-add-server-github.png)

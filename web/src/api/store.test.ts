@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { ApiError, addDomain, createDatabase, createDatabaseUser, createToken, getState, resetState, setDatabaseUser, timing, verifyDomain } from "./store";
+import { ApiError, addDomain, changePassword, createDatabase, createDatabaseUser, createToken, getState, resetState, setDatabaseUser, setTotp, timing, verifyDomain } from "./store";
 
 beforeEach(() => {
   resetState();
@@ -57,5 +57,20 @@ describe("tokens (CF-02)", () => {
     expect(() => createToken("ci", ["websites:read"], 30, "")).toThrow(ApiError);
     expect(() => createToken("ci", ["websites:read"], 30, "secret", "")).toThrow(ApiError);
     expect(createToken("ci", ["websites:read"], 30, "secret", "123456")).toMatchObject({ token: { name: "ci" } });
+  });
+});
+
+describe("sign-in settings (R-01)", () => {
+  it("checks a new password before it sends it", () => {
+    const fields = (fn: () => unknown) => { try { fn(); } catch (e) { return (e as ApiError).fields; } return {}; };
+    expect(fields(() => changePassword("", "short", "other", ""))).toMatchObject({ currentPassword: expect.any(String), password: expect.any(String), password_confirmation: expect.any(String) });
+    expect(fields(() => changePassword("old-password-1", "old-password-1", "old-password-1", "123456"))).toMatchObject({ password: expect.any(String) });
+    expect(() => changePassword("old-password-1", "a-new-long-password", "a-new-long-password", "123456")).not.toThrow();
+    expect(getState().audit[0]).toMatchObject({ action: "Changed password" });
+  });
+
+  it("needs the password and a code to change TOTP", () => {
+    expect(() => setTotp(false, "123456", "")).toThrow(ApiError);
+    expect(() => setTotp(false, "12", "secret")).toThrow(ApiError);
   });
 });

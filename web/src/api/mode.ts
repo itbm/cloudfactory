@@ -23,7 +23,6 @@ export const features = {
   access: !LIVE,
   logs: !LIVE,
   passkeys: !LIVE,
-  security: !LIVE,
   system: !LIVE,
   alerts: !LIVE,
   branding: !LIVE,

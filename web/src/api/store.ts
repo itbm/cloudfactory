@@ -1632,14 +1632,48 @@ export function removePasskey(passkeyId: string) {
   });
 }
 
-export function setTotp(enabled: boolean, code?: string) {
-  if (LIVE) notInRelease();
-  if (enabled && !/^\d{6}$/.test(code ?? "")) throw new ApiError("Type the 6-digit code.", { code: "Type the 6-digit code from the app." });
+/** R-01: the key for a new authenticator app. TOTP is on only after setTotp(true, …). */
+export function startTotpSetup(): Promise<{ secret: string; uri: string }> | { secret: string; uri: string } {
+  if (LIVE) return call(() => live.request<{ secret: string; uri: string }>("POST", "/me/totp/setup"));
+  const secret = "JBSWY3DPEHPK3PXP";
+  return { secret, uri: `otpauth://totp/Cloudfactory:${encodeURIComponent(state.session.user.email)}?secret=${secret}&issuer=Cloudfactory` };
+}
+
+/** R-01: turns TOTP on or off. Each change needs the password and a code from the app. */
+export function setTotp(enabled: boolean, code: string, password: string) {
+  const errors: Record<string, string> = {};
+  if (!password) errors.password = "Type your password.";
+  if (!/^\d{6}$/.test(code.trim())) errors.code = "Type the 6-digit code from the app.";
+  if (Object.keys(errors).length) throw new ApiError(Object.values(errors)[0], errors);
+  if (LIVE) {
+    return call(async () => {
+      await live.request("POST", enabled ? "/me/totp/enable" : "/me/totp/disable", { password, code: code.trim() });
+      await refresh();
+    });
+  }
   if (!enabled && state.passkeys.length === 0) throw new ApiError("Add a passkey before you remove TOTP.");
   update((d) => {
     d.totpEnabled = enabled;
     audit(d, enabled ? "Set up TOTP" : "Removed TOTP", d.session.user.email);
   });
+}
+
+/** R-01: changes the password. The panel then signs out the other sessions of the user. */
+export function changePassword(current: string, next: string, confirm: string, totp = "") {
+  const errors: Record<string, string> = {};
+  if (!current) errors.currentPassword = "Type your current password.";
+  if (next.length < 12) errors.password = "Use 12 or more characters.";
+  else if (next === current) errors.password = "Use a password that is different from the current password.";
+  if (next !== confirm) errors.password_confirmation = "The passwords are not the same.";
+  if (state.totpEnabled && !/^\d{6}$/.test(totp.trim())) errors.totp = "Type the 6-digit code from the app.";
+  if (Object.keys(errors).length) throw new ApiError(Object.values(errors)[0], errors);
+  if (LIVE) {
+    return call(async () => {
+      await live.request("PUT", "/me/password", { currentPassword: current, password: next, password_confirmation: confirm, totp: totp.trim() || undefined });
+      await refresh();
+    });
+  }
+  update((d) => audit(d, "Changed password", d.session.user.email));
 }
 
 export function addAlertChannel(kind: AlertChannel["kind"], target: string, events: string[]) {

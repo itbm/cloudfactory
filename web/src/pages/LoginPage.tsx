@@ -47,7 +47,7 @@ export function LoginPage() {
             e.preventDefault();
             const r = await pw.run();
             if (r.ok) go();
-            // A wrong email or password: show the first step again.
+            // R-08: one error for a wrong email, password or code. Show the first step again.
             else if (r.error.fields.email || r.error.fields.password) setStep("start");
           }}>
             <Field label="6-digit code" hint={features.passkeys ? "Open your authenticator app." : "Open your authenticator app. Leave it empty if your account has no TOTP yet."} error={pw.error?.fields.totp}>

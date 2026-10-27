@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useAction, useStore } from "../api/hooks";
-import { addAlertChannel, addPasskey, createToken, removeAlertChannel, removePasskey, revokeToken, setSystem, setTotp, testAlertChannel } from "../api/store";
+import { addAlertChannel, addPasskey, changePassword, createToken, removeAlertChannel, removePasskey, revokeToken, setSystem, setTotp, startTotpSetup, testAlertChannel } from "../api/store";
 import { features, LIVE } from "../api/mode";
 import type { AlertChannel, TokenScope } from "../api/types";
 import { Topbar } from "../components/Layout";
@@ -16,10 +16,10 @@ const EVENTS = ["Server health", "Failed update", "Failed deploy", "Failed backu
 
 export function SettingsPage() {
   const state = useStore();
-  const [tab, setTab] = useState(features.security ? "security" : "tokens");
+  const [tab, setTab] = useState("security");
   const isAdmin = state.session.user.role === "administrator";
   const tabs = [
-    ...(features.security ? [{ id: "security", label: "Sign-in and security" }] : []),
+    { id: "security", label: "Sign-in and security" },
     { id: "tokens", label: "API tokens" },
     { id: "audit", label: "Audit log" },
     ...(features.alerts ? [{ id: "alerts", label: "Alerts" }] : []),
@@ -41,17 +41,43 @@ export function SettingsPage() {
   );
 }
 
-/** FR-103: passkeys and TOTP. */
+/** FR-103 and R-01: the password, passkeys and TOTP. */
 function Security() {
   const state = useStore();
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState("");
-  const [totpOpen, setTotpOpen] = useState(false);
+  const [totpMode, setTotpMode] = useState<"on" | "off" | null>(null);
+  const [setup, setSetup] = useState<{ secret: string; uri: string } | null>(null);
   const [code, setCode] = useState("");
+  const [password, setPassword] = useState("");
   const remove = useAction(removePasskey);
   const totp = useAction(setTotp);
+  const start = useAction(startTotpSetup);
+  const closeTotp = () => { setTotpMode(null); setSetup(null); setCode(""); setPassword(""); totp.clear(); };
+  const openSetup = async () => {
+    const r = await start.run();
+    if (r.ok) { setSetup(r.value); setTotpMode("on"); }
+  };
   return (
     <div className="grid-2">
+      <PasswordCard />
+      <Card title="Authenticator app (TOTP)">
+        <div className="card-body">
+          <FormError error={start.error ?? (totpMode ? null : totp.error)} />
+          <p>{state.totpEnabled ? <Status tone="success">On</Status> : <Status tone="warning">Off</Status>}</p>
+          <p className="muted" style={{ marginTop: 8 }}>
+            {features.passkeys
+              ? "Use a time-based one-time password with your password when a passkey is not available."
+              : "Ask for a code from an app on your phone each time you sign in. Then a stolen password alone does not give access to your account."}
+          </p>
+          <div className="btn-group" style={{ marginTop: 14 }}>
+            {state.totpEnabled
+              ? <button type="button" className="btn btn-danger" onClick={() => setTotpMode("off")}>Turn off</button>
+              : <button type="button" className="btn btn-primary" onClick={() => void openSetup()}>Set up</button>}
+          </div>
+        </div>
+      </Card>
+      {features.passkeys && (
       <Card title="Passkeys" actions={<button type="button" className="btn btn-primary" onClick={() => setAdding(true)}>Add passkey</button>}>
         <div className="card-body" style={{ paddingBottom: 0 }}><FormError error={remove.error} /></div>
         <div className="table-wrap">
@@ -72,35 +98,61 @@ function Security() {
           </table>
         </div>
       </Card>
-      <Card title="Authenticator app (TOTP)">
-        <div className="card-body">
-          <FormError error={totp.error} />
-          <p>{state.totpEnabled ? <Status tone="success">On</Status> : <Status tone="neutral">Off</Status>}</p>
-          <p className="muted" style={{ marginTop: 8 }}>Use a time-based one-time password with your password when a passkey is not available.</p>
-          <div className="btn-group" style={{ marginTop: 14 }}>
-            {state.totpEnabled
-              ? <ConfirmButton className="btn btn-danger" title="Turn off TOTP?" confirm="Turn off" message={<p>You can then sign in with a passkey only.</p>} onConfirm={() => void totp.run(false)}>Turn off</ConfirmButton>
-              : <button type="button" className="btn btn-primary" onClick={() => setTotpOpen(true)}>Set up</button>}
-          </div>
-        </div>
-      </Card>
+      )}
       {adding && (
         <Modal title="Add passkey" onClose={() => setAdding(false)} footer={<><button type="button" className="btn" onClick={() => setAdding(false)}>Cancel</button><button type="button" className="btn btn-primary" onClick={() => { addPasskey(name); setAdding(false); setName(""); }}>Continue</button></>}>
           <p>Your browser asks you to confirm with Touch ID, Windows Hello or a security key.</p>
           <Field label="Name for this passkey">{(p) => <input {...p} className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Work laptop" />}</Field>
         </Modal>
       )}
-      {totpOpen && (
-        <Modal title="Set up an authenticator app" onClose={() => setTotpOpen(false)} footer={<><button type="button" className="btn" onClick={() => setTotpOpen(false)}>Cancel</button><button type="submit" form="totp" className="btn btn-primary">Turn on</button></>}>
-          <form id="totp" noValidate onSubmit={async (e) => { e.preventDefault(); if ((await totp.run(true, code)).ok) setTotpOpen(false); }}>
+      {totpMode && (
+        <Modal
+          title={totpMode === "on" ? "Set up an authenticator app" : "Turn off the authenticator app"}
+          onClose={closeTotp}
+          footer={<><button type="button" className="btn" onClick={closeTotp}>Cancel</button><button type="submit" form="totp" className={totpMode === "on" ? "btn btn-primary" : "btn btn-danger"}>{totpMode === "on" ? "Turn on" : "Turn off"}</button></>}
+        >
+          <form id="totp" noValidate onSubmit={async (e) => { e.preventDefault(); if ((await totp.run(totpMode === "on", code, password)).ok) closeTotp(); }}>
             <FormError error={totp.error} />
-            <p>Scan the code with your app, or type this key:</p>
-            <CopyField value="JBSW Y3DP EHPK 3PXP" label="TOTP key" />
-            <Field label="6-digit code" error={totp.error?.fields.code}>{(p) => <input {...p} className="input" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={code} onChange={(e) => setCode(e.target.value)} />}</Field>
+            {totpMode === "on" && setup && <>
+              <p>Add this key to your authenticator app, for example 1Password, Google Authenticator or Microsoft Authenticator. On a phone, you can <a href={setup.uri}>open the key in the app</a>.</p>
+              <CopyField value={setup.secret.replace(/(.{4})/g, "$1 ").trim()} label="TOTP key" />
+              <p className="muted" style={{ marginTop: 8, marginBottom: 12 }}>The key is valid for 10 minutes. Keep a copy in a safe place, in case you lose your phone.</p>
+            </>}
+            {totpMode === "off" && <p style={{ marginBottom: 12 }}>You then sign in with your password only. Type your password and a code from the app.</p>}
+            <Field label="Password" error={totp.error?.fields.password}>{(p) => <input {...p} className="input" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />}</Field>
+            <Field label="6-digit code from the app" error={totp.error?.fields.code}>{(p) => <input {...p} className="input" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={code} onChange={(e) => setCode(e.target.value)} />}</Field>
           </form>
         </Modal>
       )}
     </div>
+  );
+}
+
+/** R-01: change the password with the current password and, when TOTP is on, a code. */
+function PasswordCard() {
+  const state = useStore();
+  const [current, setCurrent] = useState("");
+  const [next, setNext] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [code, setCode] = useState("");
+  const [done, setDone] = useState(false);
+  const change = useAction(changePassword);
+  return (
+    <Card title="Password">
+      <form className="card-body" noValidate onSubmit={async (e) => {
+        e.preventDefault();
+        setDone(false);
+        if ((await change.run(current, next, confirm, code)).ok) { setCurrent(""); setNext(""); setConfirm(""); setCode(""); setDone(true); }
+      }}>
+        <FormError error={change.error} />
+        {done && <p role="status" style={{ marginBottom: 12 }}><Status tone="success">Changed</Status> Your other sessions are signed out.</p>}
+        <Field label="Current password" error={change.error?.fields.currentPassword}>{(p) => <input {...p} className="input" type="password" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} />}</Field>
+        <Field label="New password" hint="Use 12 or more characters." error={change.error?.fields.password}>{(p) => <input {...p} className="input" type="password" autoComplete="new-password" value={next} onChange={(e) => setNext(e.target.value)} />}</Field>
+        <Field label="Type the new password again" error={change.error?.fields.password_confirmation}>{(p) => <input {...p} className="input" type="password" autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} />}</Field>
+        {state.totpEnabled && <Field label="6-digit code from the app" error={change.error?.fields.totp}>{(p) => <input {...p} className="input" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={code} onChange={(e) => setCode(e.target.value)} />}</Field>}
+        <div className="btn-group" style={{ marginTop: 14 }}><button type="submit" className="btn btn-primary">Change password</button></div>
+      </form>
+    </Card>
   );
 }
 

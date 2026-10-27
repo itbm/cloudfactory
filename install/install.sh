@@ -420,10 +420,10 @@ base64 -d "$TMP/cf-agent.manifest.sig" >"$TMP/cf-agent.manifest.sig.der"
 openssl dgst -sha256 -verify "$CF_ETC/cosign.pub" -signature "$TMP/cf-agent.manifest.sig.der" "$TMP/cf-agent.manifest" >/dev/null ||
 	fail "the signature of the agent manifest is not valid."
 agent_sha256=$(sha256sum "$TMP/cf-agent" | cut -d' ' -f1)
-grep -qx "version=$CF_VERSION" "$TMP/cf-agent.manifest" &&
-	grep -qx "asset=$asset" "$TMP/cf-agent.manifest" &&
-	grep -qx "sha256=$agent_sha256" "$TMP/cf-agent.manifest" ||
-	fail "the agent binary does not agree with the signed manifest of version $CF_VERSION."
+for line in "version=$CF_VERSION" "asset=$asset" "sha256=$agent_sha256"; do
+	grep -qx "$line" "$TMP/cf-agent.manifest" ||
+		fail "the agent binary does not agree with the signed manifest of version $CF_VERSION."
+done
 install -m 0755 "$TMP/cf-agent" /usr/local/bin/cf-agent
 
 step "Install the agent service"

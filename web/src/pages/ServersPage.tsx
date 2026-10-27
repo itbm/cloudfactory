@@ -38,6 +38,9 @@ export function ServersTable() {
   );
 }
 
+/** R-14: the signed installation script from GitHub Releases, as in the README. */
+const INSTALL_URL = "https://github.com/itbm/cloudfactory/releases/latest/download/install.sh";
+
 const ROLES: ServerRole[] = ["web", "database", "email", "dns", "backup"];
 
 function AddServerDialog({ onClose }: { onClose: () => void }) {
@@ -51,8 +54,8 @@ function AddServerDialog({ onClose }: { onClose: () => void }) {
   useEffect(() => { if (LIVE) void newJoinToken(); }, []);
   const name_ = name.trim().toLowerCase();
   const cmd = LIVE
-    ? `curl -fsSL https://get.cloudfactory.io | sh -s -- --join ${state.joinToken || "…"} --panel https://${window.location.host}${name_ ? ` --name ${name_}` : ""} --roles ${roles.join(",") || "web"}`
-    : `curl -fsSL https://get.cloudfactory.io | sh -s -- --join ${state.joinToken}`;
+    ? `curl -fsSL ${INSTALL_URL} | sh -s -- --join ${state.joinToken || "…"} --panel https://${window.location.host}${name_ ? ` --name ${name_}` : ""} --roles ${roles.join(",") || "web"}`
+    : `curl -fsSL ${INSTALL_URL} | sh -s -- --join ${state.joinToken}`;
   return (
     <Modal
       title="Add server"
