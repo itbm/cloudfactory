@@ -241,8 +241,8 @@ fi
 # ---------------------------------------------------------------------------
 
 STEP=0
-STEPS=10
-[ "$MODE" = panel ] && STEPS=12
+STEPS=13
+[ "$MODE" = panel ] && STEPS=15
 CURRENT=""
 TMP=$(mktemp -d)
 on_exit() {
@@ -275,7 +275,26 @@ apt-get update -q
 apt-get install -y -q --no-install-recommends \
 	podman passt uidmap netavark aardvark-dns conmon crun fuse-overlayfs \
 	nftables unattended-upgrades needrestart restic apparmor apparmor-utils \
-	systemd-container dbus-user-session ca-certificates curl openssl bzip2
+	systemd-container dbus-user-session ca-certificates curl openssl bzip2 \
+	openssh-server quota
+
+step "Turn off the automatic upgrades of APT"
+# FR-1111: the agent installs the host updates, by the update policy of the server and in its
+# maintenance window. The APT timer must not install them at a different time.
+cat >/etc/apt/apt.conf.d/52cloudfactory <<'APT'
+// Managed by the Cloudfactory installer. The Cloudfactory agent installs the updates.
+APT::Periodic::Unattended-Upgrade "0";
+APT
+
+step "Let rootless containers use CPU, memory, I/O and process limits"
+# FR-202: by default, systemd gives the user services only the memory and pids controllers.
+# Podman needs the cpu and io controllers to apply the limits of each website.
+mkdir -p /etc/systemd/system/user@.service.d
+cat >/etc/systemd/system/user@.service.d/cloudfactory-delegate.conf <<'UNIT'
+[Service]
+Delegate=cpu cpuset io memory pids
+UNIT
+systemctl daemon-reload
 
 step "Hold the container packages"
 # FR-1207: only the agent updates these packages (FR-1113).
@@ -364,12 +383,45 @@ for user in cf-edge cf-db cf-panel; do
 	fi
 	loginctl enable-linger "$user"
 done
-install -d -m 0755 /srv/cloudfactory/sites
+install -d -m 0755 /srv/cloudfactory
+# Root owns each directory in sites, so that SFTP can lock a user in it (ChrootDirectory).
+# The home directories are separate, so that SFTP cannot reach them.
+install -d -m 0711 /srv/cloudfactory/sites /srv/cloudfactory/homes
 install -d -m 0700 "$CF_DATA"
 install -d -o cf-edge -g cf-edge -m 0700 "$CF_DATA/caddy"
 # CF-13: the admin API of Caddy listens on a Unix socket in this directory, not on a TCP port.
 install -d -o cf-edge -g cf-edge -m 0700 "$CF_DATA/caddy-admin"
 [ -f "$CF_ETC/restic.key" ] || (umask 077 && openssl rand -base64 48 >"$CF_ETC/restic.key")
+
+step "Set up SFTP for the websites"
+# Spec section 10: the owner of a website signs in with SFTP as the Unix user of the website.
+# sshd locks the user in the directory of the website and allows only SFTP. The agent writes
+# the keys and sets the password of each user. Other users of the server are not changed.
+getent group cf-sites >/dev/null || groupadd --system cf-sites
+install -d -m 0755 "$CF_ETC/sftp"
+mkdir -p /etc/ssh/sshd_config.d
+cat >/etc/ssh/sshd_config.d/50-cloudfactory-sftp.conf <<'SSHD'
+# Managed by the Cloudfactory installer.
+Match Group cf-sites
+	ChrootDirectory /srv/cloudfactory/sites/%u
+	ForceCommand internal-sftp -d /app -u 0027
+	AuthorizedKeysFile /etc/cloudfactory/sftp/%u.keys
+	PasswordAuthentication yes
+	KbdInteractiveAuthentication no
+	AllowTcpForwarding no
+	AllowAgentForwarding no
+	AllowStreamLocalForwarding no
+	PermitTunnel no
+	PermitTTY no
+	PermitUserRC no
+	X11Forwarding no
+SSHD
+# Debian and Ubuntu read sshd_config.d at the top of sshd_config. Check the configuration
+# before the reload, so that a mistake does not lock out the administrator.
+grep -Eq '^[[:space:]]*Include[[:space:]]+/etc/ssh/sshd_config\.d/\*\.conf' /etc/ssh/sshd_config ||
+	fail "/etc/ssh/sshd_config does not include /etc/ssh/sshd_config.d/*.conf. Add the line \"Include /etc/ssh/sshd_config.d/*.conf\" at the top, then run the script again."
+sshd -t || fail "the SSH configuration is not valid. Read the error above."
+systemctl reload ssh.service 2>/dev/null || systemctl reload sshd.service
 
 step "Set the firewall"
 # FR-1705: block all incoming traffic except the published ports and the agent port.
