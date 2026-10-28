@@ -13,6 +13,22 @@ answers. The project can change them later.
 | 6 | The final product name? | Not decided. | The code uses "Cloudfactory". A trademark search is necessary (R-01). |
 | 7 | How do rootless containers use ports below 1024? | An nftables redirect from each public port to a high port. | Refer to the next section. |
 
+## Quadlet units, not a Compose file
+
+The core containers (the edge proxy, the databases and the panel) are Quadlet units that the
+agent writes, not a `compose.yaml` file. The reasons:
+
+- systemd starts, stops and restarts each container, also at boot, with no extra service. It
+  logs to the journal, and the agent reads the state from systemd.
+- Each website and each service runs as its own rootless Unix user. One Compose project runs
+  as one user.
+- The units set the gVisor runtime, the pasta network, the dropped capabilities and the
+  limits of each container in one place. The agent checks them with tests.
+- The panel servers and the other servers use the same method. A server operates when the
+  panel is not available.
+- Decision 2: Podman only. `podman compose` needs a second tool, for example
+  `docker-compose` or `podman-compose`.
+
 ## Ports below 1024
 
 The installation script adds these nftables rules:

@@ -1467,7 +1467,7 @@ type BackupRequest struct {
 	UnixUser  string                 `protobuf:"bytes,3,opt,name=unix_user,json=unixUser,proto3" json:"unix_user,omitempty"`
 	Kind      string                 `protobuf:"bytes,4,opt,name=kind,proto3" json:"kind,omitempty"`
 	Databases []*DatabaseRef         `protobuf:"bytes,5,rep,name=databases,proto3" json:"databases,omitempty"`
-	// The restic repository, for example "s3://bucket/path".
+	// The restic repository, for example "s3:s3.amazonaws.com/bucket/path" or "b2:bucket:path".
 	Target string `protobuf:"bytes,6,opt,name=target,proto3" json:"target,omitempty"`
 	// The environment variables of restic for the object storage, for example AWS_ACCESS_KEY_ID.
 	Credentials map[string]string `protobuf:"bytes,7,rep,name=credentials,proto3" json:"credentials,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
@@ -1694,7 +1694,7 @@ type RestoreRequest struct {
 	Scope string `protobuf:"bytes,5,opt,name=scope,proto3" json:"scope,omitempty"`
 	// The database ("mariadb:name" or "postgresql:name"), the mailbox, or the file path.
 	Item string `protobuf:"bytes,6,opt,name=item,proto3" json:"item,omitempty"`
-	// The restic repository, for example "s3://bucket/path".
+	// The restic repository, for example "s3:s3.amazonaws.com/bucket/path" or "b2:bucket:path".
 	Target string `protobuf:"bytes,7,opt,name=target,proto3" json:"target,omitempty"`
 	// Scope "database": the SHA-256 hash of the dump at backup time.
 	DumpSha256    string            `protobuf:"bytes,8,opt,name=dump_sha256,json=dumpSha256,proto3" json:"dump_sha256,omitempty"`

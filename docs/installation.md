@@ -74,19 +74,95 @@ It does not change the system.
 
 Then the script does these steps:
 
-1. Install Podman and the system packages.
-2. Hold the container packages, so that a host update cannot change them.
-3. Install gVisor. Compare its SHA-512 sum with the sum in the script.
-4. Install the AppArmor profiles for Podman and gVisor.
-5. Set the image signature policy. Podman refuses all images that have no valid signature,
+1. Install Podman, OpenSSH, the quota tools and the other system packages.
+2. Turn off the automatic upgrades of the APT timer. The agent installs the host updates, by
+   the update policy of the server and in its maintenance window.
+3. Let systemd give the CPU, I/O, memory and process controllers to the user services
+   (`Delegate=`). Rootless Podman needs them for the limits of each website.
+4. Hold the container packages, so that a host update cannot change them.
+5. Install gVisor. Compare its SHA-512 sum with the sum in the script.
+6. Install the AppArmor profiles for Podman and gVisor.
+7. Set the image signature policy. Podman refuses all images that have no valid signature,
    except from a registry that you give with `--allow-unsigned`.
-6. Make the service users.
-7. Set the firewall.
-8. Download the agent and check its signature.
-9. Install the agent service and the rollback service.
-10. On the first server only: start the panel in gVisor.
-11. On the first server only: make the first administrator.
-12. Join the panel and start the agent.
+8. Make the service users.
+9. Set up SFTP for the websites (refer to [SFTP](#sftp)).
+10. Set the firewall.
+11. Download the agent and check its signature.
+12. Install the agent service and the rollback service.
+13. On the first server only: start the panel in gVisor.
+14. On the first server only: make the first administrator.
+15. Join the panel and start the agent.
 
 If a step fails, the script stops and shows the step. You can run the script again after you
 correct the problem.
+
+## After the installation
+
+### Backups
+
+The panel does not make backups until you set the object storage.
+
+1. Sign in as an administrator and open **Backups**.
+2. In **Object storage**, type a restic repository on a different server from the websites,
+   for example `s3:s3.eu-west-2.amazonaws.com/my-bucket/cloudfactory` or `b2:my-bucket:cloudfactory`.
+3. Type the credentials of the object storage, for example the access key ID and the secret
+   access key. The panel keeps them encrypted and does not show them again.
+4. Select **Save policy**.
+
+The time of the nightly backups is in UTC. Each Sunday, the panel also removes the data that
+no snapshot uses. With the CLI, put the credentials in the environment, then run
+`cf backups policy set --target REPOSITORY --credentials-from-env`.
+
+Keep a copy of `/etc/cloudfactory/restic.key` in a safe place. restic encrypts each snapshot
+with this key. Without it, you cannot restore.
+
+### SFTP
+
+The owner of a website signs in with SFTP as the Unix user of the website. The script adds
+`/etc/ssh/sshd_config.d/50-cloudfactory-sftp.conf`. For the members of the group `cf-sites`
+only, sshd:
+
+- Locks the user in the directory of the website. The user starts in `/app`.
+- Allows only SFTP: no shell, no terminal and no forwarding.
+- Reads the SSH keys from `/etc/cloudfactory/sftp/USER.keys`. The agent writes this file.
+
+The script does not change the access of other users. Port 22 stays open in the firewall.
+
+### Disk quotas
+
+The disk limit of a plan needs user quotas on the file system of `/srv/cloudfactory`. The
+script installs the quota tools, but it does not change your file systems. To turn on the
+quotas:
+
+1. Add `usrquota` to the mount options of the file system in `/etc/fstab`. For XFS, use
+   `uquota`.
+2. Mount the file system again, or reboot.
+3. For ext4, run `quotacheck -cum MOUNT` and then `quotaon -u MOUNT`.
+4. Restart the agent: `systemctl restart cf-agent`.
+
+The panel shows the service `disk-quotas` as stopped on a server with no quotas.
+
+### Ports
+
+The firewall accepts only SSH, HTTP, HTTPS and the agent port. It does not accept the
+database ports 3306 (MariaDB) and 5432 (PostgreSQL), so the databases are not open to the
+internet. A database user with the access "anywhere" can connect only after you add a rule
+for its port to `/etc/nftables.d-cloudfactory.nft`. Give only the addresses that need it.
+
+### Proxies in front of the panel
+
+The panel API trusts the `X-Forwarded-For` header only from the edge proxy on the same
+server. If you put a different proxy or a load balancer in front of the panel, add its
+address to `CF_TRUSTED_PROXIES` in `/var/lib/cloudfactory/panel/panel.env`, separated by
+commas. Otherwise the sign-in limits apply to the address of the proxy.
+
+### Check on a real server
+
+Nobody has installed release 0.1 on a real Debian 13 or Ubuntu 26.04 server yet. After you
+install it, check these items, and report a problem in the issues of the repository:
+
+- The edge proxy reaches a website through `169.254.1.3` (pasta `--map-host-loopback`).
+- A website container can connect to MariaDB and PostgreSQL.
+- Files that you upload with SFTP have the correct owner in the website container
+  (`--userns=keep-id` in gVisor).
+- A backup and a restore of a website with databases.

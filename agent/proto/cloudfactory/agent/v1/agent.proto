@@ -221,7 +221,7 @@ message BackupRequest {
   string unix_user = 3;
   string kind = 4;
   repeated DatabaseRef databases = 5;
-  // The restic repository, for example "s3://bucket/path".
+  // The restic repository, for example "s3:s3.amazonaws.com/bucket/path" or "b2:bucket:path".
   string target = 6;
   // The environment variables of restic for the object storage, for example AWS_ACCESS_KEY_ID.
   map<string, string> credentials = 7;
@@ -251,7 +251,7 @@ message RestoreRequest {
   string scope = 5;
   // The database ("mariadb:name" or "postgresql:name"), the mailbox, or the file path.
   string item = 6;
-  // The restic repository, for example "s3://bucket/path".
+  // The restic repository, for example "s3:s3.amazonaws.com/bucket/path" or "b2:bucket:path".
   string target = 7;
   // Scope "database": the SHA-256 hash of the dump at backup time.
   string dump_sha256 = 8;
