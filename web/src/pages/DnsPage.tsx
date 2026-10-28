@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { useAction, useStore } from "../api/hooks";
 import { addMailRecords, addZone, deleteRecord, saveRecord } from "../api/store";
 import type { DnsRecord, DnsRecordType, DnsZone } from "../api/types";
+import { inContext } from "../api/selectors";
 import { Topbar } from "../components/Layout";
 import { Card, ConfirmButton, Empty, Field, FormError, Modal, PageHeader, Status, TerraformBadge, TerraformNotice } from "../components/ui";
 import { RECORD_TYPES } from "../lib/dns";
@@ -17,7 +18,7 @@ function ZoneList() {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const add = useAction(addZone);
-  const zones = state.zones.filter((z) => state.session.contextId === "platform" || z.customerId === state.session.contextId);
+  const zones = state.zones.filter((z) => inContext(state, z.customerId));
   return (
     <>
       <Topbar />

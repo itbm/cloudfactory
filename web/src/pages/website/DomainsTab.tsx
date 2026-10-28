@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useAction, useStore } from "../../api/hooks";
+import { LIVE } from "../../api/mode";
 import { addDomain, checkDns, makePrimary, removeDomain, verifyDomain } from "../../api/store";
 import type { DomainKind, Website } from "../../api/types";
 import { Card, ConfirmButton, Field, FormError, Status } from "../../components/ui";
@@ -19,6 +20,12 @@ export function DomainsTab({ website }: { website: Website }) {
   });
   const remove = useAction(removeDomain);
   const verify = useAction(verifyDomain);
+  // Batch 2, finding 11: these buttons show their errors too.
+  const check = useAction(checkDns);
+  const primary = useAction(makePrimary);
+  // The address of the server, when the panel knows it.
+  const address = LIVE ? website.sftp?.host : "203.0.113.10";
+  const isIp = !!address && /^[\d.]+$|:/.test(address);
   const server = state.servers.find((s) => s.id === website.serverId);
   const checking = (d: string) => state.jobs.some((j) => j.websiteId === website.id && j.state === "running" && j.title === `Check DNS for ${d}`);
 
@@ -26,7 +33,7 @@ export function DomainsTab({ website }: { website: Website }) {
     <div className="stack">
       <Card title="Domains of this website">
         <div className="card-body" style={{ paddingBottom: 0 }}>
-          <FormError error={remove.error ?? verify.error} />
+          <FormError error={remove.error ?? verify.error ?? check.error ?? primary.error} />
         </div>
         <div className="table-wrap">
           <table>
@@ -61,7 +68,9 @@ export function DomainsTab({ website }: { website: Website }) {
                           <>
                             <Status tone="warning">Does not point here</Status>
                             {/* FR-403: show what the DNS must be. */}
-                            <span className="cell-sub">Set an A record to <code>203.0.113.10</code> ({server?.name}).</span>
+                            <span className="cell-sub">{isIp
+                              ? <>Set an {address!.includes(":") ? "AAAA" : "A"} record to <code>{address}</code> ({server?.name ?? "the server"}).</>
+                              : address ? <>Set a CNAME record to <code>{address}</code>, or A and AAAA records to its addresses.</> : <>Point the domain to the public address of the server.</>}</span>
                           </>
                         )}
                     </td>
@@ -74,11 +83,11 @@ export function DomainsTab({ website }: { website: Website }) {
                           </button>
                         )}
                         {!d.verification && !d.dnsPointsHere && (
-                          <button type="button" className="btn btn-sm" disabled={checking(d.name)} onClick={() => void checkDns(website.id, d.name)}>
-                            {checking(d.name) ? "Checking…" : "Check DNS"}
+                          <button type="button" className="btn btn-sm" disabled={checking(d.name) || check.busy} onClick={() => void check.run(website.id, d.name)}>
+                            {checking(d.name) || check.busy ? "Checking…" : "Check DNS"}
                           </button>
                         )}
-                        {d.kind !== "primary" && !d.verification && <button type="button" className="btn btn-sm" onClick={() => makePrimary(website.id, d.name)}>Make primary</button>}
+                        {d.kind !== "primary" && !d.verification && <button type="button" className="btn btn-sm" disabled={primary.busy} onClick={() => void primary.run(website.id, d.name)}>Make primary</button>}
                         {d.kind !== "primary" && (
                           <ConfirmButton className="btn btn-sm btn-danger" title={`Remove ${d.name}?`} confirm="Remove domain" message={<p>The edge proxy stops sending traffic for {d.name} to this website.</p>} onConfirm={() => void remove.run(website.id, d.name)}>
                             Remove

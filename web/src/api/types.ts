@@ -36,6 +36,8 @@ export interface Runtime {
   phpIni: Record<string, string>;
   /** The previous image, kept so that the owner can go back in one action (FR-303). */
   previous?: { imageId: string; phpVersion?: PhpVersion; tag: string };
+  /** The directory in /app that the web server serves. "." is /app. The default is "public". */
+  documentRoot?: string;
 }
 
 export type CertificateState = "valid" | "renewed" | "pending" | "failed" | "not_needed";
@@ -130,6 +132,16 @@ export interface SshKey {
   addedAt: string;
 }
 
+export interface SftpAccess {
+  enabled: boolean;
+  host: string;
+  port: number;
+  username: string;
+  passwordSet: boolean;
+  /** OpenSSH public keys, one key in each item. */
+  authorizedKeys: string[];
+}
+
 export interface Website {
   id: string;
   name: string;
@@ -150,6 +162,8 @@ export interface Website {
   cron: CronJob[];
   sshKeys: SshKey[];
   sftpPasswordEnabled: boolean;
+  /** The SFTP access from the panel API (live mode). */
+  sftp?: SftpAccess;
   shellEnabled: boolean;
   lastChange: LastChange;
   /** A staging copy points to its source website (FR-205). */
@@ -253,6 +267,9 @@ export interface RuntimeImage {
   custom: boolean;
   signatureVerified: boolean;
   digest: string;
+  /** FR-307: the HTTP port and the start command of a custom image. */
+  containerPort?: number;
+  command?: string[];
 }
 
 export type ServerRole = "web" | "database" | "email" | "dns" | "backup";
@@ -266,6 +283,8 @@ export interface PackageUpdate {
   from: string;
   to: string;
   security: boolean;
+  /** A held container tool. Only the "Update container tools" action updates it (FR-1113). */
+  containerTool?: boolean;
 }
 
 export interface ServerService {
@@ -389,6 +408,10 @@ export interface BackupPolicy {
   monthly: number;
   time: string;
   target: string;
+  /** The restic environment variables. The panel sends them and never reads them back. */
+  credentials?: Record<string, string>;
+  /** The names of the credentials that are set. */
+  credentialNames?: string[];
 }
 
 export interface Plan {

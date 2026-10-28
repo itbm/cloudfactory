@@ -2,8 +2,9 @@ import { MoreHorizontal } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { features } from "../api/mode";
-import { createStagingCopy, deleteWebsite, setPower } from "../api/store";
+import { createStagingCopy, deleteWebsite, setPower, type StagingCredential } from "../api/store";
 import type { Website } from "../api/types";
+import { CopyField } from "../pages/website/AccessTab";
 import { Modal } from "./ui";
 
 /** The actions menu of a website (FR-204, FR-205). */
@@ -11,7 +12,18 @@ export function WebsiteMenu({ website, bordered = false }: { website: Website; b
   const [open, setOpen] = useState(false);
   const [confirm, setConfirm] = useState<null | "stop" | "delete">(null);
   const [typed, setTyped] = useState("");
-  const [error, setError] = useState("");
+  const [error, setError] = useState<{ title: string; text: string } | null>(null);
+  const [staging, setStaging] = useState<{ websiteId: string; credentials: StagingCredential[] } | null>(null);
+  // Batch 2, finding 11: show the error of each action.
+  const attempt = (title: string, fn: () => unknown) => {
+    void (async () => {
+      try {
+        await fn();
+      } catch (e) {
+        setError({ title, text: (e as Error).message });
+      }
+    })();
+  };
   const ref = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
 
@@ -65,22 +77,37 @@ export function WebsiteMenu({ website, bordered = false }: { website: Website; b
           {features.files && item("File manager", () => navigate(`/websites/${website.id}/files`))}
           {running
             ? item("Stop", () => setConfirm("stop"), busy)
-            : item("Start", () => void setPower(website.id, "start"), busy)}
-          {item("Restart", () => void setPower(website.id, "restart"), !running)}
-          {item("Make staging copy", async () => {
-            try {
-              const { websiteId } = await createStagingCopy(website.id);
-              navigate(`/websites/${websiteId}`);
-            } catch (e) {
-              setError((e as Error).message);
-            }
-          }, !!website.stagingOf)}
+            : item("Start", () => attempt("Cannot start the website", () => setPower(website.id, "start")), busy)}
+          {item("Restart", () => attempt("Cannot restart the website", () => setPower(website.id, "restart")), !running)}
+          {item("Make staging copy", () => attempt("Cannot make a staging copy", async () => {
+            const { websiteId, credentials } = await createStagingCopy(website.id);
+            // The API shows the passwords of the new database users once.
+            if (credentials?.length) setStaging({ websiteId, credentials });
+            else navigate(`/websites/${websiteId}`);
+          }), !!website.stagingOf)}
           {item("Remove website", () => setConfirm("delete"), false, true)}
         </ul>
       )}
       {error && (
-        <Modal title="Cannot make a staging copy" onClose={() => setError("")} footer={<button type="button" className="btn" onClick={() => setError("")}>Close</button>}>
-          <p>{error}</p>
+        <Modal title={error.title} onClose={() => setError(null)} footer={<button type="button" className="btn" onClick={() => setError(null)}>Close</button>}>
+          <p>{error.text}</p>
+        </Modal>
+      )}
+      {staging && (
+        <Modal
+          title="The staging copy is starting"
+          wide
+          onClose={() => setStaging(null)}
+          footer={<button type="button" className="btn btn-primary" onClick={() => { const id = staging.websiteId; setStaging(null); navigate(`/websites/${id}`); }}>Open the staging copy</button>}
+        >
+          <p>The copy has its own copies of the databases. Each engine has a new database user with access to the copies. Put these users in the configuration of the copy, so that it does not change the live data.</p>
+          <p><strong>Copy the passwords now.</strong> The panel shows them only once.</p>
+          {staging.credentials.map((c) => (
+            <div key={c.user} style={{ marginTop: 12 }}>
+              <p className="small">{c.engine === "mariadb" ? "MariaDB" : "PostgreSQL"} user <code>{c.user}</code> · databases {c.databases.map((d) => <code key={d} style={{ marginRight: 6 }}>{d}</code>)}</p>
+              <CopyField value={c.password} label={`Password of ${c.user}`} />
+            </div>
+          ))}
         </Modal>
       )}
       {confirm === "stop" && (
@@ -90,7 +117,7 @@ export function WebsiteMenu({ website, bordered = false }: { website: Website; b
           footer={
             <>
               <button type="button" className="btn" onClick={() => setConfirm(null)}>Cancel</button>
-              <button type="button" className="btn btn-danger-solid" onClick={() => { setConfirm(null); void setPower(website.id, "stop"); }}>Stop website</button>
+              <button type="button" className="btn btn-danger-solid" onClick={() => { setConfirm(null); attempt("Cannot stop the website", () => setPower(website.id, "stop")); }}>Stop website</button>
             </>
           }
         >
@@ -110,7 +137,8 @@ export function WebsiteMenu({ website, bordered = false }: { website: Website; b
                 disabled={typed !== website.name}
                 onClick={() => {
                   setConfirm(null);
-                  void deleteWebsite(website.id);
+                  // A failed job shows in the notifications.
+                  attempt("Cannot remove the website", () => deleteWebsite(website.id));
                   navigate("/websites");
                 }}
               >

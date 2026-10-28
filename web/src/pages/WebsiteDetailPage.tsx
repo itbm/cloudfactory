@@ -1,14 +1,14 @@
 import { ArrowUpRight, ShieldCheck } from "lucide-react";
-import { useState } from "react";
-import { features } from "../api/mode";
+import { useEffect, useState } from "react";
+import { features, LIVE } from "../api/mode";
 import { Link, useParams } from "react-router-dom";
 import { useAction, useStore } from "../api/hooks";
 import { imageOf, runtimeLabel, supportEnds, tagOf, updateReady } from "../api/selectors";
-import { applyImageUpdate, deployNow, scheduleImageUpdate, setPower, backupNow } from "../api/store";
+import { applyImageUpdate, deployNow, scheduleImageUpdate, setPower, backupNow, showWebsite } from "../api/store";
 import type { Website } from "../api/types";
 import { Topbar } from "../components/Layout";
 import { WebsiteMenu } from "../components/WebsiteMenu";
-import { Card, Empty, JobRow, Live, Meter, Modal, Status, Tabs, TerraformBadge, TerraformNotice } from "../components/ui";
+import { Card, Empty, FormError, JobRow, Live, Meter, Modal, Status, Tabs, TerraformBadge, TerraformNotice } from "../components/ui";
 import { bytes, longDate, percent, ratio, relativeTime } from "../lib/format";
 import { certificateUntil, WEBSITE_STATUS } from "../lib/labels";
 import { AccessTab, SshCard } from "./website/AccessTab";
@@ -34,7 +34,7 @@ const ALL_TABS = [
   ["backups", "Backups", true],
   ["logs", "Logs", features.logs],
   ["deploys", "Deploys", features.deploys],
-  ["access", "SFTP and SSH", features.access],
+  ["access", LIVE ? "SFTP" : "SFTP and SSH", features.access],
   ["settings", "Settings", true],
 ] as const;
 
@@ -47,6 +47,23 @@ function UpdateBanner({ website }: { website: Website }) {
   const [changes, setChanges] = useState(false);
   const running = state.jobs.find((j) => j.websiteId === website.id && j.state === "running" && j.title.startsWith("Test update"));
   if (!updateReady(state, website) || running) return null;
+  if (LIVE) {
+    // The image rollout updates all websites in stages (FR-1108). The API has no update for one website.
+    const admin = state.session.user.role === "administrator";
+    return (
+      <section className="banner" aria-labelledby="update-title">
+        <ShieldCheck className="banner-icon" size={26} aria-hidden="true" />
+        <div className="banner-text">
+          <h2 id="update-title">An update is ready for this website</h2>
+          <p>
+            {image.name} {image.available} is signed and ready. The rollout updates the websites in stages, with a health check for each website.
+            If the check fails, the website goes back to {tagOf(state, website)}. {admin ? "" : "Your provider starts the rollout. You do not need to do anything."}
+          </p>
+        </div>
+        {admin && <div className="btn-group"><Link className="btn btn-primary" to="/updates">Go to Updates</Link></div>}
+      </section>
+    );
+  }
   return (
     <section className="banner" aria-labelledby="update-title">
       <ShieldCheck className="banner-icon" size={26} aria-hidden="true" />
@@ -217,6 +234,7 @@ function BackupsCard({ website }: { website: Website }) {
   const state = useStore();
   const last = state.snapshots.find((s) => s.websiteId === website.id);
   const p = state.backupPolicy;
+  const backup = useAction(backupNow);
   return (
     <Card title="Backups">
       <div className="card-body">
@@ -226,8 +244,9 @@ function BackupsCard({ website }: { website: Website }) {
         </p>
         <div className="btn-group" style={{ marginTop: 14 }}>
           <Link className="btn" to={`/websites/${website.id}/backups`}>Restore…</Link>
-          <button type="button" className="btn" onClick={() => void backupNow(website.id)}>Back up now</button>
+          <button type="button" className="btn" disabled={backup.busy} onClick={() => void backup.run(website.id)}>Back up now</button>
         </div>
+        <FormError error={backup.error} />
       </div>
     </Card>
   );
@@ -260,6 +279,10 @@ export function WebsiteDetailPage() {
   const state = useStore();
   const website = state.websites.find((w) => w.id === id);
   const restart = useAction(setPower);
+  const known = !!website;
+  useEffect(() => {
+    if (known) showWebsite(id);
+  }, [id, known]);
 
   if (!website) {
     return (
@@ -294,7 +317,7 @@ export function WebsiteDetailPage() {
               {website.managedByTerraform && <TerraformBadge />}
             </div>
             <p className="detail-meta">
-              {website.application} · server {server?.name} ({server?.location}) · Unix user <code>{website.unixUser}</code> · created {longDate(website.createdAt)}
+              {website.application}{server ? ` · server ${server.name} (${server.location})` : ""} · Unix user <code>{website.unixUser}</code> · created {longDate(website.createdAt)}
             </p>
           </div>
           <div className="btn-group">

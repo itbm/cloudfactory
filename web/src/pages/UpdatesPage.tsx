@@ -17,6 +17,9 @@ function RolloutCard({ rollout }: { rollout: Rollout }) {
   const total = rollout.websites;
   const waiting = Math.max(0, total - rollout.healthy - rollout.rolledBack);
   const active = rollout.state === "running" || rollout.state === "paused";
+  // Batch 2, finding 11: show the errors of these buttons.
+  const pause = useAction(pauseRollout);
+  const back = useAction(async () => { await rollBackAll(); });
   return (
     <section className="card" aria-labelledby="rollout-title" style={{ padding: 22 }}>
       <div className="card-header" style={{ padding: 0 }}>
@@ -30,13 +33,14 @@ function RolloutCard({ rollout }: { rollout: Rollout }) {
         </div>
         {active && (
           <div className="btn-group">
-            <button type="button" className="btn" onClick={() => pauseRollout(rollout.state === "running")}>{rollout.state === "running" ? "Pause" : "Resume"}</button>
-            <ConfirmButton className="btn btn-danger" title="Roll back all websites?" confirm="Roll back all" message={<p>All {rollout.healthy} updated websites go back to {rollout.fromTag}. Each website gets a health check after the switch.</p>} onConfirm={() => void rollBackAll()}>
+            <button type="button" className="btn" disabled={pause.busy} onClick={() => void pause.run(rollout.state === "running")}>{rollout.state === "running" ? "Pause" : "Resume"}</button>
+            <ConfirmButton className="btn btn-danger" title="Roll back all websites?" confirm="Roll back all" message={<p>All {rollout.healthy} updated websites go back to {rollout.fromTag}. Each website gets a health check after the switch.</p>} onConfirm={() => void back.run()}>
               Roll back all
             </ConfirmButton>
           </div>
         )}
       </div>
+      <FormError error={pause.error ?? back.error} />
       <ol className="stages" aria-label="Stages">
         {rollout.stages.map((s, i) => (
           <li key={s.name} className={`stage stage-${s.state}`} aria-current={s.state === "in_progress" ? "step" : undefined}>

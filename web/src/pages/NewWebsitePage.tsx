@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAction, useStore } from "../api/hooks";
 import { createWebsite } from "../api/store";
+import { contextCustomers } from "../api/selectors";
 import type { RuntimeImage } from "../api/types";
 import { Topbar } from "../components/Layout";
 import { Card, Field, FormError, PageHeader } from "../components/ui";
@@ -16,7 +17,8 @@ const FAMILY: Record<string, RuntimeImage["family"]> = { "Static site": "edge", 
 export function defaultImage(images: RuntimeImage[], family: RuntimeImage["family"]): string {
   const ofFamily = images.filter((i) => i.family === family);
   const pool = ofFamily.length ? ofFamily : images.filter((i) => i.family === "frankenphp");
-  const sorted = [...pool].sort((a, b) => (b.phpVersion ?? "").localeCompare(a.phpVersion ?? ""));
+  // Compare as numbers, so that PHP 8.10 is newer than 8.5.
+  const sorted = [...pool].sort((a, b) => (b.phpVersion ?? "").localeCompare(a.phpVersion ?? "", undefined, { numeric: true }));
   return (sorted.find((i) => !i.supportEndsAt || new Date(i.supportEndsAt) > new Date()) ?? sorted[0] ?? images[0])?.id ?? "";
 }
 
@@ -31,7 +33,10 @@ export function NewWebsitePage() {
   // CF-07: only an administrator can select the plan here. Other users get the plan of the account.
   const choosePlan = platform || state.session.user.role === "administrator";
   const [imageId, setImageId] = useState(() => defaultImage(runtimes, "frankenphp"));
-  const [customerId, setCustomerId] = useState(platform ? state.customers.find((c) => c.role !== "reseller")?.id ?? state.customers[0]?.id ?? "" : state.session.contextId);
+  // Batch 3, issue 2: a reseller makes websites for itself and for its customers.
+  const customers = contextCustomers(state);
+  const [customerId, setCustomerId] = useState(platform ? customers.find((c) => c.role !== "reseller")?.id ?? customers[0]?.id ?? "" : state.session.contextId);
+  const reseller = state.session.user.role === "reseller";
   const [planId, setPlanId] = useState(() => state.customers.find((c) => c.id === customerId)?.planId ?? state.plans[0]?.id ?? "");
   const [serverId, setServerId] = useState(webServers[0]?.id ?? "");
   const action = useAction(createWebsite);
@@ -70,7 +75,7 @@ export function NewWebsitePage() {
                   </select>
                 )}
               </Field>
-              {platform && (
+              {customers.length > 1 && (
                 <Field label="Customer" error={err.customerId}>
                   {(p) => (
                     <select {...p} className="select" value={customerId} onChange={(e) => {
@@ -78,7 +83,7 @@ export function NewWebsitePage() {
                       const plan = state.customers.find((c) => c.id === e.target.value)?.planId;
                       if (plan) setPlanId(plan);
                     }}>
-                      {state.customers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                      {customers.map((c) => <option key={c.id} value={c.id}>{c.id === state.session.contextId && !platform ? `${c.name} (this account)` : c.name}</option>)}
                     </select>
                   )}
                 </Field>
@@ -121,8 +126,10 @@ export function NewWebsitePage() {
                 ))}
               </fieldset>
               ) : (
-                // CF-07: an owner gets the plan of the account. Only an administrator or a reseller can select a different plan.
-                <p>Plan: <strong>{state.plans.find((p) => p.id === planId)?.name ?? "The plan of your account"}</strong>. <span className="muted">Only an administrator or your reseller can change the plan.</span></p>
+                // CF-07: a website gets the plan of its customer. A reseller changes the plan of a customer on the Customers page.
+                <p>Plan: <strong>{state.plans.find((p) => p.id === planId)?.name ?? "The plan of the customer"}</strong>.{" "}
+                  <span className="muted">{reseller && customerId !== state.session.contextId ? <>To change it, change the plan of the customer on the <Link to="/customers">Customers</Link> page.</> : reseller ? "Only an administrator can change the plan of your account." : "Only an administrator or your reseller can change the plan."}</span>
+                </p>
               )}
               {webServers.length > 0 && <div style={{ marginTop: 16 }}>
                 <Field label="Server" error={err.serverId}>

@@ -50,8 +50,10 @@ function AddServerDialog({ onClose }: { onClose: () => void }) {
   const [location, setLocation] = useState("");
   const [roles, setRoles] = useState<ServerRole[]>(["web"]);
   const add = useAction(addServer);
+  const token = useAction(newJoinToken);
+  const makeToken = token.run;
   // In live mode each dialog gets a new token, because the panel shows a token only once.
-  useEffect(() => { if (LIVE) void newJoinToken(); }, []);
+  useEffect(() => { if (LIVE) void makeToken(); }, [makeToken]);
   const name_ = name.trim().toLowerCase();
   const cmd = LIVE
     ? `curl -fsSL ${INSTALL_URL} | sh -s -- --join ${state.joinToken || "…"} --panel https://${window.location.host}${name_ ? ` --name ${name_}` : ""} --roles ${roles.join(",") || "web"}`
@@ -73,7 +75,8 @@ function AddServerDialog({ onClose }: { onClose: () => void }) {
         {LIVE && <p>2. Give the server a name and roles. The command below changes to match.</p>}
         <p>{LIVE ? "3" : "2"}. Sign in to the server as root and run this command. The script checks the system first. It does not change the system until all checks pass.</p>
         <CopyField value={cmd} label="Join command" />
-        <p className="muted small">The token is for one server and expires in 24 hours. <button type="button" className="btn-link" onClick={() => void newJoinToken()}>Make a new token</button></p>
+        <p className="muted small">The token is for one server and expires in 24 hours. <button type="button" className="btn-link" disabled={token.busy} onClick={() => void token.run()}>Make a new token</button></p>
+        <FormError error={token.error} />
         {!LIVE && <p>3. Give the server a name and roles. The panel shows it when the agent connects.</p>}
         <div className="form-row">
           <Field label="Name" error={add.error?.fields.name}>{(p) => <input {...p} className="input mono" value={name} onChange={(e) => setName(e.target.value)} placeholder="web-03" autoCapitalize="none" />}</Field>
@@ -129,6 +132,7 @@ function ServerDetail({ id }: { id: string }) {
   const install = useAction(installUpdates);
   const reboot = useAction(rebootServer);
   const settings = useAction(setServer);
+  const agent = useAction(updateAgent);
   const [windowText, setWindowText] = useState(server?.maintenanceWindow ?? "");
   if (!server) {
     return <><Topbar /><main id="main" className="content"><Empty title="This server does not exist"><p><Link to="/servers">Go to all servers</Link></p></Empty></main></>;
@@ -136,6 +140,9 @@ function ServerDetail({ id }: { id: string }) {
   const jobs = state.jobs.filter((j) => j.serverId === server.id).slice(0, 5);
   const busy = jobs.some((j) => j.state === "running");
   const sites = state.websites.filter((w) => w.serverId === server.id);
+  // FR-1113: the container tools are held. The normal updates do not install them.
+  const osUpdates = server.pendingUpdates.filter((p) => !p.containerTool);
+  const toolUpdates = server.pendingUpdates.filter((p) => p.containerTool);
   return (
     <>
       <Topbar placeholder="Search servers, images, customers and jobs" />
@@ -147,32 +154,32 @@ function ServerDetail({ id }: { id: string }) {
             <p className="detail-meta">{server.location} · {roleList(server.roles)} · {server.os} · {server.arch} · agent {server.agentVersion}</p>
           </div>
           <div className="btn-group">
-            {server.agentVersion !== "0.9.4" && <button type="button" className="btn" disabled={busy} onClick={() => void updateAgent(server.id)}>Update agent</button>}
+            {(LIVE || server.agentVersion !== "0.9.4") && <button type="button" className="btn" disabled={busy || agent.busy} onClick={() => void agent.run(server.id)}>Update agent</button>}
             <ConfirmButton className="btn" danger={false} title={`Reboot ${server.name}?`} confirm="Reboot now" message={<p>The websites on this server stop for less than 3 minutes. The panel reboots only one server of each role at a time. To reboot in the maintenance window ({server.maintenanceWindow}), wait for the planned reboot.</p>} onConfirm={() => void reboot.run(server.id)}>
               Reboot now
             </ConfirmButton>
           </div>
         </div>
-        <FormError error={reboot.error ?? install.error ?? settings.error} />
+        <FormError error={reboot.error ?? install.error ?? settings.error ?? agent.error} />
         <div className="detail-grid mt">
           <div className="stack">
-            <Card title="Operating system updates" actions={server.pendingUpdates.length > 0 && <button type="button" className="btn btn-primary" disabled={busy} onClick={() => void install.run(server.id)}>Install updates now</button>}>
+            <Card title="Operating system updates" actions={osUpdates.length > 0 && <button type="button" className="btn btn-primary" disabled={busy} onClick={() => void install.run(server.id)}>Install updates now</button>}>
               <div className="card-body">
                 <table className="kv">
                   <tbody>
-                    <tr><th scope="row">Pending</th><td>{server.pendingUpdates.length} ({server.pendingUpdates.filter((p) => p.security).length} security)</td></tr>
+                    <tr><th scope="row">Pending</th><td>{osUpdates.length} ({osUpdates.filter((p) => p.security).length} security)</td></tr>
                     <tr><th scope="row">Last update</th><td>{relativeTime(server.lastUpdateAt)}</td></tr>
                     <tr><th scope="row">Reboot</th><td>{server.rebootRequired ? <Status tone="warning">Needed. Planned in the maintenance window.</Status> : <Status tone="success">Not needed</Status>}</td></tr>
                     <tr><th scope="row">Kernel</th><td><code>{server.kernel}</code></td></tr>
                   </tbody>
                 </table>
               </div>
-              {server.pendingUpdates.length > 0 && (
+              {osUpdates.length > 0 && (
                 <div className="table-wrap">
                   <table>
                     <thead><tr><th scope="col">Package</th><th scope="col">From</th><th scope="col">To</th><th scope="col">Type</th></tr></thead>
                     <tbody>
-                      {server.pendingUpdates.map((p) => (
+                      {osUpdates.map((p) => (
                         <tr key={p.name}><td><code>{p.name}</code></td><td><code>{p.from}</code></td><td><code>{p.to}</code></td><td>{p.security ? <span className="badge badge-warning">Security</span> : "Other"}</td></tr>
                       ))}
                     </tbody>
@@ -210,12 +217,17 @@ function ServerDetail({ id }: { id: string }) {
                 <p className="muted small" style={{ marginTop: 14 }}>{sites.length} websites on this server.</p>
               </div>
             </Card>
-            <Card title="Container tools">
+            <Card title="Container tools" actions={toolUpdates.length > 0 && (
+              <ConfirmButton className="btn" danger={false} title={`Update the container tools of ${server.name}?`} confirm="Update container tools" message={<p>The agent installs {toolUpdates.map((p) => p.name).join(", ")} and holds them again. It restarts the website containers one at a time. Do this in the maintenance window.</p>} onConfirm={() => void install.run(server.id, "tools")}>
+                Update container tools
+              </ConfirmButton>
+            )}>
               <div className="card-body">
                 <table className="kv">
                   <tbody>
                     <tr><th scope="row">Podman</th><td><code>{server.podmanVersion}</code> <span className="muted small">held with apt-mark</span></td></tr>
-                    <tr><th scope="row">gVisor</th><td><code>{server.gvisorVersion}</code> <span className="muted small">SHA-512 checked</span></td></tr>
+                    <tr><th scope="row">gVisor</th><td><code>{server.gvisorVersion}</code> <span className="muted small">SHA-512 checked. The agent installs a new version when it updates.</span></td></tr>
+                    {toolUpdates.map((p) => <tr key={p.name}><th scope="row">{p.name}</th><td><code>{p.from}</code> → <code>{p.to}</code> <span className="badge badge-info">Update ready</span></td></tr>)}
                     <tr>
                       <th scope="row">Platform</th>
                       <td>

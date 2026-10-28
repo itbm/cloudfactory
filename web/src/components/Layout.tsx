@@ -65,7 +65,13 @@ function ContextSwitcher() {
     const customer = state.customers.find((x) => x.id === c.id);
     const plan = state.plans.find((p) => p.id === customer?.planId);
     const count = state.websites.filter((w) => w.customerId === c.id).length;
-    return `${c.role === "reseller" ? "Reseller" : "Website owner"} · ${count} of ${plan?.websites ?? count} websites`;
+    if (c.role === "reseller") {
+      // Batch 3, issue 2: a reseller also manages the websites of its customers.
+      const customers = state.customers.filter((x) => x.resellerId === c.id).map((x) => x.id);
+      const all = state.websites.filter((w) => w.customerId === c.id || customers.includes(w.customerId)).length;
+      return `Reseller · ${all} ${all === 1 ? "website" : "websites"} · ${customers.length} ${customers.length === 1 ? "customer" : "customers"}`;
+    }
+    return `Website owner · ${count} of ${plan?.websites ?? count} websites`;
   };
 
   return (

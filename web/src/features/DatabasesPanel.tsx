@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useAction, useStore } from "../api/hooks";
-import { createDatabase, createDatabaseUser, deleteDatabase, deleteDatabaseUser, setDatabaseUser, type GrantInput } from "../api/store";
+import { createDatabase, createDatabaseUser, deleteDatabase, deleteDatabaseUser, partialDetails, setDatabaseUser, type GrantInput } from "../api/store";
 import type { DatabaseEngine, DatabasePrivileges, DatabaseUser } from "../api/types";
 import { Card, ConfirmButton, Field, FormError, Modal } from "../components/ui";
 import { bytes } from "../lib/format";
@@ -85,6 +85,7 @@ export function DatabasesPanel({ websiteId }: { websiteId?: string }) {
             </tbody>
           </table>
         </div>
+        {!websiteId && partialDetails() && <p className="card-body muted small">There are many websites, so this list shows only the websites that you opened. Open a website to see its databases.</p>}
       </Card>
       <Card title="Database users" actions={<button type="button" className="btn" onClick={() => setDialog("user")}>New user</button>}>
         <div className="card-body" style={{ paddingBottom: 0 }}>

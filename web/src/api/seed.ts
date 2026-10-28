@@ -179,6 +179,9 @@ export const websites: Website[] = [
   site({
     id: "web_legacy",
     name: "legacy.example.net",
+    // A website of a customer of the reseller Acme.
+    customerId: "cus_bakery",
+    planId: "plan_starter",
     application: "Custom PHP · uses .htaccess",
     runtime: { kind: "apache-php-fpm", imageId: "img_ap82", phpVersion: "8.2", workerMode: false, extensions: ["opcache", "gd", "zip"], phpIni: { ...PHP_INI } },
     limits: { ...plans[1].limits, memoryBytes: 512 * MB },
@@ -483,7 +486,7 @@ export function seed(): State {
     ],
     files,
     snapshots,
-    backupPolicy: { daily: 7, weekly: 4, monthly: 6, time: "03:00", target: "s3://backups.fra1.example-storage.com/cloudfactory" },
+    backupPolicy: { daily: 7, weekly: 4, monthly: 6, time: "03:00", target: "s3:backups.fra1.example-storage.com/cloudfactory", credentialNames: ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"] },
     plans,
     customers: [
       { id: "cus_acme", name: "Acme Agency", email: "ops@acme.example", planId: "plan_business", role: "reseller", createdAt: ago(300 * DAY), suspended: false },

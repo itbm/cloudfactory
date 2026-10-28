@@ -138,7 +138,7 @@ function runJob(spec: JobSpec): Promise<Job> {
   return (async () => {
     for (let i = 0; i < spec.steps.length; i++) {
       await delay(timing.stepMs);
-      if (spec.failAt === i) {
+      if (spec.failAt === i && state.jobs.some((j) => j.id === jobId)) {
         update((d) => {
           const job = d.jobs.find((j) => j.id === jobId)!;
           job.state = "failed";
@@ -149,6 +149,8 @@ function runJob(spec: JobSpec): Promise<Job> {
         });
         return getState().jobs.find((j) => j.id === jobId)!;
       }
+      // The state was reset, for example by a test. The job no longer exists.
+      if (!state.jobs.some((j) => j.id === jobId)) return { id: jobId, title: spec.title, state: "failed", steps: spec.steps, step: i, createdAt: now() } as Job;
       update((d) => {
         const job = d.jobs.find((j) => j.id === jobId)!;
         job.step = i + 1;
@@ -210,11 +212,23 @@ function track(job: live.ApiJob | null | undefined): Promise<Job> {
     d.jobs = [first, ...d.jobs.filter((j) => j.id !== first.id)];
   });
   void refresh();
-  return live.waitForJob(job, () => void refresh()).then(async (done) => {
+  // The wait updates only the job. The panel loads all data again when the job ends.
+  return live.waitForJob(job, (j) => update((d) => {
+    d.jobs = d.jobs.map((x) => (x.id === j.id ? j : x));
+  })).then(async (done) => {
     await refresh();
     return done;
   });
 }
+
+/** Batch 1, finding 9: with many websites, reads the databases and snapshots of a website when the user opens it. */
+export function showWebsite(websiteId: string) {
+  if (!LIVE) return;
+  void live.showWebsite(state, websiteId).then((apply) => apply && replace(apply(state))).catch(() => {});
+}
+
+/** True when the panel reads the databases and snapshots only of the websites that the user opened. */
+export const partialDetails = () => LIVE && state.websites.length > live.DETAIL_LIMIT;
 
 /** For an area that the API of release 0.1 does not have yet. The UI hides these areas. */
 function notInRelease(): never {
@@ -231,9 +245,12 @@ if (LIVE) {
     void refresh();
   }
   // Read changes from agents and other users. The browser slows timers in hidden tabs.
-  setInterval(() => {
-    if (state.session.signedIn && document.visibilityState === "visible") void refresh();
-  }, 15000);
+  // Batch 1, finding 9: with many websites, a load takes more requests, so the panel loads less often.
+  const poll = () => setTimeout(async () => {
+    if (state.session.signedIn && document.visibilityState === "visible") await refresh();
+    poll();
+  }, state.websites.length > 500 ? 60000 : 15000);
+  poll();
 }
 
 const hex = () => Math.random().toString(16).slice(2, 9).padEnd(7, "0");
@@ -393,14 +410,22 @@ export function setPower(websiteId: string, action: "start" | "stop" | "restart"
   });
 }
 
-export function createStagingCopy(websiteId: string): Promise<{ websiteId: string; job: Promise<Job> }> | { websiteId: string; job: Promise<Job> } {
+/** A database user that a staging copy made. The API shows the password once. */
+export interface StagingCredential {
+  engine: DatabaseEngine;
+  user: string;
+  password: string;
+  databases: string[];
+}
+
+export function createStagingCopy(websiteId: string): Promise<{ websiteId: string; job: Promise<Job>; credentials?: StagingCredential[] }> | { websiteId: string; job: Promise<Job>; credentials?: StagingCredential[] } {
   if (LIVE) {
     return call(async () => {
-      const r = await live.request<{ website: live.ApiWebsite; job: live.ApiJob }>("POST", `/websites/${websiteId}/staging`);
+      const r = await live.request<{ website: live.ApiWebsite; job: live.ApiJob; databaseCredentials?: StagingCredential[] }>("POST", `/websites/${websiteId}/staging`);
       update((d) => {
         d.websites = [live.toWebsite(r.website), ...d.websites.filter((w) => w.id !== r.website.id)];
       });
-      return { websiteId: r.website.id, job: track(r.job) };
+      return { websiteId: r.website.id, job: track(r.job), credentials: r.databaseCredentials ?? [] };
     });
   }
   const src = state.websites.find((x) => x.id === websiteId)!;
@@ -581,7 +606,7 @@ export function removeDomain(websiteId: string, name: string) {
 }
 
 export function makePrimary(websiteId: string, name: string) {
-  if (LIVE) notInRelease();
+  if (LIVE) return call(() => live.request<JobAnswer>("POST", `/websites/${websiteId}/domains/${q(name)}/primary`)).then((r) => track(r.job));
   update((d) => {
     const w = site(d, websiteId);
     w.domains.forEach((x) => {
@@ -596,7 +621,7 @@ export function makePrimary(websiteId: string, name: string) {
 
 /** FR-403: check again if the DNS of a domain points to the correct server. */
 export function checkDns(websiteId: string, name: string) {
-  if (LIVE) return refresh();
+  if (LIVE) return call(() => live.request<JobAnswer>("POST", `/websites/${websiteId}/domains/${q(name)}/check`)).then((r) => track(r.job));
   return runJob({
     title: `Check DNS for ${name}`,
     websiteId,
@@ -656,6 +681,21 @@ export function setWorkerMode(websiteId: string, on: boolean) {
     audit(d, on ? "Set worker mode to on" : "Set worker mode to off", w.name);
   });
   return runJob({ title: `Set worker mode to ${on ? "on" : "off"}`, websiteId, steps: ["Start new container", "Health check", "Switch traffic"] });
+}
+
+/** Batch 1, finding 11: the directory in /app that the web server serves. */
+export function setDocumentRoot(websiteId: string, documentRoot: string) {
+  const root = documentRoot.trim().replace(/^\/+|\/+$/g, "") || ".";
+  if (!/^(\.|[A-Za-z0-9_-][A-Za-z0-9._-]*(\/[A-Za-z0-9_-][A-Za-z0-9._-]*)*)$/.test(root) || /(^|\/)\.\.(\/|$)/.test(root)) {
+    throw new ApiError("Type a directory in the files of the website.", { documentRoot: "Use letters, digits, dots, dashes and slashes, for example public or web. Do not use \"..\"." });
+  }
+  if (LIVE) return call(() => live.request<JobAnswer>("PUT", `/websites/${websiteId}/runtime`, { documentRoot: root })).then((r) => track(r.job));
+  update((d) => {
+    const w = site(d, websiteId);
+    w.runtime.documentRoot = root;
+    audit(d, "Changed document root", `${w.name} ${root}`);
+  });
+  return runJob({ title: "Change document root", websiteId, steps: ["Write the unit", "Restart the container", "Health check"] });
 }
 
 export function setPhpSettings(websiteId: string, extensions: string[], phpIni: Record<string, string>) {
@@ -866,6 +906,36 @@ export function setAccess(websiteId: string, change: { shellEnabled?: boolean; s
   });
 }
 
+/**
+ * Spec section 10: the SFTP access of a website (live mode). The owner signs in as the Unix
+ * user of the website. The promise gives a new password once, when the change asked for one.
+ */
+export function setSftp(websiteId: string, change: { enabled: boolean; newPassword?: boolean; removePassword?: boolean; authorizedKeys: string[] }): Promise<{ password: string | null; job: Promise<Job> }> {
+  const keys = change.authorizedKeys.map((k) => k.trim().replace(/\s+/g, " ")).filter(Boolean);
+  const bad = keys.findIndex((k) => !SSH_KEY.test(k));
+  if (bad >= 0) return Promise.reject(new ApiError("This is not an SSH public key.", { key: "Paste a public key that starts with ssh-ed25519, ssh-rsa or ecdsa-sha2." }));
+  if (new Set(keys).size !== keys.length) return Promise.reject(new ApiError("This key is in the list.", { key: "This key is in the list." }));
+  if (!LIVE) {
+    update((d) => {
+      const w = site(d, websiteId);
+      w.sftpPasswordEnabled = change.removePassword ? false : change.newPassword ? true : w.sftpPasswordEnabled;
+      audit(d, "Changed SFTP access", w.name);
+    });
+    return Promise.resolve({ password: change.newPassword ? hex() + hex() + hex() : null, job: runJob({ title: "Set SFTP access", websiteId, steps: ["Write the keys", "Set the password"] }) });
+  }
+  return call(async () => {
+    const r = await live.request<{ password: string | null; job: live.ApiJob; sftp: Website["sftp"] }>("PUT", `/websites/${websiteId}/sftp`, { ...change, authorizedKeys: keys });
+    update((d) => {
+      const w = d.websites.find((x) => x.id === websiteId);
+      if (w && r.sftp) w.sftp = { ...r.sftp, host: r.sftp.host ?? w.sftp?.host ?? "" };
+    });
+    return { password: r.password ?? null, job: track(r.job) };
+  });
+}
+
+/** An OpenSSH public key (SftpController::SSH_KEY). */
+const SSH_KEY = /^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp(256|384|521)|sk-ssh-ed25519@openssh\.com|sk-ecdsa-sha2-nistp256@openssh\.com) [A-Za-z0-9+/]+={0,3}( [ -~]{0,200})?$/;
+
 // Backups (FR-901 to FR-903)
 
 export function backupNow(websiteId: string) {
@@ -920,10 +990,11 @@ export function setBackupPolicy(policy: BackupPolicy) {
     if (!Number.isInteger(policy[k]) || policy[k] < 0 || policy[k] > 365) errors[k] = "Use a number from 0 to 365.";
   });
   if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(policy.time)) errors.time = "Use the format HH:MM.";
-  if (!/^(s3|b2|azure|gs):\/\/\S+$/.test(policy.target)) errors.target = "Use an object storage URL, for example s3://bucket/path.";
+  if (!/^(s3|b2|azure|gs):\S+$/.test(policy.target)) errors.target = "Use a restic repository, for example s3:s3.amazonaws.com/bucket/path.";
   if (Object.keys(errors).length) throw new ApiError("Correct the backup policy.", errors);
   update((d) => {
-    d.backupPolicy = policy;
+    const { credentials, ...rest } = policy;
+    d.backupPolicy = { ...rest, credentialNames: credentials ? Object.keys(credentials) : d.backupPolicy.credentialNames };
     audit(d, "Changed backup policy", `${policy.daily} daily, ${policy.weekly} weekly, ${policy.monthly} monthly`);
   });
 }
@@ -1235,9 +1306,13 @@ export function deleteNode(websiteId: string, path: string) {
 
 // Images and updates (FR-1101 to FR-1110)
 
-export function addImage(name: string, reference: string, tag: string, policy: UpdatePolicy) {
-  if (LIVE) return call(() => live.request("POST", "/images", { name: name.trim(), reference: reference.trim(), tag: tag.trim(), policy })).then(() => refresh()).then(() => undefined);
+/** FR-307: a custom image. The port and the start command are optional. */
+export function addImage(name: string, reference: string, tag: string, policy: UpdatePolicy, run: { containerPort?: string; command?: string } = {}) {
+  const port = run.containerPort?.trim() ? Number(run.containerPort) : null;
+  const command = run.command?.trim() ? splitCommand(run.command) : null;
+  if (LIVE) return call(() => live.request("POST", "/images", { name: name.trim(), reference: reference.trim(), tag: tag.trim(), policy, containerPort: port, command })).then(() => refresh()).then(() => undefined);
   const errors: Record<string, string> = {};
+  if (port !== null && !(Number.isInteger(port) && port >= 1 && port <= 65535)) errors.containerPort = "Use a port from 1 to 65535.";
   if (!name.trim()) errors.name = "Type a name.";
   if (!/^([a-z0-9.-]+(:\d+)?\/)?[a-z0-9._/-]+$/.test(reference.trim())) errors.reference = "Type an image reference, for example docker.io/library/node.";
   if (!/^[\w][\w.-]{0,127}$/.test(tag.trim())) errors.tag = "Type a tag, for example 24-alpine.";
@@ -1249,7 +1324,7 @@ export function addImage(name: string, reference: string, tag: string, policy: U
     activity: `Added image ${name}`,
     begin: (d) => audit(d, "Added image", `${reference}:${tag}`),
     apply: (d) => {
-      d.images.push({ id: imageId, name: name.trim(), family: "custom", reference: reference.trim(), running: tag.trim(), websites: "0", policy, custom: true, signatureVerified: false, digest: `sha256:${hex()}…${hex().slice(0, 4)}` });
+      d.images.push({ id: imageId, name: name.trim(), family: "custom", reference: reference.trim(), running: tag.trim(), websites: "0", policy, custom: true, signatureVerified: false, digest: `sha256:${hex()}…${hex().slice(0, 4)}`, containerPort: port ?? 8080, command: command ?? undefined });
     },
   });
 }
@@ -1261,6 +1336,17 @@ export function setImagePolicy(imageId: string, policy: UpdatePolicy) {
     i.policy = policy;
     audit(d, "Changed update policy", `${i.name}: ${policy}`);
   });
+}
+
+/**
+ * Splits a start command into its arguments. Single and double quotes keep spaces in an
+ * argument. The panel does not use a shell.
+ */
+export function splitCommand(text: string): string[] {
+  const out: string[] = [];
+  const re = /"([^"]*)"|'([^']*)'|(\S+)/g;
+  for (let m = re.exec(text); m; m = re.exec(text)) out.push(m[1] ?? m[2] ?? m[3]);
+  return out;
 }
 
 /** FR-1110: checks the registry for a new signed version of the image now. */
@@ -1439,7 +1525,8 @@ export function addServer(name: string, location: string, roles: ServerRole[]): 
 }
 
 export function setServer(serverId: string, change: { updatePolicy?: HostUpdatePolicy; maintenanceWindow?: string; gvisorPlatform?: "systrap" | "kvm"; roles?: ServerRole[] }) {
-  if (LIVE) return call(() => live.request("PATCH", `/servers/${serverId}`, change)).then(() => refresh());
+  // A new gVisor platform makes a job that writes the units again (ConfigureHost).
+  if (LIVE) return call(() => live.request<JobAnswer>("PATCH", `/servers/${serverId}`, change)).then((r) => (r?.job ? track(r.job).then(() => undefined) : refresh()));
   const srv = state.servers.find((s) => s.id === serverId)!;
   if (change.gvisorPlatform === "kvm" && !srv.bareMetal) throw new ApiError("The KVM platform needs a bare-metal server.");
   update((d) => {
@@ -1449,9 +1536,22 @@ export function setServer(serverId: string, change: { updatePolicy?: HostUpdateP
   });
 }
 
-export function installUpdates(serverId: string) {
-  if (LIVE) return call(() => live.request<JobAnswer>("POST", `/servers/${serverId}/install-updates`)).then((r) => track(r.job));
+/** FR-1113: the policy "tools" updates only the held container tools. */
+export function installUpdates(serverId: string, policy?: "security" | "all" | "tools") {
+  if (LIVE) return call(() => live.request<JobAnswer>("POST", `/servers/${serverId}/install-updates`, policy ? { policy } : undefined)).then((r) => track(r.job));
   const srv = state.servers.find((s) => s.id === serverId)!;
+  if (policy === "tools") {
+    return runJob({
+      title: `Update container tools on ${srv.name}`,
+      serverId,
+      steps: ["Install the held packages", "Hold them again", "Restart the website containers"],
+      activity: `Updated container tools on ${srv.name}`,
+      apply: (d) => {
+        const s = d.servers.find((x) => x.id === serverId)!;
+        s.pendingUpdates = s.pendingUpdates.filter((p) => !p.containerTool);
+      },
+    });
+  }
   const kernel = srv.pendingUpdates.some((p) => p.name.startsWith("linux-image"));
   return runJob({
     title: `Install updates on ${srv.name}`,

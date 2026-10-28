@@ -20,7 +20,8 @@ export const features = {
   files: !LIVE,
   cron: !LIVE,
   deploys: !LIVE,
-  access: !LIVE,
+  // Live mode shows SFTP only. The SSH shell is for a later release.
+  access: true,
   logs: !LIVE,
   passkeys: !LIVE,
   system: !LIVE,

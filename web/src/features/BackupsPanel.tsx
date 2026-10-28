@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAction, useStore } from "../api/hooks";
-import { backupNow, restore, type RestoreScope } from "../api/store";
+import { backupNow, partialDetails, restore, showWebsite, type RestoreScope } from "../api/store";
 import type { Snapshot } from "../api/types";
 import { Card, Field, FormError, JobRow, Modal } from "../components/ui";
 import { bytes, clockTime, longDate } from "../lib/format";
@@ -13,8 +13,12 @@ export function BackupsPanel({ websiteId }: { websiteId?: string }) {
   const shownSite = websiteId ?? site;
   const snaps = state.snapshots.filter((s) => shownSite === "all" || s.websiteId === shownSite).slice(0, websiteId ? 20 : 30);
   const [restoring, setRestoring] = useState<Snapshot | null>(null);
+  const backup = useAction(backupNow);
   const jobs = state.jobs.filter((j) => (j.title.startsWith("Back up") || j.title.startsWith("Restore")) && (!websiteId || j.websiteId === websiteId)).slice(0, 4);
   const siteName = (id: string) => state.websites.find((w) => w.id === id)?.name ?? "Removed website";
+  useEffect(() => {
+    if (shownSite !== "all") showWebsite(shownSite);
+  }, [shownSite]);
 
   return (
     <div className="stack">
@@ -36,10 +40,11 @@ export function BackupsPanel({ websiteId }: { websiteId?: string }) {
                 </select>
               </>
             )}
-            {shownSite !== "all" && <button type="button" className="btn btn-primary" onClick={() => void backupNow(shownSite)}>Back up now</button>}
+            {shownSite !== "all" && <button type="button" className="btn btn-primary" disabled={backup.busy} onClick={() => void backup.run(shownSite)}>Back up now</button>}
           </div>
         }
       >
+        {backup.error && <div className="card-body"><FormError error={backup.error} /></div>}
         <div className="table-wrap">
           <table>
             <thead><tr><th scope="col">Snapshot</th>{!websiteId && <th scope="col">Website</th>}<th scope="col">Type</th><th scope="col">Size</th><th scope="col">Contents</th><th scope="col"><span className="visually-hidden">Actions</span></th></tr></thead>
@@ -58,8 +63,9 @@ export function BackupsPanel({ websiteId }: { websiteId?: string }) {
             </tbody>
           </table>
         </div>
+        {shownSite === "all" && partialDetails() && <p className="card-body muted small">There are many websites, so this list shows only the websites that you opened. Select a website to see its snapshots.</p>}
         <p className="card-body muted small" style={{ paddingTop: 12 }}>
-          Snapshots are encrypted with restic and kept in object storage on a different server: <code>{state.backupPolicy.target}</code>.
+          {state.backupPolicy.target ? <>Snapshots are encrypted with restic and kept in object storage on a different server: <code>{state.backupPolicy.target}</code>.</> : "No object storage is set for backups. An administrator sets it in the backup policy."}
         </p>
       </Card>
       {restoring && <RestoreDialog snapshot={restoring} onClose={() => setRestoring(null)} />}

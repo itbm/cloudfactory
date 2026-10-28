@@ -34,9 +34,22 @@ export function runtimeLabel(s: State, w: Website): string {
   }
 }
 
+/**
+ * True when the customer is in the selected account: the account itself, or a customer of the
+ * account when the account is a reseller.
+ */
+export function inContext(s: State, customerId: string): boolean {
+  const ctx = s.session.contextId;
+  return ctx === "platform" || customerId === ctx || s.customers.some((c) => c.id === customerId && c.resellerId === ctx);
+}
+
 export function visibleWebsites(s: State): Website[] {
-  if (s.session.contextId === "platform") return s.websites;
-  return s.websites.filter((w) => w.customerId === s.session.contextId);
+  return s.websites.filter((w) => inContext(s, w.customerId));
+}
+
+/** The customers of the selected account that can own a website. */
+export function contextCustomers(s: State) {
+  return s.customers.filter((c) => inContext(s, c.id));
 }
 
 export function attention(s: State): AttentionItem[] {

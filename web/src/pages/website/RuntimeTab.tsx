@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useAction, useStore } from "../../api/hooks";
 import { imageOf, supportEnds } from "../../api/selectors";
-import { changeRuntime, revertRuntime, setPhpSettings, setWorkerMode } from "../../api/store";
+import { changeRuntime, revertRuntime, setDocumentRoot, setPhpSettings, setWorkerMode } from "../../api/store";
 import type { Website } from "../../api/types";
 import { Card, Field, FormError, Toggle } from "../../components/ui";
 import { longDate } from "../../lib/format";
@@ -12,12 +12,14 @@ export function RuntimeTab({ website }: { website: Website }) {
   const isPhp = website.runtime.kind === "frankenphp" || website.runtime.kind === "apache-php-fpm";
   const choices = state.images.filter((i) => (isPhp ? i.family === "frankenphp" || i.family === "apache-php-fpm" : i.family === current?.family));
   const [imageId, setImageId] = useState(website.runtime.imageId);
-  const plan = state.plans.find((p) => p.id === website.planId)!;
+  const plan = state.plans.find((p) => p.id === website.planId);
   const [extensions, setExtensions] = useState(website.runtime.extensions);
   const [ini, setIni] = useState(Object.entries(website.runtime.phpIni).map(([k, v]) => `${k} = ${v}`).join("\n"));
   const change = useAction(changeRuntime);
   const revert = useAction(revertRuntime);
   const worker = useAction(setWorkerMode);
+  const [root, setRoot] = useState(website.runtime.documentRoot ?? "public");
+  const docRoot = useAction(setDocumentRoot);
   const settings = useAction(async () => {
     const parsed: Record<string, string> = {};
     for (const line of ini.split("\n").map((l) => l.trim()).filter((l) => l && !l.startsWith(";"))) {
@@ -59,6 +61,17 @@ export function RuntimeTab({ website }: { website: Website }) {
             </div>
           </form>
         </Card>
+        {website.runtime.kind !== "oci" && (
+          <Card title="Document root">
+            <form className="card-body" noValidate onSubmit={(e) => { e.preventDefault(); void docRoot.run(website.id, root); }}>
+              <FormError error={docRoot.error} />
+              <Field label="Directory that the web server serves" hint={<>A directory in the files of the website, for example <code>public</code> for Laravel or <code>web</code>. Type <code>.</code> for the top directory, for example for WordPress.</>} error={docRoot.error?.fields.documentRoot}>
+                {(p) => <input {...p} className="input mono" value={root} onChange={(e) => setRoot(e.target.value)} spellCheck={false} autoCapitalize="none" />}
+              </Field>
+              <button type="submit" className="btn" style={{ marginTop: 12 }} disabled={docRoot.busy || busy || root.trim() === (website.runtime.documentRoot ?? "public")}>Save document root</button>
+            </form>
+          </Card>
+        )}
         {website.runtime.kind === "frankenphp" && (
           <Card title="Worker mode">
             <div className="card-body">
@@ -76,8 +89,8 @@ export function RuntimeTab({ website }: { website: Website }) {
           <form className="card-body" onSubmit={(e) => { e.preventDefault(); void settings.run(); }}>
             <FormError error={settings.error} />
             <fieldset className="checkbox-list">
-              <legend>Extensions in the {plan.name} plan</legend>
-              {plan.phpExtensions.map((ext) => (
+              <legend>Extensions in the {plan?.name ?? "website"} plan</legend>
+              {(plan?.phpExtensions ?? website.runtime.extensions).map((ext) => (
                 <label className="check" key={ext}>
                   <input type="checkbox" checked={extensions.includes(ext)} onChange={(e) => setExtensions(e.target.checked ? [...extensions, ext] : extensions.filter((x) => x !== ext))} />
                   <code>{ext}</code>

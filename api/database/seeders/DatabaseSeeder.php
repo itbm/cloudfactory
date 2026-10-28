@@ -57,7 +57,7 @@ class DatabaseSeeder extends Seeder
         ]);
 
         $web1 = Server::create(['name' => 'web-1', 'location' => 'London', 'roles' => ['web', 'database'], 'state' => 'healthy', 'agent_url' => 'https://web-1.internal:7443', 'agent_version' => '0.1.0', 'os' => 'Debian 13', 'arch' => 'x86-64', 'podman_version' => '5.4.2', 'gvisor_version' => 'release-20261019.0', 'pending_updates' => [], 'services' => [], 'last_seen_at' => now()]);
-        Server::create(['name' => 'web-2', 'location' => 'Amsterdam', 'roles' => ['web'], 'state' => 'healthy', 'agent_url' => 'https://web-2.internal:7443', 'agent_version' => '0.1.0', 'os' => 'Ubuntu 26.04 LTS', 'arch' => 'arm64', 'podman_version' => '5.6.0', 'gvisor_version' => 'release-20261019.0', 'pending_updates' => [['name' => 'openssl', 'from' => '3.5.1-1', 'to' => '3.5.1-2', 'security' => true]], 'services' => [], 'last_seen_at' => now()]);
+        Server::create(['name' => 'web-2', 'location' => 'Amsterdam', 'roles' => ['web'], 'state' => 'healthy', 'agent_url' => 'https://web-2.internal:7443', 'agent_version' => '0.1.0', 'os' => 'Ubuntu 26.04 LTS', 'arch' => 'arm64', 'podman_version' => '5.6.0', 'gvisor_version' => 'release-20261019.0', 'pending_updates' => [['name' => 'openssl', 'from' => '3.5.1-1', 'to' => '3.5.1-2', 'security' => true], ['name' => 'podman', 'from' => '5.6.0', 'to' => '5.6.1', 'security' => false, 'containerTool' => true]], 'services' => [], 'last_seen_at' => now()]);
 
         foreach ([
             ['acme.example', 'WordPress', $acme, 'frankenphp-8.4'],

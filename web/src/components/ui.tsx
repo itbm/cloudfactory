@@ -191,7 +191,7 @@ export function Tabs({ items, current, onSelect, label }: { items: TabItem[]; cu
 }
 
 /** A button that asks for confirmation before a change that cannot be undone. */
-export function ConfirmButton({ children, title, message, confirm, onConfirm, className = "btn", danger = true }: {
+export function ConfirmButton({ children, title, message, confirm, onConfirm, className = "btn", danger = true, disabled = false }: {
   children: ReactNode;
   title: string;
   message: ReactNode;
@@ -199,11 +199,12 @@ export function ConfirmButton({ children, title, message, confirm, onConfirm, cl
   onConfirm: () => unknown;
   className?: string;
   danger?: boolean;
+  disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <button type="button" className={className} onClick={() => setOpen(true)}>{children}</button>
+      <button type="button" className={className} disabled={disabled} onClick={() => setOpen(true)}>{children}</button>
       {open && (
         <Modal
           title={title}

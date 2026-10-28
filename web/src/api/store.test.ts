@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { ApiError, addDomain, changePassword, createDatabase, createDatabaseUser, createToken, getState, resetState, setDatabaseUser, setTotp, timing, verifyDomain } from "./store";
+import { ApiError, addDomain, changePassword, createDatabase, createDatabaseUser, createToken, getState, resetState, setContext, setDatabaseUser, setDocumentRoot, setSftp, setTotp, splitCommand, timing, verifyDomain } from "./store";
+import { contextCustomers, visibleWebsites } from "./selectors";
 
 beforeEach(() => {
   resetState();
@@ -72,5 +73,47 @@ describe("sign-in settings (R-01)", () => {
   it("needs the password and a code to change TOTP", () => {
     expect(() => setTotp(false, "123456", "")).toThrow(ApiError);
     expect(() => setTotp(false, "12", "secret")).toThrow(ApiError);
+  });
+});
+
+describe("reseller accounts (batch 3, issue 2)", () => {
+  it("shows the websites of the reseller and of its customers", () => {
+    setContext("cus_acme");
+    const s = getState();
+    const owners = new Set(visibleWebsites(s).map((w) => w.customerId));
+    const customers = s.customers.filter((c) => c.resellerId === "cus_acme").map((c) => c.id);
+    expect(customers.length).toBeGreaterThan(0);
+    for (const c of customers) expect(contextCustomers(s).map((x) => x.id)).toContain(c);
+    expect([...owners].every((c) => c === "cus_acme" || customers.includes(c))).toBe(true);
+    expect(visibleWebsites(s).some((w) => w.customerId !== "cus_acme")).toBe(true);
+  });
+
+  it("shows only the websites of an owner", () => {
+    setContext("cus_bakery");
+    expect(visibleWebsites(getState()).every((w) => w.customerId === "cus_bakery")).toBe(true);
+    expect(contextCustomers(getState()).map((c) => c.id)).toEqual(["cus_bakery"]);
+  });
+});
+
+describe("runtime settings", () => {
+  it("splits a start command into arguments with no shell", () => {
+    expect(splitCommand(`node server.js --title "My app" '--x=a b'`)).toEqual(["node", "server.js", "--title", "My app", "--x=a b"]);
+    expect(splitCommand("  ")).toEqual([]);
+  });
+
+  it("refuses a document root outside the website (batch 1, finding 11)", () => {
+    expect(() => setDocumentRoot("web_shop", "../etc")).toThrow(ApiError);
+    expect(() => setDocumentRoot("web_shop", "public/../..")).toThrow(ApiError);
+    expect(() => setDocumentRoot("web_shop", "web")).not.toThrow();
+    expect(shop().runtime.documentRoot).toBe("web");
+  });
+});
+
+describe("SFTP", () => {
+  it("accepts only OpenSSH public keys", async () => {
+    await expect(setSftp("web_shop", { enabled: true, authorizedKeys: ["not a key"] })).rejects.toMatchObject({ fields: { key: expect.any(String) } });
+    const key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHk2b3hZQ2dQa1dGa1lQa1dGa1lQa1dGa1lQa1dGa1lQ me@laptop";
+    await expect(setSftp("web_shop", { enabled: true, authorizedKeys: [key, key] })).rejects.toBeInstanceOf(ApiError);
+    await expect(setSftp("web_shop", { enabled: true, authorizedKeys: [key], newPassword: true })).resolves.toMatchObject({ password: expect.any(String) });
   });
 });

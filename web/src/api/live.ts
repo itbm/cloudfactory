@@ -90,18 +90,25 @@ export async function request<T>(method: string, path: string, body?: unknown): 
   throw new LiveError(message, fields, res.status);
 }
 
-/** Reads all pages of a paginated list. */
+/** Reads all pages of a paginated list. Batch 1, finding 9: it reads each page, with no limit. */
 async function all<T>(path: string): Promise<T[]> {
   const out: T[] = [];
-  for (let page = 1; page <= 50; page++) {
+  for (let page = 1; ; page++) {
     const sep = path.includes("?") ? "&" : "?";
     const res = await request<{ data: T[]; meta?: { last_page?: number; lastPage?: number } }>("GET", `${path}${sep}perPage=100&page=${page}`);
     out.push(...res.data);
     const last = res.meta?.last_page ?? res.meta?.lastPage ?? 1;
-    if (page >= last) break;
+    if (page >= last || res.data.length === 0) return out;
   }
-  return out;
 }
+
+/**
+ * Batch 1, finding 9: the databases and snapshots of each website need 2 requests. With up to
+ * this number of websites, each load reads them for all websites. With more, the panel reads
+ * them only for the websites that the user opened (showWebsite).
+ */
+export const DETAIL_LIMIT = 50;
+const shown = new Set<string>();
 
 // Shapes of the API (openapi/openapi.yaml, components/schemas).
 
@@ -109,7 +116,8 @@ interface ApiMe { id: number; name: string; email: string; role: User["role"]; c
 interface ApiJob { id: string; title: string; ref: string | null; state: Job["state"]; steps: string[]; step: number; error: string | null; websiteId: string | null; serverId: string | null; createdAt: string; finishedAt: string | null }
 interface ApiWebsite {
   id: string; name: string; application: string; customerId: string; serverId: string; planId: string; unixUser: string; status: Website["status"];
-  runtime: { imageId: string; family: string; image: string; phpVersion: string | null; workerMode: boolean; extensions: string[]; phpIni: Record<string, string>; previousImageId: string | null };
+  runtime: { imageId: string; family: string; image: string; phpVersion: string | null; workerMode: boolean; extensions: string[]; phpIni: Record<string, string>; previousImageId: string | null; documentRoot?: string };
+  sftp?: { enabled: boolean; host: string | null; port: number; username: string; passwordSet: boolean; authorizedKeys: string[] };
   limits: Limits; usage: Partial<Website["use"]> | null;
   domains?: { name: string; kind: Website["domains"][number]["kind"]; dnsPointsHere: boolean; certificate: { state: Website["domains"][number]["certificate"]["state"]; expiresAt: string | null }; verified?: boolean; verification?: DomainVerification | null }[];
   stagingOf: string | null; managedByTerraform: boolean; createdAt: string; updatedAt: string;
@@ -123,6 +131,7 @@ interface ApiServer {
 interface ApiImage {
   id: string; name: string; family: RuntimeImage["family"]; reference: string; tag: string; digest: string | null; availableTag: string | null; phpVersion: RuntimeImage["phpVersion"] | null;
   supportEndsAt: string | null; policy: RuntimeImage["policy"]; custom: boolean; signatureVerified: boolean; websites: number | null; checkedAt?: string | null; checkError?: string | null;
+  containerPort?: number; command?: string[] | null;
 }
 interface ApiRuntimeImage { id: string; name: string; family: RuntimeImage["family"]; tag: string; phpVersion?: RuntimeImage["phpVersion"] | null; custom: boolean; supportEndsAt: string | null }
 interface ApiRollout {
@@ -159,13 +168,15 @@ export function toWebsite(w: ApiWebsite): Website {
       kind: runtimeKind(w.runtime.family), imageId: w.runtime.imageId, phpVersion: (w.runtime.phpVersion ?? undefined) as Website["runtime"]["phpVersion"],
       workerMode: w.runtime.workerMode, extensions: w.runtime.extensions ?? [], phpIni: w.runtime.phpIni ?? {},
       previous: w.runtime.previousImageId ? { imageId: w.runtime.previousImageId, tag: "" } : undefined,
+      documentRoot: w.runtime.documentRoot ?? "public",
     },
     use: { cpuPercent: 0, memoryBytes: 0, diskBytes: 0, processes: 0, diskIoBytesPerSecond: 0, ...(w.usage ?? {}) },
     domains: (w.domains ?? []).map((d) => ({
       name: d.name, kind: d.kind, dnsPointsHere: d.dnsPointsHere, certificate: { state: d.certificate.state, expiresAt: d.certificate.expiresAt ?? undefined },
       ...(d.verified === false && d.verification ? { verification: d.verification } : {}),
     })),
-    releases: [], previews: [], cron: [], sshKeys: [], sftpPasswordEnabled: false, shellEnabled: false,
+    releases: [], previews: [], cron: [], sshKeys: [], sftpPasswordEnabled: w.sftp?.passwordSet ?? false, shellEnabled: false,
+    sftp: w.sftp ? { ...w.sftp, host: w.sftp.host ?? location.host.replace(/:\d+$/, ""), authorizedKeys: w.sftp.authorizedKeys ?? [] } : undefined,
     lastChange: { at: w.updatedAt, summary: "Last change" },
     stagingOf: w.stagingOf ?? undefined, managedByTerraform: w.managedByTerraform, imageTag: tagOfReference(w.runtime.image) || undefined, imageReference: w.runtime.image || undefined,
   };
@@ -188,7 +199,7 @@ export function toImage(i: ApiImage, rollouts: ApiRollout[]): RuntimeImage {
     id: i.id, name: i.name, family: i.family, reference: i.reference, running: i.tag, available: i.availableTag ?? undefined,
     availableNote: i.availableTag && rolling ? "rolling_out" : undefined, phpVersion: i.phpVersion ?? undefined, supportEndsAt: i.supportEndsAt ?? undefined,
     websites: String(i.websites ?? 0), policy: i.policy, policyNote: i.checkError ? `Last registry check failed: ${i.checkError}` : undefined,
-    custom: i.custom, signatureVerified: i.signatureVerified, digest: i.digest ?? "",
+    custom: i.custom, signatureVerified: i.signatureVerified, digest: i.digest ?? "", containerPort: i.containerPort, command: i.command ?? undefined,
   };
 }
 
@@ -243,17 +254,12 @@ export async function load(previous: State): Promise<State> {
     : (await optional(request<{ data: ApiRuntimeImage[] }>("GET", "/runtime-images").then((r) => r.data), [])).map(toRuntimeImage);
 
   // Databases and snapshots belong to each website.
-  const perSite = await Promise.all(websites.map(async (w) => {
-    const [db, snaps] = await Promise.all([
-      optional(request<{ databases: { id: string; engine: Database["engine"]; name: string; sizeBytes: number }[]; users: { id: string; engine: Database["engine"]; name: string; grants: DatabaseGrant[]; access: DatabaseUser["access"] }[] }>("GET", `/websites/${w.id}/databases`), { databases: [], users: [] }),
-      optional(request<{ data: ApiSnapshot[] }>("GET", `/websites/${w.id}/snapshots`).then((r) => r.data), []),
-    ]);
-    return {
-      databases: db.databases.map((d): Database => ({ id: d.id, name: d.name, engine: d.engine, websiteId: w.id, sizeBytes: d.sizeBytes ?? 0, serverId: w.serverId })),
-      users: db.users.map((u): DatabaseUser => ({ id: u.id, name: u.name, engine: u.engine, websiteId: w.id, grants: u.grants ?? [], access: u.access })),
-      snapshots: snaps.map((s): Snapshot => ({ id: s.id, at: s.createdAt, kind: s.kind, sizeBytes: s.sizeBytes ?? 0, websiteId: w.id, databases: s.databases ?? [], mailboxes: s.mailboxes ?? [] })),
-    };
-  }));
+  const all_ = websites.length <= DETAIL_LIMIT;
+  const perSite = await Promise.all(websites.filter((w) => all_ || shown.has(w.id)).map((w) => websiteDetails(w)));
+  // Keep the data of the other websites from the previous load.
+  const fresh = new Set(all_ ? websites.map((w) => w.id) : [...shown]);
+  const exists = new Set(websites.map((w) => w.id));
+  const kept = <T extends { websiteId: string }>(rows: T[]) => all_ ? [] : rows.filter((r) => exists.has(r.websiteId) && !fresh.has(r.websiteId));
 
   const own = customers.find((c) => c.id === me.customerId);
   const contexts: State["contexts"] = admin
@@ -282,9 +288,9 @@ export async function load(previous: State): Promise<State> {
     images: runtimes,
     rollout: current ? toRollout(current, servers.length) : undefined,
     zones: [], mailboxes: [], aliases: [], files: {},
-    databases: perSite.flatMap((s) => s.databases),
-    databaseUsers: perSite.flatMap((s) => s.users),
-    snapshots: perSite.flatMap((s) => s.snapshots).sort((a, b) => b.at.localeCompare(a.at)),
+    databases: [...kept(previous.databases), ...perSite.flatMap((s) => s.databases)],
+    databaseUsers: [...kept(previous.databaseUsers), ...perSite.flatMap((s) => s.users)],
+    snapshots: [...kept(previous.snapshots), ...perSite.flatMap((s) => s.snapshots)].sort((a, b) => b.at.localeCompare(a.at)),
     backupPolicy: policy,
     plans,
     customers: customers.map(toCustomer),
@@ -296,6 +302,38 @@ export async function load(previous: State): Promise<State> {
     branding: { ...previous.branding, panelDomain: location.host },
     system: { ...previous.system, panelDomain: location.host },
   };
+}
+
+/** Reads the databases, database users and snapshots of one website. */
+async function websiteDetails(w: { id: string; serverId: string }) {
+  const optional = <T>(p: Promise<T>, fallback: T) => p.catch(() => fallback);
+  const [db, snaps] = await Promise.all([
+    optional(request<{ databases: { id: string; engine: Database["engine"]; name: string; sizeBytes: number }[]; users: { id: string; engine: Database["engine"]; name: string; grants: DatabaseGrant[]; access: DatabaseUser["access"] }[] }>("GET", `/websites/${w.id}/databases`), { databases: [], users: [] }),
+    optional(request<{ data: ApiSnapshot[] }>("GET", `/websites/${w.id}/snapshots`).then((r) => r.data), []),
+  ]);
+  return {
+    databases: db.databases.map((d): Database => ({ id: d.id, name: d.name, engine: d.engine, websiteId: w.id, sizeBytes: d.sizeBytes ?? 0, serverId: w.serverId })),
+    users: db.users.map((u): DatabaseUser => ({ id: u.id, name: u.name, engine: u.engine, websiteId: w.id, grants: u.grants ?? [], access: u.access })),
+    snapshots: snaps.map((s): Snapshot => ({ id: s.id, at: s.createdAt, kind: s.kind, sizeBytes: s.sizeBytes ?? 0, websiteId: w.id, databases: s.databases ?? [], mailboxes: s.mailboxes ?? [] })),
+  };
+}
+
+/**
+ * The user opened a website. With many websites, the panel now also reads the databases and
+ * snapshots of this website at each load. The function gives the new state, or null when the
+ * last load already read them.
+ */
+export async function showWebsite(previous: State, websiteId: string): Promise<((s: State) => State) | null> {
+  const w = previous.websites.find((x) => x.id === websiteId);
+  if (!w || previous.websites.length <= DETAIL_LIMIT || shown.has(websiteId)) return null;
+  shown.add(websiteId);
+  const d = await websiteDetails(w);
+  return (s) => ({
+    ...s,
+    databases: [...s.databases.filter((x) => x.websiteId !== websiteId), ...d.databases],
+    databaseUsers: [...s.databaseUsers.filter((x) => x.websiteId !== websiteId), ...d.users],
+    snapshots: [...s.snapshots.filter((x) => x.websiteId !== websiteId), ...d.snapshots].sort((a, b) => b.at.localeCompare(a.at)),
+  });
 }
 
 // Session
@@ -313,13 +351,25 @@ export function signOut() {
 
 // Jobs
 
-/** Waits until the agent finishes the job. It reads the job from the API each 1.5 seconds. */
-export async function waitForJob(job: ApiJob | Job, onChange: () => void): Promise<Job> {
-  let current = "steps" in job ? toJob(job as ApiJob) : job;
-  for (let i = 0; i < 400 && (current.state === "queued" || current.state === "running"); i++) {
-    await new Promise((r) => setTimeout(r, 1500));
-    current = toJob((await request<{ data: ApiJob }>("GET", `/jobs/${current.id}`)).data);
-    onChange();
+/**
+ * Waits until the agent finishes the job. It reads only the job from the API, each 1.5 seconds
+ * for the first minute and then each 5 seconds. Batch 1, finding 9: it does not load all data
+ * again while it waits.
+ */
+export async function waitForJob(job: ApiJob | Job, onChange: (job: Job) => void): Promise<Job> {
+  let current = toJob(job as ApiJob);
+  const started = Date.now();
+  // A job can run for up to 3 hours (CheckJobsAndServers). Then the API marks it failed.
+  while ((current.state === "queued" || current.state === "running") && Date.now() - started < 3.5 * 3600_000) {
+    await new Promise((r) => setTimeout(r, Date.now() - started < 60_000 ? 1500 : 5000));
+    try {
+      current = toJob((await request<{ data: ApiJob }>("GET", `/jobs/${current.id}`)).data);
+    } catch (e) {
+      // A short loss of the connection does not stop the wait.
+      if (e instanceof LiveError && e.status !== 0) throw e;
+      continue;
+    }
+    onChange(current);
   }
   return current;
 }

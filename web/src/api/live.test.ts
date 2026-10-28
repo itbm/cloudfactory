@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { LiveError, request, setUnauthorisedHandler, toJob, toRuntimeImage, toWebsite } from "./live";
+import { DETAIL_LIMIT, LiveError, load, request, setUnauthorisedHandler, toJob, toRuntimeImage, toWebsite } from "./live";
+import { seed } from "./seed";
 import { defaultImage } from "../pages/NewWebsitePage";
 
 const answer = (status: number, body: unknown) =>
@@ -100,5 +101,36 @@ describe("defaultImage", () => {
   it("uses FrankenPHP when the family has no image", () => {
     expect(defaultImage(images, "node")).toBe("fp84");
     expect(defaultImage([], "node")).toBe("");
+  });
+});
+
+describe("load (batch 1, finding 9)", () => {
+  const site = (n: number) => ({
+    id: `w${n}`, name: `site${n}.example`, application: "", customerId: "c1", serverId: "s1", planId: "p1", unixUser: `site${n}_1a2b`, status: "running",
+    runtime: { imageId: "i1", family: "frankenphp", image: "x:1", phpVersion: "8.4", workerMode: false, extensions: [], phpIni: {}, previousImageId: null },
+    limits: { vcpus: 1, memoryBytes: 1, diskBytes: 1, diskIoBytesPerSecond: 1, processes: 100 }, usage: {}, domains: [],
+    sftp: { enabled: true, host: "web-01.example", port: 22, username: `site${n}_1a2b`, passwordSet: false, authorizedKeys: [] },
+    stagingOf: null, managedByTerraform: false, createdAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-02T00:00:00Z",
+  });
+
+  it("reads all pages, and reads the databases of each website only when there are few", async () => {
+    const pages = 60;
+    const calls: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      calls.push(url);
+      const path = url.replace("/api/v1", "");
+      const json = (b: unknown) => new Response(JSON.stringify(b), { status: 200 });
+      if (path === "/me") return json({ id: 1, name: "Owner", email: "o@example.com", role: "owner", customerId: "c1", totpEnabled: true });
+      const page = /^\/websites\?perPage=100&page=(\d+)$/.exec(path);
+      if (page) return json({ data: [site(+page[1])], meta: { last_page: pages } });
+      if (path.startsWith("/backup-policy")) return json({ daily: 7, weekly: 4, monthly: 6, time: "03:00", target: "s3:x/y" });
+      return json({ data: [] });
+    }));
+    const state = await load(seed());
+    expect(pages).toBeGreaterThan(50);
+    expect(state.websites).toHaveLength(pages);
+    expect(state.websites[0].sftp).toMatchObject({ enabled: true, host: "web-01.example" });
+    expect(pages).toBeGreaterThan(DETAIL_LIMIT);
+    expect(calls.some((c) => c.includes("/databases") || c.includes("/snapshots"))).toBe(false);
   });
 });

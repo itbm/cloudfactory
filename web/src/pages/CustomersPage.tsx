@@ -27,11 +27,16 @@ export function CustomersPage() {
 function Customers() {
   const state = useStore();
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState<Pick<Customer, "name" | "email" | "planId" | "role">>({ name: "", email: "", planId: "plan_standard", role: "owner" });
+  const [form, setForm] = useState<Pick<Customer, "name" | "email" | "planId" | "role">>({ name: "", email: "", planId: state.plans.find((p) => p.id === "plan_standard")?.id ?? state.plans[0]?.id ?? "", role: "owner" });
   const add = useAction(addCustomer);
+  const change = useAction(setCustomer);
+  const admin = state.session.user.role === "administrator";
+  // Batch 3, issue 2: a reseller cannot change its own plan or suspend itself.
+  const own = (c: Customer) => !admin && c.id === state.session.contextId;
   const plan = (id: string) => state.plans.find((p) => p.id === id)?.name;
   return (
-    <Card title="Customers" actions={<button type="button" className="btn btn-primary" onClick={() => setOpen(true)}>Add customer</button>}>
+    <Card title="Customers" actions={state.session.user.role !== "owner" && <button type="button" className="btn btn-primary" onClick={() => setOpen(true)}>Add customer</button>}>
+      {change.error && <div className="card-body"><FormError error={change.error} /></div>}
       <div className="table-wrap">
         <table>
           <thead><tr><th scope="col">Customer</th><th scope="col">Role</th><th scope="col">Plan</th><th scope="col">Websites</th><th scope="col">Since</th><th scope="col">Status</th><th scope="col"><span className="visually-hidden">Actions</span></th></tr></thead>
@@ -41,18 +46,20 @@ function Customers() {
                 <td><strong>{c.name}</strong><span className="cell-sub">{c.email}{c.resellerId && ` · via ${state.customers.find((r) => r.id === c.resellerId)?.name}`}</span></td>
                 <td>{c.role === "reseller" ? "Reseller" : "Website owner"}</td>
                 <td>
-                  <label className="visually-hidden" htmlFor={`plan-${c.id}`}>Plan for {c.name}</label>
-                  <select id={`plan-${c.id}`} className="select" value={c.planId} onChange={(e) => setCustomer(c.id, { planId: e.target.value })}>
-                    {state.plans.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                  </select>
+                  {own(c) ? plan(c.planId) : <>
+                    <label className="visually-hidden" htmlFor={`plan-${c.id}`}>Plan for {c.name}</label>
+                    <select id={`plan-${c.id}`} className="select" value={c.planId} disabled={change.busy} onChange={(e) => void change.run(c.id, { planId: e.target.value })}>
+                      {state.plans.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    </select>
+                  </>}
                 </td>
-                <td>{state.websites.filter((w) => w.customerId === c.id).length} of {state.plans.find((p) => p.id === c.planId)?.websites}</td>
+                <td>{state.websites.filter((w) => w.customerId === c.id).length} of {state.plans.find((p) => p.id === c.planId)?.websites ?? "?"}</td>
                 <td>{shortDate(c.createdAt)}</td>
                 <td>{c.suspended ? <Status tone="danger">Suspended</Status> : <Status tone="success">Active</Status>}</td>
                 <td className="cell-actions" style={{ width: 140 }}>
-                  {c.suspended
-                    ? <button type="button" className="btn btn-sm" onClick={() => setCustomer(c.id, { suspended: false })}>Unsuspend</button>
-                    : <ConfirmButton className="btn btn-sm btn-danger" title={`Suspend ${c.name}?`} confirm="Suspend" message={<p>The websites of {c.name} show a suspended page. Mail is still received. The {plan(c.planId)} plan stays.</p>} onConfirm={() => setCustomer(c.id, { suspended: true })}>Suspend</ConfirmButton>}
+                  {own(c) ? <span className="muted small">Your account</span> : c.suspended
+                    ? <button type="button" className="btn btn-sm" disabled={change.busy} onClick={() => void change.run(c.id, { suspended: false })}>Unsuspend</button>
+                    : <ConfirmButton className="btn btn-sm btn-danger" title={`Suspend ${c.name}?`} confirm="Suspend" message={<p>The panel stops the websites of {c.name}{c.role === "reseller" ? " and of its customers" : ""}. Mail is still received. The {plan(c.planId)} plan stays.</p>} onConfirm={() => void change.run(c.id, { suspended: true })}>Suspend</ConfirmButton>}
                 </td>
               </tr>
             ))}
@@ -66,7 +73,7 @@ function Customers() {
             <Field label="Name" error={add.error?.fields.name}>{(p) => <input {...p} className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />}</Field>
             <Field label="Email" hint="The panel sends an invitation to this address." error={add.error?.fields.email}>{(p) => <input {...p} className="input" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />}</Field>
             <div className="form-row">
-              <Field label="Role">{(p) => <select {...p} className="select" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as Customer["role"] })}><option value="owner">Website owner</option><option value="reseller">Reseller</option></select>}</Field>
+              {admin && <Field label="Role">{(p) => <select {...p} className="select" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as Customer["role"] })}><option value="owner">Website owner</option><option value="reseller">Reseller</option></select>}</Field>}
               <Field label="Plan">{(p) => <select {...p} className="select" value={form.planId} onChange={(e) => setForm({ ...form, planId: e.target.value })}>{state.plans.map((pl) => <option key={pl.id} value={pl.id}>{pl.name}</option>)}</select>}</Field>
             </div>
           </form>
@@ -82,8 +89,10 @@ const ALL_EXTENSIONS = ["opcache", "intl", "gd", "imagick", "redis", "sodium", "
 function Plans() {
   const state = useStore();
   const [editing, setEditing] = useState<Plan | null>(null);
+  // Only an administrator makes and changes plans. A reseller sees the plans that it can give.
+  const admin = state.session.user.role === "administrator";
   return (
-    <Card title="Plans" actions={<button type="button" className="btn btn-primary" onClick={() => setEditing(EMPTY_PLAN)}>New plan</button>}>
+    <Card title="Plans" actions={admin && <button type="button" className="btn btn-primary" onClick={() => setEditing(EMPTY_PLAN)}>New plan</button>}>
       <div className="table-wrap">
         <table>
           <thead><tr><th scope="col">Plan</th><th scope="col">Websites</th><th scope="col">CPU</th><th scope="col">Memory</th><th scope="col">Disk</th><th scope="col">Disk I/O</th><th scope="col">Processes</th><th scope="col">Mailboxes</th><th scope="col"><span className="visually-hidden">Actions</span></th></tr></thead>
@@ -98,7 +107,7 @@ function Plans() {
                 <td>{bytes(p.limits.diskIoBytesPerSecond)}/s</td>
                 <td>{p.limits.processes}</td>
                 <td>{p.mailboxes}</td>
-                <td className="cell-actions" style={{ width: 100 }}><button type="button" className="btn btn-sm" onClick={() => setEditing(p)}>Edit</button></td>
+                <td className="cell-actions" style={{ width: 100 }}>{admin && <button type="button" className="btn btn-sm" onClick={() => setEditing(p)}>Edit</button>}</td>
               </tr>
             ))}
           </tbody>
