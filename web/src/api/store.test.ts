@@ -114,6 +114,9 @@ describe("SFTP", () => {
     await expect(setSftp("web_shop", { enabled: true, authorizedKeys: ["not a key"] })).rejects.toMatchObject({ fields: { key: expect.any(String) } });
     const key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHk2b3hZQ2dQa1dGa1lQa1dGa1lQa1dGa1lQa1dGa1lQ me@laptop";
     await expect(setSftp("web_shop", { enabled: true, authorizedKeys: [key, key] })).rejects.toBeInstanceOf(ApiError);
-    await expect(setSftp("web_shop", { enabled: true, authorizedKeys: [key], newPassword: true })).resolves.toMatchObject({ password: expect.any(String) });
+    // SFTP accepts keys only, so it cannot be on with no key.
+    await expect(setSftp("web_shop", { enabled: true, authorizedKeys: [] })).rejects.toMatchObject({ fields: { key: expect.any(String) } });
+    await expect(setSftp("web_shop", { enabled: false, authorizedKeys: [] })).resolves.toMatchObject({ job: expect.any(Promise) });
+    await expect(setSftp("web_shop", { enabled: true, authorizedKeys: [key] })).resolves.not.toHaveProperty("password");
   });
 });

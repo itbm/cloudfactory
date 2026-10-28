@@ -65,7 +65,6 @@ class JobOutcome
             AgentAction::SetSftp => $website?->update([
                 'sftp_enabled' => (bool) ($p['enabled'] ?? false),
                 'sftp_keys' => $p['authorizedKeys'] ?? [],
-                'sftp_password_set' => ($p['enabled'] ?? false) && ! ($p['removePassword'] ?? false) && (($p['setsPassword'] ?? false) || $website->sftp_password_set),
             ]),
             AgentAction::ConfigureHost => $job->server->update(['gvisor_platform' => $p['gvisorPlatform'] ?? $job->server->gvisor_platform]),
             AgentAction::AddDomain => Domain::where('name', $p['domain'] ?? '')->update([

@@ -14,8 +14,8 @@ import (
 
 // SFTP access (spec section 10, release 0.1). The SSH service of the host locks each website
 // user in its directory in SitesDir, and allows only SFTP: no shell, no forwarding. The
-// installer writes this configuration for the group host.SitesGroup. The agent sets the
-// password and the keys of each user.
+// installer writes this configuration for the group host.SitesGroup. SFTP accepts SSH keys
+// only, so the agent sets the keys of each user and locks the password.
 
 // sftpKeysDir holds the authorized keys of each website user. Root owns the files, so that
 // the website cannot change them.
@@ -26,15 +26,12 @@ func (d *Deps) sftpKeysDir() string {
 	return "/etc/cloudfactory/sftp"
 }
 
-// SetSftp sets the SFTP access of a website: on or off, the password and the SSH keys.
+// SetSftp sets the SFTP access of a website: on or off, and the SSH keys.
 func (d *Deps) SetSftp(req *agentv1.SetSftpRequest) (jobs.Job, error) {
 	user := req.GetUnixUser()
 	errs := []error{validate.ID(req.GetWebsiteId()), validate.UnixUser(user)}
 	for _, k := range req.GetAuthorizedKeys() {
 		errs = append(errs, validate.SSHKey(k))
-	}
-	if req.GetPassword() != "" && !passwordRE.MatchString(req.GetPassword()) {
-		errs = append(errs, errors.New("the SFTP password must have 16 to 64 letters and digits"))
 	}
 	if err := errors.Join(errs...); err != nil {
 		return jobs.Job{}, err
@@ -57,17 +54,10 @@ func (d *Deps) SetSftp(req *agentv1.SetSftpRequest) (jobs.Job, error) {
 			if _, err := host.WriteFile(keysFile, keys.String(), 0o644); err != nil {
 				return err
 			}
-			switch {
-			case !req.GetEnabled() || req.GetRemovePassword():
-				// "!" locks the password. The user can still sign in with a key while SFTP is on.
-				_, err := d.Run.Run(ctx, "usermod", "--password", "!", user)
-				return err
-			case req.GetPassword() != "":
-				// chpasswd reads the password on stdin, so it is not in the process list.
-				_, err := d.Run.RunInput(ctx, user+":"+req.GetPassword()+"\n", "chpasswd")
-				return err
-			}
-			return nil
+			// "!" locks the password, also a password from an earlier version. sshd also
+			// refuses passwords for this group (install.sh), so only the keys can sign in.
+			_, err := d.Run.Run(ctx, "usermod", "--password", "!", user)
+			return err
 		}},
 	}}, nil
 }

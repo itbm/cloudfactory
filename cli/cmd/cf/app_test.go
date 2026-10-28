@@ -296,7 +296,7 @@ func pagedPanel(t *testing.T) (*httptest.Server, *[]string) {
 			b, _ := io.ReadAll(r.Body)
 			calls = append(calls, string(b))
 			w.WriteHeader(http.StatusAccepted)
-			w.Write([]byte(`{"password":"Pw123","job":null}`))
+			w.Write([]byte(`{"job":null}`))
 		case r.URL.Path == "/api/v1/jobs":
 			paged(120, func(i int) string { return fmt.Sprintf(`{"id":"J%d","title":"Job %d","state":"succeeded"}`, i, i) })
 		case r.URL.Path == "/api/v1/backup-policy" && r.Method == http.MethodGet:
@@ -353,18 +353,23 @@ func TestFindWebsiteSearchesEachPage(t *testing.T) {
 	keyFile := filepath.Join(t.TempDir(), "id.pub")
 	os.WriteFile(keyFile, []byte("# my key\nssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIA me@laptop\n"), 0o600)
 	// site240.example is on page 3.
-	if err := a.dispatch(context.Background(), []string{"sftp", "set", "site240.example", "--on", "--new-password", "--key-file", keyFile}); err != nil {
+	if err := a.dispatch(context.Background(), []string{"sftp", "set", "site240.example", "--on", "--key-file", keyFile}); err != nil {
 		t.Fatal(err)
 	}
 	body := (*calls)[len(*calls)-1]
-	for _, want := range []string{`"enabled":true`, `"newPassword":true`, `"authorizedKeys":["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIA me@laptop"]`} {
+	if strings.Contains(body, "assword") {
+		t.Errorf("SFTP accepts keys only, but the body asks for a password: %s", body)
+	}
+	for _, want := range []string{`"enabled":true`, `"authorizedKeys":["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIA me@laptop"]`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("body %s does not have %s", body, want)
 		}
 	}
-	if !strings.Contains(out.String(), "Password: Pw123") {
-		t.Errorf("output:\n%s", out)
+	// The flags for a password are gone.
+	if err := a.dispatch(context.Background(), []string{"sftp", "set", "site240.example", "--new-password"}); err == nil {
+		t.Error("--new-password is accepted")
 	}
+	_ = out
 }
 
 func TestBackupCredentialsComeFromTheEnvironment(t *testing.T) {

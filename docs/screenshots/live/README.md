@@ -141,7 +141,7 @@ The own row of a reseller has no plan menu and no Suspend button.
 
 ## 23-sftp
 
-SFTP access of a website: on or off, SSH keys with their fingerprints, and a new password that shows once.
+SFTP access of a website: on or off, and the SSH keys with their fingerprints. SFTP accepts SSH keys only. There is no password.
 
 ![23-sftp](23-sftp.png)
 
@@ -168,3 +168,9 @@ The form shows an error and does not show "Saved" (audit batch 2, finding 10).
 A held container tool has an update. "Update container tools" installs it (FR-1113).
 
 ![27-container-tools](27-container-tools.png)
+
+## 28-sftp-no-keys
+
+A website with no SSH keys. SFTP cannot be turned on until you add a key.
+
+![28-sftp-no-keys](28-sftp-no-keys.png)

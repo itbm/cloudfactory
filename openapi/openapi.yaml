@@ -464,9 +464,9 @@ paths:
       tags: [Websites]
       summary: Set the SFTP access of a website
       description: >-
-        Spec section 10. The owner signs in with the user name of the website, with a password or
-        an SSH key. The server allows only SFTP, in the directory of the website. The response
-        shows a new password once.
+        Spec section 10. The owner signs in with the user name of the website and an SSH key.
+        The server refuses passwords, and allows only SFTP, in the directory of the website. To
+        turn on SFTP, give at least one key.
       requestBody:
         required: true
         content:
@@ -476,8 +476,6 @@ paths:
               required: [enabled]
               properties:
                 enabled: { type: boolean }
-                newPassword: { type: boolean, description: True makes a new password. }
-                removePassword: { type: boolean, description: True removes the password. Only the SSH keys can sign in. }
                 authorizedKeys: { type: array, maxItems: 20, items: { type: string, description: 'One OpenSSH public key, for example "ssh-ed25519 AAAA... me@laptop".' } }
       responses:
         '202':
@@ -488,7 +486,6 @@ paths:
                 type: object
                 properties:
                   sftp: { $ref: '#/components/schemas/Sftp' }
-                  password: { type: [string, 'null'] }
                   job: { $ref: '#/components/schemas/Job' }
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/Invalid' }
@@ -1507,7 +1504,6 @@ components:
         host: { type: [string, 'null'] }
         port: { type: integer }
         username: { type: string }
-        passwordSet: { type: boolean }
         authorizedKeys: { type: array, items: { type: string } }
     JobState:
       type: string

@@ -39,7 +39,7 @@ Usage:
   cf runtime set WEBSITE [--image ID] [--worker-mode on|off] [--extensions a,b] [--ini key=value]...
                          [--document-root DIR]
   cf sftp get WEBSITE
-  cf sftp set WEBSITE [--on|--off] [--new-password] [--remove-password] [--key-file FILE]... [--no-keys]
+  cf sftp set WEBSITE [--on|--off] [--key-file FILE]... [--no-keys]
   cf runtime revert WEBSITE
   cf databases list WEBSITE
   cf databases create WEBSITE --engine mariadb|postgresql --name NAME [--no-user]

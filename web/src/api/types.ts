@@ -137,7 +137,6 @@ export interface SftpAccess {
   host: string;
   port: number;
   username: string;
-  passwordSet: boolean;
   /** OpenSSH public keys, one key in each item. */
   authorizedKeys: string[];
 }
@@ -161,7 +160,6 @@ export interface Website {
   previews: PreviewSite[];
   cron: CronJob[];
   sshKeys: SshKey[];
-  sftpPasswordEnabled: boolean;
   /** The SFTP access from the panel API (live mode). */
   sftp?: SftpAccess;
   shellEnabled: boolean;

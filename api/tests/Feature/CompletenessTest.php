@@ -72,24 +72,28 @@ class CompletenessTest extends TestCase
         Carbon::setTestNow();
     }
 
-    public function test_sftp_access_has_a_password_that_is_shown_once_and_checked_keys(): void
+    public function test_sftp_access_accepts_checked_ssh_keys_only(): void
     {
         $website = $this->website($this->customer(), $this->server(), $this->image());
         $this->actingWith($this->user());
         $key = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJ7m0Yv0Hj8d1bqQn5x9sP1rZ2y3w4v5u6t7s8r9q0p me@laptop';
+        $url = "/api/v1/websites/{$website->id}/sftp";
 
-        $this->putJson("/api/v1/websites/{$website->id}/sftp", ['enabled' => true, 'authorizedKeys' => ['command="sh" '.$key]])->assertJsonValidationErrors('authorizedKeys.0');
-        $response = $this->putJson("/api/v1/websites/{$website->id}/sftp", ['enabled' => true, 'newPassword' => true, 'authorizedKeys' => [$key]])->assertAccepted();
-        $password = $response->json('password');
-        $this->assertSame(24, strlen($password));
+        $this->putJson($url, ['enabled' => true, 'authorizedKeys' => ['command="sh" '.$key]])->assertJsonValidationErrors('authorizedKeys.0');
+        // No password: a request for one is refused, and SFTP needs at least one key.
+        $this->putJson($url, ['enabled' => true, 'newPassword' => true, 'authorizedKeys' => [$key]])->assertJsonValidationErrors('newPassword');
+        $this->putJson($url, ['enabled' => true, 'authorizedKeys' => []])->assertJsonValidationErrors('authorizedKeys');
+        $this->assertSame(0, AgentJob::count());
+
+        $response = $this->putJson($url, ['enabled' => true, 'authorizedKeys' => [$key]])->assertAccepted()->assertJsonMissingPath('password');
         $job = $this->finish($response->json('job.id'));
-        $this->assertArrayNotHasKey('password', $job->payload);
+        $this->assertSame(['websiteId', 'unixUser', 'enabled', 'authorizedKeys'], array_keys($job->payload));
         $this->getJson("/api/v1/websites/{$website->id}")
-            ->assertJsonPath('data.sftp.enabled', true)->assertJsonPath('data.sftp.passwordSet', true)
+            ->assertJsonPath('data.sftp.enabled', true)->assertJsonMissingPath('data.sftp.passwordSet')
             ->assertJsonPath('data.sftp.username', $website->unix_user)->assertJsonPath('data.sftp.authorizedKeys', [$key]);
 
-        $this->finish($this->putJson("/api/v1/websites/{$website->id}/sftp", ['enabled' => false])->assertAccepted()->assertJsonPath('password', null)->json('job.id'));
-        $this->getJson("/api/v1/websites/{$website->id}")->assertJsonPath('data.sftp.enabled', false)->assertJsonPath('data.sftp.passwordSet', false);
+        $this->finish($this->putJson($url, ['enabled' => false])->assertAccepted()->json('job.id'));
+        $this->getJson("/api/v1/websites/{$website->id}")->assertJsonPath('data.sftp.enabled', false);
     }
 
     public function test_a_verified_domain_becomes_primary_and_the_old_primary_becomes_an_alias(): void

@@ -138,23 +138,20 @@ func TestPruneRemovesUnusedData(t *testing.T) {
 	}
 }
 
-// SFTP: keys in a file of root, the password on stdin, and a lock when SFTP is off.
+// SFTP: keys in a file of root, and the password is always locked, so only the keys work.
 func TestSetSftp(t *testing.T) {
 	d, f, _ := deps(t)
 	d.SftpKeysDir = filepath.Join(t.TempDir(), "sftp")
 	key := "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGtQx2bS8ZJ4Wm1bZ7zO0Zr3wq8yXc2v1q9w8mL3h4kP owner@laptop"
-	if err := run(t)(d.SetSftp(&agentv1.SetSftpRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Enabled: true, Password: "Abcdefgh12345678", AuthorizedKeys: []string{key}})); err != nil {
+	if err := run(t)(d.SetSftp(&agentv1.SetSftpRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Enabled: true, AuthorizedKeys: []string{key}})); err != nil {
 		t.Fatal(err)
 	}
 	b, _ := os.ReadFile(filepath.Join(d.SftpKeysDir, "acme_x7k2.keys"))
 	if !strings.Contains(string(b), "restrict "+key+"\n") {
 		t.Errorf("keys file:\n%s", b)
 	}
-	if !f.Called("usermod --append --groups cf-sites acme_x7k2") || !f.Called("chpasswd") || strings.Contains(strings.Join(f.Calls, " "), "Abcdefgh12345678") {
-		t.Errorf("calls = %v", f.Calls)
-	}
-	if f.Inputs[len(f.Inputs)-1] != "acme_x7k2:Abcdefgh12345678\n" {
-		t.Errorf("stdin = %q", f.Inputs[len(f.Inputs)-1])
+	if !f.Called("usermod --append --groups cf-sites acme_x7k2") || !f.Called("usermod --password ! acme_x7k2") || f.Called("chpasswd") {
+		t.Errorf("SFTP with keys must lock the password: %v", f.Calls)
 	}
 	if err := run(t)(d.SetSftp(&agentv1.SetSftpRequest{JobId: jobID2, WebsiteId: websiteID, UnixUser: "acme_x7k2", AuthorizedKeys: []string{key}})); err != nil {
 		t.Fatal(err)

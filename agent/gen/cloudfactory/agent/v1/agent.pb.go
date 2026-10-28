@@ -1804,10 +1804,6 @@ type SetSftpRequest struct {
 	WebsiteId string                 `protobuf:"bytes,2,opt,name=website_id,json=websiteId,proto3" json:"website_id,omitempty"`
 	UnixUser  string                 `protobuf:"bytes,3,opt,name=unix_user,json=unixUser,proto3" json:"unix_user,omitempty"`
 	Enabled   bool                   `protobuf:"varint,4,opt,name=enabled,proto3" json:"enabled,omitempty"`
-	// A new password. Empty: keep the password.
-	Password string `protobuf:"bytes,5,opt,name=password,proto3" json:"password,omitempty"`
-	// True: remove the password, so that only the SSH keys can sign in.
-	RemovePassword bool `protobuf:"varint,6,opt,name=remove_password,json=removePassword,proto3" json:"remove_password,omitempty"`
 	// The public SSH keys, one OpenSSH key in each item.
 	AuthorizedKeys []string `protobuf:"bytes,7,rep,name=authorized_keys,json=authorizedKeys,proto3" json:"authorized_keys,omitempty"`
 	unknownFields  protoimpl.UnknownFields
@@ -1868,20 +1864,6 @@ func (x *SetSftpRequest) GetUnixUser() string {
 func (x *SetSftpRequest) GetEnabled() bool {
 	if x != nil {
 		return x.Enabled
-	}
-	return false
-}
-
-func (x *SetSftpRequest) GetPassword() string {
-	if x != nil {
-		return x.Password
-	}
-	return ""
-}
-
-func (x *SetSftpRequest) GetRemovePassword() bool {
-	if x != nil {
-		return x.RemovePassword
 	}
 	return false
 }
@@ -2489,16 +2471,14 @@ const file_cloudfactory_agent_v1_agent_proto_rawDesc = "" +
 	"\vcredentials\x18\t \x03(\v26.cloudfactory.agent.v1.RestoreRequest.CredentialsEntryR\vcredentials\x1a>\n" +
 	"\x10CredentialsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xeb\x01\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xcd\x01\n" +
 	"\x0eSetSftpRequest\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x1d\n" +
 	"\n" +
 	"website_id\x18\x02 \x01(\tR\twebsiteId\x12\x1b\n" +
 	"\tunix_user\x18\x03 \x01(\tR\bunixUser\x12\x18\n" +
-	"\aenabled\x18\x04 \x01(\bR\aenabled\x12\x1a\n" +
-	"\bpassword\x18\x05 \x01(\tR\bpassword\x12'\n" +
-	"\x0fremove_password\x18\x06 \x01(\bR\x0eremovePassword\x12'\n" +
-	"\x0fauthorized_keys\x18\a \x03(\tR\x0eauthorizedKeys\"V\n" +
+	"\aenabled\x18\x04 \x01(\bR\aenabled\x12'\n" +
+	"\x0fauthorized_keys\x18\a \x03(\tR\x0eauthorizedKeysJ\x04\b\x05\x10\x06J\x04\b\x06\x10\aR\bpasswordR\x0fremove_password\"V\n" +
 	"\x14ConfigureHostRequest\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12'\n" +
 	"\x0fgvisor_platform\x18\x02 \x01(\tR\x0egvisorPlatform\"<\n" +

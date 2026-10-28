@@ -358,7 +358,6 @@ export function createWebsite(input: NewWebsite): Promise<{ websiteId: string; j
         previews: [],
         cron: [],
         sshKeys: [],
-        sftpPasswordEnabled: false,
         shellEnabled: false,
         lastChange: { at: now(), summary: "Created" },
         managedByTerraform: false,
@@ -897,7 +896,7 @@ export function removeSshKey(websiteId: string, keyId: string) {
   });
 }
 
-export function setAccess(websiteId: string, change: { shellEnabled?: boolean; sftpPasswordEnabled?: boolean }) {
+export function setAccess(websiteId: string, change: { shellEnabled?: boolean }) {
   if (LIVE) notInRelease();
   update((d) => {
     const w = site(d, websiteId);
@@ -908,28 +907,25 @@ export function setAccess(websiteId: string, change: { shellEnabled?: boolean; s
 
 /**
  * Spec section 10: the SFTP access of a website (live mode). The owner signs in as the Unix
- * user of the website. The promise gives a new password once, when the change asked for one.
+ * user of the website with an SSH key. SFTP accepts no passwords.
  */
-export function setSftp(websiteId: string, change: { enabled: boolean; newPassword?: boolean; removePassword?: boolean; authorizedKeys: string[] }): Promise<{ password: string | null; job: Promise<Job> }> {
+export function setSftp(websiteId: string, change: { enabled: boolean; authorizedKeys: string[] }): Promise<{ job: Promise<Job> }> {
   const keys = change.authorizedKeys.map((k) => k.trim().replace(/\s+/g, " ")).filter(Boolean);
   const bad = keys.findIndex((k) => !SSH_KEY.test(k));
   if (bad >= 0) return Promise.reject(new ApiError("This is not an SSH public key.", { key: "Paste a public key that starts with ssh-ed25519, ssh-rsa or ecdsa-sha2." }));
   if (new Set(keys).size !== keys.length) return Promise.reject(new ApiError("This key is in the list.", { key: "This key is in the list." }));
+  if (change.enabled && keys.length === 0) return Promise.reject(new ApiError("Add an SSH public key to turn on SFTP.", { key: "Add an SSH public key to turn on SFTP." }));
   if (!LIVE) {
-    update((d) => {
-      const w = site(d, websiteId);
-      w.sftpPasswordEnabled = change.removePassword ? false : change.newPassword ? true : w.sftpPasswordEnabled;
-      audit(d, "Changed SFTP access", w.name);
-    });
-    return Promise.resolve({ password: change.newPassword ? hex() + hex() + hex() : null, job: runJob({ title: "Set SFTP access", websiteId, steps: ["Write the keys", "Set the password"] }) });
+    update((d) => audit(d, "Changed SFTP access", site(d, websiteId).name));
+    return Promise.resolve({ job: runJob({ title: "Set SFTP access", websiteId, steps: ["Write the keys", "Lock the password"] }) });
   }
   return call(async () => {
-    const r = await live.request<{ password: string | null; job: live.ApiJob; sftp: Website["sftp"] }>("PUT", `/websites/${websiteId}/sftp`, { ...change, authorizedKeys: keys });
+    const r = await live.request<{ job: live.ApiJob; sftp: Website["sftp"] }>("PUT", `/websites/${websiteId}/sftp`, { ...change, authorizedKeys: keys });
     update((d) => {
       const w = d.websites.find((x) => x.id === websiteId);
       if (w && r.sftp) w.sftp = { ...r.sftp, host: r.sftp.host ?? w.sftp?.host ?? "" };
     });
-    return { password: r.password ?? null, job: track(r.job) };
+    return { job: track(r.job) };
   });
 }
 

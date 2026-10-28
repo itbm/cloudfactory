@@ -154,7 +154,6 @@ type Sftp struct {
 	Host           *string  `json:"host"`
 	Port           int      `json:"port"`
 	Username       string   `json:"username"`
-	PasswordSet    bool     `json:"passwordSet"`
 	AuthorizedKeys []string `json:"authorizedKeys"`
 }
 

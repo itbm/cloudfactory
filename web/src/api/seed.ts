@@ -82,7 +82,6 @@ function site(input: SiteInput): Website {
     previews: [],
     cron: [],
     sshKeys: [],
-    sftpPasswordEnabled: false,
     shellEnabled: false,
     lastChange: { at: ago(6 * DAY), summary: "Plugin updates" },
     managedByTerraform: false,
@@ -188,7 +187,6 @@ export const websites: Website[] = [
     use: { cpuPercent: 2, memoryBytes: 160 * MB, diskBytes: 3.4 * GB, processes: 9, diskIoBytesPerSecond: 0.2 * MB },
     domains: [{ name: "legacy.example.net", kind: "primary", certificate: { state: "valid", expiresAt: ahead(12 * DAY) }, dnsPointsHere: true }],
     lastChange: { at: ago(240 * DAY), summary: "SFTP upload" },
-    sftpPasswordEnabled: true,
   }),
   site({
     id: "web_api",

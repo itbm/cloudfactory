@@ -265,10 +265,9 @@ message SetSftpRequest {
   string website_id = 2;
   string unix_user = 3;
   bool enabled = 4;
-  // A new password. Empty: keep the password.
-  string password = 5;
-  // True: remove the password, so that only the SSH keys can sign in.
-  bool remove_password = 6;
+  // SFTP accepts SSH keys only. The agent locks the password of the user each time.
+  reserved 5, 6;
+  reserved "password", "remove_password";
   // The public SSH keys, one OpenSSH key in each item.
   repeated string authorized_keys = 7;
 }

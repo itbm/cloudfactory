@@ -117,7 +117,7 @@ interface ApiJob { id: string; title: string; ref: string | null; state: Job["st
 interface ApiWebsite {
   id: string; name: string; application: string; customerId: string; serverId: string; planId: string; unixUser: string; status: Website["status"];
   runtime: { imageId: string; family: string; image: string; phpVersion: string | null; workerMode: boolean; extensions: string[]; phpIni: Record<string, string>; previousImageId: string | null; documentRoot?: string };
-  sftp?: { enabled: boolean; host: string | null; port: number; username: string; passwordSet: boolean; authorizedKeys: string[] };
+  sftp?: { enabled: boolean; host: string | null; port: number; username: string; authorizedKeys: string[] };
   limits: Limits; usage: Partial<Website["use"]> | null;
   domains?: { name: string; kind: Website["domains"][number]["kind"]; dnsPointsHere: boolean; certificate: { state: Website["domains"][number]["certificate"]["state"]; expiresAt: string | null }; verified?: boolean; verification?: DomainVerification | null }[];
   stagingOf: string | null; managedByTerraform: boolean; createdAt: string; updatedAt: string;
@@ -175,7 +175,7 @@ export function toWebsite(w: ApiWebsite): Website {
       name: d.name, kind: d.kind, dnsPointsHere: d.dnsPointsHere, certificate: { state: d.certificate.state, expiresAt: d.certificate.expiresAt ?? undefined },
       ...(d.verified === false && d.verification ? { verification: d.verification } : {}),
     })),
-    releases: [], previews: [], cron: [], sshKeys: [], sftpPasswordEnabled: w.sftp?.passwordSet ?? false, shellEnabled: false,
+    releases: [], previews: [], cron: [], sshKeys: [], shellEnabled: false,
     sftp: w.sftp ? { ...w.sftp, host: w.sftp.host ?? location.host.replace(/:\d+$/, ""), authorizedKeys: w.sftp.authorizedKeys ?? [] } : undefined,
     lastChange: { at: w.updatedAt, summary: "Last change" },
     stagingOf: w.stagingOf ?? undefined, managedByTerraform: w.managedByTerraform, imageTag: tagOfReference(w.runtime.image) || undefined, imageReference: w.runtime.image || undefined,

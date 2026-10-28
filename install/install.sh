@@ -395,8 +395,9 @@ install -d -o cf-edge -g cf-edge -m 0700 "$CF_DATA/caddy-admin"
 
 step "Set up SFTP for the websites"
 # Spec section 10: the owner of a website signs in with SFTP as the Unix user of the website.
-# sshd locks the user in the directory of the website and allows only SFTP. The agent writes
-# the keys and sets the password of each user. Other users of the server are not changed.
+# sshd locks the user in the directory of the website and allows only SFTP with an SSH key.
+# Passwords are refused. The agent writes the keys of each user. Other users of the server
+# are not changed.
 getent group cf-sites >/dev/null || groupadd --system cf-sites
 install -d -m 0755 "$CF_ETC/sftp"
 mkdir -p /etc/ssh/sshd_config.d
@@ -406,7 +407,8 @@ Match Group cf-sites
 	ChrootDirectory /srv/cloudfactory/sites/%u
 	ForceCommand internal-sftp -d /app -u 0027
 	AuthorizedKeysFile /etc/cloudfactory/sftp/%u.keys
-	PasswordAuthentication yes
+	AuthenticationMethods publickey
+	PasswordAuthentication no
 	KbdInteractiveAuthentication no
 	AllowTcpForwarding no
 	AllowAgentForwarding no

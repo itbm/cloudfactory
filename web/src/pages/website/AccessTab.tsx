@@ -41,7 +41,7 @@ export function SshCard({ website }: { website: Website }) {
         <div className="card-body">
           {sftp.enabled ? <CopyField value={sftpUrl(website)} label="SFTP address" /> : <p>SFTP is off.</p>}
           <p className="muted small" style={{ marginTop: 14 }}>
-            {sftp.authorizedKeys.length} SSH {sftp.authorizedKeys.length === 1 ? "key" : "keys"} · password {sftp.passwordSet ? "set" : "not set"}. <Link to={`/websites/${website.id}/access`}>Manage SFTP</Link>
+            {sftp.authorizedKeys.length} SSH {sftp.authorizedKeys.length === 1 ? "key" : "keys"}. Sign in with an SSH key. Passwords are not accepted. <Link to={`/websites/${website.id}/access`}>Manage SFTP</Link>
           </p>
         </div>
       </Card>
@@ -94,19 +94,16 @@ function KeyRow({ value, onRemove, busy }: { value: string; onRemove: () => void
 
 /**
  * Spec section 10, live mode: the owner signs in with SFTP as the Unix user of the website, with
- * an SSH key or a password. The server allows only SFTP, in the directory of the website.
+ * an SSH key. The server refuses passwords, and allows only SFTP, in the directory of the website.
  */
 function SftpTab({ website, sftp }: { website: Website; sftp: SftpAccess }) {
   const state = useStore();
   const [key, setKey] = useState("");
   // The panel saves a change when the agent has applied it. Until then, a second change would start from the old state.
   const applying = state.jobs.some((j) => j.websiteId === website.id && (j.state === "queued" || j.state === "running") && j.title.endsWith("SFTP access"));
-  const [password, setPassword] = useState<string | null>(null);
-  const action = useAction(async (next: Partial<Parameters<typeof setSftp>[1]>) => {
-    const r = await setSftp(website.id, { enabled: sftp.enabled, authorizedKeys: sftp.authorizedKeys, ...next });
-    if (r.password) setPassword(r.password);
-    return r;
-  });
+  const action = useAction((next: Partial<Parameters<typeof setSftp>[1]>) => setSftp(website.id, { enabled: sftp.enabled, authorizedKeys: sftp.authorizedKeys, ...next }));
+  // SFTP accepts keys only. The last key cannot go while SFTP is on.
+  const lastKey = sftp.enabled && sftp.authorizedKeys.length === 1;
   const change = { ...action, busy: action.busy || applying };
   const addKey = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -129,26 +126,10 @@ function SftpTab({ website, sftp }: { website: Website; sftp: SftpAccess }) {
               </tbody>
             </table>
             <div style={{ marginTop: 16 }} className="section-gap">
-              <Toggle checked={sftp.enabled} label="SFTP" disabled={change.busy} onChange={(v) => void change.run({ enabled: v })}>
+              <Toggle checked={sftp.enabled} label="SFTP" disabled={change.busy || (!sftp.enabled && sftp.authorizedKeys.length === 0)} onChange={(v) => void change.run({ enabled: v })}>
                 SFTP: {sftp.enabled ? "on" : "off"}. Only SFTP is allowed. There is no shell.
               </Toggle>
-            </div>
-          </div>
-        </Card>
-        <Card title="Password">
-          <div className="card-body">
-            <p>{sftp.passwordSet ? "A password is set. The panel cannot show it again." : "No password is set. Only SSH keys can sign in."} SSH keys are safer.</p>
-            {password && (
-              <div className="alert alert-success" role="status" style={{ marginTop: 12 }}>
-                <p><strong>Copy the new password now.</strong> The panel shows it only once.</p>
-                <CopyField value={password} label="New SFTP password" />
-              </div>
-            )}
-            <div className="btn-group" style={{ marginTop: 12 }}>
-              <button type="button" className="btn" disabled={change.busy || !sftp.enabled} onClick={() => void change.run({ newPassword: true })}>{sftp.passwordSet ? "Make a new password" : "Make a password"}</button>
-              {sftp.passwordSet && (
-                <ConfirmButton className="btn btn-danger" title="Remove the password?" confirm="Remove password" message={<p>After this, only SSH keys can sign in with SFTP.</p>} onConfirm={() => { setPassword(null); void change.run({ removePassword: true }); }}>Remove password</ConfirmButton>
-              )}
+              <p className="muted small" style={{ marginTop: 8 }}>{sftp.authorizedKeys.length === 0 ? "Add an SSH key, then turn on SFTP." : "Sign in with one of the SSH keys. The server does not accept passwords."}</p>
             </div>
           </div>
         </Card>
@@ -159,12 +140,13 @@ function SftpTab({ website, sftp }: { website: Website; sftp: SftpAccess }) {
             <table>
               <thead><tr><th scope="col">Key</th><th scope="col">Fingerprint</th><th scope="col"><span className="visually-hidden">Actions</span></th></tr></thead>
               <tbody>
-                {sftp.authorizedKeys.map((k) => <KeyRow key={k} value={k} busy={change.busy} onRemove={() => void change.run({ authorizedKeys: sftp.authorizedKeys.filter((x) => x !== k) })} />)}
+                {sftp.authorizedKeys.map((k) => <KeyRow key={k} value={k} busy={change.busy || lastKey} onRemove={() => void change.run({ authorizedKeys: sftp.authorizedKeys.filter((x) => x !== k) })} />)}
                 {sftp.authorizedKeys.length === 0 && <tr><td colSpan={3} className="muted">No SSH keys.</td></tr>}
               </tbody>
             </table>
           </div>
           <form className="card-body" style={{ paddingTop: 16 }} noValidate onSubmit={addKey}>
+            {lastKey && <p className="muted small" style={{ marginBottom: 12 }}>To remove the last key, turn off SFTP first.</p>}
             <Field label="Public key" hint="Up to 20 keys. The comment at the end of the key names it in this list." error={change.error?.fields.key ?? change.error?.fields["authorizedKeys.0"]}>
               {(p) => <textarea {...p} className="textarea mono" rows={3} value={key} onChange={(e) => setKey(e.target.value)} placeholder="ssh-ed25519 AAAA… me@laptop" spellCheck={false} />}
             </Field>
@@ -199,9 +181,6 @@ function MockAccessTab({ website }: { website: Website }) {
             <div style={{ marginTop: 16 }} className="section-gap">
               <Toggle checked={website.shellEnabled} label="SSH shell" onChange={(v) => setAccess(website.id, { shellEnabled: v })}>
                 SSH shell: {website.shellEnabled ? "on" : "off"}. The shell opens inside the website container, as {website.unixUser}. It cannot reach the host.
-              </Toggle>
-              <Toggle checked={website.sftpPasswordEnabled} label="Password sign-in" onChange={(v) => setAccess(website.id, { sftpPasswordEnabled: v })}>
-                Password sign-in: {website.sftpPasswordEnabled ? "on" : "off"}. SSH keys are safer.
               </Toggle>
             </div>
           </div>

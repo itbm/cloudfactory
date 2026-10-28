@@ -109,7 +109,7 @@ describe("load (batch 1, finding 9)", () => {
     id: `w${n}`, name: `site${n}.example`, application: "", customerId: "c1", serverId: "s1", planId: "p1", unixUser: `site${n}_1a2b`, status: "running",
     runtime: { imageId: "i1", family: "frankenphp", image: "x:1", phpVersion: "8.4", workerMode: false, extensions: [], phpIni: {}, previousImageId: null },
     limits: { vcpus: 1, memoryBytes: 1, diskBytes: 1, diskIoBytesPerSecond: 1, processes: 100 }, usage: {}, domains: [],
-    sftp: { enabled: true, host: "web-01.example", port: 22, username: `site${n}_1a2b`, passwordSet: false, authorizedKeys: [] },
+    sftp: { enabled: true, host: "web-01.example", port: 22, username: `site${n}_1a2b`, authorizedKeys: [] },
     stagingOf: null, managedByTerraform: false, createdAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-02T00:00:00Z",
   });
 

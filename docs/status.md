@@ -16,7 +16,7 @@ shows what this repository has now.
 | Agent: websites, limits, runtime changes without downtime, domains and TLS, MariaDB and PostgreSQL databases, backups and restores, host security updates, reboots, gVisor install and rollback, signed self-update with rollback | `agent/` |
 | Mutual TLS between the panel and each agent, with pinned certificates | `agent/internal/server`, `api/app/Services/AgentClient.php` |
 | Rollouts in batches with a canary, a health check, a stop and a roll back | `api/app/Services/RolloutEngine.php` |
-| SFTP for each website: password or SSH keys, locked in the directory of the website | `install/install.sh`, `agent/internal/actions/sftp.go`, `api/app/Http/Controllers/Api/SftpController.php` |
+| SFTP for each website: SSH keys only (no passwords), locked in the directory of the website | `install/install.sh`, `agent/internal/actions/sftp.go`, `api/app/Http/Controllers/Api/SftpController.php` |
 | Backups each night at the policy time, with retention and a weekly prune. Updates in the maintenance window. Checks for jobs and servers that stop answering | `api/app/Console/Commands/` |
 | `cf` CLI for all public API areas, with `--json` and `--no-wait`. Lists read all pages | `cli/` |
 | Installation script with checks before changes, for a panel and for a new server | `install/` |

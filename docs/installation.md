@@ -125,6 +125,8 @@ only, sshd:
 - Locks the user in the directory of the website. The user starts in `/app`.
 - Allows only SFTP: no shell, no terminal and no forwarding.
 - Reads the SSH keys from `/etc/cloudfactory/sftp/USER.keys`. The agent writes this file.
+- Accepts SSH keys only. Password sign-in is off, and the agent locks the password of each
+  website user.
 
 The script does not change the access of other users. Port 22 stays open in the firewall.
 

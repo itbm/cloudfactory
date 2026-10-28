@@ -85,6 +85,33 @@ The product specification, section 6.4, gives the requirements.
 - The panel keeps job data encrypted in the database. When a job is complete, the panel
   removes passwords from the job data.
 
+## Secrets in the database
+
+The panel does not keep a secret as plain text in its database. The test
+`api/tests/Feature/SecretsAtRestTest.php` makes each kind of secret, then looks for it in
+each row of each table.
+
+| Secret | How the panel keeps it |
+| --- | --- |
+| Credentials of the backup storage, for example the S3 keys | Encrypted with `APP_KEY`. The API does not show them again. |
+| TOTP secret of a user | Encrypted with `APP_KEY`. A secret that is not set up yet is encrypted in the cache. |
+| Job data, which can hold database passwords for the agent | Encrypted with `APP_KEY`. The panel removes the passwords when the job is complete. |
+| Sessions, if the panel keeps one | Encrypted with `APP_KEY` (`SESSION_ENCRYPT`). |
+| User passwords | Bcrypt hash. |
+| Sign-in and API tokens | SHA-256 hash. The panel shows a token one time only. |
+| Agent tokens and join tokens | SHA-256 hash. |
+| Database passwords | Not kept. The panel shows a new password one time only. |
+| SFTP | No passwords. SFTP accepts SSH keys only. The panel keeps the public keys. |
+
+These secrets are files, not rows in the database. Each file has mode 0600 or is in a
+directory with mode 0700:
+
+- `APP_KEY` in `/var/lib/cloudfactory/panel/panel.env`. Anyone with this key can decrypt the
+  secrets above. Keep a copy of this file in a safe place. If you lose it, you must enter
+  the backup credentials again, and users must set up TOTP again.
+- The private key of the panel for mutual TLS, in `/var/lib/cloudfactory/panel/pki/panel.key`.
+- The restic password on each server, in `/etc/cloudfactory/restic.key`.
+
 ## Users and API tokens
 
 - Users sign in with a password and, if they set it, a TOTP code. A TOTP code works only one

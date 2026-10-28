@@ -338,7 +338,7 @@ func (a *app) sftp(ctx context.Context, sub string, args []string) error {
 		if w.Sftp.Host != nil {
 			host = *w.Sftp.Host
 		}
-		fmt.Fprintf(a.out, "SFTP:     %s\nAddress:  sftp://%s@%s:%d\nPassword: %s\nSSH keys: %d\n", map[bool]string{true: "on", false: "off"}[w.Sftp.Enabled], w.Sftp.Username, host, w.Sftp.Port, map[bool]string{true: "set", false: "not set"}[w.Sftp.PasswordSet], len(w.Sftp.AuthorizedKeys))
+		fmt.Fprintf(a.out, "SFTP:     %s\nAddress:  sftp://%s@%s:%d\nSSH keys: %d (SFTP accepts keys only)\n", map[bool]string{true: "on", false: "off"}[w.Sftp.Enabled], w.Sftp.Username, host, w.Sftp.Port, len(w.Sftp.AuthorizedKeys))
 		for _, k := range w.Sftp.AuthorizedKeys {
 			fmt.Fprintf(a.out, "  %s\n", k)
 		}
@@ -347,8 +347,6 @@ func (a *app) sftp(ctx context.Context, sub string, args []string) error {
 		fs := flag.NewFlagSet("set", flag.ContinueOnError)
 		on := fs.Bool("on", false, "turn SFTP on")
 		off := fs.Bool("off", false, "turn SFTP off")
-		newPassword := fs.Bool("new-password", false, "make a new password. The command shows it once.")
-		removePassword := fs.Bool("remove-password", false, "remove the password, so that only SSH keys can sign in")
 		noKeys := fs.Bool("no-keys", false, "remove all SSH keys")
 		var keyFiles multi
 		fs.Var(&keyFiles, "key-file", "a file with one or more OpenSSH public keys, for example ~/.ssh/id_ed25519.pub. The keys replace the old keys.")
@@ -361,12 +359,6 @@ func (a *app) sftp(ctx context.Context, sub string, args []string) error {
 		body := map[string]any{"enabled": w.Sftp.Enabled || *on}
 		if *off {
 			body["enabled"] = false
-		}
-		if *newPassword {
-			body["newPassword"] = true
-		}
-		if *removePassword {
-			body["removePassword"] = true
 		}
 		if *noKeys {
 			body["authorizedKeys"] = []string{}
