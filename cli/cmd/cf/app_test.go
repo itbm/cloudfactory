@@ -4,8 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -254,5 +259,151 @@ func TestANewTokenSendsThePassword(t *testing.T) {
 	a.in = strings.NewReader("")
 	if err := a.dispatch(context.Background(), []string{"tokens", "create", "--name", "ci", "--scope", "websites:read"}); err == nil {
 		t.Error("an empty password must be an error")
+	}
+}
+
+// pagedPanel gives 250 websites on 3 pages and 120 jobs, like the Laravel paginator.
+func pagedPanel(t *testing.T) (*httptest.Server, *[]string) {
+	var calls []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls = append(calls, r.Method+" "+r.URL.String())
+		w.Header().Set("Content-Type", "application/json")
+		page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+		if page == 0 {
+			page = 1
+		}
+		per, _ := strconv.Atoi(r.URL.Query().Get("perPage"))
+		if per == 0 {
+			per = 25
+		}
+		paged := func(total int, row func(i int) string) {
+			var rows []string
+			for i := (page - 1) * per; i < page*per && i < total; i++ {
+				rows = append(rows, row(i))
+			}
+			next := "null"
+			if page*per < total {
+				next = `"http://x/next"`
+			}
+			fmt.Fprintf(w, `{"data":[%s],"links":{"next":%s},"meta":{"total":%d,"last_page":%d}}`, strings.Join(rows, ","), next, total, (total+per-1)/per)
+		}
+		switch {
+		case r.URL.Path == "/api/v1/websites" && r.Method == http.MethodGet:
+			paged(250, func(i int) string {
+				return fmt.Sprintf(`{"id":"W%d","name":"site%d.example","status":"running","sftp":{"enabled":false,"port":22,"username":"u%d","authorizedKeys":[]}}`, i, i, i)
+			})
+		case r.URL.Path == "/api/v1/websites/W240/sftp":
+			b, _ := io.ReadAll(r.Body)
+			calls = append(calls, string(b))
+			w.WriteHeader(http.StatusAccepted)
+			w.Write([]byte(`{"password":"Pw123","job":null}`))
+		case r.URL.Path == "/api/v1/jobs":
+			paged(120, func(i int) string { return fmt.Sprintf(`{"id":"J%d","title":"Job %d","state":"succeeded"}`, i, i) })
+		case r.URL.Path == "/api/v1/backup-policy" && r.Method == http.MethodGet:
+			w.Write([]byte(`{"daily":7,"weekly":4,"monthly":6,"time":"03:00","target":"s3:old/path","credentialNames":[]}`))
+		case r.URL.Path == "/api/v1/backup-policy" && r.Method == http.MethodPut:
+			b, _ := io.ReadAll(r.Body)
+			calls = append(calls, string(b))
+			w.Write(b)
+		case r.URL.Path == "/api/v1/servers":
+			w.Write([]byte(`{"data":[{"id":"S1","name":"web-1","pendingUpdates":[{"name":"podman","from":"5.6.0","to":"5.6.1","containerTool":true}]}]}`))
+		case r.URL.Path == "/api/v1/servers/S1/install-updates":
+			b, _ := io.ReadAll(r.Body)
+			calls = append(calls, string(b))
+			w.WriteHeader(http.StatusAccepted)
+			w.Write([]byte(`{"job":null}`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+			w.Write([]byte(`{"message":"Not found."}`))
+		}
+	}))
+	return srv, &calls
+}
+
+func TestListsReadEachPage(t *testing.T) {
+	srv, _ := pagedPanel(t)
+	defer srv.Close()
+	a, out := testApp(srv)
+	if err := a.dispatch(context.Background(), []string{"websites", "list"}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "site249.example") || strings.Contains(out.String(), "Showing") {
+		t.Errorf("websites list does not show all pages:\n%s", out.String()[len(out.String())-200:])
+	}
+	out.Reset()
+	if err := a.dispatch(context.Background(), []string{"jobs", "list"}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "Showing 50 of 120. Add --all to see all.") {
+		t.Errorf("jobs list does not say that rows are missing:\n%s", out)
+	}
+	out.Reset()
+	if err := a.dispatch(context.Background(), []string{"jobs", "list", "--all"}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "Job 119") || strings.Contains(out.String(), "Showing") {
+		t.Errorf("jobs list --all:\n%s", out)
+	}
+}
+
+func TestFindWebsiteSearchesEachPage(t *testing.T) {
+	srv, calls := pagedPanel(t)
+	defer srv.Close()
+	a, out := testApp(srv)
+	keyFile := filepath.Join(t.TempDir(), "id.pub")
+	os.WriteFile(keyFile, []byte("# my key\nssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIA me@laptop\n"), 0o600)
+	// site240.example is on page 3.
+	if err := a.dispatch(context.Background(), []string{"sftp", "set", "site240.example", "--on", "--new-password", "--key-file", keyFile}); err != nil {
+		t.Fatal(err)
+	}
+	body := (*calls)[len(*calls)-1]
+	for _, want := range []string{`"enabled":true`, `"newPassword":true`, `"authorizedKeys":["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIA me@laptop"]`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("body %s does not have %s", body, want)
+		}
+	}
+	if !strings.Contains(out.String(), "Password: Pw123") {
+		t.Errorf("output:\n%s", out)
+	}
+}
+
+func TestBackupCredentialsComeFromTheEnvironment(t *testing.T) {
+	srv, calls := pagedPanel(t)
+	defer srv.Close()
+	a, _ := testApp(srv)
+	for _, k := range credentialNames {
+		t.Setenv(k, "")
+	}
+	if err := a.dispatch(context.Background(), []string{"backups", "policy", "set", "--credentials-from-env"}); err == nil {
+		t.Error("no credentials in the environment must be an error")
+	}
+	t.Setenv("AWS_ACCESS_KEY_ID", "AKIAEXAMPLE")
+	t.Setenv("AWS_SECRET_ACCESS_KEY", "secret-value")
+	if err := a.dispatch(context.Background(), []string{"backups", "policy", "set", "--target", "s3:s3.amazonaws.com/b/p", "--daily", "14", "--credentials-from-env"}); err != nil {
+		t.Fatal(err)
+	}
+	body := (*calls)[len(*calls)-1]
+	for _, want := range []string{`"AWS_SECRET_ACCESS_KEY":"secret-value"`, `"daily":14`, `"target":"s3:s3.amazonaws.com/b/p"`, `"weekly":4`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("body %s does not have %s", body, want)
+		}
+	}
+}
+
+func TestServerUpdateWithTheToolsPolicy(t *testing.T) {
+	srv, calls := pagedPanel(t)
+	defer srv.Close()
+	a, out := testApp(srv)
+	if err := a.dispatch(context.Background(), []string{"servers", "get", "web-1"}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "--policy tools") {
+		t.Errorf("output:\n%s", out)
+	}
+	if err := a.dispatch(context.Background(), []string{"servers", "update", "web-1", "--policy", "tools"}); err != nil {
+		t.Fatal(err)
+	}
+	if body := (*calls)[len(*calls)-1]; body != `{"policy":"tools"}` {
+		t.Errorf("body = %s", body)
 	}
 }

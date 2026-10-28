@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -141,7 +142,20 @@ type Website struct {
 		Name string `json:"name"`
 		Kind string `json:"kind"`
 	} `json:"domains"`
-	ManagedByTerraform bool `json:"managedByTerraform"`
+	ManagedByTerraform bool               `json:"managedByTerraform"`
+	PlanID             string             `json:"planId"`
+	Limits             map[string]float64 `json:"limits"`
+	Sftp               *Sftp              `json:"sftp"`
+}
+
+// Sftp is the SFTP access of a website.
+type Sftp struct {
+	Enabled        bool     `json:"enabled"`
+	Host           *string  `json:"host"`
+	Port           int      `json:"port"`
+	Username       string   `json:"username"`
+	PasswordSet    bool     `json:"passwordSet"`
+	AuthorizedKeys []string `json:"authorizedKeys"`
 }
 
 // Job gets a job.
@@ -181,6 +195,57 @@ func (c *Client) WaitJob(ctx context.Context, id string, every time.Duration, pr
 	}
 }
 
+// All gets each page of a list and gives all rows. It follows links.next, so that no row is
+// missing (audit batch 3, issue 4). A list with no pages gives its rows at once.
+func All[T any](ctx context.Context, c *Client, path string, query url.Values) ([]T, error) {
+	rows, _, err := Pages[T](ctx, c, path, query, 0)
+	return rows, err
+}
+
+// Pages gets the pages of a list until it has limit rows. A limit of 0 gets all rows. It also
+// gives the number of rows in the full list.
+func Pages[T any](ctx context.Context, c *Client, path string, query url.Values, limit int) ([]T, int, error) {
+	q := url.Values{}
+	for k, v := range query {
+		q[k] = v
+	}
+	if q.Get("perPage") == "" {
+		q.Set("perPage", "100")
+	}
+	var rows []T
+	for page := 1; ; page++ {
+		q.Set("page", strconv.Itoa(page))
+		var out struct {
+			Data  []T `json:"data"`
+			Links *struct {
+				Next *string `json:"next"`
+			} `json:"links"`
+			Meta *struct {
+				LastPage int `json:"last_page"`
+				Total    int `json:"total"`
+			} `json:"meta"`
+		}
+		if err := c.Do(ctx, http.MethodGet, path, q, nil, &out); err != nil {
+			return nil, 0, err
+		}
+		rows = append(rows, out.Data...)
+		total := len(rows)
+		if out.Meta != nil && out.Meta.Total > total {
+			total = out.Meta.Total
+		}
+		more := out.Links != nil && out.Links.Next != nil && *out.Links.Next != ""
+		if out.Links == nil && out.Meta != nil {
+			more = page < out.Meta.LastPage
+		}
+		if limit > 0 && len(rows) >= limit {
+			return rows[:limit], total, nil
+		}
+		if !more || len(out.Data) == 0 {
+			return rows, total, nil
+		}
+	}
+}
+
 // FindWebsite gets a website by its ID or by its name.
 func (c *Client) FindWebsite(ctx context.Context, nameOrID string) (Website, error) {
 	var one struct{ Data Website }
@@ -188,11 +253,12 @@ func (c *Client) FindWebsite(ctx context.Context, nameOrID string) (Website, err
 		err := c.Do(ctx, http.MethodGet, "/websites/"+url.PathEscape(nameOrID), nil, nil, &one)
 		return one.Data, err
 	}
-	var list struct{ Data []Website }
-	if err := c.Do(ctx, http.MethodGet, "/websites", url.Values{"q": {nameOrID}, "perPage": {"100"}}, nil, &list); err != nil {
+	// The search can match more websites, for example shop.acme.example for acme.example.
+	list, err := All[Website](ctx, c, "/websites", url.Values{"q": {nameOrID}})
+	if err != nil {
 		return Website{}, err
 	}
-	for _, w := range list.Data {
+	for _, w := range list {
 		if w.Name == nameOrID {
 			return w, nil
 		}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -27,12 +28,18 @@ Usage:
   cf websites list [--status STATUS]
   cf websites get WEBSITE
   cf websites create NAME --image ID --plan ID [--customer ID] [--server ID] [--app NAME]
+  cf websites set WEBSITE [--plan ID] [--app NAME] [--vcpus N] [--memory-mb N] [--disk-gb N] [--io-mb N] [--processes N]
   cf websites delete WEBSITE
-  cf websites start|stop|restart|staging WEBSITE
+  cf websites start|stop|restart|staging WEBSITE      staging shows the passwords of the new database users once.
   cf domains add WEBSITE DOMAIN --kind redirect|alias  A new domain needs a DNS TXT record. The command shows it.
   cf domains verify WEBSITE DOMAIN                     Check the TXT record. Then the edge proxy serves the domain.
   cf domains remove WEBSITE DOMAIN
+  cf domains primary WEBSITE DOMAIN                    Make a verified domain the primary domain.
+  cf domains check WEBSITE DOMAIN                      Check the DNS of the domain again.
   cf runtime set WEBSITE [--image ID] [--worker-mode on|off] [--extensions a,b] [--ini key=value]...
+                         [--document-root DIR]
+  cf sftp get WEBSITE
+  cf sftp set WEBSITE [--on|--off] [--new-password] [--remove-password] [--key-file FILE]... [--no-keys]
   cf runtime revert WEBSITE
   cf databases list WEBSITE
   cf databases create WEBSITE --engine mariadb|postgresql --name NAME [--no-user]
@@ -43,11 +50,24 @@ Usage:
                         [--access website|anywhere] [--reset-password]
   cf database-users delete WEBSITE USER
   cf backups list|create WEBSITE
-  cf jobs list [--website WEBSITE]
+  cf backups restore WEBSITE SNAPSHOT [--scope website|database|mailbox|file] [--item ITEM]
+  cf backups policy
+  cf backups policy set [--daily N] [--weekly N] [--monthly N] [--time HH:MM] [--target REPOSITORY]
+                        [--credentials-from-env | --remove-credentials]
+                       The credentials come from AWS_ACCESS_KEY_ID, B2_ACCOUNT_ID and the other restic variables.
+  cf jobs list [--website WEBSITE] [--limit N | --all]
   cf jobs get|wait JOB
   cf servers list
+  cf servers get SERVER
+  cf servers set SERVER [--update-policy security|all|manual] [--window HH:MM-HH:MM] [--gvisor-platform systrap|kvm]
+  cf servers update SERVER [--policy security|all|tools]   "tools" updates the held container tools.
+  cf servers reboot SERVER
+  cf servers update-agent SERVER [--version VERSION] [--allow-downgrade]
   cf servers join-token
   cf images list
+  cf images add --name NAME --reference IMAGE --tag TAG [--policy POLICY] [--port N] [--arg ARG]...
+  cf images set IMAGE_ID [--policy POLICY] [--port N] [--arg ARG]... [--no-command]
+  cf images check IMAGE_ID
   cf rollouts list
   cf rollouts start IMAGE_ID
   cf rollouts pause|resume|roll-back ROLLOUT_ID
@@ -55,9 +75,17 @@ Usage:
   cf tokens create --name NAME --scope SCOPE[,SCOPE] --days DAYS [--totp CODE]
                        The password is read from CF_PASSWORD or stdin.
   cf tokens revoke ID
+  cf customers list
+  cf customers create --name NAME --email EMAIL --plan ID [--role owner|reseller]
+  cf customers set ID [--plan ID] [--suspend | --unsuspend]
+  cf plans list
+  cf audit list [--limit N | --all]
+  cf account password [--totp CODE]   The passwords come from CF_PASSWORD and CF_NEW_PASSWORD, or stdin.
+  cf account totp setup
+  cf account totp enable|disable --totp CODE
   cf version
 
-A WEBSITE is a name (for example acme.example) or an ID. A DATABASE or USER is a name, with or without
+A WEBSITE is a name (for example acme.example) or an ID. A SERVER is a name (for example web-1) or an ID. A DATABASE or USER is a name, with or without
 the prefix of the website (for example shop or u1a2b3c_shop), or an ID.
 Add --json to see the answer of the API. A change waits for its job; add --no-wait to return at once.
 The settings CF_PANEL and CF_TOKEN replace the saved panel and token.
@@ -66,10 +94,12 @@ The settings CF_PANEL and CF_TOKEN replace the saved panel and token.
 type app struct {
 	out, err io.Writer
 	// in gives the password when CF_PASSWORD is not set.
-	in     io.Reader
-	api    *client.Client
-	json   bool
-	noWait bool
+	in      io.Reader
+	lines   *bufio.Reader
+	linesOf io.Reader
+	api     *client.Client
+	json    bool
+	noWait  bool
 	// poll is the time between two job checks.
 	poll time.Duration
 }
@@ -172,9 +202,19 @@ func (a *app) dispatch(ctx context.Context, args []string) error {
 	case "jobs", "job":
 		return a.jobs(ctx, sub, rest)
 	case "servers", "server":
-		return a.servers(ctx, sub)
-	case "images":
-		return a.simpleList(ctx, "/images", []string{"id", "name", "tag", "availableTag", "policy", "signatureVerified"})
+		return a.servers(ctx, sub, rest)
+	case "images", "image":
+		return a.images(ctx, sub, rest)
+	case "sftp":
+		return a.sftp(ctx, sub, rest)
+	case "customers", "customer":
+		return a.customers(ctx, sub, rest)
+	case "plans", "plan":
+		return a.plans(ctx, sub)
+	case "audit":
+		return a.audit(ctx, sub, rest)
+	case "account":
+		return a.account(ctx, sub, rest)
 	case "rollouts", "rollout":
 		return a.rollouts(ctx, sub, rest)
 	case "tokens", "token":
@@ -220,23 +260,33 @@ func (a *app) login(ctx context.Context, args []string) error {
 
 // password reads the password of the user from CF_PASSWORD or from stdin.
 func (a *app) password() (string, error) {
-	if v := os.Getenv("CF_PASSWORD"); v != "" {
+	return a.secret("CF_PASSWORD", "Password: ")
+}
+
+// secret reads a secret from an environment variable, or else one line from stdin. Secrets
+// are not given as arguments, because the shell history and the process list show arguments.
+func (a *app) secret(env, prompt string) (string, error) {
+	if v := os.Getenv(env); v != "" {
 		return v, nil
 	}
 	in := a.in
 	if in == nil {
 		in = os.Stdin
 	}
-	fmt.Fprint(a.err, "Password: ")
-	b, err := io.ReadAll(io.LimitReader(in, 4096))
-	if err != nil {
+	// Keep one reader, so that a second secret reads the next line.
+	if a.lines == nil || a.linesOf != in {
+		a.lines, a.linesOf = bufio.NewReader(io.LimitReader(in, 16384)), in
+	}
+	fmt.Fprint(a.err, prompt)
+	line, err := a.lines.ReadString('\n')
+	if err != nil && err != io.EOF {
 		return "", err
 	}
-	password := strings.TrimRight(string(b), "\r\n")
-	if password == "" {
-		return "", errors.New("give the password in CF_PASSWORD or on stdin")
+	value := strings.TrimRight(line, "\r\n")
+	if value == "" {
+		return "", fmt.Errorf("give the value in %s or on stdin", env)
 	}
-	return password, nil
+	return value, nil
 }
 
 func (a *app) use(args []string) error {
@@ -270,6 +320,19 @@ func (a *app) change(ctx context.Context, method, path string, body any) error {
 		var pw string
 		json.Unmarshal(raw, &pw)
 		fmt.Fprintf(a.out, "Password: %s\nCopy it now. The panel does not show it again.\n", pw)
+	}
+	if raw, ok := out["databaseCredentials"]; ok {
+		var creds []struct {
+			Engine, User, Password string
+			Databases              []string
+		}
+		json.Unmarshal(raw, &creds)
+		for _, c := range creds {
+			fmt.Fprintf(a.out, "Database user %s (%s) for %s: %s\n", c.User, c.Engine, strings.Join(c.Databases, ", "), c.Password)
+		}
+		if len(creds) > 0 {
+			fmt.Fprintln(a.out, "Copy the passwords now. The panel does not show them again.")
+		}
 	}
 	if raw, ok := out["domain"]; ok {
 		var d struct {
@@ -361,17 +424,36 @@ func (a *app) simpleList(ctx context.Context, path string, cols []string) error 
 }
 
 func (a *app) list(ctx context.Context, path string, q url.Values, cols []string) error {
-	var out struct {
-		Data []map[string]any `json:"data"`
-	}
-	if err := a.api.Do(ctx, http.MethodGet, path, q, nil, &out); err != nil {
+	return a.listLimit(ctx, path, q, cols, 0)
+}
+
+// listLimit prints the first limit rows of a list, or all rows when limit is 0. It reads each
+// page of the list and says when it does not show all rows (audit batch 3, issue 4).
+func (a *app) listLimit(ctx context.Context, path string, q url.Values, cols []string, limit int) error {
+	rows, total, err := client.Pages[map[string]any](ctx, a.api, path, q, limit)
+	if err != nil {
 		return err
 	}
 	if a.json {
-		return a.printJSON(out.Data)
+		return a.printJSON(rows)
 	}
-	a.table(out.Data, cols)
+	a.table(rows, cols)
+	if total > len(rows) {
+		fmt.Fprintf(a.out, "Showing %d of %d. Add --all to see all.\n", len(rows), total)
+	}
 	return nil
+}
+
+// limitFlags adds --limit and --all to a list command. The list shows the newest rows first.
+func limitFlags(fs *flag.FlagSet) func() int {
+	limit := fs.Int("limit", 50, "the number of rows to show")
+	all := fs.Bool("all", false, "show all rows")
+	return func() int {
+		if *all {
+			return 0
+		}
+		return *limit
+	}
 }
 
 func need(args []string, n int, what string) error {
@@ -389,7 +471,7 @@ func (a *app) websites(ctx context.Context, sub string, args []string) error {
 		if err := fs.Parse(args); err != nil {
 			return err
 		}
-		q := url.Values{"perPage": {"100"}}
+		q := url.Values{}
 		if *status != "" {
 			q.Set("status", *status)
 		}
@@ -433,6 +515,8 @@ func (a *app) websites(ctx context.Context, sub string, args []string) error {
 			}
 		}
 		return a.change(ctx, http.MethodPost, "/websites", body)
+	case "set":
+		return a.websiteSet(ctx, args)
 	case "delete", "start", "stop", "restart", "staging":
 		if err := need(args, 1, "a website"); err != nil {
 			return err
@@ -472,6 +556,10 @@ func (a *app) domains(ctx context.Context, sub string, args []string) error {
 		return a.change(ctx, http.MethodPost, "/websites/"+w.ID+"/domains/"+url.PathEscape(args[1])+"/verify", nil)
 	case "remove", "rm":
 		return a.change(ctx, http.MethodDelete, "/websites/"+w.ID+"/domains/"+url.PathEscape(args[1]), nil)
+	case "primary":
+		return a.change(ctx, http.MethodPost, "/websites/"+w.ID+"/domains/"+url.PathEscape(args[1])+"/primary", nil)
+	case "check":
+		return a.change(ctx, http.MethodPost, "/websites/"+w.ID+"/domains/"+url.PathEscape(args[1])+"/check", nil)
 	}
 	return fmt.Errorf("unknown command domains %s", sub)
 }
@@ -498,6 +586,7 @@ func (a *app) runtime(ctx context.Context, sub string, args []string) error {
 		image := fs.String("image", "", "the image ID")
 		worker := fs.String("worker-mode", "", "on or off")
 		exts := fs.String("extensions", "", "the PHP extensions, separated by commas")
+		root := fs.String("document-root", "", `the directory that the web server serves, for example web, or "." for the top directory`)
 		var ini multi
 		fs.Var(&ini, "ini", "a php.ini value as key=value")
 		if err := fs.Parse(args[1:]); err != nil {
@@ -519,6 +608,9 @@ func (a *app) runtime(ctx context.Context, sub string, args []string) error {
 		if *exts != "" {
 			body["extensions"] = strings.Split(*exts, ",")
 		}
+		if *root != "" {
+			body["documentRoot"] = *root
+		}
 		if len(ini) > 0 {
 			values := map[string]string{}
 			for _, kv := range ini {
@@ -531,7 +623,7 @@ func (a *app) runtime(ctx context.Context, sub string, args []string) error {
 			body["phpIni"] = values
 		}
 		if len(body) == 0 {
-			return errors.New("give --image, --worker-mode, --extensions or --ini")
+			return errors.New("give --image, --worker-mode, --extensions, --document-root or --ini")
 		}
 		return a.change(ctx, http.MethodPut, "/websites/"+w.ID+"/runtime", body)
 	}
@@ -721,6 +813,9 @@ func (a *app) databaseUsers(ctx context.Context, sub string, args []string) erro
 }
 
 func (a *app) backups(ctx context.Context, sub string, args []string) error {
+	if sub == "policy" {
+		return a.backupPolicy(ctx, args)
+	}
 	if err := need(args, 1, "a website"); err != nil {
 		return err
 	}
@@ -733,6 +828,21 @@ func (a *app) backups(ctx context.Context, sub string, args []string) error {
 		return a.list(ctx, "/websites/"+w.ID+"/snapshots", nil, []string{"createdAt", "kind", "sizeBytes", "id"})
 	case "create", "now":
 		return a.change(ctx, http.MethodPost, "/websites/"+w.ID+"/snapshots", nil)
+	case "restore":
+		if err := need(args, 2, "a website and a snapshot ID"); err != nil {
+			return err
+		}
+		fs := flag.NewFlagSet("restore", flag.ContinueOnError)
+		scope := fs.String("scope", "website", "website, database, mailbox or file")
+		item := fs.String("item", "", `the database (for example "mariadb:shop"), the mailbox or the file path`)
+		if err := fs.Parse(args[2:]); err != nil {
+			return err
+		}
+		body := map[string]any{"scope": *scope}
+		if *item != "" {
+			body["item"] = *item
+		}
+		return a.change(ctx, http.MethodPost, "/websites/"+w.ID+"/snapshots/"+url.PathEscape(args[1])+"/restore", body)
 	}
 	return fmt.Errorf("unknown command backups %s", sub)
 }
@@ -742,6 +852,7 @@ func (a *app) jobs(ctx context.Context, sub string, args []string) error {
 	case "list", "ls":
 		fs := flag.NewFlagSet("list", flag.ContinueOnError)
 		website := fs.String("website", "", "only the jobs of this website")
+		limit := limitFlags(fs)
 		if err := fs.Parse(args); err != nil {
 			return err
 		}
@@ -753,7 +864,7 @@ func (a *app) jobs(ctx context.Context, sub string, args []string) error {
 			}
 			q.Set("websiteId", w.ID)
 		}
-		return a.list(ctx, "/jobs", q, []string{"createdAt", "title", "state", "id"})
+		return a.listLimit(ctx, "/jobs", q, []string{"createdAt", "title", "state", "id"}, limit())
 	case "get":
 		if err := need(args, 1, "a job ID"); err != nil {
 			return err
@@ -790,10 +901,12 @@ func (a *app) jobs(ctx context.Context, sub string, args []string) error {
 	return fmt.Errorf("unknown command jobs %s", sub)
 }
 
-func (a *app) servers(ctx context.Context, sub string) error {
+func (a *app) servers(ctx context.Context, sub string, args []string) error {
 	switch sub {
 	case "list", "ls":
 		return a.simpleList(ctx, "/servers", []string{"name", "state", "roles", "agentVersion", "rebootRequired", "id"})
+	case "get", "set", "update", "reboot", "update-agent":
+		return a.server(ctx, sub, args)
 	case "join-token":
 		var out struct {
 			Command   string `json:"command"`
