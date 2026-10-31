@@ -299,6 +299,8 @@ func pagedPanel(t *testing.T) (*httptest.Server, *[]string) {
 			w.Write([]byte(`{"job":null}`))
 		case r.URL.Path == "/api/v1/jobs":
 			paged(120, func(i int) string { return fmt.Sprintf(`{"id":"J%d","title":"Job %d","state":"succeeded"}`, i, i) })
+		case r.URL.Path == "/api/v1/backup-policy/repository-password":
+			w.Write([]byte(`{"password":"repo-pass"}`))
 		case r.URL.Path == "/api/v1/backup-policy" && r.Method == http.MethodGet:
 			w.Write([]byte(`{"daily":7,"weekly":4,"monthly":6,"time":"03:00","target":"s3:old/path","credentialNames":[]}`))
 		case r.URL.Path == "/api/v1/backup-policy" && r.Method == http.MethodPut:
@@ -392,6 +394,18 @@ func TestBackupCredentialsComeFromTheEnvironment(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Errorf("body %s does not have %s", body, want)
 		}
+	}
+}
+
+func TestBackupRepositoryPassword(t *testing.T) {
+	srv, _ := pagedPanel(t)
+	defer srv.Close()
+	a, out := testApp(srv)
+	if err := a.dispatch(context.Background(), []string{"backups", "policy", "password"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.TrimSpace(out.String()); got != "repo-pass" {
+		t.Errorf("output %q, want the password", got)
 	}
 }
 

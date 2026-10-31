@@ -43,8 +43,26 @@ Each website has:
 - One Unix user. The user owns the files of the website in `/srv/cloudfactory/sites/<user>`.
 - One rootless Podman container. A Quadlet unit in `/etc/containers/systemd/users/<uid>/`
   starts it. The container uses the gVisor runtime `runsc`.
-- One Podman network for the account.
-- One port on `127.0.0.1` from the range 20000 to 29999.
+- The `pasta` network mode. Each container has its own network namespace.
+- One port on the private service address `169.254.77.1` from the range 20000 to 29999.
+
+### The private service address
+
+The installer adds `169.254.77.1/32` to the loopback interface (`cloudfactory-address.service`).
+This address never leaves the server. The website ports, the database ports and the panel
+ports are open only on it.
+
+The ports are not on `127.0.0.1`, because of gVisor. pasta sends a connection from
+`127.0.0.1` to `127.0.0.1` in the network namespace of the container, and gVisor
+(`network=sandbox`) does not listen there. A connection to `169.254.77.1` comes from a
+different address, so pasta sends it through its network device into gVisor. Podman bridge
+networks have the same problem for all connections, so websites do not use them.
+
+An nftables rule refuses a new connection to a website port on `169.254.77.1` unless it comes
+from root or from the user `cf-edge`. pasta opens each connection as the Unix user of the
+container, so a website cannot connect to a different website. All websites can connect to
+the database ports 3306 and 5432. The database password keeps each website to its own
+databases.
 
 The container unit sets these limits:
 
@@ -60,9 +78,9 @@ The firewall redirects port 80 to 8080 and port 443 to 8443 (refer to
 [decisions.md](decisions.md)).
 
 The agent changes the Caddy routes through the Caddy admin API. Each website has one route.
-The route sends traffic to `169.254.1.3:<port>`. pasta maps this link-local address in the
-edge container to `127.0.0.1` on the host (`--map-host-loopback`). The website ports are open
-only on `127.0.0.1`. Caddy gets the TLS certificates automatically.
+The route sends traffic to `169.254.77.1:<port>`. Caddy gets the TLS certificates
+automatically. The agent starts the edge container before it adds the first route, also
+during the panel installation.
 
 ## Change of runtime without downtime
 
@@ -101,7 +119,7 @@ updated websites back to the old tag.
 
 The installation script installs the panel on the first server. `cf-agent panel install` makes
 three Quadlet units: the API, the queue worker and the web panel. They run in gVisor. The API
-listens on `127.0.0.1:19080` and the web panel on `127.0.0.1:19081`. The edge proxy sends the
+listens on `169.254.77.1:19080` and the web panel on `169.254.77.1:19081`. The edge proxy sends the
 panel domain to these ports.
 
 The agent on the panel server also joins the panel. The panel reaches this agent through

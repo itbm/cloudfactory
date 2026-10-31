@@ -52,6 +52,7 @@ Usage:
   cf backups list|create WEBSITE
   cf backups restore WEBSITE SNAPSHOT [--scope website|database|mailbox|file] [--item ITEM]
   cf backups policy
+  cf backups policy password   Show the restic repository password. Keep a copy in a safe place.
   cf backups policy set [--daily N] [--weekly N] [--monthly N] [--time HH:MM] [--target REPOSITORY]
                         [--credentials-from-env | --remove-credentials]
                        The credentials come from AWS_ACCESS_KEY_ID, B2_ACCOUNT_ID and the other restic variables.

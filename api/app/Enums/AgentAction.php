@@ -32,8 +32,8 @@ enum AgentAction: string
     public function steps(): array
     {
         return match ($this) {
-            self::CreateWebsite => ['Create Unix user', 'Copy databases', 'Create container network', 'Pull and check image signature', 'Start container in gVisor', 'Configure edge proxy', 'Get TLS certificate'],
-            self::DeleteWebsite => ['Stop container', 'Remove container and network', 'Remove edge proxy route', 'Remove Unix user'],
+            self::CreateWebsite => ['Create Unix user', 'Copy databases', 'Pull and check image signature', 'Start container in gVisor', 'Configure edge proxy', 'Get TLS certificate'],
+            self::DeleteWebsite => ['Stop container', 'Remove edge proxy route', 'Remove Unix user'],
             self::SetWebsitePower => ['Change container state', 'Health check'],
             self::SetLimits => ['Update cgroup limits'],
             self::SetRuntime => ['Check image signature', 'Start new container on a copy', 'Health check', 'Switch traffic', 'Stop old container'],

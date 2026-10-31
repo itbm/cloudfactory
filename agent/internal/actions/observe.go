@@ -198,7 +198,7 @@ func (d *Deps) certificate(ctx context.Context, domain string) (time.Time, error
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	dialer := tls.Dialer{Config: &tls.Config{ServerName: domain, MinVersion: tls.VersionTLS12}}
-	conn, err := dialer.DialContext(ctx, "tcp", net.JoinHostPort("127.0.0.1", "8443"))
+	conn, err := dialer.DialContext(ctx, "tcp", net.JoinHostPort(quadlet.ServiceAddress, "8443"))
 	if err != nil {
 		var verify *tls.CertificateVerificationError
 		var alert tls.AlertError

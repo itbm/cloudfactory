@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Enums\AgentAction;
 use App\Enums\JobState;
 use App\Enums\Role;
+use App\Http\Controllers\Api\BackupController;
 use App\Models\AgentJob;
 use App\Models\Database;
 use App\Models\Setting;
@@ -48,7 +49,23 @@ class CompletenessTest extends TestCase
         $job->server->update(['certificate_pem' => 'x', 'certificate_fingerprint' => str_repeat('a', 64)]);
         Http::fake(['*' => Http::response(['jobId' => $jobId])]);
         app(AgentClient::class)->send($job->fresh('server'));
-        Http::assertSent(fn ($r) => (array) $r->data()['credentials'] === ['AWS_ACCESS_KEY_ID' => 'AKIA1', 'AWS_SECRET_ACCESS_KEY' => 'secret'] && $r->data()['target'] === self::POLICY['target']);
+        $password = BackupController::repositoryPassword();
+        Http::assertSent(fn ($r) => (array) $r->data()['credentials'] === ['AWS_ACCESS_KEY_ID' => 'AKIA1', 'AWS_SECRET_ACCESS_KEY' => 'secret', 'RESTIC_PASSWORD' => $password] && $r->data()['target'] === self::POLICY['target']);
+    }
+
+    public function test_all_servers_use_one_repository_password_that_only_an_administrator_can_read(): void
+    {
+        $admin = $this->user();
+        $this->actingWith($admin);
+        $first = $this->getJson('/api/v1/backup-policy/repository-password')->assertOk()->json('password');
+        $this->assertGreaterThanOrEqual(32, strlen($first));
+        $this->getJson('/api/v1/backup-policy/repository-password')->assertOk()->assertJsonPath('password', $first);
+        $this->assertSame($first, BackupController::repositoryPassword());
+        $this->assertStringNotContainsString($first, (string) DB::table('settings')->where('key', 'backup_repository_password')->value('value'));
+        $this->assertDatabaseHas('audit_entries', ['action' => 'Viewed backup repository password']);
+
+        $this->actingWith($this->user(Role::Reseller));
+        $this->getJson('/api/v1/backup-policy/repository-password')->assertForbidden();
     }
 
     public function test_nightly_backups_apply_the_retention_and_remove_forgotten_snapshots(): void

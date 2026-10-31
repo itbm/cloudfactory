@@ -19,8 +19,9 @@ func TestContainerUnitUsesGvisorAndNoHostNetwork(t *testing.T) {
 	u := ContainerUnit(website())
 	for _, want := range []string{
 		"GlobalArgs=--runtime=/usr/local/bin/runsc --runtime-flag=platform=systrap --runtime-flag=network=sandbox",
-		"Network=cf-acme_x7k2.network",
-		"PublishPort=127.0.0.1:20001:8080",
+		"Network=pasta",
+		"PublishPort=169.254.77.1:20001:8080",
+		"AddHost=mariadb.internal:169.254.77.1",
 		"NoNewPrivileges=true",
 		"DropCapability=all",
 		"PidsLimit=100",

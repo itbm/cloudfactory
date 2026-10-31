@@ -42,7 +42,7 @@ type Client struct {
 // New gives a client with a short timeout. The address is "unix:///path/to/admin.sock" or an
 // HTTP address.
 func New(admin string) *Client {
-	c := &Client{Admin: strings.TrimRight(admin, "/"), HTTP: &http.Client{Timeout: 15 * time.Second}, Upstream: quadlet.HostLoopback}
+	c := &Client{Admin: strings.TrimRight(admin, "/"), HTTP: &http.Client{Timeout: 15 * time.Second}, Upstream: quadlet.ServiceAddress}
 	if path, ok := strings.CutPrefix(admin, "unix://"); ok {
 		c.Admin = "http://caddy"
 		c.HTTP.Transport = &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {

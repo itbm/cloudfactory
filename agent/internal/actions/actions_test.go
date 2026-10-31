@@ -121,7 +121,7 @@ func TestCreateWebsite(t *testing.T) {
 	d, f, edge := deps(t)
 	w := website("ghcr.io/cloudfactory/frankenphp-php8.4:8.4.0-1")
 	job, err := d.CreateWebsite(&agentv1.WebsiteRequest{JobId: jobID, Website: w})
-	if len(job.Steps) != 7 {
+	if len(job.Steps) != 6 {
 		t.Fatalf("steps = %d, want 6 (the panel shows 6)", len(job.Steps))
 	}
 	if err := run(t)(job, err); err != nil {
@@ -236,8 +236,8 @@ func TestCreateDatabaseSendsThePasswordOnStdin(t *testing.T) {
 	in := strings.Join(f.Inputs, "")
 	for _, want := range []string{
 		"CREATE DATABASE `acme_x7k2_shop` CHARACTER SET",
-		"CREATE USER 'acme_x7k2_shop'@'127.0.0.1' IDENTIFIED BY 'Abcdefghijklmnop1234' REQUIRE NONE;",
-		"GRANT ALL PRIVILEGES ON `acme\\_x7k2\\_shop`.* TO 'acme_x7k2_shop'@'127.0.0.1';",
+		"CREATE USER 'acme_x7k2_shop'@'169.254.77.1' IDENTIFIED BY 'Abcdefghijklmnop1234' REQUIRE NONE;",
+		"GRANT ALL PRIVILEGES ON `acme\\_x7k2\\_shop`.* TO 'acme_x7k2_shop'@'169.254.77.1';",
 	} {
 		if !strings.Contains(in, want) {
 			t.Errorf("inputs do not contain %s:\n%s", want, in)
@@ -310,7 +310,7 @@ func TestPostgreSQLDatabaseHasGroupRoles(t *testing.T) {
 func TestSetDatabaseUserGivesAPermissionForEachDatabase(t *testing.T) {
 	for _, engine := range []string{"mariadb", "postgresql"} {
 		d, f, _ := deps(t)
-		f.Rules = []execx.Rule{{Prefix: "runuser -u cf-db -- env XDG_RUNTIME_DIR=/run/user/1001 podman exec -i cf-mariadb mariadb", Output: "127.0.0.1\n"}}
+		f.Rules = []execx.Rule{{Prefix: "runuser -u cf-db -- env XDG_RUNTIME_DIR=/run/user/1001 podman exec -i cf-mariadb mariadb", Output: "169.254.77.1\n"}}
 		req := &agentv1.SetDatabaseUserRequest{
 			JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Engine: engine, Name: "acme_x7k2_sync", Access: "anywhere",
 			Grants: []*agentv1.DatabaseGrant{
@@ -324,7 +324,7 @@ func TestSetDatabaseUserGivesAPermissionForEachDatabase(t *testing.T) {
 		}
 		in := strings.Join(f.Inputs, "")
 		want := []string{
-			"RENAME USER 'acme_x7k2_sync'@'127.0.0.1' TO 'acme_x7k2_sync'@'%';",
+			"RENAME USER 'acme_x7k2_sync'@'169.254.77.1' TO 'acme_x7k2_sync'@'%';",
 			"ALTER USER 'acme_x7k2_sync'@'%' REQUIRE SSL;",
 			"REVOKE ALL PRIVILEGES, GRANT OPTION FROM 'acme_x7k2_sync'@'%';",
 			"GRANT SELECT, SHOW VIEW ON `acme\\_x7k2\\_prod`.* TO 'acme_x7k2_sync'@'%';",

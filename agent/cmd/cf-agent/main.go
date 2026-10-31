@@ -397,10 +397,12 @@ func panelCmd(ctx context.Context, args []string) error {
 			return err
 		}
 	}
+	// The agent service starts after the join, so this command starts the edge proxy itself.
 	// The edge proxy sends /api to the API and all other paths to the web UI.
 	edge := caddy.New(cfg.CaddyAdmin)
-	if err := edge.EnsureBase(ctx); err != nil {
-		return err
+	deps := &actions.Deps{Host: h, Run: run, Edge: edge, Gvisor: p.Gvisor}
+	if err := deps.EnsureEdge(ctx, *registry+"/edge:"+version, cfg.DataDir); err != nil {
+		return fmt.Errorf("start the edge proxy: %w", err)
 	}
 	if err := edge.ApplyPanel(ctx, *domain, p.APIPort, p.WebPort); err != nil {
 		return err

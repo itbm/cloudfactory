@@ -124,7 +124,7 @@ func TestApplyReplacesARouteWithNoGap(t *testing.T) {
 		}
 	}
 	b, _ := json.Marshal(fake.routes)
-	if len(fake.routes) != 1 || !strings.Contains(string(b), "169.254.1.3:20002") {
+	if len(fake.routes) != 1 || !strings.Contains(string(b), "169.254.77.1:20002") {
 		t.Errorf("routes = %s", b)
 	}
 	// A redirect domain that the website no longer has loses its route.

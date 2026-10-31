@@ -261,13 +261,6 @@ func (d *Deps) CreateWebsite(req *agentv1.WebsiteRequest) (jobs.Job, error) {
 		{Name: "Copy databases", Do: func(ctx context.Context) error {
 			return d.copyDatabases(ctx, req)
 		}},
-		{Name: "Create container network", Do: func(ctx context.Context) error {
-			if _, err := d.Host.WriteUnit(user, quadlet.NetworkName(user)+".network", quadlet.NetworkUnit(user)); err != nil {
-				return err
-			}
-			_, err := d.Host.Systemctl(ctx, user, "daemon-reload")
-			return err
-		}},
 		{Name: "Pull and check image signature", Do: func(ctx context.Context) error {
 			// The signature policy of Podman (/etc/containers/policy.json) refuses an image
 			// with no valid signature (FR-1101).
@@ -517,16 +510,6 @@ func (d *Deps) DeleteWebsite(req *agentv1.DeleteWebsiteRequest) (jobs.Job, error
 				return err
 			}
 			return d.stopContainer(ctx, user, site.Suffix)
-		}},
-		{Name: "Remove container and network", Do: func(ctx context.Context) error {
-			if err := d.Host.RemoveUnit(user, quadlet.NetworkName(user)+".network"); err != nil {
-				return err
-			}
-			// The network can be gone already. A network that stays has no container.
-			if _, err := d.Host.Podman(ctx, user, "network", "rm", "--force", quadlet.NetworkName(user)); err != nil {
-				slog.Warn("remove the network", "user", user, "err", err)
-			}
-			return nil
 		}},
 		{Name: "Remove edge proxy route", Do: func(ctx context.Context) error {
 			return d.Edge.Remove(ctx, req.GetWebsiteId())

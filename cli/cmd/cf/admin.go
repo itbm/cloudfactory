@@ -80,6 +80,19 @@ func (a *app) backupPolicy(ctx context.Context, args []string) error {
 	if err := a.api.Do(ctx, http.MethodGet, "/backup-policy", nil, nil, &policy); err != nil {
 		return err
 	}
+	if len(args) > 0 && args[0] == "password" {
+		// One restic repository password for all servers. Keep a copy in a safe place:
+		// without it, nobody can restore from the backups.
+		var out map[string]any
+		if err := a.api.Do(ctx, http.MethodGet, "/backup-policy/repository-password", nil, nil, &out); err != nil {
+			return err
+		}
+		if a.json {
+			return a.printJSON(out)
+		}
+		fmt.Fprintln(a.out, cell(out["password"]))
+		return nil
+	}
 	if len(args) == 0 || args[0] != "set" {
 		if a.json {
 			return a.printJSON(policy)

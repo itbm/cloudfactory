@@ -121,6 +121,31 @@ class BackupController extends Controller
         return self::policy() + ['credentialNames' => array_keys(self::credentials())];
     }
 
+    /**
+     * The password of the restic repository. All servers use the same repository, so the panel
+     * keeps one password, encrypted, and sends it with each backup job. An administrator needs
+     * it to restore with restic directly, for example when the panel is lost.
+     */
+    public function showRepositoryPassword(Request $request): JsonResponse
+    {
+        Audit::record($request, 'Viewed backup repository password', 'restic repository');
+
+        return response()->json(['password' => self::repositoryPassword()]);
+    }
+
+    /** The password of the restic repository. The panel makes it at the first use. */
+    public static function repositoryPassword(): string
+    {
+        $value = Setting::get('backup_repository_password');
+        if (is_string($value)) {
+            return Crypt::decryptString($value);
+        }
+        $password = base64_encode(random_bytes(48));
+        Setting::put('backup_repository_password', Crypt::encryptString($password));
+
+        return $password;
+    }
+
     /** FR-902: the administrator sets the retention policy. */
     public function updatePolicy(Request $request): JsonResponse
     {

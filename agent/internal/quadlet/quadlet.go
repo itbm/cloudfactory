@@ -46,7 +46,7 @@ type Website struct {
 	Name       string
 	UnixUser   string
 	Image      string // with "@sha256:..." when the image has a digest
-	Port       int    // the host port on 127.0.0.1 that the edge proxy uses
+	Port       int    // the host port on ServiceAddress that the edge proxy uses
 	SiteDir    string // the files of the website on the host
 	IniFile    string // the generated php.ini on the host
 	Runtime    string // "frankenphp", "apache-php-fpm" or "custom"
@@ -65,8 +65,8 @@ type Website struct {
 	Stopped bool
 }
 
-// Database host names in each website container. They point to the host, where the shared
-// database containers publish their ports (DatabasePort).
+// Database host names in each website container. They point to ServiceAddress, where the
+// shared database containers publish their ports (DatabasePort).
 const (
 	MariaDBHost    = "mariadb.internal"
 	PostgreSQLHost = "postgres.internal"
@@ -81,30 +81,25 @@ func (w Website) UnitName() string { return w.ContainerName() + ".container" }
 // ServiceName is the systemd service that Quadlet makes from the unit.
 func (w Website) ServiceName() string { return w.ContainerName() + ".service" }
 
+// ServiceAddress is the private address on the loopback interface of the host. The website,
+// database and panel containers publish their ports on it, and the edge proxy, the agent and
+// the websites connect to it. The installer adds it to "lo". The address is link-local, so it
+// is never on a real network.
+//
+// The ports are not on 127.0.0.1, because rootless Podman sends a connection from 127.0.0.1
+// to 127.0.0.1 in the network namespace of the container, and gVisor (network=sandbox) does
+// not listen there. A connection from ServiceAddress goes through the network device of pasta
+// into gVisor. The host firewall lets only root and the edge user connect to the ports of the
+// websites and the panel on this address (install.sh).
+const ServiceAddress = "169.254.77.1"
+
 // HostLoopback is the address in the edge and panel containers that pasta maps to 127.0.0.1
-// on the host (audit batch 2, finding 3). host.containers.internal is the address of the
-// host interface, so it cannot reach the ports that the website containers publish on
-// 127.0.0.1. The address is link-local, so it is not on a real network.
+// on the host. The panel connects to the agent port through it.
 const HostLoopback = "169.254.1.3"
 
 // PastaNetwork is the Network value of the edge and panel containers. The option
 // --map-host-loopback is in passt 2024_08_21 and later (Debian 13 and Ubuntu 26.04 have it).
 const PastaNetwork = "pasta:--map-host-loopback=" + HostLoopback
-
-// NetworkName is the network of the hosting account (FR-1703).
-func NetworkName(unixUser string) string { return "cf-" + unixUser }
-
-// NetworkUnit gives the network unit of one hosting account. Each account has its own
-// network, so a container cannot connect to the containers of a different account.
-func NetworkUnit(unixUser string) string {
-	return Header + strings.Join([]string{
-		"[Network]",
-		"NetworkName=" + NetworkName(unixUser),
-		"Internal=false",
-		"Label=io.cloudfactory.account=" + unixUser,
-		"",
-	}, "\n")
-}
 
 // ContainerUnit gives the container unit of a website.
 func ContainerUnit(w Website) string {
@@ -114,8 +109,6 @@ func ContainerUnit(w Website) string {
 
 	b.WriteString("[Unit]\n")
 	line("Description", "Website "+w.Name)
-	line("After", NetworkName(w.UnixUser)+"-network.service")
-	line("Requires", NetworkName(w.UnixUser)+"-network.service")
 
 	b.WriteString("\n[Container]\n")
 	line("ContainerName", w.ContainerName())
@@ -123,16 +116,18 @@ func ContainerUnit(w Website) string {
 	// The agent pulls and checks the image before it starts the unit (FR-1101).
 	line("Pull", "never")
 	line("GlobalArgs", w.Gvisor.GlobalArgs())
-	line("Network", NetworkName(w.UnixUser)+".network")
+	// FR-1703: with pasta, each container has its own network namespace, and no container can
+	// connect to a container of a different account. A website can reach the ports of other
+	// websites only on ServiceAddress, and the host firewall refuses that (install.sh).
+	line("Network", "pasta")
 	containerPort := 8080
 	if w.Runtime == "custom" && w.ContainerPort > 0 {
 		containerPort = w.ContainerPort
 	}
-	line("PublishPort", "127.0.0.1:"+strconv.Itoa(w.Port)+":"+strconv.Itoa(containerPort))
-	// "host-gateway" is the address of the host. The database containers publish their
-	// ports there. The host firewall does not let other computers connect to these ports.
-	line("AddHost", MariaDBHost+":host-gateway")
-	line("AddHost", PostgreSQLHost+":host-gateway")
+	line("PublishPort", ServiceAddress+":"+strconv.Itoa(w.Port)+":"+strconv.Itoa(containerPort))
+	// The database containers publish their ports on ServiceAddress.
+	line("AddHost", MariaDBHost+":"+ServiceAddress)
+	line("AddHost", PostgreSQLHost+":"+ServiceAddress)
 	line("Volume", w.SiteDir+":/app:Z")
 	if w.IniFile != "" && w.Runtime != "custom" {
 		line("Volume", w.IniFile+":/usr/local/etc/php/conf.d/zz-cloudfactory.ini:ro,Z")
@@ -254,8 +249,8 @@ func EdgeUnit(e Edge) string {
 		"Pull=never",
 		// host-uds=create lets Caddy make its admin socket in the mounted directory (CF-13).
 		"GlobalArgs=" + e.Gvisor.GlobalArgs() + " --runtime-flag=host-uds=create",
-		// pasta maps HostLoopback to the host loopback address, so that Caddy can reach the
-		// website ports on 127.0.0.1. Caddy sees the real client address (FR-1707).
+		// Caddy connects to the websites and the panel on ServiceAddress. Caddy sees the real
+		// client address (FR-1707).
 		"Network=" + PastaNetwork,
 		fmt.Sprintf("PublishPort=%d:8080", e.HTTPPort),
 		fmt.Sprintf("PublishPort=%d:8443", e.HTTPSPort),
@@ -295,8 +290,8 @@ type Database struct {
 // DatabaseContainer is the name of the shared container of an engine.
 func DatabaseContainer(engine string) string { return "cf-" + engine }
 
-// DatabasePort is the host port of an engine. The website containers connect to it
-// through the host names MariaDBHost and PostgreSQLHost.
+// DatabasePort is the port of an engine on ServiceAddress. The website containers connect to
+// it through the host names MariaDBHost and PostgreSQLHost.
 func DatabasePort(engine string) int {
 	if engine == "postgresql" {
 		return 5432
@@ -321,7 +316,8 @@ func DatabaseUnit(d Database) string {
 		"Image=" + d.Image,
 		"Pull=never",
 		"GlobalArgs=" + d.Gvisor.GlobalArgs(),
-		"PublishPort=" + port + ":" + port,
+		// Only on ServiceAddress: other computers cannot connect.
+		"PublishPort=" + ServiceAddress + ":" + port + ":" + port,
 		"Label=io.cloudfactory.service=" + d.Engine,
 		"NoNewPrivileges=true",
 		"DropCapability=all",
@@ -344,8 +340,9 @@ func DatabaseUnit(d Database) string {
 		)
 	} else {
 		lines = append(lines,
+			// PGDATA is the mount itself. The entry point changes to the user postgres, which
+			// cannot go through the mount directory (mode 0700) to a directory below it.
 			"Volume="+d.DataDir+":/var/lib/postgresql/data:Z",
-			"Environment=PGDATA=/var/lib/postgresql/data/pgdata",
 			"Tmpfs=/var/run/postgresql",
 			"ShmSize=256m",
 			"EnvironmentFile="+d.EnvFile,
@@ -372,7 +369,7 @@ type Panel struct {
 	Domain   string
 	DataDir  string
 	Gvisor   Runtime
-	// APIPort and WebPort are the host ports on 127.0.0.1 for the edge proxy.
+	// APIPort and WebPort are the ports on ServiceAddress for the edge proxy.
 	APIPort, WebPort int
 }
 
@@ -381,8 +378,8 @@ const CosignPublicKey = "/etc/cloudfactory/cosign.pub"
 
 // PanelUnits gives the units of the panel: the API, the queue worker, the scheduler and
 // the web UI. The scheduler checks the registry for new image tags (FR-1110).
-// The API container publishes its port only on 127.0.0.1. Thus only the edge proxy and the
-// agent on the panel server can connect to it.
+// The API container publishes its port only on ServiceAddress. Thus only the edge proxy and
+// the agent on the panel server can connect to it.
 // The API keeps its data in SQLite in DataDir, for an installation on one server.
 func PanelUnits(p Panel) map[string]string {
 	api := p.Registry + "/panel-api:" + p.Version
@@ -415,13 +412,13 @@ func PanelUnits(p Panel) map[string]string {
 	}
 	return map[string]string{
 		"cf-panel-api.container": unit("Cloudfactory panel API",
-			append([]string{"ContainerName=cf-panel-api", "Image=" + api, fmt.Sprintf("PublishPort=127.0.0.1:%d:8080", p.APIPort)}, env...)...),
+			append([]string{"ContainerName=cf-panel-api", "Image=" + api, fmt.Sprintf("PublishPort=%s:%d:8080", ServiceAddress, p.APIPort)}, env...)...),
 		"cf-panel-queue.container": unit("Cloudfactory panel queue worker",
 			append([]string{"ContainerName=cf-panel-queue", "Image=" + api, "Exec=php artisan queue:work --tries=5"}, env...)...),
 		"cf-panel-scheduler.container": unit("Cloudfactory panel scheduler",
 			append([]string{"ContainerName=cf-panel-scheduler", "Image=" + api, "Exec=php artisan schedule:work"}, env...)...),
 		"cf-panel-web.container": unit("Cloudfactory panel web UI",
-			"ContainerName=cf-panel-web", "Image="+p.Registry+"/panel-web:"+p.Version, fmt.Sprintf("PublishPort=127.0.0.1:%d:8080", p.WebPort), "ReadOnly=true", "Tmpfs=/tmp"),
+			"ContainerName=cf-panel-web", "Image="+p.Registry+"/panel-web:"+p.Version, fmt.Sprintf("PublishPort=%s:%d:8080", ServiceAddress, p.WebPort), "ReadOnly=true", "Tmpfs=/tmp"),
 	}
 }
 

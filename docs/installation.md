@@ -77,21 +77,23 @@ Then the script does these steps:
 1. Install Podman, OpenSSH, the quota tools and the other system packages.
 2. Turn off the automatic upgrades of the APT timer. The agent installs the host updates, by
    the update policy of the server and in its maintenance window.
-3. Let systemd give the CPU, I/O, memory and process controllers to the user services
+3. Add the private service address `169.254.77.1/32` to the loopback interface
+   (`cloudfactory-address.service`). The containers publish their ports only on this address.
+4. Let systemd give the CPU, I/O, memory and process controllers to the user services
    (`Delegate=`). Rootless Podman needs them for the limits of each website.
-4. Hold the container packages, so that a host update cannot change them.
-5. Install gVisor. Compare its SHA-512 sum with the sum in the script.
-6. Install the AppArmor profiles for Podman and gVisor.
-7. Set the image signature policy. Podman refuses all images that have no valid signature,
+5. Hold the container packages, so that a host update cannot change them.
+6. Install gVisor. Compare its SHA-512 sum with the sum in the script.
+7. Install the AppArmor profiles for Podman and gVisor.
+8. Set the image signature policy. Podman refuses all images that have no valid signature,
    except from a registry that you give with `--allow-unsigned`.
-8. Make the service users.
-9. Set up SFTP for the websites (refer to [SFTP](#sftp)).
-10. Set the firewall.
-11. Download the agent and check its signature.
-12. Install the agent service and the rollback service.
-13. On the first server only: start the panel in gVisor.
-14. On the first server only: make the first administrator.
-15. Join the panel and start the agent.
+9. Make the service users.
+10. Set up SFTP for the websites (refer to [SFTP](#sftp)).
+11. Set the firewall.
+12. Download the agent and check its signature.
+13. Install the agent service and the rollback service.
+14. On the first server only: start the panel in gVisor.
+15. On the first server only: make the first administrator.
+16. Join the panel and start the agent.
 
 If a step fails, the script stops and shows the step. You can run the script again after you
 correct the problem.
@@ -113,8 +115,11 @@ The time of the nightly backups is in UTC. Each Sunday, the panel also removes t
 no snapshot uses. With the CLI, put the credentials in the environment, then run
 `cf backups policy set --target REPOSITORY --credentials-from-env`.
 
-Keep a copy of `/etc/cloudfactory/restic.key` in a safe place. restic encrypts each snapshot
-with this key. Without it, you cannot restore.
+The panel makes one repository password for all servers. restic encrypts each snapshot with
+this password. Keep a copy in a safe place: without it, you cannot restore, for example after
+you lose the panel. To show it, run `cf backups policy password` or send
+`GET /api/v1/backup-policy/repository-password` as an administrator. The panel records each
+view in the audit log.
 
 ### SFTP
 
@@ -151,6 +156,10 @@ database ports 3306 (MariaDB) and 5432 (PostgreSQL), so the databases are not op
 internet. A database user with the access "anywhere" can connect only after you add a rule
 for its port to `/etc/nftables.d-cloudfactory.nft`. Give only the addresses that need it.
 
+The firewall also has an output rule for the private service address `169.254.77.1`. Only
+root and the edge proxy (`cf-edge`) can open a new connection to a port there, except the
+database ports. So a website cannot connect to a different website on the server.
+
 ### Proxies in front of the panel
 
 The panel API trusts the `X-Forwarded-For` header only from the edge proxy on the same
@@ -163,7 +172,8 @@ commas. Otherwise the sign-in limits apply to the address of the proxy.
 Nobody has installed release 0.1 on a real Debian 13 or Ubuntu 26.04 server yet. After you
 install it, check these items, and report a problem in the issues of the repository:
 
-- The edge proxy reaches a website through `169.254.1.3` (pasta `--map-host-loopback`).
+- The edge proxy reaches a website through the private service address `169.254.77.1`.
+  This was checked with Debian 13 packages in a container, not on a real server.
 - A website container can connect to MariaDB and PostgreSQL.
 - Files that you upload with SFTP have the correct owner in the website container
   (`--userns=keep-id` in gVisor).

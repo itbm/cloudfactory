@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -45,7 +46,7 @@ func TestTheFirstDatabaseStartsTheDatabaseContainer(t *testing.T) {
 		}
 	}
 	u := unitFile(t, d, DBUser, "cf-postgresql.container")
-	for _, want := range []string{"PublishPort=5432:5432", "--auth-host=scram-sha-256", "Volume=" + filepath.Join(d.DBHome, "postgresql") + ":/var/lib/postgresql/data:Z"} {
+	for _, want := range []string{"PublishPort=169.254.77.1:5432:5432", "--auth-host=scram-sha-256", "Volume=" + filepath.Join(d.DBHome, "postgresql") + ":/var/lib/postgresql/data:Z"} {
 		if !strings.Contains(u, want) {
 			t.Errorf("unit has no %q:\n%s", want, u)
 		}
@@ -78,7 +79,7 @@ func TestWebsitesHaveDatabaseHostNames(t *testing.T) {
 	d, _, _ := deps(t)
 	run(t)(d.CreateWebsite(&agentv1.WebsiteRequest{JobId: jobID, Website: website("ghcr.io/cloudfactory/frankenphp-php8.4:8.4.0-1")}))
 	u := unitFile(t, d, "acme_x7k2", "cf-acme_x7k2.container")
-	for _, want := range []string{"AddHost=mariadb.internal:host-gateway\n", "AddHost=postgres.internal:host-gateway\n", "Environment=CF_DOCUMENT_ROOT=/app/public\n"} {
+	for _, want := range []string{"AddHost=mariadb.internal:169.254.77.1\n", "AddHost=postgres.internal:169.254.77.1\n", "Environment=CF_DOCUMENT_ROOT=/app/public\n"} {
 		if !strings.Contains(u, want) {
 			t.Errorf("unit has no %q:\n%s", want, u)
 		}
@@ -179,7 +180,7 @@ func TestStagingCopyCopiesTheDatabases(t *testing.T) {
 		t.Fatal(err)
 	}
 	all := strings.Join(f.Inputs, "")
-	for _, want := range []string{"CREATE DATABASE `staging_ab12_shop`", "CREATE USER 'staging_ab12_app'@'127.0.0.1'", "GRANT ALL PRIVILEGES ON `staging\\_ab12\\_shop`.* TO 'staging_ab12_app'@'127.0.0.1'"} {
+	for _, want := range []string{"CREATE DATABASE `staging_ab12_shop`", "CREATE USER 'staging_ab12_app'@'169.254.77.1'", "GRANT ALL PRIVILEGES ON `staging\\_ab12\\_shop`.* TO 'staging_ab12_app'@'169.254.77.1'"} {
 		if !strings.Contains(all, want) {
 			t.Errorf("no %q in the SQL:\n%s", want, all)
 		}
@@ -343,5 +344,70 @@ func TestWatchWithNoStatusAcceptsARedirect(t *testing.T) {
 	status = 502
 	if err := d.watch(context.Background(), 20001, "acme.example", hc); err == nil {
 		t.Error("502 passed")
+	}
+}
+
+// Re-audit: the panel sends the password of the repository, so all servers use the same one.
+func TestBackupUsesThePasswordFromThePanel(t *testing.T) {
+	d, f, _ := deps(t)
+	os.MkdirAll(d.Host.AppDir("acme_x7k2"), 0o755)
+	f.Rules = []execx.Rule{
+		{Prefix: "restic --repo s3:https://minio.example:9000/b --json --retry-lock 30m backup", Output: `{"message_type":"summary","snapshot_id":"aa11","total_bytes_processed":1}`},
+	}
+	creds := map[string]string{"RESTIC_PASSWORD": "repo-secret", "AWS_ACCESS_KEY_ID": "AKIA1"}
+	job, err := d.Backup(&agentv1.BackupRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Kind: "manual", Target: "s3:https://minio.example:9000/b", Credentials: creds})
+	if err := run(t)(job, err); err != nil {
+		t.Fatal(err)
+	}
+	for i, c := range f.Calls {
+		if !strings.HasPrefix(c, "restic") {
+			continue
+		}
+		if strings.Contains(c, "--password-file") || strings.Contains(c, "repo-secret") {
+			t.Errorf("restic gets the password in its arguments: %s", c)
+		}
+		if !slices.Contains(f.Envs[i], "RESTIC_PASSWORD=repo-secret") {
+			t.Errorf("environment of %s = %v", c, f.Envs[i])
+		}
+	}
+}
+
+// Re-audit: the "://" of a URL in the target stays. Only "s3://" after the type changes.
+func TestBackupTargets(t *testing.T) {
+	for in, want := range map[string]string{
+		"s3:https://minio.example:9000/bucket": "s3:https://minio.example:9000/bucket",
+		"s3://bucket/path":                     "s3:bucket/path",
+		"s3:s3.eu-west-2.amazonaws.com/b/c":    "s3:s3.eu-west-2.amazonaws.com/b/c",
+		"b2:bucket:path":                       "b2:bucket:path",
+	} {
+		r, err := newRepo(in, nil)
+		if err != nil || r.target != want {
+			t.Errorf("newRepo(%q) = %q, %v; want %q", in, r.target, err, want)
+		}
+	}
+}
+
+// Re-audit: at most BackupSlots backups dump or upload at the same time.
+func TestBackupSlots(t *testing.T) {
+	d, _, _ := deps(t)
+	ctx := context.Background()
+	var releases []func()
+	for range BackupSlots {
+		release, err := d.backupSlot(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		releases = append(releases, release)
+	}
+	short, cancel := context.WithTimeout(ctx, 50*time.Millisecond)
+	defer cancel()
+	if _, err := d.backupSlot(short); err == nil {
+		t.Error("a third backup got a slot")
+	}
+	releases[0]()
+	if release, err := d.backupSlot(ctx); err != nil {
+		t.Error(err)
+	} else {
+		release()
 	}
 }

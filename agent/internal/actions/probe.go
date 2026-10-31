@@ -6,14 +6,17 @@ import (
 	"net/http"
 	"strconv"
 	"time"
+
+	"github.com/itbm/cloudfactory/agent/internal/quadlet"
 )
 
-// HTTPHealth requests the home page of a website on its host port, as the edge proxy does.
+// HTTPHealth requests the home page of a website on its port on quadlet.ServiceAddress, as the
+// edge proxy does.
 // It gives the HTTP status. An error means that the website did not answer.
 func HTTPHealth(ctx context.Context, port int, hostname string) (int, error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://127.0.0.1:"+strconv.Itoa(port)+"/", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+net.JoinHostPort(quadlet.ServiceAddress, strconv.Itoa(port))+"/", nil)
 	if err != nil {
 		return 0, err
 	}

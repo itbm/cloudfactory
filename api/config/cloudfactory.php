@@ -11,7 +11,8 @@ return [
         // The latest agent version. Servers with an older agent show "Agent update ready".
         'latest_version' => env('CF_AGENT_LATEST', '0.1.0'),
         // CF-10: the addresses from which the agent on the panel server calls the API directly.
-        'direct_addresses' => array_filter(explode(',', env('CF_AGENT_DIRECT_ADDRESSES', '127.0.0.1,::1'))),
+        // 169.254.77.1 is the private service address of the panel server (install.sh).
+        'direct_addresses' => array_filter(explode(',', env('CF_AGENT_DIRECT_ADDRESSES', '127.0.0.1,::1,169.254.77.1'))),
     ],
 
     'registry' => env('CF_REGISTRY', 'ghcr.io/cloudfactory'),

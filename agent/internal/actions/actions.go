@@ -62,7 +62,7 @@ type Deps struct {
 	// default is "/run/cloudfactory/secrets".
 	SecretsDir string
 	// DatabaseClientHost is the host part of a MariaDB user that can connect from the website
-	// containers only, for example "10.89.%" (CF-19). The default is "127.0.0.1".
+	// containers only, for example "10.89.%" (CF-19). The default is quadlet.ServiceAddress.
 	DatabaseClientHost string
 	// ServiceImage gives the image of a service, for example ServiceImage("mariadb").
 	ServiceImage func(name string) string
@@ -83,8 +83,10 @@ type Deps struct {
 
 	dbMu    sync.Mutex
 	dbReady map[string]bool
-	rtMu    sync.RWMutex
-	obs     observer
+	// backupSlots limits the backups that operate at the same time (BackupSlots).
+	backupSlots chan struct{}
+	rtMu        sync.RWMutex
+	obs         observer
 }
 
 // runtime gives the gVisor settings. ConfigureHost can change the platform.

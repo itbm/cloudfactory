@@ -11,9 +11,11 @@ The product specification, section 6.4, gives the requirements.
   it uses the `systrap` platform.
 - The container has no capabilities, cannot get new privileges and has a read-only root file
   system.
-- Each account has its own Podman network. A website cannot connect to a website of a
-  different account.
-- Each container listens only on `127.0.0.1`. Only the edge proxy can reach it.
+- Each container has its own network namespace (`pasta`). A container cannot connect to a
+  different container directly.
+- Each container port is open only on the private service address `169.254.77.1`. An
+  nftables rule lets only root and the edge proxy open a website port there, so a website
+  cannot connect to a different website. All websites can reach the database ports.
 - The home directory of each website user has mode `0700`. The edge proxy does not read the
   files of a website. The website container serves its static files.
 - The agent writes restored files and staging copies as the website user. A symbolic link in
@@ -31,7 +33,7 @@ The product specification, section 6.4, gives the requirements.
 - The agent refuses to make a database that exists. It does not give access to a database of a
   different website.
 - MariaDB users connect only from the configured host (`databaseClientHost`, default
-  `127.0.0.1`). A user with access from all hosts must use TLS.
+  `169.254.77.1`, the address that MariaDB sees for a website container). A user with access from all hosts must use TLS.
 - A backup keeps the SHA-256 sum of each database dump. Before a restore, the agent compares the
   dump with this sum. If they are different, the agent stops. The restore uses a temporary
   database user with the permissions of the website only.
@@ -94,6 +96,7 @@ each row of each table.
 | Secret | How the panel keeps it |
 | --- | --- |
 | Credentials of the backup storage, for example the S3 keys | Encrypted with `APP_KEY`. The API does not show them again. |
+| restic repository password, one for all servers | Encrypted with `APP_KEY`. Only an administrator can show it, and the audit log records each view. |
 | TOTP secret of a user | Encrypted with `APP_KEY`. A secret that is not set up yet is encrypted in the cache. |
 | Job data, which can hold database passwords for the agent | Encrypted with `APP_KEY`. The panel removes the passwords when the job is complete. |
 | Sessions, if the panel keeps one | Encrypted with `APP_KEY` (`SESSION_ENCRYPT`). |
@@ -110,7 +113,6 @@ directory with mode 0700:
   secrets above. Keep a copy of this file in a safe place. If you lose it, you must enter
   the backup credentials again, and users must set up TOTP again.
 - The private key of the panel for mutual TLS, in `/var/lib/cloudfactory/panel/pki/panel.key`.
-- The restic password on each server, in `/etc/cloudfactory/restic.key`.
 
 ## Users and API tokens
 

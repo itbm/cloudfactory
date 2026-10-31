@@ -743,6 +743,26 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '422': { $ref: '#/components/responses/Invalid' }
 
+  /v1/backup-policy/repository-password:
+    get:
+      tags: [Backups]
+      summary: Get the password of the backup repository
+      description: >-
+        Administrators only. All servers use one restic repository with this password. Keep a
+        copy in a safe place: without it, you cannot restore with restic directly. The panel
+        records each request in the audit log.
+      responses:
+        '200':
+          description: The password.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [password]
+                properties:
+                  password: { type: string }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
   /v1/jobs:
     get:
       tags: [Jobs]

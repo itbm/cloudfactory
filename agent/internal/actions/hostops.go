@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	agentv1 "github.com/itbm/cloudfactory/agent/gen/cloudfactory/agent/v1"
 	"github.com/itbm/cloudfactory/agent/internal/host"
@@ -167,7 +168,23 @@ func (d *Deps) EnsureEdge(ctx context.Context, image string, dataDir string) err
 	if _, err := d.Host.Systemctl(ctx, host.EdgeUser, "start", "cf-edge.service"); err != nil {
 		return err
 	}
-	return d.Edge.EnsureBase(ctx)
+	// Caddy makes its admin socket some seconds after the container starts.
+	timeout := d.ReadyTimeout
+	if timeout == 0 {
+		timeout = time.Minute
+	}
+	deadline := time.Now().Add(timeout)
+	for {
+		err := d.Edge.EnsureBase(ctx)
+		if err == nil || time.Now().After(deadline) {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Second):
+		}
+	}
 }
 
 // ConfigureHost changes the gVisor platform of the server (FR-310). The agent writes the units

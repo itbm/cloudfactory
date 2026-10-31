@@ -268,6 +268,8 @@ export DEBIAN_FRONTEND=noninteractive
 CF_ETC=/etc/cloudfactory
 CF_DATA=/var/lib/cloudfactory
 GVISOR_ROOT=/usr/local/lib/cloudfactory/gvisor
+# The private address of the container ports on "lo" (quadlet.ServiceAddress in the agent).
+SERVICE_ADDRESS=169.254.77.1
 
 step "Install Podman and the system packages"
 apt-get update -q
@@ -276,7 +278,7 @@ apt-get install -y -q --no-install-recommends \
 	podman passt uidmap netavark aardvark-dns conmon crun fuse-overlayfs \
 	nftables unattended-upgrades needrestart restic apparmor apparmor-utils \
 	systemd-container dbus-user-session ca-certificates curl openssl bzip2 \
-	openssh-server quota
+	openssh-server quota iproute2
 
 step "Turn off the automatic upgrades of APT"
 # FR-1111: the agent installs the host updates, by the update policy of the server and in its
@@ -286,11 +288,39 @@ cat >/etc/apt/apt.conf.d/52cloudfactory <<'APT'
 APT::Periodic::Unattended-Upgrade "0";
 APT
 
+step "Add the private service address"
+# The website, database and panel containers publish their ports on this address on "lo", not
+# on 127.0.0.1: rootless Podman cannot send a connection from 127.0.0.1 into gVisor. The
+# address is link-local, so it is never on a real network. The agent has the same value
+# (quadlet.ServiceAddress).
+cat >/etc/systemd/system/cloudfactory-address.service <<UNIT
+[Unit]
+Description=Cloudfactory private service address
+DefaultDependencies=no
+After=systemd-networkd.service networking.service
+Before=network.target user@.service cf-agent.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/ip address replace $SERVICE_ADDRESS/32 dev lo
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+systemctl daemon-reload
+systemctl enable --now --quiet cloudfactory-address.service
+
 step "Let rootless containers use CPU, memory, I/O and process limits"
 # FR-202: by default, systemd gives the user services only the memory and pids controllers.
 # Podman needs the cpu and io controllers to apply the limits of each website.
 mkdir -p /etc/systemd/system/user@.service.d
 cat >/etc/systemd/system/user@.service.d/cloudfactory-delegate.conf <<'UNIT'
+[Unit]
+# The containers publish their ports on the private service address.
+Wants=cloudfactory-address.service
+After=cloudfactory-address.service
+
 [Service]
 Delegate=cpu cpuset io memory pids
 UNIT
@@ -391,7 +421,8 @@ install -d -m 0700 "$CF_DATA"
 install -d -o cf-edge -g cf-edge -m 0700 "$CF_DATA/caddy"
 # CF-13: the admin API of Caddy listens on a Unix socket in this directory, not on a TCP port.
 install -d -o cf-edge -g cf-edge -m 0700 "$CF_DATA/caddy-admin"
-[ -f "$CF_ETC/restic.key" ] || (umask 077 && openssl rand -base64 48 >"$CF_ETC/restic.key")
+# The panel keeps one restic repository password for all servers and sends it with each
+# backup job. Do not make a key for each server: two keys cannot open one repository.
 
 step "Set up SFTP for the websites"
 # Spec section 10: the owner of a website signs in with SFTP as the Unix user of the website.
@@ -431,6 +462,7 @@ step "Set the firewall"
 # firewall redirects 80 and 443 to the high ports of the edge proxy. The client address does
 # not change (FR-1707).
 agent_rule="tcp dport 7443 accept"
+edge_uid=$(id -u cf-edge)
 [ -n "$PANEL_IP" ] && agent_rule="ip saddr $PANEL_IP tcp dport 7443 accept"
 cat >/etc/nftables.d-cloudfactory.nft <<NFT
 table inet cloudfactory
@@ -445,6 +477,15 @@ table inet cloudfactory {
     tcp dport { 80, 443, 8080, 8443 } accept
     udp dport { 443, 8443 } accept
     $agent_rule
+  }
+  chain output {
+    type filter hook output priority filter; policy accept;
+    # FR-1703: only root (the agent) and the edge proxy can connect to the website and panel
+    # ports on the private service address. pasta opens each connection of a container as the
+    # Unix user of the container, so a website cannot reach a different website. All websites
+    # can reach the shared database ports. The rule checks only new connections, because the
+    # answers of the containers go to the address too.
+    ct state new ip daddr $SERVICE_ADDRESS tcp dport != { 3306, 5432 } meta skuid != { 0, $edge_uid } reject with tcp reset
   }
   chain prerouting {
     type nat hook prerouting priority dstnat;
@@ -543,7 +584,7 @@ ENV
 
 	step "Make the first administrator"
 	i=0
-	until curl -fsS -o /dev/null http://127.0.0.1:19080/up; do
+	until curl -fsS -o /dev/null "http://$SERVICE_ADDRESS:19080/up"; do
 		i=$((i + 1))
 		[ $i -lt 60 ] || fail "the panel API did not start."
 		sleep 2
@@ -554,8 +595,8 @@ ENV
 	PASSWORD=$(printf '%s' "$result" | sed -n 's/.*"password":"\([^"]*\)".*/\1/p')
 	JOIN_TOKEN=$(printf '%s' "$result" | sed -n 's/.*"joinToken":"\([^"]*\)".*/\1/p')
 	[ -n "$JOIN_TOKEN" ] || fail "the panel did not give a join token."
-	# The agent on the panel server reports directly to the API on 127.0.0.1.
-	PANEL_URL=http://127.0.0.1:19080
+	# The agent on the panel server reports directly to the API on the private service address.
+	PANEL_URL="http://$SERVICE_ADDRESS:19080"
 	# pasta maps this address in the panel containers to 127.0.0.1 on the host.
 	[ -n "$ADDRESS" ] || ADDRESS=169.254.1.3
 	[ -n "$ROLES" ] || ROLES=web,database,email,dns,backup

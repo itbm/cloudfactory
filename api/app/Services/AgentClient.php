@@ -41,9 +41,12 @@ class AgentClient
             ->post('/'.self::SERVICE.'/'.$job->action->value, [
                 'jobId' => $job->id,
                 ...$job->payload,
-                // The credentials of the object storage are not in the job. The panel adds the
-                // current credentials each time that it sends the job.
-                ...($job->action->usesBackupRepository() ? ['credentials' => (object) BackupController::credentials()] : []),
+                // The credentials of the object storage and the password of the repository are not
+                // in the job. The panel adds the current values each time that it sends the job.
+                ...($job->action->usesBackupRepository() ? ['credentials' => (object) [
+                    ...BackupController::credentials(),
+                    'RESTIC_PASSWORD' => BackupController::repositoryPassword(),
+                ]] : []),
             ])
             ->throw();
     }

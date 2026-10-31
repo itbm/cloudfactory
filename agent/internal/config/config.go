@@ -39,7 +39,8 @@ type Config struct {
 	// CaddyAdmin is the address of the Caddy admin API: a Unix socket (CF-13).
 	CaddyAdmin string `json:"caddyAdmin"`
 	// DatabaseClientHost is the host part of the MariaDB users that only the website containers
-	// can use (CF-19). The default is "127.0.0.1".
+	// can use (CF-19). The default is the address that the database server sees for them,
+	// quadlet.ServiceAddress.
 	DatabaseClientHost string `json:"databaseClientHost"`
 	// ReleaseURL is where the agent downloads new agent binaries.
 	ReleaseURL string `json:"releaseUrl"`

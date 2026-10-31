@@ -337,7 +337,7 @@ export function createWebsite(input: NewWebsite): Promise<{ websiteId: string; j
   const job = runJob({
     title: `Create website ${name}`,
     websiteId,
-    steps: ["Create Unix user", "Create container network", "Pull and check image signature", "Start container in gVisor", "Configure edge proxy", "Get TLS certificate"],
+    steps: ["Create Unix user", "Pull and check image signature", "Start container in gVisor", "Configure edge proxy", "Get TLS certificate"],
     activity: `Created website ${name}`,
     begin: (d) => {
       d.websites.unshift({
@@ -468,7 +468,7 @@ export function deleteWebsite(websiteId: string) {
   const w = state.websites.find((x) => x.id === websiteId)!;
   return runJob({
     title: `Remove website ${w.name}`,
-    steps: ["Stop container", "Remove container and network", "Remove edge proxy route", "Remove Unix user"],
+    steps: ["Stop container", "Remove edge proxy route", "Remove Unix user"],
     activity: `Removed website ${w.name}`,
     begin: (d) => audit(d, "Removed website", w.name),
     apply: (d) => {

@@ -78,6 +78,7 @@ Route::prefix('v1')->group(function () {
             Route::post('websites/{websiteId}/snapshots/{snapshotId}/restore', [BackupController::class, 'restore']);
             Route::get('backup-policy', [BackupController::class, 'showPolicy']);
             Route::put('backup-policy', [BackupController::class, 'updatePolicy'])->middleware('admin');
+            Route::get('backup-policy/repository-password', [BackupController::class, 'showRepositoryPassword'])->middleware('admin');
         });
 
         Route::middleware(['admin', 'scope:servers'])->group(function () {

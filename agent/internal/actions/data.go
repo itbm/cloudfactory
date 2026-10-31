@@ -73,7 +73,7 @@ func (d *Deps) mariaHost(access string) (string, error) {
 	case "", "website":
 		host := d.DatabaseClientHost
 		if host == "" {
-			host = "127.0.0.1"
+			host = quadlet.ServiceAddress
 		}
 		if !clientHostRE.MatchString(host) {
 			return "", fmt.Errorf("the database client host %q is not valid", host)
@@ -429,6 +429,9 @@ var targetRE = regexp.MustCompile(`^(s3|b2|azure|gs):\S+$`)
 // resticEnv are the environment variables of restic that the panel can set for the object
 // storage. The agent refuses all other names, so that the panel cannot change how restic runs.
 var resticEnv = map[string]bool{
+	// The password of the repository. The panel keeps it, so that all servers use the same
+	// repository with the same password.
+	"RESTIC_PASSWORD":   true,
 	"AWS_ACCESS_KEY_ID": true, "AWS_SECRET_ACCESS_KEY": true, "AWS_DEFAULT_REGION": true,
 	"B2_ACCOUNT_ID": true, "B2_ACCOUNT_KEY": true,
 	"AZURE_ACCOUNT_NAME": true, "AZURE_ACCOUNT_KEY": true, "AZURE_ACCOUNT_SAS": true,
@@ -455,7 +458,11 @@ type repo struct {
 }
 
 func newRepo(target string, creds map[string]string) (repo, error) {
-	target = strings.Replace(target, "://", ":", 1)
+	// "s3://bucket" is a common mistake for "s3:bucket". Change only the "://" after the type,
+	// not the one in "s3:https://host/bucket".
+	if kind, rest, ok := strings.Cut(target, "://"); ok && !strings.Contains(kind, ":") {
+		target = kind + ":" + rest
+	}
 	if !targetRE.MatchString(target) {
 		return repo{}, errors.New("no valid backup target is set; an administrator sets it in Backups")
 	}
@@ -468,7 +475,13 @@ func newRepo(target string, creds map[string]string) (repo, error) {
 // restic runs restic on the repository. The credentials go in the environment, not in the
 // arguments. restic waits for a lock of a different job, for example a prune.
 func (d *Deps) restic(ctx context.Context, r repo, args ...string) (string, error) {
-	base := []string{"--repo", r.target, "--password-file", d.ResticPasswordFile, "--json", "--retry-lock", "30m"}
+	base := []string{"--repo", r.target}
+	if r.creds["RESTIC_PASSWORD"] == "" {
+		// The panel sends one password for all servers (RESTIC_PASSWORD). A local key file is
+		// only for a manual set-up: two servers with different keys cannot share a repository.
+		base = append(base, "--password-file", d.ResticPasswordFile)
+	}
+	base = append(base, "--json", "--retry-lock", "30m")
 	env := make([]string, 0, len(r.creds))
 	for _, k := range slices.Sorted(maps.Keys(r.creds)) {
 		env = append(env, k+"="+r.creds[k])
@@ -543,6 +556,26 @@ func (d *Deps) PruneBackups(req *agentv1.PruneBackupsRequest) (jobs.Job, error) 
 	}}, nil
 }
 
+// BackupSlots is the number of backups that dump or upload at the same time. The panel starts
+// the nightly backups of all websites together, and each one takes memory and disk I/O.
+const BackupSlots = 2
+
+// backupSlot waits for a free backup slot. The caller calls release when the step is done.
+func (d *Deps) backupSlot(ctx context.Context) (release func(), err error) {
+	d.dbMu.Lock()
+	if d.backupSlots == nil {
+		d.backupSlots = make(chan struct{}, BackupSlots)
+	}
+	slots := d.backupSlots
+	d.dbMu.Unlock()
+	select {
+	case slots <- struct{}{}:
+		return func() { <-slots }, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
 // dumpDir holds the database dumps of one website. Only root can read it, and the website
 // cannot change it (CF-06). Each backup snapshot includes it.
 func (d *Deps) dumpDir(unixUser string) string { return filepath.Join(d.DataDir, "dumps", unixUser) }
@@ -579,6 +612,11 @@ func (d *Deps) Backup(req *agentv1.BackupRequest) (jobs.Job, error) {
 			return err
 		}},
 		{Name: "Dump databases", Do: func(ctx context.Context) error {
+			release, err := d.backupSlot(ctx)
+			if err != nil {
+				return err
+			}
+			defer release()
 			// A new directory for each backup, so that the snapshot has no old dumps.
 			if err := os.RemoveAll(dumps); err != nil {
 				return err
@@ -596,6 +634,11 @@ func (d *Deps) Backup(req *agentv1.BackupRequest) (jobs.Job, error) {
 			return nil
 		}},
 		{Name: "Upload to object storage", Do: func(ctx context.Context) error {
+			release, err := d.backupSlot(ctx)
+			if err != nil {
+				return err
+			}
+			defer release()
 			if err := d.ensureRepo(ctx, r); err != nil {
 				return err
 			}
