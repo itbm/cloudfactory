@@ -1,0 +1,76 @@
+# Builds the images on a pull request that changes them. The release workflow publishes them.
+name: Images
+
+on:
+  pull_request:
+    paths:
+      - images/**
+      - api/**
+      - web/**
+      - .github/workflows/images.yml
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.image }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { image: frankenphp-php8.4, context: images/frankenphp, file: images/frankenphp/Containerfile, args: PHP_VERSION=8.4 }
+          - { image: frankenphp-php8.5, context: images/frankenphp, file: images/frankenphp/Containerfile, args: PHP_VERSION=8.5 }
+          - { image: apache-php8.4, context: images/apache-php-fpm, file: images/apache-php-fpm/Containerfile, args: PHP_VERSION=8.4 }
+          - { image: edge, context: images/edge, file: images/edge/Containerfile, args: '' }
+          - { image: panel-api, context: ., file: images/panel-api/Containerfile, args: '' }
+          - { image: panel-web, context: ., file: images/panel-web/Containerfile, args: '' }
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.file }}
+          build-args: ${{ matrix.args }}
+          load: true
+          tags: ${{ matrix.image }}:test
+      # Audit batch 2, findings 1 and 2: start the image with the limits of its unit, and send a
+      # request. A file capability or a missing configuration file stops the container.
+      - name: Start the image with no capabilities
+        env:
+          IMAGE: ${{ matrix.image }}
+        run: |
+          set -eu
+          case "$IMAGE" in
+            frankenphp-*|apache-*) args="--read-only --tmpfs /tmp --user 1001:1001" want=200 ;;
+            panel-web) args="--read-only --tmpfs /tmp" want=200 ;;
+            panel-api) args="--tmpfs /data -e APP_KEY=base64:$(openssl rand -base64 32) -e DB_DATABASE=/data/panel.sqlite" want=200 path=/up ;;
+            edge) args="--read-only --tmpfs /data --tmpfs /run/caddy-admin" want=any ;;
+          esac
+          # shellcheck disable=SC2086 # args holds several options.
+          docker run -d --name smoke --cap-drop=all --security-opt no-new-privileges -p 127.0.0.1:18080:8080 $args "$IMAGE:test"
+          code=000
+          for _ in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:18080${path:-/}" || true)
+            # Wait for the wanted code. Apache can answer 503 before php-fpm opens its socket.
+            if [ "$want" = any ]; then [ "$code" != 000 ] && break; else [ "$code" = "$want" ] && break; fi
+            sleep 2
+          done
+          docker logs smoke
+          docker inspect -f '{{.State.Running}}' smoke | grep -q true
+          if [ "$want" = any ]; then [ "$code" != 000 ]; else [ "$code" = "$want" ]; fi
+      - name: Scan for known vulnerabilities (FR-1102)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ matrix.image }}:test
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+          # CVE scan, finding 4: gosu in the mariadb and postgresql bases only changes the user at
+          # start. It does no TLS, HTTP or parsing, so the Go standard-library CVEs that Trivy
+          # reports in it do not apply. The gosu project treats them as false positives.
+          skip-files: /usr/local/bin/gosu

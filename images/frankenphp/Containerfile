@@ -1,0 +1,52 @@
+# FrankenPHP runtime image (FR-301). Build one image for each PHP version:
+#   podman build --build-arg PHP_VERSION=8.4 -t frankenphp-php8.4 images/frankenphp
+#
+# The image has all extensions of the largest plan, but turns none on. The agent writes
+# /usr/local/etc/php/conf.d/zz-cloudfactory.ini with the extensions of the plan of each
+# website (FR-304). Worker mode is off by default (FR-305).
+# SPDX-License-Identifier: AGPL-3.0-only
+ARG PHP_VERSION=8.4
+FROM docker.io/dunglas/frankenphp:1-php${PHP_VERSION}-trixie
+
+ARG PHP_VERSION
+ARG EXTENSIONS="intl gd zip exif bcmath mysqli pdo_mysql pdo_pgsql redis imagick soap"
+COPY imagemagick-policy.xml /usr/local/share/cloudfactory/imagemagick-policy.xml
+# CVE scan, finding 3: take the Debian security fixes that are newer than the base image, so that
+# the daily rebuild gets them on the day that Debian ships them.
+ARG DEBIAN_FRONTEND=noninteractive
+RUN apt-get update \
+ && apt-get upgrade -y --no-install-recommends \
+ && rm -rf /var/lib/apt/lists/* \
+ && install-php-extensions ${EXTENSIONS} \
+ && if [ "${PHP_VERSION}" != "8.5" ]; then install-php-extensions opcache; fi \
+ && mkdir -p /usr/local/etc/php/available \
+ && for f in /usr/local/etc/php/conf.d/docker-php-ext-*.ini; do \
+      name=$(basename "$f" .ini | sed 's/^docker-php-ext-//'); \
+      case "$name" in sodium) ;; *) mv "$f" /usr/local/etc/php/available/ ;; esac; \
+    done \
+ && cp "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini" \
+ && ls -d /etc/ImageMagick-* >/dev/null \
+ && for d in /etc/ImageMagick-*; do cp /usr/local/share/cloudfactory/imagemagick-policy.xml "$d/policy.xml"; done
+
+# Audit batch 2, finding 1: the base image gives frankenphp the file capability
+# cap_net_bind_service. The units drop all capabilities, and Linux does not run a file with a
+# capability that the process cannot get. The server listens on 8080, so it does not need it.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends libcap2-bin \
+ && setcap -r /usr/local/bin/frankenphp \
+ && test -z "$(getcap /usr/local/bin/frankenphp)" \
+ && apt-get purge -y libcap2-bin \
+ && rm -rf /var/lib/apt/lists/*
+COPY Caddyfile /etc/frankenphp/Caddyfile
+COPY index.php /app/public/index.php
+
+# The container root file system is read-only. Caddy keeps its state in /tmp.
+ENV SERVER_NAME=:8080 \
+    CF_DOCUMENT_ROOT=/app/public \
+    XDG_CONFIG_HOME=/tmp/config \
+    XDG_DATA_HOME=/tmp/data
+
+EXPOSE 8080
+LABEL org.opencontainers.image.source="https://github.com/itbm/cloudfactory" \
+      org.opencontainers.image.licenses="AGPL-3.0-only" \
+      org.opencontainers.image.description="Cloudfactory FrankenPHP runtime"

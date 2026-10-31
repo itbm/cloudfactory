@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ImageMagick security policy of the Cloudfactory runtime images (CVE scan, finding 3).
+  It turns off the coders that websites rarely need and that have known flaws without a fix
+  in Debian (for example OpenEXR), and it limits the resources that one image can use.
+  The same file is in images/frankenphp and images/apache-php-fpm. Change both together.
+  SPDX-License-Identifier: AGPL-3.0-only
+-->
+<!DOCTYPE policymap [
+  <!ELEMENT policymap (policy)*>
+  <!ATTLIST policymap xmlns CDATA #FIXED "">
+  <!ELEMENT policy EMPTY>
+  <!ATTLIST policy xmlns CDATA #FIXED "" domain NMTOKEN #REQUIRED
+    name NMTOKEN #IMPLIED pattern CDATA #IMPLIED rights NMTOKENS #IMPLIED
+    stealth NMTOKEN #IMPLIED value CDATA #IMPLIED>
+]>
+<policymap>
+  <policy domain="resource" name="memory" value="256MiB"/>
+  <policy domain="resource" name="map" value="512MiB"/>
+  <policy domain="resource" name="width" value="16KP"/>
+  <policy domain="resource" name="height" value="16KP"/>
+  <policy domain="resource" name="area" value="128MP"/>
+  <policy domain="resource" name="disk" value="1GiB"/>
+  <!-- No external programs, for example Ghostscript. -->
+  <policy domain="delegate" rights="none" pattern="*"/>
+  <!-- OpenEXR, PostScript, PDF, XPS, the internal SVG renderer, and reads from URLs. -->
+  <policy domain="coder" rights="none" pattern="{EXR,PS,PS2,PS3,EPS,EPI,EPSF,EPSI,EPT,PDF,PDFA,XPS,MSVG,MVG,URL,HTTP,HTTPS,FTP}"/>
+  <!-- No file names from "@file" lists. -->
+  <policy domain="path" rights="none" pattern="@*"/>
+</policymap>

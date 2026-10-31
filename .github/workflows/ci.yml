@@ -1,0 +1,149 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  web:
+    name: Web panel
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npx vitest run
+      - run: npm run build
+
+  api:
+    name: Panel API (PHP ${{ matrix.php }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        php: ['8.3', '8.4']
+    defaults:
+      run:
+        working-directory: api
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: pdo_sqlite, openssl, intl
+          coverage: none
+      - run: composer install --no-interaction --prefer-dist
+      - run: ./vendor/bin/pint --test
+      - run: php artisan test
+
+  agent:
+    name: Agent
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: agent
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          # R-05: the same Go release as the toolchain line in go.mod.
+          go-version: '1.27.3'
+          cache-dependency-path: agent/go.sum
+      - uses: bufbuild/buf-action@85aebf73123b5c15fd5528aaecbf9129cddf7fa7 # v1.6.0
+        with:
+          setup_only: true
+      - name: Check the protocol and the generated code
+        run: |
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.9
+          go install connectrpc.com/connect/cmd/protoc-gen-connect-go@v1.19.0
+          buf lint
+          buf generate
+          git diff --exit-code -- gen
+      - run: test -z "$(gofmt -l .)"
+      - run: go vet ./...
+      - run: go test -race ./...
+      - name: Build for x86-64 and ARM64
+        run: |
+          GOARCH=amd64 CGO_ENABLED=0 go build -o /dev/null ./cmd/cf-agent
+          GOARCH=arm64 CGO_ENABLED=0 go build -o /dev/null ./cmd/cf-agent
+
+  cli:
+    name: CLI
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cli
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version: '1.27.3'
+      - run: test -z "$(gofmt -l .)"
+      - run: go vet ./...
+      - run: go test -race ./...
+
+  # R-10: known vulnerabilities in the dependencies and the Go standard library. The image scans
+  # do not see the Go binaries clearly, so the source code is checked here.
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version: '1.27.3'
+          cache-dependency-path: agent/go.sum
+      - name: govulncheck (agent and CLI)
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
+          (cd agent && govulncheck ./...)
+          (cd cli && govulncheck ./...)
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        with:
+          php-version: '8.4'
+          coverage: none
+      - name: composer audit (panel API)
+        working-directory: api
+        run: composer audit --locked --no-interaction
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+      - name: npm audit (web panel)
+        working-directory: web
+        run: npm audit --package-lock-only
+
+  install:
+    name: Installation script
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - run: shellcheck -s sh install/install.sh install/test.sh images/apache-php-fpm/start.sh images/panel-api/start.sh
+      - run: sh install/test.sh
+      - run: dash install/test.sh

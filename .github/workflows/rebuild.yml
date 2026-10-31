@@ -1,0 +1,55 @@
+# FR-1109: build the runtime images again when a base image or a package changes.
+# The workflow compares the digest of each base image with the digest in the last build.
+name: Rebuild images
+
+on:
+  schedule:
+    - cron: '17 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - name: Compare base image digests
+        id: digests
+        shell: bash
+        run: |
+          set -euo pipefail
+          # R-11: read the base images from the Containerfiles, so that the list is always
+          # complete. ${PHP_VERSION} becomes each PHP version that the release workflow builds.
+          php_versions=$(grep -o 'PHP_VERSION=[0-9.]*' .github/workflows/release.yml | cut -d= -f2 | sort -u)
+          {
+            grep -h -E '^FROM ' images/*/Containerfile | sed -E 's/^FROM +(--[^ ]+ +)*//; s/ .*//'
+            grep -h -o -E 'COPY --from=[^ ]+' images/*/Containerfile | sed 's/^COPY --from=//'
+          } | grep / | while read -r ref; do
+            case "$ref" in
+              *'${PHP_VERSION}'*) for v in $php_versions; do printf '%s\n' "${ref//'${PHP_VERSION}'/$v}"; done ;;
+              *) printf '%s\n' "$ref" ;;
+            esac
+          done | sort -u > refs.txt
+          cat refs.txt
+          while read -r ref; do
+            printf '%s ' "$ref"
+            docker buildx imagetools inspect "$ref" --format '{{json .Manifest.Digest}}'
+          done < refs.txt > digests.txt
+          sha256sum digests.txt | cut -d' ' -f1 > key.txt
+          echo "key=$(cat key.txt)" >> "$GITHUB_OUTPUT"
+      - name: Remember the digests
+        id: cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: digests.txt
+          key: base-images-${{ steps.digests.outputs.key }}
+      - name: Build the images again when a base image changed
+        if: steps.cache.outputs.cache-hit != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run release.yml --ref main -f images_only=true

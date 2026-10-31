@@ -1,0 +1,42 @@
+# The web panel (spec section 6.2). Build from the repository root:
+#   podman build -f images/panel-web/Containerfile -t panel-web .
+# SPDX-License-Identifier: AGPL-3.0-only
+FROM docker.io/library/node:22-alpine AS build
+WORKDIR /web
+COPY web/package.json web/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY web/ ./
+RUN npm run build
+
+# CVE scan, finding 1: the Caddy binary in the caddy:2.11-alpine image is built with a Go
+# release and a golang.org/x/net version that have HTTP/1 and HTTP/2 denial-of-service bugs.
+# Build the same Caddy release with a patched Go and x/net, and use it in place of that binary.
+# Change the versions here and in the other Caddy image (edge, panel-web) together.
+FROM --platform=$BUILDPLATFORM docker.io/library/golang:1.27.3-alpine AS caddy
+ARG TARGETOS TARGETARCH
+ARG CADDY_VERSION=v2.11.7
+ARG X_NET_VERSION=v0.61.0
+WORKDIR /src
+RUN printf '%s\n' 'package main' \
+      'import (' \
+      '	caddycmd "github.com/caddyserver/caddy/v2/cmd"' \
+      '	_ "github.com/caddyserver/caddy/v2/modules/standard"' \
+      ')' \
+      'func main() { caddycmd.Main() }' > main.go \
+ && go mod init cloudfactory/caddy \
+ && go get "github.com/caddyserver/caddy/v2@${CADDY_VERSION}" "golang.org/x/net@${X_NET_VERSION}" \
+ && go mod tidy \
+ && CGO_ENABLED=0 GOOS="${TARGETOS:-linux}" GOARCH="${TARGETARCH:-amd64}" go build -trimpath -ldflags "-s -w" -o /usr/bin/caddy . \
+ && go version -m /usr/bin/caddy | grep -E "^/usr/bin/caddy|caddy/v2|x/net"
+
+FROM docker.io/library/caddy:2.11-alpine
+# Take the security fixes of Alpine that are newer than the base image.
+RUN apk upgrade --no-cache
+COPY --from=caddy /usr/bin/caddy /usr/bin/caddy
+COPY --from=build /web/dist /srv
+COPY images/panel-web/Caddyfile /etc/caddy/Caddyfile
+ENV XDG_CONFIG_HOME=/tmp/config XDG_DATA_HOME=/tmp/data
+EXPOSE 8080
+LABEL org.opencontainers.image.source="https://github.com/itbm/cloudfactory" \
+      org.opencontainers.image.licenses="AGPL-3.0-only" \
+      org.opencontainers.image.description="Cloudfactory web panel"

@@ -1,0 +1,21 @@
+{
+  "admin": { "listen": "unix//run/caddy-admin/admin.sock" },
+  "logging": {
+    "logs": {
+      "access": { "encoder": { "format": "json" }, "include": ["http.log.access"] }
+    }
+  },
+  "apps": {
+    "http": {
+      "http_port": 8080,
+      "https_port": 8443,
+      "servers": {
+        "edge": {
+          "listen": [":8443"],
+          "routes": [],
+          "logs": { "default_logger_name": "access" }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,24 @@
+# The edge proxy terminates TLS and sends all requests here. This server also serves the static
+# files of the website, because the edge proxy cannot read them (CF-04).
+{
+	frankenphp
+	auto_https off
+	admin off
+	servers {
+		trusted_proxies static private_ranges
+		client_ip_headers X-Forwarded-For
+	}
+	{$CADDY_GLOBAL_OPTIONS}
+}
+
+{$SERVER_NAME::8080} {
+	root * {$CF_DOCUMENT_ROOT:/app/public}
+	encode zstd br gzip
+	log {
+		output stdout
+		format json
+	}
+	php_server {
+		{$FRANKENPHP_SERVER_OPTIONS}
+	}
+}

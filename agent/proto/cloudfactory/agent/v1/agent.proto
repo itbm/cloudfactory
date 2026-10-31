@@ -1,0 +1,320 @@
+syntax = "proto3";
+
+// The API of the Cloudfactory agent (spec section 6.4).
+//
+// The agent accepts only these typed actions. It does not accept shell commands.
+// The panel calls the agent over mutual TLS. The agent accepts the job, runs it,
+// and reports each step to the panel at /api/agent/v1/jobs/{id}/events.
+// Thus each method returns as soon as the agent has accepted the job.
+//
+// The panel uses the Connect protocol with JSON. The field names in JSON are
+// lowerCamelCase, for example "jobId".
+package cloudfactory.agent.v1;
+
+option go_package = "github.com/itbm/cloudfactory/agent/gen/cloudfactory/agent/v1;agentv1";
+
+service AgentService {
+  rpc CreateWebsite(WebsiteRequest) returns (JobAccepted);
+  rpc DeleteWebsite(DeleteWebsiteRequest) returns (JobAccepted);
+  rpc SetWebsitePower(SetWebsitePowerRequest) returns (JobAccepted);
+  rpc SetLimits(SetLimitsRequest) returns (JobAccepted);
+  rpc SetRuntime(WebsiteRequest) returns (JobAccepted);
+  rpc AddDomain(DomainRequest) returns (JobAccepted);
+  rpc RemoveDomain(DomainRequest) returns (JobAccepted);
+  rpc CreateDatabase(CreateDatabaseRequest) returns (JobAccepted);
+  rpc DeleteDatabase(DeleteDatabaseRequest) returns (JobAccepted);
+  rpc SetDatabaseUser(SetDatabaseUserRequest) returns (JobAccepted);
+  rpc DeleteDatabaseUser(DeleteDatabaseUserRequest) returns (JobAccepted);
+  rpc Backup(BackupRequest) returns (JobAccepted);
+  rpc Restore(RestoreRequest) returns (JobAccepted);
+  rpc InstallHostUpdates(HostRequest) returns (JobAccepted);
+  rpc Reboot(HostRequest) returns (JobAccepted);
+  rpc UpdateAgent(UpdateAgentRequest) returns (JobAccepted);
+  rpc PruneBackups(PruneBackupsRequest) returns (JobAccepted);
+  rpc SetSftp(SetSftpRequest) returns (JobAccepted);
+  rpc ConfigureHost(ConfigureHostRequest) returns (JobAccepted);
+
+  // Returns the actual state of the server at once. This method does not make a job.
+  rpc GetStatus(GetStatusRequest) returns (HostStatus);
+}
+
+message JobAccepted {
+  string job_id = 1;
+  // True when the agent already ran this job. The agent then reports the same result again.
+  bool duplicate = 2;
+}
+
+message Limits {
+  double vcpus = 1;
+  int64 memory_bytes = 2;
+  int64 disk_bytes = 3;
+  int64 disk_io_bytes_per_second = 4;
+  int64 processes = 5;
+}
+
+message Domain {
+  string name = 1;
+  // "primary", "redirect" or "alias".
+  string kind = 2;
+}
+
+message Website {
+  string id = 1;
+  string unix_user = 2;
+  // The image reference with the tag, for example "ghcr.io/cloudfactory/frankenphp-php8.4:8.4.0-1".
+  string image = 3;
+  // The digest that the agent pulls, for example "sha256:...". Empty for a custom image.
+  string image_digest = 4;
+  // "frankenphp", "apache-php-fpm" or "custom".
+  string runtime = 5;
+  string php_version = 6;
+  bool worker_mode = 7;
+  repeated string extensions = 8;
+  map<string, string> php_ini = 9;
+  Limits limits = 10;
+  repeated Domain domains = 11;
+  // Runtime "custom": the port in the container that serves HTTP. 0 means 8080 (FR-307).
+  int32 container_port = 12;
+  // Runtime "custom": the start command, as a list of arguments. Empty means the command of the image.
+  repeated string command = 13;
+  // The directory in /app that the web server serves, for example "web". Empty means "public",
+  // and "." means /app itself.
+  string document_root = 14;
+}
+
+message HealthCheck {
+  // The status that each check expects. 0 accepts each status below 500, for example a redirect.
+  int32 status = 1;
+  double max_error_rate = 2;
+  int32 seconds = 3;
+}
+
+// For CreateWebsite and SetRuntime.
+message WebsiteRequest {
+  string job_id = 1;
+  Website website = 2;
+  // SetRuntime: the agent goes back to this tag when the health check fails.
+  string previous_tag = 3;
+  string previous_image_id = 4;
+  HealthCheck health_check = 5;
+  // CreateWebsite: copy the files and databases of this website (a staging copy).
+  string copy_from = 6;
+  string copy_from_unix_user = 7;
+  // CreateWebsite with copy_from: the databases to copy, and a new user for the copies.
+  repeated DatabaseCopy copy_databases = 8;
+  repeated DatabaseUserCopy copy_users = 9;
+}
+
+// A staging copy copies the database "from" of the source website into the new database "to".
+message DatabaseCopy {
+  string engine = 1;
+  string from = 2;
+  string to = 3;
+}
+
+// A new database user of the staging copy, with read-write access to all copies of its engine.
+message DatabaseUserCopy {
+  string engine = 1;
+  string name = 2;
+  string password = 3;
+}
+
+message DeleteWebsiteRequest {
+  string job_id = 1;
+  string website_id = 2;
+  string unix_user = 3;
+  // The agent also removes the databases and the database users of the website.
+  repeated DatabaseRef databases = 4;
+  repeated DatabaseRef database_users = 5;
+}
+
+message SetWebsitePowerRequest {
+  string job_id = 1;
+  string website_id = 2;
+  string unix_user = 3;
+  // "start", "stop" or "restart".
+  string power = 4;
+}
+
+message SetLimitsRequest {
+  string job_id = 1;
+  string website_id = 2;
+  string unix_user = 3;
+  Limits limits = 4;
+}
+
+message DomainRequest {
+  string job_id = 1;
+  string website_id = 2;
+  string unix_user = 3;
+  string domain = 4;
+  string kind = 5;
+  string primary = 6;
+}
+
+// Each database and user name starts with the Unix user of the website and "_".
+message CreateDatabaseRequest {
+  string job_id = 1;
+  string website_id = 2;
+  string unix_user = 3;
+  // "mariadb" or "postgresql".
+  string engine = 4;
+  string name = 5;
+  // Optional: a new user with read-write access to the database.
+  string user = 6;
+  string password = 7;
+  // "website": only the website container can connect. "anywhere": any address, with TLS.
+  string access = 8;
+}
+
+message DeleteDatabaseRequest {
+  string job_id = 1;
+  string website_id = 2;
+  string engine = 3;
+  string name = 4;
+  string unix_user = 5;
+  // The users with access to the database. The agent removes their access first.
+  repeated string users = 6;
+}
+
+message DatabaseGrant {
+  string database = 1;
+  // "readonly" or "readwrite".
+  string privileges = 2;
+}
+
+// Sets the full state of a database user: its password, where it can connect from, and its
+// access to each database of the website.
+message SetDatabaseUserRequest {
+  string job_id = 1;
+  string website_id = 2;
+  string unix_user = 3;
+  string engine = 4;
+  string name = 5;
+  // Empty: keep the password.
+  string password = 6;
+  string access = 7;
+  // True: make a new user. The job fails when the user exists.
+  bool create = 8;
+  repeated DatabaseGrant grants = 9;
+  // All databases of the website with this engine. The user has no access to the others.
+  repeated string website_databases = 10;
+}
+
+message DeleteDatabaseUserRequest {
+  string job_id = 1;
+  string website_id = 2;
+  string unix_user = 3;
+  string engine = 4;
+  string name = 5;
+  repeated string website_databases = 6;
+}
+
+message DatabaseRef {
+  string engine = 1;
+  string name = 2;
+}
+
+message BackupRequest {
+  string job_id = 1;
+  string website_id = 2;
+  string unix_user = 3;
+  string kind = 4;
+  repeated DatabaseRef databases = 5;
+  // The restic repository, for example "s3:s3.amazonaws.com/bucket/path" or "b2:bucket:path".
+  string target = 6;
+  // The environment variables of restic for the object storage, for example AWS_ACCESS_KEY_ID.
+  map<string, string> credentials = 7;
+  // When set, the agent removes the snapshots of the website that the policy does not keep (FR-902).
+  Retention retention = 8;
+}
+
+message Retention {
+  int32 daily = 1;
+  int32 weekly = 2;
+  int32 monthly = 3;
+}
+
+// Removes the data that no snapshot uses from the repository (FR-902).
+message PruneBackupsRequest {
+  string job_id = 1;
+  string target = 2;
+  map<string, string> credentials = 3;
+}
+
+message RestoreRequest {
+  string job_id = 1;
+  string website_id = 2;
+  string unix_user = 3;
+  string snapshot_id = 4;
+  // "website", "database", "mailbox" or "file".
+  string scope = 5;
+  // The database ("mariadb:name" or "postgresql:name"), the mailbox, or the file path.
+  string item = 6;
+  // The restic repository, for example "s3:s3.amazonaws.com/bucket/path" or "b2:bucket:path".
+  string target = 7;
+  // Scope "database": the SHA-256 hash of the dump at backup time.
+  string dump_sha256 = 8;
+  map<string, string> credentials = 9;
+}
+
+// Sets the SFTP access of a website. The owner signs in as the Unix user of the website and sees
+// only the files of the website.
+message SetSftpRequest {
+  string job_id = 1;
+  string website_id = 2;
+  string unix_user = 3;
+  bool enabled = 4;
+  // SFTP accepts SSH keys only. The agent locks the password of the user each time.
+  reserved 5, 6;
+  reserved "password", "remove_password";
+  // The public SSH keys, one OpenSSH key in each item.
+  repeated string authorized_keys = 7;
+}
+
+// Changes the settings of the host. The agent writes the units of all containers again and
+// restarts them.
+message ConfigureHostRequest {
+  string job_id = 1;
+  // "systrap" or "kvm" (FR-310).
+  string gvisor_platform = 2;
+}
+
+message HostRequest {
+  string job_id = 1;
+  // InstallHostUpdates: "security", "all", "manual" or "tools". "tools" updates only the
+  // held container tools (FR-1113).
+  string policy = 2;
+}
+
+message UpdateAgentRequest {
+  string job_id = 1;
+  string version = 2;
+  // The agent refuses a version that is older than its own version, unless this is true.
+  bool allow_downgrade = 3;
+}
+
+message GetStatusRequest {}
+
+message PendingUpdate {
+  string name = 1;
+  string from = 2;
+  string to = 3;
+  bool security = 4;
+}
+
+message Service {
+  string name = 1;
+  // "running", "stopped" or "failed".
+  string state = 2;
+}
+
+message HostStatus {
+  string agent_version = 1;
+  string kernel = 2;
+  string podman_version = 3;
+  string gvisor_version = 4;
+  repeated PendingUpdate pending_updates = 5;
+  bool reboot_required = 6;
+  repeated Service services = 7;
+}
