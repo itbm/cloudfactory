@@ -16,6 +16,7 @@ import (
 	"github.com/itbm/cloudfactory/agent/internal/caddy"
 	"github.com/itbm/cloudfactory/agent/internal/execx"
 	"github.com/itbm/cloudfactory/agent/internal/host"
+	"github.com/itbm/cloudfactory/agent/internal/images"
 	"github.com/itbm/cloudfactory/agent/internal/jobs"
 	"github.com/itbm/cloudfactory/agent/internal/quadlet"
 )
@@ -191,6 +192,108 @@ func TestSetRuntimeKeepsTheOldContainerWhenTheHealthCheckFails(t *testing.T) {
 	}
 	if !f.Called("systemctl --user --machine=acme_x7k2@ stop cf-acme_x7k2-b.service") || f.Called("systemctl --user --machine=acme_x7k2@ stop cf-acme_x7k2.service") {
 		t.Errorf("calls = %v", f.Calls)
+	}
+}
+
+// sharedDeps gives deps with a shared image store. Each pull makes an empty store.
+func sharedDeps(t *testing.T) (*Deps, *execx.Fake) {
+	d, f, _ := deps(t)
+	dir := t.TempDir()
+	d.Images = &images.Store{Run: f, Root: filepath.Join(dir, "images"), Config: filepath.Join(dir, "website-storage.conf"), RunRoot: filepath.Join(dir, "run"), Group: host.SitesGroup, MountProgram: images.FuseOverlayfs}
+	d.Host.StorageConfig = d.Images.Config
+	f.Rules = append(f.Rules, execx.Rule{Prefix: "podman pull --quiet ", Do: func() error {
+		entries, err := os.ReadDir(d.Images.Root)
+		if err != nil {
+			return err
+		}
+		for _, e := range entries {
+			if strings.HasPrefix(e.Name(), ".pull-") {
+				return nil
+			}
+		}
+		// The fake does not know the reference, so the test pulls one image at a time.
+		return os.MkdirAll(filepath.Join(d.Images.Root, ".pull-"+images.StoreName(sharedRef)), 0o700)
+	}})
+	if err := d.ShareImages(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	return d, f
+}
+
+const sharedDigest = "sha256:08af88488ce218936d530b80f6f55dc2afe4d0d91f13f9e6ae350a9e7752128e"
+const sharedRef = "ghcr.io/cloudfactory/frankenphp-php8.4:8.4.0-1@" + sharedDigest
+
+func TestCreateWebsiteUsesTheSharedImageStore(t *testing.T) {
+	d, f := sharedDeps(t)
+	w := website("ghcr.io/cloudfactory/frankenphp-php8.4:8.4.0-1")
+	w.ImageDigest = sharedDigest
+	if err := run(t)(d.CreateWebsite(&agentv1.WebsiteRequest{JobId: jobID, Website: w})); err != nil {
+		t.Fatal(err)
+	}
+	// Root pulls the image into the shared store. The website user does not pull.
+	if !f.Called("podman pull --quiet "+sharedRef) || f.Called("runuser -u acme_x7k2 -- env XDG_RUNTIME_DIR=/run/user/1001 podman pull") {
+		t.Errorf("calls = %v", f.Calls)
+	}
+	if _, err := os.Stat(filepath.Join(d.Images.Root, images.StoreName(sharedRef))); err != nil {
+		t.Error(err)
+	}
+
+	// A second website with the same image starts with no pull.
+	f.Calls = nil
+	w2 := website("ghcr.io/cloudfactory/frankenphp-php8.4:8.4.0-1")
+	w2.Id, w2.UnixUser, w2.ImageDigest = "01JBQ3Z5K8N6T4W2X9Y7R5P3M9", "bravo_a1b2", sharedDigest
+	w2.Domains = []*agentv1.Domain{{Name: "bravo.example", Kind: "primary"}}
+	if err := run(t)(d.CreateWebsite(&agentv1.WebsiteRequest{JobId: jobID2, Website: w2})); err != nil {
+		t.Fatal(err)
+	}
+	if f.Called("podman pull") {
+		t.Errorf("the second website pulled: %v", f.Calls)
+	}
+}
+
+func TestACustomImageStaysWithTheWebsiteUser(t *testing.T) {
+	d, f := sharedDeps(t)
+	w := website("registry.example/acme/app:1.0")
+	w.Runtime, w.ImageDigest = "custom", sharedDigest
+	if err := run(t)(d.CreateWebsite(&agentv1.WebsiteRequest{JobId: jobID, Website: w})); err != nil {
+		t.Fatal(err)
+	}
+	if !f.Called("runuser -u acme_x7k2 -- env XDG_RUNTIME_DIR=/run/user/1001 podman pull --quiet registry.example/acme/app:1.0@"+sharedDigest) || f.Called("podman pull") {
+		t.Errorf("calls = %v", f.Calls)
+	}
+}
+
+func TestSetRuntimeRemovesTheOldCopyOfTheWebsiteUser(t *testing.T) {
+	d, f := sharedDeps(t)
+	// A website from before the shared store, with its own copy of the image.
+	old := website("ghcr.io/cloudfactory/frankenphp-php8.4:8.4.0-1")
+	if err := d.State.Put(&Site{ID: websiteID, UnixUser: "acme_x7k2", Port: 20000, Website: old}); err != nil {
+		t.Fatal(err)
+	}
+	// The user of an existing website gets the shared storage configuration when the agent starts.
+	if err := d.ShareImages(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if !f.Called("ln -sfn " + d.Images.Config + " " + d.Host.Home("acme_x7k2") + "/.config/containers/storage.conf") {
+		t.Errorf("calls = %v", f.Calls)
+	}
+	const id = "745a3dfee8c74d346f6d0d6d58de5ba21cb2113df5bde601fe1019622640b993"
+	f.Rules = append([]execx.Rule{
+		{Prefix: "runuser -u acme_x7k2 -- env XDG_RUNTIME_DIR=/run/user/1001 podman image inspect --format {{.Id}} ghcr.io/cloudfactory/frankenphp-php8.4:8.4.0-1", Output: id + "\n"},
+		{Prefix: "runuser -u acme_x7k2 -- env XDG_RUNTIME_DIR=/run/user/1001 podman images --noheading --no-trunc --filter readonly=false", Output: "sha256:" + id + "\n"},
+	}, f.Rules...)
+	w := website("ghcr.io/cloudfactory/frankenphp-php8.4:8.4.0-1")
+	w.ImageDigest = sharedDigest
+	if err := run(t)(d.SetRuntime(&agentv1.WebsiteRequest{JobId: jobID2, Website: w})); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"podman pull --quiet " + sharedRef,
+		"runuser -u acme_x7k2 -- env XDG_RUNTIME_DIR=/run/user/1001 podman rmi --ignore " + id,
+	} {
+		if !f.Called(want) {
+			t.Errorf("not called: %s\ncalls: %v", want, f.Calls)
+		}
 	}
 }
 

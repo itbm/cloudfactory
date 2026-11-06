@@ -38,6 +38,9 @@ type Host struct {
 	// php.ini (R-16). Only root can write in it, so the agent never writes as root in a
 	// directory that the website user controls.
 	ConfigRoot string
+	// StorageConfig is the Podman storage configuration of all website users, with the shared
+	// image store (package images). Empty means that the website users keep the defaults.
+	StorageConfig string
 	// LookupUID gives the UID of a user. Tests replace it.
 	LookupUID func(name string) (int, error)
 }
@@ -106,6 +109,9 @@ func (h *Host) EnsureUser(ctx context.Context, unixUser string) error {
 			return err
 		}
 	}
+	if err := h.LinkStorageConfig(ctx, unixUser); err != nil {
+		return err
+	}
 	// Audit batch 2, finding 12: enable-linger starts the user manager, but does not wait. The
 	// start of user@<uid>.service waits until the manager and /run/user/<uid> are ready.
 	uid, err := h.LookupUID(unixUser)
@@ -114,6 +120,36 @@ func (h *Host) EnsureUser(ctx context.Context, unixUser string) error {
 	}
 	_, err = h.Run.Run(ctx, "systemctl", "start", fmt.Sprintf("user@%d.service", uid))
 	return err
+}
+
+// LinkStorageConfig makes ~/.config/containers/storage.conf of a website user a link to
+// StorageConfig, so that each Podman command of the user, also the ones that systemd starts,
+// uses the shared image store. Root owns ~/.config/containers, so the user cannot change the
+// link, and the agent never writes in a directory that the user controls (R-16).
+func (h *Host) LinkStorageConfig(ctx context.Context, unixUser string) error {
+	if h.StorageConfig == "" {
+		return nil
+	}
+	if err := validate.UnixUser(unixUser); err != nil {
+		return err
+	}
+	config := filepath.Join(h.Home(unixUser), ".config")
+	dir := filepath.Join(config, "containers")
+	for _, p := range []string{config, dir} {
+		if fi, err := os.Lstat(p); err == nil && fi.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("host: %s is a symbolic link", p)
+		}
+	}
+	for _, args := range [][]string{
+		{"install", "-d", "-o", unixUser, "-g", unixUser, "-m", "0700", config},
+		{"install", "-d", "-o", "root", "-g", "root", "-m", "0755", dir},
+		{"ln", "-sfn", h.StorageConfig, filepath.Join(dir, "storage.conf")},
+	} {
+		if _, err := h.Run.Run(ctx, args[0], args[1:]...); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // RemoveUser stops the user services and removes the user and its files.

@@ -64,6 +64,36 @@ container, so a website cannot connect to a different website. All websites can 
 the database ports 3306 and 5432. The database password keeps each website to its own
 databases.
 
+### Shared runtime images
+
+All websites on a server share one read-only copy of each runtime image. A new website with an
+image that the server has already starts with no pull, and 100 websites keep one copy of the
+image, not 100.
+
+- The agent pulls each runtime image one time, as root, into its own Podman store in
+  `/var/lib/cloudfactory-images/<sha256 of the image reference>`. The signature policy checks
+  the image when the agent pulls it. Only a reference with a digest goes in the shared store.
+- The agent pulls into a temporary store. Then it lets the website users read the metadata
+  of the store and gives the store its final name in one step. After that, nothing writes the
+  store again. Podman writes its metadata with mode `0600` each time that it changes a store,
+  so a store that changes while websites read it can stop a website for a short time.
+- `/etc/cloudfactory/website-storage.conf` lists the stores as `additionalimagestores`. The
+  file `~/.config/containers/storage.conf` of each website user is a link to it. Root owns
+  `~/.config/containers`. Each website user keeps only its own small writable container layer
+  in its home directory.
+- The website users use `fuse-overlayfs`. The containers use `--userns=keep-id`. With the
+  overlay driver of the kernel, Podman must copy each image for each user to change the file
+  owners. fuse-overlayfs changes the owners without a copy. Before the shared store, each
+  website kept about 1.2 GB: the image and its copy.
+- In the container, the files of the image have the owner `nobody`. The website process runs
+  as the website user and reads them as "other", the same as before.
+- A custom image stays in the storage of its website user, so other customers never see it.
+- After a runtime change, the agent removes the previous image from the storage of the website
+  user, if it is there: a custom image, or a copy from before the shared store. Then it removes
+  the shared images that no website uses, in two steps: first from `website-storage.conf`, then,
+  at the next prune, the files. The agent also prunes after it deletes a website and once a
+  day. It keeps an image that a job asked for in the last hour.
+
 The container unit sets these limits:
 
 - `NoNewPrivileges=true` and `DropCapability=all`.

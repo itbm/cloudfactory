@@ -76,3 +76,40 @@ func TestPodmanRunsAsTheUser(t *testing.T) {
 		t.Errorf("calls = %v", f.Calls)
 	}
 }
+
+func TestEnsureUserLinksTheSharedStorageConfig(t *testing.T) {
+	h, f := fakeHost(t, true)
+	h.StorageConfig = "/etc/cloudfactory/website-storage.conf"
+	if err := h.EnsureUser(context.Background(), "acme_x7k2"); err != nil {
+		t.Fatal(err)
+	}
+	home := h.Home("acme_x7k2")
+	for _, want := range []string{
+		"install -d -o acme_x7k2 -g acme_x7k2 -m 0700 " + home + "/.config",
+		// Root owns the directory of the link, so the user cannot change it.
+		"install -d -o root -g root -m 0755 " + home + "/.config/containers",
+		"ln -sfn /etc/cloudfactory/website-storage.conf " + home + "/.config/containers/storage.conf",
+	} {
+		if !f.Called(want) {
+			t.Errorf("not called: %s\ncalls: %v", want, f.Calls)
+		}
+	}
+}
+
+func TestLinkStorageConfigRefusesALink(t *testing.T) {
+	h, f := fakeHost(t, true)
+	h.StorageConfig = "/etc/cloudfactory/website-storage.conf"
+	home := h.Home("acme_x7k2")
+	if err := os.MkdirAll(home, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("/etc", filepath.Join(home, ".config")); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.LinkStorageConfig(context.Background(), "acme_x7k2"); err == nil {
+		t.Error("a link in place of ~/.config was accepted")
+	}
+	if f.Called("install") || f.Called("ln") {
+		t.Errorf("calls = %v", f.Calls)
+	}
+}

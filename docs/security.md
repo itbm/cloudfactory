@@ -18,6 +18,10 @@ The product specification, section 6.4, gives the requirements.
   cannot connect to a different website. All websites can reach the database ports.
 - The home directory of each website user has mode `0700`. The edge proxy does not read the
   files of a website. The website container serves its static files.
+- The shared runtime images in `/var/lib/cloudfactory-images` are read-only for the website
+  users. Root owns the stores, and the directory has mode `0750` with the group `cf-sites`, so
+  only the website users can read them. A website user writes only its own container layer in
+  its own home directory. A custom image stays in the storage of its website user.
 - The agent writes restored files and staging copies as the website user. A symbolic link in
   a backup cannot make the agent write outside the home directory of the website.
 
