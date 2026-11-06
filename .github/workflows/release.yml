@@ -58,6 +58,15 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
+      # Stop before the images are pushed, so that no unsigned image gets a release tag.
+      - name: Check the signing key
+        env:
+          COSIGN_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+        run: |
+          test -s cosign.pub || { echo "::error::cosign.pub is missing. See docs/releasing.md."; exit 1; }
+          test -n "$COSIGN_KEY" || { echo "::error::The secret COSIGN_PRIVATE_KEY is not set. See docs/releasing.md."; exit 1; }
+          test -n "$COSIGN_PASSWORD" || { echo "::error::The secret COSIGN_PASSWORD is not set. See docs/releasing.md."; exit 1; }
       - name: Find the image tag
         id: tag
         run: |
@@ -129,6 +138,14 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
+      - name: Check the signing key
+        env:
+          COSIGN_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+        run: |
+          test -s cosign.pub || { echo "::error::cosign.pub is missing. See docs/releasing.md."; exit 1; }
+          test -n "$COSIGN_KEY" || { echo "::error::The secret COSIGN_PRIVATE_KEY is not set. See docs/releasing.md."; exit 1; }
+          test -n "$COSIGN_PASSWORD" || { echo "::error::The secret COSIGN_PASSWORD is not set. See docs/releasing.md."; exit 1; }
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           # R-05: the same Go release as the toolchain line in go.mod.
