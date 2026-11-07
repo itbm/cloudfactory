@@ -17,6 +17,7 @@ import (
 	agentv1 "github.com/itbm/cloudfactory/agent/gen/cloudfactory/agent/v1"
 	"github.com/itbm/cloudfactory/agent/internal/caddy"
 	"github.com/itbm/cloudfactory/agent/internal/host"
+	"github.com/itbm/cloudfactory/agent/internal/images"
 	"github.com/itbm/cloudfactory/agent/internal/jobs"
 	"github.com/itbm/cloudfactory/agent/internal/quadlet"
 	"github.com/itbm/cloudfactory/agent/internal/validate"
@@ -66,6 +67,99 @@ func imageRef(w *agentv1.Website) string {
 		return w.GetImage() + "@" + w.GetImageDigest()
 	}
 	return w.GetImage()
+}
+
+// shared reports whether the website uses the shared image store. A custom image stays in the
+// storage of the website user, so that other customers never see it.
+func (d *Deps) shared(w *agentv1.Website) bool {
+	return d.Images != nil && w.GetRuntime() != "custom" && images.Shareable(imageRef(w))
+}
+
+// pullImage pulls the image of a website. The signature policy of Podman
+// (/etc/containers/policy.json) refuses an image with no valid signature (FR-1101). A runtime
+// image goes in the shared store once for all websites. A new website with an image that the
+// server has already starts with no pull (NFR-03).
+func (d *Deps) pullImage(ctx context.Context, w *agentv1.Website) error {
+	if d.shared(w) {
+		return d.Images.Ensure(ctx, imageRef(w))
+	}
+	_, err := d.Host.Podman(ctx, w.GetUnixUser(), "pull", "--quiet", imageRef(w))
+	return err
+}
+
+// removeOldImage removes the previous image of a website from the storage of the website user,
+// after a runtime change. That is a custom image, or a copy from before the shared store. The
+// shared store keeps its images, and the user cannot remove them. An error does not stop the
+// job: the old image only uses disk space.
+func (d *Deps) removeOldImage(ctx context.Context, unixUser, oldRef, newRef string) {
+	if oldRef == "" || oldRef == newRef {
+		return
+	}
+	id, err := d.Host.Podman(ctx, unixUser, "image", "inspect", "--format", "{{.Id}}", oldRef)
+	if err != nil {
+		return // The user does not have the image.
+	}
+	// Podman cannot remove an image of the shared store, and gives an error. So remove the
+	// image only when the user has its own copy.
+	own, err := d.Host.Podman(ctx, unixUser, "images", "--noheading", "--no-trunc", "--filter", "readonly=false", "--format", "{{.ID}}")
+	if err != nil {
+		slog.Warn("find the old image of a website", "user", unixUser, "image", oldRef, "err", err)
+		return
+	}
+	id = strings.TrimPrefix(strings.TrimSpace(id), "sha256:")
+	for _, f := range strings.Fields(own) {
+		if strings.TrimPrefix(f, "sha256:") != id {
+			continue
+		}
+		if _, err := d.Host.Podman(ctx, unixUser, "rmi", "--ignore", id); err != nil {
+			slog.Warn("remove the old image of a website", "user", unixUser, "image", oldRef, "err", err)
+		}
+	}
+}
+
+// PruneImages removes the shared images that no website on the server uses. An error does not
+// stop a job: it only keeps an image for longer.
+func (d *Deps) PruneImages() {
+	if d.Images == nil {
+		return
+	}
+	sites, err := d.State.All()
+	if err != nil {
+		slog.Warn("remove unused images", "err", err)
+		return
+	}
+	var refs []string
+	for _, s := range sites {
+		if s.Website != nil && s.Website.GetRuntime() != "custom" {
+			refs = append(refs, imageRef(s.Website))
+		}
+	}
+	if err := d.Images.Prune(refs); err != nil {
+		slog.Warn("remove unused images", "err", err)
+	}
+}
+
+// ShareImages starts the shared image store when the agent starts. It links the storage
+// configuration of each website user, also of the websites from before the shared store. Such
+// a website keeps its own copy of its image until its next runtime change, which uses the
+// shared store and removes the copy.
+func (d *Deps) ShareImages(ctx context.Context) error {
+	if d.Images == nil {
+		return nil
+	}
+	if err := d.Images.Init(ctx); err != nil {
+		return err
+	}
+	sites, err := d.State.All()
+	if err != nil {
+		return err
+	}
+	var errs []error
+	for _, s := range sites {
+		errs = append(errs, d.Host.LinkStorageConfig(ctx, s.UnixUser))
+	}
+	d.PruneImages()
+	return errors.Join(errs...)
 }
 
 func primaryDomain(w *agentv1.Website) string {
@@ -262,10 +356,7 @@ func (d *Deps) CreateWebsite(req *agentv1.WebsiteRequest) (jobs.Job, error) {
 			return d.copyDatabases(ctx, req)
 		}},
 		{Name: "Pull and check image signature", Do: func(ctx context.Context) error {
-			// The signature policy of Podman (/etc/containers/policy.json) refuses an image
-			// with no valid signature (FR-1101).
-			_, err := d.Host.Podman(ctx, user, "pull", "--quiet", imageRef(w))
-			return err
+			return d.pullImage(ctx, w)
 		}},
 		{Name: "Start container in gVisor", Do: func(ctx context.Context) error {
 			old, err := d.State.Get(w.GetId())
@@ -416,8 +507,7 @@ func (d *Deps) SetRuntime(req *agentv1.WebsiteRequest) (jobs.Job, error) {
 			if old == nil {
 				return errors.New("the agent does not know this website; create it first")
 			}
-			_, err = d.Host.Podman(ctx, user, "pull", "--quiet", imageRef(w))
-			return err
+			return d.pullImage(ctx, w)
 		}},
 		{Name: "Start new container on a copy", Do: func(ctx context.Context) error {
 			if old.Stopped {
@@ -472,7 +562,12 @@ func (d *Deps) SetRuntime(req *agentv1.WebsiteRequest) (jobs.Job, error) {
 			if err := d.State.Put(&Site{ID: w.GetId(), UnixUser: user, Port: newPort, Suffix: newSuffix, Website: w}); err != nil {
 				return err
 			}
-			return d.stopContainer(ctx, user, old.Suffix)
+			if err := d.stopContainer(ctx, user, old.Suffix); err != nil {
+				return err
+			}
+			d.removeOldImage(ctx, user, imageRef(old.Website), imageRef(w))
+			d.PruneImages()
+			return nil
 		}},
 	}, OnFailure: func(ctx context.Context) {
 		if old == nil || newPort == 0 || old.Stopped {
@@ -541,7 +636,11 @@ func (d *Deps) DeleteWebsite(req *agentv1.DeleteWebsiteRequest) (jobs.Job, error
 			if err := d.Host.RemoveUser(ctx, user); err != nil {
 				return err
 			}
-			return d.State.Delete(req.GetWebsiteId())
+			if err := d.State.Delete(req.GetWebsiteId()); err != nil {
+				return err
+			}
+			d.PruneImages()
+			return nil
 		}},
 	}}, nil
 }

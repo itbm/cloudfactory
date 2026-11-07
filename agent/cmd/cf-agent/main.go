@@ -34,6 +34,7 @@ import (
 	"github.com/itbm/cloudfactory/agent/internal/gvisor"
 	"github.com/itbm/cloudfactory/agent/internal/host"
 	"github.com/itbm/cloudfactory/agent/internal/hostupdate"
+	"github.com/itbm/cloudfactory/agent/internal/images"
 	"github.com/itbm/cloudfactory/agent/internal/jobs"
 	"github.com/itbm/cloudfactory/agent/internal/panel"
 	"github.com/itbm/cloudfactory/agent/internal/pki"
@@ -200,8 +201,10 @@ func serve(ctx context.Context) error {
 	defer cancel()
 
 	h := host.New(run, cfg.SitesDir)
+	// All website users share one read-only copy of each runtime image.
+	h.StorageConfig = images.DefaultConfig
 	deps := &actions.Deps{
-		Host: h, Run: run, Edge: caddy.New(cfg.CaddyAdmin), Apt: apt,
+		Host: h, Run: run, Edge: caddy.New(cfg.CaddyAdmin), Apt: apt, Images: images.New(run, host.SitesGroup),
 		Updater: &selfupdate.Updater{ReleaseURL: cfg.ReleaseURL, Binary: binaryPath, Key: key, Current: version},
 		Gvisor:  quadlet.Runtime{RunscPath: gv.Link(), Platform: cfg.GVisorPlatform},
 		State:   actions.NewState(cfg.DataDir), Health: actions.HTTPHealth, DNSPointsHere: actions.LocalDNS(cfg.PublicAddresses...),
@@ -256,6 +259,9 @@ func serve(ctx context.Context) error {
 	if err := deps.EnsureEdge(ctx, deps.EdgeImage, cfg.DataDir); err != nil {
 		slog.Error("start edge proxy", "err", err)
 	}
+	if err := deps.ShareImages(ctx); err != nil {
+		slog.Error("start the shared image store", "err", err)
+	}
 	// The database containers get the images of this agent version.
 	if err := deps.RefreshDatabaseServices(ctx); err != nil {
 		slog.Error("start database containers", "err", err)
@@ -270,6 +276,7 @@ func serve(ctx context.Context) error {
 	go func() {
 		for range time.Tick(24 * time.Hour) {
 			runner.Prune(time.Now().Add(-30 * 24 * time.Hour))
+			deps.PruneImages()
 		}
 	}()
 
