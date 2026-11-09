@@ -125,7 +125,7 @@ interface ApiWebsite {
 interface ApiServer {
   id: string; name: string; location: string; roles: Server["roles"]; state: Server["state"]; agentVersion: string | null; os: string | null; kernel: string | null; arch: string | null;
   podmanVersion: string | null; gvisorVersion: string | null; gvisorPlatform: Server["gvisorPlatform"]; bareMetal: boolean; updatePolicy: Server["updatePolicy"]; maintenanceWindow: string;
-  pendingUpdates: Server["pendingUpdates"]; lastUpdateAt: string | null; rebootRequired: boolean; services: Server["services"];
+  pendingUpdates: Server["pendingUpdates"]; lastUpdateAt: string | null; rebootRequired: boolean; services: Server["services"]; sftpPort?: number | null;
   usage: { cpuPercent?: number; memoryPercent?: number; diskPercent?: number } | null;
 }
 interface ApiImage {
@@ -189,7 +189,7 @@ export function toServer(s: ApiServer): Server {
     os: s.os ?? "", kernel: s.kernel ?? "", arch: s.arch === "aarch64" || s.arch === "arm64" ? "arm64" : "x86-64",
     podmanVersion: s.podmanVersion ?? "", gvisorVersion: s.gvisorVersion ?? "", gvisorPlatform: s.gvisorPlatform, bareMetal: s.bareMetal,
     updatePolicy: s.updatePolicy, maintenanceWindow: s.maintenanceWindow, pendingUpdates: s.pendingUpdates ?? [], lastUpdateAt: s.lastUpdateAt ?? "",
-    rebootRequired: s.rebootRequired, services: s.services ?? [],
+    rebootRequired: s.rebootRequired, services: s.services ?? [], sftpPort: s.sftpPort ?? 22,
   };
 }
 

@@ -63,3 +63,26 @@ The panel checks the registry, not the agent (FR-1110). The reasons:
 
 The scheduler container (`cf-panel-scheduler`) runs `php artisan cloudfactory:check-images`
 each hour. An administrator can also check one image now on the Updates page.
+
+## SFTP in a container with OpenSSH, not SFTPGo
+
+Release 0.1 used the SSH service of the host for SFTP. Later releases use one container for
+SFTP on each server, on port 2200. The container runs OpenSSH (`internal-sftp`), not SFTPGo.
+
+| Item | OpenSSH in a container | SFTPGo in a container |
+| ---- | ---------------------- | --------------------- |
+| Isolation between websites | Each session changes to the Unix user of its website, in a chroot. The kernel of gVisor checks each file access. | One process for all websites, as root. SFTPGo checks the paths itself. |
+| Owner of new files | The website user, because the session runs as that user. | Root makes the file, then SFTPGo changes the owner. |
+| Users and keys | Two files and one keys file for each user. No restart. | A user database or a REST API, with an admin password. |
+| Extra parts | None. | A web admin UI, a REST API, FTP and WebDAV. Each one is more to secure. |
+| Same as release 0.1 | Yes: the same keys files, chroot, keys only and no forwarding. | No. |
+
+The reasons for the port 2200:
+
+- Port 22 stays for the SSH service of the host. The administrators keep their access.
+- 2200 is above 1024 and is not a port of a different Cloudfactory service. Set a different
+  port with `--sftp-port` or `sftpPort`.
+
+The reason for a container that root runs: each session must change to the UID of its website.
+A rootless container can use only the UIDs of its own user. gVisor and the small set of
+capabilities limit what root can do in the container.

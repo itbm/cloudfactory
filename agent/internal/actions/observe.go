@@ -48,6 +48,7 @@ const (
 // FillReport adds the use of each website (FR-203), the state of each domain (FR-402, FR-403),
 // the size of each database and the state of the disk quotas to a status report.
 func (d *Deps) FillReport(ctx context.Context, r *panel.Report) {
+	r.SftpPort = d.SftpPortInUse()
 	sites, err := d.State.All()
 	if err != nil {
 		return

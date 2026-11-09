@@ -113,6 +113,23 @@ class CompletenessTest extends TestCase
         $this->getJson("/api/v1/websites/{$website->id}")->assertJsonPath('data.sftp.enabled', false);
     }
 
+    public function test_the_sftp_port_comes_from_the_report_of_the_agent(): void
+    {
+        $server = $this->server(['agent_token_hash' => hash('sha256', 'cfa_secret'), 'local' => true]);
+        $website = $this->website($this->customer(), $server, $this->image());
+        $this->actingWith($this->user());
+        // An agent of release 0.1 uses the SSH service of the host.
+        $this->getJson("/api/v1/websites/{$website->id}")->assertJsonPath('data.sftp.port', 22);
+
+        $this->withToken('cfa_secret')->postJson('/api/agent/v1/report', ['agentVersion' => '0.2.0', 'sftpPort' => 2200])->assertOk();
+        $this->getJson("/api/v1/websites/{$website->id}")->assertJsonPath('data.sftp.port', 2200);
+        $this->getJson("/api/v1/servers/{$server->id}")->assertJsonPath('sftpPort', 2200);
+        // A report with no port keeps the last port.
+        $this->withToken('cfa_secret')->postJson('/api/agent/v1/report', ['agentVersion' => '0.2.0'])->assertOk();
+        $this->assertSame(2200, $server->fresh()->sftp_port);
+        $this->withToken('cfa_secret')->postJson('/api/agent/v1/report', ['agentVersion' => '0.2.0', 'sftpPort' => 70000])->assertJsonValidationErrors('sftpPort');
+    }
+
     public function test_a_verified_domain_becomes_primary_and_the_old_primary_becomes_an_alias(): void
     {
         $website = $this->website($this->customer(), $this->server(), $this->image());

@@ -236,6 +236,9 @@ func (d *Deps) ConfigureHost(req *agentv1.ConfigureHostRequest) (jobs.Job, error
 			d.dbReady = nil
 			d.dbMu.Unlock()
 			errs = append(errs, d.RefreshDatabaseServices(ctx))
+			if d.SftpImage != "" {
+				errs = append(errs, d.EnsureSftp(ctx))
+			}
 			return errors.Join(errs...)
 		}},
 	}}, nil

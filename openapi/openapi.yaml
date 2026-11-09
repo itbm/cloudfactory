@@ -1522,7 +1522,7 @@ components:
       properties:
         enabled: { type: boolean }
         host: { type: [string, 'null'] }
-        port: { type: integer }
+        port: { type: integer, description: The SFTP port of the server of the website. The default is 2200. }
         username: { type: string }
         authorizedKeys: { type: array, items: { type: string } }
     JobState:
@@ -1598,6 +1598,11 @@ components:
         lastUpdateAt: { type: [string, 'null'], format: date-time }
         rebootRequired: { type: boolean }
         services: { type: array, items: { type: object } }
+        sftpPort:
+          type: integer
+          description: >-
+            The port of the SFTP container of the websites on this server. The default is 2200.
+            The value is 22 for an agent of release 0.1, which uses the SSH service of the host.
         usage:
           type: [object, 'null']
           description: The use of the host in percent.

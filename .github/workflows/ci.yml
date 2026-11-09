@@ -144,6 +144,6 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
-      - run: shellcheck -s sh install/install.sh install/test.sh images/apache-php-fpm/start.sh images/panel-api/start.sh
+      - run: shellcheck -s sh install/install.sh install/test.sh images/apache-php-fpm/start.sh images/panel-api/start.sh images/sftp/start.sh
       - run: sh install/test.sh
       - run: dash install/test.sh

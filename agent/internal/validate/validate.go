@@ -36,6 +36,23 @@ func Domain(s string) error {
 	return match(domain, s, "domain")
 }
 
+// SftpPort checks the public SFTP port of a server. The SSH service of the host keeps port 22,
+// and the agent and the edge proxy have their own ports.
+func SftpPort(port int) error {
+	switch port {
+	case 22, 80, 443, 3306, 5432, 7443, 8080, 8443, 19080, 19081:
+		return fmt.Errorf("the SFTP port %d is in use by a different service", port)
+	}
+	// The ports of the website containers (actions.NewState).
+	if port >= 20000 && port <= 29999 {
+		return fmt.Errorf("the SFTP port %d is in the range of the website ports (20000 to 29999)", port)
+	}
+	if port < 1 || port > 65535 {
+		return fmt.Errorf("the SFTP port %d is not a port number", port)
+	}
+	return nil
+}
+
 // ID checks a ULID from the panel.
 func ID(s string) error { return match(id, s, "ID") }
 

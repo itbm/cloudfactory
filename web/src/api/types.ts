@@ -314,6 +314,8 @@ export interface Server {
   lastUpdateAt: string;
   rebootRequired: boolean;
   services: ServerService[];
+  /** The port of the SFTP container of the websites (spec section 10). 22 for an agent of release 0.1. */
+  sftpPort: number;
 }
 
 export type DnsRecordType = "A" | "AAAA" | "CNAME" | "MX" | "TXT" | "SRV" | "CAA" | "NS";

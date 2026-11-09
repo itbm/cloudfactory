@@ -1,4 +1,5 @@
-// Package quadlet writes the Podman Quadlet units for websites and the edge proxy.
+// Package quadlet writes the Podman Quadlet units for websites, the edge proxy, the shared
+// services and the panel.
 // systemd starts each container. Thus the websites continue to operate when the agent
 // or the panel stops (NFR-04).
 package quadlet
@@ -360,6 +361,87 @@ func DatabaseUnit(d Database) string {
 		"",
 	)
 	return Header + strings.Join(lines, "\n")
+}
+
+// Sftp is the input for the unit of the SFTP service of the websites (spec section 10). One
+// container on each server serves all websites. The SSH service of the host is only for the
+// administrators.
+type Sftp struct {
+	Image string
+	// Port is the public SFTP port of the server. The default is DefaultSftpPort.
+	Port int
+	// SitesDir holds the directory of each website user on the host.
+	SitesDir string
+	// KeysDir holds the SSH keys of each website user ("<user>.keys"). Root owns the files.
+	KeysDir string
+	// UsersDir holds the files "passwd" and "group" with the website users that can sign in.
+	UsersDir string
+	// HostKeysDir holds the SSH host keys of the service. Only root can read it.
+	HostKeysDir string
+	Gvisor      Runtime
+}
+
+// DefaultSftpPort is the public SFTP port of a server when the settings do not give one.
+// Port 22 stays for the SSH service of the host.
+const DefaultSftpPort = 2200
+
+// SftpContainerPort is the port of sshd in the container (images/sftp/sshd_config).
+const SftpContainerPort = 2200
+
+// SftpUnitName is the file name of the unit of the SFTP service. Root runs it.
+const SftpUnitName = "cf-sftp.container"
+
+// SftpUnit gives the container unit of the SFTP service.
+//
+// Root runs this container, not a rootless user, because each SFTP session must run as the
+// Unix user of its website: then a new file has the correct owner on the host and in the
+// website container (--userns=keep-id), and the kernel of gVisor keeps each user in its own
+// directory. sshd changes to the user after the sign-in, with the capabilities below only.
+func SftpUnit(s Sftp) string {
+	port := s.Port
+	if port == 0 {
+		port = DefaultSftpPort
+	}
+	return Header + strings.Join([]string{
+		"[Unit]",
+		"Description=Cloudfactory SFTP service for the websites",
+		"",
+		"[Container]",
+		"ContainerName=cf-sftp",
+		"Image=" + s.Image,
+		"Pull=never",
+		"GlobalArgs=" + s.Gvisor.GlobalArgs(),
+		// pasta gives the container its own network namespace, and sshd sees the real client
+		// address. The container has no access to ServiceAddress or to other containers.
+		"Network=pasta",
+		fmt.Sprintf("PublishPort=%d:%d", port, SftpContainerPort),
+		// No ":Z": a new SELinux label would change the label of the files of all websites.
+		// Only the website directories. The home directories (with the Podman storage of each
+		// user) are not in the container.
+		"Volume=" + s.SitesDir + ":/srv/cloudfactory/sites",
+		"Volume=" + s.KeysDir + ":/etc/cloudfactory/sftp:ro",
+		// libnss-extrausers reads the website users from this directory.
+		"Volume=" + s.UsersDir + ":/var/lib/extrausers:ro",
+		"Volume=" + s.HostKeysDir + ":/etc/ssh/keys",
+		"Label=io.cloudfactory.service=sftp",
+		"NoNewPrivileges=true",
+		"DropCapability=all",
+		// sshd locks each session in the directory of the website (chroot), changes to the
+		// website user, and stops the processes of its sessions.
+		"AddCapability=SYS_CHROOT SETUID SETGID KILL",
+		"ReadOnly=true",
+		"Tmpfs=/run",
+		"Tmpfs=/tmp",
+		"PidsLimit=2048",
+		"PodmanArgs=--memory=512m --memory-swap=512m",
+		"",
+		"[Service]",
+		"Restart=always",
+		"",
+		"[Install]",
+		"WantedBy=multi-user.target",
+		"",
+	}, "\n")
 }
 
 // Panel is the input for the units of the panel (FR-1808).

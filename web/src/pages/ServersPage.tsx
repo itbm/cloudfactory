@@ -249,6 +249,11 @@ function ServerDetail({ id }: { id: string }) {
                     <li key={s.name}><span>{s.name}</span><Status tone={s.state === "running" ? "success" : "danger"}>{s.state === "running" ? "Running" : s.state === "stopped" ? "Stopped" : "Failed"}</Status></li>
                   ))}
                 </ul>
+                <p className="muted small" style={{ marginTop: 14 }}>
+                  {server.sftpPort === 22
+                    ? "Website SFTP uses the SSH service of this server on port 22. Update the agent to move SFTP to its own container."
+                    : <>Website SFTP: port <code>{server.sftpPort}</code>, in its own gVisor container. Port 22 is only for the administrators.</>}
+                </p>
               </div>
             </Card>
           </div>

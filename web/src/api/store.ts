@@ -1503,7 +1503,7 @@ export function addServer(name: string, location: string, roles: ServerRole[]): 
         id: serverId, name: n, location: location.trim() || "Unknown", roles, agentVersion: "0.9.4", cpuPercent: 0, memoryPercent: 0, diskPercent: 0,
         state: "joining", stateDetail: "Waiting for the agent", os: "Debian 13 (trixie)", kernel: "6.12.48-1", arch: "x86-64",
         podmanVersion: "5.4.2", gvisorVersion: "release-20261013.0", gvisorPlatform: "systrap", bareMetal: false, updatePolicy: "security",
-        maintenanceWindow: "02:00 to 05:00 (Europe/London)", pendingUpdates: [], lastUpdateAt: now(), rebootRequired: false,
+        maintenanceWindow: "02:00 to 05:00 (Europe/London)", pendingUpdates: [], lastUpdateAt: now(), rebootRequired: false, sftpPort: 2200,
         services: [{ name: "cloudfactory-agent", state: "running" }, { name: "podman", state: "running" }, { name: "nftables", state: "running" }],
       });
       audit(d, "Added server", n);

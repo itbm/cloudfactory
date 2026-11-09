@@ -82,6 +82,8 @@ class AgentController extends Controller
             'databases.*.engine' => ['required', Rule::in(['mariadb', 'postgresql'])],
             'databases.*.name' => ['required', 'string', 'max:64'],
             'databases.*.sizeBytes' => ['integer', 'min:0'],
+            // Spec section 10: the port of the SFTP container. An agent of release 0.1 does not send it.
+            'sftpPort' => ['nullable', 'integer', 'between:1,65535'],
         ]);
 
         $failed = collect($data['services'] ?? [])->contains(fn ($s) => $s['state'] !== 'running');
@@ -95,6 +97,7 @@ class AgentController extends Controller
             'last_update_at' => $data['lastUpdateAt'] ?? $server->last_update_at,
             'services' => $data['services'] ?? [],
             'usage' => $data['usage'] ?? null,
+            'sftp_port' => $data['sftpPort'] ?? $server->sftp_port,
             // A server that was offline is back with this report.
             'state' => in_array($server->state, ['rebooting', 'joining'], true) ? $server->state : ($failed ? 'degraded' : 'healthy'),
         ]);

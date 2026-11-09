@@ -1,0 +1,34 @@
+# The SFTP service of the websites (spec section 10). One container on each server. It runs
+# OpenSSH in gVisor, so that the SSH service of the host is only for the administrators.
+#   podman build -t sftp images/sftp
+# SPDX-License-Identifier: AGPL-3.0-only
+FROM docker.io/library/debian:13-slim
+
+ARG DEBIAN_FRONTEND=noninteractive
+# libnss-extrausers reads the website users from /var/lib/extrausers. The agent writes these
+# files on the host, and the container mounts them read-only.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends openssh-server libnss-extrausers \
+ && rm -rf /var/lib/apt/lists/* \
+ && rm -f /etc/ssh/ssh_host_* /etc/ssh/sshd_config.d/* \
+ && sed -i -E 's/^(passwd|group):.*/\1:         files extrausers/' /etc/nsswitch.conf \
+ && mkdir -p /var/lib/extrausers /etc/ssh/keys /etc/cloudfactory/sftp /srv/cloudfactory/sites
+
+# CVE scan, finding 3: take the Debian security fixes that are newer than the base image. The
+# release workflow gives CF_REFRESH a new value for each build, so this step never comes from
+# the build cache.
+ARG CF_REFRESH
+RUN apt-get update \
+ && apt-get upgrade -y --no-install-recommends \
+ && rm -rf /var/lib/apt/lists/*
+
+COPY sshd_config /etc/ssh/sshd_config
+COPY start.sh /usr/local/bin/cf-sftp-start
+RUN chmod 0644 /etc/ssh/sshd_config && chmod 0755 /usr/local/bin/cf-sftp-start
+
+EXPOSE 2200
+STOPSIGNAL SIGTERM
+CMD ["/usr/local/bin/cf-sftp-start"]
+LABEL org.opencontainers.image.source="https://github.com/itbm/cloudfactory" \
+      org.opencontainers.image.licenses="AGPL-3.0-only" \
+      org.opencontainers.image.description="Cloudfactory SFTP service"

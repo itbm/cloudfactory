@@ -9,7 +9,8 @@ import { relativeTime } from "../../lib/format";
 function sftpUrl(website: Website) {
   if (website.sftp) return `sftp://${website.sftp.username}@${website.sftp.host}${website.sftp.port === 22 ? "" : `:${website.sftp.port}`}`;
   const server = website.serverId.replace("srv_", "").replace(/(\D+)(\d+)/, "$1-$2");
-  return `sftp://${website.unixUser}@${server}.cloudfactory.io`;
+  // Mock mode: the default port of the SFTP container.
+  return `sftp://${website.unixUser}@${server}.cloudfactory.io:2200`;
 }
 
 export function CopyField({ value, label }: { value: string; label: string }) {

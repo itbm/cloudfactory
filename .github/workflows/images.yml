@@ -24,6 +24,7 @@ jobs:
           - { image: frankenphp-php8.5, context: images/frankenphp, file: images/frankenphp/Containerfile, args: PHP_VERSION=8.5 }
           - { image: apache-php8.4, context: images/apache-php-fpm, file: images/apache-php-fpm/Containerfile, args: PHP_VERSION=8.4 }
           - { image: edge, context: images/edge, file: images/edge/Containerfile, args: '' }
+          - { image: sftp, context: images/sftp, file: images/sftp/Containerfile, args: '' }
           - { image: panel-api, context: ., file: images/panel-api/Containerfile, args: '' }
           - { image: panel-web, context: ., file: images/panel-web/Containerfile, args: '' }
     steps:
@@ -45,6 +46,29 @@ jobs:
           IMAGE: ${{ matrix.image }}
         run: |
           set -eu
+          if [ "$IMAGE" = sftp ]; then
+            # The capabilities of quadlet.SftpUnit. sshd makes the host keys and answers with
+            # its version line.
+            mkdir -p "$RUNNER_TEMP/sftp/sites" "$RUNNER_TEMP/sftp/keys" "$RUNNER_TEMP/sftp/users" "$RUNNER_TEMP/sftp/host-keys"
+            # Root owns these directories on a server (the agent makes them). With no DAC_OVERRIDE,
+            # root in the container cannot write the host keys to a directory of the runner user.
+            sudo chown root:root "$RUNNER_TEMP/sftp/sites" "$RUNNER_TEMP/sftp/keys" "$RUNNER_TEMP/sftp/users" "$RUNNER_TEMP/sftp/host-keys"
+            sudo chmod 0700 "$RUNNER_TEMP/sftp/host-keys"
+            docker run -d --name smoke --cap-drop=all --cap-add SYS_CHROOT --cap-add SETUID --cap-add SETGID --cap-add KILL \
+              --security-opt no-new-privileges --read-only --tmpfs /run --tmpfs /tmp -p 127.0.0.1:12200:2200 \
+              -v "$RUNNER_TEMP/sftp/sites:/srv/cloudfactory/sites" -v "$RUNNER_TEMP/sftp/keys:/etc/cloudfactory/sftp:ro" \
+              -v "$RUNNER_TEMP/sftp/users:/var/lib/extrausers:ro" -v "$RUNNER_TEMP/sftp/host-keys:/etc/ssh/keys" sftp:test
+            banner=""
+            for _ in $(seq 1 30); do
+              banner=$(timeout 5 bash -c 'exec 3<>/dev/tcp/127.0.0.1/12200 && head -c 8 <&3' 2>/dev/null || true)
+              [ "$banner" = "SSH-2.0-" ] && break
+              sleep 2
+            done
+            docker logs smoke
+            docker inspect -f '{{.State.Running}}' smoke | grep -q true
+            [ "$banner" = "SSH-2.0-" ]
+            exit 0
+          fi
           case "$IMAGE" in
             frankenphp-*|apache-*) args="--read-only --tmpfs /tmp --user 1001:1001" want=200 ;;
             panel-web) args="--read-only --tmpfs /tmp" want=200 ;;

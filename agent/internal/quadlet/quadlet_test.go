@@ -123,3 +123,41 @@ func TestPHPVersionsCompareAsNumbers(t *testing.T) {
 		}
 	}
 }
+
+// Spec section 10: one SFTP container in gVisor serves all websites. Root runs it, so that each
+// session can change to the Unix user of its website, with only the capabilities that sshd needs.
+func TestSftpUnit(t *testing.T) {
+	u := SftpUnit(Sftp{
+		Image: "ghcr.io/cloudfactory/sftp:0.2.0", Port: 2222, SitesDir: "/srv/cloudfactory/sites",
+		KeysDir: "/etc/cloudfactory/sftp", UsersDir: "/etc/cloudfactory/sftp-users", HostKeysDir: "/var/lib/cloudfactory/sftp-host-keys",
+		Gvisor: Runtime{RunscPath: "/usr/local/bin/runsc", Platform: "systrap"},
+	})
+	for _, want := range []string{
+		"ContainerName=cf-sftp",
+		"Pull=never",
+		"GlobalArgs=--runtime=/usr/local/bin/runsc --runtime-flag=platform=systrap --runtime-flag=network=sandbox",
+		"Network=pasta",
+		"PublishPort=2222:2200",
+		"Volume=/srv/cloudfactory/sites:/srv/cloudfactory/sites",
+		"Volume=/etc/cloudfactory/sftp:/etc/cloudfactory/sftp:ro",
+		"Volume=/etc/cloudfactory/sftp-users:/var/lib/extrausers:ro",
+		"Volume=/var/lib/cloudfactory/sftp-host-keys:/etc/ssh/keys",
+		"NoNewPrivileges=true",
+		"DropCapability=all",
+		"AddCapability=SYS_CHROOT SETUID SETGID KILL",
+		"ReadOnly=true",
+		"WantedBy=multi-user.target",
+	} {
+		if !strings.Contains(u, want+"\n") {
+			t.Errorf("unit does not contain %q:\n%s", want, u)
+		}
+	}
+	// The home directories hold the Podman storage of each user. The container must not see them,
+	// and a new SELinux label on the website files would stop the website containers.
+	if strings.Contains(u, "homes") || strings.Contains(u, ":Z") || strings.Contains(u, "Network=host") || strings.Contains(u, "DAC_OVERRIDE") {
+		t.Errorf("unexpected setting:\n%s", u)
+	}
+	if !strings.Contains(SftpUnit(Sftp{Image: "x"}), "PublishPort=2200:2200\n") {
+		t.Error("the default SFTP port is not 2200")
+	}
+}

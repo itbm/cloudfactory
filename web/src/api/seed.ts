@@ -253,7 +253,8 @@ const server = (s: Partial<Server> & Pick<Server, "id" | "name" | "location" | "
   pendingUpdates: [],
   lastUpdateAt: atClock(6, 25),
   rebootRequired: false,
-  services: services(["cloudfactory-agent", "podman", "edge-proxy (Caddy)", "nftables"]),
+  services: services(["cloudfactory-agent", "podman", "edge-proxy (Caddy)", "SFTP (cf-sftp)", "nftables"]),
+  sftpPort: 2200,
   ...s,
 });
 
@@ -261,13 +262,13 @@ export const servers: Server[] = [
   server({
     id: "srv_web01", name: "web-01", location: "London", roles: ["web", "database"], cpuPercent: 23, memoryPercent: 58, diskPercent: 41,
     bareMetal: true, gvisorPlatform: "kvm",
-    services: services(["cloudfactory-agent", "podman", "edge-proxy (Caddy)", "MariaDB 11.8", "PostgreSQL 18", "SFTPGo", "nftables"]),
+    services: services(["cloudfactory-agent", "podman", "edge-proxy (Caddy)", "MariaDB 11.8", "PostgreSQL 18", "SFTP (cf-sftp)", "nftables"]),
     pendingUpdates: [{ name: "openssl", from: "3.5.1-1", to: "3.5.1-1+deb13u1", security: true }],
   }),
   server({
     id: "srv_web02", name: "web-02", location: "Manchester", roles: ["web"], cpuPercent: 41, memoryPercent: 66, diskPercent: 52,
     os: "Ubuntu 26.04 LTS", kernel: "6.17.0-14-generic", state: "updating", stateDetail: "Updating 18 of 30 containers",
-    services: services(["cloudfactory-agent", "podman", "edge-proxy (Caddy)", "SFTPGo", "nftables"]),
+    services: services(["cloudfactory-agent", "podman", "edge-proxy (Caddy)", "SFTP (cf-sftp)", "nftables"]),
     pendingUpdates: [
       { name: "linux-image-generic", from: "6.17.0-14", to: "6.17.0-15", security: true },
       { name: "curl", from: "8.14.1-2ubuntu1", to: "8.14.1-2ubuntu1.1", security: true },

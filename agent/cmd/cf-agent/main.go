@@ -2,7 +2,7 @@
 //
 // Usage:
 //
-//	cf-agent join --panel URL --token TOKEN [--name NAME] [--roles web,database] [--address HOST]
+//	cf-agent join --panel URL --token TOKEN [--name NAME] [--roles web,database] [--address HOST] [--sftp-port PORT]
 //	cf-agent serve
 //	cf-agent gvisor install|rollback
 //	cf-agent panel install --domain DOMAIN
@@ -56,7 +56,7 @@ const (
 	gvisorRoot  = "/usr/local/lib/cloudfactory/gvisor"
 	gvisorBin   = "/usr/local/bin"
 	usageString = `Usage:
-  cf-agent join --panel URL --token TOKEN [--name NAME] [--roles web] [--address HOST] [--public-ip IP]
+  cf-agent join --panel URL --token TOKEN [--name NAME] [--roles web] [--address HOST] [--public-ip IP] [--sftp-port PORT]
   cf-agent serve
   cf-agent gvisor install [--sha512 SUM] [VERSION] | rollback
   cf-agent panel install --domain DOMAIN
@@ -109,6 +109,7 @@ func join(ctx context.Context, args []string) error {
 	registry := fs.String("registry", config.Defaults().Registry, "the registry of the images, for example a mirror")
 	configPath := fs.String("config", config.DefaultPath, "the settings file")
 	public := fs.String("public-ip", "", "the public IP addresses of this server behind NAT, separated by commas")
+	sftpPort := fs.Int("sftp-port", quadlet.DefaultSftpPort, "the public port of the SFTP service of the websites")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -122,7 +123,11 @@ func join(ctx context.Context, args []string) error {
 		return fmt.Errorf("%s exists; this server has already joined a panel", *configPath)
 	}
 
+	if err := validate.SftpPort(*sftpPort); err != nil {
+		return err
+	}
 	cfg := config.Defaults()
+	cfg.SftpPort = *sftpPort
 	cfg.PanelURL = strings.TrimRight(*panelURL, "/")
 	cfg.Registry = strings.TrimRight(*registry, "/")
 	// Batch 1, finding 10: behind NAT the public address is not on an interface. The DNS check
@@ -222,6 +227,8 @@ func serve(ctx context.Context) error {
 		// The images of the services have the version of the agent. The release signs them.
 		ServiceImage: func(name string) string { return cfg.Registry + "/" + name + ":" + version },
 		EdgeImage:    cfg.Registry + "/edge:" + version,
+		SftpImage:    cfg.Registry + "/sftp:" + version,
+		SftpPort:     cfg.SftpPort,
 		SavePlatform: func(platform string) error {
 			c, err := config.Load(config.DefaultPath)
 			if err != nil {
@@ -266,11 +273,16 @@ func serve(ctx context.Context) error {
 	if err := deps.RefreshDatabaseServices(ctx); err != nil {
 		slog.Error("start database containers", "err", err)
 	}
+	// The SFTP container of the websites. On a server from release 0.1, this also moves SFTP
+	// from the SSH service of the host to the container.
+	if err := deps.EnsureSftp(ctx); err != nil {
+		slog.Error("start the SFTP container", "err", err)
+	}
 	runner := &jobs.Runner{Dir: filepath.Join(cfg.DataDir, "jobs"), Reporter: reporter}
 	if job, ok := deps.ResumeReboot(); ok {
 		runner.Resume(job)
 	}
-	collector := status.Collector{Run: run, Apt: apt, AgentVersion: version, GVisorVersion: gv.Current, Services: []string{"cf-agent", "nftables", "ssh"}, UserServices: []string{host.EdgeUser + ":cf-edge.service"}, DiskPath: cfg.SitesDir, Extra: deps.FillReport}
+	collector := status.Collector{Run: run, Apt: apt, AgentVersion: version, GVisorVersion: gv.Current, Services: []string{"cf-agent", "nftables", "ssh", "cf-sftp"}, UserServices: []string{host.EdgeUser + ":cf-edge.service"}, DiskPath: cfg.SitesDir, Extra: deps.FillReport}
 
 	go reportLoop(ctx, reporter, collector, time.Duration(cfg.ReportSeconds)*time.Second)
 	go func() {

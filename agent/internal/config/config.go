@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 
 	"github.com/itbm/cloudfactory/agent/internal/gvisor"
+	"github.com/itbm/cloudfactory/agent/internal/quadlet"
+	"github.com/itbm/cloudfactory/agent/internal/validate"
 )
 
 // DefaultPath is where "cf-agent join" writes the settings.
@@ -46,6 +48,9 @@ type Config struct {
 	ReleaseURL string `json:"releaseUrl"`
 	// ReportSeconds is the time between two host reports.
 	ReportSeconds int `json:"reportSeconds"`
+	// SftpPort is the public port of the SFTP container of the websites. The default is 2200.
+	// Port 22 stays for the SSH service of the host. After a change, restart cf-agent.
+	SftpPort int `json:"sftpPort,omitempty"`
 	// PublicAddresses are the public IP addresses of a server behind NAT, for example on a
 	// cloud provider. The DNS check accepts them as addresses of this server.
 	PublicAddresses []string `json:"publicAddresses,omitempty"`
@@ -63,6 +68,7 @@ func Defaults() Config {
 		CaddyAdmin:     "unix:///var/lib/cloudfactory/caddy-admin/admin.sock",
 		ReleaseURL:     "https://github.com/itbm/cloudfactory/releases/download",
 		ReportSeconds:  60,
+		SftpPort:       quadlet.DefaultSftpPort,
 	}
 }
 
@@ -90,6 +96,9 @@ func (c Config) Check() error {
 	}
 	if c.GVisorPlatform != "systrap" && c.GVisorPlatform != "kvm" {
 		errs = append(errs, fmt.Errorf("gvisorPlatform must be systrap or kvm, not %q", c.GVisorPlatform))
+	}
+	if err := validate.SftpPort(c.SftpPort); err != nil {
+		errs = append(errs, fmt.Errorf("sftpPort: %w", err))
 	}
 	return errors.Join(errs...)
 }
