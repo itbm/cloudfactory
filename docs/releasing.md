@@ -86,7 +86,8 @@ server.
 
 The workflow [`release.yml`](../.github/workflows/release.yml) then does these steps:
 
-1. Build each image for x86-64 and ARM64.
+1. Build each image for x86-64 and ARM64. The build uses the layers of the last build from
+   the build cache (see [Build cache](#build-cache)).
 2. Push each image to `ghcr.io/<owner>` by its digest only. The image has no tag yet.
 3. Scan each image with Trivy. The release stops if Trivy finds a critical
    vulnerability that has a fix.
@@ -102,6 +103,20 @@ The workflow [`release.yml`](../.github/workflows/release.yml) then does these s
 If a build fails, the workflow does not tag an image and does not add a file to the release.
 Fix the problem, then run the failed jobs again from the **Actions** tab. If the fix needs a
 new commit, delete the release and the tag, then make the release again.
+
+## Build cache
+
+The image builds keep their layers in the package `ghcr.io/<owner>/build-cache`, with one tag
+for each image. The next build uses these layers again when their inputs did not change. This
+makes the PHP images much faster, because the build does not compile the PHP extensions again.
+
+Each Containerfile installs the security fixes of Debian or Alpine in a step of its own. The
+workflow gives the build argument `CF_REFRESH` a new value for each run, and each Containerfile
+declares `CF_REFRESH` immediately before that step. Thus this step, and all steps after it,
+never come from the cache. Each release and each rebuild gets the security fixes of that day.
+
+To build all layers again, delete the package `build-cache` on GitHub. The next release makes
+it again. The build cache is not part of a release. Podman and the panel do not use it.
 
 ## Daily image rebuild
 

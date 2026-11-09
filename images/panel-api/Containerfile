@@ -9,12 +9,9 @@ COPY api/ ./
 RUN composer dump-autoload --optimize --classmap-authoritative --no-dev
 
 FROM docker.io/dunglas/frankenphp:1-php8.4-trixie
-# CVE scan, finding 3: take the Debian security fixes that are newer than the base image.
 ARG DEBIAN_FRONTEND=noninteractive
-RUN apt-get update \
- && apt-get upgrade -y --no-install-recommends \
- && rm -rf /var/lib/apt/lists/* \
- && install-php-extensions pdo_sqlite pdo_pgsql intl opcache pcntl \
+# The build cache keeps this slow step. The Debian security fixes come in a later step.
+RUN install-php-extensions pdo_sqlite pdo_pgsql intl opcache pcntl \
  && cp "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini"
 # Audit batch 2, finding 1: the base image gives frankenphp the file capability
 # cap_net_bind_service. The units drop all capabilities, and Linux does not run a file with a
@@ -24,6 +21,14 @@ RUN apt-get update \
  && setcap -r /usr/local/bin/frankenphp \
  && test -z "$(getcap /usr/local/bin/frankenphp)" \
  && apt-get purge -y libcap2-bin \
+ && rm -rf /var/lib/apt/lists/*
+# CVE scan, finding 3: take the Debian security fixes that are newer than the base image, so that
+# the daily rebuild gets them on the day that Debian ships them. This step is apart from the slow
+# steps above. The release workflow gives CF_REFRESH a new value for each build, so this step
+# never comes from the build cache.
+ARG CF_REFRESH
+RUN apt-get update \
+ && apt-get upgrade -y --no-install-recommends \
  && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=vendor /app /app
