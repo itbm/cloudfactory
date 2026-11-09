@@ -149,6 +149,10 @@ quotas:
 
 The panel shows the service `disk-quotas` as stopped on a server with no quotas.
 
+The shared runtime images in `/var/lib/cloudfactory-images` belong to root, so they do not
+count toward the disk limit of a website. Each runtime image uses about 0.6 to 0.8 GB one time
+for each server, not one time for each website.
+
 ### Ports
 
 The firewall accepts only SSH, HTTP, HTTPS and the agent port. It does not accept the

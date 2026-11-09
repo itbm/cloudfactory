@@ -16,6 +16,7 @@ import (
 	"github.com/itbm/cloudfactory/agent/internal/execx"
 	"github.com/itbm/cloudfactory/agent/internal/host"
 	"github.com/itbm/cloudfactory/agent/internal/hostupdate"
+	"github.com/itbm/cloudfactory/agent/internal/images"
 	"github.com/itbm/cloudfactory/agent/internal/quadlet"
 	"github.com/itbm/cloudfactory/agent/internal/selfupdate"
 )
@@ -36,6 +37,9 @@ type Deps struct {
 	Updater *selfupdate.Updater
 	Gvisor  quadlet.Runtime
 	State   *State
+	// Images is the shared read-only store of the runtime images. Nil means that each website
+	// user pulls its own copy, as for a custom image.
+	Images *images.Store
 	// Health requests the home page of a website port and gives the HTTP status.
 	Health func(ctx context.Context, port int, hostname string) (int, error)
 	// DNSPointsHere reports whether a domain resolves to this server.

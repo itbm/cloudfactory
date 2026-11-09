@@ -280,6 +280,10 @@ apt-get install -y -q --no-install-recommends \
 	systemd-container dbus-user-session ca-certificates curl openssl bzip2 \
 	openssh-server quota iproute2
 
+# The website users mount the shared images with fuse-overlayfs (agent package images).
+modprobe fuse 2>/dev/null || true
+echo fuse >/etc/modules-load.d/cloudfactory-fuse.conf
+
 step "Turn off the automatic upgrades of APT"
 # FR-1111: the agent installs the host updates, by the update policy of the server and in its
 # maintenance window. The APT timer must not install them at a different time.
@@ -430,6 +434,10 @@ step "Set up SFTP for the websites"
 # Passwords are refused. The agent writes the keys of each user. Other users of the server
 # are not changed.
 getent group cf-sites >/dev/null || groupadd --system cf-sites
+# All website users share one read-only copy of each runtime image. The agent pulls it as root
+# and checks its signature. Only root can write the store, and only the website users can read
+# it (agent package images). The agent uses the same path.
+install -d -o root -g cf-sites -m 0750 /var/lib/cloudfactory-images
 install -d -m 0755 "$CF_ETC/sftp"
 mkdir -p /etc/ssh/sshd_config.d
 cat >/etc/ssh/sshd_config.d/50-cloudfactory-sftp.conf <<'SSHD'
