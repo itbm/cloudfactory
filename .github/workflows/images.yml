@@ -50,7 +50,10 @@ jobs:
             # The capabilities of quadlet.SftpUnit. sshd makes the host keys and answers with
             # its version line.
             mkdir -p "$RUNNER_TEMP/sftp/sites" "$RUNNER_TEMP/sftp/keys" "$RUNNER_TEMP/sftp/users" "$RUNNER_TEMP/sftp/host-keys"
-            sudo chown root:root "$RUNNER_TEMP/sftp/sites" "$RUNNER_TEMP/sftp/keys" "$RUNNER_TEMP/sftp/users"
+            # Root owns these directories on a server (the agent makes them). With no DAC_OVERRIDE,
+            # root in the container cannot write the host keys to a directory of the runner user.
+            sudo chown root:root "$RUNNER_TEMP/sftp/sites" "$RUNNER_TEMP/sftp/keys" "$RUNNER_TEMP/sftp/users" "$RUNNER_TEMP/sftp/host-keys"
+            sudo chmod 0700 "$RUNNER_TEMP/sftp/host-keys"
             docker run -d --name smoke --cap-drop=all --cap-add SYS_CHROOT --cap-add SETUID --cap-add SETGID --cap-add KILL \
               --security-opt no-new-privileges --read-only --tmpfs /run --tmpfs /tmp -p 127.0.0.1:12200:2200 \
               -v "$RUNNER_TEMP/sftp/sites:/srv/cloudfactory/sites" -v "$RUNNER_TEMP/sftp/keys:/etc/cloudfactory/sftp:ro" \
