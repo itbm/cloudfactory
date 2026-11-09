@@ -102,7 +102,7 @@ jobs:
       # a push to a private package when a layer of the image is already in a public package,
       # such as build-cache. The build then stops after many minutes with "403 Forbidden" or
       # "permission_denied". This check stops it at the start. A package that does not exist yet
-      # (404) is correct: the push makes it with the visibility of the repository.
+      # (404) passes: the push makes it. Then check its visibility (docs/releasing.md).
       - name: Check that the packages are public
         env:
           OWNER: ${{ github.repository_owner }}
