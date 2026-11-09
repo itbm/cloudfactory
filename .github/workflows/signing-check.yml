@@ -1,0 +1,55 @@
+# Checks that the signing key in the repository secrets agrees with cosign.pub. It signs a
+# test file in the same way as the release workflow, and then verifies the signature with
+# cosign.pub. It does not publish anything. Refer to docs/releasing.md.
+#
+# Secrets:
+#   COSIGN_PRIVATE_KEY  The private key that matches cosign.pub in the repository root.
+#   COSIGN_PASSWORD     The password of the private key.
+name: Signing check
+
+on:
+  workflow_dispatch:
+  # Pull requests from forks do not get the secrets, so the check fails for them.
+  pull_request:
+    paths:
+      - cosign.pub
+      - .github/workflows/signing-check.yml
+  push:
+    branches: [main]
+    paths:
+      - cosign.pub
+      - .github/workflows/signing-check.yml
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      # The same cosign release as the release workflow.
+      - uses: sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5 # v3.10.1
+        with:
+          cosign-release: v2.5.2
+      - name: Sign a test file and verify it with cosign.pub
+        env:
+          COSIGN_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+        run: |
+          set -eu
+          test -s cosign.pub || { echo "::error::cosign.pub is missing. See docs/releasing.md."; exit 1; }
+          test -n "$COSIGN_KEY" || { echo "::error::The secret COSIGN_PRIVATE_KEY is not set. See docs/releasing.md."; exit 1; }
+          test -n "$COSIGN_PASSWORD" || { echo "::error::The secret COSIGN_PASSWORD is not set. See docs/releasing.md."; exit 1; }
+          work=$(mktemp -d)
+          printf 'Signing check for %s, run %s\n' "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" > "$work/check.txt"
+          cosign sign-blob --yes --key env://COSIGN_KEY --tlog-upload=false --output-signature "$work/check.txt.sig" "$work/check.txt"
+          # The release workflow signs files with no transparency log entry, so do not look for one.
+          cosign verify-blob --key cosign.pub --insecure-ignore-tlog=true --signature "$work/check.txt.sig" "$work/check.txt"
+          # The installation script, the agent and the panel verify with OpenSSL or Go, not cosign.
+          base64 -d "$work/check.txt.sig" > "$work/check.txt.der"
+          openssl dgst -sha256 -verify cosign.pub -signature "$work/check.txt.der" "$work/check.txt"
+          echo "The signing key agrees with cosign.pub:"
+          openssl pkey -pubin -in cosign.pub -outform DER | sha256sum | cut -d' ' -f1
