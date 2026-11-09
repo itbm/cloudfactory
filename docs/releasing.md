@@ -104,6 +104,21 @@ If a build fails, the workflow does not tag an image and does not add a file to 
 Fix the problem, then run the failed jobs again from the **Actions** tab. If the fix needs a
 new commit, delete the release and the tag, then make the release again.
 
+## Package visibility
+
+Each image package on `ghcr.io/<owner>` must be public. Servers pull the images with no login.
+Also, GHCR refuses a push to a private package when a layer of the image is already in a public
+package. Then the build stops with `403 Forbidden` or `permission_denied: write_package`.
+
+A package that the release workflow makes gets the visibility of the repository. A package that
+was made while the repository was private stays private. To make a package public:
+
+1. Open `https://github.com/users/<owner>/packages/container/<package>/settings`.
+2. In **Danger Zone**, select **Change visibility**, then **Public**.
+
+Each image job of the release workflow checks its package and the package `build-cache` first.
+If a package is not public, the job stops and gives the link to its settings.
+
 ## Build cache
 
 The image builds keep their layers in the package `ghcr.io/<owner>/build-cache`, with one tag

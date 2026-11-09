@@ -98,6 +98,30 @@ jobs:
           - { image: panel-api, context: ., file: images/panel-api/Containerfile, args: '' }
           - { image: panel-web, context: ., file: images/panel-web/Containerfile, args: '' }
     steps:
+      # Servers pull the images with no login, so each package must be public. Also, GHCR refuses
+      # a push to a private package when a layer of the image is already in a public package,
+      # such as build-cache. The build then stops after many minutes with "403 Forbidden" or
+      # "permission_denied". This check stops it at the start. A package that does not exist yet
+      # (404) is correct: the push makes it with the visibility of the repository.
+      - name: Check that the packages are public
+        env:
+          OWNER: ${{ github.repository_owner }}
+          IMAGE: ${{ matrix.image }}
+        run: |
+          set -eu
+          owner=$(printf '%s' "$OWNER" | tr '[:upper:]' '[:lower:]')
+          for p in "$IMAGE" build-cache; do
+            token=$(curl -sS "https://ghcr.io/token?scope=repository:$owner/$p:pull" | jq -r '.token // empty')
+            code=$(curl -sS -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $token" "https://ghcr.io/v2/$owner/$p/tags/list")
+            case "$code" in
+            200) echo "ghcr.io/$owner/$p is public." ;;
+            404) echo "ghcr.io/$owner/$p does not exist yet. The push makes it." ;;
+            *)
+              echo "::error::The package ghcr.io/$owner/$p is not public (HTTP $code). Make it public at https://github.com/users/$owner/packages/container/$p/settings (Danger Zone, Change visibility), then run the failed jobs again. See docs/releasing.md."
+              exit 1
+              ;;
+            esac
+          done
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
