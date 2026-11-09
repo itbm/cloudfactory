@@ -1,8 +1,11 @@
 # The shared MariaDB service image. The release pipeline signs it like all other images (FR-1101).
 # SPDX-License-Identifier: AGPL-3.0-only
 FROM docker.io/library/mariadb:11.8
-# CVE scan, finding 3: take the security fixes that are newer than the base image.
+# CVE scan, finding 3: take the security fixes that are newer than the base image. The release
+# workflow gives CF_REFRESH a new value for each build, so this step never comes from the build
+# cache.
 ARG DEBIAN_FRONTEND=noninteractive
+ARG CF_REFRESH
 RUN apt-get update \
  && apt-get upgrade -y --no-install-recommends \
  && rm -rf /var/lib/apt/lists/*

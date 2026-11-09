@@ -22,7 +22,9 @@ RUN printf '%s\n' 'package main' \
  && go version -m /usr/bin/caddy | grep -E "^/usr/bin/caddy|caddy/v2|x/net"
 
 FROM docker.io/library/caddy:2.11-alpine
-# Take the security fixes of Alpine that are newer than the base image.
+# Take the security fixes of Alpine that are newer than the base image. The release workflow
+# gives CF_REFRESH a new value for each build, so this step never comes from the build cache.
+ARG CF_REFRESH
 RUN apk upgrade --no-cache
 COPY --from=caddy /usr/bin/caddy /usr/bin/caddy
 

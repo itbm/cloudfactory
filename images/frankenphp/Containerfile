@@ -11,13 +11,9 @@ FROM docker.io/dunglas/frankenphp:1-php${PHP_VERSION}-trixie
 ARG PHP_VERSION
 ARG EXTENSIONS="intl gd zip exif bcmath mysqli pdo_mysql pdo_pgsql redis imagick soap"
 COPY imagemagick-policy.xml /usr/local/share/cloudfactory/imagemagick-policy.xml
-# CVE scan, finding 3: take the Debian security fixes that are newer than the base image, so that
-# the daily rebuild gets them on the day that Debian ships them.
 ARG DEBIAN_FRONTEND=noninteractive
-RUN apt-get update \
- && apt-get upgrade -y --no-install-recommends \
- && rm -rf /var/lib/apt/lists/* \
- && install-php-extensions ${EXTENSIONS} \
+# The build cache keeps this slow step. The Debian security fixes come in a later step.
+RUN install-php-extensions ${EXTENSIONS} \
  && if [ "${PHP_VERSION}" != "8.5" ]; then install-php-extensions opcache; fi \
  && mkdir -p /usr/local/etc/php/available \
  && for f in /usr/local/etc/php/conf.d/docker-php-ext-*.ini; do \
@@ -36,6 +32,14 @@ RUN apt-get update \
  && setcap -r /usr/local/bin/frankenphp \
  && test -z "$(getcap /usr/local/bin/frankenphp)" \
  && apt-get purge -y libcap2-bin \
+ && rm -rf /var/lib/apt/lists/*
+# CVE scan, finding 3: take the Debian security fixes that are newer than the base image, so that
+# the daily rebuild gets them on the day that Debian ships them. This step is apart from the slow
+# steps above. The release workflow gives CF_REFRESH a new value for each build, so this step
+# never comes from the build cache.
+ARG CF_REFRESH
+RUN apt-get update \
+ && apt-get upgrade -y --no-install-recommends \
  && rm -rf /var/lib/apt/lists/*
 COPY Caddyfile /etc/frankenphp/Caddyfile
 COPY index.php /app/public/index.php

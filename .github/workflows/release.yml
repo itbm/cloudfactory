@@ -140,11 +140,20 @@ jobs:
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.file }}
-          build-args: ${{ matrix.args }}
+          # CF_REFRESH has a new value for each run. Each Containerfile uses it before its security
+          # upgrade step, so that step never comes from the cache.
+          build-args: |
+            ${{ matrix.args }}
+            CF_REFRESH=${{ github.run_id }}-${{ github.run_attempt }}
           platforms: linux/amd64,linux/arm64
           provenance: mode=max
           sbom: true
           outputs: type=image,name=${{ env.REGISTRY }}/${{ matrix.image }},push-by-digest=true,name-canonical=true,push=true
+          # The layers of the last build, for example the PHP extensions, come from this cache.
+          # The cache is in its own package, so that the image packages have only release tags.
+          # A failure to write the cache does not stop the release.
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/build-cache:${{ matrix.image }}
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/build-cache:${{ matrix.image }},mode=max,image-manifest=true,oci-mediatypes=true,ignore-error=true
       - name: Scan for known vulnerabilities (FR-1102)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
