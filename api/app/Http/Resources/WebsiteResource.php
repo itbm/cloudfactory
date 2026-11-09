@@ -42,7 +42,7 @@ class WebsiteResource extends JsonResource
             'usage' => $this->usage,
             'domains' => $this->whenLoaded('domains', fn () => $this->domains->map(fn (Domain $d) => self::domain($d))),
             // Spec section 10: the owner signs in as the Unix user of the website, with an SSH key, to
-        // the SFTP container of the server.
+            // the SFTP container of the server.
             'sftp' => [
                 'enabled' => (bool) $this->sftp_enabled,
                 'host' => $this->server ? self::sftpHost($this->server->agent_url) : null,

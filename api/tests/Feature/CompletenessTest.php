@@ -123,7 +123,7 @@ class CompletenessTest extends TestCase
 
         $this->withToken('cfa_secret')->postJson('/api/agent/v1/report', ['agentVersion' => '0.2.0', 'sftpPort' => 2200])->assertOk();
         $this->getJson("/api/v1/websites/{$website->id}")->assertJsonPath('data.sftp.port', 2200);
-        $this->getJson("/api/v1/servers/{$server->id}")->assertJsonPath('data.sftpPort', 2200);
+        $this->getJson("/api/v1/servers/{$server->id}")->assertJsonPath('sftpPort', 2200);
         // A report with no port keeps the last port.
         $this->withToken('cfa_secret')->postJson('/api/agent/v1/report', ['agentVersion' => '0.2.0'])->assertOk();
         $this->assertSame(2200, $server->fresh()->sftp_port);
