@@ -157,6 +157,10 @@ jobs:
           image: ${{ env.REGISTRY }}/${{ matrix.image }}@${{ steps.build.outputs.digest }}
           format: spdx-json
           output-file: sbom.spdx.json
+          # The next step attaches the SBOM to the image with cosign. On a release event, the
+          # action would also upload it to the release, which this job has no permission to do.
+          upload-artifact: false
+          upload-release-assets: false
       - name: Sign the image and the SBOM (FR-1101)
         env:
           COSIGN_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
