@@ -74,6 +74,24 @@ type Deps struct {
 	DBHome string
 	// SftpKeysDir holds the SSH keys of each website user. The default is "/etc/cloudfactory/sftp".
 	SftpKeysDir string
+	// SftpUsersDir holds the user list of the SFTP container. The default is
+	// "/etc/cloudfactory/sftp-users".
+	SftpUsersDir string
+	// SftpImage is the image of the SFTP container of this agent version.
+	SftpImage string
+	// SftpPort is the public SFTP port of the server. 0 means quadlet.DefaultSftpPort.
+	SftpPort int
+	// SftpReady checks that the SFTP container answers on a port. Nil means an SSH connection
+	// to quadlet.ServiceAddress. Tests replace it.
+	SftpReady func(ctx context.Context, port int) error
+	// SystemUnitDir holds the Quadlet units that root runs. The default is "/etc/containers/systemd".
+	SystemUnitDir string
+	// FirewallFile is the nftables file of the installer. The default is
+	// "/etc/nftables.d-cloudfactory.nft".
+	FirewallFile string
+	// HostSftpConfig is the SSH configuration of the host from release 0.1. The default is
+	// "/etc/ssh/sshd_config.d/50-cloudfactory-sftp.conf".
+	HostSftpConfig string
 
 	// SavePlatform keeps the gVisor platform in the settings of the agent (ConfigureHost).
 	SavePlatform func(platform string) error
@@ -86,6 +104,7 @@ type Deps struct {
 	Certificate func(ctx context.Context, domain string) (time.Time, error)
 
 	dbMu    sync.Mutex
+	sftpMu  sync.Mutex
 	dbReady map[string]bool
 	// backupSlots limits the backups that operate at the same time (BackupSlots).
 	backupSlots chan struct{}

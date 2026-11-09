@@ -633,6 +633,9 @@ func (d *Deps) DeleteWebsite(req *agentv1.DeleteWebsiteRequest) (jobs.Job, error
 			if err := os.Remove(filepath.Join(d.sftpKeysDir(), user+".keys")); err != nil && !os.IsNotExist(err) {
 				return err
 			}
+			if err := d.SyncSftpUsers(); err != nil {
+				return err
+			}
 			if err := d.Host.RemoveUser(ctx, user); err != nil {
 				return err
 			}

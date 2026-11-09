@@ -62,6 +62,8 @@ type Report struct {
 	Domains []DomainState `json:"domains"`
 	// Databases are the sizes of the databases in the shared database containers.
 	Databases []DatabaseSize `json:"databases"`
+	// SftpPort is the port that the website owners use for SFTP on this server.
+	SftpPort int `json:"sftpPort,omitempty"`
 }
 
 // DomainState is what the agent sees for one domain (FR-402, FR-403).

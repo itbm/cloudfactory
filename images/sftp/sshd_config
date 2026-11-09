@@ -1,0 +1,51 @@
+# The SFTP service of the websites. Managed by the Cloudfactory image. The agent publishes
+# port 2200 of the container on the SFTP port of the server (2200 by default).
+#
+# The website users come from /var/lib/extrausers (the agent writes it). Each user signs in
+# with an SSH key only. sshd locks the user in the directory of the website and allows only
+# SFTP. After the sign-in, the session runs as the Unix user of the website, so the files
+# have the correct owner and a website cannot read the files of a different website.
+Port 2200
+AddressFamily any
+HostKey /etc/ssh/keys/ssh_host_ed25519_key
+HostKey /etc/ssh/keys/ssh_host_ecdsa_key
+HostKey /etc/ssh/keys/ssh_host_rsa_key
+PidFile none
+LogLevel INFO
+
+# Keys only. No PAM in the container.
+UsePAM no
+PubkeyAuthentication yes
+AuthenticationMethods publickey
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PermitEmptyPasswords no
+HostbasedAuthentication no
+GSSAPIAuthentication no
+PermitRootLogin no
+DenyUsers root sshd nobody
+# The agent writes one file for each website user. Root owns the files.
+AuthorizedKeysFile /etc/cloudfactory/sftp/%u.keys
+StrictModes yes
+MaxAuthTries 3
+LoginGraceTime 30
+MaxStartups 20:30:100
+MaxSessions 4
+ClientAliveInterval 60
+ClientAliveCountMax 5
+
+# SFTP only. No shell, no terminal and no forwarding.
+Subsystem sftp internal-sftp
+ChrootDirectory /srv/cloudfactory/sites/%u
+ForceCommand internal-sftp -d /app -u 0027
+DisableForwarding yes
+AllowTcpForwarding no
+AllowAgentForwarding no
+AllowStreamLocalForwarding no
+X11Forwarding no
+PermitTunnel no
+PermitTTY no
+PermitUserRC no
+PermitUserEnvironment no
+PrintMotd no
+Banner none

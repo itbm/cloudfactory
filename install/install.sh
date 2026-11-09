@@ -48,6 +48,8 @@ ADDRESS=""
 PANEL_IP=""
 CHECK_ONLY=0
 UNSIGNED_REGISTRIES=""
+# The SFTP port of the websites. Port 22 stays for the SSH service of the host.
+SFTP_PORT=2200
 
 usage() {
 	cat <<'USAGE'
@@ -62,6 +64,8 @@ Options:
                        The default is "web" for --join, and all roles for a new panel.
   --address HOST       The host name or IP address that the panel uses to reach this server.
   --panel-ip IP        Accept the agent port only from this IP address (the panel).
+  --sftp-port PORT     The SFTP port of the websites. The default is 2200. Port 22 stays
+                       for the SSH service of this server.
   --registry URL       Use a different image registry, for example a mirror (FR-1813).
   --allow-unsigned REGISTRY
                        Let Podman pull images with no signature from REGISTRY, for example
@@ -97,6 +101,7 @@ while [ $# -gt 0 ]; do
 	--roles) ROLES=$(value "$@"); shift ;;
 	--address) ADDRESS=$(value "$@"); shift ;;
 	--panel-ip) PANEL_IP=$(value "$@"); shift ;;
+	--sftp-port) SFTP_PORT=$(value "$@"); shift ;;
 	--registry) REGISTRY=$(value "$@"); shift ;;
 	--allow-unsigned) UNSIGNED_REGISTRIES="$UNSIGNED_REGISTRIES $(value "$@")"; shift ;;
 	--check) CHECK_ONLY=1 ;;
@@ -191,6 +196,18 @@ check_arguments() {
 	case "${GVISOR_SHA512:-}" in
 	__*) problem "this script has no gVisor checksum. Download it from a GitHub release." ;;
 	esac
+	# The same check as validate.SftpPort in the agent.
+	case "$SFTP_PORT" in
+	*[!0-9]* | 0*) problem "--sftp-port $SFTP_PORT is not a port number." ;;
+	22 | 80 | 443 | 3306 | 5432 | 7443 | 8080 | 8443 | 19080 | 19081) problem "--sftp-port $SFTP_PORT is in use by a different Cloudfactory service." ;;
+	*)
+		if [ "$SFTP_PORT" -gt 65535 ]; then
+			problem "--sftp-port $SFTP_PORT is not a port number."
+		elif [ "$SFTP_PORT" -ge 20000 ] && [ "$SFTP_PORT" -le 29999 ]; then
+			problem "--sftp-port $SFTP_PORT is in the range of the website ports (20000 to 29999)."
+		fi
+		;;
+	esac
 	for registry in $UNSIGNED_REGISTRIES; do
 		case "$registry" in
 		*[!A-Za-z0-9.:/_-]* | "$REGISTRY" | "$REGISTRY"/*) problem "--allow-unsigned $registry is not permitted." ;;
@@ -199,11 +216,16 @@ check_arguments() {
 }
 
 check_ports() {
-	[ "$MODE" = panel ] || return 0
 	command -v ss >/dev/null 2>&1 || return 0
-	for port in 80 443; do
+	ports=$SFTP_PORT
+	[ "$MODE" = panel ] && ports="80 443 $SFTP_PORT"
+	for port in $ports; do
+		# When you run the script again, the SFTP container already uses its port.
+		if [ "$port" = "$SFTP_PORT" ] && systemctl is-active --quiet cf-sftp.service 2>/dev/null; then
+			continue
+		fi
 		if ss -Hltn "sport = :$port" 2>/dev/null | grep -q .; then
-			problem "port $port is in use. Stop the service that uses it."
+			problem "port $port is in use. Stop the service that uses it, or give a different port with --sftp-port."
 		fi
 	done
 }
@@ -428,44 +450,22 @@ install -d -o cf-edge -g cf-edge -m 0700 "$CF_DATA/caddy-admin"
 # The panel keeps one restic repository password for all servers and sends it with each
 # backup job. Do not make a key for each server: two keys cannot open one repository.
 
-step "Set up SFTP for the websites"
-# Spec section 10: the owner of a website signs in with SFTP as the Unix user of the website.
-# sshd locks the user in the directory of the website and allows only SFTP with an SSH key.
-# Passwords are refused. The agent writes the keys of each user. Other users of the server
-# are not changed.
+step "Prepare the website users and SFTP"
+# Spec section 10: the owner of a website signs in with SFTP as the Unix user of the website,
+# with an SSH key only. The SFTP service is the container cf-sftp, on port $SFTP_PORT, not the
+# SSH service of the host. The agent starts the container and writes the users and the keys.
+# The script does not change the SSH service of the host. Port 22 is for the administrators.
 getent group cf-sites >/dev/null || groupadd --system cf-sites
 # All website users share one read-only copy of each runtime image. The agent pulls it as root
 # and checks its signature. Only root can write the store, and only the website users can read
 # it (agent package images). The agent uses the same path.
 install -d -o root -g cf-sites -m 0750 /var/lib/cloudfactory-images
-install -d -m 0755 "$CF_ETC/sftp"
-mkdir -p /etc/ssh/sshd_config.d
-cat >/etc/ssh/sshd_config.d/50-cloudfactory-sftp.conf <<'SSHD'
-# Managed by the Cloudfactory installer.
-Match Group cf-sites
-	ChrootDirectory /srv/cloudfactory/sites/%u
-	ForceCommand internal-sftp -d /app -u 0027
-	AuthorizedKeysFile /etc/cloudfactory/sftp/%u.keys
-	AuthenticationMethods publickey
-	PasswordAuthentication no
-	KbdInteractiveAuthentication no
-	AllowTcpForwarding no
-	AllowAgentForwarding no
-	AllowStreamLocalForwarding no
-	PermitTunnel no
-	PermitTTY no
-	PermitUserRC no
-	X11Forwarding no
-SSHD
-# Debian and Ubuntu read sshd_config.d at the top of sshd_config. Check the configuration
-# before the reload, so that a mistake does not lock out the administrator.
-grep -Eq '^[[:space:]]*Include[[:space:]]+/etc/ssh/sshd_config\.d/\*\.conf' /etc/ssh/sshd_config ||
-	fail "/etc/ssh/sshd_config does not include /etc/ssh/sshd_config.d/*.conf. Add the line \"Include /etc/ssh/sshd_config.d/*.conf\" at the top, then run the script again."
-sshd -t || fail "the SSH configuration is not valid. Read the error above."
-systemctl reload ssh.service 2>/dev/null || systemctl reload sshd.service
+# The SSH keys and the user list of the SFTP container. Only root can write them.
+install -d -m 0755 "$CF_ETC/sftp" "$CF_ETC/sftp-users"
 
 step "Set the firewall"
-# FR-1705: block all incoming traffic except the published ports and the agent port.
+# FR-1705: block all incoming traffic except the published ports, SSH, SFTP and the agent port.
+# The agent finds the SFTP rule by its comment, and changes it when the SFTP port changes.
 # Spec section 15, question 7: rootless containers cannot open ports below 1024, so the
 # firewall redirects 80 and 443 to the high ports of the edge proxy. The client address does
 # not change (FR-1707).
@@ -482,6 +482,7 @@ table inet cloudfactory {
     iif lo accept
     meta l4proto { icmp, ipv6-icmp } accept
     tcp dport 22 accept
+    tcp dport $SFTP_PORT accept # cloudfactory-sftp
     tcp dport { 80, 443, 8080, 8443 } accept
     udp dport { 443, 8443 } accept
     $agent_rule
@@ -612,7 +613,7 @@ fi
 
 step "Join the panel and start the agent"
 if [ ! -f "$CF_ETC/agent.json" ]; then
-	set -- --panel "$PANEL_URL" --token "$JOIN_TOKEN" --roles "${ROLES:-web}" --registry "$REGISTRY"
+	set -- --panel "$PANEL_URL" --token "$JOIN_TOKEN" --roles "${ROLES:-web}" --registry "$REGISTRY" --sftp-port "$SFTP_PORT"
 	[ -n "$NAME" ] && set -- "$@" --name "$NAME"
 	[ -n "$ADDRESS" ] && set -- "$@" --address "$ADDRESS"
 	/usr/local/bin/cf-agent join "$@"
@@ -632,3 +633,4 @@ if [ "$MODE" = panel ]; then
 else
 	info "This server joined the panel. It shows in the panel under Servers."
 fi
+info "The website owners use SFTP on port $SFTP_PORT. If this server has a firewall at your provider, open this port there."

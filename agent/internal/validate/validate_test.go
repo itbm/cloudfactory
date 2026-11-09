@@ -67,3 +67,16 @@ func TestPanelURL(t *testing.T) {
 		}
 	}
 }
+
+func TestSftpPort(t *testing.T) {
+	for _, p := range []int{2200, 2222, 1022, 65535} {
+		if err := SftpPort(p); err != nil {
+			t.Errorf("SftpPort(%d): %v", p, err)
+		}
+	}
+	for _, p := range []int{0, -1, 65536, 22, 80, 443, 7443, 8080, 8443, 3306, 5432, 19080, 20000, 29999} {
+		if err := SftpPort(p); err == nil {
+			t.Errorf("SftpPort(%d) is accepted", p)
+		}
+	}
+}

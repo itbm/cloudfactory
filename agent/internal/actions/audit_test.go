@@ -139,10 +139,13 @@ func TestPruneRemovesUnusedData(t *testing.T) {
 	}
 }
 
-// SFTP: keys in a file of root, and the password is always locked, so only the keys work.
+// SFTP: keys in a file of root, the password is always locked, and only a user with a key is
+// in the user list of the SFTP container.
 func TestSetSftp(t *testing.T) {
 	d, f, _ := deps(t)
-	d.SftpKeysDir = filepath.Join(t.TempDir(), "sftp")
+	dir := t.TempDir()
+	d.SftpKeysDir, d.SftpUsersDir = filepath.Join(dir, "sftp"), filepath.Join(dir, "sftp-users")
+	d.Host.LookupGID = func(string) (int, error) { return 1002, nil }
 	key := "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGtQx2bS8ZJ4Wm1bZ7zO0Zr3wq8yXc2v1q9w8mL3h4kP owner@laptop"
 	if err := run(t)(d.SetSftp(&agentv1.SetSftpRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Enabled: true, AuthorizedKeys: []string{key}})); err != nil {
 		t.Fatal(err)
@@ -151,15 +154,21 @@ func TestSetSftp(t *testing.T) {
 	if !strings.Contains(string(b), "restrict "+key+"\n") {
 		t.Errorf("keys file:\n%s", b)
 	}
-	if !f.Called("usermod --append --groups cf-sites acme_x7k2") || !f.Called("usermod --password ! acme_x7k2") || f.Called("chpasswd") {
+	if !f.Called("usermod --password ! acme_x7k2") || f.Called("chpasswd") {
 		t.Errorf("SFTP with keys must lock the password: %v", f.Calls)
+	}
+	passwd, _ := os.ReadFile(filepath.Join(d.SftpUsersDir, "passwd"))
+	group, _ := os.ReadFile(filepath.Join(d.SftpUsersDir, "group"))
+	if !strings.Contains(string(passwd), "\nacme_x7k2:x:1001:1002:Cloudfactory website:/app:/usr/sbin/nologin\n") || !strings.Contains(string(group), "\nacme_x7k2:x:1002:\n") {
+		t.Errorf("user list:\n%s\n%s", passwd, group)
 	}
 	if err := run(t)(d.SetSftp(&agentv1.SetSftpRequest{JobId: jobID2, WebsiteId: websiteID, UnixUser: "acme_x7k2", AuthorizedKeys: []string{key}})); err != nil {
 		t.Fatal(err)
 	}
 	b, _ = os.ReadFile(filepath.Join(d.SftpKeysDir, "acme_x7k2.keys"))
-	if strings.Contains(string(b), "ssh-ed25519") || !f.Called("usermod --password ! acme_x7k2") {
-		t.Errorf("SFTP is still on: %s %v", b, f.Calls)
+	passwd, _ = os.ReadFile(filepath.Join(d.SftpUsersDir, "passwd"))
+	if strings.Contains(string(b), "ssh-ed25519") || strings.Contains(string(passwd), "acme_x7k2") {
+		t.Errorf("SFTP is still on: %s %s", b, passwd)
 	}
 	for _, bad := range []string{`command="sh" ` + key, key + "\nssh-rsa AAAA", "not a key"} {
 		if _, err := d.SetSftp(&agentv1.SetSftpRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Enabled: true, AuthorizedKeys: []string{bad}}); err == nil {

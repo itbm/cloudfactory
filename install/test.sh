@@ -88,6 +88,18 @@ done
 if grep -q '^install -d -o root -g cf-sites -m 0750 /var/lib/cloudfactory-images$' "$HERE/install.sh" && grep -q 'fuse-overlayfs' "$HERE/install.sh"; then PASS=$((PASS + 1)); else FAIL=$((FAIL + 1)); echo 'FAIL: the shared image store'; fi
 if grep -q 'DefaultRoot = "/var/lib/cloudfactory-images"' "$HERE/../agent/internal/images/images.go"; then PASS=$((PASS + 1)); else FAIL=$((FAIL + 1)); echo 'FAIL: the agent uses a different image store'; fi
 
+# Spec section 10: SFTP for the websites is the container cf-sftp on its own port. The script
+# does not change the SSH service of the host, and the agent finds the firewall rule by its comment.
+expect "a different SFTP port" 0 "All checks passed." "$(fake debian 13)" $panel --sftp-port 2222
+for bad in 22 7443 8443 25000 65536 abc 0; do
+	expect "SFTP port $bad stops" 1 "--sftp-port $bad" "$(fake debian 13)" $panel --sftp-port "$bad"
+done
+if ! grep -q 'sshd_config' "$HERE/install.sh" && ! grep -q 'systemctl reload ssh' "$HERE/install.sh"; then PASS=$((PASS + 1)); else FAIL=$((FAIL + 1)); echo 'FAIL: the script changes the SSH service of the host'; fi
+# shellcheck disable=SC2016 # The pattern finds the text $SFTP_PORT in the script.
+if grep -q '^    tcp dport \$SFTP_PORT accept # cloudfactory-sftp$' "$HERE/install.sh" && grep -q 'sftpRuleMarker = "# cloudfactory-sftp"' "$HERE/../agent/internal/actions/sftp.go"; then PASS=$((PASS + 1)); else FAIL=$((FAIL + 1)); echo 'FAIL: the SFTP firewall rule'; fi
+# shellcheck disable=SC2016 # The pattern finds the text $SFTP_PORT in the script.
+if grep -q -- '--sftp-port "\$SFTP_PORT"' "$HERE/install.sh"; then PASS=$((PASS + 1)); else FAIL=$((FAIL + 1)); echo 'FAIL: the agent does not get the SFTP port'; fi
+
 root=$(fake debian 13)
 rm "$root/sys/fs/cgroup/cgroup.controllers"
 expect "cgroup v2 is necessary" 1 "cgroup v2 is not mounted" "$root" $panel

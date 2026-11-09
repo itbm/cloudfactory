@@ -8,6 +8,7 @@
 - 1 GB of memory for a server. 2 GB of memory for the first server with the panel.
 - 10 GB of free disk space.
 - Ports 80 and 443 must be free on the first server.
+- Port 2200 must be free on each server, for SFTP. To use a different port, give `--sftp-port`.
 
 ## Verify the script
 
@@ -63,6 +64,7 @@ certificate.
 | `--roles ROLES`    | The roles of the server: `web`, `database`, `email`, `dns`, `backup`.    |
 | `--address HOST`   | The host name or IP address that the panel uses to reach the server.     |
 | `--panel-ip IP`    | Accept the agent port only from this IP address.                         |
+| `--sftp-port PORT` | The SFTP port of the websites. The default is `2200`. You cannot use port 22. |
 | `--registry URL`   | Use a different image registry, for example a mirror.                    |
 | `--allow-unsigned REGISTRY` | Let Podman pull unsigned images from this registry. You can use this option more than one time. |
 | `--check`          | Do only the checks. Do not change the system.                            |
@@ -87,8 +89,10 @@ Then the script does these steps:
 8. Set the image signature policy. Podman refuses all images that have no valid signature,
    except from a registry that you give with `--allow-unsigned`.
 9. Make the service users.
-10. Set up SFTP for the websites (refer to [SFTP](#sftp)).
-11. Set the firewall.
+10. Make the group of the website users and the directories for SFTP (refer to [SFTP](#sftp)).
+    The script does not change the SSH service of the host.
+11. Set the firewall. The firewall accepts SSH (port 22), HTTP, HTTPS, the agent port and the
+    SFTP port.
 12. Download the agent and check its signature.
 13. Install the agent service and the rollback service.
 14. On the first server only: start the panel in gVisor.
@@ -123,17 +127,70 @@ view in the audit log.
 
 ### SFTP
 
-The owner of a website signs in with SFTP as the Unix user of the website. The script adds
-`/etc/ssh/sshd_config.d/50-cloudfactory-sftp.conf`. For the members of the group `cf-sites`
-only, sshd:
+The owner of a website signs in with SFTP as the Unix user of the website, on port 2200 (or
+the port of `--sftp-port`). For example:
+
+```sh
+sftp -P 2200 acme_x7k2@web-01.example.com
+```
+
+The SFTP service is the container `cf-sftp`, not the SSH service of the host. Port 22 is only
+for the administrators. The agent starts the container when it starts. The container runs
+OpenSSH in gVisor. It:
 
 - Locks the user in the directory of the website. The user starts in `/app`.
 - Allows only SFTP: no shell, no terminal and no forwarding.
-- Reads the SSH keys from `/etc/cloudfactory/sftp/USER.keys`. The agent writes this file.
-- Accepts SSH keys only. Password sign-in is off, and the agent locks the password of each
-  website user.
+- Accepts SSH keys only. Passwords are refused.
+- Reads the SSH keys from `/etc/cloudfactory/sftp/USER.keys`. The agent writes these files.
+- Reads the website users from `/etc/cloudfactory/sftp-users`. The agent writes this
+  directory. It has only the users that have an SSH key.
+- Runs each session as the Unix user of the website. Thus a file that you upload has the
+  correct owner on the host and in the website container.
 
-The script does not change the access of other users. Port 22 stays open in the firewall.
+The container keeps its host keys in `/var/lib/cloudfactory/sftp-host-keys`. They are not the
+host keys of the server. To show the fingerprints, for example for your customers:
+
+```sh
+for f in /var/lib/cloudfactory/sftp-host-keys/*.pub; do ssh-keygen -lf "$f"; done
+```
+
+To change the SFTP port of a server:
+
+1. Set `"sftpPort"` in `/etc/cloudfactory/agent.json`, for example `"sftpPort": 2222`.
+2. Restart the agent: `systemctl restart cf-agent`.
+
+The agent changes the container and the SFTP rule in `/etc/nftables.d-cloudfactory.nft`. The
+panel shows the new port after the next report of the agent (1 minute). Open sessions stop.
+If the server has a firewall at your provider (for example a security group), open the SFTP
+port there.
+
+Optional: the website users cannot sign in to the SSH service of the host, because they have
+no key there and a locked password. To refuse them on the host in all cases, add
+`DenyGroups cf-sites` to the SSH configuration of the host.
+
+### Servers that you installed with release 0.1
+
+Release 0.1 used the SSH service of the host for SFTP, on port 22. Later releases move SFTP to
+the container. You do not have to run the script again. When the agent starts with the new
+release, it does these steps:
+
+1. It writes the user list of the container from the SSH keys in `/etc/cloudfactory/sftp`. The
+   keys stay the same.
+2. It starts the container `cf-sftp` on port 2200.
+3. It adds the SFTP rule after the rule for port 22 in `/etc/nftables.d-cloudfactory.nft`.
+4. It checks that the container answers on port 2200.
+5. It removes `/etc/ssh/sshd_config.d/50-cloudfactory-sftp.conf` and reloads the SSH service.
+   Open SSH sessions of the administrators do not stop.
+
+If step 4 fails, the agent keeps the SSH configuration of release 0.1, so SFTP continues on
+port 22, and the panel continues to show port 22. The agent tries again at its next start. If
+you changed `50-cloudfactory-sftp.conf`, the agent does not remove it. Remove it yourself.
+
+Before you update, do these steps:
+
+1. Open port 2200 in the firewall of your provider, if the server has one.
+2. Tell the website owners that the SFTP port changes to 2200. Their SFTP client also shows a
+   new host key on the first connection, because the container has its own host keys.
 
 ### Disk quotas
 
@@ -155,7 +212,7 @@ for each server, not one time for each website.
 
 ### Ports
 
-The firewall accepts only SSH, HTTP, HTTPS and the agent port. It does not accept the
+The firewall accepts only SSH, SFTP, HTTP, HTTPS and the agent port. It does not accept the
 database ports 3306 (MariaDB) and 5432 (PostgreSQL), so the databases are not open to the
 internet. A database user with the access "anywhere" can connect only after you add a rule
 for its port to `/etc/nftables.d-cloudfactory.nft`. Give only the addresses that need it.
@@ -180,5 +237,8 @@ install it, check these items, and report a problem in the issues of the reposit
   This was checked with Debian 13 packages in a container, not on a real server.
 - A website container can connect to MariaDB and PostgreSQL.
 - Files that you upload with SFTP have the correct owner in the website container
-  (`--userns=keep-id` in gVisor).
+  (`--userns=keep-id` in gVisor). The SFTP image was checked with Docker and the same
+  capabilities, not in gVisor.
+- The SFTP container (OpenSSH as root in gVisor, with `pasta`) answers on port 2200 and sees
+  the real client address.
 - A backup and a restore of a website with databases.

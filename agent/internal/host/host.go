@@ -19,8 +19,8 @@ import (
 // EdgeUser is the Unix user of the edge proxy. It cannot read the files of the websites (CF-04).
 const EdgeUser = "cf-edge"
 
-// SitesGroup is the group of all website users. The SSH service allows only SFTP for this
-// group, in the directory of the user (the installer writes the configuration).
+// SitesGroup is the group of all website users. Only this group can read the shared runtime
+// images (package images).
 const SitesGroup = "cf-sites"
 
 // Host changes the host.
@@ -43,6 +43,8 @@ type Host struct {
 	StorageConfig string
 	// LookupUID gives the UID of a user. Tests replace it.
 	LookupUID func(name string) (int, error)
+	// LookupGID gives the primary GID of a user. Nil means the user database of the host.
+	LookupGID func(name string) (int, error)
 }
 
 // New gives a Host with the standard paths.
@@ -58,6 +60,18 @@ func lookupUID(name string) (int, error) {
 	return strconv.Atoi(u.Uid)
 }
 
+// GID gives the primary GID of a user.
+func (h *Host) GID(name string) (int, error) {
+	if h.LookupGID != nil {
+		return h.LookupGID(name)
+	}
+	u, err := user.Lookup(name)
+	if err != nil {
+		return 0, err
+	}
+	return strconv.Atoi(u.Gid)
+}
+
 // Home is the home directory of a website user.
 func (h *Host) Home(unixUser string) string {
 	dir := h.HomesDir
@@ -67,7 +81,7 @@ func (h *Host) Home(unixUser string) string {
 	return filepath.Join(dir, unixUser)
 }
 
-// SiteRoot is the directory of a website user in SitesDir. Root owns it. The SFTP service
+// SiteRoot is the directory of a website user in SitesDir. Root owns it. The SFTP container
 // locks the user in it (ChrootDirectory).
 func (h *Host) SiteRoot(unixUser string) string { return filepath.Join(h.SitesDir, unixUser) }
 

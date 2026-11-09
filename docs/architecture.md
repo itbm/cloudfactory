@@ -94,7 +94,7 @@ image, not 100.
   at the next prune, the files. The agent also prunes after it deletes a website and once a
   day. It keeps an image that a job asked for in the last hour.
 
-The container unit sets these limits:
+The container unit of a website sets these limits:
 
 - `NoNewPrivileges=true` and `DropCapability=all`.
 - A read-only root file system. Only the website directory and `/tmp` are writable.
@@ -111,6 +111,42 @@ The agent changes the Caddy routes through the Caddy admin API. Each website has
 The route sends traffic to `169.254.77.1:<port>`. Caddy gets the TLS certificates
 automatically. The agent starts the edge container before it adds the first route, also
 during the panel installation.
+
+## SFTP for the websites
+
+One SFTP container, `cf-sftp`, on each server serves all websites. It listens on port 2200 (the
+setting `sftpPort` in `/etc/cloudfactory/agent.json`). The SSH service of the host is only for
+the administrators. The image `sftp` has OpenSSH and `libnss-extrausers`.
+
+```text
+ SFTP client ──► port 2200 ──► cf-sftp (root Podman, gVisor, pasta)
+                                 │ sshd: key check, chroot, change to the website user
+                                 ▼
+                     /srv/cloudfactory/sites/<user>/app  (owner: the website user)
+```
+
+- Root runs the container, with a Quadlet unit in `/etc/containers/systemd/cf-sftp.container`.
+  A rootless container cannot change to the UIDs of the website users.
+- The container mounts these host directories:
+
+  | Host directory | In the container | Access |
+  | -------------- | ---------------- | ------ |
+  | `/srv/cloudfactory/sites` | `/srv/cloudfactory/sites` | Read and write |
+  | `/etc/cloudfactory/sftp` (one `<user>.keys` file for each user) | `/etc/cloudfactory/sftp` | Read only |
+  | `/etc/cloudfactory/sftp-users` (`passwd` and `group`) | `/var/lib/extrausers` | Read only |
+  | `/var/lib/cloudfactory/sftp-host-keys` | `/etc/ssh/keys` | Read and write |
+
+- The agent writes the keys file of a website for each SFTP change. Then it writes `passwd` and
+  `group` again, with each website user that has a key, and the UID and GID of the user on the
+  host. sshd reads these files at each sign-in, so the container does not restart.
+- After the sign-in, the session runs as the website user, with the same UID and GID as on the
+  host. A new file has the correct owner on the host and in the website container
+  (`--userns=keep-id`). The umask is `0027`.
+- The agent starts the container when it starts, and checks that port 2200 answers on
+  `169.254.77.1`. A new agent version brings a new image and restarts the container.
+- On a server from release 0.1, the agent then removes the SFTP configuration from the SSH
+  service of the host. Until this step is complete, the agent reports port 22 to the panel.
+  Refer to [installation.md](installation.md#servers-that-you-installed-with-release-01).
 
 ## Change of runtime without downtime
 

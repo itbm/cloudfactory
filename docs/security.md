@@ -22,8 +22,31 @@ The product specification, section 6.4, gives the requirements.
   users. Root owns the stores, and the directory has mode `0750` with the group `cf-sites`, so
   only the website users can read them. A website user writes only its own container layer in
   its own home directory. A custom image stays in the storage of its website user.
+- SFTP runs in its own container (`cf-sftp`) in gVisor, not in the SSH service of the host.
+  Refer to [SFTP](#sftp).
 - The agent writes restored files and staging copies as the website user. A symbolic link in
   a backup cannot make the agent write outside the home directory of the website.
+
+## SFTP
+
+- One SFTP container on each server serves all websites, on port 2200 by default. Port 22 is
+  only for the administrators.
+- The container runs OpenSSH in gVisor. Root in the container starts sshd, because each session
+  must change to the Unix user of its website. The container has only the capabilities
+  `SYS_CHROOT`, `SETUID`, `SETGID` and `KILL`, cannot get new privileges, and has a read-only
+  root file system.
+- After the sign-in, the session runs as the website user, locked in the directory of the
+  website (`ChrootDirectory`). The kernel of gVisor checks the file permissions, so a session
+  cannot read the files of a different website. A bug in sshd after the sign-in has only the
+  permissions of the website user.
+- The container sees only the website directories in `/srv/cloudfactory/sites`. It does not
+  see the home directories, with the Podman storage of each user.
+- SFTP accepts SSH keys only. A key cannot open a shell, a terminal or a forwarded port.
+- Only a website user with at least one key is in the user list of the container. The agent
+  never puts a user with a UID or GID below 1000 in the list.
+- The keys and the user list are read-only in the container. Root owns them.
+- The container has its own SSH host keys. A problem in the container does not give the host
+  keys of the server.
 
 ## Databases
 
@@ -108,7 +131,7 @@ each row of each table.
 | Sign-in and API tokens | SHA-256 hash. The panel shows a token one time only. |
 | Agent tokens and join tokens | SHA-256 hash. |
 | Database passwords | Not kept. The panel shows a new password one time only. |
-| SFTP | No passwords. SFTP accepts SSH keys only. The panel keeps the public keys. |
+| SFTP | No passwords. SFTP accepts SSH keys only. The panel keeps the public keys. The SFTP container keeps its own host keys in `/var/lib/cloudfactory/sftp-host-keys` (mode `0700`). |
 
 These secrets are files, not rows in the database. Each file has mode 0600 or is in a
 directory with mode 0700:
@@ -190,4 +213,5 @@ directory with mode 0700:
 ## Firewall
 
 The installation script sets an nftables table. The table blocks all incoming traffic except
-SSH, HTTP, HTTPS and the agent port.
+SSH, SFTP (port 2200 by default), HTTP, HTTPS and the agent port. The agent changes only the
+SFTP rule, which has the comment `# cloudfactory-sftp`.

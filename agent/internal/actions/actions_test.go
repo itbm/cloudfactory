@@ -60,6 +60,8 @@ func deps(t *testing.T) (*Deps, *execx.Fake, *fakeEdge) {
 		DataDir:       filepath.Join(dir, "data"),
 		SecretsDir:    filepath.Join(dir, "secrets"),
 		DBHome:        filepath.Join(dir, "cf-db"),
+		SftpKeysDir:   filepath.Join(dir, "sftp"),
+		SftpUsersDir:  filepath.Join(dir, "sftp-users"),
 	}
 	return d, run, edge
 }
