@@ -87,14 +87,21 @@ server.
 The workflow [`release.yml`](../.github/workflows/release.yml) then does these steps:
 
 1. Build each image for x86-64 and ARM64.
-2. Scan each image with Trivy. The release stops if Trivy finds a critical
+2. Push each image to `ghcr.io/<owner>` by its digest only. The image has no tag yet.
+3. Scan each image with Trivy. The release stops if Trivy finds a critical
    vulnerability that has a fix.
-3. Push each image to `ghcr.io/<owner>` with the version tag.
 4. Make an SBOM for each image. Sign each image and attach the SBOM with cosign.
 5. Build `cf-agent` and `cf` for x86-64 and ARM64.
 6. Put the version, the gVisor version, the registry and the public key into `install.sh`.
 7. Sign each file and make a `.sha256` file for each file.
-8. Make the GitHub release with all files, or add the files to the release that you made.
+8. When all of the steps above are successful, the last job does these steps:
+   1. Verify the signature of each image with `cosign.pub`.
+   2. Give each image the version tag, for example `0.1.0`.
+   3. Make the GitHub release with all files, or add the files to the release that you made.
+
+If a build fails, the workflow does not tag an image and does not add a file to the release.
+Fix the problem, then run the failed jobs again from the **Actions** tab. If the fix needs a
+new commit, delete the release and the tag, then make the release again.
 
 ## Daily image rebuild
 

@@ -3,6 +3,11 @@
 # - Publish a release with a new tag such as v0.1.0 on the GitHub website. The workflow adds
 #   the files to that release. Use this way when you cannot push a tag, for example on a phone.
 #
+# The build jobs make and sign everything, but they do not publish it: the images go to the
+# registry by digest only, with no tag. The last job (publish) runs only when every build job
+# is successful. It checks the image signatures, tags the images and adds the files to the
+# GitHub release. If one build fails, no image tag and no release file changes.
+#
 # Secrets:
 #   COSIGN_PRIVATE_KEY  The private key that matches cosign.pub in the repository root.
 #   COSIGN_PASSWORD     The password of the private key.
@@ -96,7 +101,7 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
-      # Stop before the images are pushed, so that no unsigned image gets a release tag.
+      # Stop before the build if the signing key is not available.
       - name: Check the signing key
         env:
           COSIGN_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
@@ -127,7 +132,9 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Build and push for x86-64 and ARM64
+      # The image goes to the registry by digest only. The publish job adds the tag when every
+      # build is successful.
+      - name: Build and push by digest for x86-64 and ARM64
         id: build
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
@@ -135,11 +142,9 @@ jobs:
           file: ${{ matrix.file }}
           build-args: ${{ matrix.args }}
           platforms: linux/amd64,linux/arm64
-          push: true
           provenance: mode=max
           sbom: true
-          # The agent and the panel use the version with no "v", for example 0.1.0.
-          tags: ${{ env.REGISTRY }}/${{ matrix.image }}:${{ steps.tag.outputs.tag }}
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ matrix.image }},push-by-digest=true,name-canonical=true,push=true
       - name: Scan for known vulnerabilities (FR-1102)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -169,6 +174,22 @@ jobs:
         run: |
           cosign sign --yes --key env://COSIGN_KEY "$IMAGE"
           cosign attest --yes --key env://COSIGN_KEY --type spdxjson --predicate sbom.spdx.json "$IMAGE"
+      - name: Record the digest for the publish job
+        env:
+          IMAGE: ${{ matrix.image }}
+          # The agent and the panel use the version with no "v", for example 0.1.0.
+          TAG: ${{ steps.tag.outputs.tag }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -eu
+          mkdir -p digests
+          printf '%s %s %s\n' "$IMAGE" "$TAG" "$DIGEST" > "digests/$IMAGE"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: digest-${{ matrix.image }}
+          path: digests/${{ matrix.image }}
+          if-no-files-found: error
+          retention-days: 7
 
   binaries:
     name: Agent, CLI and installation script
@@ -176,7 +197,7 @@ jobs:
     if: needs.plan.outputs.run == 'true' && github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -252,7 +273,73 @@ jobs:
           # Check one signature as the installation script does.
           base64 -d install.sh.sig > /tmp/sig.der
           openssl dgst -sha256 -verify cosign.pub -signature /tmp/sig.der install.sh
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-files
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
+
+  # Runs only when every build job is successful. A rebuild (workflow_dispatch) has no binaries
+  # job and makes no GitHub release.
+  publish:
+    name: Publish the images and the release
+    needs: [plan, images, binaries]
+    if: >-
+      always() && needs.plan.outputs.run == 'true' && needs.images.result == 'success' &&
+      (needs.binaries.result == 'success' || (github.event_name == 'workflow_dispatch' && needs.binaries.result == 'skipped'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5 # v3.10.1
+        with:
+          cosign-release: v2.5.2
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: digest-*
+          path: digests
+          merge-multiple: true
+      - name: Log in to the registry
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          command -v skopeo >/dev/null || { sudo apt-get update -q && sudo apt-get install -yq skopeo; }
+          printf '%s' "$GH_TOKEN" | skopeo login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          printf '%s' "$GH_TOKEN" | cosign login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+      # Check every signature before the first tag is added.
+      - name: Check the image signatures
+        run: |
+          set -eu
+          for f in digests/*; do
+            read -r image tag digest < "$f"
+            cosign verify --key cosign.pub "$REGISTRY/$image@$digest" > /dev/null
+            echo "$image@$digest: the signature is correct."
+          done
+      # A tag copy keeps the digest, so the signatures stay valid.
+      - name: Tag the images
+        run: |
+          set -eu
+          for f in digests/*; do
+            read -r image tag digest < "$f"
+            ref="$REGISTRY/$image"
+            skopeo copy --all --preserve-digests --quiet "docker://$ref@$digest" "docker://$ref:$tag"
+            got=$(skopeo inspect --raw "docker://$ref:$tag" | sha256sum | cut -d' ' -f1)
+            test "sha256:$got" = "$digest" || { echo "::error::$ref:$tag has the digest sha256:$got, not $digest."; exit 1; }
+            echo "$ref:$tag -> $digest"
+          done
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        if: github.event_name != 'workflow_dispatch'
+        with:
+          name: release-files
+          path: dist
       - name: Publish the release
+        if: github.event_name != 'workflow_dispatch'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
