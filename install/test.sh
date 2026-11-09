@@ -88,6 +88,47 @@ done
 if grep -q '^install -d -o root -g cf-sites -m 0750 /var/lib/cloudfactory-images$' "$HERE/install.sh" && grep -q 'fuse-overlayfs' "$HERE/install.sh"; then PASS=$((PASS + 1)); else FAIL=$((FAIL + 1)); echo 'FAIL: the shared image store'; fi
 if grep -q 'DefaultRoot = "/var/lib/cloudfactory-images"' "$HERE/../agent/internal/images/images.go"; then PASS=$((PASS + 1)); else FAIL=$((FAIL + 1)); echo 'FAIL: the agent uses a different image store'; fi
 
+# reload_ssh: the SSH unit and the way it starts are different on Debian and Ubuntu.
+# The fake systemctl reads the state of the units from UNITS and writes each change to a log.
+mkdir -p "$WORK/ssh/bin"
+cat >"$WORK/ssh/bin/systemctl" <<'SYSTEMCTL'
+#!/bin/sh
+has() { case " $UNITS " in *" $1 "*) return 0 ;; esac; return 1; }
+case "$1" in
+show) has "$5=loaded" && echo loaded || echo not-found ;;
+is-active) has "$3=active" ;;
+is-enabled) has "$3=enabled" || has "$3=active" ;;
+*) echo "$*" >>"$LOG" ;;
+esac
+SYSTEMCTL
+chmod +x "$WORK/ssh/bin/systemctl"
+{
+	echo 'set -eu'
+	sed -n '/^info() /p; /^fail() {/,/^}/p; /^reload_ssh() {/,/^}/p' "$HERE/install.sh"
+	echo 'reload_ssh'
+} >"$WORK/reload-ssh.sh"
+ssh_case() {
+	name=$1 units=$2 want_status=$3 want=$4
+	: >"$WORK/ssh/log"
+	out=$(UNITS="$units" LOG="$WORK/ssh/log" PATH="$WORK/ssh/bin:$PATH" sh "$WORK/reload-ssh.sh" 2>&1)
+	status=$?
+	got="$(cat "$WORK/ssh/log")|$out"
+	if [ "$status" -eq "$want_status" ] && printf '%s' "$got" | grep -qF -- "$want"; then
+		PASS=$((PASS + 1))
+	else
+		FAIL=$((FAIL + 1))
+		printf 'FAIL: reload_ssh: %s (status %s, want %s)\n%s\n\n' "$name" "$status" "$want_status" "$got"
+	fi
+}
+ssh_case "Debian: reload the running service" "ssh.service=loaded ssh.service=active" 0 "reload ssh.service|"
+ssh_case "only sshd.service" "sshd.service=loaded sshd.service=active" 0 "reload sshd.service|"
+ssh_case "Ubuntu: the socket starts SSH later" "ssh.service=loaded ssh.socket=active" 0 "|SSH starts when a client connects"
+ssh_case "Ubuntu: reload the service after a connection" "ssh.service=loaded ssh.service=active ssh.socket=active" 0 "reload ssh.service|"
+ssh_case "start the stopped socket" "ssh.service=loaded ssh.socket=enabled" 0 "start ssh.socket|"
+ssh_case "start the stopped service" "ssh.service=loaded" 0 "enable --now ssh.service|"
+ssh_case "no SSH service" "" 1 "cannot find the SSH service"
+if grep -q '^install -d -m 0755 /run/sshd$' "$HERE/install.sh" && ! grep -q 'systemctl reload ssh' "$HERE/install.sh"; then PASS=$((PASS + 1)); else FAIL=$((FAIL + 1)); echo 'FAIL: the SFTP step does not use reload_ssh'; fi
+
 root=$(fake debian 13)
 rm "$root/sys/fs/cgroup/cgroup.controllers"
 expect "cgroup v2 is necessary" 1 "cgroup v2 is not mounted" "$root" $panel

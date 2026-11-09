@@ -264,6 +264,34 @@ download() {
 	curl -fsSL --retry 3 --proto '=https' --tlsv1.2 -o "$2" "$1"
 }
 
+# reload_ssh makes sshd use the new configuration. The SSH unit is different on each system:
+# - Debian starts ssh.service at boot. sshd.service is a second name for it.
+# - Ubuntu starts ssh.socket at boot. ssh.service starts only when the first client connects,
+#   and then reads the configuration. If ssh.service is not running, there is nothing to reload.
+# If SSH is not running, the script starts it, because the website owners use SFTP.
+# You can run this function again with no problem.
+reload_ssh() {
+	ssh_unit=""
+	for name in ssh.service sshd.service; do
+		if [ "$(systemctl show -p LoadState --value "$name" 2>/dev/null)" = loaded ]; then
+			ssh_unit=$name
+			break
+		fi
+	done
+	[ -n "$ssh_unit" ] || fail "cannot find the SSH service (ssh.service or sshd.service). Install the package openssh-server, then run the script again."
+	if systemctl is-active --quiet "$ssh_unit"; then
+		systemctl reload "$ssh_unit" || fail "cannot reload $ssh_unit. Read the error above."
+	elif systemctl is-active --quiet ssh.socket 2>/dev/null; then
+		info "SSH starts when a client connects (ssh.socket). It reads the new configuration then."
+	elif systemctl is-enabled --quiet ssh.socket 2>/dev/null; then
+		info "SSH is not running. The script starts ssh.socket."
+		systemctl start ssh.socket || fail "cannot start ssh.socket. Read the error above."
+	else
+		info "SSH is not running. The script starts $ssh_unit, because the website owners use SFTP."
+		systemctl enable --now "$ssh_unit" || fail "cannot start $ssh_unit. Read the error above."
+	fi
+}
+
 export DEBIAN_FRONTEND=noninteractive
 CF_ETC=/etc/cloudfactory
 CF_DATA=/var/lib/cloudfactory
@@ -461,8 +489,11 @@ SSHD
 # before the reload, so that a mistake does not lock out the administrator.
 grep -Eq '^[[:space:]]*Include[[:space:]]+/etc/ssh/sshd_config\.d/\*\.conf' /etc/ssh/sshd_config ||
 	fail "/etc/ssh/sshd_config does not include /etc/ssh/sshd_config.d/*.conf. Add the line \"Include /etc/ssh/sshd_config.d/*.conf\" at the top, then run the script again."
+# sshd -t needs the privilege separation directory. Only ssh.service makes it, so it is not
+# there when SSH is not running yet (for example, with ssh.socket on Ubuntu).
+install -d -m 0755 /run/sshd
 sshd -t || fail "the SSH configuration is not valid. Read the error above."
-systemctl reload ssh.service 2>/dev/null || systemctl reload sshd.service
+reload_ssh
 
 step "Set the firewall"
 # FR-1705: block all incoming traffic except the published ports and the agent port.
