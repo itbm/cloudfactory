@@ -68,12 +68,21 @@ server.
 ## Make a release
 
 1. Make sure that CI passes on `main`.
-2. Make a tag with the version, for example:
+2. Start the release in one of these two ways:
+   - **With git.** Make a tag with the version and push it:
 
-   ```sh
-   git tag v0.1.0
-   git push origin v0.1.0
-   ```
+     ```sh
+     git fetch origin
+     git tag v0.1.0 origin/main
+     git push origin v0.1.0
+     ```
+
+     The workflow makes the GitHub release.
+   - **On the GitHub website**, for example on a phone. Go to **Releases** > **Draft a new
+     release**. In **Choose a tag**, type the new version, for example `v0.1.0`, and select
+     **Create new tag**. Keep `main` as the target. Select **Generate release notes**, then
+     **Publish release**. The workflow adds the files to this release when it finishes.
+     Until then, the release has no files.
 
 The workflow [`release.yml`](../.github/workflows/release.yml) then does these steps:
 
@@ -85,7 +94,7 @@ The workflow [`release.yml`](../.github/workflows/release.yml) then does these s
 5. Build `cf-agent` and `cf` for x86-64 and ARM64.
 6. Put the version, the gVisor version, the registry and the public key into `install.sh`.
 7. Sign each file and make a `.sha256` file for each file.
-8. Make the GitHub release with all files.
+8. Make the GitHub release with all files, or add the files to the release that you made.
 
 ## Daily image rebuild
 
