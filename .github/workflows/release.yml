@@ -1,4 +1,7 @@
-# Publishes a release when a maintainer pushes a tag such as v0.1.0 (spec section 7.18).
+# Publishes a release (spec section 7.18). Start it in one of two ways:
+# - Push a tag such as v0.1.0. The workflow makes the GitHub release.
+# - Publish a release with a new tag such as v0.1.0 on the GitHub website. The workflow adds
+#   the files to that release. Use this way when you cannot push a tag, for example on a phone.
 #
 # Secrets:
 #   COSIGN_PRIVATE_KEY  The private key that matches cosign.pub in the repository root.
@@ -8,6 +11,8 @@ name: Release
 on:
   push:
     tags: ['v*.*.*']
+  release:
+    types: [published]
   # FR-1109: the rebuild workflow starts this workflow to build the images again.
   workflow_dispatch:
     inputs:
@@ -30,8 +35,41 @@ env:
   GVISOR_SHA512_AARCH64: 6b14b582cd3185169df54275eed8721d94c9b40e6cb1533d0d0c46573271c6d2d03db586ea1caac46a45e805797f00b115bead9fb93636a1ffa69f2430958977
 
 jobs:
+  # A release made on the website can also start a tag push event for the same tag. Only one
+  # of the two runs continues: the push run stops when the release already exists.
+  plan:
+    name: Decide what to build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      run: ${{ steps.plan.outputs.run }}
+    steps:
+      - name: Decide
+        id: plan
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -eu
+          run=true
+          case "$GITHUB_EVENT_NAME" in
+          push | release)
+            if ! printf '%s\n' "$GITHUB_REF_NAME" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+              echo "::notice::$GITHUB_REF_NAME is not a version tag such as v0.1.0. Nothing to do."
+              run=false
+            elif [ "$GITHUB_EVENT_NAME" = push ] && gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+              echo "::notice::The release $GITHUB_REF_NAME exists. The run for the release event builds it."
+              run=false
+            fi
+            ;;
+          esac
+          echo "run=$run" >> "$GITHUB_OUTPUT"
+
   images:
     name: Image ${{ matrix.image }}
+    needs: plan
+    if: needs.plan.outputs.run == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -72,7 +110,7 @@ jobs:
         run: |
           set -eu
           latest=$(git describe --tags --abbrev=0 --match 'v*.*.*')
-          if [ "$GITHUB_EVENT_NAME" = push ]; then
+          if [ "$GITHUB_EVENT_NAME" != workflow_dispatch ]; then
             echo "tag=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
           else
             git checkout -q "$latest"
@@ -130,7 +168,8 @@ jobs:
 
   binaries:
     name: Agent, CLI and installation script
-    if: github.event_name == 'push'
+    needs: plan
+    if: needs.plan.outputs.run == 'true' && github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -212,4 +251,12 @@ jobs:
       - name: Publish the release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release create "$GITHUB_REF_NAME" dist/* --title "$GITHUB_REF_NAME" --generate-notes --verify-tag
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -eu
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            # The release was made on the website. Add the files to it.
+            gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" dist/* --title "$GITHUB_REF_NAME" --generate-notes --verify-tag
+          fi
