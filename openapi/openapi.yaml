@@ -706,6 +706,10 @@ paths:
     post:
       tags: [Backups]
       summary: Back up now
+      description: >-
+        Makes a manual backup. The panel keeps the newest manual backups of each website (the
+        field "manual" of the backup policy). The retention policy of the scheduled backups does
+        not remove the manual backups.
       responses:
         '202': { $ref: '#/components/responses/JobOnly' }
 
@@ -716,7 +720,9 @@ paths:
     post:
       tags: [Backups]
       summary: Restore from a snapshot
-      description: FR-903. Restore the full website, one database or one file.
+      description: >-
+        FR-903. Restore the full website, one database or one file. A restore of the full
+        website keeps the files that are not in the snapshot, unless removeNewFiles is true.
       requestBody:
         required: true
         content:
@@ -727,6 +733,12 @@ paths:
               properties:
                 scope: { type: string, enum: [website, database, file] }
                 item: { type: string, description: 'The database name or file path. A file path starts with "/" and cannot contain "..".' }
+                removeNewFiles:
+                  type: boolean
+                  default: false
+                  description: >-
+                    Only with the scope "website". The agent removes all files of the website
+                    that are not in the snapshot, for example files that an attacker added.
       responses:
         '202': { $ref: '#/components/responses/JobOnly' }
         '422': { $ref: '#/components/responses/Invalid' }
@@ -735,7 +747,7 @@ paths:
     get:
       tags: [Backups]
       summary: Get the backup policy
-      description: An administrator gets all fields. Other users get only daily, weekly, monthly and time.
+      description: An administrator gets all fields. Other users get only daily, weekly, monthly, time and manual.
       responses:
         '200':
           description: The policy.
@@ -1671,6 +1683,7 @@ components:
         weekly: { type: integer, minimum: 0, maximum: 520 }
         monthly: { type: integer, minimum: 0, maximum: 240 }
         time: { type: string, pattern: '^[0-2][0-9]:[0-5][0-9]$', description: The time of the nightly backups, in UTC. }
+        manual: { type: integer, readOnly: true, description: The number of manual backups that the panel keeps for each website. The operator sets it with CF_MANUAL_BACKUPS. }
         target: { type: string, description: 'A restic repository in object storage, for example "s3:s3.amazonaws.com/bucket/path" or "b2:bucket:path".' }
         credentials:
           type: [object, 'null']

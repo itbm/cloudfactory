@@ -51,6 +51,17 @@ CHECK_ONLY=0
 UNSIGNED_REGISTRIES=""
 # The SFTP port of the websites. Port 22 stays for the SSH service of the host.
 SFTP_PORT=2200
+# The private address of the container ports on "lo" (quadlet.ServiceAddress in the agent).
+SERVICE_ADDRESS=169.254.77.1
+# Audit finding S1: the agent makes each website user with a UID and a GID in this range
+# (host.WebsiteIDMin and host.WebsiteIDMax in the agent). The firewall finds the connections
+# of the website containers by this range.
+WEBSITE_UID_MIN=20000
+WEBSITE_UID_MAX=59999
+# The websites cannot connect to port 25 and to private networks, unless the operator
+# permits it.
+WEBSITE_SMTP=0
+WEBSITE_NETWORKS=""
 
 usage() {
 	cat <<'USAGE'
@@ -72,6 +83,15 @@ Options:
                        Let Podman pull images with no signature from REGISTRY, for example
                        docker.io. Podman refuses all other unsigned images. You can give
                        this option more than one time.
+  --allow-website-smtp
+                       Let the websites connect to port 25 (SMTP) of other servers. The
+                       default refuses these connections, so that a website cannot send
+                       email directly. Ports 465 and 587 are always open.
+  --allow-website-network NETWORK
+                       Let the websites connect to this private address or network, for
+                       example 10.0.5.10 or 10.0.5.0/24. The default refuses the private
+                       and link-local networks and the services of this server. You can
+                       give this option more than one time.
   --check              Do only the checks. Do not change the system.
   --help               Show this help.
 USAGE
@@ -105,6 +125,8 @@ while [ $# -gt 0 ]; do
 	--sftp-port) SFTP_PORT=$(value "$@"); shift ;;
 	--registry) REGISTRY=$(value "$@"); shift ;;
 	--allow-unsigned) UNSIGNED_REGISTRIES="$UNSIGNED_REGISTRIES $(value "$@")"; shift ;;
+	--allow-website-smtp) WEBSITE_SMTP=1 ;;
+	--allow-website-network) WEBSITE_NETWORKS="$WEBSITE_NETWORKS $(value "$@")"; shift ;;
 	--check) CHECK_ONLY=1 ;;
 	--help | -h) usage; exit 0 ;;
 	*) usage >&2; fail "unknown option: $1" ;;
@@ -214,6 +236,101 @@ check_arguments() {
 		*[!A-Za-z0-9.:/_-]* | "$REGISTRY" | "$REGISTRY"/*) problem "--allow-unsigned $registry is not permitted." ;;
 		esac
 	done
+	# An IPv4 or IPv6 address, with or without a prefix length. nftables does the full check.
+	for network in $WEBSITE_NETWORKS; do
+		case "$network" in
+		*[!0-9a-fA-F.:/]* | /* | */ | */*/* | */0 | *.*:* | *:*.*) problem "--allow-website-network $network is not an IP address or a network." ;;
+		*[0-9].[0-9]* | *:*) ;;
+		*) problem "--allow-website-network $network is not an IP address or a network." ;;
+		esac
+	done
+}
+
+# firewall_rules prints the nftables rules of Cloudfactory.
+#
+# FR-1705: block all incoming traffic except the published ports, SSH, SFTP and the agent port.
+# The agent finds the SFTP rule by its comment, and changes it when the SFTP port changes.
+# Spec section 15, question 7: rootless containers cannot open ports below 1024, so the
+# firewall redirects 80 and 443 to the high ports of the edge proxy. The client address does
+# not change (FR-1707).
+firewall_rules() {
+	agent_rule="tcp dport 7443 accept"
+	[ -n "$PANEL_IP" ] && agent_rule="ip saddr $PANEL_IP tcp dport 7443 accept"
+	edge_uid=$(id -u cf-edge)
+	panel_uid=$(id -u cf-panel)
+	website_networks=""
+	for network in $WEBSITE_NETWORKS; do
+		family=ip
+		case "$network" in
+		*:*) family=ip6 ;;
+		esac
+		website_networks="$website_networks    $family daddr $network accept
+"
+	done
+	smtp_rule="tcp dport 25 jump refuse"
+	[ "$WEBSITE_SMTP" -eq 1 ] && smtp_rule="# The option --allow-website-smtp: the websites can connect to port 25."
+	cat <<NFT
+table inet cloudfactory
+delete table inet cloudfactory
+table inet cloudfactory {
+  chain input {
+    type filter hook input priority filter; policy drop;
+    ct state established,related accept
+    iif lo accept
+    meta l4proto { icmp, ipv6-icmp } accept
+    tcp dport 22 accept
+    tcp dport $SFTP_PORT accept # cloudfactory-sftp
+    tcp dport { 80, 443, 8080, 8443 } accept
+    udp dport { 443, 8443 } accept
+    $agent_rule
+  }
+  chain output {
+    type filter hook output priority filter; policy accept;
+    # FR-1703: only root (the agent) and the edge proxy can connect to the website and panel
+    # ports on the private service address. pasta opens each connection of a container as the
+    # Unix user of the container, so a website cannot reach a different website. All websites
+    # can reach the shared database ports. The rule checks only new connections, because the
+    # answers of the containers go to the address too.
+    #
+    # Port 19432 is the database of the panel. Only root and the containers of the panel
+    # (cf-panel) can connect to it. Each connection also needs the password.
+    ct state new ip daddr $SERVICE_ADDRESS tcp dport 19432 meta skuid != { 0, $panel_uid } reject with tcp reset
+    ct state new ip daddr $SERVICE_ADDRESS tcp dport != { 3306, 5432, 19432 } meta skuid != { 0, $edge_uid } reject with tcp reset
+    # Audit finding S1: the limits for the connections that a website container opens. The
+    # agent makes each website user with a UID from $WEBSITE_UID_MIN to $WEBSITE_UID_MAX. The
+    # rule checks only new connections, so it does not change the answers to the visitors.
+    ct state new meta skuid $WEBSITE_UID_MIN-$WEBSITE_UID_MAX jump websites
+  }
+  chain websites {
+    # The shared databases on the private service address.
+    ip daddr $SERVICE_ADDRESS tcp dport { 3306, 5432 } accept
+    # DNS. The resolver of the host can have a private or a link-local address.
+    meta l4proto { tcp, udp } th dport 53 accept
+    # The networks of the option --allow-website-network.
+${website_networks}    # The edge proxy on the addresses of this server, so that a website can call its own
+    # public address. All other services of this server are closed for the websites.
+    fib daddr type local tcp dport { 80, 443, 8080, 8443 } accept
+    fib daddr type local udp dport { 443, 8443 } accept
+    fib daddr type { local, broadcast, multicast } jump refuse
+    # Link-local addresses (the metadata service of a cloud provider), private networks and
+    # the service address of Azure.
+    ip daddr { 0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 168.63.129.16, 169.254.0.0/16, 172.16.0.0/12, 192.168.0.0/16, 224.0.0.0/3 } jump refuse
+    ip6 daddr { ::1, fc00::/7, fe80::/10, ff00::/8 } jump refuse
+    # SMTP: a website must not send email directly from the address of this server.
+    $smtp_rule
+  }
+  chain refuse {
+    meta l4proto tcp reject with tcp reset
+    reject
+  }
+  chain prerouting {
+    type nat hook prerouting priority dstnat;
+    tcp dport 80 redirect to :8080
+    tcp dport 443 redirect to :8443
+    udp dport 443 redirect to :8443
+  }
+}
+NFT
 }
 
 check_ports() {
@@ -256,6 +373,10 @@ if [ -n "$ERRORS" ]; then
 fi
 info "All checks passed."
 if [ "$CHECK_ONLY" -eq 1 ]; then
+	# The tests of this script read the firewall rules. This does not change the system.
+	if [ -n "$ROOT" ] && [ "${CF_TEST_PRINT:-}" = firewall ]; then
+		firewall_rules
+	fi
 	exit 0
 fi
 
@@ -301,8 +422,6 @@ export DEBIAN_FRONTEND=noninteractive
 CF_ETC=/etc/cloudfactory
 CF_DATA=/var/lib/cloudfactory
 GVISOR_ROOT=/usr/local/lib/cloudfactory/gvisor
-# The private address of the container ports on "lo" (quadlet.ServiceAddress in the agent).
-SERVICE_ADDRESS=169.254.77.1
 
 step "Install Podman and the system packages"
 apt-get update -q
@@ -324,6 +443,14 @@ cat >/etc/apt/apt.conf.d/52cloudfactory <<'APT'
 // Managed by the Cloudfactory installer. The Cloudfactory agent installs the updates.
 APT::Periodic::Unattended-Upgrade "0";
 APT
+# FR-1114: after an update, the agent runs needrestart, which restarts the services that use
+# changed files. needrestart must not restart the agent, because a restart stops the update
+# job. The agent restarts itself after its own update.
+mkdir -p /etc/needrestart/conf.d
+cat >/etc/needrestart/conf.d/50-cloudfactory.conf <<'CONF'
+# Managed by the Cloudfactory installer.
+$nrconf{override_rc}{qr(^cf-agent\.service$)} = 0;
+CONF
 
 step "Add the private service address"
 # The website, database and panel containers publish their ports on this address on "lo", not
@@ -502,51 +629,7 @@ install -d -o root -g cf-sites -m 0750 /var/lib/cloudfactory-images
 install -d -m 0755 "$CF_ETC/sftp" "$CF_ETC/sftp-users"
 
 step "Set the firewall"
-# FR-1705: block all incoming traffic except the published ports, SSH, SFTP and the agent port.
-# The agent finds the SFTP rule by its comment, and changes it when the SFTP port changes.
-# Spec section 15, question 7: rootless containers cannot open ports below 1024, so the
-# firewall redirects 80 and 443 to the high ports of the edge proxy. The client address does
-# not change (FR-1707).
-agent_rule="tcp dport 7443 accept"
-edge_uid=$(id -u cf-edge)
-panel_uid=$(id -u cf-panel)
-[ -n "$PANEL_IP" ] && agent_rule="ip saddr $PANEL_IP tcp dport 7443 accept"
-cat >/etc/nftables.d-cloudfactory.nft <<NFT
-table inet cloudfactory
-delete table inet cloudfactory
-table inet cloudfactory {
-  chain input {
-    type filter hook input priority filter; policy drop;
-    ct state established,related accept
-    iif lo accept
-    meta l4proto { icmp, ipv6-icmp } accept
-    tcp dport 22 accept
-    tcp dport $SFTP_PORT accept # cloudfactory-sftp
-    tcp dport { 80, 443, 8080, 8443 } accept
-    udp dport { 443, 8443 } accept
-    $agent_rule
-  }
-  chain output {
-    type filter hook output priority filter; policy accept;
-    # FR-1703: only root (the agent) and the edge proxy can connect to the website and panel
-    # ports on the private service address. pasta opens each connection of a container as the
-    # Unix user of the container, so a website cannot reach a different website. All websites
-    # can reach the shared database ports. The rule checks only new connections, because the
-    # answers of the containers go to the address too.
-    #
-    # Port 19432 is the database of the panel. Only root and the containers of the panel
-    # (cf-panel) can connect to it. Each connection also needs the password.
-    ct state new ip daddr $SERVICE_ADDRESS tcp dport 19432 meta skuid != { 0, $panel_uid } reject with tcp reset
-    ct state new ip daddr $SERVICE_ADDRESS tcp dport != { 3306, 5432, 19432 } meta skuid != { 0, $edge_uid } reject with tcp reset
-  }
-  chain prerouting {
-    type nat hook prerouting priority dstnat;
-    tcp dport 80 redirect to :8080
-    tcp dport 443 redirect to :8443
-    udp dport 443 redirect to :8443
-  }
-}
-NFT
+firewall_rules >/etc/nftables.d-cloudfactory.nft
 grep -q 'nftables.d-cloudfactory.nft' /etc/nftables.conf 2>/dev/null || printf 'include "/etc/nftables.d-cloudfactory.nft"\n' >>/etc/nftables.conf
 nft -f /etc/nftables.d-cloudfactory.nft
 systemctl enable --quiet nftables
@@ -571,6 +654,10 @@ for line in "version=$CF_VERSION" "asset=$asset" "sha256=$agent_sha256"; do
 	grep -qx "$line" "$TMP/cf-agent.manifest" ||
 		fail "the agent binary does not agree with the signed manifest of version $CF_VERSION."
 done
+# When you run the script of a new release again, the agent service must start again with the
+# new binary.
+AGENT_CHANGED=0
+cmp -s "$TMP/cf-agent" /usr/local/bin/cf-agent 2>/dev/null || AGENT_CHANGED=1
 install -m 0755 "$TMP/cf-agent" /usr/local/bin/cf-agent
 
 step "Install the agent service"
@@ -665,6 +752,10 @@ if [ ! -f "$CF_ETC/agent.json" ]; then
 	[ -n "$ADDRESS" ] && set -- "$@" --address "$ADDRESS"
 	[ -n "$PANEL_PIN" ] && set -- "$@" --panel-certificate-sha256 "$PANEL_PIN"
 	/usr/local/bin/cf-agent join "$@"
+fi
+if [ "$AGENT_CHANGED" -eq 1 ] && systemctl is-active --quiet cf-agent.service; then
+	# An update: the service still has the old binary.
+	systemctl restart cf-agent.service
 fi
 systemctl enable --now --quiet cf-agent.service
 

@@ -21,6 +21,18 @@ import (
 // EdgeUser is the Unix user of the edge proxy. It cannot read the files of the websites (CF-04).
 const EdgeUser = "cf-edge"
 
+// WebsiteIDMin and WebsiteIDMax are the limits of the UID and the GID of a website user. The
+// installer has the same values (WEBSITE_UID_MIN and WEBSITE_UID_MAX in install.sh).
+//
+// Audit finding S1: pasta opens each connection of a website container as the Unix user of
+// the website. The firewall of the installer finds these connections by the UID range, and
+// refuses the connections to the services of the host, to private networks and to the
+// metadata service of a cloud provider.
+const (
+	WebsiteIDMin = 20000
+	WebsiteIDMax = 59999
+)
+
 // SitesGroup is the group of all website users. Only this group can read the shared runtime
 // images (package images).
 const SitesGroup = "cf-sites"
@@ -113,9 +125,18 @@ func (h *Host) EnsureUser(ctx context.Context, unixUser string) error {
 		if !errors.As(err, &unknown) {
 			return err
 		}
-		if _, err := h.Run.Run(ctx, "useradd", "--create-home", "--home-dir", h.Home(unixUser), "--shell", "/usr/sbin/nologin", "--user-group", "--groups", SitesGroup, unixUser); err != nil {
+		min, max := strconv.Itoa(WebsiteIDMin), strconv.Itoa(WebsiteIDMax)
+		if _, err := h.Run.Run(ctx, "useradd", "-K", "UID_MIN="+min, "-K", "UID_MAX="+max, "-K", "GID_MIN="+min, "-K", "GID_MAX="+max,
+			"--create-home", "--home-dir", h.Home(unixUser), "--shell", "/usr/sbin/nologin", "--user-group", "--groups", SitesGroup, unixUser); err != nil {
 			return err
 		}
+	}
+	// The firewall limits only the users in the range. The agent does not start a website as a
+	// user that the firewall does not find, for example a user that an administrator made.
+	if uid, err := h.LookupUID(unixUser); err != nil {
+		return err
+	} else if uid < WebsiteIDMin || uid > WebsiteIDMax {
+		return fmt.Errorf("the user %s has the UID %d, which is not in the range of the website users (%d to %d)", unixUser, uid, WebsiteIDMin, WebsiteIDMax)
 	}
 	for _, args := range [][]string{
 		// CF-04: only the website user can read its files. The edge proxy does not read them.

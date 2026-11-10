@@ -122,6 +122,77 @@ if grep -q '^    tcp dport \$SFTP_PORT accept # cloudfactory-sftp$' "$HERE/insta
 # shellcheck disable=SC2016 # The pattern finds the text $SFTP_PORT in the script.
 if grep -q -- '--sftp-port "\$SFTP_PORT"' "$HERE/install.sh"; then PASS=$((PASS + 1)); else FAIL=$((FAIL + 1)); echo 'FAIL: the agent does not get the SFTP port'; fi
 
+# Audit finding S1: the firewall limits the connections that a website container opens. The
+# tests read the rules that the script prints, with fake user IDs.
+firewall() {
+	root=$(fake debian 13)
+	# shellcheck disable=SC2016 # $* expands in the fake command.
+	printf '#!/bin/sh\ncase "$*" in *cf-edge*) echo 991 ;; *cf-panel*) echo 992 ;; *) echo 0 ;; esac\n' >"$root/bin/id"
+	CF_TEST_ROOT="$root" CF_TEST_PRINT=firewall PATH="$root/bin:$PATH" sh "$WORK/install.sh" --check $panel "$@" 2>&1 | sed '1,/^All checks passed\.$/d'
+}
+# rule checks that a file of rules has, or does not have, a line.
+rule() {
+	name=$1 want=$2 text=$3 file=$4
+	if grep -qxF -- "    $text" "$file"; then got=yes; else got=no; fi
+	if [ "$got" = "$want" ]; then PASS=$((PASS + 1)); else FAIL=$((FAIL + 1)); printf 'FAIL: %s\n' "$name"; fi
+}
+# line gives the line number of a rule, or 0.
+line() { grep -nxF -- "    $1" "$2" | head -n 1 | cut -d: -f1 | grep . || echo 0; }
+
+firewall >"$WORK/default.nft"
+rule "the website users go to the website chain" yes 'ct state new meta skuid 20000-59999 jump websites' "$WORK/default.nft"
+rule "a website reaches the shared databases" yes 'ip daddr 169.254.77.1 tcp dport { 3306, 5432 } accept' "$WORK/default.nft"
+rule "a website reaches the DNS resolver" yes 'meta l4proto { tcp, udp } th dport 53 accept' "$WORK/default.nft"
+rule "a website does not reach the services of the server" yes 'fib daddr type { local, broadcast, multicast } jump refuse' "$WORK/default.nft"
+rule "a website does not reach link-local and private networks" yes 'ip daddr { 0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 168.63.129.16, 169.254.0.0/16, 172.16.0.0/12, 192.168.0.0/16, 224.0.0.0/3 } jump refuse' "$WORK/default.nft"
+rule "a website does not reach private IPv6 networks" yes 'ip6 daddr { ::1, fc00::/7, fe80::/10, ff00::/8 } jump refuse' "$WORK/default.nft"
+rule "a website does not send email directly" yes 'tcp dport 25 jump refuse' "$WORK/default.nft"
+rule "the panel database rule has the user of the panel" yes 'ct state new ip daddr 169.254.77.1 tcp dport 19432 meta skuid != { 0, 992 } reject with tcp reset' "$WORK/default.nft"
+# The rule for the ports of the other websites comes before the website chain, and the
+# databases come before the rule that closes the addresses of the server.
+other=$(line 'ct state new ip daddr 169.254.77.1 tcp dport != { 3306, 5432, 19432 } meta skuid != { 0, 991 } reject with tcp reset' "$WORK/default.nft")
+jump=$(line 'ct state new meta skuid 20000-59999 jump websites' "$WORK/default.nft")
+databases=$(line 'ip daddr 169.254.77.1 tcp dport { 3306, 5432 } accept' "$WORK/default.nft")
+local_rule=$(line 'fib daddr type { local, broadcast, multicast } jump refuse' "$WORK/default.nft")
+if [ "$other" -gt 0 ] && [ "$other" -lt "$jump" ] && [ "$databases" -gt 0 ] && [ "$databases" -lt "$local_rule" ]; then PASS=$((PASS + 1)); else FAIL=$((FAIL + 1)); echo 'FAIL: the order of the website firewall rules'; fi
+
+firewall --allow-website-smtp --allow-website-network 10.0.5.0/24 --allow-website-network fd00:1::/64 --allow-website-network 192.168.7.9 >"$WORK/allowed.nft"
+rule "--allow-website-smtp opens port 25" no 'tcp dport 25 jump refuse' "$WORK/allowed.nft"
+rule "--allow-website-network opens an IPv4 network" yes 'ip daddr 10.0.5.0/24 accept' "$WORK/allowed.nft"
+rule "--allow-website-network opens an IPv6 network" yes 'ip6 daddr fd00:1::/64 accept' "$WORK/allowed.nft"
+rule "--allow-website-network opens one address" yes 'ip daddr 192.168.7.9 accept' "$WORK/allowed.nft"
+rule "the other private networks stay closed" yes 'fib daddr type { local, broadcast, multicast } jump refuse' "$WORK/allowed.nft"
+if [ "$(line 'ip daddr 10.0.5.0/24 accept' "$WORK/allowed.nft")" -lt "$(line 'fib daddr type { local, broadcast, multicast } jump refuse' "$WORK/allowed.nft")" ]; then PASS=$((PASS + 1)); else FAIL=$((FAIL + 1)); echo 'FAIL: a permitted network comes after the rule that closes it'; fi
+for bad in example.com 10.0.0.0/8/1 0.0.0.0/0 '10.0.0.1;drop' 10.0.0.1/ fd00::1.2 1234; do
+	expect "website network $bad stops" 1 "--allow-website-network $bad is not an IP address or a network." "$(fake debian 13)" $panel --allow-website-network "$bad"
+done
+# nftables checks the syntax of the rules, when the test runs as root on a system with nft.
+if command -v nft >/dev/null 2>&1 && printf 'table inet cloudfactory_test\n' | nft -c -f - 2>/dev/null; then
+	for file in default allowed; do
+		if nft -c -f "$WORK/$file.nft"; then PASS=$((PASS + 1)); else FAIL=$((FAIL + 1)); printf 'FAIL: nft refuses the %s firewall rules\n' "$file"; fi
+	done
+else
+	echo 'Note: nft cannot run here, so nftables did not check the syntax of the firewall rules.'
+fi
+# The agent makes the website users in the UID range of the firewall, and it does not start a
+# website as a user that is not in the range.
+if grep -q '^WEBSITE_UID_MIN=20000$' "$HERE/install.sh" && grep -q '^WEBSITE_UID_MAX=59999$' "$HERE/install.sh" &&
+	grep -q 'WebsiteIDMin = 20000$' "$HERE/../agent/internal/host/host.go" && grep -q 'WebsiteIDMax = 59999$' "$HERE/../agent/internal/host/host.go" &&
+	grep -q '"UID_MIN="+min, "-K", "UID_MAX="+max' "$HERE/../agent/internal/host/host.go"; then
+	PASS=$((PASS + 1))
+else
+	FAIL=$((FAIL + 1))
+	echo 'FAIL: the agent and the firewall use different UID ranges for the website users'
+fi
+# Audit finding R9: needrestart restarts the services after an update, but not the agent.
+if grep -q '^cat >/etc/needrestart/conf.d/50-cloudfactory.conf' "$HERE/install.sh" && grep -qF '$nrconf{override_rc}{qr(^cf-agent\.service$)} = 0;' "$HERE/install.sh" &&
+	! grep -q '"needrestart", "-r", "a", "-b"' "$HERE/../agent/internal/hostupdate/hostupdate.go"; then
+	PASS=$((PASS + 1))
+else
+	FAIL=$((FAIL + 1))
+	echo 'FAIL: the needrestart settings'
+fi
+
 root=$(fake debian 13)
 rm "$root/sys/fs/cgroup/cgroup.controllers"
 expect "cgroup v2 is necessary" 1 "cgroup v2 is not mounted" "$root" $panel

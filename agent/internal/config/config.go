@@ -60,13 +60,21 @@ type Config struct {
 	// PublicAddresses are the public IP addresses of a server behind NAT, for example on a
 	// cloud provider. The DNS check accepts them as addresses of this server.
 	PublicAddresses []string `json:"publicAddresses,omitempty"`
+	// JobTimeoutMinutes is the maximum time of a job. The default is 30 minutes.
+	JobTimeoutMinutes int `json:"jobTimeoutMinutes,omitempty"`
+	// LongJobTimeoutMinutes is the maximum time of a backup, a restore, a copy of a website
+	// or an installation of host updates. The default is 170 minutes. The panel fails a job
+	// that has no result after 3 hours, so a larger value has no effect.
+	LongJobTimeoutMinutes int `json:"longJobTimeoutMinutes,omitempty"`
 }
 
 // Defaults gives the values for the settings that the file does not set.
 func Defaults() Config {
 	return Config{
-		Listen:         ":7443",
-		Registry:       "ghcr.io/cloudfactory",
+		Listen: ":7443",
+		// Audit finding S12: the registry of the project. "cf-agent join --registry" and the
+		// installation script set the registry of the installation.
+		Registry:       "ghcr.io/itbm",
 		GVisorPlatform: "systrap",
 		GVisorVersion:  gvisor.Version,
 		DataDir:        "/var/lib/cloudfactory",
@@ -110,6 +118,9 @@ func (c Config) Check() error {
 	}
 	if err := validate.SftpPort(c.SftpPort); err != nil {
 		errs = append(errs, fmt.Errorf("sftpPort: %w", err))
+	}
+	if c.JobTimeoutMinutes < 0 || c.LongJobTimeoutMinutes < 0 {
+		errs = append(errs, errors.New("jobTimeoutMinutes and longJobTimeoutMinutes must not be negative"))
 	}
 	return errors.Join(errs...)
 }

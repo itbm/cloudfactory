@@ -59,7 +59,10 @@ const (
   cf-agent join --panel URL --token TOKEN [--name NAME] [--roles web] [--address HOST] [--public-ip IP] [--sftp-port PORT]
   cf-agent serve
   cf-agent gvisor install [--sha512 SUM] [VERSION] | rollback
-  cf-agent panel install --domain DOMAIN
+  cf-agent panel install --domain DOMAIN [--registry URL]
+  cf-agent panel update
+  cf-agent panel reset-password EMAIL [--remove-totp]
+  cf-agent panel unlock EMAIL [--address IP]
   cf-agent rollback
   cf-agent version`
 )
@@ -235,7 +238,9 @@ func serve(ctx context.Context) error {
 			return err
 		},
 		// systemd starts the agent again (Restart=always in cf-agent.service).
-		Restart:            cancel,
+		Restart: cancel,
+		// The stop signal of systemd, for example at a shutdown, closes this channel.
+		Stopping:           ctx.Done(),
 		Arch:               runtime.GOARCH,
 		MaxWatch:           5 * time.Minute,
 		ResticPasswordFile: resticKey,
@@ -295,7 +300,8 @@ func serve(ctx context.Context) error {
 	if err := deps.EnsureSftp(ctx); err != nil {
 		slog.Error("start the SFTP container", "err", err)
 	}
-	runner := &jobs.Runner{Dir: filepath.Join(cfg.DataDir, "jobs"), Reporter: reporter}
+	runner := &jobs.Runner{Dir: filepath.Join(cfg.DataDir, "jobs"), Reporter: reporter,
+		Timeout: time.Duration(cfg.JobTimeoutMinutes) * time.Minute, LongTimeout: time.Duration(cfg.LongJobTimeoutMinutes) * time.Minute}
 	if job, ok := deps.ResumeReboot(); ok {
 		runner.Resume(job)
 	}
@@ -394,15 +400,42 @@ func bareMetal(ctx context.Context, run execx.Runner) bool {
 }
 
 // panelCmd pulls the panel images and starts them in gVisor (FR-1808).
+const panelUsage = `usage:
+  cf-agent panel install --domain DOMAIN [--registry URL]   Install the panel, or start it again.
+  cf-agent panel update                                     Change the panel to the version of this agent.
+  cf-agent panel reset-password EMAIL [--remove-totp]       Give a user a new temporary password.
+  cf-agent panel unlock EMAIL [--address IP]                Remove the sign-in lock of an account.`
+
+// panelCmd has the commands for the panel server. Only root can run them.
 func panelCmd(ctx context.Context, args []string) error {
-	if len(args) < 1 || args[0] != "install" {
-		return errors.New("usage: cf-agent panel install --domain DOMAIN")
+	if len(args) < 1 {
+		return errors.New(panelUsage)
+	}
+	switch args[0] {
+	case "install", "update":
+	case "reset-password", "unlock":
+		return panelAccount(ctx, args[0], args[1:])
+	default:
+		return errors.New(panelUsage)
 	}
 	fs := flag.NewFlagSet("panel", flag.ContinueOnError)
 	domain := fs.String("domain", "", "the domain of the panel, for example panel.example.com")
 	registry := fs.String("registry", config.Defaults().Registry, "the registry of the panel images")
 	if err := fs.Parse(args[1:]); err != nil {
 		return err
+	}
+	if args[0] == "update" {
+		// Audit finding S7: after an update of the agent, this command changes the panel
+		// containers to the images of the same version. The domain and the registry are the
+		// values of the installation.
+		saved, err := config.Load(config.DefaultPath)
+		if err != nil {
+			return fmt.Errorf("read the settings of the agent: %w", err)
+		}
+		*registry = saved.Registry
+		if *domain, err = actions.PanelDomain(filepath.Join(saved.DataDir, "panel", "panel.env")); err != nil {
+			return fmt.Errorf("this server has no panel: %w", err)
+		}
 	}
 	if err := validate.Domain(*domain); err != nil {
 		return err
@@ -426,6 +459,40 @@ func panelCmd(ctx context.Context, args []string) error {
 	if err := edge.ApplyPanel(ctx, *domain, p.APIPort, p.WebPort); err != nil {
 		return err
 	}
-	fmt.Printf("The panel operates at https://%s\n", *domain)
+	fmt.Printf("The panel operates at https://%s with version %s\n", *domain, version)
 	return nil
+}
+
+// panelAccount runs an account command of the panel in the API container.
+func panelAccount(ctx context.Context, command string, args []string) error {
+	fs := flag.NewFlagSet("panel "+command, flag.ContinueOnError)
+	removeTotp := fs.Bool("remove-totp", false, "also remove TOTP, for a user who lost the device")
+	address := fs.String("address", "", "also remove the lock for this client address")
+	// The email address can come before or after the options.
+	var email string
+	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+		email, args = args[0], args[1:]
+	}
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if email == "" && fs.NArg() == 1 {
+		email = fs.Arg(0)
+	} else if fs.NArg() != 0 {
+		return errors.New(panelUsage)
+	}
+	if email == "" {
+		return errors.New(panelUsage)
+	}
+	cfg := config.Defaults()
+	deps := &actions.Deps{Host: host.New(execx.Host{}, cfg.SitesDir), Run: execx.Host{}}
+	var out string
+	var err error
+	if command == "reset-password" {
+		out, err = deps.ResetPanelPassword(ctx, email, *removeTotp)
+	} else {
+		out, err = deps.UnlockPanelSignIn(ctx, email, *address)
+	}
+	fmt.Print(out)
+	return err
 }

@@ -43,9 +43,9 @@ const sftpRuleMarker = "# cloudfactory-sftp"
 // sftpServiceName is the systemd service that Quadlet makes from quadlet.SftpUnitName.
 const sftpServiceName = "cf-sftp.service"
 
-// minWebsiteID is the lowest UID and GID of a website user (UID_MIN of useradd). The agent
-// never gives a lower ID, for example root, to the SFTP container.
-const minWebsiteID = 1000
+// minWebsiteID is the lowest UID and GID of a website user. The agent never gives a lower ID,
+// for example root, to the SFTP container.
+const minWebsiteID = host.WebsiteIDMin
 
 // sftpKeysDir holds the authorized keys of each website user. Root owns the files, so that
 // the website cannot change them.

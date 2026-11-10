@@ -46,10 +46,18 @@ class BackupController extends Controller
         return response()->json(['job' => new JobResource($job)], 202);
     }
 
-    /** The payload of a backup. A scheduled backup also applies the retention policy (FR-902). */
+    /**
+     * The payload of a backup. A scheduled backup also applies the retention policy (FR-902).
+     *
+     * Audit finding R8: the agent applies the policy only to the scheduled backups. For the
+     * manual backups of a website, it keeps the newest ones.
+     */
     public static function backupPayload(Website $website, string $kind): array
     {
         $policy = self::policy();
+        $retention = $kind === 'scheduled'
+            ? ['daily' => (int) $policy['daily'], 'weekly' => (int) $policy['weekly'], 'monthly' => (int) $policy['monthly']]
+            : ['last' => self::manualBackups()];
 
         return [
             'websiteId' => $website->id,
@@ -57,8 +65,14 @@ class BackupController extends Controller
             'kind' => $kind,
             'databases' => $website->databases()->orderBy('name')->get(['engine', 'name'])->map(fn ($d) => ['engine' => $d->engine, 'name' => $d->name])->all(),
             'target' => $policy['target'],
-            ...($kind === 'scheduled' ? ['retention' => ['daily' => (int) $policy['daily'], 'weekly' => (int) $policy['weekly'], 'monthly' => (int) $policy['monthly']]] : []),
+            'retention' => $retention,
         ];
+    }
+
+    /** The number of manual backups that the panel keeps for each website. */
+    public static function manualBackups(): int
+    {
+        return max(1, (int) config('cloudfactory.manual_backups', 10));
     }
 
     /**
@@ -82,7 +96,11 @@ class BackupController extends Controller
             // Audit finding R5: the agent of this release has no mailbox restore.
             'scope' => ['required', Rule::in(['website', 'database', 'file'])],
             'item' => ['required_unless:scope,website', 'nullable', 'string', 'max:1024'],
+            // Audit finding R8: a full restore can remove the files that are not in the backup,
+            // for example the files that an attacker added.
+            'removeNewFiles' => ['sometimes', 'boolean', 'prohibited_unless:scope,website'],
         ]);
+        $removeNewFiles = (bool) ($data['removeNewFiles'] ?? false);
         $dumpHash = null;
         if ($data['scope'] === 'database') {
             $request->validate(['item' => [Rule::in($snapshot->databases)]]);
@@ -104,9 +122,10 @@ class BackupController extends Controller
             'scope' => $data['scope'],
             'item' => $data['item'] ?? null,
             'dumpSha256' => $dumpHash,
+            'deleteExtra' => $removeNewFiles,
             'target' => self::policy()['target'],
         ], "Restore {$what}", $website);
-        Audit::record($request, 'Restored from backup', "{$website->name} {$what}", $website->customer_id);
+        Audit::record($request, 'Restored from backup', "{$website->name} {$what}".($removeNewFiles ? ', new files removed' : ''), $website->customer_id);
 
         return response()->json(['job' => new JobResource($job)], 202);
     }
@@ -117,7 +136,7 @@ class BackupController extends Controller
         // Audit finding S9: a customer sees when the backups run and how long they stay. The
         // address of the object storage and the names of its credentials are for administrators.
         if (! $request->user()->isAdministrator()) {
-            return response()->json(array_intersect_key(self::policy(), array_flip(['daily', 'weekly', 'monthly', 'time'])));
+            return response()->json(array_intersect_key(self::presentPolicy(), array_flip(['daily', 'weekly', 'monthly', 'time', 'manual'])));
         }
 
         return response()->json(self::presentPolicy());
@@ -125,7 +144,7 @@ class BackupController extends Controller
 
     private static function presentPolicy(): array
     {
-        return self::policy() + ['credentialNames' => array_keys(self::credentials())];
+        return self::policy() + ['manual' => self::manualBackups(), 'credentialNames' => array_keys(self::credentials())];
     }
 
     /**

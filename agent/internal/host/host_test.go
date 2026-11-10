@@ -21,7 +21,7 @@ func fakeHost(t *testing.T, exists bool) (*Host, *execx.Fake) {
 		if !exists {
 			return 0, user.UnknownUserError(name)
 		}
-		return 1001, nil
+		return 20001, nil
 	}}
 	return h, f
 }
@@ -30,13 +30,14 @@ func TestEnsureUserMakesTheUserOnce(t *testing.T) {
 	h, f := fakeHost(t, false)
 	// useradd makes the user.
 	f.Rules = []execx.Rule{{Prefix: "useradd", Do: func() error {
-		h.LookupUID = func(string) (int, error) { return 1001, nil }
+		h.LookupUID = func(string) (int, error) { return 20001, nil }
 		return nil
 	}}}
 	if err := h.EnsureUser(context.Background(), "acme_x7k2"); err != nil {
 		t.Fatal(err)
 	}
-	if !f.Called("useradd --create-home --home-dir "+h.Home("acme_x7k2")+" --shell /usr/sbin/nologin") || !f.Called("loginctl enable-linger acme_x7k2") || !f.Called("chmod 0700 "+h.Home("acme_x7k2")) || !f.Called("systemctl start user@1001.service") {
+	// Audit finding S1: the UID and the GID are in the range that the firewall limits.
+	if !f.Called("useradd -K UID_MIN=20000 -K UID_MAX=59999 -K GID_MIN=20000 -K GID_MAX=59999 --create-home --home-dir "+h.Home("acme_x7k2")+" --shell /usr/sbin/nologin --user-group") || !f.Called("loginctl enable-linger acme_x7k2") || !f.Called("chmod 0700 "+h.Home("acme_x7k2")) || !f.Called("systemctl start user@20001.service") {
 		t.Errorf("calls = %v", f.Calls)
 	}
 	// CF-04: the edge proxy is not in the group of the website user.
@@ -54,6 +55,16 @@ func TestEnsureUserMakesTheUserOnce(t *testing.T) {
 	if err := h.EnsureUser(context.Background(), "root"); err == nil {
 		t.Error("the user root was accepted")
 	}
+
+	// A user with a UID that the firewall does not limit: the agent does not use it.
+	h, f = fakeHost(t, true)
+	h.LookupUID = func(string) (int, error) { return 1001, nil }
+	if err := h.EnsureUser(context.Background(), "acme_x7k2"); err == nil || !strings.Contains(err.Error(), "not in the range") {
+		t.Errorf("a user with the UID 1001 was accepted: %v", err)
+	}
+	if f.Called("loginctl") || f.Called("systemctl") {
+		t.Errorf("the agent started the services of a user that is not in the range: %v", f.Calls)
+	}
 }
 
 func TestWriteUnitReportsAChange(t *testing.T) {
@@ -65,7 +76,7 @@ func TestWriteUnitReportsAChange(t *testing.T) {
 	if changed, _ := h.WriteUnit("acme_x7k2", "cf-acme_x7k2.container", "a"); changed {
 		t.Error("same content reported a change")
 	}
-	if _, err := os.Stat(filepath.Join(h.UnitRoot, "1001", "cf-acme_x7k2.container")); err != nil {
+	if _, err := os.Stat(filepath.Join(h.UnitRoot, "20001", "cf-acme_x7k2.container")); err != nil {
 		t.Error(err)
 	}
 	if _, err := h.WriteUnit("acme_x7k2", "../evil", "a"); err == nil {
@@ -76,7 +87,7 @@ func TestWriteUnitReportsAChange(t *testing.T) {
 func TestPodmanRunsAsTheUser(t *testing.T) {
 	h, f := fakeHost(t, true)
 	h.Podman(context.Background(), "acme_x7k2", "pull", "img")
-	if !f.Called("runuser -u acme_x7k2 -- env XDG_RUNTIME_DIR=/run/user/1001 podman pull img") {
+	if !f.Called("runuser -u acme_x7k2 -- env XDG_RUNTIME_DIR=/run/user/20001 podman pull img") {
 		t.Errorf("calls = %v", f.Calls)
 	}
 }
@@ -122,7 +133,7 @@ func TestLinkStorageConfigRefusesALink(t *testing.T) {
 // manager first, and waits for it.
 func TestRemoveUserStopsTheUserManagerBeforeUserdel(t *testing.T) {
 	h, f := fakeHost(t, true)
-	for _, dir := range []string{h.SiteRoot("acme_x7k2"), h.ConfigDir("acme_x7k2"), filepath.Join(h.UnitRoot, "1001")} {
+	for _, dir := range []string{h.SiteRoot("acme_x7k2"), h.ConfigDir("acme_x7k2"), filepath.Join(h.UnitRoot, "20001")} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -132,16 +143,16 @@ func TestRemoveUserStopsTheUserManagerBeforeUserdel(t *testing.T) {
 	}
 	want := []string{
 		"loginctl disable-linger acme_x7k2",
-		"systemctl stop user@1001.service",
-		"systemctl stop user-1001.slice",
-		"pkill --signal KILL --uid 1001",
+		"systemctl stop user@20001.service",
+		"systemctl stop user-20001.slice",
+		"pkill --signal KILL --uid 20001",
 		"userdel --remove acme_x7k2",
 	}
 	if !slices.Equal(f.Calls, want) {
 		t.Errorf("calls = %v, want %v", f.Calls, want)
 	}
-	// A later user can get the UID 1001. It must not get the units of this user.
-	for _, dir := range []string{h.SiteRoot("acme_x7k2"), h.ConfigDir("acme_x7k2"), filepath.Join(h.UnitRoot, "1001")} {
+	// A later user can get the UID 20001. It must not get the units of this user.
+	for _, dir := range []string{h.SiteRoot("acme_x7k2"), h.ConfigDir("acme_x7k2"), filepath.Join(h.UnitRoot, "20001")} {
 		if _, err := os.Stat(dir); !os.IsNotExist(err) {
 			t.Errorf("%s is not removed: %v", dir, err)
 		}
@@ -156,7 +167,7 @@ func TestRemoveUserTriesUserdelAgain(t *testing.T) {
 		// pkill gives status 1 when the user has no process.
 		{Prefix: "pkill", Err: errors.New("exit status 1")},
 		// A unit that is not loaded is not a reason to stop.
-		{Prefix: "systemctl stop user-1001.slice", Err: errors.New("Unit user-1001.slice not loaded.")},
+		{Prefix: "systemctl stop user-20001.slice", Err: errors.New("Unit user-20001.slice not loaded.")},
 		{Prefix: "userdel", Do: func() error {
 			attempts++
 			if attempts < 3 {

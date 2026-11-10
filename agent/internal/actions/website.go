@@ -331,7 +331,7 @@ func (d *Deps) CreateWebsite(req *agentv1.WebsiteRequest) (jobs.Job, error) {
 	user := w.GetUnixUser()
 	var port int
 	var dnsHere bool
-	return jobs.Job{ID: req.GetJobId(), Key: w.GetId(), Steps: []jobs.Step{
+	return jobs.Job{ID: req.GetJobId(), Key: w.GetId(), Long: req.GetCopyFrom() != "", Steps: []jobs.Step{
 		{Name: "Create Unix user", Do: func(ctx context.Context) error {
 			if err := d.Host.EnsureUser(ctx, user); err != nil {
 				return err

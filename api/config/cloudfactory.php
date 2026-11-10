@@ -45,6 +45,14 @@ return [
         'target' => env('CF_BACKUP_TARGET', ''),
     ],
 
+    // Audit finding R8: the number of manual backups that the panel keeps for each website.
+    // The retention policy above is only for the scheduled backups.
+    'manual_backups' => (int) env('CF_MANUAL_BACKUPS', 10),
+
+    // Audit finding R8: the number of days that the backups of a deleted website stay in the
+    // repository. In this time, an administrator can restore them with restic.
+    'deleted_website_backup_days' => (int) env('CF_DELETED_WEBSITE_BACKUP_DAYS', 30),
+
     // FR-104: the scopes that an API token can have.
     'scopes' => [
         'websites:read', 'websites:write',

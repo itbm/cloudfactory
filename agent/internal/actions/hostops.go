@@ -26,7 +26,7 @@ func (d *Deps) InstallHostUpdates(req *agentv1.HostRequest) (jobs.Job, error) {
 	if policy != "security" && policy != "all" && policy != "manual" && policy != "tools" {
 		return jobs.Job{}, errors.New("the update policy is not valid")
 	}
-	return jobs.Job{ID: req.GetJobId(), Key: "host", Steps: []jobs.Step{
+	return jobs.Job{ID: req.GetJobId(), Key: "host", Long: true, Steps: []jobs.Step{
 		{Name: "Download packages", Do: d.Apt.Download},
 		{Name: "Install packages", Do: func(ctx context.Context) error { return d.Apt.Install(ctx, policy) }},
 		{Name: "Restart changed services only", Do: func(ctx context.Context) error {
@@ -82,12 +82,38 @@ func (d *Deps) checkAllWebsites(ctx context.Context) error {
 	return errors.Join(errs...)
 }
 
+// rebootAndWait starts the reboot and waits for the shutdown.
+//
+// Audit finding R10: "systemctl reboot" returns immediately. If this step ended then, the job
+// would continue with "Start containers" while the server shuts down, fail, and report
+// "failed". Thus the step waits until the agent gets the stop signal of the shutdown, and
+// then ends the job with no result (jobs.ErrInterrupted). After the reboot, the agent
+// continues the job (ResumeReboot), and only that part sends the result.
+func (d *Deps) rebootAndWait(ctx context.Context) error {
+	if err := d.Reboot(ctx); err != nil {
+		os.Remove(d.rebootMarker())
+		return err
+	}
+	wait := d.RebootWait
+	if wait == 0 {
+		wait = 10 * time.Minute
+	}
+	select {
+	case <-d.Stopping:
+		return jobs.ErrInterrupted
+	case <-time.After(wait):
+		// The server did not shut down. The job must not continue after a later restart.
+		os.Remove(d.rebootMarker())
+		return fmt.Errorf("the server did not shut down in %s after the reboot command", wait)
+	}
+}
+
 func (d *Deps) rebootSteps() []jobs.Step {
 	return []jobs.Step{
 		// Caddy finishes the open requests when its container stops.
 		{Name: "Drain the edge proxy", Do: func(context.Context) error { return nil }},
 		{Name: "Stop containers", Do: func(ctx context.Context) error { return d.allServices(ctx, "stop") }},
-		{Name: "Reboot", Do: func(ctx context.Context) error { return d.Reboot(ctx) }},
+		{Name: "Reboot", Do: d.rebootAndWait},
 		{Name: "Start containers", Do: func(ctx context.Context) error { return d.allServices(ctx, "start") }},
 		// FR-1117: after a reboot, all containers and services must operate.
 		{Name: "Check all services", Do: d.checkAllWebsites},
@@ -145,6 +171,11 @@ func (d *Deps) UpdateAgent(req *agentv1.UpdateAgentRequest) (jobs.Job, error) {
 }
 
 // EnsureEdge starts the edge proxy as the user cf-edge, if it does not operate.
+//
+// Audit finding S7: when the unit changed, for example with the image of a new agent version
+// or a different gVisor platform, the agent starts the edge proxy again. Without that, the
+// proxy continues with the old image until the next reboot. Caddy keeps its routes in the
+// data directory, and loads them when it starts.
 func (d *Deps) EnsureEdge(ctx context.Context, image string, dataDir string) error {
 	if _, err := d.Host.Podman(ctx, host.EdgeUser, "image", "exists", image); err != nil {
 		if _, err := d.Host.Podman(ctx, host.EdgeUser, "pull", "--quiet", image); err != nil {
@@ -160,12 +191,14 @@ func (d *Deps) EnsureEdge(ctx context.Context, image string, dataDir string) err
 	if err != nil {
 		return err
 	}
+	verb := "start"
 	if changed {
 		if _, err := d.Host.Systemctl(ctx, host.EdgeUser, "daemon-reload"); err != nil {
 			return err
 		}
+		verb = "restart"
 	}
-	if _, err := d.Host.Systemctl(ctx, host.EdgeUser, "start", "cf-edge.service"); err != nil {
+	if _, err := d.Host.Systemctl(ctx, host.EdgeUser, verb, "cf-edge.service"); err != nil {
 		return err
 	}
 	// Caddy makes its admin socket some seconds after the container starts.

@@ -1,6 +1,49 @@
 package validate
 
-import "testing"
+import (
+	"encoding/json"
+	"os"
+	"testing"
+)
+
+// Audit finding R5: the agent and the panel accept the same names. The two test their rules
+// with one list of examples (the panel: AuditFixesTest).
+func TestTheAgentAndThePanelUseTheSameExamplesForNames(t *testing.T) {
+	b, err := os.ReadFile("../../../testdata/names.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names struct {
+		Domains, Images struct{ Valid, Invalid []string }
+	}
+	if err := json.Unmarshal(b, &names); err != nil {
+		t.Fatal(err)
+	}
+	if len(names.Domains.Valid) == 0 || len(names.Domains.Invalid) == 0 || len(names.Images.Valid) == 0 || len(names.Images.Invalid) == 0 {
+		t.Fatalf("the list has no examples: %+v", names)
+	}
+	for _, d := range names.Domains.Valid {
+		if err := Domain(d); err != nil {
+			t.Errorf("the agent refuses the domain %q, which the panel accepts", d)
+		}
+	}
+	for _, d := range names.Domains.Invalid {
+		if Domain(d) == nil {
+			t.Errorf("the agent accepts the domain %q, which the panel refuses", d)
+		}
+	}
+	// The list has references with no tag. The agent gets each reference with a tag.
+	for _, i := range names.Images.Valid {
+		if err := Image(i + ":8.4.0-1"); err != nil {
+			t.Errorf("the agent refuses the image %q, which the panel accepts", i)
+		}
+	}
+	for _, i := range names.Images.Invalid {
+		if Image(i+":8.4.0-1") == nil {
+			t.Errorf("the agent accepts the image %q, which the panel refuses", i)
+		}
+	}
+}
 
 func TestValues(t *testing.T) {
 	good := []struct {

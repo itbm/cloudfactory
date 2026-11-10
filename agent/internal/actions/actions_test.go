@@ -50,7 +50,7 @@ func (f *fakeEdge) Remove(_ context.Context, id string) error {
 func deps(t *testing.T) (*Deps, *execx.Fake, *fakeEdge) {
 	dir := t.TempDir()
 	run := &execx.Fake{}
-	h := &host.Host{Run: run, SitesDir: filepath.Join(dir, "sites"), UnitRoot: filepath.Join(dir, "units"), ConfigRoot: filepath.Join(dir, "config"), LookupUID: func(string) (int, error) { return 1001, nil }}
+	h := &host.Host{Run: run, SitesDir: filepath.Join(dir, "sites"), UnitRoot: filepath.Join(dir, "units"), ConfigRoot: filepath.Join(dir, "config"), LookupUID: func(string) (int, error) { return 20001, nil }}
 	edge := &fakeEdge{sites: map[string]caddy.Site{}}
 	d := &Deps{
 		Host: h, Run: run, Edge: edge, State: NewState(dir),
@@ -134,14 +134,14 @@ func TestCreateWebsite(t *testing.T) {
 
 	for _, want := range []string{
 		"loginctl enable-linger acme_x7k2",
-		"runuser -u acme_x7k2 -- env XDG_RUNTIME_DIR=/run/user/1001 podman pull --quiet ghcr.io/cloudfactory/frankenphp-php8.4:8.4.0-1",
+		"runuser -u acme_x7k2 -- env XDG_RUNTIME_DIR=/run/user/20001 podman pull --quiet ghcr.io/cloudfactory/frankenphp-php8.4:8.4.0-1",
 		"systemctl --user --machine=acme_x7k2@ restart cf-acme_x7k2.service",
 	} {
 		if !f.Called(want) {
 			t.Errorf("not called: %s\ncalls: %v", want, f.Calls)
 		}
 	}
-	unit, err := os.ReadFile(filepath.Join(d.Host.UnitRoot, "1001", "cf-acme_x7k2.container"))
+	unit, err := os.ReadFile(filepath.Join(d.Host.UnitRoot, "20001", "cf-acme_x7k2.container"))
 	if err != nil || !strings.Contains(string(unit), "--runtime=/usr/local/bin/runsc") {
 		t.Errorf("unit: %v\n%s", err, unit)
 	}
@@ -234,7 +234,7 @@ func TestCreateWebsiteUsesTheSharedImageStore(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Root pulls the image into the shared store. The website user does not pull.
-	if !f.Called("podman pull --quiet "+sharedRef) || f.Called("runuser -u acme_x7k2 -- env XDG_RUNTIME_DIR=/run/user/1001 podman pull") {
+	if !f.Called("podman pull --quiet "+sharedRef) || f.Called("runuser -u acme_x7k2 -- env XDG_RUNTIME_DIR=/run/user/20001 podman pull") {
 		t.Errorf("calls = %v", f.Calls)
 	}
 	if _, err := os.Stat(filepath.Join(d.Images.Root, images.StoreName(sharedRef))); err != nil {
@@ -261,7 +261,7 @@ func TestACustomImageStaysWithTheWebsiteUser(t *testing.T) {
 	if err := run(t)(d.CreateWebsite(&agentv1.WebsiteRequest{JobId: jobID, Website: w})); err != nil {
 		t.Fatal(err)
 	}
-	if !f.Called("runuser -u acme_x7k2 -- env XDG_RUNTIME_DIR=/run/user/1001 podman pull --quiet registry.example/acme/app:1.0@"+sharedDigest) || f.Called("podman pull") {
+	if !f.Called("runuser -u acme_x7k2 -- env XDG_RUNTIME_DIR=/run/user/20001 podman pull --quiet registry.example/acme/app:1.0@"+sharedDigest) || f.Called("podman pull") {
 		t.Errorf("calls = %v", f.Calls)
 	}
 }
@@ -282,8 +282,8 @@ func TestSetRuntimeRemovesTheOldCopyOfTheWebsiteUser(t *testing.T) {
 	}
 	const id = "745a3dfee8c74d346f6d0d6d58de5ba21cb2113df5bde601fe1019622640b993"
 	f.Rules = append([]execx.Rule{
-		{Prefix: "runuser -u acme_x7k2 -- env XDG_RUNTIME_DIR=/run/user/1001 podman image inspect --format {{.Id}} ghcr.io/cloudfactory/frankenphp-php8.4:8.4.0-1", Output: id + "\n"},
-		{Prefix: "runuser -u acme_x7k2 -- env XDG_RUNTIME_DIR=/run/user/1001 podman images --noheading --no-trunc --filter readonly=false", Output: "sha256:" + id + "\n"},
+		{Prefix: "runuser -u acme_x7k2 -- env XDG_RUNTIME_DIR=/run/user/20001 podman image inspect --format {{.Id}} ghcr.io/cloudfactory/frankenphp-php8.4:8.4.0-1", Output: id + "\n"},
+		{Prefix: "runuser -u acme_x7k2 -- env XDG_RUNTIME_DIR=/run/user/20001 podman images --noheading --no-trunc --filter readonly=false", Output: "sha256:" + id + "\n"},
 	}, f.Rules...)
 	w := website("ghcr.io/cloudfactory/frankenphp-php8.4:8.4.0-1")
 	w.ImageDigest = sharedDigest
@@ -292,7 +292,7 @@ func TestSetRuntimeRemovesTheOldCopyOfTheWebsiteUser(t *testing.T) {
 	}
 	for _, want := range []string{
 		"podman pull --quiet " + sharedRef,
-		"runuser -u acme_x7k2 -- env XDG_RUNTIME_DIR=/run/user/1001 podman rmi --ignore " + id,
+		"runuser -u acme_x7k2 -- env XDG_RUNTIME_DIR=/run/user/20001 podman rmi --ignore " + id,
 	} {
 		if !f.Called(want) {
 			t.Errorf("not called: %s\ncalls: %v", want, f.Calls)
@@ -378,7 +378,7 @@ func TestCreateDatabaseRefusesSystemAndForeignNames(t *testing.T) {
 // to an object that exists.
 func TestCreateDatabaseFailsWhenTheDatabaseExists(t *testing.T) {
 	d, f, _ := deps(t)
-	f.Rules = []execx.Rule{{Prefix: "runuser -u cf-db -- env XDG_RUNTIME_DIR=/run/user/1001 podman exec -i cf-postgresql", Output: "1\n"}}
+	f.Rules = []execx.Rule{{Prefix: "runuser -u cf-db -- env XDG_RUNTIME_DIR=/run/user/20001 podman exec -i cf-postgresql", Output: "1\n"}}
 	err := run(t)(d.CreateDatabase(&agentv1.CreateDatabaseRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Engine: "postgresql", Name: "acme_x7k2_shop"}))
 	if err == nil || !strings.Contains(err.Error(), "exists") {
 		t.Fatalf("err = %v", err)
@@ -416,7 +416,7 @@ func TestPostgreSQLDatabaseHasGroupRoles(t *testing.T) {
 func TestSetDatabaseUserGivesAPermissionForEachDatabase(t *testing.T) {
 	for _, engine := range []string{"mariadb", "postgresql"} {
 		d, f, _ := deps(t)
-		f.Rules = []execx.Rule{{Prefix: "runuser -u cf-db -- env XDG_RUNTIME_DIR=/run/user/1001 podman exec -i cf-mariadb mariadb", Output: "169.254.77.1\n"}}
+		f.Rules = []execx.Rule{{Prefix: "runuser -u cf-db -- env XDG_RUNTIME_DIR=/run/user/20001 podman exec -i cf-mariadb mariadb", Output: "169.254.77.1\n"}}
 		req := &agentv1.SetDatabaseUserRequest{
 			JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Engine: engine, Name: "acme_x7k2_sync", Access: "anywhere",
 			Grants: []*agentv1.DatabaseGrant{
@@ -488,9 +488,22 @@ func TestDeleteDatabaseRemovesTheGrants(t *testing.T) {
 func TestBackupGivesTheSnapshotID(t *testing.T) {
 	d, f, _ := deps(t)
 	os.MkdirAll(d.Host.AppDir("acme_x7k2"), 0o755)
+	dumps := filepath.Join(d.DataDir, "dumps", "acme_x7k2")
+	var dumpMode os.FileMode
+	var dumpNames []string
 	f.Rules = []execx.Rule{
-		{Prefix: "restic", Output: `{"message_type":"status"}` + "\n" + `{"message_type":"summary","snapshot_id":"1a2b3c4d","total_bytes_processed":2048}`},
-		{Prefix: "runuser -u cf-db -- env XDG_RUNTIME_DIR=/run/user/1001 podman exec cf-mariadb mariadb-dump", Output: "CREATE TABLE t (id int);\n"},
+		{Prefix: "restic --repo s3:backups/cf --password-file  --json --retry-lock 30m backup", Output: `{"message_type":"status"}` + "\n" + `{"message_type":"summary","snapshot_id":"1a2b3c4d","total_bytes_processed":2048}`, Do: func() error {
+			// The state of the dump directory at the time of the upload.
+			if info, err := os.Stat(dumps); err == nil {
+				dumpMode = info.Mode().Perm()
+			}
+			entries, _ := os.ReadDir(dumps)
+			for _, e := range entries {
+				dumpNames = append(dumpNames, e.Name())
+			}
+			return nil
+		}},
+		{Prefix: "runuser -u cf-db -- env XDG_RUNTIME_DIR=/run/user/20001 podman exec cf-mariadb mariadb-dump", Output: "CREATE TABLE t (id int);\n"},
 	}
 
 	job, err := d.Backup(&agentv1.BackupRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Kind: "manual", Target: "s3:backups/cf", Databases: []*agentv1.DatabaseRef{{Engine: "mariadb", Name: "acme_x7k2_shop"}}})
@@ -503,9 +516,12 @@ func TestBackupGivesTheSnapshotID(t *testing.T) {
 		t.Errorf("result = %v", r)
 	}
 	// CF-06: the dumps are in the data directory of the agent, not in the home of the website.
-	dumps := filepath.Join(d.DataDir, "dumps", "acme_x7k2")
-	if info, err := os.Stat(dumps); err != nil || info.Mode().Perm() != 0o700 {
-		t.Errorf("dump directory: %v %v", info, err)
+	if dumpMode != 0o700 || len(dumpNames) != 1 || dumpNames[0] != "mariadb-acme_x7k2_shop.dump" {
+		t.Errorf("dump directory at the upload: mode %o, files %v", dumpMode, dumpNames)
+	}
+	// Audit finding R8: the dumps do not stay on the disk after the upload.
+	if _, err := os.Stat(dumps); !os.IsNotExist(err) {
+		t.Errorf("the dumps are on the disk after the backup: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(d.Host.SiteRoot("acme_x7k2"), ".cloudfactory")); !os.IsNotExist(err) {
 		t.Error("the agent wrote a dump in the home of the website")
@@ -513,8 +529,74 @@ func TestBackupGivesTheSnapshotID(t *testing.T) {
 	if !f.Called("restic --repo s3:backups/cf --password-file  --json --retry-lock 30m backup " + d.Host.AppDir("acme_x7k2") + " " + dumps) {
 		t.Errorf("calls = %v", f.Calls)
 	}
-	if _, err := d.Backup(&agentv1.BackupRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Target: "/tmp"}); err == nil {
+	if _, err := d.Backup(&agentv1.BackupRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Kind: "manual", Target: "/tmp"}); err == nil {
 		t.Error("a local target was accepted")
+	}
+	// The kind is a tag of the snapshot. A value with a comma would add a second tag.
+	for _, kind := range []string{"", "nightly", "manual,website=" + websiteID} {
+		if _, err := d.Backup(&agentv1.BackupRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Kind: kind, Target: "s3:backups/cf"}); err == nil {
+			t.Errorf("the kind %q was accepted", kind)
+		}
+	}
+}
+
+// Audit finding R8: a backup that fails does not leave the dumps on the disk.
+func TestAFailedBackupRemovesTheDumps(t *testing.T) {
+	d, f, _ := deps(t)
+	os.MkdirAll(d.Host.AppDir("acme_x7k2"), 0o755)
+	f.Rules = []execx.Rule{
+		{Prefix: "runuser -u cf-db -- env XDG_RUNTIME_DIR=/run/user/20001 podman exec cf-mariadb mariadb-dump --user=root --single-transaction --routines acme_x7k2_blog", Err: errors.New("mariadb-dump: exit status 2")},
+		{Prefix: "runuser -u cf-db -- env XDG_RUNTIME_DIR=/run/user/20001 podman exec cf-mariadb mariadb-dump", Output: "CREATE TABLE t (id int);\n"},
+	}
+	job, err := d.Backup(&agentv1.BackupRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Kind: "scheduled", Target: "s3:backups/cf",
+		Databases: []*agentv1.DatabaseRef{{Engine: "mariadb", Name: "acme_x7k2_shop"}, {Engine: "mariadb", Name: "acme_x7k2_blog"}}})
+	if err := run(t)(job, err); err == nil {
+		t.Fatal("the backup did not fail")
+	}
+	if _, err := os.Stat(filepath.Join(d.DataDir, "dumps", "acme_x7k2")); !os.IsNotExist(err) {
+		t.Errorf("the dumps are on the disk after the failed backup: %v", err)
+	}
+}
+
+// Audit finding R8: a full restore can remove the files that are not in the snapshot. The
+// website user removes them, after restic has the snapshot on the server.
+func TestAFullRestoreCanRemoveTheOtherFiles(t *testing.T) {
+	d, f, _ := deps(t)
+	run(t)(d.CreateWebsite(&agentv1.WebsiteRequest{JobId: jobID, Website: website("ghcr.io/cloudfactory/frankenphp-php8.4:8.4.0-1")}))
+	app := d.Host.AppDir("acme_x7k2")
+	req := &agentv1.RestoreRequest{JobId: jobID2, WebsiteId: websiteID, UnixUser: "acme_x7k2", SnapshotId: "1a2b3c4d", Scope: "website", Target: "s3:b/c", DeleteExtra: true}
+	f.Calls = nil
+	if err := run(t)(d.Restore(req)); err != nil {
+		t.Fatal(err)
+	}
+	order := []string{}
+	for _, c := range f.Calls {
+		switch {
+		case strings.Contains(c, " restore 1a2b3c4d "):
+			order = append(order, "download")
+		case c == "runuser -u acme_x7k2 -- find "+app+" -mindepth 1 -type d -exec chmod u+rwx -- {} +":
+			order = append(order, "open")
+		case c == "runuser -u acme_x7k2 -- find "+app+" -mindepth 1 -delete":
+			order = append(order, "remove")
+		case strings.Contains(c, "| runuser -u acme_x7k2 -- tar --extract"):
+			order = append(order, "copy")
+		}
+	}
+	if strings.Join(order, " ") != "download open remove copy" {
+		t.Errorf("order = %v\ncalls = %v", order, f.Calls)
+	}
+	// Without the option, the agent removes nothing.
+	req.DeleteExtra = false
+	f.Calls = nil
+	if err := run(t)(d.Restore(req)); err != nil {
+		t.Fatal(err)
+	}
+	if f.Called("runuser -u acme_x7k2 -- find") {
+		t.Errorf("the agent removed files without the option: %v", f.Calls)
+	}
+	// The option is only for the full website.
+	if _, err := d.Restore(&agentv1.RestoreRequest{JobId: jobID2, WebsiteId: websiteID, UnixUser: "acme_x7k2", SnapshotId: "1a2b3c4d", Scope: "file", Item: "/public/index.php", Target: "s3:b/c", DeleteExtra: true}); err == nil {
+		t.Error("the restore of one file can remove the other files")
 	}
 }
 
@@ -692,8 +774,20 @@ func TestRebootResumesAfterTheReboot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, s := range job.Steps[:3] {
-		if err := s.Do(context.Background()); err != nil {
+	// The shutdown sends the stop signal to the agent a short time after the reboot command.
+	stopping := make(chan struct{})
+	d.Stopping = stopping
+	d.Reboot = func(context.Context) error {
+		time.AfterFunc(20*time.Millisecond, func() { close(stopping) })
+		return nil
+	}
+	for i, s := range job.Steps[:3] {
+		err := s.Do(context.Background())
+		// Audit finding R10: the reboot step ends the job with no result.
+		if i == 2 && !errors.Is(err, jobs.ErrInterrupted) {
+			t.Fatalf("the reboot step gave %v", err)
+		}
+		if i < 2 && err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -703,6 +797,32 @@ func TestRebootResumesAfterTheReboot(t *testing.T) {
 	}
 	if _, ok := d.ResumeReboot(); ok {
 		t.Error("the reboot resumed two times")
+	}
+}
+
+// Audit finding R10: a server that does not shut down fails the job, and the job does not
+// continue after a later restart of the agent.
+func TestARebootThatDoesNotStartFailsTheJob(t *testing.T) {
+	d, _, _ := deps(t)
+	d.RebootWait = 20 * time.Millisecond
+	job, err := d.RebootJob(&agentv1.HostRequest{JobId: jobID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := job.Steps[2].Do(context.Background()); err == nil || errors.Is(err, jobs.ErrInterrupted) {
+		t.Fatalf("err = %v", err)
+	}
+	if _, ok := d.ResumeReboot(); ok {
+		t.Error("the job continues after a reboot that did not start")
+	}
+
+	d.Reboot = func(context.Context) error { return errors.New("systemctl: access denied") }
+	job, _ = d.RebootJob(&agentv1.HostRequest{JobId: jobID2})
+	if err := job.Steps[2].Do(context.Background()); err == nil {
+		t.Fatal("no error")
+	}
+	if _, ok := d.ResumeReboot(); ok {
+		t.Error("the job continues after a reboot command that failed")
 	}
 }
 

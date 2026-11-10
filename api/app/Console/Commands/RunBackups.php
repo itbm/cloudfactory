@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Enums\AgentAction;
 use App\Enums\WebsiteStatus;
 use App\Http\Controllers\Api\BackupController;
+use App\Models\BackupRemoval;
 use App\Models\Server;
 use App\Models\Setting;
 use App\Models\Website;
@@ -16,13 +17,17 @@ use Illuminate\Support\Carbon;
 
 /**
  * FR-901 and FR-902: the nightly backup of each website at the time of the backup policy (UTC),
- * with the retention policy. On Sunday, one server also removes the data that no snapshot uses.
+ * with the retention policy. On Sunday, one server also removes the backups of the websites
+ * that were deleted some time ago, and the data that no snapshot uses.
  * The scheduler runs this command each minute. It starts the backups once each day.
  */
 #[Signature('cloudfactory:backups {--now : Start the backups now}')]
 #[Description('Start the scheduled backups of all websites')]
 class RunBackups extends Command
 {
+    /** The maximum number of deleted websites in one weekly job. */
+    public const DELETED_WEBSITES = 200;
+
     public function handle(JobDispatcher $jobs): int
     {
         $policy = BackupController::policy();
@@ -48,7 +53,10 @@ class RunBackups extends Command
 
         // All servers use the same repository. One server removes the unused data each week.
         if ($now->isSunday() && ($server = Server::whereJsonContains('roles', 'web')->where('state', 'healthy')->orderBy('name')->first())) {
-            $jobs->dispatch($server, AgentAction::PruneBackups, ['target' => $policy['target']], 'Remove unused backup data');
+            // Audit finding R8: the job also removes the backups of the websites that were
+            // deleted some time ago. A limit keeps the job short. The rest goes next week.
+            $deleted = BackupRemoval::where('remove_after', '<=', $now)->orderBy('remove_after')->limit(self::DELETED_WEBSITES)->pluck('website_id')->all();
+            $jobs->dispatch($server, AgentAction::PruneBackups, ['target' => $policy['target'], 'forgetWebsiteIds' => $deleted], 'Remove unused backup data');
             $this->line("Started the weekly prune on {$server->name}.");
         }
 

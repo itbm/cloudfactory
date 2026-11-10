@@ -17,7 +17,7 @@ var (
 	domain    = regexp.MustCompile(`^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
 	id        = regexp.MustCompile(`^[0-9A-Za-z]{26}$`)
 	dbName    = regexp.MustCompile(`^[a-z][a-z0-9_]{1,62}$`)
-	image     = regexp.MustCompile(`^[a-z0-9.-]+(:[0-9]+)?(/[a-z0-9._-]+)+:[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$`)
+	image     = regexp.MustCompile(`^([a-z0-9]([a-z0-9.-]*[a-z0-9])?)(:[0-9]+)?(/[a-z0-9._-]+)+:[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$`)
 	digest    = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
 	extension = regexp.MustCompile(`^[a-z0-9_]{1,40}$`)
 	iniKey    = regexp.MustCompile(`^[a-z_.]{1,64}$`)
@@ -28,12 +28,20 @@ var (
 // UnixUser checks a website user name, for example "acme_x7k2".
 func UnixUser(s string) error { return match(unixUser, s, "Unix user") }
 
-// Domain checks a lower-case domain name.
+// Domain checks a lower-case domain name. The panel has the same rule
+// (WebsiteController::DOMAIN), and the two use the examples in testdata/names.json.
 func Domain(s string) error {
 	if len(s) > 253 {
 		return fmt.Errorf("the domain %q is too long", s)
 	}
-	return match(domain, s, "domain")
+	if err := match(domain, s, "domain"); err != nil {
+		return err
+	}
+	// The last label is not a number, so that the name is not an IP address (audit finding R5).
+	if last := s[strings.LastIndexByte(s, '.')+1:]; strings.Trim(last, "0123456789") == "" {
+		return fmt.Errorf("the domain %q is not valid", s)
+	}
+	return nil
 }
 
 // SftpPort checks the public SFTP port of a server. The SSH service of the host keeps port 22,
@@ -84,8 +92,17 @@ func TenantDatabaseName(unixUser, s string) error {
 	return nil
 }
 
-// Image checks an image reference with a tag.
-func Image(s string) error { return match(image, s, "image") }
+// Image checks an image reference with a tag. The panel has the same rule for the reference
+// with no tag (ImageController::REFERENCE).
+func Image(s string) error {
+	m := image.FindStringSubmatch(s)
+	// The first part is the host of a registry: it has a dot or a port, or it is "localhost".
+	// Podman would search a name with no registry in its default registries (audit finding R5).
+	if m == nil || !(strings.Contains(m[1], ".") || m[3] != "" || m[1] == "localhost") {
+		return fmt.Errorf("the image %q is not valid", s)
+	}
+	return nil
+}
 
 // Digest checks an image digest. An empty digest is permitted.
 func Digest(s string) error {

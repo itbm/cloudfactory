@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Enums\AgentAction;
 use App\Enums\JobState;
 use App\Enums\Role;
+use App\Http\Controllers\Api\BackupController;
 use App\Http\Controllers\Api\ImageController;
 use App\Http\Controllers\Api\WebsiteController;
 use App\Jobs\SendJobToAgent;
@@ -13,6 +14,7 @@ use App\Models\AuditEntry;
 use App\Models\Domain;
 use App\Models\Rollout;
 use App\Models\Setting;
+use App\Models\Snapshot;
 use App\Models\Website;
 use App\Services\AgentClient;
 use App\Services\Audit;
@@ -20,6 +22,7 @@ use App\Services\JobDispatcher;
 use App\Services\JobOutcome;
 use App\Services\RolloutEngine;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Tests\TestCase;
@@ -132,7 +135,7 @@ class AuditFixesTest extends TestCase
     {
         Setting::put('backup_policy', ['daily' => 7, 'weekly' => 4, 'monthly' => 6, 'time' => '03:00', 'target' => 's3:s3.example.com/bucket']);
         $this->actingWith($this->user(Role::Owner, $this->customer()));
-        $this->getJson('/api/v1/backup-policy')->assertOk()->assertExactJson(['daily' => 7, 'weekly' => 4, 'monthly' => 6, 'time' => '03:00']);
+        $this->getJson('/api/v1/backup-policy')->assertOk()->assertExactJson(['daily' => 7, 'weekly' => 4, 'monthly' => 6, 'time' => '03:00', 'manual' => 10]);
 
         $this->actingWith($this->user());
         $this->getJson('/api/v1/backup-policy')->assertOk()->assertJsonPath('target', 's3:s3.example.com/bucket')->assertJsonStructure(['credentialNames']);
@@ -376,6 +379,80 @@ class AuditFixesTest extends TestCase
         $this->assertFalse((bool) $copy->sftp_enabled);
         $this->assertEmpty($copy->sftp_keys);
         $this->assertTrue((bool) $website->fresh()->sftp_enabled);
+    }
+
+    // R8
+
+    public function test_the_retention_policy_does_not_remove_manual_backups(): void
+    {
+        Setting::put('backup_policy', ['daily' => 7, 'weekly' => 4, 'monthly' => 6, 'time' => '03:00', 'target' => 's3:s3.example.com/bucket']);
+        config(['cloudfactory.manual_backups' => 5]);
+        $website = $this->website($this->customer(), $this->server(), $this->image());
+
+        // The agent applies each policy to the snapshots of the same kind only.
+        $this->assertSame(['daily' => 7, 'weekly' => 4, 'monthly' => 6], BackupController::backupPayload($website, 'scheduled')['retention']);
+        $this->assertSame(['last' => 5], BackupController::backupPayload($website, 'manual')['retention']);
+
+        $this->actingWith($this->user(Role::Owner, $website->customer));
+        $id = $this->postJson("/api/v1/websites/{$website->id}/snapshots")->assertAccepted()->json('job.id');
+        $this->assertSame(['last' => 5], AgentJob::findOrFail($id)->payload['retention']);
+        $this->getJson('/api/v1/backup-policy')->assertOk()->assertJsonPath('manual', 5);
+    }
+
+    public function test_a_full_restore_can_remove_the_new_files(): void
+    {
+        Setting::put('backup_policy', ['daily' => 7, 'weekly' => 4, 'monthly' => 6, 'time' => '03:00', 'target' => 's3:s3.example.com/bucket']);
+        $website = $this->website($this->customer(), $this->server(), $this->image());
+        $snapshot = Snapshot::create(['website_id' => $website->id, 'kind' => 'manual', 'restic_id' => 'abc12345', 'databases' => [], 'mailboxes' => []]);
+        $this->actingWith($this->user(Role::Owner, $website->customer));
+        $url = "/api/v1/websites/{$website->id}/snapshots/{$snapshot->id}/restore";
+
+        $id = $this->postJson($url, ['scope' => 'website', 'removeNewFiles' => true])->assertAccepted()->json('job.id');
+        $this->assertTrue(AgentJob::findOrFail($id)->payload['deleteExtra']);
+        $this->assertDatabaseHas('audit_entries', ['action' => 'Restored from backup', 'target' => 'acme.example full website, new files removed']);
+
+        // The default keeps the files, and the option is only for the full website.
+        $id = $this->postJson($url, ['scope' => 'website'])->assertAccepted()->json('job.id');
+        $this->assertFalse(AgentJob::findOrFail($id)->payload['deleteExtra']);
+        $this->postJson($url, ['scope' => 'file', 'item' => '/public/index.php', 'removeNewFiles' => true])->assertJsonValidationErrors('removeNewFiles');
+    }
+
+    public function test_the_weekly_job_removes_the_backups_of_a_deleted_website_after_a_set_time(): void
+    {
+        Setting::put('backup_policy', ['daily' => 7, 'weekly' => 4, 'monthly' => 6, 'time' => '03:00', 'target' => 's3:s3.example.com/bucket']);
+        config(['cloudfactory.deleted_website_backup_days' => 30]);
+        $server = $this->server();
+        $website = $this->website($this->customer(), $server, $this->image());
+        // Sunday 1 November 2026.
+        Carbon::setTestNow(Carbon::parse('2026-11-01 02:00:00', 'UTC'));
+        $delete = app(JobDispatcher::class)->dispatch($server, AgentAction::DeleteWebsite, [], 'Delete', $website);
+        app(JobOutcome::class)->finish($delete, JobState::Succeeded);
+        $this->assertModelMissing($website);
+        $this->assertDatabaseHas('backup_removals', ['website_id' => $website->id, 'website_name' => 'acme.example']);
+
+        // In the first 30 days, the weekly job keeps the backups.
+        Carbon::setTestNow(Carbon::parse('2026-11-08 03:00:00', 'UTC'));
+        $this->artisan('cloudfactory:backups')->assertSuccessful();
+        $prune = AgentJob::where('action', AgentAction::PruneBackups->value)->sole();
+        $this->assertSame([], $prune->payload['forgetWebsiteIds']);
+        app(JobOutcome::class)->finish($prune, JobState::Succeeded);
+        $this->assertDatabaseCount('backup_removals', 1);
+
+        // After 30 days, the job removes them. The record stays until the job is complete.
+        Carbon::setTestNow(Carbon::parse('2026-12-06 03:00:00', 'UTC'));
+        $this->artisan('cloudfactory:backups')->assertSuccessful();
+        $prune = AgentJob::where('action', AgentAction::PruneBackups->value)->latest('id')->firstOrFail();
+        $this->assertSame([$website->id], $prune->payload['forgetWebsiteIds']);
+        $this->assertSame(['Remove backups of deleted websites', 'Remove unused data'], $prune->steps);
+        app(JobOutcome::class)->finish($prune, JobState::Failed, 'restic: exit status 1');
+        $this->assertDatabaseCount('backup_removals', 1);
+
+        Carbon::setTestNow(Carbon::parse('2026-12-13 03:00:00', 'UTC'));
+        $this->artisan('cloudfactory:backups')->assertSuccessful();
+        $prune = AgentJob::where('action', AgentAction::PruneBackups->value)->latest('id')->firstOrFail();
+        app(JobOutcome::class)->finish($prune, JobState::Succeeded);
+        $this->assertDatabaseCount('backup_removals', 0);
+        Carbon::setTestNow();
     }
 
     // R11

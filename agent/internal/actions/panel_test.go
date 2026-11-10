@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/itbm/cloudfactory/agent/internal/execx"
 	"github.com/itbm/cloudfactory/agent/internal/quadlet"
 )
 
@@ -30,7 +31,7 @@ func TestInstallPanelStartsTheDatabaseFirst(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	asPanel := "runuser -u cf-panel -- env XDG_RUNTIME_DIR=/run/user/1001 podman "
+	asPanel := "runuser -u cf-panel -- env XDG_RUNTIME_DIR=/run/user/20001 podman "
 	order := []string{
 		asPanel + "pull --quiet ghcr.io/cloudfactory/postgresql:0.2.0",
 		asPanel + "pull --quiet ghcr.io/cloudfactory/panel-api:0.2.0",
@@ -139,5 +140,64 @@ func TestInstallPanelStopsOnABadPasswordFile(t *testing.T) {
 	os.WriteFile(p.PanelDatabaseEnv(), []byte("POSTGRES_PASSWORD=x\n"), 0o600)
 	if err := d.InstallPanel(context.Background(), p); err == nil || !strings.Contains(err.Error(), "has no DB_PASSWORD") {
 		t.Errorf("err = %v", err)
+	}
+}
+
+// Audit finding S7: an update of the panel sets the version that the panel offers to the
+// other servers, and keeps the other settings.
+func TestInstallPanelSetsTheVersionInTheSettings(t *testing.T) {
+	d, f, _ := deps(t)
+	p := testPanel(t.TempDir())
+	env := p.DataDir + "/panel.env"
+	os.MkdirAll(p.DataDir, 0o755)
+	os.WriteFile(env, []byte("APP_KEY=base64:abc\nAPP_URL=https://panel.example.com\nCF_AGENT_LATEST=0.1.0\n"), 0o600)
+	if err := d.InstallPanel(context.Background(), p); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(env)
+	if string(b) != "APP_KEY=base64:abc\nAPP_URL=https://panel.example.com\nCF_AGENT_LATEST="+p.Version+"\n" {
+		t.Errorf("settings = %q", b)
+	}
+	if info, _ := os.Stat(env); info.Mode().Perm() != 0o600 {
+		t.Errorf("mode = %o", info.Mode().Perm())
+	}
+	if !f.Called("chown cf-panel:cf-panel " + env) {
+		t.Errorf("the user of the panel does not own the settings: %v", f.Calls)
+	}
+	if domain, err := PanelDomain(env); err != nil || domain != "panel.example.com" {
+		t.Errorf("domain = %q, %v", domain, err)
+	}
+}
+
+// Audit findings B5 and S3: root on the panel server can reset a password and remove a lock.
+func TestThePanelAccountCommandsRunInTheAPIContainer(t *testing.T) {
+	d, f, _ := deps(t)
+	f.Rules = []execx.Rule{{Prefix: "runuser -u cf-panel", Output: "Temporary password for admin@example.com: abc\n"}}
+	out, err := d.ResetPanelPassword(context.Background(), "admin@example.com", true)
+	if err != nil || !strings.Contains(out, "Temporary password") {
+		t.Fatalf("out = %q, err = %v", out, err)
+	}
+	asPanel := "runuser -u cf-panel -- env XDG_RUNTIME_DIR=/run/user/20001 podman exec cf-panel-api php artisan "
+	if f.Calls[len(f.Calls)-1] != asPanel+"cloudfactory:reset-password --remove-totp -- admin@example.com" {
+		t.Errorf("calls = %v", f.Calls)
+	}
+	if _, err := d.UnlockPanelSignIn(context.Background(), "admin@example.com", "203.0.113.9"); err != nil {
+		t.Fatal(err)
+	}
+	if f.Calls[len(f.Calls)-1] != asPanel+"cloudfactory:unlock --address=203.0.113.9 -- admin@example.com" {
+		t.Errorf("calls = %v", f.Calls)
+	}
+	// A value that is not an address or an email does not go to the command.
+	n := len(f.Calls)
+	if _, err := d.UnlockPanelSignIn(context.Background(), "admin@example.com", "203.0.113.9 --help"); err == nil {
+		t.Error("a bad address was accepted")
+	}
+	for _, email := range []string{"", "admin", "a b@example.com", "admin@example.com\n--remove-totp"} {
+		if _, err := d.ResetPanelPassword(context.Background(), email, false); err == nil {
+			t.Errorf("the email %q was accepted", email)
+		}
+	}
+	if len(f.Calls) != n {
+		t.Errorf("a command ran with a bad value: %v", f.Calls[n:])
 	}
 }

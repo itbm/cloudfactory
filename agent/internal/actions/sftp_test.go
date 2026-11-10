@@ -38,7 +38,7 @@ func sftpDeps(t *testing.T) (*Deps, *execx.Fake) {
 	d.SftpImage = "ghcr.io/cloudfactory/sftp:0.2.0"
 	d.SftpReady = func(context.Context, int) error { return nil }
 	d.ReadyTimeout = time.Millisecond
-	d.Host.LookupGID = func(string) (int, error) { return 1001, nil }
+	d.Host.LookupGID = func(string) (int, error) { return 20001, nil }
 	return d, f
 }
 
@@ -81,7 +81,7 @@ func TestEnsureSftpMovesSftpFromTheHost(t *testing.T) {
 		t.Error("the SFTP configuration of the host is still there")
 	}
 	passwd, _ := os.ReadFile(filepath.Join(d.SftpUsersDir, "passwd"))
-	if !strings.Contains(string(passwd), "acme_x7k2:x:1001:1001:") || strings.Contains(string(passwd), "other_ab12") {
+	if !strings.Contains(string(passwd), "acme_x7k2:x:20001:20001:") || strings.Contains(string(passwd), "other_ab12") {
 		t.Errorf("only the users with a key can sign in:\n%s", passwd)
 	}
 	if got := d.SftpPortInUse(); got != 2200 {
@@ -158,7 +158,7 @@ func TestSyncSftpUsersSkipsSystemUsers(t *testing.T) {
 		if name == "other_ab12" {
 			return 0, nil
 		}
-		return 1001, nil
+		return 20001, nil
 	}
 	if err := d.SyncSftpUsers(); err != nil {
 		t.Fatal(err)

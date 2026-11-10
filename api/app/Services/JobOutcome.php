@@ -6,6 +6,7 @@ use App\Enums\AgentAction;
 use App\Enums\JobState;
 use App\Enums\WebsiteStatus;
 use App\Models\AgentJob;
+use App\Models\BackupRemoval;
 use App\Models\Domain;
 use App\Models\Rollout;
 use App\Models\Snapshot;
@@ -95,7 +96,9 @@ class JobOutcome
             AgentAction::SetWebsitePower => $website?->update([
                 'status' => ($p['power'] ?? '') === 'stop' ? WebsiteStatus::Stopped : WebsiteStatus::Running,
             ]),
-            AgentAction::DeleteWebsite => $website?->delete(),
+            AgentAction::DeleteWebsite => $website && $this->deleteWebsite($website),
+            // Audit finding R8: the backups of these deleted websites are gone.
+            AgentAction::PruneBackups => BackupRemoval::whereIn('website_id', array_filter((array) ($p['forgetWebsiteIds'] ?? []), 'is_string'))->delete(),
             AgentAction::SetSftp => $website?->update([
                 'sftp_enabled' => (bool) ($p['enabled'] ?? false),
                 'sftp_keys' => $p['authorizedKeys'] ?? [],
@@ -156,6 +159,20 @@ class JobOutcome
         if (isset($p['user'])) {
             $website->databaseUsers()->where(['engine' => $p['engine'] ?? '', 'name' => $p['user']])->delete();
         }
+    }
+
+    /**
+     * Audit finding R8: the backups of a deleted website stay in the repository for a set time,
+     * so that an administrator can restore them with restic. Then the weekly job removes them.
+     */
+    private function deleteWebsite(Website $website): bool
+    {
+        BackupRemoval::updateOrCreate(['website_id' => $website->id], [
+            'website_name' => $website->name,
+            'remove_after' => now()->addDays(max(0, (int) config('cloudfactory.deleted_website_backup_days', 30))),
+        ]);
+
+        return (bool) $website->delete();
     }
 
     private function recordSnapshot(Website $website, array $p, array $result): bool

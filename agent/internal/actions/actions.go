@@ -47,7 +47,17 @@ type Deps struct {
 	// Reboot reboots the host. Restart restarts the agent.
 	Reboot  func(ctx context.Context) error
 	Restart func()
-	Arch    string
+	// Stopping is closed when the agent gets a stop signal, for example at a shutdown. A nil
+	// channel never closes.
+	Stopping <-chan struct{}
+	// RebootWait is the maximum time between the reboot command and the stop signal. The
+	// default is 10 minutes.
+	RebootWait time.Duration
+	// DomainWait is the time that a status report waits for a check of the domains. DomainLimit
+	// is the time limit for one check of all domains. The defaults are 5 seconds and 2 minutes.
+	DomainWait  time.Duration
+	DomainLimit time.Duration
+	Arch        string
 	// BlockDevice is the disk for the I/O limit of each website.
 	BlockDevice string
 	// QuotaMount is the mount point of SitesDir when user quotas are on there. Empty means that

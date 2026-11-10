@@ -3,6 +3,7 @@ package actions
 import (
 	"context"
 	"fmt"
+	"net"
 	"os"
 	"regexp"
 	"strings"
@@ -35,6 +36,9 @@ func (d *Deps) InstallPanel(ctx context.Context, p quadlet.Panel) error {
 	}
 	password, err := d.panelDatabasePassword(ctx, p.PanelDatabaseEnv())
 	if err != nil {
+		return err
+	}
+	if err := d.setPanelVersion(ctx, p.DataDir+"/panel.env", p.Version); err != nil {
 		return err
 	}
 	changed := map[string]bool{}
@@ -75,6 +79,98 @@ func (d *Deps) InstallPanel(ctx context.Context, p quadlet.Panel) error {
 	}
 	return nil
 }
+
+var panelLatestRE = regexp.MustCompile(`(?m)^CF_AGENT_LATEST=.*$`)
+
+// setPanelVersion writes the version of this release in the settings of the panel. The panel
+// offers this version of the agent to the other servers (audit finding S7). The installer
+// makes the file. Without the file, the function does nothing.
+func (d *Deps) setPanelVersion(ctx context.Context, envFile, version string) error {
+	b, err := os.ReadFile(envFile)
+	if os.IsNotExist(err) {
+		return nil
+	} else if err != nil {
+		return err
+	}
+	line := "CF_AGENT_LATEST=" + strings.TrimPrefix(version, "v")
+	content := string(b)
+	if panelLatestRE.MatchString(content) {
+		content = panelLatestRE.ReplaceAllLiteralString(content, line)
+	} else {
+		content = strings.TrimRight(content, "\n") + "\n" + line + "\n"
+	}
+	changed, err := host.WriteFile(envFile, content, 0o600)
+	if err != nil || !changed {
+		return err
+	}
+	_, err = d.Run.Run(ctx, "chown", PanelUser+":"+PanelUser, envFile)
+	return err
+}
+
+// panelAPIContainer is the container of the panel API (quadlet.PanelUnits).
+const panelAPIContainer = "cf-panel-api"
+
+// PanelCommand runs a command of the panel ("php artisan") in the API container, as the user
+// of the panel. It gives the output of the command. The arguments go to the command as they
+// are, with no shell. "--" before the values keeps a value that starts with "-" from being
+// read as an option.
+func (d *Deps) PanelCommand(ctx context.Context, command string, options []string, values ...string) (string, error) {
+	args := append([]string{"exec", panelAPIContainer, "php", "artisan", command}, options...)
+	args = append(append(args, "--"), values...)
+	return d.Host.Podman(ctx, PanelUser, args...)
+}
+
+// ResetPanelPassword gives a user of the panel a new temporary password (audit finding B5).
+// It is the way back for an administrator who lost the password or the TOTP device. Only
+// root on the panel server can do it.
+func (d *Deps) ResetPanelPassword(ctx context.Context, email string, removeTotp bool) (string, error) {
+	if err := panelEmail(email); err != nil {
+		return "", err
+	}
+	options := []string{}
+	if removeTotp {
+		options = append(options, "--remove-totp")
+	}
+	return d.PanelCommand(ctx, "cloudfactory:reset-password", options, email)
+}
+
+// UnlockPanelSignIn removes the sign-in lock of an account (audit finding S3). With an
+// address, it also removes the lock for that client address.
+func (d *Deps) UnlockPanelSignIn(ctx context.Context, email, address string) (string, error) {
+	if err := panelEmail(email); err != nil {
+		return "", err
+	}
+	options := []string{}
+	if address != "" {
+		if net.ParseIP(address) == nil {
+			return "", fmt.Errorf("%q is not an IP address", address)
+		}
+		options = append(options, "--address="+address)
+	}
+	return d.PanelCommand(ctx, "cloudfactory:unlock", options, email)
+}
+
+func panelEmail(email string) error {
+	if len(email) > 254 || !strings.Contains(email, "@") || strings.ContainsFunc(email, func(r rune) bool { return r <= ' ' || r == 0x7f }) {
+		return fmt.Errorf("%q is not an email address", email)
+	}
+	return nil
+}
+
+// PanelDomain reads the domain of the panel from the settings file that the installer wrote.
+func PanelDomain(envFile string) (string, error) {
+	b, err := os.ReadFile(envFile)
+	if err != nil {
+		return "", err
+	}
+	m := panelURLRE.FindSubmatch(b)
+	if m == nil {
+		return "", fmt.Errorf("%s has no APP_URL with the domain of the panel", envFile)
+	}
+	return string(m[1]), nil
+}
+
+var panelURLRE = regexp.MustCompile(`(?m)^APP_URL=https://([a-z0-9.-]+)$`)
 
 var panelPasswordRE = regexp.MustCompile(`(?m)^DB_PASSWORD=([0-9a-f]{32,})$`)
 

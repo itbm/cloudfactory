@@ -1563,11 +1563,15 @@ func (x *BackupRequest) GetRetention() *Retention {
 	return nil
 }
 
+// The snapshots of a website that the agent keeps. The policy applies to the snapshots of the
+// same kind as the backup, so that the scheduled backups do not remove the manual backups.
 type Retention struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Daily         int32                  `protobuf:"varint,1,opt,name=daily,proto3" json:"daily,omitempty"`
-	Weekly        int32                  `protobuf:"varint,2,opt,name=weekly,proto3" json:"weekly,omitempty"`
-	Monthly       int32                  `protobuf:"varint,3,opt,name=monthly,proto3" json:"monthly,omitempty"`
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Daily   int32                  `protobuf:"varint,1,opt,name=daily,proto3" json:"daily,omitempty"`
+	Weekly  int32                  `protobuf:"varint,2,opt,name=weekly,proto3" json:"weekly,omitempty"`
+	Monthly int32                  `protobuf:"varint,3,opt,name=monthly,proto3" json:"monthly,omitempty"`
+	// When more than 0, the agent also keeps this number of the newest snapshots.
+	Last          int32 `protobuf:"varint,4,opt,name=last,proto3" json:"last,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1623,14 +1627,23 @@ func (x *Retention) GetMonthly() int32 {
 	return 0
 }
 
+func (x *Retention) GetLast() int32 {
+	if x != nil {
+		return x.Last
+	}
+	return 0
+}
+
 // Removes the data that no snapshot uses from the repository (FR-902).
 type PruneBackupsRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	JobId         string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
-	Target        string                 `protobuf:"bytes,2,opt,name=target,proto3" json:"target,omitempty"`
-	Credentials   map[string]string      `protobuf:"bytes,3,rep,name=credentials,proto3" json:"credentials,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	JobId       string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
+	Target      string                 `protobuf:"bytes,2,opt,name=target,proto3" json:"target,omitempty"`
+	Credentials map[string]string      `protobuf:"bytes,3,rep,name=credentials,proto3" json:"credentials,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	// The IDs of deleted websites. The agent removes all their snapshots first.
+	ForgetWebsiteIds []string `protobuf:"bytes,4,rep,name=forget_website_ids,json=forgetWebsiteIds,proto3" json:"forget_website_ids,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *PruneBackupsRequest) Reset() {
@@ -1684,6 +1697,13 @@ func (x *PruneBackupsRequest) GetCredentials() map[string]string {
 	return nil
 }
 
+func (x *PruneBackupsRequest) GetForgetWebsiteIds() []string {
+	if x != nil {
+		return x.ForgetWebsiteIds
+	}
+	return nil
+}
+
 type RestoreRequest struct {
 	state      protoimpl.MessageState `protogen:"open.v1"`
 	JobId      string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
@@ -1697,8 +1717,10 @@ type RestoreRequest struct {
 	// The restic repository, for example "s3:s3.amazonaws.com/bucket/path" or "b2:bucket:path".
 	Target string `protobuf:"bytes,7,opt,name=target,proto3" json:"target,omitempty"`
 	// Scope "database": the SHA-256 hash of the dump at backup time.
-	DumpSha256    string            `protobuf:"bytes,8,opt,name=dump_sha256,json=dumpSha256,proto3" json:"dump_sha256,omitempty"`
-	Credentials   map[string]string `protobuf:"bytes,9,rep,name=credentials,proto3" json:"credentials,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	DumpSha256  string            `protobuf:"bytes,8,opt,name=dump_sha256,json=dumpSha256,proto3" json:"dump_sha256,omitempty"`
+	Credentials map[string]string `protobuf:"bytes,9,rep,name=credentials,proto3" json:"credentials,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	// Scope "website": the agent removes the files of the website that are not in the snapshot.
+	DeleteExtra   bool `protobuf:"varint,10,opt,name=delete_extra,json=deleteExtra,proto3" json:"delete_extra,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1794,6 +1816,13 @@ func (x *RestoreRequest) GetCredentials() map[string]string {
 		return x.Credentials
 	}
 	return nil
+}
+
+func (x *RestoreRequest) GetDeleteExtra() bool {
+	if x != nil {
+		return x.DeleteExtra
+	}
+	return false
 }
 
 // Sets the SFTP access of a website. The owner signs in as the Unix user of the website and sees
@@ -2444,18 +2473,20 @@ const file_cloudfactory_agent_v1_agent_proto_rawDesc = "" +
 	"\tretention\x18\b \x01(\v2 .cloudfactory.agent.v1.RetentionR\tretention\x1a>\n" +
 	"\x10CredentialsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"S\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"g\n" +
 	"\tRetention\x12\x14\n" +
 	"\x05daily\x18\x01 \x01(\x05R\x05daily\x12\x16\n" +
 	"\x06weekly\x18\x02 \x01(\x05R\x06weekly\x12\x18\n" +
-	"\amonthly\x18\x03 \x01(\x05R\amonthly\"\xe3\x01\n" +
+	"\amonthly\x18\x03 \x01(\x05R\amonthly\x12\x12\n" +
+	"\x04last\x18\x04 \x01(\x05R\x04last\"\x91\x02\n" +
 	"\x13PruneBackupsRequest\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x16\n" +
 	"\x06target\x18\x02 \x01(\tR\x06target\x12]\n" +
-	"\vcredentials\x18\x03 \x03(\v2;.cloudfactory.agent.v1.PruneBackupsRequest.CredentialsEntryR\vcredentials\x1a>\n" +
+	"\vcredentials\x18\x03 \x03(\v2;.cloudfactory.agent.v1.PruneBackupsRequest.CredentialsEntryR\vcredentials\x12,\n" +
+	"\x12forget_website_ids\x18\x04 \x03(\tR\x10forgetWebsiteIds\x1a>\n" +
 	"\x10CredentialsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x81\x03\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xa4\x03\n" +
 	"\x0eRestoreRequest\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x1d\n" +
 	"\n" +
@@ -2468,7 +2499,9 @@ const file_cloudfactory_agent_v1_agent_proto_rawDesc = "" +
 	"\x06target\x18\a \x01(\tR\x06target\x12\x1f\n" +
 	"\vdump_sha256\x18\b \x01(\tR\n" +
 	"dumpSha256\x12X\n" +
-	"\vcredentials\x18\t \x03(\v26.cloudfactory.agent.v1.RestoreRequest.CredentialsEntryR\vcredentials\x1a>\n" +
+	"\vcredentials\x18\t \x03(\v26.cloudfactory.agent.v1.RestoreRequest.CredentialsEntryR\vcredentials\x12!\n" +
+	"\fdelete_extra\x18\n" +
+	" \x01(\bR\vdeleteExtra\x1a>\n" +
 	"\x10CredentialsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xcd\x01\n" +
