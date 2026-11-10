@@ -6,11 +6,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/user"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/itbm/cloudfactory/agent/internal/execx"
 	"github.com/itbm/cloudfactory/agent/internal/validate"
@@ -18,6 +20,18 @@ import (
 
 // EdgeUser is the Unix user of the edge proxy. It cannot read the files of the websites (CF-04).
 const EdgeUser = "cf-edge"
+
+// WebsiteIDMin and WebsiteIDMax are the limits of the UID and the GID of a website user. The
+// installer has the same values (WEBSITE_UID_MIN and WEBSITE_UID_MAX in install.sh).
+//
+// Audit finding S1: pasta opens each connection of a website container as the Unix user of
+// the website. The firewall of the installer finds these connections by the UID range, and
+// refuses the connections to the services of the host, to private networks and to the
+// metadata service of a cloud provider.
+const (
+	WebsiteIDMin = 20000
+	WebsiteIDMax = 59999
+)
 
 // SitesGroup is the group of all website users. Only this group can read the shared runtime
 // images (package images).
@@ -45,6 +59,10 @@ type Host struct {
 	LookupUID func(name string) (int, error)
 	// LookupGID gives the primary GID of a user. Nil means the user database of the host.
 	LookupGID func(name string) (int, error)
+	// RemoveTries and RemoveDelay are the attempts of userdel in RemoveUser and the time
+	// between them. Zero means 20 attempts with 500 ms. Tests use a short time.
+	RemoveTries int
+	RemoveDelay time.Duration
 }
 
 // New gives a Host with the standard paths.
@@ -107,9 +125,18 @@ func (h *Host) EnsureUser(ctx context.Context, unixUser string) error {
 		if !errors.As(err, &unknown) {
 			return err
 		}
-		if _, err := h.Run.Run(ctx, "useradd", "--create-home", "--home-dir", h.Home(unixUser), "--shell", "/usr/sbin/nologin", "--user-group", "--groups", SitesGroup, unixUser); err != nil {
+		min, max := strconv.Itoa(WebsiteIDMin), strconv.Itoa(WebsiteIDMax)
+		if _, err := h.Run.Run(ctx, "useradd", "-K", "UID_MIN="+min, "-K", "UID_MAX="+max, "-K", "GID_MIN="+min, "-K", "GID_MAX="+max,
+			"--create-home", "--home-dir", h.Home(unixUser), "--shell", "/usr/sbin/nologin", "--user-group", "--groups", SitesGroup, unixUser); err != nil {
 			return err
 		}
+	}
+	// The firewall limits only the users in the range. The agent does not start a website as a
+	// user that the firewall does not find, for example a user that an administrator made.
+	if uid, err := h.LookupUID(unixUser); err != nil {
+		return err
+	} else if uid < WebsiteIDMin || uid > WebsiteIDMax {
+		return fmt.Errorf("the user %s has the UID %d, which is not in the range of the website users (%d to %d)", unixUser, uid, WebsiteIDMin, WebsiteIDMax)
 	}
 	for _, args := range [][]string{
 		// CF-04: only the website user can read its files. The edge proxy does not read them.
@@ -166,21 +193,59 @@ func (h *Host) LinkStorageConfig(ctx context.Context, unixUser string) error {
 	return nil
 }
 
-// RemoveUser stops the user services and removes the user and its files.
+// RemoveUser stops the user services and removes the user and its files. It is safe to run it
+// again after a failure.
+//
+// Audit finding B7: userdel refuses a user that has a process ("user ... is currently used by
+// process ..."). "loginctl disable-linger" only asks systemd to stop the user manager, and
+// does not wait. Thus this function stops the user manager and waits for it, stops the
+// processes that remain, and tries userdel again for a short time.
 func (h *Host) RemoveUser(ctx context.Context, unixUser string) error {
 	if err := validate.UnixUser(unixUser); err != nil {
 		return err
 	}
-	if _, err := h.LookupUID(unixUser); err != nil {
-		return nil // The user does not exist. There is nothing to do.
+	uid, err := h.LookupUID(unixUser)
+	if err == nil {
+		if _, err := h.Run.Run(ctx, "loginctl", "disable-linger", unixUser); err != nil {
+			return err
+		}
+		// "systemctl stop" waits until the unit has stopped. The user manager has all
+		// containers of the user, and the slice has also the sessions and the runtime
+		// directory. A unit that is not loaded is not an error here: userdel is the check.
+		for _, unit := range []string{fmt.Sprintf("user@%d.service", uid), fmt.Sprintf("user-%d.slice", uid)} {
+			if _, err := h.Run.Run(ctx, "systemctl", "stop", unit); err != nil {
+				slog.Warn("stop the services of a website user", "user", unixUser, "unit", unit, "err", err)
+			}
+		}
+		tries, delay := h.RemoveTries, h.RemoveDelay
+		if tries == 0 {
+			tries, delay = 20, 500*time.Millisecond
+		}
+		for attempt := 1; ; attempt++ {
+			// pkill gives status 1 when the user has no process. That is the usual result.
+			h.Run.Run(ctx, "pkill", "--signal", "KILL", "--uid", strconv.Itoa(uid))
+			if _, err = h.Run.Run(ctx, "userdel", "--remove", unixUser); err == nil {
+				break
+			}
+			if attempt >= tries {
+				return fmt.Errorf("remove the user %s: %w", unixUser, err)
+			}
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(delay):
+			}
+		}
+		// A later user can get the same UID. It must not get the units of this user.
+		if dir, err := h.UnitDir(unixUser); err == nil {
+			if err := os.RemoveAll(dir); err != nil {
+				return err
+			}
+		}
 	}
-	if _, err := h.Run.Run(ctx, "loginctl", "disable-linger", unixUser); err != nil {
-		return err
-	}
-	if _, err := h.Run.Run(ctx, "userdel", "--remove", unixUser); err != nil {
-		return err
-	}
-	// os.RemoveAll removes a link, not the file that the link points to.
+	// With no user, a first attempt removed the user and then failed. Remove the files that
+	// have the name of the user. os.RemoveAll removes a link, not the file that the link
+	// points to.
 	if err := os.RemoveAll(h.SiteRoot(unixUser)); err != nil {
 		return err
 	}

@@ -134,3 +134,41 @@ describe("load (batch 1, finding 9)", () => {
     expect(calls.some((c) => c.includes("/databases") || c.includes("/snapshots"))).toBe(false);
   });
 });
+
+describe("load with a temporary password (audit finding B5)", () => {
+  it("reads only the user, because the API refuses each other request", async () => {
+    const calls: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      calls.push(url);
+      if (url === "/api/v1/me") return new Response(JSON.stringify({ id: 7, name: "New", email: "new@example.com", role: "owner", customerId: "c1", totpEnabled: false, mustChangePassword: true }), { status: 200 });
+      return new Response(JSON.stringify({ message: "Set a new password first. Your password is temporary.", code: "password_change_required" }), { status: 403 });
+    }));
+    const state = await load({ ...seed(), websites: [], users: [] });
+    expect(calls).toEqual(["/api/v1/me"]);
+    expect(state.session).toMatchObject({ signedIn: true, mustChangePassword: true, user: { id: "7", email: "new@example.com" } });
+    expect(state.totpEnabled).toBe(false);
+  });
+
+  it("reads the users and the kind of each snapshot after the password change", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      const path = url.replace("/api/v1", "");
+      const json = (b: unknown) => new Response(JSON.stringify(b), { status: 200 });
+      if (path === "/me") return json({ id: 1, name: "Admin", email: "a@example.com", role: "administrator", customerId: null, totpEnabled: true, mustChangePassword: false });
+      if (path === "/users") return json({ data: [{ id: 2, name: "Owner", email: "o@example.com", role: "owner", customerId: "c1", totpEnabled: false, mustChangePassword: true, createdAt: "2026-11-10T09:00:00+00:00" }, { id: 1, name: "Admin", email: "a@example.com", role: "administrator", customerId: null, totpEnabled: true, mustChangePassword: false, createdAt: null }] });
+      if (path.startsWith("/websites?")) return json({ data: [{ id: "w1", name: "a.example", application: "", customerId: "c1", serverId: "s1", planId: "p1", unixUser: "a_1a2b", status: "running", runtime: { imageId: "i1", family: "frankenphp", image: "x:1", phpVersion: "8.4", workerMode: false, extensions: [], phpIni: {}, previousImageId: null }, limits: { vcpus: 1, memoryBytes: 1, diskBytes: 1, diskIoBytesPerSecond: 1, processes: 100 }, usage: {}, domains: [], stagingOf: null, managedByTerraform: false, createdAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-02T00:00:00Z" }], meta: { last_page: 1 } });
+      if (path === "/websites/w1/snapshots") return json({ data: [{ id: "s1", kind: "scheduled", sizeBytes: 5, databases: [], mailboxes: [], createdAt: "2026-11-10T03:00:00Z" }, { id: "s2", kind: "manual", sizeBytes: 5, databases: [], mailboxes: [], createdAt: "2026-11-09T12:00:00Z" }] });
+      if (path === "/websites/w1/databases") return json({ databases: [], users: [] });
+      if (path.startsWith("/backup-policy")) return json({ daily: 7, weekly: 4, monthly: 6, time: "03:00", target: "s3:x/y", manual: 10 });
+      return json({ data: [] });
+    }));
+    const state = await load(seed());
+    expect(state.session.mustChangePassword).toBeUndefined();
+    expect(state.users).toEqual([
+      { id: "2", name: "Owner", email: "o@example.com", role: "owner", customerId: "c1", totpEnabled: false, mustChangePassword: true, createdAt: "2026-11-10T09:00:00+00:00" },
+      { id: "1", name: "Admin", email: "a@example.com", role: "administrator", customerId: undefined, totpEnabled: true, mustChangePassword: false, createdAt: "" },
+    ]);
+    // The API names a nightly backup "scheduled".
+    expect(state.snapshots.map((s) => [s.id, s.kind])).toEqual([["s1", "nightly"], ["s2", "manual"]]);
+    expect(state.backupPolicy.manual).toBe(10);
+  });
+});

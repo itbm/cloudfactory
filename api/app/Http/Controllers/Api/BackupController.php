@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Enums\AgentAction;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\JobResource;
+use App\Models\Server;
 use App\Models\Setting;
 use App\Models\Website;
 use App\Services\Audit;
@@ -46,19 +47,62 @@ class BackupController extends Controller
         return response()->json(['job' => new JobResource($job)], 202);
     }
 
-    /** The payload of a backup. A scheduled backup also applies the retention policy (FR-902). */
+    /**
+     * The payload of a backup. A scheduled backup also applies the retention policy (FR-902).
+     *
+     * Audit finding R8: the agent applies the policy only to the scheduled backups. For the
+     * manual backups of a website, it keeps the newest ones.
+     */
     public static function backupPayload(Website $website, string $kind): array
     {
         $policy = self::policy();
+        $retention = $kind === 'scheduled'
+            ? ['daily' => (int) $policy['daily'], 'weekly' => (int) $policy['weekly'], 'monthly' => (int) $policy['monthly']]
+            : ['last' => self::manualBackups()];
 
         return [
             'websiteId' => $website->id,
             'unixUser' => $website->unix_user,
             'kind' => $kind,
             'databases' => $website->databases()->orderBy('name')->get(['engine', 'name'])->map(fn ($d) => ['engine' => $d->engine, 'name' => $d->name])->all(),
-            'target' => $policy['target'],
-            ...($kind === 'scheduled' ? ['retention' => ['daily' => (int) $policy['daily'], 'weekly' => (int) $policy['weekly'], 'monthly' => (int) $policy['monthly']]] : []),
+            'target' => self::repository($website->server),
+            'retention' => $retention,
         ];
+    }
+
+    /**
+     * Audit finding S2: the restic repository of a server. Each server has its own repository
+     * below the backup target, and its own password (Server::backupPassword). A person who
+     * has root access to one server can then not read the backups of the other servers.
+     */
+    public static function repository(Server $server): string
+    {
+        return self::serverTarget((string) (self::policy()['target'] ?? ''), $server->id);
+    }
+
+    /**
+     * Adds "servers/ID" to the path of a restic repository. The forms are
+     * "s3:host/bucket/path", "b2:bucket:path", "azure:container:/path" and "gs:bucket:/path".
+     */
+    public static function serverTarget(string $target, string $serverId): string
+    {
+        $suffix = 'servers/'.$serverId;
+        [$kind, $rest] = array_pad(explode(':', $target, 2), 2, '');
+        if ($kind === 's3') {
+            return $kind.':'.rtrim($rest, '/').'/'.$suffix;
+        }
+        [$bucket, $path] = array_pad(explode(':', $rest, 2), 2, '');
+        $path = rtrim($path, '/');
+        // With no path, B2 has "b2:bucket:servers/ID". Azure and Google have a path from "/".
+        $start = $path === '' ? ($kind === 'b2' ? '' : '/') : $path.'/';
+
+        return "{$kind}:{$bucket}:{$start}{$suffix}";
+    }
+
+    /** The number of manual backups that the panel keeps for each website. */
+    public static function manualBackups(): int
+    {
+        return max(1, (int) config('cloudfactory.manual_backups', 10));
     }
 
     /**
@@ -79,9 +123,14 @@ class BackupController extends Controller
         $website = $this->findWebsite($request, $websiteId);
         $snapshot = $website->snapshots()->findOrFail($snapshotId);
         $data = $request->validate([
-            'scope' => ['required', Rule::in(['website', 'database', 'mailbox', 'file'])],
+            // Audit finding R5: the agent of this release has no mailbox restore.
+            'scope' => ['required', Rule::in(['website', 'database', 'file'])],
             'item' => ['required_unless:scope,website', 'nullable', 'string', 'max:1024'],
+            // Audit finding R8: a full restore can remove the files that are not in the backup,
+            // for example the files that an attacker added.
+            'removeNewFiles' => ['sometimes', 'boolean', 'prohibited_unless:scope,website'],
         ]);
+        $removeNewFiles = (bool) ($data['removeNewFiles'] ?? false);
         $dumpHash = null;
         if ($data['scope'] === 'database') {
             $request->validate(['item' => [Rule::in($snapshot->databases)]]);
@@ -103,47 +152,68 @@ class BackupController extends Controller
             'scope' => $data['scope'],
             'item' => $data['item'] ?? null,
             'dumpSha256' => $dumpHash,
-            'target' => self::policy()['target'],
+            'deleteExtra' => $removeNewFiles,
+            // A snapshot from before the change to one repository for each server is in the
+            // repository that all servers used. AgentClient then sends the old password.
+            'target' => $snapshot->shared_repository ? self::policy()['target'] : self::repository($website->server),
+            ...($snapshot->shared_repository ? ['sharedRepository' => true] : []),
         ], "Restore {$what}", $website);
-        Audit::record($request, 'Restored from backup', "{$website->name} {$what}", $website->customer_id);
+        Audit::record($request, 'Restored from backup', "{$website->name} {$what}".($removeNewFiles ? ', new files removed' : ''), $website->customer_id);
 
         return response()->json(['job' => new JobResource($job)], 202);
     }
 
     /** The policy. The credentials are not in the response: only their names (write-only). */
-    public function showPolicy(): JsonResponse
+    public function showPolicy(Request $request): JsonResponse
     {
+        // Audit finding S9: a customer sees when the backups run and how long they stay. The
+        // address of the object storage and the names of its credentials are for administrators.
+        if (! $request->user()->isAdministrator()) {
+            return response()->json(array_intersect_key(self::presentPolicy(), array_flip(['daily', 'weekly', 'monthly', 'time', 'manual'])));
+        }
+
         return response()->json(self::presentPolicy());
     }
 
     private static function presentPolicy(): array
     {
-        return self::policy() + ['credentialNames' => array_keys(self::credentials())];
+        return self::policy() + ['manual' => self::manualBackups(), 'credentialNames' => array_keys(self::credentials())];
     }
 
     /**
-     * The password of the restic repository. All servers use the same repository, so the panel
-     * keeps one password, encrypted, and sends it with each backup job. An administrator needs
-     * it to restore with restic directly, for example when the panel is lost.
+     * The restic repository and the repository password of each server that has websites.
+     * An administrator needs them to restore with restic directly, for example when the panel
+     * is lost. The panel keeps the passwords encrypted and sends each one only to its server.
+     *
+     * "shared" is the repository that all servers used before audit finding S2. It is null
+     * when the panel never used it.
      */
     public function showRepositoryPassword(Request $request): JsonResponse
     {
-        Audit::record($request, 'Viewed backup repository password', 'restic repository');
+        Audit::record($request, 'Viewed backup repository passwords', 'restic repositories');
+        $hasTarget = (bool) preg_match(self::TARGET, (string) (self::policy()['target'] ?? ''));
+        $shared = self::sharedRepositoryPassword();
 
-        return response()->json(['password' => self::repositoryPassword()]);
+        return response()->json([
+            'repositories' => Server::whereJsonContains('roles', 'web')->orderBy('name')->get()->map(fn (Server $s) => [
+                'serverId' => $s->id,
+                'server' => $s->name,
+                'repository' => $hasTarget ? self::repository($s) : null,
+                'password' => $s->backupPassword(),
+            ])->all(),
+            'shared' => $shared === null ? null : ['repository' => $hasTarget ? self::policy()['target'] : null, 'password' => $shared],
+        ]);
     }
 
-    /** The password of the restic repository. The panel makes it at the first use. */
-    public static function repositoryPassword(): string
+    /**
+     * The password of the repository that all servers used before audit finding S2, or null.
+     * The panel uses it only to restore a snapshot from that time.
+     */
+    public static function sharedRepositoryPassword(): ?string
     {
         $value = Setting::get('backup_repository_password');
-        if (is_string($value)) {
-            return Crypt::decryptString($value);
-        }
-        $password = base64_encode(random_bytes(48));
-        Setting::put('backup_repository_password', Crypt::encryptString($password));
 
-        return $password;
+        return is_string($value) ? Crypt::decryptString($value) : null;
     }
 
     /** FR-902: the administrator sets the retention policy. */

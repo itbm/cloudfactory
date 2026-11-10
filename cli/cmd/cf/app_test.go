@@ -300,7 +300,7 @@ func pagedPanel(t *testing.T) (*httptest.Server, *[]string) {
 		case r.URL.Path == "/api/v1/jobs":
 			paged(120, func(i int) string { return fmt.Sprintf(`{"id":"J%d","title":"Job %d","state":"succeeded"}`, i, i) })
 		case r.URL.Path == "/api/v1/backup-policy/repository-password":
-			w.Write([]byte(`{"password":"repo-pass"}`))
+			w.Write([]byte(`{"repositories":[{"serverId":"S1","server":"web-1","repository":"s3:host/bucket/servers/S1","password":"pass-one"},{"serverId":"S2","server":"web-2","repository":"s3:host/bucket/servers/S2","password":"pass-two"}],"shared":{"repository":"s3:host/bucket","password":"pass-old"}}`))
 		case r.URL.Path == "/api/v1/backup-policy" && r.Method == http.MethodGet:
 			w.Write([]byte(`{"daily":7,"weekly":4,"monthly":6,"time":"03:00","target":"s3:old/path","credentialNames":[]}`))
 		case r.URL.Path == "/api/v1/backup-policy" && r.Method == http.MethodPut:
@@ -404,8 +404,17 @@ func TestBackupRepositoryPassword(t *testing.T) {
 	if err := a.dispatch(context.Background(), []string{"backups", "policy", "password"}); err != nil {
 		t.Fatal(err)
 	}
-	if got := strings.TrimSpace(out.String()); got != "repo-pass" {
-		t.Errorf("output %q, want the password", got)
+	// Audit finding S2: each server has its own repository and password.
+	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
+	if len(lines) != 4 {
+		t.Fatalf("output:\n%s", out)
+	}
+	for i, want := range [][]string{{"web-1", "s3:host/bucket/servers/S1", "pass-one"}, {"web-2", "s3:host/bucket/servers/S2", "pass-two"}, {"(all servers, earlier version)", "s3:host/bucket", "pass-old"}} {
+		for _, w := range want {
+			if !strings.Contains(lines[i+1], w) {
+				t.Errorf("line %q does not have %q", lines[i+1], w)
+			}
+		}
 	}
 }
 

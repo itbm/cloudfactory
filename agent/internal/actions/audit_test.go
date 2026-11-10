@@ -31,13 +31,13 @@ func unitFile(t *testing.T, d *Deps, user, name string) string {
 func TestTheFirstDatabaseStartsTheDatabaseContainer(t *testing.T) {
 	d, f, _ := deps(t)
 	d.ServiceImage = func(name string) string { return "ghcr.io/cloudfactory/" + name + ":0.1.0" }
-	f.Rules = []execx.Rule{{Prefix: "runuser -u cf-db -- env XDG_RUNTIME_DIR=/run/user/1001 podman image exists", Err: errors.New("no image")}}
+	f.Rules = []execx.Rule{{Prefix: "runuser -u cf-db -- env XDG_RUNTIME_DIR=/run/user/20001 podman image exists", Err: errors.New("no image")}}
 	job, err := d.CreateDatabase(&agentv1.CreateDatabaseRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Engine: "postgresql", Name: "acme_x7k2_shop"})
 	if err := run(t)(job, err); err != nil {
 		t.Fatal(err)
 	}
 	for _, want := range []string{
-		"runuser -u cf-db -- env XDG_RUNTIME_DIR=/run/user/1001 podman pull --quiet ghcr.io/cloudfactory/postgresql:0.1.0",
+		"runuser -u cf-db -- env XDG_RUNTIME_DIR=/run/user/20001 podman pull --quiet ghcr.io/cloudfactory/postgresql:0.1.0",
 		"install -d -o cf-db -g cf-db -m 0700 " + filepath.Join(d.DBHome, "postgresql"),
 		"systemctl --user --machine=cf-db@ restart cf-postgresql.service",
 	} {
@@ -96,7 +96,7 @@ func TestBackupMakesTheRepositoryAndUsesTheCredentials(t *testing.T) {
 		{Prefix: "restic --repo s3:s3.eu-west-1.amazonaws.com/b --password-file  --json --retry-lock 30m forget", Output: `[{"keep":[{"id":"aa11"}],"remove":[{"id":"0011"},{"id":"0022"}]}]`},
 	}
 	creds := map[string]string{"AWS_ACCESS_KEY_ID": "AKIA1", "AWS_SECRET_ACCESS_KEY": "s3cret"}
-	job, err := d.Backup(&agentv1.BackupRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Kind: "nightly", Target: "s3:s3.eu-west-1.amazonaws.com/b",
+	job, err := d.Backup(&agentv1.BackupRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Kind: "scheduled", Target: "s3:s3.eu-west-1.amazonaws.com/b",
 		Credentials: creds, Retention: &agentv1.Retention{Daily: 7, Weekly: 4, Monthly: 6}})
 	if err := run(t)(job, err); err != nil {
 		t.Fatal(err)
@@ -104,7 +104,7 @@ func TestBackupMakesTheRepositoryAndUsesTheCredentials(t *testing.T) {
 	if !f.Called("restic --repo s3:s3.eu-west-1.amazonaws.com/b --password-file  --json --retry-lock 30m init") {
 		t.Errorf("no restic init: %v", f.Calls)
 	}
-	if !f.Called("restic --repo s3:s3.eu-west-1.amazonaws.com/b --password-file  --json --retry-lock 30m forget --tag website=" + websiteID + " --group-by  --keep-daily 7 --keep-weekly 4 --keep-monthly 6") {
+	if !f.Called("restic --repo s3:s3.eu-west-1.amazonaws.com/b --password-file  --json --retry-lock 30m forget --tag website=" + websiteID + ",kind=scheduled --group-by  --keep-daily 7 --keep-weekly 4 --keep-monthly 6") {
 		t.Errorf("no restic forget: %v", f.Calls)
 	}
 	for i, c := range f.Calls {
@@ -121,11 +121,62 @@ func TestBackupMakesTheRepositoryAndUsesTheCredentials(t *testing.T) {
 		t.Errorf("forgotten = %v", got)
 	}
 	// The panel cannot set other environment variables of restic.
-	if _, err := d.Backup(&agentv1.BackupRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Target: "s3:b/c", Credentials: map[string]string{"RESTIC_PASSWORD_COMMAND": "sh"}}); err == nil {
+	if _, err := d.Backup(&agentv1.BackupRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Kind: "manual", Target: "s3:b/c", Credentials: map[string]string{"RESTIC_PASSWORD_COMMAND": "sh"}}); err == nil {
 		t.Error("a different variable was accepted")
 	}
-	if _, err := d.Backup(&agentv1.BackupRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Target: ""}); err == nil {
+	if _, err := d.Backup(&agentv1.BackupRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Kind: "manual", Target: ""}); err == nil {
 		t.Error("no target was accepted")
+	}
+}
+
+// Audit finding R8: the retention of the manual backups is apart from the scheduled backups.
+func TestManualBackupsKeepTheNewestSnapshots(t *testing.T) {
+	d, f, _ := deps(t)
+	os.MkdirAll(d.Host.AppDir("acme_x7k2"), 0o755)
+	f.Rules = []execx.Rule{
+		{Prefix: "restic --repo s3:b/c --password-file  --json --retry-lock 30m backup", Output: `{"message_type":"summary","snapshot_id":"aa11","total_bytes_processed":1}`},
+		{Prefix: "restic --repo s3:b/c --password-file  --json --retry-lock 30m forget", Output: `[{"remove":[{"id":"0011"}]}]`},
+	}
+	job, err := d.Backup(&agentv1.BackupRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Kind: "manual", Target: "s3:b/c", Retention: &agentv1.Retention{Last: 10}})
+	if err := run(t)(job, err); err != nil {
+		t.Fatal(err)
+	}
+	if !f.Called("restic --repo s3:b/c --password-file  --json --retry-lock 30m forget --tag website=" + websiteID + ",kind=manual --group-by  --keep-last 10") {
+		t.Errorf("no restic forget for the manual backups: %v", f.Calls)
+	}
+	for _, c := range f.Calls {
+		if strings.Contains(c, " forget ") && strings.Contains(c, "--keep-daily") {
+			t.Errorf("the manual backups use the policy of the scheduled backups: %s", c)
+		}
+	}
+	if got := job.Result()["forgotten"].([]string); len(got) != 1 || got[0] != "0011" {
+		t.Errorf("forgotten = %v", got)
+	}
+}
+
+// Audit finding R8: the weekly job removes all snapshots of the websites that the panel deleted.
+func TestPruneRemovesTheSnapshotsOfDeletedWebsites(t *testing.T) {
+	d, f, _ := deps(t)
+	f.Rules = []execx.Rule{
+		{Prefix: "restic --repo b2:bucket:cf --password-file  --json --retry-lock 30m snapshots --tag website=" + websiteID, Output: `[{"id":"00aa11bb22cc","short_id":"00aa11bb"},{"id":"ffee99887766"},{"id":"--help"}]`},
+	}
+	if err := run(t)(d.PruneBackups(&agentv1.PruneBackupsRequest{JobId: jobID, Target: "b2:bucket:cf", ForgetWebsiteIds: []string{websiteID}})); err != nil {
+		t.Fatal(err)
+	}
+	forget, prune := -1, -1
+	for i, c := range f.Calls {
+		if c == "restic --repo b2:bucket:cf --password-file  --json --retry-lock 30m forget 00aa11bb22cc ffee99887766" {
+			forget = i
+		}
+		if strings.HasSuffix(c, " prune") {
+			prune = i
+		}
+	}
+	if forget < 0 || prune < forget {
+		t.Errorf("forget = %d, prune = %d, calls = %v", forget, prune, f.Calls)
+	}
+	if _, err := d.PruneBackups(&agentv1.PruneBackupsRequest{JobId: jobID, Target: "b2:bucket:cf", ForgetWebsiteIds: []string{"x,kind=manual"}}); err == nil {
+		t.Error("a website ID that is not valid was accepted")
 	}
 }
 
@@ -145,7 +196,7 @@ func TestSetSftp(t *testing.T) {
 	d, f, _ := deps(t)
 	dir := t.TempDir()
 	d.SftpKeysDir, d.SftpUsersDir = filepath.Join(dir, "sftp"), filepath.Join(dir, "sftp-users")
-	d.Host.LookupGID = func(string) (int, error) { return 1002, nil }
+	d.Host.LookupGID = func(string) (int, error) { return 20002, nil }
 	key := "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGtQx2bS8ZJ4Wm1bZ7zO0Zr3wq8yXc2v1q9w8mL3h4kP owner@laptop"
 	if err := run(t)(d.SetSftp(&agentv1.SetSftpRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Enabled: true, AuthorizedKeys: []string{key}})); err != nil {
 		t.Fatal(err)
@@ -159,7 +210,7 @@ func TestSetSftp(t *testing.T) {
 	}
 	passwd, _ := os.ReadFile(filepath.Join(d.SftpUsersDir, "passwd"))
 	group, _ := os.ReadFile(filepath.Join(d.SftpUsersDir, "group"))
-	if !strings.Contains(string(passwd), "\nacme_x7k2:x:1001:1002:Cloudfactory website:/app:/usr/sbin/nologin\n") || !strings.Contains(string(group), "\nacme_x7k2:x:1002:\n") {
+	if !strings.Contains(string(passwd), "\nacme_x7k2:x:20001:20002:Cloudfactory website:/app:/usr/sbin/nologin\n") || !strings.Contains(string(group), "\nacme_x7k2:x:20002:\n") {
 		t.Errorf("user list:\n%s\n%s", passwd, group)
 	}
 	if err := run(t)(d.SetSftp(&agentv1.SetSftpRequest{JobId: jobID2, WebsiteId: websiteID, UnixUser: "acme_x7k2", AuthorizedKeys: []string{key}})); err != nil {
@@ -195,7 +246,7 @@ func TestStagingCopyCopiesTheDatabases(t *testing.T) {
 		}
 	}
 	// The dump goes from one client to the other, not through the memory of the agent.
-	if !f.Called("runuser -u cf-db -- env XDG_RUNTIME_DIR=/run/user/1001 podman exec cf-mariadb mariadb-dump --user=root --single-transaction --routines acme_x7k2_shop | runuser -u cf-db") ||
+	if !f.Called("runuser -u cf-db -- env XDG_RUNTIME_DIR=/run/user/20001 podman exec cf-mariadb mariadb-dump --user=root --single-transaction --routines acme_x7k2_shop | runuser -u cf-db") ||
 		!strings.Contains(strings.Join(f.Calls, "\n"), "mariadb --sandbox --user=cfrestore_") {
 		t.Errorf("no copy of the source: %v", f.Calls)
 	}
@@ -260,7 +311,7 @@ func TestLimitsSetTheQuotaAndTheIOLimit(t *testing.T) {
 	if !f.Called("setquota --user acme_x7k2 9961472 10485760 0 0 /srv") {
 		t.Errorf("no quota: %v", f.Calls)
 	}
-	if !f.Called("runuser -u acme_x7k2 -- env XDG_RUNTIME_DIR=/run/user/1001 podman update --cpus=2 --memory=1073741824 --memory-swap=1073741824 --pids-limit=50 --device-read-bps=/dev/vda:52428800 --device-write-bps=/dev/vda:52428800 cf-acme_x7k2") {
+	if !f.Called("runuser -u acme_x7k2 -- env XDG_RUNTIME_DIR=/run/user/20001 podman update --cpus=2 --memory=1073741824 --memory-swap=1073741824 --pids-limit=50 --device-read-bps=/dev/vda:52428800 --device-write-bps=/dev/vda:52428800 cf-acme_x7k2") {
 		t.Errorf("no I/O limit: %v", f.Calls)
 	}
 }
@@ -270,7 +321,7 @@ func TestTheReportHasWebsiteUseAndCertificates(t *testing.T) {
 	d, f, _ := deps(t)
 	d.CgroupRoot = t.TempDir()
 	run(t)(d.CreateWebsite(&agentv1.WebsiteRequest{JobId: jobID, Website: website("ghcr.io/cloudfactory/frankenphp-php8.4:8.4.0-1")}))
-	cg := "/user.slice/user-1001.slice/user@1001.service/app.slice/cf-acme_x7k2.service"
+	cg := "/user.slice/user-20001.slice/user@20001.service/app.slice/cf-acme_x7k2.service"
 	os.MkdirAll(filepath.Join(d.CgroupRoot, cg), 0o755)
 	os.WriteFile(filepath.Join(d.CgroupRoot, cg, "memory.current"), []byte("104857600\n"), 0o644)
 	os.WriteFile(filepath.Join(d.CgroupRoot, cg, "pids.current"), []byte("12\n"), 0o644)
@@ -293,6 +344,65 @@ func TestTheReportHasWebsiteUseAndCertificates(t *testing.T) {
 	}
 	if r.Services[len(r.Services)-1] != (panel.Service{Name: "disk-quotas", State: "stopped"}) {
 		t.Errorf("services = %+v", r.Services)
+	}
+}
+
+// Audit finding S6: a domain with slow DNS does not delay the report, and the other domains
+// get their state.
+func TestSlowDomainsDoNotDelayTheReport(t *testing.T) {
+	d, _, _ := deps(t)
+	w := website("ghcr.io/cloudfactory/frankenphp-php8.4:8.4.0-1")
+	w.Domains = append(w.Domains, &agentv1.Domain{Name: "slow.example", Kind: "alias"})
+	run(t)(d.CreateWebsite(&agentv1.WebsiteRequest{JobId: jobID, Website: w}))
+	d.Certificate = func(context.Context, string) (time.Time, error) { return time.Now().Add(time.Hour), nil }
+	d.DNSPointsHere = func(ctx context.Context, name string) bool {
+		if name == "slow.example" {
+			<-ctx.Done()
+		}
+		return true
+	}
+	d.DomainWait, d.DomainLimit = 20*time.Millisecond, 200*time.Millisecond
+
+	start := time.Now()
+	var first panel.Report
+	d.FillReport(context.Background(), &first)
+	if took := time.Since(start); took > 150*time.Millisecond {
+		t.Errorf("the report waited %s for the slow domain", took)
+	}
+	if len(first.Domains) != 0 {
+		t.Errorf("the first report has domains from a check that is not complete: %+v", first.Domains)
+	}
+	// The check ends at its time limit. The subsequent report has the domain that answered.
+	var second panel.Report
+	for end := time.Now().Add(5 * time.Second); time.Now().Before(end); time.Sleep(10 * time.Millisecond) {
+		second = panel.Report{}
+		d.FillReport(context.Background(), &second)
+		if len(second.Domains) > 0 {
+			break
+		}
+	}
+	if len(second.Domains) != 1 || second.Domains[0].Name != "acme.example" || second.Domains[0].Certificate != "valid" {
+		t.Errorf("domains = %+v", second.Domains)
+	}
+}
+
+// The agent checks the first domain of each website before the other domains.
+func TestTheDomainCheckTakesEachWebsiteInTurn(t *testing.T) {
+	d, _, _ := deps(t)
+	site := func(names ...string) *Site {
+		w := &agentv1.Website{}
+		for _, n := range names {
+			w.Domains = append(w.Domains, &agentv1.Domain{Name: n})
+		}
+		return &Site{Website: w}
+	}
+	d.Certificate = func(context.Context, string) (time.Time, error) { return time.Time{}, errNoCertificate }
+	got := []string{}
+	for _, st := range d.domainStates(context.Background(), []*Site{site("a1.example", "a2.example", "a3.example"), site("b1.example")}) {
+		got = append(got, st.Name)
+	}
+	if want := "a1.example b1.example a2.example a3.example"; strings.Join(got, " ") != want {
+		t.Errorf("order = %v, want %s", got, want)
 	}
 }
 
@@ -418,5 +528,31 @@ func TestBackupSlots(t *testing.T) {
 		t.Error(err)
 	} else {
 		release()
+	}
+}
+
+// Audit finding S7: the edge proxy starts again when its unit changed, for example with the
+// image of a new agent version. With no change, the agent does not interrupt the proxy.
+func TestTheEdgeProxyRestartsWhenItsUnitChanged(t *testing.T) {
+	d, f, _ := deps(t)
+	if err := d.EnsureEdge(context.Background(), "ghcr.io/itbm/edge:0.1.0", d.DataDir); err != nil {
+		t.Fatal(err)
+	}
+	if !f.Called("systemctl --user --machine=cf-edge@ restart cf-edge.service") {
+		t.Errorf("the first start: %v", f.Calls)
+	}
+	f.Calls = nil
+	if err := d.EnsureEdge(context.Background(), "ghcr.io/itbm/edge:0.1.0", d.DataDir); err != nil {
+		t.Fatal(err)
+	}
+	if f.Called("systemctl --user --machine=cf-edge@ restart") || !f.Called("systemctl --user --machine=cf-edge@ start cf-edge.service") {
+		t.Errorf("with no change: %v", f.Calls)
+	}
+	f.Calls = nil
+	if err := d.EnsureEdge(context.Background(), "ghcr.io/itbm/edge:0.2.0", d.DataDir); err != nil {
+		t.Fatal(err)
+	}
+	if !f.Called("systemctl --user --machine=cf-edge@ daemon-reload") || !f.Called("systemctl --user --machine=cf-edge@ restart cf-edge.service") {
+		t.Errorf("with a new image: %v", f.Calls)
 	}
 }

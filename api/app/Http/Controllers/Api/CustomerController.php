@@ -8,6 +8,7 @@ use App\Enums\WebsiteStatus;
 use App\Http\Controllers\Controller;
 use App\Models\Customer;
 use App\Models\Domain;
+use App\Models\Plan;
 use App\Models\User;
 use App\Models\Website;
 use App\Services\Audit;
@@ -15,6 +16,7 @@ use App\Services\DomainPolicy;
 use App\Services\JobDispatcher;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
@@ -44,18 +46,36 @@ class CustomerController extends Controller
             // A reseller can add website owners only.
             'role' => ['required', Rule::in($user->isAdministrator() ? ['reseller', 'owner'] : ['owner'])],
             'planId' => ['required', 'exists:plans,id'],
+            // Audit finding B5: also make the first user of the customer, with the email of
+            // the customer. The answer then has the temporary password of that user.
+            'createUser' => ['sometimes', 'boolean'],
         ]);
+        $createUser = (bool) ($data['createUser'] ?? false);
+        if ($createUser) {
+            $token = $user->currentAccessToken();
+            if (! $token || ! $token->can('users:write')) {
+                return response()->json(['message' => 'The token does not have the users:write scope.'], 403);
+            }
+            $request->validate(['email' => ['max:255', Rule::unique('users', 'email')]], ['email.unique' => 'A user with this email exists already.']);
+        }
         self::checkPlan($user, $data['planId']);
-        $customer = Customer::create([
-            'name' => $data['name'],
-            'email' => $data['email'],
-            'role' => $data['role'],
-            'plan_id' => $data['planId'],
-            'reseller_id' => $user->role === Role::Reseller ? $user->customer_id : null,
-        ]);
-        Audit::record($request, 'Created customer', $customer->name, $customer->id);
+        [$customer, $account, $password] = DB::transaction(function () use ($data, $user, $createUser) {
+            $customer = Customer::create([
+                'name' => $data['name'],
+                'email' => $data['email'],
+                'role' => $data['role'],
+                'plan_id' => $data['planId'],
+                'reseller_id' => $user->role === Role::Reseller ? $user->customer_id : null,
+            ]);
 
-        return response()->json(self::present($customer), 201);
+            return [$customer, ...($createUser ? UserController::make($data['name'], $data['email'], $customer) : [null, null])];
+        });
+        Audit::record($request, 'Created customer', $customer->name, $customer->id);
+        if ($account) {
+            Audit::record($request, 'Created user', $account->email, $customer->id);
+        }
+
+        return response()->json(self::present($customer) + ($account ? ['user' => UserController::present($account) + ['temporaryPassword' => $password]] : []), 201);
     }
 
     public function update(Request $request, string $id): JsonResponse
@@ -83,6 +103,7 @@ class CustomerController extends Controller
         }
         if (isset($data['planId']) && $data['planId'] !== $customer->plan_id) {
             self::checkPlan($user, $data['planId']);
+            self::checkPlanHasSpace($customer, Plan::findOrFail($data['planId']));
         }
         // R-06: a reseller cannot lift a suspension that an administrator set.
         if (($data['suspended'] ?? null) === false && $customer->suspended && $customer->suspended_by === 'administrator' && ! $user->isAdministrator()) {
@@ -167,6 +188,23 @@ class CustomerController extends Controller
     {
         if ($user->role === Role::Reseller && ! in_array($planId, $user->customer->allowedPlanIds(), true)) {
             throw ValidationException::withMessages(['planId' => 'Select a plan that your provider gives you.']);
+        }
+    }
+
+    /**
+     * Audit finding R6: a customer cannot move to a plan that allows fewer websites than the
+     * customer has. For a reseller, the websites of its customers count too.
+     *
+     * @throws ValidationException
+     */
+    private static function checkPlanHasSpace(Customer $customer, Plan $plan): void
+    {
+        $ids = $customer->role === 'reseller'
+            ? Customer::where('id', $customer->id)->orWhere('reseller_id', $customer->id)->pluck('id')
+            : [$customer->id];
+        $websites = Website::whereIn('customer_id', $ids)->count();
+        if ($websites > $plan->websites) {
+            throw ValidationException::withMessages(['planId' => "The {$plan->name} plan allows {$plan->websites} websites. {$customer->name} has {$websites}."]);
         }
     }
 

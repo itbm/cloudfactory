@@ -1,0 +1,50 @@
+# The panel API on FrankenPHP, with the HTTP port and the HTTPS port. The start script uses
+# this file when the panel has its certificate. Keep the HTTP site the same as in Caddyfile.
+{
+	frankenphp
+	auto_https off
+	admin off
+	servers :8443 {
+		protocols h1 h2
+		# Caddy turns on a strict check when a server asks for client certificates: the Host
+		# header must be the server name (SNI) of the TLS connection. That check stops a client
+		# that gives the name of one site and then asks for a different site. The agent
+		# connects to an IP address, so it sends no server name, and Caddy would answer 421.
+		# This server has only one site, and the API compares the certificate fingerprint for
+		# each request of an agent. Thus the check is not necessary here.
+		strict_sni_host insecure_off
+	}
+}
+
+# The edge proxy ends the TLS connections of the panel domain and sends the requests to this
+# port. The port is only on the service address of the host.
+http://:8080 {
+	# Only the HTTPS port below can set this header (AuthenticateAgent).
+	request_header -X-Cloudfactory-Direct-Cert-Sha256
+	root * /app/public
+	encode zstd br gzip
+	php_server
+}
+
+# The agent on the panel server sends its reports to this port, so that this link also uses
+# HTTPS. The port has the certificate of the panel. The agent accepts only that certificate
+# (cf-agent join --panel-certificate-sha256), so the certificate needs no public name.
+#
+# The server asks for the client certificate of the agent and does not check it. It sends the
+# SHA-256 fingerprint to the API, and the API compares it with the certificate of the server.
+https://:8443 {
+	tls {$CF_AGENT_CLIENT_CERT} {$CF_AGENT_CLIENT_KEY} {
+		client_auth {
+			mode request
+		}
+	}
+	# A client of this port is not the edge proxy.
+	request_header -X-Cloudfactory-Edge
+	request_header -X-Client-Cert-Sha256
+	# This replaces a value that the client sends. With no client certificate, the value is
+	# not a fingerprint, and the API ignores it.
+	request_header X-Cloudfactory-Direct-Cert-Sha256 {http.request.tls.client.fingerprint}
+	root * /app/public
+	encode zstd br gzip
+	php_server
+}

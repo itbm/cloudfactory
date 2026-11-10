@@ -29,6 +29,78 @@ agent writes, not a `compose.yaml` file. The reasons:
 - Decision 2: Podman only. `podman compose` needs a second tool, for example
   `docker-compose` or `podman-compose`.
 
+## PostgreSQL for the panel, not SQLite
+
+The panel keeps its data in PostgreSQL, in the container `cf-panel-db`. Release 0.1 first used
+one SQLite file. The reasons for the change:
+
+- Three containers write to the database: the API, the queue worker and the scheduler. Each
+  container is a gVisor sandbox. gVisor keeps a file lock in one sandbox, so the three
+  containers do not see the locks of each other. Two writers at the same time can damage a
+  SQLite file. A test in two sandboxes showed this.
+- A database server has no such limit. It also locks one row at a time, so a long job does
+  not stop the sign-in of a user.
+- The project has a signed PostgreSQL image for the databases of the websites. The panel uses
+  the same image, so there is no new software to keep up to date.
+
+The cost is one more container on the panel server, with approximately 100 MB of memory.
+
+SQLite stays for development and for the fast test run. The CI runs all API tests with SQLite
+and with PostgreSQL.
+
+To make a copy of the panel database, run this command as root on the panel server:
+
+```sh
+runuser -u cf-panel -- env XDG_RUNTIME_DIR=/run/user/$(id -u cf-panel) \
+  podman exec cf-panel-db pg_dump --username=cloudfactory --format=custom cloudfactory >panel.dump
+```
+
+## One backup repository for each server
+
+Each server with the role `web` has its own restic repository and its own repository password.
+An earlier version used one repository and one password for all servers. The reasons for the
+change:
+
+- The agent needs the repository password to make a backup. With one password for all
+  servers, a person who has root access to one server can read the backups of all servers.
+- With one repository for each server, the panel sends a password only to its server.
+- Each server removes its own old data. A weekly job of one server does not lock the
+  repository of the other servers.
+
+The costs:
+
+- restic does not remove equal data between two repositories. Two servers with equal files
+  keep two copies.
+- An administrator must keep one password for each server.
+- The credentials of the object storage are still the same for all servers. A person who has
+  root access to one server can delete the data of all servers. Versioning or an object lock
+  in the bucket prevents the loss. Different credentials for each server need a different
+  procedure for each storage provider, so they are not in release 0.1.
+
+## Temporary passwords, not invitations by email
+
+The panel of release 0.1 sends no email. Thus a new user gets a temporary password, which the
+panel shows one time to the person who makes the user. The user must set a new password at
+the first sign-in. The first administrator from the installation script has the same rule,
+because its first password is in the output of the script.
+
+When no administrator can sign in, root on the panel server uses
+`cf-agent panel reset-password`. Root access to the panel server is already full access to the
+panel data, so this command gives no new access.
+
+## A firewall range for the website users
+
+The firewall must know which connections come from a website. pasta opens each connection of
+a container as the Unix user of the container. Thus the agent makes each website user with a
+UID from 20000 to 59999, and one nftables rule sends the new connections of this range to the
+chain `websites`.
+
+- A rule for each website needs a firewall change for each new website. One range needs none.
+- The range is above the UIDs of the system users and the usual login users, and below 60000,
+  where some distributions keep special users.
+- The limits are in the firewall of the host, not in the container, because a website
+  controls all software in its container.
+
 ## Ports below 1024
 
 The installation script adds these nftables rules:

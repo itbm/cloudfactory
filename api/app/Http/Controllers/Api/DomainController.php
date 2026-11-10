@@ -38,6 +38,12 @@ class DomainController extends Controller
             'name' => ['required', 'string', 'lowercase', 'regex:'.WebsiteController::DOMAIN],
             'kind' => ['required', Rule::in([DomainKind::Redirect->value, DomainKind::Alias->value])],
         ]);
+        // Audit finding S5: each name starts a certificate order, and a server has a limit of
+        // orders. A website thus has a limit of names.
+        $limit = (int) config('cloudfactory.domains_per_website');
+        if ($website->domains()->count() >= $limit) {
+            throw ValidationException::withMessages(['name' => "A website can have {$limit} domains."]);
+        }
         $proved = self::checkName($this->policy, $data['name'], $website->customer_id, $request);
         $domain = $website->domains()->create(self::newDomain($this->policy, $request, $website->customer_id, $data['name'], DomainKind::from($data['kind']), $proved));
         $job = $domain->verified() ? $this->addRoute($website, $domain) : null;
@@ -121,12 +127,21 @@ class DomainController extends Controller
 
     /**
      * Refuses a reserved domain and a domain of a different website. A domain that a different
-     * customer added but did not verify does not block the customer that can verify it.
+     * customer has does not block the customer that controls it.
      *
-     * R-04: when that domain is the primary domain of a website of a different customer, the
-     * customer must first prove control of it, with a verified domain of its own or a DNS TXT
-     * record. Then the panel parks the other website under an internal name. The method returns
-     * true when the customer proved control here, so that the new domain is verified at once.
+     * R-04 and audit finding S5: when a different customer has the domain, the customer must
+     * first prove control of it. Then the panel takes the domain from the other website: it
+     * removes a redirect or an alias, and it parks a website that has the domain as its primary
+     * domain under an internal name. The panel never removes a domain of a different customer
+     * with no proof.
+     *
+     * - A domain that the other customer did not verify: the proof is a verified domain of the
+     *   customer itself, or the DNS TXT record below.
+     * - A domain that the other customer verified, for example before the domain got a new
+     *   owner: the proof is the DNS TXT record only.
+     *
+     * The method returns true when the customer proved control here, so that the new domain is
+     * verified at once.
      *
      * @throws ValidationException
      */
@@ -135,35 +150,48 @@ class DomainController extends Controller
         if ($policy->isReserved($name)) {
             throw ValidationException::withMessages([$field => 'This domain is reserved for the panel or a server.']);
         }
-        $existing = Domain::with('website')->where('name', $name)->first();
+        $existing = Domain::with('website.server')->where('name', $name)->first();
         if (! $existing) {
             return false;
         }
-        if ($existing->verified() || $existing->website->customer_id === $customerId) {
+        if ($existing->website->customer_id === $customerId) {
             throw ValidationException::withMessages([$field => 'This domain is in use.']);
         }
-        if ($existing->kind !== DomainKind::Primary) {
-            $existing->delete();
-
-            return false;
+        $record = "add a TXT record _cloudfactory-challenge.{$name} with the value {$policy->claimToken($customerId, $name)}, and then try again. DNS changes can take some minutes.";
+        if ($existing->verified()) {
+            if (! $policy->proves($customerId, $name)) {
+                throw ValidationException::withMessages([$field => "This domain is in use. If you control the domain now, {$record}"]);
+            }
+        } elseif (! $policy->preVerified($request->user(), $customerId, $name) && ! $policy->proves($customerId, $name)) {
+            throw ValidationException::withMessages([$field => "A different website uses this domain but has not proved control of it. If you control the domain, {$record}"]);
         }
-        $preVerified = $policy->preVerified($request->user(), $customerId, $name);
-        if (! $preVerified && ! $policy->proves($customerId, $name)) {
-            throw ValidationException::withMessages([$field => "A different website uses this domain but has not proved control of it. If you control the domain, add a TXT record _cloudfactory-challenge.{$name} with the value {$policy->claimToken($customerId, $name)}, and then try again. DNS changes can take some minutes."]);
-        }
-        self::park($existing->website, $request);
+        self::release($existing, $request);
 
         return true;
     }
 
-    /** R-04: gives a website an internal name, because a different customer proved control of its domain. */
-    private static function park(Website $website, Request $request): void
+    /**
+     * Takes a domain from a website, because a different customer proved control of it. A
+     * website keeps its files when it loses its primary domain: it gets an internal name.
+     */
+    private static function release(Domain $domain, Request $request): void
     {
-        $old = $website->name;
-        $parked = 'parked-'.strtolower($website->id).'.invalid';
-        $website->domains()->where('name', $old)->update(['name' => $parked]);
-        $website->update(['name' => $parked]);
-        Audit::record($request, 'Parked website with a domain that it did not verify', "{$old} → {$parked}", $website->customer_id);
+        $website = $domain->website;
+        $name = $domain->name;
+        $served = $domain->verified();
+        if ($domain->kind === DomainKind::Primary) {
+            $parked = 'parked-'.strtolower($website->id).'.invalid';
+            $domain->update(['name' => $parked, 'verified_at' => null]);
+            $website->update(['name' => $parked]);
+            Audit::record($request, 'Parked website, because a different customer proved control of its domain', "{$name} → {$parked}", $website->customer_id);
+        } else {
+            $domain->delete();
+            Audit::record($request, 'Removed domain, because a different customer proved control of it', "{$website->name} {$name}", $website->customer_id);
+        }
+        // The edge proxy of the other website stops serving the domain.
+        if ($served) {
+            app(JobDispatcher::class)->dispatch($website->server, AgentAction::RemoveDomain, ['websiteId' => $website->id, 'domain' => $name], "Remove domain {$name}", $website);
+        }
     }
 
     /** The attributes of a new domain, verified at once when the policy permits or when the customer proved control. */

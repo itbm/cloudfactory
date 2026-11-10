@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Agent;
 
 use App\Enums\JobState;
 use App\Http\Controllers\Controller;
+use App\Jobs\SendJobToAgent;
 use App\Models\AgentJob;
 use App\Models\Database;
 use App\Models\Domain;
@@ -17,6 +18,9 @@ use Illuminate\Validation\Rule;
 /** Reports from the agents: job progress, results and the actual state of the server. */
 class AgentController extends Controller
 {
+    /** The maximum length of the error text of a job. */
+    public const ERROR_LENGTH = 4000;
+
     public function __construct(private JobOutcome $outcome) {}
 
     public function jobEvent(Request $request, string $id): JsonResponse
@@ -26,10 +30,15 @@ class AgentController extends Controller
         $job = AgentJob::where('server_id', $server->id)->findOrFail($id);
         $data = $request->validate([
             'state' => ['required', Rule::in(['running', 'succeeded', 'failed'])],
-            'step' => ['nullable', 'integer', 'min:0'],
-            'error' => ['nullable', 'string', 'max:4000'],
+            'step' => ['nullable', 'integer', 'min:0', 'max:1000'],
+            // Audit finding R5: the panel cuts a long error text. It does not refuse the report,
+            // because the result of the job would be lost.
+            'error' => ['nullable', 'string', 'max:100000'],
             'result' => ['nullable', 'array'],
         ]);
+        if (isset($data['error'])) {
+            $data['error'] = mb_substr($data['error'], 0, self::ERROR_LENGTH);
+        }
 
         if ($data['state'] === 'running') {
             $this->outcome->progress($job, $data['step'] ?? $job->step);
@@ -87,6 +96,7 @@ class AgentController extends Controller
         ]);
 
         $failed = collect($data['services'] ?? [])->contains(fn ($s) => $s['state'] !== 'running');
+        $wasOffline = $server->state === 'offline';
         $server->update([
             'agent_version' => $data['agentVersion'],
             'kernel' => $data['kernel'] ?? $server->kernel,
@@ -101,6 +111,12 @@ class AgentController extends Controller
             // A server that was offline is back with this report.
             'state' => in_array($server->state, ['rebooting', 'joining'], true) ? $server->state : ($failed ? 'degraded' : 'healthy'),
         ]);
+        // Audit finding R11: the panel kept the jobs of this server while it was offline.
+        if ($wasOffline) {
+            foreach (AgentJob::where('server_id', $server->id)->where('state', JobState::Queued->value)->orderBy('created_at')->pluck('id') as $jobId) {
+                SendJobToAgent::dispatch($jobId);
+            }
+        }
         // FR-203: the current resource use of each website.
         foreach ($data['websites'] ?? [] as $use) {
             $server->websites()->whereKey($use['id'])->update(['usage' => json_encode(collect($use)->except('id'))]);

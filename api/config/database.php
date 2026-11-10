@@ -38,10 +38,14 @@ return [
             'database' => env('DB_DATABASE', database_path('database.sqlite')),
             'prefix' => '',
             'foreign_key_constraints' => env('DB_FOREIGN_KEYS', true),
-            'busy_timeout' => null,
-            'journal_mode' => null,
+            // SQLite is for development and for the tests. A server uses PostgreSQL, because
+            // the containers of the panel cannot share one SQLite file (docs/decisions.md).
+            // These values let the API and a queue worker of a developer use one file: a
+            // writer waits for the lock, and a transaction takes the write lock at its start.
+            'busy_timeout' => 5000,
+            'journal_mode' => 'wal',
             'synchronous' => null,
-            'transaction_mode' => 'DEFERRED',
+            'transaction_mode' => 'IMMEDIATE',
         ],
 
         'mysql' => [

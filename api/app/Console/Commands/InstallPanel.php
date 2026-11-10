@@ -33,7 +33,10 @@ class InstallPanel extends Command
         $password = null;
         if (! User::where('role', Role::Administrator)->exists()) {
             $password = Str::password(20, symbols: false);
-            User::create(['name' => 'Administrator', 'email' => $email, 'password' => $password, 'role' => Role::Administrator]);
+            // The installation script prints this password. The administrator sets a new one
+            // at the first sign-in.
+            User::create(['name' => 'Administrator', 'email' => $email, 'password' => $password, 'role' => Role::Administrator])
+                ->forceFill(['must_change_password' => true])->save();
         }
 
         $registry = config('cloudfactory.registry');

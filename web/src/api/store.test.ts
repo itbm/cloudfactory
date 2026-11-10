@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { ApiError, addDomain, changePassword, createDatabase, createDatabaseUser, createToken, getState, resetState, setContext, setDatabaseUser, setDocumentRoot, setSftp, setTotp, splitCommand, timing, verifyDomain } from "./store";
+import { ApiError, addCustomer, addDomain, addUser, changePassword, createDatabase, createDatabaseUser, createToken, deleteUser, getState, resetState, resetUserPassword, setContext, setDatabaseUser, setDocumentRoot, setSftp, setTotp, splitCommand, timing, verifyDomain } from "./store";
 import { contextCustomers, visibleWebsites } from "./selectors";
 
 beforeEach(() => {
@@ -118,5 +118,43 @@ describe("SFTP", () => {
     await expect(setSftp("web_shop", { enabled: true, authorizedKeys: [] })).rejects.toMatchObject({ fields: { key: expect.any(String) } });
     await expect(setSftp("web_shop", { enabled: false, authorizedKeys: [] })).resolves.toMatchObject({ job: expect.any(Promise) });
     await expect(setSftp("web_shop", { enabled: true, authorizedKeys: [key] })).resolves.not.toHaveProperty("password");
+  });
+});
+
+describe("users (audit finding B5)", () => {
+  it("makes the first user of a new customer with a temporary password", () => {
+    const access = addCustomer({ name: "Oak Lane", email: "owner@oaklane.example", planId: "plan_starter", role: "owner" }, true) as { email: string; temporaryPassword: string };
+    expect(access.email).toBe("owner@oaklane.example");
+    expect(access.temporaryPassword).toMatch(/^[A-Za-z0-9]{20}$/);
+    const customer = getState().customers.find((c) => c.name === "Oak Lane")!;
+    expect(getState().users.find((u) => u.email === "owner@oaklane.example")).toMatchObject({ role: "owner", customerId: customer.id, mustChangePassword: true, totpEnabled: false });
+    // With no user, the customer cannot sign in, and the panel gives no password.
+    expect(addCustomer({ name: "Elm Road", email: "owner@elmroad.example", planId: "plan_starter", role: "owner" })).toBeNull();
+    expect(getState().users.some((u) => u.email === "owner@elmroad.example")).toBe(false);
+  });
+
+  it("gives a new user the role of the customer", () => {
+    expect(addUser({ name: "Kim", email: "kim@acme.example", customerId: "cus_acme" })).toMatchObject({ email: "kim@acme.example", temporaryPassword: expect.stringMatching(/^.{20}$/) });
+    expect(getState().users.find((u) => u.email === "kim@acme.example")).toMatchObject({ role: "reseller", customerId: "cus_acme" });
+    addUser({ name: "Root", email: "root@platform.example", customerId: null });
+    expect(getState().users.find((u) => u.email === "root@platform.example")).toMatchObject({ role: "administrator", customerId: undefined });
+    expect(() => addUser({ name: "Kim", email: "kim@acme.example", customerId: "cus_acme" })).toThrow(/exists already/);
+    expect(() => addUser({ name: "", email: "bad", customerId: "cus_none" })).toThrow(ApiError);
+  });
+
+  it("resets a password, and can remove TOTP", () => {
+    expect(getState().users.find((u) => u.id === "usr_4")).toMatchObject({ totpEnabled: true, mustChangePassword: false });
+    resetUserPassword("usr_4");
+    expect(getState().users.find((u) => u.id === "usr_4")).toMatchObject({ totpEnabled: true, mustChangePassword: true });
+    resetUserPassword("usr_4", true);
+    expect(getState().users.find((u) => u.id === "usr_4")).toMatchObject({ totpEnabled: false, mustChangePassword: true });
+    expect(getState().audit[0]).toMatchObject({ action: "Reset password and removed TOTP" });
+  });
+
+  it("does not let a user reset or delete itself", () => {
+    expect(() => resetUserPassword("usr_1")).toThrow(/your own password/);
+    expect(() => deleteUser("usr_1")).toThrow(/your own user/);
+    deleteUser("usr_5");
+    expect(getState().users.some((u) => u.id === "usr_5")).toBe(false);
   });
 });

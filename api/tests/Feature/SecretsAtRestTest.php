@@ -7,6 +7,7 @@ use App\Models\AgentJob;
 use App\Services\JobOutcome;
 use App\Services\Totp;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
 /**
@@ -68,7 +69,8 @@ class SecretsAtRestTest extends TestCase
     /** @param  list<string>  $secrets */
     private function assertSecretsNotInTheDatabase(array $secrets, string $when): void
     {
-        $tables = array_column(DB::select("select name from sqlite_master where type = 'table' and name not like 'sqlite_%'"), 'name');
+        // The names with no schema, so that the test is the same for SQLite and PostgreSQL.
+        $tables = Schema::getTableListing(schemaQualified: false);
         $this->assertContains('settings', $tables);
         foreach ($tables as $table) {
             // The values only: a column can have the name "password".

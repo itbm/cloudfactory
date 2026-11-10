@@ -11,6 +11,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/itbm/cloudfactory/agent/internal/pki"
 )
 
 // Client calls the agent routes of the panel.
@@ -23,13 +25,24 @@ type Client struct {
 	Backoff time.Duration
 }
 
-// New gives a client. The agent sends its own certificate, so that the edge proxy of the
-// panel can check it.
-func New(baseURL, token string, cert *tls.Certificate) *Client {
+// New gives a client. The agent sends its own certificate, so that the panel can check it.
+//
+// serverPin is the SHA-256 fingerprint of the certificate of the panel, or "". With a pin, the
+// client accepts only that certificate and does not use the public certificate authorities.
+// The agent on the panel server uses a pin, because it connects to the HTTPS port of the API
+// on the service address, which has no public name. With no pin, the client checks the
+// certificate of the panel domain in the usual way.
+func New(baseURL, token string, cert *tls.Certificate, serverPin string) *Client {
 	tr := http.DefaultTransport.(*http.Transport).Clone()
 	tr.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS12}
 	if cert != nil {
 		tr.TLSClientConfig.Certificates = []tls.Certificate{*cert}
+	}
+	if serverPin != "" {
+		// The pin replaces the checks of the name and of the certificate chain. Go calls
+		// VerifyConnection for each connection, also for a resumed session.
+		tr.TLSClientConfig.InsecureSkipVerify = true
+		tr.TLSClientConfig.VerifyConnection = pki.PinnedServer(serverPin)
 	}
 	return &Client{BaseURL: strings.TrimRight(baseURL, "/"), Token: token, HTTP: &http.Client{Timeout: 30 * time.Second, Transport: tr}, Retries: 5, Backoff: 2 * time.Second}
 }

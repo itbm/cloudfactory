@@ -85,10 +85,12 @@ go run ./cmd/cf --help
 ## Installation script
 
 ```sh
-shellcheck install/install.sh install/test.sh
+shellcheck -s sh install/install.sh install/test.sh images/*/start.sh
 sh install/test.sh
 dash install/test.sh
 ```
+
+The CI fails for each ShellCheck note, also for a note of the type "info".
 
 The tests use `CF_TEST_ROOT` to give the script a fake system. They do not change your
 computer.
@@ -105,7 +107,8 @@ The workflow [`ci.yml`](../.github/workflows/ci.yml) runs for each pull request.
 jobs:
 
 - **web**: type check, tests and build.
-- **api**: tests and Pint on PHP 8.3 and PHP 8.4.
+- **api**: tests and Pint on PHP 8.3 and PHP 8.4. The tests run with SQLite and with
+  PostgreSQL.
 - **agent**: buf generate check, gofmt, go vet, tests with the race detector, and builds for
   x86-64 and ARM64.
 - **cli**: tests and build.
@@ -113,3 +116,10 @@ jobs:
 
 The workflow [`images.yml`](../.github/workflows/images.yml) builds each image and scans it with
 Trivy when a pull request changes `images/`.
+
+Dependabot ([`dependabot.yml`](../.github/dependabot.yml)) proposes updates each week for the
+GitHub actions, the Composer, npm and Go packages, and the base images in `images/`.
+
+The agent and the panel API use one list of examples for the rules of domain names and image
+names: [`testdata/names.json`](../testdata/names.json). When you change a rule, change the
+list. The tests of the two components then show a difference between them.

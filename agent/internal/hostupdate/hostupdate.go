@@ -146,7 +146,13 @@ func (a Apt) Install(ctx context.Context, policy string) error {
 }
 
 // RestartServices restarts only the services that use changed files (FR-1114).
+//
+// Audit finding R9: the command has no batch option (-b), because needrestart in batch mode
+// only prints the services. The option -l skips the kernel and microcode checks, which the
+// agent reports apart with the reboot file. needrestart keeps its own list of services that
+// it does not restart, for example D-Bus and the user managers of the websites. The installer
+// adds the agent to that list.
 func (a Apt) RestartServices(ctx context.Context) error {
-	_, err := a.Run.Run(ctx, "needrestart", "-r", "a", "-b")
+	_, err := a.Run.Run(ctx, "needrestart", "-r", "a", "-l", "-u", "NeedRestart::UI::stdio")
 	return err
 }

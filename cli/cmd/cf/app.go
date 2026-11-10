@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -24,6 +25,7 @@ const usage = `cf controls a Cloudfactory panel.
 
 Usage:
   cf login --panel URL --email EMAIL [--totp CODE]     Sign in. The password is read from CF_PASSWORD or stdin.
+  cf logout                                            Sign out. The panel deletes the session.
   cf use --panel URL --token TOKEN                     Use an API token.
   cf websites list [--status STATUS]
   cf websites get WEBSITE
@@ -50,9 +52,10 @@ Usage:
                         [--access website|anywhere] [--reset-password]
   cf database-users delete WEBSITE USER
   cf backups list|create WEBSITE
-  cf backups restore WEBSITE SNAPSHOT [--scope website|database|mailbox|file] [--item ITEM]
+  cf backups restore WEBSITE SNAPSHOT [--scope website|database|file] [--item ITEM] [--remove-new-files]
+                       --remove-new-files is for a full website. It deletes the files that are not in the backup.
   cf backups policy
-  cf backups policy password   Show the restic repository password. Keep a copy in a safe place.
+  cf backups policy password   Show the restic repository and its password for each server. Keep a copy in a safe place.
   cf backups policy set [--daily N] [--weekly N] [--monthly N] [--time HH:MM] [--target REPOSITORY]
                         [--credentials-from-env | --remove-credentials]
                        The credentials come from AWS_ACCESS_KEY_ID, B2_ACCOUNT_ID and the other restic variables.
@@ -77,8 +80,14 @@ Usage:
                        The password is read from CF_PASSWORD or stdin.
   cf tokens revoke ID
   cf customers list
-  cf customers create --name NAME --email EMAIL --plan ID [--role owner|reseller]
+  cf customers create --name NAME --email EMAIL --plan ID [--role owner|reseller] [--with-user]
+                       --with-user also makes a user with the email of the customer, and shows a temporary password.
   cf customers set ID [--plan ID] [--suspend | --unsuspend]
+  cf users list
+  cf users create --name NAME --email EMAIL (--customer ID | --administrator)
+                       The command shows a temporary password once. The user sets a new password at the first sign-in.
+  cf users reset-password USER [--remove-totp]         A USER is an email address or an ID.
+  cf users delete USER
   cf plans list
   cf audit list [--limit N | --all]
   cf account password [--totp CODE]   The passwords come from CF_PASSWORD and CF_NEW_PASSWORD, or stdin.
@@ -90,6 +99,7 @@ A WEBSITE is a name (for example acme.example) or an ID. A SERVER is a name (for
 the prefix of the website (for example shop or u1a2b3c_shop), or an ID.
 Add --json to see the answer of the API. A change waits for its job; add --no-wait to return at once.
 The settings CF_PANEL and CF_TOKEN replace the saved panel and token.
+The panel address must start with https://. An address with http:// is accepted only for this computer (localhost).
 `
 
 type app struct {
@@ -108,6 +118,28 @@ type app struct {
 type settings struct {
 	Panel string `json:"panel"`
 	Token string `json:"token"`
+	// Session is true when the token is from "cf login". "cf logout" then deletes it in the panel.
+	Session bool `json:"session,omitempty"`
+}
+
+// checkPanel refuses a panel address that sends the token with no encryption (audit finding
+// S12). HTTP is accepted only for this computer, for example for a test.
+func checkPanel(address string) error {
+	u, err := url.Parse(address)
+	if err != nil || u.Host == "" {
+		return fmt.Errorf("the panel address %q is not a URL, for example https://panel.example.com", address)
+	}
+	switch u.Scheme {
+	case "https":
+		return nil
+	case "http":
+		host := u.Hostname()
+		if ip := net.ParseIP(host); host == "localhost" || (ip != nil && ip.IsLoopback()) {
+			return nil
+		}
+		return fmt.Errorf("the panel address %q does not use HTTPS, so the token would go over the network with no encryption; use https://", address)
+	}
+	return fmt.Errorf("the panel address %q must start with https://", address)
 }
 
 func settingsPath() string {
@@ -127,7 +159,8 @@ func loadSettings() settings {
 		s.Panel = v
 	}
 	if v := os.Getenv("CF_TOKEN"); v != "" {
-		s.Token = v
+		// A token from the environment is not the saved session.
+		s.Token, s.Session = v, false
 	}
 	return s
 }
@@ -175,11 +208,16 @@ func (a *app) dispatch(ctx context.Context, args []string) error {
 		return a.login(ctx, args[1:])
 	case "use":
 		return a.use(args[1:])
+	case "logout":
+		return a.logout(ctx)
 	}
 	if a.api == nil {
 		s := loadSettings()
 		if s.Panel == "" || s.Token == "" {
 			return errors.New("sign in first: cf login --panel URL --email EMAIL")
+		}
+		if err := checkPanel(s.Panel); err != nil {
+			return err
 		}
 		a.api = client.New(s.Panel, s.Token)
 	}
@@ -210,6 +248,8 @@ func (a *app) dispatch(ctx context.Context, args []string) error {
 		return a.sftp(ctx, sub, rest)
 	case "customers", "customer":
 		return a.customers(ctx, sub, rest)
+	case "users", "user":
+		return a.users(ctx, sub, rest)
 	case "plans", "plan":
 		return a.plans(ctx, sub)
 	case "audit":
@@ -236,6 +276,9 @@ func (a *app) login(ctx context.Context, args []string) error {
 	if *panel == "" || *email == "" {
 		return errors.New("login needs --panel and --email")
 	}
+	if err := checkPanel(*panel); err != nil {
+		return err
+	}
 	password, err := a.password()
 	if err != nil {
 		return err
@@ -252,10 +295,53 @@ func (a *app) login(ctx context.Context, args []string) error {
 	if err := c.Do(ctx, http.MethodPost, "/auth/login", nil, body, &out); err != nil {
 		return err
 	}
-	if err := saveSettings(settings{Panel: *panel, Token: out.Token}); err != nil {
+	if err := saveSettings(settings{Panel: *panel, Token: out.Token, Session: true}); err != nil {
 		return err
 	}
 	fmt.Fprintf(a.out, "Signed in. The session expires at %s.\n", out.ExpiresAt)
+	// Audit finding B5: with a temporary password, the panel refuses each other command.
+	var me struct {
+		MustChangePassword bool `json:"mustChangePassword"`
+	}
+	c.Token = out.Token
+	if err := c.Do(ctx, http.MethodGet, "/me", nil, nil, &me); err == nil && me.MustChangePassword {
+		fmt.Fprintln(a.out, "Your password is temporary. Set a new password before you use other commands: cf account password")
+	}
+	return nil
+}
+
+// logout removes the saved token. The panel also deletes a session from "cf login", so that
+// a copy of the token does not work (audit finding S8). An API token from "cf use" stays in
+// the panel: revoke it with "cf tokens revoke".
+func (a *app) logout(ctx context.Context) error {
+	var s settings
+	if b, err := os.ReadFile(settingsPath()); err == nil {
+		json.Unmarshal(b, &s)
+	}
+	if s.Token == "" {
+		fmt.Fprintln(a.out, "You are not signed in.")
+		return nil
+	}
+	var remote error
+	if s.Session && checkPanel(s.Panel) == nil {
+		remote = client.New(s.Panel, s.Token).Do(ctx, http.MethodPost, "/auth/logout", nil, nil, nil)
+		// The session is not valid: it is deleted already or it is too old.
+		var apiErr *client.Error
+		if errors.As(remote, &apiErr) && apiErr.Status == http.StatusUnauthorized {
+			remote = nil
+		}
+	}
+	if err := saveSettings(settings{Panel: s.Panel}); err != nil {
+		return err
+	}
+	if remote != nil {
+		return fmt.Errorf("the token is removed from this computer, but the panel did not delete the session: %w", remote)
+	}
+	if s.Session {
+		fmt.Fprintln(a.out, "Signed out.")
+	} else {
+		fmt.Fprintln(a.out, "The API token is removed from this computer. It stays valid in the panel: revoke it with cf tokens revoke.")
+	}
 	return nil
 }
 
@@ -300,6 +386,9 @@ func (a *app) use(args []string) error {
 	}
 	if *panel == "" || *token == "" {
 		return errors.New("use needs --panel and --token")
+	}
+	if err := checkPanel(*panel); err != nil {
+		return err
 	}
 	return saveSettings(settings{Panel: *panel, Token: *token})
 }
@@ -834,14 +923,22 @@ func (a *app) backups(ctx context.Context, sub string, args []string) error {
 			return err
 		}
 		fs := flag.NewFlagSet("restore", flag.ContinueOnError)
-		scope := fs.String("scope", "website", "website, database, mailbox or file")
-		item := fs.String("item", "", `the database (for example "mariadb:shop"), the mailbox or the file path`)
+		scope := fs.String("scope", "website", "website, database or file")
+		item := fs.String("item", "", `the database (for example "mariadb:shop") or the file path`)
+		// Audit finding R8: without this option, a file that an attacker added stays.
+		removeNew := fs.Bool("remove-new-files", false, "for a full website: delete the files that are not in the backup")
 		if err := fs.Parse(args[2:]); err != nil {
 			return err
 		}
 		body := map[string]any{"scope": *scope}
 		if *item != "" {
 			body["item"] = *item
+		}
+		if *removeNew {
+			if *scope != "website" {
+				return errors.New("--remove-new-files is only for --scope website")
+			}
+			body["removeNewFiles"] = true
 		}
 		return a.change(ctx, http.MethodPost, "/websites/"+w.ID+"/snapshots/"+url.PathEscape(args[1])+"/restore", body)
 	}

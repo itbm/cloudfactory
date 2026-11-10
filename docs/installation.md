@@ -36,9 +36,10 @@ If you do not give `--domain`, the script uses the full host name of the server.
 give `--email`, the script uses `admin@` and the domain.
 
 At the end, the script shows the address of the panel and the password of the first
-administrator. After you sign in, open **Settings**, change the password and set up an
-authenticator app (TOTP). The first password is also in your terminal history and in any log of
-the script.
+administrator. This password is temporary. When you sign in, the panel shows only the form
+**Set a new password**. After you set a new password, open **Settings** and set up an
+authenticator app (TOTP). The temporary password is also in your terminal history and in any
+log of the script.
 
 Point the DNS record of the panel domain to the server. The edge proxy then gets a TLS
 certificate.
@@ -67,6 +68,8 @@ certificate.
 | `--sftp-port PORT` | The SFTP port of the websites. The default is `2200`. You cannot use port 22. |
 | `--registry URL`   | Use a different image registry, for example a mirror.                    |
 | `--allow-unsigned REGISTRY` | Let Podman pull unsigned images from this registry. You can use this option more than one time. |
+| `--allow-website-smtp` | Let the websites connect to port 25 (SMTP) of other servers. Refer to [Connections from the websites](#connections-from-the-websites). |
+| `--allow-website-network NETWORK` | Let the websites connect to this private address or network, for example `10.0.5.0/24`. You can use this option more than one time. |
 | `--check`          | Do only the checks. Do not change the system.                            |
 
 ## What the script does
@@ -78,7 +81,9 @@ Then the script does these steps:
 
 1. Install Podman, OpenSSH, the quota tools and the other system packages.
 2. Turn off the automatic upgrades of the APT timer. The agent installs the host updates, by
-   the update policy of the server and in its maintenance window.
+   the update policy of the server and in its maintenance window. After an update, the agent
+   runs `needrestart`, which restarts the services that use changed files. The script tells
+   `needrestart` not to restart the agent, because a restart stops the update job.
 3. Add the private service address `169.254.77.1/32` to the loopback interface
    (`cloudfactory-address.service`). The containers publish their ports only on this address.
 4. Let systemd give the CPU, I/O, memory and process controllers to the user services
@@ -92,15 +97,20 @@ Then the script does these steps:
 10. Make the group of the website users and the directories for SFTP (refer to [SFTP](#sftp)).
     The script does not change the SSH service of the host.
 11. Set the firewall. The firewall accepts SSH (port 22), HTTP, HTTPS, the agent port and the
-    SFTP port.
+    SFTP port. It also limits the connections that a website opens (refer to
+    [Connections from the websites](#connections-from-the-websites)).
 12. Download the agent and check its signature.
 13. Install the agent service and the rollback service.
-14. On the first server only: start the panel in gVisor.
+14. On the first server only: start the panel in gVisor. The panel has its own PostgreSQL
+    database in the container `cf-panel-db`.
 15. On the first server only: make the first administrator.
-16. Join the panel and start the agent.
+16. Join the panel and start the agent. On the first server, the agent connects to the HTTPS
+    port of the panel API on the private service address, and accepts only the certificate of
+    the panel.
 
 If a step fails, the script stops and shows the step. You can run the script again after you
-correct the problem.
+correct the problem. The script does not keep your options. Give all options again each time
+that you run it.
 
 ## After the installation
 
@@ -115,15 +125,103 @@ The panel does not make backups until you set the object storage.
    access key. The panel keeps them encrypted and does not show them again.
 4. Select **Save policy**.
 
-The time of the nightly backups is in UTC. Each Sunday, the panel also removes the data that
-no snapshot uses. With the CLI, put the credentials in the environment, then run
-`cf backups policy set --target REPOSITORY --credentials-from-env`.
+The time of the nightly backups is in UTC. With the CLI, put the credentials in the
+environment, then run `cf backups policy set --target REPOSITORY --credentials-from-env`.
 
-The panel makes one repository password for all servers. restic encrypts each snapshot with
-this password. Keep a copy in a safe place: without it, you cannot restore, for example after
-you lose the panel. To show it, run `cf backups policy password` or send
+#### One repository for each server
+
+Each server with the role `web` has its own restic repository below the address that you
+typed, and its own repository password. For example, with the address
+`s3:s3.eu-west-2.amazonaws.com/my-bucket/cloudfactory`, the repository of a server is
+`s3:s3.eu-west-2.amazonaws.com/my-bucket/cloudfactory/servers/SERVER-ID`. restic encrypts each
+snapshot with the password of its repository. The panel sends a password only to its server.
+Thus a person who has root access to one server cannot read the backups of the other servers.
+
+Keep a copy of each repository address and password in a safe place. Without them, you cannot
+restore after you lose the panel. To show them, run `cf backups policy password` or send
 `GET /api/v1/backup-policy/repository-password` as an administrator. The panel records each
-view in the audit log.
+view in the audit log. Do this again after you add a server, because a new server gets a new
+password.
+
+All servers use the same credentials of the object storage. A person who has root access to
+one server can thus delete the data of all repositories, but cannot read it. To prevent a
+loss of data, turn on versioning or an object lock in the bucket.
+
+#### What the panel keeps
+
+- **Nightly backups.** The retention policy on the **Backups** page gives the number of daily,
+  weekly and monthly backups of each website.
+- **Manual backups.** The panel keeps the 10 newest manual backups of each website. The
+  retention policy does not remove them. To change the number, set `CF_MANUAL_BACKUPS` in
+  `/var/lib/cloudfactory/panel/panel.env` and restart the panel services.
+- **Deleted websites.** The backups of a deleted website stay in the repository for 30 days.
+  In this time, you can restore them with restic. To change the time, set
+  `CF_DELETED_WEBSITE_BACKUP_DAYS`.
+
+Each Sunday, each server removes the backups of the websites that were deleted more than
+30 days ago, and the data that no snapshot uses. A server that is offline does this in a
+later week.
+
+#### Restore
+
+A restore of the full website puts the files from the backup into the website and starts the
+website again. It does not delete the files that are not in the backup. To delete them, select
+**Remove files that are not in the backup**, or use `cf backups restore --remove-new-files`.
+A restore of the full website does not restore the databases. Restore each database
+separately.
+
+#### Backups from an earlier version
+
+An earlier version of release 0.1 used one repository and one password for all servers. The
+panel can restore the snapshots from that time: it uses the old repository and the old
+password for them. `cf backups policy password` shows that repository in the row
+"(all servers, earlier version)". The panel does not remove data from the old repository.
+Delete the old repository in the object storage when you do not need its snapshots.
+
+### Users
+
+The panel does not send email. A new user gets a temporary password, which the panel shows
+one time. Give it to the user in a safe way. At the first sign-in, the user must set a new
+password.
+
+- To add a customer with its first user, go to **Customers > Add customer** and keep
+  **Make a user who can sign in** selected. With the CLI:
+  `cf customers create --name NAME --email EMAIL --plan ID --with-user`.
+- To add a user to a customer, or to add an administrator, go to **Customers > Users >
+  Add user**. With the CLI: `cf users create --name NAME --email EMAIL --customer ID`, or
+  `--administrator` in place of `--customer ID`.
+- To give a user a new temporary password, select **Reset password** in the row of the user,
+  or run `cf users reset-password USER`. For a user who lost the TOTP device, also select
+  **Also remove TOTP** (`--remove-totp`).
+
+An administrator can change all users. A reseller can change only the users of its own
+customers. Only an administrator who is signed in with a password can make, reset or delete
+an administrator. An API token cannot. A user cannot reset or delete its own account in this
+way.
+
+If no administrator can sign in, run these commands as root on the panel server:
+
+```sh
+# Give a user a new temporary password. Add --remove-totp for a lost TOTP device.
+cf-agent panel reset-password you@example.com
+# Remove the sign-in lock of an account after too many failed attempts.
+cf-agent panel unlock you@example.com
+```
+
+### Update to a new release
+
+1. Download and verify the `install.sh` of the new release (refer to
+   [Verify the script](#verify-the-script)).
+2. Run the script as root on the panel server, with the same options as for the installation.
+   The script installs the new agent. The agent then changes the panel containers and the
+   edge proxy to the images of the new release. The data of the panel stays.
+3. In the panel, go to **Servers**. For each other server, open the server and select
+   **Update agent**. With the CLI: `cf servers update-agent SERVER`. The agent checks the
+   signature of the new binary, and the previous binary comes back if the new agent does not
+   start.
+
+If you updated the agent on the panel server in a different way, run `cf-agent panel update`
+as root there. This command changes the panel to the version of the agent.
 
 ### SFTP
 
@@ -221,6 +319,31 @@ The firewall also has an output rule for the private service address `169.254.77
 root and the edge proxy (`cf-edge`) can open a new connection to a port there, except the
 database ports. So a website cannot connect to a different website on the server.
 
+### Connections from the websites
+
+Each website user has a UID from 20000 to 59999. The firewall applies these rules to each new
+connection of these users, thus to each connection that a website opens:
+
+| Destination | Result |
+| ----------- | ------ |
+| MariaDB and PostgreSQL on the private service address | Permitted |
+| DNS (port 53) | Permitted |
+| The addresses of this server, on the HTTP and HTTPS ports | Permitted |
+| All other services of this server, for example SSH and the agent port | Refused |
+| Private networks, link-local addresses (for example the metadata service of a cloud provider at `169.254.169.254`) and multicast addresses | Refused |
+| Port 25 (SMTP) of other servers | Refused |
+| All other addresses on the internet, with the ports 465 and 587 for email | Permitted |
+
+To change these rules, run the script again with all your options and one of these options:
+
+- `--allow-website-smtp` lets the websites connect to port 25. Without this option, a website
+  must send email through a mail service on port 465 or 587.
+- `--allow-website-network NETWORK` lets the websites connect to a private address or
+  network, for example a database server at `10.0.5.10`.
+
+Do not make a Unix user with a UID from 20000 to 59999 for a different purpose. The agent
+refuses a website user with a UID that is not in this range.
+
 ### Proxies in front of the panel
 
 The panel API trusts the `X-Forwarded-For` header only from the edge proxy on the same
@@ -239,6 +362,10 @@ install it, check these items, and report a problem in the issues of the reposit
 - Files that you upload with SFTP have the correct owner in the website container
   (`--userns=keep-id` in gVisor). The SFTP image was checked with Docker and the same
   capabilities, not in gVisor.
-- The SFTP container (OpenSSH as root in gVisor, with `pasta`) answers on port 2200 and sees
-  the real client address.
-- A backup and a restore of a website with databases.
+- The SFTP container (OpenSSH as root in gVisor, with the bridge network of Podman) answers
+  on port 2200 and sees the real client address.
+- A backup and a restore of a website with databases, with real object storage.
+- The firewall rules for the connections from the websites, also with IPv6. They were checked
+  with nftables in a network namespace, not with a real website container.
+- A reboot from the panel, and the restart of the services by `needrestart` after an update.
+- An update of the panel with the installation script of a later release.

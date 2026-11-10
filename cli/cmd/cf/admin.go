@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/itbm/cloudfactory/cli/internal/client"
@@ -81,16 +82,24 @@ func (a *app) backupPolicy(ctx context.Context, args []string) error {
 		return err
 	}
 	if len(args) > 0 && args[0] == "password" {
-		// One restic repository password for all servers. Keep a copy in a safe place:
-		// without it, nobody can restore from the backups.
-		var out map[string]any
+		// Audit finding S2: each server has its own restic repository and password. Keep a
+		// copy in a safe place: without it, nobody can restore the backups of that server.
+		var out struct {
+			Repositories []map[string]any `json:"repositories"`
+			Shared       map[string]any   `json:"shared"`
+		}
 		if err := a.api.Do(ctx, http.MethodGet, "/backup-policy/repository-password", nil, nil, &out); err != nil {
 			return err
 		}
 		if a.json {
 			return a.printJSON(out)
 		}
-		fmt.Fprintln(a.out, cell(out["password"]))
+		rows := out.Repositories
+		if out.Shared != nil {
+			out.Shared["server"] = "(all servers, earlier version)"
+			rows = append(rows, out.Shared)
+		}
+		a.table(rows, []string{"server", "repository", "password"})
 		return nil
 	}
 	if len(args) == 0 || args[0] != "set" {
@@ -407,17 +416,28 @@ func (a *app) customers(ctx context.Context, sub string, args []string) error {
 		email := fs.String("email", "", "the email address")
 		plan := fs.String("plan", "", "the plan ID")
 		role := fs.String("role", "owner", "owner or reseller")
+		// Audit finding B5: the panel sends no email, so it makes the first user here.
+		withUser := fs.Bool("with-user", false, "also make a user with the email of the customer")
 		if err := fs.Parse(args); err != nil {
 			return err
 		}
+		body := map[string]any{"name": *name, "email": *email, "planId": *plan, "role": *role}
+		if *withUser {
+			body["createUser"] = true
+		}
 		var out map[string]any
-		if err := a.api.Do(ctx, http.MethodPost, "/customers", nil, map[string]string{"name": *name, "email": *email, "planId": *plan, "role": *role}, &out); err != nil {
+		if err := a.api.Do(ctx, http.MethodPost, "/customers", nil, body, &out); err != nil {
 			return err
 		}
 		if a.json {
 			return a.printJSON(out)
 		}
 		fmt.Fprintf(a.out, "Added customer %s (%s).\n", cell(out["name"]), cell(out["id"]))
+		if user, ok := out["user"].(map[string]any); ok {
+			a.temporaryPassword(user)
+		} else {
+			fmt.Fprintln(a.out, "The customer has no user and cannot sign in. Add one with: cf users create")
+		}
 		return nil
 	case "set":
 		if err := need(args, 1, "a customer ID"); err != nil {
@@ -450,6 +470,106 @@ func (a *app) customers(ctx context.Context, sub string, args []string) error {
 		return nil
 	}
 	return fmt.Errorf("unknown command customers %s", sub)
+}
+
+// temporaryPassword shows the temporary password of a new user or of a reset, one time.
+func (a *app) temporaryPassword(user map[string]any) {
+	fmt.Fprintf(a.out, "Temporary password for %s: %s\nCopy it now. The panel does not show it again and sends no email. The user sets a new password at the first sign-in.\n", cell(user["email"]), cell(user["temporaryPassword"]))
+}
+
+// users lists, adds, resets and deletes the users who can sign in (audit finding B5).
+func (a *app) users(ctx context.Context, sub string, args []string) error {
+	switch sub {
+	case "list", "ls":
+		return a.simpleList(ctx, "/users", []string{"name", "email", "role", "customerId", "totpEnabled", "mustChangePassword", "id"})
+	case "create":
+		fs := flag.NewFlagSet("create", flag.ContinueOnError)
+		name := fs.String("name", "", "the name of the user")
+		email := fs.String("email", "", "the email address. The user signs in with it.")
+		customer := fs.String("customer", "", "the ID of the customer of the user")
+		admin := fs.Bool("administrator", false, "make an administrator, who has no customer")
+		if err := fs.Parse(args); err != nil {
+			return err
+		}
+		if (*customer == "") != *admin {
+			return errors.New("give --customer ID or --administrator")
+		}
+		// customerId is null for an administrator.
+		body := map[string]any{"name": *name, "email": *email, "customerId": nil}
+		if *customer != "" {
+			body["customerId"] = *customer
+		}
+		var out map[string]any
+		if err := a.api.Do(ctx, http.MethodPost, "/users", nil, body, &out); err != nil {
+			return err
+		}
+		if a.json {
+			return a.printJSON(out)
+		}
+		fmt.Fprintf(a.out, "Added user %s (%s, ID %s).\n", cell(out["email"]), cell(out["role"]), cell(out["id"]))
+		a.temporaryPassword(out)
+		return nil
+	case "reset-password", "delete", "rm":
+		if err := need(args, 1, "the email address or the ID of a user"); err != nil {
+			return err
+		}
+		fs := flag.NewFlagSet(sub, flag.ContinueOnError)
+		removeTotp := fs.Bool("remove-totp", false, "also remove TOTP, for a user who lost the authenticator app")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		id, err := a.userID(ctx, args[0])
+		if err != nil {
+			return err
+		}
+		if sub != "reset-password" {
+			if err := a.api.Do(ctx, http.MethodDelete, "/users/"+id, nil, nil, nil); err != nil {
+				return err
+			}
+			fmt.Fprintln(a.out, "The user is deleted.")
+			return nil
+		}
+		body := map[string]any{}
+		if *removeTotp {
+			body["removeTotp"] = true
+		}
+		var out map[string]any
+		if err := a.api.Do(ctx, http.MethodPost, "/users/"+id+"/reset-password", nil, body, &out); err != nil {
+			return err
+		}
+		if a.json {
+			return a.printJSON(out)
+		}
+		fmt.Fprintln(a.out, "The password is reset. The panel signed the user out and deleted the API tokens of the user.")
+		a.temporaryPassword(out)
+		return nil
+	}
+	return fmt.Errorf("unknown command users %s", sub)
+}
+
+// userID gives the ID of a user from an ID or an email address.
+func (a *app) userID(ctx context.Context, ref string) (string, error) {
+	if !strings.Contains(ref, "@") {
+		if _, err := strconv.Atoi(ref); err != nil {
+			return "", fmt.Errorf("%q is not an email address or the ID of a user", ref)
+		}
+		return ref, nil
+	}
+	var out struct {
+		Data []struct {
+			ID    int    `json:"id"`
+			Email string `json:"email"`
+		} `json:"data"`
+	}
+	if err := a.api.Do(ctx, http.MethodGet, "/users", nil, nil, &out); err != nil {
+		return "", err
+	}
+	for _, u := range out.Data {
+		if strings.EqualFold(u.Email, ref) {
+			return strconv.Itoa(u.ID), nil
+		}
+	}
+	return "", fmt.Errorf("there is no user %s", ref)
 }
 
 func (a *app) plans(ctx context.Context, sub string) error {

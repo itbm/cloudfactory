@@ -174,3 +174,54 @@ A held container tool has an update. "Update container tools" installs it (FR-11
 A website with no SSH keys. SFTP cannot be turned on until you add a key.
 
 ![28-sftp-no-keys](28-sftp-no-keys.png)
+
+## 29-set-new-password
+
+The screenshots 29 to 36 show a new panel from `php artisan cloudfactory:install`, with
+PostgreSQL, not the sample data.
+
+A user with a temporary password sees only this form. The first administrator from the installation script starts here (audit finding B5).
+
+![29-set-new-password](29-set-new-password.png)
+
+## 30-add-customer-with-user
+
+"Add customer" also makes the first user of the customer.
+
+![30-add-customer-with-user](30-add-customer-with-user.png)
+
+## 31-temporary-password
+
+The panel shows the temporary password of a new user one time. The panel sends no email.
+
+![31-temporary-password](31-temporary-password.png)
+
+## 32-add-user
+
+"Add user" for a customer or for an administrator.
+
+![32-add-user](32-add-user.png)
+
+## 33-users
+
+The users, as an administrator. A user with a temporary password has a label.
+
+![33-users](33-users.png)
+
+## 34-users-as-owner
+
+An owner sees its users, with no actions.
+
+![34-users-as-owner](34-users-as-owner.png)
+
+## 35-reset-password
+
+"Reset password" gives a user a new temporary password.
+
+![35-reset-password](35-reset-password.png)
+
+## 36-password-settings
+
+The password form in Settings. A password change signs out the other sessions and deletes the API tokens of the user (audit finding S8).
+
+![36-password-settings](36-password-settings.png)

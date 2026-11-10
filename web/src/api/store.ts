@@ -26,6 +26,7 @@ import type {
   HostUpdatePolicy,
   Job,
   MailAlias,
+  ManagedUser,
   Plan,
   ServerRole,
   State,
@@ -52,7 +53,7 @@ function emptyState(): State {
     ...s,
     session: { ...s.session, signedIn: false, user: { id: "", name: "", email: "", role: "owner" }, contextId: "" },
     contexts: [], websites: [], jobs: [], activity: [], notifications: [], servers: [], images: [], rollout: undefined,
-    zones: [], mailboxes: [], aliases: [], databases: [], databaseUsers: [], files: {}, snapshots: [], plans: [], customers: [],
+    zones: [], mailboxes: [], aliases: [], databases: [], databaseUsers: [], files: {}, snapshots: [], plans: [], customers: [], users: [],
     tokens: [], passkeys: [], totpEnabled: false, audit: [], alertChannels: [], joinToken: "",
   };
 }
@@ -199,6 +200,12 @@ export function refresh(): Promise<void> {
     })
     .finally(() => (loading = null));
   return loading;
+}
+
+/** Loads the state after a change. A load that started before the change does not count. */
+async function reload(): Promise<void> {
+  await loading;
+  return refresh();
 }
 
 /** Follows a job that the API made. The promise resolves when the agent has finished it. */
@@ -960,12 +967,17 @@ export function backupNow(websiteId: string) {
 
 export type RestoreScope = { kind: "website" } | { kind: "database"; name: string } | { kind: "mailbox"; name: string } | { kind: "file"; path: string };
 
-export function restore(snapshotId: string, scope: RestoreScope) {
+/**
+ * Audit finding R8: removeNewFiles is for the restore of a full website. The panel then also
+ * removes the files that are not in the backup, for example the files that an attacker added.
+ */
+export function restore(snapshotId: string, scope: RestoreScope, removeNewFiles = false) {
+  const extra = removeNewFiles && scope.kind === "website";
   if (LIVE) {
     const snapshot = state.snapshots.find((x) => x.id === snapshotId);
     if (!snapshot) throw new ApiError("The snapshot does not exist.");
     const item = scope.kind === "website" ? undefined : scope.kind === "file" ? scope.path : scope.name;
-    return call(() => live.request<JobAnswer>("POST", `/websites/${snapshot.websiteId}/snapshots/${snapshotId}/restore`, { scope: scope.kind, item })).then((r) => track(r.job));
+    return call(() => live.request<JobAnswer>("POST", `/websites/${snapshot.websiteId}/snapshots/${snapshotId}/restore`, { scope: scope.kind, item, ...(extra ? { removeNewFiles: true } : {}) })).then((r) => track(r.job));
   }
   const snap = state.snapshots.find((s) => s.id === snapshotId)!;
   const w = state.websites.find((x) => x.id === snap.websiteId)!;
@@ -975,7 +987,7 @@ export function restore(snapshotId: string, scope: RestoreScope) {
     websiteId: w.id,
     steps: scope.kind === "website" ? ["Download snapshot", "Restore files", "Restore databases", "Restore mailboxes", "Health check"] : ["Download snapshot", "Restore"],
     activity: `Restored ${what} on ${w.name}`,
-    begin: (d) => audit(d, "Restored from backup", `${w.name} ${what}`),
+    begin: (d) => audit(d, "Restored from backup", `${w.name} ${what}${extra ? ", new files removed" : ""}`),
   });
 }
 
@@ -1622,15 +1634,124 @@ export function newJoinToken() {
 
 // Customers, plans and branding (FR-102, FR-106, FR-202)
 
-export function addCustomer(input: Pick<Customer, "name" | "email" | "planId" | "role">) {
-  if (LIVE) return call(() => live.request("POST", "/customers", { name: input.name.trim(), email: input.email.trim(), planId: input.planId, role: input.role })).then(() => refresh());
+/** A new user or a new password. The panel shows the temporary password one time only. */
+export interface NewAccess {
+  email: string;
+  temporaryPassword: string;
+}
+
+const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+
+/**
+ * Audit finding B5: with createUser, the panel also makes the first user of the customer. The
+ * user has the email of the customer and a temporary password. The panel sends no email.
+ */
+export function addCustomer(input: Pick<Customer, "name" | "email" | "planId" | "role">, createUser = false): Promise<NewAccess | null> | NewAccess | null {
+  if (LIVE) {
+    return call(async () => {
+      const r = await live.request<{ user?: { email: string; temporaryPassword: string } }>("POST", "/customers", { name: input.name.trim(), email: input.email.trim(), planId: input.planId, role: input.role, ...(createUser ? { createUser: true } : {}) });
+      await reload();
+      return r.user ? { email: r.user.email, temporaryPassword: r.user.temporaryPassword } : null;
+    });
+  }
   const errors: Record<string, string> = {};
   if (!input.name.trim()) errors.name = "Type a name.";
-  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(input.email)) errors.email = "Type an email address.";
+  if (!EMAIL.test(input.email)) errors.email = "Type an email address.";
+  else if (createUser && state.users.some((u) => u.email === input.email.trim())) errors.email = "A user with this email exists already.";
   if (Object.keys(errors).length) throw new ApiError("Correct the customer.", errors);
+  const customerId = id("cus");
+  const access = createUser ? { email: input.email.trim(), temporaryPassword: newPassword().slice(0, 20) } : null;
   update((d) => {
-    d.customers.push({ id: id("cus"), ...input, name: input.name.trim(), resellerId: d.session.contextId === "platform" ? undefined : d.session.contextId, createdAt: now(), suspended: false });
+    d.customers.push({ id: customerId, ...input, name: input.name.trim(), email: input.email.trim(), resellerId: d.session.contextId === "platform" ? undefined : d.session.contextId, createdAt: now(), suspended: false });
     audit(d, "Created customer", input.name);
+    if (access) {
+      d.users.push({ id: id("usr"), name: input.name.trim(), email: access.email, role: input.role, customerId, totpEnabled: false, mustChangePassword: true, createdAt: now() });
+      audit(d, "Created user", access.email);
+    }
+  });
+  return access;
+}
+
+// Users (audit finding B5)
+
+/**
+ * The rules of the API (UserController::refuse) for the mock data. customerId is undefined
+ * for an administrator.
+ */
+function checkUserChange(customerId: string | undefined) {
+  const role = state.session.user.role;
+  if (role === "owner") throw new ApiError("Website owners cannot change users.");
+  if (role === "reseller" && state.customers.find((c) => c.id === customerId)?.resellerId !== state.session.contextId) {
+    throw new ApiError("A reseller can change only the users of its own customers.");
+  }
+}
+
+/** Makes a user for a customer. With no customer (null), the user is an administrator. */
+export function addUser(input: { name: string; email: string; customerId: string | null }): Promise<NewAccess> | NewAccess {
+  if (LIVE) {
+    return call(async () => {
+      const r = await live.request<live.ApiUser & { temporaryPassword: string }>("POST", "/users", { name: input.name.trim(), email: input.email.trim(), customerId: input.customerId });
+      await reload();
+      return { email: r.email, temporaryPassword: r.temporaryPassword };
+    });
+  }
+  const errors: Record<string, string> = {};
+  const customer = state.customers.find((c) => c.id === input.customerId);
+  if (!input.name.trim()) errors.name = "Type a name.";
+  if (!EMAIL.test(input.email)) errors.email = "Type an email address.";
+  else if (state.users.some((u) => u.email === input.email.trim())) errors.email = "A user with this email exists already.";
+  if (input.customerId !== null && !customer) errors.customerId = "The customer does not exist.";
+  // As in live mode: with one error, the message says what to correct.
+  const messages = Object.values(errors);
+  if (messages.length) throw new ApiError(messages.length === 1 ? messages[0] : "Correct the errors and try again.", errors);
+  checkUserChange(customer?.id);
+  const access = { email: input.email.trim(), temporaryPassword: newPassword().slice(0, 20) };
+  update((d) => {
+    d.users.push({ id: id("usr"), name: input.name.trim(), email: access.email, role: customer ? customer.role : "administrator", customerId: customer?.id, totpEnabled: false, mustChangePassword: true, createdAt: now() });
+    audit(d, "Created user", access.email);
+  });
+  return access;
+}
+
+function managedUser(userId: string): ManagedUser {
+  const u = state.users.find((x) => x.id === userId);
+  if (!u) throw new ApiError("The user does not exist.");
+  return u;
+}
+
+/**
+ * Gives the user a new temporary password and signs the user out. With removeTotp, the user
+ * can sign in with the password only, for example after the loss of a telephone.
+ */
+export function resetUserPassword(userId: string, removeTotp = false): Promise<NewAccess> | NewAccess {
+  if (LIVE) {
+    return call(async () => {
+      const r = await live.request<live.ApiUser & { temporaryPassword: string }>("POST", `/users/${userId}/reset-password`, removeTotp ? { removeTotp: true } : {});
+      await reload();
+      return { email: r.email, temporaryPassword: r.temporaryPassword };
+    });
+  }
+  const u = managedUser(userId);
+  if (u.id === state.session.user.id) throw new ApiError("Change your own password in the settings.");
+  checkUserChange(u.customerId);
+  const access = { email: u.email, temporaryPassword: newPassword().slice(0, 20) };
+  update((d) => {
+    const x = d.users.find((y) => y.id === userId)!;
+    x.mustChangePassword = true;
+    if (removeTotp) x.totpEnabled = false;
+    audit(d, removeTotp ? "Reset password and removed TOTP" : "Reset password", u.email);
+  });
+  return access;
+}
+
+export function deleteUser(userId: string) {
+  if (LIVE) return call(() => live.request("DELETE", `/users/${userId}`)).then(() => reload());
+  const u = managedUser(userId);
+  if (u.id === state.session.user.id) throw new ApiError("You cannot delete your own user.");
+  checkUserChange(u.customerId);
+  update((d) => {
+    d.users = d.users.filter((x) => x.id !== userId);
+    audit(d, "Deleted user", u.email);
   });
 }
 
@@ -1754,7 +1875,11 @@ export function setTotp(enabled: boolean, code: string, password: string) {
   });
 }
 
-/** R-01: changes the password. The panel then signs out the other sessions of the user. */
+/**
+ * R-01: changes the password. The panel then signs out the other sessions of the user and
+ * deletes the API tokens of the user (audit finding S8). It also ends the state of a temporary
+ * password (audit finding B5).
+ */
 export function changePassword(current: string, next: string, confirm: string, totp = "") {
   const errors: Record<string, string> = {};
   if (!current) errors.currentPassword = "Type your current password.";
@@ -1766,10 +1891,14 @@ export function changePassword(current: string, next: string, confirm: string, t
   if (LIVE) {
     return call(async () => {
       await live.request("PUT", "/me/password", { currentPassword: current, password: next, password_confirmation: confirm, totp: totp.trim() || undefined });
-      await refresh();
+      await reload();
     });
   }
-  update((d) => audit(d, "Changed password", d.session.user.email));
+  update((d) => {
+    d.session.mustChangePassword = false;
+    d.tokens = [];
+    audit(d, "Changed password", d.session.user.email);
+  });
 }
 
 export function addAlertChannel(kind: AlertChannel["kind"], target: string, events: string[]) {

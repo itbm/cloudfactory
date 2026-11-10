@@ -47,7 +47,17 @@ type Deps struct {
 	// Reboot reboots the host. Restart restarts the agent.
 	Reboot  func(ctx context.Context) error
 	Restart func()
-	Arch    string
+	// Stopping is closed when the agent gets a stop signal, for example at a shutdown. A nil
+	// channel never closes.
+	Stopping <-chan struct{}
+	// RebootWait is the maximum time between the reboot command and the stop signal. The
+	// default is 10 minutes.
+	RebootWait time.Duration
+	// DomainWait is the time that a status report waits for a check of the domains. DomainLimit
+	// is the time limit for one check of all domains. The defaults are 5 seconds and 2 minutes.
+	DomainWait  time.Duration
+	DomainLimit time.Duration
+	Arch        string
 	// BlockDevice is the disk for the I/O limit of each website.
 	BlockDevice string
 	// QuotaMount is the mount point of SitesDir when user quotas are on there. Empty means that
@@ -131,6 +141,9 @@ type Site struct {
 	// Stopped is true when the owner stopped the website. Then a change of the runtime does not
 	// start it.
 	Stopped bool `json:"stopped,omitempty"`
+	// NextPort is the port of the new container while a change of the runtime is in work, or 0.
+	// The state keeps it, so that no other website gets the same port in that time.
+	NextPort int `json:"nextPort,omitempty"`
 }
 
 // State keeps the sites and their ports in a file, so that the agent knows them after a restart.
@@ -234,20 +247,15 @@ func (s *State) Delete(id string) error {
 	return s.write(f)
 }
 
-// FreePort gives a port that no site uses. A runtime change uses two ports for a short time.
-func (s *State) FreePort(also ...int) (int, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	f, err := s.read()
-	if err != nil {
-		return 0, err
-	}
+// freePort gives a port that no site uses and that no change of a runtime has taken. The
+// caller holds the lock and records the port before it releases the lock.
+func (s *State) freePort(f stateFile) (int, error) {
 	used := map[int]bool{}
 	for _, site := range f.Sites {
 		used[site.Port] = true
-	}
-	for _, p := range also {
-		used[p] = true
+		if site.NextPort != 0 {
+			used[site.NextPort] = true
+		}
 	}
 	for p := s.FirstPort; p <= s.LastPort; p++ {
 		if !used[p] {
@@ -255,6 +263,66 @@ func (s *State) FreePort(also ...int) (int, error) {
 		}
 	}
 	return 0, fmt.Errorf("actions: no free port from %d to %d", s.FirstPort, s.LastPort)
+}
+
+// Reserve records a site and gives its port. A site that the state knows keeps its port. A new
+// site gets a free port. The search and the record are one step with one lock. The runner
+// starts the jobs of different websites at the same time, and with two steps two websites
+// could get the same port (audit finding B6).
+func (s *State) Reserve(site *Site) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	f, err := s.read()
+	if err != nil {
+		return 0, err
+	}
+	if old := f.Sites[site.ID]; old != nil {
+		site.Port = old.Port
+	} else if site.Port, err = s.freePort(f); err != nil {
+		return 0, err
+	}
+	f.Sites[site.ID] = site
+	return site.Port, s.write(f)
+}
+
+// ReserveNext takes a second port for a site and records it in the same step. A change of the
+// runtime starts the new container on this port while the old container continues. The port
+// stays taken until the change is complete (Put) or stops (ReleaseNext). A port from a change
+// that did not end, for example because the agent stopped, is used again.
+func (s *State) ReserveNext(id string) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	f, err := s.read()
+	if err != nil {
+		return 0, err
+	}
+	site := f.Sites[id]
+	if site == nil {
+		return 0, fmt.Errorf("actions: the state does not have the website %s", id)
+	}
+	if site.NextPort != 0 {
+		return site.NextPort, nil
+	}
+	if site.NextPort, err = s.freePort(f); err != nil {
+		return 0, err
+	}
+	return site.NextPort, s.write(f)
+}
+
+// ReleaseNext gives the second port of a site back after a change of the runtime that failed.
+func (s *State) ReleaseNext(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	f, err := s.read()
+	if err != nil {
+		return err
+	}
+	site := f.Sites[id]
+	if site == nil || site.NextPort == 0 {
+		return nil
+	}
+	site.NextPort = 0
+	return s.write(f)
 }
 
 // NewState gives a State in the data directory.

@@ -1,0 +1,57 @@
+{
+  "comment": "Audit finding R5: the panel (api) and the agent test their rules for names with this one list, so that the two always agree.",
+  "domains": {
+    "valid": [
+      "example.com",
+      "www.example.com",
+      "ok-name.example",
+      "a.b.c.example",
+      "xn--bcher-kva.example",
+      "1-800.example",
+      "123.example",
+      "example.co.uk",
+      "a1.b2.c3"
+    ],
+    "invalid": [
+      "example",
+      "-bad.example",
+      "bad-.example",
+      "a.-b.example",
+      "a.b-.example",
+      "a..example",
+      ".example.com",
+      "example.com.",
+      "1.2.3.4",
+      "example.123",
+      "under_score.example",
+      "Example.com",
+      "exa mple.com",
+      "*.example.com",
+      "example.com/path",
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.example"
+    ]
+  },
+  "images": {
+    "comment": "An image reference with no tag. The agent adds a tag.",
+    "valid": [
+      "ghcr.io/itbm/frankenphp-php8.4",
+      "registry.example.com/team/app",
+      "registry.example.com:5000/app",
+      "localhost:5000/app",
+      "quay.io/a/b/c_d-e.f"
+    ],
+    "invalid": [
+      "nginx",
+      "library/nginx",
+      "team/app",
+      "ghcr.io",
+      "ghcr.io/",
+      "ghcr.io//app",
+      "GHCR.io/app",
+      "ghcr.io/App",
+      "--privileged",
+      "ghcr.io/app image",
+      "ghcr.io/app:tag"
+    ]
+  }
+}

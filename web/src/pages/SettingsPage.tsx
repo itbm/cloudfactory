@@ -5,12 +5,13 @@ import { features, LIVE } from "../api/mode";
 import type { AlertChannel, TokenScope } from "../api/types";
 import { Topbar } from "../components/Layout";
 import { Card, ConfirmButton, Field, FormError, Modal, PageHeader, Status, Tabs } from "../components/ui";
+import { auditCsv } from "../lib/csv";
 import { daysUntil, longDate, relativeTime, shortDate } from "../lib/format";
 import { CopyField } from "./website/AccessTab";
 
 // The live API has no DNS or email scopes in release 0.1 (FR-104).
 const SCOPES: TokenScope[] = LIVE
-  ? ["websites:read", "websites:write", "databases:read", "databases:write", "backups:read", "backups:write", "servers:read", "servers:write", "images:read", "images:write", "customers:read", "customers:write", "audit:read", "tokens:read", "tokens:write"]
+  ? ["websites:read", "websites:write", "databases:read", "databases:write", "backups:read", "backups:write", "servers:read", "servers:write", "images:read", "images:write", "customers:read", "customers:write", "users:read", "users:write", "audit:read", "tokens:read", "tokens:write"]
   : ["websites:read", "websites:write", "dns:read", "dns:write", "email:read", "email:write", "databases:read", "databases:write", "backups:read", "backups:write", "servers:read", "servers:write"];
 const EVENTS = ["Server health", "Failed update", "Failed deploy", "Failed backup", "Mailbox 90% full", "Certificate failed", "PHP support ends"];
 
@@ -145,7 +146,8 @@ function PasswordCard() {
         if ((await change.run(current, next, confirm, code)).ok) { setCurrent(""); setNext(""); setConfirm(""); setCode(""); setDone(true); }
       }}>
         <FormError error={change.error} shown={["currentPassword", "password", "password_confirmation", "totp"]} />
-        {done && <p role="status" style={{ marginBottom: 12 }}><Status tone="success">Changed</Status> Your other sessions are signed out.</p>}
+        <p className="muted" style={{ marginBottom: 12 }}>A password change signs out your other sessions and deletes your API tokens. Make new tokens after the change.</p>
+        {done && <p role="status" style={{ marginBottom: 12 }}><Status tone="success">Changed</Status> Your other sessions are signed out, and your API tokens are deleted.</p>}
         <Field label="Current password" error={change.error?.fields.currentPassword}>{(p) => <input {...p} className="input" type="password" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} />}</Field>
         <Field label="New password" hint="Use 12 or more characters." error={change.error?.fields.password}>{(p) => <input {...p} className="input" type="password" autoComplete="new-password" value={next} onChange={(e) => setNext(e.target.value)} />}</Field>
         <Field label="Type the new password again" error={change.error?.fields.password_confirmation}>{(p) => <input {...p} className="input" type="password" autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} />}</Field>
@@ -240,7 +242,7 @@ function Audit() {
       <div className="filters">
         <label className="visually-hidden" htmlFor="audit-q">Filter</label>
         <input id="audit-q" className="input" style={{ width: 240 }} placeholder="Filter by person, change or IP" value={q} onChange={(e) => setQ(e.target.value)} />
-        <a className="btn" download="audit-log.csv" href={`data:text/csv;charset=utf-8,${encodeURIComponent(["time,person,ip,change,target", ...state.audit.map((a) => [a.at, a.actor, a.ip, a.action, a.target].map((v) => `"${v.replace(/"/g, '""')}"`).join(","))].join("\n"))}`}>Export CSV</a>
+        <a className="btn" download="audit-log.csv" href={`data:text/csv;charset=utf-8,${encodeURIComponent(auditCsv(state.audit))}`}>Export CSV</a>
       </div>
     }>
       <div className="table-wrap">

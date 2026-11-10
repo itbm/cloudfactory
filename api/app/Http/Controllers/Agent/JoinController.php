@@ -21,9 +21,9 @@ class JoinController extends Controller
     public function __invoke(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'token' => ['required', 'string'],
+            'token' => ['required', 'string', 'max:200'],
             'name' => ['required', 'regex:/^[a-z][a-z0-9-]{1,30}$/', 'unique:servers,name'],
-            'agentUrl' => ['required', 'url:https'],
+            'agentUrl' => ['required', 'url:https', 'max:255'],
             'certificateSha256' => ['required', 'regex:/^[0-9a-f]{64}$/'],
             'certificatePem' => ['required', 'string', 'max:8000'],
             'agentVersion' => ['required', 'string', 'max:32'],
@@ -44,7 +44,11 @@ class JoinController extends Controller
         }
 
         // CF-10: only the agent on the panel server joins directly, not through the edge proxy.
-        $local = ! AuthenticateAgent::viaEdge($request) && AuthenticateAgent::fromLoopback($request);
+        // It uses the HTTPS port of the API, and its TLS connection has the certificate of the
+        // request. Thus the agent has the private key of the certificate that the panel keeps.
+        $direct = AuthenticateAgent::directFingerprint($request);
+        $local = ! AuthenticateAgent::viaEdge($request)
+            && (($direct !== '' && hash_equals($data['certificateSha256'], $direct)) || AuthenticateAgent::fromDevelopmentAddress($request));
 
         return DB::transaction(function () use ($data, $local) {
             $join = JoinToken::where('token_hash', hash('sha256', $data['token']))

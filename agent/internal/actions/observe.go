@@ -29,8 +29,10 @@ type observer struct {
 	diskAt   time.Time
 	domains  []panel.DomainState
 	domainAt time.Time
-	dbSizes  []panel.DatabaseSize
-	dbAt     time.Time
+	// domainRun is open while a check of the domains is in progress.
+	domainRun chan struct{}
+	dbSizes   []panel.DatabaseSize
+	dbAt      time.Time
 }
 
 type cpuSample struct {
@@ -43,6 +45,18 @@ const (
 	diskEvery     = 30 * time.Minute
 	domainEvery   = 5 * time.Minute
 	databaseEvery = 10 * time.Minute
+)
+
+// Limits of the domain checks (audit finding S6). A customer controls the DNS of a domain, and
+// thus the time that a check takes. The checks must not delay the report, because the panel
+// marks a server without reports as offline.
+const (
+	// domainWorkers is the number of domains that the agent checks at the same time.
+	domainWorkers = 16
+	// domainLimit is the time limit for one check of all domains.
+	domainLimit = 2 * time.Minute
+	// domainWait is the time that a report waits for a check that it started.
+	domainWait = 5 * time.Second
 )
 
 // FillReport adds the use of each website (FR-203), the state of each domain (FR-402, FR-403),
@@ -73,9 +87,24 @@ func (d *Deps) FillReport(ctx context.Context, r *panel.Report) {
 		}
 		r.Websites = append(r.Websites, u)
 	}
-	if now.Sub(o.domainAt) > domainEvery {
-		o.domains = d.domainStates(ctx, sites)
-		o.domainAt = now
+	// The check of the domains runs apart from the report. The report waits a short time for
+	// the check that it started, and then uses the last complete result.
+	var started chan struct{}
+	if now.Sub(o.domainAt) > domainEvery && o.domainRun == nil {
+		started = make(chan struct{})
+		o.domainRun = started
+		go d.checkDomains(sites, started)
+	}
+	if started != nil {
+		o.mu.Unlock()
+		wait := time.NewTimer(orDefault(d.DomainWait, domainWait))
+		select {
+		case <-started:
+		case <-wait.C:
+		case <-ctx.Done():
+		}
+		wait.Stop()
+		o.mu.Lock()
 	}
 	r.Domains = o.domains
 	if now.Sub(o.dbAt) > databaseEvery {
@@ -166,27 +195,90 @@ func dirSize(dir string) int64 {
 	return total
 }
 
-// domainStates checks the DNS and the TLS certificate of each domain. The agent asks the edge
-// proxy for the certificate of each domain, as a browser does, and checks it with the system
-// roots. A domain with a valid certificate also points to this server, for example behind NAT.
+// checkDomains checks all domains and keeps the result for the subsequent reports.
+func (d *Deps) checkDomains(sites []*Site, done chan struct{}) {
+	ctx, cancel := context.WithTimeout(context.Background(), orDefault(d.DomainLimit, domainLimit))
+	defer cancel()
+	states := d.domainStates(ctx, sites)
+	o := &d.obs
+	o.mu.Lock()
+	o.domains, o.domainAt, o.domainRun = states, time.Now(), nil
+	o.mu.Unlock()
+	close(done)
+}
+
+func orDefault(v, fallback time.Duration) time.Duration {
+	if v > 0 {
+		return v
+	}
+	return fallback
+}
+
+// domainStates checks the DNS and the TLS certificate of each domain. It checks some domains
+// at the same time, and it stops when ctx ends. A domain that was not checked in time is not
+// in the result, so the panel keeps the last state of that domain.
 func (d *Deps) domainStates(ctx context.Context, sites []*Site) []panel.DomainState {
-	out := []panel.DomainState{}
-	for _, s := range sites {
-		for _, dom := range s.Website.GetDomains() {
-			st := panel.DomainState{Name: dom.GetName(), DNSPointsHere: d.DNSPointsHere(ctx, dom.GetName()), Certificate: "pending"}
-			if exp, err := d.certificate(ctx, dom.GetName()); err == nil {
-				st.Certificate, st.ExpiresAt, st.DNSPointsHere = "valid", exp.UTC().Format(time.RFC3339), true
-				if time.Until(exp) < 0 {
-					st.Certificate = "expired"
-				}
-			} else if st.DNSPointsHere && !errors.Is(err, errNoCertificate) {
-				// The DNS points here, but Caddy could not get a certificate.
-				st.Certificate = "failed"
+	// The first domain of each website, then the second of each website, and so on. Thus one
+	// website with many slow domains does not use all the time of the other websites.
+	names := []string{}
+	for i, more := 0, true; more; i++ {
+		more = false
+		for _, s := range sites {
+			if doms := s.Website.GetDomains(); i < len(doms) {
+				names, more = append(names, doms[i].GetName()), true
 			}
-			out = append(out, st)
+		}
+	}
+	states := make([]*panel.DomainState, len(names))
+	next := make(chan int)
+	var wg sync.WaitGroup
+	for w := 0; w < min(domainWorkers, len(names)); w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := range next {
+				st := d.domainState(ctx, names[i])
+				// A check that the time limit stopped gives no reliable result.
+				if ctx.Err() == nil {
+					states[i] = &st
+				}
+			}
+		}()
+	}
+feed:
+	for i := range names {
+		select {
+		case next <- i:
+		case <-ctx.Done():
+			break feed
+		}
+	}
+	close(next)
+	wg.Wait()
+	out := []panel.DomainState{}
+	for _, st := range states {
+		if st != nil {
+			out = append(out, *st)
 		}
 	}
 	return out
+}
+
+// domainState checks one domain. The agent asks the edge proxy for the certificate of the
+// domain, as a browser does, and checks it with the system roots. A domain with a valid
+// certificate also points to this server, for example behind NAT.
+func (d *Deps) domainState(ctx context.Context, name string) panel.DomainState {
+	st := panel.DomainState{Name: name, DNSPointsHere: d.DNSPointsHere(ctx, name), Certificate: "pending"}
+	if exp, err := d.certificate(ctx, name); err == nil {
+		st.Certificate, st.ExpiresAt, st.DNSPointsHere = "valid", exp.UTC().Format(time.RFC3339), true
+		if time.Until(exp) < 0 {
+			st.Certificate = "expired"
+		}
+	} else if st.DNSPointsHere && !errors.Is(err, errNoCertificate) {
+		// The DNS points here, but Caddy could not get a certificate.
+		st.Certificate = "failed"
+	}
+	return st
 }
 
 var errNoCertificate = errors.New("the edge proxy has no certificate for the domain")

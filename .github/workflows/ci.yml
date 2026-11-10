@@ -42,6 +42,22 @@ jobs:
     defaults:
       run:
         working-directory: api
+    # A server keeps the data of the panel in PostgreSQL (docs/decisions.md). This is the same
+    # PostgreSQL release as images/postgresql.
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: cloudfactory
+          POSTGRES_PASSWORD: cloudfactory
+          POSTGRES_DB: cloudfactory_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U cloudfactory -d cloudfactory_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -49,11 +65,23 @@ jobs:
       - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
         with:
           php-version: ${{ matrix.php }}
-          extensions: pdo_sqlite, openssl, intl
+          extensions: pdo_sqlite, pdo_pgsql, openssl, intl
           coverage: none
       - run: composer install --no-interaction --prefer-dist
       - run: ./vendor/bin/pint --test
+      # SQLite in memory: the fast run, and the engine of a developer.
       - run: php artisan test
+      # PostgreSQL: the engine of a server. It checks the length of text, the range of numbers
+      # and the case of letters in a different way.
+      - name: Run the tests with PostgreSQL
+        env:
+          DB_CONNECTION: pgsql
+          DB_HOST: 127.0.0.1
+          DB_PORT: '5432'
+          DB_DATABASE: cloudfactory_test
+          DB_USERNAME: cloudfactory
+          DB_PASSWORD: cloudfactory
+        run: php artisan test
 
   agent:
     name: Agent

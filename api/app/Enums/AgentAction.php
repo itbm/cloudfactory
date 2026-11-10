@@ -48,7 +48,7 @@ enum AgentAction: string
             self::InstallHostUpdates => ['Download packages', 'Install packages', 'Restart changed services only'],
             self::Reboot => ['Drain the edge proxy', 'Stop containers', 'Reboot', 'Start containers', 'Check all services'],
             self::UpdateAgent => ['Download agent binary', 'Check signature', 'Keep previous binary for rollback', 'Restart agent'],
-            self::PruneBackups => ['Remove unused data'],
+            self::PruneBackups => ['Remove backups of deleted websites', 'Remove unused data'],
             self::SetSftp => ['Set SFTP access'],
             self::ConfigureHost => ['Save settings', 'Restart websites', 'Restart services'],
         };

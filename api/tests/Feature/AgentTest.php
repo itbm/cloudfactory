@@ -70,10 +70,27 @@ class AgentTest extends TestCase
     public function test_the_agent_on_the_panel_server_does_not_go_through_the_edge_proxy(): void
     {
         $this->server(['certificate_fingerprint' => str_repeat('ab', 32), 'agent_token_hash' => hash('sha256', 'cfa_local'), 'local' => true]);
+        $direct = fn (string $fingerprint) => $this->withHeader('X-Cloudfactory-Direct-Cert-Sha256', $fingerprint);
 
+        // The HTTPS port of the API sends the fingerprint of the client certificate.
+        $direct(str_repeat('AB', 32))->withToken('cfa_local')->postJson('/api/agent/v1/report', ['agentVersion' => '0.1.0'])->assertOk();
+        $direct(str_repeat('ab', 32))->withToken('cfa_wrong')->postJson('/api/agent/v1/report', ['agentVersion' => '0.1.0'])->assertUnauthorized();
+        // The token alone is not sufficient: a different certificate, or no certificate.
+        $direct(str_repeat('cd', 32))->withToken('cfa_local')->postJson('/api/agent/v1/report', ['agentVersion' => '0.1.0'])->assertUnauthorized();
+        $direct('')->withToken('cfa_local')->postJson('/api/agent/v1/report', ['agentVersion' => '0.1.0'])
+            ->assertUnauthorized()->assertJsonPath('message', 'The agent on the panel server must connect to the HTTPS port of the API with its client certificate.');
+    }
+
+    /** The address of the client does not identify the agent on a server. It is only for development. */
+    public function test_an_address_identifies_an_agent_only_in_development(): void
+    {
+        $this->server(['certificate_fingerprint' => str_repeat('ab', 32), 'agent_token_hash' => hash('sha256', 'cfa_local'), 'local' => true]);
+
+        $this->assertSame([], config('cloudfactory.agent.direct_addresses'));
+        $this->withToken('cfa_local')->postJson('/api/agent/v1/report', ['agentVersion' => '0.1.0'])->assertUnauthorized();
+
+        config(['cloudfactory.agent.direct_addresses' => ['127.0.0.1']]);
         $this->withToken('cfa_local')->postJson('/api/agent/v1/report', ['agentVersion' => '0.1.0'])->assertOk();
-        $this->withToken('cfa_wrong')->postJson('/api/agent/v1/report', ['agentVersion' => '0.1.0'])->assertUnauthorized();
-        // The local agent must call from a loopback address.
         $this->withToken('cfa_local')->withServerVariables(['REMOTE_ADDR' => '10.0.0.5'])->postJson('/api/agent/v1/report', ['agentVersion' => '0.1.0'])->assertUnauthorized();
     }
 
@@ -82,21 +99,36 @@ class AgentTest extends TestCase
     {
         $this->server(['certificate_fingerprint' => str_repeat('ab', 32), 'agent_token_hash' => hash('sha256', 'cfa_remote')]);
 
-        $this->withToken('cfa_remote')->postJson('/api/agent/v1/report', ['agentVersion' => '0.1.0'])
+        $this->withToken('cfa_remote')->withHeader('X-Cloudfactory-Direct-Cert-Sha256', str_repeat('ab', 32))->postJson('/api/agent/v1/report', ['agentVersion' => '0.1.0'])
             ->assertUnauthorized()->assertJsonPath('message', 'This agent must connect through the edge proxy with its client certificate.');
     }
 
     public function test_only_a_direct_join_from_the_panel_server_makes_a_local_server(): void
     {
-        JoinToken::create(['token_hash' => hash('sha256', 'cfj_a'), 'expires_at' => now()->addHour()]);
-        JoinToken::create(['token_hash' => hash('sha256', 'cfj_b'), 'expires_at' => now()->addHour()]);
+        foreach (['cfj_a', 'cfj_b', 'cfj_c', 'cfj_d'] as $token) {
+            JoinToken::create(['token_hash' => hash('sha256', $token), 'expires_at' => now()->addHour()]);
+        }
 
-        $this->withHeader('X-Cloudfactory-Edge', '1')->postJson('/api/agent/v1/join', $this->joinBody('cfj_a'))->assertCreated();
+        $body = $this->joinBody('cfj_a');
+        $this->withHeader('X-Cloudfactory-Edge', '1')->withHeader('X-Client-Cert-Sha256', $body['certificateSha256'])
+            ->postJson('/api/agent/v1/join', $body)->assertCreated();
         $this->assertFalse(Server::where('name', 'web-9')->sole()->local);
+        $this->flushHeaders();
 
-        $this->withHeaders(['X-Cloudfactory-Edge' => null])->flushHeaders();
-        $this->postJson('/api/agent/v1/join', ['name' => 'panel-1'] + $this->joinBody('cfj_b'))->assertCreated();
+        // The HTTPS port of the API saw the certificate of the request.
+        $body = ['name' => 'panel-1'] + $this->joinBody('cfj_b');
+        $this->withHeader('X-Cloudfactory-Direct-Cert-Sha256', strtoupper($body['certificateSha256']))
+            ->postJson('/api/agent/v1/join', $body)->assertCreated();
         $this->assertTrue(Server::where('name', 'panel-1')->sole()->local);
+        $this->flushHeaders();
+
+        // A different certificate in the TLS connection, or no certificate, is not the local agent.
+        $this->withHeader('X-Cloudfactory-Direct-Cert-Sha256', str_repeat('cd', 32))
+            ->postJson('/api/agent/v1/join', ['name' => 'web-11'] + $this->joinBody('cfj_c'))->assertCreated();
+        $this->assertFalse(Server::where('name', 'web-11')->sole()->local);
+        $this->flushHeaders();
+        $this->postJson('/api/agent/v1/join', ['name' => 'web-12'] + $this->joinBody('cfj_d'))->assertCreated();
+        $this->assertFalse(Server::where('name', 'web-12')->sole()->local);
     }
 
     public function test_the_agent_must_send_the_certificate_that_it_joined_with(): void
@@ -121,39 +153,39 @@ class AgentTest extends TestCase
 
     public function test_job_events_change_the_state_of_the_website(): void
     {
-        $server = $this->server(['agent_token_hash' => hash('sha256', 'cfa_secret'), 'local' => true]);
+        $server = $this->server(['agent_token_hash' => hash('sha256', 'cfa_secret'), 'certificate_fingerprint' => self::LOCAL_FINGERPRINT, 'local' => true]);
         $website = $this->website($this->customer(), $server, $this->image(), attributes: ['status' => 'starting']);
         $job = app(JobDispatcher::class)->dispatch($server, AgentAction::CreateWebsite, JobDispatcher::websitePayload($website), 'Create', $website);
 
-        $this->withToken('cfa_secret')->postJson("/api/agent/v1/jobs/{$job->id}/events", ['state' => 'running', 'step' => 2])->assertOk();
+        $this->asLocalAgent('cfa_secret')->postJson("/api/agent/v1/jobs/{$job->id}/events", ['state' => 'running', 'step' => 2])->assertOk();
         $this->assertSame(2, $job->fresh()->step);
 
-        $this->withToken('cfa_secret')->postJson("/api/agent/v1/jobs/{$job->id}/events", ['state' => 'succeeded'])->assertOk();
+        $this->asLocalAgent('cfa_secret')->postJson("/api/agent/v1/jobs/{$job->id}/events", ['state' => 'succeeded'])->assertOk();
         $this->assertSame('running', $website->fresh()->status->value);
         $this->assertSame(count(AgentAction::CreateWebsite->steps()), $job->fresh()->step);
     }
 
     public function test_the_report_sets_the_use_of_the_server_and_its_websites(): void
     {
-        $server = $this->server(['agent_token_hash' => hash('sha256', 'cfa_secret'), 'local' => true]);
+        $server = $this->server(['agent_token_hash' => hash('sha256', 'cfa_secret'), 'certificate_fingerprint' => self::LOCAL_FINGERPRINT, 'local' => true]);
         $website = $this->website($this->customer(), $server, $this->image());
         $report = ['agentVersion' => '0.1.0', 'usage' => ['cpuPercent' => 12.5, 'memoryPercent' => 40, 'diskPercent' => 7], 'websites' => [['id' => $website->id, 'cpuPercent' => 3, 'memoryBytes' => 1024]]];
 
-        $this->withToken('cfa_secret')->postJson('/api/agent/v1/report', $report)->assertOk();
+        $this->asLocalAgent('cfa_secret')->postJson('/api/agent/v1/report', $report)->assertOk();
         $this->assertSame(['cpuPercent' => 12.5, 'memoryPercent' => 40, 'diskPercent' => 7], $server->fresh()->usage);
         $this->assertSame(1024, $website->fresh()->usage['memoryBytes']);
 
         $report['usage']['diskPercent'] = 101;
-        $this->withToken('cfa_secret')->postJson('/api/agent/v1/report', $report)->assertUnprocessable()->assertJsonValidationErrors('usage.diskPercent');
+        $this->asLocalAgent('cfa_secret')->postJson('/api/agent/v1/report', $report)->assertUnprocessable()->assertJsonValidationErrors('usage.diskPercent');
     }
 
     public function test_an_agent_cannot_report_the_job_of_a_different_server(): void
     {
-        $this->server(['agent_token_hash' => hash('sha256', 'cfa_one'), 'local' => true]);
+        $this->server(['agent_token_hash' => hash('sha256', 'cfa_one'), 'certificate_fingerprint' => self::LOCAL_FINGERPRINT, 'local' => true]);
         $other = $this->server();
         $job = app(JobDispatcher::class)->dispatch($other, AgentAction::Reboot, [], 'Reboot');
 
-        $this->withToken('cfa_one')->postJson("/api/agent/v1/jobs/{$job->id}/events", ['state' => 'succeeded'])->assertNotFound();
+        $this->asLocalAgent('cfa_one')->postJson("/api/agent/v1/jobs/{$job->id}/events", ['state' => 'succeeded'])->assertNotFound();
         $this->assertSame('queued', AgentJob::find($job->id)->state->value);
     }
 }

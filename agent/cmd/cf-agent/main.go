@@ -59,7 +59,10 @@ const (
   cf-agent join --panel URL --token TOKEN [--name NAME] [--roles web] [--address HOST] [--public-ip IP] [--sftp-port PORT]
   cf-agent serve
   cf-agent gvisor install [--sha512 SUM] [VERSION] | rollback
-  cf-agent panel install --domain DOMAIN
+  cf-agent panel install --domain DOMAIN [--registry URL]
+  cf-agent panel update
+  cf-agent panel reset-password EMAIL [--remove-totp]
+  cf-agent panel unlock EMAIL [--address IP]
   cf-agent rollback
   cf-agent version`
 )
@@ -110,6 +113,7 @@ func join(ctx context.Context, args []string) error {
 	configPath := fs.String("config", config.DefaultPath, "the settings file")
 	public := fs.String("public-ip", "", "the public IP addresses of this server behind NAT, separated by commas")
 	sftpPort := fs.Int("sftp-port", quadlet.DefaultSftpPort, "the public port of the SFTP service of the websites")
+	panelPin := fs.String("panel-certificate-sha256", "", "the SHA-256 fingerprint of the certificate of the panel; only for the server of the panel, which uses the HTTPS port of the API")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -118,6 +122,15 @@ func join(ctx context.Context, args []string) error {
 	}
 	if err := validate.PanelURL(*panelURL); err != nil {
 		return err
+	}
+	*panelPin = strings.ToLower(strings.TrimSpace(*panelPin))
+	if *panelPin != "" {
+		if err := pki.CheckFingerprint(*panelPin); err != nil {
+			return fmt.Errorf("--panel-certificate-sha256: %w", err)
+		}
+		if !strings.HasPrefix(*panelURL, "https://") {
+			return errors.New("--panel-certificate-sha256 needs a panel address that starts with https://")
+		}
 	}
 	if _, err := os.Stat(*configPath); err == nil {
 		return fmt.Errorf("%s exists; this server has already joined a panel", *configPath)
@@ -129,6 +142,7 @@ func join(ctx context.Context, args []string) error {
 	cfg := config.Defaults()
 	cfg.SftpPort = *sftpPort
 	cfg.PanelURL = strings.TrimRight(*panelURL, "/")
+	cfg.PanelServerCertificateSHA256 = *panelPin
 	cfg.Registry = strings.TrimRight(*registry, "/")
 	// Batch 1, finding 10: behind NAT the public address is not on an interface. The DNS check
 	// accepts the address that the panel uses.
@@ -159,7 +173,13 @@ func join(ctx context.Context, args []string) error {
 	gv := gvisor.Installer{Root: gvisorRoot, BinDir: gvisorBin}
 	kernel, _ := os.ReadFile("/proc/sys/kernel/osrelease")
 
-	resp, err := panel.New(cfg.PanelURL, "", nil).Join(ctx, panel.JoinRequest{
+	// The agent sends its new certificate in the TLS connection. The panel then knows that the
+	// agent has the private key of the certificate in the request.
+	cert, err := tls.LoadX509KeyPair(cfg.CertFile(), cfg.KeyFile())
+	if err != nil {
+		return err
+	}
+	resp, err := panel.New(cfg.PanelURL, "", &cert, cfg.PanelServerCertificateSHA256).Join(ctx, panel.JoinRequest{
 		Token: *token, Name: *name, AgentURL: "https://" + *address + cfg.Listen,
 		CertificateSHA256: fp, CertificatePEM: string(certPEM), AgentVersion: version,
 		OS: osID, OSName: osName, Kernel: strings.TrimSpace(string(kernel)), Arch: archName(),
@@ -201,7 +221,7 @@ func serve(ctx context.Context) error {
 		slog.Warn("hold container packages", "err", err)
 	}
 	gv := gvisor.Installer{BaseURL: gvisor.ReleaseURL, Root: gvisorRoot, BinDir: gvisorBin}
-	reporter := panel.New(cfg.PanelURL, cfg.AgentToken, &cert)
+	reporter := panel.New(cfg.PanelURL, cfg.AgentToken, &cert, cfg.PanelServerCertificateSHA256)
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -218,7 +238,9 @@ func serve(ctx context.Context) error {
 			return err
 		},
 		// systemd starts the agent again (Restart=always in cf-agent.service).
-		Restart:            cancel,
+		Restart: cancel,
+		// The stop signal of systemd, for example at a shutdown, closes this channel.
+		Stopping:           ctx.Done(),
 		Arch:               runtime.GOARCH,
 		MaxWatch:           5 * time.Minute,
 		ResticPasswordFile: resticKey,
@@ -278,7 +300,8 @@ func serve(ctx context.Context) error {
 	if err := deps.EnsureSftp(ctx); err != nil {
 		slog.Error("start the SFTP container", "err", err)
 	}
-	runner := &jobs.Runner{Dir: filepath.Join(cfg.DataDir, "jobs"), Reporter: reporter}
+	runner := &jobs.Runner{Dir: filepath.Join(cfg.DataDir, "jobs"), Reporter: reporter,
+		Timeout: time.Duration(cfg.JobTimeoutMinutes) * time.Minute, LongTimeout: time.Duration(cfg.LongJobTimeoutMinutes) * time.Minute}
 	if job, ok := deps.ResumeReboot(); ok {
 		runner.Resume(job)
 	}
@@ -376,19 +399,43 @@ func bareMetal(ctx context.Context, run execx.Runner) bool {
 	return err != nil && strings.TrimSpace(out) == "none"
 }
 
-// panelUser is the Unix user of the panel containers.
-const panelUser = "cf-panel"
-
 // panelCmd pulls the panel images and starts them in gVisor (FR-1808).
+const panelUsage = `usage:
+  cf-agent panel install --domain DOMAIN [--registry URL]   Install the panel, or start it again.
+  cf-agent panel update                                     Change the panel to the version of this agent.
+  cf-agent panel reset-password EMAIL [--remove-totp]       Give a user a new temporary password.
+  cf-agent panel unlock EMAIL [--address IP]                Remove the sign-in lock of an account.`
+
+// panelCmd has the commands for the panel server. Only root can run them.
 func panelCmd(ctx context.Context, args []string) error {
-	if len(args) < 1 || args[0] != "install" {
-		return errors.New("usage: cf-agent panel install --domain DOMAIN")
+	if len(args) < 1 {
+		return errors.New(panelUsage)
+	}
+	switch args[0] {
+	case "install", "update":
+	case "reset-password", "unlock":
+		return panelAccount(ctx, args[0], args[1:])
+	default:
+		return errors.New(panelUsage)
 	}
 	fs := flag.NewFlagSet("panel", flag.ContinueOnError)
 	domain := fs.String("domain", "", "the domain of the panel, for example panel.example.com")
 	registry := fs.String("registry", config.Defaults().Registry, "the registry of the panel images")
 	if err := fs.Parse(args[1:]); err != nil {
 		return err
+	}
+	if args[0] == "update" {
+		// Audit finding S7: after an update of the agent, this command changes the panel
+		// containers to the images of the same version. The domain and the registry are the
+		// values of the installation.
+		saved, err := config.Load(config.DefaultPath)
+		if err != nil {
+			return fmt.Errorf("read the settings of the agent: %w", err)
+		}
+		*registry = saved.Registry
+		if *domain, err = actions.PanelDomain(filepath.Join(saved.DataDir, "panel", "panel.env")); err != nil {
+			return fmt.Errorf("this server has no panel: %w", err)
+		}
 	}
 	if err := validate.Domain(*domain); err != nil {
 		return err
@@ -397,35 +444,55 @@ func panelCmd(ctx context.Context, args []string) error {
 	run := execx.Host{}
 	h := host.New(run, cfg.SitesDir)
 	gv := gvisor.Installer{Root: gvisorRoot, BinDir: gvisorBin}
-	p := quadlet.Panel{Registry: *registry, Version: version, Domain: *domain, DataDir: filepath.Join(cfg.DataDir, "panel"), Gvisor: quadlet.Runtime{RunscPath: gv.Link(), Platform: cfg.GVisorPlatform}, APIPort: 19080, WebPort: 19081}
-	for _, image := range []string{p.Registry + "/panel-api:" + p.Version, p.Registry + "/panel-web:" + p.Version} {
-		if _, err := h.Podman(ctx, panelUser, "pull", "--quiet", image); err != nil {
-			return err
-		}
-	}
-	for name, content := range quadlet.PanelUnits(p) {
-		if _, err := h.WriteUnit(panelUser, name, content); err != nil {
-			return err
-		}
-	}
-	if _, err := h.Systemctl(ctx, panelUser, "daemon-reload"); err != nil {
-		return err
-	}
-	for _, svc := range []string{"cf-panel-api.service", "cf-panel-queue.service", "cf-panel-scheduler.service", "cf-panel-web.service"} {
-		if _, err := h.Systemctl(ctx, panelUser, "start", svc); err != nil {
-			return err
-		}
+	p := quadlet.Panel{Registry: *registry, Version: version, Domain: *domain, DataDir: filepath.Join(cfg.DataDir, "panel"), Gvisor: quadlet.Runtime{RunscPath: gv.Link(), Platform: cfg.GVisorPlatform},
+		APIPort: quadlet.PanelAPIPort, WebPort: quadlet.PanelWebPort, AgentPort: quadlet.PanelAgentPort, DatabasePort: quadlet.PanelDatabasePort}
+	edge := caddy.New(cfg.CaddyAdmin)
+	deps := &actions.Deps{Host: h, Run: run, Edge: edge, Gvisor: p.Gvisor}
+	if err := deps.InstallPanel(ctx, p); err != nil {
+		return fmt.Errorf("start the panel: %w", err)
 	}
 	// The agent service starts after the join, so this command starts the edge proxy itself.
 	// The edge proxy sends /api to the API and all other paths to the web UI.
-	edge := caddy.New(cfg.CaddyAdmin)
-	deps := &actions.Deps{Host: h, Run: run, Edge: edge, Gvisor: p.Gvisor}
 	if err := deps.EnsureEdge(ctx, *registry+"/edge:"+version, cfg.DataDir); err != nil {
 		return fmt.Errorf("start the edge proxy: %w", err)
 	}
 	if err := edge.ApplyPanel(ctx, *domain, p.APIPort, p.WebPort); err != nil {
 		return err
 	}
-	fmt.Printf("The panel operates at https://%s\n", *domain)
+	fmt.Printf("The panel operates at https://%s with version %s\n", *domain, version)
 	return nil
+}
+
+// panelAccount runs an account command of the panel in the API container.
+func panelAccount(ctx context.Context, command string, args []string) error {
+	fs := flag.NewFlagSet("panel "+command, flag.ContinueOnError)
+	removeTotp := fs.Bool("remove-totp", false, "also remove TOTP, for a user who lost the device")
+	address := fs.String("address", "", "also remove the lock for this client address")
+	// The email address can come before or after the options.
+	var email string
+	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+		email, args = args[0], args[1:]
+	}
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if email == "" && fs.NArg() == 1 {
+		email = fs.Arg(0)
+	} else if fs.NArg() != 0 {
+		return errors.New(panelUsage)
+	}
+	if email == "" {
+		return errors.New(panelUsage)
+	}
+	cfg := config.Defaults()
+	deps := &actions.Deps{Host: host.New(execx.Host{}, cfg.SitesDir), Run: execx.Host{}}
+	var out string
+	var err error
+	if command == "reset-password" {
+		out, err = deps.ResetPanelPassword(ctx, email, *removeTotp)
+	} else {
+		out, err = deps.UnlockPanelSignIn(ctx, email, *address)
+	}
+	fmt.Print(out)
+	return err
 }

@@ -331,7 +331,7 @@ func (d *Deps) CreateWebsite(req *agentv1.WebsiteRequest) (jobs.Job, error) {
 	user := w.GetUnixUser()
 	var port int
 	var dnsHere bool
-	return jobs.Job{ID: req.GetJobId(), Key: w.GetId(), Steps: []jobs.Step{
+	return jobs.Job{ID: req.GetJobId(), Key: w.GetId(), Long: req.GetCopyFrom() != "", Steps: []jobs.Step{
 		{Name: "Create Unix user", Do: func(ctx context.Context) error {
 			if err := d.Host.EnsureUser(ctx, user); err != nil {
 				return err
@@ -359,16 +359,9 @@ func (d *Deps) CreateWebsite(req *agentv1.WebsiteRequest) (jobs.Job, error) {
 			return d.pullImage(ctx, w)
 		}},
 		{Name: "Start container in gVisor", Do: func(ctx context.Context) error {
-			old, err := d.State.Get(w.GetId())
-			if err != nil {
-				return err
-			}
-			if old != nil {
-				port = old.Port
-			} else if port, err = d.State.FreePort(); err != nil {
-				return err
-			}
-			if err := d.State.Put(&Site{ID: w.GetId(), UnixUser: user, Port: port, Website: w}); err != nil {
+			// One step: a new website gets a free port, and the state records it.
+			var err error
+			if port, err = d.State.Reserve(&Site{ID: w.GetId(), UnixUser: user, Website: w}); err != nil {
 				return err
 			}
 			if err := d.startContainer(ctx, w, port, ""); err != nil {
@@ -498,6 +491,8 @@ func (d *Deps) SetRuntime(req *agentv1.WebsiteRequest) (jobs.Job, error) {
 	var newPort int
 	var newSuffix string
 	switched := false
+	// committed is true when the state has the new container as the container of the website.
+	committed := false
 	return jobs.Job{ID: req.GetJobId(), Key: w.GetId(), Steps: []jobs.Step{
 		{Name: "Check image signature", Do: func(ctx context.Context) error {
 			var err error
@@ -533,8 +528,10 @@ func (d *Deps) SetRuntime(req *agentv1.WebsiteRequest) (jobs.Job, error) {
 			if old.Suffix == "-b" {
 				newSuffix = ""
 			}
+			// The state records the second port, so that a change of a different website at
+			// the same time does not get it (audit finding B6).
 			var err error
-			if newPort, err = d.State.FreePort(old.Port); err != nil {
+			if newPort, err = d.State.ReserveNext(w.GetId()); err != nil {
 				return err
 			}
 			return d.startContainer(ctx, w, newPort, newSuffix)
@@ -562,6 +559,9 @@ func (d *Deps) SetRuntime(req *agentv1.WebsiteRequest) (jobs.Job, error) {
 			if err := d.State.Put(&Site{ID: w.GetId(), UnixUser: user, Port: newPort, Suffix: newSuffix, Website: w}); err != nil {
 				return err
 			}
+			// From here, the website uses the new container. If the old container does not
+			// stop, the job fails, but the new container continues.
+			committed = true
 			if err := d.stopContainer(ctx, user, old.Suffix); err != nil {
 				return err
 			}
@@ -570,7 +570,7 @@ func (d *Deps) SetRuntime(req *agentv1.WebsiteRequest) (jobs.Job, error) {
 			return nil
 		}},
 	}, OnFailure: func(ctx context.Context) {
-		if old == nil || newPort == 0 || old.Stopped {
+		if old == nil || newPort == 0 || old.Stopped || committed {
 			return
 		}
 		// The job has failed already. The agent logs an error of the rollback.
@@ -581,6 +581,9 @@ func (d *Deps) SetRuntime(req *agentv1.WebsiteRequest) (jobs.Job, error) {
 		}
 		if err := d.stopContainer(ctx, user, newSuffix); err != nil {
 			slog.Error("stop the new container", "website", w.GetId(), "err", err)
+		}
+		if err := d.State.ReleaseNext(w.GetId()); err != nil {
+			slog.Error("give back the port of the new container", "website", w.GetId(), "err", err)
 		}
 	}}, nil
 }
@@ -603,6 +606,11 @@ func (d *Deps) DeleteWebsite(req *agentv1.DeleteWebsiteRequest) (jobs.Job, error
 			site, err := d.State.Get(req.GetWebsiteId())
 			if err != nil || site == nil {
 				return err
+			}
+			// A first attempt can remove the Unix user and then fail. The user manager is
+			// gone then, and there is no container to stop (audit finding B7).
+			if _, err := d.Host.LookupUID(user); err != nil {
+				return nil
 			}
 			return d.stopContainer(ctx, user, site.Suffix)
 		}},

@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { useAction, useStore } from "../api/hooks";
 import { features } from "../api/mode";
-import { addCustomer, savePlan, setBranding, setCustomer } from "../api/store";
-import type { Customer, Plan } from "../api/types";
+import { addCustomer, addUser, deleteUser, resetUserPassword, savePlan, setBranding, setCustomer, type NewAccess } from "../api/store";
+import type { Customer, ManagedUser, Plan } from "../api/types";
 import { GB, MB } from "../api/seed";
 import { Topbar } from "../components/Layout";
 import { Card, ConfirmButton, Field, FormError, Modal, PageHeader, Status, Tabs } from "../components/ui";
 import { bytes, shortDate } from "../lib/format";
+import { CopyField } from "./website/AccessTab";
 
 export function CustomersPage() {
   const [tab, setTab] = useState("customers");
@@ -14,9 +15,10 @@ export function CustomersPage() {
     <>
       <Topbar placeholder="Search servers, images, customers and jobs" />
       <main id="main" className="content content-wide">
-        <PageHeader title="Customers and plans" description="Resellers add website owners and set their limits. A plan sets the default limits for each website." />
-        <Tabs label="Sections" current={tab} onSelect={setTab} items={[{ id: "customers", label: "Customers" }, { id: "plans", label: "Plans" }, ...(features.branding ? [{ id: "branding", label: "Branding" }] : [])]} />
+        <PageHeader title="Customers and plans" description="Resellers add website owners and set their limits. Each customer has users who sign in. A plan sets the default limits for each website." />
+        <Tabs label="Sections" current={tab} onSelect={setTab} items={[{ id: "customers", label: "Customers" }, { id: "users", label: "Users" }, { id: "plans", label: "Plans" }, ...(features.branding ? [{ id: "branding", label: "Branding" }] : [])]} />
         {tab === "customers" && <Customers />}
+        {tab === "users" && <Users />}
         {tab === "plans" && <Plans />}
         {tab === "branding" && <Branding />}
       </main>
@@ -28,6 +30,9 @@ function Customers() {
   const state = useStore();
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<Pick<Customer, "name" | "email" | "planId" | "role">>({ name: "", email: "", planId: state.plans.find((p) => p.id === "plan_standard")?.id ?? state.plans[0]?.id ?? "", role: "owner" });
+  // Audit finding B5: the panel sends no email, so it makes the first user and shows a temporary password.
+  const [createUser, setCreateUser] = useState(true);
+  const [access, setAccess] = useState<NewAccess | null>(null);
   const add = useAction(addCustomer);
   const change = useAction(setCustomer);
   const admin = state.session.user.role === "administrator";
@@ -68,18 +73,141 @@ function Customers() {
       </div>
       {open && (
         <Modal title="Add customer" onClose={() => { setOpen(false); add.clear(); }} footer={<><button type="button" className="btn" onClick={() => setOpen(false)}>Cancel</button><button type="submit" form="cus" className="btn btn-primary">Add customer</button></>}>
-          <form id="cus" noValidate onSubmit={async (e) => { e.preventDefault(); if ((await add.run(form)).ok) setOpen(false); }}>
+          <form id="cus" noValidate onSubmit={async (e) => {
+            e.preventDefault();
+            const r = await add.run(form, createUser);
+            if (!r.ok) return;
+            setOpen(false);
+            setForm({ ...form, name: "", email: "" });
+            setAccess(r.value);
+          }}>
             <FormError error={add.error} />
             <Field label="Name" error={add.error?.fields.name}>{(p) => <input {...p} className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />}</Field>
-            <Field label="Email" hint="The panel sends an invitation to this address." error={add.error?.fields.email}>{(p) => <input {...p} className="input" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />}</Field>
-            <div className="form-row">
+            <Field label="Email" hint={createUser ? "The first user signs in with this address." : "The contact address of the customer."} error={add.error?.fields.email}>{(p) => <input {...p} className="input" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />}</Field>
+            <div className="form-row" style={{ marginTop: 14 }}>
               {admin && <Field label="Role">{(p) => <select {...p} className="select" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as Customer["role"] })}><option value="owner">Website owner</option><option value="reseller">Reseller</option></select>}</Field>}
               <Field label="Plan">{(p) => <select {...p} className="select" value={form.planId} onChange={(e) => setForm({ ...form, planId: e.target.value })}>{state.plans.map((pl) => <option key={pl.id} value={pl.id}>{pl.name}</option>)}</select>}</Field>
             </div>
+            <label className="check" style={{ marginTop: 14 }}><input type="checkbox" checked={createUser} onChange={(e) => setCreateUser(e.target.checked)} />Make a user who can sign in</label>
+            <p className="muted small">{createUser ? "The panel sends no email. It shows a temporary password one time, and you give it to the customer." : "The customer cannot sign in until you add a user in the Users section."}</p>
           </form>
         </Modal>
       )}
+      {access && <AccessDialog access={access} onClose={() => setAccess(null)} />}
     </Card>
+  );
+}
+
+/** Audit finding B5: the panel shows a temporary password one time only. */
+function AccessDialog({ access, onClose }: { access: NewAccess; onClose: () => void }) {
+  return (
+    <Modal title={`Temporary password for ${access.email}`} onClose={onClose} footer={<button type="button" className="btn btn-primary" onClick={onClose}>Done</button>}>
+      <p>The panel shows this password one time only. Give it to the user in a safe way. The panel sends no email.</p>
+      <CopyField value={access.temporaryPassword} label="Temporary password" />
+      <p className="muted small" style={{ marginTop: 12 }}>The user signs in with <strong>{access.email}</strong> and this password, and then must set a new password.</p>
+    </Modal>
+  );
+}
+
+const ROLE_LABEL: Record<ManagedUser["role"], string> = { administrator: "Administrator", reseller: "Reseller", owner: "Website owner" };
+
+/**
+ * Audit finding B5: the users who can sign in. An administrator changes all users. A reseller
+ * changes the users of its own customers. A website owner sees the users of its account.
+ */
+function Users() {
+  const state = useStore();
+  const role = state.session.user.role;
+  const admin = role === "administrator";
+  const [open, setOpen] = useState(false);
+  const [access, setAccess] = useState<NewAccess | null>(null);
+  const [resetting, setResetting] = useState<ManagedUser | null>(null);
+  // An administrator has no customer. The value "" in the form is an administrator.
+  const customers = admin ? state.customers : state.customers.filter((c) => c.resellerId === state.session.contextId);
+  const [form, setForm] = useState({ name: "", email: "", customerId: customers[0]?.id ?? "" });
+  const add = useAction(addUser);
+  const remove = useAction(deleteUser);
+  const customer = (id?: string) => state.customers.find((c) => c.id === id);
+  const self = (u: ManagedUser) => u.id === state.session.user.id;
+  const canChange = (u: ManagedUser) => !self(u) && (admin || (role === "reseller" && customer(u.customerId)?.resellerId === state.session.contextId));
+  const canAdd = admin || (role === "reseller" && customers.length > 0);
+  return (
+    <Card title="Users" actions={canAdd && <button type="button" className="btn btn-primary" onClick={() => setOpen(true)}>Add user</button>}>
+      <div className="card-body" style={{ paddingBottom: 12 }}>
+        <p className="muted">A user signs in with an email and a password. The panel sends no email: a new user gets a temporary password, which you give to the user. The user must set a new password at the first sign-in.</p>
+        {remove.error && <FormError error={remove.error} />}
+      </div>
+      <div className="table-wrap">
+        <table>
+          <thead><tr><th scope="col">User</th><th scope="col">Role</th><th scope="col">Customer</th><th scope="col">Sign-in</th><th scope="col">Since</th><th scope="col"><span className="visually-hidden">Actions</span></th></tr></thead>
+          <tbody>
+            {state.users.map((u) => (
+              <tr key={u.id}>
+                <td><strong>{u.name}</strong><span className="cell-sub">{u.email}</span></td>
+                <td>{ROLE_LABEL[u.role]}</td>
+                <td>{u.customerId ? customer(u.customerId)?.name ?? "Removed customer" : <span className="muted">All customers</span>}</td>
+                <td>
+                  {u.mustChangePassword ? <Status tone="warning">Temporary password</Status> : u.totpEnabled ? <Status tone="success">Password and TOTP</Status> : <Status tone="neutral">Password only</Status>}
+                </td>
+                <td>{u.createdAt ? shortDate(u.createdAt) : ""}</td>
+                <td className="cell-actions" style={{ width: 250 }}>
+                  {self(u) ? <span className="muted small">Your account</span> : canChange(u) && (
+                    <div className="btn-group" style={{ justifyContent: "flex-end" }}>
+                      <button type="button" className="btn btn-sm" onClick={() => setResetting(u)}>Reset password…</button>
+                      <ConfirmButton className="btn btn-sm btn-danger" title={`Delete ${u.email}?`} confirm="Delete user" message={<p>{u.name} can no longer sign in. The panel deletes the sessions and the API tokens of this user. The websites of the customer stay.</p>} onConfirm={() => void remove.run(u.id)}>Delete</ConfirmButton>
+                    </div>
+                  )}
+                </td>
+              </tr>
+            ))}
+            {state.users.length === 0 && <tr><td colSpan={6} className="muted">No users.</td></tr>}
+          </tbody>
+        </table>
+      </div>
+      {open && (
+        <Modal title="Add user" onClose={() => { setOpen(false); add.clear(); }} footer={<><button type="button" className="btn" onClick={() => { setOpen(false); add.clear(); }}>Cancel</button><button type="submit" form="usr" className="btn btn-primary" disabled={add.busy}>Add user</button></>}>
+          <form id="usr" noValidate onSubmit={async (e) => {
+            e.preventDefault();
+            const r = await add.run({ name: form.name, email: form.email, customerId: form.customerId || null });
+            if (!r.ok) return;
+            setOpen(false);
+            setForm({ ...form, name: "", email: "" });
+            setAccess(r.value);
+          }}>
+            <FormError error={add.error} shown={["name", "email", "customerId"]} />
+            <Field label="Name" error={add.error?.fields.name}>{(p) => <input {...p} className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />}</Field>
+            <Field label="Email" hint="The user signs in with this address." error={add.error?.fields.email}>{(p) => <input {...p} className="input" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />}</Field>
+            <Field label="Customer" hint={form.customerId ? "The user gets the role of the customer and sees only the websites of the customer." : "An administrator sees and changes all customers, servers and settings."} error={add.error?.fields.customerId}>
+              {(p) => (
+                <select {...p} className="select" value={form.customerId} onChange={(e) => setForm({ ...form, customerId: e.target.value })}>
+                  {customers.map((c) => <option key={c.id} value={c.id}>{c.name} ({c.role === "reseller" ? "reseller" : "website owner"})</option>)}
+                  {admin && <option value="">No customer: administrator</option>}
+                </select>
+              )}
+            </Field>
+          </form>
+        </Modal>
+      )}
+      {resetting && <ResetDialog user={resetting} onClose={() => setResetting(null)} onDone={(a) => { setResetting(null); setAccess(a); }} />}
+      {access && <AccessDialog access={access} onClose={() => setAccess(null)} />}
+    </Card>
+  );
+}
+
+function ResetDialog({ user, onClose, onDone }: { user: ManagedUser; onClose: () => void; onDone: (access: NewAccess) => void }) {
+  const [removeTotp, setRemoveTotp] = useState(false);
+  const reset = useAction(resetUserPassword);
+  return (
+    <Modal title={`Reset the password of ${user.email}?`} onClose={onClose} footer={<><button type="button" className="btn" onClick={onClose}>Cancel</button><button type="button" className="btn btn-danger-solid" disabled={reset.busy} onClick={async () => { const r = await reset.run(user.id, removeTotp); if (r.ok) onDone(r.value); }}>Reset password</button></>}>
+      <FormError error={reset.error} />
+      <p>{user.name} gets a new temporary password. The panel signs the user out and deletes the API tokens of the user. It also removes a sign-in lock.</p>
+      {user.totpEnabled && (
+        <>
+          <label className="check" style={{ marginTop: 10 }}><input type="checkbox" checked={removeTotp} onChange={(e) => setRemoveTotp(e.target.checked)} />Also remove TOTP</label>
+          <p className="muted small">Use this when the user lost the authenticator app. The user then signs in with the password only, and sets up TOTP again.</p>
+        </>
+      )}
+    </Modal>
   );
 }
 

@@ -229,10 +229,14 @@ message BackupRequest {
   Retention retention = 8;
 }
 
+// The snapshots of a website that the agent keeps. The policy applies to the snapshots of the
+// same kind as the backup, so that the scheduled backups do not remove the manual backups.
 message Retention {
   int32 daily = 1;
   int32 weekly = 2;
   int32 monthly = 3;
+  // When more than 0, the agent also keeps this number of the newest snapshots.
+  int32 last = 4;
 }
 
 // Removes the data that no snapshot uses from the repository (FR-902).
@@ -240,6 +244,8 @@ message PruneBackupsRequest {
   string job_id = 1;
   string target = 2;
   map<string, string> credentials = 3;
+  // The IDs of deleted websites. The agent removes all their snapshots first.
+  repeated string forget_website_ids = 4;
 }
 
 message RestoreRequest {
@@ -256,6 +262,8 @@ message RestoreRequest {
   // Scope "database": the SHA-256 hash of the dump at backup time.
   string dump_sha256 = 8;
   map<string, string> credentials = 9;
+  // Scope "website": the agent removes the files of the website that are not in the snapshot.
+  bool delete_extra = 10;
 }
 
 // Sets the SFTP access of a website. The owner signs in as the Unix user of the website and sees

@@ -51,8 +51,14 @@ func TestInstallPolicies(t *testing.T) {
 	if err := a.RestartServices(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if !f.Called("unattended-upgrade") || f.Called("apt-get -y -o") || !f.Called("needrestart -r a") {
+	if !f.Called("unattended-upgrade") || f.Called("apt-get -y -o") || !f.Called("needrestart -r a -l") {
 		t.Errorf("calls = %v", f.Calls)
+	}
+	// Audit finding R9: in batch mode, needrestart restarts nothing.
+	for _, c := range f.Calls {
+		if strings.HasPrefix(c, "needrestart") && strings.Contains(c+" ", " -b ") {
+			t.Errorf("needrestart runs in batch mode: %s", c)
+		}
 	}
 	f.Calls = nil
 	if err := a.Install(ctx, "all"); err != nil || !f.Called("apt-get -y -o Dpkg::Options::=--force-confold upgrade") {

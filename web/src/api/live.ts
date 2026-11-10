@@ -14,6 +14,7 @@ import type {
   DomainVerification,
   Job,
   Limits,
+  ManagedUser,
   Plan,
   Rollout,
   RuntimeImage,
@@ -112,7 +113,8 @@ const shown = new Set<string>();
 
 // Shapes of the API (openapi/openapi.yaml, components/schemas).
 
-interface ApiMe { id: number; name: string; email: string; role: User["role"]; customerId: string | null; totpEnabled: boolean }
+interface ApiMe { id: number; name: string; email: string; role: User["role"]; customerId: string | null; totpEnabled: boolean; mustChangePassword?: boolean }
+interface ApiUser { id: number; name: string; email: string; role: User["role"]; customerId: string | null; totpEnabled: boolean; mustChangePassword: boolean; createdAt: string | null }
 interface ApiJob { id: string; title: string; ref: string | null; state: Job["state"]; steps: string[]; step: number; error: string | null; websiteId: string | null; serverId: string | null; createdAt: string; finishedAt: string | null }
 interface ApiWebsite {
   id: string; name: string; application: string; customerId: string; serverId: string; planId: string; unixUser: string; status: Website["status"];
@@ -141,7 +143,7 @@ interface ApiRollout {
 interface ApiCustomer { id: string; name: string; email: string; role: Customer["role"]; planId: string; resellerId: string | null; suspended: boolean; createdAt: string }
 interface ApiToken_ { id: number; name: string; scopes: string[]; createdAt: string; expiresAt: string | null; lastUsedAt: string | null }
 interface ApiAudit { id: number; at: string; actor: string; ip: string | null; action: string; target: string }
-interface ApiSnapshot { id: string; kind: Snapshot["kind"]; sizeBytes: number; databases: string[]; mailboxes: string[]; createdAt: string }
+interface ApiSnapshot { id: string; kind: "scheduled" | "manual"; sizeBytes: number; databases: string[]; mailboxes: string[]; createdAt: string }
 
 // Mapping from the API shapes to the state of the UI.
 
@@ -223,6 +225,10 @@ export function toRollout(r: ApiRollout, servers: number): Rollout {
 
 const toCustomer = (c: ApiCustomer): Customer => ({ id: c.id, name: c.name, email: c.email, planId: c.planId, role: c.role, resellerId: c.resellerId ?? undefined, createdAt: c.createdAt, suspended: c.suspended });
 
+export const toUser = (u: ApiUser): ManagedUser => ({
+  id: String(u.id), name: u.name, email: u.email, role: u.role, customerId: u.customerId ?? undefined, totpEnabled: u.totpEnabled, mustChangePassword: u.mustChangePassword, createdAt: u.createdAt ?? "",
+});
+
 const toToken = (t: ApiToken_): ApiToken => ({
   id: String(t.id), name: t.name, scopes: t.scopes as ApiToken["scopes"], createdAt: t.createdAt, expiresAt: t.expiresAt ?? "", lastUsedAt: t.lastUsedAt ?? undefined, prefix: `${t.id}|`,
 });
@@ -234,10 +240,16 @@ const toAudit = (a: ApiAudit): AuditEntry => ({ id: String(a.id), at: a.at, acto
 /** Loads the full state for the signed-in user from the API. */
 export async function load(previous: State): Promise<State> {
   const me = await request<ApiMe>("GET", "/me");
+  const user: User = { id: String(me.id), name: me.name, email: me.email, role: me.role };
+  // Audit finding B5: with a temporary password, the API refuses each other request. The
+  // panel shows only the form for a new password.
+  if (me.mustChangePassword) {
+    return { ...previous, session: { signedIn: true, mustChangePassword: true, user, contextId: previous.session.contextId }, totpEnabled: me.totpEnabled };
+  }
   const admin = me.role === "administrator";
   const optional = <T>(p: Promise<T>, fallback: T) => p.catch(() => fallback);
 
-  const [websites, jobs, customers, plans, tokens, policy, servers, images, rollouts, audit] = await Promise.all([
+  const [websites, jobs, customers, plans, tokens, policy, servers, images, rollouts, audit, users] = await Promise.all([
     all<ApiWebsite>("/websites"),
     request<{ data: ApiJob[] }>("GET", "/jobs?perPage=50").then((r) => r.data),
     optional(request<{ data: ApiCustomer[] }>("GET", "/customers").then((r) => r.data), []),
@@ -248,6 +260,7 @@ export async function load(previous: State): Promise<State> {
     admin ? request<{ data: ApiImage[] }>("GET", "/images").then((r) => r.data) : Promise.resolve([] as ApiImage[]),
     admin ? request<{ data: ApiRollout[] }>("GET", "/rollouts").then((r) => r.data) : Promise.resolve([] as ApiRollout[]),
     optional(request<{ data: ApiAudit[] }>("GET", "/audit?perPage=100").then((r) => r.data), []),
+    optional(request<{ data: ApiUser[] }>("GET", "/users").then((r) => r.data), []),
   ]);
   // A customer or a reseller cannot list all images. They get the images for a new website.
   const runtimes = admin ? images.map((i) => toImage(i, rollouts))
@@ -275,7 +288,7 @@ export async function load(previous: State): Promise<State> {
 
   return {
     ...previous,
-    session: { signedIn: true, user: { id: String(me.id), name: me.name, email: me.email, role: me.role }, contextId },
+    session: { signedIn: true, user, contextId },
     contexts,
     websites: websites.map(toWebsite),
     jobs: mappedJobs,
@@ -294,6 +307,7 @@ export async function load(previous: State): Promise<State> {
     backupPolicy: policy,
     plans,
     customers: customers.map(toCustomer),
+    users: users.map(toUser),
     tokens: tokens.map(toToken),
     passkeys: [],
     totpEnabled: me.totpEnabled,
@@ -314,7 +328,7 @@ async function websiteDetails(w: { id: string; serverId: string }) {
   return {
     databases: db.databases.map((d): Database => ({ id: d.id, name: d.name, engine: d.engine, websiteId: w.id, sizeBytes: d.sizeBytes ?? 0, serverId: w.serverId })),
     users: db.users.map((u): DatabaseUser => ({ id: u.id, name: u.name, engine: u.engine, websiteId: w.id, grants: u.grants ?? [], access: u.access })),
-    snapshots: snaps.map((s): Snapshot => ({ id: s.id, at: s.createdAt, kind: s.kind, sizeBytes: s.sizeBytes ?? 0, websiteId: w.id, databases: s.databases ?? [], mailboxes: s.mailboxes ?? [] })),
+    snapshots: snaps.map((s): Snapshot => ({ id: s.id, at: s.createdAt, kind: s.kind === "manual" ? "manual" : "nightly", sizeBytes: s.sizeBytes ?? 0, websiteId: w.id, databases: s.databases ?? [], mailboxes: s.mailboxes ?? [] })),
   };
 }
 
@@ -344,7 +358,14 @@ export async function signIn(email: string, password: string, totp: string): Pro
   writeToken(token);
 }
 
+/**
+ * Audit finding S8: the API deletes the session token, so a copy of the token does not work
+ * after the sign-out. The panel does not wait for the answer.
+ */
 export function signOut() {
+  if (token) {
+    void fetch(`${BASE}/auth/logout`, { method: "POST", headers: { Accept: "application/json", Authorization: `Bearer ${token}` }, keepalive: true }).catch(() => {});
+  }
   token = null;
   writeToken(null);
 }
@@ -374,4 +395,4 @@ export async function waitForJob(job: ApiJob | Job, onChange: (job: Job) => void
   return current;
 }
 
-export type { ApiJob, ApiWebsite };
+export type { ApiJob, ApiUser, ApiWebsite };

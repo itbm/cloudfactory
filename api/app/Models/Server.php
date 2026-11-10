@@ -8,6 +8,8 @@ use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\DB;
 
 #[Fillable([
     'name', 'location', 'roles', 'state', 'agent_url', 'agent_version', 'certificate_fingerprint', 'certificate_pem', 'agent_token_hash',
@@ -15,7 +17,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'maintenance_window', 'pending_updates', 'reboot_required', 'services', 'usage', 'last_update_at', 'last_seen_at', 'local',
     'sftp_port',
 ])]
-#[Hidden(['agent_token_hash'])]
+#[Hidden(['agent_token_hash', 'backup_password'])]
 class Server extends Model
 {
     use HasFactory, HasUlids;
@@ -44,5 +46,23 @@ class Server extends Model
     public function jobs(): HasMany
     {
         return $this->hasMany(AgentJob::class);
+    }
+
+    /**
+     * Audit finding S2: the password of the restic repository of this server. The panel makes
+     * it at the first use and keeps it encrypted. Only this server gets it, with each backup
+     * job. The lock makes sure that two jobs at the same time get the same password.
+     */
+    public function backupPassword(): string
+    {
+        return DB::transaction(function () {
+            $value = DB::table('servers')->where('id', $this->id)->lockForUpdate()->value('backup_password');
+            if (! is_string($value)) {
+                $value = Crypt::encryptString(base64_encode(random_bytes(48)));
+                DB::table('servers')->where('id', $this->id)->update(['backup_password' => $value]);
+            }
+
+            return Crypt::decryptString($value);
+        });
     }
 }

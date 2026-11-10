@@ -125,3 +125,33 @@ func PinnedClient(fingerprint string) func([][]byte, [][]*x509.Certificate) erro
 		return nil
 	}
 }
+
+// PinnedServer gives a function for tls.Config.VerifyConnection of a client. It accepts only a
+// server with the given certificate. The agent on the panel server uses it for the HTTPS port
+// of the panel API, which has the certificate of the panel and no public name.
+func PinnedServer(fingerprint string) func(tls.ConnectionState) error {
+	want := strings.ToLower(fingerprint)
+	return func(cs tls.ConnectionState) error {
+		if len(cs.PeerCertificates) == 0 {
+			return errors.New("the panel sent no certificate")
+		}
+		cert := cs.PeerCertificates[0]
+		got := Fingerprint(cert.Raw)
+		if subtle.ConstantTimeCompare([]byte(got), []byte(want)) != 1 {
+			return fmt.Errorf("the certificate %s of the panel is not the certificate %s that this agent expects", got, want)
+		}
+		if now := time.Now(); now.Before(cert.NotBefore) || now.After(cert.NotAfter) {
+			return errors.New("the panel certificate has expired")
+		}
+		return nil
+	}
+}
+
+// CheckFingerprint makes sure that the text is a SHA-256 fingerprint in hex.
+func CheckFingerprint(fingerprint string) error {
+	b, err := hex.DecodeString(fingerprint)
+	if err != nil || len(b) != sha256.Size {
+		return errors.New("a certificate fingerprint has 64 hex characters (SHA-256)")
+	}
+	return nil
+}

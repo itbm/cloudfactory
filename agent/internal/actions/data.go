@@ -477,8 +477,8 @@ func newRepo(target string, creds map[string]string) (repo, error) {
 func (d *Deps) restic(ctx context.Context, r repo, args ...string) (string, error) {
 	base := []string{"--repo", r.target}
 	if r.creds["RESTIC_PASSWORD"] == "" {
-		// The panel sends one password for all servers (RESTIC_PASSWORD). A local key file is
-		// only for a manual set-up: two servers with different keys cannot share a repository.
+		// The panel sends the password of the repository of this server (RESTIC_PASSWORD).
+		// A local key file is only for a manual set-up.
 		base = append(base, "--password-file", d.ResticPasswordFile)
 	}
 	base = append(base, "--json", "--retry-lock", "30m")
@@ -504,14 +504,23 @@ func (d *Deps) ensureRepo(ctx context.Context, r repo) error {
 }
 
 // forget removes the snapshots of a website that the retention policy does not keep
-// (FR-902). It gives the IDs of the removed snapshots. The policy is for all snapshots of the
-// website together. The data stays in the repository until PruneBackups.
-func (d *Deps) forget(ctx context.Context, r repo, websiteID string, keep *agentv1.Retention) ([]string, error) {
-	if keep.GetDaily() <= 0 && keep.GetWeekly() <= 0 && keep.GetMonthly() <= 0 {
+// (FR-902). It gives the IDs of the removed snapshots. The data stays in the repository until
+// PruneBackups.
+//
+// Audit finding R8: the policy is for the snapshots of one kind. The retention of the
+// scheduled backups thus does not remove the backups that a user made.
+func (d *Deps) forget(ctx context.Context, r repo, websiteID, kind string, keep *agentv1.Retention) ([]string, error) {
+	if keep.GetDaily() <= 0 && keep.GetWeekly() <= 0 && keep.GetMonthly() <= 0 && keep.GetLast() <= 0 {
 		return nil, nil
 	}
-	out, err := d.restic(ctx, r, "forget", "--tag", "website="+websiteID, "--group-by", "",
-		"--keep-daily", fmt.Sprint(keep.GetDaily()), "--keep-weekly", fmt.Sprint(keep.GetWeekly()), "--keep-monthly", fmt.Sprint(keep.GetMonthly()))
+	args := []string{"forget", "--tag", "website=" + websiteID + ",kind=" + kind, "--group-by", ""}
+	if keep.GetLast() > 0 {
+		args = append(args, "--keep-last", fmt.Sprint(keep.GetLast()))
+	}
+	if keep.GetDaily() > 0 || keep.GetWeekly() > 0 || keep.GetMonthly() > 0 {
+		args = append(args, "--keep-daily", fmt.Sprint(keep.GetDaily()), "--keep-weekly", fmt.Sprint(keep.GetWeekly()), "--keep-monthly", fmt.Sprint(keep.GetMonthly()))
+	}
+	out, err := d.restic(ctx, r, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -532,6 +541,35 @@ func (d *Deps) forget(ctx context.Context, r repo, websiteID string, keep *agent
 	return ids, nil
 }
 
+// forgetWebsite removes all snapshots of a website that the panel deleted (audit finding R8).
+func (d *Deps) forgetWebsite(ctx context.Context, r repo, websiteID string) error {
+	out, err := d.restic(ctx, r, "snapshots", "--tag", "website="+websiteID)
+	if err != nil {
+		return err
+	}
+	var snapshots []struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal([]byte(lastJSONLine(out)), &snapshots); err != nil {
+		return fmt.Errorf("read the output of restic snapshots: %w", err)
+	}
+	ids := []string{}
+	for _, s := range snapshots {
+		if snapshotID.MatchString(s.ID) {
+			ids = append(ids, s.ID)
+		}
+	}
+	// Some snapshots for each command, so that the command line stays short.
+	for chunk := range slices.Chunk(ids, 100) {
+		if _, err := d.restic(ctx, r, append([]string{"forget"}, chunk...)...); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+var snapshotID = regexp.MustCompile(`^[0-9a-f]{8,64}$`)
+
 // lastJSONLine gives the last line of the output that is not empty.
 func lastJSONLine(out string) string {
 	lines := strings.Split(strings.TrimSpace(out), "\n")
@@ -539,13 +577,33 @@ func lastJSONLine(out string) string {
 }
 
 // PruneBackups removes the data that no snapshot uses from the repository (FR-902). The panel
-// sends it to one server after the nightly backups.
+// sends it to one server after the nightly backups. Before that, the agent removes the
+// snapshots of the websites that the panel deleted some time ago (audit finding R8).
 func (d *Deps) PruneBackups(req *agentv1.PruneBackupsRequest) (jobs.Job, error) {
 	r, err := newRepo(req.GetTarget(), req.GetCredentials())
 	if err != nil {
 		return jobs.Job{}, err
 	}
-	return jobs.Job{ID: req.GetJobId(), Key: "backup-repository", Steps: []jobs.Step{
+	for _, id := range req.GetForgetWebsiteIds() {
+		if err := validate.ID(id); err != nil {
+			return jobs.Job{}, err
+		}
+	}
+	return jobs.Job{ID: req.GetJobId(), Key: "backup-repository", Long: true, Steps: []jobs.Step{
+		{Name: "Remove backups of deleted websites", Do: func(ctx context.Context) error {
+			if len(req.GetForgetWebsiteIds()) == 0 {
+				return nil
+			}
+			if err := d.ensureRepo(ctx, r); err != nil {
+				return err
+			}
+			for _, id := range req.GetForgetWebsiteIds() {
+				if err := d.forgetWebsite(ctx, r, id); err != nil {
+					return err
+				}
+			}
+			return nil
+		}},
 		{Name: "Remove unused data", Do: func(ctx context.Context) error {
 			if err := d.ensureRepo(ctx, r); err != nil {
 				return err
@@ -600,13 +658,20 @@ func (d *Deps) Backup(req *agentv1.BackupRequest) (jobs.Job, error) {
 			return jobs.Job{}, err
 		}
 	}
+	// The kind is a tag of the snapshot, and the retention policy uses it.
+	if k := req.GetKind(); k != "manual" && k != "scheduled" {
+		return jobs.Job{}, fmt.Errorf("the backup kind %q is not valid", k)
+	}
 	app := d.Host.AppDir(req.GetUnixUser())
 	dumps := d.dumpDir(req.GetUnixUser())
+	// Audit finding R8: the dumps are plain text. They stay on the disk only until the upload
+	// is complete or the job fails.
+	removeDumps := func(context.Context) { _ = os.RemoveAll(dumps) }
 	hashes := map[string]any{}
 	var snapshotID string
 	var size float64
 	forgotten := []string{}
-	return jobs.Job{ID: req.GetJobId(), Key: req.GetWebsiteId(), Steps: []jobs.Step{
+	return jobs.Job{ID: req.GetJobId(), Key: req.GetWebsiteId(), Long: true, Steps: []jobs.Step{
 		{Name: "Snapshot files", Do: func(context.Context) error {
 			_, err := os.Stat(app)
 			return err
@@ -639,6 +704,7 @@ func (d *Deps) Backup(req *agentv1.BackupRequest) (jobs.Job, error) {
 				return err
 			}
 			defer release()
+			defer removeDumps(ctx)
 			if err := d.ensureRepo(ctx, r); err != nil {
 				return err
 			}
@@ -656,11 +722,11 @@ func (d *Deps) Backup(req *agentv1.BackupRequest) (jobs.Job, error) {
 			if req.GetRetention() == nil {
 				return nil
 			}
-			ids, err := d.forget(ctx, r, req.GetWebsiteId(), req.GetRetention())
+			ids, err := d.forget(ctx, r, req.GetWebsiteId(), req.GetKind(), req.GetRetention())
 			forgotten = ids
 			return err
 		}},
-	}, Result: func() map[string]any {
+	}, OnFailure: removeDumps, Result: func() map[string]any {
 		return map[string]any{"snapshotId": snapshotID, "sizeBytes": int64(size), "dumps": hashes, "forgotten": forgotten}
 	}}, nil
 }
@@ -752,7 +818,7 @@ func (d *Deps) Restore(req *agentv1.RestoreRequest) (jobs.Job, error) {
 	if err := errors.Join(validate.ID(req.GetJobId()), validate.ID(req.GetWebsiteId()), validate.UnixUser(unixUser)); err != nil {
 		return jobs.Job{}, err
 	}
-	if !regexp.MustCompile(`^[0-9a-f]{8,64}$`).MatchString(req.GetSnapshotId()) {
+	if !snapshotID.MatchString(req.GetSnapshotId()) {
 		return jobs.Job{}, errors.New("the snapshot ID is not valid")
 	}
 	r, err := newRepo(req.GetTarget(), req.GetCredentials())
@@ -787,9 +853,12 @@ func (d *Deps) Restore(req *agentv1.RestoreRequest) (jobs.Job, error) {
 	default:
 		return jobs.Job{}, fmt.Errorf("the restore scope %q is not valid", req.GetScope())
 	}
+	if req.GetDeleteExtra() && req.GetScope() != "website" {
+		return jobs.Job{}, errors.New("only the restore of a full website can remove the other files")
+	}
 	staging := filepath.Join(d.DataDir, "restore", req.GetJobId())
 	cleanup := func(context.Context) { _ = os.RemoveAll(staging) }
-	return jobs.Job{ID: req.GetJobId(), Key: req.GetWebsiteId(), Steps: []jobs.Step{
+	return jobs.Job{ID: req.GetJobId(), Key: req.GetWebsiteId(), Long: true, Steps: []jobs.Step{
 		{Name: "Download snapshot", Do: func(ctx context.Context) error {
 			_, err := d.restic(ctx, r, "snapshots", req.GetSnapshotId())
 			return err
@@ -806,6 +875,12 @@ func (d *Deps) Restore(req *agentv1.RestoreRequest) (jobs.Job, error) {
 				return err
 			}
 			if dbName == "" {
+				if req.GetDeleteExtra() {
+					// The snapshot is on this server now, so the old files can go.
+					if err := d.emptyAsUser(ctx, unixUser, app); err != nil {
+						return err
+					}
+				}
 				return d.copyAsUser(ctx, filepath.Join(staging, app), rel, unixUser, app)
 			}
 			path := filepath.Join(staging, include)
@@ -849,6 +924,19 @@ func (d *Deps) copyAsUser(ctx context.Context, src, rel, unixUser, dst string) e
 		[]string{"tar", "--create", "--file=-", "--directory=" + src, "--", rel},
 		[]string{"runuser", "-u", unixUser, "--", "tar", "--extract", "--file=-", "--directory=" + dst, "--no-same-owner", "--preserve-permissions"},
 	)
+}
+
+// emptyAsUser removes all files in dir, as the website user (audit finding R8). After a
+// restore, the website then has only the files of the snapshot, for example no file that an
+// attacker added. The website user removes the files, so a link in the website cannot make
+// root remove files outside the website. find does not follow links.
+func (d *Deps) emptyAsUser(ctx context.Context, unixUser, dir string) error {
+	// The user can remove a file only from a directory that the user can write.
+	if _, err := d.Run.Run(ctx, "runuser", "-u", unixUser, "--", "find", dir, "-mindepth", "1", "-type", "d", "-exec", "chmod", "u+rwx", "--", "{}", "+"); err != nil {
+		return err
+	}
+	_, err := d.Run.Run(ctx, "runuser", "-u", unixUser, "--", "find", dir, "-mindepth", "1", "-delete")
+	return err
 }
 
 // restoreDump loads a dump as a temporary user that can use only this database. The password
