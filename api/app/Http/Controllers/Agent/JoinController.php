@@ -21,9 +21,9 @@ class JoinController extends Controller
     public function __invoke(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'token' => ['required', 'string'],
+            'token' => ['required', 'string', 'max:200'],
             'name' => ['required', 'regex:/^[a-z][a-z0-9-]{1,30}$/', 'unique:servers,name'],
-            'agentUrl' => ['required', 'url:https'],
+            'agentUrl' => ['required', 'url:https', 'max:255'],
             'certificateSha256' => ['required', 'regex:/^[0-9a-f]{64}$/'],
             'certificatePem' => ['required', 'string', 'max:8000'],
             'agentVersion' => ['required', 'string', 'max:32'],

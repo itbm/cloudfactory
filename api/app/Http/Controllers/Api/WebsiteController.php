@@ -38,11 +38,12 @@ class WebsiteController extends Controller
 
     public function index(Request $request): AnonymousResourceCollection
     {
-        $request->validate(['status' => ['nullable', Rule::enum(WebsiteStatus::class)], 'q' => ['nullable', 'string']]);
+        $request->validate(['status' => ['nullable', Rule::enum(WebsiteStatus::class)], 'q' => ['nullable', 'string', 'max:200']]);
         $websites = $this->visibleWebsites($request)
             ->with(['image', 'domains', 'server'])
             ->when($request->query('status'), fn ($q, $s) => $q->where('status', $s))
-            ->when($request->query('q'), fn ($q, $s) => $q->where('name', 'like', '%'.$s.'%'))
+            // whereLike ignores the case of the letters in each database engine.
+            ->when($request->query('q'), fn ($q, $s) => $q->whereLike('name', '%'.$s.'%'))
             ->orderBy('name')
             ->paginate(self::perPage($request));
 

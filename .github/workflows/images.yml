@@ -69,10 +69,77 @@ jobs:
             [ "$banner" = "SSH-2.0-" ]
             exit 0
           fi
+          if [ "$IMAGE" = panel-api ]; then
+            # The settings of quadlet.PanelUnits: PostgreSQL, and the HTTPS port for the agent on
+            # the panel server with the certificate of the panel (audit findings B2 and B4).
+            work="$RUNNER_TEMP/panel"
+            mkdir -p "$work/data/pki/agents"
+            newcert() { openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 30 -subj "$1" -keyout "$2.key" -out "$2.crt" 2>/dev/null; }
+            fingerprint() { openssl x509 -in "$1" -outform DER | sha256sum | cut -d' ' -f1; }
+            # The same certificate as install.sh makes: a name, and no IP address.
+            newcert "/CN=panel.example.com/O=Cloudfactory panel" "$work/data/pki/panel"
+            newcert "/CN=panel-1" "$work/agent"
+            panel_fingerprint=$(fingerprint "$work/data/pki/panel.crt")
+            # The user of the panel owns /data on a server, and that user is root in the
+            # container. With no DAC_OVERRIDE, root cannot read the key of the runner user.
+            sudo chown -R root:root "$work/data"
+            docker network create smoke
+            docker run -d --name smoke-db --network smoke -e POSTGRES_USER=cloudfactory -e POSTGRES_PASSWORD=smoke -e POSTGRES_DB=cloudfactory postgres:17
+            docker run -d --name smoke --network smoke --cap-drop=all --security-opt no-new-privileges \
+              -p 127.0.0.1:18080:8080 -p 127.0.0.1:18443:8443 -v "$work/data:/data" \
+              -e "APP_KEY=base64:$(openssl rand -base64 32)" -e QUEUE_CONNECTION=database \
+              -e DB_CONNECTION=pgsql -e DB_HOST=smoke-db -e DB_PORT=5432 -e DB_DATABASE=cloudfactory -e DB_USERNAME=cloudfactory -e DB_PASSWORD=smoke -e DB_SSLMODE=disable \
+              -e CF_AGENT_CLIENT_CERT=/data/pki/panel.crt -e CF_AGENT_CLIENT_KEY=/data/pki/panel.key -e CF_AGENT_CERTIFICATES=/data/pki/agents panel-api:test
+            # The start script waits for the database and makes the tables before it serves.
+            code=000
+            for _ in $(seq 1 60); do
+              code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18080/up || true)
+              [ "$code" = 200 ] && break
+              sleep 2
+            done
+            docker logs smoke
+            docker inspect -f '{{.State.Running}}' smoke | grep -q true
+            [ "$code" = 200 ]
+            # The HTTPS port has the certificate of the panel, also for a client that connects to
+            # an IP address and sends no server name, as the agent does.
+            served=$(openssl s_client -connect 127.0.0.1:18443 -noservername </dev/null 2>/dev/null | openssl x509 -outform DER | sha256sum | cut -d' ' -f1)
+            echo "served certificate: $served, panel certificate: $panel_fingerprint"
+            [ "$served" = "$panel_fingerprint" ]
+            # A join on the HTTPS port with the client certificate makes the server of the panel
+            # ("local"). Then the agent can report on that port with its certificate.
+            token=$(docker exec smoke php artisan cloudfactory:install admin@example.com | sed -n 's/.*"joinToken":"\([^"]*\)".*/\1/p')
+            [ -n "$token" ]
+            agent_fingerprint=$(fingerprint "$work/agent.crt")
+            jq -n --arg token "$token" --arg fingerprint "$agent_fingerprint" --rawfile pem "$work/agent.crt" \
+              '{token: $token, name: "panel-1", agentUrl: "https://169.254.1.3:7443", certificateSha256: $fingerprint, certificatePem: $pem, agentVersion: "0.0.0", os: "debian-13", arch: "x86-64", roles: ["web"]}' >"$work/join.json"
+            # -k: the certificate has no IP address. The check of its fingerprint is above, and
+            # the agent does the same check for each connection.
+            agent_token=$(curl -sS --fail-with-body -k --cert "$work/agent.crt" --key "$work/agent.key" -H 'Content-Type: application/json' -H 'Accept: application/json' \
+              -d @"$work/join.json" https://127.0.0.1:18443/api/agent/v1/join | jq -r .agentToken)
+            [ -n "$agent_token" ] && [ "$agent_token" != null ]
+            report() {
+              curl -s -o /dev/null -w '%{http_code}' -k -H "Authorization: Bearer $agent_token" -H 'Content-Type: application/json' -H 'Accept: application/json' -d '{"agentVersion":"0.0.0"}' "$@"
+            }
+            check() {
+              want=$1
+              shift
+              got=$(report "$@")
+              echo "report $*: $got (want $want)"
+              [ "$got" = "$want" ]
+            }
+            check 200 --cert "$work/agent.crt" --key "$work/agent.key" https://127.0.0.1:18443/api/agent/v1/report
+            # The token alone is not sufficient: no certificate, a header that the client sets,
+            # and the HTTP port, which removes the header.
+            check 401 https://127.0.0.1:18443/api/agent/v1/report
+            check 401 -H "X-Cloudfactory-Direct-Cert-Sha256: $agent_fingerprint" https://127.0.0.1:18443/api/agent/v1/report
+            check 401 -H "X-Cloudfactory-Direct-Cert-Sha256: $agent_fingerprint" http://127.0.0.1:18080/api/agent/v1/report
+            # A client of the HTTPS port cannot pass as the edge proxy.
+            check 401 -H 'X-Cloudfactory-Edge: 1' -H "X-Client-Cert-Sha256: $agent_fingerprint" https://127.0.0.1:18443/api/agent/v1/report
+            exit 0
+          fi
           case "$IMAGE" in
             frankenphp-*|apache-*) args="--read-only --tmpfs /tmp --user 1001:1001" want=200 ;;
             panel-web) args="--read-only --tmpfs /tmp" want=200 ;;
-            panel-api) args="--tmpfs /data -e APP_KEY=base64:$(openssl rand -base64 32) -e DB_DATABASE=/data/panel.sqlite" want=200 path=/up ;;
             edge) args="--read-only --tmpfs /data --tmpfs /run/caddy-admin" want=any ;;
           esac
           # shellcheck disable=SC2086 # args holds several options.

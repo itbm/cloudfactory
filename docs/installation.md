@@ -95,9 +95,12 @@ Then the script does these steps:
     SFTP port.
 12. Download the agent and check its signature.
 13. Install the agent service and the rollback service.
-14. On the first server only: start the panel in gVisor.
+14. On the first server only: start the panel in gVisor. The panel has its own PostgreSQL
+    database in the container `cf-panel-db`.
 15. On the first server only: make the first administrator.
-16. Join the panel and start the agent.
+16. Join the panel and start the agent. On the first server, the agent connects to the HTTPS
+    port of the panel API on the private service address, and accepts only the certificate of
+    the panel.
 
 If a step fails, the script stops and shows the step. You can run the script again after you
 correct the problem.

@@ -184,9 +184,32 @@ updated websites back to the old tag.
 ## The panel on the first server
 
 The installation script installs the panel on the first server. `cf-agent panel install` makes
-three Quadlet units: the API, the queue worker and the web panel. They run in gVisor. The API
-listens on `169.254.77.1:19080` and the web panel on `169.254.77.1:19081`. The edge proxy sends the
-panel domain to these ports.
+five Quadlet units for the user `cf-panel`. Each unit is a container in gVisor.
 
-The agent on the panel server also joins the panel. The panel reaches this agent through
-`169.254.1.3`, which pasta maps to `127.0.0.1` on the host.
+| Unit | Function | Port on `169.254.77.1` |
+| ---- | -------- | ---------------------- |
+| `cf-panel-db` | The PostgreSQL database of the panel | 19432 |
+| `cf-panel-api` | The API | 19080 (HTTP) and 19443 (HTTPS) |
+| `cf-panel-queue` | The queue worker, which sends the jobs to the agents | None |
+| `cf-panel-scheduler` | The scheduler, for example for the backups and the image checks | None |
+| `cf-panel-web` | The web panel | 19081 |
+
+The edge proxy sends the panel domain to the ports 19080 and 19081. It ends the TLS connection
+of the browser with a public certificate.
+
+The API, the queue worker and the scheduler use one PostgreSQL database. The data files are in
+`/var/lib/cloudfactory/panel/db`. The password is in `/var/lib/cloudfactory/panel/db.env`, and
+only `cf-panel` can read it. The firewall lets only root and `cf-panel` connect to port 19432.
+Refer to [decisions.md](decisions.md) for the reason.
+
+The agent on the panel server also joins the panel. It does not use the edge proxy. It uses
+the HTTPS port of the API, `https://169.254.77.1:19443`:
+
+- The port has the certificate of the panel (`/var/lib/cloudfactory/panel/pki/panel.crt`). The
+  installation script gives the SHA-256 fingerprint of this certificate to `cf-agent join`
+  (`--panel-certificate-sha256`). The agent accepts only this certificate.
+- The agent sends its own certificate. The API compares its fingerprint with the certificate
+  from the join.
+
+The panel reaches this agent through `169.254.1.3`, which pasta maps to `127.0.0.1` on the
+host.

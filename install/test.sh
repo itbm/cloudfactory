@@ -104,6 +104,18 @@ else
 	FAIL=$((FAIL + 1))
 	echo 'FAIL: the agent on the panel server does not get an HTTPS address with the panel certificate'
 fi
+# Audit B4: the panel keeps its data in PostgreSQL on port 19432 of the service address. The
+# firewall lets only root and the user of the panel connect, and the rule for the edge proxy
+# does not open the port for the edge proxy.
+# shellcheck disable=SC2016 # The patterns are text of the script, not variables of this test.
+if grep -q 'ip daddr $SERVICE_ADDRESS tcp dport 19432 meta skuid != { 0, $panel_uid } reject with tcp reset' "$HERE/install.sh" &&
+	grep -q 'tcp dport != { 3306, 5432, 19432 } meta skuid != { 0, $edge_uid } reject with tcp reset' "$HERE/install.sh" &&
+	grep -q 'PanelDatabasePort = 19432' "$HERE/../agent/internal/quadlet/quadlet.go"; then
+	PASS=$((PASS + 1))
+else
+	FAIL=$((FAIL + 1))
+	echo 'FAIL: the firewall rule of the panel database'
+fi
 if ! grep -Eq 'sshd_config|sshd -t|reload_ssh|systemctl (reload|restart) ssh' "$HERE/install.sh"; then PASS=$((PASS + 1)); else FAIL=$((FAIL + 1)); echo 'FAIL: the script changes the SSH service of the host'; fi
 # shellcheck disable=SC2016 # The pattern finds the text $SFTP_PORT in the script.
 if grep -q '^    tcp dport \$SFTP_PORT accept # cloudfactory-sftp$' "$HERE/install.sh" && grep -q 'sftpRuleMarker = "# cloudfactory-sftp"' "$HERE/../agent/internal/actions/sftp.go"; then PASS=$((PASS + 1)); else FAIL=$((FAIL + 1)); echo 'FAIL: the SFTP firewall rule'; fi

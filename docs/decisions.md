@@ -29,6 +29,32 @@ agent writes, not a `compose.yaml` file. The reasons:
 - Decision 2: Podman only. `podman compose` needs a second tool, for example
   `docker-compose` or `podman-compose`.
 
+## PostgreSQL for the panel, not SQLite
+
+The panel keeps its data in PostgreSQL, in the container `cf-panel-db`. Release 0.1 first used
+one SQLite file. The reasons for the change:
+
+- Three containers write to the database: the API, the queue worker and the scheduler. Each
+  container is a gVisor sandbox. gVisor keeps a file lock in one sandbox, so the three
+  containers do not see the locks of each other. Two writers at the same time can damage a
+  SQLite file. A test in two sandboxes showed this.
+- A database server has no such limit. It also locks one row at a time, so a long job does
+  not stop the sign-in of a user.
+- The project has a signed PostgreSQL image for the databases of the websites. The panel uses
+  the same image, so there is no new software to keep up to date.
+
+The cost is one more container on the panel server, with approximately 100 MB of memory.
+
+SQLite stays for development and for the fast test run. The CI runs all API tests with SQLite
+and with PostgreSQL.
+
+To make a copy of the panel database, run this command as root on the panel server:
+
+```sh
+runuser -u cf-panel -- env XDG_RUNTIME_DIR=/run/user/$(id -u cf-panel) \
+  podman exec cf-panel-db pg_dump --username=cloudfactory --format=custom cloudfactory >panel.dump
+```
+
 ## Ports below 1024
 
 The installation script adds these nftables rules:

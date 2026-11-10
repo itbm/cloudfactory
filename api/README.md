@@ -43,11 +43,26 @@ The seed data has three users. The password of each user is `password`.
 
 Do not use the seed data on a production panel.
 
+The development setup uses one SQLite file. A server uses PostgreSQL, because the containers
+of the panel cannot share one SQLite file. Refer to
+[`../docs/decisions.md`](../docs/decisions.md).
+
+To let a local agent report to `php artisan serve` with no TLS, set
+`CF_AGENT_DIRECT_ADDRESSES=127.0.0.1` in `.env`. Do not set it on a server.
+
 ## Run the tests
 
 ```sh
 php artisan test
 ./vendor/bin/pint --test
+```
+
+The tests use SQLite in memory. To run them with PostgreSQL also, as the CI does, give the
+database in the environment:
+
+```sh
+DB_CONNECTION=pgsql DB_HOST=127.0.0.1 DB_DATABASE=cloudfactory_test \
+  DB_USERNAME=cloudfactory DB_PASSWORD=secret php artisan test
 ```
 
 ## Settings

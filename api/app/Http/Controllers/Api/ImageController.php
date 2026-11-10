@@ -43,7 +43,7 @@ class ImageController extends Controller
     {
         $data = $request->validate([
             'name' => ['required', 'string', 'max:100'],
-            'reference' => ['required', 'regex:#^([a-z0-9.-]+(:\d+)?/)?[a-z0-9._/-]+$#'],
+            'reference' => ['required', 'max:200', 'regex:#^([a-z0-9.-]+(:\d+)?/)?[a-z0-9._/-]+$#'],
             'tag' => ['required', 'regex:/^[\w][\w.-]{0,127}$/'],
             // FR-1110: automatic or manual updates for each image.
             'policy' => ['required', Rule::in([UpdatePolicy::Automatic->value, UpdatePolicy::Manual->value])],

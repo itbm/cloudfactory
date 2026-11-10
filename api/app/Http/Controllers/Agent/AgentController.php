@@ -26,7 +26,7 @@ class AgentController extends Controller
         $job = AgentJob::where('server_id', $server->id)->findOrFail($id);
         $data = $request->validate([
             'state' => ['required', Rule::in(['running', 'succeeded', 'failed'])],
-            'step' => ['nullable', 'integer', 'min:0'],
+            'step' => ['nullable', 'integer', 'min:0', 'max:1000'],
             'error' => ['nullable', 'string', 'max:4000'],
             'result' => ['nullable', 'array'],
         ]);

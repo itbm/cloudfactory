@@ -105,10 +105,17 @@ The product specification, section 6.4, gives the requirements.
 - The panel keeps the certificate of each agent from the join. For each request to an agent,
   it trusts only that certificate. It does not use a public certificate authority.
 - A join token is good for one use only. It expires after a short time.
-- When an agent sends an event to the panel, it sends its token. The request must come through
-  the edge proxy, and the fingerprint of the client certificate must agree with the fingerprint
-  of the server. Only the agent on the panel server can connect directly, from a loopback
-  address (`CF_AGENT_DIRECT_ADDRESSES`).
+- When an agent sends an event to the panel, it sends its token and its client certificate.
+  The fingerprint of the certificate must agree with the fingerprint of the server. Thus a
+  token alone is not sufficient. The request comes through the edge proxy. Only the agent on
+  the panel server connects directly, to the HTTPS port of the API on the private service
+  address. That agent accepts only the certificate of the panel.
+- All connections between an agent and the panel use TLS. `CF_AGENT_DIRECT_ADDRESSES` is for
+  development only: it lets an agent from the given addresses report with no certificate.
+  Keep it empty on a server.
+- The panel keeps its data in PostgreSQL. The database listens only on the private service
+  address. Each connection needs a password, and the firewall lets only root and the user
+  `cf-panel` connect.
 - The API accepts browser requests only from the panel domain (`CF_PANEL_DOMAIN`) and the
   origins in `CF_CORS_ORIGINS`.
 - The panel keeps job data encrypted in the database. When a job is complete, the panel

@@ -509,6 +509,7 @@ step "Set the firewall"
 # not change (FR-1707).
 agent_rule="tcp dport 7443 accept"
 edge_uid=$(id -u cf-edge)
+panel_uid=$(id -u cf-panel)
 [ -n "$PANEL_IP" ] && agent_rule="ip saddr $PANEL_IP tcp dport 7443 accept"
 cat >/etc/nftables.d-cloudfactory.nft <<NFT
 table inet cloudfactory
@@ -532,7 +533,11 @@ table inet cloudfactory {
     # Unix user of the container, so a website cannot reach a different website. All websites
     # can reach the shared database ports. The rule checks only new connections, because the
     # answers of the containers go to the address too.
-    ct state new ip daddr $SERVICE_ADDRESS tcp dport != { 3306, 5432 } meta skuid != { 0, $edge_uid } reject with tcp reset
+    #
+    # Port 19432 is the database of the panel. Only root and the containers of the panel
+    # (cf-panel) can connect to it. Each connection also needs the password.
+    ct state new ip daddr $SERVICE_ADDRESS tcp dport 19432 meta skuid != { 0, $panel_uid } reject with tcp reset
+    ct state new ip daddr $SERVICE_ADDRESS tcp dport != { 3306, 5432, 19432 } meta skuid != { 0, $edge_uid } reject with tcp reset
   }
   chain prerouting {
     type nat hook prerouting priority dstnat;

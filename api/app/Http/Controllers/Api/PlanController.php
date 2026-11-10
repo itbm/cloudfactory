@@ -67,9 +67,9 @@ class PlanController extends Controller
     {
         $d = $request->validate([
             'name' => ['required', 'string', 'max:100'],
-            'websites' => ['required', 'integer', 'min:1'],
-            'mailboxes' => ['required', 'integer', 'min:0'],
-            'databases' => ['required', 'integer', 'min:0'],
+            'websites' => ['required', 'integer', 'min:1', 'max:1000000'],
+            'mailboxes' => ['required', 'integer', 'min:0', 'max:1000000'],
+            'databases' => ['required', 'integer', 'min:0', 'max:1000000'],
             'phpExtensions' => ['required', 'array'],
             'phpExtensions.*' => ['string', 'regex:/^[a-z0-9_]+$/'],
             'limits.vcpus' => ['required', 'numeric', 'gt:0'],

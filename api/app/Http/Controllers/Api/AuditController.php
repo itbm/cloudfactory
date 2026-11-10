@@ -12,10 +12,13 @@ class AuditController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
+        // The search text must be text. An array value ("q[]=x") gave a server error.
+        $search = $request->validate(['q' => ['nullable', 'string', 'max:200']])['q'] ?? null;
         $ids = $request->user()->visibleCustomerIds();
         $page = AuditEntry::query()
             ->when($ids !== null, fn ($q) => $q->whereIn('customer_id', $ids))
-            ->when($request->query('q'), fn ($q, $s) => $q->where(fn ($w) => $w->where('actor', 'like', "%{$s}%")->orWhere('action', 'like', "%{$s}%")->orWhere('target', 'like', "%{$s}%")->orWhere('ip', $s)))
+            // whereLike ignores the case of the letters in each database engine.
+            ->when($search, fn ($q, $s) => $q->where(fn ($w) => $w->whereLike('actor', "%{$s}%")->orWhereLike('action', "%{$s}%")->orWhereLike('target', "%{$s}%")->orWhere('ip', $s)))
             ->latest('id')
             ->paginate(self::perPage($request, 50, 200));
 

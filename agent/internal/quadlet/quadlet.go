@@ -456,26 +456,48 @@ type Panel struct {
 	// AgentPort is the HTTPS port of the API on ServiceAddress. The agent on the panel server
 	// uses it. The API has the certificate of the panel on this port.
 	AgentPort int
+	// DatabasePort is the port of the PostgreSQL database of the panel on ServiceAddress.
+	DatabasePort int
 }
 
 // The ports of the panel on ServiceAddress.
 const (
-	PanelAPIPort   = 19080
-	PanelWebPort   = 19081
-	PanelAgentPort = 19443
+	PanelAPIPort      = 19080
+	PanelWebPort      = 19081
+	PanelAgentPort    = 19443
+	PanelDatabasePort = 19432
 )
+
+// PanelDatabaseContainer is the name of the container with the database of the panel.
+const PanelDatabaseContainer = "cf-panel-db"
+
+// PanelDatabaseName is the name of the database of the panel and of its database user.
+const PanelDatabaseName = "cloudfactory"
+
+// PanelDatabaseDir gives the directory with the data files of the panel database.
+func (p Panel) PanelDatabaseDir() string { return p.DataDir + "/db" }
+
+// PanelDatabaseEnv gives the file with the password of the panel database. The database
+// container and the API containers read it. Only the user of the panel can read it.
+func (p Panel) PanelDatabaseEnv() string { return p.DataDir + "/db.env" }
 
 // CosignPublicKey is the release public key on each server. The install script writes it.
 const CosignPublicKey = "/etc/cloudfactory/cosign.pub"
 
-// PanelUnits gives the units of the panel: the API, the queue worker, the scheduler and
-// the web UI. The scheduler checks the registry for new image tags (FR-1110).
+// PanelUnits gives the units of the panel: the database, the API, the queue worker, the
+// scheduler and the web UI. The scheduler checks the registry for new image tags (FR-1110).
 // The API container publishes its ports only on ServiceAddress. Thus only the edge proxy and
 // the agent on the panel server can connect to them. The edge proxy uses the HTTP port. The
 // agent uses the HTTPS port, and the API identifies it by its client certificate.
-// The API keeps its data in SQLite in DataDir, for an installation on one server.
+//
+// The panel keeps its data in PostgreSQL, in a container of its own. The API, the queue worker
+// and the scheduler are three containers that write to one database. Each container is a
+// gVisor sandbox, and gVisor keeps a file lock in one sandbox. Thus a database in a file that
+// the containers share (SQLite) is not safe. A database server is. Each connection needs the
+// password, and the firewall lets only root and the user of the panel connect to the port.
 func PanelUnits(p Panel) map[string]string {
 	api := p.Registry + "/panel-api:" + p.Version
+	database := PanelDatabaseContainer + ".service"
 	common := []string{
 		"Pull=never",
 		"GlobalArgs=" + p.Gvisor.GlobalArgs(),
@@ -484,16 +506,31 @@ func PanelUnits(p Panel) map[string]string {
 		"NoNewPrivileges=true",
 		"DropCapability=all",
 	}
-	unit := func(desc string, lines ...string) string {
-		body := append([]string{"[Unit]", "Description=" + desc, "", "[Container]"}, lines...)
+	// RestartSec: a container that stops at once, for example because the database is not
+	// ready, must not use all the start attempts that systemd permits in 10 seconds.
+	service := []string{"", "[Service]", "Restart=always", "RestartSec=5", "", "[Install]", "WantedBy=default.target", ""}
+	unit := func(desc string, after []string, lines ...string) string {
+		body := []string{"[Unit]", "Description=" + desc}
+		if len(after) > 0 {
+			body = append(body, "Wants="+strings.Join(after, " "), "After="+strings.Join(after, " "))
+		}
+		body = append(body, "", "[Container]")
+		body = append(body, lines...)
 		body = append(body, common...)
-		body = append(body, "", "[Service]", "Restart=always", "", "[Install]", "WantedBy=default.target", "")
+		body = append(body, service...)
 		return Header + strings.Join(body, "\n")
 	}
 	env := []string{
 		"Environment=APP_ENV=production",
-		"Environment=DB_CONNECTION=sqlite",
-		"Environment=DB_DATABASE=/data/panel.sqlite",
+		"Environment=DB_CONNECTION=pgsql",
+		"Environment=DB_HOST=" + ServiceAddress,
+		fmt.Sprintf("Environment=DB_PORT=%d", p.DatabasePort),
+		"Environment=DB_DATABASE=" + PanelDatabaseName,
+		"Environment=DB_USERNAME=" + PanelDatabaseName,
+		// The connection stays on the host, on the service address. The password uses SCRAM.
+		"Environment=DB_SSLMODE=disable",
+		// DB_PASSWORD.
+		"EnvironmentFile=" + p.PanelDatabaseEnv(),
 		"Environment=QUEUE_CONNECTION=database",
 		"Environment=CF_PANEL_DOMAIN=" + p.Domain,
 		"Environment=CF_REGISTRY=" + p.Registry,
@@ -503,16 +540,57 @@ func PanelUnits(p Panel) map[string]string {
 		"Environment=CF_COSIGN_PUBLIC_KEY=/run/cloudfactory/cosign.pub",
 		"Volume=" + CosignPublicKey + ":/run/cloudfactory/cosign.pub:ro",
 	}
+	databaseUnit := []string{
+		"[Unit]",
+		"Description=Cloudfactory panel database (PostgreSQL)",
+		"",
+		"[Container]",
+		"ContainerName=" + PanelDatabaseContainer,
+		"Image=" + p.Registry + "/postgresql:" + p.Version,
+		"Pull=never",
+		"GlobalArgs=" + p.Gvisor.GlobalArgs(),
+		// The database does not connect to the host, so it does not need PastaNetwork.
+		"Network=pasta",
+		// Only on ServiceAddress: other computers cannot connect.
+		fmt.Sprintf("PublishPort=%s:%d:5432", ServiceAddress, p.DatabasePort),
+		"NoNewPrivileges=true",
+		"DropCapability=all",
+		// The entry point of the image sets the owner of the data files, and then changes to
+		// the database user.
+		"AddCapability=CHOWN DAC_OVERRIDE FOWNER SETUID SETGID",
+		"ReadOnly=true",
+		"Tmpfs=/tmp",
+		// PGDATA is the mount itself, as in DatabaseUnit.
+		"Volume=" + p.PanelDatabaseDir() + ":/var/lib/postgresql/data:Z",
+		"Tmpfs=/var/run/postgresql",
+		"ShmSize=256m",
+		// POSTGRES_USER, POSTGRES_DB and POSTGRES_PASSWORD. The entry point uses them only
+		// when it makes a new data directory.
+		"EnvironmentFile=" + p.PanelDatabaseEnv(),
+		// Each TCP connection needs the password. Only "podman exec" can use the socket.
+		`Environment="POSTGRES_INITDB_ARGS=--auth-host=scram-sha-256 --auth-local=trust"`,
+		"",
+		"[Service]",
+		"Restart=always",
+		"RestartSec=5",
+		"TimeoutStartSec=900",
+		"",
+		"[Install]",
+		"WantedBy=default.target",
+		"",
+	}
 	return map[string]string{
-		"cf-panel-api.container": unit("Cloudfactory panel API",
+		PanelDatabaseContainer + ".container": Header + strings.Join(databaseUnit, "\n"),
+		"cf-panel-api.container": unit("Cloudfactory panel API", []string{database},
 			append([]string{"ContainerName=cf-panel-api", "Image=" + api,
 				fmt.Sprintf("PublishPort=%s:%d:8080", ServiceAddress, p.APIPort),
 				fmt.Sprintf("PublishPort=%s:%d:8443", ServiceAddress, p.AgentPort)}, env...)...),
-		"cf-panel-queue.container": unit("Cloudfactory panel queue worker",
+		// The API makes the tables when it starts. The two other containers need them.
+		"cf-panel-queue.container": unit("Cloudfactory panel queue worker", []string{database, "cf-panel-api.service"},
 			append([]string{"ContainerName=cf-panel-queue", "Image=" + api, "Exec=php artisan queue:work --tries=5"}, env...)...),
-		"cf-panel-scheduler.container": unit("Cloudfactory panel scheduler",
+		"cf-panel-scheduler.container": unit("Cloudfactory panel scheduler", []string{database, "cf-panel-api.service"},
 			append([]string{"ContainerName=cf-panel-scheduler", "Image=" + api, "Exec=php artisan schedule:work"}, env...)...),
-		"cf-panel-web.container": unit("Cloudfactory panel web UI",
+		"cf-panel-web.container": unit("Cloudfactory panel web UI", nil,
 			"ContainerName=cf-panel-web", "Image="+p.Registry+"/panel-web:"+p.Version, fmt.Sprintf("PublishPort=%s:%d:8080", ServiceAddress, p.WebPort), "ReadOnly=true", "Tmpfs=/tmp"),
 	}
 }

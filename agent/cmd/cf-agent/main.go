@@ -393,9 +393,6 @@ func bareMetal(ctx context.Context, run execx.Runner) bool {
 	return err != nil && strings.TrimSpace(out) == "none"
 }
 
-// panelUser is the Unix user of the panel containers.
-const panelUser = "cf-panel"
-
 // panelCmd pulls the panel images and starts them in gVisor (FR-1808).
 func panelCmd(ctx context.Context, args []string) error {
 	if len(args) < 1 || args[0] != "install" {
@@ -414,38 +411,15 @@ func panelCmd(ctx context.Context, args []string) error {
 	run := execx.Host{}
 	h := host.New(run, cfg.SitesDir)
 	gv := gvisor.Installer{Root: gvisorRoot, BinDir: gvisorBin}
-	p := quadlet.Panel{Registry: *registry, Version: version, Domain: *domain, DataDir: filepath.Join(cfg.DataDir, "panel"), Gvisor: quadlet.Runtime{RunscPath: gv.Link(), Platform: cfg.GVisorPlatform}, APIPort: quadlet.PanelAPIPort, WebPort: quadlet.PanelWebPort, AgentPort: quadlet.PanelAgentPort}
-	for _, image := range []string{p.Registry + "/panel-api:" + p.Version, p.Registry + "/panel-web:" + p.Version} {
-		if _, err := h.Podman(ctx, panelUser, "pull", "--quiet", image); err != nil {
-			return err
-		}
-	}
-	changed := map[string]bool{}
-	for name, content := range quadlet.PanelUnits(p) {
-		c, err := h.WriteUnit(panelUser, name, content)
-		if err != nil {
-			return err
-		}
-		changed[strings.TrimSuffix(name, ".container")+".service"] = c
-	}
-	if _, err := h.Systemctl(ctx, panelUser, "daemon-reload"); err != nil {
-		return err
-	}
-	for _, svc := range []string{"cf-panel-api.service", "cf-panel-queue.service", "cf-panel-scheduler.service", "cf-panel-web.service"} {
-		// A service that operates keeps its old unit until it starts again, for example with no
-		// HTTPS port. Thus start a service again when its unit changed.
-		verb := "start"
-		if changed[svc] {
-			verb = "restart"
-		}
-		if _, err := h.Systemctl(ctx, panelUser, verb, svc); err != nil {
-			return err
-		}
+	p := quadlet.Panel{Registry: *registry, Version: version, Domain: *domain, DataDir: filepath.Join(cfg.DataDir, "panel"), Gvisor: quadlet.Runtime{RunscPath: gv.Link(), Platform: cfg.GVisorPlatform},
+		APIPort: quadlet.PanelAPIPort, WebPort: quadlet.PanelWebPort, AgentPort: quadlet.PanelAgentPort, DatabasePort: quadlet.PanelDatabasePort}
+	edge := caddy.New(cfg.CaddyAdmin)
+	deps := &actions.Deps{Host: h, Run: run, Edge: edge, Gvisor: p.Gvisor}
+	if err := deps.InstallPanel(ctx, p); err != nil {
+		return fmt.Errorf("start the panel: %w", err)
 	}
 	// The agent service starts after the join, so this command starts the edge proxy itself.
 	// The edge proxy sends /api to the API and all other paths to the web UI.
-	edge := caddy.New(cfg.CaddyAdmin)
-	deps := &actions.Deps{Host: h, Run: run, Edge: edge, Gvisor: p.Gvisor}
 	if err := deps.EnsureEdge(ctx, *registry+"/edge:"+version, cfg.DataDir); err != nil {
 		return fmt.Errorf("start the edge proxy: %w", err)
 	}
