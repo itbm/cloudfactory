@@ -1,6 +1,10 @@
 # The shared PostgreSQL service image. The release pipeline signs it like all other images (FR-1101).
 # SPDX-License-Identifier: AGPL-3.0-only
-FROM docker.io/library/postgres:17
+FROM docker.io/library/postgres:18
+# From release 18, the base image keeps the data in /var/lib/postgresql/18/docker. The agent
+# mounts the data directory at /var/lib/postgresql/data, and the user postgres cannot go through
+# the mount directory (mode 0700) to a directory below it. Thus PGDATA is the mount itself.
+ENV PGDATA=/var/lib/postgresql/data
 # CVE scan, finding 3: take the security fixes that are newer than the base image. The release
 # workflow gives CF_REFRESH a new value for each build, so this step never comes from the build
 # cache.

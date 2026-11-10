@@ -27,6 +27,8 @@ jobs:
           - { image: sftp, context: images/sftp, file: images/sftp/Containerfile, args: '' }
           - { image: panel-api, context: ., file: images/panel-api/Containerfile, args: '' }
           - { image: panel-web, context: ., file: images/panel-web/Containerfile, args: '' }
+          - { image: mariadb, context: images/mariadb, file: images/mariadb/Containerfile, args: '' }
+          - { image: postgresql, context: images/postgresql, file: images/postgresql/Containerfile, args: '' }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -46,6 +48,41 @@ jobs:
           IMAGE: ${{ matrix.image }}
         run: |
           set -eu
+          if [ "$IMAGE" = mariadb ] || [ "$IMAGE" = postgresql ]; then
+            # The settings of quadlet.DatabaseUnit. The user cf-db owns the data directory (mode
+            # 0700) on a server, and that user is root in the container.
+            data="$RUNNER_TEMP/db"
+            sudo install -d -o root -g root -m 0700 "$data"
+            caps="--cap-drop=all --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER --cap-add SETUID --cap-add SETGID"
+            if [ "$IMAGE" = mariadb ]; then
+              # shellcheck disable=SC2086 # caps holds several options.
+              docker run -d --name smoke $caps --security-opt no-new-privileges --read-only --tmpfs /tmp --tmpfs /run/mysqld \
+                -v "$data:/var/lib/mysql" -e MARIADB_ROOT_PASSWORD=smoke -e MYSQL_PWD=smoke -e MARIADB_ROOT_HOST=localhost \
+                -e MARIADB_AUTO_UPGRADE=1 mariadb:test
+              query() { docker exec smoke mariadb --user=root --skip-column-names --execute='SELECT VERSION()'; }
+              marker=mysql
+            else
+              # shellcheck disable=SC2086 # caps holds several options.
+              docker run -d --name smoke $caps --security-opt no-new-privileges --read-only --tmpfs /tmp --tmpfs /var/run/postgresql \
+                --shm-size 256m -v "$data:/var/lib/postgresql/data" -e POSTGRES_PASSWORD=smoke \
+                -e 'POSTGRES_INITDB_ARGS=--auth-host=scram-sha-256 --auth-local=trust' postgresql:test
+              query() { docker exec smoke psql --username=postgres --tuples-only --no-align --command='SELECT version()'; }
+              marker=PG_VERSION
+            fi
+            version=""
+            for _ in $(seq 1 60); do
+              version=$(query 2>/dev/null || true)
+              [ -n "$version" ] && break
+              sleep 2
+            done
+            docker logs smoke
+            docker inspect -f '{{.State.Running}}' smoke | grep -q true
+            echo "server version: $version"
+            [ -n "$version" ]
+            # The data files are in the mount, not in a directory of the container.
+            sudo test -e "$data/$marker"
+            exit 0
+          fi
           if [ "$IMAGE" = sftp ]; then
             # The capabilities of quadlet.SftpUnit. sshd makes the host keys and answers with
             # its version line.
@@ -84,7 +121,7 @@ jobs:
             # container. With no DAC_OVERRIDE, root cannot read the key of the runner user.
             sudo chown -R root:root "$work/data"
             docker network create smoke
-            docker run -d --name smoke-db --network smoke -e POSTGRES_USER=cloudfactory -e POSTGRES_PASSWORD=smoke -e POSTGRES_DB=cloudfactory postgres:17
+            docker run -d --name smoke-db --network smoke -e POSTGRES_USER=cloudfactory -e POSTGRES_PASSWORD=smoke -e POSTGRES_DB=cloudfactory postgres:18
             docker run -d --name smoke --network smoke --cap-drop=all --security-opt no-new-privileges \
               -p 127.0.0.1:18080:8080 -p 127.0.0.1:18443:8443 -v "$work/data:/data" \
               -e "APP_KEY=base64:$(openssl rand -base64 32)" -e QUEUE_CONNECTION=database \
