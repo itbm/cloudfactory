@@ -7,6 +7,38 @@ server. All updates are signed, and each update has a health check and an automa
 This repository holds release 0.1 (Foundation). Refer to [docs/status.md](docs/status.md) for the
 items that are complete and the items that are not complete.
 
+![The Websites page of the panel. It shows each website with its runtime, status, certificate, and CPU and memory use.](docs/screenshots/readme/websites.png)
+
+## Screenshots
+
+These screenshots show the web panel of release 0.1 on the panel API, with sample data. Click a
+screenshot to see it at full size.
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="docs/screenshots/readme/website-overview.png"><img src="docs/screenshots/readme/website-overview.png" alt="The overview page of a website" width="100%"></a>
+      <p>Each website has a page with its runtime, resource limits, domains, SFTP access and backups.</p>
+    </td>
+    <td width="50%" valign="top">
+      <a href="docs/screenshots/readme/new-website.png"><img src="docs/screenshots/readme/new-website.png" alt="The New website form" width="100%"></a>
+      <p>To make a website, select the domain, the application, the runtime and the plan.</p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="docs/screenshots/readme/updates.png"><img src="docs/screenshots/readme/updates.png" alt="The Updates page with the runtime images and the servers" width="100%"></a>
+      <p>Each runtime is a signed container image. A rollout updates the websites in stages and rolls back a website if its health check fails.</p>
+    </td>
+    <td width="50%" valign="top">
+      <a href="docs/screenshots/readme/server.png"><img src="docs/screenshots/readme/server.png" alt="The page of a server" width="100%"></a>
+      <p>Each server has a page with its operating system updates, update policy, resource use and container tools.</p>
+    </td>
+  </tr>
+</table>
+
+Refer to [docs/screenshots](docs/screenshots/README.md) for screenshots of all pages.
+
 ## Components
 
 | Directory              | Component                                                                 |
