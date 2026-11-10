@@ -185,6 +185,7 @@ else
 	echo 'FAIL: the agent and the firewall use different UID ranges for the website users'
 fi
 # Audit finding R9: needrestart restarts the services after an update, but not the agent.
+# shellcheck disable=SC2016 # The pattern is text of the script, not a variable of this test.
 if grep -q '^cat >/etc/needrestart/conf.d/50-cloudfactory.conf' "$HERE/install.sh" && grep -qF '$nrconf{override_rc}{qr(^cf-agent\.service$)} = 0;' "$HERE/install.sh" &&
 	! grep -q '"needrestart", "-r", "a", "-b"' "$HERE/../agent/internal/hostupdate/hostupdate.go"; then
 	PASS=$((PASS + 1))

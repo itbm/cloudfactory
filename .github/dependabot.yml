@@ -1,4 +1,6 @@
 # CF-17: the workflows pin each action to a commit SHA. Dependabot proposes the updates.
+# Audit finding S12: Dependabot also proposes the updates of the PHP, JavaScript and Go
+# packages, and of the base images of the containers.
 version: 2
 updates:
   - package-ecosystem: github-actions
@@ -8,3 +10,36 @@ updates:
     groups:
       actions:
         patterns: ['*']
+
+  - package-ecosystem: composer
+    directory: /api
+    schedule:
+      interval: weekly
+    groups:
+      php:
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directory: /web
+    schedule:
+      interval: weekly
+    groups:
+      javascript:
+        update-types: [minor, patch]
+
+  - package-ecosystem: gomod
+    directories: [/agent, /cli]
+    schedule:
+      interval: weekly
+    groups:
+      go:
+        update-types: [minor, patch]
+
+  # The base images. Each directory in images/ has one Containerfile.
+  - package-ecosystem: docker
+    directories: ['/images/*']
+    schedule:
+      interval: weekly
+    groups:
+      base-images:
+        update-types: [minor, patch]
