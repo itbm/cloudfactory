@@ -82,16 +82,24 @@ func (a *app) backupPolicy(ctx context.Context, args []string) error {
 		return err
 	}
 	if len(args) > 0 && args[0] == "password" {
-		// One restic repository password for all servers. Keep a copy in a safe place:
-		// without it, nobody can restore from the backups.
-		var out map[string]any
+		// Audit finding S2: each server has its own restic repository and password. Keep a
+		// copy in a safe place: without it, nobody can restore the backups of that server.
+		var out struct {
+			Repositories []map[string]any `json:"repositories"`
+			Shared       map[string]any   `json:"shared"`
+		}
 		if err := a.api.Do(ctx, http.MethodGet, "/backup-policy/repository-password", nil, nil, &out); err != nil {
 			return err
 		}
 		if a.json {
 			return a.printJSON(out)
 		}
-		fmt.Fprintln(a.out, cell(out["password"]))
+		rows := out.Repositories
+		if out.Shared != nil {
+			out.Shared["server"] = "(all servers, earlier version)"
+			rows = append(rows, out.Shared)
+		}
+		a.table(rows, []string{"server", "repository", "password"})
 		return nil
 	}
 	if len(args) == 0 || args[0] != "set" {

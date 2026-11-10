@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Enums\AgentAction;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\JobResource;
+use App\Models\Server;
 use App\Models\Setting;
 use App\Models\Website;
 use App\Services\Audit;
@@ -64,9 +65,38 @@ class BackupController extends Controller
             'unixUser' => $website->unix_user,
             'kind' => $kind,
             'databases' => $website->databases()->orderBy('name')->get(['engine', 'name'])->map(fn ($d) => ['engine' => $d->engine, 'name' => $d->name])->all(),
-            'target' => $policy['target'],
+            'target' => self::repository($website->server),
             'retention' => $retention,
         ];
+    }
+
+    /**
+     * Audit finding S2: the restic repository of a server. Each server has its own repository
+     * below the backup target, and its own password (Server::backupPassword). A person who
+     * has root access to one server can then not read the backups of the other servers.
+     */
+    public static function repository(Server $server): string
+    {
+        return self::serverTarget((string) (self::policy()['target'] ?? ''), $server->id);
+    }
+
+    /**
+     * Adds "servers/ID" to the path of a restic repository. The forms are
+     * "s3:host/bucket/path", "b2:bucket:path", "azure:container:/path" and "gs:bucket:/path".
+     */
+    public static function serverTarget(string $target, string $serverId): string
+    {
+        $suffix = 'servers/'.$serverId;
+        [$kind, $rest] = array_pad(explode(':', $target, 2), 2, '');
+        if ($kind === 's3') {
+            return $kind.':'.rtrim($rest, '/').'/'.$suffix;
+        }
+        [$bucket, $path] = array_pad(explode(':', $rest, 2), 2, '');
+        $path = rtrim($path, '/');
+        // With no path, B2 has "b2:bucket:servers/ID". Azure and Google have a path from "/".
+        $start = $path === '' ? ($kind === 'b2' ? '' : '/') : $path.'/';
+
+        return "{$kind}:{$bucket}:{$start}{$suffix}";
     }
 
     /** The number of manual backups that the panel keeps for each website. */
@@ -123,7 +153,10 @@ class BackupController extends Controller
             'item' => $data['item'] ?? null,
             'dumpSha256' => $dumpHash,
             'deleteExtra' => $removeNewFiles,
-            'target' => self::policy()['target'],
+            // A snapshot from before the change to one repository for each server is in the
+            // repository that all servers used. AgentClient then sends the old password.
+            'target' => $snapshot->shared_repository ? self::policy()['target'] : self::repository($website->server),
+            ...($snapshot->shared_repository ? ['sharedRepository' => true] : []),
         ], "Restore {$what}", $website);
         Audit::record($request, 'Restored from backup', "{$website->name} {$what}".($removeNewFiles ? ', new files removed' : ''), $website->customer_id);
 
@@ -148,28 +181,39 @@ class BackupController extends Controller
     }
 
     /**
-     * The password of the restic repository. All servers use the same repository, so the panel
-     * keeps one password, encrypted, and sends it with each backup job. An administrator needs
-     * it to restore with restic directly, for example when the panel is lost.
+     * The restic repository and the repository password of each server that has websites.
+     * An administrator needs them to restore with restic directly, for example when the panel
+     * is lost. The panel keeps the passwords encrypted and sends each one only to its server.
+     *
+     * "shared" is the repository that all servers used before audit finding S2. It is null
+     * when the panel never used it.
      */
     public function showRepositoryPassword(Request $request): JsonResponse
     {
-        Audit::record($request, 'Viewed backup repository password', 'restic repository');
+        Audit::record($request, 'Viewed backup repository passwords', 'restic repositories');
+        $hasTarget = (bool) preg_match(self::TARGET, (string) (self::policy()['target'] ?? ''));
+        $shared = self::sharedRepositoryPassword();
 
-        return response()->json(['password' => self::repositoryPassword()]);
+        return response()->json([
+            'repositories' => Server::whereJsonContains('roles', 'web')->orderBy('name')->get()->map(fn (Server $s) => [
+                'serverId' => $s->id,
+                'server' => $s->name,
+                'repository' => $hasTarget ? self::repository($s) : null,
+                'password' => $s->backupPassword(),
+            ])->all(),
+            'shared' => $shared === null ? null : ['repository' => $hasTarget ? self::policy()['target'] : null, 'password' => $shared],
+        ]);
     }
 
-    /** The password of the restic repository. The panel makes it at the first use. */
-    public static function repositoryPassword(): string
+    /**
+     * The password of the repository that all servers used before audit finding S2, or null.
+     * The panel uses it only to restore a snapshot from that time.
+     */
+    public static function sharedRepositoryPassword(): ?string
     {
         $value = Setting::get('backup_repository_password');
-        if (is_string($value)) {
-            return Crypt::decryptString($value);
-        }
-        $password = base64_encode(random_bytes(48));
-        Setting::put('backup_repository_password', Crypt::encryptString($password));
 
-        return $password;
+        return is_string($value) ? Crypt::decryptString($value) : null;
     }
 
     /** FR-902: the administrator sets the retention policy. */

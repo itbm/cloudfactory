@@ -775,21 +775,40 @@ paths:
   /v1/backup-policy/repository-password:
     get:
       tags: [Backups]
-      summary: Get the password of the backup repository
+      summary: Get the backup repository and the repository password of each server
       description: >-
-        Administrators only. All servers use one restic repository with this password. Keep a
-        copy in a safe place: without it, you cannot restore with restic directly. The panel
-        records each request in the audit log.
+        Administrators only. Each server that has websites has its own restic repository below
+        the backup target, and its own repository password. The panel sends a password only to
+        its server. Keep a copy of all passwords in a safe place: without the password of a
+        server, you cannot restore the websites of that server with restic directly. Get the
+        passwords again after you add a server. The panel records each request in the audit log.
       responses:
         '200':
-          description: The password.
+          description: The repositories and their passwords.
           content:
             application/json:
               schema:
                 type: object
-                required: [password]
+                required: [repositories, shared]
                 properties:
-                  password: { type: string }
+                  repositories:
+                    type: array
+                    items:
+                      type: object
+                      required: [serverId, server, repository, password]
+                      properties:
+                        serverId: { type: string }
+                        server: { type: string, description: The name of the server. }
+                        repository: { type: string, nullable: true, description: 'The restic repository of the server, for example s3:s3.amazonaws.com/bucket/servers/SERVER_ID. Null when no backup target is set.' }
+                        password: { type: string }
+                  shared:
+                    type: object
+                    nullable: true
+                    description: The repository that all servers used in an earlier version of the panel. The panel uses it only to restore the snapshots from that time. Null when the panel never used it.
+                    required: [repository, password]
+                    properties:
+                      repository: { type: string, nullable: true }
+                      password: { type: string }
         '403': { $ref: '#/components/responses/Forbidden' }
 
   /v1/jobs:

@@ -169,6 +169,7 @@ class JobOutcome
     {
         BackupRemoval::updateOrCreate(['website_id' => $website->id], [
             'website_name' => $website->name,
+            'server_id' => $website->server_id,
             'remove_after' => now()->addDays(max(0, (int) config('cloudfactory.deleted_website_backup_days', 30))),
         ]);
 

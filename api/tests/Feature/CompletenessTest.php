@@ -15,6 +15,7 @@ use App\Services\JobDispatcher;
 use App\Services\JobOutcome;
 use App\Services\RolloutEngine;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
@@ -49,23 +50,79 @@ class CompletenessTest extends TestCase
         $job->server->update(['certificate_pem' => 'x', 'certificate_fingerprint' => str_repeat('a', 64)]);
         Http::fake(['*' => Http::response(['jobId' => $jobId])]);
         app(AgentClient::class)->send($job->fresh('server'));
-        $password = BackupController::repositoryPassword();
-        Http::assertSent(fn ($r) => (array) $r->data()['credentials'] === ['AWS_ACCESS_KEY_ID' => 'AKIA1', 'AWS_SECRET_ACCESS_KEY' => 'secret', 'RESTIC_PASSWORD' => $password] && $r->data()['target'] === self::POLICY['target']);
+        // Audit finding S2: the job has the repository and the password of its server.
+        $password = $job->server->backupPassword();
+        Http::assertSent(fn ($r) => (array) $r->data()['credentials'] === ['AWS_ACCESS_KEY_ID' => 'AKIA1', 'AWS_SECRET_ACCESS_KEY' => 'secret', 'RESTIC_PASSWORD' => $password]
+            && $r->data()['target'] === self::POLICY['target'].'/servers/'.$job->server_id);
     }
 
-    public function test_all_servers_use_one_repository_password_that_only_an_administrator_can_read(): void
+    public function test_each_server_has_its_own_repository_and_password_that_only_an_administrator_can_read(): void
     {
-        $admin = $this->user();
-        $this->actingWith($admin);
-        $first = $this->getJson('/api/v1/backup-policy/repository-password')->assertOk()->json('password');
-        $this->assertGreaterThanOrEqual(32, strlen($first));
-        $this->getJson('/api/v1/backup-policy/repository-password')->assertOk()->assertJsonPath('password', $first);
-        $this->assertSame($first, BackupController::repositoryPassword());
-        $this->assertStringNotContainsString($first, (string) DB::table('settings')->where('key', 'backup_repository_password')->value('value'));
-        $this->assertDatabaseHas('audit_entries', ['action' => 'Viewed backup repository password']);
+        Setting::put('backup_policy', self::POLICY);
+        $one = $this->server(['name' => 'web-1']);
+        $two = $this->server(['name' => 'web-2']);
+        // A server with no websites, for example a database server, has no repository.
+        $this->server(['name' => 'db-1', 'roles' => ['database']]);
+        $this->actingWith($this->user());
+        $rows = collect($this->getJson('/api/v1/backup-policy/repository-password')->assertOk()->assertJsonPath('shared', null)->json('repositories'))->keyBy('serverId');
+        $this->assertSame([$one->id, $two->id], $rows->keys()->sort()->values()->all());
+        $this->assertSame(self::POLICY['target'].'/servers/'.$one->id, $rows[$one->id]['repository']);
+        $this->assertGreaterThanOrEqual(32, strlen($rows[$one->id]['password']));
+        // A person who has the password of one server cannot read the repository of a different server.
+        $this->assertNotSame($rows[$one->id]['password'], $rows[$two->id]['password']);
+        // The password does not change, and it is not plain text in the database.
+        $this->assertSame($rows[$one->id]['password'], $one->backupPassword());
+        $this->getJson('/api/v1/backup-policy/repository-password')->assertOk()->assertJsonPath('repositories.0.password', $rows->firstWhere('server', $one->name)['password']);
+        $this->assertStringNotContainsString($rows[$one->id]['password'], (string) DB::table('servers')->where('id', $one->id)->value('backup_password'));
+        $this->assertDatabaseHas('audit_entries', ['action' => 'Viewed backup repository passwords']);
+        // The API never shows the password with a server.
+        $this->getJson("/api/v1/servers/{$one->id}")->assertOk()->assertDontSee($rows[$one->id]['password'])->assertJsonMissingPath('data.backupPassword');
 
         $this->actingWith($this->user(Role::Reseller));
         $this->getJson('/api/v1/backup-policy/repository-password')->assertForbidden();
+    }
+
+    public function test_the_repository_of_a_server_is_below_the_backup_target(): void
+    {
+        $id = '01hzy3v8k2m4n6p8q0r2s4t6v8';
+        foreach ([
+            's3:s3.amazonaws.com/bucket' => "s3:s3.amazonaws.com/bucket/servers/{$id}",
+            's3:s3.amazonaws.com/bucket/path/' => "s3:s3.amazonaws.com/bucket/path/servers/{$id}",
+            's3:https://storage.example.com:9000/bucket' => "s3:https://storage.example.com:9000/bucket/servers/{$id}",
+            'b2:bucket' => "b2:bucket:servers/{$id}",
+            'b2:bucket:cloudfactory/prod' => "b2:bucket:cloudfactory/prod/servers/{$id}",
+            'azure:container:/' => "azure:container:/servers/{$id}",
+            'azure:container:/cloudfactory' => "azure:container:/cloudfactory/servers/{$id}",
+            'gs:bucket:/' => "gs:bucket:/servers/{$id}",
+            'gs:bucket:/cloudfactory/' => "gs:bucket:/cloudfactory/servers/{$id}",
+        ] as $target => $want) {
+            $this->assertSame($want, BackupController::serverTarget($target, $id));
+            $this->assertMatchesRegularExpression(BackupController::TARGET, $want);
+        }
+    }
+
+    public function test_a_snapshot_from_the_repository_of_all_servers_is_restored_with_the_old_password(): void
+    {
+        Setting::put('backup_policy', self::POLICY);
+        Setting::put('backup_repository_password', Crypt::encryptString('the-old-password'));
+        $website = $this->website($this->customer(), $this->server(), $this->image());
+        $website->server->update(['certificate_pem' => 'x', 'certificate_fingerprint' => str_repeat('a', 64)]);
+        $old = Snapshot::create(['website_id' => $website->id, 'kind' => 'scheduled', 'restic_id' => 'abc12345', 'databases' => [], 'mailboxes' => [], 'shared_repository' => true]);
+        $new = Snapshot::create(['website_id' => $website->id, 'kind' => 'scheduled', 'restic_id' => 'def67890', 'databases' => [], 'mailboxes' => []]);
+        $this->actingWith($this->user());
+        Http::fake(['*' => Http::response(['jobId' => 'x'])]);
+
+        $id = $this->postJson("/api/v1/websites/{$website->id}/snapshots/{$old->id}/restore", ['scope' => 'website'])->assertAccepted()->json('job.id');
+        app(AgentClient::class)->send(AgentJob::with('server')->findOrFail($id));
+        Http::assertSent(fn ($r) => str_contains($r->url(), 'Restore') && $r->data()['snapshotId'] === 'abc12345' && $r->data()['target'] === self::POLICY['target']
+            && $r->data()['credentials']->RESTIC_PASSWORD === 'the-old-password' && ! array_key_exists('sharedRepository', $r->data()));
+
+        $id = $this->postJson("/api/v1/websites/{$website->id}/snapshots/{$new->id}/restore", ['scope' => 'website'])->assertAccepted()->json('job.id');
+        app(AgentClient::class)->send(AgentJob::with('server')->findOrFail($id));
+        Http::assertSent(fn ($r) => str_contains($r->url(), 'Restore') && $r->data()['snapshotId'] === 'def67890' && $r->data()['target'] === self::POLICY['target'].'/servers/'.$website->server_id
+            && $r->data()['credentials']->RESTIC_PASSWORD === $website->server->backupPassword());
+
+        $this->getJson('/api/v1/backup-policy/repository-password')->assertOk()->assertJsonPath('shared', ['repository' => self::POLICY['target'], 'password' => 'the-old-password']);
     }
 
     public function test_nightly_backups_apply_the_retention_and_remove_forgotten_snapshots(): void

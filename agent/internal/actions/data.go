@@ -477,8 +477,8 @@ func newRepo(target string, creds map[string]string) (repo, error) {
 func (d *Deps) restic(ctx context.Context, r repo, args ...string) (string, error) {
 	base := []string{"--repo", r.target}
 	if r.creds["RESTIC_PASSWORD"] == "" {
-		// The panel sends one password for all servers (RESTIC_PASSWORD). A local key file is
-		// only for a manual set-up: two servers with different keys cannot share a repository.
+		// The panel sends the password of the repository of this server (RESTIC_PASSWORD).
+		// A local key file is only for a manual set-up.
 		base = append(base, "--password-file", d.ResticPasswordFile)
 	}
 	base = append(base, "--json", "--retry-lock", "30m")

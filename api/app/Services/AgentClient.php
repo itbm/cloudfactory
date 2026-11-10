@@ -27,6 +27,11 @@ class AgentClient
     {
         $server = $job->server;
         $config = config('cloudfactory.agent');
+        $payload = $job->payload;
+        // Audit finding S2: each server has its own repository password. A restore of a
+        // snapshot from before that change uses the password that all servers had.
+        $shared = (bool) ($payload['sharedRepository'] ?? false);
+        unset($payload['sharedRepository']);
 
         Http::baseUrl($server->agent_url)
             ->timeout($config['timeout'])
@@ -41,12 +46,12 @@ class AgentClient
             ->withHeaders(['Connect-Protocol-Version' => '1'])
             ->post('/'.self::SERVICE.'/'.$job->action->value, [
                 'jobId' => $job->id,
-                ...$job->payload,
+                ...$payload,
                 // The credentials of the object storage and the password of the repository are not
                 // in the job. The panel adds the current values each time that it sends the job.
                 ...($job->action->usesBackupRepository() ? ['credentials' => (object) [
                     ...BackupController::credentials(),
-                    'RESTIC_PASSWORD' => BackupController::repositoryPassword(),
+                    'RESTIC_PASSWORD' => $shared ? (string) BackupController::sharedRepositoryPassword() : $server->backupPassword(),
                 ]] : []),
             ])
             ->throw();

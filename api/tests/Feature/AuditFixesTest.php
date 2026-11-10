@@ -428,28 +428,34 @@ class AuditFixesTest extends TestCase
         $delete = app(JobDispatcher::class)->dispatch($server, AgentAction::DeleteWebsite, [], 'Delete', $website);
         app(JobOutcome::class)->finish($delete, JobState::Succeeded);
         $this->assertModelMissing($website);
-        $this->assertDatabaseHas('backup_removals', ['website_id' => $website->id, 'website_name' => 'acme.example']);
+        $this->assertDatabaseHas('backup_removals', ['website_id' => $website->id, 'website_name' => 'acme.example', 'server_id' => $server->id]);
+        // Audit finding S2: each server removes the backups from its own repository.
+        $other = $this->server();
 
         // In the first 30 days, the weekly job keeps the backups.
         Carbon::setTestNow(Carbon::parse('2026-11-08 03:00:00', 'UTC'));
         $this->artisan('cloudfactory:backups')->assertSuccessful();
-        $prune = AgentJob::where('action', AgentAction::PruneBackups->value)->sole();
+        $this->assertSame(2, AgentJob::where('action', AgentAction::PruneBackups->value)->count());
+        $prune = AgentJob::where('action', AgentAction::PruneBackups->value)->where('server_id', $server->id)->sole();
         $this->assertSame([], $prune->payload['forgetWebsiteIds']);
+        $this->assertSame("s3:s3.example.com/bucket/servers/{$server->id}", $prune->payload['target']);
         app(JobOutcome::class)->finish($prune, JobState::Succeeded);
         $this->assertDatabaseCount('backup_removals', 1);
 
         // After 30 days, the job removes them. The record stays until the job is complete.
         Carbon::setTestNow(Carbon::parse('2026-12-06 03:00:00', 'UTC'));
         $this->artisan('cloudfactory:backups')->assertSuccessful();
-        $prune = AgentJob::where('action', AgentAction::PruneBackups->value)->latest('id')->firstOrFail();
+        $prune = AgentJob::where('action', AgentAction::PruneBackups->value)->where('server_id', $server->id)->latest('id')->firstOrFail();
         $this->assertSame([$website->id], $prune->payload['forgetWebsiteIds']);
         $this->assertSame(['Remove backups of deleted websites', 'Remove unused data'], $prune->steps);
+        // The other server does not have the backups of this website.
+        $this->assertSame([], AgentJob::where('action', AgentAction::PruneBackups->value)->where('server_id', $other->id)->latest('id')->firstOrFail()->payload['forgetWebsiteIds']);
         app(JobOutcome::class)->finish($prune, JobState::Failed, 'restic: exit status 1');
         $this->assertDatabaseCount('backup_removals', 1);
 
         Carbon::setTestNow(Carbon::parse('2026-12-13 03:00:00', 'UTC'));
         $this->artisan('cloudfactory:backups')->assertSuccessful();
-        $prune = AgentJob::where('action', AgentAction::PruneBackups->value)->latest('id')->firstOrFail();
+        $prune = AgentJob::where('action', AgentAction::PruneBackups->value)->where('server_id', $server->id)->latest('id')->firstOrFail();
         app(JobOutcome::class)->finish($prune, JobState::Succeeded);
         $this->assertDatabaseCount('backup_removals', 0);
         Carbon::setTestNow();

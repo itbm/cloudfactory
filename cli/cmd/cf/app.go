@@ -55,7 +55,7 @@ Usage:
   cf backups restore WEBSITE SNAPSHOT [--scope website|database|file] [--item ITEM] [--remove-new-files]
                        --remove-new-files is for a full website. It deletes the files that are not in the backup.
   cf backups policy
-  cf backups policy password   Show the restic repository password. Keep a copy in a safe place.
+  cf backups policy password   Show the restic repository and its password for each server. Keep a copy in a safe place.
   cf backups policy set [--daily N] [--weekly N] [--monthly N] [--time HH:MM] [--target REPOSITORY]
                         [--credentials-from-env | --remove-credentials]
                        The credentials come from AWS_ACCESS_KEY_ID, B2_ACCOUNT_ID and the other restic variables.

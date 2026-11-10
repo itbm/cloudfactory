@@ -18,6 +18,9 @@ return new class extends Migration
             // The website has no row in "websites" now, so there is no foreign key.
             $table->string('website_id', 26)->unique();
             $table->string('website_name');
+            // Audit finding S2: each server has its own repository. The server of the website
+            // removes the backups.
+            $table->string('server_id', 26)->index();
             $table->timestamp('remove_after')->index();
             $table->timestamps();
         });
