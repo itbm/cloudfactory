@@ -55,8 +55,8 @@ ports are open only on it.
 The ports are not on `127.0.0.1`, because of gVisor. pasta sends a connection from
 `127.0.0.1` to `127.0.0.1` in the network namespace of the container, and gVisor
 (`network=sandbox`) does not listen there. A connection to `169.254.77.1` comes from a
-different address, so pasta sends it through its network device into gVisor. Podman bridge
-networks have the same problem for all connections, so websites do not use them.
+different address, so pasta sends it through its network device into gVisor. Rootless Podman
+bridge networks have the same problem for all connections, so websites do not use them.
 
 An nftables rule refuses a new connection to a website port on `169.254.77.1` unless it comes
 from root or from the user `cf-edge`. pasta opens each connection as the Unix user of the
@@ -119,7 +119,7 @@ setting `sftpPort` in `/etc/cloudfactory/agent.json`). The SSH service of the ho
 the administrators. The image `sftp` has OpenSSH and `libnss-extrausers`.
 
 ```text
- SFTP client ──► port 2200 ──► cf-sftp (root Podman, gVisor, pasta)
+ SFTP client ──► port 2200 ──► cf-sftp (root Podman, gVisor, bridge network)
                                  │ sshd: key check, chroot, change to the website user
                                  ▼
                      /srv/cloudfactory/sites/<user>/app  (owner: the website user)
@@ -127,6 +127,16 @@ the administrators. The image `sftp` has OpenSSH and `libnss-extrausers`.
 
 - Root runs the container, with a Quadlet unit in `/etc/containers/systemd/cf-sftp.container`.
   A rootless container cannot change to the UIDs of the website users.
+- The container uses the bridge network of Podman, because Podman has the `pasta` network
+  mode only for rootless containers. Podman publishes the SFTP port with a destination NAT
+  rule, so the connection comes through the network device into gVisor, and sshd sees the
+  real client address. The firewall drops the traffic from the bridge to the ports on
+  `169.254.77.1`. The bridge has IPv4 only, so an SFTP client must use the IPv4 address of
+  the server.
+- Podman adds the NAT rule to the firewall when the container starts. A start of
+  `nftables.service` removes all rules, so the unit starts the container again after it
+  (`PartOf=nftables.service`). After `systemctl reload nftables`, run
+  `systemctl restart cf-sftp`.
 - The container mounts these host directories:
 
   | Host directory | In the container | Access |

@@ -242,6 +242,6 @@ install it, check these items, and report a problem in the issues of the reposit
 - Files that you upload with SFTP have the correct owner in the website container
   (`--userns=keep-id` in gVisor). The SFTP image was checked with Docker and the same
   capabilities, not in gVisor.
-- The SFTP container (OpenSSH as root in gVisor, with `pasta`) answers on port 2200 and sees
-  the real client address.
+- The SFTP container (OpenSSH as root in gVisor, with the bridge network of Podman) answers
+  on port 2200 and sees the real client address.
 - A backup and a restore of a website with databases.

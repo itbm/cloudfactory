@@ -210,7 +210,9 @@ func TestSftpUnit(t *testing.T) {
 		"ContainerName=cf-sftp",
 		"Pull=never",
 		"GlobalArgs=--runtime=/usr/local/bin/runsc --runtime-flag=platform=systrap --runtime-flag=network=sandbox",
-		"Network=pasta",
+		"Network=bridge",
+		"After=nftables.service",
+		"PartOf=nftables.service",
 		"PublishPort=2222:2200",
 		"Volume=/srv/cloudfactory/sites:/srv/cloudfactory/sites",
 		"Volume=/etc/cloudfactory/sftp:/etc/cloudfactory/sftp:ro",
@@ -230,6 +232,10 @@ func TestSftpUnit(t *testing.T) {
 	// and a new SELinux label on the website files would stop the website containers.
 	if strings.Contains(u, "homes") || strings.Contains(u, ":Z") || strings.Contains(u, "Network=host") || strings.Contains(u, "DAC_OVERRIDE") {
 		t.Errorf("unexpected setting:\n%s", u)
+	}
+	// Audit finding B3: root runs this container, and Podman refuses the pasta network for root.
+	if strings.Contains(u, "Network=pasta") {
+		t.Errorf("the SFTP unit uses the pasta network:\n%s", u)
 	}
 	if !strings.Contains(SftpUnit(Sftp{Image: "x"}), "PublishPort=2200:2200\n") {
 		t.Error("the default SFTP port is not 2200")

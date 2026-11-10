@@ -405,15 +405,25 @@ func SftpUnit(s Sftp) string {
 	return Header + strings.Join([]string{
 		"[Unit]",
 		"Description=Cloudfactory SFTP service for the websites",
+		// Podman adds the rules of the published port to the firewall when the container
+		// starts. A start of nftables.service removes all rules ("flush ruleset"), so the
+		// container starts after it, and starts again when nftables.service starts again.
+		"After=nftables.service",
+		"PartOf=nftables.service",
 		"",
 		"[Container]",
 		"ContainerName=cf-sftp",
 		"Image=" + s.Image,
 		"Pull=never",
 		"GlobalArgs=" + s.Gvisor.GlobalArgs(),
-		// pasta gives the container its own network namespace, and sshd sees the real client
-		// address. The container has no access to ServiceAddress or to other containers.
-		"Network=pasta",
+		// Audit finding B3: Podman refuses the pasta network for a container that root runs
+		// ("pasta networking is only supported for rootless mode"), so the service did not
+		// start. The bridge network of Podman also gives the container its own network
+		// namespace, and sshd sees the real client address, because the published port is a
+		// destination NAT rule. The firewall of the install script drops all traffic from the
+		// bridge to the host except to the public ports, so the container has no access to
+		// the ports on ServiceAddress. The other containers are not on the bridge.
+		"Network=bridge",
 		fmt.Sprintf("PublishPort=%d:%d", port, SftpContainerPort),
 		// No ":Z": a new SELinux label would change the label of the files of all websites.
 		// Only the website directories. The home directories (with the Podman storage of each

@@ -12,7 +12,9 @@ The product specification, section 6.4, gives the requirements.
 - The container has no capabilities, cannot get new privileges and has a read-only root file
   system.
 - Each container has its own network namespace (`pasta`). A container cannot connect to a
-  different container directly.
+  different container directly. The SFTP container is the only container that root runs. It
+  uses the bridge network of Podman, and the firewall drops its traffic to the private
+  service address.
 - Each container port is open only on the private service address `169.254.77.1`. An
   nftables rule lets only root and the edge proxy open a website port there, so a website
   cannot connect to a different website. All websites can reach the database ports.
