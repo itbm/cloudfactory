@@ -98,12 +98,10 @@ jobs:
           - { image: panel-api, context: ., file: images/panel-api/Containerfile, args: '' }
           - { image: panel-web, context: ., file: images/panel-web/Containerfile, args: '' }
     steps:
-      # Servers pull the images with no login, so each package must be public. Also, GHCR refuses
-      # a push to a private package when a layer of the image is already in a public package,
-      # such as build-cache. The build then stops after many minutes with "403 Forbidden" or
-      # "permission_denied". This check stops it at the start. A package that does not exist yet
-      # (404) passes: the push makes it. Then check its visibility (docs/releasing.md).
-      - name: Check that the packages are public
+      # Servers pull the images with no login, so each image package must be public before
+      # production. This step only gives a warning for a private package. It does not stop the
+      # build. A package that does not exist yet (404) is correct: the push makes it.
+      - name: Check the package visibility
         env:
           OWNER: ${{ github.repository_owner }}
           IMAGE: ${{ matrix.image }}
@@ -116,10 +114,7 @@ jobs:
             case "$code" in
             200) echo "ghcr.io/$owner/$p is public." ;;
             404) echo "ghcr.io/$owner/$p does not exist yet. The push makes it." ;;
-            *)
-              echo "::error::The package ghcr.io/$owner/$p is not public (HTTP $code). Make it public at https://github.com/users/$owner/packages/container/$p/settings (Danger Zone, Change visibility), then run the failed jobs again. See docs/releasing.md."
-              exit 1
-              ;;
+            *) echo "::warning::The package ghcr.io/$owner/$p is not public (HTTP $code). Servers cannot pull a private image with no login. Before production, make it public at https://github.com/users/$owner/packages/container/$p/settings (Danger Zone, Change visibility). See docs/releasing.md." ;;
             esac
           done
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0

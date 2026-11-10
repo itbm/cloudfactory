@@ -3,8 +3,10 @@
 name: Rebuild images
 
 on:
-  schedule:
-    - cron: '17 4 * * *'
+  # The daily schedule is off until production, to save CI minutes. To turn it on again, remove
+  # the "#" from the next two lines. You can start the workflow from the Actions tab at any time.
+  # schedule:
+  #   - cron: '17 4 * * *'
   workflow_dispatch:
 
 permissions:
