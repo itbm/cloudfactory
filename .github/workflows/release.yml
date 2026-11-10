@@ -200,8 +200,12 @@ jobs:
           COSIGN_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
           COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
           IMAGE: ${{ env.REGISTRY }}/${{ matrix.image }}@${{ steps.build.outputs.digest }}
+        # --recursive also signs the image of each platform in the multi-platform index. Podman
+        # selects the image for its platform and checks the signature of that image, not of
+        # the index. With only the index signed, Podman refuses the image with "A signature
+        # was required, but no signature exists".
         run: |
-          cosign sign --yes --key env://COSIGN_KEY "$IMAGE"
+          cosign sign --yes --recursive --key env://COSIGN_KEY "$IMAGE"
           cosign attest --yes --key env://COSIGN_KEY --type spdxjson --predicate sbom.spdx.json "$IMAGE"
       - name: Record the digest for the publish job
         env:
@@ -349,6 +353,14 @@ jobs:
             read -r image tag digest < "$f"
             cosign verify --key cosign.pub "$REGISTRY/$image@$digest" > /dev/null
             echo "$image@$digest: the signature is correct."
+            # Podman checks the image of its platform, so each platform needs a signature too.
+            children=$(skopeo inspect --raw "docker://$REGISTRY/$image@$digest" |
+              jq -r '.manifests[]? | select(.platform.os != "unknown") | .digest')
+            test -n "$children" || { echo "::error::$image@$digest has no platform images."; exit 1; }
+            for child in $children; do
+              cosign verify --key cosign.pub "$REGISTRY/$image@$child" > /dev/null
+              echo "$image@$child: the signature is correct."
+            done
           done
       # A tag copy keeps the digest, so the signatures stay valid.
       - name: Tag the images
