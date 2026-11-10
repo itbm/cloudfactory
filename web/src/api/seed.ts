@@ -262,7 +262,7 @@ export const servers: Server[] = [
   server({
     id: "srv_web01", name: "web-01", location: "London", roles: ["web", "database"], cpuPercent: 23, memoryPercent: 58, diskPercent: 41,
     bareMetal: true, gvisorPlatform: "kvm",
-    services: services(["cloudfactory-agent", "podman", "edge-proxy (Caddy)", "MariaDB 11.8", "PostgreSQL 18", "SFTP (cf-sftp)", "nftables"]),
+    services: services(["cloudfactory-agent", "podman", "edge-proxy (Caddy)", "MariaDB 12.3", "PostgreSQL 18", "SFTP (cf-sftp)", "nftables"]),
     pendingUpdates: [{ name: "openssl", from: "3.5.1-1", to: "3.5.1-1+deb13u1", security: true }],
   }),
   server({
@@ -425,7 +425,7 @@ export function seed(): State {
       { id: "img_caddy", name: "Edge proxy · Caddy", family: "edge", reference: "ghcr.io/cloudfactory/caddy", running: "2.11.4", websites: "All", policy: "automatic", policyNote: "One server at a time", custom: false, signatureVerified: true, digest: "sha256:e8f3a2…61bc" },
       { id: "img_stalwart", name: "Mail · Stalwart", family: "mail", reference: "ghcr.io/cloudfactory/stalwart", running: "0.16", websites: "All mail", policy: "manual", custom: false, signatureVerified: true, digest: "sha256:7c40de…aa17" },
       { id: "img_pdns", name: "DNS · PowerDNS", family: "dns", reference: "ghcr.io/cloudfactory/powerdns", running: "5.0.1", websites: "All zones", policy: "automatic", policyNote: "One DNS server at a time", custom: false, signatureVerified: true, digest: "sha256:12bb90…d3e5" },
-      { id: "img_mariadb", name: "MariaDB 11.8", family: "database", reference: "ghcr.io/cloudfactory/mariadb", running: "11.8.3", websites: "All databases", policy: "manual", custom: false, signatureVerified: true, digest: "sha256:9a0e61…5f22" },
+      { id: "img_mariadb", name: "MariaDB 12.3", family: "database", reference: "ghcr.io/cloudfactory/mariadb", running: "12.3.3", websites: "All databases", policy: "manual", custom: false, signatureVerified: true, digest: "sha256:9a0e61…5f22" },
     ],
     rollout: {
       id: "rol_42",

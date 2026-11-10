@@ -247,7 +247,7 @@ function DbFields(props: { engine: DatabaseEngine; setEngine: (e: DatabaseEngine
         {(["mariadb", "postgresql"] as const).map((e) => (
           <label className="radio-card" key={e}>
             <input type="radio" name="engine" checked={props.engine === e} onChange={() => props.setEngine(e)} />
-            <span><strong>{ENGINE[e]}</strong><span>{e === "mariadb" ? "MariaDB 11.8" : "PostgreSQL 18"}</span></span>
+            <span><strong>{ENGINE[e]}</strong><span>{e === "mariadb" ? "MariaDB 12.3" : "PostgreSQL 18"}</span></span>
           </label>
         ))}
       </fieldset>

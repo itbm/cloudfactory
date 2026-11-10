@@ -1,6 +1,6 @@
 # Cloudfactory panel API
 
-This is the API of the Cloudfactory panel. It uses Laravel 13 and PHP 8.3 or later.
+This is the API of the Cloudfactory panel. It uses Laravel 13 and PHP 8.4 or later.
 
 The web panel and the `cf` command line tool use only this API. The document
 [`../openapi/openapi.yaml`](../openapi/openapi.yaml) describes each route. A test makes sure

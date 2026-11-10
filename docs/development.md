@@ -5,7 +5,7 @@
 | Tool         | Version          | For                        |
 | ------------ | ---------------- | -------------------------- |
 | Node.js      | 22 or later      | The web panel              |
-| PHP          | 8.3 or 8.4       | The panel API              |
+| PHP          | 8.4 or later     | The panel API              |
 | Composer     | 2                | The panel API              |
 | Go           | 1.24             | The agent and the CLI      |
 | buf          | 1                | The agent protocol         |
@@ -107,7 +107,7 @@ The workflow [`ci.yml`](../.github/workflows/ci.yml) runs for each pull request.
 jobs:
 
 - **web**: type check, tests and build.
-- **api**: tests and Pint on PHP 8.3 and PHP 8.4. The tests run with SQLite and with
+- **api**: tests and Pint on PHP 8.4. The tests run with SQLite and with
   PostgreSQL.
 - **agent**: buf generate check, gofmt, go vet, tests with the race detector, and builds for
   x86-64 and ARM64.

@@ -43,3 +43,9 @@ updates:
     groups:
       base-images:
         update-types: [minor, patch]
+    ignore:
+      # MariaDB stays on a long-term support release. Dependabot cannot tell a long-term support
+      # release from a short-term rolling release, so change to the next long-term support
+      # release by hand.
+      - dependency-name: library/mariadb
+        update-types: ['version-update:semver-major']

@@ -38,7 +38,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        php: ['8.3', '8.4']
+        php: ['8.4']
     defaults:
       run:
         working-directory: api
@@ -46,7 +46,7 @@ jobs:
     # PostgreSQL release as images/postgresql.
     services:
       postgres:
-        image: postgres:17
+        image: postgres:18
         env:
           POSTGRES_USER: cloudfactory
           POSTGRES_PASSWORD: cloudfactory
