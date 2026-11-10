@@ -267,6 +267,10 @@ fi
 # the script. A service user cannot open /root or a home directory, and rootless Podman then
 # stops with "cannot chdir to /root: Permission denied".
 cd /
+# The SSH session of root sets these variables. They point to the files of root, for example
+# the D-Bus session of root in /run/user/0. The commands as the service users must not use them.
+unset DBUS_SESSION_BUS_ADDRESS XDG_RUNTIME_DIR XDG_SESSION_ID XDG_SESSION_TYPE XDG_SESSION_CLASS \
+	XDG_CONFIG_HOME XDG_DATA_HOME XDG_CACHE_HOME XDG_STATE_HOME
 
 STEP=0
 STEPS=13
@@ -388,7 +392,28 @@ ln -sfn "$dir/runsc" /usr/local/bin/runsc
 step "Install the AppArmor profiles"
 # Spec section 6.4 and R-10: AppArmor stays on. These profiles let rootless Podman and gVisor
 # use user namespaces on Ubuntu.
-cat >/etc/apparmor.d/cloudfactory-podman <<'PROFILE'
+# AppArmor 4.0 and later has its own profile "podman" for /usr/bin/podman, with the same
+# permissions. Two profiles for one program conflict, and AppArmor then runs Podman with no
+# profile. Ubuntu then does not let rootless Podman use user namespaces, and Podman stops with
+# "failed to reexec: Permission denied". Thus add a profile for Podman only if the system does
+# not have one, and remove the profile of an earlier installation.
+podman_profile=""
+for file in /etc/apparmor.d/*; do
+	[ -f "$file" ] && [ "$file" != /etc/apparmor.d/cloudfactory-podman ] || continue
+	if grep -Eq '^[[:space:]]*profile[[:space:]]+[^[:space:]]+[[:space:]]+/usr/bin/podman([[:space:]]|$)' "$file"; then
+		podman_profile=$file
+	fi
+done
+apparmor_on=0
+command -v apparmor_parser >/dev/null 2>&1 && [ -d /sys/kernel/security/apparmor ] && apparmor_on=1
+if [ -n "$podman_profile" ]; then
+	info "Podman uses the AppArmor profile $podman_profile."
+	if [ -f /etc/apparmor.d/cloudfactory-podman ]; then
+		[ "$apparmor_on" -eq 0 ] || apparmor_parser -R /etc/apparmor.d/cloudfactory-podman 2>/dev/null || true
+		rm -f /etc/apparmor.d/cloudfactory-podman
+	fi
+else
+	cat >/etc/apparmor.d/cloudfactory-podman <<'PROFILE'
 abi <abi/4.0>,
 include <tunables/global>
 profile cloudfactory-podman /usr/bin/podman flags=(unconfined) {
@@ -396,6 +421,7 @@ profile cloudfactory-podman /usr/bin/podman flags=(unconfined) {
   include if exists <local/cloudfactory-podman>
 }
 PROFILE
+fi
 cat >/etc/apparmor.d/cloudfactory-runsc <<'PROFILE'
 abi <abi/4.0>,
 include <tunables/global>
@@ -404,8 +430,9 @@ profile cloudfactory-runsc /usr/local/lib/cloudfactory/gvisor/*/{runsc,gvisor-bi
   include if exists <local/cloudfactory-runsc>
 }
 PROFILE
-if command -v apparmor_parser >/dev/null 2>&1 && [ -d /sys/kernel/security/apparmor ]; then
-	apparmor_parser -r /etc/apparmor.d/cloudfactory-podman /etc/apparmor.d/cloudfactory-runsc
+if [ "$apparmor_on" -eq 1 ]; then
+	apparmor_parser -r /etc/apparmor.d/cloudfactory-runsc
+	[ -n "$podman_profile" ] || apparmor_parser -r /etc/apparmor.d/cloudfactory-podman
 fi
 
 step "Set the image signature policy"
