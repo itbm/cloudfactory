@@ -10,6 +10,7 @@ use App\Models\Plan;
 use App\Models\Server;
 use App\Models\User;
 use App\Models\Website;
+use App\Services\DomainPolicy;
 use Laravel\Sanctum\Sanctum;
 
 /** Small helpers that make the data that the tests need. */
@@ -57,6 +58,23 @@ trait Hosting
     protected function user(Role $role = Role::Administrator, ?Customer $customer = null): User
     {
         return User::factory()->create(['role' => $role, 'customer_id' => $customer?->id]);
+    }
+
+    /** A DNS that answers TXT queries from the array. The test can change the array later. */
+    protected function fakeTxt(array &$txt): DomainPolicy
+    {
+        $policy = new class($txt) extends DomainPolicy
+        {
+            public function __construct(public array &$txt) {}
+
+            protected function txtRecords(string $name): array
+            {
+                return $this->txt[$name] ?? [];
+            }
+        };
+        $this->app->instance(DomainPolicy::class, $policy);
+
+        return $policy;
     }
 
     /** Sign in as the user with a token that has these scopes. */

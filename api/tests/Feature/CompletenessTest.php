@@ -290,16 +290,23 @@ class CompletenessTest extends TestCase
 
     public function test_silent_servers_go_offline_and_old_jobs_go_again_or_fail(): void
     {
-        $server = $this->server(['last_seen_at' => now()->subMinutes(6)]);
+        $silent = $this->server(['last_seen_at' => now()->subMinutes(6)]);
+        $server = $this->server(['last_seen_at' => now()]);
         $job = app(JobDispatcher::class)->dispatch($server, AgentAction::Reboot, [], 'Reboot');
         $job->update(['state' => JobState::Running]);
-        AgentJob::whereKey($job->id)->update(['updated_at' => now()->subMinutes(11)]);
+        $waiting = app(JobDispatcher::class)->dispatch($silent, AgentAction::Reboot, [], 'Reboot');
+        $waiting->update(['state' => JobState::Running]);
+        AgentJob::whereKey([$job->id, $waiting->id])->update(['updated_at' => now()->subMinutes(11)]);
         $old = app(JobDispatcher::class)->dispatch($server, AgentAction::InstallHostUpdates, [], 'Updates');
         AgentJob::whereKey($old->id)->update(['created_at' => now()->subHours(4)]);
 
         $this->artisan('cloudfactory:check-jobs')->assertSuccessful();
-        $this->assertSame('offline', $server->fresh()->state);
+        $this->assertSame('offline', $silent->fresh()->state);
+        $this->assertSame('healthy', $server->fresh()->state);
         $this->assertNotNull($job->fresh()->resent_at);
+        $this->assertSame(JobState::Queued, $job->fresh()->state);
+        // Audit finding R11: the panel does not send a job to a server that is offline.
+        $this->assertNull($waiting->fresh()->resent_at);
         $this->assertSame(JobState::Failed, $old->fresh()->state);
     }
 

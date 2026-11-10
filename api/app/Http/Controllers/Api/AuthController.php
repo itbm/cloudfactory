@@ -51,6 +51,14 @@ class AuthController extends Controller
             throw ValidationException::withMessages(['email' => 'The email, the password or the code is not correct.']);
         }
         if ($user->isSuspended()) {
+            // Audit finding S8: with no second factor, the answer for a suspended account must
+            // not show that the password is correct. A user who gave a correct code has shown
+            // more than the password, and gets the reason.
+            if (! $user->totp_secret) {
+                LoginThrottle::fail($data['email'], $ip);
+                throw ValidationException::withMessages(['email' => 'The email, the password or the code is not correct.']);
+            }
+
             return response()->json(['message' => 'This account is suspended. Contact your provider.'], 403);
         }
         LoginThrottle::clear($data['email'], $ip);
@@ -66,8 +74,24 @@ class AuthController extends Controller
     public const SESSION = 'Web session';
 
     /**
+     * Audit finding S8: sign out. The panel deletes the token of this request, so that a copy
+     * of the token does not work after the sign-out.
+     */
+    public function logout(Request $request): JsonResponse
+    {
+        $token = $request->user()->currentAccessToken();
+        if ($token && method_exists($token, 'delete')) {
+            $token->delete();
+        }
+
+        return response()->json(null, 204);
+    }
+
+    /**
      * R-01: change the password. The user gives the current password and, when TOTP is on, a
-     * code. The panel then signs out all other sessions of the user.
+     * code. The panel then signs out all other sessions of the user. Audit finding S8: it also
+     * deletes the API tokens of the user, because a person who knew the old password could
+     * make a token.
      */
     public function changePassword(Request $request): JsonResponse
     {
@@ -78,9 +102,9 @@ class AuthController extends Controller
         ]);
         $user = self::sessionUser($request);
         self::checkSecondFactor($user, $data['currentPassword'], $data['totp'] ?? '', 'currentPassword');
-        $user->forceFill(['password' => $data['password']])->save();
+        $user->forceFill(['password' => $data['password'], 'must_change_password' => false])->save();
         $current = $user->currentAccessToken();
-        $user->tokens()->where('name', self::SESSION)->when($current?->id, fn ($q, $id) => $q->where('id', '!=', $id))->delete();
+        $user->tokens()->when($current?->id, fn ($q, $id) => $q->where('id', '!=', $id))->delete();
         Audit::record($request, 'Changed password', $user->email);
 
         return response()->json(null, 204);
@@ -154,11 +178,17 @@ class AuthController extends Controller
      */
     private static function sessionUser(Request $request): User
     {
-        $user = $request->user();
-        $token = $user->currentAccessToken();
-        abort_unless($token && method_exists($token, 'can') && $token->can('*') && $token->getAttribute('name') === self::SESSION, 403, 'Sign in to the panel to change your sign-in settings. An API token cannot change them.');
+        abort_unless(self::isSession($request), 403, 'Sign in to the panel to change your sign-in settings. An API token cannot change them.');
 
-        return $user;
+        return $request->user();
+    }
+
+    /** True when the request has the token of a sign-in, and not an API token. */
+    public static function isSession(Request $request): bool
+    {
+        $token = $request->user()?->currentAccessToken();
+
+        return $token && method_exists($token, 'can') && $token->can('*') && $token->getAttribute('name') === self::SESSION;
     }
 
     /** @throws ValidationException */
@@ -210,6 +240,9 @@ class AuthController extends Controller
             'role' => $user->role->value,
             'customerId' => $user->customer_id,
             'totpEnabled' => $user->totp_secret !== null,
+            // The user has a temporary password. The API refuses all other work until the user
+            // sets a new password (EnsureActive).
+            'mustChangePassword' => (bool) $user->must_change_password,
         ]);
     }
 

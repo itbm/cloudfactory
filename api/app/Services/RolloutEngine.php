@@ -8,6 +8,7 @@ use App\Models\AgentJob;
 use App\Models\Image;
 use App\Models\Rollout;
 use App\Models\Website;
+use Illuminate\Support\Facades\DB;
 
 /**
  * FR-1103 to FR-1107: update an image in stages (canary, 10%, 50%, then all websites).
@@ -85,9 +86,22 @@ class RolloutEngine
         );
     }
 
+    /**
+     * Audit finding R2: two jobs of one stage can end at the same time. Each result reads the
+     * rollout with a lock, so that no result is lost and the next stage starts one time only.
+     */
     public function jobFinished(Rollout $rollout, AgentJob $job): void
     {
-        $rollout->refresh();
+        DB::transaction(function () use ($rollout, $job) {
+            $locked = Rollout::lockForUpdate()->find($rollout->id);
+            if ($locked) {
+                $this->recordResult($locked, $job);
+            }
+        });
+    }
+
+    private function recordResult(Rollout $rollout, AgentJob $job): void
+    {
         // A job that was running during a roll back can still succeed. Put that website back too.
         if ($rollout->state === 'rolled_back') {
             if ($job->state === JobState::Succeeded && ($website = Website::find($job->website_id))) {

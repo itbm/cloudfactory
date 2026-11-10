@@ -32,7 +32,13 @@ class WebsiteController extends Controller
 {
     use Concerns;
 
-    public const DOMAIN = '/^(?!-)[a-z0-9-]{1,63}(\.[a-z0-9-]{1,63})+$/';
+    /**
+     * A lower-case domain name. Audit finding R5: the agent has the same rule
+     * (agent/internal/validate), and the two test it with testdata/names.json. Each label
+     * starts and ends with a letter or a digit, and the last label is not a number, so that an
+     * IP address is not a domain name.
+     */
+    public const DOMAIN = '/^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+(?!\d+$)[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/';
 
     public function __construct(private JobDispatcher $jobs, private DomainPolicy $domains) {}
 
@@ -71,6 +77,7 @@ class WebsiteController extends Controller
             throw ValidationException::withMessages(['customerId' => 'Select a customer that you control.']);
         }
         $customer = Customer::with('plan')->findOrFail($customerId);
+        $this->refuseSuspended($customer);
         // CF-07: only an administrator, or the reseller of the customer, selects a different plan.
         $planId = $data['planId'] ?? $customer->plan_id;
         if ($planId !== $customer->plan_id && ! self::canChoosePlan($user, $customer, $planId)) {
@@ -152,6 +159,11 @@ class WebsiteController extends Controller
         $plan = null;
         if (isset($data['planId']) && $data['planId'] !== $website->plan_id) {
             $plan = Plan::findOrFail($data['planId']);
+            // Audit finding R6: the website must be in the limits of the new plan.
+            $databases = $website->databases()->count();
+            if ($databases > $plan->databases) {
+                throw ValidationException::withMessages(['planId' => "The {$plan->name} plan allows {$plan->databases} databases. This website has {$databases}."]);
+            }
             $changes['plan_id'] = $plan->id;
         }
         if (isset($data['limits'])) {
@@ -194,6 +206,9 @@ class WebsiteController extends Controller
     {
         $website = $this->findWebsite($request, $id);
         $data = $request->validate(['action' => ['required', Rule::in(['start', 'stop', 'restart'])]]);
+        if ($data['action'] !== 'stop') {
+            $this->refuseSuspended($website->customer);
+        }
         $website->update(['status' => match ($data['action']) {
             'start' => WebsiteStatus::Starting,
             'stop' => WebsiteStatus::Stopping,
@@ -209,16 +224,24 @@ class WebsiteController extends Controller
     public function staging(Request $request, string $id): JsonResponse
     {
         $source = $this->findWebsite($request, $id);
+        $this->refuseSuspended($source->customer);
         $name = 'staging.'.preg_replace('/^www\./', '', $source->name);
         if (Website::where('name', $name)->exists()) {
             throw ValidationException::withMessages(['name' => "{$name} exists."]);
+        }
+        // Audit finding R6: the copy gets a copy of each database, and has the same plan.
+        $databases = $source->databases()->count();
+        if ($databases > $source->plan->databases) {
+            throw ValidationException::withMessages(['name' => "The {$source->plan->name} plan allows {$source->plan->databases} databases for each website. This website has {$databases}."]);
         }
         $proved = DomainController::checkName($this->domains, $name, $source->customer_id, $request);
         $domain = DomainController::newDomain($this->domains, $request, $source->customer_id, $name, DomainKind::Primary, $proved);
         $copy = DB::transaction(function () use ($source, $name, $domain) {
             // CF-09: a staging copy is a website, so the plan limit applies.
             self::checkWebsiteLimit($source->customer);
-            $copy = $source->replicate(['usage', 'managed_by_terraform']);
+            // Audit finding R7: the copy has no SFTP account on the server, so it does not get
+            // the SFTP settings of the source. The owner turns SFTP on for the copy.
+            $copy = $source->replicate(['usage', 'managed_by_terraform', 'sftp_enabled', 'sftp_keys']);
             $copy->fill([
                 'name' => $name,
                 'application' => "Staging copy of {$source->name}",
@@ -296,11 +319,14 @@ class WebsiteController extends Controller
             throw ValidationException::withMessages(['name' => "The {$customer->plan->name} plan allows {$customer->plan->websites} websites."]);
         }
         // R-07: the websites of the customers of a reseller count against the plan of the reseller.
-        if ($customer->reseller_id) {
-            $reseller = Customer::with('plan')->lockForUpdate()->findOrFail($customer->reseller_id);
+        // Audit finding R6: the same total applies when the reseller makes a website for itself.
+        if ($customer->reseller_id || $customer->role === 'reseller') {
+            $reseller = $customer->reseller_id ? Customer::with('plan')->lockForUpdate()->findOrFail($customer->reseller_id) : $customer;
             $ids = Customer::where('id', $reseller->id)->orWhere('reseller_id', $reseller->id)->pluck('id');
             if (Website::whereIn('customer_id', $ids)->count() >= $reseller->plan->websites) {
-                throw ValidationException::withMessages(['name' => "The {$reseller->plan->name} plan of your provider allows {$reseller->plan->websites} websites in total."]);
+                throw ValidationException::withMessages(['name' => $customer->reseller_id
+                    ? "The {$reseller->plan->name} plan of your provider allows {$reseller->plan->websites} websites in total."
+                    : "The {$reseller->plan->name} plan allows {$reseller->plan->websites} websites in total, for you and your customers."]);
             }
         }
     }

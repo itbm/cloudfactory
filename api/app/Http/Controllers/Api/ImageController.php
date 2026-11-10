@@ -17,6 +17,14 @@ use Illuminate\Validation\Rule;
 /** FR-307 and FR-1106 to FR-1110: runtime images and their update policy. */
 class ImageController extends Controller
 {
+    /**
+     * An image reference with no tag. Audit finding R5: it must start with the host name of a
+     * registry (a name with a dot or a port, or "localhost"), because the agent and the
+     * signature policy do not accept a short name such as "nginx". The agent has the same
+     * rule, and the two test it with testdata/names.json.
+     */
+    public const REFERENCE = '#^(?=[^/]*[.:]|localhost/)[a-z0-9]([a-z0-9.-]*[a-z0-9])?(:\d+)?(/[a-z0-9._-]+)+$#';
+
     public function index(): JsonResponse
     {
         return response()->json(['data' => Image::withCount('websites')->orderBy('name')->get()->map(fn (Image $i) => self::present($i))]);
@@ -43,7 +51,7 @@ class ImageController extends Controller
     {
         $data = $request->validate([
             'name' => ['required', 'string', 'max:100'],
-            'reference' => ['required', 'max:200', 'regex:#^([a-z0-9.-]+(:\d+)?/)?[a-z0-9._/-]+$#'],
+            'reference' => ['required', 'max:200', 'regex:'.self::REFERENCE],
             'tag' => ['required', 'regex:/^[\w][\w.-]{0,127}$/'],
             // FR-1110: automatic or manual updates for each image.
             'policy' => ['required', Rule::in([UpdatePolicy::Automatic->value, UpdatePolicy::Manual->value])],

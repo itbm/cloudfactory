@@ -197,12 +197,24 @@ class SecurityTest extends TestCase
         $real = $this->website($owner, $server, $image, 'real.example');
         $squat->domains()->create(['name' => 'brand.example', 'kind' => 'alias', 'verification_token' => 'cf-x']);
         $this->actingWith($this->user(Role::Owner, $owner));
+        $txt = [];
+        $policy = $this->fakeTxt($txt);
 
-        $this->postJson("/api/v1/websites/{$real->id}/domains", ['name' => 'brand.example', 'kind' => 'alias'])->assertAccepted();
+        // Audit finding S5: with no proof, the panel does not remove the domain of the other
+        // customer. The answer gives the TXT record that proves control.
+        $this->postJson("/api/v1/websites/{$real->id}/domains", ['name' => 'brand.example', 'kind' => 'alias'])
+            ->assertJsonValidationErrors('name');
+        $this->assertSame($squat->id, Domain::where('name', 'brand.example')->sole()->website_id);
+
+        // With the TXT record, the real owner gets the domain, and it is verified at once.
+        $txt['_cloudfactory-challenge.brand.example'] = [$policy->claimToken($owner->id, 'brand.example')];
+        $this->postJson("/api/v1/websites/{$real->id}/domains", ['name' => 'brand.example', 'kind' => 'alias'])
+            ->assertAccepted()->assertJsonPath('domain.verified', true);
         $this->assertSame($real->id, Domain::where('name', 'brand.example')->sole()->website_id);
 
-        // A verified domain stays with its website.
-        $this->postJson("/api/v1/websites/{$real->id}/domains", ['name' => 'squat.example', 'kind' => 'alias'])->assertJsonValidationErrors(['name' => 'This domain is in use.']);
+        // A verified domain stays with its website while the customer has no proof.
+        $this->postJson("/api/v1/websites/{$real->id}/domains", ['name' => 'squat.example', 'kind' => 'alias'])->assertJsonValidationErrors('name');
+        $this->assertSame($squat->id, Domain::where('name', 'squat.example')->sole()->website_id);
     }
 
     /** CF-07: a website owner cannot select a different plan. */
@@ -248,7 +260,8 @@ class SecurityTest extends TestCase
 
         $this->assertSame(0, $owner->tokens()->count());
         $this->withToken($token)->getJson('/api/v1/websites')->assertUnauthorized();
-        $this->postJson('/api/v1/auth/login', ['email' => $owner->email, 'password' => 'password'])->assertForbidden();
+        // Audit finding S8: the answer does not show that the password is correct.
+        $this->postJson('/api/v1/auth/login', ['email' => $owner->email, 'password' => 'password'])->assertUnprocessable()->assertJsonMissingPath('token');
         $this->actingWith($owner);
         $this->getJson('/api/v1/websites')->assertForbidden()->assertJsonPath('message', 'This account is suspended. Contact your provider.');
     }

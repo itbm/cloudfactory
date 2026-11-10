@@ -79,7 +79,8 @@ class BackupController extends Controller
         $website = $this->findWebsite($request, $websiteId);
         $snapshot = $website->snapshots()->findOrFail($snapshotId);
         $data = $request->validate([
-            'scope' => ['required', Rule::in(['website', 'database', 'mailbox', 'file'])],
+            // Audit finding R5: the agent of this release has no mailbox restore.
+            'scope' => ['required', Rule::in(['website', 'database', 'file'])],
             'item' => ['required_unless:scope,website', 'nullable', 'string', 'max:1024'],
         ]);
         $dumpHash = null;
@@ -111,8 +112,14 @@ class BackupController extends Controller
     }
 
     /** The policy. The credentials are not in the response: only their names (write-only). */
-    public function showPolicy(): JsonResponse
+    public function showPolicy(Request $request): JsonResponse
     {
+        // Audit finding S9: a customer sees when the backups run and how long they stay. The
+        // address of the object storage and the names of its credentials are for administrators.
+        if (! $request->user()->isAdministrator()) {
+            return response()->json(array_intersect_key(self::policy(), array_flip(['daily', 'weekly', 'monthly', 'time'])));
+        }
+
         return response()->json(self::presentPolicy());
     }
 

@@ -16,6 +16,7 @@ use App\Http\Controllers\Api\RolloutController;
 use App\Http\Controllers\Api\RuntimeController;
 use App\Http\Controllers\Api\ServerController;
 use App\Http\Controllers\Api\SftpController;
+use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\WebsiteController;
 use Illuminate\Support\Facades\Route;
 
@@ -28,6 +29,7 @@ Route::prefix('v1')->group(function () {
     Route::post('auth/login', [AuthController::class, 'login'])->middleware('throttle:10,1');
 
     Route::middleware(['auth:sanctum', 'active'])->group(function () {
+        Route::post('auth/logout', [AuthController::class, 'logout']);
         Route::get('me', [AuthController::class, 'me']);
         // R-01: the user changes the password and turns TOTP on or off. Only a sign-in session can.
         Route::middleware('throttle:10,1')->group(function () {
@@ -50,10 +52,11 @@ Route::prefix('v1')->group(function () {
             Route::delete('websites/{id}', [WebsiteController::class, 'destroy']);
             Route::post('websites/{id}/power', [WebsiteController::class, 'power']);
             Route::post('websites/{id}/staging', [WebsiteController::class, 'staging']);
-            Route::post('websites/{websiteId}/domains', [DomainController::class, 'store']);
-            Route::post('websites/{websiteId}/domains/{name}/verify', [DomainController::class, 'verify']);
+            // Audit finding S5: limits for each customer (AppServiceProvider).
+            Route::post('websites/{websiteId}/domains', [DomainController::class, 'store'])->middleware('throttle:domain-changes');
+            Route::post('websites/{websiteId}/domains/{name}/verify', [DomainController::class, 'verify'])->middleware('throttle:domain-checks');
             Route::post('websites/{websiteId}/domains/{name}/primary', [DomainController::class, 'makePrimary']);
-            Route::post('websites/{websiteId}/domains/{name}/check', [DomainController::class, 'check']);
+            Route::post('websites/{websiteId}/domains/{name}/check', [DomainController::class, 'check'])->middleware('throttle:domain-checks');
             Route::delete('websites/{websiteId}/domains/{name}', [DomainController::class, 'destroy']);
             Route::put('websites/{websiteId}/sftp', [SftpController::class, 'update']);
             Route::put('websites/{websiteId}/runtime', [RuntimeController::class, 'update']);
@@ -111,6 +114,14 @@ Route::prefix('v1')->group(function () {
             Route::get('plans', [PlanController::class, 'index']);
             Route::post('plans', [PlanController::class, 'store'])->middleware('admin');
             Route::patch('plans/{id}', [PlanController::class, 'update'])->middleware('admin');
+        });
+
+        // Audit finding B5: the users who can sign in.
+        Route::middleware('scope:users')->group(function () {
+            Route::get('users', [UserController::class, 'index']);
+            Route::post('users', [UserController::class, 'store'])->middleware('throttle:30,1');
+            Route::post('users/{id}/reset-password', [UserController::class, 'resetPassword'])->whereNumber('id')->middleware('throttle:30,1');
+            Route::delete('users/{id}', [UserController::class, 'destroy'])->whereNumber('id');
         });
 
         Route::get('audit', [AuditController::class, 'index'])->middleware('scope:audit');

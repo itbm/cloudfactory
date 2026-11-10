@@ -10,6 +10,7 @@ use App\Models\Domain;
 use App\Models\Rollout;
 use App\Models\Snapshot;
 use App\Models\Website;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Spec section 6.3, step 7: the agent reports the result and the actual state.
@@ -19,29 +20,62 @@ class JobOutcome
 {
     public function __construct(private RolloutEngine $rollouts) {}
 
+    /**
+     * Audit finding R1: each change of the job state reads the job again with a lock, and
+     * changes only a job that is not complete. Thus a late event cannot move a complete job
+     * back to "running", and two final reports cannot both apply their result.
+     *
+     * @param  callable(AgentJob): array<string, mixed>  $change
+     */
+    private static function changeOpen(AgentJob $job, callable $change, bool $queuedOnly = false): bool
+    {
+        return DB::transaction(function () use ($job, $change, $queuedOnly) {
+            $current = AgentJob::lockForUpdate()->find($job->id);
+            if (! $current || $current->state->finished() || ($queuedOnly && $current->state !== JobState::Queued)) {
+                return false;
+            }
+            $current->update($change($current));
+            $job->setRawAttributes($current->getAttributes(), true);
+
+            return true;
+        });
+    }
+
+    /** The agent accepted the job. */
+    public function started(AgentJob $job): void
+    {
+        self::changeOpen($job, fn (AgentJob $j) => ['state' => JobState::Running, 'started_at' => $j->started_at ?? now()], queuedOnly: true);
+    }
+
+    /** The panel sends a job with no news to the agent again. False when the job is complete. */
+    public function queueAgain(AgentJob $job): bool
+    {
+        return self::changeOpen($job, fn () => ['state' => JobState::Queued, 'resent_at' => now()]);
+    }
+
     public function progress(AgentJob $job, int $step): void
     {
-        $job->update([
+        self::changeOpen($job, fn (AgentJob $j) => [
             'state' => JobState::Running,
-            'step' => min($step, count($job->steps)),
-            'started_at' => $job->started_at ?? now(),
+            'step' => min($step, count($j->steps)),
+            'started_at' => $j->started_at ?? now(),
         ]);
     }
 
     /** @param array<string, mixed> $result */
     public function finish(AgentJob $job, JobState $state, ?string $error = null, array $result = []): void
     {
-        if ($job->state->finished()) {
-            return;
-        }
-        $job->update([
+        $changed = self::changeOpen($job, fn (AgentJob $j) => [
             'state' => $state,
             // The agent has the passwords now. The panel does not keep them.
-            'payload' => self::withoutPasswords($job->payload),
-            'step' => $state === JobState::Succeeded ? count($job->steps) : $job->step,
+            'payload' => self::withoutPasswords($j->payload),
+            'step' => $state === JobState::Succeeded ? count($j->steps) : $j->step,
             'error' => $error,
             'finished_at' => now(),
         ]);
+        if (! $changed) {
+            return;
+        }
 
         $website = $job->website_id ? Website::find($job->website_id) : null;
         $state === JobState::Succeeded

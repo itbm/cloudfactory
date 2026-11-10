@@ -30,6 +30,8 @@ tags:
   - name: Images
     description: Administrators only.
   - name: Customers
+  - name: Users
+    description: The users who can sign in. These routes need the users scope.
   - name: Audit
   - name: Agent
     description: Only the agent on a server uses these routes. They use the agent token, not a user token.
@@ -63,8 +65,17 @@ paths:
                   token: { type: string }
                   expiresAt: { type: string, format: date-time }
         '422': { $ref: '#/components/responses/Invalid' }
-        '403': { description: The customer of the user is suspended. }
+        '403': { description: The customer of the user is suspended. The panel gives this answer only to a user who also gave a correct TOTP code. A user with no TOTP gets the 422 answer, so that the answer does not show that the password is correct. }
         '429': { description: Too many attempts from this address, or too many failed attempts for this account. The Retry-After header gives the number of seconds to wait. }
+
+  /v1/auth/logout:
+    post:
+      tags: [Auth]
+      summary: Sign out
+      description: Deletes the token of this request. The token does not work after this request.
+      responses:
+        '204': { description: Signed out. }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
 
   /v1/me:
     get:
@@ -82,7 +93,7 @@ paths:
     put:
       tags: [Auth]
       summary: Change your password
-      description: Needs a sign-in session token. An API token cannot change the password. Give the current password, and your TOTP code when TOTP is on. The panel signs out all other sessions of the user.
+      description: Needs a sign-in session token. An API token cannot change the password. Give the current password, and your TOTP code when TOTP is on. The panel signs out all other sessions of the user and deletes all API tokens of the user. A user with a temporary password (mustChangePassword) can use only this route, /v1/me and /v1/auth/logout. Each other route gives 403 with the code password_change_required.
       requestBody:
         required: true
         content:
@@ -320,6 +331,7 @@ paths:
     post:
       tags: [Websites]
       summary: Start, stop or restart a website
+      description: The panel refuses start and restart with status 409 while the customer of the website is suspended.
       requestBody:
         required: true
         content:
@@ -331,6 +343,7 @@ paths:
                 action: { type: string, enum: [start, stop, restart] }
       responses:
         '202': { $ref: '#/components/responses/JobOnly' }
+        '409': { description: The customer of the website is suspended. }
         '422': { $ref: '#/components/responses/Invalid' }
 
   /v1/websites/{id}/staging:
@@ -375,7 +388,10 @@ paths:
         sub-domain of one of these. The edge proxy serves the domain only after you prove that you
         control it. Add the TXT record in "verification", then verify the domain. A domain is
         verified at once when you are an administrator, or when it is a sub-domain of a verified
-        domain of the same customer.
+        domain of the same customer. A website can have 50 domains. A customer can add 30
+        domains in one hour (status 429 after that). When a different customer has the domain,
+        the error message gives a TXT record. With that record, you prove that you control the
+        domain, and the panel takes the domain from the other website.
       requestBody:
         required: true
         content:
@@ -700,7 +716,7 @@ paths:
     post:
       tags: [Backups]
       summary: Restore from a snapshot
-      description: FR-903. Restore the full website, one database, one mailbox or one file.
+      description: FR-903. Restore the full website, one database or one file.
       requestBody:
         required: true
         content:
@@ -709,8 +725,8 @@ paths:
               type: object
               required: [scope]
               properties:
-                scope: { type: string, enum: [website, database, mailbox, file] }
-                item: { type: string, description: 'The database name, mailbox or file path. A file path starts with "/" and cannot contain "..".' }
+                scope: { type: string, enum: [website, database, file] }
+                item: { type: string, description: 'The database name or file path. A file path starts with "/" and cannot contain "..".' }
       responses:
         '202': { $ref: '#/components/responses/JobOnly' }
         '422': { $ref: '#/components/responses/Invalid' }
@@ -719,6 +735,7 @@ paths:
     get:
       tags: [Backups]
       summary: Get the backup policy
+      description: An administrator gets all fields. Other users get only daily, weekly, monthly and time.
       responses:
         '200':
           description: The policy.
@@ -1145,7 +1162,7 @@ paths:
     post:
       tags: [Customers]
       summary: Add a customer
-      description: Administrators add resellers and owners. Resellers add owners only.
+      description: Administrators add resellers and owners. Resellers add owners only. With createUser, the panel also makes the first user of the customer, and the answer has the temporary password of that user one time.
       requestBody:
         required: true
         content:
@@ -1158,13 +1175,18 @@ paths:
                 email: { type: string, format: email }
                 role: { type: string, enum: [reseller, owner] }
                 planId: { type: string }
-                resellerId: { type: string, description: Administrators only. }
+                createUser: { type: boolean, default: false, description: Also make a user with the name and the email of the customer. An API token needs the users:write scope for this. }
       responses:
         '201':
           description: Added.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/Customer' }
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/Customer' }
+                  - type: object
+                    properties:
+                      user: { $ref: '#/components/schemas/NewUser' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '422': { $ref: '#/components/responses/Invalid' }
 
@@ -1174,7 +1196,7 @@ paths:
     patch:
       tags: [Customers]
       summary: Change a customer
-      description: A reseller sets the branding (FR-106). A reseller that sets a new panel domain must prove that it controls the domain, with a verified domain of its own or a DNS TXT record that the error message gives. A reseller can give only the plans in its allowedPlanIds, and cannot lift a suspension that an administrator set.
+      description: A customer cannot move to a plan that allows fewer websites than the customer has. A reseller sets the branding (FR-106). A reseller that sets a new panel domain must prove that it controls the domain, with a verified domain of its own or a DNS TXT record that the error message gives. A reseller can give only the plans in its allowedPlanIds, and cannot lift a suspension that an administrator set.
       requestBody:
         required: true
         content:
@@ -1243,13 +1265,86 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Plan' }
 
+  /v1/users:
+    get:
+      tags: [Users]
+      summary: List users
+      description: An administrator sees all users. A reseller sees its own users and the users of its customers. A website owner sees the users of its own account.
+      responses:
+        '200':
+          description: The users that you can see.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/ManagedUser' } }
+    post:
+      tags: [Users]
+      summary: Add a user
+      description: The panel sends no email. The answer has a temporary password one time. Give it to the user. The user must set a new password at the first sign-in. An administrator adds users for all customers. A reseller adds users for its own customers only. With customerId null, the new user is an administrator. Only an administrator in a sign-in session can do this. An API token cannot.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email, customerId]
+              properties:
+                name: { type: string, maxLength: 200 }
+                email: { type: string, format: email }
+                customerId: { type: [string, 'null'], description: The customer of the user. The role of the user is the role of the customer. Null makes an administrator. }
+      responses:
+        '201':
+          description: Added.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NewUser' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/users/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    delete:
+      tags: [Users]
+      summary: Delete a user
+      description: Deletes the user with all sessions and API tokens. You cannot delete your own user. The rules of POST /v1/users apply.
+      responses:
+        '204': { description: Deleted. }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/users/{id}/reset-password:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: integer } }
+    post:
+      tags: [Users]
+      summary: Give a user a new temporary password
+      description: The panel deletes all sessions and API tokens of the user, and removes the sign-in lock. The user must set a new password at the next sign-in. You cannot do this for your own user. The rules of POST /v1/users apply.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                removeTotp: { type: boolean, default: false, description: Also turn off TOTP, for a user who lost the device. }
+      responses:
+        '200':
+          description: The user with the temporary password.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NewUser' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   /v1/audit:
     get:
       tags: [Audit]
       summary: Read the audit log
-      description: FR-105. Each change, with who made it, when, and from which IP address.
+      description: FR-105. Each change, with who made it, when, and from which IP address. For a user who is not an administrator, an entry of an administrator or of the provider has the text "Administrator" or "Your provider" as the actor, and no IP address.
       parameters:
-        - { name: q, in: query, description: Text in the actor, action or target, or an exact IP address., schema: { type: string } }
+        - { name: q, in: query, description: Text in the action or the target. An administrator also searches the actor and an exact IP address., schema: { type: string, maxLength: 200 } }
         - { name: perPage, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
         - { name: page, in: query, schema: { type: integer, minimum: 1 } }
       responses:
@@ -1449,7 +1544,7 @@ components:
           additionalProperties: { type: array, items: { type: string } }
     Scope:
       type: string
-      enum: [websites:read, websites:write, databases:read, databases:write, backups:read, backups:write, servers:read, servers:write, images:read, images:write, customers:read, customers:write, audit:read, tokens:read, tokens:write]
+      enum: [websites:read, websites:write, databases:read, databases:write, backups:read, backups:write, servers:read, servers:write, images:read, images:write, customers:read, customers:write, users:read, users:write, audit:read, tokens:read, tokens:write]
     User:
       type: object
       properties:
@@ -1459,6 +1554,19 @@ components:
         role: { type: string, enum: [administrator, reseller, owner] }
         customerId: { type: [string, 'null'] }
         totpEnabled: { type: boolean }
+        mustChangePassword: { type: boolean, description: The user has a temporary password and must set a new one. }
+    ManagedUser:
+      allOf:
+        - { $ref: '#/components/schemas/User' }
+        - type: object
+          properties:
+            createdAt: { type: string, format: date-time }
+    NewUser:
+      allOf:
+        - { $ref: '#/components/schemas/ManagedUser' }
+        - type: object
+          properties:
+            temporaryPassword: { type: string, description: The panel shows this value one time only. }
     Token:
       type: object
       properties:
@@ -1538,7 +1646,7 @@ components:
         state: { $ref: '#/components/schemas/JobState' }
         steps: { type: array, items: { type: string } }
         step: { type: integer, description: The number of steps that are complete. }
-        error: { type: [string, 'null'] }
+        error: { type: [string, 'null'], description: An administrator gets the full error of the agent. Other users get a short text. }
         websiteId: { type: [string, 'null'] }
         serverId: { type: string }
         createdAt: { type: string, format: date-time }

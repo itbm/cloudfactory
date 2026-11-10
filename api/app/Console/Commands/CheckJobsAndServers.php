@@ -37,11 +37,17 @@ class CheckJobsAndServers extends Command
             $outcome->finish($job, JobState::Failed, 'The agent did not report the result in 3 hours.');
             $this->line("Failed job {$job->id}.");
         }
+        // Audit finding R11: a job of an offline server waits. The panel sends it when the
+        // server reports again (AgentController::report).
         $stale = (clone $open)->where('updated_at', '<', now()->subMinutes(10))
+            ->whereHas('server', fn ($q) => $q->where('state', '!=', 'offline'))
             ->where(fn ($q) => $q->whereNull('resent_at')->orWhere('resent_at', '<', now()->subMinutes(10)))->get();
         foreach ($stale as $job) {
-            // SendJobToAgent sends only a queued job.
-            $job->update(['state' => JobState::Queued, 'resent_at' => now()]);
+            // SendJobToAgent sends only a queued job. Audit finding R1: a job that completed
+            // after the query above stays complete.
+            if (! $outcome->queueAgain($job)) {
+                continue;
+            }
             SendJobToAgent::dispatch($job->id);
             $this->line("Sent job {$job->id} again.");
         }

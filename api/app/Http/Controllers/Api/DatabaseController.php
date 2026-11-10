@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\JobResource;
 use App\Models\Database;
 use App\Models\DatabaseUser;
+use App\Models\Website;
 use App\Services\Audit;
 use App\Services\DatabaseNames;
 use App\Services\JobDispatcher;
@@ -55,11 +56,14 @@ class DatabaseController extends Controller
         if ($withUser && DatabaseUser::where(['engine' => $data['engine'], 'name' => $name])->exists()) {
             throw ValidationException::withMessages(['name' => 'A database user with this name exists. Make the database with no user.']);
         }
-        if ($website->databases()->count() >= $website->plan->databases) {
-            throw ValidationException::withMessages(['name' => "The {$website->plan->name} plan allows {$website->plan->databases} databases."]);
-        }
 
         $database = DB::transaction(function () use ($website, $data, $name, $withUser) {
+            // Audit finding R6: the count and the new row are in one transaction. The lock on
+            // the website row stops two requests from passing the limit at the same time.
+            $locked = Website::with('plan')->lockForUpdate()->findOrFail($website->id);
+            if ($locked->databases()->count() >= $locked->plan->databases) {
+                throw ValidationException::withMessages(['name' => "The {$locked->plan->name} plan allows {$locked->plan->databases} databases."]);
+            }
             $database = $website->databases()->create(['engine' => $data['engine'], 'name' => $name]);
             if ($withUser) {
                 $user = $website->databaseUsers()->create(['engine' => $data['engine'], 'name' => $name, 'access' => 'website']);

@@ -26,6 +26,7 @@ class User extends Authenticatable
             'password' => 'hashed',
             'role' => Role::class,
             'totp_secret' => 'encrypted',
+            'must_change_password' => 'boolean',
         ];
     }
 

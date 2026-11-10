@@ -30,6 +30,7 @@ class AgentClient
 
         Http::baseUrl($server->agent_url)
             ->timeout($config['timeout'])
+            ->connectTimeout($config['connect_timeout'] ?? 3)
             ->withOptions([
                 'cert' => $config['client_certificate'],
                 'ssl_key' => $config['client_key'],
