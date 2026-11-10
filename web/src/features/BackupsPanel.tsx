@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAction, useStore } from "../api/hooks";
+import { LIVE } from "../api/mode";
 import { backupNow, partialDetails, restore, showWebsite, type RestoreScope } from "../api/store";
 import type { Snapshot } from "../api/types";
 import { Card, Field, FormError, JobRow, Modal } from "../components/ui";
@@ -65,6 +66,8 @@ export function BackupsPanel({ websiteId }: { websiteId?: string }) {
         </div>
         {shownSite === "all" && partialDetails() && <p className="card-body muted small">There are many websites, so this list shows only the websites that you opened. Select a website to see its snapshots.</p>}
         <p className="card-body muted small" style={{ paddingTop: 12 }}>
+          {/* Audit finding R8: the retention policy does not remove manual backups. */}
+          The panel keeps the newest {state.backupPolicy.manual ?? 10} manual backups of each website. The retention policy applies to the nightly backups only.{" "}
           {state.backupPolicy.target ? <>Snapshots are encrypted with restic and kept in object storage on a different server: <code>{state.backupPolicy.target}</code>.</> : "No object storage is set for backups. An administrator sets it in the backup policy."}
         </p>
       </Card>
@@ -73,9 +76,18 @@ export function BackupsPanel({ websiteId }: { websiteId?: string }) {
   );
 }
 
+/** What the agent of this release does for each restore (agent/internal/actions/data.go). */
+const RESTORE_NOTE: Record<RestoreScope["kind"], string> = {
+  website: "The panel puts the files from the backup into the website, and then starts the website again. It does not restore the databases: restore each database separately. Make a backup first if you want to keep the current version.",
+  database: "The panel replaces the database with the dump from the backup. Make a backup first if you want to keep the current version.",
+  mailbox: "",
+  file: "The panel replaces the file or the folder with the version from the backup. Make a backup first if you want to keep the current version.",
+};
+
 function RestoreDialog({ snapshot, onClose }: { snapshot: Snapshot; onClose: () => void }) {
   const [kind, setKind] = useState<RestoreScope["kind"]>("website");
   const [item, setItem] = useState("");
+  const [removeNewFiles, setRemoveNewFiles] = useState(false);
   const action = useAction(restore);
   const scope = (): RestoreScope => (kind === "website" ? { kind } : kind === "file" ? { kind, path: item } : { kind, name: item });
   const options = kind === "database" ? snapshot.databases : kind === "mailbox" ? snapshot.mailboxes : [];
@@ -92,7 +104,7 @@ function RestoreDialog({ snapshot, onClose }: { snapshot: Snapshot; onClose: () 
             className="btn btn-primary"
             disabled={kind !== "website" && !item}
             onClick={async () => {
-              const result = await action.run(snapshot.id, scope());
+              const result = await action.run(snapshot.id, scope(), kind === "website" && removeNewFiles);
               if (result.ok) onClose();
             }}
           >
@@ -105,11 +117,11 @@ function RestoreDialog({ snapshot, onClose }: { snapshot: Snapshot; onClose: () 
       <fieldset className="radio-cards">
         <legend>What to restore</legend>
         {([
-          ["website", "Full website", "Files, databases and mailboxes."],
+          ["website", "Full website", LIVE ? "All files of the website." : "Files, databases and mailboxes."],
           ["database", "One database", `${snapshot.databases.length} in this snapshot.`],
           ["mailbox", "One mailbox", `${snapshot.mailboxes.length} in this snapshot.`],
           ["file", "One file or folder", "Type the path."],
-        ] as const).map(([k, label, hint]) => (
+        ] as const).filter(([k]) => !LIVE || k !== "mailbox").map(([k, label, hint]) => (
           <label key={k} className="radio-card">
             <input type="radio" name="scope" checked={kind === k} disabled={(k === "database" && !snapshot.databases.length) || (k === "mailbox" && !snapshot.mailboxes.length)} onChange={() => { setKind(k); setItem(""); }} />
             <span><strong>{label}</strong><span>{hint}</span></span>
@@ -131,7 +143,14 @@ function RestoreDialog({ snapshot, onClose }: { snapshot: Snapshot; onClose: () 
           {(p) => <input {...p} className="input" value={item} onChange={(e) => setItem(e.target.value)} spellCheck={false} />}
         </Field>
       )}
-      <p className="muted small">{kind === "website" ? "The panel restores to a copy first and does a health check. Then it switches with no downtime." : "The panel replaces the current version. It makes a snapshot of the current version first."}</p>
+      {kind === "website" && (
+        <>
+          {/* Audit finding R8: without this option, a file that an attacker added stays after the restore. */}
+          <label className="check" style={{ marginTop: 12 }}><input type="checkbox" checked={removeNewFiles} onChange={(e) => setRemoveNewFiles(e.target.checked)} />Remove files that are not in the backup</label>
+          <p className="muted small">{removeNewFiles ? "The panel deletes each file of the website that the backup does not have. This cannot be undone. Use it after an attack." : "Files that were added after the backup stay."}</p>
+        </>
+      )}
+      <p className="muted small" style={{ marginTop: 12 }}>{LIVE ? RESTORE_NOTE[kind] : kind === "website" ? "The panel restores to a copy first and does a health check. Then it switches with no downtime." : "The panel replaces the current version. It makes a snapshot of the current version first."}</p>
     </Modal>
   );
 }

@@ -13,6 +13,7 @@ import { JobsPage } from "./pages/JobsPage";
 import { LoginPage } from "./pages/LoginPage";
 import { NewWebsitePage } from "./pages/NewWebsitePage";
 import { ServersPage } from "./pages/ServersPage";
+import { SetPasswordPage } from "./pages/SetPasswordPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { UpdatesPage } from "./pages/UpdatesPage";
 import { WebsiteDetailPage } from "./pages/WebsiteDetailPage";
@@ -23,6 +24,8 @@ function RequireSignIn({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   if (!state.session.signedIn) return <Navigate to="/login" state={{ from: location }} replace />;
   if (state.session.loading) return <main id="main" className="content"><p className="muted" role="status">Loading…</p></main>;
+  // Audit finding B5: a temporary password gives access only to the form for a new password.
+  if (state.session.mustChangePassword) return <SetPasswordPage />;
   return children;
 }
 

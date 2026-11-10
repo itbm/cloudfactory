@@ -10,6 +10,20 @@ export interface User {
   role: Role;
 }
 
+/** Audit finding B5: a user who can sign in, as an administrator or a reseller sees it. */
+export interface ManagedUser {
+  id: string;
+  name: string;
+  email: string;
+  role: Role;
+  /** Not set for an administrator. */
+  customerId?: string;
+  totpEnabled: boolean;
+  /** The user has a temporary password and must set a new one at the next sign-in. */
+  mustChangePassword: boolean;
+  createdAt: string;
+}
+
 export interface AccountContext {
   id: string;
   name: string;
@@ -395,6 +409,7 @@ export interface FileNode {
 export interface Snapshot {
   id: string;
   at: string;
+  /** nightly: a scheduled backup ("scheduled" in the API). */
   kind: "nightly" | "manual";
   sizeBytes: number;
   websiteId: string;
@@ -412,6 +427,8 @@ export interface BackupPolicy {
   credentials?: Record<string, string>;
   /** The names of the credentials that are set. */
   credentialNames?: string[];
+  /** The number of manual backups that the panel keeps for each website. */
+  manual?: number;
 }
 
 export interface Plan {
@@ -452,6 +469,7 @@ export type TokenScope =
   | "servers:read" | "servers:write"
   | "images:read" | "images:write"
   | "customers:read" | "customers:write"
+  | "users:read" | "users:write"
   | "audit:read";
 
 export interface ApiToken {
@@ -502,8 +520,12 @@ export interface SearchResult {
 }
 
 export interface State {
-  /** loading: in live mode, the panel has a session but has not loaded the data yet. */
-  session: { signedIn: boolean; loading?: boolean; user: User; contextId: string };
+  /**
+   * loading: in live mode, the panel has a session but has not loaded the data yet.
+   * mustChangePassword: the user has a temporary password. The panel shows only the form for
+   * a new password.
+   */
+  session: { signedIn: boolean; loading?: boolean; mustChangePassword?: boolean; user: User; contextId: string };
   contexts: AccountContext[];
   websites: Website[];
   jobs: Job[];
@@ -522,6 +544,8 @@ export interface State {
   backupPolicy: BackupPolicy;
   plans: Plan[];
   customers: Customer[];
+  /** The users that the signed-in user can see (audit finding B5). */
+  users: ManagedUser[];
   branding: Branding;
   tokens: ApiToken[];
   passkeys: Passkey[];

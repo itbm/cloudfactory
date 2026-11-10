@@ -493,6 +493,13 @@ export function seed(): State {
       { id: "cus_studio", name: "North Studio", email: "dev@northstudio.example", planId: "plan_standard", role: "owner", resellerId: "cus_acme", createdAt: ago(45 * DAY), suspended: false },
       { id: "cus_lawson", name: "Lawson & Co", email: "it@lawson.example", planId: "plan_business", role: "owner", createdAt: ago(400 * DAY), suspended: true },
     ],
+    users: [
+      { id: "usr_1", name: "Alex Morgan", email: "alex@acme.example", role: "administrator", totpEnabled: true, mustChangePassword: false, createdAt: ago(400 * DAY) },
+      { id: "usr_2", name: "Sam Patel", email: "sam@acme.example", role: "reseller", customerId: "cus_acme", totpEnabled: true, mustChangePassword: false, createdAt: ago(300 * DAY) },
+      { id: "usr_3", name: "Priya Shah", email: "owner@hillstreet.example", role: "owner", customerId: "cus_bakery", totpEnabled: false, mustChangePassword: true, createdAt: ago(2 * DAY) },
+      { id: "usr_4", name: "Jonas Berg", email: "dev@northstudio.example", role: "owner", customerId: "cus_studio", totpEnabled: true, mustChangePassword: false, createdAt: ago(45 * DAY) },
+      { id: "usr_5", name: "Erin Lawson", email: "it@lawson.example", role: "owner", customerId: "cus_lawson", totpEnabled: false, mustChangePassword: false, createdAt: ago(400 * DAY) },
+    ],
     branding: { name: "Acme Hosting", colour: "#1d5fd6", panelDomain: "panel.acme.example", supportEmail: "support@acme.example" },
     tokens: [
       { id: "tok_1", name: "Terraform (production)", scopes: ["websites:read", "websites:write", "dns:read", "dns:write", "databases:write"], createdAt: ago(60 * DAY), expiresAt: ahead(120 * DAY), lastUsedAt: ago(3 * HOUR), prefix: "cf_live_7Hq2" },
