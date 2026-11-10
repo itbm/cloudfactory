@@ -1,7 +1,7 @@
 # The web panel (spec section 6.2). Build from the repository root:
 #   podman build -f images/panel-web/Containerfile -t panel-web .
 # SPDX-License-Identifier: AGPL-3.0-only
-FROM docker.io/library/node:22-alpine AS build
+FROM docker.io/library/node:26-alpine AS build
 WORKDIR /web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci --no-audit --no-fund
