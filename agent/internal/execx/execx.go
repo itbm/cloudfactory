@@ -29,10 +29,26 @@ type Runner interface {
 	Stream(ctx context.Context, stdin io.Reader, stdout io.Writer, name string, args ...string) error
 }
 
-// Host runs commands on the host.
+// Host runs commands on the host. Each command starts in the root directory, not in the
+// working directory of the agent. Rootless Podman under runuser stops with "cannot chdir to
+// /root" when the website user cannot open the working directory, for example when an
+// administrator runs "cf-agent panel install" from /root.
 type Host struct {
 	// Env is added to the environment of each command, for example "DEBIAN_FRONTEND=noninteractive".
 	Env []string
+}
+
+// Dir is the working directory of each command. Every Unix user can open it.
+const Dir = "/"
+
+// command makes a command that starts in Dir, with the extra environment of the host.
+func (h Host) command(ctx context.Context, env []string, name string, args ...string) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Dir = Dir
+	if len(h.Env) > 0 || len(env) > 0 {
+		cmd.Env = append(append(cmd.Environ(), h.Env...), env...)
+	}
+	return cmd
 }
 
 func (h Host) Run(ctx context.Context, name string, args ...string) (string, error) {
@@ -44,12 +60,9 @@ func (h Host) RunInput(ctx context.Context, stdin, name string, args ...string) 
 }
 
 func (h Host) RunEnv(ctx context.Context, env []string, stdin, name string, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, name, args...)
+	cmd := h.command(ctx, env, name, args...)
 	if stdin != "" {
 		cmd.Stdin = strings.NewReader(stdin)
-	}
-	if len(h.Env) > 0 || len(env) > 0 {
-		cmd.Env = append(append(cmd.Environ(), h.Env...), env...)
 	}
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -65,12 +78,9 @@ func (h Host) RunEnv(ctx context.Context, env []string, stdin, name string, args
 }
 
 func (h Host) Stream(ctx context.Context, stdin io.Reader, stdout io.Writer, name string, args ...string) error {
-	cmd := exec.CommandContext(ctx, name, args...)
+	cmd := h.command(ctx, nil, name, args...)
 	cmd.Stdin = stdin
 	cmd.Stdout = stdout
-	if len(h.Env) > 0 {
-		cmd.Env = append(cmd.Environ(), h.Env...)
-	}
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
@@ -87,12 +97,8 @@ func (h Host) Pipe(ctx context.Context, from, to []string) error {
 	if len(from) == 0 || len(to) == 0 {
 		return fmt.Errorf("execx: pipe needs two commands")
 	}
-	src := exec.CommandContext(ctx, from[0], from[1:]...)
-	dst := exec.CommandContext(ctx, to[0], to[1:]...)
-	if len(h.Env) > 0 {
-		src.Env = append(src.Environ(), h.Env...)
-		dst.Env = append(dst.Environ(), h.Env...)
-	}
+	src := h.command(ctx, nil, from[0], from[1:]...)
+	dst := h.command(ctx, nil, to[0], to[1:]...)
 	out, err := src.StdoutPipe()
 	if err != nil {
 		return err
