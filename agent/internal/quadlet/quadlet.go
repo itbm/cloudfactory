@@ -453,15 +453,26 @@ type Panel struct {
 	Gvisor   Runtime
 	// APIPort and WebPort are the ports on ServiceAddress for the edge proxy.
 	APIPort, WebPort int
+	// AgentPort is the HTTPS port of the API on ServiceAddress. The agent on the panel server
+	// uses it. The API has the certificate of the panel on this port.
+	AgentPort int
 }
+
+// The ports of the panel on ServiceAddress.
+const (
+	PanelAPIPort   = 19080
+	PanelWebPort   = 19081
+	PanelAgentPort = 19443
+)
 
 // CosignPublicKey is the release public key on each server. The install script writes it.
 const CosignPublicKey = "/etc/cloudfactory/cosign.pub"
 
 // PanelUnits gives the units of the panel: the API, the queue worker, the scheduler and
 // the web UI. The scheduler checks the registry for new image tags (FR-1110).
-// The API container publishes its port only on ServiceAddress. Thus only the edge proxy and
-// the agent on the panel server can connect to it.
+// The API container publishes its ports only on ServiceAddress. Thus only the edge proxy and
+// the agent on the panel server can connect to them. The edge proxy uses the HTTP port. The
+// agent uses the HTTPS port, and the API identifies it by its client certificate.
 // The API keeps its data in SQLite in DataDir, for an installation on one server.
 func PanelUnits(p Panel) map[string]string {
 	api := p.Registry + "/panel-api:" + p.Version
@@ -494,7 +505,9 @@ func PanelUnits(p Panel) map[string]string {
 	}
 	return map[string]string{
 		"cf-panel-api.container": unit("Cloudfactory panel API",
-			append([]string{"ContainerName=cf-panel-api", "Image=" + api, fmt.Sprintf("PublishPort=%s:%d:8080", ServiceAddress, p.APIPort)}, env...)...),
+			append([]string{"ContainerName=cf-panel-api", "Image=" + api,
+				fmt.Sprintf("PublishPort=%s:%d:8080", ServiceAddress, p.APIPort),
+				fmt.Sprintf("PublishPort=%s:%d:8443", ServiceAddress, p.AgentPort)}, env...)...),
 		"cf-panel-queue.container": unit("Cloudfactory panel queue worker",
 			append([]string{"ContainerName=cf-panel-queue", "Image=" + api, "Exec=php artisan queue:work --tries=5"}, env...)...),
 		"cf-panel-scheduler.container": unit("Cloudfactory panel scheduler",

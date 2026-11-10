@@ -110,6 +110,7 @@ func join(ctx context.Context, args []string) error {
 	configPath := fs.String("config", config.DefaultPath, "the settings file")
 	public := fs.String("public-ip", "", "the public IP addresses of this server behind NAT, separated by commas")
 	sftpPort := fs.Int("sftp-port", quadlet.DefaultSftpPort, "the public port of the SFTP service of the websites")
+	panelPin := fs.String("panel-certificate-sha256", "", "the SHA-256 fingerprint of the certificate of the panel; only for the server of the panel, which uses the HTTPS port of the API")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -118,6 +119,15 @@ func join(ctx context.Context, args []string) error {
 	}
 	if err := validate.PanelURL(*panelURL); err != nil {
 		return err
+	}
+	*panelPin = strings.ToLower(strings.TrimSpace(*panelPin))
+	if *panelPin != "" {
+		if err := pki.CheckFingerprint(*panelPin); err != nil {
+			return fmt.Errorf("--panel-certificate-sha256: %w", err)
+		}
+		if !strings.HasPrefix(*panelURL, "https://") {
+			return errors.New("--panel-certificate-sha256 needs a panel address that starts with https://")
+		}
 	}
 	if _, err := os.Stat(*configPath); err == nil {
 		return fmt.Errorf("%s exists; this server has already joined a panel", *configPath)
@@ -129,6 +139,7 @@ func join(ctx context.Context, args []string) error {
 	cfg := config.Defaults()
 	cfg.SftpPort = *sftpPort
 	cfg.PanelURL = strings.TrimRight(*panelURL, "/")
+	cfg.PanelServerCertificateSHA256 = *panelPin
 	cfg.Registry = strings.TrimRight(*registry, "/")
 	// Batch 1, finding 10: behind NAT the public address is not on an interface. The DNS check
 	// accepts the address that the panel uses.
@@ -159,7 +170,13 @@ func join(ctx context.Context, args []string) error {
 	gv := gvisor.Installer{Root: gvisorRoot, BinDir: gvisorBin}
 	kernel, _ := os.ReadFile("/proc/sys/kernel/osrelease")
 
-	resp, err := panel.New(cfg.PanelURL, "", nil).Join(ctx, panel.JoinRequest{
+	// The agent sends its new certificate in the TLS connection. The panel then knows that the
+	// agent has the private key of the certificate in the request.
+	cert, err := tls.LoadX509KeyPair(cfg.CertFile(), cfg.KeyFile())
+	if err != nil {
+		return err
+	}
+	resp, err := panel.New(cfg.PanelURL, "", &cert, cfg.PanelServerCertificateSHA256).Join(ctx, panel.JoinRequest{
 		Token: *token, Name: *name, AgentURL: "https://" + *address + cfg.Listen,
 		CertificateSHA256: fp, CertificatePEM: string(certPEM), AgentVersion: version,
 		OS: osID, OSName: osName, Kernel: strings.TrimSpace(string(kernel)), Arch: archName(),
@@ -201,7 +218,7 @@ func serve(ctx context.Context) error {
 		slog.Warn("hold container packages", "err", err)
 	}
 	gv := gvisor.Installer{BaseURL: gvisor.ReleaseURL, Root: gvisorRoot, BinDir: gvisorBin}
-	reporter := panel.New(cfg.PanelURL, cfg.AgentToken, &cert)
+	reporter := panel.New(cfg.PanelURL, cfg.AgentToken, &cert, cfg.PanelServerCertificateSHA256)
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -397,22 +414,31 @@ func panelCmd(ctx context.Context, args []string) error {
 	run := execx.Host{}
 	h := host.New(run, cfg.SitesDir)
 	gv := gvisor.Installer{Root: gvisorRoot, BinDir: gvisorBin}
-	p := quadlet.Panel{Registry: *registry, Version: version, Domain: *domain, DataDir: filepath.Join(cfg.DataDir, "panel"), Gvisor: quadlet.Runtime{RunscPath: gv.Link(), Platform: cfg.GVisorPlatform}, APIPort: 19080, WebPort: 19081}
+	p := quadlet.Panel{Registry: *registry, Version: version, Domain: *domain, DataDir: filepath.Join(cfg.DataDir, "panel"), Gvisor: quadlet.Runtime{RunscPath: gv.Link(), Platform: cfg.GVisorPlatform}, APIPort: quadlet.PanelAPIPort, WebPort: quadlet.PanelWebPort, AgentPort: quadlet.PanelAgentPort}
 	for _, image := range []string{p.Registry + "/panel-api:" + p.Version, p.Registry + "/panel-web:" + p.Version} {
 		if _, err := h.Podman(ctx, panelUser, "pull", "--quiet", image); err != nil {
 			return err
 		}
 	}
+	changed := map[string]bool{}
 	for name, content := range quadlet.PanelUnits(p) {
-		if _, err := h.WriteUnit(panelUser, name, content); err != nil {
+		c, err := h.WriteUnit(panelUser, name, content)
+		if err != nil {
 			return err
 		}
+		changed[strings.TrimSuffix(name, ".container")+".service"] = c
 	}
 	if _, err := h.Systemctl(ctx, panelUser, "daemon-reload"); err != nil {
 		return err
 	}
 	for _, svc := range []string{"cf-panel-api.service", "cf-panel-queue.service", "cf-panel-scheduler.service", "cf-panel-web.service"} {
-		if _, err := h.Systemctl(ctx, panelUser, "start", svc); err != nil {
+		// A service that operates keeps its old unit until it starts again, for example with no
+		// HTTPS port. Thus start a service again when its unit changed.
+		verb := "start"
+		if changed[svc] {
+			verb = "restart"
+		}
+		if _, err := h.Systemctl(ctx, panelUser, verb, svc); err != nil {
 			return err
 		}
 	}

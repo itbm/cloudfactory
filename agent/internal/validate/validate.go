@@ -40,7 +40,7 @@ func Domain(s string) error {
 // and the agent and the edge proxy have their own ports.
 func SftpPort(port int) error {
 	switch port {
-	case 22, 80, 443, 3306, 5432, 7443, 8080, 8443, 19080, 19081:
+	case 22, 80, 443, 3306, 5432, 7443, 8080, 8443, 19080, 19081, 19432, 19443:
 		return fmt.Errorf("the SFTP port %d is in use by a different service", port)
 	}
 	// The ports of the website containers (actions.NewState).

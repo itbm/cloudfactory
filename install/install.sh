@@ -40,6 +40,7 @@ COSIGN_PUBLIC_KEY='__COSIGN_PUBLIC_KEY__'
 MODE=panel
 JOIN_TOKEN=""
 PANEL_URL=""
+PANEL_PIN=""
 DOMAIN=""
 EMAIL=""
 NAME=""
@@ -199,7 +200,7 @@ check_arguments() {
 	# The same check as validate.SftpPort in the agent.
 	case "$SFTP_PORT" in
 	*[!0-9]* | 0*) problem "--sftp-port $SFTP_PORT is not a port number." ;;
-	22 | 80 | 443 | 3306 | 5432 | 7443 | 8080 | 8443 | 19080 | 19081) problem "--sftp-port $SFTP_PORT is in use by a different Cloudfactory service." ;;
+	22 | 80 | 443 | 3306 | 5432 | 7443 | 8080 | 8443 | 19080 | 19081 | 19432 | 19443) problem "--sftp-port $SFTP_PORT is in use by a different Cloudfactory service." ;;
 	*)
 		if [ "$SFTP_PORT" -gt 65535 ]; then
 			problem "--sftp-port $SFTP_PORT is not a port number."
@@ -641,8 +642,12 @@ ENV
 	PASSWORD=$(printf '%s' "$result" | sed -n 's/.*"password":"\([^"]*\)".*/\1/p')
 	JOIN_TOKEN=$(printf '%s' "$result" | sed -n 's/.*"joinToken":"\([^"]*\)".*/\1/p')
 	[ -n "$JOIN_TOKEN" ] || fail "the panel did not give a join token."
-	# The agent on the panel server reports directly to the API on the private service address.
-	PANEL_URL="http://$SERVICE_ADDRESS:19080"
+	# The agent on the panel server reports to the HTTPS port of the API on the private service
+	# address. That port has the certificate of the panel, which has no public name. Thus the
+	# agent gets the fingerprint of the certificate here and accepts only that certificate.
+	PANEL_URL="https://$SERVICE_ADDRESS:19443"
+	PANEL_PIN=$(openssl x509 -in "$CF_DATA/panel/pki/panel.crt" -outform DER | sha256sum | cut -d' ' -f1)
+	[ "${#PANEL_PIN}" -eq 64 ] || fail "could not read the fingerprint of $CF_DATA/panel/pki/panel.crt."
 	# pasta maps this address in the panel containers to 127.0.0.1 on the host.
 	[ -n "$ADDRESS" ] || ADDRESS=169.254.1.3
 	[ -n "$ROLES" ] || ROLES=web,database,email,dns,backup
@@ -653,6 +658,7 @@ if [ ! -f "$CF_ETC/agent.json" ]; then
 	set -- --panel "$PANEL_URL" --token "$JOIN_TOKEN" --roles "${ROLES:-web}" --registry "$REGISTRY" --sftp-port "$SFTP_PORT"
 	[ -n "$NAME" ] && set -- "$@" --name "$NAME"
 	[ -n "$ADDRESS" ] && set -- "$@" --address "$ADDRESS"
+	[ -n "$PANEL_PIN" ] && set -- "$@" --panel-certificate-sha256 "$PANEL_PIN"
 	/usr/local/bin/cf-agent join "$@"
 fi
 systemctl enable --now --quiet cf-agent.service

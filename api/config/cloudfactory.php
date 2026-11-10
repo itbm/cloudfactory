@@ -10,9 +10,10 @@ return [
         'timeout' => (int) env('CF_AGENT_TIMEOUT', 10),
         // The latest agent version. Servers with an older agent show "Agent update ready".
         'latest_version' => env('CF_AGENT_LATEST', '0.1.0'),
-        // CF-10: the addresses from which the agent on the panel server calls the API directly.
-        // 169.254.77.1 is the private service address of the panel server (install.sh).
-        'direct_addresses' => array_filter(explode(',', env('CF_AGENT_DIRECT_ADDRESSES', '127.0.0.1,::1,169.254.77.1'))),
+        // For development only (CF-10): the addresses from which an agent can call the API with
+        // its token and no client certificate. Keep this empty on a server. There, the agent on
+        // the panel server uses the HTTPS port of the API and shows its certificate.
+        'direct_addresses' => array_values(array_filter(explode(',', (string) env('CF_AGENT_DIRECT_ADDRESSES', '')))),
     ],
 
     'registry' => env('CF_REGISTRY', 'ghcr.io/cloudfactory'),

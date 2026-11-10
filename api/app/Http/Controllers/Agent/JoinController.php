@@ -44,7 +44,11 @@ class JoinController extends Controller
         }
 
         // CF-10: only the agent on the panel server joins directly, not through the edge proxy.
-        $local = ! AuthenticateAgent::viaEdge($request) && AuthenticateAgent::fromLoopback($request);
+        // It uses the HTTPS port of the API, and its TLS connection has the certificate of the
+        // request. Thus the agent has the private key of the certificate that the panel keeps.
+        $direct = AuthenticateAgent::directFingerprint($request);
+        $local = ! AuthenticateAgent::viaEdge($request)
+            && (($direct !== '' && hash_equals($data['certificateSha256'], $direct)) || AuthenticateAgent::fromDevelopmentAddress($request));
 
         return DB::transaction(function () use ($data, $local) {
             $join = JoinToken::where('token_hash', hash('sha256', $data['token']))

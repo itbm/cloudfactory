@@ -91,9 +91,19 @@ if grep -q 'DefaultRoot = "/var/lib/cloudfactory-images"' "$HERE/../agent/intern
 # Spec section 10: SFTP for the websites is the container cf-sftp on its own port. The script
 # does not change the SSH service of the host, and the agent finds the firewall rule by its comment.
 expect "a different SFTP port" 0 "All checks passed." "$(fake debian 13)" $panel --sftp-port 2222
-for bad in 22 7443 8443 25000 65536 abc 0; do
+for bad in 22 7443 8443 19432 19443 25000 65536 abc 0; do
 	expect "SFTP port $bad stops" 1 "--sftp-port $bad" "$(fake debian 13)" $panel --sftp-port "$bad"
 done
+# Audit B2: "cf-agent join" accepts http only for a loopback address. The agent on the panel
+# server gets the HTTPS port of the API and the fingerprint of the panel certificate.
+# shellcheck disable=SC2016 # The patterns are text of the script, not variables of this test.
+if grep -q 'PANEL_URL="https://$SERVICE_ADDRESS:19443"' "$HERE/install.sh" && ! grep -q 'PANEL_URL="http://' "$HERE/install.sh" &&
+	grep -q -- '--panel-certificate-sha256 "$PANEL_PIN"' "$HERE/install.sh"; then
+	PASS=$((PASS + 1))
+else
+	FAIL=$((FAIL + 1))
+	echo 'FAIL: the agent on the panel server does not get an HTTPS address with the panel certificate'
+fi
 if ! grep -Eq 'sshd_config|sshd -t|reload_ssh|systemctl (reload|restart) ssh' "$HERE/install.sh"; then PASS=$((PASS + 1)); else FAIL=$((FAIL + 1)); echo 'FAIL: the script changes the SSH service of the host'; fi
 # shellcheck disable=SC2016 # The pattern finds the text $SFTP_PORT in the script.
 if grep -q '^    tcp dport \$SFTP_PORT accept # cloudfactory-sftp$' "$HERE/install.sh" && grep -q 'sftpRuleMarker = "# cloudfactory-sftp"' "$HERE/../agent/internal/actions/sftp.go"; then PASS=$((PASS + 1)); else FAIL=$((FAIL + 1)); echo 'FAIL: the SFTP firewall rule'; fi

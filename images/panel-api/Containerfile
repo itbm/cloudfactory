@@ -34,13 +34,16 @@ WORKDIR /app
 COPY --from=vendor /app /app
 COPY openapi/openapi.yaml /app/public/openapi.yaml
 COPY images/panel-api/start.sh /usr/local/bin/panel-start
+COPY images/panel-api/Caddyfile images/panel-api/Caddyfile.tls /etc/frankenphp/
 # The API runs as root in a rootless container, with no capabilities. With no DAC_OVERRIDE,
 # root can write only to files that root owns, so storage and bootstrap/cache stay root's.
 RUN rm -rf tests .env
 
 ENV APP_ENV=production APP_DEBUG=false LOG_CHANNEL=stderr \
     SERVER_NAME=:8080 XDG_CONFIG_HOME=/tmp/config XDG_DATA_HOME=/tmp/data
-EXPOSE 8080
+# 8080 is the HTTP port for the edge proxy. 8443 is the HTTPS port for the agent on the panel
+# server (images/panel-api/Caddyfile.tls).
+EXPOSE 8080 8443
 CMD ["/usr/local/bin/panel-start"]
 LABEL org.opencontainers.image.source="https://github.com/itbm/cloudfactory" \
       org.opencontainers.image.licenses="AGPL-3.0-only" \

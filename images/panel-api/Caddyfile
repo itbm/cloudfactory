@@ -1,0 +1,17 @@
+# The panel API on FrankenPHP, with the HTTP port only. The start script uses this file when
+# the panel has no certificate, for example in development. A server uses Caddyfile.tls.
+{
+	frankenphp
+	auto_https off
+	admin off
+}
+
+# The edge proxy ends the TLS connections of the panel domain and sends the requests to this
+# port. The port is only on the service address of the host.
+http://:8080 {
+	# Only the HTTPS port in Caddyfile.tls can set this header (AuthenticateAgent).
+	request_header -X-Cloudfactory-Direct-Cert-Sha256
+	root * /app/public
+	encode zstd br gzip
+	php_server
+}

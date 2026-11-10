@@ -115,19 +115,19 @@ class CompletenessTest extends TestCase
 
     public function test_the_sftp_port_comes_from_the_report_of_the_agent(): void
     {
-        $server = $this->server(['agent_token_hash' => hash('sha256', 'cfa_secret'), 'local' => true]);
+        $server = $this->server(['agent_token_hash' => hash('sha256', 'cfa_secret'), 'certificate_fingerprint' => self::LOCAL_FINGERPRINT, 'local' => true]);
         $website = $this->website($this->customer(), $server, $this->image());
         $this->actingWith($this->user());
         // An agent of release 0.1 uses the SSH service of the host.
         $this->getJson("/api/v1/websites/{$website->id}")->assertJsonPath('data.sftp.port', 22);
 
-        $this->withToken('cfa_secret')->postJson('/api/agent/v1/report', ['agentVersion' => '0.2.0', 'sftpPort' => 2200])->assertOk();
+        $this->asLocalAgent('cfa_secret')->postJson('/api/agent/v1/report', ['agentVersion' => '0.2.0', 'sftpPort' => 2200])->assertOk();
         $this->getJson("/api/v1/websites/{$website->id}")->assertJsonPath('data.sftp.port', 2200);
         $this->getJson("/api/v1/servers/{$server->id}")->assertJsonPath('sftpPort', 2200);
         // A report with no port keeps the last port.
-        $this->withToken('cfa_secret')->postJson('/api/agent/v1/report', ['agentVersion' => '0.2.0'])->assertOk();
+        $this->asLocalAgent('cfa_secret')->postJson('/api/agent/v1/report', ['agentVersion' => '0.2.0'])->assertOk();
         $this->assertSame(2200, $server->fresh()->sftp_port);
-        $this->withToken('cfa_secret')->postJson('/api/agent/v1/report', ['agentVersion' => '0.2.0', 'sftpPort' => 70000])->assertJsonValidationErrors('sftpPort');
+        $this->asLocalAgent('cfa_secret')->postJson('/api/agent/v1/report', ['agentVersion' => '0.2.0', 'sftpPort' => 70000])->assertJsonValidationErrors('sftpPort');
     }
 
     public function test_a_verified_domain_becomes_primary_and_the_old_primary_becomes_an_alias(): void
@@ -207,12 +207,12 @@ class CompletenessTest extends TestCase
 
     public function test_the_report_sets_the_domains_and_the_database_sizes(): void
     {
-        $server = $this->server(['agent_token_hash' => hash('sha256', 'cfa_secret'), 'local' => true]);
+        $server = $this->server(['agent_token_hash' => hash('sha256', 'cfa_secret'), 'certificate_fingerprint' => self::LOCAL_FINGERPRINT, 'local' => true]);
         $website = $this->website($this->customer(), $server, $this->image());
         $db = $website->databases()->create(['engine' => 'mariadb', 'name' => $website->unix_user.'_shop']);
         $foreign = $this->website($this->customer(), $this->server(), $this->image(), 'other.example');
 
-        $this->withToken('cfa_secret')->postJson('/api/agent/v1/report', [
+        $this->asLocalAgent('cfa_secret')->postJson('/api/agent/v1/report', [
             'agentVersion' => '0.1.0', 'pendingUpdates' => [['name' => 'podman', 'to' => '5.4.3', 'containerTool' => true]],
             'domains' => [
                 ['name' => 'acme.example', 'dnsPointsHere' => true, 'certificate' => 'valid', 'expiresAt' => '2027-01-25T00:00:00Z'],

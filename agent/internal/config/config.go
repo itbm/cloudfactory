@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 
 	"github.com/itbm/cloudfactory/agent/internal/gvisor"
+	"github.com/itbm/cloudfactory/agent/internal/pki"
 	"github.com/itbm/cloudfactory/agent/internal/quadlet"
 	"github.com/itbm/cloudfactory/agent/internal/validate"
 )
@@ -28,6 +29,11 @@ type Config struct {
 	// PanelCertificateSHA256 is the fingerprint of the client certificate of the panel.
 	// The agent accepts calls only from a client with this certificate (FR-1706).
 	PanelCertificateSHA256 string `json:"panelCertificateSha256"`
+	// PanelServerCertificateSHA256 is the fingerprint of the certificate of the HTTPS port of
+	// the panel API. Only the agent on the panel server has it: PanelURL is then the service
+	// address, which has no public name, and the agent accepts only this certificate. When it
+	// is empty, the agent checks the certificate of the panel domain in the usual way.
+	PanelServerCertificateSHA256 string `json:"panelServerCertificateSha256,omitempty"`
 	// Registry is the registry of the Cloudfactory images. Set a mirror here (FR-1813).
 	Registry string `json:"registry"`
 	// GVisorPlatform is "systrap" (the default) or "kvm" on bare metal (FR-310).
@@ -93,6 +99,11 @@ func (c Config) Check() error {
 	}
 	if c.AgentToken == "" {
 		errs = append(errs, errors.New("agentToken is not set; run cf-agent join"))
+	}
+	if c.PanelServerCertificateSHA256 != "" {
+		if err := pki.CheckFingerprint(c.PanelServerCertificateSHA256); err != nil {
+			errs = append(errs, fmt.Errorf("panelServerCertificateSha256: %w", err))
+		}
 	}
 	if c.GVisorPlatform != "systrap" && c.GVisorPlatform != "kvm" {
 		errs = append(errs, fmt.Errorf("gvisorPlatform must be systrap or kvm, not %q", c.GVisorPlatform))

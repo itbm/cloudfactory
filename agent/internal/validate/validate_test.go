@@ -56,12 +56,14 @@ func TestValues(t *testing.T) {
 
 // R-15: the join command refuses a plain HTTP panel address, except on the same server.
 func TestPanelURL(t *testing.T) {
-	for _, good := range []string{"https://panel.example.com", "https://panel.example.com:8443/", "http://127.0.0.1:8080", "http://localhost", "http://[::1]:8080"} {
+	for _, good := range []string{"https://panel.example.com", "https://panel.example.com:8443/", "http://127.0.0.1:8080", "http://localhost", "http://[::1]:8080",
+		// The address that the install script gives to the agent on the panel server.
+		"https://169.254.77.1:19443"} {
 		if err := PanelURL(good); err != nil {
 			t.Errorf("%s: %v", good, err)
 		}
 	}
-	for _, bad := range []string{"http://panel.example.com", "http://10.0.0.5", "ftp://panel.example.com", "panel.example.com", "https://", "https://user:pw@panel.example.com"} {
+	for _, bad := range []string{"http://panel.example.com", "http://10.0.0.5", "http://169.254.77.1:19080", "ftp://panel.example.com", "panel.example.com", "https://", "https://user:pw@panel.example.com"} {
 		if err := PanelURL(bad); err == nil {
 			t.Errorf("%s was accepted", bad)
 		}
@@ -74,7 +76,7 @@ func TestSftpPort(t *testing.T) {
 			t.Errorf("SftpPort(%d): %v", p, err)
 		}
 	}
-	for _, p := range []int{0, -1, 65536, 22, 80, 443, 7443, 8080, 8443, 3306, 5432, 19080, 20000, 29999} {
+	for _, p := range []int{0, -1, 65536, 22, 80, 443, 7443, 8080, 8443, 3306, 5432, 19080, 19081, 19432, 19443, 20000, 29999} {
 		if err := SftpPort(p); err == nil {
 			t.Errorf("SftpPort(%d) is accepted", p)
 		}
