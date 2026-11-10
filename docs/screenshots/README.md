@@ -3,6 +3,13 @@
 These screenshots show the web panel of release 0.1 with the mock API. For the panel on the
 real API, refer to [live/README.md](live/README.md).
 
+The mock API shows areas that the API of release 0.1 does not have, for example DNS, email and
+files. Refer to [status.md](../status.md).
+
+The [main README](../../README.md) uses the screenshots in [readme/](readme). They show the
+production build of the web panel on the panel API, with the sample data of `php artisan db:seed`
+and sample reports for resource use, jobs and backups.
+
 ## 01-websites
 
 ![01-websites](01-websites.png)
