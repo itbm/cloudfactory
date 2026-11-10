@@ -2,10 +2,14 @@ package host
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/user"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/itbm/cloudfactory/agent/internal/execx"
 )
@@ -111,5 +115,131 @@ func TestLinkStorageConfigRefusesALink(t *testing.T) {
 	}
 	if f.Called("install") || f.Called("ln") {
 		t.Errorf("calls = %v", f.Calls)
+	}
+}
+
+// Audit finding B7: userdel refuses a user that has a process. RemoveUser stops the user
+// manager first, and waits for it.
+func TestRemoveUserStopsTheUserManagerBeforeUserdel(t *testing.T) {
+	h, f := fakeHost(t, true)
+	for _, dir := range []string{h.SiteRoot("acme_x7k2"), h.ConfigDir("acme_x7k2"), filepath.Join(h.UnitRoot, "1001")} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := h.RemoveUser(context.Background(), "acme_x7k2"); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"loginctl disable-linger acme_x7k2",
+		"systemctl stop user@1001.service",
+		"systemctl stop user-1001.slice",
+		"pkill --signal KILL --uid 1001",
+		"userdel --remove acme_x7k2",
+	}
+	if !slices.Equal(f.Calls, want) {
+		t.Errorf("calls = %v, want %v", f.Calls, want)
+	}
+	// A later user can get the UID 1001. It must not get the units of this user.
+	for _, dir := range []string{h.SiteRoot("acme_x7k2"), h.ConfigDir("acme_x7k2"), filepath.Join(h.UnitRoot, "1001")} {
+		if _, err := os.Stat(dir); !os.IsNotExist(err) {
+			t.Errorf("%s is not removed: %v", dir, err)
+		}
+	}
+}
+
+func TestRemoveUserTriesUserdelAgain(t *testing.T) {
+	h, f := fakeHost(t, true)
+	h.RemoveTries, h.RemoveDelay = 5, time.Millisecond
+	attempts := 0
+	f.Rules = []execx.Rule{
+		// pkill gives status 1 when the user has no process.
+		{Prefix: "pkill", Err: errors.New("exit status 1")},
+		// A unit that is not loaded is not a reason to stop.
+		{Prefix: "systemctl stop user-1001.slice", Err: errors.New("Unit user-1001.slice not loaded.")},
+		{Prefix: "userdel", Do: func() error {
+			attempts++
+			if attempts < 3 {
+				return errors.New("userdel: user acme_x7k2 is currently used by process 4242")
+			}
+			return nil
+		}},
+	}
+	if err := h.RemoveUser(context.Background(), "acme_x7k2"); err != nil {
+		t.Fatal(err)
+	}
+	if attempts != 3 {
+		t.Errorf("userdel ran %d times, want 3", attempts)
+	}
+	kills := 0
+	for _, c := range f.Calls {
+		if strings.HasPrefix(c, "pkill ") {
+			kills++
+		}
+	}
+	if kills != 3 {
+		t.Errorf("pkill ran %d times, want one time before each userdel", kills)
+	}
+}
+
+func TestRemoveUserStopsAfterTheLastAttempt(t *testing.T) {
+	h, f := fakeHost(t, true)
+	h.RemoveTries, h.RemoveDelay = 3, time.Millisecond
+	if err := os.MkdirAll(h.SiteRoot("acme_x7k2"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	attempts := 0
+	f.Rules = []execx.Rule{{Prefix: "userdel", Do: func() error {
+		attempts++
+		return errors.New("userdel: user acme_x7k2 is currently used by process 4242")
+	}}}
+	err := h.RemoveUser(context.Background(), "acme_x7k2")
+	if err == nil || !strings.Contains(err.Error(), "currently used by process") {
+		t.Fatalf("err = %v", err)
+	}
+	if attempts != 3 {
+		t.Errorf("userdel ran %d times, want 3", attempts)
+	}
+	// The files stay while the user stays, so that the next attempt has the same start.
+	if _, err := os.Stat(h.SiteRoot("acme_x7k2")); err != nil {
+		t.Errorf("the files of the user are gone although the user stays: %v", err)
+	}
+}
+
+func TestRemoveUserStopsWhenTheJobStops(t *testing.T) {
+	h, f := fakeHost(t, true)
+	h.RemoveTries, h.RemoveDelay = 1000, time.Hour
+	ctx, cancel := context.WithCancel(context.Background())
+	f.Rules = []execx.Rule{{Prefix: "userdel", Do: func() error {
+		cancel()
+		return errors.New("userdel: user acme_x7k2 is currently used by process 4242")
+	}}}
+	if err := h.RemoveUser(ctx, "acme_x7k2"); !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+// A first attempt removed the user and then failed. The second attempt removes the files,
+// and runs no command for a user that does not exist.
+func TestRemoveUserIsSafeToRunAgain(t *testing.T) {
+	h, f := fakeHost(t, false)
+	for _, dir := range []string{h.SiteRoot("acme_x7k2"), h.ConfigDir("acme_x7k2")} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := h.RemoveUser(context.Background(), "acme_x7k2"); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.Calls) != 0 {
+		t.Errorf("calls = %v", f.Calls)
+	}
+	for _, dir := range []string{h.SiteRoot("acme_x7k2"), h.ConfigDir("acme_x7k2")} {
+		if _, err := os.Stat(dir); !os.IsNotExist(err) {
+			t.Errorf("%s is not removed: %v", dir, err)
+		}
+	}
+	if err := h.RemoveUser(context.Background(), "root"); err == nil {
+		t.Error("the user root was accepted")
 	}
 }

@@ -607,6 +607,11 @@ func (d *Deps) DeleteWebsite(req *agentv1.DeleteWebsiteRequest) (jobs.Job, error
 			if err != nil || site == nil {
 				return err
 			}
+			// A first attempt can remove the Unix user and then fail. The user manager is
+			// gone then, and there is no container to stop (audit finding B7).
+			if _, err := d.Host.LookupUID(user); err != nil {
+				return nil
+			}
 			return d.stopContainer(ctx, user, site.Suffix)
 		}},
 		{Name: "Remove edge proxy route", Do: func(ctx context.Context) error {

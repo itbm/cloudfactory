@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"os"
+	"os/user"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -627,6 +628,34 @@ func TestDeleteWebsiteRemovesItsDatabases(t *testing.T) {
 	req.Databases[0].Name = "mysql"
 	if _, err := d.DeleteWebsite(req); err == nil {
 		t.Error("the agent accepted a system database")
+	}
+}
+
+// Audit finding B7: a second delete job completes the work of a first job that removed the
+// Unix user and then failed.
+func TestDeleteWebsiteCanRunAgainAfterTheUserIsGone(t *testing.T) {
+	d, f, edge := deps(t)
+	if err := run(t)(d.CreateWebsite(&agentv1.WebsiteRequest{JobId: jobID, Website: website("ghcr.io/cloudfactory/frankenphp-php8.4:8.4.0-1")})); err != nil {
+		t.Fatal(err)
+	}
+	// The first job removed the user. The record of the website is still in the state.
+	d.Host.LookupUID = func(name string) (int, error) { return 0, user.UnknownUserError(name) }
+	f.Calls = nil
+	req := &agentv1.DeleteWebsiteRequest{JobId: jobID2, WebsiteId: websiteID, UnixUser: "acme_x7k2"}
+	if err := run(t)(d.DeleteWebsite(req)); err != nil {
+		t.Fatal(err)
+	}
+	if f.Called("systemctl --user") || f.Called("userdel") || f.Called("loginctl") {
+		t.Errorf("a command ran for a user that does not exist: %v", f.Calls)
+	}
+	if site, err := d.State.Get(websiteID); err != nil || site != nil {
+		t.Errorf("the website is still in the state: %+v %v", site, err)
+	}
+	if _, ok := edge.sites[websiteID]; ok {
+		t.Error("the edge route is still there")
+	}
+	if _, err := os.Stat(d.Host.SiteRoot("acme_x7k2")); !os.IsNotExist(err) {
+		t.Errorf("the files of the website are still there: %v", err)
 	}
 }
 

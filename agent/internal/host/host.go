@@ -6,11 +6,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/user"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/itbm/cloudfactory/agent/internal/execx"
 	"github.com/itbm/cloudfactory/agent/internal/validate"
@@ -45,6 +47,10 @@ type Host struct {
 	LookupUID func(name string) (int, error)
 	// LookupGID gives the primary GID of a user. Nil means the user database of the host.
 	LookupGID func(name string) (int, error)
+	// RemoveTries and RemoveDelay are the attempts of userdel in RemoveUser and the time
+	// between them. Zero means 20 attempts with 500 ms. Tests use a short time.
+	RemoveTries int
+	RemoveDelay time.Duration
 }
 
 // New gives a Host with the standard paths.
@@ -166,21 +172,59 @@ func (h *Host) LinkStorageConfig(ctx context.Context, unixUser string) error {
 	return nil
 }
 
-// RemoveUser stops the user services and removes the user and its files.
+// RemoveUser stops the user services and removes the user and its files. It is safe to run it
+// again after a failure.
+//
+// Audit finding B7: userdel refuses a user that has a process ("user ... is currently used by
+// process ..."). "loginctl disable-linger" only asks systemd to stop the user manager, and
+// does not wait. Thus this function stops the user manager and waits for it, stops the
+// processes that remain, and tries userdel again for a short time.
 func (h *Host) RemoveUser(ctx context.Context, unixUser string) error {
 	if err := validate.UnixUser(unixUser); err != nil {
 		return err
 	}
-	if _, err := h.LookupUID(unixUser); err != nil {
-		return nil // The user does not exist. There is nothing to do.
+	uid, err := h.LookupUID(unixUser)
+	if err == nil {
+		if _, err := h.Run.Run(ctx, "loginctl", "disable-linger", unixUser); err != nil {
+			return err
+		}
+		// "systemctl stop" waits until the unit has stopped. The user manager has all
+		// containers of the user, and the slice has also the sessions and the runtime
+		// directory. A unit that is not loaded is not an error here: userdel is the check.
+		for _, unit := range []string{fmt.Sprintf("user@%d.service", uid), fmt.Sprintf("user-%d.slice", uid)} {
+			if _, err := h.Run.Run(ctx, "systemctl", "stop", unit); err != nil {
+				slog.Warn("stop the services of a website user", "user", unixUser, "unit", unit, "err", err)
+			}
+		}
+		tries, delay := h.RemoveTries, h.RemoveDelay
+		if tries == 0 {
+			tries, delay = 20, 500*time.Millisecond
+		}
+		for attempt := 1; ; attempt++ {
+			// pkill gives status 1 when the user has no process. That is the usual result.
+			h.Run.Run(ctx, "pkill", "--signal", "KILL", "--uid", strconv.Itoa(uid))
+			if _, err = h.Run.Run(ctx, "userdel", "--remove", unixUser); err == nil {
+				break
+			}
+			if attempt >= tries {
+				return fmt.Errorf("remove the user %s: %w", unixUser, err)
+			}
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(delay):
+			}
+		}
+		// A later user can get the same UID. It must not get the units of this user.
+		if dir, err := h.UnitDir(unixUser); err == nil {
+			if err := os.RemoveAll(dir); err != nil {
+				return err
+			}
+		}
 	}
-	if _, err := h.Run.Run(ctx, "loginctl", "disable-linger", unixUser); err != nil {
-		return err
-	}
-	if _, err := h.Run.Run(ctx, "userdel", "--remove", unixUser); err != nil {
-		return err
-	}
-	// os.RemoveAll removes a link, not the file that the link points to.
+	// With no user, a first attempt removed the user and then failed. Remove the files that
+	// have the name of the user. os.RemoveAll removes a link, not the file that the link
+	// points to.
 	if err := os.RemoveAll(h.SiteRoot(unixUser)); err != nil {
 		return err
 	}
