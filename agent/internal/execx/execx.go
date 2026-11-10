@@ -45,10 +45,25 @@ const Dir = "/"
 func (h Host) command(ctx context.Context, env []string, name string, args ...string) *exec.Cmd {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = Dir
-	if len(h.Env) > 0 || len(env) > 0 {
-		cmd.Env = append(append(cmd.Environ(), h.Env...), env...)
-	}
+	cmd.Env = append(append(serviceEnviron(cmd.Environ()), h.Env...), env...)
 	return cmd
+}
+
+// serviceEnviron removes the variables of a login session from environ. An administrator who
+// runs "cf-agent panel install" in an SSH session as root has, for example,
+// DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/0/bus. runuser keeps these variables, and
+// rootless Podman as a different user then tries to use the D-Bus session of root. The agent
+// service has none of these variables, so each command gets the same environment as under
+// the service.
+func serviceEnviron(environ []string) []string {
+	out := make([]string, 0, len(environ))
+	for _, kv := range environ {
+		if strings.HasPrefix(kv, "DBUS_SESSION_BUS_ADDRESS=") || strings.HasPrefix(kv, "XDG_") {
+			continue
+		}
+		out = append(out, kv)
+	}
+	return out
 }
 
 func (h Host) Run(ctx context.Context, name string, args ...string) (string, error) {
