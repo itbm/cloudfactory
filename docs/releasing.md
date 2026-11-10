@@ -106,9 +106,8 @@ new commit, delete the release and the tag, then make the release again.
 
 ## Package visibility
 
-Each image package on `ghcr.io/<owner>` must be public. Servers pull the images with no login.
-Also, GHCR refuses a push to a private package when a layer of the image is already in a public
-package. Then the build stops with `403 Forbidden` or `permission_denied: write_package`.
+Servers pull the images with no login. Thus, before production, each image package on
+`ghcr.io/<owner>` must be public.
 
 A package that the release workflow makes for the first time can get a visibility that is not
 the same as the visibility of the repository or of the other packages. Thus, after a release
@@ -118,7 +117,8 @@ adds a new image, check the visibility of its package. To make a package public:
 2. In **Danger Zone**, select **Change visibility**, then **Public**.
 
 Each image job of the release workflow checks its package and the package `build-cache` first.
-If a package is not public, the job stops and gives the link to its settings.
+If a package is not public, the job gives a warning with the link to its settings. The job does
+not stop.
 
 ## Build cache
 
@@ -135,6 +135,10 @@ To build all layers again, delete the package `build-cache` on GitHub. The next 
 it again. The build cache is not part of a release. Podman and the panel do not use it.
 
 ## Daily image rebuild
+
+**Note:** The daily schedule is off until production, to save CI minutes. To run the check one
+time, start **Rebuild images** from the **Actions** tab. To turn the schedule on again, remove
+the `#` from the `schedule` lines in `rebuild.yml`.
 
 The workflow [`rebuild.yml`](../.github/workflows/rebuild.yml) runs each day. It checks the
 digest of each base image. If a base image changed, it starts `release.yml` with
