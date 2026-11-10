@@ -262,6 +262,12 @@ fi
 # Steps. Each step is idempotent, so you can run the script again after a failure.
 # ---------------------------------------------------------------------------
 
+# Run the steps from the root directory. The script runs commands as the service users, for
+# example "runuser -u cf-panel -- podman". These commands start in the working directory of
+# the script. A service user cannot open /root or a home directory, and rootless Podman then
+# stops with "cannot chdir to /root: Permission denied".
+cd /
+
 STEP=0
 STEPS=13
 [ "$MODE" = panel ] && STEPS=15
