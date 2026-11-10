@@ -18,6 +18,11 @@ updates:
     groups:
       php:
         update-types: [minor, patch]
+    ignore:
+      # PHPUnit 13 needs PHP 8.4, but composer.json and the CI also accept PHP 8.3. Remove this
+      # rule when the API stops support for PHP 8.3.
+      - dependency-name: phpunit/phpunit
+        update-types: ['version-update:semver-major']
 
   - package-ecosystem: npm
     directory: /web
@@ -43,3 +48,11 @@ updates:
     groups:
       base-images:
         update-types: [minor, patch]
+    ignore:
+      # A new major release of a database cannot open the data files of the old release, and you
+      # cannot go back after the upgrade. Each server needs an upgrade procedure first, so do a
+      # major upgrade in its own pull request. MariaDB stays on a long-term support release.
+      - dependency-name: library/mariadb
+        update-types: ['version-update:semver-major']
+      - dependency-name: library/postgres
+        update-types: ['version-update:semver-major']
