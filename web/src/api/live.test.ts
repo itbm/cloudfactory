@@ -89,11 +89,12 @@ describe("mappers", () => {
 });
 
 describe("defaultImage", () => {
-  const image = (id: string, family: "frankenphp" | "apache-php-fpm", phpVersion: "8.2" | "8.4" | "8.5", supportEndsAt?: string) =>
+  const image = (id: string, family: "frankenphp" | "apache-php-fpm", phpVersion: "8.4" | "8.5", supportEndsAt?: string) =>
     toRuntimeImage({ id, name: id, family, tag: "0.1.0", phpVersion, custom: false, supportEndsAt: supportEndsAt ?? null });
-  const images = [image("fp82", "frankenphp", "8.2", "2020-01-01"), image("fp84", "frankenphp", "8.4"), image("ap84", "apache-php-fpm", "8.4")];
+  const images = [image("fp84", "frankenphp", "8.4"), image("ap84", "apache-php-fpm", "8.4")];
 
   it("takes the newest supported PHP version of the family", () => {
+    expect(defaultImage([...images, image("fp85", "frankenphp", "8.5")], "frankenphp")).toBe("fp85");
     expect(defaultImage([...images, image("fp85", "frankenphp", "8.5", "2020-01-01")], "frankenphp")).toBe("fp84");
     expect(defaultImage(images, "apache-php-fpm")).toBe("ap84");
   });

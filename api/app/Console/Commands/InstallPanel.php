@@ -42,7 +42,7 @@ class InstallPanel extends Command
         $registry = config('cloudfactory.registry');
         $tag = (string) $this->option('image-tag');
         // FR-301 and FR-302. The dates are the end of security support of each PHP version.
-        $php = ['8.2' => '2026-12-31', '8.3' => '2027-12-31', '8.4' => '2028-12-31', '8.5' => '2029-12-31'];
+        $php = ['8.4' => '2028-12-31', '8.5' => '2029-12-31'];
         foreach ($php as $version => $ends) {
             Image::firstOrCreate(['reference' => "{$registry}/frankenphp-php{$version}"], [
                 'name' => "FrankenPHP · PHP {$version}", 'family' => 'frankenphp', 'php_version' => $version,

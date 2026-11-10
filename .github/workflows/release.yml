@@ -83,12 +83,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { image: frankenphp-php8.2, context: images/frankenphp, file: images/frankenphp/Containerfile, args: PHP_VERSION=8.2 }
-          - { image: frankenphp-php8.3, context: images/frankenphp, file: images/frankenphp/Containerfile, args: PHP_VERSION=8.3 }
           - { image: frankenphp-php8.4, context: images/frankenphp, file: images/frankenphp/Containerfile, args: PHP_VERSION=8.4 }
           - { image: frankenphp-php8.5, context: images/frankenphp, file: images/frankenphp/Containerfile, args: PHP_VERSION=8.5 }
-          - { image: apache-php8.2, context: images/apache-php-fpm, file: images/apache-php-fpm/Containerfile, args: PHP_VERSION=8.2 }
-          - { image: apache-php8.3, context: images/apache-php-fpm, file: images/apache-php-fpm/Containerfile, args: PHP_VERSION=8.3 }
           - { image: apache-php8.4, context: images/apache-php-fpm, file: images/apache-php-fpm/Containerfile, args: PHP_VERSION=8.4 }
           - { image: apache-php8.5, context: images/apache-php-fpm, file: images/apache-php-fpm/Containerfile, args: PHP_VERSION=8.5 }
           - { image: edge, context: images/edge, file: images/edge/Containerfile, args: '' }
