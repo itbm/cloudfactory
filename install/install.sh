@@ -476,7 +476,11 @@ install -d -m 0755 /srv/cloudfactory
 # Root owns each directory in sites, so that SFTP can lock a user in it (ChrootDirectory).
 # The home directories are separate, so that SFTP cannot reach them.
 install -d -m 0711 /srv/cloudfactory/sites /srv/cloudfactory/homes
-install -d -m 0700 "$CF_DATA"
+# Mode 0711: the service users cf-edge and cf-panel must go through this directory to their own
+# data, and rootless Podman stops with "statfs ...: permission denied" if they cannot. Other
+# users cannot list the directory. Each directory in it has mode 0700 and its own owner, and
+# the agent makes its own directories (jobs, pki, dumps, restore) with mode 0700.
+install -d -m 0711 "$CF_DATA"
 install -d -o cf-edge -g cf-edge -m 0700 "$CF_DATA/caddy"
 # CF-13: the admin API of Caddy listens on a Unix socket in this directory, not on a TCP port.
 install -d -o cf-edge -g cf-edge -m 0700 "$CF_DATA/caddy-admin"
