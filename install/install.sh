@@ -612,8 +612,8 @@ install -d -m 0711 "$CF_DATA"
 install -d -o cf-edge -g cf-edge -m 0700 "$CF_DATA/caddy"
 # CF-13: the admin API of Caddy listens on a Unix socket in this directory, not on a TCP port.
 install -d -o cf-edge -g cf-edge -m 0700 "$CF_DATA/caddy-admin"
-# The panel keeps one restic repository password for all servers and sends it with each
-# backup job. Do not make a key for each server: two keys cannot open one repository.
+# Audit finding S2: the panel keeps one restic repository and one repository password for each
+# server, and sends the password with each backup job. This script makes no key file.
 
 step "Prepare the website users and SFTP"
 # Spec section 10: the owner of a website signs in with SFTP as the Unix user of the website,
@@ -766,7 +766,8 @@ if [ "$MODE" = panel ]; then
 	info "Point the DNS of $DOMAIN to this server, so that the panel can get a TLS certificate."
 	if [ -n "${PASSWORD:-}" ]; then
 		info "Sign in as $EMAIL with this password: $PASSWORD"
-		info "After you sign in, open Settings, change this password and set up an authenticator app (TOTP)."
+		info "This password is temporary. The panel asks you for a new password when you sign in."
+		info "Then open Settings and set up an authenticator app (TOTP)."
 		info "This password is also in your terminal history and in any log of this script."
 	fi
 else

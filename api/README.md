@@ -75,8 +75,28 @@ Set these values in `.env`:
 | `CF_AGENT_CLIENT_KEY`  | `storage/pki/panel.key`   | The private key of the client certificate.             |
 | `CF_AGENT_CERTIFICATES` | `storage/pki/agents`     | The panel keeps the certificate of each agent here. It trusts only that certificate for the server. |
 | `CF_AGENT_LATEST`      | `0.1.0`                   | The latest agent version.                              |
-| `CF_REGISTRY`          | `ghcr.io/cloudfactory`    | The registry of the runtime images.                    |
+| `CF_AGENT_TIMEOUT`     | `10`                      | The time limit in seconds for a request to an agent.   |
+| `CF_AGENT_CONNECT_TIMEOUT` | `3`                   | The time limit in seconds to connect to an agent.      |
+| `CF_REGISTRY`          | `ghcr.io/itbm`            | The registry of the runtime images.                    |
 | `CF_PANEL_DOMAIN`      | `panel.cloudfactory.io`   | The domain of the panel.                               |
-| `CF_BACKUP_TARGET`     | (empty)                   | The object storage for backups, for example `s3://bucket/path`. |
+| `CF_BACKUP_TARGET`     | (empty)                   | The object storage for backups, for example `s3:host/bucket/path`. Each server uses a repository below this address. |
+| `CF_MANUAL_BACKUPS`    | `10`                      | The number of manual backups that the panel keeps for each website. |
+| `CF_DELETED_WEBSITE_BACKUP_DAYS` | `30`            | The number of days that the backups of a deleted website stay in the repository. |
+| `CF_DOMAINS_PER_WEBSITE` | `50`                    | The maximum number of domains of one website.          |
 
 The install script makes the certificates and writes these values.
+
+## Commands
+
+The scheduler runs the first four commands. An administrator runs the others on the panel
+server (refer to [`../docs/installation.md`](../docs/installation.md#users)).
+
+| Command | Function |
+| ------- | -------- |
+| `php artisan cloudfactory:backups` | Start the nightly backups at the policy time. On Sunday, start the weekly removal of old backup data on each server. |
+| `php artisan cloudfactory:check-jobs` | Set silent servers to "offline". Send old jobs again, or set them to "failed". |
+| `php artisan cloudfactory:check-images` | Look for new signed image tags in the registry. |
+| `php artisan cloudfactory:host-updates` | Install the host updates in the maintenance window of each server. |
+| `php artisan cloudfactory:install EMAIL` | Prepare a new panel: the first administrator with a temporary password, the standard images and plans, and a join token. |
+| `php artisan cloudfactory:reset-password EMAIL [--remove-totp]` | Give a user a new temporary password. |
+| `php artisan cloudfactory:unlock EMAIL [--address=IP]` | Remove the sign-in lock of an account. |

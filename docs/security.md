@@ -18,6 +18,11 @@ The product specification, section 6.4, gives the requirements.
 - Each container port is open only on the private service address `169.254.77.1`. An
   nftables rule lets only root and the edge proxy open a website port there, so a website
   cannot connect to a different website. All websites can reach the database ports.
+- Each website user has a UID and a GID from 20000 to 59999. The firewall limits each new
+  connection of these users. A website cannot connect to the other services of the server
+  (for example SSH and the agent port), to private networks, to link-local addresses (for
+  example the metadata service of a cloud provider) or to port 25 of other servers. Refer to
+  [Firewall](#firewall).
 - The home directory of each website user has mode `0700`. The edge proxy does not read the
   files of a website. The website container serves its static files.
 - The shared runtime images in `/var/lib/cloudfactory-images` are read-only for the website
@@ -75,6 +80,11 @@ The product specification, section 6.4, gives the requirements.
 - A customer cannot add the domain of the panel, a reseller panel domain or the domain of an
   agent.
 - A domain that is not verified does not stop the real owner. The owner can add it and verify it.
+- The panel moves a domain away from the website of a different customer only after the new
+  owner proves control with the DNS TXT record.
+- A website has 50 domains at most (`CF_DOMAINS_PER_WEBSITE`), because each domain starts a
+  certificate order. A customer can add 30 domains in one hour and start 10 domain checks in
+  one minute. An administrator has no such limit.
 
 ## The edge proxy
 
@@ -101,6 +111,11 @@ The product specification, section 6.4, gives the requirements.
 - The agent writes the php.ini of each website in `/etc/cloudfactory/websites/<user>/`, which
   only root can change, not in the home directory of the website user. It does not follow a
   symbolic link when it writes a file.
+- The agent sends its status report apart from the domain checks. It does some checks at the
+  same time and gives the full set a time limit. Thus a slow DNS server of a customer cannot
+  make the server show as offline.
+- The agent accepts a website user only with a UID from 20000 to 59999, the range that the
+  firewall limits.
 
 ## The panel
 
@@ -132,7 +147,7 @@ each row of each table.
 | Secret | How the panel keeps it |
 | --- | --- |
 | Credentials of the backup storage, for example the S3 keys | Encrypted with `APP_KEY`. The API does not show them again. |
-| restic repository password, one for all servers | Encrypted with `APP_KEY`. Only an administrator can show it, and the audit log records each view. |
+| restic repository passwords, one for each server | Encrypted with `APP_KEY`. The panel sends a password only to its server. Only an administrator can show the passwords, and the audit log records each view. |
 | TOTP secret of a user | Encrypted with `APP_KEY`. A secret that is not set up yet is encrypted in the cache. |
 | Job data, which can hold database passwords for the agent | Encrypted with `APP_KEY`. The panel removes the passwords when the job is complete. |
 | Sessions, if the panel keeps one | Encrypted with `APP_KEY` (`SESSION_ENCRYPT`). |
@@ -154,19 +169,40 @@ directory with mode 0700:
 
 - Users sign in with a password and, if they set it, a TOTP code. A TOTP code works only one
   time. The panel checks the password and the code together and gives one error for both, so
-  the answer does not show that a password is correct.
+  the answer does not show that a password is correct. A suspended account with no TOTP gets
+  the same answer for a correct and an incorrect password.
+- The panel sends no email. An administrator or a reseller makes a user, and the panel shows a
+  temporary password of 20 characters one time. The first administrator from the installation
+  script has a temporary password also. With a temporary password, the API accepts only the
+  password change, the account data and the sign-out. The web panel shows only the form
+  **Set a new password**.
+- An administrator can make, reset and delete all users. A reseller can do this only for the
+  users of its own customers. An owner sees the list of its users only. Only a sign-in session
+  of an administrator can make, reset or delete an administrator. An API token cannot. A user
+  cannot reset or delete its own account in this way. A password reset signs the user out,
+  deletes the API tokens of the user and removes a sign-in lock. Each of these changes is an
+  audit event.
+- On the panel server, root can run `cf-agent panel reset-password EMAIL` and
+  `cf-agent panel unlock EMAIL`. This is the procedure when no administrator can sign in.
 - In **Settings**, a user changes the password and turns TOTP on or off. Each change needs the
   current password and, when TOTP is on, a code. Only a sign-in session can do this, not an API
-  token. A password change signs out the other sessions of the user. A new password has 12 or
-  more characters.
-- After 5 failed sign-in attempts from one address, the panel locks the account for that
-  address for 30 seconds. Each new failure doubles the time, to a maximum of 1 hour. Somebody
-  who knows an email address cannot lock the real user out from a different address. After 100
-  failures in one hour from all addresses, the panel locks the account for all addresses. Each
-  lock is an audit event. The panel checks a password hash also for an unknown email address,
+  token. A password change signs out the other sessions of the user and deletes the API
+  tokens of the user. A new password has 12 or more characters.
+- **Sign out** deletes the session token in the panel, so a copy of the token stops. A session
+  token expires after 12 hours.
+- After 5 failed sign-in attempts from one network, the panel locks the account for that
+  network for 30 seconds. Each new failure doubles the time, to a maximum of 1 hour. A network
+  is one IPv4 address or one IPv6 `/64` prefix. Somebody who knows an email address cannot
+  lock the real user out from a different network.
+- After 100 failures in one hour from all networks, the panel locks the account with the same
+  times, but only for the networks from which the user did not sign in during the last
+  30 days. Thus an attacker with many addresses cannot keep an administrator out of the panel.
+  Each lock is an audit event. The panel checks a password hash also for an unknown email address,
   so the response time does not show which accounts exist.
 - Each API token has scopes, for example `websites:read` or `websites:write`. A write scope
-  also gives the read scope. A token can have an expiry date.
+  also gives the read scope. A token can have an expiry date. A token with the scope
+  `users:write` can make users and reset passwords for customers, and can thus get the access
+  of those users. Give this scope only to a tool that needs it.
 - To make a token, the user must give the password and, if set, a TOTP code. A token needs the
   `tokens:write` scope to make a token. A new token cannot have a scope that the current token
   does not have.
@@ -179,7 +215,12 @@ directory with mode 0700:
   website limit of the plan of the reseller.
 - When an administrator suspends a customer, the panel deletes the API tokens of the customer.
   A suspended user cannot use the API. Only an administrator can lift a suspension that an
-  administrator set.
+  administrator set. No request starts a website while its customer, or the reseller of its
+  customer, is suspended.
+- A customer or a reseller does not see the address of the backup storage, the name and the
+  client address of an administrator in the audit log, or the command line and the output of
+  a failed job. For these users, the audit log shows "Administrator", and a failed job shows
+  the name of the step.
 - Only an administrator selects a custom image, for a new website and for a runtime change. The
   owner can go back to the previous image.
 - Only a reseller can set a brand. The panel domain of the brand cannot be a reserved domain. A
@@ -198,7 +239,8 @@ directory with mode 0700:
   image with Trivy.
 - Podman on each server accepts only images with a valid signature from the release key. It
   refuses all other images, except from a registry that the administrator gave with
-  `--allow-unsigned`. The file `/etc/containers/policy.json` sets this rule.
+  `--allow-unsigned`. The file `/etc/containers/policy.json` sets this rule. The rule does not
+  check the tag of an image (refer to [Known limits](#known-limits)).
 - The release pipeline signs the agent binary, the CLI and the installation script. Each
   release has a `.sig` file and a `.sha256` file for each file.
 - The agent and the CLI build with the Go release in the `toolchain` line of `go.mod`. CI runs
@@ -210,7 +252,11 @@ directory with mode 0700:
 - The PHP runtime images have an ImageMagick policy that turns off coders that websites rarely
   need (EXR, PostScript, PDF, MSVG, URL) and all external programs.
 - Each GitHub workflow uses actions at a fixed commit SHA. Each job has only the permissions
-  that it needs. Dependabot proposes updates to the actions.
+  that it needs. Dependabot proposes updates to the actions, the Composer, npm and Go
+  packages, and the base images of the containers.
+- The edge proxy starts again when a new release changes its unit. An update of the panel
+  server changes the panel containers to the images of the new release (refer to
+  [installation.md](installation.md#update-to-a-new-release)).
 
 ## Web panel
 
@@ -218,9 +264,66 @@ directory with mode 0700:
   `X-Content-Type-Options` and `Referrer-Policy`.
 - The "Add server" command downloads the signed installation script from GitHub Releases
   (`CF_INSTALL_URL`).
+- The CSV export of the audit log puts a single quotation mark before a cell that starts with
+  `=`, `+`, `-`, `@`, a tab or a carriage return. A spreadsheet program then does not read the
+  cell as a formula.
+
+## The `cf` CLI
+
+- The CLI refuses a panel address that does not start with `https://`, because the token
+  would go over the network with no encryption. An `http://` address is permitted only for
+  the same computer (`localhost` or a loopback address).
+- `cf logout` deletes the session in the panel, then removes the token from the computer.
+
+## Backups
+
+- Each server with the role `web` has its own restic repository and its own repository
+  password. The panel sends a password only to its server, with each backup job. A person who
+  has root access to one server cannot read the backups of the other servers.
+- The agent does not keep the repository password or the credentials of the object storage
+  in a file. It gets them with each job and gives them to restic in the environment, not in
+  the command line.
+- All servers use the same credentials of the object storage. Refer to
+  [Known limits](#known-limits).
+- A backup keeps the SHA-256 sum of each database dump (refer to [Databases](#databases)).
 
 ## Firewall
 
 The installation script sets an nftables table. The table blocks all incoming traffic except
 SSH, SFTP (port 2200 by default), HTTP, HTTPS and the agent port. The agent changes only the
 SFTP rule, which has the comment `# cloudfactory-sftp`.
+
+The table also limits the outgoing connections:
+
+- Only root and the edge proxy can connect to a website port or a panel port on the private
+  service address. Only root and the user `cf-panel` can connect to the database of the panel.
+- The chain `websites` gets each new connection of a user with a UID from 20000 to 59999,
+  thus each connection that a website opens. It permits the shared databases, DNS, and the
+  HTTP and HTTPS ports of the server. It refuses all other addresses of the server, the
+  private networks (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `100.64.0.0/10`), the
+  link-local addresses (`169.254.0.0/16`, `fe80::/10`), the unique local addresses
+  (`fc00::/7`), multicast, and port 25 of other servers.
+- The options `--allow-website-smtp` and `--allow-website-network` of the installation script
+  open port 25 or a private network for the websites. Refer to
+  [installation.md](installation.md#connections-from-the-websites).
+
+## Known limits
+
+These items stay open in release 0.1:
+
+- **Image tags.** The signature policy accepts a signed image for each tag of its repository
+  (`matchRepository`). A person who can write to the registry can thus give an old signed
+  image a new tag. That person cannot add an image with no signature. The correction is to
+  pull each image by its digest from the signed release manifest.
+- **Service images between releases.** The edge, SFTP, database and panel images get security
+  fixes only with a new release. The daily rebuild of the images is off (refer to
+  [releasing.md](releasing.md#daily-image-rebuild)), and the rebuild tags are only for the
+  runtime images of the websites.
+- **Credentials of the object storage.** All servers use the same credentials. A person who
+  has root access to one server can delete the backup data of all servers, but cannot read
+  it. Turn on versioning or an object lock in the bucket.
+- **Custom registry.** An administrator can set a custom registry address. The panel server
+  then sends requests to that address.
+- **Join token.** The person who has a join token gives the agent address that the panel
+  calls. Give a join token only to a person whom you trust with a server.
+- **Base images.** The Containerfiles name the base images by tag, not by digest.

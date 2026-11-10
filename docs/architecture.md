@@ -33,18 +33,34 @@ together. The product specification, section 6, gives the requirements.
 7. The API changes the state of the website, server or rollout to agree with the result.
 
 The agent keeps each job in its data directory. If the agent stops during a job, it continues
-the job when it starts again. A reboot job uses this method: the agent writes a marker, reboots
-the server and then completes the job.
+the job when it starts again. A reboot job uses this method: the agent writes a marker, starts
+the reboot and waits for the shutdown. After the reboot, the agent starts the containers,
+checks the websites and only then sends the result.
+
+Time limits make sure that a job always gets a result:
+
+- The agent stops a job after 30 minutes. A backup, a restore, a host update and the weekly
+  removal of backup data have a limit of 170 minutes.
+- If a job has no event for 10 minutes, the panel sends the job again. The agent knows the job
+  ID. It reports the result of a complete job again, and does not run the job a second time.
+- If a job has no result after 3 hours, the panel sets the job to "failed".
+- A server that does not report for 5 minutes is "offline". The panel does not call an offline
+  server. The jobs of that server wait, and the panel sends them when the server reports again.
+- The panel reads a job with a lock before each change of its state. Thus a late event does
+  not open a complete job again.
 
 ## A website on a server
 
 Each website has:
 
-- One Unix user. The user owns the files of the website in `/srv/cloudfactory/sites/<user>`.
+- One Unix user, with a UID and a GID from 20000 to 59999. The user owns the files of the
+  website in `/srv/cloudfactory/sites/<user>`. The firewall limits the connections of the
+  users in this range (refer to [security.md](security.md#firewall)).
 - One rootless Podman container. A Quadlet unit in `/etc/containers/systemd/users/<uid>/`
   starts it. The container uses the gVisor runtime `runsc`.
 - The `pasta` network mode. Each container has its own network namespace.
-- One port on the private service address `169.254.77.1` from the range 20000 to 29999.
+- One port on the private service address `169.254.77.1` from the range 20000 to 29999. The
+  agent takes and records a port in one locked step, so two websites never get the same port.
 
 ### The private service address
 
@@ -183,13 +199,39 @@ updated websites back to the old tag.
 ## Updates of the host and the agent
 
 - **Host updates.** The agent installs security updates with `apt`. It holds the Podman,
-  crun and gVisor packages. After the update, it uses `needrestart` to find the services to
-  restart. It reports when the server must reboot.
+  crun and gVisor packages. After the update, it runs `needrestart`, which restarts the
+  services that use changed files. `needrestart` does not restart the agent. The agent
+  reports when the server must reboot.
 - **gVisor.** The agent checks the SHA-512 sum of each `runsc` release. It keeps the previous
   release, so that an operator can roll back with `cf-agent gvisor rollback`.
 - **Agent.** The agent downloads the new binary and its signature. It verifies the signature
   with the release public key. It keeps the previous binary. If the new agent does not start,
   the service `cf-agent-rollback` puts the previous binary back.
+- **Edge proxy and SFTP.** A new agent version brings new images for the edge proxy and the
+  SFTP container. The agent starts each of them again when its unit changed.
+- **Panel.** The installation script of a new release, or `cf-agent panel update`, changes the
+  panel containers to the images of the version of the agent. Refer to
+  [installation.md](installation.md#update-to-a-new-release).
+
+## Backups
+
+The agent makes the backups with restic. The panel sends the address of the repository, the
+credentials of the object storage and the repository password with each job. The agent does
+not keep them.
+
+- Each server with the role `web` has its own repository, `<target>/servers/<server ID>`, and
+  its own password. The panel makes the password at the first use and keeps it encrypted.
+- A backup has the files of the website and a dump of each database. The panel keeps the
+  SHA-256 sum of each dump, and the agent compares the dump with this sum before a restore.
+- Each snapshot has the tags `website=<website ID>` and `kind=scheduled` (a nightly backup) or
+  `kind=manual` (a backup that a user starts). The retention policy removes only scheduled
+  backups. The panel keeps the 10 newest manual backups of each website.
+- When a website is deleted, the panel records its server and the date after which its
+  backups can go (30 days by default).
+- On Sunday, each healthy server removes the backups of those websites from its repository,
+  and then the data that no snapshot uses.
+- A snapshot from the time when all servers used one repository has a mark. The panel
+  restores it from the old repository with the old password.
 
 ## The panel on the first server
 
@@ -223,3 +265,7 @@ the HTTPS port of the API, `https://169.254.77.1:19443`:
 
 The panel reaches this agent through `169.254.1.3`, which pasta maps to `127.0.0.1` on the
 host.
+
+Root on the panel server can run two account commands of the panel through the agent:
+`cf-agent panel reset-password EMAIL` and `cf-agent panel unlock EMAIL`. The agent runs them
+in the API container. Refer to [installation.md](installation.md#users).
