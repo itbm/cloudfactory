@@ -128,7 +128,8 @@ The container unit of a website sets these limits:
 One Caddy container on each web server receives all HTTP and HTTPS traffic. It runs as the
 user `cf-edge`, in gVisor, with the `pasta` network mode. It listens on port 8080 and port 8443.
 The firewall redirects port 80 to 8080 and port 443 to 8443 (refer to
-[decisions.md](decisions.md)).
+[decisions.md](decisions.md)). It also redirects the connections from the server itself to its
+own addresses, for example from a browser on the server to `localhost`.
 
 The agent changes the Caddy routes through the Caddy admin API. Each website has one route.
 The route sends traffic to `169.254.77.1:<port>`. Caddy gets the TLS certificates
@@ -254,7 +255,41 @@ five Quadlet units for the user `cf-panel`. Each unit is a container in gVisor.
 | `cf-panel-web` | The web panel | 19081 |
 
 The edge proxy sends the panel domain to the ports 19080 and 19081. It ends the TLS connection
-of the browser with a public certificate.
+of the browser with the certificate of the panel domain.
+
+### The panel certificate
+
+The edge proxy gets the certificate of the panel domain with one of two methods. A TLS
+automation policy with the ID `cf-panel-tls` sets the method. It is the first policy, so that it
+applies before the policies of the websites.
+
+| Method | Issuer | Domains |
+| ------ | ------ | ------- |
+| `internal` | The panel CA: the CA `cloudfactory` of the Caddy PKI app. Caddy signs the certificate with the root certificate (`sign_with_root`) for 90 days, and renews it. | All domains, also `localhost` and `panel.localhost`. A new panel uses this method. |
+| `letsencrypt` | Let's Encrypt, with ACME, as for the websites. | Public domains only. |
+
+The CA stays in the Caddy configuration with Let's Encrypt too. Thus a change back to the panel
+CA uses the same root certificate. Caddy does not add the root certificate to the trust store
+of the host (`install_trust` is false).
+
+The administrator changes the method in **Settings > Panel certificate**. The API sends the job
+`SetPanelCertificate` to the agent on the panel server. The agent changes the policy, then
+connects to the edge proxy and checks the certificate that it gets:
+
+- `internal`: the panel CA signed the certificate.
+- `letsencrypt`: a public CA signed the certificate, and the panel CA did not.
+
+If the check does not pass in two minutes, the agent sets the previous method again, and the
+job fails. With each report, the agent on the panel server sends the method, the state of the
+certificate and the root certificate of the panel CA. The panel keeps them.
+
+The other agents connect to the panel domain through the edge proxy. Each agent trusts the
+public CAs, and the panel CA by the SHA-256 fingerprint of its root certificate
+(`panelCaSha256` in `agent.json`). The edge proxy sends the root certificate with the
+certificate of the panel, so the agent does not need the file. The agent gets the fingerprint
+from the join command (`--panel-ca-sha256`), and from the answer of the panel to the join and to
+each report. In each report, the agent sends the fingerprint that it trusts. The panel changes
+back to its CA only when all other servers trust it.
 
 The API, the queue worker and the scheduler use one PostgreSQL database. The data files are in
 `/var/lib/cloudfactory/panel/db`. The password is in `/var/lib/cloudfactory/panel/db.env`, and

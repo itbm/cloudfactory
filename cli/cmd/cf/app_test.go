@@ -435,3 +435,39 @@ func TestServerUpdateWithTheToolsPolicy(t *testing.T) {
 		t.Errorf("body = %s", body)
 	}
 }
+
+func TestPanelCertificate(t *testing.T) {
+	var sent []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.URL.Path == "/api/v1/panel-certificate" && r.Method == http.MethodGet:
+			w.Write([]byte(`{"domain":"panel.localhost","method":"internal","state":"valid","expiresAt":"2027-02-09T10:00:00Z","caCertificate":"-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n","caSha256":"7eaa","letsEncryptAvailable":false,"serversWithoutCa":[]}`))
+		case r.URL.Path == "/api/v1/panel-certificate" && r.Method == http.MethodPut:
+			b, _ := io.ReadAll(r.Body)
+			sent = append(sent, string(b))
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			w.Write([]byte(`{"message":"x","errors":{"method":["Let's Encrypt gives certificates only for public domains. panel.localhost is not a public domain."]}}`))
+		}
+	}))
+	defer srv.Close()
+	a, out := testApp(srv)
+	ctx := context.Background()
+
+	if err := a.dispatch(ctx, []string{"panel-certificate", "show"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"domain:               panel.localhost", "method:               internal", "caSha256:             7eaa", "letsEncryptAvailable: no"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("output does not contain %q:\n%s", want, out)
+		}
+	}
+	out.Reset()
+	if err := a.dispatch(ctx, []string{"panel-certificate", "ca"}); err != nil || !strings.HasPrefix(out.String(), "-----BEGIN CERTIFICATE-----") {
+		t.Errorf("ca: %q, %v", out, err)
+	}
+	err := a.dispatch(ctx, []string{"panel-certificate", "set", "letsencrypt"})
+	if err == nil || !strings.Contains(err.Error(), "not a public domain") || len(sent) != 1 || sent[0] != `{"method":"letsencrypt"}` {
+		t.Errorf("set: %v, sent %v", err, sent)
+	}
+}

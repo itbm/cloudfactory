@@ -10,6 +10,7 @@ use App\Models\Database;
 use App\Models\Domain;
 use App\Models\Server;
 use App\Services\JobOutcome;
+use App\Services\PanelCertificate;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -93,6 +94,15 @@ class AgentController extends Controller
             'databases.*.sizeBytes' => ['integer', 'min:0'],
             // Spec section 10: the port of the SFTP container. An agent of release 0.1 does not send it.
             'sftpPort' => ['nullable', 'integer', 'between:1,65535'],
+            // The certificate of the panel domain. Only the agent on the panel server sends it.
+            'panelCertificate' => ['nullable', 'array'],
+            'panelCertificate.domain' => ['required_with:panelCertificate', 'string', 'max:253'],
+            'panelCertificate.method' => ['required_with:panelCertificate', Rule::in(PanelCertificate::METHODS)],
+            'panelCertificate.state' => ['required_with:panelCertificate', Rule::in(['valid', 'pending', 'expired'])],
+            'panelCertificate.expiresAt' => ['nullable', 'date'],
+            'panelCertificate.caCertificate' => ['nullable', 'string', 'max:8000'],
+            // The panel CA that the agent trusts. An agent of an earlier release does not send it.
+            'panelCaSha256' => ['nullable', 'string', 'regex:/^[0-9a-f]{64}$/'],
         ]);
 
         $failed = collect($data['services'] ?? [])->contains(fn ($s) => $s['state'] !== 'running');
@@ -108,6 +118,7 @@ class AgentController extends Controller
             'services' => $data['services'] ?? [],
             'usage' => $data['usage'] ?? null,
             'sftp_port' => $data['sftpPort'] ?? $server->sftp_port,
+            'panel_ca_sha256' => $data['panelCaSha256'] ?? null,
             // A server that was offline is back with this report.
             'state' => in_array($server->state, ['rebooting', 'joining'], true) ? $server->state : ($failed ? 'degraded' : 'healthy'),
         ]);
@@ -133,7 +144,13 @@ class AgentController extends Controller
         foreach ($data['databases'] ?? [] as $d) {
             Database::whereIn('website_id', $websiteIds)->where(['engine' => $d['engine'], 'name' => $d['name']])->update(['size_bytes' => $d['sizeBytes'] ?? 0]);
         }
+        // CF-10: only the panel server has the panel and its edge proxy.
+        if ($server->local && isset($data['panelCertificate'])) {
+            PanelCertificate::record($data['panelCertificate']);
+        }
 
-        return response()->json(['ok' => true]);
+        // Each agent trusts the CA of the panel, also when the panel has a certificate from
+        // Let's Encrypt now. Thus a later change to the CA of the panel does not stop the agents.
+        return response()->json(['ok' => true, 'panelCaSha256' => PanelCertificate::current()['caSha256']]);
     }
 }

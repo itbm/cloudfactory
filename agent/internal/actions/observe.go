@@ -60,9 +60,15 @@ const (
 )
 
 // FillReport adds the use of each website (FR-203), the state of each domain (FR-402, FR-403),
-// the size of each database and the state of the disk quotas to a status report.
+// the size of each database, the state of the disk quotas and, on the panel server, the
+// certificate of the panel to a status report.
 func (d *Deps) FillReport(ctx context.Context, r *panel.Report) {
 	r.SftpPort = d.SftpPortInUse()
+	// The panel server reports the certificate of the panel domain, and the root certificate
+	// of the panel CA, which the panel offers for download.
+	if domain, err := PanelDomain(PanelEnvFile(d.DataDir)); err == nil && d.Edge != nil {
+		r.PanelCertificate = d.PanelCertificateState(ctx, domain)
+	}
 	sites, err := d.State.All()
 	if err != nil {
 		return

@@ -41,17 +41,79 @@ administrator. This password is temporary. When you sign in, the panel shows onl
 authenticator app (TOTP). The temporary password is also in your terminal history and in any
 log of the script.
 
-Point the DNS record of the panel domain to the server. The edge proxy then gets a TLS
-certificate.
+### The panel certificate
+
+A new panel gets a TLS certificate from its own certificate authority (the panel CA). This works
+for all domains, also `localhost` and `panel.localhost`. At the end, the script shows the path of
+the root certificate of the panel CA (`/etc/cloudfactory/panel-ca.crt`) and its SHA-256
+fingerprint.
+
+Browsers show a warning for the panel until you add the root certificate to their trusted
+certificates. Do these steps on each computer that opens the panel:
+
+1. Get the root certificate. Copy `/etc/cloudfactory/panel-ca.crt` from the server, or download
+   it in the panel: **Settings > Panel certificate > Download root certificate**.
+2. Compare the SHA-256 fingerprint of the file with the fingerprint that the script showed.
+3. Add the file to the trusted certificates of your system or browser. The page in the panel
+   shows the steps for macOS, Windows, Debian, Ubuntu and Firefox.
+
+To show the method, the state of the certificate and the fingerprint again, run
+`cf-agent panel certificate` on the server.
+
+#### Use Let's Encrypt
+
+When the panel domain is public, you can use a certificate from Let's Encrypt. All browsers trust
+it, and you do not need the root certificate.
+
+1. Point the DNS record of the panel domain to the server. Make sure that ports 80 and 443 are
+   open.
+2. Sign in as an administrator and open **Settings > Panel certificate**.
+3. Select **Let's Encrypt**, then select **Change to Let's Encrypt**.
+
+The agent on the panel server waits two minutes for the new certificate. If the certificate does
+not come, the agent goes back to the panel CA and the job fails. The panel then shows the error.
+With the CLI, run `cf panel-certificate set letsencrypt`. On the server, you can also run
+`cf-agent panel certificate letsencrypt`, or install with `--certificate letsencrypt` when the DNS
+already points to the server.
+
+Let's Encrypt does not give certificates for `localhost` and for names that end in `.localhost`,
+`.local`, `.internal`, `.home.arpa`, `.test`, `.example` or `.invalid`. For these domains, the
+panel and the script refuse Let's Encrypt.
+
+#### Go back to the panel CA
+
+Add the root certificate to your browser before you change back to the panel CA. The panel tells
+browsers to use only HTTPS for its domain (HSTS). Thus a browser that opened the panel with the
+certificate from Let's Encrypt does not let you continue past the warning.
+
+The panel changes back to its CA only when all other servers trust the panel CA. Each agent gets
+the fingerprint of the panel CA from the panel. An agent from an earlier release does not. Update
+the agent on these servers first. The page shows the names of the servers.
+
+#### A panel on localhost
+
+Browsers send `localhost` and all names that end in `.localhost` to the computer itself. Thus you
+can open a panel with such a domain only in a browser on the server, for example for a test:
+
+```sh
+sh install.sh --domain panel.localhost
+```
+
+The firewall sends the connections from the server itself to ports 80 and 443 to the edge proxy.
 
 ## Add a server
 
-1. In the panel, go to **Servers > Add server**. Copy the join token.
-2. Run the script as root on the new server:
+1. In the panel, go to **Servers > Add server**. Copy the join command.
+2. Run the command as root on the new server. For example:
 
    ```sh
-   sh install.sh --join TOKEN --panel https://panel.example.com
+   sh install.sh --join TOKEN --panel https://panel.example.com --panel-ca-sha256 FINGERPRINT
    ```
+
+When the panel has a CA, the command has the fingerprint of its root certificate
+(`--panel-ca-sha256`). The new server then trusts a certificate of the panel domain from the
+panel CA. It does not trust other certificates from that CA. The fingerprint is in the output of
+`cf-agent panel certificate` on the panel server.
 
 ## Options
 
@@ -59,8 +121,10 @@ certificate.
 | ------------------ | ------------------------------------------------------------------------ |
 | `--domain DOMAIN`  | The domain of the panel.                                                 |
 | `--email EMAIL`    | The email address of the first administrator.                            |
+| `--certificate METHOD` | The TLS certificate of the panel domain: `internal` (from the panel CA) or `letsencrypt`. A new panel uses `internal`. A panel that operates keeps its method. |
 | `--join TOKEN`     | Add this server to a panel with this join token.                         |
 | `--panel URL`      | The `https://` address of the panel. Use it with `--join`.               |
+| `--panel-ca-sha256 SHA256` | The SHA-256 fingerprint of the root certificate of the panel CA. Use it with `--join`. |
 | `--name NAME`      | The name of the server in the panel. The default is the host name.       |
 | `--roles ROLES`    | The roles of the server: `web`, `database`, `email`, `dns`, `backup`.    |
 | `--address HOST`   | The host name or IP address that the panel uses to reach the server.     |
@@ -97,13 +161,15 @@ Then the script does these steps:
 10. Make the group of the website users and the directories for SFTP (refer to [SFTP](#sftp)).
     The script does not change the SSH service of the host.
 11. Set the firewall. The firewall accepts SSH (port 22), HTTP, HTTPS, the agent port and the
-    SFTP port. It also limits the connections that a website opens (refer to
+    SFTP port. It sends connections to ports 80 and 443 to the edge proxy, also connections
+    from the server itself. It also limits the connections that a website opens (refer to
     [Connections from the websites](#connections-from-the-websites)).
 12. Download the agent and check its signature.
 13. Install the agent service and the rollback service.
 14. On the first server only: start the panel in gVisor. The panel has its own PostgreSQL
     database in the container `cf-panel-db`.
-15. On the first server only: make the first administrator.
+15. On the first server only: make the first administrator, and get the certificate of the
+    panel domain from the panel CA (refer to [The panel certificate](#the-panel-certificate)).
 16. Join the panel and start the agent. On the first server, the agent connects to the HTTPS
     port of the panel API on the private service address, and accepts only the certificate of
     the panel.

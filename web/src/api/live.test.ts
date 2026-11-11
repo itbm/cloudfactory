@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DETAIL_LIMIT, LiveError, load, request, setUnauthorisedHandler, toJob, toRuntimeImage, toWebsite } from "./live";
+import { DETAIL_LIMIT, LiveError, load, request, setUnauthorisedHandler, toJob, toPanelCertificate, toRuntimeImage, toWebsite } from "./live";
 import { seed } from "./seed";
 import { defaultImage } from "../pages/NewWebsitePage";
 
@@ -45,6 +45,17 @@ describe("request", () => {
 });
 
 describe("mappers", () => {
+  it("maps the panel certificate", () => {
+    const cert = toPanelCertificate({
+      domain: "panel.localhost", method: "internal", state: "valid", expiresAt: "2027-02-09T10:00:00Z", caCertificate: "-----BEGIN CERTIFICATE-----", caSha256: "ab".repeat(32),
+      reportedAt: null, letsEncryptAvailable: false, serversWithoutCa: ["web-2"], job: null,
+    });
+    expect(cert).toEqual({
+      domain: "panel.localhost", method: "internal", state: "valid", expiresAt: "2027-02-09T10:00:00Z", caCertificate: "-----BEGIN CERTIFICATE-----", caSha256: "ab".repeat(32),
+      reportedAt: undefined, letsEncryptAvailable: false, serversWithoutCa: ["web-2"], job: undefined,
+    });
+  });
+
   it("maps a job", () => {
     const job = toJob({ id: "j1", title: "Create website", ref: null, state: "running", steps: ["a", "b"], step: 1, error: null, websiteId: "w1", serverId: null, createdAt: "2026-10-26T09:00:00Z", finishedAt: null });
     expect(job).toEqual({ id: "j1", title: "Create website", ref: undefined, state: "running", steps: ["a", "b"], step: 1, error: undefined, createdAt: "2026-10-26T09:00:00Z", finishedAt: undefined, websiteId: "w1", serverId: undefined });

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { ApiError, addCustomer, addDomain, addUser, changePassword, createDatabase, createDatabaseUser, createToken, deleteUser, getState, resetState, resetUserPassword, setContext, setDatabaseUser, setDocumentRoot, setSftp, setTotp, splitCommand, timing, verifyDomain } from "./store";
+import { ApiError, addCustomer, addDomain, addUser, changePassword, createDatabase, createDatabaseUser, createToken, deleteUser, getState, publicName, resetState, resetUserPassword, setContext, setDatabaseUser, setDocumentRoot, setPanelCertificate, setSftp, setTotp, splitCommand, timing, verifyDomain } from "./store";
 import { contextCustomers, visibleWebsites } from "./selectors";
 
 beforeEach(() => {
@@ -156,5 +156,32 @@ describe("users (audit finding B5)", () => {
     expect(() => deleteUser("usr_1")).toThrow(/your own user/);
     deleteUser("usr_5");
     expect(getState().users.some((u) => u.id === "usr_5")).toBe(false);
+  });
+});
+
+describe("panel certificate", () => {
+  it("changes the method with a job", async () => {
+    expect(getState().panelCertificate.method).toBe("internal");
+    const job = await setPanelCertificate("letsencrypt");
+    expect(job).toMatchObject({ state: "succeeded", title: "Change the panel certificate to Let's Encrypt", steps: ["Change certificate method", "Get TLS certificate"] });
+    expect(getState().panelCertificate).toMatchObject({ method: "letsencrypt", state: "valid" });
+    expect(getState().audit[0]).toMatchObject({ action: "Changed the panel certificate method", target: "letsencrypt" });
+  });
+
+  it("refuses Let's Encrypt for a domain that is not public", () => {
+    const state = getState();
+    state.panelCertificate.domain = "panel.localhost";
+    state.panelCertificate.letsEncryptAvailable = false;
+    expect(() => setPanelCertificate("letsencrypt")).toThrow("panel.localhost is not a public domain");
+  });
+
+  it("uses the panel CA only when all servers trust it", () => {
+    getState().panelCertificate.serversWithoutCa = ["web-02"];
+    expect(() => setPanelCertificate("internal")).toThrow("These servers do not trust the panel CA yet: web-02.");
+  });
+
+  it("knows the public names, as the agent does", () => {
+    for (const name of ["panel.example.com", "Panel.Example.Com.", "cloudfactory.io"]) expect(publicName(name)).toBe(true);
+    for (const name of ["localhost", "panel.localhost", "panel.local", "panel.internal", "panel.home.arpa", "panel.test", "panel.example", "panel", "10.0.0.1", "::1"]) expect(publicName(name)).toBe(false);
   });
 });

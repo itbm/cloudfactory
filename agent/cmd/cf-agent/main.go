@@ -5,14 +5,17 @@
 //	cf-agent join --panel URL --token TOKEN [--name NAME] [--roles web,database] [--address HOST] [--sftp-port PORT]
 //	cf-agent serve
 //	cf-agent gvisor install|rollback
-//	cf-agent panel install --domain DOMAIN
+//	cf-agent panel install --domain DOMAIN [--certificate internal|letsencrypt]
+//	cf-agent panel certificate [internal|letsencrypt]
 //	cf-agent rollback
 //	cf-agent version
 package main
 
 import (
+	"cmp"
 	"context"
 	"crypto/tls"
+	"encoding/pem"
 	"errors"
 	"flag"
 	"fmt"
@@ -27,6 +30,7 @@ import (
 	"syscall"
 	"time"
 
+	agentv1 "github.com/itbm/cloudfactory/agent/gen/cloudfactory/agent/v1"
 	"github.com/itbm/cloudfactory/agent/internal/actions"
 	"github.com/itbm/cloudfactory/agent/internal/caddy"
 	"github.com/itbm/cloudfactory/agent/internal/config"
@@ -56,11 +60,12 @@ const (
 	gvisorRoot  = "/usr/local/lib/cloudfactory/gvisor"
 	gvisorBin   = "/usr/local/bin"
 	usageString = `Usage:
-  cf-agent join --panel URL --token TOKEN [--name NAME] [--roles web] [--address HOST] [--public-ip IP] [--sftp-port PORT]
+  cf-agent join --panel URL --token TOKEN [--name NAME] [--roles web] [--address HOST] [--public-ip IP] [--sftp-port PORT] [--panel-ca-sha256 SHA256]
   cf-agent serve
   cf-agent gvisor install [--sha512 SUM] [VERSION] | rollback
-  cf-agent panel install --domain DOMAIN [--registry URL]
+  cf-agent panel install --domain DOMAIN [--registry URL] [--certificate internal|letsencrypt]
   cf-agent panel update
+  cf-agent panel certificate [internal|letsencrypt]
   cf-agent panel reset-password EMAIL [--remove-totp]
   cf-agent panel unlock EMAIL [--address IP]
   cf-agent rollback
@@ -114,6 +119,7 @@ func join(ctx context.Context, args []string) error {
 	public := fs.String("public-ip", "", "the public IP addresses of this server behind NAT, separated by commas")
 	sftpPort := fs.Int("sftp-port", quadlet.DefaultSftpPort, "the public port of the SFTP service of the websites")
 	panelPin := fs.String("panel-certificate-sha256", "", "the SHA-256 fingerprint of the certificate of the panel; only for the server of the panel, which uses the HTTPS port of the API")
+	caPin := fs.String("panel-ca-sha256", "", "the SHA-256 fingerprint of the root certificate of the panel CA, when the panel has a certificate from its own CA")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -132,6 +138,12 @@ func join(ctx context.Context, args []string) error {
 			return errors.New("--panel-certificate-sha256 needs a panel address that starts with https://")
 		}
 	}
+	*caPin = strings.ToLower(strings.TrimSpace(*caPin))
+	if *caPin != "" {
+		if err := pki.CheckFingerprint(*caPin); err != nil {
+			return fmt.Errorf("--panel-ca-sha256: %w", err)
+		}
+	}
 	if _, err := os.Stat(*configPath); err == nil {
 		return fmt.Errorf("%s exists; this server has already joined a panel", *configPath)
 	}
@@ -143,6 +155,7 @@ func join(ctx context.Context, args []string) error {
 	cfg.SftpPort = *sftpPort
 	cfg.PanelURL = strings.TrimRight(*panelURL, "/")
 	cfg.PanelServerCertificateSHA256 = *panelPin
+	cfg.PanelCASHA256 = *caPin
 	cfg.Registry = strings.TrimRight(*registry, "/")
 	// Batch 1, finding 10: behind NAT the public address is not on an interface. The DNS check
 	// accepts the address that the panel uses.
@@ -179,7 +192,7 @@ func join(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	resp, err := panel.New(cfg.PanelURL, "", &cert, cfg.PanelServerCertificateSHA256).Join(ctx, panel.JoinRequest{
+	resp, err := panel.New(cfg.PanelURL, "", &cert, cfg.PanelServerCertificateSHA256, cfg.PanelCASHA256).Join(ctx, panel.JoinRequest{
 		Token: *token, Name: *name, AgentURL: "https://" + *address + cfg.Listen,
 		CertificateSHA256: fp, CertificatePEM: string(certPEM), AgentVersion: version,
 		OS: osID, OSName: osName, Kernel: strings.TrimSpace(string(kernel)), Arch: archName(),
@@ -190,6 +203,11 @@ func join(ctx context.Context, args []string) error {
 		return err
 	}
 	cfg.ServerID, cfg.AgentToken, cfg.PanelCertificateSHA256 = resp.ServerID, resp.AgentToken, resp.PanelCertificateSHA256
+	// The connection to the panel is checked, thus the agent can trust the panel CA that the
+	// panel gives. The agent then continues to work after a change of the panel certificate.
+	if resp.PanelCASHA256 != "" && pki.CheckFingerprint(resp.PanelCASHA256) == nil {
+		cfg.PanelCASHA256 = resp.PanelCASHA256
+	}
 	if err := config.Save(*configPath, cfg); err != nil {
 		return err
 	}
@@ -221,7 +239,7 @@ func serve(ctx context.Context) error {
 		slog.Warn("hold container packages", "err", err)
 	}
 	gv := gvisor.Installer{BaseURL: gvisor.ReleaseURL, Root: gvisorRoot, BinDir: gvisorBin}
-	reporter := panel.New(cfg.PanelURL, cfg.AgentToken, &cert, cfg.PanelServerCertificateSHA256)
+	reporter := panel.New(cfg.PanelURL, cfg.AgentToken, &cert, cfg.PanelServerCertificateSHA256, cfg.PanelCASHA256)
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -307,7 +325,7 @@ func serve(ctx context.Context) error {
 	}
 	collector := status.Collector{Run: run, Apt: apt, AgentVersion: version, GVisorVersion: gv.Current, Services: []string{"cf-agent", "nftables", "ssh", "cf-sftp"}, UserServices: []string{host.EdgeUser + ":cf-edge.service"}, DiskPath: cfg.SitesDir, Extra: deps.FillReport}
 
-	go reportLoop(ctx, reporter, collector, time.Duration(cfg.ReportSeconds)*time.Second)
+	go reportLoop(ctx, reporter, collector, time.Duration(cfg.ReportSeconds)*time.Second, cfg.PanelServerCertificateSHA256 == "", savePanelCAPin)
 	go func() {
 		for range time.Tick(24 * time.Hour) {
 			runner.Prune(time.Now().Add(-30 * 24 * time.Hour))
@@ -321,13 +339,28 @@ func serve(ctx context.Context) error {
 	return err
 }
 
-func reportLoop(ctx context.Context, c *panel.Client, s status.Collector, every time.Duration) {
+// reportLoop sends a report at each interval. With learnCA, the agent trusts the panel CA that
+// the panel gives in its answer, and save keeps the fingerprint for the next start.
+func reportLoop(ctx context.Context, c *panel.Client, s status.Collector, every time.Duration, learnCA bool, save func(string) error) {
 	if every <= 0 {
 		every = time.Minute
 	}
 	for {
-		if err := c.SendReport(ctx, s.Report(ctx)); err != nil && ctx.Err() == nil {
+		r := s.Report(ctx)
+		if learnCA {
+			r.PanelCASHA256 = c.CAPin()
+		}
+		resp, err := c.SendReport(ctx, r)
+		if err != nil && ctx.Err() == nil {
 			slog.Warn("report to panel failed", "err", err)
+		}
+		if pin := strings.ToLower(resp.PanelCASHA256); err == nil && learnCA && pin != "" && pin != c.CAPin() && pki.CheckFingerprint(pin) == nil {
+			c.SetCAPin(pin)
+			if err := save(pin); err != nil {
+				slog.Error("save the fingerprint of the panel CA", "err", err)
+			} else {
+				slog.Info("trust the panel CA", "sha256", pin)
+			}
 		}
 		select {
 		case <-ctx.Done():
@@ -335,6 +368,16 @@ func reportLoop(ctx context.Context, c *panel.Client, s status.Collector, every 
 		case <-time.After(every):
 		}
 	}
+}
+
+// savePanelCAPin keeps the fingerprint of the root certificate of the panel CA in the settings.
+func savePanelCAPin(pin string) error {
+	c, err := config.Load(config.DefaultPath)
+	if err != nil {
+		return err
+	}
+	c.PanelCASHA256 = pin
+	return config.Save(config.DefaultPath, c)
 }
 
 // gvisorCmd installs the gVisor version from the settings, or goes back to the previous version.
@@ -401,10 +444,18 @@ func bareMetal(ctx context.Context, run execx.Runner) bool {
 
 // panelCmd pulls the panel images and starts them in gVisor (FR-1808).
 const panelUsage = `usage:
-  cf-agent panel install --domain DOMAIN [--registry URL]   Install the panel, or start it again.
+  cf-agent panel install --domain DOMAIN [--registry URL] [--certificate METHOD]
+                                                            Install the panel, or start it again.
   cf-agent panel update                                     Change the panel to the version of this agent.
+  cf-agent panel certificate [METHOD]                       Show or change the certificate method of the panel.
   cf-agent panel reset-password EMAIL [--remove-totp]       Give a user a new temporary password.
-  cf-agent panel unlock EMAIL [--address IP]                Remove the sign-in lock of an account.`
+  cf-agent panel unlock EMAIL [--address IP]                Remove the sign-in lock of an account.
+
+METHOD is "internal" (a certificate from the CA of the panel) or "letsencrypt".`
+
+// panelCAFile is a copy of the root certificate of the panel CA. Root writes it, and all users
+// can read it, for example to add it to the trust store of this server.
+const panelCAFile = "/etc/cloudfactory/panel-ca.crt"
 
 // panelCmd has the commands for the panel server. Only root can run them.
 func panelCmd(ctx context.Context, args []string) error {
@@ -413,16 +464,24 @@ func panelCmd(ctx context.Context, args []string) error {
 	}
 	switch args[0] {
 	case "install", "update":
+	case "certificate":
+		return panelCertificate(ctx, args[1:])
 	case "reset-password", "unlock":
 		return panelAccount(ctx, args[0], args[1:])
 	default:
 		return errors.New(panelUsage)
 	}
 	fs := flag.NewFlagSet("panel", flag.ContinueOnError)
-	domain := fs.String("domain", "", "the domain of the panel, for example panel.example.com")
+	domain := fs.String("domain", "", "the domain of the panel, for example panel.example.com or panel.localhost")
 	registry := fs.String("registry", config.Defaults().Registry, "the registry of the panel images")
+	certificate := fs.String("certificate", "", `the certificate method of the panel domain: "internal" (the CA of the panel) or "letsencrypt". The default keeps the method of the panel. A new panel uses "internal"`)
 	if err := fs.Parse(args[1:]); err != nil {
 		return err
+	}
+	if *certificate != "" {
+		if err := caddy.PanelMethod(*certificate); err != nil {
+			return err
+		}
 	}
 	if args[0] == "update" {
 		// Audit finding S7: after an update of the agent, this command changes the panel
@@ -433,12 +492,15 @@ func panelCmd(ctx context.Context, args []string) error {
 			return fmt.Errorf("read the settings of the agent: %w", err)
 		}
 		*registry = saved.Registry
-		if *domain, err = actions.PanelDomain(filepath.Join(saved.DataDir, "panel", "panel.env")); err != nil {
+		if *domain, err = actions.PanelDomain(actions.PanelEnvFile(saved.DataDir)); err != nil {
 			return fmt.Errorf("this server has no panel: %w", err)
 		}
 	}
-	if err := validate.Domain(*domain); err != nil {
+	if err := validate.PanelDomain(*domain); err != nil {
 		return err
+	}
+	if *certificate == caddy.PanelLetsEncrypt && !caddy.PublicName(*domain) {
+		return fmt.Errorf("Let's Encrypt gives certificates only for public domains, and %s is not a public domain; use --certificate internal", *domain)
 	}
 	cfg := config.Defaults()
 	run := execx.Host{}
@@ -447,7 +509,7 @@ func panelCmd(ctx context.Context, args []string) error {
 	p := quadlet.Panel{Registry: *registry, Version: version, Domain: *domain, DataDir: filepath.Join(cfg.DataDir, "panel"), Gvisor: quadlet.Runtime{RunscPath: gv.Link(), Platform: cfg.GVisorPlatform},
 		APIPort: quadlet.PanelAPIPort, WebPort: quadlet.PanelWebPort, AgentPort: quadlet.PanelAgentPort, DatabasePort: quadlet.PanelDatabasePort}
 	edge := caddy.New(cfg.CaddyAdmin)
-	deps := &actions.Deps{Host: h, Run: run, Edge: edge, Gvisor: p.Gvisor}
+	deps := &actions.Deps{Host: h, Run: run, Edge: edge, Gvisor: p.Gvisor, DataDir: cfg.DataDir}
 	if err := deps.InstallPanel(ctx, p); err != nil {
 		return fmt.Errorf("start the panel: %w", err)
 	}
@@ -456,10 +518,101 @@ func panelCmd(ctx context.Context, args []string) error {
 	if err := deps.EnsureEdge(ctx, *registry+"/edge:"+version, cfg.DataDir); err != nil {
 		return fmt.Errorf("start the edge proxy: %w", err)
 	}
-	if err := edge.ApplyPanel(ctx, *domain, p.APIPort, p.WebPort); err != nil {
+	method := *certificate
+	if method == "" {
+		// Keep the method of a panel that operates. A new panel gets a certificate from its own
+		// CA, which works for all domains, also before the DNS points to this server.
+		current, err := edge.PanelCertificate(ctx, *domain)
+		if err != nil {
+			return err
+		}
+		method = cmp.Or(current, caddy.PanelInternal)
+	}
+	if err := edge.ApplyPanel(ctx, *domain, method, p.APIPort, p.WebPort); err != nil {
 		return err
 	}
 	fmt.Printf("The panel operates at https://%s with version %s\n", *domain, version)
+	st, err := savePanelCA(ctx, deps, *domain)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("The certificate of the panel is from %s.\n", actions.PanelMethodName(st.Method))
+	return nil
+}
+
+// panelCertificate shows or changes the certificate method of the panel domain. The panel
+// shows the change after the next report of the agent.
+func panelCertificate(ctx context.Context, args []string) error {
+	if len(args) > 1 {
+		return errors.New(panelUsage)
+	}
+	cfg := config.Defaults()
+	if saved, err := config.Load(config.DefaultPath); err == nil {
+		cfg = saved
+	}
+	domain, err := actions.PanelDomain(actions.PanelEnvFile(cfg.DataDir))
+	if err != nil {
+		return fmt.Errorf("this server has no panel: %w", err)
+	}
+	deps := &actions.Deps{Edge: caddy.New(cfg.CaddyAdmin), DataDir: cfg.DataDir}
+	if len(args) == 1 {
+		// The same steps as the job from the panel. The ID is not a job of the panel.
+		job, err := deps.SetPanelCertificate(&agentv1.SetPanelCertificateRequest{JobId: "00000000000000000000000000", Method: args[0]})
+		if err != nil {
+			return err
+		}
+		for _, step := range job.Steps {
+			fmt.Println(step.Name + "...")
+			if err := step.Do(ctx); err != nil {
+				return err
+			}
+		}
+	}
+	return showPanelCertificate(ctx, deps, domain)
+}
+
+// savePanelCA gives the certificate of the panel, and writes the root certificate of the panel
+// CA to panelCAFile.
+func savePanelCA(ctx context.Context, d *actions.Deps, domain string) (*panel.PanelCertificate, error) {
+	st := d.PanelCertificateState(ctx, domain)
+	if st == nil {
+		return nil, errors.New("the edge proxy has no panel route; run cf-agent panel update")
+	}
+	if st.CACertificate != "" {
+		if _, err := host.WriteFile(panelCAFile, st.CACertificate, 0o644); err != nil {
+			return nil, err
+		}
+	}
+	return st, nil
+}
+
+// showPanelCertificate shows the certificate of the panel.
+func showPanelCertificate(ctx context.Context, d *actions.Deps, domain string) error {
+	st, err := savePanelCA(ctx, d, domain)
+	if err != nil {
+		return err
+	}
+	state := st.State
+	if st.ExpiresAt != "" {
+		state += ", valid until " + st.ExpiresAt
+	}
+	fmt.Printf("Certificate method: %s (%s)\n", actions.PanelMethodName(st.Method), st.Method)
+	fmt.Printf("Certificate of %s: %s\n", domain, state)
+	if st.Method != caddy.PanelInternal || st.CACertificate == "" {
+		return nil
+	}
+	fp := ""
+	if block, _ := pem.Decode([]byte(st.CACertificate)); block != nil {
+		fp = pki.Fingerprint(block.Bytes)
+	}
+	fmt.Printf("Root certificate of the panel CA: %s\n", panelCAFile)
+	fmt.Printf("SHA-256 fingerprint of the root certificate: %s\n", fp)
+	fmt.Println("Browsers show a warning until you add this root certificate to their trusted certificates.")
+	fmt.Println("You can also download it in the panel: Settings > Panel certificate.")
+	if caddy.PublicName(domain) {
+		fmt.Printf("To use Let's Encrypt, point the DNS of %s to this server. Then select Let's Encrypt in\n", domain)
+		fmt.Println("Settings > Panel certificate, or run: cf-agent panel certificate letsencrypt")
+	}
 	return nil
 }
 

@@ -385,6 +385,22 @@ export const snapshots: Snapshot[] = websites.flatMap((w) =>
   })),
 );
 
+/** A root certificate for the demonstration. Nobody has its private key. */
+const DEMO_CA = [
+  "-----BEGIN CERTIFICATE-----",
+  "MIIBtjCCAVugAwIBAgIUZdDRZDi2PZc38uCBzccI4WvILTowCgYIKoZIzj0EAwIw",
+  "MDEuMCwGA1UEAwwlQ2xvdWRmYWN0b3J5IHBhbmVsIENBIC0gMjAyNiBFQ0MgUm9v",
+  "dDAeFw0yNjExMTEyMjQ5MzVaFw0zNjExMDgyMjQ5MzVaMDAxLjAsBgNVBAMMJUNs",
+  "b3VkZmFjdG9yeSBwYW5lbCBDQSAtIDIwMjYgRUNDIFJvb3QwWTATBgcqhkjOPQIB",
+  "BggqhkjOPQMBBwNCAASLEc9kMHgRS0H+DiWWf3ZJ5qkPwhOiseCzsfliPkqRzr3L",
+  "sp9HzVi5O1K9NG0JW8SWhOyfufdvTTT26Kv2eQklo1MwUTAdBgNVHQ4EFgQUesr7",
+  "Q4HPUX4lnhoDHeuPMl5xi7wwHwYDVR0jBBgwFoAUesr7Q4HPUX4lnhoDHeuPMl5x",
+  "i7wwDwYDVR0TAQH/BAUwAwEB/zAKBggqhkjOPQQDAgNJADBGAiEAjUigZuG0/eG5",
+  "FGzMQz4/DiTIyTZWwbiCMSSWarOSjYACIQDfQ/m1SsNNpYhsr5u4H91hiSdLNlBO",
+  "RQ8QnPHpBbVDtA==",
+  "-----END CERTIFICATE-----",
+].join("\n") + "\n";
+
 export function seed(): State {
   return structuredClone<State>({
     session: {
@@ -521,6 +537,11 @@ export function seed(): State {
       { id: "alc_2", kind: "webhook", target: "https://hooks.acme.example/cloudfactory", events: ["Server health", "Failed update", "Failed deploy"] },
     ],
     system: { registry: "ghcr.io/cloudfactory", registryMirror: "", panelDomain: "panel.cloudfactory.io", timezone: "Europe/London" },
+    panelCertificate: {
+      domain: "panel.cloudfactory.io", method: "internal", state: "valid", expiresAt: ahead(89 * DAY),
+      caCertificate: DEMO_CA, caSha256: "7eaa2a40aa2fab942f73901801bfdcfbfcb44e4df16d4b62ed31851c640f29c0", reportedAt: ago(MINUTE),
+      letsEncryptAvailable: true, serversWithoutCa: [],
+    },
     joinToken: "cfj_3kV9xQ2mL7pR8tW1",
   });
 }

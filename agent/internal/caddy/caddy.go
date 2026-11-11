@@ -219,8 +219,14 @@ func (c *Client) do(ctx context.Context, method, path string, body any) (int, []
 }
 
 // ApplyPanel sets the route of the panel: /api/* goes to the API, and all other paths
-// go to the web UI.
-func (c *Client) ApplyPanel(ctx context.Context, domain string, apiPort, webPort int) error {
+// go to the web UI. method is the certificate method of the panel domain: PanelInternal or
+// PanelLetsEncrypt.
+func (c *Client) ApplyPanel(ctx context.Context, domain, method string, apiPort, webPort int) error {
+	// Set the certificate method before the route. With the route first, Caddy would start an
+	// ACME order for the domain with the default issuer.
+	if err := c.SetPanelCertificate(ctx, domain, method); err != nil {
+		return err
+	}
 	dial := func(port int) []any { return []any{map[string]any{"dial": c.Upstream + ":" + strconv.Itoa(port)}} }
 	api := map[string]any{
 		"handler":   "reverse_proxy",

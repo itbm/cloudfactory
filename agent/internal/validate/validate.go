@@ -44,6 +44,15 @@ func Domain(s string) error {
 	return nil
 }
 
+// PanelDomain checks the domain of the panel. It is a domain, or "localhost" for a panel that
+// only a browser on the same server opens.
+func PanelDomain(s string) error {
+	if s == "localhost" {
+		return nil
+	}
+	return Domain(s)
+}
+
 // SftpPort checks the public SFTP port of a server. The SSH service of the host keeps port 22,
 // and the agent and the edge proxy have their own ports.
 func SftpPort(port int) error {

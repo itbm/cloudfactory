@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Middleware\AuthenticateAgent;
 use App\Models\JoinToken;
 use App\Models\Server;
+use App\Services\PanelCertificate;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -78,7 +79,11 @@ class JoinController extends Controller
                 'local' => $local,
             ]);
 
-            return response()->json(['serverId' => $server->id, 'agentToken' => $agentToken, 'panelCertificateSha256' => self::panelFingerprint()], 201);
+            return response()->json([
+                'serverId' => $server->id, 'agentToken' => $agentToken, 'panelCertificateSha256' => self::panelFingerprint(),
+                // The agent also trusts the CA of the panel (agent/internal/pki PinnedCA).
+                'panelCaSha256' => PanelCertificate::current()['caSha256'],
+            ], 201);
         });
     }
 

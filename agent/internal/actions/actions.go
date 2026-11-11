@@ -4,6 +4,7 @@ package actions
 
 import (
 	"context"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -26,6 +27,11 @@ type Edge interface {
 	EnsureBase(ctx context.Context) error
 	Apply(ctx context.Context, s caddy.Site) error
 	Remove(ctx context.Context, websiteID string) error
+	// PanelCertificate gives the certificate method of the panel domain, or "" with no panel.
+	PanelCertificate(ctx context.Context, domain string) (string, error)
+	SetPanelCertificate(ctx context.Context, domain, method string) error
+	// PanelCARoot gives the root certificate of the CA of the panel in PEM format.
+	PanelCARoot(ctx context.Context) (string, error)
 }
 
 // Deps are the parts of the host that the actions change.
@@ -112,6 +118,17 @@ type Deps struct {
 	CgroupRoot string
 	// Certificate gives the expiry time of the certificate of a domain. Tests replace it.
 	Certificate func(ctx context.Context, domain string) (time.Time, error)
+	// ServedCertificate gives the certificate chain that the edge proxy serves for a domain.
+	// Nil means a TLS connection to the edge proxy. Tests replace it.
+	ServedCertificate func(ctx context.Context, domain string) ([]*x509.Certificate, error)
+	// PublicRoots are the public certificate authorities for the check of a certificate from
+	// Let's Encrypt. Nil means the system roots. Tests replace them.
+	PublicRoots *x509.CertPool
+	// PanelCertificateWait is the time that the agent waits for a new certificate of the
+	// panel, and PanelCertificatePoll is the time between two checks. The defaults are
+	// 2 minutes and 2 seconds.
+	PanelCertificateWait time.Duration
+	PanelCertificatePoll time.Duration
 
 	dbMu    sync.Mutex
 	sftpMu  sync.Mutex

@@ -107,6 +107,9 @@ The product specification, section 6.4, gives the requirements.
   and the SHA-256 hash of the binary. The agent and the installation script refuse a binary
   that does not agree with the manifest of the version that they asked for.
 - The agent checks the panel certificate on each connection, also for a resumed TLS session.
+- An agent trusts a certificate of the panel domain from a public CA, or from the panel CA with
+  the SHA-256 fingerprint in `agent.json`. It does not trust the panel CA for other names. It
+  gets a new fingerprint only from the panel, on a connection that it checked.
 - `cf-agent join` accepts only an `https://` panel address, except a loopback address.
 - The agent writes the php.ini of each website in `/etc/cloudfactory/websites/<user>/`, which
   only root can change, not in the home directory of the website user. It does not follow a
@@ -135,6 +138,14 @@ The product specification, section 6.4, gives the requirements.
   `cf-panel` connect.
 - The API accepts browser requests only from the panel domain (`CF_PANEL_DOMAIN`) and the
   origins in `CF_CORS_ORIGINS`.
+- A new panel has a certificate from its own CA (the panel CA). Caddy keeps the private key of
+  the CA in the data directory of the edge proxy, `/var/lib/cloudfactory/caddy`. Caddy does not
+  add the root certificate to the trust store of the server. A person who adds the root
+  certificate to a browser lets the CA sign certificates for all names in that browser. Keep the
+  data directory of the edge proxy safe, or use Let's Encrypt for a public panel domain.
+- The panel changes to Let's Encrypt only after the edge proxy serves a certificate that a
+  public CA signed. If the certificate does not come, the agent sets the previous method again.
+  Thus a failed ACME order does not lock out the administrator.
 - The panel keeps job data encrypted in the database. When a job is complete, the panel
   removes passwords from the job data.
 
@@ -164,6 +175,7 @@ directory with mode 0700:
   secrets above. Keep a copy of this file in a safe place. If you lose it, you must enter
   the backup credentials again, and users must set up TOTP again.
 - The private key of the panel for mutual TLS, in `/var/lib/cloudfactory/panel/pki/panel.key`.
+- The private key of the panel CA, in `/var/lib/cloudfactory/caddy/caddy/pki/authorities/cloudfactory/`.
 
 ## Users and API tokens
 

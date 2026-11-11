@@ -9,7 +9,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/itbm/cloudfactory/agent/internal/pki"
@@ -23,6 +25,9 @@ type Client struct {
 	// Retries is the number of times to try a report again when the panel is not available.
 	Retries int
 	Backoff time.Duration
+
+	mu    sync.Mutex
+	caPin string
 }
 
 // New gives a client. The agent sends its own certificate, so that the panel can check it.
@@ -32,19 +37,52 @@ type Client struct {
 // The agent on the panel server uses a pin, because it connects to the HTTPS port of the API
 // on the service address, which has no public name. With no pin, the client checks the
 // certificate of the panel domain in the usual way.
-func New(baseURL, token string, cert *tls.Certificate, serverPin string) *Client {
+//
+// caPin is the SHA-256 fingerprint of the root certificate of the panel CA, or "". With this
+// pin, the client also accepts a certificate of the panel domain from the panel CA
+// (pki.PinnedCA). The other servers use it when the panel has a certificate from its own CA.
+// The panel gives the pin in the answer to each report. SetCAPin changes it.
+func New(baseURL, token string, cert *tls.Certificate, serverPin, caPin string) *Client {
+	c := &Client{BaseURL: strings.TrimRight(baseURL, "/"), Token: token, Retries: 5, Backoff: 2 * time.Second, caPin: caPin}
 	tr := http.DefaultTransport.(*http.Transport).Clone()
 	tr.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS12}
 	if cert != nil {
 		tr.TLSClientConfig.Certificates = []tls.Certificate{*cert}
 	}
+	// The pins replace the checks of Go. Go calls VerifyConnection for each connection, also
+	// for a resumed session.
+	tr.TLSClientConfig.InsecureSkipVerify = true
 	if serverPin != "" {
-		// The pin replaces the checks of the name and of the certificate chain. Go calls
-		// VerifyConnection for each connection, also for a resumed session.
-		tr.TLSClientConfig.InsecureSkipVerify = true
+		// The pin replaces the checks of the name and of the certificate chain.
 		tr.TLSClientConfig.VerifyConnection = pki.PinnedServer(serverPin)
+	} else {
+		host := ""
+		if u, err := url.Parse(baseURL); err == nil {
+			host = u.Hostname()
+		}
+		// PinnedCA checks the name and the chain, with the system roots and the panel CA. With
+		// no pin, it checks only with the system roots, as Go does.
+		tr.TLSClientConfig.VerifyConnection = func(cs tls.ConnectionState) error {
+			return pki.PinnedCA(c.CAPin(), host, nil)(cs)
+		}
 	}
-	return &Client{BaseURL: strings.TrimRight(baseURL, "/"), Token: token, HTTP: &http.Client{Timeout: 30 * time.Second, Transport: tr}, Retries: 5, Backoff: 2 * time.Second}
+	c.HTTP = &http.Client{Timeout: 30 * time.Second, Transport: tr}
+	return c
+}
+
+// CAPin gives the fingerprint of the root certificate of the panel CA, or "".
+func (c *Client) CAPin() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.caPin
+}
+
+// SetCAPin changes the fingerprint of the root certificate of the panel CA. New connections use
+// it. Connections that are open stay open.
+func (c *Client) SetCAPin(fingerprint string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.caPin = fingerprint
 }
 
 // Event is the progress or the result of a job.
@@ -77,6 +115,26 @@ type Report struct {
 	Databases []DatabaseSize `json:"databases"`
 	// SftpPort is the port that the website owners use for SFTP on this server.
 	SftpPort int `json:"sftpPort,omitempty"`
+	// PanelCertificate is the certificate of the panel domain. Only the panel server sends it.
+	PanelCertificate *PanelCertificate `json:"panelCertificate,omitempty"`
+	// PanelCASHA256 is the fingerprint of the root certificate of the panel CA that this agent
+	// trusts. The panel changes to its own CA only when all other servers trust it.
+	PanelCASHA256 string `json:"panelCaSha256,omitempty"`
+}
+
+// PanelCertificate is the certificate method of the panel domain and the state of the
+// certificate that the edge proxy serves.
+type PanelCertificate struct {
+	Domain string `json:"domain"`
+	// Method is "internal" (the CA of the panel) or "letsencrypt".
+	Method string `json:"method"`
+	// State is "valid", "pending" (the edge proxy has no certificate of the method yet) or
+	// "expired".
+	State     string `json:"state"`
+	ExpiresAt string `json:"expiresAt,omitempty"`
+	// CACertificate is the root certificate of the panel CA in PEM format. Browsers and other
+	// servers trust the internal certificate when they trust this root.
+	CACertificate string `json:"caCertificate,omitempty"`
 }
 
 // DomainState is what the agent sees for one domain (FR-402, FR-403).
@@ -116,9 +174,18 @@ type Usage struct {
 	Processes   int64   `json:"processes"`
 }
 
+// ReportResponse is the answer of the panel to a report.
+type ReportResponse struct {
+	// PanelCASHA256 is the fingerprint of the root certificate of the panel CA, or "" when the
+	// panel does not know it yet.
+	PanelCASHA256 string `json:"panelCaSha256"`
+}
+
 // SendReport sends the state of the host.
-func (c *Client) SendReport(ctx context.Context, r Report) error {
-	return c.post(ctx, "/api/agent/v1/report", r, nil)
+func (c *Client) SendReport(ctx context.Context, r Report) (ReportResponse, error) {
+	var resp ReportResponse
+	err := c.post(ctx, "/api/agent/v1/report", r, &resp)
+	return resp, err
 }
 
 // JoinRequest is the request of "cf-agent join" (FR-1201).
@@ -143,6 +210,8 @@ type JoinResponse struct {
 	ServerID               string `json:"serverId"`
 	AgentToken             string `json:"agentToken"`
 	PanelCertificateSHA256 string `json:"panelCertificateSha256"`
+	// PanelCASHA256 is the fingerprint of the root certificate of the panel CA, or "".
+	PanelCASHA256 string `json:"panelCaSha256"`
 }
 
 // Join adds this server to the panel. The join token works once, so Join does not try again.
@@ -205,7 +274,7 @@ func (c *Client) once(ctx context.Context, path string, body []byte, out any) (r
 		json.Unmarshal(data, &msg)
 		return false, fmt.Errorf("panel: %s: status %d: %s", path, resp.StatusCode, msg.Message)
 	}
-	if out != nil {
+	if out != nil && len(bytes.TrimSpace(data)) > 0 {
 		return false, json.Unmarshal(data, out)
 	}
 	return false, nil

@@ -2,8 +2,15 @@ package panel
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/json"
+	"math/big"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -32,7 +39,7 @@ func TestJobEventTriesAgainWhenThePanelFails(t *testing.T) {
 		}
 	}))
 	defer srv.Close()
-	c := New(srv.URL, "cfa_x", nil, "")
+	c := New(srv.URL, "cfa_x", nil, "", "")
 	c.Backoff = time.Millisecond
 
 	if err := c.JobEvent(context.Background(), "J1", Event{State: "succeeded", Step: 6}); err != nil {
@@ -52,7 +59,7 @@ func TestJoinDoesNotTryAgain(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	_, err := New(srv.URL, "", nil, "").Join(context.Background(), JoinRequest{Token: "cfj_x"})
+	_, err := New(srv.URL, "", nil, "", "").Join(context.Background(), JoinRequest{Token: "cfj_x"})
 	if err == nil || calls.Load() != 1 {
 		t.Fatalf("err = %v, calls = %d", err, calls.Load())
 	}
@@ -93,7 +100,7 @@ func TestAPinnedClientAcceptsOnlyThePanelCertificate(t *testing.T) {
 	defer srv.Close()
 	panelFingerprint := pki.Fingerprint(srv.Certificate().Raw)
 
-	resp, err := New(srv.URL, "", &cert, panelFingerprint).Join(context.Background(), JoinRequest{Token: "cfj_x"})
+	resp, err := New(srv.URL, "", &cert, panelFingerprint, "").Join(context.Background(), JoinRequest{Token: "cfj_x"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,12 +113,70 @@ func TestAPinnedClientAcceptsOnlyThePanelCertificate(t *testing.T) {
 
 	// A different certificate on the same address is not the panel.
 	wrong := strings.Repeat("ab", 32)
-	if _, err := New(srv.URL, "", &cert, wrong).Join(context.Background(), JoinRequest{Token: "cfj_x"}); err == nil || !strings.Contains(err.Error(), "is not the certificate") {
+	if _, err := New(srv.URL, "", &cert, wrong, "").Join(context.Background(), JoinRequest{Token: "cfj_x"}); err == nil || !strings.Contains(err.Error(), "is not the certificate") {
 		t.Errorf("err = %v, want a pin error", err)
 	}
 	// With no pin, the client uses the public certificate authorities. They do not know the
 	// certificate of the test server.
-	if _, err := New(srv.URL, "", &cert, "").Join(context.Background(), JoinRequest{Token: "cfj_x"}); err == nil {
+	if _, err := New(srv.URL, "", &cert, "", "").Join(context.Background(), JoinRequest{Token: "cfj_x"}); err == nil {
 		t.Error("a client with no pin accepted a certificate that no authority signed")
+	}
+}
+
+// The panel has a certificate from its own CA. The edge proxy sends the root certificate with
+// the certificate of the panel. The agent trusts it only with the fingerprint of the root, and
+// it learns a new fingerprint from the answer to a report.
+func TestTheClientTrustsThePanelCAWithItsFingerprint(t *testing.T) {
+	caKey, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	caTmpl := &x509.Certificate{SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "Cloudfactory panel CA"}, NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour),
+		IsCA: true, BasicConstraintsValid: true, KeyUsage: x509.KeyUsageCertSign}
+	caDER, _ := x509.CreateCertificate(rand.Reader, caTmpl, caTmpl, &caKey.PublicKey, caKey)
+	ca, _ := x509.ParseCertificate(caDER)
+	leafKey, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	leafTmpl := &x509.Certificate{SerialNumber: big.NewInt(2), NotBefore: time.Now().Add(-time.Hour), NotAfter: time.Now().Add(time.Hour),
+		IPAddresses: []net.IP{net.ParseIP("127.0.0.1")}, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}, KeyUsage: x509.KeyUsageDigitalSignature}
+	leafDER, _ := x509.CreateCertificate(rand.Reader, leafTmpl, ca, &leafKey.PublicKey, caKey)
+	rootPin := pki.Fingerprint(caDER)
+
+	var reported atomic.Value
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body Report
+		json.NewDecoder(r.Body).Decode(&body)
+		reported.Store(body.PanelCASHA256)
+		w.Write([]byte(`{"ok":true,"panelCaSha256":"` + rootPin + `"}`))
+	}))
+	srv.TLS = &tls.Config{Certificates: []tls.Certificate{{Certificate: [][]byte{leafDER, caDER}, PrivateKey: leafKey}}}
+	srv.StartTLS()
+	defer srv.Close()
+
+	c := New(srv.URL, "cfa_x", nil, "", "")
+	c.Retries = 0
+	if _, err := c.SendReport(context.Background(), Report{}); err == nil {
+		t.Fatal("a client with no CA pin accepted the certificate of the panel CA")
+	}
+	c.SetCAPin(rootPin)
+	resp, err := c.SendReport(context.Background(), Report{PanelCASHA256: c.CAPin()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.PanelCASHA256 != rootPin || reported.Load() != rootPin {
+		t.Errorf("response = %+v, reported = %v", resp, reported.Load())
+	}
+
+	// A different CA is not the panel CA.
+	c.SetCAPin(strings.Repeat("ab", 32))
+	c.HTTP.CloseIdleConnections()
+	if _, err := c.SendReport(context.Background(), Report{}); err == nil || !strings.Contains(err.Error(), "panel CA") {
+		t.Errorf("err = %v, want a CA error", err)
+	}
+}
+
+// A panel from an earlier release answers a report with no fingerprint.
+func TestAnEmptyAnswerToAReport(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	defer srv.Close()
+	resp, err := New(srv.URL, "cfa_x", nil, "", "").SendReport(context.Background(), Report{})
+	if err != nil || resp.PanelCASHA256 != "" {
+		t.Errorf("resp = %+v, err = %v", resp, err)
 	}
 }

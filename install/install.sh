@@ -5,6 +5,9 @@
 #   curl -fsSL https://github.com/itbm/cloudfactory/releases/latest/download/install.sh | sh
 #   curl -fsSL https://github.com/itbm/cloudfactory/releases/latest/download/install.sh | sh -s -- --domain panel.example.com --email you@example.com
 #
+# A new panel gets a TLS certificate from its own certificate authority (CA). This works for all
+# domains, also panel.localhost. The administrator can change to Let's Encrypt in the panel.
+#
 # Add a server to a panel:
 #   curl -fsSL https://github.com/itbm/cloudfactory/releases/latest/download/install.sh | sh -s -- --join <TOKEN> --panel https://panel.example.com
 #
@@ -41,6 +44,12 @@ MODE=panel
 JOIN_TOKEN=""
 PANEL_URL=""
 PANEL_PIN=""
+# The SHA-256 fingerprint of the root certificate of the panel CA, for a panel that has a
+# certificate from its own CA (--panel-ca-sha256).
+PANEL_CA_PIN=""
+# The certificate method of the panel domain: "internal" (the panel CA) or "letsencrypt". Empty
+# keeps the method of a panel that operates. A new panel uses "internal".
+CERTIFICATE=""
 DOMAIN=""
 EMAIL=""
 NAME=""
@@ -71,6 +80,14 @@ Usage:
   install.sh --join TOKEN --panel URL                 Add this server to a panel.
 
 Options:
+  --certificate METHOD The TLS certificate of the panel domain: "internal" (a certificate
+                       from the certificate authority of the panel) or "letsencrypt". A new
+                       panel uses "internal", which works also for localhost and
+                       panel.localhost. You can change the method in the panel later.
+  --panel-ca-sha256 SHA256
+                       With --join: the SHA-256 fingerprint of the root certificate of the
+                       panel CA. Give it when the panel uses the "internal" certificate. The
+                       panel shows the full command in Servers > Add server.
   --name NAME          The name of this server in the panel. The default is the host name.
   --roles ROLES        The roles of this server: web, database, email, dns, backup.
                        The default is "web" for --join, and all roles for a new panel.
@@ -116,6 +133,8 @@ while [ $# -gt 0 ]; do
 	case "$1" in
 	--join) MODE="join"; JOIN_TOKEN=$(value "$@"); shift ;;
 	--panel) PANEL_URL=$(value "$@"); shift ;;
+	--panel-ca-sha256) PANEL_CA_PIN=$(value "$@"); shift ;;
+	--certificate) CERTIFICATE=$(value "$@"); shift ;;
 	--domain) DOMAIN=$(value "$@"); shift ;;
 	--email) EMAIL=$(value "$@"); shift ;;
 	--name) NAME=$(value "$@"); shift ;;
@@ -188,6 +207,12 @@ check_arguments() {
 		https://*) ;;
 		*) problem "--join needs --panel with an https:// address." ;;
 		esac
+		case "$PANEL_CA_PIN" in
+		"") ;;
+		*[!0-9a-fA-F]*) problem "--panel-ca-sha256 needs the SHA-256 fingerprint of the panel CA (64 hex characters)." ;;
+		*) [ "${#PANEL_CA_PIN}" -eq 64 ] || problem "--panel-ca-sha256 needs the SHA-256 fingerprint of the panel CA (64 hex characters)." ;;
+		esac
+		[ -z "$CERTIFICATE" ] || problem "--certificate is only for a new panel, not with --join."
 		;;
 	panel)
 		if [ -z "$DOMAIN" ]; then
@@ -197,11 +222,27 @@ check_arguments() {
 			*) DOMAIN="" ;;
 			esac
 		fi
-		[ -n "$DOMAIN" ] || problem "the host name is not a full domain. Give the domain of the panel with --domain, for example --domain panel.example.com."
+		[ -n "$DOMAIN" ] || problem "the host name is not a full domain. Give the domain of the panel with --domain, for example --domain panel.example.com or --domain panel.localhost."
 		[ -n "$EMAIL" ] || EMAIL="admin@$DOMAIN"
 		case "$EMAIL" in
 		*@*.*) ;;
 		*) problem "give the email address of the first administrator with --email." ;;
+		esac
+		[ -z "$PANEL_CA_PIN" ] || problem "--panel-ca-sha256 is only for --join."
+		case "$CERTIFICATE" in
+		"" | internal) ;;
+		letsencrypt)
+			# The same names as caddy.PublicName in the agent.
+			case "$DOMAIN" in
+			*.*) ;;
+			*) problem "Let's Encrypt gives certificates only for public domains. Use --certificate internal for $DOMAIN." ;;
+			esac
+			case "$DOMAIN" in
+			*.localhost | *.local | *.internal | *.home.arpa | *.test | *.example | *.invalid)
+				problem "Let's Encrypt gives certificates only for public domains. Use --certificate internal for $DOMAIN." ;;
+			esac
+			;;
+		*) problem "--certificate must be internal or letsencrypt." ;;
 		esac
 		;;
 	esac
@@ -328,6 +369,16 @@ ${website_networks}    # The edge proxy on the addresses of this server, so that
     tcp dport 80 redirect to :8080
     tcp dport 443 redirect to :8443
     udp dport 443 redirect to :8443
+  }
+  chain output_nat {
+    # A connection that a program on this server opens does not go through the prerouting
+    # chain. Thus a browser on this server (for example https://panel.localhost), or a website
+    # that calls the public address of this server, needs the same redirects here. The
+    # output chain then sees port 8080 or 8443.
+    type nat hook output priority -100;
+    fib daddr type local tcp dport 80 redirect to :8080
+    fib daddr type local tcp dport 443 redirect to :8443
+    fib daddr type local udp dport 443 redirect to :8443
   }
 }
 NFT
@@ -722,7 +773,11 @@ ENV
 		umask 022
 	fi
 	# FR-1808: the agent pulls the panel images and starts them in gVisor.
-	/usr/local/bin/cf-agent panel install --domain "$DOMAIN" --registry "$REGISTRY"
+	# A new panel gets a certificate from its own CA. A panel that operates keeps its method,
+	# unless you give --certificate.
+	set -- --domain "$DOMAIN" --registry "$REGISTRY"
+	[ -n "$CERTIFICATE" ] && set -- "$@" --certificate "$CERTIFICATE"
+	/usr/local/bin/cf-agent panel install "$@"
 
 	step "Make the first administrator"
 	i=0
@@ -754,6 +809,7 @@ if [ ! -f "$CF_ETC/agent.json" ]; then
 	[ -n "$NAME" ] && set -- "$@" --name "$NAME"
 	[ -n "$ADDRESS" ] && set -- "$@" --address "$ADDRESS"
 	[ -n "$PANEL_PIN" ] && set -- "$@" --panel-certificate-sha256 "$PANEL_PIN"
+	[ -n "$PANEL_CA_PIN" ] && set -- "$@" --panel-ca-sha256 "$PANEL_CA_PIN"
 	/usr/local/bin/cf-agent join "$@"
 fi
 if [ "$AGENT_CHANGED" -eq 1 ] && systemctl is-active --quiet cf-agent.service; then
@@ -766,7 +822,8 @@ CURRENT=""
 info ""
 if [ "$MODE" = panel ]; then
 	info "The panel is installed. Open https://$DOMAIN"
-	info "Point the DNS of $DOMAIN to this server, so that the panel can get a TLS certificate."
+	# The certificate method of the panel, and the root certificate of the panel CA.
+	/usr/local/bin/cf-agent panel certificate || true
 	if [ -n "${PASSWORD:-}" ]; then
 		info "Sign in as $EMAIL with this password: $PASSWORD"
 		info "This password is temporary. The panel asks you for a new password when you sign in."

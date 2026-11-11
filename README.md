@@ -61,11 +61,16 @@ Use a new server with Debian 13 or Ubuntu 26.04. Run this command as root:
 curl -fsSL https://github.com/itbm/cloudfactory/releases/latest/download/install.sh | sh -s -- --domain panel.example.com
 ```
 
-The script does all checks before it changes the system. To add a second server, get a join
-token in the panel (**Servers > Add server**). Then run:
+The script does all checks before it changes the system. The panel gets a TLS certificate from
+its own certificate authority, so any domain works, also `panel.localhost`. Add the root
+certificate to your browser, or change to Let's Encrypt in **Settings > Panel certificate** when
+the domain is public.
+
+To add a second server, copy the join command in the panel (**Servers > Add server**). It looks
+like this:
 
 ```sh
-curl -fsSL https://github.com/itbm/cloudfactory/releases/latest/download/install.sh | sh -s -- --join TOKEN --panel https://panel.example.com
+curl -fsSL https://github.com/itbm/cloudfactory/releases/latest/download/install.sh | sh -s -- --join TOKEN --panel https://panel.example.com --panel-ca-sha256 FINGERPRINT
 ```
 
 Refer to [docs/installation.md](docs/installation.md) for all options and for the steps to verify

@@ -15,7 +15,7 @@ use Illuminate\Support\Facades\DB;
     'name', 'location', 'roles', 'state', 'agent_url', 'agent_version', 'certificate_fingerprint', 'certificate_pem', 'agent_token_hash',
     'os', 'kernel', 'arch', 'podman_version', 'gvisor_version', 'gvisor_platform', 'bare_metal', 'update_policy',
     'maintenance_window', 'pending_updates', 'reboot_required', 'services', 'usage', 'last_update_at', 'last_seen_at', 'local',
-    'sftp_port',
+    'sftp_port', 'panel_ca_sha256',
 ])]
 #[Hidden(['agent_token_hash', 'backup_password'])]
 class Server extends Model

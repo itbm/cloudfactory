@@ -104,6 +104,9 @@ class JobOutcome
                 'sftp_keys' => $p['authorizedKeys'] ?? [],
             ]),
             AgentAction::ConfigureHost => $job->server->update(['gvisor_platform' => $p['gvisorPlatform'] ?? $job->server->gvisor_platform]),
+            // The agent gives the new state of the certificate. The panel does not wait for the next report.
+            AgentAction::SetPanelCertificate => $job->server->local && is_array($result['panelCertificate'] ?? null)
+                && PanelCertificate::record($result['panelCertificate']),
             AgentAction::AddDomain => Domain::where('name', $p['domain'] ?? '')->update([
                 'dns_points_here' => (bool) ($result['dnsPointsHere'] ?? true),
                 'certificate_state' => ($result['dnsPointsHere'] ?? true) ? 'valid' : 'pending',
