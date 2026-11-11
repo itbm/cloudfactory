@@ -27,6 +27,7 @@ enum AgentAction: string
     case PruneBackups = 'PruneBackups';
     case SetSftp = 'SetSftp';
     case ConfigureHost = 'ConfigureHost';
+    case SetPanelCertificate = 'SetPanelCertificate';
 
     /** The steps that the agent reports for this action. */
     public function steps(): array
@@ -51,6 +52,7 @@ enum AgentAction: string
             self::PruneBackups => ['Remove backups of deleted websites', 'Remove unused data'],
             self::SetSftp => ['Set SFTP access'],
             self::ConfigureHost => ['Save settings', 'Restart websites', 'Restart services'],
+            self::SetPanelCertificate => ['Change certificate method', 'Get TLS certificate'],
         };
     }
 

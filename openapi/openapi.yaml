@@ -877,7 +877,8 @@ paths:
                 properties:
                   token: { type: string }
                   expiresAt: { type: string, format: date-time }
-                  command: { type: string }
+                  command: { type: string, description: The install command. When the panel has a CA, the command has its fingerprint (--panel-ca-sha256). }
+                  panelCaSha256: { type: [string, 'null'], description: The SHA-256 fingerprint of the root certificate of the panel CA. }
 
   /v1/servers/{id}:
     parameters:
@@ -975,6 +976,49 @@ paths:
                 allowDowngrade: { type: boolean, default: false }
       responses:
         '202': { $ref: '#/components/responses/JobOnly' }
+
+  /v1/panel-certificate:
+    get:
+      tags: [Servers]
+      summary: Get the certificate of the panel domain
+      description: >-
+        The edge proxy on the panel server gets the TLS certificate of the panel domain with one
+        of two methods. "internal": the CA of the panel signs it. This works for all domains,
+        also localhost and panel.localhost. A browser trusts it only after you add the root
+        certificate of the CA (caCertificate). A new panel uses this method. "letsencrypt": Let's
+        Encrypt gives it. The domain must be public, and its DNS must point to the panel server.
+      responses:
+        '200':
+          description: The certificate.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PanelCertificate' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    put:
+      tags: [Servers]
+      summary: Change the certificate method of the panel domain
+      description: >-
+        The agent on the panel server changes the method and waits for the new certificate. If
+        the certificate does not come in time, the agent goes back to the previous method and the
+        job fails. The panel refuses "internal" while other servers do not trust the panel CA
+        (serversWithoutCa), and "letsencrypt" for a domain that is not public.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [method]
+              properties:
+                method: { type: string, enum: [internal, letsencrypt] }
+      responses:
+        '202':
+          description: The job started.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PanelCertificate' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Invalid' }
 
   /v1/runtime-images:
     get:
@@ -1443,6 +1487,7 @@ paths:
                   serverId: { type: string }
                   agentToken: { type: string }
                   panelCertificateSha256: { type: [string, 'null'] }
+                  panelCaSha256: { type: [string, 'null'], description: The agent trusts a certificate of the panel domain from the CA with this root fingerprint. }
         '401': { description: The join token is not valid or has expired. }
         '422': { $ref: '#/components/responses/Invalid' }
 
@@ -1484,7 +1529,15 @@ paths:
           application/json:
             schema: { $ref: '#/components/schemas/HostReport' }
       responses:
-        '200': { description: Recorded. }
+        '200':
+          description: Recorded.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  panelCaSha256: { type: [string, 'null'], description: The SHA-256 fingerprint of the root certificate of the panel CA. The agent trusts this CA from now on. }
         '401': { $ref: '#/components/responses/Unauthenticated' }
 
 components:
@@ -1882,6 +1935,21 @@ components:
         - type: object
           properties:
             id: { type: string }
+    PanelCertificate:
+      type: object
+      required: [domain, method, state, letsEncryptAvailable, serversWithoutCa]
+      properties:
+        domain: { type: string }
+        method: { type: [string, 'null'], enum: [internal, letsencrypt, null], description: Null until the agent on the panel server reports. }
+        state: { type: string, enum: [valid, pending, expired], description: '"pending": the edge proxy does not have a certificate of the method yet.' }
+        expiresAt: { type: [string, 'null'], format: date-time }
+        caCertificate: { type: [string, 'null'], description: The root certificate of the panel CA in PEM format. Add it to the trust store of your browser or system. }
+        caSha256: { type: [string, 'null'], description: The SHA-256 fingerprint of caCertificate. }
+        reportedAt: { type: [string, 'null'], format: date-time }
+        letsEncryptAvailable: { type: boolean, description: False when the panel domain is not public, for example panel.localhost. }
+        serversWithoutCa: { type: array, items: { type: string }, description: The names of the other servers that do not trust the panel CA yet. }
+        job: { oneOf: [{ $ref: '#/components/schemas/Job' }, { type: 'null' }], description: The current or the last change of the method. }
+
     HostReport:
       type: object
       required: [agentVersion]
@@ -1946,3 +2014,15 @@ components:
               engine: { $ref: '#/components/schemas/Engine' }
               name: { type: string }
               sizeBytes: { type: integer }
+        sftpPort: { type: [integer, 'null'], minimum: 1, maximum: 65535 }
+        panelCertificate:
+          type: [object, 'null']
+          description: The certificate of the panel domain. Only the agent on the panel server sends it.
+          required: [domain, method, state]
+          properties:
+            domain: { type: string }
+            method: { type: string, enum: [internal, letsencrypt] }
+            state: { type: string, enum: [valid, pending, expired] }
+            expiresAt: { type: [string, 'null'], format: date-time }
+            caCertificate: { type: [string, 'null'], description: The root certificate of the panel CA in PEM format. }
+        panelCaSha256: { type: [string, 'null'], pattern: '^[0-9a-f]{64}$', description: The fingerprint of the root certificate of the panel CA that the agent trusts. }

@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\DatabaseUserController;
 use App\Http\Controllers\Api\DomainController;
 use App\Http\Controllers\Api\ImageController;
 use App\Http\Controllers\Api\JobController;
+use App\Http\Controllers\Api\PanelCertificateController;
 use App\Http\Controllers\Api\PlanController;
 use App\Http\Controllers\Api\RolloutController;
 use App\Http\Controllers\Api\RuntimeController;
@@ -92,6 +93,9 @@ Route::prefix('v1')->group(function () {
             Route::post('servers/{id}/install-updates', [ServerController::class, 'installUpdates']);
             Route::post('servers/{id}/reboot', [ServerController::class, 'reboot']);
             Route::post('servers/{id}/update-agent', [ServerController::class, 'updateAgent']);
+            // The TLS certificate of the panel domain: the CA of the panel or Let's Encrypt.
+            Route::get('panel-certificate', [PanelCertificateController::class, 'show']);
+            Route::put('panel-certificate', [PanelCertificateController::class, 'update'])->middleware('throttle:10,1');
         });
 
         Route::middleware(['admin', 'scope:images'])->group(function () {

@@ -12,6 +12,7 @@ use App\Models\JoinToken;
 use App\Models\Server;
 use App\Services\Audit;
 use App\Services\JobDispatcher;
+use App\Services\PanelCertificate;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -71,11 +72,18 @@ class ServerController extends Controller
         JoinToken::create(['token_hash' => hash('sha256', $token), 'expires_at' => now()->addDay()]);
         Audit::record($request, 'Made server join token');
 
+        // The new server trusts the CA of the panel by the fingerprint of its root certificate.
+        // It needs it when the panel has a certificate from its own CA, and it keeps it for a
+        // later change back from Let's Encrypt.
+        $pin = PanelCertificate::current()['caSha256'];
+
         return response()->json([
             'token' => $token,
             'expiresAt' => now()->addDay()->toIso8601String(),
             // R-14: the same signed installation script from GitHub Releases as in the README.
-            'command' => 'curl -fsSL '.config('cloudfactory.install_url')." | sh -s -- --join {$token} --panel https://".config('cloudfactory.panel_domain'),
+            'command' => 'curl -fsSL '.config('cloudfactory.install_url')." | sh -s -- --join {$token} --panel https://".config('cloudfactory.panel_domain')
+                .($pin ? " --panel-ca-sha256 {$pin}" : ''),
+            'panelCaSha256' => $pin,
         ], 201);
     }
 

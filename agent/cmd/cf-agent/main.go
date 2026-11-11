@@ -203,6 +203,11 @@ func join(ctx context.Context, args []string) error {
 		return err
 	}
 	cfg.ServerID, cfg.AgentToken, cfg.PanelCertificateSHA256 = resp.ServerID, resp.AgentToken, resp.PanelCertificateSHA256
+	// The connection to the panel is checked, thus the agent can trust the panel CA that the
+	// panel gives. The agent then continues to work after a change of the panel certificate.
+	if resp.PanelCASHA256 != "" && pki.CheckFingerprint(resp.PanelCASHA256) == nil {
+		cfg.PanelCASHA256 = resp.PanelCASHA256
+	}
 	if err := config.Save(*configPath, cfg); err != nil {
 		return err
 	}
@@ -320,7 +325,7 @@ func serve(ctx context.Context) error {
 	}
 	collector := status.Collector{Run: run, Apt: apt, AgentVersion: version, GVisorVersion: gv.Current, Services: []string{"cf-agent", "nftables", "ssh", "cf-sftp"}, UserServices: []string{host.EdgeUser + ":cf-edge.service"}, DiskPath: cfg.SitesDir, Extra: deps.FillReport}
 
-	go reportLoop(ctx, reporter, collector, time.Duration(cfg.ReportSeconds)*time.Second)
+	go reportLoop(ctx, reporter, collector, time.Duration(cfg.ReportSeconds)*time.Second, cfg.PanelServerCertificateSHA256 == "", savePanelCAPin)
 	go func() {
 		for range time.Tick(24 * time.Hour) {
 			runner.Prune(time.Now().Add(-30 * 24 * time.Hour))
@@ -334,13 +339,28 @@ func serve(ctx context.Context) error {
 	return err
 }
 
-func reportLoop(ctx context.Context, c *panel.Client, s status.Collector, every time.Duration) {
+// reportLoop sends a report at each interval. With learnCA, the agent trusts the panel CA that
+// the panel gives in its answer, and save keeps the fingerprint for the next start.
+func reportLoop(ctx context.Context, c *panel.Client, s status.Collector, every time.Duration, learnCA bool, save func(string) error) {
 	if every <= 0 {
 		every = time.Minute
 	}
 	for {
-		if err := c.SendReport(ctx, s.Report(ctx)); err != nil && ctx.Err() == nil {
+		r := s.Report(ctx)
+		if learnCA {
+			r.PanelCASHA256 = c.CAPin()
+		}
+		resp, err := c.SendReport(ctx, r)
+		if err != nil && ctx.Err() == nil {
 			slog.Warn("report to panel failed", "err", err)
+		}
+		if pin := strings.ToLower(resp.PanelCASHA256); err == nil && learnCA && pin != "" && pin != c.CAPin() && pki.CheckFingerprint(pin) == nil {
+			c.SetCAPin(pin)
+			if err := save(pin); err != nil {
+				slog.Error("save the fingerprint of the panel CA", "err", err)
+			} else {
+				slog.Info("trust the panel CA", "sha256", pin)
+			}
 		}
 		select {
 		case <-ctx.Done():
@@ -348,6 +368,16 @@ func reportLoop(ctx context.Context, c *panel.Client, s status.Collector, every 
 		case <-time.After(every):
 		}
 	}
+}
+
+// savePanelCAPin keeps the fingerprint of the root certificate of the panel CA in the settings.
+func savePanelCAPin(pin string) error {
+	c, err := config.Load(config.DefaultPath)
+	if err != nil {
+		return err
+	}
+	c.PanelCASHA256 = pin
+	return config.Save(config.DefaultPath, c)
 }
 
 // gvisorCmd installs the gVisor version from the settings, or goes back to the previous version.
