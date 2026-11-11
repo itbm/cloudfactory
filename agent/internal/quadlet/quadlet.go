@@ -7,6 +7,7 @@ package quadlet
 import (
 	"fmt"
 	"maps"
+	"math"
 	"path"
 	"slices"
 	"strconv"
@@ -27,8 +28,40 @@ type Runtime struct {
 
 // GlobalArgs are the Podman arguments that select gVisor. The network stack of gVisor
 // ("sandbox") is always on (FR-1701). The agent never sets host networking (FR-1702).
+//
+// runsc does not make a cgroup for the container (ignore-cgroups). runsc makes a cgroup from
+// the top of the cgroup tree, and writes cgroup.subtree_control at each level from
+// /sys/fs/cgroup. Only root can write /sys/fs/cgroup/cgroup.subtree_control, so no rootless
+// container started ("cannot set up cgroup for root: ... permission denied"). Thus the
+// sandbox stays in the cgroup of its systemd service, and the limits are properties of the
+// service (ServiceLimits). The status report reads the use of each website from the same
+// cgroup.
 func (r Runtime) GlobalArgs() string {
-	return fmt.Sprintf("--runtime=%s --runtime-flag=platform=%s --runtime-flag=network=sandbox", r.RunscPath, r.Platform)
+	return fmt.Sprintf("--runtime=%s --runtime-flag=platform=%s --runtime-flag=network=sandbox --runtime-flag=ignore-cgroups", r.RunscPath, r.Platform)
+}
+
+// LimitProperties gives the systemd properties of the cgroup limits (FR-202). systemd sets
+// them on the cgroup of the service, which holds the gVisor sandbox. The installer lets the
+// user managers use the cpu, io, memory and pids controllers. The values are for a unit file
+// and for "systemctl set-property".
+func LimitProperties(l Limits) []string {
+	var props []string
+	if l.VCPUs > 0 {
+		// One vCPU is 100% of one CPU.
+		props = append(props, fmt.Sprintf("CPUQuota=%d%%", int64(math.Round(l.VCPUs*100))))
+	}
+	if l.MemoryBytes > 0 {
+		// The website cannot use swap.
+		props = append(props, "MemoryMax="+strconv.FormatInt(l.MemoryBytes, 10), "MemorySwapMax=0")
+	}
+	if l.Processes > 0 {
+		props = append(props, "TasksMax="+strconv.FormatInt(l.Processes, 10))
+	}
+	if l.DiskIOBytesPerSecond > 0 && l.BlockDevice != "" {
+		v := l.BlockDevice + " " + strconv.FormatInt(l.DiskIOBytesPerSecond, 10)
+		props = append(props, "IOReadBandwidthMax="+v, "IOWriteBandwidthMax="+v)
+	}
+	return props
 }
 
 // Limits are the cgroup v2 limits of one website.
@@ -152,12 +185,6 @@ func ContainerUnit(w Website) string {
 	line("ReadOnly", "true")
 	line("Tmpfs", "/tmp")
 	line("UserNS", "keep-id")
-	if w.Limits.Processes > 0 {
-		line("PidsLimit", strconv.FormatInt(w.Limits.Processes, 10))
-	}
-	if args := podmanLimitArgs(w.Limits); args != "" {
-		line("PodmanArgs", args)
-	}
 
 	if w.Runtime == "custom" && len(w.Command) > 0 {
 		line("Exec", execLine(w.Command))
@@ -166,6 +193,10 @@ func ContainerUnit(w Website) string {
 	b.WriteString("\n[Service]\n")
 	line("Restart", "always")
 	line("TimeoutStartSec", "300")
+	// The limits are on the cgroup of the service (Runtime.GlobalArgs).
+	for _, p := range LimitProperties(w.Limits) {
+		b.WriteString(p + "\n")
+	}
 
 	if !w.Stopped {
 		b.WriteString("\n[Install]\n")
@@ -183,23 +214,6 @@ func execLine(args []string) string {
 		q[i] = `"` + a + `"`
 	}
 	return strings.Join(q, " ")
-}
-
-func podmanLimitArgs(l Limits) string {
-	var args []string
-	if l.VCPUs > 0 {
-		args = append(args, "--cpus="+strconv.FormatFloat(l.VCPUs, 'f', -1, 64))
-	}
-	if l.MemoryBytes > 0 {
-		m := strconv.FormatInt(l.MemoryBytes, 10)
-		// The same value for swap means that the container cannot use swap.
-		args = append(args, "--memory="+m, "--memory-swap="+m)
-	}
-	if l.DiskIOBytesPerSecond > 0 && l.BlockDevice != "" {
-		v := l.BlockDevice + ":" + strconv.FormatInt(l.DiskIOBytesPerSecond, 10)
-		args = append(args, "--device-read-bps="+v, "--device-write-bps="+v)
-	}
-	return strings.Join(args, " ")
 }
 
 // PHPIni gives the php.ini file for a website: the extensions and the values of the plan.
@@ -442,11 +456,13 @@ func SftpUnit(s Sftp) string {
 		"ReadOnly=true",
 		"Tmpfs=/run",
 		"Tmpfs=/tmp",
-		"PidsLimit=2048",
-		"PodmanArgs=--memory=512m --memory-swap=512m",
 		"",
 		"[Service]",
 		"Restart=always",
+		// The limits are on the cgroup of the service (Runtime.GlobalArgs).
+		"MemoryMax=512M",
+		"MemorySwapMax=0",
+		"TasksMax=2048",
 		"",
 		"[Install]",
 		"WantedBy=multi-user.target",

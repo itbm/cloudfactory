@@ -18,21 +18,25 @@ func website() Website {
 func TestContainerUnitUsesGvisorAndNoHostNetwork(t *testing.T) {
 	u := ContainerUnit(website())
 	for _, want := range []string{
-		"GlobalArgs=--runtime=/usr/local/bin/runsc --runtime-flag=platform=systrap --runtime-flag=network=sandbox",
+		"GlobalArgs=--runtime=/usr/local/bin/runsc --runtime-flag=platform=systrap --runtime-flag=network=sandbox --runtime-flag=ignore-cgroups",
 		"Network=pasta",
 		"PublishPort=169.254.77.1:20001:8080",
 		"AddHost=mariadb.internal:169.254.77.1",
 		"NoNewPrivileges=true",
 		"DropCapability=all",
-		"PidsLimit=100",
-		"PodmanArgs=--cpus=1.5 --memory=1073741824 --memory-swap=1073741824",
+		// The limits are on the cgroup of the service, because runsc ignores cgroups.
+		"CPUQuota=150%",
+		"MemoryMax=1073741824",
+		"MemorySwapMax=0",
+		"TasksMax=100",
 		"Pull=never",
 	} {
 		if !strings.Contains(u, want+"\n") {
 			t.Errorf("unit does not contain %q:\n%s", want, u)
 		}
 	}
-	if strings.Contains(u, "Network=host") || strings.Contains(u, "AddCapability") || strings.Contains(u, "FRANKENPHP_CONFIG") {
+	if strings.Contains(u, "Network=host") || strings.Contains(u, "AddCapability") || strings.Contains(u, "FRANKENPHP_CONFIG") ||
+		strings.Contains(u, "PodmanArgs") || strings.Contains(u, "PidsLimit") {
 		t.Errorf("unexpected setting:\n%s", u)
 	}
 }
@@ -54,12 +58,13 @@ func TestWorkerModeAndApache(t *testing.T) {
 func TestDiskLimitNeedsADevice(t *testing.T) {
 	w := website()
 	w.Limits.DiskIOBytesPerSecond = 1000
-	if strings.Contains(ContainerUnit(w), "device-write-bps") {
+	if strings.Contains(ContainerUnit(w), "BandwidthMax") {
 		t.Error("I/O limit with no device")
 	}
 	w.Limits.BlockDevice = "/dev/vda"
-	if !strings.Contains(ContainerUnit(w), "--device-write-bps=/dev/vda:1000") {
-		t.Error("no I/O limit")
+	u := ContainerUnit(w)
+	if !strings.Contains(u, "IOReadBandwidthMax=/dev/vda 1000\n") || !strings.Contains(u, "IOWriteBandwidthMax=/dev/vda 1000\n") {
+		t.Errorf("no I/O limit:\n%s", u)
 	}
 }
 
@@ -209,7 +214,7 @@ func TestSftpUnit(t *testing.T) {
 	for _, want := range []string{
 		"ContainerName=cf-sftp",
 		"Pull=never",
-		"GlobalArgs=--runtime=/usr/local/bin/runsc --runtime-flag=platform=systrap --runtime-flag=network=sandbox",
+		"GlobalArgs=--runtime=/usr/local/bin/runsc --runtime-flag=platform=systrap --runtime-flag=network=sandbox --runtime-flag=ignore-cgroups",
 		"Network=bridge",
 		"After=nftables.service",
 		"PartOf=nftables.service",
@@ -223,6 +228,9 @@ func TestSftpUnit(t *testing.T) {
 		"AddCapability=SYS_CHROOT SETUID SETGID KILL",
 		"ReadOnly=true",
 		"WantedBy=multi-user.target",
+		"MemoryMax=512M",
+		"MemorySwapMax=0",
+		"TasksMax=2048",
 	} {
 		if !strings.Contains(u, want+"\n") {
 			t.Errorf("unit does not contain %q:\n%s", want, u)
@@ -239,5 +247,30 @@ func TestSftpUnit(t *testing.T) {
 	}
 	if !strings.Contains(SftpUnit(Sftp{Image: "x"}), "PublishPort=2200:2200\n") {
 		t.Error("the default SFTP port is not 2200")
+	}
+}
+
+// runsc writes /sys/fs/cgroup/cgroup.subtree_control when it makes a cgroup, and a rootless
+// Podman user cannot. Each gVisor unit ignores cgroups, and no unit gives limits to Podman,
+// because runsc would ignore them.
+func TestEachGvisorUnitIgnoresCgroups(t *testing.T) {
+	gv := Runtime{RunscPath: "/usr/local/bin/runsc", Platform: "systrap"}
+	units := map[string]string{
+		"website": ContainerUnit(website()),
+		"sftp":    SftpUnit(Sftp{Image: "sftp", Gvisor: gv}),
+		"edge":    EdgeUnit(Edge{Gvisor: gv}),
+		"mariadb": DatabaseUnit(Database{Engine: "mariadb", Gvisor: gv}),
+		"pgsql":   DatabaseUnit(Database{Engine: "postgresql", Gvisor: gv}),
+	}
+	for name, u := range PanelUnits(Panel{Registry: "ghcr.io/itbm", Version: "0.1.7", DataDir: "/var/lib/cloudfactory/panel", Gvisor: gv}) {
+		units[name] = u
+	}
+	for name, u := range units {
+		if !strings.Contains(u, "--runtime-flag=ignore-cgroups") {
+			t.Errorf("%s does not ignore cgroups:\n%s", name, u)
+		}
+		if strings.Contains(u, "PidsLimit") || strings.Contains(u, "--memory") || strings.Contains(u, "--cpus") {
+			t.Errorf("%s gives limits to Podman:\n%s", name, u)
+		}
 	}
 }

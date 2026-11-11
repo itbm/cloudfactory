@@ -12,7 +12,7 @@ RUN npm run build
 # release and a golang.org/x/net version that have HTTP/1 and HTTP/2 denial-of-service bugs.
 # Build the same Caddy release with a patched Go and x/net, and use it in place of that binary.
 # Change the versions here and in the other Caddy image (edge, panel-web) together.
-FROM --platform=$BUILDPLATFORM docker.io/library/golang:1.27.3-alpine AS caddy
+FROM --platform=$BUILDPLATFORM docker.io/library/golang:1.27.4-alpine AS caddy
 ARG TARGETOS TARGETARCH
 ARG CADDY_VERSION=v2.11.7
 ARG X_NET_VERSION=v0.61.0
