@@ -20,8 +20,29 @@ type fakeCaddy struct {
 	loaded   bool
 	routes   []map[string]any
 	policies string
+	// cas are the CAs of the PKI app. tls are the TLS automation policies; nil means that the
+	// configuration has no TLS app.
+	cas map[string]map[string]any
+	tls []map[string]any
 	// calls are the method and path of each request.
 	calls []string
+}
+
+// object finds a route or a TLS automation policy by its @id.
+func (f *fakeCaddy) object(id string) (list []map[string]any, index int) {
+	for _, l := range [][]map[string]any{f.routes, f.tls} {
+		for i, o := range l {
+			if o["@id"] == id {
+				return l, i
+			}
+		}
+	}
+	return nil, -1
+}
+
+func readJSON(r *http.Request, v any) {
+	b, _ := io.ReadAll(r.Body)
+	json.Unmarshal(b, v)
 }
 
 func (f *fakeCaddy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -52,16 +73,59 @@ func (f *fakeCaddy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		f.policies = string(b)
 	case r.Method == http.MethodPatch && strings.HasPrefix(r.URL.Path, "/id/"):
 		id := strings.TrimPrefix(r.URL.Path, "/id/")
-		var route map[string]any
-		b, _ := io.ReadAll(r.Body)
-		json.Unmarshal(b, &route)
-		for i, old := range f.routes {
-			if old["@id"] == id {
-				f.routes[i] = route
-				return
-			}
+		var object map[string]any
+		readJSON(r, &object)
+		if list, i := f.object(id); i >= 0 {
+			list[i] = object
+			return
 		}
 		http.Error(w, `{"error":"unknown object ID '`+id+`'"}`, http.StatusNotFound)
+	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/id/"):
+		id := strings.TrimPrefix(r.URL.Path, "/id/")
+		if list, i := f.object(id); i >= 0 {
+			json.NewEncoder(w).Encode(list[i])
+			return
+		}
+		http.Error(w, `{"error":"unknown object ID '`+id+`'"}`, http.StatusNotFound)
+	case strings.HasPrefix(r.URL.Path, "/config/apps/pki/certificate_authorities/"):
+		id := strings.TrimPrefix(r.URL.Path, "/config/apps/pki/certificate_authorities/")
+		_, exists := f.cas[id]
+		switch {
+		case r.Method == http.MethodPut && exists:
+			http.Error(w, `{"error":"key already exists: `+id+`"}`, http.StatusConflict)
+		case r.Method == http.MethodPatch && !exists:
+			http.Error(w, `{"error":"key does not exist: `+id+`"}`, http.StatusNotFound)
+		default:
+			var ca map[string]any
+			readJSON(r, &ca)
+			if f.cas == nil {
+				f.cas = map[string]map[string]any{}
+			}
+			f.cas[id] = ca
+		}
+	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/pki/ca/"):
+		if _, ok := f.cas[strings.TrimPrefix(r.URL.Path, "/pki/ca/")]; !ok {
+			http.Error(w, `{"error":"no certificate authority configured with id"}`, http.StatusNotFound)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]string{"id": PanelCA, "root_certificate": "-----BEGIN CERTIFICATE-----\nROOT\n-----END CERTIFICATE-----\n"})
+	case r.URL.Path == "/config/apps/tls/automation/policies":
+		switch {
+		case r.Method == http.MethodGet && f.tls == nil:
+			http.Error(w, `{"error":"invalid traversal path at: config/apps/tls/automation"}`, http.StatusBadRequest)
+		case r.Method == http.MethodGet:
+			json.NewEncoder(w).Encode(f.tls)
+		case r.Method == http.MethodPut && f.tls != nil:
+			http.Error(w, `{"error":"key already exists: policies"}`, http.StatusConflict)
+		case r.Method == http.MethodPut:
+			readJSON(r, &f.tls)
+		default:
+			http.Error(w, "unexpected", http.StatusTeapot)
+		}
+	case r.Method == http.MethodPut && r.URL.Path == "/config/apps/tls/automation/policies/0":
+		var policy map[string]any
+		readJSON(r, &policy)
+		f.tls = append([]map[string]any{policy}, f.tls...)
 	case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/id/"):
 		id := strings.TrimPrefix(r.URL.Path, "/id/")
 		for i, route := range f.routes {
@@ -163,7 +227,7 @@ func TestPanelRouteSetsTheEdgeHeaders(t *testing.T) {
 	srv := httptest.NewServer(fake)
 	defer srv.Close()
 
-	if err := New(srv.URL).ApplyPanel(context.Background(), "panel.example.com", 19080, 19081); err != nil {
+	if err := New(srv.URL).ApplyPanel(context.Background(), "panel.example.com", PanelInternal, 19080, 19081); err != nil {
 		t.Fatal(err)
 	}
 	b, _ := json.Marshal(fake.routes)
@@ -202,7 +266,7 @@ func TestThePanelRouteIsFirst(t *testing.T) {
 	if err := c.Apply(ctx, Site{WebsiteID: "W1", Port: 20001, Hosts: []string{"panel.example.com"}, Primary: "panel.example.com"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := c.ApplyPanel(ctx, "panel.example.com", 19080, 19081); err != nil {
+	if err := c.ApplyPanel(ctx, "panel.example.com", PanelInternal, 19080, 19081); err != nil {
 		t.Fatal(err)
 	}
 	if len(fake.routes) != 2 || fake.routes[0]["@id"] != "cf-panel" {

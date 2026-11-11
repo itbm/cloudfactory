@@ -149,3 +149,8 @@ type nopEdge struct{}
 func (nopEdge) EnsureBase(context.Context) error        { return nil }
 func (nopEdge) Apply(context.Context, caddy.Site) error { return nil }
 func (nopEdge) Remove(context.Context, string) error    { return nil }
+func (nopEdge) PanelCertificate(context.Context, string) (string, error) {
+	return "", nil
+}
+func (nopEdge) SetPanelCertificate(context.Context, string, string) error { return nil }
+func (nopEdge) PanelCARoot(context.Context) (string, error)               { return "", nil }

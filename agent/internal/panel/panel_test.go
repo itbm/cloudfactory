@@ -32,7 +32,7 @@ func TestJobEventTriesAgainWhenThePanelFails(t *testing.T) {
 		}
 	}))
 	defer srv.Close()
-	c := New(srv.URL, "cfa_x", nil, "")
+	c := New(srv.URL, "cfa_x", nil, "", "")
 	c.Backoff = time.Millisecond
 
 	if err := c.JobEvent(context.Background(), "J1", Event{State: "succeeded", Step: 6}); err != nil {
@@ -52,7 +52,7 @@ func TestJoinDoesNotTryAgain(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	_, err := New(srv.URL, "", nil, "").Join(context.Background(), JoinRequest{Token: "cfj_x"})
+	_, err := New(srv.URL, "", nil, "", "").Join(context.Background(), JoinRequest{Token: "cfj_x"})
 	if err == nil || calls.Load() != 1 {
 		t.Fatalf("err = %v, calls = %d", err, calls.Load())
 	}
@@ -93,7 +93,7 @@ func TestAPinnedClientAcceptsOnlyThePanelCertificate(t *testing.T) {
 	defer srv.Close()
 	panelFingerprint := pki.Fingerprint(srv.Certificate().Raw)
 
-	resp, err := New(srv.URL, "", &cert, panelFingerprint).Join(context.Background(), JoinRequest{Token: "cfj_x"})
+	resp, err := New(srv.URL, "", &cert, panelFingerprint, "").Join(context.Background(), JoinRequest{Token: "cfj_x"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,12 +106,12 @@ func TestAPinnedClientAcceptsOnlyThePanelCertificate(t *testing.T) {
 
 	// A different certificate on the same address is not the panel.
 	wrong := strings.Repeat("ab", 32)
-	if _, err := New(srv.URL, "", &cert, wrong).Join(context.Background(), JoinRequest{Token: "cfj_x"}); err == nil || !strings.Contains(err.Error(), "is not the certificate") {
+	if _, err := New(srv.URL, "", &cert, wrong, "").Join(context.Background(), JoinRequest{Token: "cfj_x"}); err == nil || !strings.Contains(err.Error(), "is not the certificate") {
 		t.Errorf("err = %v, want a pin error", err)
 	}
 	// With no pin, the client uses the public certificate authorities. They do not know the
 	// certificate of the test server.
-	if _, err := New(srv.URL, "", &cert, "").Join(context.Background(), JoinRequest{Token: "cfj_x"}); err == nil {
+	if _, err := New(srv.URL, "", &cert, "", "").Join(context.Background(), JoinRequest{Token: "cfj_x"}); err == nil {
 		t.Error("a client with no pin accepted a certificate that no authority signed")
 	}
 }

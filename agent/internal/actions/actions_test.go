@@ -31,6 +31,29 @@ const (
 type fakeEdge struct {
 	mu    sync.Mutex
 	sites map[string]caddy.Site
+	// panel is the certificate method of the panel domain, and root is the root certificate
+	// of the panel CA.
+	panel, root string
+	// methods are the methods that SetPanelCertificate got, in order.
+	methods []string
+}
+
+func (f *fakeEdge) PanelCertificate(context.Context, string) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.panel, nil
+}
+func (f *fakeEdge) SetPanelCertificate(_ context.Context, _, method string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.panel = method
+	f.methods = append(f.methods, method)
+	return nil
+}
+func (f *fakeEdge) PanelCARoot(context.Context) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.root, nil
 }
 
 func (f *fakeEdge) EnsureBase(context.Context) error { return nil }

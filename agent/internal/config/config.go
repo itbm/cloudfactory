@@ -34,6 +34,10 @@ type Config struct {
 	// address, which has no public name, and the agent accepts only this certificate. When it
 	// is empty, the agent checks the certificate of the panel domain in the usual way.
 	PanelServerCertificateSHA256 string `json:"panelServerCertificateSha256,omitempty"`
+	// PanelCASHA256 is the fingerprint of the root certificate of the panel CA. The agent then
+	// also accepts a certificate of the panel domain from that CA (pki.PinnedCA). It is for a
+	// panel that has a certificate from its own CA, not from Let's Encrypt.
+	PanelCASHA256 string `json:"panelCaSha256,omitempty"`
 	// Registry is the registry of the Cloudfactory images. Set a mirror here (FR-1813).
 	Registry string `json:"registry"`
 	// GVisorPlatform is "systrap" (the default) or "kvm" on bare metal (FR-310).
@@ -111,6 +115,11 @@ func (c Config) Check() error {
 	if c.PanelServerCertificateSHA256 != "" {
 		if err := pki.CheckFingerprint(c.PanelServerCertificateSHA256); err != nil {
 			errs = append(errs, fmt.Errorf("panelServerCertificateSha256: %w", err))
+		}
+	}
+	if c.PanelCASHA256 != "" {
+		if err := pki.CheckFingerprint(c.PanelCASHA256); err != nil {
+			errs = append(errs, fmt.Errorf("panelCaSha256: %w", err))
 		}
 	}
 	if c.GVisorPlatform != "systrap" && c.GVisorPlatform != "kvm" {

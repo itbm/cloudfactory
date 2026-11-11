@@ -125,3 +125,20 @@ func TestSftpPort(t *testing.T) {
 		}
 	}
 }
+
+// The panel can use "localhost", for a browser on the same server. A website domain cannot.
+func TestPanelDomain(t *testing.T) {
+	for _, ok := range []string{"localhost", "panel.localhost", "panel.example.com"} {
+		if err := PanelDomain(ok); err != nil {
+			t.Errorf("PanelDomain(%q) = %v", ok, err)
+		}
+	}
+	for _, bad := range []string{"", "panel", "LOCALHOST", "localhost.", "127.0.0.1", "panel.example.com/x"} {
+		if err := PanelDomain(bad); err == nil {
+			t.Errorf("PanelDomain(%q) accepted", bad)
+		}
+	}
+	if err := Domain("localhost"); err == nil {
+		t.Error(`Domain("localhost") accepted`)
+	}
+}

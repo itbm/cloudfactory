@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -32,17 +33,30 @@ type Client struct {
 // The agent on the panel server uses a pin, because it connects to the HTTPS port of the API
 // on the service address, which has no public name. With no pin, the client checks the
 // certificate of the panel domain in the usual way.
-func New(baseURL, token string, cert *tls.Certificate, serverPin string) *Client {
+//
+// caPin is the SHA-256 fingerprint of the root certificate of the panel CA, or "". With this
+// pin, the client also accepts a certificate of the panel domain from the panel CA
+// (pki.PinnedCA). The other servers use it when the panel has a certificate from its own CA.
+func New(baseURL, token string, cert *tls.Certificate, serverPin, caPin string) *Client {
 	tr := http.DefaultTransport.(*http.Transport).Clone()
 	tr.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS12}
 	if cert != nil {
 		tr.TLSClientConfig.Certificates = []tls.Certificate{*cert}
 	}
-	if serverPin != "" {
+	switch {
+	case serverPin != "":
 		// The pin replaces the checks of the name and of the certificate chain. Go calls
 		// VerifyConnection for each connection, also for a resumed session.
 		tr.TLSClientConfig.InsecureSkipVerify = true
 		tr.TLSClientConfig.VerifyConnection = pki.PinnedServer(serverPin)
+	case caPin != "":
+		host := ""
+		if u, err := url.Parse(baseURL); err == nil {
+			host = u.Hostname()
+		}
+		// PinnedCA checks the name and the chain, with the system roots and the panel CA.
+		tr.TLSClientConfig.InsecureSkipVerify = true
+		tr.TLSClientConfig.VerifyConnection = pki.PinnedCA(caPin, host, nil)
 	}
 	return &Client{BaseURL: strings.TrimRight(baseURL, "/"), Token: token, HTTP: &http.Client{Timeout: 30 * time.Second, Transport: tr}, Retries: 5, Backoff: 2 * time.Second}
 }
@@ -77,6 +91,23 @@ type Report struct {
 	Databases []DatabaseSize `json:"databases"`
 	// SftpPort is the port that the website owners use for SFTP on this server.
 	SftpPort int `json:"sftpPort,omitempty"`
+	// PanelCertificate is the certificate of the panel domain. Only the panel server sends it.
+	PanelCertificate *PanelCertificate `json:"panelCertificate,omitempty"`
+}
+
+// PanelCertificate is the certificate method of the panel domain and the state of the
+// certificate that the edge proxy serves.
+type PanelCertificate struct {
+	Domain string `json:"domain"`
+	// Method is "internal" (the CA of the panel) or "letsencrypt".
+	Method string `json:"method"`
+	// State is "valid", "pending" (the edge proxy has no certificate of the method yet) or
+	// "expired".
+	State     string `json:"state"`
+	ExpiresAt string `json:"expiresAt,omitempty"`
+	// CACertificate is the root certificate of the panel CA in PEM format. Browsers and other
+	// servers trust the internal certificate when they trust this root.
+	CACertificate string `json:"caCertificate,omitempty"`
 }
 
 // DomainState is what the agent sees for one domain (FR-402, FR-403).

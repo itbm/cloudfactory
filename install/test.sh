@@ -60,6 +60,31 @@ expect "no options: the host name is the domain" 0 "All checks passed." "$(fake 
 expect "option needs a value" 1 "the option --join needs a value." "$(fake debian 13)" --join
 expect "unknown option" 1 "unknown option: --force" "$(fake debian 13)" --force
 
+# A new panel gets a certificate from its own CA, so a local domain works.
+expect "panel.localhost passes" 0 "All checks passed." "$(fake debian 13)" --domain panel.localhost --email admin@example.com
+expect "localhost passes" 0 "All checks passed." "$(fake debian 13)" --domain localhost --email admin@example.com
+expect "localhost needs an email address" 1 "give the email address of the first administrator with --email." "$(fake debian 13)" --domain localhost
+expect "Let's Encrypt for a public domain passes" 0 "All checks passed." "$(fake debian 13)" $panel --certificate letsencrypt
+expect "the internal CA passes" 0 "All checks passed." "$(fake debian 13)" --domain panel.localhost --email admin@example.com --certificate internal
+for local in panel.localhost localhost panel.internal panel.test; do
+	expect "Let's Encrypt for $local stops" 1 "Use --certificate internal for $local." "$(fake debian 13)" --domain "$local" --email admin@example.com --certificate letsencrypt
+done
+expect "an unknown certificate method stops" 1 "--certificate must be internal or letsencrypt." "$(fake debian 13)" $panel --certificate zerossl
+expect "--certificate is not for --join" 1 "--certificate is only for a new panel" "$(fake debian 13)" --join cfj_abc --panel https://panel.example.com --certificate internal
+pin=$(printf '%064d' 7)
+expect "join with the fingerprint of the panel CA passes" 0 "All checks passed." "$(fake debian 13)" --join cfj_abc --panel https://panel.example.com --panel-ca-sha256 "$pin"
+expect "a short fingerprint of the panel CA stops" 1 "--panel-ca-sha256 needs the SHA-256 fingerprint" "$(fake debian 13)" --join cfj_abc --panel https://panel.example.com --panel-ca-sha256 abc123
+expect "a fingerprint of the panel CA that is not hex stops" 1 "--panel-ca-sha256 needs the SHA-256 fingerprint" "$(fake debian 13)" --join cfj_abc --panel https://panel.example.com --panel-ca-sha256 "$(printf '%063dz' 7)"
+expect "--panel-ca-sha256 is only for --join" 1 "--panel-ca-sha256 is only for --join." "$(fake debian 13)" $panel --panel-ca-sha256 "$pin"
+# shellcheck disable=SC2016 # The patterns are text of the script, not variables of this test.
+if grep -q -- '--panel-ca-sha256 "$PANEL_CA_PIN"' "$HERE/install.sh" && grep -q -- '--certificate "$CERTIFICATE"' "$HERE/install.sh" &&
+	grep -q 'caPin := fs.String("panel-ca-sha256"' "$HERE/../agent/cmd/cf-agent/main.go"; then
+	PASS=$((PASS + 1))
+else
+	FAIL=$((FAIL + 1))
+	echo 'FAIL: the agent does not get the fingerprint of the panel CA or the certificate method'
+fi
+
 expect "an unsigned registry is permitted" 0 "All checks passed." "$(fake debian 13)" $panel --allow-unsigned docker.io --allow-unsigned quay.io
 expect "the release registry must stay signed" 1 "--allow-unsigned ghcr.io/itbm is not permitted." "$(fake debian 13)" $panel --allow-unsigned ghcr.io/itbm
 expect "a registry name is checked" 1 'is not permitted.' "$(fake debian 13)" $panel --allow-unsigned 'docker.io"'
@@ -147,6 +172,12 @@ rule "a website does not reach the services of the server" yes 'fib daddr type {
 rule "a website does not reach link-local and private networks" yes 'ip daddr { 0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 168.63.129.16, 169.254.0.0/16, 172.16.0.0/12, 192.168.0.0/16, 224.0.0.0/3 } jump refuse' "$WORK/default.nft"
 rule "a website does not reach private IPv6 networks" yes 'ip6 daddr { ::1, fc00::/7, fe80::/10, ff00::/8 } jump refuse' "$WORK/default.nft"
 rule "a website does not send email directly" yes 'tcp dport 25 jump refuse' "$WORK/default.nft"
+# A browser on this server opens https://panel.localhost on port 443. The connection does not
+# go through the prerouting chain, so the output chain of the NAT table redirects it.
+rule "local connections to port 80 go to the edge proxy" yes 'fib daddr type local tcp dport 80 redirect to :8080' "$WORK/default.nft"
+rule "local connections to port 443 go to the edge proxy" yes 'fib daddr type local tcp dport 443 redirect to :8443' "$WORK/default.nft"
+rule "local HTTP/3 connections go to the edge proxy" yes 'fib daddr type local udp dport 443 redirect to :8443' "$WORK/default.nft"
+rule "the redirects of local connections are in the NAT table" yes 'type nat hook output priority -100;' "$WORK/default.nft"
 rule "the panel database rule has the user of the panel" yes 'ct state new ip daddr 169.254.77.1 tcp dport 19432 meta skuid != { 0, 992 } reject with tcp reset' "$WORK/default.nft"
 # The rule for the ports of the other websites comes before the website chain, and the
 # databases come before the rule that closes the addresses of the server.

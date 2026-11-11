@@ -117,6 +117,10 @@ func (s *Service) ConfigureHost(_ context.Context, r *connect.Request[agentv1.Co
 	return s.submit(s.Deps.ConfigureHost(r.Msg))
 }
 
+func (s *Service) SetPanelCertificate(_ context.Context, r *connect.Request[agentv1.SetPanelCertificateRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.SetPanelCertificate(r.Msg))
+}
+
 func (s *Service) GetStatus(ctx context.Context, _ *connect.Request[agentv1.GetStatusRequest]) (*connect.Response[agentv1.HostStatus], error) {
 	r := s.Status.Report(ctx)
 	out := &agentv1.HostStatus{AgentVersion: r.AgentVersion, Kernel: r.Kernel, PodmanVersion: r.PodmanVersion, GvisorVersion: r.GVisorVersion, RebootRequired: r.RebootRequired}

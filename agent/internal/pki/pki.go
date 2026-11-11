@@ -147,6 +147,48 @@ func PinnedServer(fingerprint string) func(tls.ConnectionState) error {
 	}
 }
 
+// PinnedCA gives a function for tls.Config.VerifyConnection of a client, with
+// InsecureSkipVerify. It accepts a server certificate for host when a root in roots signs it,
+// as with no pin. A nil roots means the system roots. It also accepts a server certificate for
+// host from the CA with the given root fingerprint.
+//
+// The agents on the other servers use it when the panel has a certificate from its own CA
+// (caddy.PanelInternal). The edge proxy of the panel sends the root certificate of that CA
+// with the certificate of the panel. Thus the agent needs only the fingerprint of the root, and
+// it continues to work when the panel changes to a public certificate.
+func PinnedCA(fingerprint, host string, roots *x509.CertPool) func(tls.ConnectionState) error {
+	want := strings.ToLower(fingerprint)
+	return func(cs tls.ConnectionState) error {
+		if len(cs.PeerCertificates) == 0 {
+			return errors.New("the panel sent no certificate")
+		}
+		leaf := cs.PeerCertificates[0]
+		intermediates := x509.NewCertPool()
+		var pinned *x509.Certificate
+		for _, c := range cs.PeerCertificates[1:] {
+			intermediates.AddCert(c)
+			if c.IsCA && subtle.ConstantTimeCompare([]byte(Fingerprint(c.Raw)), []byte(want)) == 1 {
+				pinned = c
+			}
+		}
+		opts := x509.VerifyOptions{DNSName: host, Intermediates: intermediates, Roots: roots}
+		_, err := leaf.Verify(opts)
+		if err == nil {
+			return nil
+		}
+		if pinned == nil {
+			return fmt.Errorf("the panel certificate is not from a public certificate authority or from the panel CA %s: %w", want, err)
+		}
+		opts.Roots = x509.NewCertPool()
+		opts.Roots.AddCert(pinned)
+		opts.Intermediates = x509.NewCertPool()
+		if _, err := leaf.Verify(opts); err != nil {
+			return fmt.Errorf("the panel certificate is not valid: %w", err)
+		}
+		return nil
+	}
+}
+
 // CheckFingerprint makes sure that the text is a SHA-256 fingerprint in hex.
 func CheckFingerprint(fingerprint string) error {
 	b, err := hex.DecodeString(fingerprint)

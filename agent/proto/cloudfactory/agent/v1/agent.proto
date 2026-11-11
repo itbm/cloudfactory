@@ -33,6 +33,7 @@ service AgentService {
   rpc PruneBackups(PruneBackupsRequest) returns (JobAccepted);
   rpc SetSftp(SetSftpRequest) returns (JobAccepted);
   rpc ConfigureHost(ConfigureHostRequest) returns (JobAccepted);
+  rpc SetPanelCertificate(SetPanelCertificateRequest) returns (JobAccepted);
 
   // Returns the actual state of the server at once. This method does not make a job.
   rpc GetStatus(GetStatusRequest) returns (HostStatus);
@@ -286,6 +287,14 @@ message ConfigureHostRequest {
   string job_id = 1;
   // "systrap" or "kvm" (FR-310).
   string gvisor_platform = 2;
+}
+
+// Changes the certificate method of the panel domain. Only the agent on the panel server accepts
+// it. The agent reads the domain from the settings of the panel, not from the request.
+message SetPanelCertificateRequest {
+  string job_id = 1;
+  // "internal" (the certificate authority of the panel) or "letsencrypt".
+  string method = 2;
 }
 
 message HostRequest {

@@ -7,13 +7,14 @@ import (
 	"net/http"
 	"os"
 	"testing"
+	"time"
 )
 
 // Run against a real edge image:
 //
 //	mkdir -p /tmp/cf-caddy-admin
-//	podman run -d -v /tmp/cf-caddy-admin:/run/caddy-admin -p 127.0.0.1:18080:8080 ghcr.io/cloudfactory/edge:VERSION
-//	CF_CADDY_ADMIN=unix:///tmp/cf-caddy-admin/admin.sock CF_CADDY_HTTP=http://127.0.0.1:18080 go test -tags integration ./internal/caddy/
+//	podman run -d -v /tmp/cf-caddy-admin:/run/caddy-admin -p 127.0.0.1:18080:8080 -p 127.0.0.1:18443:8443 ghcr.io/cloudfactory/edge:VERSION
+//	CF_CADDY_ADMIN=unix:///tmp/cf-caddy-admin/admin.sock CF_CADDY_HTTP=http://127.0.0.1:18080 CF_CADDY_HTTPS=127.0.0.1:18443 go test -tags integration ./internal/caddy/
 func TestRealCaddy(t *testing.T) {
 	admin, web := os.Getenv("CF_CADDY_ADMIN"), os.Getenv("CF_CADDY_HTTP")
 	if admin == "" || web == "" {
@@ -49,10 +50,73 @@ func TestRealCaddy(t *testing.T) {
 	}
 	t.Logf("www.acme.example → %d %s", resp.StatusCode, resp.Header.Get("Location"))
 
-	if err := c.ApplyPanel(ctx, "panel.example.com", 19080, 19081); err != nil {
+	if err := c.ApplyPanel(ctx, "panel.example.com", PanelInternal, 19080, 19081); err != nil {
 		t.Fatal(err)
 	}
 	if err := c.Remove(ctx, site.WebsiteID); err != nil {
 		t.Fatal(err)
+	}
+	testPanelCertificate(t, c)
+}
+
+// testPanelCertificate checks the certificate methods of the panel domain. Set CF_CADDY_HTTPS to
+// the HTTPS address of the edge proxy, for example 127.0.0.1:18443.
+func testPanelCertificate(t *testing.T, c *Client) {
+	ctx := context.Background()
+	if err := c.ApplyPanel(ctx, "panel.localhost", PanelInternal, 19080, 19081); err != nil {
+		t.Fatal(err)
+	}
+	if m, err := c.PanelCertificate(ctx, "panel.localhost"); err != nil || m != PanelInternal {
+		t.Fatalf("PanelCertificate = %q, %v", m, err)
+	}
+	root, err := c.PanelCARoot(ctx)
+	if err != nil || root == "" {
+		t.Fatalf("PanelCARoot = %q, %v", root, err)
+	}
+	address := os.Getenv("CF_CADDY_HTTPS")
+	if address == "" {
+		return
+	}
+	check := func(method string) error {
+		chain, err := ServedCertificate(ctx, address, "panel.localhost")
+		if err != nil {
+			return err
+		}
+		return CheckPanelCertificate(chain, "panel.localhost", method, root, nil, time.Now())
+	}
+	var last error
+	for range 20 {
+		if last = check(PanelInternal); last == nil {
+			break
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	if last != nil {
+		t.Fatalf("internal certificate: %v", last)
+	}
+	chain, _ := ServedCertificate(ctx, address, "panel.localhost")
+	t.Logf("panel.localhost: %d certificates, issuer %q, expires %s", len(chain), chain[0].Issuer.CommonName, chain[0].NotAfter)
+	// Caddy cannot get a certificate from Let's Encrypt for this name. It then serves no
+	// certificate, and the agent goes back to the internal method.
+	if err := c.SetPanelCertificate(ctx, "panel.localhost", PanelLetsEncrypt); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(2 * time.Second)
+	if err := check(PanelLetsEncrypt); err == nil {
+		t.Error("a certificate from Let's Encrypt for panel.localhost")
+	} else {
+		t.Logf("with Let's Encrypt: %v", err)
+	}
+	if err := c.SetPanelCertificate(ctx, "panel.localhost", PanelInternal); err != nil {
+		t.Fatal(err)
+	}
+	for range 20 {
+		if last = check(PanelInternal); last == nil {
+			break
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	if last != nil {
+		t.Fatalf("internal certificate after the change back: %v", last)
 	}
 }
