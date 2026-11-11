@@ -676,8 +676,11 @@ StartLimitBurst=5
 ExecStart=/usr/local/bin/cf-agent serve
 Restart=always
 RestartSec=5
-# NFR-02: the agent uses less than 100 MB of memory.
-MemoryMax=150M
+# NFR-02: the agent itself uses less than 100 MB of memory. The programs that the agent starts,
+# for example podman pull, restic and the database dumps, are in the cgroup of this service too.
+# They need more memory: restic used 164 MiB for the backup of 5 GB in 79,000 files, and podman
+# pull used 82 MiB for an image of 756 MB. This limit stops a memory leak, not normal work.
+MemoryMax=1G
 
 [Install]
 WantedBy=multi-user.target
