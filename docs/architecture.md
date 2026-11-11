@@ -114,7 +114,14 @@ The container unit of a website sets these limits:
 
 - `NoNewPrivileges=true` and `DropCapability=all`.
 - A read-only root file system. Only the website directory and `/tmp` are writable.
-- Memory, CPU and process limits from the plan of the website.
+- Memory, CPU, process and disk I/O limits from the plan of the website. These limits are
+  systemd properties of the service (`MemoryMax`, `CPUQuota`, `TasksMax`,
+  `IOReadBandwidthMax` and `IOWriteBandwidthMax`), not Podman options. Each gVisor container
+  starts with `--runtime-flag=ignore-cgroups`, so the sandbox stays in the cgroup of its
+  service. Without this flag, runsc makes its own cgroup and must write
+  `/sys/fs/cgroup/cgroup.subtree_control`, which a rootless user cannot do. A change of the
+  limits in the panel uses `systemctl set-property` on the running service and also changes
+  the unit.
 
 ## The edge proxy
 

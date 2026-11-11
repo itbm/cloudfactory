@@ -700,8 +700,8 @@ func (d *Deps) SetWebsitePower(req *agentv1.SetWebsitePowerRequest) (jobs.Job, e
 	}}, nil
 }
 
-// SetLimits changes the cgroup limits of a running container, and writes them to the unit
-// for the next start (FR-202).
+// SetLimits changes the cgroup limits of a running website, and writes them to the unit for
+// the next start (FR-202).
 func (d *Deps) SetLimits(req *agentv1.SetLimitsRequest) (jobs.Job, error) {
 	if err := validate.ID(req.GetWebsiteId()); err != nil {
 		return jobs.Job{}, err
@@ -732,15 +732,11 @@ func (d *Deps) SetLimits(req *agentv1.SetLimitsRequest) (jobs.Job, error) {
 			if err := d.applyDiskQuota(ctx, site.UnixUser, l); err != nil {
 				return err
 			}
-			// A stopped website has no container. It gets the limits from the unit at the next start.
+			// The limits are on the cgroup of the service (quadlet.Runtime.GlobalArgs). A
+			// stopped website has no service. It gets the limits from the unit at the next start.
 			if !site.Stopped {
-				mem := fmt.Sprint(l.GetMemoryBytes())
-				args := []string{"update", "--cpus=" + fmt.Sprint(l.GetVcpus()), "--memory=" + mem, "--memory-swap=" + mem, "--pids-limit=" + fmt.Sprint(l.GetProcesses())}
-				if io := l.GetDiskIoBytesPerSecond(); io > 0 && d.BlockDevice != "" {
-					v := d.BlockDevice + ":" + fmt.Sprint(io)
-					args = append(args, "--device-read-bps="+v, "--device-write-bps="+v)
-				}
-				if _, err := d.Host.Podman(ctx, site.UnixUser, append(args, u.ContainerName())...); err != nil {
+				args := append([]string{"set-property", "--runtime", u.ServiceName()}, quadlet.LimitProperties(u.Limits)...)
+				if _, err := d.Host.Systemctl(ctx, site.UnixUser, args...); err != nil {
 					return err
 				}
 			}

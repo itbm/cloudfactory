@@ -311,7 +311,7 @@ func TestLimitsSetTheQuotaAndTheIOLimit(t *testing.T) {
 	if !f.Called("setquota --user acme_x7k2 9961472 10485760 0 0 /srv") {
 		t.Errorf("no quota: %v", f.Calls)
 	}
-	if !f.Called("runuser -u acme_x7k2 -- env XDG_RUNTIME_DIR=/run/user/20001 podman update --cpus=2 --memory=1073741824 --memory-swap=1073741824 --pids-limit=50 --device-read-bps=/dev/vda:52428800 --device-write-bps=/dev/vda:52428800 cf-acme_x7k2") {
+	if !f.Called("systemctl --user --machine=acme_x7k2@ set-property --runtime cf-acme_x7k2.service CPUQuota=200% MemoryMax=1073741824 MemorySwapMax=0 TasksMax=50 IOReadBandwidthMax=/dev/vda 52428800 IOWriteBandwidthMax=/dev/vda 52428800") {
 		t.Errorf("no I/O limit: %v", f.Calls)
 	}
 }
