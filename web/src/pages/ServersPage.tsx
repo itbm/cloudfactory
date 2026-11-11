@@ -56,7 +56,8 @@ function AddServerDialog({ onClose }: { onClose: () => void }) {
   useEffect(() => { if (LIVE) void makeToken(); }, [makeToken]);
   const name_ = name.trim().toLowerCase();
   const cmd = LIVE
-    ? `curl -fsSL ${INSTALL_URL} | sh -s -- --join ${state.joinToken || "…"} --panel https://${window.location.host}${name_ ? ` --name ${name_}` : ""} --roles ${roles.join(",") || "web"}`
+    // The new server trusts the panel CA by the fingerprint of its root certificate.
+    ? `curl -fsSL ${INSTALL_URL} | sh -s -- --join ${state.joinToken || "…"} --panel https://${window.location.host}${state.joinCaSha256 ? ` --panel-ca-sha256 ${state.joinCaSha256}` : ""}${name_ ? ` --name ${name_}` : ""} --roles ${roles.join(",") || "web"}`
     : `curl -fsSL ${INSTALL_URL} | sh -s -- --join ${state.joinToken}`;
   return (
     <Modal

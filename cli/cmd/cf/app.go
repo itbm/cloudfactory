@@ -68,6 +68,10 @@ Usage:
   cf servers reboot SERVER
   cf servers update-agent SERVER [--version VERSION] [--allow-downgrade]
   cf servers join-token
+  cf panel-certificate show
+  cf panel-certificate set internal|letsencrypt
+                       "internal": a certificate from the panel CA. "letsencrypt" needs a public domain.
+  cf panel-certificate ca      Print the root certificate of the panel CA in PEM format.
   cf images list
   cf images add --name NAME --reference IMAGE --tag TAG [--policy POLICY] [--port N] [--arg ARG]...
   cf images set IMAGE_ID [--policy POLICY] [--port N] [--arg ARG]... [--no-command]
@@ -242,6 +246,8 @@ func (a *app) dispatch(ctx context.Context, args []string) error {
 		return a.jobs(ctx, sub, rest)
 	case "servers", "server":
 		return a.servers(ctx, sub, rest)
+	case "panel-certificate":
+		return a.panelCertificate(ctx, sub, rest)
 	case "images", "image":
 		return a.images(ctx, sub, rest)
 	case "sftp":

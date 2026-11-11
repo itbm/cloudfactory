@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { useAction, useStore } from "../api/hooks";
-import { addAlertChannel, addPasskey, changePassword, createToken, removeAlertChannel, removePasskey, revokeToken, setSystem, setTotp, startTotpSetup, testAlertChannel } from "../api/store";
+import { addAlertChannel, addPasskey, changePassword, createToken, removeAlertChannel, removePasskey, revokeToken, setPanelCertificate, setSystem, setTotp, startTotpSetup, testAlertChannel } from "../api/store";
 import { features, LIVE } from "../api/mode";
-import type { AlertChannel, TokenScope } from "../api/types";
+import type { AlertChannel, PanelCertificateMethod, TokenScope } from "../api/types";
 import { Topbar } from "../components/Layout";
-import { Card, ConfirmButton, Field, FormError, Modal, PageHeader, Status, Tabs } from "../components/ui";
+import { Card, ConfirmButton, Field, FormError, JobRow, Modal, PageHeader, Status, Tabs } from "../components/ui";
 import { auditCsv } from "../lib/csv";
 import { daysUntil, longDate, relativeTime, shortDate } from "../lib/format";
 import { CopyField } from "./website/AccessTab";
@@ -24,6 +24,7 @@ export function SettingsPage() {
     { id: "tokens", label: "API tokens" },
     { id: "audit", label: "Audit log" },
     ...(features.alerts ? [{ id: "alerts", label: "Alerts" }] : []),
+    ...(isAdmin ? [{ id: "certificate", label: "Panel certificate" }] : []),
     ...(isAdmin && features.system ? [{ id: "system", label: "System" }] : []),
   ];
   return (
@@ -36,6 +37,7 @@ export function SettingsPage() {
         {tab === "tokens" && <Tokens />}
         {tab === "audit" && <Audit />}
         {tab === "alerts" && <Alerts />}
+        {tab === "certificate" && <PanelCertificateSettings />}
         {tab === "system" && <System />}
       </main>
     </>
@@ -338,5 +340,119 @@ function System() {
         </div>
       </form>
     </Card>
+  );
+}
+
+const METHOD_LABEL: Record<PanelCertificateMethod, string> = { internal: "Panel CA", letsencrypt: "Let's Encrypt" };
+
+/**
+ * The TLS certificate of the panel domain. A new panel gets a certificate from its own CA. This
+ * works for all domains, also localhost and panel.localhost. An administrator can change to
+ * Let's Encrypt when the domain is public.
+ */
+function PanelCertificateSettings() {
+  const state = useStore();
+  const cert = state.panelCertificate;
+  // The store changes the job in the job list while the agent works.
+  const job = cert.job && (state.jobs.find((j) => j.id === cert.job!.id) ?? cert.job);
+  const busy = job?.state === "running" || job?.state === "queued";
+  const [method, setMethod] = useState<PanelCertificateMethod>(cert.method ?? "internal");
+  const change = useAction(setPanelCertificate);
+  const tone = cert.state === "valid" ? "success" : cert.state === "expired" ? "danger" : "warning";
+  const stateLabel = cert.state === "valid" ? "Valid" : cert.state === "expired" ? "Expired" : "Waiting for the certificate";
+  const blocked = method === "letsencrypt" && !cert.letsEncryptAvailable ? `Let's Encrypt gives certificates only for public domains. ${cert.domain} is not a public domain.`
+    : method === "internal" && cert.serversWithoutCa.length > 0 ? `These servers do not trust the panel CA yet: ${cert.serversWithoutCa.join(", ")}. Update their agent, and wait one minute.`
+      : null;
+  return (
+    <div className="stack">
+      <Card title="Panel certificate">
+        <div className="card-body">
+          {cert.method === null ? (
+            <p className="muted">The agent on the panel server has not reported the certificate yet. Update the agent on the panel server, and wait one minute.</p>
+          ) : (
+            <table className="kv">
+              <tbody>
+                <tr><th scope="row">Domain</th><td><code>{cert.domain}</code></td></tr>
+                <tr><th scope="row">Method</th><td>{METHOD_LABEL[cert.method]}</td></tr>
+                <tr><th scope="row">Certificate</th><td><Status tone={tone}>{stateLabel}</Status></td></tr>
+                {cert.expiresAt && <tr><th scope="row">Expires</th><td>{longDate(cert.expiresAt)} <span className="muted">({relativeTime(cert.expiresAt)}). The edge proxy renews it automatically.</span></td></tr>}
+                {cert.reportedAt && <tr><th scope="row">Last check</th><td>{relativeTime(cert.reportedAt)}</td></tr>}
+              </tbody>
+            </table>
+          )}
+          {job && (busy || job.state === "failed") && <ul className="job-list" style={{ marginTop: 16 }}><JobRow job={job} /></ul>}
+        </div>
+      </Card>
+
+      {cert.caCertificate && (
+        <Card title="Root certificate of the panel CA">
+          <div className="card-body">
+            <p>
+              {cert.method === "internal"
+                ? "Your browser shows a warning for the panel until you add this root certificate. Add it on each computer that opens the panel."
+                : "The panel keeps its CA for a change back from Let's Encrypt. You need the root certificate only when the panel uses the panel CA."}
+              {" "}The other servers trust the panel CA by its fingerprint. They do not need the file.
+            </p>
+            <div className="btn-group" style={{ marginTop: 12 }}>
+              <a className="btn btn-primary" download="cloudfactory-panel-ca.crt" href={`data:application/x-x509-ca-cert;charset=utf-8,${encodeURIComponent(cert.caCertificate)}`}>Download root certificate</a>
+            </div>
+            {cert.caSha256 && <>
+              <p className="muted small" style={{ marginTop: 14, marginBottom: 6 }}>SHA-256 fingerprint. Compare it with the fingerprint that your system shows before you trust the certificate.</p>
+              <CopyField value={cert.caSha256} label="SHA-256 fingerprint of the root certificate" />
+            </>}
+            <details style={{ marginTop: 14 }}>
+              <summary>How to add the root certificate</summary>
+              <ul style={{ marginTop: 8 }}>
+                <li><strong>macOS:</strong> open the file. Keychain Access adds it to the login keychain. Open the certificate, expand Trust and set &quot;When using this certificate&quot; to Always Trust.</li>
+                <li><strong>Windows:</strong> open the file and select Install Certificate. Select Local Machine, then put the certificate in Trusted Root Certification Authorities.</li>
+                <li><strong>Debian and Ubuntu:</strong> copy the file to <code>/usr/local/share/ca-certificates/</code> and run <code>sudo update-ca-certificates</code>.</li>
+                <li><strong>Firefox:</strong> go to Settings, Privacy &amp; Security, View Certificates, Authorities. Select Import, then select &quot;Trust this CA to identify websites&quot;.</li>
+              </ul>
+            </details>
+          </div>
+        </Card>
+      )}
+
+      {cert.method !== null && (
+        <Card title="Change the method">
+          <div className="card-body" style={{ maxWidth: 760 }}>
+            <FormError error={change.error} />
+            <fieldset className="radio-cards">
+              <legend>Certificate method</legend>
+              <label className="radio-card">
+                <input type="radio" name="panel-cert" checked={method === "internal"} onChange={() => setMethod("internal")} />
+                <span><strong>Panel CA</strong><span>Works for all domains, also localhost and panel.localhost. Each browser must trust the root certificate.</span></span>
+              </label>
+              <label className={`radio-card${cert.letsEncryptAvailable ? "" : " radio-card-disabled"}`}>
+                <input type="radio" name="panel-cert" checked={method === "letsencrypt"} disabled={!cert.letsEncryptAvailable} onChange={() => setMethod("letsencrypt")} />
+                <span><strong>Let&apos;s Encrypt</strong><span>{cert.letsEncryptAvailable
+                  ? "All browsers trust it. The DNS of the domain must point to the panel server, and ports 80 and 443 must be open."
+                  : `Not available: ${cert.domain} is not a public domain.`}</span></span>
+              </label>
+            </fieldset>
+            {blocked && method !== cert.method && <div className="alert alert-warning" style={{ marginTop: 12 }}><p>{blocked}</p></div>}
+            <div className="btn-group" style={{ marginTop: 14 }}>
+              <ConfirmButton
+                className="btn btn-primary"
+                danger={false}
+                disabled={busy || method === cert.method || !!blocked}
+                title={`Change to ${METHOD_LABEL[method]}?`}
+                confirm={`Change to ${METHOD_LABEL[method]}`}
+                message={method === "letsencrypt" ? <>
+                  <p>The edge proxy asks Let&apos;s Encrypt for a certificate for <code>{cert.domain}</code>. Make sure that the DNS of the domain points to the panel server, and that ports 80 and 443 are open.</p>
+                  <p>If the certificate does not come in two minutes, the panel keeps the current certificate.</p>
+                </> : <>
+                  <p>The panel CA signs the certificate of <code>{cert.domain}</code>. Browsers that do not trust the root certificate show a warning.</p>
+                  <p><strong>Add the root certificate to your browser first.</strong> A browser that opened the panel with the Let&apos;s Encrypt certificate does not let you continue past the warning, because the panel tells browsers to use only HTTPS (HSTS).</p>
+                </>}
+                onConfirm={() => void change.run(method)}
+              >
+                {method === cert.method ? "This method is in use" : `Change to ${METHOD_LABEL[method]}`}
+              </ConfirmButton>
+            </div>
+          </div>
+        </Card>
+      )}
+    </div>
   );
 }

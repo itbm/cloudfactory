@@ -31,6 +31,7 @@ import type {
   ServerRole,
   State,
   SystemSettings,
+  PanelCertificateMethod,
   TokenScope,
   UpdatePolicy,
   Website,
@@ -54,7 +55,8 @@ function emptyState(): State {
     session: { ...s.session, signedIn: false, user: { id: "", name: "", email: "", role: "owner" }, contextId: "" },
     contexts: [], websites: [], jobs: [], activity: [], notifications: [], servers: [], images: [], rollout: undefined,
     zones: [], mailboxes: [], aliases: [], databases: [], databaseUsers: [], files: {}, snapshots: [], plans: [], customers: [], users: [],
-    tokens: [], passkeys: [], totpEnabled: false, audit: [], alertChannels: [], joinToken: "",
+    tokens: [], passkeys: [], totpEnabled: false, audit: [], alertChannels: [], joinToken: "", joinCaSha256: undefined,
+    panelCertificate: { domain: "", method: null, state: "pending", letsEncryptAvailable: false, serversWithoutCa: [] },
   };
 }
 
@@ -1622,14 +1624,65 @@ export function updateAgent(serverId: string) {
 
 export function newJoinToken() {
   if (LIVE) {
-    return call(() => live.request<{ token: string }>("POST", "/servers/join-tokens")).then((r) => update((d) => {
+    return call(() => live.request<{ token: string; panelCaSha256?: string | null }>("POST", "/servers/join-tokens")).then((r) => update((d) => {
       d.joinToken = r.token;
+      d.joinCaSha256 = r.panelCaSha256 ?? undefined;
     }));
   }
   update((d) => {
     d.joinToken = `cfj_${hex()}${hex()}`;
     audit(d, "Made new server join token", "");
   });
+}
+
+/** Public names only: the same rule as the agent (caddy.PublicName) and the API. */
+export function publicName(domain: string) {
+  const d = domain.toLowerCase().replace(/\.$/, "");
+  if (!d.includes(".") || /^[\d.]+$/.test(d) || d.includes(":")) return false;
+  return ![".localhost", ".local", ".internal", ".home.arpa", ".test", ".example", ".invalid"].some((s) => d.endsWith(s));
+}
+
+const METHOD_NAME: Record<PanelCertificateMethod, string> = { internal: "the panel CA", letsencrypt: "Let's Encrypt" };
+
+/**
+ * The agent on the panel server changes the certificate method of the panel domain. If the new
+ * certificate does not come in time, the agent goes back to the previous method.
+ */
+export function setPanelCertificate(method: PanelCertificateMethod) {
+  if (LIVE) {
+    return call(() => live.request<live.ApiPanelCertificate>("PUT", "/panel-certificate", { method })).then((r) => {
+      update((d) => { d.panelCertificate = live.toPanelCertificate(r); });
+      return track(r.job);
+    });
+  }
+  const cert = state.panelCertificate;
+  if (method === "letsencrypt" && !publicName(cert.domain)) {
+    throw new ApiError(`Let's Encrypt gives certificates only for public domains. ${cert.domain} is not a public domain.`, { method: "Use the panel CA for this domain." });
+  }
+  if (method === "internal" && cert.serversWithoutCa.length > 0) {
+    throw new ApiError(`These servers do not trust the panel CA yet: ${cert.serversWithoutCa.join(", ")}. Update their agent, and wait one minute.`);
+  }
+  if (cert.job && (cert.job.state === "running" || cert.job.state === "queued")) {
+    throw new ApiError("A change of the panel certificate is in progress. Wait until it is complete.");
+  }
+  const panel = state.servers.find((s) => s.roles.includes("web")) ?? state.servers[0];
+  const job = runJob({
+    title: `Change the panel certificate to ${METHOD_NAME[method]}`,
+    ref: method,
+    serverId: panel?.id,
+    steps: ["Change certificate method", "Get TLS certificate"],
+    activity: `Changed the panel certificate to ${METHOD_NAME[method]}`,
+    begin: (d) => audit(d, "Changed the panel certificate method", method),
+    apply: (d) => {
+      d.panelCertificate = {
+        ...d.panelCertificate, method, state: "valid", reportedAt: now(),
+        // Both methods give certificates for 90 days.
+        expiresAt: new Date(Date.now() + 90 * DAY).toISOString(),
+      };
+    },
+  });
+  update((d) => { d.panelCertificate.job = d.jobs[0]; });
+  return job;
 }
 
 // Customers, plans and branding (FR-102, FR-106, FR-202)

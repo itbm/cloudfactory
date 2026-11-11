@@ -431,6 +431,32 @@ export interface BackupPolicy {
   manual?: number;
 }
 
+/** The certificate method of the panel domain. */
+export type PanelCertificateMethod = "internal" | "letsencrypt";
+
+/**
+ * The TLS certificate of the panel domain. "internal": the CA of the panel signs it. A browser
+ * trusts it after the user adds the root certificate of the CA. "letsencrypt": Let's Encrypt
+ * gives it. The domain must be public.
+ */
+export interface PanelCertificate {
+  domain: string;
+  /** Null until the agent on the panel server reports. */
+  method: PanelCertificateMethod | null;
+  /** pending: the edge proxy does not have a certificate of the method yet. */
+  state: "valid" | "pending" | "expired";
+  expiresAt?: string;
+  /** The root certificate of the panel CA in PEM format. */
+  caCertificate?: string;
+  caSha256?: string;
+  reportedAt?: string;
+  letsEncryptAvailable: boolean;
+  /** The other servers that do not trust the panel CA yet. */
+  serversWithoutCa: string[];
+  /** The current or the last change of the method. */
+  job?: Job;
+}
+
 export interface Plan {
   id: string;
   name: string;
@@ -553,5 +579,8 @@ export interface State {
   audit: AuditEntry[];
   alertChannels: AlertChannel[];
   system: SystemSettings;
+  panelCertificate: PanelCertificate;
   joinToken: string;
+  /** The fingerprint of the panel CA for the join command. */
+  joinCaSha256?: string;
 }

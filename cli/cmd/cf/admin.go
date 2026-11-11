@@ -650,3 +650,39 @@ func (a *app) account(ctx context.Context, sub string, args []string) error {
 	}
 	return fmt.Errorf("unknown command account %s", sub)
 }
+
+// panelCertificate shows or changes the TLS certificate of the panel domain.
+func (a *app) panelCertificate(ctx context.Context, sub string, args []string) error {
+	switch sub {
+	case "show", "get":
+		var out map[string]any
+		if err := a.api.Do(ctx, http.MethodGet, "/panel-certificate", nil, nil, &out); err != nil {
+			return err
+		}
+		if a.json {
+			return a.printJSON(out)
+		}
+		for _, k := range []string{"domain", "method", "state", "expiresAt", "caSha256", "letsEncryptAvailable", "serversWithoutCa"} {
+			fmt.Fprintf(a.out, "%-21s %s\n", k+":", cell(out[k]))
+		}
+		return nil
+	case "ca":
+		var out struct {
+			CACertificate *string `json:"caCertificate"`
+		}
+		if err := a.api.Do(ctx, http.MethodGet, "/panel-certificate", nil, nil, &out); err != nil {
+			return err
+		}
+		if out.CACertificate == nil {
+			return errors.New("the panel has no CA yet")
+		}
+		fmt.Fprint(a.out, *out.CACertificate)
+		return nil
+	case "set":
+		if err := need(args, 1, "a method: internal or letsencrypt"); err != nil {
+			return err
+		}
+		return a.change(ctx, http.MethodPut, "/panel-certificate", map[string]string{"method": args[0]})
+	}
+	return fmt.Errorf("unknown command panel-certificate %s", sub)
+}

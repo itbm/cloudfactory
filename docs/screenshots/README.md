@@ -141,3 +141,29 @@ A domain that is not verified. The edge proxy serves it only after the TXT recor
 A new API token needs the password and the TOTP code of the user (CF-02).
 
 ![30-new-token](30-new-token.png)
+
+## 31-panel-certificate
+
+The certificate of the panel domain from the panel CA, and the root certificate to download.
+
+![31-panel-certificate](31-panel-certificate.png)
+
+## 32-panel-certificate-localhost
+
+A panel on `panel.localhost`. Let's Encrypt is not available for this domain. This screenshot
+shows live mode with the answers of the API from a test.
+
+![32-panel-certificate-localhost](32-panel-certificate-localhost.png)
+
+## 33-change-to-lets-encrypt
+
+The change to Let's Encrypt. If the certificate does not come, the panel keeps the current
+certificate.
+
+![33-change-to-lets-encrypt](33-change-to-lets-encrypt.png)
+
+## 34-change-back-to-panel-ca
+
+The change back to the panel CA. Add the root certificate to the browser first (HSTS).
+
+![34-change-back-to-panel-ca](34-change-back-to-panel-ca.png)

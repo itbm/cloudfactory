@@ -15,6 +15,7 @@ import type {
   Job,
   Limits,
   ManagedUser,
+  PanelCertificate,
   Plan,
   Rollout,
   RuntimeImage,
@@ -143,6 +144,10 @@ interface ApiRollout {
 interface ApiCustomer { id: string; name: string; email: string; role: Customer["role"]; planId: string; resellerId: string | null; suspended: boolean; createdAt: string }
 interface ApiToken_ { id: number; name: string; scopes: string[]; createdAt: string; expiresAt: string | null; lastUsedAt: string | null }
 interface ApiAudit { id: number; at: string; actor: string; ip: string | null; action: string; target: string }
+interface ApiPanelCertificate {
+  domain: string; method: PanelCertificate["method"]; state: PanelCertificate["state"]; expiresAt: string | null; caCertificate: string | null; caSha256: string | null;
+  reportedAt: string | null; letsEncryptAvailable: boolean; serversWithoutCa: string[]; job: ApiJob | null;
+}
 interface ApiSnapshot { id: string; kind: "scheduled" | "manual"; sizeBytes: number; databases: string[]; mailboxes: string[]; createdAt: string }
 
 // Mapping from the API shapes to the state of the UI.
@@ -159,6 +164,13 @@ export function toJob(j: ApiJob): Job {
   return {
     id: j.id, title: j.title, ref: j.ref ?? undefined, state: j.state, steps: j.steps ?? [], step: j.step ?? 0, error: j.error ?? undefined,
     createdAt: j.createdAt, finishedAt: j.finishedAt ?? undefined, websiteId: j.websiteId ?? undefined, serverId: j.serverId ?? undefined,
+  };
+}
+
+export function toPanelCertificate(c: ApiPanelCertificate): PanelCertificate {
+  return {
+    domain: c.domain, method: c.method, state: c.state, expiresAt: c.expiresAt ?? undefined, caCertificate: c.caCertificate ?? undefined, caSha256: c.caSha256 ?? undefined,
+    reportedAt: c.reportedAt ?? undefined, letsEncryptAvailable: c.letsEncryptAvailable, serversWithoutCa: c.serversWithoutCa ?? [], job: c.job ? toJob(c.job) : undefined,
   };
 }
 
@@ -249,7 +261,7 @@ export async function load(previous: State): Promise<State> {
   const admin = me.role === "administrator";
   const optional = <T>(p: Promise<T>, fallback: T) => p.catch(() => fallback);
 
-  const [websites, jobs, customers, plans, tokens, policy, servers, images, rollouts, audit, users] = await Promise.all([
+  const [websites, jobs, customers, plans, tokens, policy, servers, images, rollouts, audit, users, certificate] = await Promise.all([
     all<ApiWebsite>("/websites"),
     request<{ data: ApiJob[] }>("GET", "/jobs?perPage=50").then((r) => r.data),
     optional(request<{ data: ApiCustomer[] }>("GET", "/customers").then((r) => r.data), []),
@@ -261,6 +273,7 @@ export async function load(previous: State): Promise<State> {
     admin ? request<{ data: ApiRollout[] }>("GET", "/rollouts").then((r) => r.data) : Promise.resolve([] as ApiRollout[]),
     optional(request<{ data: ApiAudit[] }>("GET", "/audit?perPage=100").then((r) => r.data), []),
     optional(request<{ data: ApiUser[] }>("GET", "/users").then((r) => r.data), []),
+    admin ? optional(request<ApiPanelCertificate>("GET", "/panel-certificate"), null) : Promise.resolve(null),
   ]);
   // A customer or a reseller cannot list all images. They get the images for a new website.
   const runtimes = admin ? images.map((i) => toImage(i, rollouts))
@@ -315,6 +328,7 @@ export async function load(previous: State): Promise<State> {
     alertChannels: [],
     branding: { ...previous.branding, panelDomain: location.host },
     system: { ...previous.system, panelDomain: location.host },
+    panelCertificate: certificate ? toPanelCertificate(certificate) : previous.panelCertificate,
   };
 }
 
@@ -395,4 +409,4 @@ export async function waitForJob(job: ApiJob | Job, onChange: (job: Job) => void
   return current;
 }
 
-export type { ApiJob, ApiUser, ApiWebsite };
+export type { ApiJob, ApiPanelCertificate, ApiUser, ApiWebsite };
