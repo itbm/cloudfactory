@@ -294,7 +294,7 @@ class CompletenessTest extends TestCase
         $this->getJson("/api/v1/websites/{$website->id}/databases")->assertJsonCount(0, 'databases')->assertJsonCount(0, 'users');
 
         // Batch 1, finding 3: a failed change of the PHP settings puts back the old settings, not an older image.
-        $website->update(['previous_image_id' => $this->image(['name' => 'Old', 'tag' => '8.3.0-1'])->id, 'php_ini' => ['memory_limit' => '256M']]);
+        $website->update(['previous_image_id' => $this->image(['name' => 'Old', 'tag' => '8.4.0-0'])->id, 'php_ini' => ['memory_limit' => '256M']]);
         $jobId = $this->putJson("/api/v1/websites/{$website->id}/runtime", ['phpIni' => ['memory_limit' => '512M'], 'documentRoot' => 'web'])->assertAccepted()->json('job.id');
         $this->assertSame('web', AgentJob::findOrFail($jobId)->payload['website']['documentRoot']);
         $image = $website->image_id;

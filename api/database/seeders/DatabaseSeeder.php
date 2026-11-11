@@ -42,7 +42,7 @@ class DatabaseSeeder extends Seeder
         User::create(['name' => 'Olu Owner', 'email' => 'owner@example.com', 'password' => Hash::make('password'), 'role' => Role::Owner, 'customer_id' => $acme->id]);
 
         $images = [];
-        foreach (['8.2' => '2026-12-31', '8.3' => '2027-12-31', '8.4' => '2028-12-31', '8.5' => '2029-12-31'] as $php => $ends) {
+        foreach (['8.4' => '2028-12-31', '8.5' => '2029-12-31'] as $php => $ends) {
             $images["frankenphp-{$php}"] = Image::create([
                 'name' => "FrankenPHP · PHP {$php}", 'family' => 'frankenphp', 'php_version' => $php,
                 'reference' => config('cloudfactory.registry')."/frankenphp-php{$php}", 'tag' => "{$php}.0-1",
@@ -50,10 +50,10 @@ class DatabaseSeeder extends Seeder
             ]);
         }
         $images['frankenphp-8.4']->update(['available_tag' => '8.4.0-2', 'available_digest' => 'sha256:'.str_repeat('a', 64)]);
-        $images['apache-8.3'] = Image::create([
-            'name' => 'Apache + PHP-FPM · PHP 8.3', 'family' => 'apache-php-fpm', 'php_version' => '8.3',
-            'reference' => config('cloudfactory.registry').'/apache-php8.3', 'tag' => '8.3.0-1',
-            'support_ends_at' => '2027-12-31', 'policy' => 'manual', 'signature_verified' => true,
+        $images['apache-8.4'] = Image::create([
+            'name' => 'Apache + PHP-FPM · PHP 8.4', 'family' => 'apache-php-fpm', 'php_version' => '8.4',
+            'reference' => config('cloudfactory.registry').'/apache-php8.4', 'tag' => '8.4.0-1',
+            'support_ends_at' => '2028-12-31', 'policy' => 'manual', 'signature_verified' => true,
         ]);
 
         $web1 = Server::create(['name' => 'web-1', 'location' => 'London', 'roles' => ['web', 'database'], 'state' => 'healthy', 'agent_url' => 'https://web-1.internal:7443', 'agent_version' => '0.1.0', 'os' => 'Debian 13', 'arch' => 'x86-64', 'podman_version' => '5.4.2', 'gvisor_version' => 'release-20261019.0', 'pending_updates' => [], 'services' => [], 'last_seen_at' => now()]);
@@ -62,8 +62,8 @@ class DatabaseSeeder extends Seeder
         foreach ([
             ['acme.example', 'WordPress', $acme, 'frankenphp-8.4'],
             ['shop.acme.example', 'WooCommerce', $acme, 'frankenphp-8.4'],
-            ['api.acme.example', 'Laravel', $acme, 'frankenphp-8.3'],
-            ['cornerbakery.example', 'WordPress', $bakery, 'apache-8.3'],
+            ['api.acme.example', 'Laravel', $acme, 'frankenphp-8.5'],
+            ['cornerbakery.example', 'WordPress', $bakery, 'apache-8.4'],
         ] as [$name, $app, $customer, $image]) {
             $plan = $customer->plan;
             $website = Website::create([

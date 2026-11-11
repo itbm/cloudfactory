@@ -17,7 +17,7 @@ class InstallPanelTest extends TestCase
 
         $this->assertSame(20, strlen($out['password']));
         $this->assertStringStartsWith('cfj_', $out['joinToken']);
-        $this->assertSame(8, Image::count());
+        $this->assertSame(4, Image::count());
         $this->assertSame(3, Plan::count());
         $this->assertTrue(User::sole()->isAdministrator());
 
@@ -25,6 +25,6 @@ class InstallPanelTest extends TestCase
         Artisan::call('cloudfactory:install', ['email' => 'other@example.com']);
         $this->assertNull(json_decode(trim(Artisan::output()), true)['password']);
         $this->assertSame(1, User::count());
-        $this->assertSame(8, Image::count());
+        $this->assertSame(4, Image::count());
     }
 }

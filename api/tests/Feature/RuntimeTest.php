@@ -46,7 +46,7 @@ class RuntimeTest extends TestCase
     public function test_worker_mode_is_only_for_frankenphp(): void
     {
         $customer = $this->customer();
-        $apache = $this->image(['name' => 'Apache', 'family' => 'apache-php-fpm', 'reference' => 'ghcr.io/cloudfactory/apache-php8.3', 'tag' => '8.3.0-1']);
+        $apache = $this->image(['name' => 'Apache', 'family' => 'apache-php-fpm', 'reference' => 'ghcr.io/cloudfactory/apache-php8.4', 'tag' => '8.4.0-1']);
         $website = $this->website($customer, $this->server(), $apache);
         $this->actingWith($this->user());
 

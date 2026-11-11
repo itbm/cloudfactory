@@ -39,7 +39,7 @@ export type WebsiteStatus = "running" | "stopped" | "starting" | "stopping" | "f
 
 export type RuntimeKind = "frankenphp" | "apache-php-fpm" | "oci" | "static";
 
-export type PhpVersion = "8.2" | "8.3" | "8.4" | "8.5";
+export type PhpVersion = "8.4" | "8.5";
 
 export interface Runtime {
   kind: RuntimeKind;

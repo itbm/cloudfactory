@@ -25,7 +25,7 @@ shows what this repository has now.
 | `cf` CLI for all public API areas, with `--json` and `--no-wait`. Lists read all pages | `cli/` |
 | Installation script with checks before changes, for a panel and for a new server | `install/` |
 | Shared read-only runtime images: one copy of each image on a server for all websites, so a new website starts with no pull | `agent/internal/images` |
-| Images: FrankenPHP and Apache with PHP-FPM for PHP 8.2 to 8.5, the Caddy edge, the panel API and web, MariaDB, PostgreSQL and SFTP | `images/` |
+| Images: FrankenPHP and Apache with PHP-FPM for PHP 8.4 and 8.5, the Caddy edge, the panel API and web, MariaDB, PostgreSQL and SFTP | `images/` |
 | CI, image scans, signed multi-arch releases with SBOMs, and a daily rebuild (the schedule is off, refer to [releasing.md](releasing.md#daily-image-rebuild)) | `.github/workflows/` |
 
 ## Not complete
