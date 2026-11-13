@@ -376,9 +376,22 @@ ${website_networks}    # The edge proxy on the addresses of this server, so that
     # that calls the public address of this server, needs the same redirects here. The
     # output chain then sees port 8080 or 8443.
     type nat hook output priority -100;
+    # pasta cannot send a connection from ::1 into gVisor (refer to postrouting_nat), and IPv6
+    # has no private service address. Thus a connection from ::1 to port 80 or 443 is refused,
+    # and the browser then uses 127.0.0.1.
+    ip6 saddr ::1 return
     fib daddr type local tcp dport 80 redirect to :8080
     fib daddr type local tcp dport 443 redirect to :8443
     fib daddr type local udp dport 443 redirect to :8443
+  }
+  chain postrouting_nat {
+    # pasta sends a connection from a loopback address to the loopback interface in the network
+    # namespace of the edge container. gVisor does not listen there, so pasta closes the
+    # connection. This occurs for https://panel.localhost, and for the full host name, which
+    # /etc/hosts gives as 127.0.1.1. Thus a redirected connection from a loopback address gets
+    # the private service address as its source address. pasta then sends it to gVisor.
+    type nat hook postrouting priority 100;
+    ip saddr 127.0.0.0/8 ct status dnat meta l4proto { tcp, udp } th dport { 8080, 8443 } snat ip to $SERVICE_ADDRESS
   }
 }
 NFT
@@ -446,8 +459,8 @@ unset DBUS_SESSION_BUS_ADDRESS XDG_RUNTIME_DIR XDG_SESSION_ID XDG_SESSION_TYPE X
 	XDG_CONFIG_HOME XDG_DATA_HOME XDG_CACHE_HOME XDG_STATE_HOME
 
 STEP=0
-STEPS=13
-[ "$MODE" = panel ] && STEPS=15
+STEPS=14
+[ "$MODE" = panel ] && STEPS=16
 CURRENT=""
 TMP=$(mktemp -d)
 on_exit() {

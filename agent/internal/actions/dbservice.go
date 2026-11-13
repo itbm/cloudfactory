@@ -31,6 +31,25 @@ func (d *Deps) serviceImage(name string) string {
 	return "ghcr.io/cloudfactory/" + name + ":latest"
 }
 
+// makeDataDir makes the data directory of a database container, with the owner user and mode
+// 0700. It does not change a directory that exists.
+//
+// The entry point of the database image gives the directory to the database user of the
+// container (for example postgres, UID 999), which is a different UID on the host. The database
+// server then opens each file through this directory. "install -d" on a directory that exists
+// sets the owner and the mode again. A database server that operates then cannot open its files
+// ("could not open file global/pg_filenode.map: Permission denied"), until the container starts
+// again. This occurred when the install script ran again while the panel database operated.
+func (d *Deps) makeDataDir(ctx context.Context, dir, user string) error {
+	if _, err := os.Lstat(dir); err == nil {
+		return nil
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	_, err := d.Run.Run(ctx, "install", "-d", "-o", user, "-g", user, "-m", "0700", dir)
+	return err
+}
+
 func (d *Deps) dbUnit(engine string) quadlet.Database {
 	home := d.dbHome()
 	return quadlet.Database{
@@ -65,7 +84,7 @@ func (d *Deps) EnsureDatabaseService(ctx context.Context, engine string) error {
 		}
 	}
 	// Only cf-db can open the data. The entry point of the image sets the owner in the container.
-	if _, err := d.Run.Run(ctx, "install", "-d", "-o", DBUser, "-g", DBUser, "-m", "0700", u.DataDir); err != nil {
+	if err := d.makeDataDir(ctx, u.DataDir, DBUser); err != nil {
 		return err
 	}
 	if err := d.writeSuperuserSecret(ctx, engine, u.EnvFile); err != nil {

@@ -178,6 +178,13 @@ rule "local connections to port 80 go to the edge proxy" yes 'fib daddr type loc
 rule "local connections to port 443 go to the edge proxy" yes 'fib daddr type local tcp dport 443 redirect to :8443' "$WORK/default.nft"
 rule "local HTTP/3 connections go to the edge proxy" yes 'fib daddr type local udp dport 443 redirect to :8443' "$WORK/default.nft"
 rule "the redirects of local connections are in the NAT table" yes 'type nat hook output priority -100;' "$WORK/default.nft"
+# pasta closes a connection from a loopback address, because gVisor does not listen on the
+# loopback interface of the container. The redirected connections from 127.0.0.0/8 get the
+# service address as their source. A connection from ::1 is not redirected, so it is refused.
+rule "local connections from a loopback address get the service address" yes 'ip saddr 127.0.0.0/8 ct status dnat meta l4proto { tcp, udp } th dport { 8080, 8443 } snat ip to 169.254.77.1' "$WORK/default.nft"
+rule "the source address changes in the NAT table" yes 'type nat hook postrouting priority 100;' "$WORK/default.nft"
+rule "local connections from ::1 are not redirected" yes 'ip6 saddr ::1 return' "$WORK/default.nft"
+if [ "$(line 'ip6 saddr ::1 return' "$WORK/default.nft")" -lt "$(line 'fib daddr type local tcp dport 80 redirect to :8080' "$WORK/default.nft")" ]; then PASS=$((PASS + 1)); else FAIL=$((FAIL + 1)); echo 'FAIL: the rule for ::1 comes after the redirects'; fi
 rule "the panel database rule has the user of the panel" yes 'ct state new ip daddr 169.254.77.1 tcp dport 19432 meta skuid != { 0, 992 } reject with tcp reset' "$WORK/default.nft"
 # The rule for the ports of the other websites comes before the website chain, and the
 # databases come before the rule that closes the addresses of the server.
@@ -223,6 +230,17 @@ if grep -q '^cat >/etc/needrestart/conf.d/50-cloudfactory.conf' "$HERE/install.s
 else
 	FAIL=$((FAIL + 1))
 	echo 'FAIL: the needrestart settings'
+fi
+
+# The step counter agrees with the steps: all steps for --join, and two more for a new panel.
+# The panel steps are in an "if" block, so they have a tab before "step".
+common=$(grep -c '^step "' "$HERE/install.sh")
+panel_only=$(grep -c "^	step \"" "$HERE/install.sh")
+if grep -qx "STEPS=$common" "$HERE/install.sh" && grep -qxF "[ \"\$MODE\" = panel ] && STEPS=$((common + panel_only))" "$HERE/install.sh"; then
+	PASS=$((PASS + 1))
+else
+	FAIL=$((FAIL + 1))
+	printf 'FAIL: STEPS does not agree with the %d steps and the %d panel steps\n' "$common" "$panel_only"
 fi
 
 root=$(fake debian 13)
