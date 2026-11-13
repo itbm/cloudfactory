@@ -131,6 +131,13 @@ The firewall redirects port 80 to 8080 and port 443 to 8443 (refer to
 [decisions.md](decisions.md)). It also redirects the connections from the server itself to its
 own addresses, for example from a browser on the server to `localhost`.
 
+pasta sends a connection from a loopback address (`127.0.0.0/8` or `::1`) to the loopback
+interface in the network namespace of the container. gVisor does not listen there, so pasta
+closes the connection. Thus the firewall changes the source address of a redirected IPv4
+connection from a loopback address to `169.254.77.1`. IPv6 has no private service address, so
+the firewall does not redirect a connection from `::1`. Nothing listens on port 80 or 443, so
+the connection is refused, and the browser then uses `127.0.0.1`.
+
 The agent changes the Caddy routes through the Caddy admin API. Each website has one route.
 The route sends traffic to `169.254.77.1:<port>`. Caddy gets the TLS certificates
 automatically. The agent starts the edge container before it adds the first route, also

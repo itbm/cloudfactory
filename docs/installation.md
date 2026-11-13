@@ -100,6 +100,8 @@ sh install.sh --domain panel.localhost
 ```
 
 The firewall sends the connections from the server itself to ports 80 and 443 to the edge proxy.
+This also applies to the full host name of the server, which `/etc/hosts` usually gives as
+`127.0.1.1`.
 
 ## Add a server
 

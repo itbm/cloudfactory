@@ -132,6 +132,35 @@ func TestInstallPanelAgainKeepsThePasswordAndTheServices(t *testing.T) {
 	}
 }
 
+// The entry point of the database image gives the data directory to the user postgres of the
+// container. When the install script ran again while the database operated, "install -d" gave
+// the directory back to cf-panel. The database then could not open its files ("could not open
+// file global/pg_filenode.map: Permission denied"), and step 14 of the script stopped.
+func TestInstallPanelAgainKeepsTheOwnerOfTheDatabaseDirectory(t *testing.T) {
+	d, f, _ := deps(t)
+	p := testPanel(t.TempDir())
+	if err := d.InstallPanel(context.Background(), p); err != nil {
+		t.Fatal(err)
+	}
+	if !f.Called("install -d -o cf-panel -g cf-panel -m 0700 " + p.PanelDatabaseDir()) {
+		t.Fatalf("the first run did not make the database directory\ncalls: %v", f.Calls)
+	}
+	// The fake runner does not run "install". The entry point of the image made the directory.
+	if err := os.MkdirAll(p.PanelDatabaseDir(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	f.Calls, f.Inputs = nil, nil
+
+	if err := d.InstallPanel(context.Background(), p); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range f.Calls {
+		if strings.HasSuffix(c, " "+p.PanelDatabaseDir()) && (strings.HasPrefix(c, "install ") || strings.HasPrefix(c, "chown ") || strings.HasPrefix(c, "chmod ")) {
+			t.Errorf("the second run changed the database directory: %s", c)
+		}
+	}
+}
+
 // A password file with no password is a fault that the administrator must see.
 func TestInstallPanelStopsOnABadPasswordFile(t *testing.T) {
 	d, _, _ := deps(t)

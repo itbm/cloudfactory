@@ -30,8 +30,8 @@ func (d *Deps) InstallPanel(ctx context.Context, p quadlet.Panel) error {
 		}
 	}
 	// Only the user of the panel can open the data. The entry point of the image sets the
-	// owner in the container.
-	if _, err := d.Run.Run(ctx, "install", "-d", "-o", PanelUser, "-g", PanelUser, "-m", "0700", p.PanelDatabaseDir()); err != nil {
+	// owner in the container, so a directory that exists keeps its owner (makeDataDir).
+	if err := d.makeDataDir(ctx, p.PanelDatabaseDir(), PanelUser); err != nil {
 		return err
 	}
 	password, err := d.panelDatabasePassword(ctx, p.PanelDatabaseEnv())

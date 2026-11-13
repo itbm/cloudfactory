@@ -87,6 +87,28 @@ func TestWebsitesHaveDatabaseHostNames(t *testing.T) {
 }
 
 // Blocker 3: the agent makes the repository, and restic gets the credentials in its environment.
+// After a restart, the agent starts the shared database containers again (RefreshDatabaseServices).
+// A data directory that exists keeps its owner: the entry point of the image gave it to the
+// database user of the container, and the database server that operates needs that owner.
+func TestTheDatabaseServiceKeepsTheOwnerOfItsDataDirectory(t *testing.T) {
+	d, f, _ := deps(t)
+	d.ServiceImage = func(name string) string { return "ghcr.io/cloudfactory/" + name + ":0.1.0" }
+	for _, engine := range Engines {
+		dir := filepath.Join(d.DBHome, engine)
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := d.EnsureDatabaseService(context.Background(), engine); err != nil {
+			t.Fatal(err)
+		}
+		for _, c := range f.Calls {
+			if strings.HasSuffix(c, " "+dir) && (strings.HasPrefix(c, "install ") || strings.HasPrefix(c, "chown ") || strings.HasPrefix(c, "chmod ")) {
+				t.Errorf("%s: the agent changed the data directory that exists: %s", engine, c)
+			}
+		}
+	}
+}
+
 func TestBackupMakesTheRepositoryAndUsesTheCredentials(t *testing.T) {
 	d, f, _ := deps(t)
 	os.MkdirAll(d.Host.AppDir("acme_x7k2"), 0o755)
