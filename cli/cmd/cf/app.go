@@ -106,10 +106,12 @@ Usage:
                        --with-user also makes a user with the email of the customer, and shows a temporary password.
   cf customers set ID [--plan ID] [--suspend | --unsuspend]
   cf users list
-  cf users create --name NAME --email EMAIL (--customer ID | --administrator)
+  cf users create --name NAME --email EMAIL (--customer ID | --administrator) [--totp CODE]
                        The command shows a temporary password once. The user sets a new password at the first sign-in.
-  cf users reset-password USER [--remove-totp]         A USER is an email address or an ID.
-  cf users delete USER
+  cf users reset-password USER [--remove-totp] [--totp CODE]   A USER is an email address or an ID.
+  cf users delete USER [--totp CODE]
+                       A change to an administrator needs a sign-in (cf login), your password from
+                       CF_PASSWORD or stdin, and --totp when your TOTP is on.
   cf plans list
   cf audit list [--limit N | --all]
   cf account password [--totp CODE]   The passwords come from CF_PASSWORD and CF_NEW_PASSWORD, or stdin.

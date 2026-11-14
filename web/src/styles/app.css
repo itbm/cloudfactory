@@ -391,6 +391,9 @@ a.cell-title:hover { text-decoration: underline; }
 .alert-stack > * + * { margin-top: 8px; }
 .alert-stack .cause { font-family: var(--font-mono); font-size: 13px; overflow-wrap: anywhere; padding: 8px 10px; border-radius: var(--radius-sm); background: rgb(255 255 255 / 60%); }
 .load-error { margin: 16px 32px 0; }
+.security-notices { margin-bottom: 16px; }
+.notice-list { margin: 8px 0 0; padding-left: 20px; }
+.notice-list li + li { margin-top: 4px; }
 .alert-warning { background: var(--warning-soft); border-color: var(--warning-border); }
 .alert-danger { background: var(--danger-soft); border-color: var(--danger-border); }
 .alert-info { background: var(--primary-soft); border-color: var(--primary-border); }
@@ -565,6 +568,7 @@ a.cell-title:hover { text-decoration: underline; }
   .topbar-actions .btn-primary .label { display: none; }
   .topbar-actions .btn-primary { width: var(--target); padding: 0; }
   .content { padding: 20px 16px; }
+  .load-error { margin-left: 16px; margin-right: 16px; }
   h1 { font-size: 24px; }
   .stats { gap: 10px; }
   .stat { padding: 14px; }
@@ -676,6 +680,8 @@ a.cell-title:hover { text-decoration: underline; }
 .login .brand { padding: 0 0 20px; color: var(--text); }
 .login .brand:hover { color: var(--text); }
 .login .brand span { color: var(--text-muted); }
+/* The TOTP key must show in full, because the user can type it into an app. */
+.login .copy-field code { white-space: normal; overflow-wrap: anywhere; }
 .divider { display: flex; align-items: center; gap: 12px; color: var(--text-muted); font-size: 13px; margin: 18px 0; }
 .divider::before, .divider::after { content: ""; flex: 1; height: 1px; background: var(--border); }
 

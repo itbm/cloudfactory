@@ -11,6 +11,7 @@ use App\Models\Server;
 use App\Models\User;
 use App\Models\Website;
 use App\Services\DomainPolicy;
+use App\Services\Totp;
 use Laravel\Sanctum\Sanctum;
 
 /** Small helpers that make the data that the tests need. */
@@ -58,6 +59,15 @@ trait Hosting
     protected function user(Role $role = Role::Administrator, ?Customer $customer = null): User
     {
         return User::factory()->create(['role' => $role, 'customer_id' => $customer?->id]);
+    }
+
+    /** Turns on TOTP for a user, and gives the key. Totp::code($key) gives a code. */
+    protected function totp(User $user): string
+    {
+        $secret = Totp::generateSecret();
+        $user->forceFill(['totp_secret' => $secret, 'totp_last_step' => null])->save();
+
+        return $secret;
     }
 
     /** A DNS that answers TXT queries from the array. The test can change the array later. */

@@ -4,6 +4,7 @@ import { features } from "../api/mode";
 import { addCustomer, addUser, deleteUser, resetUserPassword, savePlan, setBranding, setCustomer, type NewAccess } from "../api/store";
 import type { Customer, ManagedUser, Plan } from "../api/types";
 import { GB, MB } from "../api/seed";
+import { ConfirmIdentityFields, NO_CONFIRMATION } from "../components/ConfirmIdentity";
 import { Topbar } from "../components/Layout";
 import { Card, ConfirmButton, Field, FormError, Modal, PageHeader, Status, Tabs } from "../components/ui";
 import { bytes, shortDate } from "../lib/format";
@@ -124,11 +125,15 @@ function Users() {
   const [open, setOpen] = useState(false);
   const [access, setAccess] = useState<NewAccess | null>(null);
   const [resetting, setResetting] = useState<ManagedUser | null>(null);
+  const [deleting, setDeleting] = useState<ManagedUser | null>(null);
   // An administrator has no customer. The value "" in the form is an administrator.
   const customers = admin ? state.customers : state.customers.filter((c) => c.resellerId === state.session.contextId);
   const [form, setForm] = useState({ name: "", email: "", customerId: customers[0]?.id ?? "" });
+  // Second audit, finding F09: the password and the code for a new administrator.
+  const [confirm, setConfirm] = useState(NO_CONFIRMATION);
   const add = useAction(addUser);
   const remove = useAction(deleteUser);
+  const closeAdd = () => { setOpen(false); setConfirm(NO_CONFIRMATION); add.clear(); };
   const customer = (id?: string) => state.customers.find((c) => c.id === id);
   const self = (u: ManagedUser) => u.id === state.session.user.id;
   const canChange = (u: ManagedUser) => !self(u) && (admin || (role === "reseller" && customer(u.customerId)?.resellerId === state.session.contextId));
@@ -156,7 +161,9 @@ function Users() {
                   {self(u) ? <span className="muted small">Your account</span> : canChange(u) && (
                     <div className="btn-group" style={{ justifyContent: "flex-end" }}>
                       <button type="button" className="btn btn-sm" onClick={() => setResetting(u)}>Reset password…</button>
-                      <ConfirmButton className="btn btn-sm btn-danger" title={`Delete ${u.email}?`} confirm="Delete user" message={<p>{u.name} can no longer sign in. The panel deletes the sessions and the API tokens of this user. The websites of the customer stay.</p>} onConfirm={() => void remove.run(u.id)}>Delete</ConfirmButton>
+                      {u.customerId
+                        ? <ConfirmButton className="btn btn-sm btn-danger" title={`Delete ${u.email}?`} confirm="Delete user" message={<p>{u.name} can no longer sign in. The panel deletes the sessions and the API tokens of this user. The websites of the customer stay.</p>} onConfirm={() => void remove.run(u.id)}>Delete</ConfirmButton>
+                        : <button type="button" className="btn btn-sm btn-danger" onClick={() => setDeleting(u)}>Delete</button>}
                     </div>
                   )}
                 </td>
@@ -167,16 +174,16 @@ function Users() {
         </table>
       </div>
       {open && (
-        <Modal title="Add user" onClose={() => { setOpen(false); add.clear(); }} footer={<><button type="button" className="btn" onClick={() => { setOpen(false); add.clear(); }}>Cancel</button><button type="submit" form="usr" className="btn btn-primary" disabled={add.busy}>Add user</button></>}>
+        <Modal title="Add user" onClose={closeAdd} footer={<><button type="button" className="btn" onClick={closeAdd}>Cancel</button><button type="submit" form="usr" className="btn btn-primary" disabled={add.busy}>{form.customerId ? "Add user" : "Add administrator"}</button></>}>
           <form id="usr" noValidate onSubmit={async (e) => {
             e.preventDefault();
-            const r = await add.run({ name: form.name, email: form.email, customerId: form.customerId || null });
+            const r = await add.run({ name: form.name, email: form.email, customerId: form.customerId || null }, form.customerId ? undefined : confirm);
             if (!r.ok) return;
-            setOpen(false);
+            closeAdd();
             setForm({ ...form, name: "", email: "" });
             setAccess(r.value);
           }}>
-            <FormError error={add.error} shown={["name", "email", "customerId"]} />
+            <FormError error={add.error} shown={["name", "email", "customerId", "password", "totp"]} />
             <Field label="Name" error={add.error?.fields.name}>{(p) => <input {...p} className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />}</Field>
             <Field label="Email" hint="The user signs in with this address." error={add.error?.fields.email}>{(p) => <input {...p} className="input" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />}</Field>
             <Field label="Customer" hint={form.customerId ? "The user gets the role of the customer and sees only the websites of the customer." : "An administrator sees and changes all customers, servers and settings."} error={add.error?.fields.customerId}>
@@ -187,10 +194,12 @@ function Users() {
                 </select>
               )}
             </Field>
+            {!form.customerId && <ConfirmIdentityFields value={confirm} onChange={setConfirm} error={add.error} />}
           </form>
         </Modal>
       )}
       {resetting && <ResetDialog user={resetting} onClose={() => setResetting(null)} onDone={(a) => { setResetting(null); setAccess(a); }} />}
+      {deleting && <DeleteAdministratorDialog user={deleting} onClose={() => setDeleting(null)} />}
       {access && <AccessDialog access={access} onClose={() => setAccess(null)} />}
     </Card>
   );
@@ -198,17 +207,38 @@ function Users() {
 
 function ResetDialog({ user, onClose, onDone }: { user: ManagedUser; onClose: () => void; onDone: (access: NewAccess) => void }) {
   const [removeTotp, setRemoveTotp] = useState(false);
+  const [confirm, setConfirm] = useState(NO_CONFIRMATION);
   const reset = useAction(resetUserPassword);
+  // Second audit, finding F09: a reset for an administrator needs the password and a code.
+  const administrator = !user.customerId;
   return (
-    <Modal title={`Reset the password of ${user.email}?`} onClose={onClose} footer={<><button type="button" className="btn" onClick={onClose}>Cancel</button><button type="button" className="btn btn-danger-solid" disabled={reset.busy} onClick={async () => { const r = await reset.run(user.id, removeTotp); if (r.ok) onDone(r.value); }}>Reset password</button></>}>
-      <FormError error={reset.error} />
-      <p>{user.name} gets a new temporary password. The panel signs the user out and deletes the API tokens of the user. It also removes a sign-in lock.</p>
-      {user.totpEnabled && (
-        <>
-          <label className="check" style={{ marginTop: 10 }}><input type="checkbox" checked={removeTotp} onChange={(e) => setRemoveTotp(e.target.checked)} />Also remove TOTP</label>
-          <p className="muted small">Use this when the user lost the authenticator app. The user then signs in with the password only, and sets up TOTP again.</p>
-        </>
-      )}
+    <Modal title={`Reset the password of ${user.email}?`} onClose={onClose} footer={<><button type="button" className="btn" onClick={onClose}>Cancel</button><button type="submit" form="reset-user" className="btn btn-danger-solid" disabled={reset.busy}>Reset password</button></>}>
+      <form id="reset-user" noValidate onSubmit={async (e) => { e.preventDefault(); const r = await reset.run(user.id, removeTotp, administrator ? confirm : undefined); if (r.ok) onDone(r.value); }}>
+        <FormError error={reset.error} shown={["password", "totp"]} />
+        <p>{user.name} gets a new temporary password. The panel signs the user out and deletes the API tokens of the user. It also removes a sign-in lock.</p>
+        {user.totpEnabled && (
+          <>
+            <label className="check" style={{ marginTop: 10 }}><input type="checkbox" checked={removeTotp} onChange={(e) => setRemoveTotp(e.target.checked)} />Also remove TOTP</label>
+            <p className="muted small">Use this when the user lost the authenticator app. The user then signs in with the password only, and sets up TOTP again.</p>
+          </>
+        )}
+        {administrator && <ConfirmIdentityFields value={confirm} onChange={setConfirm} error={reset.error} />}
+      </form>
+    </Modal>
+  );
+}
+
+/** Second audit, finding F09: to delete an administrator, type the password and a code. */
+function DeleteAdministratorDialog({ user, onClose }: { user: ManagedUser; onClose: () => void }) {
+  const [confirm, setConfirm] = useState(NO_CONFIRMATION);
+  const remove = useAction(deleteUser);
+  return (
+    <Modal title={`Delete the administrator ${user.email}?`} onClose={onClose} footer={<><button type="button" className="btn" onClick={onClose}>Cancel</button><button type="submit" form="delete-administrator" className="btn btn-danger-solid" disabled={remove.busy}>Delete administrator</button></>}>
+      <form id="delete-administrator" noValidate onSubmit={async (e) => { e.preventDefault(); if ((await remove.run(user.id, confirm)).ok) onClose(); }}>
+        <FormError error={remove.error} shown={["password", "totp"]} />
+        <p>{user.name} can no longer sign in. The panel deletes the sessions and the API tokens of this user. The other administrators see a notice about this change.</p>
+        <ConfirmIdentityFields value={confirm} onChange={setConfirm} error={remove.error} />
+      </form>
     </Modal>
   );
 }

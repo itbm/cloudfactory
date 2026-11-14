@@ -14,7 +14,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'name', 'application', 'customer_id', 'server_id', 'plan_id', 'image_id', 'image_tag', 'previous_image_id',
     'previous_image_tag', 'unix_user', 'status', 'worker_mode', 'extensions', 'php_ini', 'limits', 'usage',
     'staging_of', 'managed_by_terraform', 'document_root', 'sftp_enabled', 'sftp_keys',
-    'stopped_by_suspension', 'database_instance',
+    'stopped_by_suspension', 'sftp_closed_by_suspension', 'database_instance',
 ])]
 class Website extends Model
 {
@@ -33,6 +33,7 @@ class Website extends Model
             'sftp_enabled' => 'boolean',
             'sftp_keys' => 'array',
             'stopped_by_suspension' => 'boolean',
+            'sftp_closed_by_suspension' => 'boolean',
         ];
     }
 

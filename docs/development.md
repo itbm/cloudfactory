@@ -44,7 +44,10 @@ VITE_API_MODE=live npm run dev         # sends /api to port 8000
 ```
 
 Sign in as `admin@example.com`, `reseller@example.com` or `owner@example.com`. The password
-is `password`. The sample users have no TOTP, so leave the code empty.
+is `password`. The sample users have no TOTP, so leave the code empty. The file
+`api/.env.example` has `CF_REQUIRE_TOTP=false`, so the panel does not ask the sample
+administrator and the sample reseller to set up TOTP. Without this line, the panel shows only
+the page **Set up an authenticator app** to these users until TOTP is on.
 
 ## Panel API
 

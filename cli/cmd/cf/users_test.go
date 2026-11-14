@@ -88,12 +88,18 @@ func TestUsersCreateShowsTheTemporaryPassword(t *testing.T) {
 	if !strings.Contains(out.String(), "Temporary password for kim@acme.example: TempPassword12345678") {
 		t.Errorf("output:\n%s", out)
 	}
-	// An administrator has no customer. The API needs the field with the value null.
-	if err := a.dispatch(ctx, []string{"users", "create", "--name", "Root", "--email", "root@panel.example", "--administrator"}); err != nil {
+	// An administrator has no customer. The API needs the field with the value null. Audit
+	// finding F09: the request has the password of the user, and the TOTP code.
+	a.in = strings.NewReader("my-password\n")
+	if err := a.dispatch(ctx, []string{"users", "create", "--name", "Root", "--email", "root@panel.example", "--administrator", "--totp", "123456"}); err != nil {
 		t.Fatal(err)
 	}
-	if got := last(calls); got != `POST /users {"customerId":null,"email":"root@panel.example","name":"Root"}` {
+	if got := last(calls); got != `POST /users {"customerId":null,"email":"root@panel.example","name":"Root","password":"my-password","totp":"123456"}` {
 		t.Errorf("call = %s", got)
+	}
+	a.in = strings.NewReader("")
+	if err := a.dispatch(ctx, []string{"users", "create", "--name", "Root", "--email", "root@panel.example", "--administrator"}); err == nil {
+		t.Error("a new administrator with no password was accepted")
 	}
 	n := len(*calls)
 	for _, args := range [][]string{
@@ -132,6 +138,21 @@ func TestUsersResetAndDeleteFindTheUserByEmail(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got := last(calls); got != "DELETE /users/7" {
+		t.Errorf("call = %s", got)
+	}
+	// Audit finding F09: a change to an administrator has the password of the user. A change
+	// to a user of a customer does not ask for it.
+	a.in = strings.NewReader("my-password\nmy-password\n")
+	if err := a.dispatch(ctx, []string{"users", "reset-password", "admin@panel.example", "--totp", "123456"}); err == nil || !strings.Contains(err.Error(), "Not found") {
+		t.Errorf("err = %v", err)
+	}
+	if got := last(calls); got != `POST /users/1/reset-password {"password":"my-password","totp":"123456"}` {
+		t.Errorf("call = %s", got)
+	}
+	if err := a.dispatch(ctx, []string{"users", "delete", "1"}); err == nil || !strings.Contains(err.Error(), "Not found") {
+		t.Errorf("err = %v", err)
+	}
+	if got := last(calls); got != `DELETE /users/1 {"password":"my-password"}` {
 		t.Errorf("call = %s", got)
 	}
 	if err := a.dispatch(ctx, []string{"users", "delete", "nobody@acme.example"}); err == nil || !strings.Contains(err.Error(), "no user") {

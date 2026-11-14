@@ -312,8 +312,12 @@ describe("users (audit finding B5)", () => {
   it("gives a new user the role of the customer", () => {
     expect(addUser({ name: "Kim", email: "kim@acme.example", customerId: "cus_acme" })).toMatchObject({ email: "kim@acme.example", temporaryPassword: expect.stringMatching(/^.{20}$/) });
     expect(getState().users.find((u) => u.email === "kim@acme.example")).toMatchObject({ role: "reseller", customerId: "cus_acme" });
-    addUser({ name: "Root", email: "root@platform.example", customerId: null });
+    // Second audit, finding F09: a new administrator needs the password and a TOTP code.
+    expect(() => addUser({ name: "Root", email: "root@platform.example", customerId: null })).toThrow(/Correct the errors/);
+    expect(() => addUser({ name: "Root", email: "root@platform.example", customerId: null }, { password: "secret", totp: "" })).toThrow(/6-digit code/);
+    addUser({ name: "Root", email: "root@platform.example", customerId: null }, { password: "secret", totp: "123456" });
     expect(getState().users.find((u) => u.email === "root@platform.example")).toMatchObject({ role: "administrator", customerId: undefined });
+    expect(getState().audit[0]).toMatchObject({ action: "Created administrator", target: "root@platform.example" });
     expect(() => addUser({ name: "Kim", email: "kim@acme.example", customerId: "cus_acme" })).toThrow(/exists already/);
     expect(() => addUser({ name: "", email: "bad", customerId: "cus_none" })).toThrow(ApiError);
   });
@@ -325,6 +329,23 @@ describe("users (audit finding B5)", () => {
     resetUserPassword("usr_4", true);
     expect(getState().users.find((u) => u.id === "usr_4")).toMatchObject({ totpEnabled: false, mustChangePassword: true });
     expect(getState().audit[0]).toMatchObject({ action: "Reset password and removed TOTP" });
+  });
+
+  it("asks for the password and a code to reset or delete an administrator (second audit, finding F09)", () => {
+    const confirm = { password: "secret", totp: "123456" };
+    addUser({ name: "Root", email: "root@platform.example", customerId: null }, confirm);
+    const root = getState().users.find((u) => u.email === "root@platform.example")!;
+    expect(() => resetUserPassword(root.id)).toThrow(ApiError);
+    expect(() => deleteUser(root.id, { password: "", totp: "123456" })).toThrow(/Type your password/);
+    expect(getState().users.some((u) => u.id === root.id)).toBe(true);
+    resetUserPassword(root.id, false, confirm);
+    expect(getState().audit[0]).toMatchObject({ action: "Reset password of administrator" });
+    deleteUser(root.id, confirm);
+    expect(getState().users.some((u) => u.id === root.id)).toBe(false);
+    expect(getState().audit[0]).toMatchObject({ action: "Deleted administrator" });
+    // A user of a customer needs no confirmation.
+    deleteUser("usr_4");
+    expect(getState().audit[0]).toMatchObject({ action: "Deleted user" });
   });
 
   it("does not let a user reset or delete itself", () => {

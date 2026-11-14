@@ -42,9 +42,10 @@ give `--email`, the script uses `admin@` and the domain.
 
 At the end, the script shows the address of the panel and the password of the first
 administrator. This password is temporary. When you sign in, the panel shows only the form
-**Set a new password**. After you set a new password, open **Settings** and set up an
-authenticator app (TOTP). The temporary password is also in your terminal history and in any
-log of the script.
+**Set a new password**. After you set a new password, the panel shows the page
+**Set up an authenticator app**. Add the key to an authenticator app (TOTP) and type a code.
+An administrator and a reseller must do this before they can use the panel. The temporary
+password is also in your terminal history and in any log of the script.
 
 ### The panel certificate
 
@@ -324,6 +325,19 @@ An administrator can change all users. A reseller can change only the users of i
 customers. Only an administrator who is signed in with a password can make, reset or delete
 an administrator. An API token cannot. A user cannot reset or delete its own account in this
 way.
+
+To make, reset or delete an administrator, you must confirm that it is you:
+
+- In the web panel, type your password and a code from your authenticator app in the dialog.
+- With the CLI, sign in with `cf login`, give your password in `CF_PASSWORD` or on stdin, and
+  add `--totp CODE`. For example: `cf users delete admin2@example.com --totp 123456`.
+
+After 5 incorrect attempts, the panel refuses these changes for 15 minutes. For 7 days, the
+web panel shows a notice about the change to each other administrator.
+
+A new administrator or reseller must set up an authenticator app (TOTP) after the first
+sign-in. Until then, the panel shows only the page **Set up an authenticator app**. An API
+token continues to work.
 
 If no administrator can sign in, run these commands as root on the panel server:
 

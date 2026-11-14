@@ -6,9 +6,10 @@ FROM docker.io/library/debian:13-slim
 
 ARG DEBIAN_FRONTEND=noninteractive
 # libnss-extrausers reads the website users from /var/lib/extrausers. The agent writes these
-# files on the host, and the container mounts them read-only.
+# files on the host, and the container mounts them read-only. procps has pkill: the agent stops
+# the open sessions of a website user when the panel turns SFTP off for that user.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends openssh-server libnss-extrausers \
+ && apt-get install -y --no-install-recommends openssh-server libnss-extrausers procps \
  && rm -rf /var/lib/apt/lists/* \
  && rm -f /etc/ssh/ssh_host_* /etc/ssh/sshd_config.d/* \
  && sed -i -E 's/^(passwd|group):.*/\1:         files extrausers/' /etc/nsswitch.conf \

@@ -310,3 +310,22 @@ func TestTheClientUsesTheAdminSocket(t *testing.T) {
 		t.Errorf("base config: %s", b)
 	}
 }
+
+// Audit item U10: the route of a stopped website answers with a page and status 503. It keeps
+// the domains, so that the edge proxy keeps their certificates.
+func TestSiteRouteOfAStoppedWebsite(t *testing.T) {
+	route := SiteRoute(Site{WebsiteID: "w1", Port: 20001, Hosts: []string{"acme.example"}, Stopped: true}, "169.254.77.1")
+	b, err := json.Marshal(route)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(b)
+	for _, want := range []string{`"@id":"cf-w1"`, `"host":["acme.example"]`, `"handler":"static_response"`, `"status_code":503`, `text/html; charset=utf-8`, `This website is not available`} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the route has no %s:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "reverse_proxy") {
+		t.Errorf("the route of a stopped website sends requests to the container:\n%s", got)
+	}
+}

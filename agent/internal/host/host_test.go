@@ -254,3 +254,114 @@ func TestRemoveUserIsSafeToRunAgain(t *testing.T) {
 		t.Error("the user root was accepted")
 	}
 }
+
+// dirRunner does the directory commands of EnsureUser on a real file system. "install -d"
+// follows a symbolic link, as the command of the host does. The runner records each directory
+// that a root command changed, with all links resolved, and each directory that the website
+// user made.
+type dirRunner struct {
+	execx.Fake
+	byRoot, byUser []string
+}
+
+func (r *dirRunner) Run(ctx context.Context, name string, args ...string) (string, error) {
+	switch {
+	case name == "install" && len(args) > 0 && args[0] == "-d":
+		for i := 1; i < len(args); i++ {
+			if args[i] == "-o" || args[i] == "-g" || args[i] == "-m" {
+				i++
+				continue
+			}
+			if err := os.MkdirAll(args[i], 0o750); err != nil {
+				return "", err
+			}
+			// os.Chmod follows a link, like the chmod and the chown of "install -d".
+			if err := os.Chmod(args[i], 0o750); err != nil {
+				return "", err
+			}
+			dir, err := filepath.EvalSymlinks(args[i])
+			if err != nil {
+				return "", err
+			}
+			r.byRoot = append(r.byRoot, dir)
+		}
+		return "", nil
+	case name == "runuser" && slices.Contains(args, "mkdir"):
+		dir := args[len(args)-1]
+		r.byUser = append(r.byUser, dir)
+		return "", os.MkdirAll(dir, 0o750)
+	}
+	return r.Fake.Run(ctx, name, args...)
+}
+
+// Audit finding F01: the website user controls "app/public". When the agent makes a website
+// again, for example after "Try again", root must not change the directory that a link at
+// "app/public" points to.
+func TestEnsureUserDoesNotFollowALinkOfTheWebsiteUser(t *testing.T) {
+	h, _ := fakeHost(t, true)
+	r := &dirRunner{}
+	h.Run = r
+	ctx := context.Background()
+	if err := h.EnsureUser(ctx, "acme_x7k2"); err != nil {
+		t.Fatal(err)
+	}
+	public := filepath.Join(h.AppDir("acme_x7k2"), "public")
+	if fi, err := os.Stat(public); err != nil || !fi.IsDir() {
+		t.Fatalf("no default document root: %v", err)
+	}
+	if !slices.Contains(r.byUser, public) || slices.Contains(r.byRoot, public) {
+		t.Errorf("the website user must make the document root: root %v, user %v", r.byRoot, r.byUser)
+	}
+
+	// The document root of a different customer. The website user has no access to it.
+	other := filepath.Join(h.AppDir("other_a1b2"), "public")
+	if err := os.MkdirAll(other, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(other, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	// The website user replaces its document root with a link, for example with SFTP.
+	if err := os.Remove(public); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(other, public); err != nil {
+		t.Fatal(err)
+	}
+	r.byRoot = nil
+	if err := h.EnsureUser(ctx, "acme_x7k2"); err != nil {
+		t.Fatal(err)
+	}
+	inOther := func() {
+		t.Helper()
+		for _, dir := range r.byRoot {
+			if strings.HasPrefix(dir, h.SiteRoot("other_a1b2")) {
+				t.Errorf("root changed %s through a link of the website user", dir)
+			}
+		}
+		if fi, err := os.Stat(other); err != nil || fi.Mode().Perm() != 0o700 {
+			t.Errorf("the mode of the other document root changed: %v %v", fi.Mode().Perm(), err)
+		}
+	}
+	inOther()
+
+	// A link in place of "app" is not from the agent: only root can write in the directory of
+	// the user. The agent stops, and changes nothing.
+	if err := os.RemoveAll(h.AppDir("acme_x7k2")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(h.AppDir("other_a1b2"), h.AppDir("acme_x7k2")); err != nil {
+		t.Fatal(err)
+	}
+	r.byRoot = nil
+	if err := h.EnsureUser(ctx, "acme_x7k2"); err == nil || !strings.Contains(err.Error(), "is not a directory") {
+		t.Errorf("a link in place of app was accepted: %v", err)
+	}
+	inOther()
+	// Only the two parent directories, which root owns, are made before the check.
+	for _, dir := range r.byRoot {
+		if dir != h.SitesDir && dir != filepath.Dir(h.Home("acme_x7k2")) {
+			t.Errorf("root changed %s after the check failed", dir)
+		}
+	}
+}

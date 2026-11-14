@@ -61,7 +61,25 @@ type Site struct {
 	// Redirects go to the primary domain with status 308.
 	Redirects []string
 	Primary   string
+	// Stopped is true for a website that is stopped, for example because its customer is
+	// suspended. The edge proxy then answers with StoppedPage, not with an empty 502 answer.
+	Stopped bool
 }
+
+// StoppedPage is the page of a stopped website. It has status 503. It does not tell a visitor
+// why the website is stopped.
+const StoppedPage = `<!doctype html>
+<html lang="en-GB">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Website not available</title>
+<body style="font-family: system-ui, sans-serif; max-width: 40rem; margin: 4rem auto; padding: 0 1rem">
+<h1>This website is not available</h1>
+<p>The website is stopped. If you are the owner of the website, sign in to your hosting panel or contact your hosting provider.</p>
+</body>
+</html>
+`
 
 // EnsureBase loads the base configuration when Caddy has no "edge" server.
 func (c *Client) EnsureBase(ctx context.Context) error {
@@ -161,15 +179,28 @@ func (c *Client) remove(ctx context.Context, id string) error {
 // Caddy answers 400 or 404 with "unknown object ID" for an ID that it does not have.
 func unknownID(body []byte) bool { return bytes.Contains(body, []byte("unknown object ID")) }
 
-// SiteRoute is the route of the primary domain and the aliases.
+// SiteRoute is the route of the primary domain and the aliases. The route of a stopped website
+// keeps the domains, so that the edge proxy keeps their certificates.
 func SiteRoute(s Site, upstream string) map[string]any {
+	handler := map[string]any{
+		"handler":   "reverse_proxy",
+		"upstreams": []any{map[string]any{"dial": upstream + ":" + strconv.Itoa(s.Port)}},
+	}
+	if s.Stopped {
+		handler = map[string]any{
+			"handler":     "static_response",
+			"status_code": 503,
+			"headers": map[string]any{
+				"Content-Type":  []string{"text/html; charset=utf-8"},
+				"Cache-Control": []string{"no-store"},
+			},
+			"body": StoppedPage,
+		}
+	}
 	return map[string]any{
-		"@id":   "cf-" + s.WebsiteID,
-		"match": []any{map[string]any{"host": s.Hosts}},
-		"handle": []any{map[string]any{
-			"handler":   "reverse_proxy",
-			"upstreams": []any{map[string]any{"dial": upstream + ":" + strconv.Itoa(s.Port)}},
-		}},
+		"@id":      "cf-" + s.WebsiteID,
+		"match":    []any{map[string]any{"host": s.Hosts}},
+		"handle":   []any{handler},
 		"terminal": true,
 	}
 }

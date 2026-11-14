@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Middleware\EnsureActive;
+use App\Models\AuditEntry;
 use App\Models\User;
 use App\Services\Audit;
 use App\Services\LoginThrottle;
@@ -12,6 +14,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Password;
@@ -212,6 +215,35 @@ class AuthController extends Controller
         return $token && method_exists($token, 'can') && $token->can('*') && $token->getAttribute('name') === self::SESSION;
     }
 
+    /**
+     * Audit finding F09: a change to an administrator account needs the password of the user who
+     * makes the change and, when TOTP is on, a code. Thus a person who has only a stolen session
+     * cannot take the other administrator accounts. After 5 wrong attempts, the user waits
+     * 15 minutes.
+     *
+     * @throws ValidationException
+     */
+    public static function confirmIdentity(Request $request): void
+    {
+        $data = $request->validate([
+            'password' => ['required', 'string'],
+            'totp' => ['nullable', 'digits:6'],
+        ], ['password.required' => 'Type your password to confirm this change.']);
+        $user = $request->user();
+        $key = "confirm-identity:{$user->id}";
+        if (RateLimiter::tooManyAttempts($key, 5)) {
+            $seconds = RateLimiter::availableIn($key);
+            abort(response()->json(['message' => "Too many failed attempts. Try again in {$seconds} seconds."], 429)->header('Retry-After', (string) $seconds));
+        }
+        try {
+            self::checkSecondFactor($user, $data['password'], $data['totp'] ?? '', 'password');
+        } catch (ValidationException $e) {
+            RateLimiter::hit($key, 15 * 60);
+            throw $e;
+        }
+        RateLimiter::clear($key);
+    }
+
     /** @throws ValidationException */
     private static function checkSecondFactor(User $user, string $password, string $code, string $passwordField, string $codeField = 'totp'): void
     {
@@ -264,7 +296,38 @@ class AuthController extends Controller
             // The user has a temporary password. The API refuses all other work until the user
             // sets a new password (EnsureActive).
             'mustChangePassword' => (bool) $user->must_change_password,
+            // Audit finding F09: an administrator or a reseller must turn on TOTP. The API
+            // refuses all other work in a sign-in session until then (EnsureActive).
+            'totpSetupRequired' => EnsureActive::totpSetupRequired($request),
+            'securityNotices' => self::securityNotices($user),
         ]);
+    }
+
+    /** The audit actions that change who can sign in as an administrator. */
+    public const ADMINISTRATOR_CHANGES = ['Created administrator', 'Reset password of administrator', 'Reset password and removed TOTP of administrator', 'Deleted administrator'];
+
+    /**
+     * Audit finding F09: each administrator sees the changes that a different person made to
+     * the administrator accounts in the last 7 days. A person who took one account cannot
+     * change the other accounts with no notice. A new administrator gets no notice that its
+     * own account was made.
+     *
+     * @return list<array{action: string, target: string, actor: string, at: string|null}>
+     */
+    private static function securityNotices(User $user): array
+    {
+        if (! $user->isAdministrator()) {
+            return [];
+        }
+
+        return AuditEntry::whereIn('action', self::ADMINISTRATOR_CHANGES)
+            ->where('created_at', '>=', now()->subDays(7))
+            ->where(fn ($q) => $q->whereNull('user_id')->orWhere('user_id', '!=', $user->id))
+            ->whereNot(fn ($q) => $q->where('action', 'Created administrator')->where('target', $user->email))
+            ->latest('id')->limit(10)->get()
+            // Only a sign-in session makes these changes, so the notice gives the name only.
+            ->map(fn (AuditEntry $e) => ['action' => $e->action, 'target' => $e->target, 'actor' => str_replace(' (token '.self::SESSION.')', '', $e->actor), 'at' => $e->created_at?->toIso8601String()])
+            ->all();
     }
 
     public function tokens(Request $request): JsonResponse

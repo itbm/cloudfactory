@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -42,6 +43,9 @@ const sftpRuleMarker = "# cloudfactory-sftp"
 
 // sftpServiceName is the systemd service that Quadlet makes from quadlet.SftpUnitName.
 const sftpServiceName = "cf-sftp.service"
+
+// sftpContainer is the name of the SFTP container (quadlet.SftpUnit).
+const sftpContainer = "cf-sftp"
 
 // minWebsiteID is the lowest UID and GID of a website user. The agent never gives a lower ID,
 // for example root, to the SFTP container.
@@ -136,9 +140,33 @@ func (d *Deps) SetSftp(req *agentv1.SetSftpRequest) (jobs.Job, error) {
 				return err
 			}
 			// Only a user with a key is in the user list of the SFTP container.
-			return d.SyncSftpUsers()
+			if err := d.SyncSftpUsers(); err != nil {
+				return err
+			}
+			if !req.GetEnabled() || len(req.GetAuthorizedKeys()) == 0 {
+				d.closeSftpSessions(ctx, user)
+			}
+			return nil
 		}},
 	}}, nil
+}
+
+// closeSftpSessions stops the open SFTP sessions of a website user. sshd checks the keys only
+// at the sign-in, so an open session continues after the keys are gone. Audit finding F05: the
+// panel turns SFTP off when it suspends a customer, and the customer must not keep a session.
+// An error is only in the log, because no new session can start. An SFTP image from an earlier
+// version has no pkill command.
+func (d *Deps) closeSftpSessions(ctx context.Context, user string) {
+	uid, err := d.Host.LookupUID(user)
+	if err != nil || uid < minWebsiteID {
+		return
+	}
+	_, err = d.Run.Run(ctx, "podman", "exec", sftpContainer, "pkill", "--signal", "KILL", "--euid", strconv.Itoa(uid))
+	// pkill gives status 1 when the user has no session. That is the usual result.
+	var exit *exec.ExitError
+	if err != nil && !(errors.As(err, &exit) && exit.ExitCode() == 1) {
+		slog.Warn("SFTP: the open sessions of the website user did not stop", "user", user, "err", err)
+	}
 }
 
 // SyncSftpUsers writes the user list of the SFTP container: each website user that has at
