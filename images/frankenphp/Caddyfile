@@ -1,11 +1,17 @@
 # The edge proxy terminates TLS and sends all requests here. This server also serves the static
 # files of the website, because the edge proxy cannot read them (CF-04).
 {
-	frankenphp
+	# The agent sets FRANKENPHP_CONFIG for worker mode (FR-305), for example
+	# "worker /app/public/index.php".
+	frankenphp {
+		{$FRANKENPHP_CONFIG}
+	}
 	auto_https off
 	admin off
 	servers {
-		trusted_proxies static private_ranges
+		# The edge proxy connects from the private service address 169.254.77.1, which is not
+		# in private_ranges.
+		trusted_proxies static private_ranges 169.254.0.0/16
 		client_ip_headers X-Forwarded-For
 	}
 	{$CADDY_GLOBAL_OPTIONS}
@@ -18,7 +24,25 @@
 		output stdout
 		format json
 	}
+	# The request from the edge proxy has no TLS. PHP applications read the address of the
+	# visitor and the scheme from $_SERVER, so the server takes them from the headers of the
+	# edge proxy, as the Apache image does (apache.conf).
+	@cf_https header X-Forwarded-Proto https
+	vars {
+		cf_https ""
+		cf_scheme http
+		cf_port 80
+	}
+	vars @cf_https {
+		cf_https on
+		cf_scheme https
+		cf_port 443
+	}
 	php_server {
+		env REMOTE_ADDR {client_ip}
+		env HTTPS {vars.cf_https}
+		env REQUEST_SCHEME {vars.cf_scheme}
+		env SERVER_PORT {vars.cf_port}
 		{$FRANKENPHP_SERVER_OPTIONS}
 	}
 }
