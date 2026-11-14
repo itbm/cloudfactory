@@ -51,9 +51,11 @@ func start(t *testing.T) (*Client, *Server) {
 			return errors.New("not in the test list")
 		},
 		Ops: map[string]Handler{
-			"add":   Op(func(_ context.Context, in sum) (int, error) { return in.A + in.B, nil }),
-			"none":  Op(func(context.Context, None) (None, error) { return None{}, nil }),
-			"gone":  Op(func(context.Context, None) (None, error) { return None{}, &fs.PathError{Op: "open", Path: "/x", Err: fs.ErrNotExist} }),
+			"add":  Op(func(_ context.Context, in sum) (int, error) { return in.A + in.B, nil }),
+			"none": Op(func(context.Context, None) (None, error) { return None{}, nil }),
+			"gone": Op(func(context.Context, None) (None, error) {
+				return None{}, &fs.PathError{Op: "open", Path: "/x", Err: fs.ErrNotExist}
+			}),
 			"known": Op(func(context.Context, None) (None, error) { return None{}, errors.Join(errors.New("first"), errKnown) }),
 		},
 		Dials: map[string]func(context.Context) (net.Conn, error){

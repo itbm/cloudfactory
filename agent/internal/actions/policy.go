@@ -96,7 +96,7 @@ func (d *Deps) allowRunuser(args []string) error {
 	}
 	// The user of a website has only the rights of its website, so the worker can run each
 	// program as that user.
-	if err := errors.Join(d.websiteUser(user), d.existingUser(user)); err != nil {
+	if err := d.existingWebsiteUser(user); err != nil {
 		return fmt.Errorf("runuser: %w", err)
 	}
 	return nil

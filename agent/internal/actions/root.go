@@ -232,9 +232,9 @@ func (d *Deps) managedUser(name string) error {
 	return d.websiteUser(name)
 }
 
-// existingUser is managedUser for a user that must exist.
-func (d *Deps) existingUser(name string) error {
-	if err := d.managedUser(name); err != nil {
+// existingWebsiteUser is websiteUser for a user that must exist.
+func (d *Deps) existingWebsiteUser(name string) error {
+	if err := d.websiteUser(name); err != nil {
 		return err
 	}
 	_, err := d.Host.LookupUID(name)
@@ -352,7 +352,7 @@ func (d *Deps) RootOps() map[string]gate.Handler {
 			return h.EnsureUser(ctx, in.User)
 		}),
 		opUserStorage: none(func(ctx context.Context, in userIn) error {
-			if err := errors.Join(d.websiteUser(in.User), d.existingUser(in.User)); err != nil {
+			if err := d.existingWebsiteUser(in.User); err != nil {
 				return err
 			}
 			return h.LinkStorageConfig(ctx, in.User)
@@ -364,7 +364,7 @@ func (d *Deps) RootOps() map[string]gate.Handler {
 			return h.RemoveUser(ctx, in.User)
 		}),
 		opUserQuota: none(func(ctx context.Context, in quotaIn) error {
-			if err := errors.Join(d.websiteUser(in.User), d.existingUser(in.User)); err != nil {
+			if err := d.existingWebsiteUser(in.User); err != nil {
 				return err
 			}
 			if in.Bytes < 0 {
@@ -379,7 +379,7 @@ func (d *Deps) RootOps() map[string]gate.Handler {
 		// cannot give more rights than that user has. The helper makes the units of the
 		// services itself (db.prepare, edge.prepare).
 		opUnitWrite: gate.Op(func(_ context.Context, in unitIn) (bool, error) {
-			if err := errors.Join(d.websiteUser(in.User), d.existingUser(in.User)); err != nil {
+			if err := d.existingWebsiteUser(in.User); err != nil {
 				return false, err
 			}
 			if !unitNameRE.MatchString(in.Name) {
@@ -456,7 +456,7 @@ func (d *Deps) RootOps() map[string]gate.Handler {
 
 		// SFTP: the keys of a website user, the user list and the container.
 		opSftpSet: none(func(ctx context.Context, in sftpIn) error {
-			errs := []error{d.websiteUser(in.User), d.existingUser(in.User)}
+			errs := []error{d.existingWebsiteUser(in.User)}
 			for _, k := range in.Keys {
 				errs = append(errs, validate.SSHKey(k))
 			}
@@ -570,7 +570,7 @@ func (d *Deps) RootOps() map[string]gate.Handler {
 			return d.removeStage(ctx, in.Job)
 		}),
 		opRestoreCopy: none(func(ctx context.Context, in copyIn) error {
-			if err := errors.Join(validate.ID(in.Job), d.websiteUser(in.User), d.existingUser(in.User)); err != nil {
+			if err := errors.Join(validate.ID(in.Job), d.existingWebsiteUser(in.User)); err != nil {
 				return err
 			}
 			if in.Rel != "." && (!filepath.IsLocal(in.Rel) || filepath.Clean(in.Rel) != in.Rel) {

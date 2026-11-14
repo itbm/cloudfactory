@@ -934,13 +934,15 @@ func (d *Deps) loadDatabaseAccess(ctx context.Context, elements []accessElement)
 	if d.Gate != nil {
 		return d.Gate.Call(ctx, opDBAccess, accessIn{Elements: elements}, nil)
 	}
-	if _, err := os.Stat(d.firewallFile()); os.IsNotExist(err) {
-		// The administrator manages the firewall (openDatabaseNetwork).
-		return nil
-	}
+	// The check is first: the helper accepts no element that is not correct, also when it
+	// does not load the elements.
 	content, err := accessContent(elements)
 	if err != nil {
 		return err
+	}
+	if _, err := os.Stat(d.firewallFile()); os.IsNotExist(err) {
+		// The administrator manages the firewall (openDatabaseNetwork).
+		return nil
 	}
 	d.accessMu.Lock()
 	defer d.accessMu.Unlock()
