@@ -8,7 +8,7 @@ import { Topbar } from "../components/Layout";
 import { WebsiteMenu } from "../components/WebsiteMenu";
 import { Card, JobRow, Live, Meter, PageHeader, Status, TerraformBadge } from "../components/ui";
 import { bytes, percent, ratio, relativeTime, shortAgo, shortDate } from "../lib/format";
-import { certificateText, jobActive, RUNTIME_KIND, WEBSITE_STATUS } from "../lib/labels";
+import { certificateText, DISK_LIMIT_NOT_APPLIED_ALL, jobActive, RUNTIME_KIND, WEBSITE_STATUS } from "../lib/labels";
 
 const PAGE_SIZE = 7;
 
@@ -24,11 +24,14 @@ const FILTERS: { id: Filter; label: string; test: (s: State, w: Website) => bool
 function UsageCards() {
   const state = useStore();
   const u = accountUsage(state);
-  const cards = [
+  // Audit item U4: the card says when a server does not apply the disk limit.
+  const count = u.diskLimitNotApplied;
+  const diskNote = count === 0 ? undefined : count === u.websites.used ? DISK_LIMIT_NOT_APPLIED_ALL : `The limit is not applied for ${count} of ${u.websites.used} websites`;
+  const cards: { label: string; value: string; of: string; ratio: number; note?: string }[] = [
     { label: "Websites", value: String(u.websites.used), of: u.websites.limit === undefined ? "on the panel" : `of ${u.websites.limit} on your plan`, ratio: u.websites.limit ? ratio(u.websites.used, u.websites.limit) : 0 },
     { label: "CPU", value: `${u.cpuPercent}%`, of: `of ${u.vcpus} vCPU`, ratio: u.cpuPercent / 100 },
     { label: "Memory", value: bytes(u.memoryBytes.used), of: `of ${bytes(u.memoryBytes.limit)}`, ratio: ratio(u.memoryBytes.used, u.memoryBytes.limit) },
-    { label: "Disk", value: bytes(u.diskBytes.used), of: `of ${bytes(u.diskBytes.limit)}`, ratio: ratio(u.diskBytes.used, u.diskBytes.limit) },
+    { label: "Disk", value: bytes(u.diskBytes.used), of: `of ${bytes(u.diskBytes.limit)}`, ratio: ratio(u.diskBytes.used, u.diskBytes.limit), note: diskNote },
   ];
   return (
     <div className="stats">
@@ -40,6 +43,7 @@ function UsageCards() {
             <small>{c.of}</small>
           </p>
           <Meter value={c.ratio} label={`${c.label}: ${c.value} ${c.of}`} />
+          {c.note && <p className="note-warning" style={{ marginTop: 8 }}>{c.note}</p>}
         </section>
       ))}
     </div>

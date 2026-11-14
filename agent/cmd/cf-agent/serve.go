@@ -491,6 +491,9 @@ func work(ctx context.Context, cfg config.Config, g gate.Gate) error {
 	}
 	if deps.QuotaMount = h.QuotaMount(ctx, cfg.SitesDir); deps.QuotaMount == "" {
 		slog.Warn("no disk limits: user quotas are off on the file system of the websites", "dir", cfg.SitesDir)
+	} else if err := deps.ApplyDiskQuotas(ctx); err != nil {
+		// The websites that were there before the quotas were on get their limits now.
+		slog.Error("set the disk limits of the websites", "err", err)
 	}
 	// The edge proxy operates in gVisor like all other containers. Its image is signed (FR-1101).
 	if err := deps.EnsureEdge(ctx, deps.EdgeImage, cfg.DataDir); err != nil {

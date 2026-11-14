@@ -34,7 +34,7 @@ class FirstUseTest extends TestCase
         $this->report([
             ['name' => 'cf-agent', 'state' => 'running'],
             ['name' => 'firewall', 'state' => 'running'],
-            ['name' => 'disk-quotas', 'state' => 'stopped', 'optional' => true, 'detail' => 'The file system of /srv/websites has no project quotas.'],
+            ['name' => 'disk-quotas', 'state' => 'stopped', 'optional' => true, 'detail' => 'User quotas are off on the file system of the websites.'],
         ]);
 
         $this->assertSame('healthy', $server->fresh()->state);

@@ -2228,6 +2228,12 @@ components:
           items: { $ref: '#/components/schemas/Domain' }
         sftp: { $ref: '#/components/schemas/Sftp' }
         stagingOf: { type: [string, 'null'] }
+        diskLimitApplied:
+          type: [boolean, 'null']
+          description: >-
+            False when the server of the website does not apply the disk limit of the website,
+            because the file system of the websites has no user quotas. True when it applies the
+            limit. Null when the agent of the server did not report it.
         sharedDatabases:
           type: boolean
           description: >-

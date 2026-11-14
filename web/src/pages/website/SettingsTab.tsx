@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import { useAction, useStore } from "../../api/hooks";
 import { setLimits, setWebsitePlan } from "../../api/store";
 import type { Limits, Website } from "../../api/types";
 import { Card, Field, FormError } from "../../components/ui";
 import { GB, MB } from "../../lib/format";
+import { DISK_LIMIT_NOT_APPLIED } from "../../lib/labels";
 
 /** Resource limits of the website (FR-202). Only administrators can change them. */
 export function SettingsTab({ website }: { website: Website }) {
@@ -26,10 +27,12 @@ export function SettingsTab({ website }: { website: Website }) {
     };
     return setLimits(website.id, limits);
   });
-  const fields: [keyof typeof form, string][] = [
+  // Audit item U4: the field of a limit that the server does not apply says so.
+  const diskHint = website.diskLimitApplied === false ? <span className="note-warning">{DISK_LIMIT_NOT_APPLIED}</span> : undefined;
+  const fields: [keyof typeof form, string, ReactNode?][] = [
     ["vcpus", "CPU (vCPU)"],
     ["memory", "Memory (MB)"],
-    ["disk", "Disk (GB)"],
+    ["disk", "Disk (GB)", diskHint],
     ["io", "Disk I/O (MB/s)"],
     ["processes", "Processes"],
   ];
@@ -40,8 +43,8 @@ export function SettingsTab({ website }: { website: Website }) {
           <FormError error={save.error} />
           <p className="muted" style={{ marginBottom: 14 }}>{isAdmin ? "cgroup v2 applies these limits to the container of the website. The plan sets the default values." : "The server applies these limits to the website. They come from the plan. Only your provider can change them."}</p>
           <div className="form-row">
-            {fields.map(([k, label]) => (
-              <Field key={k} label={label}>
+            {fields.map(([k, label, hint]) => (
+              <Field key={k} label={label} hint={hint}>
                 {(p) => <input {...p} className="input" type="number" min={0} step="any" disabled={!isAdmin} value={form[k]} onChange={(e) => setForm({ ...form, [k]: e.target.value })} />}
               </Field>
             ))}

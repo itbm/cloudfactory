@@ -32,6 +32,17 @@ class Server extends Model
     /** The states of a server that can do work: a degraded server has a part that does not run. */
     public const WORKING = ['healthy', 'degraded'];
 
+    /**
+     * True when the server applies the disk limit of a website, and false when it does not. Null
+     * when the agent did not report it: an agent of an earlier release, or no report yet.
+     */
+    public function appliesDiskLimits(): ?bool
+    {
+        $quotas = collect($this->services ?? [])->firstWhere('name', 'disk-quotas');
+
+        return $quotas === null ? null : ($quotas['state'] ?? '') === 'running';
+    }
+
     /** True when a reported service is a part that the server can operate without. */
     public static function optionalService(array $service): bool
     {

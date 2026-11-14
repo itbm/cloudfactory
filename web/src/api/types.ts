@@ -127,6 +127,11 @@ export interface Website {
   runtime: Runtime;
   planId: string;
   limits: Limits;
+  /**
+   * False when the server of the website does not apply the disk limit, because its file
+   * system has no user quotas. No value when the server did not report it.
+   */
+  diskLimitApplied?: boolean;
   use: ResourceUse;
   domains: Domain[];
   /** The SFTP access from the panel API. */

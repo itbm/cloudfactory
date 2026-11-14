@@ -53,12 +53,17 @@ class DemoFixtures extends Command
         $previous = DB::getDefaultConnection();
         DB::setDefaultConnection('fixtures');
         Carbon::setTestNow(self::NOW);
+        // The sample servers have this agent release, and one has an earlier release. Without the
+        // demonstration mode, the configuration has a different release, and the files change.
+        $latest = config('cloudfactory.agent.latest_version');
+        config(['cloudfactory.agent.latest_version' => DemoSeeder::AGENT]);
         try {
             Artisan::call('migrate', ['--database' => 'fixtures', '--force' => true]);
             (new DemoSeeder)->run();
 
             return array_map(fn (string $role) => Fixtures::capture($role), array_combine(array_keys(Fixtures::USERS), array_keys(Fixtures::USERS)));
         } finally {
+            config(['cloudfactory.agent.latest_version' => $latest]);
             Carbon::setTestNow();
             DB::purge('fixtures');
             DB::setDefaultConnection($previous);

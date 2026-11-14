@@ -322,6 +322,150 @@ else
 	printf 'FAIL: STEPS does not agree with the %d steps and the %d panel steps\n' "$common" "$panel_only"
 fi
 
+# The disk quotas. The script turns on user quotas on the file system of the websites and of
+# the database servers. The tests run the step with fake commands, which write their arguments
+# to the file "calls". The fake file systems have the type in "fstype". The quotas of the root
+# file system are on when the file "on_" is there, and "on_var_lib_cf-db" is for a file system
+# at /var/lib/cf-db. "quotaon" turns them on only after a remount with the quota options
+# ("remounted_"), or on a file system that always counts ("feature").
+quota_root() {
+	root="$WORK/quota-$1"
+	cp -R "$(fake debian 13)" "$root"
+	printf '%s\n' "${2:-ext4}" >"$root/fstype"
+	# shellcheck disable=SC2016 # The variables expand in the fake commands.
+	{
+		printf '#!/bin/sh\necho "findmnt $*" >>"%s/calls"\n' "$root"
+		printf 'case "$*" in *TARGET*) case "$*" in *cf-db) cat "%s/db-target" 2>/dev/null || echo / ;; *) echo / ;; esac ;; *FSTYPE*) cat "%s/fstype" ;; esac\n' "$root" "$root"
+	} >"$root/bin/findmnt"
+	# shellcheck disable=SC2016
+	{
+		printf '#!/bin/sh\nR=%s\n' "$root"
+		printf 'slug=$(printf "%%s" "$3$2" | sed "s/^--user//; s/--user$//" | tr / _)\n'
+		printf 'case "$1" in --print-state) if [ -e "$R/on$slug" ]; then echo "user quota on $3 (/dev/vda1) is on"; else echo "user quota on $3 (/dev/vda1) is off"; fi; exit 0 ;; esac\n'
+		printf 'echo "quotaon $*" >>"$R/calls"\n'
+		printf 'if [ -e "$R/remounted$slug" ] || [ -e "$R/feature" ]; then : >"$R/on$slug"; exit 0; fi\nexit 1\n'
+	} >"$root/bin/quotaon"
+	# shellcheck disable=SC2016
+	printf '#!/bin/sh\necho "mount $*" >>"%s/calls"\n[ -e "%s/no-remount" ] && exit 32\n: >"%s/remounted$(printf "%%s" "$3" | tr / _)"\n' "$root" "$root" "$root" >"$root/bin/mount"
+	for command in quotacheck systemctl; do
+		# shellcheck disable=SC2016
+		printf '#!/bin/sh\necho "%s $*" >>"%s/calls"\n' "$command" "$root" >"$root/bin/$command"
+	done
+	chmod +x "$root/bin/findmnt" "$root/bin/quotaon" "$root/bin/mount" "$root/bin/quotacheck" "$root/bin/systemctl"
+	: >"$root/calls"
+	printf '%s' "$root"
+}
+quotas() {
+	CF_TEST_ROOT="$1" CF_TEST_PRINT=quotas PATH="$1/bin:$PATH" sh "$WORK/install.sh" --check $panel 2>&1 | sed '1,/^All checks passed\.$/d'
+}
+# said checks the text that the quota step printed. called checks a command of the step.
+said() {
+	if printf '%s' "$3" | grep -qF -- "$2"; then PASS=$((PASS + 1)); else FAIL=$((FAIL + 1)); printf 'FAIL: %s\n%s\n\n' "$1" "$3"; fi
+}
+called() {
+	name=$1 want=$2 text=$3 root=$4
+	if grep -qxF -- "$text" "$root/calls"; then got=yes; else got=no; fi
+	if [ "$got" = "$want" ]; then PASS=$((PASS + 1)); else FAIL=$((FAIL + 1)); printf 'FAIL: %s\n' "$name"; cat "$root/calls"; fi
+}
+
+root=$(quota_root ext4)
+out=$(quotas "$root")
+said "the script turns on the quotas of an ext4 file system" "/ (ext4): the script turned on the user quotas." "$out"
+called "the file system gets the journaled quota options" yes "mount -o remount,usrjquota=aquota.user,jqfmt=vfsv1 /" "$root"
+called "the script makes the quota file" yes "quotacheck -cum /" "$root"
+called "the unit turns on the quotas at each start" yes "systemctl enable cloudfactory-quota.service" "$root"
+if [ "$(grep -c '^mount ' "$root/calls")" -eq 1 ] && [ "$(cat "$root/etc/cloudfactory/quota-mounts")" = "/" ]; then
+	PASS=$((PASS + 1))
+else
+	FAIL=$((FAIL + 1))
+	echo 'FAIL: one file system with the two directories gets the quotas one time'
+fi
+# shellcheck disable=SC2016 # The pattern is text of the program, not a variable of this test.
+if sh -n "$root/usr/local/lib/cloudfactory/quota-on" && grep -qF 'mount -o "remount,usrjquota=aquota.user,jqfmt=vfsv1" "$mount"' "$root/usr/local/lib/cloudfactory/quota-on" &&
+	grep -qxF 'done </etc/cloudfactory/quota-mounts' "$root/usr/local/lib/cloudfactory/quota-on" &&
+	grep -qxF 'Before=systemd-logind.service systemd-user-sessions.service cf-agent.service cf-sftp.service' "$root/etc/systemd/system/cloudfactory-quota.service"; then
+	PASS=$((PASS + 1))
+else
+	FAIL=$((FAIL + 1))
+	echo 'FAIL: the program and the unit that turn on the quotas at each start'
+fi
+# The program of the unit, with the fake commands: the quotas are off after a restart.
+rm "$root/on_" "$root/remounted_"
+: >"$root/calls"
+sed "s#/etc/cloudfactory/quota-mounts#$root/etc/cloudfactory/quota-mounts#" "$root/usr/local/lib/cloudfactory/quota-on" >"$root/quota-on.sh"
+if PATH="$root/bin:$PATH" sh "$root/quota-on.sh" && [ -e "$root/on_" ]; then PASS=$((PASS + 1)); else FAIL=$((FAIL + 1)); echo 'FAIL: the unit turns on the quotas after a restart'; fi
+called "the unit gives the file system the quota options" yes "mount -o remount,usrjquota=aquota.user,jqfmt=vfsv1 /" "$root"
+called "the unit does not make a new quota file" no "quotacheck -cum /" "$root"
+# A second run of the script: the quotas are on, and the file system stays in the list.
+: >"$root/calls"
+out=$(quotas "$root")
+said "a second run finds the quotas" "/ (ext4): the user quotas are on." "$out"
+called "a second run does not mount the file system again" no "mount -o remount,usrjquota=aquota.user,jqfmt=vfsv1 /" "$root"
+if [ "$(cat "$root/etc/cloudfactory/quota-mounts")" = "/" ]; then PASS=$((PASS + 1)); else FAIL=$((FAIL + 1)); echo 'FAIL: a second run keeps the list of the unit'; fi
+
+# Quotas that the operator turned on in /etc/fstab: the script changes nothing and makes no unit.
+root=$(quota_root operator)
+: >"$root/on_"
+out=$(quotas "$root")
+said "quotas of the operator stay" "/ (ext4): the user quotas are on." "$out"
+if [ ! -e "$root/etc/cloudfactory/quota-mounts" ] && [ ! -e "$root/etc/systemd/system/cloudfactory-quota.service" ] && ! grep -q '^mount \|^quotacheck ' "$root/calls"; then
+	PASS=$((PASS + 1))
+else
+	FAIL=$((FAIL + 1))
+	echo 'FAIL: the script makes no unit for the quotas of the operator'
+fi
+
+# An ext4 file system with the feature "quota" needs no mount options and no quota file.
+root=$(quota_root feature)
+: >"$root/feature"
+out=$(quotas "$root")
+said "an ext4 file system that always counts" "/ (ext4): the script turned on the user quotas." "$out"
+called "the feature needs no mount options" no "mount -o remount,usrjquota=aquota.user,jqfmt=vfsv1 /" "$root"
+
+# A file system that refuses the options, for example in a container: the installation continues.
+root=$(quota_root container)
+: >"$root/no-remount"
+out=$(quotas "$root")
+said "a file system that refuses the quota options" "/ (ext4): the file system does not accept the quota options" "$out"
+called "no quota file after a refused remount" no "quotacheck -cum /" "$root"
+if [ ! -e "$root/etc/systemd/system/cloudfactory-quota.service" ]; then PASS=$((PASS + 1)); else FAIL=$((FAIL + 1)); echo 'FAIL: no unit when the quotas are off'; fi
+
+root=$(quota_root xfs xfs)
+out=$(quotas "$root")
+said "XFS needs the option at mount time" "/ (xfs): XFS accepts the quota option only when it mounts the file system." "$out"
+called "the script does not mount XFS again" no "mount -o remount,usrjquota=aquota.user,jqfmt=vfsv1 /" "$root"
+root=$(quota_root btrfs btrfs)
+out=$(quotas "$root")
+said "a file system type with no user quotas" "/ (btrfs): the script cannot turn on user quotas on this type of file system." "$out"
+
+# The database servers on their own file system: the two file systems get the quotas.
+root=$(quota_root two)
+echo /var/lib/cf-db >"$root/db-target"
+out=$(quotas "$root")
+said "the file system of the database servers" "/var/lib/cf-db (ext4): the script turned on the user quotas." "$out"
+if [ "$(tr '\n' ' ' <"$root/etc/cloudfactory/quota-mounts")" = "/ /var/lib/cf-db " ]; then PASS=$((PASS + 1)); else FAIL=$((FAIL + 1)); echo 'FAIL: the list has the two file systems'; cat "$root/etc/cloudfactory/quota-mounts"; fi
+
+# The agent finds the quotas at its start, so the script starts it again after new quotas.
+# shellcheck disable=SC2016 # The pattern is text of the script, not a variable of this test.
+if grep -qxF 'if { [ "$AGENT_CHANGED" -eq 1 ] || [ "$QUOTAS_CHANGED" -eq 1 ]; } && systemctl is-active --quiet cf-agent.service; then' "$HERE/install.sh" &&
+	[ "$(grep -c '^	QUOTAS_CHANGED=1$' "$HERE/install.sh")" -eq 1 ]; then
+	PASS=$((PASS + 1))
+else
+	FAIL=$((FAIL + 1))
+	echo 'FAIL: the agent starts again after new quotas'
+fi
+
+# The operator can refuse the quotas, and the step is before the first website.
+expect "--no-disk-quotas is an option" 0 "All checks passed." "$(fake debian 13)" $panel --no-disk-quotas
+# shellcheck disable=SC2016 # The pattern is text of the script, not a variable of this test.
+if grep -qxF 'if [ "$DISK_QUOTAS" -eq 1 ]; then' "$HERE/install.sh" &&
+	[ "$(grep -n '^step "Turn on the disk quotas"' "$HERE/install.sh" | cut -d: -f1)" -lt "$(grep -n '^step "Join the panel and start the agent"' "$HERE/install.sh" | cut -d: -f1)" ]; then
+	PASS=$((PASS + 1))
+else
+	FAIL=$((FAIL + 1))
+	echo 'FAIL: the quota step and its option'
+fi
+
 root=$(fake debian 13)
 rm "$root/sys/fs/cgroup/cgroup.controllers"
 expect "cgroup v2 is necessary" 1 "cgroup v2 is not mounted" "$root" $panel
