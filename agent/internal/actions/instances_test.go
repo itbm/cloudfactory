@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	agentv1 "github.com/itbm/cloudfactory/agent/gen/cloudfactory/agent/v1"
 	"github.com/itbm/cloudfactory/agent/internal/execx"
@@ -507,5 +508,44 @@ func TestCreateWebsiteChecksTheDatabaseInstance(t *testing.T) {
 	w.DatabaseInstance = "../../etc"
 	if _, err := d.CreateWebsite(&agentv1.WebsiteRequest{JobId: jobID, Website: w}); err == nil {
 		t.Error("the agent accepted the database instance")
+	}
+}
+
+// The entry point of a database image first starts a temporary server that answers on the
+// socket only, and then stops it. The agent waits for the TCP port, which only the real
+// server has, before it sends SQL.
+func TestTheWaitForADatabaseServerNeedsItsTcpPort(t *testing.T) {
+	// The test host gives each user the UID 20001.
+	const podman = "runuser -u cf-db -- env XDG_RUNTIME_DIR=/run/user/20001 podman "
+	probes := map[string]string{
+		"mariadb":    podman + "exec -i cf-mariadb-" + customerKey + " mariadb-admin --protocol=tcp --host=127.0.0.1 --port=3306 --connect-timeout=5 ping",
+		"postgresql": podman + "exec -i cf-postgresql-" + customerKey + " pg_isready --quiet --host=127.0.0.1 --port=5432 --timeout=5",
+	}
+	sql := map[string]string{
+		"mariadb":    podman + "exec -i cf-mariadb-" + customerKey + " mariadb --user=root",
+		"postgresql": podman + "exec -i cf-postgresql-" + customerKey + " psql",
+	}
+	for engine, probe := range probes {
+		d, f, _ := deps(t)
+		d.ReadyTimeout = time.Nanosecond
+		s := dbServer{Instance: customerKey, Engine: engine}
+
+		// The temporary server: SQL on the socket has an answer, but the TCP port has none.
+		f.Rules = []execx.Rule{{Prefix: probe, Err: errors.New("no response")}}
+		if err := d.waitDatabase(context.Background(), s); err == nil || !strings.Contains(err.Error(), "did not answer") {
+			t.Errorf("%s: the wait did not fail without the TCP port: %v", engine, err)
+		}
+		if f.Called(sql[engine]) {
+			t.Errorf("%s: the agent sent SQL before the TCP port answered: %v", engine, f.Calls)
+		}
+
+		// The real server.
+		f.Rules, f.Calls = nil, nil
+		if err := d.waitDatabase(context.Background(), s); err != nil {
+			t.Fatalf("%s: %v", engine, err)
+		}
+		if p, q := index(f.Calls, probe), index(f.Calls, sql[engine]); p < 0 || q < p {
+			t.Errorf("%s: the TCP check is not before the SQL: %v", engine, f.Calls)
+		}
 	}
 }

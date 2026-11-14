@@ -236,8 +236,33 @@ func (d *Deps) writeSuperuserSecret(ctx context.Context, engine, path string) er
 	return err
 }
 
+// databaseListens checks that the SQL server of a container accepts TCP connections.
+func (d *Deps) databaseListens(ctx context.Context, s dbServer) error {
+	uid, err := d.Host.LookupUID(DBUser)
+	if err != nil {
+		return err
+	}
+	args := []string{"-u", DBUser, "--", "env", fmt.Sprintf("XDG_RUNTIME_DIR=/run/user/%d", uid), "podman", "exec", "-i", s.container()}
+	if s.Engine == "mariadb" {
+		// "ping" is successful when the server answers, also when the server refuses the user.
+		// The server refuses the user here, and writes one warning for that in its log.
+		args = append(args, "mariadb-admin", "--protocol=tcp", "--host=127.0.0.1", "--port=3306", "--connect-timeout=5", "ping")
+	} else {
+		args = append(args, "pg_isready", "--quiet", "--host=127.0.0.1", "--port=5432", "--timeout=5")
+	}
+	_, err = d.Run.Run(ctx, "runuser", args...)
+	return err
+}
+
 // waitDatabase waits until the database server answers in its container. A new data
 // directory takes some time.
+//
+// The entry point of the MariaDB image and of the PostgreSQL image first starts a temporary
+// server that has only the socket, to prepare a new data directory. Then it stops that server
+// and starts the real server. The SQL of the agent uses the socket, so an answer to SQL does
+// not show that the real server operates. Thus the check first makes sure that the server
+// accepts TCP connections: the temporary server does not. Without this check, the next step
+// can send its SQL while the temporary server stops.
 func (d *Deps) waitDatabase(ctx context.Context, s dbServer) error {
 	timeout := d.ReadyTimeout
 	if timeout == 0 {
@@ -248,7 +273,7 @@ func (d *Deps) waitDatabase(ctx context.Context, s dbServer) error {
 		var err error
 		if s.Engine == "valkey" {
 			err = d.valkeyReady(ctx, s)
-		} else {
+		} else if err = d.databaseListens(ctx, s); err == nil {
 			_, err = d.sqlNow(ctx, s, "SELECT 1;\n")
 		}
 		if err == nil {
