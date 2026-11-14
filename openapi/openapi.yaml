@@ -22,6 +22,11 @@ security:
 tags:
   - name: Auth
   - name: Websites
+  - name: Files
+    description: The file manager of a website.
+  - name: Cron jobs
+  - name: Deploys
+    description: Deploys of a website from a Git repository.
   - name: Databases
   - name: Backups
   - name: Jobs
@@ -620,6 +625,463 @@ paths:
       responses:
         '202': { $ref: '#/components/responses/WebsiteJob' }
         '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/websites/{websiteId}/files:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+    get:
+      tags: [Files]
+      summary: List the files of a directory of a website
+      description: >-
+        The file manager. The agent does each request as the Unix user of the website, in the
+        directory of the website, and gives the answer at once: these routes make no job. A path
+        starts with `/`, which is the directory of the website. The container of the website has
+        that directory at `/app`. A path has no `.` part and no `..` part. A symbolic link that
+        goes out of the directory of the website gives status 403. The list has the directories
+        first, and at most 2,000 entries. The routes of the file manager refuse a website that
+        the panel could not make (422). When the panel cannot connect to the server, the status
+        is 503.
+      parameters:
+        - { name: path, in: query, schema: { type: string, default: / } }
+      responses:
+        '200':
+          description: The entries of the directory.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  path: { type: string }
+                  entries: { type: array, items: { $ref: '#/components/schemas/FileEntry' } }
+                  truncated: { type: boolean, description: True when the directory has more entries than the list. }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+        '503': { description: The panel cannot connect to the server of the website. }
+    delete:
+      tags: [Files]
+      summary: Delete a file or a directory of a website
+      description: A directory goes with all that it contains. You cannot delete `/`. A suspended customer cannot change files (409).
+      parameters:
+        - { name: path, in: query, required: true, schema: { type: string } }
+      responses:
+        '204': { description: Deleted. }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: The customer of the website is suspended. }
+        '422': { $ref: '#/components/responses/Invalid' }
+        '503': { description: The panel cannot connect to the server of the website. }
+
+  /v1/websites/{websiteId}/files/content:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+    get:
+      tags: [Files]
+      summary: Read a file of a website
+      description: >-
+        The file has at most 2 MB. Use SFTP for a larger file. A file that is UTF-8 text has the
+        encoding `utf8`. Each other file has the encoding `base64`.
+      parameters:
+        - { name: path, in: query, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: The file and its content.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  file: { $ref: '#/components/schemas/FileEntry' }
+                  encoding: { type: string, enum: [utf8, base64] }
+                  content: { type: string }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+        '503': { description: The panel cannot connect to the server of the website. }
+    put:
+      tags: [Files]
+      summary: Write a file of a website
+      description: >-
+        Makes the file, or replaces its content in one step. The file has at most 5 MB. Use SFTP
+        for a larger file. A file that exists keeps its permission bits. The directory of the
+        file must exist. With `createOnly`, a file that exists gives status 409.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [path, content]
+              properties:
+                path: { type: string, example: /public/index.php }
+                content: { type: string }
+                encoding: { type: string, enum: [utf8, base64], default: utf8 }
+                createOnly: { type: boolean, default: false }
+      responses:
+        '200':
+          description: The file.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  file: { $ref: '#/components/schemas/FileEntry' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'The file exists already, or the customer of the website is suspended.' }
+        '422': { $ref: '#/components/responses/Invalid' }
+        '503': { description: The panel cannot connect to the server of the website. }
+
+  /v1/websites/{websiteId}/files/directories:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+    post:
+      tags: [Files]
+      summary: Make a directory in the files of a website
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [path]
+              properties:
+                path: { type: string, example: /public/images }
+      responses:
+        '201':
+          description: The directory.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  file: { $ref: '#/components/schemas/FileEntry' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'A file or a directory with this name exists already, or the customer of the website is suspended.' }
+        '422': { $ref: '#/components/responses/Invalid' }
+        '503': { description: The panel cannot connect to the server of the website. }
+
+  /v1/websites/{websiteId}/files/move:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+    post:
+      tags: [Files]
+      summary: Move or rename a file or a directory of a website
+      description: The route does not replace a path that exists (409).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [from, to]
+              properties:
+                from: { type: string }
+                to: { type: string }
+      responses:
+        '200':
+          description: The file or the directory at its new path.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  file: { $ref: '#/components/schemas/FileEntry' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'A file or a directory with the new name exists already, or the customer of the website is suspended.' }
+        '422': { $ref: '#/components/responses/Invalid' }
+        '503': { description: The panel cannot connect to the server of the website. }
+
+  /v1/websites/{websiteId}/logs:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+    get:
+      tags: [Websites]
+      summary: Read the last log lines of a website
+      description: >-
+        The output of the container of the website, oldest line first. The stream `access` is
+        the standard output, which has the access log of the runtime images as JSON. The stream
+        `error` is the standard error, which has the errors of the web server and of PHP. The
+        server keeps the last 10 MB. A website gets its log file at its first start with an
+        agent that has this method: restart an older website one time.
+      parameters:
+        - { name: lines, in: query, schema: { type: integer, minimum: 1, maximum: 2000, default: 200 }, description: The number of lines that the agent reads from the end of the log. }
+        - { name: stream, in: query, schema: { type: string, enum: [access, error] }, description: Only the lines of this stream. }
+      responses:
+        '200':
+          description: The log lines.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  lines:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        at: { type: string, format: date-time }
+                        stream: { type: string, enum: [access, error] }
+                        text: { type: string }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+        '503': { description: The panel cannot connect to the server of the website. }
+
+  /v1/websites/{websiteId}/cron-jobs:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+    get:
+      tags: [Cron jobs]
+      summary: List the cron jobs of a website
+      responses:
+        '200':
+          description: The cron jobs.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/CronJob' } }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [Cron jobs]
+      summary: Add a cron job to a website
+      description: >-
+        The agent runs the command with `sh -c` in the directory `/app` of the container of the
+        website, as the Unix user of the website, with the limits of the website. The schedule
+        has the five fields of cron: minute, hour, day of the month, month and day of the week.
+        Its time is UTC. A command that still runs does not start again, and the agent stops a
+        command after 1 hour. A stopped website has no runs. A website can have 20 cron jobs.
+        The job sends all cron jobs of the website to the agent.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [schedule, command]
+              properties:
+                schedule: { type: string, example: '*/5 * * * *' }
+                command: { type: string, maxLength: 1000, example: php artisan schedule:run, description: One line. }
+                enabled: { type: boolean, default: true }
+      responses:
+        '202': { $ref: '#/components/responses/CronJobJob' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: The customer of the website is suspended. }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/websites/{websiteId}/cron-jobs/{cronJobId}:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+      - { name: cronJobId, in: path, required: true, schema: { type: string } }
+    patch:
+      tags: [Cron jobs]
+      summary: Change a cron job, or turn it on or off
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                schedule: { type: string }
+                command: { type: string, maxLength: 1000 }
+                enabled: { type: boolean }
+      responses:
+        '202': { $ref: '#/components/responses/CronJobJob' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: The customer of the website is suspended. }
+        '422': { $ref: '#/components/responses/Invalid' }
+    delete:
+      tags: [Cron jobs]
+      summary: Delete a cron job
+      responses:
+        '202': { $ref: '#/components/responses/JobOnly' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: The customer of the website is suspended. }
+
+  /v1/websites/{websiteId}/cron-jobs/{cronJobId}/run:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+      - { name: cronJobId, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [Cron jobs]
+      summary: Run the command of a cron job now
+      description: >-
+        The job fails when the command gives an exit code that is not 0. When the job is
+        complete, the cron job has the result in `lastRunAt`, `lastExitCode` and `lastOutput`.
+      responses:
+        '202': { $ref: '#/components/responses/JobOnly' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'The website does not run, or its customer is suspended.' }
+
+  /v1/websites/{websiteId}/deploy:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+    get:
+      tags: [Deploys]
+      summary: Show the Git repository and the releases of a website
+      responses:
+        '200':
+          description: The repository, or null when the website has none, and the last 20 releases.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Deploy' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Deploys]
+      summary: Connect a website to a Git repository, or change the deploy settings
+      description: >-
+        The repository is an `https://` address with no user name and no password, or an SSH
+        address such as `git@github.com:acme/shop.git`. For a private repository, use an SSH
+        address and add `deployKey` to the repository as a read-only deploy key. The panel makes
+        the key of the website at the first request. The route starts no deploy.
+
+
+        Each deploy makes a release: the directory `releases/<id>` in the files of the website.
+        The agent gets the code and runs the build commands in a build container: a container
+        from the image of the website, as the Unix user of the website, in a gVisor sandbox,
+        with the limits of the website. Thus the image must have `git`. The working directory of
+        the build commands is the release. The directory `/app/shared` is for the files that all
+        releases use, for example an `.env` file. The link `/app/current` points to the release
+        that the website serves.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [repository, branch]
+              properties:
+                repository: { type: string, example: 'git@github.com:acme/shop.git' }
+                branch: { type: string, example: main }
+                webDirectory: { type: string, default: public, description: 'The directory in the repository that the web server serves. "." is the repository itself.' }
+                trigger: { type: string, enum: [manual, webhook], default: manual, description: With "webhook", a request to `webhookUrl` starts a deploy. }
+                buildCommands: { type: array, maxItems: 10, items: { type: string, maxLength: 1000 }, example: ['composer install --no-dev', 'ln -s /app/shared/.env .env'] }
+      responses:
+        '200':
+          description: The repository and the releases.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Deploy' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+    delete:
+      tags: [Deploys]
+      summary: Disconnect the Git repository of a website
+      description: >-
+        The website continues to serve the release that it has, and its files stay on the
+        server. The panel removes the key, the webhook, the secrets and the list of releases.
+      responses:
+        '204': { description: Disconnected. }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: A deploy is in progress. }
+
+  /v1/websites/{websiteId}/deploy/secrets/{name}:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+      - { name: name, in: path, required: true, schema: { type: string, pattern: '^[A-Z_][A-Z0-9_]{0,63}$' } }
+    put:
+      tags: [Deploys]
+      summary: Set a secret of the build commands
+      description: >-
+        A secret is an environment variable of the build commands. The panel keeps the value
+        encrypted, and no route gives it. The agent gets the secrets with each deploy and does
+        not keep them. A website can have 50 secrets.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [value]
+              properties:
+                value: { type: string, maxLength: 4096, description: One line. }
+      responses:
+        '200':
+          description: The repository and the releases.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Deploy' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+    delete:
+      tags: [Deploys]
+      summary: Remove a secret of the build commands
+      responses:
+        '200':
+          description: The repository and the releases.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Deploy' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/websites/{websiteId}/deploy/releases:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+    post:
+      tags: [Deploys]
+      summary: Deploy the branch now
+      description: >-
+        The job gets the code, builds it, starts a new container from the new release, checks
+        it, and only then sends the traffic to it. If a step fails, the website continues from
+        the release that it had, and the release has the state `failed` with the error. The
+        server keeps the last 5 releases. A website has one deploy at a time (409).
+      responses:
+        '202': { $ref: '#/components/responses/ReleaseJob' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'A deploy is in progress, or the customer of the website is suspended.' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/websites/{websiteId}/deploy/releases/{releaseId}/activate:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+      - { name: releaseId, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [Deploys]
+      summary: Go back to a release that is on the server
+      description: >-
+        The job starts the website from the release with no stop, as a deploy does. The release
+        must have the state `ready`. The route runs no build command.
+      responses:
+        '202': { $ref: '#/components/responses/ReleaseJob' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'A deploy is in progress, or the customer of the website is suspended.' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/hooks/deploy/{token}:
+    parameters:
+      - { name: token, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [Deploys]
+      summary: Start a deploy from a webhook
+      description: >-
+        The address is `webhookUrl` of the deploy settings. The token in the address is the only
+        credential, so keep the address secret. The route operates only when the trigger of the
+        website is `webhook` (404). A Git host sends the branch of a push in `ref`, for example
+        `refs/heads/main`: a push to a different branch starts no deploy (`ignored`). A request
+        while a deploy is in progress starts no second deploy (`busy`). At most 30 requests in
+        one minute from one address.
+      security: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                ref: { type: string, example: refs/heads/main }
+      responses:
+        '200':
+          description: The push was to a different branch.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HookAnswer' }
+        '202':
+          description: 'The deploy started, or a deploy is in progress.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HookAnswer' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'The panel could not make the website, or its customer is suspended.' }
 
   /v1/websites/{websiteId}/databases:
     parameters:
@@ -2072,6 +2534,24 @@ components:
             type: object
             properties:
               job: { $ref: '#/components/schemas/Job' }
+    CronJobJob:
+      description: The cron job, and the job that sends the cron jobs of the website to the agent.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              cronJob: { $ref: '#/components/schemas/CronJob' }
+              job: { $ref: '#/components/schemas/Job' }
+    ReleaseJob:
+      description: The release and its job.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              release: { $ref: '#/components/schemas/Release' }
+              job: { $ref: '#/components/schemas/Job' }
     WebsiteJob:
       description: The panel recorded the change. The job is in the queue.
       content:
@@ -2207,6 +2687,63 @@ components:
         port: { type: integer, description: The SFTP port of the server of the website. The default is 2200. }
         username: { type: string }
         authorizedKeys: { type: array, items: { type: string } }
+    FileEntry:
+      type: object
+      properties:
+        name: { type: string }
+        path: { type: string, example: /public/index.php }
+        type: { type: string, enum: [file, directory, link, other] }
+        sizeBytes: { type: integer, description: 0 for a directory and for a link. }
+        modifiedAt: { type: [string, 'null'], format: date-time }
+        mode: { type: string, example: '0640', description: The permission bits. }
+        target: { type: [string, 'null'], description: The target of a link. }
+    CronJob:
+      type: object
+      properties:
+        id: { type: string }
+        schedule: { type: string, example: '*/5 * * * *', description: The five fields of cron. The time is UTC. }
+        command: { type: string }
+        enabled: { type: boolean }
+        lastRunAt: { type: [string, 'null'], format: date-time }
+        lastResult: { type: [string, 'null'], enum: [ok, failed, null] }
+        lastExitCode: { type: [integer, 'null'], description: -1 when the command did not start. }
+        lastOutput: { type: [string, 'null'], description: The end of the output of the last run. }
+    Deploy:
+      type: object
+      properties:
+        source:
+          type: [object, 'null']
+          description: The Git repository of the website. Null when the website has none.
+          properties:
+            repository: { type: string }
+            branch: { type: string }
+            webDirectory: { type: string }
+            trigger: { type: string, enum: [manual, webhook] }
+            buildCommands: { type: array, items: { type: string } }
+            deployKey: { type: string, description: The public SSH key of the website. Add it to a private repository as a read-only deploy key. }
+            webhookUrl: { type: string, description: A POST request to this address starts a deploy when the trigger is "webhook". }
+            secrets: { type: array, items: { type: string }, description: The names of the secrets. No route gives a value. }
+        releases: { type: array, items: { $ref: '#/components/schemas/Release' } }
+    Release:
+      type: object
+      properties:
+        id: { type: string }
+        branch: { type: string }
+        commit: { type: [string, 'null'] }
+        message: { type: string, description: The subject of the commit. }
+        state: { type: string, enum: [building, ready, failed, removed], description: '"ready": the release is on the server. "removed": the agent removed its directory.' }
+        live: { type: boolean, description: True for the release that the website serves. }
+        trigger: { type: string, enum: [manual, webhook] }
+        durationSeconds: { type: integer }
+        error: { type: [string, 'null'], description: 'The error of a deploy that failed, with the end of the output of Git or of the build command.' }
+        jobId: { type: [string, 'null'] }
+        createdAt: { type: string, format: date-time }
+    HookAnswer:
+      type: object
+      properties:
+        status: { type: string, enum: [started, busy, ignored] }
+        message: { type: string }
+        releaseId: { type: string }
     JobState:
       type: string
       enum: [queued, running, succeeded, failed]
@@ -2625,6 +3162,18 @@ components:
               sizeBytes: { type: integer }
               number: { type: integer, minimum: 1, description: Valkey only. The database number. }
               keys: { type: integer, minimum: 0, description: Valkey only. The number of keys. }
+        cronRuns:
+          type: [array, 'null']
+          description: The results of the cron jobs that ran since the last reports. The agent sends each result in 3 reports.
+          items:
+            type: object
+            required: [websiteId, id, at, exitCode]
+            properties:
+              websiteId: { type: string }
+              id: { type: string, description: The ID of the cron job. }
+              at: { type: string, format: date-time }
+              exitCode: { type: integer, description: -1 when the command did not start. }
+              output: { type: string, description: The end of the output of the command. }
         databaseEngines:
           type: [array, 'null']
           description: The database engines that the agent can operate. An agent of an earlier release does not send the field.

@@ -193,4 +193,41 @@ class DemoTest extends TestCase
             }
         }
     }
+
+    public function test_the_demo_agent_has_files_logs_cron_jobs_and_deploys(): void
+    {
+        $this->seed(DemoSeeder::class);
+        $this->signInAs('owner@example.com');
+        $website = Website::where('name', 'api.acme.example.com')->firstOrFail();
+        $base = "/api/v1/websites/{$website->id}";
+
+        // The file manager works on a small tree of files, with no server.
+        $this->getJson("{$base}/files")->assertOk()->assertJsonPath('entries.0.name', 'public')->assertJsonPath('entries.0.type', 'directory');
+        $this->putJson("{$base}/files/content", ['path' => '/public/hello.txt', 'content' => 'Hello'])->assertOk()->assertJsonPath('file.sizeBytes', 5);
+        $this->getJson("{$base}/files/content?path=/public/hello.txt")->assertOk()->assertJsonPath('content', 'Hello')->assertJsonPath('encoding', 'utf8');
+        $this->putJson("{$base}/files/content", ['path' => '/public/hello.txt', 'content' => 'x', 'createOnly' => true])->assertStatus(409);
+        $this->postJson("{$base}/files/directories", ['path' => '/public/images'])->assertCreated();
+        $this->postJson("{$base}/files/move", ['from' => '/public/hello.txt', 'to' => '/public/images/hello.txt'])->assertOk()->assertJsonPath('file.path', '/public/images/hello.txt');
+        $this->deleteJson("{$base}/files?path=/public/images")->assertNoContent();
+        $this->getJson("{$base}/files/content?path=/public/images/hello.txt")->assertNotFound();
+        $this->getJson("{$base}/logs")->assertOk()->assertJsonStructure(['lines' => [['at', 'stream', 'text']]]);
+
+        // "Run now" gives the cron job a result.
+        $cron = $website->cronJobs()->firstOrFail();
+        $job = $this->runJob($this->postJson("{$base}/cron-jobs/{$cron->id}/run")->assertAccepted()->json('job.id'));
+        $this->assertSame([JobState::Succeeded, 0], [$job->state, $cron->fresh()->last_exit_code]);
+
+        // A deploy goes live. A repository with "fail" in its address fails in the build.
+        $this->getJson("{$base}/deploy")->assertOk()->assertJsonPath('source.trigger', 'webhook')->assertJsonPath('source.secrets', ['COMPOSER_AUTH', 'SENTRY_AUTH_TOKEN'])->assertJsonCount(5, 'releases');
+        $answer = $this->postJson("{$base}/deploy/releases")->assertAccepted()->json();
+        $this->assertSame(JobState::Succeeded, $this->runJob($answer['job']['id'])->state);
+        $this->getJson("{$base}/deploy")->assertJsonPath('releases.0.id', $answer['release']['id'])->assertJsonPath('releases.0.live', true)->assertJsonPath('releases.0.state', 'ready');
+        $this->assertSame("releases/{$answer['release']['id']}/public", $website->fresh()->document_root);
+
+        $this->putJson("{$base}/deploy", ['repository' => 'git@github.com:acme-example/fail.git', 'branch' => 'main'])->assertOk();
+        $this->travel(1)->minutes();
+        $failed = $this->postJson("{$base}/deploy/releases")->assertAccepted()->json();
+        $this->assertSame(JobState::Failed, $this->runJob($failed['job']['id'])->state);
+        $this->getJson("{$base}/deploy")->assertJsonPath('releases.0.state', 'failed')->assertJsonPath('releases.1.live', true);
+    }
 }
