@@ -18,6 +18,8 @@ import (
 	"syscall"
 	"time"
 
+	"golang.org/x/sys/unix"
+
 	"github.com/itbm/cloudfactory/agent/internal/actions"
 	"github.com/itbm/cloudfactory/agent/internal/caddy"
 	"github.com/itbm/cloudfactory/agent/internal/config"
@@ -360,10 +362,36 @@ func superviseWorker(ctx context.Context, uid, gid int) error {
 	return nil
 }
 
+// sealedArg shows that the worker process cannot get new rights (seal).
+const sealedArg = "--sealed"
+
+// seal takes from the worker the possibility to get more rights from a program, for example
+// a setuid program such as su. The kernel keeps the setting for the process and for each
+// program that it starts, and nothing can remove it (PR_SET_NO_NEW_PRIVS).
+//
+// The setting is for one thread, and a Go program has many threads. Thus the worker sets it
+// on one thread and then starts its own program again in that thread: the new program has
+// the setting in all its threads.
+func seal() error {
+	runtime.LockOSThread()
+	if err := unix.Prctl(unix.PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0); err != nil {
+		return fmt.Errorf("the worker cannot give up new rights: %w", err)
+	}
+	// The link of the kernel always gives the program of this process, also when an update
+	// replaced the file on the disk a moment ago.
+	return syscall.Exec("/proc/self/exe", []string{os.Args[0], "work", sealedArg}, os.Environ())
+}
+
 // workCmd is the worker of the agent service, as its own process.
 func workCmd(ctx context.Context) error {
 	if os.Geteuid() == 0 {
 		return errors.New(`"cf-agent work" is a part of "cf-agent serve"; it does not start as root`)
+	}
+	if len(os.Args) < 3 || os.Args[2] != sealedArg {
+		return seal()
+	}
+	if on, err := unix.PrctlRetInt(unix.PR_GET_NO_NEW_PRIVS, 0, 0, 0, 0); err != nil || on != 1 {
+		return fmt.Errorf("the worker can get new rights (%d, %v)", on, err)
 	}
 	cfg, err := config.Load(config.DefaultPath)
 	if err != nil {
