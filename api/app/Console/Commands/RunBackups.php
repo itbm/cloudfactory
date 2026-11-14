@@ -54,7 +54,7 @@ class RunBackups extends Command
         // Audit finding S2: each server has its own repository, and removes its unused data
         // each week. A server that is not healthy does it in a later week.
         if ($now->isSunday()) {
-            foreach (Server::whereJsonContains('roles', 'web')->where('state', 'healthy')->orderBy('name')->get() as $server) {
+            foreach (Server::whereJsonContains('roles', 'web')->whereIn('state', Server::WORKING)->orderBy('name')->get() as $server) {
                 // Audit finding R8: the job also removes the backups of the websites that were
                 // deleted some time ago. A limit keeps the job short. The rest goes next week.
                 $deleted = BackupRemoval::where('server_id', $server->id)->where('remove_after', '<=', $now)->orderBy('remove_after')->limit(self::DELETED_WEBSITES)->pluck('website_id')->all();

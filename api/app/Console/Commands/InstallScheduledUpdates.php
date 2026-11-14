@@ -24,7 +24,8 @@ class InstallScheduledUpdates extends Command
     public function handle(JobDispatcher $jobs): int
     {
         $now = Carbon::now('UTC');
-        foreach (Server::whereIn('update_policy', ['security', 'all'])->where('state', 'healthy')->get() as $server) {
+        // A degraded server also gets its updates: an update can be the correction.
+        foreach (Server::whereIn('update_policy', ['security', 'all'])->whereIn('state', Server::WORKING)->get() as $server) {
             $pending = collect($server->pending_updates ?? [])->reject(fn ($u) => $u['containerTool'] ?? false);
             if ($server->update_policy === 'security') {
                 $pending = $pending->filter(fn ($u) => $u['security'] ?? false);

@@ -164,7 +164,7 @@ class ServerController extends Controller
             'pendingUpdates' => $s->pending_updates ?? [],
             'lastUpdateAt' => $s->last_update_at?->toIso8601String(),
             'rebootRequired' => $s->reboot_required,
-            'services' => $s->services ?? [],
+            'services' => Server::presentServices($s->services),
             // Spec section 10: the port of the SFTP container. 22 means an agent of release 0.1.
             'sftpPort' => $s->sftp_port ?? 22,
             'usage' => $s->usage,

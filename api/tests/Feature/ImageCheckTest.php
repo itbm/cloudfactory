@@ -155,6 +155,48 @@ class ImageCheckTest extends TestCase
         $this->assertSame(1, Rollout::count());
     }
 
+    public function test_an_image_that_no_website_uses_changes_to_the_new_release_at_once(): void
+    {
+        $image = $this->official(['policy' => 'security_automatic']);
+        $digest = $this->push('0.2.0', $this->key);
+
+        $this->artisan('cloudfactory:check-images')->assertSuccessful();
+
+        $image->refresh();
+        $this->assertSame('0.2.0', $image->tag);
+        $this->assertSame($digest, $image->digest);
+        $this->assertNull($image->available_tag);
+        $this->assertNull($image->available_digest);
+        $this->assertSame(0, Rollout::count(), 'there is no website to roll out to');
+        $this->assertSame(1, AuditEntry::where('action', 'Changed image version')->count());
+
+        // With the manual policy, the administrator decides, also when no website uses the image.
+        $manual = $this->image(['reference' => 'ghcr.io/'.self::REPO, 'tag' => '0.1.0', 'policy' => 'manual', 'name' => 'Manual']);
+        $this->artisan('cloudfactory:check-images')->assertSuccessful();
+        $this->assertSame('0.1.0', $manual->fresh()->tag);
+        $this->assertSame('0.2.0', $manual->fresh()->available_tag);
+    }
+
+    public function test_an_image_with_only_a_failed_website_changes_to_the_new_release_at_once(): void
+    {
+        // The state of a panel after the first pull failed: the website has no container, so
+        // there is nothing to roll out to.
+        $image = $this->official(['policy' => 'security_automatic']);
+        $website = $this->website($this->customer(), $this->server(), $image, attributes: ['status' => 'failed']);
+        $this->assertFalse($image->inUse());
+        $this->push('0.2.0', $this->key);
+
+        $this->artisan('cloudfactory:check-images')->assertSuccessful();
+
+        $this->assertSame('0.2.0', $image->fresh()->tag);
+        $this->assertNull($image->fresh()->available_tag);
+        $this->assertSame(0, Rollout::count());
+        // The panel makes the website again with the new tag.
+        $this->actingWith($this->user());
+        $job = $this->postJson("/api/v1/websites/{$website->id}/retry")->assertAccepted()->json('job.id');
+        $this->assertStringEndsWith(':0.2.0', AgentJob::findOrFail($job)->payload['website']['image']);
+    }
+
     public function test_a_custom_image_gets_a_new_digest_of_the_same_tag(): void
     {
         $image = $this->image(['reference' => 'ghcr.io/'.self::REPO, 'tag' => 'stable', 'family' => 'custom', 'custom' => true, 'policy' => 'automatic', 'signature_verified' => false]);

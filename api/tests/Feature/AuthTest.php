@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Enums\Role;
 use App\Models\AuditEntry;
 use App\Models\User;
+use App\Services\LoginThrottle;
 use App\Services\Totp;
 use Tests\TestCase;
 
@@ -26,8 +27,25 @@ class AuthTest extends TestCase
         $secret = Totp::generateSecret();
         $user->forceFill(['totp_secret' => $secret])->save();
 
+        // A wrong password gives the error at once, with or without a code.
+        $this->postJson('/api/v1/auth/login', ['email' => $user->email, 'password' => 'wrong'])
+            ->assertUnprocessable()->assertJsonValidationErrors(['email' => 'The email or the password is not correct.'])
+            ->assertJsonMissingPath('totpRequired');
+        $this->postJson('/api/v1/auth/login', ['email' => $user->email, 'password' => 'wrong', 'totp' => Totp::code($secret)])
+            ->assertUnprocessable()->assertJsonValidationErrors(['email' => 'The email or the password is not correct.'])
+            ->assertJsonMissingValidationErrors('totp');
+        LoginThrottle::clear($user->email, '127.0.0.1');
+
+        // A correct password with no code: the panel asks for the code. This is not a failed attempt.
+        for ($i = 0; $i < LoginThrottle::FREE_FAILURES; $i++) {
+            $this->postJson('/api/v1/auth/login', ['email' => $user->email, 'password' => 'password'])
+                ->assertUnprocessable()->assertJsonPath('totpRequired', true)
+                ->assertJsonValidationErrors(['totp' => 'Type the code from your authenticator app.'])
+                ->assertJsonMissingPath('token');
+        }
         $this->postJson('/api/v1/auth/login', ['email' => $user->email, 'password' => 'password', 'totp' => '000000'])
-            ->assertUnprocessable()->assertJsonValidationErrors(['email' => 'The email, the password or the code is not correct.']);
+            ->assertUnprocessable()->assertJsonValidationErrors(['totp' => 'The code is not correct. A code works one time only.'])
+            ->assertJsonMissingPath('totpRequired');
         $this->postJson('/api/v1/auth/login', ['email' => $user->email, 'password' => 'password', 'totp' => Totp::code($secret)])
             ->assertOk();
         $this->assertDatabaseHas('audit_entries', ['action' => 'Signed in with password and TOTP', 'user_id' => $user->id]);

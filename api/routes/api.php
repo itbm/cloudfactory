@@ -52,6 +52,7 @@ Route::prefix('v1')->group(function () {
             Route::patch('websites/{id}', [WebsiteController::class, 'update']);
             Route::delete('websites/{id}', [WebsiteController::class, 'destroy']);
             Route::post('websites/{id}/power', [WebsiteController::class, 'power']);
+            Route::post('websites/{id}/retry', [WebsiteController::class, 'retry']);
             Route::post('websites/{id}/staging', [WebsiteController::class, 'staging']);
             // Audit finding S5: limits for each customer (AppServiceProvider).
             Route::post('websites/{websiteId}/domains', [DomainController::class, 'store'])->middleware('throttle:domain-changes');

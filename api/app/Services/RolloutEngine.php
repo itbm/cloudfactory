@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Enums\AgentAction;
 use App\Enums\JobState;
+use App\Enums\WebsiteStatus;
 use App\Models\AgentJob;
 use App\Models\Image;
 use App\Models\Rollout;
@@ -22,8 +23,10 @@ class RolloutEngine
     public function start(Image $image): Rollout
     {
         // Batch 1, finding 5: a stopped website gets the new image too. The agent writes its unit
-        // and does not start it.
+        // and does not start it. A website that the panel could not make has no container to
+        // update: it gets the new tag when the panel makes it again.
         $ids = Website::where('image_id', $image->id)
+            ->where('status', '!=', WebsiteStatus::Failed->value)
             ->orderBy('created_at')
             ->pluck('id')
             ->all();
@@ -141,14 +144,17 @@ class RolloutEngine
             $rollout->update(['state' => 'done']);
             $rollout->image->update([
                 'tag' => $rollout->to_tag,
-                'digest' => $rollout->image->available_digest ?? $rollout->image->digest,
+                // A new tag with no known digest does not keep the digest of the old tag.
+                'digest' => $rollout->image->available_digest ?? ($rollout->to_tag === $rollout->image->tag ? $rollout->image->digest : null),
                 'available_tag' => null,
                 'available_digest' => null,
             ]);
             Website::whereIn('id', $rollout->updated_ids)->update(['image_tag' => null]);
             // A website that the rollout did not update keeps the old tag, so that the panel
-            // shows what its container runs.
+            // shows what its container runs. A website that the panel could not make has no
+            // container, so it follows the image.
             Website::where('image_id', $rollout->image_id)->whereNull('image_tag')->whereNotIn('id', $rollout->updated_ids)
+                ->where('status', '!=', WebsiteStatus::Failed->value)
                 ->update(['image_tag' => $rollout->from_tag]);
 
             return;
@@ -161,6 +167,7 @@ class RolloutEngine
     {
         // Batch 1, finding 5: websites made during the rollout are part of the later stages.
         $new = Website::where('image_id', $rollout->image_id)->whereNotIn('id', $rollout->website_ids)
+            ->where('status', '!=', WebsiteStatus::Failed->value)
             ->where(fn ($q) => $q->whereNull('image_tag')->orWhere('image_tag', $rollout->from_tag))
             ->orderBy('created_at')->pluck('id')->all();
         if ($new) {

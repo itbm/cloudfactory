@@ -9,6 +9,7 @@ use App\Enums\WebsiteStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\JobResource;
 use App\Http\Resources\WebsiteResource;
+use App\Models\AgentJob;
 use App\Models\Customer;
 use App\Models\Image;
 use App\Models\Plan;
@@ -39,6 +40,9 @@ class WebsiteController extends Controller
      * IP address is not a domain name.
      */
     public const DOMAIN = '/^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+(?!\d+$)[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/';
+
+    /** The PHP extensions of a new website, when the plan has them. The owner can change them. */
+    public const DEFAULT_EXTENSIONS = ['opcache', 'intl', 'gd', 'zip', 'mysqli', 'pdo_mysql', 'pdo_pgsql'];
 
     public function __construct(private JobDispatcher $jobs, private DomainPolicy $domains) {}
 
@@ -93,7 +97,9 @@ class WebsiteController extends Controller
         $plan = Plan::findOrFail($planId);
         $server = isset($data['serverId'])
             ? Server::findOrFail($data['serverId'])
-            : Server::whereJsonContains('roles', 'web')->where('state', 'healthy')->withCount('websites')->orderBy('websites_count')->first();
+            // A healthy server first. A degraded server can also get a website: its agent answers.
+            : Server::whereJsonContains('roles', 'web')->whereIn('state', Server::WORKING)->withCount('websites')
+                ->orderByRaw("case when state = 'healthy' then 0 else 1 end")->orderBy('websites_count')->first();
         if (! $server || ! in_array('web', $server->roles, true)) {
             throw ValidationException::withMessages(['serverId' => 'Select a server with the web role.']);
         }
@@ -114,7 +120,8 @@ class WebsiteController extends Controller
                 'image_id' => $image->id,
                 'unix_user' => self::unixUser($data['name']),
                 'status' => WebsiteStatus::Starting,
-                'extensions' => $image->isPhp() ? array_values(array_intersect(['opcache', 'intl', 'gd', 'zip'], $plan->php_extensions)) : [],
+                // The database drivers are on from the start: most PHP applications need one.
+                'extensions' => $image->isPhp() ? array_values(array_intersect(self::DEFAULT_EXTENSIONS, $plan->php_extensions)) : [],
                 'php_ini' => $image->isPhp() ? ['memory_limit' => '256M', 'upload_max_filesize' => '64M', 'max_execution_time' => '60'] : [],
                 'limits' => $plan->limits,
             ]);
@@ -201,11 +208,55 @@ class WebsiteController extends Controller
         return response()->json(['job' => new JobResource($job)], 202);
     }
 
+    /**
+     * Makes a website again after its first job failed, for example because the server could
+     * not pull the image. Before, the only way was to delete the website and to make it again.
+     * The job of the agent can run again: each step keeps what a previous run made.
+     */
+    public function retry(Request $request, string $id): JsonResponse
+    {
+        $website = $this->findWebsite($request, $id);
+        $this->refuseSuspended($website->customer);
+        $job = self::createAgain($this->jobs, $website);
+        Audit::record($request, 'Created website again', $website->name, $website->customer_id);
+
+        return response()->json(['website' => new WebsiteResource($website->fresh(['image', 'domains'])), 'job' => new JobResource($job)], 202);
+    }
+
+    /**
+     * Starts the job that makes a failed website again.
+     *
+     * @throws ValidationException
+     */
+    public static function createAgain(JobDispatcher $jobs, Website $website): AgentJob
+    {
+        if ($website->status !== WebsiteStatus::Failed) {
+            throw ValidationException::withMessages(['website' => 'The panel made this website. Only a website that the panel could not make can be made again.']);
+        }
+        if ($website->staging_of) {
+            // The job of a staging copy also copies the databases, with passwords that the panel
+            // does not keep.
+            throw ValidationException::withMessages(['website' => 'The panel could not make this staging copy. Delete it, and make the staging copy again.']);
+        }
+        $website->update(['status' => WebsiteStatus::Starting]);
+
+        return $jobs->dispatch($website->server, AgentAction::CreateWebsite, JobDispatcher::websitePayload($website->fresh(['image', 'domains'])), "Create website {$website->name}", $website);
+    }
+
+    /** A website that the panel could not make has no container on the server. */
+    public static function refuseFailed(Website $website): void
+    {
+        if ($website->status === WebsiteStatus::Failed) {
+            throw ValidationException::withMessages(['website' => 'The panel could not make this website. Use "Try again" on the website first, or delete the website.']);
+        }
+    }
+
     /** FR-204: start, stop and restart. */
     public function power(Request $request, string $id): JsonResponse
     {
         $website = $this->findWebsite($request, $id);
         $data = $request->validate(['action' => ['required', Rule::in(['start', 'stop', 'restart'])]]);
+        self::refuseFailed($website);
         if ($data['action'] !== 'stop') {
             $this->refuseSuspended($website->customer);
         }

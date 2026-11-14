@@ -71,6 +71,9 @@ class AgentController extends Controller
             'services' => ['array'],
             'services.*.name' => ['required', 'string'],
             'services.*.state' => ['required', Rule::in(['running', 'stopped', 'failed'])],
+            // The reason for a service that does not run, and a part that the server can operate without.
+            'services.*.detail' => ['nullable', 'string', 'max:1000'],
+            'services.*.optional' => ['boolean'],
             'usage' => ['array'],
             'usage.cpuPercent' => ['numeric', 'between:0,100'],
             'usage.memoryPercent' => ['numeric', 'between:0,100'],
@@ -105,7 +108,9 @@ class AgentController extends Controller
             'panelCaSha256' => ['nullable', 'string', 'regex:/^[0-9a-f]{64}$/'],
         ]);
 
-        $failed = collect($data['services'] ?? [])->contains(fn ($s) => $s['state'] !== 'running');
+        // A server is degraded when a necessary service does not run. An optional part, for
+        // example the disk quotas, does not change the state.
+        $failed = Server::hasFailedService($data['services'] ?? []);
         $wasOffline = $server->state === 'offline';
         $server->update([
             'agent_version' => $data['agentVersion'],
