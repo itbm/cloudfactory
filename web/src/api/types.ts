@@ -344,6 +344,8 @@ export interface Server {
   connectionError?: string;
   /** This server has the panel. It cannot be removed. */
   panel?: boolean;
+  /** The database engines that the agent of the server can operate. An agent of an earlier release has no Valkey. */
+  databaseEngines?: DatabaseEngine[];
   services: ServerService[];
   /** The port of the SFTP container of the websites (spec section 10). 22 for an agent of release 0.1. */
   sftpPort: number;
@@ -384,7 +386,7 @@ export interface MailAlias {
   destinations: string[];
 }
 
-export type DatabaseEngine = "mariadb" | "postgresql";
+export type DatabaseEngine = "mariadb" | "postgresql" | "valkey";
 
 export interface Database {
   id: string;
@@ -393,6 +395,10 @@ export interface Database {
   websiteId: string;
   sizeBytes: number;
   serverId: string;
+  /** Valkey only: the database number that the app selects. It is not known until the job that makes the database is complete. */
+  number?: number;
+  /** Valkey only: the number of keys, from the last report of the server. */
+  keys?: number;
 }
 
 export type DatabasePrivileges = "readonly" | "readwrite";

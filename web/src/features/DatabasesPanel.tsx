@@ -4,11 +4,15 @@ import { useAction, useStore } from "../api/hooks";
 import { createDatabase, createDatabaseUser, deleteDatabase, deleteDatabaseUser, partialDetails, setDatabaseUser, type GrantInput } from "../api/store";
 import type { DatabaseEngine, DatabasePrivileges, DatabaseUser } from "../api/types";
 import { Card, ConfirmButton, Field, FormError, Modal } from "../components/ui";
-import { bytes } from "../lib/format";
-import { jobActive } from "../lib/labels";
+import { bytes, count } from "../lib/format";
+import { ENGINE_NAME as ENGINE, jobActive } from "../lib/labels";
 
-const ENGINE: Record<DatabaseEngine, string> = { mariadb: "MariaDB", postgresql: "PostgreSQL" };
+const ENGINE_RELEASE: Record<DatabaseEngine, string> = { mariadb: "MariaDB 12.3", postgresql: "PostgreSQL 18", valkey: "Valkey 9.1" };
+const HOST: Record<DatabaseEngine, string> = { mariadb: "mariadb.internal:3306", postgresql: "postgres.internal:5432", valkey: "valkey.internal:6379" };
 const PRIVILEGES: Record<DatabasePrivileges, string> = { readonly: "Read only", readwrite: "Read and write" };
+/** A database user has an SQL engine. The user of a Valkey database comes with the database. */
+const SQL_ENGINES: DatabaseEngine[] = ["mariadb", "postgresql"];
+const ALL_ENGINES: DatabaseEngine[] = [...SQL_ENGINES, "valkey"];
 
 /**
  * Databases and database users (FR-501, FR-502). With websiteId, it shows one website only.
@@ -25,16 +29,22 @@ export function DatabasesPanel({ websiteId }: { websiteId?: string }) {
   const [site, setSite] = useState(websiteId ?? sites[0]?.id ?? "");
   const [withUser, setWithUser] = useState(true);
   const [grants, setGrants] = useState<GrantInput[]>([]);
-  const [password, setPassword] = useState<{ user: string; value: string } | null>(null);
+  const [password, setPassword] = useState<{ user: string; value: string; valkey?: boolean } | null>(null);
   const createDb = useAction(createDatabase);
   const createUser = useAction(createDatabaseUser);
   const changeUser = useAction(setDatabaseUser);
   const siteName = (id: string) => sites.find((w) => w.id === id)?.name ?? "Removed website";
   const prefix = (id: string) => `${sites.find((w) => w.id === id)?.unixUser ?? ""}_`;
+  // An agent of an earlier release cannot operate Valkey. When the panel does not know the server, the API makes the check.
+  const noValkey = (id: string) => {
+    const server = state.servers.find((s) => s.id === sites.find((w) => w.id === id)?.serverId);
+    return server?.databaseEngines && !server.databaseEngines.includes("valkey") ? server.name : undefined;
+  };
   const pending = state.jobs.filter((j) => jobActive(j) && j.title.startsWith("Create ") && j.title.includes("database") && (!websiteId || j.websiteId === websiteId));
 
   const close = () => {
     setDialog(null);
+    setEngine("mariadb");
     setName("");
     setGrants([]);
     setWithUser(true);
@@ -71,10 +81,13 @@ export function DatabasesPanel({ websiteId }: { websiteId?: string }) {
                         ? access.map((a) => <span key={a.user} className="grant"><code>{a.user}</code> <span className={`badge ${a.privileges === "readonly" ? "badge-neutral" : "badge-info"}`}>{PRIVILEGES[a.privileges]}</span></span>)
                         : <span className="muted">No users</span>}
                     </td>
-                    <td>{bytes(d.sizeBytes)}</td>
-                    <td><code>{d.engine === "mariadb" ? "mariadb.internal:3306" : "postgres.internal:5432"}</code></td>
+                    <td>{d.engine === "valkey" ? (d.keys === undefined ? <span className="muted">No report</span> : `${count(d.keys)} ${d.keys === 1 ? "key" : "keys"}`) : bytes(d.sizeBytes)}</td>
+                    <td>
+                      <code>{HOST[d.engine]}</code>
+                      {d.engine === "valkey" && <span className="cell-sub">{d.number === undefined ? "The number comes when the job is complete" : <>Database number <strong>{d.number}</strong></>}</span>}
+                    </td>
                     <td className="cell-actions" style={{ width: 120 }}>
-                      <ConfirmButton className="btn btn-sm btn-danger" title={`Remove database ${d.name}?`} confirm="Remove database" message={<p>The data is removed now. The users of this database lose access to it. You can restore it from a backup for the retention period.</p>} onConfirm={() => deleteDatabase(d.id)}>Remove</ConfirmButton>
+                      <ConfirmButton className="btn btn-sm btn-danger" title={`Remove database ${d.name}?`} confirm="Remove database" message={d.engine === "valkey" ? <p>The data and the user of the database are removed now. A backup has no Valkey data, so you cannot restore it.</p> : <p>The data is removed now. The users of this database lose access to it. You can restore it from a backup for the retention period.</p>} onConfirm={() => deleteDatabase(d.id)}>Remove</ConfirmButton>
                     </td>
                   </tr>
                 );
@@ -87,6 +100,11 @@ export function DatabasesPanel({ websiteId }: { websiteId?: string }) {
           </table>
         </div>
         {!websiteId && partialDetails() && <p className="card-body muted small">There are many websites, so this list shows only the websites that you opened. Open a website to see its databases.</p>}
+        {dbs.some((d) => d.engine === "valkey") && (
+          <p className="card-body muted small" style={{ paddingTop: 12 }}>
+            To connect to a Valkey database, an app uses the host <code>valkey.internal</code>, the port <code>6379</code>, the user name, the password and the database number. Valkey is compatible with Redis: for PHP, turn on the extension <code>redis</code> on the Runtime tab. All the Valkey databases of a server share its Valkey memory: when the memory is full, Valkey removes the keys that were not used for the longest time. A backup has no Valkey data.
+          </p>
+        )}
       </Card>
       <Card title="Database users" actions={<button type="button" className="btn" onClick={() => setDialog("user")}>New user</button>}>
         <div className="card-body" style={{ paddingBottom: 0 }}>
@@ -108,20 +126,24 @@ export function DatabasesPanel({ websiteId }: { websiteId?: string }) {
                       : <span className="muted">No databases</span>}
                   </td>
                   <td>
-                    <label className="visually-hidden" htmlFor={`access-${u.id}`}>Can connect from</label>
-                    <select id={`access-${u.id}`} className="select" style={{ maxWidth: 210 }} value={u.access} onChange={(e) => void changeUser.run(u.id, { access: e.target.value as "website" | "anywhere" })}>
-                      <option value="website">Website container only</option>
-                      <option value="anywhere">Anywhere, with TLS</option>
-                    </select>
+                    {u.engine === "valkey" ? "Website container only" : (
+                      <>
+                        <label className="visually-hidden" htmlFor={`access-${u.id}`}>Can connect from</label>
+                        <select id={`access-${u.id}`} className="select" style={{ maxWidth: 210 }} value={u.access} onChange={(e) => void changeUser.run(u.id, { access: e.target.value as "website" | "anywhere" })}>
+                          <option value="website">Website container only</option>
+                          <option value="anywhere">Anywhere, with TLS</option>
+                        </select>
+                      </>
+                    )}
                   </td>
                   <td className="cell-actions">
                     <div className="btn-group" style={{ justifyContent: "flex-end", flexWrap: "nowrap" }}>
-                      <button type="button" className="btn btn-sm" onClick={() => edit(u)}>Permissions</button>
-                      <ConfirmButton className="btn btn-sm" danger={false} title={`Make a new password for ${u.name}?`} confirm="Make new password" message={<p>Apps that use the old password cannot connect.</p>} onConfirm={async () => {
+                      {u.engine !== "valkey" && <button type="button" className="btn btn-sm" onClick={() => edit(u)}>Permissions</button>}
+                      <ConfirmButton className="btn btn-sm" danger={false} title={`Make a new password for ${u.name}?`} confirm="Make new password" message={<p>Apps that use the old password cannot connect.{u.engine === "valkey" && " Valkey closes the connections that are open with the old password."}</p>} onConfirm={async () => {
                         const r = await changeUser.run(u.id, { resetPassword: true });
                         if (r.ok && r.value) setPassword({ user: u.name, value: r.value });
                       }}>New password</ConfirmButton>
-                      <ConfirmButton className="btn btn-sm btn-danger" title={`Remove user ${u.name}?`} confirm="Remove user" message={<p>Apps that use this user cannot connect.</p>} onConfirm={() => deleteDatabaseUser(u.id)}>Remove</ConfirmButton>
+                      {u.engine !== "valkey" && <ConfirmButton className="btn btn-sm btn-danger" title={`Remove user ${u.name}?`} confirm="Remove user" message={<p>Apps that use this user cannot connect.</p>} onConfirm={() => deleteDatabaseUser(u.id)}>Remove</ConfirmButton>}
                     </div>
                   </td>
                 </tr>
@@ -130,7 +152,7 @@ export function DatabasesPanel({ websiteId }: { websiteId?: string }) {
             </tbody>
           </table>
         </div>
-        <p className="card-body muted small" style={{ paddingTop: 12 }}>By default, only the container of the website can connect to its databases. A user can have access only to the databases of its website.</p>
+        <p className="card-body muted small" style={{ paddingTop: 12 }}>By default, only the container of the website can connect to its databases. A user can have access only to the databases of its website.{users.some((u) => u.engine === "valkey") && " The user of a Valkey database has access to that database only. To remove the user, remove the database."}</p>
       </Card>
 
       {dialog === "db" && (
@@ -142,18 +164,22 @@ export function DatabasesPanel({ websiteId }: { websiteId?: string }) {
           <form id="new-db" noValidate onSubmit={async (e) => {
             e.preventDefault();
             const full = prefix(site) + name.trim();
-            const result = await createDb.run(site, engine, name, withUser);
+            const result = await createDb.run(site, engine, name, engine === "valkey" || withUser);
             if (result.ok) {
               close();
-              if (result.value) setPassword({ user: full, value: result.value });
+              if (result.value) setPassword({ user: full, value: result.value, valkey: engine === "valkey" });
             }
           }}>
             <FormError error={createDb.error} />
-            <DbFields engine={engine} setEngine={setEngine} name={name} setName={setName} site={site} setSite={setSite} showSite={!websiteId} prefix={prefix(site)} error={createDb.error?.fields.name} />
-            <label className="check" style={{ marginTop: 12 }}>
-              <input type="checkbox" checked={withUser} onChange={(e) => setWithUser(e.target.checked)} />
-              Also make a user with the same name, with read and write access
-            </label>
+            <DbFields engines={ALL_ENGINES} noValkey={noValkey(site)} engine={engine} setEngine={setEngine} name={name} setName={setName} site={site} setSite={(s) => { setSite(s); if (engine === "valkey" && noValkey(s)) setEngine("mariadb"); }} showSite={!websiteId} prefix={prefix(site)} error={createDb.error?.fields.name} engineError={createDb.error?.fields.engine} />
+            {engine === "valkey" ? (
+              <p className="muted small" style={{ marginTop: 12 }}>Valkey keeps keys and values in memory, for a cache, sessions and queues. It is compatible with Redis. The database gets a number, and a user with the same name as the database. An app connects with the user name, the password and the number.</p>
+            ) : (
+              <label className="check" style={{ marginTop: 12 }}>
+                <input type="checkbox" checked={withUser} onChange={(e) => setWithUser(e.target.checked)} />
+                Also make a user with the same name, with read and write access
+              </label>
+            )}
           </form>
         </Modal>
       )}
@@ -170,7 +196,7 @@ export function DatabasesPanel({ websiteId }: { websiteId?: string }) {
             if (result.ok) { close(); setPassword({ user: full, value: result.value }); }
           }}>
             <FormError error={createUser.error} />
-            <DbFields engine={engine} setEngine={(e) => { setEngine(e); setGrants([]); }} name={name} setName={setName} site={site} setSite={(s) => { setSite(s); setGrants([]); }} showSite={!websiteId} prefix={prefix(site)} error={createUser.error?.fields.name} />
+            <DbFields engines={SQL_ENGINES} engine={engine} setEngine={(e) => { setEngine(e); setGrants([]); }} name={name} setName={setName} site={site} setSite={(s) => { setSite(s); setGrants([]); }} showSite={!websiteId} prefix={prefix(site)} error={createUser.error?.fields.name} engineError={createUser.error?.fields.engine} />
             <GrantEditor websiteId={site} engine={engine} grants={grants} setGrants={setGrants} />
           </form>
         </Modal>
@@ -197,6 +223,7 @@ export function DatabasesPanel({ websiteId }: { websiteId?: string }) {
             <code>{password.value}</code>
             <button type="button" className="btn" onClick={() => void navigator.clipboard?.writeText(password.value)}>Copy</button>
           </div>
+          {password.valkey && <p className="muted small" style={{ marginTop: 12 }}>The user name is the name of the database. When the job is complete, the list of databases shows the database number.</p>}
         </Modal>
       )}
     </div>
@@ -230,7 +257,7 @@ function GrantEditor({ websiteId, engine, grants, setGrants }: { websiteId: stri
   );
 }
 
-function DbFields(props: { engine: DatabaseEngine; setEngine: (e: DatabaseEngine) => void; name: string; setName: (n: string) => void; site: string; setSite: (s: string) => void; showSite: boolean; prefix: string; error?: string }) {
+function DbFields(props: { engines: DatabaseEngine[]; noValkey?: string; engine: DatabaseEngine; setEngine: (e: DatabaseEngine) => void; name: string; setName: (n: string) => void; site: string; setSite: (s: string) => void; showSite: boolean; prefix: string; error?: string; engineError?: string }) {
   const state = useStore();
   return (
     <>
@@ -243,15 +270,20 @@ function DbFields(props: { engine: DatabaseEngine; setEngine: (e: DatabaseEngine
           )}
         </Field>
       )}
-      <fieldset className="radio-cards" style={{ marginTop: 14 }}>
+      <fieldset className="radio-cards" style={{ marginTop: 14, gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))" }}>
         <legend>Engine</legend>
-        {(["mariadb", "postgresql"] as const).map((e) => (
-          <label className="radio-card" key={e}>
-            <input type="radio" name="engine" checked={props.engine === e} onChange={() => props.setEngine(e)} />
-            <span><strong>{ENGINE[e]}</strong><span>{e === "mariadb" ? "MariaDB 12.3" : "PostgreSQL 18"}</span></span>
-          </label>
-        ))}
+        {props.engines.map((e) => {
+          const disabled = e === "valkey" && !!props.noValkey;
+          return (
+            <label className={`radio-card${disabled ? " radio-card-disabled" : ""}`} key={e}>
+              <input type="radio" name="engine" checked={props.engine === e} disabled={disabled} onChange={() => props.setEngine(e)} />
+              <span><strong>{ENGINE[e]}</strong><span>{ENGINE_RELEASE[e]}</span></span>
+            </label>
+          );
+        })}
       </fieldset>
+      {props.engines.includes("valkey") && props.noValkey && <p className="muted small" style={{ marginTop: 6 }}>The agent on the server {props.noValkey} cannot operate Valkey. Update the agent of the server.</p>}
+      {props.engineError && <p className="text-danger small" role="alert" style={{ marginTop: 6 }}>{props.engineError}</p>}
       <div style={{ marginTop: 14 }}>
         <Field label="Name" hint={<>Each name starts with <code>{props.prefix}</code>, the Unix user of the website. Use lower-case letters, digits and underscores.</>} error={props.error}>
           {(p) => (

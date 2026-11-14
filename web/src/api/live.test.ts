@@ -169,7 +169,7 @@ describe("load with a temporary password (audit finding B5)", () => {
       if (path === "/users") return json({ data: [{ id: 2, name: "Owner", email: "o@example.com", role: "owner", customerId: "c1", totpEnabled: false, mustChangePassword: true, createdAt: "2026-11-10T09:00:00+00:00" }, { id: 1, name: "Admin", email: "a@example.com", role: "administrator", customerId: null, totpEnabled: true, mustChangePassword: false, createdAt: null }] });
       if (path.startsWith("/websites?")) return json({ data: [{ id: "w1", name: "a.example", application: "", customerId: "c1", serverId: "s1", planId: "p1", unixUser: "a_1a2b", status: "running", runtime: { imageId: "i1", family: "frankenphp", image: "x:1", phpVersion: "8.4", workerMode: false, extensions: [], phpIni: {}, previousImageId: null }, limits: { vcpus: 1, memoryBytes: 1, diskBytes: 1, diskIoBytesPerSecond: 1, processes: 100 }, usage: {}, domains: [], stagingOf: null, managedByTerraform: false, createdAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-02T00:00:00Z" }], meta: { last_page: 1 } });
       if (path === "/websites/w1/snapshots") return json({ data: [{ id: "s1", kind: "scheduled", sizeBytes: 5, databases: [], mailboxes: [], createdAt: "2026-11-10T03:00:00Z" }, { id: "s2", kind: "manual", sizeBytes: 5, databases: [], mailboxes: [], createdAt: "2026-11-09T12:00:00Z" }] });
-      if (path === "/websites/w1/databases") return json({ databases: [], users: [] });
+      if (path === "/websites/w1/databases") return json({ databases: [{ id: "d1", engine: "valkey", name: "a_1a2b_cache", sizeBytes: 0, number: 3, keys: 12 }, { id: "d2", engine: "valkey", name: "a_1a2b_new", sizeBytes: 0, number: null, keys: null }, { id: "d3", engine: "mariadb", name: "a_1a2b_wp", sizeBytes: 4096, number: null, keys: null }], users: [] });
       if (path.startsWith("/backup-policy")) return json({ daily: 7, weekly: 4, monthly: 6, time: "03:00", target: "s3:x/y", manual: 10 });
       return json({ data: [] });
     }));
@@ -182,5 +182,7 @@ describe("load with a temporary password (audit finding B5)", () => {
     // The API names a nightly backup "scheduled".
     expect(state.snapshots.map((s) => [s.id, s.kind])).toEqual([["s1", "nightly"], ["s2", "manual"]]);
     expect(state.backupPolicy.manual).toBe(10);
+    // Valkey: the number is not known until the agent made the database.
+    expect(state.databases.map((d) => [d.name, d.number, d.keys, d.sizeBytes])).toEqual([["a_1a2b_cache", 3, 12, 0], ["a_1a2b_new", undefined, undefined, 0], ["a_1a2b_wp", undefined, undefined, 4096]]);
   });
 });

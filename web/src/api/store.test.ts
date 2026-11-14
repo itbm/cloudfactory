@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { ApiError, addCustomer, addDomain, addUser, changePassword, createDatabase, createDatabaseUser, createToken, deleteUser, getState, publicName, resetState, resetUserPassword, setContext, setDatabaseUser, setDocumentRoot, setPanelCertificate, setSftp, setTotp, splitCommand, timing, verifyDomain } from "./store";
+import { ApiError, addCustomer, addDomain, addUser, changePassword, createDatabase, createDatabaseUser, createToken, deleteDatabase, deleteDatabaseUser, deleteUser, getState, publicName, resetState, resetUserPassword, setContext, setDatabaseUser, setDocumentRoot, setPanelCertificate, setSftp, setTotp, splitCommand, timing, verifyDomain } from "./store";
 import { contextCustomers, visibleWebsites } from "./selectors";
 
 beforeEach(() => {
@@ -35,6 +35,31 @@ describe("databases (CF-01)", () => {
   it("refuses a database of a different website or engine", () => {
     expect(() => createDatabaseUser("web_shop", "mariadb", "x", [{ databaseId: "db_3", privileges: "readonly" }])).toThrow(ApiError);
     expect(() => createDatabaseUser("web_shop", "mariadb", "y", [{ databaseId: "db_2", privileges: "readonly" }])).toThrow(ApiError);
+  });
+
+  it("gives a Valkey database a number and a user with the same name", async () => {
+    // The demo data has one Valkey database with the number 1 on the server of the shop.
+    expect(await createDatabase("web_shop", "valkey", "sessions", false)).toMatch(/^.{24}$/);
+    await new Promise((r) => setTimeout(r, 10));
+    const name = `${shop().unixUser}_sessions`;
+    expect(getState().databases.find((d) => d.name === name)).toMatchObject({ engine: "valkey", number: 2, keys: 0 });
+    const user = getState().databaseUsers.find((u) => u.name === name)!;
+    expect(user).toMatchObject({ engine: "valkey", access: "website", grants: [{ database: name, privileges: "readwrite" }] });
+
+    // The user can only get a new password. It goes with its database.
+    expect(() => setDatabaseUser(user.id, { access: "anywhere" })).toThrow(ApiError);
+    expect(() => setDatabaseUser(user.id, { grants: [] })).toThrow(ApiError);
+    expect(() => deleteDatabaseUser(user.id)).toThrow(ApiError);
+    expect(() => createDatabaseUser("web_shop", "valkey", "more", [])).toThrow(ApiError);
+    expect(await setDatabaseUser(user.id, { resetPassword: true })).toMatch(/^.{24}$/);
+
+    deleteDatabase(getState().databases.find((d) => d.name === name)!.id);
+    expect(getState().databaseUsers.some((u) => u.name === name)).toBe(false);
+  });
+
+  it("refuses a Valkey database on a server with an agent that cannot operate Valkey", () => {
+    getState().servers.find((s) => s.id === shop().serverId)!.databaseEngines = ["mariadb", "postgresql"];
+    expect(() => createDatabase("web_shop", "valkey", "cache2")).toThrow(/Correct the engine/);
   });
 });
 

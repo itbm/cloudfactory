@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { features } from "../api/mode";
 import { createStagingCopy, deleteWebsite, setPower, type StagingCredential } from "../api/store";
 import type { Website } from "../api/types";
+import { ENGINE_NAME } from "../lib/labels";
 import { CopyField } from "../pages/website/AccessTab";
 import { Modal } from "./ui";
 
@@ -101,10 +102,11 @@ export function WebsiteMenu({ website, bordered = false }: { website: Website; b
           footer={<button type="button" className="btn btn-primary" onClick={() => { const id = staging.websiteId; setStaging(null); navigate(`/websites/${id}`); }}>Open the staging copy</button>}
         >
           <p>The copy has its own copies of the databases. Each engine has a new database user with access to the copies. Put these users in the configuration of the copy, so that it does not change the live data.</p>
+          {staging.credentials.some((c) => c.engine === "valkey") && <p>The data of a Valkey database is not copied. The copy gets a new, empty Valkey database with its own number. Find the number on the Databases page of the copy.</p>}
           <p><strong>Copy the passwords now.</strong> The panel shows them only once.</p>
           {staging.credentials.map((c) => (
             <div key={c.user} style={{ marginTop: 12 }}>
-              <p className="small">{c.engine === "mariadb" ? "MariaDB" : "PostgreSQL"} user <code>{c.user}</code> · databases {c.databases.map((d) => <code key={d} style={{ marginRight: 6 }}>{d}</code>)}</p>
+              <p className="small">{ENGINE_NAME[c.engine]} user <code>{c.user}</code> · {c.engine === "valkey" ? "new, empty database" : "databases"} {c.databases.map((d) => <code key={d} style={{ marginRight: 6 }}>{d}</code>)}</p>
               <CopyField value={c.password} label={`Password of ${c.user}`} />
             </div>
           ))}

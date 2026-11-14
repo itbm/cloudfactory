@@ -7,7 +7,7 @@ export function DatabasesPage() {
     <>
       <Topbar />
       <main id="main" className="content">
-        <PageHeader title="Databases" description="MariaDB and PostgreSQL. Each customer database is a separate database on the shared server. By default, only the website container can connect." />
+        <PageHeader title="Databases" description="MariaDB, PostgreSQL and Valkey. Each customer database is a separate database on the shared server. By default, only the website container can connect." />
         <DatabasesPanel />
       </main>
     </>

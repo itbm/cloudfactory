@@ -6,6 +6,7 @@
 // desired state, and puts a job in the queue. A simulated agent then runs the job step by step.
 
 import { validateRecord, type RecordInput } from "../lib/dns";
+import { ENGINE_NAME } from "../lib/labels";
 import * as live from "./live";
 import { LIVE } from "./mode";
 import { DAY, GB, MB, seed } from "./seed";
@@ -16,6 +17,7 @@ import type {
   Branding,
   CronJob,
   Customer,
+  Database,
   DatabaseEngine,
   DatabaseGrant,
   DatabasePrivileges,
@@ -1193,8 +1195,15 @@ const newPassword = () => Array.from(crypto.getRandomValues(new Uint8Array(24)),
 
 export type GrantInput = { databaseId: string; privileges: DatabasePrivileges };
 
-/** Makes a database. With createUser, it also makes a user with readwrite access, and gives its password. */
+/** The number of Valkey databases of one server. Database 0 is for no website. */
+const VALKEY_DATABASES = 1024;
+
+/**
+ * Makes a database. With createUser, it also makes a user with readwrite access, and gives its password.
+ * A Valkey database always has a user with the same name: the user and the database number are the database.
+ */
 export function createDatabase(websiteId: string, engine: DatabaseEngine, name: string, createUser = true): Promise<string | null> {
+  if (engine === "valkey") createUser = true;
   if (LIVE) {
     return call(async () => {
       const r = await live.request<{ password: string | null; job: live.ApiJob }>("POST", `/websites/${websiteId}/databases`, { engine, name: name.trim(), createUser });
@@ -1207,15 +1216,26 @@ export function createDatabase(websiteId: string, engine: DatabaseEngine, name: 
   if (state.databases.some((x) => x.name === n && x.engine === engine)) throw new ApiError("This database exists.", { name: "This database exists." });
   if (createUser && state.databaseUsers.some((x) => x.name === n && x.engine === engine)) throw new ApiError("A database user with this name exists.", { name: "A database user with this name exists. Make the database with no user." });
   const w = state.websites.find((x) => x.id === websiteId)!;
+  const server = state.servers.find((x) => x.id === w.serverId);
+  if (engine === "valkey" && server?.databaseEngines && !server.databaseEngines.includes("valkey")) {
+    throw new ApiError("Correct the engine.", { engine: `The agent on the server ${server.name} did not report that it can operate Valkey. Update the agent of the server, then try again.` });
+  }
   const dbId = id("db");
   void runJob({
-    title: `Create ${engine === "mariadb" ? "MariaDB" : "PostgreSQL"} database ${n}`,
+    title: `Create ${ENGINE_NAME[engine]} database ${n}`,
     websiteId,
-    steps: createUser ? ["Create database", "Create user", "Allow the website container only"] : ["Create database"],
+    steps: engine === "valkey" ? ["Create database and user", "Give the host name to the website container"] : createUser ? ["Create database", "Create user", "Allow the website container only"] : ["Create database"],
     activity: `Created database ${n} for ${w.name}`,
     begin: (d) => audit(d, "Created database", `${w.name} ${n}`),
     apply: (d) => {
-      d.databases.push({ id: dbId, name: n, engine, websiteId, sizeBytes: 0, serverId: w.serverId });
+      const database: Database = { id: dbId, name: n, engine, websiteId, sizeBytes: 0, serverId: w.serverId };
+      if (engine === "valkey") {
+        // The server gives the smallest number that no database of the server has.
+        const used = new Set(d.databases.filter((x) => x.engine === "valkey" && x.serverId === w.serverId).map((x) => x.number));
+        database.number = Array.from({ length: VALKEY_DATABASES - 1 }, (_, i) => i + 1).find((i) => !used.has(i));
+        database.keys = 0;
+      }
+      d.databases.push(database);
       if (createUser) d.databaseUsers.push({ id: id("dbu"), name: n, engine, websiteId, grants: [{ databaseId: dbId, database: n, privileges: "readwrite" }], access: "website" });
     },
   });
@@ -1232,6 +1252,8 @@ export function deleteDatabase(databaseId: string) {
     const db = d.databases.find((x) => x.id === databaseId)!;
     d.databases = d.databases.filter((x) => x.id !== databaseId);
     d.databaseUsers.forEach((u) => (u.grants = u.grants.filter((g) => g.databaseId !== databaseId)));
+    // The user of a Valkey database goes with its database.
+    if (db.engine === "valkey") d.databaseUsers = d.databaseUsers.filter((u) => !(u.engine === "valkey" && u.name === db.name));
     audit(d, "Removed database", db.name);
   });
 }
@@ -1246,6 +1268,7 @@ function checkGrants(websiteId: string, engine: DatabaseEngine, grants: GrantInp
 
 /** Makes a database user with a permission for each database, and gives its password. */
 export function createDatabaseUser(websiteId: string, engine: DatabaseEngine, name: string, grants: GrantInput[]): Promise<string> {
+  if (engine === "valkey") throw new ApiError("Correct the engine.", { engine: "A Valkey database has one user, with the same name. Make a Valkey database." });
   if (LIVE) {
     return call(async () => {
       const r = await live.request<{ password: string; job: live.ApiJob }>("POST", `/websites/${websiteId}/database-users`, { engine, name: name.trim(), grants });
@@ -1268,6 +1291,7 @@ export function createDatabaseUser(websiteId: string, engine: DatabaseEngine, na
 export function setDatabaseUser(userId: string, change: { grants?: GrantInput[]; access?: "website" | "anywhere"; resetPassword?: boolean }): Promise<string | null> {
   const user = state.databaseUsers.find((x) => x.id === userId);
   if (!user) throw new ApiError("The database user does not exist.");
+  if (user.engine === "valkey" && (change.grants || change.access)) throw new ApiError("A Valkey user has access to its own database only, from the container of the website only. You can only make a new password.");
   if (LIVE) {
     return call(async () => {
       const r = await live.request<{ password: string | null; job: live.ApiJob }>("PATCH", `/websites/${user.websiteId}/database-users/${userId}`, change);
@@ -1289,6 +1313,7 @@ export function setDatabaseUser(userId: string, change: { grants?: GrantInput[];
 export function deleteDatabaseUser(userId: string) {
   const user = state.databaseUsers.find((x) => x.id === userId);
   if (!user) throw new ApiError("The database user does not exist.");
+  if (user.engine === "valkey") throw new ApiError("The user of a Valkey database goes with its database. Remove the database.");
   if (LIVE) return call(() => live.request<JobAnswer>("DELETE", `/websites/${user.websiteId}/database-users/${userId}`)).then((r) => track(r.job)).then(() => refresh());
   update((d) => {
     d.databaseUsers = d.databaseUsers.filter((x) => x.id !== userId);

@@ -92,3 +92,6 @@ export const HOST_POLICY_LABEL: Record<HostUpdatePolicy, string> = {
   all: "All updates",
   manual: "Manual",
 };
+
+/** The name of each database engine. */
+export const ENGINE_NAME = { mariadb: "MariaDB", postgresql: "PostgreSQL", valkey: "Valkey" } as const;

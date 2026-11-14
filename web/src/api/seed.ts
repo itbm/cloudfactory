@@ -262,7 +262,7 @@ export const servers: Server[] = [
   server({
     id: "srv_web01", name: "web-01", location: "London", roles: ["web", "database"], cpuPercent: 23, memoryPercent: 58, diskPercent: 41,
     bareMetal: true, gvisorPlatform: "kvm",
-    services: services(["cloudfactory-agent", "podman", "edge-proxy (Caddy)", "MariaDB 12.3", "PostgreSQL 18", "SFTP (cf-sftp)", "nftables"]),
+    services: services(["cloudfactory-agent", "podman", "edge-proxy (Caddy)", "MariaDB 12.3", "PostgreSQL 18", "Valkey 9.1", "SFTP (cf-sftp)", "nftables"]),
     pendingUpdates: [{ name: "openssl", from: "3.5.1-1", to: "3.5.1-1+deb13u1", security: true }],
   }),
   server({
@@ -488,6 +488,7 @@ export function seed(): State {
       { id: "db_2", name: "shop_7f2a_reports", engine: "postgresql", websiteId: "web_shop", sizeBytes: 140 * MB, serverId: "srv_web01" },
       { id: "db_3", name: "example_9c1d_wp", engine: "mariadb", websiteId: "web_example", sizeBytes: 310 * MB, serverId: "srv_web01" },
       { id: "db_4", name: "app_4e8b_main", engine: "postgresql", websiteId: "web_app", sizeBytes: 1.1 * GB, serverId: "srv_web01" },
+      { id: "db_6", name: "shop_7f2a_cache", engine: "valkey", websiteId: "web_shop", sizeBytes: 0, serverId: "srv_web01", number: 1, keys: 18412 },
     ],
     databaseUsers: [
       { id: "dbu_1", name: "shop_7f2a_wp", engine: "mariadb", websiteId: "web_shop", grants: [{ databaseId: "db_1", database: "shop_7f2a_wp", privileges: "readwrite" }], access: "website" },
@@ -496,6 +497,7 @@ export function seed(): State {
       { id: "dbu_2", name: "shop_7f2a_reports", engine: "postgresql", websiteId: "web_shop", grants: [{ databaseId: "db_2", database: "shop_7f2a_reports", privileges: "readwrite" }], access: "website" },
       { id: "dbu_3", name: "example_9c1d_wp", engine: "mariadb", websiteId: "web_example", grants: [{ databaseId: "db_3", database: "example_9c1d_wp", privileges: "readwrite" }], access: "website" },
       { id: "dbu_4", name: "app_4e8b_app", engine: "postgresql", websiteId: "web_app", grants: [{ databaseId: "db_4", database: "app_4e8b_main", privileges: "readwrite" }], access: "website" },
+      { id: "dbu_6", name: "shop_7f2a_cache", engine: "valkey", websiteId: "web_shop", grants: [{ databaseId: "db_6", database: "shop_7f2a_cache", privileges: "readwrite" }], access: "website" },
     ],
     files,
     snapshots,
