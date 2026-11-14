@@ -167,3 +167,17 @@ certificate.
 The change back to the panel CA. Add the root certificate to the browser first (HSTS).
 
 ![34-change-back-to-panel-ca](34-change-back-to-panel-ca.png)
+
+## 35-new-valkey-database
+
+A new Valkey database. It always gets a user with the same name, so the form has no option
+for the user.
+
+![35-new-valkey-database](35-new-valkey-database.png)
+
+## 36-valkey-database
+
+The databases of a website with a Valkey database: the host, the database number and the
+number of keys. The user of a Valkey database can only get a new password.
+
+![36-valkey-database](36-valkey-database.png)
