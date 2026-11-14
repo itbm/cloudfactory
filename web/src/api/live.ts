@@ -16,6 +16,7 @@ import type {
   Job,
   Limits,
   ManagedUser,
+  Mesh,
   PanelCertificate,
   Plan,
   Rollout,
@@ -302,7 +303,7 @@ export async function load(previous: State): Promise<State> {
   const admin = me.role === "administrator";
   const optional = <T>(p: Promise<T>, fallback: T) => p.catch(() => fallback);
 
-  const [websites, jobs, customers, plans, tokens, policy, servers, images, rollouts, audit, users, certificate, setup, account, databaseServers] = await Promise.all([
+  const [websites, jobs, customers, plans, tokens, policy, servers, images, rollouts, audit, users, certificate, setup, account, databaseServers, mesh] = await Promise.all([
     all<ApiWebsite>("/websites"),
     request<{ data: ApiJob[] }>("GET", "/jobs?perPage=50").then((r) => r.data),
     optional(request<{ data: ApiCustomer[] }>("GET", "/customers").then((r) => r.data), []),
@@ -319,6 +320,8 @@ export async function load(previous: State): Promise<State> {
     admin ? Promise.resolve(null) : optional(request<ApiAccount>("GET", "/account"), null),
     // The database servers of the customers that the user can see.
     optional(request<{ data: ApiDatabaseServer[] }>("GET", "/database-servers").then((r) => r.data), []),
+    // A panel API of an earlier release has no mesh.
+    admin ? optional(request<Mesh>("GET", "/mesh"), undefined) : Promise.resolve(undefined),
   ]);
   // A customer or a reseller cannot list all images. They get the images for a new website.
   const runtimes = admin ? images.map((i) => toImage(i, rollouts))
@@ -360,6 +363,7 @@ export async function load(previous: State): Promise<State> {
     images: runtimes,
     rollout: current ? toRollout(current, servers.length) : undefined,
     databaseServers: databaseServers.map(toDatabaseServer),
+    mesh,
     databases: [...kept(previous.databases), ...perSite.flatMap((s) => s.databases)],
     databaseUsers: [...kept(previous.databaseUsers), ...perSite.flatMap((s) => s.users)],
     snapshots: [...kept(previous.snapshots), ...perSite.flatMap((s) => s.snapshots)].sort((a, b) => b.at.localeCompare(a.at)),

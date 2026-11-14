@@ -12,6 +12,7 @@ import { JobsPage } from "./pages/JobsPage";
 import { LoginPage } from "./pages/LoginPage";
 import { NewWebsitePage } from "./pages/NewWebsitePage";
 import { OverviewPage } from "./pages/OverviewPage";
+import { NetworkPage } from "./pages/NetworkPage";
 import { PlansPage } from "./pages/PlansPage";
 import { ServersPage } from "./pages/ServersPage";
 import { SetPasswordPage } from "./pages/SetPasswordPage";
@@ -71,6 +72,7 @@ export function App() {
           <Route index element={<Home />} />
           <Route path="overview" element={<OverviewPage />} />
           <Route path="setup" element={<SetupPage />} />
+          <Route path="network" element={<NetworkPage />} />
           <Route path="servers" element={<ServersPage />} />
           <Route path="servers/:id" element={<ServersPage />} />
           <Route path="updates" element={<UpdatesPage />} />
