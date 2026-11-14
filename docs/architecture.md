@@ -330,6 +330,28 @@ fill the disk of the server, and the database servers of other customers continu
   the server that is off. This does not make the server degraded.
 - The disk quota of a website does not include its databases.
 
+### Stop of a database server
+
+A database server must write its data to the disk before it stops. If it gets `SIGKILL`
+before that, it repairs its data at the next start, and the start is slower.
+
+| Step | Time | Source |
+| ---- | ---- | ------ |
+| Podman waits for a database server after the stop signal | 60 seconds | `StopTimeout` in the container unit |
+| systemd waits for the services of a Unix user when the server stops | 120 seconds | `/etc/systemd/system/user@.service.d/zz-cloudfactory-stop.conf` |
+
+- The systemd package of Ubuntu sets 5 seconds for the services of a Unix user
+  (`/usr/lib/systemd/system/user@.service.d/timeout.conf`). After that time, systemd stops
+  all containers of the user with `SIGKILL`. systemd reads the drop-in files of a unit in the
+  sequence of their names, and the last value applies. Thus the file of Cloudfactory has a
+  name that comes after `timeout.conf`.
+- The installer writes the file. On a server of an earlier release, the agent writes it
+  when it adds the database network.
+- The 120 seconds are also for the website containers and for the other containers of the
+  server.
+- The shared containers of an earlier release keep the stop time of Podman, which is 10
+  seconds.
+
 ### The shared containers of an earlier release
 
 In release 0.1.9 and earlier, all websites of a server used one MariaDB container
@@ -357,9 +379,10 @@ website of the server has moved, the agent stops the shared containers. Their da
 directories stay on the disk. Refer to
 [installation.md](installation.md#move-the-databases-of-a-server-from-an-earlier-release).
 
-An agent of this release adds the database network and the firewall rules to a server that
-the installer of an earlier release prepared. If the firewall file does not have the rules
-of the installer, the job stops and tells you to run the installer again.
+An agent of this release adds the database network, the firewall rules and the stop time of
+the user services to a server that the installer of an earlier release prepared. If the
+firewall file does not have the rules of the installer, the job stops and tells you to run
+the installer again.
 
 ### Valkey
 

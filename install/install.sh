@@ -617,6 +617,16 @@ After=cloudfactory-address.service
 [Service]
 Delegate=cpu cpuset io memory pids
 UNIT
+# The systemd package of Ubuntu has the file "timeout.conf" with "TimeoutStopSec=5" for the
+# user services. When the server stops, systemd then stops the containers of each user with
+# SIGKILL after 5 seconds, before a database server writes its data to the disk. systemd reads
+# the drop-in files in the sequence of their names and the last value applies, so the name of
+# this file must come after "timeout.conf". The agent writes the same file on a server of an
+# earlier release (quadlet.UserStopFile).
+cat >/etc/systemd/system/user@.service.d/zz-cloudfactory-stop.conf <<'UNIT'
+[Service]
+TimeoutStopSec=120
+UNIT
 systemctl daemon-reload
 
 step "Hold the container packages"

@@ -538,6 +538,10 @@ the image, correct the cause and select **Try again**. With the CLI:
 - **Memory of the server.** Each container uses memory, also when its databases have no
   work. The limits do not reserve memory: the sum of the limits can be more than the memory
   of the server. Give a server with many database servers sufficient memory.
+- **Restart of the server.** When the server stops, each database server has 60 seconds to
+  write its data to the disk. The installer gives the containers of the server this time on
+  Ubuntu, where the default is 5 seconds. A server of an earlier release gets the setting
+  from the agent of this release, when the agent adds the database network.
 - **Unix user.** All database containers of a server run as the Unix user `cf-db`, each in
   its own gVisor sandbox. The database files of all customers have this owner on the host.
 - **Disk quota of a website.** The disk quota of a website applies to the files of the
@@ -834,27 +838,53 @@ Ubuntu 26.04. On both, the installation completed, the administrator signed in, 
 started and answered through the edge proxy on the private service address `169.254.77.1`.
 The virtual machines had no hardware virtualisation, so gVisor used the `systrap` platform.
 
-The database containers of each customer were checked in the virtual machine with Ubuntu
-26.04, with release 0.1.9 and the agent of this release:
+The database servers were checked in the virtual machine with Ubuntu 26.04, with release
+0.1.9 and the agent of this release. The check sent each request directly to the agent, not
+through the panel:
 
-- The agent added the database network and the firewall rules to the server of release 0.1.9.
-- MariaDB and PostgreSQL of a customer started in gVisor, with the memory limit.
-- The move of a website with a MariaDB database and a PostgreSQL database. After the move,
-  the website container connected to MariaDB and to PostgreSQL with the same host names, user
-  names and passwords, and the data was the same.
+- The agent added the database network, the firewall rules and the stop time of the user
+  services to the server of release 0.1.9.
+- A MariaDB database server with 1 vCPU, 512 MB of memory and 1 GB of disk space started in
+  gVisor on port 3307. Its service had the CPU limit and the memory limit, with no swap. Its
+  disk image file was mounted as a loop device, and its file system had the size of the limit.
+- The move of a website with a MariaDB database and a PostgreSQL database. The agent made
+  the two database servers with the usual ports. After the move, the website container
+  connected to MariaDB and to PostgreSQL with the same host names, user names and passwords,
+  and the data was the same.
+- A new database in the second MariaDB database server of the customer. The website
+  container connected to it on port 3307.
+- A website of a different customer, a website with the shared containers, and other Unix
+  users of the server (not `root`) could not connect to the database servers of a customer.
+- A PostgreSQL user of a website could not connect to the database `postgres`.
+- A larger disk limit made the file system larger, with no restart of the database server.
+- A disk limit that was smaller than the data failed with a clear message. The database
+  server continued to operate, with its disk and its data.
+- A smaller disk limit with sufficient space made the file system smaller. The database
+  server started again, and the data stayed.
+- A database server that filled its disk got the error "No space left on device". The disk
+  of the server did not fill, and the other database servers answered.
+- After a restart of the server, the disk images were mounted before the user manager of
+  `cf-db` started. The database network and the firewall rules were there, the database
+  servers started, and the website connected to its databases with the same data.
+- A second restart of the server, with the stop time of this release. MariaDB and PostgreSQL
+  of the customer wrote their data and stopped with no error, and they started with no
+  repair of the data. In the slow virtual machine, the containers of `cf-db` needed 88
+  seconds to stop. Before, with the 5 seconds of Ubuntu, systemd stopped them with `SIGKILL`,
+  and each database server repaired its data at the next start.
+- The removal of a database server removed its container, its mount, its disk image file and
+  its firewall element. The other database servers continued to operate.
+
+These items were checked with an earlier version of the agent of this release, before each
+database server had its own limits. They were not checked again:
+
 - A move that failed, and a website that did not answer after the move. The website started
   again with the shared containers.
-- A website of a different customer, a website with the shared containers and a different
-  Unix user of the server (not `root`) could not connect to the containers of a customer.
 - The shared containers stopped when the last website of the server had moved.
-- The containers of a customer and their data went with the last website of the customer.
-- After a restart of the server, the database network and the firewall rules were there, the
-  containers of the customer started, and the website connected to its databases.
 
 The virtual machine is slow, because it has no hardware virtualisation. A new MariaDB
-container needed 6 minutes to start there, which is more than the 3 minutes that the agent
-waits. Thus the check used an agent with a longer time. The start time of a new database
-container on a server with hardware virtualisation was not measured.
+database server needed 8 minutes to start there, which is more than the 3 minutes that the
+agent waits. Thus the check used an agent with a longer time. The start time of a new
+database server on a server with hardware virtualisation was not measured.
 
 These items were not checked on a real server. After you install the release, check them, and
 report a problem in the issues of the repository:
@@ -862,6 +892,8 @@ report a problem in the issues of the repository:
 - Valkey in gVisor, and a website container that connects to it. The access rules of the
   Valkey users are checked with a real Valkey server when the Valkey image is built, but not
   in gVisor.
+- A database server that you make in the panel, and the move with **Move the databases**. The
+  panel of this release was checked with its tests, not with a real agent.
 - Files that you upload with SFTP have the correct owner in the website container
   (`--userns=keep-id` in gVisor). The SFTP image was checked with Docker and the same
   capabilities, not in gVisor.

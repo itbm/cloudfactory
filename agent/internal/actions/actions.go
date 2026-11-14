@@ -164,8 +164,8 @@ type Deps struct {
 	dbStart map[string]*sync.Mutex
 	// netMu protects netReady, and makes each change of the firewall one step.
 	netMu sync.Mutex
-	// netReady is true when this agent process made sure that "lo" has the database network
-	// and that the firewall has its rules.
+	// netReady is true when this agent process made sure that "lo" has the database network,
+	// that the firewall has its rules, and that the user services have the time to stop.
 	netReady bool
 	// accessMu protects accessLoaded: the content of the database access file that the
 	// kernel has.

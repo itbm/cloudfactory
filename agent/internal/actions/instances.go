@@ -727,6 +727,30 @@ func (d *Deps) addDatabaseAddress(ctx context.Context) error {
 	return err
 }
 
+// keepStopTime gives the user services of the server the time to stop their containers when
+// the server stops or starts again (quadlet.UserStopSeconds). The installer of this release
+// writes the drop-in file. A server from an earlier release does not have the file: the
+// agent writes it. Without it, Ubuntu stops the database servers with SIGKILL after 5
+// seconds, before they write their data to the disk.
+func (d *Deps) keepStopTime(ctx context.Context) error {
+	dir := filepath.Join(filepath.Dir(d.addressUnit()), "user@.service.d")
+	file := filepath.Join(dir, quadlet.UserStopFile)
+	if _, err := os.Stat(file); err == nil {
+		return nil
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	if _, err := host.WriteFile(file, quadlet.Header+quadlet.UserStopUnit(), 0o644); err != nil {
+		return err
+	}
+	// systemd applies the new time to the user services that operate now.
+	_, err := d.Run.Run(ctx, "systemctl", "daemon-reload")
+	return err
+}
+
 var websiteJumpRE = regexp.MustCompile(`^(\s*)ct state new meta skuid (\d+)-(\d+) jump websites\s*$`)
 
 // addDatabaseRules gives the firewall file of the installer with the rules of the database
@@ -897,7 +921,8 @@ func accessContent(elements []accessElement) (string, error) {
 
 // syncDatabaseAccess makes sure that "lo" has the database network, and that the firewall
 // lets each website connect to the database servers of its own customer only. The agent calls
-// it after each change of the websites and of the database servers, and at its start.
+// it after each change of the websites and of the database servers, and at its start. The
+// first call also makes sure that the database servers have the time to stop (keepStopTime).
 //
 // The file of the installer includes the access file, so the kernel gets the elements again
 // when the server starts or when somebody loads the file of the installer.
@@ -906,6 +931,9 @@ func (d *Deps) syncDatabaseAccess(ctx context.Context) error {
 	defer d.netMu.Unlock()
 	if !d.netReady {
 		if err := d.ensureDatabaseNetwork(ctx); err != nil {
+			return err
+		}
+		if err := d.keepStopTime(ctx); err != nil {
 			return err
 		}
 		d.netReady = true
