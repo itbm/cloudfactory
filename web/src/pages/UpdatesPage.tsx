@@ -2,11 +2,10 @@ import { Check } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useAction, useStore } from "../api/hooks";
-import { LIVE } from "../api/mode";
 import { checkImage, pauseRollout, rollBackAll, setImagePolicy, startRollout } from "../api/store";
 import type { Rollout, UpdatePolicy } from "../api/types";
 import { Topbar } from "../components/Layout";
-import { Card, ConfirmButton, FormError, PageHeader, Status } from "../components/ui";
+import { Card, ConfirmButton, FormError, PageHeader, Status, TableWrap } from "../components/ui";
 import { clockTime, shortDate } from "../lib/format";
 import { POLICY_LABEL } from "../lib/labels";
 import { ServersTable } from "./ServersPage";
@@ -123,11 +122,11 @@ export function UpdatesPage() {
         {active && <Link to="/updates" className="pill pill-warning"><Status tone="warning">1 rollout in progress</Status></Link>}
       </Topbar>
       <main id="main" className="content content-wide">
-        <PageHeader title="Updates" description="Every runtime is a signed container image. Roll it out in stages, check each website's health, and roll back on its own if a check fails." />
+        <PageHeader title="Images and updates" description="Every runtime is a signed container image. Roll it out in stages, check each website's health, and roll back on its own if a check fails." />
         {rollout && showRollout(rollout, dismissed) && <RolloutCard rollout={rollout} onDismiss={() => dismiss(rollout.id)} />}
         <Card title="Runtime images" className="mt" actions={<Link className="btn" to="/apps">Add your own image</Link>}>
           <FormError error={start.error ?? check.error} />
-          <div className="table-wrap">
+          <TableWrap>
             <table>
               <thead><tr><th scope="col">Image</th><th scope="col">Running</th><th scope="col">Available</th><th scope="col">Websites</th><th scope="col">Update policy</th><th scope="col"><span className="visually-hidden">Actions</span></th></tr></thead>
               <tbody>
@@ -148,7 +147,10 @@ export function UpdatesPage() {
                     <td>
                       {i.available ? (
                         <><code>{i.available}</code> {i.availableNote === "rolling_out" ? <span className="text-info small">rolling out</span> : i.availableNote === "queued" ? <span className="muted small">queued next</span> : null}</>
-                      ) : <span className="muted">Up to date</span>}
+                      ) : i.checkError
+                        // Audit item U9: after a failed check, the panel does not know if the image is up to date.
+                        ? <span className="note-warning">Unknown: the last check failed</span>
+                        : <span className="muted">Up to date</span>}
                     </td>
                     <td>{i.websites}</td>
                     <td>
@@ -172,13 +174,13 @@ export function UpdatesPage() {
                       {i.available && i.availableNote !== "rolling_out" && (
                         <button type="button" className="btn btn-sm" disabled={!!active} onClick={() => void start.run(i.id)}>Start rollout</button>
                       )}
-                      {LIVE && !i.available && <button type="button" className="btn btn-sm" disabled={check.busy} onClick={() => void check.run(i.id)}>Check now</button>}
+                      {!i.available && <button type="button" className="btn btn-sm" disabled={check.busy} onClick={() => void check.run(i.id)}>Check now</button>}
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
-          </div>
+          </TableWrap>
         </Card>
         <Card title="Servers" className="mt" actions={<Link className="btn btn-primary" to="/servers?add=1">Add server</Link>}>
           <ServersTable />

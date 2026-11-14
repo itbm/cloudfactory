@@ -1,9 +1,9 @@
-// The client for the real panel API (openapi/openapi.yaml). store.ts calls these functions
-// when the panel runs in live mode (see mode.ts). Each function sends one request, and then
+// The client for the panel API (openapi/openapi.yaml). store.ts calls these functions. Each function sends one request, and then
 // loads the changed data again. A change that makes a job gives a promise that resolves when
 // the agent has finished the job.
 
 import type {
+  Account,
   ApiToken,
   AuditEntry,
   BackupPolicy,
@@ -22,11 +22,13 @@ import type {
   RuntimeImage,
   RuntimeKind,
   Server,
+  SetupChecklist,
   Snapshot,
   State,
   User,
   Website,
 } from "./types";
+import { jobFailure, openFailures } from "../lib/jobFailure";
 import { degradedReason } from "./selectors";
 
 /** The error of a request. store.ts makes an ApiError from it. */
@@ -121,10 +123,10 @@ interface ApiMe {
   totpSetupRequired?: boolean; securityNotices?: { action: string; target: string; actor: string; at: string | null }[];
 }
 interface ApiUser { id: number; name: string; email: string; role: User["role"]; customerId: string | null; totpEnabled: boolean; mustChangePassword: boolean; createdAt: string | null }
-interface ApiJob { id: string; title: string; ref: string | null; state: Job["state"]; steps: string[]; step: number; error: string | null; websiteId: string | null; serverId: string | null; databaseServerId?: string | null; createdAt: string; finishedAt: string | null }
+interface ApiJob { id: string; title: string; ref: string | null; action?: string | null; state: Job["state"]; steps: string[]; step: number; error: string | null; websiteId: string | null; serverId: string | null; databaseServerId?: string | null; createdAt: string; finishedAt: string | null }
 interface ApiWebsite {
   id: string; name: string; application: string; customerId: string; serverId: string; planId: string; unixUser: string; status: Website["status"];
-  runtime: { imageId: string; family: string; image: string; phpVersion: string | null; workerMode: boolean; extensions: string[]; phpIni: Record<string, string>; previousImageId: string | null; documentRoot?: string };
+  runtime: { imageId: string; family: string; image: string; phpVersion: string | null; workerMode: boolean; extensions: string[]; phpIni: Record<string, string>; previousImageId: string | null; documentRoot?: string; digest?: string | null; signatureVerified?: boolean };
   sftp?: { enabled: boolean; host: string | null; port: number; username: string; authorizedKeys: string[] };
   limits: Limits; usage: Partial<Website["use"]> | null;
   domains?: { name: string; kind: Website["domains"][number]["kind"]; dnsPointsHere: boolean; certificate: { state: Website["domains"][number]["certificate"]["state"]; expiresAt: string | null }; verified?: boolean; verification?: DomainVerification | null }[];
@@ -154,7 +156,7 @@ interface ApiPanelCertificate {
   reportedAt: string | null; letsEncryptAvailable: boolean; serversWithoutCa: string[]; job: ApiJob | null;
 }
 interface ApiDatabaseServer extends Omit<DatabaseServer, "usage" | "createdAt"> { usage: DatabaseServer["usage"] | null; createdAt: string | null }
-interface ApiSnapshot { id: string; kind: "scheduled" | "manual"; sizeBytes: number; databases: string[]; mailboxes: string[]; createdAt: string }
+interface ApiSnapshot { id: string; kind: "scheduled" | "manual"; sizeBytes: number; databases: string[]; createdAt: string }
 
 // Mapping from the API shapes to the state of the UI.
 
@@ -168,9 +170,28 @@ const tagOfReference = (ref: string) => {
 
 export function toJob(j: ApiJob): Job {
   return {
-    id: j.id, title: j.title, ref: j.ref ?? undefined, state: j.state, steps: j.steps ?? [], step: j.step ?? 0, error: j.error ?? undefined,
+    id: j.id, title: j.title, ref: j.ref ?? undefined, action: j.action ?? undefined, state: j.state, steps: j.steps ?? [], step: j.step ?? 0, error: j.error ?? undefined,
     createdAt: j.createdAt, finishedAt: j.finishedAt ?? undefined, websiteId: j.websiteId ?? undefined, serverId: j.serverId ?? undefined,
     databaseServerId: j.databaseServerId ?? undefined,
+  };
+}
+
+interface ApiAccount {
+  customer: Account["customer"] | null;
+  provider: { name: string; email: string } | null;
+  plan: Plan | null;
+  usage: { websites: number; databases: number; diskBytes: number; customers: number | null } | null;
+  backups?: { available: boolean };
+  users: ApiUser[];
+}
+
+export function toAccount(a: ApiAccount): Account {
+  const usage = a.usage ?? { websites: 0, databases: 0, diskBytes: 0, customers: null };
+  return {
+    customer: a.customer!, provider: a.provider ?? undefined, plan: a.plan ?? undefined,
+    usage: { websites: usage.websites, databases: usage.databases, diskBytes: usage.diskBytes, customers: usage.customers ?? undefined },
+    backupsAvailable: a.backups?.available ?? true,
+    users: a.users.map(toUser),
   };
 }
 
@@ -190,15 +211,15 @@ export function toWebsite(w: ApiWebsite): Website {
       workerMode: w.runtime.workerMode, extensions: w.runtime.extensions ?? [], phpIni: w.runtime.phpIni ?? {},
       previous: w.runtime.previousImageId ? { imageId: w.runtime.previousImageId, tag: "" } : undefined,
       documentRoot: w.runtime.documentRoot ?? "public",
+      digest: w.runtime.digest ?? undefined, signatureVerified: w.runtime.signatureVerified ?? undefined,
     },
     use: { cpuPercent: 0, memoryBytes: 0, diskBytes: 0, processes: 0, diskIoBytesPerSecond: 0, ...(w.usage ?? {}) },
     domains: (w.domains ?? []).map((d) => ({
       name: d.name, kind: d.kind, dnsPointsHere: d.dnsPointsHere, certificate: { state: d.certificate.state, expiresAt: d.certificate.expiresAt ?? undefined },
       ...(d.verified === false && d.verification ? { verification: d.verification } : {}),
     })),
-    releases: [], previews: [], cron: [], sshKeys: [], shellEnabled: false,
     sftp: w.sftp ? { ...w.sftp, host: w.sftp.host ?? location.host.replace(/:\d+$/, ""), authorizedKeys: w.sftp.authorizedKeys ?? [] } : undefined,
-    lastChange: { at: w.updatedAt, summary: "Last change" },
+    lastChange: { at: w.updatedAt, summary: "" },
     stagingOf: w.stagingOf ?? undefined, sharedDatabases: w.sharedDatabases ?? false, managedByTerraform: w.managedByTerraform, imageTag: tagOfReference(w.runtime.image) || undefined, imageReference: w.runtime.image || undefined,
   };
 }
@@ -281,7 +302,7 @@ export async function load(previous: State): Promise<State> {
   const admin = me.role === "administrator";
   const optional = <T>(p: Promise<T>, fallback: T) => p.catch(() => fallback);
 
-  const [websites, jobs, customers, plans, tokens, policy, servers, images, rollouts, audit, users, certificate, databaseServers] = await Promise.all([
+  const [websites, jobs, customers, plans, tokens, policy, servers, images, rollouts, audit, users, certificate, setup, account, databaseServers] = await Promise.all([
     all<ApiWebsite>("/websites"),
     request<{ data: ApiJob[] }>("GET", "/jobs?perPage=50").then((r) => r.data),
     optional(request<{ data: ApiCustomer[] }>("GET", "/customers").then((r) => r.data), []),
@@ -294,6 +315,8 @@ export async function load(previous: State): Promise<State> {
     optional(request<{ data: ApiAudit[] }>("GET", "/audit?perPage=100").then((r) => r.data), []),
     optional(request<{ data: ApiUser[] }>("GET", "/users").then((r) => r.data), []),
     admin ? optional(request<ApiPanelCertificate>("GET", "/panel-certificate"), null) : Promise.resolve(null),
+    admin ? optional(request<SetupChecklist>("GET", "/setup"), undefined) : Promise.resolve(undefined),
+    admin ? Promise.resolve(null) : optional(request<ApiAccount>("GET", "/account"), null),
     // The database servers of the customers that the user can see.
     optional(request<{ data: ApiDatabaseServer[] }>("GET", "/database-servers").then((r) => r.data), []),
   ]);
@@ -317,7 +340,8 @@ export async function load(previous: State): Promise<State> {
   const contextId = contextIds.has(previous.session.contextId) ? previous.session.contextId : contexts[0]?.id ?? "platform";
 
   const mappedJobs = jobs.map(toJob);
-  const failed = mappedJobs.filter((j) => j.state === "failed").slice(0, 10);
+  // Audit item U2: a failure that a later job resolved needs no notification.
+  const failed = openFailures(mappedJobs).slice(0, 10);
   const done = mappedJobs.filter((j) => j.state === "succeeded").slice(0, 10);
   const current = rollouts.find((r) => r.state === "running" || r.state === "paused") ?? rollouts[0];
 
@@ -330,12 +354,11 @@ export async function load(previous: State): Promise<State> {
     activity: done.map((j) => ({ id: `act_${j.id}`, text: j.title, ref: j.ref, at: j.finishedAt ?? j.createdAt })),
     notifications: failed.map((j) => {
       const known = previous.notifications.find((n) => n.id === `ntf_${j.id}`);
-      return { id: `ntf_${j.id}`, tone: "danger" as const, text: `${j.title} failed${j.error ? `: ${j.error}` : "."}`, at: j.finishedAt ?? j.createdAt, read: known?.read ?? false, href: j.websiteId ? `/websites/${j.websiteId}` : "/jobs" };
+      return { id: `ntf_${j.id}`, tone: "danger" as const, text: `${j.title}${j.ref ? ` ${j.ref}` : ""} failed. ${jobFailure(j, me.role).text} Reference ${jobFailure(j, me.role).reference}.`, at: j.finishedAt ?? j.createdAt, read: known?.read ?? false, href: j.websiteId ? `/websites/${j.websiteId}` : "/jobs" };
     }),
     servers: servers.map(toServer),
     images: runtimes,
     rollout: current ? toRollout(current, servers.length) : undefined,
-    zones: [], mailboxes: [], aliases: [], files: {},
     databaseServers: databaseServers.map(toDatabaseServer),
     databases: [...kept(previous.databases), ...perSite.flatMap((s) => s.databases)],
     databaseUsers: [...kept(previous.databaseUsers), ...perSite.flatMap((s) => s.users)],
@@ -345,14 +368,13 @@ export async function load(previous: State): Promise<State> {
     customers: customers.map(toCustomer),
     users: users.map(toUser),
     tokens: tokens.map(toToken),
-    passkeys: [],
     totpEnabled: me.totpEnabled,
     securityNotices: (me.securityNotices ?? []).map((n) => ({ ...n, at: n.at ?? "" })),
     audit: audit.map(toAudit),
-    alertChannels: [],
-    branding: { ...previous.branding, panelDomain: location.host },
-    system: { ...previous.system, panelDomain: location.host },
+    panelDomain: location.host,
     panelCertificate: certificate ? toPanelCertificate(certificate) : previous.panelCertificate,
+    setup,
+    account: account?.customer ? toAccount(account) : undefined,
   };
 }
 
@@ -366,7 +388,7 @@ async function websiteDetails(w: { id: string; serverId: string }) {
   return {
     databases: db.databases.map((d): Database => ({ id: d.id, name: d.name, engine: d.engine, websiteId: w.id, sizeBytes: d.sizeBytes ?? 0, serverId: w.serverId, number: d.number ?? undefined, keys: d.keys ?? undefined, databaseServerId: d.databaseServerId ?? undefined, host: d.host, port: d.port })),
     users: db.users.map((u): DatabaseUser => ({ id: u.id, name: u.name, engine: u.engine, websiteId: w.id, databaseServerId: u.databaseServerId ?? undefined, grants: u.grants ?? [], access: u.access })),
-    snapshots: snaps.map((s): Snapshot => ({ id: s.id, at: s.createdAt, kind: s.kind === "manual" ? "manual" : "nightly", sizeBytes: s.sizeBytes ?? 0, websiteId: w.id, databases: s.databases ?? [], mailboxes: s.mailboxes ?? [] })),
+    snapshots: snaps.map((s): Snapshot => ({ id: s.id, at: s.createdAt, kind: s.kind === "manual" ? "manual" : "nightly", sizeBytes: s.sizeBytes ?? 0, websiteId: w.id, databases: s.databases ?? [] })),
   };
 }
 

@@ -51,7 +51,7 @@ export function SecurityNotices() {
       <ul className="notice-list">
         {notices.map((n) => <li key={`${n.at} ${n.action} ${n.target}`}>{sentence(n)}, {relativeTime(n.at)}.</li>)}
       </ul>
-      <p>If you do not know about a change, reset the password of that administrator and look at the <Link to="/settings">audit log in the settings</Link>.</p>
+      <p>If you do not know about a change, reset the password of that administrator and look at the <Link to="/settings/audit">audit log in the settings</Link>.</p>
       <div className="btn-group">
         <button type="button" className="btn btn-sm" onClick={close}>I know about {notices.length === 1 ? "this change" : "these changes"}</button>
       </div>

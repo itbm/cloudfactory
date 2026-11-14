@@ -23,7 +23,41 @@ composer install
 cp .env.example .env
 php artisan key:generate
 touch database/database.sqlite
-php artisan migrate --seed
+```
+
+### With no server (demonstration mode)
+
+Set `CF_DEMO=true` in `.env`. Then start the HTTP server and the queue worker with one command:
+
+```sh
+php artisan demo:serve --fresh
+```
+
+In this mode, the API uses a demo agent (`app/Demo`) and no real server. The demo agent does
+the steps of each job and reports the result, so each change completes. `--fresh` deletes all
+data and makes the sample data (`database/seeders/DemoSeeder.php`).
+
+The sample data has these users. The password of each user is `password`.
+
+| Email                  | Role          |
+| ---------------------- | ------------- |
+| `admin@example.com`    | Administrator |
+| `reseller@example.com` | Reseller      |
+| `owner@example.com`    | Owner         |
+
+| Command                     | Function                                                          |
+| --------------------------- | ----------------------------------------------------------------- |
+| `php artisan demo:serve`    | Starts the API and the demo agent. Makes the sample data if the database is empty. |
+| `php artisan demo:reset`    | Deletes all data and makes the sample data. Stop the queue worker first. |
+| `php artisan demo:fixtures` | Writes the API answers that the tests of the web panel use (`web/src/test/fixtures`). |
+
+The panel ignores `CF_DEMO` when `APP_ENV` is `production`. Do not use the sample data on a
+production panel.
+
+### With a real agent
+
+```sh
+php artisan migrate
 php artisan serve
 ```
 
@@ -32,16 +66,6 @@ In a second terminal, start the queue worker:
 ```sh
 php artisan queue:work
 ```
-
-The seed data has three users. The password of each user is `password`.
-
-| Email                  | Role          |
-| ---------------------- | ------------- |
-| `admin@example.com`    | Administrator |
-| `reseller@example.com` | Reseller      |
-| `owner@example.com`    | Owner         |
-
-Do not use the seed data on a production panel.
 
 The development setup uses one SQLite file. A server uses PostgreSQL, because the containers
 of the panel cannot share one SQLite file. Refer to
@@ -83,6 +107,8 @@ Set these values in `.env`:
 | `CF_MANUAL_BACKUPS`    | `10`                      | The number of manual backups that the panel keeps for each website. |
 | `CF_DELETED_WEBSITE_BACKUP_DAYS` | `30`            | The number of days that the backups of a deleted website stay in the repository. |
 | `CF_DOMAINS_PER_WEBSITE` | `50`                    | The maximum number of domains of one website.          |
+| `CF_DEMO`              | `false`                   | The demonstration mode: a demo agent completes each job, with no server. For development only. The panel ignores it when `APP_ENV` is `production`. |
+| `CF_DEMO_STEP_MS`      | `700`                     | The time of each job step of the demo agent, in milliseconds. |
 
 The install script makes the certificates and writes these values.
 

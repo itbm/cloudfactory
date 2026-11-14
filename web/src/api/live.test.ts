@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DETAIL_LIMIT, LiveError, load, request, setUnauthorisedHandler, toDatabaseServer, toJob, toPanelCertificate, toRuntimeImage, toServer, toWebsite } from "./live";
-import { seed } from "./seed";
+import { emptyState } from "./store";
 import { defaultImage } from "../pages/NewWebsitePage";
 
 const answer = (status: number, body: unknown) =>
@@ -63,10 +63,10 @@ describe("mappers", () => {
 
   it("maps a website, its runtime and its domains", () => {
     const w = toWebsite({
-      id: "w1", name: "acme.example", application: "", customerId: "c1", serverId: "s1", planId: "p1", unixUser: "acmeexam_1a2b", status: "running",
+      id: "w1", name: "acme.example.com", application: "", customerId: "c1", serverId: "s1", planId: "p1", unixUser: "acmeexam_1a2b", status: "running",
       runtime: { imageId: "i1", family: "frankenphp", image: "ghcr.io/itbm/frankenphp-php8.4:0.1.0", phpVersion: "8.4", workerMode: false, extensions: ["opcache"], phpIni: {}, previousImageId: null },
       limits: { vcpus: 1, memoryBytes: 1, diskBytes: 1, diskIoBytesPerSecond: 1, processes: 100 }, usage: { cpuPercent: 12 },
-      domains: [{ name: "acme.example", kind: "primary", dnsPointsHere: true, certificate: { state: "valid", expiresAt: null } }],
+      domains: [{ name: "acme.example.com", kind: "primary", dnsPointsHere: true, certificate: { state: "valid", expiresAt: null } }],
       stagingOf: null, managedByTerraform: false, createdAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-02T00:00:00Z",
     });
     expect(w.application).toBe("Website");
@@ -74,13 +74,13 @@ describe("mappers", () => {
     expect(w.use.cpuPercent).toBe(12);
     expect(w.use.memoryBytes).toBe(0);
     expect(w.imageTag).toBe("0.1.0");
-    expect(w.domains[0]).toEqual({ name: "acme.example", kind: "primary", dnsPointsHere: true, certificate: { state: "valid", expiresAt: undefined } });
+    expect(w.domains[0]).toEqual({ name: "acme.example.com", kind: "primary", dnsPointsHere: true, certificate: { state: "valid", expiresAt: undefined } });
     // A panel of an earlier release does not send the field.
     expect(w.sharedDatabases).toBe(false);
   });
 
   it("maps the database containers of a website and of a server", () => {
-    const website = { id: "w1", name: "acme.example", application: "", customerId: "c1", serverId: "s1", planId: "p1", unixUser: "acmeexam_1a2b", status: "running" as const,
+    const website = { id: "w1", name: "acme.example.com", application: "", customerId: "c1", serverId: "s1", planId: "p1", unixUser: "acmeexam_1a2b", status: "running" as const,
       runtime: { imageId: "i1", family: "frankenphp", image: "ghcr.io/itbm/frankenphp-php8.4:0.1.0", phpVersion: "8.4", workerMode: false, extensions: [], phpIni: {}, previousImageId: null },
       limits: { vcpus: 1, memoryBytes: 1, diskBytes: 1, diskIoBytesPerSecond: 1, processes: 100 }, usage: {},
       stagingOf: null, managedByTerraform: false, createdAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-02T00:00:00Z" };
@@ -113,11 +113,11 @@ describe("mappers", () => {
   it("keeps the TXT record of a domain that is not verified (CF-03)", () => {
     const verification = { type: "TXT" as const, name: "_cloudfactory-challenge.new.example", value: "cf-abc" };
     const w = toWebsite({
-      id: "w1", name: "acme.example", application: "", customerId: "c1", serverId: "s1", planId: "p1", unixUser: "acmeexam_1a2b", status: "running",
+      id: "w1", name: "acme.example.com", application: "", customerId: "c1", serverId: "s1", planId: "p1", unixUser: "acmeexam_1a2b", status: "running",
       runtime: { imageId: "i1", family: "frankenphp", image: "ghcr.io/itbm/frankenphp-php8.4:0.1.0", phpVersion: "8.4", workerMode: false, extensions: [], phpIni: {}, previousImageId: null },
       limits: { vcpus: 1, memoryBytes: 1, diskBytes: 1, diskIoBytesPerSecond: 1, processes: 100 }, usage: {},
       domains: [
-        { name: "acme.example", kind: "primary", dnsPointsHere: true, certificate: { state: "valid", expiresAt: null }, verified: true, verification: null },
+        { name: "acme.example.com", kind: "primary", dnsPointsHere: true, certificate: { state: "valid", expiresAt: null }, verified: true, verification: null },
         { name: "new.example", kind: "alias", dnsPointsHere: false, certificate: { state: "pending", expiresAt: null }, verified: false, verification },
       ],
       stagingOf: null, managedByTerraform: false, createdAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-02T00:00:00Z",
@@ -171,7 +171,7 @@ describe("load (batch 1, finding 9)", () => {
       if (path.startsWith("/backup-policy")) return json({ daily: 7, weekly: 4, monthly: 6, time: "03:00", target: "s3:x/y" });
       return json({ data: [] });
     }));
-    const state = await load(seed());
+    const state = await load(emptyState());
     expect(pages).toBeGreaterThan(50);
     expect(state.websites).toHaveLength(pages);
     expect(state.websites[0].sftp).toMatchObject({ enabled: true, host: "web-01.example" });
@@ -188,7 +188,7 @@ describe("load with a temporary password (audit finding B5)", () => {
       if (url === "/api/v1/me") return new Response(JSON.stringify({ id: 7, name: "New", email: "new@example.com", role: "owner", customerId: "c1", totpEnabled: false, mustChangePassword: true }), { status: 200 });
       return new Response(JSON.stringify({ message: "Set a new password first. Your password is temporary.", code: "password_change_required" }), { status: 403 });
     }));
-    const state = await load({ ...seed(), websites: [], users: [] });
+    const state = await load({ ...emptyState(), websites: [], users: [] });
     expect(calls).toEqual(["/api/v1/me"]);
     expect(state.session).toMatchObject({ signedIn: true, mustChangePassword: true, user: { id: "7", email: "new@example.com" } });
     expect(state.totpEnabled).toBe(false);
@@ -201,7 +201,7 @@ describe("load with a temporary password (audit finding B5)", () => {
       if (url === "/api/v1/me") return new Response(JSON.stringify({ id: 3, name: "Admin", email: "a@example.com", role: "administrator", customerId: null, totpEnabled: false, mustChangePassword: false, totpSetupRequired: true, securityNotices: [] }), { status: 200 });
       return new Response(JSON.stringify({ message: "Set up TOTP first.", code: "totp_setup_required" }), { status: 403 });
     }));
-    const state = await load({ ...seed(), websites: [], users: [] });
+    const state = await load(emptyState());
     expect(calls).toEqual(["/api/v1/me"]);
     expect(state.session).toMatchObject({ signedIn: true, totpSetupRequired: true, user: { id: "3", role: "administrator" } });
     expect(state.session.mustChangePassword).toBeUndefined();
@@ -222,7 +222,7 @@ describe("load with a temporary password (audit finding B5)", () => {
       if (path.startsWith("/backup-policy")) return json({ daily: 7, weekly: 4, monthly: 6, time: "03:00", target: "s3:x/y", manual: 10 });
       return json({ data: [] });
     }));
-    const state = await load(seed());
+    const state = await load(emptyState());
     expect(state.session.mustChangePassword).toBeUndefined();
     expect(state.session.totpSetupRequired).toBeUndefined();
     expect(state.securityNotices).toEqual([{ action: "Created administrator", target: "new@example.com", actor: "Other Admin", at: "2026-11-13T10:00:00+00:00" }]);

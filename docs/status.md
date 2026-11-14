@@ -9,6 +9,9 @@ shows what this repository has now.
 | ---- | ----- |
 | Web panel with all screens of the specification, section 9, and their actions | `web/` |
 | Web panel on the real API (live mode). The production build uses it. | `web/src/api/live.ts` |
+| One console for each role: an administrator console, a reseller console and an owner console, each with its own menu and first page | `web/src/lib/roles.ts`, `web/src/App.tsx` |
+| Setup checklist for the administrator, with the effect of each open item | `api/app/Http/Controllers/Api/SetupController.php`, `web/src/pages/SetupPage.tsx` |
+| Account page for owners and resellers: plan, use, provider and users | `api/app/Http/Controllers/Api/AccountController.php`, `web/src/pages/AccountPage.tsx` |
 | New image tags from the registry: the panel checks each hour and accepts a tag only with a good signature (FR-1110) | `api/app/Services/ImageUpdateChecker.php` |
 | Host CPU, memory and disk use in the agent report | `agent/internal/status` |
 | CPU, memory and disk use of each website in the agent report | `agent/internal/actions/observe.go` |
@@ -34,13 +37,13 @@ shows what this repository has now.
 
 | Item | Notes |
 | ---- | ----- |
-| Areas without an API | The API of release 0.1 has no DNS, email, files, cron, deploys, SSH shell, logs, passkeys, alerts, branding or system settings. In live mode the web panel hides these areas. In mock mode it shows them with sample data. |
+| Areas without an API | The API of release 0.1 has no DNS, email, files, cron, deploys, SSH shell, logs, passkeys, alerts, branding or system settings. The web panel has no pages for these areas. |
 | Staging copy | A staging copy gets the files only. It keeps the database settings of the original website, so it uses the live databases. |
 | Restore of a full website | A restore of the full website restores the files only. Restore each database separately. |
 | Email from the panel | The panel sends no email. A new user gets a temporary password from the person who makes the user. |
 | Known security limits | Refer to [security.md](security.md#known-limits): image tags in the signature policy, service images between releases, and one set of object storage credentials for all servers. |
 | Disk quotas | The agent sets the disk limit of each website only when the file system has user quotas. The installer does not turn them on. Refer to [installation.md](installation.md#disk-quotas). |
 | gVisor benchmark | Release 0.1 must measure websites, MariaDB and DNS in gVisor (R-08). This is not done. |
-| Passkeys | The web panel shows passkeys. The API does not support passkeys yet. Users sign in with a password and TOTP, and set up TOTP and change the password in Settings. |
+| Passkeys | The API does not support passkeys yet, and the web panel has no page for them. Users sign in with a password and TOTP, and set up TOTP and change the password in Settings. |
 | Tests on real servers | The tests use fakes for the system commands. The Caddy routes have a test with a real edge container. Nobody has installed release 0.1 on a real Debian 13 or Ubuntu 26.04 server yet. Test these items on a real server: the Caddy admin socket in gVisor (`--runtime-flag=host-uds=create`), the route from the edge to a website through the private service address `169.254.77.1`, the MariaDB client host of a website container and the nftables rule between websites (all checked with Debian 13 packages in a container only, with cgroup v1 and no systemd), file owners with `--userns=keep-id` in gVisor, the shared image store with fuse-overlayfs under systemd and AppArmor, a restore with the PostgreSQL group roles, the firewall rules for the connections from the websites (checked with nftables in a network namespace only), the PostgreSQL container of the panel, a reboot from the panel, `needrestart` after an update, and backups to real object storage. |
 | DNS, email, Git deploys, migration, Terraform | These are in releases 0.2 to 1.0. |

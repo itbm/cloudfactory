@@ -57,8 +57,7 @@ function WebsitesTable({ sites }: { sites: Website[] }) {
             <th scope="col">Runtime</th>
             <th scope="col">Status</th>
             <th scope="col">Certificate</th>
-            <th scope="col">CPU</th>
-            <th scope="col">Memory</th>
+            <th scope="col">CPU and memory</th>
             <th scope="col">Last change</th>
             <th scope="col"><span className="visually-hidden">Actions</span></th>
           </tr>
@@ -85,18 +84,19 @@ function WebsitesTable({ sites }: { sites: Website[] }) {
                 </td>
                 <td><Status tone={status.tone}>{status.label}</Status></td>
                 <td className="muted" style={{ minWidth: 150, maxWidth: 170 }}>{w.status === "failed" ? "–" : certificateText(w.domains.find((d) => d.kind === "primary") ?? w.domains[0])}</td>
-                <td style={{ whiteSpace: "nowrap" }}>
+                {/* One column for the two values: with a column for each, the table was wider than the page. */}
+                <td className="nowrap">
                   {w.status !== "running" ? "–" : (
                     <>
                       <Meter inline value={w.use.cpuPercent / 100 / w.limits.vcpus} label={`CPU ${percent(w.use.cpuPercent)}`} />
                       {percent(w.use.cpuPercent)}
+                      <span className="cell-sub">{bytes(w.use.memoryBytes)} of {bytes(w.limits.memoryBytes)}</span>
                     </>
                   )}
                 </td>
-                <td className="nowrap">{w.status !== "running" ? "–" : `${bytes(w.use.memoryBytes)} / ${bytes(w.limits.memoryBytes)}`}</td>
                 <td className="nowrap">
                   {relativeTime(w.lastChange.at).replace(/^./, (c) => c.toUpperCase())}
-                  <span className={`cell-sub${w.lastChange.ref ? " mono" : ""}`}>{w.lastChange.ref ?? w.lastChange.summary}</span>
+                  {(w.lastChange.ref ?? w.lastChange.summary) && <span className={`cell-sub${w.lastChange.ref ? " mono" : ""}`}>{w.lastChange.ref ?? w.lastChange.summary}</span>}
                 </td>
                 <td className="cell-actions"><WebsiteMenu website={w} /></td>
               </tr>
@@ -264,6 +264,7 @@ function NeedsAttention() {
 }
 
 export function WebsitesPage() {
+  const role = useStore().session.user.role;
   return (
     <>
       <Topbar
@@ -274,10 +275,11 @@ export function WebsitesPage() {
           </Link>
         }
       >
-        <HealthPill />
+        {/* Only an administrator has the state of the servers. */}
+        {role === "administrator" && <HealthPill />}
       </Topbar>
       <main id="main" className="content">
-        <PageHeader title="Websites" description="Each website runs in its own container, as its own Unix user, with its own limits." />
+        <PageHeader title={role === "owner" ? "My websites" : "Websites"} description="Each website runs in its own container, as its own Unix user, with its own limits." />
         <UsageCards />
         <WebsiteList />
         <div className="two-col">
