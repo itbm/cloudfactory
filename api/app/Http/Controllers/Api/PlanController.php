@@ -13,6 +13,7 @@ use App\Models\Plan;
 use App\Models\Website;
 use App\Services\Audit;
 use App\Services\JobDispatcher;
+use App\Validation\Input;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
@@ -98,7 +99,7 @@ class PlanController extends Controller
             'mailboxes' => ['required', 'integer', 'min:0', 'max:1000000'],
             'databases' => ['required', 'integer', 'min:0', 'max:1000000'],
             'phpExtensions' => ['required', 'array'],
-            'phpExtensions.*' => ['string', 'regex:/^[a-z0-9_]+$/'],
+            'phpExtensions.*' => ['string', Input::rule('phpExtension')],
             'limits.vcpus' => ['required', 'numeric', 'gt:0'],
             'limits.memoryBytes' => ['required', 'integer', 'gt:0'],
             'limits.diskBytes' => ['required', 'integer', 'gt:0'],

@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Enums\RolloutState;
+use App\Models\Concerns\GuardsState;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
@@ -10,7 +12,13 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 #[Fillable(['image_id', 'from_tag', 'to_tag', 'severity', 'state', 'stage', 'website_ids', 'updated_ids', 'rolled_back'])]
 class Rollout extends Model
 {
-    use HasUlids;
+    use GuardsState, HasUlids;
+
+    /** The table of the permitted changes is in App\Enums\RolloutState. */
+    public static function stateAttribute(): string
+    {
+        return 'state';
+    }
 
     /** FR-1103: canary, 10%, 50%, then all websites. */
     public const STAGES = [
@@ -22,7 +30,7 @@ class Rollout extends Model
 
     protected function casts(): array
     {
-        return ['website_ids' => 'array', 'updated_ids' => 'array', 'rolled_back' => 'array', 'stage' => 'integer'];
+        return ['state' => RolloutState::class, 'website_ids' => 'array', 'updated_ids' => 'array', 'rolled_back' => 'array', 'stage' => 'integer'];
     }
 
     public function image(): BelongsTo

@@ -101,7 +101,7 @@ class JobOutcome
      */
     private function websiteMade(Website $website, array $result): bool
     {
-        $website->update(['status' => WebsiteStatus::Running]);
+        $website->moveTo(WebsiteStatus::Running);
         // A staging copy: the database number of each new Valkey database.
         foreach (is_array($result['valkey'] ?? null) ? $result['valkey'] : [] as $name => $number) {
             if (is_string($name) && is_int($number) && $number > 0) {
@@ -142,9 +142,7 @@ class JobOutcome
         $p = $job->payload;
         match ($job->action) {
             AgentAction::CreateWebsite => $website && $this->websiteMade($website, $result),
-            AgentAction::SetWebsitePower => $website?->update([
-                'status' => ($p['power'] ?? '') === 'stop' ? WebsiteStatus::Stopped : WebsiteStatus::Running,
-            ]),
+            AgentAction::SetWebsitePower => $website?->moveTo(($p['power'] ?? '') === 'stop' ? WebsiteStatus::Stopped : WebsiteStatus::Running),
             AgentAction::DeleteWebsite => $website && $this->deleteWebsite($website),
             // Audit finding R8: the backups of these deleted websites are gone.
             AgentAction::PruneBackups => BackupRemoval::whereIn('website_id', array_filter((array) ($p['forgetWebsiteIds'] ?? []), 'is_string'))->delete(),
@@ -187,7 +185,7 @@ class JobOutcome
     {
         $p = $job->payload;
         match ($job->action) {
-            AgentAction::CreateWebsite => $website?->update(['status' => WebsiteStatus::Failed]),
+            AgentAction::CreateWebsite => $website?->moveTo(WebsiteStatus::Failed),
             // FR-1105: the agent went back to the previous image. The panel records the same.
             // Batch 1, finding 3: a change of the PHP settings has the old settings in "revert".
             AgentAction::SetRuntime => $website?->update(isset($p['revert']) ? $p['revert'] : [
@@ -200,7 +198,7 @@ class JobOutcome
             // The domain stays, so that the owner can see the error and check the DNS again.
             AgentAction::AddDomain => Domain::where('name', $p['domain'] ?? '')->update(['certificate_state' => 'failed']),
             // The power change did not complete. The website has its old state.
-            AgentAction::SetWebsitePower => $website?->update(['status' => ($p['power'] ?? '') === 'start' ? WebsiteStatus::Stopped : WebsiteStatus::Running]),
+            AgentAction::SetWebsitePower => $website?->moveTo(($p['power'] ?? '') === 'start' ? WebsiteStatus::Stopped : WebsiteStatus::Running),
             AgentAction::Reboot => $job->server->update(['state' => 'degraded']),
             AgentAction::SetDatabaseServer => $this->databaseServerKept($job, $p),
             // The database server is on the server still.

@@ -7,6 +7,7 @@ use App\Http\Middleware\AuthenticateAgent;
 use App\Models\JoinToken;
 use App\Models\Server;
 use App\Services\PanelCertificate;
+use App\Validation\Input;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -25,7 +26,7 @@ class JoinController extends Controller
             'token' => ['required', 'string', 'max:200'],
             'name' => ['required', 'regex:/^[a-z][a-z0-9-]{1,30}$/', 'unique:servers,name'],
             'agentUrl' => ['required', 'url:https', 'max:255'],
-            'certificateSha256' => ['required', 'regex:/^[0-9a-f]{64}$/'],
+            'certificateSha256' => ['required', Input::rule('sha256')],
             'certificatePem' => ['required', 'string', 'max:8000'],
             'agentVersion' => ['required', 'string', 'max:32'],
             'os' => ['required', Rule::in(['debian-13', 'ubuntu-26.04'])],
