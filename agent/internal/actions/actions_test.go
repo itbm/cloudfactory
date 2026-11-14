@@ -92,7 +92,7 @@ func deps(t *testing.T) (*Deps, *execx.Fake, *fakeEdge) {
 	run := &execx.Fake{}
 	edge := &fakeEdge{sites: map[string]caddy.Site{}}
 	d, root := settings(dir, run, edge), settings(dir, run, edge)
-	server := &gate.Server{Run: run, Allow: root.Allow, Ops: root.RootOps()}
+	server := &gate.Server{Run: run, Allow: root.Allow, Ops: root.RootOps(), Dial: root.RootDial}
 	d.UseGate(testGate{Gate: server.Local(), root: root})
 	return d, run, edge
 }

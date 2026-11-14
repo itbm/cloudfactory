@@ -100,6 +100,9 @@ type Deps struct {
 	// database server a disk image with the size of its disk limit. The default is
 	// "/dev/loop-control". Tests replace it.
 	LoopControl string
+	// EdgeSocket is the path of the admin socket of the edge proxy. The root helper connects
+	// the worker to it (DialEdge).
+	EdgeSocket string
 	// ValkeyDial opens a connection to a Valkey database server on an address and a port
 	// ("address:port"). Nil means a TCP connection. Tests replace it.
 	ValkeyDial func(ctx context.Context, address string) (net.Conn, error)
@@ -132,6 +135,9 @@ type Deps struct {
 
 	// SavePlatform keeps the gVisor platform in the settings of the agent (ConfigureHost).
 	SavePlatform func(platform string) error
+	// SavePanelCA keeps the fingerprint of the root certificate of the panel CA in the
+	// settings of the agent (SavePanelCAPin).
+	SavePanelCA func(fingerprint string) error
 	// EdgeImage is the image of the edge proxy of this agent version.
 	EdgeImage string
 

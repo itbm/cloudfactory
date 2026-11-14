@@ -33,8 +33,8 @@ type Gate interface {
 	// Call runs one operation of the list of the helper. in and out are JSON values. out
 	// can be nil.
 	Call(ctx context.Context, op string, in, out any) error
-	// Dial opens a connection to a local socket of the list of the helper, for example the
-	// admin socket of the edge proxy.
+	// Dial opens a connection to a local socket or a local address of the list of the helper,
+	// for example the admin socket of the edge proxy.
 	Dial(ctx context.Context, name string) (net.Conn, error)
 }
 

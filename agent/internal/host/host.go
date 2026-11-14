@@ -22,6 +22,11 @@ import (
 // EdgeUser is the Unix user of the edge proxy. It cannot read the files of the websites (CF-04).
 const EdgeUser = "cf-edge"
 
+// AgentUser is the Unix user of the worker of the agent. The worker has the connection to
+// the panel and the jobs. It is not root: the root helper of the agent does the work that
+// needs root (package gate).
+const AgentUser = "cf-agent"
+
 // WebsiteIDMin and WebsiteIDMax are the limits of the UID and the GID of a website user. The
 // installer has the same values (WEBSITE_UID_MIN and WEBSITE_UID_MAX in install.sh).
 //

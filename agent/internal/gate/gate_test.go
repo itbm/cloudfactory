@@ -58,10 +58,11 @@ func start(t *testing.T) (*Client, *Server) {
 			}),
 			"known": Op(func(context.Context, None) (None, error) { return None{}, errors.Join(errors.New("first"), errKnown) }),
 		},
-		Dials: map[string]func(context.Context) (net.Conn, error){
-			"echo": func(ctx context.Context) (net.Conn, error) {
-				return (&net.Dialer{}).DialContext(ctx, "unix", echo.Addr().String())
-			},
+		Dial: func(ctx context.Context, name string) (net.Conn, error) {
+			if name != "echo" {
+				return nil, errors.New("not in the list")
+			}
+			return (&net.Dialer{}).DialContext(ctx, "unix", echo.Addr().String())
 		},
 		UIDs: []uint32{uint32(os.Getuid())},
 	}

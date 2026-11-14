@@ -49,7 +49,7 @@ func Op[In, Out any](fn func(ctx context.Context, in In) (Out, error)) Handler {
 // None is the value of an operation with no values or no result.
 type None struct{}
 
-// Server is the side of the root helper. The lists Allow, Ops and Dials are all that the
+// Server is the side of the root helper. The lists Allow, Ops and Dial are all that the
 // worker can do with the rights of root.
 type Server struct {
 	// Run runs a command that Allow accepts.
@@ -59,8 +59,9 @@ type Server struct {
 	Allow func(Command) error
 	// Ops are the operations with typed values.
 	Ops map[string]Handler
-	// Dials are the local sockets that the worker can connect to.
-	Dials map[string]func(ctx context.Context) (net.Conn, error)
+	// Dial opens a connection to a local socket or a local address for the worker. It gives
+	// an error for a name that is not in its list. Nil refuses all names.
+	Dial func(ctx context.Context, name string) (net.Conn, error)
 	// UIDs are the users that can connect, apart from root. It is the user of the worker.
 	UIDs []uint32
 }
@@ -255,13 +256,7 @@ func (s *Server) call(ctx context.Context, op string, in json.RawMessage) respon
 
 // relay connects the worker to a local socket of the list.
 func (s *Server) relay(ctx context.Context, conn net.Conn, req request) {
-	dial := s.Dials[req.Name]
-	if dial == nil {
-		slog.Warn("root helper: refused a socket", "socket", req.Name)
-		s.respond(conn, failure(fmt.Errorf("root helper: the socket %q is not in the list", req.Name)))
-		return
-	}
-	target, err := dial(ctx)
+	target, err := s.dial(ctx, req.Name)
 	if err != nil {
 		s.respond(conn, failure(err))
 		return
@@ -273,6 +268,19 @@ func (s *Server) relay(ctx context.Context, conn net.Conn, req request) {
 	go func() { io.Copy(conn, target); closeWrite(conn); done <- struct{}{} }()
 	<-done
 	<-done
+}
+
+// dial opens a connection of the list of the helper.
+func (s *Server) dial(ctx context.Context, name string) (net.Conn, error) {
+	if s.Dial == nil {
+		return nil, fmt.Errorf("root helper: the connection %q is not in the list", name)
+	}
+	conn, err := s.Dial(ctx, name)
+	if err != nil {
+		slog.Warn("root helper: refused a connection", "name", name, "err", err)
+		return nil, fmt.Errorf("root helper: the connection %q: %w", name, err)
+	}
+	return conn, nil
 }
 
 func closeWrite(c net.Conn) {
@@ -327,9 +335,5 @@ func (l local) Call(ctx context.Context, op string, in, out any) error {
 }
 
 func (l local) Dial(ctx context.Context, name string) (net.Conn, error) {
-	dial := l.s.Dials[name]
-	if dial == nil {
-		return nil, fmt.Errorf("root helper: the socket %q is not in the list", name)
-	}
-	return dial(ctx)
+	return l.s.dial(ctx, name)
 }

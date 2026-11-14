@@ -15,6 +15,7 @@ import (
 	"github.com/itbm/cloudfactory/agent/internal/gate"
 	"github.com/itbm/cloudfactory/agent/internal/host"
 	"github.com/itbm/cloudfactory/agent/internal/images"
+	"github.com/itbm/cloudfactory/agent/internal/pki"
 	"github.com/itbm/cloudfactory/agent/internal/quadlet"
 	"github.com/itbm/cloudfactory/agent/internal/selfupdate"
 	"github.com/itbm/cloudfactory/agent/internal/validate"
@@ -58,6 +59,7 @@ const (
 	opAgentKeep    = "agent.keep"
 	opAgentReplace = "agent.replace"
 	opPlatform     = "config.platform"
+	opPanelCA      = "config.panelCA"
 
 	opEdgePrepare = "edge.prepare"
 
@@ -124,6 +126,9 @@ type (
 	}
 	platformIn struct {
 		Platform string
+	}
+	pinIn struct {
+		Fingerprint string
 	}
 	sftpIn struct {
 		User    string
@@ -445,6 +450,7 @@ func (d *Deps) RootOps() map[string]gate.Handler {
 			return d.replaceAgent(in.Release, in.AllowDowngrade)
 		}),
 		opPlatform: none(func(_ context.Context, in platformIn) error { return d.savePlatform(in.Platform) }),
+		opPanelCA:  none(func(_ context.Context, in pinIn) error { return d.SavePanelCAPin(in.Fingerprint) }),
 
 		// The edge proxy. The helper makes the unit from its own settings.
 		opEdgePrepare: gate.Op(func(ctx context.Context, _ gate.None) (bool, error) {
@@ -770,6 +776,22 @@ func (d *Deps) savePlatform(platform string) error {
 	return nil
 }
 
+// SavePanelCAPin keeps the fingerprint of the root certificate of the panel CA in the settings
+// of the agent. The worker learns the fingerprint from the panel, on a connection that it
+// checked, and uses it for its own connections to the panel.
+func (d *Deps) SavePanelCAPin(fingerprint string) error {
+	if err := pki.CheckFingerprint(fingerprint); err != nil {
+		return err
+	}
+	if d.Gate != nil {
+		return d.Gate.Call(context.Background(), opPanelCA, pinIn{Fingerprint: fingerprint}, nil)
+	}
+	if d.SavePanelCA == nil {
+		return errors.New("the agent cannot save the fingerprint of the panel CA")
+	}
+	return d.SavePanelCA(fingerprint)
+}
+
 // writeIni writes the php.ini of a website. Root owns the file, so the website cannot
 // change it.
 func (d *Deps) writeIni(ctx context.Context, unixUser, suffix, content string) error {
@@ -855,6 +877,6 @@ func (d *Deps) prepareEdge(ctx context.Context, image, dataDir string) (changed 
 	if _, err := d.Run.Run(ctx, "install", "-d", "-o", host.EdgeUser, "-g", host.EdgeUser, "-m", "0700", filepath.Join(dataDir, quadlet.EdgeAdminDir)); err != nil {
 		return false, err
 	}
-	unit := quadlet.EdgeUnit(quadlet.Edge{Image: image, DataDir: dataDir, Gvisor: d.runtime(), HTTPPort: 8080, HTTPSPort: 8443})
+	unit := quadlet.EdgeUnit(quadlet.Edge{Image: image, DataDir: dataDir, Gvisor: d.runtime(), HTTPPort: edgeHTTPPort, HTTPSPort: edgeHTTPSPort})
 	return d.Host.WriteUnit(host.EdgeUser, "cf-edge.container", unit)
 }

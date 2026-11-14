@@ -146,10 +146,7 @@ func (d *Deps) valkeyConnect(ctx context.Context, s dbServer, user, password str
 	}
 	dial := d.ValkeyDial
 	if dial == nil {
-		dial = func(ctx context.Context, address string) (net.Conn, error) {
-			dialer := net.Dialer{Timeout: 5 * time.Second}
-			return dialer.DialContext(ctx, "tcp", address)
-		}
+		dial = d.DialLocal
 	}
 	c, err := dial(ctx, net.JoinHostPort(address, strconv.Itoa(record.Port)))
 	if err != nil {

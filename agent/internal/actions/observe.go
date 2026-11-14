@@ -367,6 +367,9 @@ func (d *Deps) domainState(ctx context.Context, name string) panel.DomainState {
 
 var errNoCertificate = errors.New("the edge proxy has no certificate for the domain")
 
+// edgeHTTPS is the address of the HTTPS port of the edge proxy.
+var edgeHTTPS = net.JoinHostPort(quadlet.ServiceAddress, strconv.Itoa(edgeHTTPSPort))
+
 // certificate gives the expiry time of the certificate that the edge proxy serves for a domain.
 func (d *Deps) certificate(ctx context.Context, domain string) (time.Time, error) {
 	if d.Certificate != nil {
@@ -377,9 +380,13 @@ func (d *Deps) certificate(ctx context.Context, domain string) (time.Time, error
 	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	dialer := tls.Dialer{Config: &tls.Config{ServerName: domain, MinVersion: tls.VersionTLS12}}
-	conn, err := dialer.DialContext(ctx, "tcp", net.JoinHostPort(quadlet.ServiceAddress, "8443"))
+	raw, err := d.DialLocal(ctx, edgeHTTPS)
 	if err != nil {
+		return time.Time{}, err
+	}
+	defer raw.Close()
+	conn := tls.Client(raw, &tls.Config{ServerName: domain, MinVersion: tls.VersionTLS12})
+	if err := conn.HandshakeContext(ctx); err != nil {
 		var verify *tls.CertificateVerificationError
 		var alert tls.AlertError
 		switch {
@@ -389,8 +396,7 @@ func (d *Deps) certificate(ctx context.Context, domain string) (time.Time, error
 		}
 		return time.Time{}, err
 	}
-	defer conn.Close()
-	certs := conn.(*tls.Conn).ConnectionState().PeerCertificates
+	certs := conn.ConnectionState().PeerCertificates
 	if len(certs) == 0 {
 		return time.Time{}, errNoCertificate
 	}

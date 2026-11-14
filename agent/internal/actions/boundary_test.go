@@ -3,6 +3,8 @@ package actions
 import (
 	"context"
 	"errors"
+	"io"
+	"net"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -12,6 +14,7 @@ import (
 	"github.com/itbm/cloudfactory/agent/internal/execx"
 	"github.com/itbm/cloudfactory/agent/internal/gate"
 	"github.com/itbm/cloudfactory/agent/internal/hostupdate"
+	"github.com/itbm/cloudfactory/agent/internal/quadlet"
 	"github.com/itbm/cloudfactory/agent/internal/selfupdate"
 )
 
@@ -418,5 +421,93 @@ func TestAnErrorOfTheRootHelperKeepsItsCause(t *testing.T) {
 	var remote *gate.Error
 	if !errors.As(err, &remote) || !strings.Contains(err.Error(), "is not a secret file of the agent") {
 		t.Errorf("err = %v", err)
+	}
+}
+
+// The worker connects to a local address only through the root helper, and only to the
+// addresses of the list.
+func TestTheRootHelperConnectsOnlyToTheAddressesOfTheList(t *testing.T) {
+	d, _ := boundary(t)
+	root := rootOf(d)
+	const service = quadlet.ServiceAddress
+	for _, address := range []string{
+		service + ":20000", service + ":29999", // the ports of the websites
+		service + ":8443",         // the edge proxy
+		service + ":2200",         // the SFTP container
+		service + ":19443",        // the agent port of the panel
+		customerAddress + ":6379", // a Valkey database server
+	} {
+		if err := root.allowAddress(address); err != nil {
+			t.Errorf("%s: %v", address, err)
+		}
+	}
+	for _, address := range []string{
+		service + ":19432", // the database of the panel
+		service + ":19080", service + ":22", service + ":3306", service + ":5432", service + ":19999", service + ":30000",
+		service + ":08443", service + ":+8443", service + ":https", service,
+		// MariaDB and PostgreSQL: the agent uses a client in the container.
+		customerAddress + ":3306", customerAddress + ":5432", customerAddress + ":22",
+		"127.0.0.1:22", "127.0.0.1:8443", "localhost:8443", "[::1]:8443", "0.0.0.0:8443",
+		"169.254.169.254:80", "169.254.80.0:6379", "169.254.1.3:8443", "10.0.0.1:6379", "8.8.8.8:53", "example.com:443", ":8443", "",
+	} {
+		if err := root.allowAddress(address); err == nil {
+			t.Errorf("the root helper connects to %s", address)
+		}
+	}
+	// The worker cannot name a socket.
+	for _, name := range []string{"", "docker", "unix:/run/docker.sock", "unix:///run/podman/podman.sock", "tcp:127.0.0.1:22", "tcp:" + service + ":19432", "udp:" + service + ":8443", "edge:/etc/passwd"} {
+		if conn, err := d.Gate.Dial(context.Background(), name); err == nil {
+			conn.Close()
+			t.Errorf("the root helper connected to %q", name)
+		}
+	}
+}
+
+// The worker reaches the admin socket of the edge proxy through the root helper.
+func TestTheWorkerConnectsToTheEdgeProxyThroughTheRootHelper(t *testing.T) {
+	d, _ := boundary(t)
+	socket := filepath.Join(t.TempDir(), "admin.sock")
+	l, err := net.Listen("unix", socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Close()
+	go func() {
+		conn, err := l.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		conn.Write([]byte("edge"))
+	}()
+	// Only the helper has the path of the socket.
+	rootOf(d).EdgeSocket = socket
+	conn, err := d.DialEdge(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	buf := make([]byte, 4)
+	if _, err := io.ReadFull(conn, buf); err != nil || string(buf) != "edge" {
+		t.Errorf("read %q, %v", buf, err)
+	}
+}
+
+// A fingerprint that is not valid does not go into the settings of the agent.
+func TestThePanelCAFingerprintIsChecked(t *testing.T) {
+	d, _ := boundary(t)
+	var saved string
+	rootOf(d).SavePanelCA = func(fingerprint string) error { saved = fingerprint; return nil }
+	const pin = "08af88488ce218936d530b80f6f55dc2afe4d0d91f13f9e6ae350a9e7752128e"
+	if err := d.SavePanelCAPin(pin); err != nil || saved != pin {
+		t.Errorf("saved %q, %v", saved, err)
+	}
+	for _, bad := range []string{"", "abc", pin + "\",\"agentToken\":\"x", strings.Repeat("z", 64)} {
+		if err := call(d, opPanelCA, pinIn{Fingerprint: bad}); err == nil {
+			t.Errorf("the root helper saved %q", bad)
+		}
+	}
+	if saved != pin {
+		t.Errorf("saved %q", saved)
 	}
 }

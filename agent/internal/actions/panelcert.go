@@ -5,7 +5,6 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
-	"net"
 	"path/filepath"
 	"time"
 
@@ -13,7 +12,6 @@ import (
 	"github.com/itbm/cloudfactory/agent/internal/caddy"
 	"github.com/itbm/cloudfactory/agent/internal/jobs"
 	"github.com/itbm/cloudfactory/agent/internal/panel"
-	"github.com/itbm/cloudfactory/agent/internal/quadlet"
 	"github.com/itbm/cloudfactory/agent/internal/validate"
 )
 
@@ -130,7 +128,7 @@ func (d *Deps) servedCertificate(ctx context.Context, domain string) ([]*x509.Ce
 	if d.ServedCertificate != nil {
 		return d.ServedCertificate(ctx, domain)
 	}
-	return caddy.ServedCertificate(ctx, net.JoinHostPort(quadlet.ServiceAddress, "8443"), domain)
+	return caddy.ServedCertificateVia(ctx, d.DialLocal, edgeHTTPS, domain)
 }
 
 // PanelCertificateState gives the certificate method of the panel and the state of the

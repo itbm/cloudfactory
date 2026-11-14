@@ -283,7 +283,7 @@ func (d *Deps) EnsureSftp(ctx context.Context) error {
 	}
 	ready := d.SftpReady
 	if ready == nil {
-		ready = sshBanner
+		ready = d.sshBanner
 	}
 	if err := d.waitSftp(ctx, ready, port); err != nil {
 		return fmt.Errorf("SFTP: the container does not answer on port %d, so SFTP stays on the SSH service of the host: %w", port, err)
@@ -369,9 +369,10 @@ func (d *Deps) waitSftp(ctx context.Context, ready func(context.Context, int) er
 // sshBanner connects to the SFTP port and reads the SSH version line of the server. The agent
 // uses ServiceAddress, not 127.0.0.1: pasta sends a connection from the host loopback address
 // to the loopback address in the container, where gVisor does not listen (quadlet.ServiceAddress).
-func sshBanner(ctx context.Context, port int) error {
-	dialer := net.Dialer{Timeout: 5 * time.Second}
-	conn, err := dialer.DialContext(ctx, "tcp", net.JoinHostPort(quadlet.ServiceAddress, strconv.Itoa(port)))
+func (d *Deps) sshBanner(ctx context.Context, port int) error {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	conn, err := d.DialLocal(ctx, net.JoinHostPort(quadlet.ServiceAddress, strconv.Itoa(port)))
 	if err != nil {
 		return err
 	}

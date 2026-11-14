@@ -37,15 +37,10 @@ import (
 	"github.com/itbm/cloudfactory/agent/internal/execx"
 	"github.com/itbm/cloudfactory/agent/internal/gvisor"
 	"github.com/itbm/cloudfactory/agent/internal/host"
-	"github.com/itbm/cloudfactory/agent/internal/hostupdate"
-	"github.com/itbm/cloudfactory/agent/internal/images"
-	"github.com/itbm/cloudfactory/agent/internal/jobs"
 	"github.com/itbm/cloudfactory/agent/internal/panel"
 	"github.com/itbm/cloudfactory/agent/internal/pki"
 	"github.com/itbm/cloudfactory/agent/internal/quadlet"
 	"github.com/itbm/cloudfactory/agent/internal/selfupdate"
-	"github.com/itbm/cloudfactory/agent/internal/server"
-	"github.com/itbm/cloudfactory/agent/internal/signature"
 	"github.com/itbm/cloudfactory/agent/internal/status"
 	"github.com/itbm/cloudfactory/agent/internal/validate"
 )
@@ -87,6 +82,9 @@ func main() {
 		err = join(ctx, os.Args[2:])
 	case "serve":
 		err = serve(ctx)
+	case "work":
+		// The worker of "serve". The command is not in the usage text: only "serve" starts it.
+		err = workCmd(ctx)
 	case "gvisor":
 		err = gvisorCmd(ctx, os.Args[2:])
 	case "panel":
@@ -222,137 +220,6 @@ func join(ctx context.Context, args []string) error {
 	return nil
 }
 
-func serve(ctx context.Context) error {
-	cfg, err := config.Load(config.DefaultPath)
-	if err != nil {
-		return err
-	}
-	cert, err := tls.LoadX509KeyPair(cfg.CertFile(), cfg.KeyFile())
-	if err != nil {
-		return err
-	}
-	keyPEM, err := os.ReadFile(signingKey)
-	if err != nil {
-		return fmt.Errorf("read the signing key: %w", err)
-	}
-	key, err := signature.ParsePublicKey(keyPEM)
-	if err != nil {
-		return err
-	}
-
-	run := execx.Host{Env: []string{"DEBIAN_FRONTEND=noninteractive", "NEEDRESTART_MODE=a"}}
-	apt := hostupdate.New(run)
-	if err := apt.Hold(ctx); err != nil {
-		slog.Warn("hold container packages", "err", err)
-	}
-	gv := gvisor.Installer{BaseURL: gvisor.ReleaseURL, Root: gvisorRoot, BinDir: gvisorBin}
-	reporter := panel.New(cfg.PanelURL, cfg.AgentToken, &cert, cfg.PanelServerCertificateSHA256, cfg.PanelCASHA256)
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	h := host.New(run, cfg.SitesDir)
-	// All website users share one read-only copy of each runtime image.
-	h.StorageConfig = images.DefaultConfig
-	deps := &actions.Deps{
-		Host: h, Run: run, Edge: caddy.New(cfg.CaddyAdmin), Apt: apt, Images: images.New(run, host.SitesGroup),
-		Updater: &selfupdate.Updater{ReleaseURL: cfg.ReleaseURL, Binary: binaryPath, Key: key, Current: version},
-		Gvisor:  quadlet.Runtime{RunscPath: gv.Link(), Platform: cfg.GVisorPlatform},
-		State:   actions.NewState(cfg.DataDir), Health: actions.HTTPHealth, DNSPointsHere: actions.LocalDNS(cfg.PublicAddresses...),
-		Reboot: func(ctx context.Context) error {
-			_, err := run.Run(ctx, "systemctl", "reboot")
-			return err
-		},
-		// systemd starts the agent again (Restart=always in cf-agent.service).
-		Restart: cancel,
-		// The stop signal of systemd, for example at a shutdown, closes this channel.
-		Stopping:           ctx.Done(),
-		Arch:               runtime.GOARCH,
-		MaxWatch:           5 * time.Minute,
-		ResticPasswordFile: resticKey,
-		DataDir:            cfg.DataDir,
-		DatabaseClientHost: cfg.DatabaseClientHost,
-		// The images of the services have the version of the agent. The release signs them.
-		ServiceImage: func(name string) string { return cfg.Registry + "/" + name + ":" + version },
-		EdgeImage:    cfg.Registry + "/edge:" + version,
-		SftpImage:    cfg.Registry + "/sftp:" + version,
-		SftpPort:     cfg.SftpPort,
-		SavePlatform: func(platform string) error {
-			c, err := config.Load(config.DefaultPath)
-			if err != nil {
-				return err
-			}
-			c.GVisorPlatform = platform
-			return config.Save(config.DefaultPath, c)
-		},
-	}
-	// FR-202: the disk I/O limit needs the disk of the websites, and the disk limit needs
-	// user quotas on its file system.
-	if dev, err := h.BlockDevice(ctx, cfg.SitesDir); err == nil {
-		deps.BlockDevice = dev
-	} else {
-		slog.Warn("no disk I/O limits", "err", err)
-	}
-	if deps.QuotaMount = h.QuotaMount(ctx, cfg.SitesDir); deps.QuotaMount == "" {
-		slog.Warn("no disk limits: user quotas are off on the file system of the websites", "dir", cfg.SitesDir)
-	}
-	// An agent update brings the gVisor version of the new agent. Containers that start after
-	// the switch use it. Containers that operate keep the old version until they restart.
-	if gvisor.Newer(gvisor.Version, cfg.GVisorVersion) {
-		if arch, err := gvisor.Arch(runtime.GOARCH); err == nil {
-			if err := gv.Install(ctx, gvisor.Version, arch); err != nil {
-				slog.Error("update gVisor", "version", gvisor.Version, "err", err)
-			} else if c, err := config.Load(config.DefaultPath); err == nil {
-				c.GVisorVersion = gvisor.Version
-				if err := config.Save(config.DefaultPath, c); err != nil {
-					slog.Error("save the gVisor version", "err", err)
-				}
-			}
-		}
-	}
-	// The edge proxy operates in gVisor like all other containers. Its image is signed (FR-1101).
-	if err := deps.EnsureEdge(ctx, deps.EdgeImage, cfg.DataDir); err != nil {
-		slog.Error("start edge proxy", "err", err)
-	}
-	if err := deps.RestoreLocalNames(ctx); err != nil {
-		slog.Error("set the certificates of the local names", "err", err)
-	}
-	if err := deps.ShareImages(ctx); err != nil {
-		slog.Error("start the shared image store", "err", err)
-	}
-	// The database containers get the images of this agent version. A server can have the
-	// containers of many customers, so the agent does not wait for them: a job that needs a
-	// container waits for that container only.
-	go func() {
-		if err := deps.RefreshDatabaseServices(ctx); err != nil {
-			slog.Error("start database containers", "err", err)
-		}
-	}()
-	// The SFTP container of the websites. On a server from release 0.1, this also moves SFTP
-	// from the SSH service of the host to the container.
-	if err := deps.EnsureSftp(ctx); err != nil {
-		slog.Error("start the SFTP container", "err", err)
-	}
-	runner := &jobs.Runner{Dir: filepath.Join(cfg.DataDir, "jobs"), Reporter: reporter,
-		Timeout: time.Duration(cfg.JobTimeoutMinutes) * time.Minute, LongTimeout: time.Duration(cfg.LongJobTimeoutMinutes) * time.Minute}
-	if job, ok := deps.ResumeReboot(); ok {
-		runner.Resume(job)
-	}
-	collector := status.Collector{Run: run, Apt: apt, AgentVersion: version, GVisorVersion: gv.Current, Services: []string{"cf-agent", "ssh", "cf-sftp"}, UserServices: []string{host.EdgeUser + ":cf-edge.service"}, DiskPath: cfg.SitesDir, Extra: deps.FillReport}
-
-	go reportLoop(ctx, reporter, collector, time.Duration(cfg.ReportSeconds)*time.Second, cfg.PanelServerCertificateSHA256 == "", savePanelCAPin)
-	go func() {
-		for range time.Tick(24 * time.Hour) {
-			runner.Prune(time.Now().Add(-30 * 24 * time.Hour))
-			deps.PruneImages()
-		}
-	}()
-
-	slog.Info("cf-agent started", "version", version, "listen", cfg.Listen)
-	err = server.Serve(ctx, cfg.Listen, server.Handler(&server.Service{Deps: deps, Runner: runner, Status: collector}), server.TLSConfig(cert, cfg.PanelCertificateSHA256))
-	runner.Wait()
-	return err
-}
-
 // reportLoop sends a report at each interval. With learnCA, the agent trusts the panel CA that
 // the panel gives in its answer, and save keeps the fingerprint for the next start.
 func reportLoop(ctx context.Context, c *panel.Client, s status.Collector, every time.Duration, learnCA bool, save func(string) error) {
@@ -382,16 +249,6 @@ func reportLoop(ctx context.Context, c *panel.Client, s status.Collector, every 
 		case <-time.After(every):
 		}
 	}
-}
-
-// savePanelCAPin keeps the fingerprint of the root certificate of the panel CA in the settings.
-func savePanelCAPin(pin string) error {
-	c, err := config.Load(config.DefaultPath)
-	if err != nil {
-		return err
-	}
-	c.PanelCASHA256 = pin
-	return config.Save(config.DefaultPath, c)
 }
 
 // gvisorCmd installs the gVisor version from the settings, or goes back to the previous version.
