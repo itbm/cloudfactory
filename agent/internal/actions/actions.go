@@ -116,6 +116,19 @@ type Deps struct {
 	SftpUsersDir string
 	// SftpImage is the image of the SFTP container of this agent version.
 	SftpImage string
+	// MailImage is the image of the mail server of this agent version.
+	MailImage string
+	// MailHome is the home directory of the Unix user of the mail server. The default is
+	// "/var/lib/cf-mail". MailConfigDir holds the files of root for the mail server. The
+	// default is "/etc/cloudfactory/mail". Tests replace them.
+	MailHome      string
+	MailConfigDir string
+	// MailURL is the address of the management API of the mail server. Empty means the port
+	// on the private service address, through the root helper. Tests replace it.
+	MailURL string
+	// MailCertificateWait is the maximum time that a job waits for the certificate of the
+	// mail host name. The default is 3 minutes.
+	MailCertificateWait time.Duration
 	// SftpPort is the public SFTP port of the server. 0 means quadlet.DefaultSftpPort.
 	SftpPort int
 	// SftpReady checks that the SFTP container answers on a port. Nil means an SSH connection

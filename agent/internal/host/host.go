@@ -23,6 +23,10 @@ import (
 // EdgeUser is the Unix user of the edge proxy. It cannot read the files of the websites (CF-04).
 const EdgeUser = "cf-edge"
 
+// MailUser is the Unix user of the mail server of a server with the email role. The root
+// helper makes the user when an administrator turns on email.
+const MailUser = "cf-mail"
+
 // AgentUser is the Unix user of the worker of the agent. The worker has the connection to
 // the panel and the jobs. It is not root: the root helper of the agent does the work that
 // needs root (package gate).
@@ -279,6 +283,25 @@ func (h *Host) EnsureDatabaseUser(ctx context.Context, unixUser, home string) er
 		}
 	}
 	if err := h.linkStorageConfig(unixUser, home); err != nil {
+		return err
+	}
+	return h.startUserManager(ctx, unixUser)
+}
+
+// EnsureServiceUser makes the Unix user of a service if it does not exist, as the installer
+// makes the user of the edge proxy: a system user with a home directory, no password and no
+// login shell. Its user services start at boot. Only root calls this function.
+func (h *Host) EnsureServiceUser(ctx context.Context, unixUser, home string) error {
+	if _, err := h.LookupUID(unixUser); err != nil {
+		var unknown user.UnknownUserError
+		if !errors.As(err, &unknown) {
+			return err
+		}
+		if _, err := h.Run.Run(ctx, "useradd", "--system", "--create-home", "--home-dir", home, "--shell", "/usr/sbin/nologin", "--add-subids-for-system", unixUser); err != nil {
+			return err
+		}
+	}
+	if _, err := h.Run.Run(ctx, "loginctl", "enable-linger", unixUser); err != nil {
 		return err
 	}
 	return h.startUserManager(ctx, unixUser)

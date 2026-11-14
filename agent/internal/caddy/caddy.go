@@ -64,6 +64,10 @@ type Site struct {
 	// Stopped is true for a website that is stopped, for example because its customer is
 	// suspended. The edge proxy then answers with StoppedPage, not with an empty 502 answer.
 	Stopped bool
+	// Page is the text that the edge proxy gives for each request, with status 200. It is for
+	// a host name that has no website but needs a certificate: the host name of the mail
+	// server. The edge proxy gets the certificate, and the agent gives it to the mail server.
+	Page string
 }
 
 // StoppedPage is the page of a stopped website. It has status 503. It does not tell a visitor
@@ -195,6 +199,14 @@ func SiteRoute(s Site, upstream string) map[string]any {
 				"Cache-Control": []string{"no-store"},
 			},
 			"body": StoppedPage,
+		}
+	}
+	if s.Page != "" {
+		handler = map[string]any{
+			"handler":     "static_response",
+			"status_code": 200,
+			"headers":     map[string]any{"Content-Type": []string{"text/plain; charset=utf-8"}},
+			"body":        s.Page,
 		}
 	}
 	return map[string]any{

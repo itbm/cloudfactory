@@ -132,6 +132,7 @@ func (d *Deps) FillReport(ctx context.Context, r *panel.Report) {
 	r.DatabaseEngines = Engines
 	r.DatabaseInstances = true
 	r.Services = append(r.Services, d.firewallService(ctx), d.helperService(), d.quotaService(), d.diskService())
+	r.Mail = d.mailReport(ctx)
 }
 
 // databaseServerUse gives the state, the memory and the disk space of each database server of

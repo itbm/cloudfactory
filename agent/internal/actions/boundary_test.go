@@ -29,7 +29,7 @@ func boundary(t *testing.T) (*Deps, *execx.Fake) {
 	t.Helper()
 	d, f, _ := deps(t)
 	ids := map[string]int{
-		"acme_x7k2": 20001, "bolt_k3m9": 20002, "cf-edge": 991,
+		"acme_x7k2": 20001, "bolt_k3m9": 20002, "cf-edge": 991, "cf-mail": 985,
 		// The user of the shared database containers of an earlier release. A server from
 		// that release has it. The worker cannot use it.
 		oldDBUser: 990,
@@ -49,6 +49,7 @@ func boundary(t *testing.T) (*Deps, *execx.Fake) {
 			return 0, user.UnknownUserError(name)
 		}
 		d.EdgeImage = "ghcr.io/itbm/edge:0.2.0"
+		d.MailImage = "ghcr.io/itbm/mail:0.2.0"
 		d.ResticPasswordFile = "/etc/cloudfactory/restic.key"
 	})
 	return d, f
@@ -58,6 +59,7 @@ const (
 	oldDBUser  = "cf-db"
 	dbPodman   = "runuser -u cf-db -- env XDG_RUNTIME_DIR=/run/user/990 podman "
 	edgePodman = "runuser -u cf-edge -- env XDG_RUNTIME_DIR=/run/user/991 podman "
+	mailPodman = "runuser -u cf-mail -- env XDG_RUNTIME_DIR=/run/user/985 podman "
 	mariaName  = "cf-mariadb-" + mariaServerKey
 	// adminKey is the last part of the name of adminDBUser.
 	adminKey    = "01jbq3z5k8n6t4w2x9y7r5p3zz"
@@ -84,6 +86,10 @@ func TestTheRootHelperRunsTheCommandsOfThePolicy(t *testing.T) {
 		serverPodman + "pull --quiet " + root.serviceImage("mariadb"),
 		// The service user of the edge proxy: the image of this agent version.
 		edgePodman + "image exists ghcr.io/itbm/edge:0.2.0",
+		// The service user of the mail server: the image of this agent version.
+		mailPodman + "image exists ghcr.io/itbm/mail:0.2.0",
+		mailPodman + "pull --quiet ghcr.io/itbm/mail:0.2.0",
+		"systemctl --user --machine=cf-mail@ restart cf-mail.service",
 		// The user managers.
 		"systemctl --user --machine=acme_x7k2@ daemon-reload",
 		"systemctl --user --machine=acme_x7k2@ restart cf-acme_x7k2.service",
@@ -215,6 +221,16 @@ func TestTheRootHelperRefusesCommandsOutsideThePolicy(t *testing.T) {
 		edgePodman + "pull --quiet docker.io/library/alpine",
 		edgePodman + "exec cf-edge sh",
 		edgePodman + "run --rm docker.io/library/alpine",
+		// The user of the mail server owns the mail of all customers. The worker cannot run
+		// a program as that user, or in the container.
+		"runuser -u cf-mail -- sh -c id",
+		"runuser -u cf-mail -- cat /var/lib/cf-mail/data/data.db",
+		mailPodman + "pull --quiet docker.io/library/alpine",
+		mailPodman + "pull --quiet ghcr.io/itbm/edge:0.2.0",
+		mailPodman + "exec cf-mail sh",
+		mailPodman + "run --rm ghcr.io/itbm/mail:0.2.0",
+		mailPodman + "cp cf-mail:/var/lib/stalwart /tmp/mail",
+		"systemctl --user --machine=cf-mail@ set-property --runtime cf-mail.service MemoryMax=1",
 
 		// systemctl goes only to the user manager of a website or of a service.
 		"systemctl --user --machine=root@ start x.service",
@@ -395,11 +411,13 @@ func TestTheRootHelperRefusesValuesOutsideTheLimits(t *testing.T) {
 		"a release with no root helper": {opAgentReplace, replaceIn{Release: selfupdate.Release{Version: "9.9.9", Manifest: []byte("version=9.9.9\nasset=cf-agent-linux-amd64\nsha256=00\n")}}},
 		"a platform that is not valid":  {opPlatform, platformIn{Platform: "ptrace"}},
 
-		"SFTP keys for root":             {opSftpSet, sftpIn{User: "root", Enabled: true}},
-		"SFTP keys for an administrator": {opSftpSet, sftpIn{User: "admin_ab12", Enabled: true}},
-		"an SFTP key with an option":     {opSftpSet, sftpIn{User: "acme_x7k2", Enabled: true, Keys: []string{`command="id" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGb9ECWmMtLzH8r1Fd1bAQJ5gN1nT3eb0v0f5c0pZzYp`}}},
-		"an SFTP key with two lines":     {opSftpSet, sftpIn{User: "acme_x7k2", Enabled: true, Keys: []string{"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGb9ECWmMtLzH8r1Fd1bAQJ5gN1nT3eb0v0f5c0pZzYp\nroot:x:0:0::/:/bin/sh"}}},
-		"remove the SFTP keys of a path": {opSftpRemove, userIn{User: "../../etc/passwd"}},
+		"SFTP keys for root":              {opSftpSet, sftpIn{User: "root", Enabled: true}},
+		"SFTP keys for an administrator":  {opSftpSet, sftpIn{User: "admin_ab12", Enabled: true}},
+		"an SFTP key with an option":      {opSftpSet, sftpIn{User: "acme_x7k2", Enabled: true, Keys: []string{`command="id" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGb9ECWmMtLzH8r1Fd1bAQJ5gN1nT3eb0v0f5c0pZzYp`}}},
+		"an SFTP key with two lines":      {opSftpSet, sftpIn{User: "acme_x7k2", Enabled: true, Keys: []string{"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGb9ECWmMtLzH8r1Fd1bAQJ5gN1nT3eb0v0f5c0pZzYp\nroot:x:0:0::/:/bin/sh"}}},
+		"a mail host name with a line":    {opMailPrepare, mailIn{Hostname: "mail.example.net\nSTALWART_RECOVERY_MODE=1"}},
+		"a mail host name that is a path": {opMailPrepare, mailIn{Hostname: "../../etc/cron.d"}},
+		"remove the SFTP keys of a path":  {opSftpRemove, userIn{User: "../../etc/passwd"}},
 
 		"a database server with a path":          {opDBPrepare, prepare(func(in *serverIn) { in.Server.ID = "../../etc" })},
 		"a database server in upper case":        {opDBPrepare, prepare(func(in *serverIn) { in.Server.ID = mariaServerID })},
@@ -504,6 +522,7 @@ func TestTheRootHelperConnectsOnlyToTheAddressesOfTheList(t *testing.T) {
 		service + ":8443",         // the edge proxy
 		service + ":2200",         // the SFTP container
 		service + ":19443",        // the agent port of the panel
+		service + ":19025",        // the management API of the mail server
 		customerAddress + ":6379", // a Valkey database server
 	} {
 		if err := root.allowAddress(address); err != nil {
@@ -512,7 +531,7 @@ func TestTheRootHelperConnectsOnlyToTheAddressesOfTheList(t *testing.T) {
 	}
 	for _, address := range []string{
 		service + ":19432", // the database of the panel
-		service + ":19080", service + ":22", service + ":3306", service + ":5432", service + ":19999", service + ":30000",
+		service + ":19080", service + ":19026", service + ":2025", service + ":22", service + ":3306", service + ":5432", service + ":19999", service + ":30000",
 		service + ":08443", service + ":+8443", service + ":https", service,
 		// MariaDB and PostgreSQL: the agent uses a client in the container.
 		customerAddress + ":3306", customerAddress + ":5432", customerAddress + ":22",

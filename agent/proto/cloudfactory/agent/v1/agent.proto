@@ -36,6 +36,13 @@ service AgentService {
   rpc SetPanelCertificate(SetPanelCertificateRequest) returns (JobAccepted);
   rpc SetDatabaseServer(DatabaseServerRequest) returns (JobAccepted);
   rpc DeleteDatabaseServer(DeleteDatabaseServerRequest) returns (JobAccepted);
+  rpc SetMailServer(SetMailServerRequest) returns (JobAccepted);
+  rpc SetMailDomain(MailDomainRequest) returns (JobAccepted);
+  rpc DeleteMailDomain(MailDomainRequest) returns (JobAccepted);
+  rpc SetMailbox(SetMailboxRequest) returns (JobAccepted);
+  rpc DeleteMailbox(MailAddressRequest) returns (JobAccepted);
+  rpc SetMailAlias(SetMailAliasRequest) returns (JobAccepted);
+  rpc DeleteMailAlias(MailAddressRequest) returns (JobAccepted);
 
   // Returns the actual state of the server at once. This method does not make a job.
   rpc GetStatus(GetStatusRequest) returns (HostStatus);
@@ -115,6 +122,55 @@ message DatabaseServer {
 message DatabaseServerRequest {
   string job_id = 1;
   DatabaseServer database_server = 2;
+}
+
+// Email. A server with the role "email" has one mail server (Stalwart) in a container, for
+// all customers of the server. The panel keeps the customers apart: it sends a mail domain
+// only for the customer that controls the domain.
+
+// SetMailServer starts the mail server, opens the mail ports in the firewall, and gets a TLS
+// certificate for the host name from the edge proxy.
+message SetMailServerRequest {
+  string job_id = 1;
+  // The name of the mail server in the DNS, for example "mail.example.net".
+  string hostname = 2;
+}
+
+// SetMailDomain adds a domain to the mail server. The result of the job has "records": the
+// DNS records that the owner of the domain adds (MX, SPF, DKIM and DMARC). DeleteMailDomain
+// removes a domain with no mailboxes and no other addresses.
+message MailDomainRequest {
+  string job_id = 1;
+  string domain = 2;
+}
+
+// SetMailbox makes a mailbox, or changes its size or its password.
+message SetMailboxRequest {
+  string job_id = 1;
+  string domain = 2;
+  // The part of the address before the @ sign.
+  string local_part = 3;
+  int64 quota_bytes = 4;
+  // The bcrypt hash of the password. The agent never gets the password. Empty: the mailbox
+  // keeps its password.
+  string password_hash = 5;
+}
+
+// DeleteMailbox removes a mailbox and its messages. DeleteMailAlias removes an alias or a
+// forwarder.
+message MailAddressRequest {
+  string job_id = 1;
+  string domain = 2;
+  string local_part = 3;
+}
+
+// SetMailAlias makes an address with no mailbox. The mail server sends each message for the
+// address to all destinations: an alias has one destination, a forwarder has a list.
+message SetMailAliasRequest {
+  string job_id = 1;
+  string domain = 2;
+  string local_part = 3;
+  repeated string destinations = 4;
 }
 
 // Stops a database server and removes its data. The panel sends it only for a database

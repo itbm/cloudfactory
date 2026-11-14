@@ -218,6 +218,7 @@ func newDeps(cfg config.Config, run execx.Runner) (*actions.Deps, error) {
 		ServiceImage: func(name string) string { return cfg.Registry + "/" + name + ":" + version },
 		EdgeImage:    cfg.Registry + "/edge:" + version,
 		SftpImage:    cfg.Registry + "/sftp:" + version,
+		MailImage:    cfg.Registry + "/mail:" + version,
 		SftpPort:     cfg.SftpPort,
 	}
 	// CF-13: the admin API of the edge proxy is a Unix socket.
@@ -524,6 +525,12 @@ func work(ctx context.Context, cfg config.Config, g gate.Gate) error {
 	if err := deps.EnsureSftp(ctx); err != nil {
 		slog.Error("start the SFTP container", "err", err)
 	}
+	// The mail server, on a server that has one. The agent does not wait for it.
+	go func() {
+		if err := deps.RefreshMail(ctx); err != nil {
+			slog.Error("start the mail server", "err", err)
+		}
+	}()
 	runner := &jobs.Runner{Dir: filepath.Join(cfg.DataDir, "jobs"), Reporter: reporter,
 		Timeout: time.Duration(cfg.JobTimeoutMinutes) * time.Minute, LongTimeout: time.Duration(cfg.LongJobTimeoutMinutes) * time.Minute}
 	if job, ok := deps.ResumeReboot(); ok {
@@ -536,6 +543,8 @@ func work(ctx context.Context, cfg config.Config, g gate.Gate) error {
 		for range time.Tick(24 * time.Hour) {
 			runner.Prune(time.Now().Add(-30 * 24 * time.Hour))
 			deps.PruneImages()
+			// The edge proxy renews the certificate of the mail host name.
+			deps.RenewMailCertificate(ctx)
 		}
 	}()
 
