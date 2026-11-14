@@ -10,6 +10,7 @@ use App\Models\Setting;
 use App\Models\Website;
 use App\Services\Audit;
 use App\Services\JobDispatcher;
+use App\Validation\Input;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Crypt;
@@ -150,7 +151,7 @@ class BackupController extends Controller
             $databaseServer = $database?->database_server_id;
         }
         if ($data['scope'] === 'file') {
-            $request->validate(['item' => ['regex:#^/[^\0]*$#', 'not_regex:#(^|/)\.\.(/|$)#']]);
+            $request->validate(['item' => [Input::rule('restorePath')]]);
         }
         self::requireTarget();
         $what = $data['scope'] === 'website' ? 'full website' : $data['item'];

@@ -124,6 +124,36 @@ computer.
 podman build -t frankenphp-php8.4 --build-arg PHP_VERSION=8.4 images/frankenphp
 ```
 
+## Input rules
+
+The panel API and the agent check the same values, for example a domain name or the name of a
+PHP extension. The rules for these values are in one file:
+[`schema/input-rules.json`](../schema/input-rules.json). Do not write such a rule in the PHP code
+or in the Go code. Refer to [`schema/README.md`](../schema/README.md) for the format of the file.
+
+To change a rule or to add a rule:
+
+1. Change `schema/input-rules.json`.
+2. Add valid and invalid examples to
+   [`schema/input-vectors.json`](../schema/input-vectors.json). Each rule must have the two
+   types of example.
+3. Write the generated files again:
+
+   ```sh
+   cd agent
+   go run ./cmd/cf-rules
+   ```
+
+4. Run the tests of the agent and of the panel API. The two run all the examples.
+5. Commit the rules file, the examples and the two generated files together.
+
+The generator writes these files. Do not change them by hand:
+
+- `agent/internal/validate/rules_gen.go`: one Go function for each rule, for example
+  `validate.Domain`.
+- `api/app/Validation/InputRules.php`: one pattern and one message for each rule. Use
+  `Input::rule('domain')` in the rules of a request, or `Input::valid('domain', $value)`.
+
 ## Continuous integration
 
 The workflow [`ci.yml`](../.github/workflows/ci.yml) runs for each pull request. It has these
@@ -132,7 +162,7 @@ jobs:
 - **web**: type check, tests and build.
 - **api**: tests and Pint on PHP 8.4. The tests run with SQLite and with
   PostgreSQL.
-- **agent**: buf generate check, gofmt, go vet, tests with the race detector, and builds for
+- **agent**: buf generate check, input rules check, gofmt, go vet, tests with the race detector, and builds for
   x86-64 and ARM64.
 - **cli**: tests and build.
 - **install**: ShellCheck and the script tests with `sh` and `dash`.
@@ -143,6 +173,5 @@ Trivy when a pull request changes `images/`.
 Dependabot ([`dependabot.yml`](../.github/dependabot.yml)) proposes updates each week for the
 GitHub actions, the Composer, npm and Go packages, and the base images in `images/`.
 
-The agent and the panel API use one list of examples for the rules of domain names and image
-names: [`testdata/names.json`](../testdata/names.json). When you change a rule, change the
-list. The tests of the two components then show a difference between them.
+The agent job also runs the generator of the input rules and makes sure that the generated
+files are current. Refer to "Input rules".
