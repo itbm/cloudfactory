@@ -143,7 +143,6 @@ type (
 		Server dbServer
 		// Customer, Address and Record are the customer of a database server, the address of
 		// that customer, and the port and the limits of the database server (db.prepare).
-		// They are empty for a shared container of an earlier release.
 		Customer, Address string
 		Record            DatabaseServer
 		// Measure asks for the size of a directory with no disk image (db.disk).
@@ -215,7 +214,7 @@ type accessElement struct {
 // database server, and it cannot give the text of one of their units: the user of a database
 // server owns the data of a customer, and root does file work in the directory of the
 // database servers. The root helper makes their units from its own settings.
-var serviceUsers = []string{host.EdgeUser, DBUser}
+var serviceUsers = []string{host.EdgeUser}
 
 // websiteUser checks that name is the Unix user of a website: the name has the form of a
 // website user, and a user that exists has a UID in the range of the website users. The
@@ -281,9 +280,9 @@ func (d *Deps) existingWebsiteUser(name string) error {
 	return err
 }
 
-// checkServer checks a database container from the worker.
+// checkServer checks a database server from the worker.
 func checkServer(s dbServer) error {
-	if _, err := dbContainer(s.Engine); err != nil {
+	if err := checkEngine(s.Engine); err != nil {
 		return err
 	}
 	key, err := serverKey(s.ID)
@@ -296,27 +295,18 @@ func checkServer(s dbServer) error {
 	return nil
 }
 
-// checkPrepare checks the values of a database container from the worker, before the root
+// checkPrepare checks the values of a database server from the worker, before the root
 // helper makes its directories and its unit.
 func checkPrepare(in serverIn) error {
 	s, r := in.Server, in.Record
 	if err := checkServer(s); err != nil {
 		return err
 	}
-	if s.ID == "" {
-		if s.Engine == "valkey" {
-			return errNoSharedValkey
-		}
-		if in.Customer != "" || in.Address != "" || r != (DatabaseServer{}) {
-			return errors.New("a shared database container has no customer and no limits")
-		}
-		return nil
-	}
 	key, err := instanceKey(in.Customer)
 	if err != nil {
 		return err
 	}
-	if key == "" || key != in.Customer {
+	if key != in.Customer {
 		return errors.New("the customer of the database server is not valid")
 	}
 	if _, err := quadlet.DatabaseNumber(in.Address); err != nil {
@@ -334,17 +324,13 @@ func checkPrepare(in serverIn) error {
 	return nil
 }
 
-// containerOf reports whether name is the name of a database container of a Unix user: for
-// cf-db, the shared container of an engine, and for the user of a database server, the
-// container of that database server. Thus a command as the user of a database server
-// cannot name the container of a different database server.
+// containerOf reports whether name is the name of the container of the database server of a
+// Unix user. Thus a command as the user of a database server cannot name the container of a
+// different database server.
 func containerOf(unixUser, name string) bool {
-	id := ""
-	if unixUser != DBUser {
-		var ok bool
-		if id, ok = strings.CutPrefix(unixUser, host.DatabaseUserPrefix); !ok || host.CheckDatabaseUser(unixUser) != nil {
-			return false
-		}
+	id, ok := strings.CutPrefix(unixUser, host.DatabaseUserPrefix)
+	if !ok || host.CheckDatabaseUser(unixUser) != nil {
+		return false
 	}
 	for _, engine := range Engines {
 		if name == quadlet.DatabaseContainer(engine, id) {
@@ -354,7 +340,7 @@ func containerOf(unixUser, name string) bool {
 	return false
 }
 
-// unitOf reports whether name is the unit of a database container of a Unix user (containerOf).
+// unitOf reports whether name is the unit of the database server of a Unix user (containerOf).
 func unitOf(unixUser, name string) bool {
 	container, ok := strings.CutSuffix(name, ".container")
 	return ok && containerOf(unixUser, container)
@@ -433,15 +419,13 @@ func (d *Deps) RootOps() map[string]gate.Handler {
 			return h.WriteUnit(in.User, in.Name, in.Content)
 		}),
 		opUnitRemove: none(func(_ context.Context, in unitIn) error {
-			if in.User == DBUser || strings.HasPrefix(in.User, host.DatabaseUserPrefix) {
-				// The worker stops a database container and removes its unit.
-				if in.User != DBUser {
-					if err := d.databaseUser(in.User); err != nil {
-						return err
-					}
+			if strings.HasPrefix(in.User, host.DatabaseUserPrefix) {
+				// The worker stops a database server and removes its unit.
+				if err := d.databaseUser(in.User); err != nil {
+					return err
 				}
 				if !unitOf(in.User, in.Name) {
-					return fmt.Errorf("%q is not the unit of a database container of %s", in.Name, in.User)
+					return fmt.Errorf("%q is not the unit of the database server of %s", in.Name, in.User)
 				}
 				return h.RemoveUnit(in.User, in.Name)
 			}
@@ -539,18 +523,12 @@ func (d *Deps) RootOps() map[string]gate.Handler {
 			if err := checkServer(in.Server); err != nil {
 				return err
 			}
-			if in.Server.ID == "" {
-				return errors.New("the agent does not remove the data of a shared database container")
-			}
 			return d.removeServerData(ctx, in.Server)
 		}),
 		opDBRemoveOld: none(func(ctx context.Context, _ gate.None) error { d.removeOldServerData(ctx); return nil }),
 		opDBDisk: gate.Op(func(ctx context.Context, in serverIn) (diskOut, error) {
 			if err := checkServer(in.Server); err != nil {
 				return diskOut{}, err
-			}
-			if in.Server.ID == "" {
-				return diskOut{}, errors.New("a shared database container has no disk")
 			}
 			return d.diskState(ctx, in.Server, in.Measure), nil
 		}),
@@ -563,7 +541,7 @@ func (d *Deps) RootOps() map[string]gate.Handler {
 			if err := checkServer(in.Server); err != nil {
 				return "", err
 			}
-			if in.Server.ID == "" || in.Server.Engine != "valkey" {
+			if in.Server.Engine != "valkey" {
 				return "", errors.New("the database server is not a Valkey database server")
 			}
 			return d.valkeySecret(ctx, in.Server)

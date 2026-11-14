@@ -209,8 +209,10 @@ class CompletenessTest extends TestCase
     public function test_a_staging_copy_gets_its_own_databases_and_user(): void
     {
         $website = $this->website($this->customer(), $this->server(), $this->image());
-        $website->databases()->create(['engine' => 'mariadb', 'name' => $website->unix_user.'_shop']);
-        $website->databases()->create(['engine' => 'postgresql', 'name' => $website->unix_user.'_reports']);
+        $maria = $this->databaseServerOf($website);
+        $postgres = $this->databaseServerOf($website, 'postgresql');
+        $website->databases()->create(['engine' => 'mariadb', 'name' => $website->unix_user.'_shop', 'database_server_id' => $maria->id]);
+        $website->databases()->create(['engine' => 'postgresql', 'name' => $website->unix_user.'_reports', 'database_server_id' => $postgres->id]);
         $this->actingWith($this->user());
 
         $response = $this->postJson("/api/v1/websites/{$website->id}/staging")->assertAccepted();
@@ -221,7 +223,9 @@ class CompletenessTest extends TestCase
         $this->assertSame(24, strlen($credentials['postgresql']['password']));
 
         $job = AgentJob::findOrFail($response->json('job.id'));
-        $this->assertContains(['engine' => 'mariadb', 'from' => $website->unix_user.'_shop', 'to' => $copy['unixUser'].'_shop'], $job->payload['copyDatabases']);
+        // Each copy is in the database server of its source database.
+        $this->assertContains(['engine' => 'mariadb', 'from' => $website->unix_user.'_shop', 'to' => $copy['unixUser'].'_shop', 'fromServer' => $maria->id, 'toServer' => $maria->id], $job->payload['copyDatabases']);
+        $this->assertSame($postgres->id, Database::where('website_id', $copy['id'])->where('engine', 'postgresql')->sole()->database_server_id);
         $this->assertSame(2, Database::where('website_id', $copy['id'])->count());
         $job = $this->finish($job->id);
         $this->assertStringNotContainsString($credentials['mariadb']['password'], json_encode($job->payload));
@@ -266,7 +270,7 @@ class CompletenessTest extends TestCase
     {
         $server = $this->server(['agent_token_hash' => hash('sha256', 'cfa_secret'), 'certificate_fingerprint' => self::LOCAL_FINGERPRINT, 'local' => true]);
         $website = $this->website($this->customer(), $server, $this->image());
-        $db = $website->databases()->create(['engine' => 'mariadb', 'name' => $website->unix_user.'_shop']);
+        $db = $website->databases()->create(['engine' => 'mariadb', 'name' => $website->unix_user.'_shop', 'database_server_id' => $this->databaseServerOf($website)->id]);
         $foreign = $this->website($this->customer(), $this->server(), $this->image(), 'other.example');
 
         $this->asLocalAgent('cfa_secret')->postJson('/api/agent/v1/report', [

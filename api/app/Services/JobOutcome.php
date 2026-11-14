@@ -9,7 +9,6 @@ use App\Models\AgentJob;
 use App\Models\BackupRemoval;
 use App\Models\Database;
 use App\Models\DatabaseServer;
-use App\Models\DatabaseUser;
 use App\Models\Domain;
 use App\Models\Rollout;
 use App\Models\Snapshot;
@@ -163,7 +162,6 @@ class JobOutcome
             // Batch 1, finding 4: the panel removes the row when the item is gone from the server.
             AgentAction::CreateDatabase => $website && $this->databaseMade($website, $p, $result),
             AgentAction::DeleteDatabase => $website && $this->databaseRemoved($website, $p),
-            AgentAction::MoveDatabases => $website && $this->databasesMoved($website, $p),
             // The panel removes the record when the database server is gone from the server.
             AgentAction::DeleteDatabaseServer => DatabaseServer::whereKey($job->database_server_id)->where('status', DatabaseServer::REMOVING)->delete(),
             AgentAction::DeleteDatabaseUser => $website?->databaseUsers()->where(['engine' => $p['engine'] ?? '', 'name' => $p['name'] ?? ''])->delete(),
@@ -215,7 +213,7 @@ class JobOutcome
 
     /**
      * The database servers in the payload of a job that makes one when the agent does not have
-     * it: SetDatabaseServer, CreateDatabase, SetDatabaseUser, MoveDatabases and a staging copy.
+     * it: SetDatabaseServer, CreateDatabase, SetDatabaseUser and a staging copy.
      *
      * After the job, the agent has each database server and it operates. When the job failed,
      * a database server that the panel made for the job is possibly not on the server: its
@@ -255,27 +253,6 @@ class JobOutcome
             'limits' => $previous['limits'],
             'plan_id' => is_string($previous['planId'] ?? null) ? $previous['planId'] : null,
         ], fn ($v) => $v !== null));
-    }
-
-    /**
-     * MoveDatabases: the website uses the database servers of its customer now, and each of
-     * its databases and database users is in the database server of the payload.
-     *
-     * @param  array<string, mixed>  $p
-     */
-    private function databasesMoved(Website $website, array $p): bool
-    {
-        $website->update(['database_instance' => $website->customer_id]);
-        $servers = DatabaseServer::where(['customer_id' => $website->customer_id, 'server_id' => $website->server_id])->pluck('id')->all();
-        foreach ([[Database::class, $p['databases'] ?? []], [DatabaseUser::class, $p['users'] ?? []]] as [$model, $items]) {
-            foreach (is_array($items) ? $items : [] as $item) {
-                if (is_array($item) && in_array($item['databaseServer'] ?? null, $servers, true)) {
-                    $model::where(['website_id' => $website->id, 'engine' => $item['engine'] ?? '', 'name' => $item['name'] ?? ''])->update(['database_server_id' => $item['databaseServer']]);
-                }
-            }
-        }
-
-        return true;
     }
 
     /** Valkey: the agent gives the database number, which the application needs to connect. */

@@ -56,7 +56,7 @@ const panelBody = `{"jobId":"01JBQ3Z5K8N6T4W2X9Y7R5P3M2","website":{"id":"01JBQ3
 "image":"ghcr.io/cloudfactory/frankenphp-php8.4:8.4.0-1","imageDigest":null,"runtime":"frankenphp","phpVersion":"8.4",
 "workerMode":false,"extensions":["opcache"],"phpIni":{"memory_limit":"256M"},
 "limits":{"vcpus":2,"memoryBytes":2147483648,"diskBytes":21474836480,"diskIoBytesPerSecond":52428800,"processes":100},
-"domains":[{"name":"acme.example","kind":"primary"}]},"previousImageId":null,"futureField":1}`
+"domains":[{"name":"acme.example","kind":"primary"}],"databaseInstance":"01JBQ3Z5K8N6T4W2X9Y7R5P3C1"},"previousImageId":null,"futureField":1}`
 
 func TestOnlyThePanelCertificateIsAccepted(t *testing.T) {
 	dir := t.TempDir()

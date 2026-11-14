@@ -463,9 +463,10 @@ cf-agent panel unlock you@example.com
 If you updated the agent on the panel server in a different way, run `cf-agent panel update`
 as root there. This command changes the panel to the version of the agent.
 
-After the update from release 0.1.9 or an earlier release, move the databases of each server
-to the database servers of each customer. Refer to
-[Move the databases of a server from an earlier release](#move-the-databases-of-a-server-from-an-earlier-release).
+Release 0.1.9 and the earlier releases had one shared MariaDB container and one shared
+PostgreSQL container on each server. This release does not have them, and the update removes
+their databases from the panel. Before you update such a server, refer to
+[A server from release 0.1.9](#a-server-from-release-019).
 
 The update also changes the official runtime images to the tag of the new release. An image
 that no website uses changes immediately. An image that websites use shows the new tag on the
@@ -660,59 +661,45 @@ the image, correct the cause and select **Try again**. With the CLI:
 - **Disk quota of a website.** The disk quota of a website applies to the files of the
   website only, not to its databases.
 
-#### Move the databases of a server from an earlier release
+#### A server from release 0.1.9
 
 In release 0.1.9 and earlier, all websites of a server used one shared MariaDB container and
-one shared PostgreSQL container. After you update the agent of such a server, its websites
-continue to use the shared containers. The page of the server shows the number of these
-websites. A website with the shared containers cannot have a Valkey database.
+one shared PostgreSQL container. The two containers ran as the Unix user `cf-db`. This release
+does not have the shared containers, and it has no procedure that moves their databases to
+database servers.
 
-To move the databases to database servers of each customer:
+- The update of the panel removes the records of the databases and of the database users of
+  the shared containers. After the update, the panel shows no databases for a website that
+  used them.
+- The update does not change the data on the server. The shared containers continue to run
+  until you remove them. Their data is in `/var/lib/cf-db/mariadb` and
+  `/var/lib/cf-db/postgresql`.
+- The agent of this release does not operate the shared containers. A website gets only the
+  host names of the database servers of its customer.
 
-1. Make sure that the last backup of each website is complete (refer to [Backups](#backups)).
-2. In the panel, go to **Servers** and open the server.
-3. Select **Move the databases**. With the CLI: `cf servers move-databases SERVER`.
+If you need the data of a shared container, export each database before the update, for
+example with `mariadb-dump` or `pg_dump`. After the update, make a database in a database
+server of the customer and import the data.
 
-The panel starts one job for each website. The databases of the website go to the database
-server of its customer that has the usual port of the engine (3306 or 5432), because the
-applications connect to that port. If the customer does not have that database server, the
-panel makes it with the plan of the customer, also when the plan permits no more database
-servers or databases. The job does these steps:
+To remove the shared containers after the update, run these commands as root on the server:
 
-1. Start the database servers.
-2. Stop the website.
-3. Copy the databases of the website to the database servers.
-4. Make the database users there, with the same passwords.
-5. Start the website.
-6. Remove the old copies from the shared containers.
+```sh
+loginctl disable-linger cf-db
+systemctl stop "user@$(id -u cf-db).service"
+userdel cf-db
+rm -rf /var/lib/cf-db/mariadb /var/lib/cf-db/postgresql
+rm -rf /var/lib/cf-db/mariadb.env /var/lib/cf-db/postgresql.env /var/lib/cf-db/.config /var/lib/cf-db/.local
+rm -f /var/lib/cf-db/.bash_logout /var/lib/cf-db/.bashrc /var/lib/cf-db/.profile
+chown root:root /var/lib/cf-db
+chmod 0711 /var/lib/cf-db
+```
 
-The website does not operate from step 2 to step 5. The time depends on the size of the
-databases. The applications need no change: the host names, the ports, the user names and
-the passwords stay the same. An application must connect to the host name `mariadb.internal`
-or `postgres.internal`. If an application connects to the address `169.254.77.1`, change it
-to the host name before the move.
+Do not use `userdel -r`. The home directory of `cf-db` is `/var/lib/cf-db`, and this directory
+also has the files of the database servers of the customers.
 
-Before the move, make sure that the disk limit of the plan of each customer is sufficient
-for the databases of the customer. If a database server has no space for a copy, the job
-fails. Then give the database server more disk space and start the move again.
-
-In step 5, the agent makes sure that a website that answered before the move answers with
-the database servers too. A website that did not answer before the move, for example a
-website that gives the status 503 during maintenance, moves without this check.
-
-If a job fails before the end of step 5, the agent removes the new copies, and the website
-starts again with the shared containers. Find the cause in the job, then select **Move the
-databases** again. When the last website of the server has moved, the agent stops the shared
-containers. Their data directories, `/var/lib/cf-db/mariadb` and
-`/var/lib/cf-db/postgresql`, stay on the disk. Remove them when you are sure that all
-websites operate correctly.
-
-A new website on the server uses the database servers of its customer immediately. A staging
-copy does too, also when its source website uses the shared containers.
-
-If you changed the firewall rules in `/etc/nftables.d-cloudfactory.nft`, the first job stops
-and tells you to run the installation script again on the server. The script writes the
-rules of this release.
+Then run the installation script of this release on the server, with all your options. The
+script writes the firewall rules of this release, which have no rule for the ports of the
+shared containers.
 
 ### Valkey
 
@@ -724,10 +711,7 @@ A Valkey database is in a Valkey database server of the customer (refer to
 on a server, the panel makes a Valkey database server with the plan of the customer. The
 agent of the server must be from a release that has Valkey. If it is not, the panel does not
 let you select Valkey. Update the agent (refer to
-[Update to a new release](#update-to-a-new-release)). A website that uses the shared database
-containers of an earlier release cannot have a Valkey database until its databases move
-(refer to
-[Move the databases of a server from an earlier release](#move-the-databases-of-a-server-from-an-earlier-release)).
+[Update to a new release](#update-to-a-new-release)).
 
 A Valkey database has three parts:
 
@@ -1012,9 +996,9 @@ rules. Cloudfactory does not make such rules. Give only the addresses that need 
 user cannot have the access "anywhere".
 
 The firewall has an output rule for the private service address `169.254.77.1`. Only root and
-the edge proxy (`cf-edge`) can open a new connection to a port there, except the ports of
-the shared database containers of an earlier release. So a website cannot connect to a
-different website on the server.
+the edge proxy (`cf-edge`) can open a new connection to a port there. So a website cannot
+connect to a different website on the server. The port of the panel database is different:
+only root and the containers of the panel (`cf-panel`) can connect to it.
 
 The firewall also has rules for the database network:
 
@@ -1035,7 +1019,6 @@ connection of these users, thus to each connection that a website opens:
 | ----------- | ------ |
 | The database servers of the customer of the website | Permitted |
 | The database servers of other customers | Refused |
-| The shared MariaDB and PostgreSQL containers of an earlier release | Permitted |
 | DNS (port 53) | Permitted |
 | The addresses of this server, on the HTTP and HTTPS ports | Permitted |
 | All other services of this server, for example SSH and the agent port | Refused |
@@ -1067,23 +1050,22 @@ Ubuntu 26.04. On both, the installation completed, the administrator signed in, 
 started and answered through the edge proxy on the private service address `169.254.77.1`.
 The virtual machines had no hardware virtualisation, so gVisor used the `systrap` platform.
 
-The database servers were checked in the virtual machine with Ubuntu 26.04, with release
-0.1.9 and the agent of this release. The check sent each request directly to the agent, not
-through the panel:
+The database servers were checked two times. Each check sent its requests directly to the
+agent, not through the panel.
+
+The first check was in the virtual machine with Ubuntu 26.04, with release 0.1.9 and an
+earlier version of the agent of this release. In that version, all database servers ran as one
+Unix user, and each database server had a disk image:
 
 - The agent added the database network, the firewall rules and the stop time of the user
   services to the server of release 0.1.9.
 - A MariaDB database server with 1 vCPU, 512 MB of memory and 1 GB of disk space started in
   gVisor on port 3307. Its service had the CPU limit and the memory limit, with no swap. Its
   disk image file was mounted as a loop device, and its file system had the size of the limit.
-- The move of a website with a MariaDB database and a PostgreSQL database. The agent made
-  the two database servers with the usual ports. After the move, the website container
-  connected to MariaDB and to PostgreSQL with the same host names, user names and passwords,
-  and the data was the same.
 - A new database in the second MariaDB database server of the customer. The website
   container connected to it on port 3307.
-- A website of a different customer, a website with the shared containers, and other Unix
-  users of the server (not `root`) could not connect to the database servers of a customer.
+- A website of a different customer and other Unix users of the server (not `root`) could not
+  connect to the database servers of a customer.
 - A PostgreSQL user of a website could not connect to the database `postgres`.
 - A larger disk limit made the file system larger, with no restart of the database server.
 - A disk limit that was smaller than the data failed with a clear message. The database
@@ -1092,37 +1074,59 @@ through the panel:
   server started again, and the data stayed.
 - A database server that filled its disk got the error "No space left on device". The disk
   of the server did not fill, and the other database servers answered.
-- After a restart of the server, the disk images were mounted before the user manager of
-  `cf-db` started. The database network and the firewall rules were there, the database
-  servers started, and the website connected to its databases with the same data.
+- After a restart of the server, the disk images were mounted before the database servers
+  started. The database network and the firewall rules were there, the database servers
+  started, and the website connected to its databases with the same data.
 - A second restart of the server, with the stop time of this release. MariaDB and PostgreSQL
   of the customer wrote their data and stopped with no error, and they started with no
-  repair of the data. In the slow virtual machine, the containers of `cf-db` needed 88
-  seconds to stop. Before, with the 5 seconds of Ubuntu, systemd stopped them with `SIGKILL`,
-  and each database server repaired its data at the next start.
+  repair of the data. In the slow virtual machine, the database containers needed 88 seconds
+  to stop. Before, with the 5 seconds of Ubuntu, systemd stopped them with `SIGKILL`, and
+  each database server repaired its data at the next start.
 - The removal of a database server removed its container, its mount, its disk image file and
   its firewall element. The other database servers continued to operate.
 
-These items were checked with an earlier version of the agent of this release, before each
-database server had its own limits. They were not checked again:
+The second check was in a virtual machine with Debian 13 and user quotas on ext4, with
+release 0.1.9 and the agent of this release:
 
-- A move that failed, and a website that did not answer after the move. The website started
-  again with the shared containers.
-- The shared containers stopped when the last website of the server had moved.
+- A MariaDB, a PostgreSQL and a Valkey database server of one customer started in gVisor,
+  each with its own Unix user. On the server, the data files of each database server had
+  that user as their owner.
+- Each database server had a user quota with the size of its disk limit. A disk limit that
+  was smaller than the data failed with a clear message, and the quota stayed.
+- The container of a website of the customer connected to the three database servers. The
+  Valkey user of the website could not select a different database number.
+- A Unix user of a database server could not open a connection, and the database servers
+  answered their clients with the firewall rule loaded.
+- The removal of a database server removed its Unix user, its directories and its user
+  quota. The next database server got the same UID with its own quota.
+- The agent started on the server while the shared containers of release 0.1.9 operated, and
+  the database servers continued to operate. The agent refused a database with no database
+  server, and it made and removed a database in a database server.
+- The commands that remove the shared containers and the user `cf-db` (refer to
+  [A server from release 0.1.9](#a-server-from-release-019)) kept the database servers and
+  their data.
 
-The virtual machine is slow, because it has no hardware virtualisation. A new MariaDB
-database server needed 8 minutes to start there, which is more than the 3 minutes that the
-agent waits. Thus the check used an agent with a longer time. The start time of a new
+In a different check, a database process with its own user ID and a user quota wrote data
+until the quota was full. MariaDB stopped. PostgreSQL lost the connection and refused new
+connections. Valkey refused the write. With the quota removed, PostgreSQL and Valkey
+accepted data again.
+
+The virtual machines are slow, because they have no hardware virtualisation. A new MariaDB
+database server needed from 5 to 8 minutes to start there, which is more than the 3 minutes
+that the agent waits. The first check used an agent with a longer time. In the second check,
+the first request failed and the second request was successful. The start time of a new
 database server on a server with hardware virtualisation was not measured.
 
 These items were not checked on a real server. After you install the release, check them, and
 report a problem in the issues of the repository:
 
-- Valkey in gVisor, and a website container that connects to it. The access rules of the
-  Valkey users are checked with a real Valkey server when the Valkey image is built, but not
-  in gVisor.
-- A database server that you make in the panel, and the move with **Move the databases**. The
-  panel of this release was checked with its tests, not with a real agent.
+- The Valkey service image in gVisor. The second check used the Valkey base image, because
+  release 0.1.9 has no Valkey service image. The first release that has Valkey publishes the
+  image. The access rules of the Valkey users are checked with a real Valkey server when the
+  Valkey image is built.
+- A database server that you make in the panel. The panel of this release was checked with
+  its tests, not with a real agent.
+- A restart of the server with database servers that have their own Unix users.
 - Files that you upload with SFTP have the correct owner in the website container
   (`--userns=keep-id` in gVisor). The SFTP image was checked with Docker and the same
   capabilities, not in gVisor.

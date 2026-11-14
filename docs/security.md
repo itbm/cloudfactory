@@ -102,9 +102,8 @@ The product specification, section 6.4, gives the requirements.
 - The agent refuses to make a database that exists. It does not give access to a database of a
   different website.
 - A MariaDB user with the access "website" connects only from `169.254.80.1`, the address
-  that a database server of a customer sees for a website container. In the shared
-  container of an earlier release, the host is `databaseClientHost` (default `169.254.77.1`).
-  A user with access from all hosts must use TLS.
+  that a database server of a customer sees for a website container. A user with access from
+  all hosts must use TLS.
 - A backup keeps the SHA-256 sum of each database dump. Before a restore, the agent compares the
   dump with this sum. If they are different, the agent stops. The restore uses a temporary
   database user with the permissions of the website only.
@@ -125,12 +124,10 @@ The product specification, section 6.4, gives the requirements.
   website that fills the memory makes Valkey remove keys of the other websites that use the
   same database server. It cannot remove keys of a different database server or of a
   different customer. Thus Valkey is for data that an application can make again.
-- A website from release 0.1.9 or an earlier release uses the shared MariaDB and PostgreSQL
-  containers of its server until an administrator moves the databases of the server. All
-  websites of a server can connect to the shared containers, and only the database users and
-  their passwords keep the websites apart there. Move the databases after the update (refer
-  to
-  [installation.md](installation.md#move-the-databases-of-a-server-from-an-earlier-release)).
+- Each database is in a database server of the customer of its website. Cloudfactory has no
+  database container that the websites of different customers share. The agent refuses a
+  request for a database or a database user that has no database server, and a database
+  server of a different customer.
 
 ## Domains
 
@@ -205,7 +202,7 @@ helper does only the work of three lists:
 
 | List | What the worker can ask for |
 | --- | --- |
-| Commands | A program as the Unix user of a website (`runuser -u <user>`). A command of a fixed form as the Unix user of a database server, as `cf-db` or as `cf-edge`, for example a database client in the container of that database server. Some root commands with fixed arguments: the commands of the status report, the updates of the operating system, the reboot, and restic with paths that the root helper examines. |
+| Commands | A program as the Unix user of a website (`runuser -u <user>`). A command of a fixed form as the Unix user of a database server or as `cf-edge`, for example a database client in the container of that database server. Some root commands with fixed arguments: the commands of the status report, the updates of the operating system, the reboot, and restic with paths that the root helper examines. |
 | Operations | Root work that has a name, for example `user.ensure`, `unit.write`, `user.quota` and `db.prepare`. Each operation has typed values, and the root helper examines each value. |
 | Connections | The admin socket of the edge proxy, and some ports on the private service address and on the database network. |
 
@@ -218,8 +215,8 @@ These rules apply to the three lists:
   website user, the files of a restore and the records of the jobs. There, the root helper
   uses `openat2` with the flags `RESOLVE_BENEATH` and `RESOLVE_NO_SYMLINKS`. Thus a symbolic
   link cannot send root to a different file.
-- The worker cannot give the text of a unit of a database server, of `cf-db` or of
-  `cf-edge`, and it cannot run a program of its choice as these users. The root helper makes
+- The worker cannot give the text of a unit of a database server or of `cf-edge`, and it
+  cannot run a program of its choice as these users. The root helper makes
   these units from its own settings.
 - The root helper makes the Unix user of a database server (`db-<id>`) from the ID of the
   database server. It uses such a user only when the UID of the user is in the range from
@@ -254,7 +251,7 @@ The worker can read these files of the agent:
 A person who controls the worker cannot do these things:
 
 - Run a program of their choice as root, as the Unix user of a database server, or as
-  `cf-db`, `cf-edge` or `cf-panel`.
+  `cf-edge` or `cf-panel`.
 - Read or change a file of root, for example `/etc/shadow`, an SSH key or a unit of the
   system.
 - On the panel server: read the files of the panel, for example `APP_KEY` and the private
@@ -557,8 +554,7 @@ The table also limits the outgoing connections:
   from it to the internet, to a private network or to a service of the server.
 - The chain `websites` gets each new connection of a user with a UID from 20000 to 59999,
   thus each connection that a website opens. It permits the database ports on the address of
-  the customer of the website, the shared databases of an earlier release, DNS, and the
-  HTTP and HTTPS ports of the server. It refuses all other addresses of the server, the
+  the customer of the website, DNS, and the HTTP and HTTPS ports of the server. It refuses all other addresses of the server, the
   private networks (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `100.64.0.0/10`), the
   link-local addresses (`169.254.0.0/16`, `fe80::/10`), the unique local addresses
   (`fc00::/7`), multicast, and port 25 of other servers.
@@ -603,14 +599,13 @@ These items stay open in release 0.1:
   then sends requests to that address.
 - **Join token.** The person who has a join token gives the agent address that the panel
   calls. Give a join token only to a person whom you trust with a server.
-- **Unix user of the shared database containers.** The shared database containers of a
-  server from release 0.1.9 or an earlier release run as the Unix user `cf-db`. A person who
-  breaks out of the gVisor sandbox of one shared container has the rights of `cf-db`, and can
-  then read the files of the other shared container. The root helper makes the data
-  directories of the shared containers in the home directory of `cf-db` with paths, and
-  does not use `openat2` there. The database servers of the customers do not have these
-  limits: each database server has its own Unix user, and root owns the directories that
-  lead to its data.
+- **Shared database containers of release 0.1.9.** A server from release 0.1.9 or an earlier
+  release has one shared MariaDB container and one shared PostgreSQL container, which run as
+  the Unix user `cf-db`. This release does not operate them, and the update does not remove
+  them. Until an administrator removes them, the containers run with their data, and the
+  firewall of the earlier release lets each website of the server connect to them. Remove
+  them after the update, and run the installer again (refer to
+  [installation.md](installation.md#a-server-from-release-019)).
 - **Firewall rule of the database servers on a server from an earlier release.** The
   installer writes the rule that refuses the connections of the Unix users of the database
   servers. A server that you installed with an earlier release gets the rule when you run
@@ -628,6 +623,4 @@ These items stay open in release 0.1:
 - **Sum of the disk limits.** A user quota and a disk image use only the disk space that
   the database server uses, and the sum of the disk limits can be more than the disk of the
   server. Monitor the free disk space of the server.
-- **Shared database containers.** The websites of a server from release 0.1.9 or an earlier
-  release use shared database containers until an administrator moves their databases.
 - **Base images.** The Containerfiles name the base images by tag, not by digest.

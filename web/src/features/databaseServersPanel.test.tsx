@@ -184,10 +184,9 @@ describe("the database server of a new database", () => {
     expect([...select.options].map((o) => [o.textContent, o.disabled])).toEqual([["Automatic: the first database server with space", false], ["valkey-1 · port 6379 · 2 of 2 databases", true]]);
   });
 
-  it("has no database server for a website with the shared database containers of an earlier release", async () => {
+  it("offers a database server for each new database", async () => {
     await databases();
-    shop().sharedDatabases = true;
     fireEvent.click(screen.getByRole("button", { name: "New database" }));
-    expect(within(screen.getByRole("dialog")).queryByLabelText("Database server")).toBeNull();
+    expect(within(screen.getByRole("dialog")).getByLabelText("Database server")).toBeTruthy();
   });
 });

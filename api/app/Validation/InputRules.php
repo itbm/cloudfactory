@@ -117,7 +117,7 @@ final class InputRules
         'version' => 'Enter a version, for example 0.1.0.',
     ];
 
-    /** Names that the shared database servers use (CF-01). */
+    /** Names that the database servers use (CF-01). */
     public const RESERVED_DATABASE_NAMES = ['mysql', 'sys', 'information_schema', 'performance_schema', 'postgres', 'template0', 'template1', 'root', 'mariadb.sys', 'healthcheck'];
 
     /** A database name does not start with one of these (CF-01). */

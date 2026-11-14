@@ -139,11 +139,6 @@ export interface Website {
   lastChange: LastChange;
   /** A staging copy points to its source website (FR-205). */
   stagingOf?: string;
-  /**
-   * True when the website uses the shared database containers of an earlier release. The other
-   * websites use the database servers of their customer.
-   */
-  sharedDatabases?: boolean;
   managedByTerraform: boolean;
   /** The image tag that the website uses. When it is not set, the website uses the running tag of its image. */
   imageTag?: string;
@@ -315,8 +310,6 @@ export interface Server {
   databaseEngines?: DatabaseEngine[];
   /** True when the agent of the server can operate the database servers of customers. */
   databaseInstances?: boolean;
-  /** The number of websites that use the shared database containers of an earlier release. */
-  sharedDatabaseWebsites?: number;
   services: ServerService[];
   /** The port of the SFTP container of the websites (spec section 10). 22 for an agent of release 0.1. */
   sftpPort: number;
@@ -370,7 +363,7 @@ export interface Database {
   websiteId: string;
   sizeBytes: number;
   serverId: string;
-  /** Not set for a database in the shared database containers of an earlier release. */
+  /** The database server of the customer that has the database. */
   databaseServerId?: string;
   /** The host name and the port that the app of the website connects to. */
   host?: string;

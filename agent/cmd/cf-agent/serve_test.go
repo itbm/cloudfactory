@@ -114,7 +114,7 @@ func TestRootDoesNotFollowTheLinksOfTheWorker(t *testing.T) {
 }
 
 // The root helper closes the directory of its socket for all users except the worker. On a
-// test server, the socket was in /run/cloudfactory: the user cf-db could then not read its
+// test server, the socket was in /run/cloudfactory: a database user could then not read its
 // secret files below that directory, and the restore of a database failed.
 func TestTheSocketHasItsOwnDirectory(t *testing.T) {
 	dir := filepath.Dir(gate.DefaultSocket)

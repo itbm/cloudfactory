@@ -180,6 +180,8 @@ func website(image string) *agentv1.Website {
 		Extensions: []string{"opcache"}, PhpIni: map[string]string{"memory_limit": "256M"},
 		Limits:  &agentv1.Limits{Vcpus: 1, MemoryBytes: 1 << 30, Processes: 100},
 		Domains: []*agentv1.Domain{{Name: "acme.example", Kind: "primary"}},
+		// Each website has a customer. The website can use the database servers of it.
+		DatabaseInstance: customerID,
 	}
 }
 
@@ -469,7 +471,8 @@ func TestDomainsChangeTheEdgeRoute(t *testing.T) {
 
 func TestCreateDatabaseSendsThePasswordOnStdin(t *testing.T) {
 	d, f, _ := deps(t)
-	req := &agentv1.CreateDatabaseRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Engine: "mariadb", Name: "acme_x7k2_shop", User: "acme_x7k2_shop", Password: "Abcdefghijklmnop1234", Access: "website"}
+	customerServers(t, d)
+	req := &agentv1.CreateDatabaseRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Engine: "mariadb", Name: "acme_x7k2_shop", User: "acme_x7k2_shop", Password: "Abcdefghijklmnop1234", Access: "website", DatabaseServer: databaseServer("mariadb")}
 	if err := run(t)(d.CreateDatabase(req)); err != nil {
 		t.Fatal(err)
 	}
@@ -481,8 +484,9 @@ func TestCreateDatabaseSendsThePasswordOnStdin(t *testing.T) {
 	in := strings.Join(f.Inputs, "")
 	for _, want := range []string{
 		"CREATE DATABASE `acme_x7k2_shop` CHARACTER SET",
-		"CREATE USER 'acme_x7k2_shop'@'169.254.77.1' IDENTIFIED BY 'Abcdefghijklmnop1234' REQUIRE NONE WITH MAX_USER_CONNECTIONS 100;",
-		"GRANT ALL PRIVILEGES ON `acme\\_x7k2\\_shop`.* TO 'acme_x7k2_shop'@'169.254.77.1';",
+		// A website connects from the client address of the network of the database servers.
+		"CREATE USER 'acme_x7k2_shop'@'169.254.80.1' IDENTIFIED BY 'Abcdefghijklmnop1234' REQUIRE NONE WITH MAX_USER_CONNECTIONS 100;",
+		"GRANT ALL PRIVILEGES ON `acme\\_x7k2\\_shop`.* TO 'acme_x7k2_shop'@'169.254.80.1';",
 	} {
 		if !strings.Contains(in, want) {
 			t.Errorf("inputs do not contain %s:\n%s", want, in)
@@ -517,8 +521,9 @@ func TestCreateDatabaseRefusesSystemAndForeignNames(t *testing.T) {
 // to an object that exists.
 func TestCreateDatabaseFailsWhenTheDatabaseExists(t *testing.T) {
 	d, f, _ := deps(t)
-	f.Rules = []execx.Rule{{Prefix: "runuser -u cf-db -- env XDG_RUNTIME_DIR=/run/user/20001 podman exec -i cf-postgresql", Output: "1\n"}}
-	err := run(t)(d.CreateDatabase(&agentv1.CreateDatabaseRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Engine: "postgresql", Name: "acme_x7k2_shop"}))
+	customerServers(t, d)
+	f.Rules = []execx.Rule{{Prefix: execOf("postgresql", pgServerKey) + "psql", Output: "1\n"}}
+	err := run(t)(d.CreateDatabase(&agentv1.CreateDatabaseRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Engine: "postgresql", Name: "acme_x7k2_shop", DatabaseServer: databaseServer("postgresql")}))
 	if err == nil || !strings.Contains(err.Error(), "exists") {
 		t.Fatalf("err = %v", err)
 	}
@@ -531,7 +536,8 @@ func TestCreateDatabaseFailsWhenTheDatabaseExists(t *testing.T) {
 
 func TestPostgreSQLDatabaseHasGroupRoles(t *testing.T) {
 	d, f, _ := deps(t)
-	req := &agentv1.CreateDatabaseRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Engine: "postgresql", Name: "acme_x7k2_shop", User: "acme_x7k2_shop", Password: "Abcdefghijklmnop1234"}
+	customerServers(t, d)
+	req := &agentv1.CreateDatabaseRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Engine: "postgresql", Name: "acme_x7k2_shop", User: "acme_x7k2_shop", Password: "Abcdefghijklmnop1234", DatabaseServer: databaseServer("postgresql")}
 	if err := run(t)(d.CreateDatabase(req)); err != nil {
 		t.Fatal(err)
 	}
@@ -555,9 +561,10 @@ func TestPostgreSQLDatabaseHasGroupRoles(t *testing.T) {
 func TestSetDatabaseUserGivesAPermissionForEachDatabase(t *testing.T) {
 	for _, engine := range []string{"mariadb", "postgresql"} {
 		d, f, _ := deps(t)
-		f.Rules = []execx.Rule{{Prefix: "runuser -u cf-db -- env XDG_RUNTIME_DIR=/run/user/20001 podman exec -i cf-mariadb mariadb", Output: "169.254.77.1\n"}}
+		customerServers(t, d)
+		f.Rules = []execx.Rule{{Prefix: execOf("mariadb", mariaServerKey) + "mariadb", Input: "SELECT Host FROM mysql.user", Output: "169.254.80.1\n"}}
 		req := &agentv1.SetDatabaseUserRequest{
-			JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Engine: engine, Name: "acme_x7k2_sync", Access: "anywhere",
+			JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Engine: engine, Name: "acme_x7k2_sync", Access: "anywhere", DatabaseServer: databaseServer(engine),
 			Grants: []*agentv1.DatabaseGrant{
 				{Database: "acme_x7k2_prod", Privileges: "readonly"},
 				{Database: "acme_x7k2_staging", Privileges: "readwrite"},
@@ -569,7 +576,7 @@ func TestSetDatabaseUserGivesAPermissionForEachDatabase(t *testing.T) {
 		}
 		in := strings.Join(f.Inputs, "")
 		want := []string{
-			"RENAME USER 'acme_x7k2_sync'@'169.254.77.1' TO 'acme_x7k2_sync'@'%';",
+			"RENAME USER 'acme_x7k2_sync'@'169.254.80.1' TO 'acme_x7k2_sync'@'%';",
 			"ALTER USER 'acme_x7k2_sync'@'%' REQUIRE SSL WITH MAX_USER_CONNECTIONS 100;",
 			"REVOKE ALL PRIVILEGES, GRANT OPTION FROM 'acme_x7k2_sync'@'%';",
 			"GRANT SELECT, SHOW VIEW ON `acme\\_x7k2\\_prod`.* TO 'acme_x7k2_sync'@'%';",
@@ -612,7 +619,8 @@ func TestSetDatabaseUserRefusesADatabaseOfADifferentWebsite(t *testing.T) {
 // CF-01: MariaDB keeps the grants of a database that it drops. The agent removes them first.
 func TestDeleteDatabaseRemovesTheGrants(t *testing.T) {
 	d, f, _ := deps(t)
-	if err := run(t)(d.DeleteDatabase(&agentv1.DeleteDatabaseRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Engine: "mariadb", Name: "acme_x7k2_shop", Users: []string{"acme_x7k2_sync"}})); err != nil {
+	customerServers(t, d, "mariadb")
+	if err := run(t)(d.DeleteDatabase(&agentv1.DeleteDatabaseRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Engine: "mariadb", Name: "acme_x7k2_shop", Users: []string{"acme_x7k2_sync"}, DatabaseServer: mariaServerID})); err != nil {
 		t.Fatal(err)
 	}
 	in := strings.Join(f.Inputs, "")
@@ -626,6 +634,7 @@ func TestDeleteDatabaseRemovesTheGrants(t *testing.T) {
 
 func TestBackupGivesTheSnapshotID(t *testing.T) {
 	d, f, _ := deps(t)
+	customerServers(t, d, "mariadb")
 	os.MkdirAll(d.Host.AppDir("acme_x7k2"), 0o755)
 	dumps := filepath.Join(d.DataDir, "dumps", "acme_x7k2")
 	var dumpMode os.FileMode
@@ -642,10 +651,10 @@ func TestBackupGivesTheSnapshotID(t *testing.T) {
 			}
 			return nil
 		}},
-		{Prefix: "runuser -u cf-db -- env XDG_RUNTIME_DIR=/run/user/20001 podman exec cf-mariadb mariadb-dump", Output: "CREATE TABLE t (id int);\n"},
+		{Prefix: podmanOf(mariaServerKey) + "exec cf-mariadb-" + mariaServerKey + " mariadb-dump", Output: "CREATE TABLE t (id int);\n"},
 	}
 
-	job, err := d.Backup(&agentv1.BackupRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Kind: "manual", Target: "s3:backups/cf", Databases: []*agentv1.DatabaseRef{{Engine: "mariadb", Name: "acme_x7k2_shop"}}})
+	job, err := d.Backup(&agentv1.BackupRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Kind: "manual", Target: "s3:backups/cf", Databases: []*agentv1.DatabaseRef{{Engine: "mariadb", Name: "acme_x7k2_shop", DatabaseServer: mariaServerID}}})
 	if err := run(t)(job, err); err != nil {
 		t.Fatal(err)
 	}
@@ -682,13 +691,15 @@ func TestBackupGivesTheSnapshotID(t *testing.T) {
 // Audit finding R8: a backup that fails does not leave the dumps on the disk.
 func TestAFailedBackupRemovesTheDumps(t *testing.T) {
 	d, f, _ := deps(t)
+	customerServers(t, d, "mariadb")
 	os.MkdirAll(d.Host.AppDir("acme_x7k2"), 0o755)
+	dump := podmanOf(mariaServerKey) + "exec cf-mariadb-" + mariaServerKey + " mariadb-dump"
 	f.Rules = []execx.Rule{
-		{Prefix: "runuser -u cf-db -- env XDG_RUNTIME_DIR=/run/user/20001 podman exec cf-mariadb mariadb-dump --user=root --single-transaction --routines acme_x7k2_blog", Err: errors.New("mariadb-dump: exit status 2")},
-		{Prefix: "runuser -u cf-db -- env XDG_RUNTIME_DIR=/run/user/20001 podman exec cf-mariadb mariadb-dump", Output: "CREATE TABLE t (id int);\n"},
+		{Prefix: dump + " --user=root --single-transaction --routines acme_x7k2_blog", Err: errors.New("mariadb-dump: exit status 2")},
+		{Prefix: dump, Output: "CREATE TABLE t (id int);\n"},
 	}
 	job, err := d.Backup(&agentv1.BackupRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Kind: "scheduled", Target: "s3:backups/cf",
-		Databases: []*agentv1.DatabaseRef{{Engine: "mariadb", Name: "acme_x7k2_shop"}, {Engine: "mariadb", Name: "acme_x7k2_blog"}}})
+		Databases: []*agentv1.DatabaseRef{{Engine: "mariadb", Name: "acme_x7k2_shop", DatabaseServer: mariaServerID}, {Engine: "mariadb", Name: "acme_x7k2_blog", DatabaseServer: mariaServerID}}})
 	if err := run(t)(job, err); err == nil {
 		t.Fatal("the backup did not fail")
 	}
@@ -779,13 +790,14 @@ func TestRestoreCopiesFilesAsTheWebsiteUser(t *testing.T) {
 // database only, with no client commands.
 func TestRestoreDatabaseChecksTheHashAndUsesATemporaryUser(t *testing.T) {
 	d, f, _ := deps(t)
+	customerServers(t, d, "mariadb")
 	dump := []byte("CREATE TABLE t (id int);\n")
 	sum := sha256.Sum256(dump)
 	staging := filepath.Join(d.DataDir, "restore", jobID)
 	file := filepath.Join(staging, d.DataDir, "dumps", "acme_x7k2", "mariadb-acme_x7k2_shop.dump")
 	// The fake restic "restores" the dump.
 	f.Rules = []execx.Rule{{Prefix: "restic --repo s3:b/c --password-file  --json --retry-lock 30m restore", Do: func() error { return writeFile(file, dump) }}}
-	req := &agentv1.RestoreRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", SnapshotId: "1a2b3c4d", Scope: "database", Item: "mariadb:acme_x7k2_shop", Target: "s3:b/c", DumpSha256: hex.EncodeToString(sum[:])}
+	req := &agentv1.RestoreRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", SnapshotId: "1a2b3c4d", Scope: "database", Item: "mariadb:acme_x7k2_shop", Target: "s3:b/c", DumpSha256: hex.EncodeToString(sum[:]), DatabaseServer: mariaServerID}
 	if err := run(t)(d.Restore(req)); err != nil {
 		t.Fatal(err)
 	}
@@ -812,7 +824,7 @@ func TestRestoreDatabaseChecksTheHashAndUsesATemporaryUser(t *testing.T) {
 	if err := run(t)(d.Restore(req)); err == nil || !strings.Contains(err.Error(), "hash") {
 		t.Fatalf("err = %v", err)
 	}
-	if f.Called("runuser -u cf-db") {
+	if f.Called("runuser -u " + host.DatabaseUser(mariaServerKey)) {
 		t.Errorf("the agent sent a changed dump to the database server: %v", f.Calls)
 	}
 	req.DumpSha256 = ""
@@ -846,19 +858,21 @@ func TestStagingCopyCopiesAsTheWebsiteUsers(t *testing.T) {
 // CF-01: a website that the panel removes takes its databases and users with it.
 func TestDeleteWebsiteRemovesItsDatabases(t *testing.T) {
 	d, f, _ := deps(t)
-	// The databases are in a container that the server has.
-	if err := d.EnsureDatabaseService(context.Background(), dbServer{Engine: "postgresql"}); err != nil {
+	// The PostgreSQL databases are in a database server that this server has.
+	customerServers(t, d, "postgresql")
+	if err := d.EnsureDatabaseService(context.Background(), dbServer{ID: pgServerKey, Engine: "postgresql"}); err != nil {
 		t.Fatal(err)
 	}
 	req := &agentv1.DeleteWebsiteRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2",
-		Databases:     []*agentv1.DatabaseRef{{Engine: "postgresql", Name: "acme_x7k2_shop"}, {Engine: "mariadb", Name: "acme_x7k2_blog"}},
-		DatabaseUsers: []*agentv1.DatabaseRef{{Engine: "postgresql", Name: "acme_x7k2_sync"}}}
+		Databases:     []*agentv1.DatabaseRef{{Engine: "postgresql", Name: "acme_x7k2_shop", DatabaseServer: pgServerID}, {Engine: "mariadb", Name: "acme_x7k2_blog", DatabaseServer: mariaServerID}},
+		DatabaseUsers: []*agentv1.DatabaseRef{{Engine: "postgresql", Name: "acme_x7k2_sync", DatabaseServer: pgServerID}}}
 	if err := run(t)(d.DeleteWebsite(req)); err != nil {
 		t.Fatal(err)
 	}
-	// The server has no MariaDB container, so the job does not start one to remove a database.
-	if f.Called("systemctl --user --machine=cf-db@ start cf-mariadb.service") || f.Called("systemctl --user --machine=cf-db@ restart cf-mariadb.service") {
-		t.Errorf("the job started a MariaDB container: %v", f.Calls)
+	// This server has no MariaDB database server with that ID, so the job does not start one
+	// to remove a database.
+	if f.Called(systemctlOf(mariaServerKey)) || f.Called(podmanOf(mariaServerKey)) {
+		t.Errorf("the job started a MariaDB database server: %v", f.Calls)
 	}
 	in := strings.Join(f.Inputs, "")
 	if !strings.Contains(in, `DROP ROLE IF EXISTS "acme_x7k2_sync";`) || !strings.Contains(in, `DROP DATABASE IF EXISTS "acme_x7k2_shop" WITH (FORCE);`) {
@@ -867,6 +881,10 @@ func TestDeleteWebsiteRemovesItsDatabases(t *testing.T) {
 	req.Databases[0].Name = "mysql"
 	if _, err := d.DeleteWebsite(req); err == nil {
 		t.Error("the agent accepted a system database")
+	}
+	req.Databases[0].Name, req.Databases[0].DatabaseServer = "acme_x7k2_shop", ""
+	if _, err := d.DeleteWebsite(req); !errors.Is(err, errNoDatabaseServer) {
+		t.Errorf("a database with no database server: %v", err)
 	}
 }
 

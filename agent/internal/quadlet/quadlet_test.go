@@ -13,7 +13,8 @@ func website() Website {
 		Image: "ghcr.io/cloudfactory/frankenphp-php8.4:8.4.0-1@sha256:abc", Port: 20001,
 		SiteDir: "/srv/cloudfactory/sites/acme_x7k2/app", IniFile: "/srv/cloudfactory/sites/acme_x7k2/php.ini",
 		Runtime: "frankenphp", Limits: Limits{VCPUs: 1.5, MemoryBytes: 1 << 30, Processes: 100},
-		Gvisor: Runtime{RunscPath: "/usr/local/bin/runsc", Platform: "systrap"},
+		Gvisor:          Runtime{RunscPath: "/usr/local/bin/runsc", Platform: "systrap"},
+		DatabaseAddress: "169.254.80.2",
 	}
 }
 
@@ -23,7 +24,7 @@ func TestContainerUnitUsesGvisorAndNoHostNetwork(t *testing.T) {
 		"GlobalArgs=--runtime=/usr/local/bin/runsc --runtime-flag=platform=systrap --runtime-flag=network=sandbox --runtime-flag=ignore-cgroups",
 		"Network=pasta",
 		"PublishPort=169.254.77.1:20001:8080",
-		"AddHost=mariadb.internal:169.254.77.1",
+		"AddHost=mariadb.internal:169.254.80.2",
 		"NoNewPrivileges=true",
 		"DropCapability=all",
 		// The limits are on the cgroup of the service, because runsc ignores cgroups.
@@ -279,8 +280,7 @@ func TestEachGvisorUnitIgnoresCgroups(t *testing.T) {
 }
 
 // A database server of a customer has its own name, port, labels and limits, on the address of
-// its customer. The shared container of an earlier release keeps its name and the service
-// address.
+// its customer. It runs as the database user of the image, with no capabilities.
 func TestDatabaseUnitOfADatabaseServer(t *testing.T) {
 	gv := Runtime{RunscPath: "/usr/local/bin/runsc", Platform: "systrap"}
 	id, customer := "01jbq3z5k8n6t4w2x9y7r5p3d1", "01jbq3z5k8n6t4w2x9y7r5p3c1"
@@ -311,18 +311,13 @@ func TestDatabaseUnitOfADatabaseServer(t *testing.T) {
 		if want := "PublishPort=169.254.80.2:" + strconv.Itoa(first+1) + ":" + port + "\n"; !strings.Contains(second, want) {
 			t.Errorf("the second %s database server has no %q:\n%s", engine, want, second)
 		}
-		shared := DatabaseUnit(Database{Engine: engine, Gvisor: gv, Image: "image", DataDir: "/data", EnvFile: "/env"})
-		for _, want := range []string{"ContainerName=cf-" + engine + "\n", "PublishPort=" + ServiceAddress + ":" + port + ":" + port + "\n"} {
-			if !strings.Contains(shared, want) {
-				t.Errorf("the shared %s has no %q:\n%s", engine, want, shared)
+		for _, want := range []string{"DropCapability=all\n", "UserNS=keep-id:uid=999,gid=999\n", "User=999\n", "Group=999\n"} {
+			if !strings.Contains(u, want) {
+				t.Errorf("the %s database server has no %q:\n%s", engine, want, u)
 			}
 		}
-		// The unit of a shared container does not change, so the agent does not start a
-		// shared container again.
-		for _, not := range []string{"io.cloudfactory.customer", "io.cloudfactory.database-server", "MemoryMax", "CPUQuota", "StopTimeout"} {
-			if strings.Contains(shared, not) {
-				t.Errorf("the shared %s has %q:\n%s", engine, not, shared)
-			}
+		if strings.Contains(u, "AddCapability") {
+			t.Errorf("the %s database server has a capability:\n%s", engine, u)
 		}
 	}
 }
@@ -395,11 +390,10 @@ func TestWebsiteDatabaseAddress(t *testing.T) {
 			t.Errorf("no %q:\n%s", want, u)
 		}
 	}
-	u = ContainerUnit(website())
-	for _, host := range []string{MariaDBHost, PostgreSQLHost, ValkeyHost} {
-		if want := "AddHost=" + host + ":" + ServiceAddress + "\n"; !strings.Contains(u, want) {
-			t.Errorf("no %q:\n%s", want, u)
-		}
+	// A website with no record of its customer has no database host names.
+	w.DatabaseAddress = ""
+	if u = ContainerUnit(w); strings.Contains(u, "AddHost=") {
+		t.Errorf("a website with no customer has a database host name:\n%s", u)
 	}
 }
 

@@ -392,13 +392,10 @@ table inet cloudfactory {
     # Unix user of the container, so a website cannot reach a different website. The rule
     # checks only new connections, because the answers of the containers go to the address too.
     #
-    # Ports 3306 and 5432 are the shared database containers of an earlier release. A server
-    # has them only until the databases of its websites move to database servers of each customer.
-    #
     # Port 19432 is the database of the panel. Only root and the containers of the panel
     # (cf-panel) can connect to it. Each connection also needs the password.
     ct state new ip daddr $SERVICE_ADDRESS tcp dport 19432 meta skuid != { 0, $panel_uid } reject with tcp reset
-    ct state new ip daddr $SERVICE_ADDRESS tcp dport != { 3306, 5432, 19432 } meta skuid != { 0, $edge_uid } reject with tcp reset
+    ct state new ip daddr $SERVICE_ADDRESS tcp dport != 19432 meta skuid != { 0, $edge_uid } reject with tcp reset
     # The database servers of the customers. Only root (the agent) and the websites can
     # connect to them. The chain "websites" lets a website connect only to the database
     # servers of its own customer.
@@ -420,8 +417,6 @@ table inet cloudfactory {
     # The database servers of the customer of the website: MariaDB, PostgreSQL and Valkey.
     # A website cannot connect to a database server of a different customer.
     meta skuid . ip daddr . tcp dport @database_access accept
-    # The shared database containers of an earlier release.
-    ip daddr $SERVICE_ADDRESS tcp dport { 3306, 5432 } accept
     # DNS. The resolver of the host can have a private or a link-local address.
     meta l4proto { tcp, udp } th dport 53 accept
     # The networks of the option --allow-website-network.
@@ -945,12 +940,16 @@ REGISTRIES
 
 step "Make the service users"
 # Each service has its own Unix user with rootless containers (spec section 6.4).
-for user in cf-edge cf-db cf-panel; do
+for user in cf-edge cf-panel; do
 	if ! id "$user" >/dev/null 2>&1; then
 		useradd --system --create-home --home-dir "/var/lib/$user" --shell /usr/sbin/nologin --add-subids-for-system "$user"
 	fi
 	loginctl enable-linger "$user"
 done
+# The files of the database servers. Root owns the directory, and the other users cannot list
+# it. The agent makes a Unix user and a directory for each database server. The directory is
+# here before the script turns on the disk quotas of its file system.
+install -d -o root -g root -m 0711 /var/lib/cf-db
 # The worker of the agent. The agent service starts as root, and starts its worker as this
 # user. The worker has the agent port, the connection to the panel and the jobs. It is not
 # root: the root part of the agent does only the operations of a fixed list for it. The user

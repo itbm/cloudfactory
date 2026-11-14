@@ -47,9 +47,8 @@ class DatabaseController extends Controller
             'databases' => $website->databases()->with('databaseServer')->orderBy('name')->get()->map(fn (Database $d) => self::present($d)),
             'users' => $website->databaseUsers()->with('databases')->orderBy('name')->get()->map(fn (DatabaseUser $u) => DatabaseUserController::present($u)),
             // The database servers that can get a database of this website: those of its
-            // customer on its server. Empty for a website that uses the shared database
-            // containers of an earlier release.
-            'servers' => $website->database_instance === null ? [] : DatabaseServers::forWebsite($website)->map(fn (DatabaseServer $s) => DatabaseServerController::present($s))->all(),
+            // customer on its server.
+            'servers' => DatabaseServers::forWebsite($website)->map(fn (DatabaseServer $s) => DatabaseServerController::present($s))->all(),
         ]);
     }
 
@@ -59,11 +58,10 @@ class DatabaseController extends Controller
             'id' => $d->id,
             'engine' => $d->engine,
             'name' => $d->name,
-            // Null for a database in the shared database containers of an earlier release.
             'databaseServerId' => $d->database_server_id,
             // The host name and the port that the application of the website connects to.
             'host' => DatabaseServer::HOSTS[$d->engine],
-            'port' => $d->databaseServer?->port ?? DatabaseServer::FIRST_PORT[$d->engine],
+            'port' => $d->databaseServer->port,
             'sizeBytes' => $d->size_bytes,
             // Valkey only: the database number that the application selects, and the number of
             // keys. The number is null until the agent made the database.
@@ -87,25 +85,12 @@ class DatabaseController extends Controller
         $name = DatabaseNames::full($website, 'name', $data['name']);
         $withUser = $data['createUser'] ?? true;
         $serverId = $data['databaseServerId'] ?? null;
-        // A website from an earlier release uses the shared database containers until an
-        // administrator moves its databases.
-        $shared = $website->database_instance === null;
-        if ($shared && $serverId !== null) {
-            throw ValidationException::withMessages(['databaseServerId' => "This website uses the shared database containers of an earlier release. An administrator must move the databases of the server {$website->server->name} to database servers first."]);
+        if ($data['engine'] === Database::VALKEY && ! $withUser) {
+            throw ValidationException::withMessages(['createUser' => 'A Valkey database always has a user with the same name.']);
         }
-        if ($data['engine'] === Database::VALKEY) {
-            if (! $withUser) {
-                throw ValidationException::withMessages(['createUser' => 'A Valkey database always has a user with the same name.']);
-            }
-            if (! $website->server->hasDatabaseEngine(Database::VALKEY)) {
-                throw ValidationException::withMessages(['engine' => "The agent on the server {$website->server->name} did not report that it can operate Valkey. Update the agent of the server, then try again."]);
-            }
-            // Valkey is in a database server of the customer. The shared database containers
-            // of an earlier release have none.
-            if ($shared) {
-                throw ValidationException::withMessages(['engine' => "This website uses the shared database containers of an earlier release, which have no Valkey. An administrator must move the databases of the server {$website->server->name} to database servers first."]);
-            }
-        }
+        // Each database is in a database server of the customer of the website. Only an agent
+        // that reports database servers, and the engine, can operate one.
+        DatabaseServers::checkHost($website->server, $data['engine']);
         if (Database::where(['engine' => $data['engine'], 'name' => $name])->exists()) {
             throw ValidationException::withMessages(['name' => 'This database exists.']);
         }
@@ -115,22 +100,12 @@ class DatabaseController extends Controller
 
         // Audit finding R6: the count and the new row are in one transaction, with a lock
         // that stops two requests from passing the limit at the same time.
-        [$database, $server] = DB::transaction(function () use ($website, $data, $name, $withUser, $shared, $serverId) {
-            $server = null;
-            if ($shared) {
-                // The shared containers have no database server. The plan of the website
-                // gives the number of its databases, as in the earlier release.
-                $locked = Website::with('plan')->lockForUpdate()->findOrFail($website->id);
-                if ($locked->databases()->count() >= $locked->plan->databases) {
-                    throw ValidationException::withMessages(['name' => "The {$locked->plan->name} plan allows {$locked->plan->databases} databases."]);
-                }
-            } else {
-                // The plan of the database server gives the number of its databases.
-                $server = DatabaseServers::checkSpace(DatabaseServers::forDatabase($website, $data['engine'], $serverId)[0]);
-            }
-            $database = $website->databases()->create(['engine' => $data['engine'], 'name' => $name, 'database_server_id' => $server?->id]);
+        [$database, $server] = DB::transaction(function () use ($website, $data, $name, $withUser, $serverId) {
+            // The plan of the database server gives the number of its databases.
+            $server = DatabaseServers::checkSpace(DatabaseServers::forDatabase($website, $data['engine'], $serverId)[0]);
+            $database = $website->databases()->create(['engine' => $data['engine'], 'name' => $name, 'database_server_id' => $server->id]);
             if ($withUser) {
-                $user = $website->databaseUsers()->create(['engine' => $data['engine'], 'name' => $name, 'access' => 'website', 'database_server_id' => $server?->id]);
+                $user = $website->databaseUsers()->create(['engine' => $data['engine'], 'name' => $name, 'access' => 'website', 'database_server_id' => $server->id]);
                 $user->databases()->attach($database->id, ['privileges' => 'readwrite']);
             }
 
@@ -147,7 +122,7 @@ class DatabaseController extends Controller
             'password' => $password,
             'access' => $withUser ? 'website' : null,
             // The agent makes a database server that it does not have.
-            'databaseServer' => $server?->forAgent(),
+            'databaseServer' => $server->forAgent(),
         ]), "Create database {$name}", $website, databaseServer: $server);
         Audit::record($request, 'Created database', "{$website->name} {$name}", $website->customer_id);
 
@@ -156,9 +131,9 @@ class DatabaseController extends Controller
             'name' => $name,
             'user' => $withUser ? $name : null,
             'password' => $password,
-            'databaseServerId' => $server?->id,
+            'databaseServerId' => $server->id,
             'host' => DatabaseServer::HOSTS[$data['engine']],
-            'port' => $server?->port ?? DatabaseServer::FIRST_PORT[$data['engine']],
+            'port' => $server->port,
             'job' => new JobResource($job),
         ], 202);
     }
@@ -176,7 +151,7 @@ class DatabaseController extends Controller
             'engine' => $database->engine,
             'name' => $database->name,
             'users' => $users,
-            ...($database->database_server_id ? ['databaseServer' => $database->database_server_id] : []),
+            'databaseServer' => $database->database_server_id,
         ], "Remove database {$database->name}", $website, databaseServer: $database->databaseServer);
         Audit::record($request, 'Removed database', "{$website->name} {$database->name}", $website->customer_id);
 

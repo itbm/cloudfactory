@@ -131,12 +131,12 @@ interface ApiWebsite {
   sftp?: { enabled: boolean; host: string | null; port: number; username: string; authorizedKeys: string[] };
   limits: Limits; diskLimitApplied?: boolean | null; usage: Partial<Website["use"]> | null;
   domains?: { name: string; kind: Website["domains"][number]["kind"]; dnsPointsHere: boolean; certificate: { state: Website["domains"][number]["certificate"]["state"]; expiresAt: string | null }; verified?: boolean; verification?: DomainVerification | null }[];
-  stagingOf: string | null; sharedDatabases?: boolean; managedByTerraform: boolean; createdAt: string; updatedAt: string;
+  stagingOf: string | null; managedByTerraform: boolean; createdAt: string; updatedAt: string;
 }
 interface ApiServer {
   id: string; name: string; location: string; roles: Server["roles"]; state: Server["state"]; agentVersion: string | null; os: string | null; kernel: string | null; arch: string | null;
   podmanVersion: string | null; gvisorVersion: string | null; gvisorPlatform: Server["gvisorPlatform"]; bareMetal: boolean; updatePolicy: Server["updatePolicy"]; maintenanceWindow: string;
-  pendingUpdates: Server["pendingUpdates"]; lastUpdateAt: string | null; rebootRequired: boolean; agentUpdateAvailable?: boolean; agentAddress?: string | null; connectionError?: string | null; panel?: boolean; databaseEngines?: Database["engine"][]; databaseInstances?: boolean; sharedDatabaseWebsites?: number | null; services: Server["services"]; sftpPort?: number | null;
+  pendingUpdates: Server["pendingUpdates"]; lastUpdateAt: string | null; rebootRequired: boolean; agentUpdateAvailable?: boolean; agentAddress?: string | null; connectionError?: string | null; panel?: boolean; databaseEngines?: Database["engine"][]; databaseInstances?: boolean; services: Server["services"]; sftpPort?: number | null;
   usage: { cpuPercent?: number; memoryPercent?: number; diskPercent?: number } | null;
 }
 interface ApiImage {
@@ -221,7 +221,7 @@ export function toWebsite(w: ApiWebsite): Website {
     })),
     sftp: w.sftp ? { ...w.sftp, host: w.sftp.host ?? location.host.replace(/:\d+$/, ""), authorizedKeys: w.sftp.authorizedKeys ?? [] } : undefined,
     lastChange: { at: w.updatedAt, summary: "" },
-    stagingOf: w.stagingOf ?? undefined, sharedDatabases: w.sharedDatabases ?? false, managedByTerraform: w.managedByTerraform, imageTag: tagOfReference(w.runtime.image) || undefined, imageReference: w.runtime.image || undefined,
+    stagingOf: w.stagingOf ?? undefined, managedByTerraform: w.managedByTerraform, imageTag: tagOfReference(w.runtime.image) || undefined, imageReference: w.runtime.image || undefined,
   };
 }
 
@@ -237,7 +237,7 @@ export function toServer(s: ApiServer): Server {
     agentUpdateAvailable: s.agentUpdateAvailable ?? s.state === "agent_update",
     agentAddress: s.agentAddress ?? undefined, connectionError: s.connectionError ?? undefined, panel: s.panel ?? false,
     databaseEngines: s.databaseEngines ?? undefined,
-    databaseInstances: s.databaseInstances ?? false, sharedDatabaseWebsites: s.sharedDatabaseWebsites ?? undefined,
+    databaseInstances: s.databaseInstances ?? false,
     stateDetail: s.state === "degraded" ? (s.connectionError ? "Degraded: the panel cannot connect" : degradedReason(s.services ?? [])) : undefined,
   };
 }

@@ -21,7 +21,7 @@ type Client struct {
 //
 // The socket has its own directory, which only root and the group of the worker can open.
 // Do not put it in a directory that a different user must go through: /run/cloudfactory has
-// the secret files of the database clients, which the user cf-db reads.
+// the secret files of the database clients, which the users of the database servers read.
 const DefaultSocket = "/run/cloudfactory-agent/gate.sock"
 
 // open connects to the helper and sends the request. When ctx ends, the connection closes,
