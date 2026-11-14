@@ -98,6 +98,23 @@ func TestValkeyServer(t *testing.T) {
 			t.Errorf("%s: Valkey did not refuse the command: %v %v", strings.Join(args, " "), res, err)
 		}
 	}
+	// dryRun asks Valkey if the rules of a user permit a command. ACL DRYRUN does not run the
+	// command. Its answer is "OK" when the rules permit the command, and the reason when they
+	// do not.
+	dryRun := func(name string, args ...string) string {
+		t.Helper()
+		admin, err := d.valkeyAdminConn(ctx, customerValkey)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer admin.Close()
+		res, err := admin.do(append([]string{"ACL", "DRYRUN", name}, args...)...)
+		answer, _ := res.(string)
+		if err != nil || answer == "" {
+			t.Fatalf("ACL DRYRUN %s %s: %v %v", name, strings.Join(args, " "), res, err)
+		}
+		return answer
+	}
 	// scriptDenied runs a script in which Valkey must refuse a command.
 	scriptDenied := func(v *valkeyConn, script string, args ...string) {
 		t.Helper()
@@ -207,7 +224,18 @@ func TestValkeyServer(t *testing.T) {
 	denied(a, "BGSAVE")
 	denied(a, "BGREWRITEAOF")
 	denied(a, "REPLICAOF", "NO", "ONE")
-	denied(a, "DEBUG", "SLEEP", "0")
+	// Valkey refuses DEBUG from a different host before it reads the rules of the user (the
+	// option enable-debug-command), with a different error. Thus the test also asks Valkey
+	// for the answer of the rules.
+	if res, err := a.do("DEBUG", "SLEEP", "0"); err == nil {
+		t.Errorf("DEBUG SLEEP 0: Valkey did not refuse the command: %v", res)
+	}
+	if answer := dryRun(nameA, "DEBUG", "SLEEP", "0"); answer == "OK" {
+		t.Error("DEBUG SLEEP 0: the rules of the user permit the command")
+	}
+	if answer := dryRun(nameA, "PING"); answer != "OK" {
+		t.Errorf("ACL DRYRUN for a command that the user can run: %s", answer)
+	}
 	denied(a, "MIGRATE", "192.0.2.1", "6379", "k", "0", "1000")
 	denied(a, "RESTORE", "k3", "0", "x")
 	denied(a, "MODULE", "LIST")
