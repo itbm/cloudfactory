@@ -158,3 +158,22 @@ The reasons for the port 2200:
 The reason for a container that root runs: each session must change to the UID of its website.
 A rootless container can use only the UIDs of its own user. gVisor and the small set of
 capabilities limit what root can do in the container.
+
+## A root helper for the agent, with fixed lists
+
+Until release 0.1.9, the agent was one root process. It ran many commands in directories that
+the customers control, and three security faults had this cause. Later releases divide the
+agent into a worker with the user `cf-agent` and a root helper (refer to
+[architecture.md](architecture.md#the-processes-of-the-agent)).
+
+| Item | Decision | Reason |
+| ---- | -------- | ------ |
+| Number of services | One service unit. The root helper starts the worker. | An update, a restart and `cf-agent rollback` operate as before. A server from an earlier release needs no new unit. |
+| Which process is root | The process with the network port is not root. | The code that reads data from the network and from the customers is the most probable place of a fault. |
+| Interface | Three lists: commands, operations and connections. No request has a path of root. | A list of fixed forms is small and a person can examine it. A general "run as root" request gives no protection. |
+| Local connections | The root helper opens them for the worker. | The firewall of a server from an earlier release does not change, and the worker cannot connect to the database of the panel. |
+| Failure of the worker start | The agent operates as one root process and tells the panel. | The websites of the server are more important than the boundary. The administrator sees the state and can correct it. |
+| Earlier releases | The root helper does not install a release that has no root helper. | A worker that an attacker controls cannot go back to an agent with one root process. |
+
+The boundary has limits: the worker can still act as each website user, and it manages the
+database servers. [security.md](security.md#the-root-helper-of-the-agent) gives the full list.

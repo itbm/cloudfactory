@@ -17,9 +17,10 @@ together. The product specification, section 6, gives the requirements.
   routes for the panel.
 - The **panel API** keeps the desired state in its database. It does not change a server
   directly. It sends a typed job to the agent.
-- The **agent** (`cf-agent`) runs as root on each server. It accepts only the actions in
+- The **agent** (`cf-agent`) runs on each server. It accepts only the actions in
   [`agent.proto`](../agent/proto/cloudfactory/agent/v1/agent.proto). It has no action that runs
-  a shell command that the panel gives.
+  a shell command that the panel gives. The agent has two processes: a worker with the user
+  `cf-agent`, and a root helper (refer to [The processes of the agent](#the-processes-of-the-agent)).
 
 ## Flow of a change
 
@@ -48,6 +49,47 @@ Time limits make sure that a job always gets a result:
   server. The jobs of that server wait, and the panel sends them when the server reports again.
 - The panel reads a job with a lock before each change of its state. Thus a late event does
   not open a complete job again.
+
+## The processes of the agent
+
+```text
+ panel ──► port 7443 ──► worker (user cf-agent)
+                           │  jobs, state, reports, connection to the panel
+                           │
+                           │  /run/cloudfactory/gate.sock
+                           ▼
+                         root helper (root)
+                           commands · operations · connections
+```
+
+systemd starts `cf-agent serve` as root. This process is the root helper. It makes the Unix
+socket `/run/cloudfactory/gate.sock`, starts the worker (`cf-agent work`) as the user
+`cf-agent`, and waits. When the worker stops, the root helper stops with the same result,
+and systemd starts the two processes again. Thus the service has one unit, and an update, a
+restart and a rollback of the agent operate as with one process.
+
+The worker has the agent port, the jobs, the state of the websites and the connection to
+the panel. For each step that needs root, it sends a request through the socket. The root
+helper has three lists, and it refuses a request that is not in a list:
+
+- **Commands.** The worker gives the arguments of a command. The policy
+  (`agent/internal/actions/policy.go`) accepts a program as the Unix user of a website, a
+  command of a fixed form as a service user, and some root commands with fixed arguments.
+- **Operations.** An operation is root work with a name and typed values, for example
+  `user.ensure`, `unit.write` and `db.prepare` (`agent/internal/actions/root.go`). The worker
+  gives names, for example a Unix user or the ID of a database server. The root helper makes
+  each path from its own settings.
+- **Connections.** The root helper opens a connection for the worker and gives the data
+  through the socket (`agent/internal/actions/dial.go`): the admin socket of the edge proxy,
+  some ports on the private service address, and the Valkey database servers.
+
+The code of an action is the same for the two sides. A function that needs root starts with
+a check: in the worker, it sends the operation to the root helper. In the root helper, it
+does the work. If the root helper cannot start the worker, it does the work of the worker
+itself, as one root process.
+
+[security.md](security.md#the-root-helper-of-the-agent) gives what the boundary protects and
+what it does not protect.
 
 ## A website on a server
 

@@ -183,6 +183,94 @@ The product specification, section 6.4, gives the requirements.
 - The agent accepts a website user only with a UID from 20000 to 59999, the range that the
   firewall limits.
 
+## The root helper of the agent
+
+The agent service has two processes:
+
+- The **root helper** (`cf-agent serve`) runs as root. systemd starts it. It does not listen
+  on the network, and it does not connect to the panel.
+- The **worker** (`cf-agent work`) runs as the Unix user `cf-agent`. It has the agent port,
+  the connection to the panel, the jobs and the state of the websites. It has no
+  capabilities, and a setuid program cannot give it new rights (`no_new_privs`). The user
+  has no home directory, no shell and no containers.
+
+The worker has most of the code of the agent. It reads the data that comes from the network,
+and it starts the work in the directories that the customers control. A fault in that code
+gives an attacker the rights of `cf-agent`, not the rights of root.
+
+The worker asks the root helper for each step that needs root. The two processes use the
+Unix socket `/run/cloudfactory/gate.sock`. Only root and the group `cf-agent` can open the
+socket, and the root helper accepts only a process with the UID of the worker. The root
+helper does only the work of three lists:
+
+| List | What the worker can ask for |
+| --- | --- |
+| Commands | A program as the Unix user of a website (`runuser -u <user>`). A command of a fixed form as `cf-db` or `cf-edge`, for example a database client in a database container. Some root commands with fixed arguments: the commands of the status report, the updates of the operating system, the reboot, and restic with paths that the root helper examines. |
+| Operations | Root work that has a name, for example `user.ensure`, `unit.write`, `user.quota` and `db.prepare`. Each operation has typed values, and the root helper examines each value. |
+| Connections | The admin socket of the edge proxy, and some ports on the private service address and on the database network. |
+
+These rules apply to the three lists:
+
+- The worker gives names, not paths: a Unix user, the ID of a database server, the ID of a
+  job. The root helper makes each path from its own settings.
+- All work in the files of a website runs as the Unix user of that website. Root opens a
+  file in a directory of a different user only in these places: the home directory of a
+  website user, the files of a restore and the records of the jobs. There, the root helper
+  uses `openat2` with the flags `RESOLVE_BENEATH` and `RESOLVE_NO_SYMLINKS`. Thus a symbolic
+  link cannot send root to a different file.
+- The worker cannot give the text of a unit of `cf-db` or `cf-edge`, and it cannot run a
+  program of its choice as these users. The root helper makes these units from its own
+  settings.
+- The root helper examines the signature and the version of a new agent release again. It
+  installs a release only when the signed manifest has the line `rootHelper=1`. Thus the
+  worker cannot install a release that has no root helper.
+- The root helper connects the worker to the port of a website, to the HTTPS port of the edge
+  proxy, to the SFTP port and to the agent port of the panel on the private service address.
+  It also connects the worker to a Valkey database server. It refuses the database of the
+  panel and all other addresses. Thus the firewall has no rule for the user `cf-agent`.
+- The root helper writes to the log of the service each command and each connection that it
+  refuses, and each operation that is not in its list (`journalctl -u cf-agent`). The lines
+  start with `root helper: refused`.
+
+The worker can read these files of the agent:
+
+- `/etc/cloudfactory/agent.json` (mode `0640`, group `cf-agent`), which has the token of the
+  agent.
+- The TLS key of the agent in `/var/lib/cloudfactory/pki/` (mode `0640`, group `cf-agent`).
+- The records of the jobs in `/var/lib/cloudfactory/jobs/`. The worker owns this directory.
+
+A person who controls the worker cannot do these things:
+
+- Run a program of their choice as root, `cf-db`, `cf-edge` or `cf-panel`.
+- Read or change a file of root, for example `/etc/shadow`, an SSH key or a unit of the
+  system.
+- On the panel server: read the files of the panel, for example `APP_KEY` and the private
+  key of the panel, or connect to the database of the panel.
+- Change the firewall. The exceptions are the elements of the set `database_access` and the
+  database addresses, which the root helper examines.
+- Install an agent binary that the release key did not sign.
+
+The boundary does not make the worker safe to lose. A person who controls the worker can
+still do these things, because they are the function of the agent:
+
+- Run a program as the Unix user of each website on the server.
+- Use the administrator account of each database server, through the database client in its
+  container.
+- Change the configuration of the edge proxy through its admin API. That includes the routes
+  of all websites and, on the panel server, the route of the panel. It also includes the
+  files that the edge proxy can read: the TLS keys of the websites and the private key of the
+  panel CA.
+- Start a backup or a restore, install the updates of the operating system and reboot the
+  server.
+- Use the token and the TLS key of the agent to send reports and job events to the panel.
+- Install an earlier agent release that has a root helper and a valid signature.
+
+If the root helper cannot start the worker, the agent operates as one root process, as in
+release 0.1.9. The websites then continue to operate, the root helper writes the cause to the
+log, and the panel shows `agent-root-helper` as an optional part of the server that is off.
+The setting `CF_AGENT_ONE_PROCESS=1` has the same effect. Refer to
+[installation.md](installation.md#the-two-processes-of-the-agent).
+
 ## The panel
 
 - The panel keeps the certificate of each agent from the join. For each request to an agent,
@@ -389,6 +477,8 @@ The table also limits the outgoing connections:
 
 - Only root and the edge proxy can connect to a website port or a panel port on the private
   service address. Only root and the user `cf-panel` can connect to the database of the panel.
+  The worker of the agent (the user `cf-agent`) has no rule. It gets a connection only from
+  the root helper (refer to [The root helper of the agent](#the-root-helper-of-the-agent)).
 - Each customer has one address of the database network `169.254.80.0/20` on a server for
   its database servers. Only root and the website users can connect to this network. The
   set `database_access` has one element for each website and each database server of its
@@ -434,6 +524,16 @@ These items stay open in release 0.1:
   sandbox of one database container has the rights of `cf-db`, and can then read the database
   files of all customers on the server. The website containers do not have this limit: each
   website has its own Unix user.
+- **Root file work for the database servers.** The root helper makes and removes the data
+  directories and the disk images of the database servers in the home directory of `cf-db`
+  with paths. It does not use `openat2` there, as it does for the home directory of a
+  website user. A person who breaks out of the gVisor sandbox of a database container has the rights of
+  `cf-db`, and can put a symbolic link in that directory.
+- **Rights of the worker of the agent.** The worker is not root, but it can act as each
+  website user, it manages each database server, and it has the full admin API of the edge
+  proxy. Refer to [The root helper of the agent](#the-root-helper-of-the-agent). A possible
+  correction for the edge proxy is a root helper that accepts only the route changes of a
+  fixed form.
 - **Disk space of the databases.** A server with no loop devices (for example a container of
   an LXC host) cannot apply the disk limit of a database server. On such a server, a customer
   that fills the disk of the server with database data stops the database servers of all
