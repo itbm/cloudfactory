@@ -140,7 +140,7 @@ fi
 # does not open the port for the edge proxy.
 # shellcheck disable=SC2016 # The patterns are text of the script, not variables of this test.
 if grep -q 'ip daddr $SERVICE_ADDRESS tcp dport 19432 meta skuid != { 0, $panel_uid } reject with tcp reset' "$HERE/install.sh" &&
-	grep -q 'tcp dport != { 3306, 5432, 19432 } meta skuid != { 0, $edge_uid } reject with tcp reset' "$HERE/install.sh" &&
+	grep -q 'tcp dport != 19432 meta skuid != { 0, $edge_uid } reject with tcp reset' "$HERE/install.sh" &&
 	grep -q 'PanelDatabasePort = 19432' "$HERE/../agent/internal/quadlet/quadlet.go"; then
 	PASS=$((PASS + 1))
 else
@@ -157,6 +157,16 @@ if grep -q 'useradd --system --user-group --no-create-home --home-dir /nonexiste
 else
 	FAIL=$((FAIL + 1))
 	echo 'FAIL: the user of the worker of the agent'
+fi
+# Each database server has its own Unix user, which the agent makes. The script makes no Unix
+# user for the databases. Root owns the directory of the database servers.
+if ! grep -Eq '(useradd|for user in) .*cf-db' "$HERE/install.sh" &&
+	grep -qxF 'install -d -o root -g root -m 0711 /var/lib/cf-db' "$HERE/install.sh" &&
+	grep -q 'return "/var/lib/cf-db"' "$HERE/../agent/internal/actions/dbservice.go"; then
+	PASS=$((PASS + 1))
+else
+	FAIL=$((FAIL + 1))
+	echo 'FAIL: the directory of the database servers'
 fi
 if ! grep -Eq 'sshd_config|sshd -t|reload_ssh|systemctl (reload|restart) ssh' "$HERE/install.sh"; then PASS=$((PASS + 1)); else FAIL=$((FAIL + 1)); echo 'FAIL: the script changes the SSH service of the host'; fi
 # shellcheck disable=SC2016 # The pattern finds the text $SFTP_PORT in the script.
@@ -185,8 +195,10 @@ firewall >"$WORK/default.nft"
 rule "the website users go to the website chain" yes 'ct state new meta skuid 20000-59999 jump websites' "$WORK/default.nft"
 rule "a website reaches the database servers of its customer" yes 'meta skuid . ip daddr . tcp dport @database_access accept' "$WORK/default.nft"
 rule "the rule of the database servers has no list of ports" no 'meta skuid . ip daddr @database_access tcp dport { 3306, 5432, 6379 } accept' "$WORK/default.nft"
-rule "a website of an earlier release reaches the shared databases" yes 'ip daddr 169.254.77.1 tcp dport { 3306, 5432 } accept' "$WORK/default.nft"
-rule "the shared database address has no Valkey port" no 'ip daddr 169.254.77.1 tcp dport { 3306, 5432, 6379 } accept' "$WORK/default.nft"
+# No website connects to a database on the service address: each database is in a database
+# server of its customer, on the database network.
+rule "the service address has no database ports for the websites" no 'ip daddr 169.254.77.1 tcp dport { 3306, 5432 } accept' "$WORK/default.nft"
+rule "the rule for the edge proxy has no database ports" no 'ct state new ip daddr 169.254.77.1 tcp dport != { 3306, 5432, 19432 } meta skuid != { 0, 991 } reject with tcp reset' "$WORK/default.nft"
 rule "only root and the websites reach the database network" yes 'ct state new ip daddr 169.254.80.0/20 meta skuid != 0 meta skuid != 20000-59999 jump refuse' "$WORK/default.nft"
 rule "the set of the database access has the UID, the address and the port" yes 'typeof meta skuid . ip daddr . tcp dport' "$WORK/default.nft"
 # Each database server has its own Unix user. A database server opens no connection.
@@ -211,23 +223,21 @@ rule "the source address changes in the NAT table" yes 'type nat hook postroutin
 rule "local connections from ::1 are not redirected" yes 'ip6 saddr ::1 return' "$WORK/default.nft"
 if [ "$(line 'ip6 saddr ::1 return' "$WORK/default.nft")" -lt "$(line 'fib daddr type local tcp dport 80 redirect to :8080' "$WORK/default.nft")" ]; then PASS=$((PASS + 1)); else FAIL=$((FAIL + 1)); echo 'FAIL: the rule for ::1 comes after the redirects'; fi
 rule "the panel database rule has the user of the panel" yes 'ct state new ip daddr 169.254.77.1 tcp dport 19432 meta skuid != { 0, 992 } reject with tcp reset' "$WORK/default.nft"
-# The rule for the ports of the other websites comes before the website chain, and the
-# databases come before the rule that closes the addresses of the server.
-other=$(line 'ct state new ip daddr 169.254.77.1 tcp dport != { 3306, 5432, 19432 } meta skuid != { 0, 991 } reject with tcp reset' "$WORK/default.nft")
+# The rule for the ports of the other websites comes before the website chain.
+other=$(line 'ct state new ip daddr 169.254.77.1 tcp dport != 19432 meta skuid != { 0, 991 } reject with tcp reset' "$WORK/default.nft")
 jump=$(line 'ct state new meta skuid 20000-59999 jump websites' "$WORK/default.nft")
-databases=$(line 'ip daddr 169.254.77.1 tcp dport { 3306, 5432 } accept' "$WORK/default.nft")
 local_rule=$(line 'fib daddr type { local, broadcast, multicast } jump refuse' "$WORK/default.nft")
-if [ "$other" -gt 0 ] && [ "$other" -lt "$jump" ] && [ "$databases" -gt 0 ] && [ "$databases" -lt "$local_rule" ]; then PASS=$((PASS + 1)); else FAIL=$((FAIL + 1)); echo 'FAIL: the order of the website firewall rules'; fi
+if [ "$other" -gt 0 ] && [ "$other" -lt "$jump" ]; then PASS=$((PASS + 1)); else FAIL=$((FAIL + 1)); echo 'FAIL: the order of the website firewall rules'; fi
 # Each customer has its own database servers. The rule that closes the database network for
 # the other users comes before the website chain. The rule for the database servers of the
-# customer of a website is the first rule of the website chain, and the set that it uses
-# comes before the chains.
+# customer of a website is the first rule of the website chain: it comes before the rule that
+# closes the addresses of the server. The set that it uses comes before the chains.
 network=$(line 'ct state new ip daddr 169.254.80.0/20 meta skuid != 0 meta skuid != 20000-59999 jump refuse' "$WORK/default.nft")
 access=$(line 'meta skuid . ip daddr . tcp dport @database_access accept' "$WORK/default.nft")
 chain=$(grep -nxF '  chain websites {' "$WORK/default.nft" | head -n 1 | cut -d: -f1 | grep . || echo 0)
 access_set=$(grep -nxF '  set database_access {' "$WORK/default.nft" | head -n 1 | cut -d: -f1 | grep . || echo 0)
 first_chain=$(grep -n '^  chain ' "$WORK/default.nft" | head -n 1 | cut -d: -f1 | grep . || echo 0)
-if [ "$network" -gt 0 ] && [ "$network" -lt "$jump" ] && [ "$chain" -gt 0 ] && [ "$access" -lt "$databases" ] && [ "$access_set" -gt 0 ] && [ "$access_set" -lt "$first_chain" ] &&
+if [ "$network" -gt 0 ] && [ "$network" -lt "$jump" ] && [ "$chain" -gt 0 ] && [ "$access" -lt "$local_rule" ] && [ "$access_set" -gt 0 ] && [ "$access_set" -lt "$first_chain" ] &&
 	[ "$(sed -n "$((chain + 1)),${access}p" "$WORK/default.nft" | grep -cv '^ *#')" -eq 1 ]; then
 	PASS=$((PASS + 1))
 else

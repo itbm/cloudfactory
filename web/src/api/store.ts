@@ -407,10 +407,6 @@ export function databasePrefix(websiteId: string) {
 
 export type GrantInput = { databaseId: string; privileges: DatabasePrivileges };
 
-/** The message for a Valkey database of a website with the shared database containers of an earlier release. */
-export const sharedDatabasesMessage = (server: string) =>
-  `This website uses the shared database containers of an earlier release, which have no Valkey. An administrator must move the databases of the server ${server} to database servers first.`;
-
 // Database servers
 //
 // A customer makes database servers as it makes websites. Each one is a container with one
@@ -601,21 +597,6 @@ export function installUpdates(serverId: string, policy?: "security" | "all" | "
 /** FR-1116: reboot only one server of each role at a time. */
 export function rebootServer(serverId: string) {
   return call(() => live.request<JobAnswer>("POST", `/servers/${serverId}/reboot`)).then((r) => track(r.job));
-}
-
-/** The websites of a server that use the shared database containers of an earlier release. */
-export const sharedDatabaseWebsites = (d: State, serverId: string) => d.websites.filter((w) => w.serverId === serverId && w.sharedDatabases && w.status !== "failed");
-
-/**
- * Moves the databases of a server from an earlier release to database servers. The panel
- * starts one job for each website that uses the shared containers. The job copies the
- * databases and the database users of the website to the database server of its customer with
- * the usual port of the engine. The panel makes that database server when the customer has none.
- */
-export function moveDatabases(serverId: string) {
-  return call(() => live.request<{ jobs: live.ApiJob[] }>("POST", `/servers/${serverId}/move-databases`))
-    .then((r) => Promise.all(r.jobs.map((job) => track(job))))
-    .then(() => refresh());
 }
 
 /** The panel connects to the agent of the server again and records the result. */

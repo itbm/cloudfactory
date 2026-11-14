@@ -40,7 +40,7 @@ class DatabaseServerTest extends TestCase
     {
         $this->customer = $this->customer($this->plan($plan));
         $this->host = $this->server(['database_engines' => self::ENGINES, 'database_instances' => true]);
-        $this->website = $this->website($this->customer, $this->host, $this->image(), attributes: ['database_instance' => $this->customer->id]);
+        $this->website = $this->website($this->customer, $this->host, $this->image());
     }
 
     private function finish(string $jobId, JobState $state = JobState::Succeeded, array $result = []): AgentJob
@@ -205,7 +205,7 @@ class DatabaseServerTest extends TestCase
     {
         $this->hosting();
         $other = $this->server(['database_engines' => self::ENGINES, 'database_instances' => true]);
-        $old = $this->server();
+        $old = $this->server(['database_instances' => false]);
         $noWebsite = Customer::create(['name' => 'Bolt', 'email' => 'it@bolt.example', 'role' => 'owner', 'plan_id' => $this->customer->plan_id]);
 
         $this->actingWith($this->user(Role::Owner, $this->customer));
@@ -339,14 +339,11 @@ class DatabaseServerTest extends TestCase
         $this->assertSame([$this->customer->id, $this->host->id, 3306], [$new->customer_id, $new->server_id, $new->port]);
         $this->getJson($databases)->assertJsonCount(2, 'servers');
 
-        // A website from an earlier release uses the shared containers, which have no database servers.
-        $shared = $this->website($this->customer, $this->host, $this->image(), 'old.example');
-        $this->postJson("/api/v1/websites/{$shared->id}/databases", ['engine' => 'postgresql', 'name' => 'data', 'databaseServerId' => $postgres->id])
-            ->assertJsonValidationErrors(['databaseServerId' => "This website uses the shared database containers of an earlier release. An administrator must move the databases of the server {$this->host->name} to database servers first."]);
-        $response = $this->postJson("/api/v1/websites/{$shared->id}/databases", ['engine' => 'postgresql', 'name' => 'data'])->assertAccepted()
-            ->assertJsonPath('databaseServerId', null)->assertJsonPath('port', 5432);
-        $this->assertArrayNotHasKey('databaseServer', AgentJob::findOrFail($response->json('job.id'))->payload);
-        $this->getJson("/api/v1/websites/{$shared->id}/databases")->assertJsonPath('servers', [])->assertJsonPath('databases.0.databaseServerId', null);
+        // A second website of the customer on the server uses the same database servers.
+        $second = $this->website($this->customer, $this->host, $this->image(), 'second.example');
+        $this->postJson("/api/v1/websites/{$second->id}/databases", ['engine' => 'postgresql', 'name' => 'data', 'databaseServerId' => $postgres->id])->assertAccepted()
+            ->assertJsonPath('databaseServerId', $postgres->id)->assertJsonPath('port', 5432);
+        $this->getJson("/api/v1/websites/{$second->id}/databases")->assertJsonCount(2, 'servers')->assertJsonPath('databases.0.databaseServerId', $postgres->id);
     }
 
     public function test_a_database_user_is_in_the_database_server_of_its_databases(): void

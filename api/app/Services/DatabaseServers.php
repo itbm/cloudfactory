@@ -26,8 +26,6 @@ class DatabaseServers
      * agent: with SetDatabaseServer, or in the payload of a job that makes a database.
      *
      * @param  string  $field  The request field that gets the error text.
-     * @param  bool  $checkLimit  False for the move from an earlier release: the databases of
-     *                            the customer exist, so they must get a database server.
      *
      * @throws ValidationException
      */
@@ -39,18 +37,15 @@ class DatabaseServers
         ?string $name = null,
         ?array $limits = null,
         string $field = 'engine',
-        bool $checkLimit = true,
     ): DatabaseServer {
         self::checkHost($server, $engine, $field);
 
-        return DB::transaction(function () use ($customer, $server, $engine, $plan, $name, $limits, $field, $checkLimit) {
+        return DB::transaction(function () use ($customer, $server, $engine, $plan, $name, $limits, $field) {
             // The count, the port and the new record are in one transaction. The lock on the
             // customer row stops two requests from passing the limit, or from getting the same
             // port, at the same time.
             $customer = Customer::with('plan')->lockForUpdate()->findOrFail($customer->id);
-            if ($checkLimit) {
-                self::checkLimit($customer, $field);
-            }
+            self::checkLimit($customer, $field);
             $port = self::freePort($customer->id, $server->id, $engine);
             if ($port === null) {
                 throw ValidationException::withMessages([$field => 'A customer can have '.DatabaseServer::PORTS." database servers of one engine on a server. {$customer->name} has this number."]);
@@ -224,29 +219,6 @@ class DatabaseServers
         }
 
         return $locked;
-    }
-
-    /**
-     * The database server that gets the databases of a website from the shared containers of
-     * an earlier release: the database server of the customer with the usual port of the
-     * engine. The applications of the website connect to that port. The panel makes the
-     * database server when the customer has none on that port.
-     *
-     * Null when the panel removes the database server on that port now.
-     */
-    public static function forMove(Website $website, string $engine): ?DatabaseServer
-    {
-        $server = DatabaseServer::where([
-            'customer_id' => $website->customer_id,
-            'server_id' => $website->server_id,
-            'engine' => $engine,
-            'port' => DatabaseServer::FIRST_PORT[$engine],
-        ])->first();
-        if ($server) {
-            return $server->status === DatabaseServer::REMOVING ? null : $server;
-        }
-
-        return self::make($website->customer, $website->server, $engine, checkLimit: false);
     }
 
     public static function engineName(string $engine): string

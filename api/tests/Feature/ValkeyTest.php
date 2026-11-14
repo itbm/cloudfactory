@@ -25,7 +25,7 @@ class ValkeyTest extends TestCase
     {
         $customer = $this->customer();
         // The website can use the database servers of its customer.
-        $website = $this->website($customer, $this->server($server + ['database_engines' => self::ENGINES, 'database_instances' => true]), $this->image(), attributes: ['database_instance' => $customer->id]);
+        $website = $this->website($customer, $this->server($server + ['database_engines' => self::ENGINES, 'database_instances' => true]), $this->image());
         $this->actingWith($this->user());
 
         return $website;
@@ -128,8 +128,9 @@ class ValkeyTest extends TestCase
     {
         $website = $this->site();
         $database = $this->cache($website);
-        $website->databases()->create(['engine' => 'mariadb', 'name' => $website->unix_user.'_shop']);
-        $shop = $website->databaseUsers()->create(['engine' => 'mariadb', 'name' => $website->unix_user.'_cache', 'access' => 'website']);
+        $maria = $this->databaseServerOf($website);
+        $website->databases()->create(['engine' => 'mariadb', 'name' => $website->unix_user.'_shop', 'database_server_id' => $maria->id]);
+        $shop = $website->databaseUsers()->create(['engine' => 'mariadb', 'name' => $website->unix_user.'_cache', 'access' => 'website', 'database_server_id' => $maria->id]);
 
         $jobId = $this->deleteJson("/api/v1/websites/{$website->id}/databases/{$database->id}")->assertAccepted()->json('job.id');
         $job = AgentJob::findOrFail($jobId);
@@ -150,8 +151,8 @@ class ValkeyTest extends TestCase
         $server = $this->server(['local' => true, 'agent_token_hash' => hash('sha256', 'cfa_valkey'), 'certificate_fingerprint' => self::LOCAL_FINGERPRINT, 'connection_checked_at' => now()]);
         $website = $this->website($this->customer(), $server, $this->image());
         $name = $website->unix_user.'_cache';
-        $website->databases()->create(['engine' => 'valkey', 'name' => $name]);
-        $website->databases()->create(['engine' => 'mariadb', 'name' => $name]);
+        $website->databases()->create(['engine' => 'valkey', 'name' => $name, 'database_server_id' => $this->databaseServerOf($website, 'valkey')->id]);
+        $website->databases()->create(['engine' => 'mariadb', 'name' => $name, 'database_server_id' => $this->databaseServerOf($website)->id]);
         $this->assertFalse($server->hasDatabaseEngine('valkey'));
 
         $this->asLocalAgent('cfa_valkey')->postJson('/api/agent/v1/report', ['agentVersion' => '0.1.9', 'databaseEngines' => self::ENGINES, 'databases' => [
@@ -175,11 +176,12 @@ class ValkeyTest extends TestCase
     {
         $website = $this->site();
         $this->cache($website);
-        $website->databases()->create(['engine' => 'mariadb', 'name' => $website->unix_user.'_shop']);
+        $maria = $this->databaseServerOf($website);
+        $website->databases()->create(['engine' => 'mariadb', 'name' => $website->unix_user.'_shop', 'database_server_id' => $maria->id]);
         $this->putJson('/api/v1/backup-policy', ['daily' => 7, 'weekly' => 4, 'monthly' => 6, 'time' => '03:00', 'target' => 's3:s3.amazonaws.com/backups'])->assertOk();
 
         $jobId = $this->postJson("/api/v1/websites/{$website->id}/snapshots")->assertAccepted()->json('job.id');
-        $this->assertSame([['engine' => 'mariadb', 'name' => $website->unix_user.'_shop']], AgentJob::findOrFail($jobId)->payload['databases']);
+        $this->assertSame([['engine' => 'mariadb', 'name' => $website->unix_user.'_shop', 'databaseServer' => $maria->id]], AgentJob::findOrFail($jobId)->payload['databases']);
         $this->finish($jobId, result: ['snapshotId' => 'abc123', 'sizeBytes' => 1024]);
 
         $this->getJson("/api/v1/websites/{$website->id}/snapshots")->assertJsonPath('data.0.databases', ["mariadb:{$website->unix_user}_shop"]);

@@ -5,6 +5,7 @@ namespace Tests\Support;
 use App\Enums\DomainKind;
 use App\Enums\Role;
 use App\Models\Customer;
+use App\Models\DatabaseServer;
 use App\Models\Image;
 use App\Models\Plan;
 use App\Models\Server;
@@ -34,9 +35,10 @@ trait Hosting
         return Customer::create($attributes + ['name' => 'Acme Ltd', 'email' => 'it@acme.example', 'role' => 'owner', 'plan_id' => ($plan ?? $this->plan())->id]);
     }
 
+    /** A server. Its agent reports that it can operate database servers. */
     protected function server(array $attributes = []): Server
     {
-        return Server::create($attributes + ['name' => 'web-'.substr(uniqid(), -5), 'roles' => ['web'], 'state' => 'healthy', 'agent_url' => 'https://web-1.internal:7443', 'agent_version' => '0.1.0']);
+        return Server::create($attributes + ['name' => 'web-'.substr(uniqid(), -5), 'roles' => ['web'], 'state' => 'healthy', 'agent_url' => 'https://web-1.internal:7443', 'agent_version' => '0.1.0', 'database_instances' => true]);
     }
 
     protected function image(array $attributes = []): Image
@@ -54,6 +56,16 @@ trait Hosting
         $website->domains()->create(['name' => $name, 'kind' => DomainKind::Primary, 'verification_token' => 'cf-test', 'verified_at' => now()]);
 
         return $website;
+    }
+
+    /** A database server of the customer of a website, on the server of the website. */
+    protected function databaseServerOf(Website $website, string $engine = 'mariadb', array $attributes = []): DatabaseServer
+    {
+        return DatabaseServer::create($attributes + [
+            'customer_id' => $website->customer_id, 'server_id' => $website->server_id, 'plan_id' => $website->plan_id, 'engine' => $engine,
+            'name' => "{$engine}-1", 'port' => DatabaseServer::FIRST_PORT[$engine], 'status' => DatabaseServer::RUNNING,
+            'limits' => ['vcpus' => 1, 'memoryBytes' => 1024 ** 3, 'diskBytes' => 5 * 1024 ** 3],
+        ]);
     }
 
     protected function user(Role $role = Role::Administrator, ?Customer $customer = null): User

@@ -426,7 +426,7 @@ paths:
                         databases: { type: array, items: { type: string } }
                         host: { type: string, description: The host name that the application of the copy connects to. }
                         port: { type: integer }
-                        databaseServerId: { type: [string, 'null'] }
+                        databaseServerId: { type: string }
         '422': { $ref: '#/components/responses/Invalid' }
 
   /v1/websites/{websiteId}/domains:
@@ -644,9 +644,7 @@ paths:
                         id: { type: string }
                         engine: { $ref: '#/components/schemas/Engine' }
                         name: { type: string }
-                        databaseServerId:
-                          type: [string, 'null']
-                          description: The database server that has the database. Null for the shared database containers of an earlier release.
+                        databaseServerId: { type: string, description: The database server that has the database. }
                         host: { type: string, description: 'The host name that the application of the website connects to, for example `mariadb.internal`.' }
                         port: { type: integer, description: The port of the database server. }
                         sizeBytes: { type: integer, description: Not used for Valkey. }
@@ -662,8 +660,7 @@ paths:
                     type: array
                     description: >-
                       The database servers that can get a database of this website: those of its
-                      customer on its server. Empty for a website that uses the shared database
-                      containers of an earlier release.
+                      customer on its server.
                     items: { $ref: '#/components/schemas/DatabaseServer' }
     post:
       tags: [Databases]
@@ -690,11 +687,13 @@ paths:
         A Valkey database is a database number and a user with the same name in a Valkey
         database server. The application connects to the host `valkey.internal` and the port of
         the database server, with the user name, the password and the database number. The user
-        has access to that number only. `createUser` must not be false. The response is 422 when
-        the agent of the server did not report the engine (see `databaseEngines` of the server),
-        and when the website uses the shared database containers of an earlier release (see
-        `sharedDatabases` of the website). The list of the databases gives the number when the
-        job is complete.
+        has access to that number only. `createUser` must not be false. The list of the
+        databases gives the number when the job is complete.
+
+
+        The response is 422 when the agent of the server did not report that it can operate
+        database servers (see `databaseInstances` of the server), and when it did not report the
+        engine (see `databaseEngines` of the server). Update the agent of the server.
       requestBody:
         required: true
         content:
@@ -721,7 +720,7 @@ paths:
                   name: { type: string }
                   user: { type: [string, 'null'] }
                   password: { type: [string, 'null'] }
-                  databaseServerId: { type: [string, 'null'] }
+                  databaseServerId: { type: string }
                   host: { type: string }
                   port: { type: integer }
                   job: { $ref: '#/components/schemas/Job' }
@@ -1335,43 +1334,6 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Server' }
         '404': { $ref: '#/components/responses/NotFound' }
-
-  /v1/servers/{id}/move-databases:
-    parameters:
-      - { $ref: '#/components/parameters/Id' }
-    post:
-      tags: [Servers]
-      summary: Move the databases of a server to database servers
-      description: >-
-        Each customer has its own database servers. On a server from an earlier release, all
-        websites use one shared MariaDB container and one shared PostgreSQL container. This
-        request starts one job for each website of the server that uses the shared containers
-        (see `sharedDatabases` of the website). The job copies the databases and the database
-        users of the website to database servers of its customer: one for each engine, on the
-        usual port of the engine. The panel makes a database server that the customer does not
-        have, with the plan of the customer. The plan does not limit the number of these
-        database servers. The passwords, the host names and the ports stay the same. The website
-        does not operate during the copy of its databases. When the last website has moved, the
-        agent stops the shared containers. Their data stays on the disk of the server.
-
-
-        The response has no job for a website that the panel makes now, and for a website with a
-        job that is not complete. After a job fails, the website uses the shared containers
-        again, and you can send the request again. The response is 422 when the agent of the
-        server is from an earlier release (see `databaseInstances` of the server).
-      responses:
-        '202':
-          description: The jobs are in the queue. One job for each website.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  jobs:
-                    type: array
-                    items: { $ref: '#/components/schemas/Job' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '422': { $ref: '#/components/responses/Invalid' }
 
   /v1/panel-certificate:
     get:
@@ -2234,12 +2196,6 @@ components:
             False when the server of the website does not apply the disk limit of the website,
             because the file system of the websites has no user quotas. True when it applies the
             limit. Null when the agent of the server did not report it.
-        sharedDatabases:
-          type: boolean
-          description: >-
-            True when the website uses the shared database containers of an earlier release.
-            False when its databases are in database servers of its customer. A website with the
-            shared containers cannot have a Valkey database.
         managedByTerraform: { type: boolean }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
@@ -2360,14 +2316,8 @@ components:
           type: boolean
           description: >-
             True when the agent of the server can operate the database servers of customers.
-            With an agent of an earlier release, all websites of the server use the same
-            database containers.
-        sharedDatabaseWebsites:
-          type: [integer, 'null']
-          description: >-
-            The number of websites of the server that use the shared database containers of an
-            earlier release. Send "Move the databases of a server to database servers" to move
-            their databases. Null when `databaseInstances` is false.
+            With an agent of an earlier release, the websites of the server cannot have a
+            database. Update the agent of the server.
         databaseServers: { type: [integer, 'null'], description: The number of database servers of customers on the server. A server with database servers cannot be removed. }
         os: { type: [string, 'null'] }
         kernel: { type: [string, 'null'] }
@@ -2528,7 +2478,7 @@ components:
         id: { type: string }
         engine: { $ref: '#/components/schemas/Engine' }
         name: { type: string, description: Starts with the Unix user of the website and an underscore. }
-        databaseServerId: { type: [string, 'null'], description: The database server of the user. Null for the shared database containers of an earlier release. }
+        databaseServerId: { type: string, description: The database server of the user. }
         access: { type: string, enum: [website, anywhere], description: '"website": only the website container can connect. "anywhere": any address, with TLS.' }
         grants: { type: array, items: { $ref: '#/components/schemas/DatabaseGrant' } }
     DatabaseGrant:
@@ -2570,9 +2520,7 @@ components:
           type: integer
           minimum: 0
           description: >-
-            The number of databases of each database server with the plan. For a website that
-            uses the shared database containers of an earlier release, it is the number of
-            databases of the website.
+            The number of databases of each database server with the plan.
         phpExtensions: { type: array, items: { type: string } }
         limits: { $ref: '#/components/schemas/Limits', description: The limits of each website with the plan. }
         databaseServers:

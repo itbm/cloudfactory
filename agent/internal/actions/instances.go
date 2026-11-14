@@ -38,19 +38,16 @@ import (
 //   - The host firewall lets a website connect only to the ports of the database servers of
 //     its own customer, on the address of its own customer (the set database_access).
 //
-// The panel sends the ID of the customer with a new website (Website.database_instance). The
-// agent records the website in the state, with the customer (DatabaseInstance.Websites). A
-// website from an earlier release has no record: it uses the shared containers of that
-// release until MoveDatabases moves its databases.
+// The panel sends the ID of the customer with each website (Website.database_instance). The
+// agent records the website in the state, with the customer (DatabaseInstance.Websites).
 //
 // The panel sends each database server with the request that needs it first, and the ID of
 // the database server with each later request. The agent records each database server in the
 // state (DatabaseInstance.Servers).
 
-// dbServer is one database container of this server.
+// dbServer is one database server of this server.
 type dbServer struct {
-	// ID is the ID of a database server in lower case. Empty is the shared container of an
-	// earlier release, for all customers.
+	// ID is the ID of the database server in lower case.
 	ID string
 	// Engine is "mariadb", "postgresql" or "valkey".
 	Engine string
@@ -61,20 +58,21 @@ func (s dbServer) container() string { return quadlet.DatabaseContainer(s.Engine
 
 // String names the container in an error message.
 func (s dbServer) String() string {
-	if s.ID == "" {
-		return "shared " + s.Engine
-	}
 	return "the " + s.Engine + " database server " + s.ID
 }
 
-// errNoSharedValkey is the answer when a website from an earlier release asks for Valkey.
-var errNoSharedValkey = errors.New("this website uses the shared database containers of an earlier release, which have no Valkey; move the databases of the website to database servers of its customer first")
+// errNoDatabaseServer is the answer to a request that needs a database server and has none.
+var errNoDatabaseServer = errors.New("the request has no database server")
+
+// errNoCustomer is the answer when the agent has no record of the customer of a website.
+// The panel sends the customer with each website.
+var errNoCustomer = errors.New("the agent does not know the customer of the website; send the website again")
 
 // instanceKey checks the ID of a customer from the panel, and gives the key of its record:
-// the ID in lower case. An empty ID gives an empty key.
+// the ID in lower case.
 func instanceKey(id string) (string, error) {
 	if id == "" {
-		return "", nil
+		return "", errors.New("the website has no customer (database instance)")
 	}
 	if err := validate.ID(id); err != nil {
 		return "", fmt.Errorf("the database instance: %w", err)
@@ -83,10 +81,10 @@ func instanceKey(id string) (string, error) {
 }
 
 // serverKey checks the ID of a database server from the panel, and gives its key: the ID in
-// lower case. An empty ID gives an empty key.
+// lower case.
 func serverKey(id string) (string, error) {
 	if id == "" {
-		return "", nil
+		return "", errNoDatabaseServer
 	}
 	if err := validate.ID(id); err != nil {
 		return "", fmt.Errorf("the database server: %w", err)
@@ -94,19 +92,19 @@ func serverKey(id string) (string, error) {
 	return strings.ToLower(id), nil
 }
 
-// checkDatabaseServer checks a database server from the panel. An empty database server is
-// correct: it means the shared container of an earlier release.
+// checkDatabaseServer checks a database server from the panel.
 func checkDatabaseServer(s *agentv1.DatabaseServer) error {
 	if s.GetId() == "" {
-		return nil
+		return errNoDatabaseServer
 	}
 	_, idErr := serverKey(s.GetId())
-	_, customerErr := instanceKey(s.GetCustomer())
-	errs := []error{idErr, customerErr}
+	errs := []error{idErr}
 	if s.GetCustomer() == "" {
 		errs = append(errs, errors.New("the database server has no customer"))
+	} else if err := validate.ID(s.GetCustomer()); err != nil {
+		errs = append(errs, fmt.Errorf("the customer of the database server: %w", err))
 	}
-	if _, err := dbContainer(s.GetEngine()); err != nil {
+	if err := checkEngine(s.GetEngine()); err != nil {
 		errs = append(errs, err)
 	} else if err := quadlet.CheckDatabasePort(s.GetEngine(), int(s.GetPort())); err != nil {
 		errs = append(errs, err)
@@ -139,30 +137,23 @@ func recordOf(s *agentv1.DatabaseServer) DatabaseServer {
 	return DatabaseServer{Engine: s.GetEngine(), Port: int(s.GetPort()), VCPUs: l.GetVcpus(), MemoryBytes: l.GetMemoryBytes(), DiskBytes: l.GetDiskBytes()}
 }
 
-// server gives the database container for a database or a database user of a website. id is
-// the ID of the database server from the request. An empty ID is the shared container of an
-// earlier release. A step calls the function when it runs, because an earlier job can move
-// the databases of the website.
+// server gives the database server for a database or a database user of a website. id is the
+// ID of the database server from the request. A step calls the function when it runs.
 //
-// The function refuses a database server of a different customer, and a request that does
-// not agree with the record of the website: MoveDatabases can run between the request of the
-// panel and the step.
+// The function refuses a database server of a different customer.
 func (d *Deps) server(websiteID, id, engine string) (dbServer, error) {
-	if _, err := dbContainer(engine); err != nil {
+	if err := checkEngine(engine); err != nil {
 		return dbServer{}, err
+	}
+	if id == "" {
+		return dbServer{}, errNoDatabaseServer
 	}
 	customer, _, err := d.State.WebsiteDatabases(websiteID)
 	if err != nil {
 		return dbServer{}, err
 	}
-	if id == "" {
-		if customer != "" {
-			return dbServer{}, errors.New("the website uses the database servers of its customer, and the request has no database server; send the request again")
-		}
-		return dbServer{Engine: engine}, nil
-	}
 	if customer == "" {
-		return dbServer{}, errors.New("the website uses the shared database containers of an earlier release, and the request has a database server; move the databases of the website first")
+		return dbServer{}, errNoCustomer
 	}
 	return d.serverOf(customer, id, engine)
 }
@@ -195,7 +186,7 @@ func checkWebsiteServer(s *agentv1.DatabaseServer, engine string) error {
 	if err := checkDatabaseServer(s); err != nil {
 		return err
 	}
-	if s.GetId() != "" && s.GetEngine() != engine {
+	if s.GetEngine() != engine {
 		return fmt.Errorf("the database server has the engine %s, not %s", s.GetEngine(), engine)
 	}
 	return nil
@@ -205,36 +196,39 @@ func checkWebsiteServer(s *agentv1.DatabaseServer, engine string) error {
 // It makes a database server of the customer of the website that this server does not have,
 // and starts it.
 func (d *Deps) websiteServer(ctx context.Context, websiteID string, s *agentv1.DatabaseServer, engine string) (dbServer, error) {
-	if s.GetId() != "" {
-		customer, _, err := d.State.WebsiteDatabases(websiteID)
-		if err != nil {
-			return dbServer{}, err
-		}
-		if key, _ := instanceKey(s.GetCustomer()); customer != "" && customer != key {
-			return dbServer{}, fmt.Errorf("the database server %s is not a database server of the customer of the website", s.GetId())
-		}
-		// With no customer, server refuses the request: the website uses the shared containers.
-		if customer != "" {
-			if _, err := d.ensureServer(ctx, s, false); err != nil {
-				return dbServer{}, err
-			}
-		}
+	if s.GetId() == "" {
+		return dbServer{}, errNoDatabaseServer
+	}
+	customer, _, err := d.State.WebsiteDatabases(websiteID)
+	if err != nil {
+		return dbServer{}, err
+	}
+	if customer == "" {
+		return dbServer{}, errNoCustomer
+	}
+	if customer != strings.ToLower(s.GetCustomer()) {
+		return dbServer{}, fmt.Errorf("the database server %s is not a database server of the customer of the website", s.GetId())
+	}
+	if _, err := d.ensureServer(ctx, s, false); err != nil {
+		return dbServer{}, err
 	}
 	return d.server(websiteID, s.GetId(), engine)
 }
 
 // ensureServer makes sure that this server has a database server from the panel, and that
-// the database server operates. It gives the container. An empty database server gives the
-// shared container of an earlier release, which the function does not start.
+// the database server operates. It gives the container.
 //
 // A database server that the agent has keeps its limits. Only SetDatabaseServer changes them
 // (update), because a change restarts the database server.
 func (d *Deps) ensureServer(ctx context.Context, s *agentv1.DatabaseServer, update bool) (dbServer, error) {
-	if s.GetId() == "" {
-		return dbServer{Engine: s.GetEngine()}, nil
+	key, err := serverKey(s.GetId())
+	if err != nil {
+		return dbServer{}, err
 	}
-	key, _ := serverKey(s.GetId())
-	customer, _ := instanceKey(s.GetCustomer())
+	customer, err := instanceKey(s.GetCustomer())
+	if err != nil {
+		return dbServer{}, err
+	}
 	srv := dbServer{ID: key, Engine: s.GetEngine()}
 	// put records the limits, and makes the next step write the unit and the disk again.
 	put := func(record DatabaseServer, update bool) (bool, error) {
@@ -277,12 +271,8 @@ func (d *Deps) putServer(customer, key string, record DatabaseServer, update boo
 	return d.State.PutDatabaseServer(customer, key, record, update)
 }
 
-// dbDir holds the files of one database server, or of the shared containers: the data
-// directory and the secret of each engine.
+// dbDir holds the files of one database server: its disk and its secret.
 func (d *Deps) dbDir(s dbServer) string {
-	if s.ID == "" {
-		return d.dbHome()
-	}
 	return filepath.Join(d.dbHome(), "servers", s.ID)
 }
 
@@ -450,8 +440,7 @@ func (s *State) DatabaseServer(key string) (customer string, record DatabaseServ
 }
 
 // WebsiteDatabases gives the customer whose database servers a website can use, and the
-// address of that customer. Both are "" for a website that uses the shared containers of an
-// earlier release.
+// address of that customer. Both are "" for a website with no record of its customer.
 func (s *State) WebsiteDatabases(websiteID string) (key, address string, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -489,7 +478,7 @@ func (s *State) DatabaseInstances() (map[string]DatabaseInstance, error) {
 }
 
 // databaseAddress gives the address for the database host names of a website container: the
-// address of its customer, or "" for the shared containers.
+// address of its customer, or "" for a website with no record of its customer.
 func (d *Deps) databaseAddress(websiteID string) string {
 	_, address, err := d.State.WebsiteDatabases(websiteID)
 	if err != nil {
@@ -516,8 +505,8 @@ func (d *Deps) releaseDatabases(key, websiteID string) error {
 	return d.State.ReleaseDatabases(key, websiteID)
 }
 
-// instanceLock gives the lock of one database server. "" is the shared containers. The start
-// and the removal of a database server hold it.
+// instanceLock gives the lock of one database server. The start and the removal of a
+// database server hold it.
 func (d *Deps) instanceLock(key string) *sync.Mutex {
 	d.dbMu.Lock()
 	defer d.dbMu.Unlock()
@@ -540,7 +529,7 @@ func (d *Deps) stopServer(ctx context.Context, s dbServer) error {
 	dir, err := d.Host.UnitDir(account)
 	if err != nil {
 		var unknown user.UnknownUserError
-		if s.ID != "" && errors.As(err, &unknown) {
+		if errors.As(err, &unknown) {
 			// The database server has no Unix user, so it has no container.
 			return nil
 		}
@@ -620,61 +609,6 @@ func (d *Deps) removeOldServerData(ctx context.Context) {
 			}
 		}
 	}
-}
-
-// retireSharedDatabases stops the shared database containers of an earlier release when no
-// website on this server uses them. Their data directories stay on the disk: an administrator
-// removes them.
-func (d *Deps) retireSharedDatabases(ctx context.Context) error {
-	lock := d.instanceLock("")
-	lock.Lock()
-	defer lock.Unlock()
-	sites, err := d.State.All()
-	if err != nil {
-		return err
-	}
-	instances, err := d.State.DatabaseInstances()
-	if err != nil {
-		return err
-	}
-	moved := map[string]bool{}
-	for _, inst := range instances {
-		for _, id := range inst.Websites {
-			moved[id] = true
-		}
-	}
-	for _, s := range sites {
-		if !moved[s.ID] {
-			return nil
-		}
-	}
-	dir, err := d.Host.UnitDir(DBUser)
-	if err != nil {
-		return err
-	}
-	reload := false
-	for _, engine := range Engines {
-		s := dbServer{Engine: engine}
-		unit := s.container() + ".container"
-		if _, err := os.Stat(filepath.Join(dir, unit)); err != nil {
-			continue
-		}
-		d.dbMu.Lock()
-		delete(d.dbReady, s)
-		d.dbMu.Unlock()
-		if _, err := d.Host.Systemctl(ctx, DBUser, "stop", s.container()+".service"); err != nil {
-			return err
-		}
-		if err := d.Host.RemoveUnit(DBUser, unit); err != nil {
-			return err
-		}
-		reload = true
-		slog.Info("stopped a shared database container of an earlier release; its data stays on the disk", "engine", engine, "data", filepath.Join(d.dbHome(), engine))
-	}
-	if reload {
-		_, err = d.Host.Systemctl(ctx, DBUser, "daemon-reload")
-	}
-	return err
 }
 
 // valkeyDataMB gives the memory limit of a Valkey database server for its data, in MB, from

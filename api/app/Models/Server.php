@@ -2,7 +2,6 @@
 
 namespace App\Models;
 
-use App\Enums\WebsiteStatus;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
@@ -100,16 +99,6 @@ class Server extends Model
         return in_array($engine, $this->database_engines ?? Database::SQL_ENGINES, true);
     }
 
-    /**
-     * The ID of the customer whose database servers a new website of the customer can use on
-     * this server. It is null when the agent of the server is from an earlier release: such
-     * an agent has only the shared database containers.
-     */
-    public function databaseInstanceFor(string $customerId): ?string
-    {
-        return $this->database_instances ? $customerId : null;
-    }
-
     public function websites(): HasMany
     {
         return $this->hasMany(Website::class);
@@ -119,15 +108,6 @@ class Server extends Model
     public function databaseServers(): HasMany
     {
         return $this->hasMany(DatabaseServer::class);
-    }
-
-    /**
-     * The websites that use the shared database containers of an earlier release. The panel
-     * made them, so each one is on the server.
-     */
-    public function sharedDatabaseWebsites(): HasMany
-    {
-        return $this->websites()->whereNull('database_instance')->where('status', '!=', WebsiteStatus::Failed->value);
     }
 
     public function jobs(): HasMany

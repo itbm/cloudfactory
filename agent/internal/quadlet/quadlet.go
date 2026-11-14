@@ -98,8 +98,8 @@ type Website struct {
 	// Stopped is true when the owner stopped the website. Then systemd does not start it at boot.
 	Stopped bool
 	// DatabaseAddress is the address of the database servers of the customer of the website
-	// (DatabaseAddress). Empty means ServiceAddress, where the shared database containers of
-	// an earlier release publish their ports.
+	// (DatabaseAddress). With no address, the container has no database host names: the agent
+	// has no record of the customer of the website.
 	DatabaseAddress string
 }
 
@@ -121,9 +121,9 @@ func (w Website) UnitName() string { return w.ContainerName() + ".container" }
 // ServiceName is the systemd service that Quadlet makes from the unit.
 func (w Website) ServiceName() string { return w.ContainerName() + ".service" }
 
-// ServiceAddress is the private address on the loopback interface of the host. The website,
-// database and panel containers publish their ports on it, and the edge proxy, the agent and
-// the websites connect to it. The installer adds it to "lo". The address is link-local, so it
+// ServiceAddress is the private address on the loopback interface of the host. The website
+// and panel containers publish their ports on it, and the edge proxy and the agent connect
+// to it. The installer adds it to "lo". The address is link-local, so it
 // is never on a real network.
 //
 // The ports are not on 127.0.0.1, because rootless Podman sends a connection from 127.0.0.1
@@ -233,14 +233,12 @@ func ContainerUnit(w Website) string {
 		containerPort = w.ContainerPort
 	}
 	line("PublishPort", ServiceAddress+":"+strconv.Itoa(w.Port)+":"+strconv.Itoa(containerPort))
-	// The database containers of the customer publish their ports on this address.
-	databases := w.DatabaseAddress
-	if databases == "" {
-		databases = ServiceAddress
+	// The database servers of the customer publish their ports on this address.
+	if w.DatabaseAddress != "" {
+		line("AddHost", MariaDBHost+":"+w.DatabaseAddress)
+		line("AddHost", PostgreSQLHost+":"+w.DatabaseAddress)
+		line("AddHost", ValkeyHost+":"+w.DatabaseAddress)
 	}
-	line("AddHost", MariaDBHost+":"+databases)
-	line("AddHost", PostgreSQLHost+":"+databases)
-	line("AddHost", ValkeyHost+":"+databases)
 	line("Volume", w.SiteDir+":/app:Z")
 	if w.IniFile != "" && w.Runtime != "custom" {
 		line("Volume", w.IniFile+":/usr/local/etc/php/conf.d/zz-cloudfactory.ini:ro,Z")
@@ -368,24 +366,23 @@ func EdgeUnit(e Edge) string {
 	}, "\n")
 }
 
-// Database is the input for the unit of a database container (FR-501). The user cf-db runs
-// the containers, each one in its own gVisor sandbox. Each database server of a customer is
-// one container, so a customer cannot use the memory, the connections or the settings of the
-// database server of a different customer. Each website connects with its own database user.
+// Database is the input for the unit of a database server (FR-501). Each database server of
+// a customer is one container with its own Unix user and its own gVisor sandbox, so a
+// customer cannot use the memory, the connections or the settings of the database server of
+// a different customer. Each website connects with its own database user.
 type Database struct {
 	// Engine is "mariadb", "postgresql" or "valkey".
 	Engine string
-	// ID is the ID of the database server, in lower case. Empty is the shared container of an
-	// earlier release, for all customers.
+	// ID is the ID of the database server, in lower case.
 	ID string
 	// Customer is the ID of the customer of the database server, in lower case.
 	Customer string
 	// Address is the address on which the container publishes its port: the address of the
-	// customer in DatabaseNetwork. Empty means ServiceAddress.
+	// customer in DatabaseNetwork.
 	Address string
 	// Port is the port on Address. 0 means the usual port of the engine (DatabasePort).
 	Port int
-	// Limits are the limits of the container. The shared container has none.
+	// Limits are the limits of the container.
 	Limits Limits
 	Image  string
 	// DataDir holds the data files on the host.
@@ -418,12 +415,8 @@ func PostgresWALMB(diskBytes int64) int {
 const DatabaseImageUser = 999
 
 // DatabaseContainer is the name of the container of a database server, for example
-// "cf-mariadb-01jbq3z5k8n6t4w2x9y7r5p3m1". With no ID, it is the shared container of an
-// earlier release, for example "cf-mariadb".
+// "cf-mariadb-01jbq3z5k8n6t4w2x9y7r5p3m1".
 func DatabaseContainer(engine, id string) string {
-	if id == "" {
-		return "cf-" + engine
-	}
 	return "cf-" + engine + "-" + id
 }
 
@@ -484,7 +477,7 @@ func ValkeyArgs(d Database) []string {
 	}
 }
 
-// DatabaseUnit gives the container unit of a database container.
+// DatabaseUnit gives the container unit of a database server.
 //
 // The superuser can connect only through the socket in the container, with "podman exec".
 // The agent uses it. Each connection on the published port needs a password: MariaDB has no
@@ -498,16 +491,13 @@ func DatabaseUnit(d Database) string {
 	if d.Port > 0 {
 		published = strconv.Itoa(d.Port)
 	}
-	description := "Cloudfactory " + map[string]string{"mariadb": "MariaDB", "postgresql": "PostgreSQL", "valkey": "Valkey"}[d.Engine]
-	address := d.Address
-	if address == "" {
-		address = ServiceAddress
-	}
-	if d.ID != "" {
-		description += " database server " + d.ID
-	} else {
-		description += " service"
-	}
+	description := "Cloudfactory " + map[string]string{"mariadb": "MariaDB", "postgresql": "PostgreSQL", "valkey": "Valkey"}[d.Engine] + " database server " + d.ID
+	// A database server has its own Unix user on the host, and that user owns the data
+	// files. In the container, that user is the database user of the image. Thus the
+	// database server starts as the database user, with no capability, and each file that
+	// it writes has the Unix user of the database server as its owner on the host. The
+	// disk limit is the user quota of that user.
+	user := strconv.Itoa(DatabaseImageUser)
 	lines := []string{
 		"[Unit]",
 		"Description=" + description,
@@ -520,25 +510,16 @@ func DatabaseUnit(d Database) string {
 		// Only on a private address of "lo": other computers cannot connect. The host firewall
 		// lets only the websites of the customer connect to this port on the address of the
 		// customer.
-		"PublishPort=" + address + ":" + published + ":" + port,
+		"PublishPort=" + d.Address + ":" + published + ":" + port,
 		"Label=io.cloudfactory.service=" + d.Engine,
 		"NoNewPrivileges=true",
 		"DropCapability=all",
+		"UserNS=keep-id:uid=" + user + ",gid=" + user,
+		"User=" + user,
+		"Group=" + user,
+		"ReadOnly=true",
+		"Tmpfs=/tmp",
 	}
-	if d.ID != "" {
-		// A database server has its own Unix user on the host, and that user owns the data
-		// files. In the container, that user is the database user of the image. Thus the
-		// database server starts as the database user, with no capability, and each file that
-		// it writes has the Unix user of the database server as its owner on the host. The
-		// disk limit is the user quota of that user.
-		user := strconv.Itoa(DatabaseImageUser)
-		lines = append(lines, "UserNS=keep-id:uid="+user+",gid="+user, "User="+user, "Group="+user)
-	} else {
-		// The shared container of an earlier release: the entry point of the image sets the
-		// owner of the data files, and then changes to the database user.
-		lines = append(lines, "AddCapability=CHOWN DAC_OVERRIDE FOWNER SETUID SETGID")
-	}
-	lines = append(lines, "ReadOnly=true", "Tmpfs=/tmp")
 	switch d.Engine {
 	case "valkey":
 		lines = append(lines,
@@ -573,13 +554,10 @@ func DatabaseUnit(d Database) string {
 			lines = append(lines, fmt.Sprintf("Exec=postgres -c max_wal_size=%dMB -c min_wal_size=32MB", wal))
 		}
 	}
-	if d.ID != "" {
-		lines = append(lines, "Label=io.cloudfactory.database-server="+d.ID, "Label=io.cloudfactory.customer="+d.Customer,
-			// The database server writes its data to the disk before it stops. The time must
-			// be less than the stop time of a user service of systemd (90 seconds).
-			"StopTimeout="+strconv.Itoa(DatabaseStopSeconds))
-	}
-	lines = append(lines,
+	lines = append(lines, "Label=io.cloudfactory.database-server="+d.ID, "Label=io.cloudfactory.customer="+d.Customer,
+		// The database server writes its data to the disk before it stops. The time must be
+		// less than the stop time of a user service of systemd (90 seconds).
+		"StopTimeout="+strconv.Itoa(DatabaseStopSeconds),
 		"",
 		"[Service]",
 		"Restart=always",

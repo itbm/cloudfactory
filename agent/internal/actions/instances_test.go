@@ -73,12 +73,9 @@ func dataOf(d *Deps, key string) string    { return filepath.Join(serverDir(d, k
 
 const runtimeImage = "ghcr.io/cloudfactory/frankenphp-php8.4:8.4.0-1"
 
-// podmanDB is the start of each Podman command of the user cf-db in these tests.
-const podmanDB = "runuser -u cf-db -- env XDG_RUNTIME_DIR=/run/user/990 podman "
-
 // users gives each Unix user of the tests its own UID, as on a server.
 func users(d *Deps) {
-	ids := map[string]int{DBUser: 990, "acme_x7k2": 20001, "bolt_k3m9": 20002, "acme_s1t2": 20003}
+	ids := map[string]int{"acme_x7k2": 20001, "bolt_k3m9": 20002, "acme_s1t2": 20003}
 	both(d, func(d *Deps) {
 		d.Host.LookupUID = func(name string) (int, error) {
 			if id, ok := ids[name]; ok {
@@ -107,10 +104,48 @@ func otherWebsite() *agentv1.Website {
 	return w
 }
 
-// mariaRequest gives the request for a MariaDB database of a website in a database server. A
-// nil database server is the shared container of an earlier release.
+// mariaRequest gives the request for a MariaDB database of a website in a database server.
 func mariaRequest(id, unixUser, name string, server *agentv1.DatabaseServer) *agentv1.CreateDatabaseRequest {
 	return &agentv1.CreateDatabaseRequest{JobId: jobID2, WebsiteId: id, UnixUser: unixUser, Engine: "mariadb", Name: name, User: name, Password: "Abcdefghijklmnop1234", Access: "website", DatabaseServer: server}
+}
+
+// customerServers records that the website of the tests is a website of the first customer of
+// the tests, and gives that customer a database server of each engine in the list. It starts
+// no container: the first statement for a database server starts it.
+func customerServers(t *testing.T, d *Deps, engines ...string) {
+	t.Helper()
+	if _, err := d.useDatabases(customerKey, websiteID); err != nil {
+		t.Fatal(err)
+	}
+	for _, engine := range engines {
+		s := databaseServer(engine)
+		if _, err := d.putServer(customerKey, strings.ToLower(s.GetId()), recordOf(s), false); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// testServer gives the database server of an engine of the first customer of the tests, for
+// a function that gets a database server and not a request.
+func testServer(engine string) dbServer {
+	return dbServer{ID: strings.ToLower(databaseServer(engine).GetId()), Engine: engine}
+}
+
+// execOf is the start of each "podman exec" command in the container of a database server
+// of the tests.
+func execOf(engine, key string) string {
+	return podmanOf(key) + "exec -i cf-" + engine + "-" + key + " "
+}
+
+// inputsOf gives the stdin of each command that starts with prefix, in one text.
+func inputsOf(f *execx.Fake, prefix string) string {
+	var b strings.Builder
+	for i, c := range f.Calls {
+		if strings.HasPrefix(c, prefix) {
+			b.WriteString(f.Inputs[i])
+		}
+	}
+	return b.String()
 }
 
 // newFirewall writes a firewall file of this release, so that the agent loads the database
@@ -157,7 +192,7 @@ func TestEachDatabaseServerHasItsOwnContainer(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Root owns the directories that lead to the files of the database servers.
-	if !f.Called("install -d -o root -g root -m 0711 " + filepath.Join(d.DBHome, "servers") + " " + filepath.Join(d.DBHome, "homes")) {
+	if !f.Called("install -d -o root -g root -m 0711 " + d.DBHome + " " + filepath.Join(d.DBHome, "servers") + " " + filepath.Join(d.DBHome, "homes")) {
 		t.Errorf("no directory for the database servers: %v", f.Calls)
 	}
 	secrets := map[string]bool{}
@@ -231,7 +266,7 @@ func TestEachDatabaseServerHasItsOwnContainer(t *testing.T) {
 				t.Errorf("a statement of the first customer is in the database server of the second: %s", in)
 			}
 		case strings.Contains(c, "exec -i cf-mariadb "), strings.Contains(c, "cf-mariadb.service"):
-			t.Errorf("the agent used the shared container: %s", c)
+			t.Errorf("the agent used a container with no database server: %s", c)
 		}
 	}
 	in := strings.Join(f.Inputs, "")
@@ -672,7 +707,7 @@ func TestDatabaseAddressNumbers(t *testing.T) {
 // A database server from the panel needs an ID of the panel, a customer, an engine, a port of
 // the engine and limits that a database server can start with.
 func TestCheckDatabaseServer(t *testing.T) {
-	if err := checkDatabaseServer(nil); err != nil {
+	if err := checkDatabaseServer(nil); !errors.Is(err, errNoDatabaseServer) {
 		t.Errorf("no database server: %v", err)
 	}
 	for _, engine := range Engines {
@@ -690,6 +725,7 @@ func TestCheckDatabaseServer(t *testing.T) {
 		}
 	}
 	for name, change := range map[string]func(*agentv1.DatabaseServer){
+		"no ID":                      func(s *agentv1.DatabaseServer) { s.Id = "" },
 		"a path as ID":               func(s *agentv1.DatabaseServer) { s.Id = "../../etc" },
 		"no customer":                func(s *agentv1.DatabaseServer) { s.Customer = "" },
 		"a path as customer":         func(s *agentv1.DatabaseServer) { s.Customer = "../../etc" },
@@ -713,61 +749,52 @@ func TestCheckDatabaseServer(t *testing.T) {
 	}
 }
 
-// A website from an earlier release keeps the shared containers until its databases move.
-// A change of its runtime does not move it, and it cannot have a Valkey database or a
-// database in a database server.
-func TestAWebsiteOfAnEarlierReleaseKeepsTheSharedContainers(t *testing.T) {
+// A website from an earlier release has no record of its customer. A change of its runtime
+// records the customer. Then the website can use the database servers of its customer.
+func TestAWebsiteOfAnEarlierReleaseGetsItsCustomer(t *testing.T) {
 	d, f, _ := deps(t)
-	users(d)
-	newFakeValkeyFor(d)
-	if err := run(t)(d.CreateWebsite(&agentv1.WebsiteRequest{JobId: jobID, Website: website(runtimeImage)})); err != nil {
-		t.Fatal(err)
-	}
-	// A newer panel sends the customer with each request for the website.
-	if err := run(t)(d.SetRuntime(&agentv1.WebsiteRequest{JobId: jobID2, Website: customerWebsite()})); err != nil {
-		t.Fatal(err)
-	}
-	if err := run(t)(d.CreateDatabase(mariaRequest(websiteID, "acme_x7k2", "acme_x7k2_shop", nil))); err != nil {
-		t.Fatal(err)
-	}
-	if !f.Called("systemctl --user --machine=cf-db@ restart cf-mariadb.service") || !strings.Contains(strings.Join(f.Inputs, ""), "CREATE USER 'acme_x7k2_shop'@'169.254.77.1'") {
-		t.Errorf("the database is not in the shared container: %v", f.Calls)
-	}
-	if u := unitFile(t, d, DBUser, "cf-mariadb.container"); !strings.Contains(u, "Volume="+filepath.Join(d.DBHome, "mariadb")+":/var/lib/mysql:Z\n") || !strings.Contains(u, "PublishPort=169.254.77.1:3306:3306\n") || strings.Contains(u, "MemoryMax") {
-		t.Errorf("the unit of the shared container:\n%s", u)
-	}
-	if u := unitFile(t, d, "acme_x7k2", "cf-acme_x7k2-b.container"); !strings.Contains(u, "AddHost=mariadb.internal:169.254.77.1\n") {
-		t.Errorf("the website does not use the service address:\n%s", u)
-	}
-	cache := valkeyRequest("acme_x7k2_cache")
-	cache.DatabaseServer = nil
-	if err := run(t)(d.CreateDatabase(cache)); !errors.Is(err, errNoSharedValkey) {
-		t.Errorf("Valkey for a website of an earlier release: %v", err)
-	}
-	// The databases of the website move first. Then it can have a database in a database server.
-	for engine, req := range map[string]*agentv1.CreateDatabaseRequest{
-		"mariadb": mariaRequest(websiteID, "acme_x7k2", "acme_x7k2_blog", databaseServer("mariadb")),
-		"valkey":  valkeyRequest("acme_x7k2_cache"),
-	} {
-		if err := run(t)(d.CreateDatabase(req)); err == nil || !strings.Contains(err.Error(), "move the databases of the website first") {
-			t.Errorf("a %s database server for a website of an earlier release: %v", engine, err)
-		}
-	}
-	if instances, _ := d.State.DatabaseInstances(); len(instances) != 0 {
-		t.Errorf("the website got database servers of a customer: %+v", instances)
-	}
-	// A website of this release has no shared containers: a request with no database server
-	// is not correct.
-	d, f, _ = deps(t)
 	users(d)
 	if err := run(t)(d.CreateWebsite(&agentv1.WebsiteRequest{JobId: jobID, Website: customerWebsite()})); err != nil {
 		t.Fatal(err)
 	}
-	if err := run(t)(d.CreateDatabase(mariaRequest(websiteID, "acme_x7k2", "acme_x7k2_shop", nil))); err == nil || !strings.Contains(err.Error(), "the request has no database server") {
+	// The state of an earlier release has the website, and no customer for it.
+	if err := d.releaseDatabases(customerKey, websiteID); err != nil {
+		t.Fatal(err)
+	}
+	shop := mariaRequest(websiteID, "acme_x7k2", "acme_x7k2_shop", databaseServer("mariadb"))
+	if err := run(t)(d.CreateDatabase(shop)); !errors.Is(err, errNoCustomer) {
+		t.Errorf("a database for a website with no customer: %v", err)
+	}
+	if instances, _ := d.State.DatabaseInstances(); len(instances) != 0 {
+		t.Errorf("the website got database servers: %+v", instances)
+	}
+	if err := run(t)(d.SetRuntime(&agentv1.WebsiteRequest{JobId: jobID2, Website: customerWebsite()})); err != nil {
+		t.Fatal(err)
+	}
+	if u := unitFile(t, d, "acme_x7k2", "cf-acme_x7k2-b.container"); !strings.Contains(u, "AddHost=mariadb.internal:"+customerAddress+"\n") {
+		t.Errorf("the website does not have the address of its customer:\n%s", u)
+	}
+	if err := run(t)(d.CreateDatabase(shop)); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(strings.Join(f.Inputs, ""), "CREATE USER 'acme_x7k2_shop'@'"+quadlet.DatabaseClientAddress+"'") {
+		t.Errorf("the database is not in the database server of the customer: %v", f.Inputs)
+	}
+	// A request with no database server is not correct, and a website with no customer is
+	// not correct.
+	if _, err := d.CreateDatabase(mariaRequest(websiteID, "acme_x7k2", "acme_x7k2_blog", nil)); !errors.Is(err, errNoDatabaseServer) {
 		t.Errorf("a request with no database server: %v", err)
 	}
-	if f.Called("systemctl --user --machine=cf-db@ restart cf-mariadb.service") {
-		t.Errorf("the agent started the shared container: %v", f.Calls)
+	w := customerWebsite()
+	w.DatabaseInstance = ""
+	if _, err := d.SetRuntime(&agentv1.WebsiteRequest{JobId: jobID2, Website: w}); err == nil {
+		t.Error("the agent accepted a website with no customer")
+	}
+	// The agent uses no container and no user of the shared databases of an earlier release.
+	for _, c := range f.Calls {
+		if strings.Contains(c, "runuser -u cf-db") || strings.Contains(c, "--machine=cf-db@") || strings.Contains(c, "cf-mariadb.service") {
+			t.Errorf("the agent used the shared databases of an earlier release: %s", c)
+		}
 	}
 }
 

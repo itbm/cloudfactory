@@ -142,48 +142,10 @@ describe("the server page", () => {
 });
 
 describe("the database servers of each customer", () => {
-  /** Two websites of web-2 use the shared database containers of an earlier release. */
-  const earlier = () => {
-    const sites = getState().websites.filter((w) => w.serverId === server().id).slice(0, 2);
-    sites.forEach((w) => { w.sharedDatabases = true; });
-    Object.assign(server(), { sharedDatabaseWebsites: 2 });
-    return sites;
-  };
-
-  it("moves the databases of the websites of an earlier release", async () => {
-    const sites = earlier();
-    api.on("POST /servers/*/move-databases", () => [202, { jobs: sites.map((w, i) => apiJob({ id: `move-${i}`, action: "MoveDatabases", title: `Move the databases of ${w.name}`, websiteId: w.id, serverId: server().id })) }]);
-    page();
-    expect(screen.getByText("2 websites on this server use the shared database containers of an earlier release.")).toBeTruthy();
-    expect(screen.getByText(/Each website stops during the copy of its databases/)).toBeTruthy();
-
-    fireEvent.click(screen.getByRole("button", { name: "Move the databases" }));
-    const dialog = screen.getByRole("dialog");
-    expect(dialog.textContent).toContain("Move the databases on web-2?");
-    expect(dialog.textContent).toContain("If a job fails, the website starts again with the shared containers");
-    fireEvent.click(within(dialog).getByRole("button", { name: "Move the databases" }));
-
-    // The answers of the API have no website with the shared containers.
-    await waitFor(() => expect(getState().websites.filter((w) => w.sharedDatabases)).toEqual([]));
-    await waitFor(() => expect(screen.queryByText(/shared database containers of an earlier release/)).toBeNull());
-    expect(api.changes.at(-1)).toMatchObject({ method: "POST", path: `/servers/${server().id}/move-databases` });
-  });
-
-  it("shows nothing for a server with no website of an earlier release, and for an agent of an earlier release", () => {
+  it("has no action that moves databases", () => {
+    // Each website uses the database servers of its customer. No website has databases to move.
     page();
     expect(screen.queryByRole("button", { name: "Move the databases" })).toBeNull();
-    cleanup();
-    // The agent of an earlier release cannot move the databases. The page offers the update of the agent.
-    earlier();
-    server().databaseInstances = false;
-    page();
-    expect(screen.queryByRole("button", { name: "Move the databases" })).toBeNull();
-  });
-
-  it("counts the websites that the panel API reports", () => {
-    // With many websites, the list of the panel can have a part of the websites only.
-    Object.assign(server(), { sharedDatabaseWebsites: 1 });
-    page();
-    expect(screen.getByText("1 website on this server uses the shared database containers of an earlier release.")).toBeTruthy();
+    expect(screen.queryByText(/shared database containers/)).toBeNull();
   });
 });

@@ -152,7 +152,7 @@
   },
   "sets": {
     "reservedDatabaseNames": {
-      "doc": "Names that the shared database servers use (CF-01).",
+      "doc": "Names that the database servers use (CF-01).",
       "values": ["mysql", "sys", "information_schema", "performance_schema", "postgres", "template0", "template1", "root", "mariadb.sys", "healthcheck"]
     },
     "reservedDatabasePrefixes": {

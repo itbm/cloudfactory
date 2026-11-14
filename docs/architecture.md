@@ -386,7 +386,8 @@ The user owns the data of the database server and starts its container.
   database server or of a website.
 - The removal of a database server removes its Unix user, its home directory and its user
   quota.
-- The shared containers of an earlier release have the Unix user `cf-db`.
+- Root owns `/var/lib/cf-db`, and the other users cannot list it. No Unix user has this
+  directory as its home directory.
 
 ### The database network
 
@@ -540,35 +541,26 @@ before that, it repairs its data at the next start, and the start is slower.
   when it adds the database network.
 - The 120 seconds are also for the website containers and for the other containers of the
   server.
-- The shared containers of an earlier release keep the stop time of Podman, which is 10
-  seconds.
 
-### The shared containers of an earlier release
+### A server from release 0.1.9
 
 In release 0.1.9 and earlier, all websites of a server used one MariaDB container
 (`cf-mariadb`) and one PostgreSQL container (`cf-postgresql`) on the private service address
-`169.254.77.1`. Their data is in `/var/lib/cf-db/mariadb` and `/var/lib/cf-db/postgresql`.
+`169.254.77.1`. The containers ran as the Unix user `cf-db`, and their data is in
+`/var/lib/cf-db/mariadb` and `/var/lib/cf-db/postgresql`.
 
-A website from such a release keeps the shared containers until an administrator moves the
-databases of its server. The databases of a website go to the database server of its customer
-that has the usual port of the engine, because the applications connect to that port. The
-panel makes that database server when the customer does not have it, also when the plan of
-the customer permits no more database servers. The agent has the action `MoveDatabases` for
-one website:
+This release does not have these containers:
 
-1. Start the database servers.
-2. Stop the website.
-3. Copy each database from the shared container to its database server.
-4. Make each database user in its database server, with the same password. The agent copies
-   the hash of the password, not the password.
-5. Start the website with the host names of the address of its customer.
-6. Remove the old copies from the shared containers.
+- The panel sends the customer of a website with each website, and a database server with
+  each request for a database or a database user. The agent refuses a request for a database
+  that has no database server.
+- The agent does not start, stop or change the shared containers, and it has no action that
+  moves their databases.
+- The update of the panel removes the records of the databases and the database users that
+  have no database server.
 
-Before step 5, a failure starts the website again with the shared containers. After step 5,
-the job only removes the old copies, and a job that runs again does only that. When the last
-website of the server has moved, the agent stops the shared containers. Their data
-directories stay on the disk. Refer to
-[installation.md](installation.md#move-the-databases-of-a-server-from-an-earlier-release).
+An administrator removes the shared containers and the user `cf-db` by hand. Refer to
+[installation.md](installation.md#a-server-from-release-019).
 
 An agent of this release adds the database network, the firewall rules and the stop time of
 the user services to a server that the installer of an earlier release prepared. If the

@@ -83,8 +83,6 @@ Usage:
   cf servers update-agent SERVER [--version VERSION] [--allow-downgrade]
   cf servers join-token
   cf servers check SERVER                  Tests the connection from the panel to the server.
-  cf servers move-databases SERVER         Moves the databases of the websites of an earlier release to the
-                                           database servers of each customer. Each website stops during the copy.
   cf servers remove SERVER                 Removes a server that has no websites from the panel.
   cf panel-certificate show
   cf panel-certificate set internal|letsencrypt
@@ -787,8 +785,8 @@ func (l dbList) server(ref string) (map[string]any, error) {
 	return nil, fmt.Errorf("the website cannot use a database server %q. It can use the database servers of its customer on its server: cf database-servers list", ref)
 }
 
-// serverName gives the name of the database server of a database or a user, or "-" for the
-// shared database containers of an earlier release.
+// serverName gives the name of the database server of a database or a user. It gives the ID
+// when the list does not have the database server.
 func (l dbList) serverName(row map[string]any) any {
 	for _, s := range l.Servers {
 		if s["id"] == row["databaseServerId"] {
@@ -1143,7 +1141,7 @@ func (a *app) servers(ctx context.Context, sub string, args []string) error {
 	switch sub {
 	case "list", "ls":
 		return a.simpleList(ctx, "/servers", []string{"name", "state", "roles", "agentVersion", "rebootRequired", "id"})
-	case "get", "set", "update", "reboot", "update-agent", "check", "move-databases", "remove", "rm":
+	case "get", "set", "update", "reboot", "update-agent", "check", "remove", "rm":
 		return a.server(ctx, sub, args)
 	case "join-token":
 		var out struct {

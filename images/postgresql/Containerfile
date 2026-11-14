@@ -1,4 +1,4 @@
-# The shared PostgreSQL service image. The release pipeline signs it like all other images (FR-1101).
+# The PostgreSQL service image. Each PostgreSQL database server of a customer has its own container. The release pipeline signs it like all other images (FR-1101).
 # SPDX-License-Identifier: AGPL-3.0-only
 FROM docker.io/library/postgres:18
 # From release 18, the base image keeps the data in /var/lib/postgresql/18/docker. The agent

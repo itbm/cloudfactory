@@ -89,7 +89,7 @@ class SetupAndAccountTest extends TestCase
         $website = $this->website($customer, $server, $image, 'cornerbakery.example', ['usage' => ['diskBytes' => 1000]]);
         $this->website($customer, $server, $image, 'orders.cornerbakery.example', ['usage' => ['diskBytes' => 500]]);
         $this->website($other, $server, $image, 'harbourbooks.example', ['usage' => ['diskBytes' => 9000]]);
-        Database::create(['website_id' => $website->id, 'engine' => 'mariadb', 'name' => 'bakery']);
+        Database::create(['website_id' => $website->id, 'engine' => 'mariadb', 'name' => 'bakery', 'database_server_id' => $this->databaseServerOf($website)->id]);
         $user = $this->actingWith($this->user(Role::Owner, $customer));
         $this->user(Role::Owner, $other);
 

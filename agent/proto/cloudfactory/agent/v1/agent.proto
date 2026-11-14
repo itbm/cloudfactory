@@ -34,7 +34,6 @@ service AgentService {
   rpc SetSftp(SetSftpRequest) returns (JobAccepted);
   rpc ConfigureHost(ConfigureHostRequest) returns (JobAccepted);
   rpc SetPanelCertificate(SetPanelCertificateRequest) returns (JobAccepted);
-  rpc MoveDatabases(MoveDatabasesRequest) returns (JobAccepted);
   rpc SetDatabaseServer(DatabaseServerRequest) returns (JobAccepted);
   rpc DeleteDatabaseServer(DeleteDatabaseServerRequest) returns (JobAccepted);
 
@@ -85,11 +84,10 @@ message Website {
   // and "." means /app itself.
   string document_root = 14;
   // The ID of the customer of the website. The website can connect to the database servers of
-  // its customer on this server (DatabaseServer). Empty means the shared database containers
-  // of an earlier release.
+  // its customer on this server (DatabaseServer). Each website has a customer.
   //
-  // The agent uses this value only in CreateWebsite. After that, it keeps the value of the
-  // website, and only MoveDatabases changes it.
+  // The agent records the value in CreateWebsite. After that, it keeps the value of the
+  // website. SetRuntime records the value only for a website that has none.
   string database_instance = 15;
 }
 
@@ -157,8 +155,7 @@ message DatabaseCopy {
   string engine = 1;
   string from = 2;
   string to = 3;
-  // The IDs of the database servers of the two databases. Empty means the shared database
-  // container of an earlier release.
+  // The IDs of the database servers of the two databases.
   string from_server = 4;
   string to_server = 5;
 }
@@ -208,8 +205,7 @@ message DomainRequest {
 
 // Each database and user name starts with the Unix user of the website and "_". The database
 // is in a database server of the customer of the website. The agent makes a database server
-// that it does not have. With no database server, the database is in the shared database
-// container of an earlier release.
+// that it does not have.
 message CreateDatabaseRequest {
   string job_id = 1;
   string website_id = 2;
@@ -278,38 +274,8 @@ message DeleteDatabaseUserRequest {
 message DatabaseRef {
   string engine = 1;
   string name = 2;
-  // The ID of its database server. Empty means the shared database container of an earlier
-  // release.
+  // The ID of its database server.
   string database_server = 3;
-}
-
-// A database user that MoveDatabases copies. The agent copies the password hash of the user,
-// so the password stays the same.
-message MoveDatabaseUser {
-  string engine = 1;
-  string name = 2;
-  // "website" or "anywhere".
-  string access = 3;
-  repeated DatabaseGrant grants = 4;
-  // The ID of the database server that gets the user.
-  string database_server = 5;
-}
-
-// Moves the databases and the database users of a website from the shared database containers
-// of an earlier release to database servers of its customer. The website does not operate
-// during the copy.
-message MoveDatabasesRequest {
-  string job_id = 1;
-  string website_id = 2;
-  string unix_user = 3;
-  // The ID of the customer of the website.
-  string database_instance = 4;
-  // DatabaseRef.database_server is the ID of the database server that gets the database.
-  repeated DatabaseRef databases = 5;
-  repeated MoveDatabaseUser users = 6;
-  // The database servers that get the databases and the users. The agent makes a database
-  // server that it does not have.
-  repeated DatabaseServer database_servers = 7;
 }
 
 message BackupRequest {

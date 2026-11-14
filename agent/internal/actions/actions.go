@@ -92,14 +92,9 @@ type Deps struct {
 	// SecretsDir holds short-lived files with passwords for the database clients. The
 	// default is "/run/cloudfactory/secrets".
 	SecretsDir string
-	// DatabaseClientHost is the host part of a MariaDB user of the shared container of an
-	// earlier release that can connect from the website containers only, for example "10.89.%"
-	// (CF-19). The default is quadlet.ServiceAddress. In the container of a customer, the
-	// host part is quadlet.DatabaseClientAddress.
-	DatabaseClientHost string
 	// ServiceImage gives the image of a service, for example ServiceImage("mariadb").
 	ServiceImage func(name string) string
-	// DBHome holds the data of the database containers. The default is "/var/lib/cf-db".
+	// DBHome holds the data of the database servers. The default is "/var/lib/cf-db".
 	DBHome string
 	// LoopControl is the device that makes loop devices. On a file system with no user quotas,
 	// a server that has it gives each database server a disk image with the size of its disk
@@ -171,10 +166,10 @@ type Deps struct {
 	// valkeyMu makes the search for a free Valkey database number and its user one step.
 	valkeyMu sync.Mutex
 	sftpMu   sync.Mutex
-	// dbReady has the database containers that this agent process started and that answered.
+	// dbReady has the database servers that this agent process started and that answered.
 	dbReady map[dbServer]bool
-	// dbStart has one lock for each database server ("" is the shared containers). The start
-	// and the removal of a database server hold it.
+	// dbStart has one lock for each database server. The start and the removal of a database
+	// server hold it.
 	dbStart map[string]*sync.Mutex
 	// netMu protects netReady, and makes each change of the firewall one step.
 	netMu sync.Mutex
@@ -277,7 +272,6 @@ type DatabaseInstance struct {
 	// Number is the address number of the customer (quadlet.DatabaseAddress).
 	Number int `json:"number"`
 	// Websites are the IDs of the websites that can use the database servers of the customer.
-	// A website that is in no list uses the shared containers of an earlier release.
 	Websites []string `json:"websites"`
 	// Servers are the database servers of the customer. The key is the ID of the database
 	// server in lower case.
