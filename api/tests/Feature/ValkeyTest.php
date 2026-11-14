@@ -13,8 +13,9 @@ use App\Services\JobOutcome;
 use Tests\TestCase;
 
 /**
- * Valkey is the third database engine. A Valkey database is one database number of the shared
- * Valkey server, with one user that has the name of the database. The agent gives the number.
+ * Valkey is the third database engine. A Valkey database is one database number of the Valkey
+ * container of its customer, with one user that has the name of the database. The agent gives
+ * the number.
  */
 class ValkeyTest extends TestCase
 {
@@ -22,7 +23,9 @@ class ValkeyTest extends TestCase
 
     private function site(array $server = []): Website
     {
-        $website = $this->website($this->customer(), $this->server($server + ['database_engines' => self::ENGINES]), $this->image());
+        $customer = $this->customer();
+        // The website uses the database containers of its customer.
+        $website = $this->website($customer, $this->server($server + ['database_engines' => self::ENGINES, 'database_instances' => true]), $this->image(), attributes: ['database_instance' => $customer->id]);
         $this->actingWith($this->user());
 
         return $website;

@@ -5,12 +5,15 @@ namespace App\Http\Controllers\Api;
 use App\Enums\AgentAction;
 use App\Enums\JobState;
 use App\Enums\ServerRole;
+use App\Enums\WebsiteStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\JobResource;
 use App\Models\AgentJob;
 use App\Models\Database;
+use App\Models\DatabaseUser;
 use App\Models\JoinToken;
 use App\Models\Server;
+use App\Models\Website;
 use App\Services\AgentClient;
 use App\Services\Audit;
 use App\Services\JobDispatcher;
@@ -29,12 +32,12 @@ class ServerController extends Controller
 
     public function index(): JsonResponse
     {
-        return response()->json(['data' => Server::withCount('websites')->orderBy('name')->get()->map(fn (Server $s) => self::present($s))]);
+        return response()->json(['data' => Server::withCount(['websites', 'sharedDatabaseWebsites'])->orderBy('name')->get()->map(fn (Server $s) => self::present($s))]);
     }
 
     public function show(string $id): JsonResponse
     {
-        return response()->json(self::present(Server::withCount('websites')->findOrFail($id)));
+        return response()->json(self::present(Server::withCount(['websites', 'sharedDatabaseWebsites'])->findOrFail($id)));
     }
 
     public function update(Request $request, string $id): JsonResponse
@@ -153,12 +156,67 @@ class ServerController extends Controller
     }
 
     /**
+     * Gives each customer its own database containers on a server from an earlier release. On
+     * such a server, all websites use one MariaDB container and one PostgreSQL container.
+     *
+     * The panel starts one job for each website that uses the shared containers. The job copies
+     * the databases and the database users of the website to the containers of its customer.
+     * The passwords, the host names and the ports stay the same. A website does not operate
+     * during the copy of its databases.
+     */
+    public function moveDatabases(Request $request, string $id): JsonResponse
+    {
+        $server = Server::findOrFail($id);
+        if (! $server->database_instances) {
+            throw ValidationException::withMessages(['server' => "The agent on the server {$server->name} did not report that it can give each customer its own database containers. Update the agent of the server, then try again."]);
+        }
+        $open = AgentJob::where('server_id', $server->id)->where('action', AgentAction::MoveDatabases->value)
+            ->whereIn('state', [JobState::Queued->value, JobState::Running->value])->pluck('website_id')->all();
+        $jobs = [];
+        foreach ($server->sharedDatabaseWebsites()->with(['databases', 'databaseUsers.databases'])->orderBy('name')->get() as $website) {
+            // A website that the panel makes now is not on the server yet. A website with an
+            // open job moves already.
+            if ($website->status === WebsiteStatus::Starting || in_array($website->id, $open, true)) {
+                continue;
+            }
+            $jobs[] = $this->jobs->dispatch($server, AgentAction::MoveDatabases, self::movePayload($website), "Move the databases of {$website->name}", $website);
+        }
+        if ($jobs) {
+            Audit::record($request, 'Moved databases to the containers of each customer', $server->name);
+        }
+
+        return response()->json(['jobs' => JobResource::collection($jobs)], 202);
+    }
+
+    /**
+     * The databases and the database users of a website, for the job that moves them. The
+     * agent copies the hash of each password, so the panel does not send a password.
+     *
+     * @return array<string, mixed>
+     */
+    public static function movePayload(Website $website): array
+    {
+        return [
+            'websiteId' => $website->id,
+            'unixUser' => $website->unix_user,
+            'databaseInstance' => $website->customer_id,
+            'databases' => $website->databases->sortBy('name')->map(fn (Database $d) => ['engine' => $d->engine, 'name' => $d->name])->values()->all(),
+            'users' => $website->databaseUsers->sortBy('name')->map(fn (DatabaseUser $u) => [
+                'engine' => $u->engine,
+                'name' => $u->name,
+                'access' => $u->access,
+                'grants' => array_map(fn ($g) => ['database' => $g['database'], 'privileges' => $g['privileges']], $u->grants()),
+            ])->values()->all(),
+        ];
+    }
+
+    /**
      * Tests the connection from the panel to the agent of the server, and gives the server with
      * the result. The administrator uses this after a change of the DNS or of a firewall.
      */
     public function checkConnection(string $id, AgentClient $client): JsonResponse
     {
-        $server = Server::withCount('websites')->findOrFail($id);
+        $server = Server::withCount(['websites', 'sharedDatabaseWebsites'])->findOrFail($id);
         $client->check($server);
 
         return response()->json(self::present($server));
@@ -171,7 +229,7 @@ class ServerController extends Controller
      */
     public function destroy(Request $request, string $id): JsonResponse
     {
-        $server = Server::withCount('websites')->findOrFail($id);
+        $server = Server::withCount(['websites', 'sharedDatabaseWebsites'])->findOrFail($id);
         if ($server->local) {
             throw ValidationException::withMessages(['server' => 'This server has the panel. You cannot remove it.']);
         }
@@ -235,6 +293,11 @@ class ServerController extends Controller
             'gvisorPlatform' => $s->gvisor_platform,
             // The database engines that the agent of the server can operate.
             'databaseEngines' => $s->database_engines ?? Database::SQL_ENGINES,
+            // True when the agent gives each customer its own database containers.
+            'databaseInstances' => (bool) $s->database_instances,
+            // The number of websites that use the shared database containers of an earlier
+            // release. An administrator moves their databases to the containers of each customer.
+            'sharedDatabaseWebsites' => $s->database_instances ? ($s->shared_database_websites_count ?? null) : null,
             'bareMetal' => $s->bare_metal,
             'updatePolicy' => $s->update_policy,
             'maintenanceWindow' => $s->maintenance_window,

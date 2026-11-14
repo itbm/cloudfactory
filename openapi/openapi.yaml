@@ -652,12 +652,18 @@ paths:
         read-write access. Only the website container can connect.
 
 
-        A Valkey database is a database number and a user with the same name in the shared Valkey
-        container of the server. The application connects to the host `valkey.internal`, port 6379,
-        with the user name, the password and the database number. The user has access to that
-        number only. `createUser` must not be false. The response is 422 when the agent of the
-        server did not report the engine (see `databaseEngines` of the server). The list of the
-        databases gives the number when the job is complete.
+        Each customer has its own database containers on a server. The website container connects
+        to them with the host names `mariadb.internal`, `postgres.internal` and `valkey.internal`.
+        A website cannot connect to the database containers of a different customer.
+
+
+        A Valkey database is a database number and a user with the same name in the Valkey
+        container of the customer. The application connects to the host `valkey.internal`, port
+        6379, with the user name, the password and the database number. The user has access to
+        that number only. `createUser` must not be false. The response is 422 when the agent of
+        the server did not report the engine (see `databaseEngines` of the server), and when the
+        website uses the shared database containers of an earlier release (see `sharedDatabases`
+        of the website). The list of the databases gives the number when the job is complete.
       requestBody:
         required: true
         content:
@@ -1074,6 +1080,41 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Server' }
         '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/servers/{id}/move-databases:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [Servers]
+      summary: Give each customer its own database containers
+      description: >-
+        Each customer has its own MariaDB, PostgreSQL and Valkey containers on a server. On a
+        server from an earlier release, all websites use one MariaDB container and one PostgreSQL
+        container. This request starts one job for each website of the server that uses the
+        shared containers (see `sharedDatabases` of the website). The job copies the databases
+        and the database users of the website to the containers of its customer. The passwords,
+        the host names and the ports stay the same. The website does not operate during the copy
+        of its databases. When the last website has moved, the agent stops the shared containers.
+        Their data stays on the disk of the server.
+
+
+        The response has no job for a website that the panel makes now, and for a website with a
+        job that is not complete. After a job fails, the website uses the shared containers
+        again, and you can send the request again. The response is 422 when the agent of the
+        server is from an earlier release (see `databaseInstances` of the server).
+      responses:
+        '202':
+          description: The jobs are in the queue. One job for each website.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  jobs:
+                    type: array
+                    items: { $ref: '#/components/schemas/Job' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
 
   /v1/panel-certificate:
     get:
@@ -1804,6 +1845,12 @@ components:
           items: { $ref: '#/components/schemas/Domain' }
         sftp: { $ref: '#/components/schemas/Sftp' }
         stagingOf: { type: [string, 'null'] }
+        sharedDatabases:
+          type: boolean
+          description: >-
+            True when the website uses the shared database containers of an earlier release.
+            False when it uses the database containers of its customer. A website with the shared
+            containers cannot have a Valkey database.
         managedByTerraform: { type: boolean }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
@@ -1904,6 +1951,18 @@ components:
           description: >-
             The database engines that the agent of the server can operate. An agent of an earlier
             release has `mariadb` and `postgresql` only. Update the agent to get `valkey`.
+        databaseInstances:
+          type: boolean
+          description: >-
+            True when the agent of the server gives each customer its own database containers.
+            With an agent of an earlier release, all websites of the server use the same
+            database containers.
+        sharedDatabaseWebsites:
+          type: [integer, 'null']
+          description: >-
+            The number of websites of the server that use the shared database containers of an
+            earlier release. Send "Give each customer its own database containers" to move their
+            databases. Null when `databaseInstances` is false.
         os: { type: [string, 'null'] }
         kernel: { type: [string, 'null'] }
         arch: { type: [string, 'null'] }
@@ -2158,6 +2217,9 @@ components:
           type: [array, 'null']
           description: The database engines that the agent can operate. An agent of an earlier release does not send the field.
           items: { $ref: '#/components/schemas/Engine' }
+        databaseInstances:
+          type: boolean
+          description: True when the agent gives each customer its own database containers. An agent of an earlier release does not send the field.
         sftpPort: { type: [integer, 'null'], minimum: 1, maximum: 65535 }
         panelCertificate:
           type: [object, 'null']

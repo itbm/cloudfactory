@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\WebsiteStatus;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
@@ -15,7 +16,7 @@ use Illuminate\Support\Facades\DB;
     'name', 'location', 'roles', 'state', 'agent_url', 'agent_version', 'certificate_fingerprint', 'certificate_pem', 'agent_token_hash',
     'os', 'kernel', 'arch', 'podman_version', 'gvisor_version', 'gvisor_platform', 'bare_metal', 'update_policy',
     'maintenance_window', 'pending_updates', 'reboot_required', 'services', 'usage', 'last_update_at', 'last_seen_at', 'local',
-    'sftp_port', 'panel_ca_sha256', 'connection_error', 'connection_checked_at', 'database_engines',
+    'sftp_port', 'panel_ca_sha256', 'connection_error', 'connection_checked_at', 'database_engines', 'database_instances',
 ])]
 #[Hidden(['agent_token_hash', 'backup_password'])]
 class Server extends Model
@@ -68,6 +69,7 @@ class Server extends Model
             'services' => 'array',
             'usage' => 'array',
             'database_engines' => 'array',
+            'database_instances' => 'boolean',
             'bare_metal' => 'boolean',
             'reboot_required' => 'boolean',
             'local' => 'boolean',
@@ -87,9 +89,28 @@ class Server extends Model
         return in_array($engine, $this->database_engines ?? Database::SQL_ENGINES, true);
     }
 
+    /**
+     * The ID of the customer whose database containers a new website of the customer uses on
+     * this server. It is null when the agent of the server is from an earlier release: such
+     * an agent has only the shared database containers.
+     */
+    public function databaseInstanceFor(string $customerId): ?string
+    {
+        return $this->database_instances ? $customerId : null;
+    }
+
     public function websites(): HasMany
     {
         return $this->hasMany(Website::class);
+    }
+
+    /**
+     * The websites that use the shared database containers of an earlier release. The panel
+     * made them, so each one is on the server.
+     */
+    public function sharedDatabaseWebsites(): HasMany
+    {
+        return $this->websites()->whereNull('database_instance')->where('status', '!=', WebsiteStatus::Failed->value);
     }
 
     public function jobs(): HasMany

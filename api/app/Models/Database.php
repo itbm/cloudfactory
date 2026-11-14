@@ -23,8 +23,9 @@ class Database extends Model
     public const SQL_ENGINES = ['mariadb', 'postgresql'];
 
     /**
-     * Valkey: a database is one database number of the shared Valkey server, with one user that
-     * has the name of the database. A backup and a staging copy do not include its data.
+     * Valkey: a database is one database number of the Valkey container of its customer, with
+     * one user that has the name of the database. A backup and a staging copy do not include
+     * its data.
      */
     public const VALKEY = 'valkey';
 

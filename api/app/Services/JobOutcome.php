@@ -162,6 +162,8 @@ class JobOutcome
             // Batch 1, finding 4: the panel removes the row when the item is gone from the server.
             AgentAction::CreateDatabase => $website && $this->databaseMade($website, $p, $result),
             AgentAction::DeleteDatabase => $website && $this->databaseRemoved($website, $p),
+            // The website uses the database containers of its customer now.
+            AgentAction::MoveDatabases => $website?->update(['database_instance' => $website->customer_id]),
             AgentAction::DeleteDatabaseUser => $website?->databaseUsers()->where(['engine' => $p['engine'] ?? '', 'name' => $p['name'] ?? ''])->delete(),
             AgentAction::InstallHostUpdates => $job->server->update([
                 'pending_updates' => self::updatesLeft($job->server->pending_updates ?? [], (string) ($p['policy'] ?? 'security')),

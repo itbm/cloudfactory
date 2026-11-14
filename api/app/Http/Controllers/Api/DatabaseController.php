@@ -22,9 +22,10 @@ use Illuminate\Validation\ValidationException;
  * FR-501 and FR-502: MariaDB, PostgreSQL and Valkey databases. The names start with the Unix
  * user of the website (CF-01). DatabaseUserController changes the users and their access.
  *
- * A Valkey database is one database number of the shared Valkey server. It always has one user
- * with the same name. The agent gives the number, and the panel shows it when the job is
- * complete.
+ * Each customer has its own database containers on a server, so a customer cannot change the
+ * service of a different customer. A Valkey database is one database number of the Valkey
+ * container of the customer. It always has one user with the same name. The agent gives the
+ * number, and the panel shows it when the job is complete.
  */
 class DatabaseController extends Controller
 {
@@ -74,6 +75,11 @@ class DatabaseController extends Controller
             }
             if (! $website->server->hasDatabaseEngine(Database::VALKEY)) {
                 throw ValidationException::withMessages(['engine' => "The agent on the server {$website->server->name} did not report that it can operate Valkey. Update the agent of the server, then try again."]);
+            }
+            // Each customer has its own Valkey container. A website with the shared database
+            // containers of an earlier release has none.
+            if ($website->database_instance === null) {
+                throw ValidationException::withMessages(['engine' => "This website uses the shared database containers of an earlier release, which have no Valkey. An administrator must move the databases of the server {$website->server->name} to the containers of each customer first."]);
             }
         }
         if (Database::where(['engine' => $data['engine'], 'name' => $name])->exists()) {

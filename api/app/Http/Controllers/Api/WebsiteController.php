@@ -127,6 +127,8 @@ class WebsiteController extends Controller
                 'extensions' => $image->isPhp() ? array_values(array_intersect(self::DEFAULT_EXTENSIONS, $plan->php_extensions)) : [],
                 'php_ini' => $image->isPhp() ? ['memory_limit' => '256M', 'upload_max_filesize' => '64M', 'max_execution_time' => '60'] : [],
                 'limits' => $plan->limits,
+                // The website uses the database containers of its customer on the server.
+                'database_instance' => $server->databaseInstanceFor($customer->id),
             ]);
             $website->domains()->create($domain);
 
@@ -241,7 +243,10 @@ class WebsiteController extends Controller
             // does not keep.
             throw ValidationException::withMessages(['website' => 'The panel could not make this staging copy. Delete it, and make the staging copy again.']);
         }
-        $website->update(['status' => WebsiteStatus::Starting]);
+        // A website with no databases does not need the shared database containers of an
+        // earlier release: it gets the containers of its customer when the agent has them now.
+        $instance = $website->database_instance ?? ($website->databases()->exists() || $website->databaseUsers()->exists() ? null : $website->server->databaseInstanceFor($website->customer_id));
+        $website->update(['status' => WebsiteStatus::Starting, 'database_instance' => $instance]);
 
         return $jobs->dispatch($website->server, AgentAction::CreateWebsite, JobDispatcher::websitePayload($website->fresh(['image', 'domains'])), "Create website {$website->name}", $website);
     }
@@ -303,6 +308,9 @@ class WebsiteController extends Controller
                 'status' => WebsiteStatus::Starting,
                 'staging_of' => $source->id,
                 'managed_by_terraform' => false,
+                // The copy is a new website, so it uses the database containers of its customer,
+                // also when the source uses the shared containers of an earlier release.
+                'database_instance' => $source->server->databaseInstanceFor($source->customer_id),
             ])->save();
             $copy->domains()->create($domain);
 

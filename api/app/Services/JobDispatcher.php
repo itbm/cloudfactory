@@ -63,6 +63,9 @@ class JobDispatcher
                 'command' => $website->image->custom ? ($website->image->command ?? []) : [],
                 // CF-03: the edge proxy serves only the domains that the customer verified.
                 'domains' => $website->domains->filter(fn ($d) => $d->verified())->map(fn ($d) => ['name' => $d->name, 'kind' => $d->kind->value])->values()->all(),
+                // The customer whose database containers the website uses on its server. An empty
+                // value is a website with the shared database containers of an earlier release.
+                'databaseInstance' => $website->database_instance ?? '',
             ],
         ];
     }

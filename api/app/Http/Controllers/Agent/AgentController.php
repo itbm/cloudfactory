@@ -102,6 +102,8 @@ class AgentController extends Controller
             // The engines that the agent can operate. An agent of an earlier release does not send them.
             'databaseEngines' => ['nullable', 'array', 'max:20'],
             'databaseEngines.*' => ['string', 'max:32'],
+            // True when the agent gives each customer its own database containers.
+            'databaseInstances' => ['boolean'],
             // Spec section 10: the port of the SFTP container. An agent of release 0.1 does not send it.
             'sftpPort' => ['nullable', 'integer', 'between:1,65535'],
             // The certificate of the panel domain. Only the agent on the panel server sends it.
@@ -132,6 +134,7 @@ class AgentController extends Controller
             'sftp_port' => $data['sftpPort'] ?? $server->sftp_port,
             'panel_ca_sha256' => $data['panelCaSha256'] ?? null,
             'database_engines' => $data['databaseEngines'] ?? null,
+            'database_instances' => $data['databaseInstances'] ?? false,
             // A server that was offline is back with this report.
             'state' => in_array($server->state, ['rebooting', 'joining'], true) ? $server->state : ($failed ? 'degraded' : 'healthy'),
         ]);

@@ -5,9 +5,9 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Valkey is the third database engine. A Valkey database is one database number of the shared
- * Valkey server of the server. The agent gives the number, and the application needs it to
- * connect. Valkey does not know the size of one database in bytes, so the panel shows its
+ * Valkey is the third database engine. A Valkey database is one database number of the Valkey
+ * container of its customer on the server. The agent gives the number, and the application
+ * needs it to connect. Valkey does not know the size of one database in bytes, so the panel shows its
  * number of keys.
  *
  * The agent reports the database engines that it can operate. An agent of an earlier release
