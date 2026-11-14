@@ -1,4 +1,4 @@
-import type { Domain, HostUpdatePolicy, JobState, RuntimeKind, ServerRole, ServerState, UpdatePolicy, WebsiteStatus } from "../api/types";
+import type { DatabaseServerStatus, Domain, HostUpdatePolicy, JobState, RuntimeKind, ServerRole, ServerState, UpdatePolicy, WebsiteStatus } from "../api/types";
 import type { Tone } from "../components/ui";
 import { daysUntil, longDate, relativeTime } from "./format";
 
@@ -95,3 +95,17 @@ export const HOST_POLICY_LABEL: Record<HostUpdatePolicy, string> = {
 
 /** The name of each database engine. */
 export const ENGINE_NAME = { mariadb: "MariaDB", postgresql: "PostgreSQL", valkey: "Valkey" } as const;
+
+/** The host name that a website container connects to, for each database engine. */
+export const DATABASE_HOST = { mariadb: "mariadb.internal", postgresql: "postgres.internal", valkey: "valkey.internal" } as const;
+
+/** The port of the first database server of an engine. A second database server of the engine gets the next port. */
+export const DATABASE_PORT = { mariadb: 3306, postgresql: 5432, valkey: 6379 } as const;
+
+export const DATABASE_SERVER_STATUS: Record<DatabaseServerStatus, { label: string; tone: Tone }> = {
+  starting: { label: "Starting", tone: "info" },
+  running: { label: "Running", tone: "success" },
+  stopped: { label: "Stopped", tone: "neutral" },
+  failed: { label: "Failed", tone: "danger" },
+  removing: { label: "Removing", tone: "info" },
+};

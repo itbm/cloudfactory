@@ -6,7 +6,7 @@
 // desired state, and puts a job in the queue. A simulated agent then runs the job step by step.
 
 import { validateRecord, type RecordInput } from "../lib/dns";
-import { ENGINE_NAME, jobActive } from "../lib/labels";
+import { DATABASE_HOST, DATABASE_PORT, ENGINE_NAME, jobActive } from "../lib/labels";
 import * as live from "./live";
 import { LIVE } from "./mode";
 import { DAY, GB, MB, seed } from "./seed";
@@ -20,7 +20,9 @@ import type {
   Database,
   DatabaseEngine,
   DatabaseGrant,
+  DatabaseLimits,
   DatabasePrivileges,
+  DatabaseServer,
   DnsRecord,
   Domain,
   DomainKind,
@@ -56,7 +58,7 @@ function emptyState(): State {
     ...s,
     session: { ...s.session, signedIn: false, user: { id: "", name: "", email: "", role: "owner" }, contextId: "" },
     contexts: [], websites: [], jobs: [], activity: [], notifications: [], servers: [], images: [], rollout: undefined,
-    zones: [], mailboxes: [], aliases: [], databases: [], databaseUsers: [], files: {}, snapshots: [], plans: [], customers: [], users: [],
+    zones: [], mailboxes: [], aliases: [], databaseServers: [], databases: [], databaseUsers: [], files: {}, snapshots: [], plans: [], customers: [], users: [],
     tokens: [], passkeys: [], totpEnabled: false, audit: [], alertChannels: [], joinToken: "", joinCaSha256: undefined,
     panelCertificate: { domain: "", method: null, state: "pending", letsEncryptAvailable: false, serversWithoutCa: [] },
   };
@@ -79,6 +81,8 @@ export function subscribe(listener: Listener) {
 function update(change: (draft: State) => void) {
   const draft = structuredClone(state);
   change(draft);
+  // In live mode, the panel API gives these numbers.
+  if (!LIVE) countDatabases(draft);
   state = draft;
   listeners.forEach((l) => l());
 }
@@ -86,6 +90,14 @@ function update(change: (draft: State) => void) {
 export function resetState() {
   state = seed();
   listeners.forEach((l) => l());
+}
+
+/** Mock mode: sets the number of databases of each database server, and the number that its plan allows. */
+function countDatabases(d: State) {
+  for (const s of d.databaseServers) {
+    s.databases = d.databases.filter((x) => x.databaseServerId === s.id).length;
+    s.maxDatabases = d.plans.find((p) => p.id === s.planId)?.databases ?? s.maxDatabases;
+  }
 }
 
 const id = (prefix: string) => `${prefix}_${++seq}`;
@@ -112,6 +124,7 @@ interface JobSpec {
   steps: string[];
   websiteId?: string;
   serverId?: string;
+  databaseServerId?: string;
   /** Changes the state when the job is complete. */
   apply?: (draft: State) => void;
   /** Changes the state when the job starts. */
@@ -136,6 +149,7 @@ function runJob(spec: JobSpec): Promise<Job> {
       createdAt: now(),
       websiteId: spec.websiteId,
       serverId: spec.serverId,
+      databaseServerId: spec.databaseServerId,
     });
     spec.begin?.(d);
   });
@@ -462,6 +476,10 @@ export interface StagingCredential {
   user: string;
   password: string;
   databases: string[];
+  /** The host name and the port of the database server of the user. */
+  host?: string;
+  port?: number;
+  databaseServerId?: string | null;
 }
 
 export function createStagingCopy(websiteId: string): Promise<{ websiteId: string; job: Promise<Job>; credentials?: StagingCredential[] }> | { websiteId: string; job: Promise<Job>; credentials?: StagingCredential[] } {
@@ -489,7 +507,7 @@ export function createStagingCopy(websiteId: string): Promise<{ websiteId: strin
       copy.name = name;
       copy.application = `Staging copy of ${src.name}`;
       copy.stagingOf = websiteId;
-      // The copy is a new website, so it uses the database containers of its customer.
+      // The copy is a new website, so it uses the database servers of its customer.
       copy.sharedDatabases = false;
       copy.status = "starting";
       copy.createdAt = now();
@@ -1198,22 +1216,335 @@ const newPassword = () => Array.from(crypto.getRandomValues(new Uint8Array(24)),
 
 export type GrantInput = { databaseId: string; privileges: DatabasePrivileges };
 
-/** The number of Valkey databases of one customer on a server. Database 0 is for no website. */
+/** The number of Valkey databases of one database server. Database 0 is for no website. */
 const VALKEY_DATABASES = 1024;
 
 /** The message for a Valkey database of a website with the shared database containers of an earlier release. */
 export const sharedDatabasesMessage = (server: string) =>
-  `This website uses the shared database containers of an earlier release, which have no Valkey. An administrator must move the databases of the server ${server} to the containers of each customer first.`;
+  `This website uses the shared database containers of an earlier release, which have no Valkey. An administrator must move the databases of the server ${server} to database servers first.`;
+
+// Database servers
+//
+// A customer makes database servers as it makes websites. Each one is a container with one
+// engine and its own limits. The plan of the customer gives the number of its database
+// servers. The plan of a database server gives its limits and the number of its databases.
+
+const DATABASE_SERVER_NAME = /^[a-z0-9]([a-z0-9-]{0,38}[a-z0-9])?$/;
+/** The number of ports of one engine for the database servers of a customer on a server. */
+const DATABASE_PORTS = 50;
+export const MIN_DATABASE_MEMORY = 512 * MB;
+export const MIN_DATABASE_DISK = 1 * GB;
+
+const serverCount = (n: number) => `${n} ${n === 1 ? "database server" : "database servers"}`;
+
+/** The database servers that a website can use: those of its customer on its server. */
+export function databaseServersFor(s: State, website: Pick<Website, "customerId" | "serverId"> | undefined, engine?: DatabaseEngine): DatabaseServer[] {
+  if (!website) return [];
+  return s.databaseServers
+    .filter((x) => x.customerId === website.customerId && x.serverId === website.serverId && x.status !== "removing" && (!engine || x.engine === engine))
+    .sort((a, b) => a.port - b.port);
+}
+
+function checkDatabaseLimits(limits: DatabaseLimits, prefix = "limits") {
+  const errors: Record<string, string> = {};
+  if (!(limits.vcpus > 0)) errors[`${prefix}.vcpus`] = "The CPU limit must be more than 0.";
+  if (!(limits.memoryBytes >= MIN_DATABASE_MEMORY)) errors[`${prefix}.memoryBytes`] = "A database server needs 512 MB of memory or more.";
+  if (!(limits.diskBytes >= MIN_DATABASE_DISK)) errors[`${prefix}.diskBytes`] = "A database server needs 1 GB of disk space or more.";
+  const messages = Object.values(errors);
+  if (messages.length) throw new ApiError(messages.length === 1 ? messages[0] : "Correct the limits.", errors);
+}
+
+const sameLimits = (a: DatabaseLimits, b: DatabaseLimits) => a.vcpus === b.vcpus && a.memoryBytes === b.memoryBytes && a.diskBytes === b.diskBytes;
+
+/**
+ * Mock mode: the record of a new database server, with the checks of the panel API. The
+ * caller adds the record to the state.
+ */
+function newDatabaseServer(s: State, customerId: string, serverId: string, engine: DatabaseEngine, options: { name?: string; planId?: string; limits?: DatabaseLimits; field?: string; checkLimit?: boolean } = {}): DatabaseServer {
+  const field = options.field ?? "engine";
+  const fail = (key: string, text: string): never => {
+    throw new ApiError(text, { [key]: text });
+  };
+  const customer = s.customers.find((c) => c.id === customerId);
+  if (!customer) return fail("customerId", "Select a customer that you control.");
+  const own = s.databaseServers.filter((x) => x.customerId === customerId);
+  // As in the panel API, the checks of the input come before the checks of the plan.
+  let name = options.name?.trim() ?? "";
+  if (name && !DATABASE_SERVER_NAME.test(name)) fail("name", "Use 1 to 40 lower-case letters, digits and hyphens. Start and end with a letter or a digit.");
+  if (name && own.some((x) => x.name === name)) fail("name", "This customer has a database server with this name.");
+  const plan = s.plans.find((p) => p.id === (options.planId || customer.planId));
+  if (!plan) return fail("planId", "Select a plan.");
+  const limits = options.limits ?? plan.databaseLimits;
+  checkDatabaseLimits(limits);
+  const host = s.servers.find((x) => x.id === serverId);
+  if (host && !host.databaseInstances) fail(field, `The agent on the server ${host.name} did not report that it can operate database servers. Update the agent of the server, then try again.`);
+  if (host?.databaseEngines && !host.databaseEngines.includes(engine)) fail(field, `The agent on the server ${host.name} did not report that it can operate ${ENGINE_NAME[engine]}. Update the agent of the server, then try again.`);
+  const customerPlan = s.plans.find((p) => p.id === customer.planId);
+  if (options.checkLimit !== false && customerPlan) {
+    if (own.length >= customerPlan.databaseServers) fail(field, `The ${customerPlan.name} plan allows ${serverCount(customerPlan.databaseServers)}.`);
+    // As for websites, the database servers of the customers of a reseller count against the
+    // plan of the reseller, with the database servers of the reseller itself.
+    const reseller = customer.resellerId ? s.customers.find((c) => c.id === customer.resellerId) : customer.role === "reseller" ? customer : undefined;
+    const resellerPlan = s.plans.find((p) => p.id === reseller?.planId);
+    if (reseller && resellerPlan) {
+      const ids = new Set(s.customers.filter((c) => c.id === reseller.id || c.resellerId === reseller.id).map((c) => c.id));
+      if (s.databaseServers.filter((x) => ids.has(x.customerId)).length >= resellerPlan.databaseServers) {
+        fail(field, customer.resellerId
+          ? `The ${resellerPlan.name} plan of your provider allows ${serverCount(resellerPlan.databaseServers)} in total.`
+          : `The ${resellerPlan.name} plan allows ${serverCount(resellerPlan.databaseServers)} in total, for you and your customers.`);
+      }
+    }
+  }
+  // The first database server of an engine gets the usual port of the engine.
+  const used = new Set(own.filter((x) => x.serverId === serverId && x.engine === engine).map((x) => x.port));
+  const port = Array.from({ length: DATABASE_PORTS }, (_, i) => DATABASE_PORT[engine] + i).find((x) => !used.has(x));
+  if (port === undefined) return fail(field, `A customer can have ${DATABASE_PORTS} database servers of one engine on a server. ${customer.name} has this number.`);
+  if (!name) {
+    for (let n = 1; ; n++) {
+      name = `${engine}-${n}`;
+      if (!own.some((x) => x.name === name)) break;
+    }
+  }
+  return { id: id("dbs"), name, engine, customerId, serverId, planId: plan.id, status: "starting", host: DATABASE_HOST[engine], port, limits: { ...limits }, databases: 0, maxDatabases: plan.databases, createdAt: now() };
+}
+
+/** Mock mode: the first report of the server for a database server that it started. */
+const firstUsage = (limits: DatabaseLimits) => ({ memoryBytes: 90 * MB, diskBytes: 64 * MB, diskSizeBytes: limits.diskBytes });
+
+function databaseServer(serverId: string): DatabaseServer {
+  const s = state.databaseServers.find((x) => x.id === serverId);
+  if (!s) throw new ApiError("The database server does not exist.");
+  return s;
+}
+
+/** One change of a database server at a time. */
+function refuseOpenChange(s: DatabaseServer) {
+  if (state.jobs.some((j) => jobActive(j) && j.databaseServerId === s.id && /^(Create|Change|Remove) database server |^Apply the limits /.test(j.title))) {
+    throw new ApiError("A change of this database server is in progress. Wait until it is complete.");
+  }
+}
+
+function putDatabaseServer(server: live.ApiDatabaseServer) {
+  update((d) => {
+    const next = live.toDatabaseServer(server);
+    d.databaseServers = d.databaseServers.some((x) => x.id === next.id) ? d.databaseServers.map((x) => (x.id === next.id ? next : x)) : [...d.databaseServers, next];
+  });
+}
+
+export interface DatabaseServerInput {
+  customerId: string;
+  engine: DatabaseEngine;
+  /** With no name, the panel gives a name, for example "mariadb-2". */
+  name?: string;
+  /** With no plan, the database server gets the plan of the customer. */
+  planId?: string;
+  /** With no server, the panel uses the server with the most websites of the customer. */
+  serverId?: string;
+  /** Only an administrator sets limits. The other users select a plan. */
+  limits?: DatabaseLimits;
+}
+
+/** Makes a database server. The promise resolves when the panel has put the job in the queue. */
+export function createDatabaseServer(input: DatabaseServerInput): Promise<void> {
+  if (LIVE) {
+    return call(async () => {
+      const body = { engine: input.engine, customerId: input.customerId, name: input.name?.trim() || undefined, planId: input.planId || undefined, serverId: input.serverId || undefined, limits: input.limits };
+      const r = await live.request<{ databaseServer: live.ApiDatabaseServer; job: live.ApiJob }>("POST", "/database-servers", body);
+      putDatabaseServer(r.databaseServer);
+      void track(r.job);
+    });
+  }
+  const customer = state.customers.find((c) => c.id === input.customerId);
+  if (customer?.suspended) throw new ApiError("This customer is suspended. Lift the suspension before you make a database server.");
+  let serverId = input.serverId;
+  if (!serverId) {
+    const websites = new Map<string, number>();
+    for (const w of state.websites) if (w.customerId === input.customerId) websites.set(w.serverId, (websites.get(w.serverId) ?? 0) + 1);
+    serverId = [...websites].sort((a, b) => b[1] - a[1])[0]?.[0];
+    if (!serverId) {
+      const text = "This customer has no website. Make a website first: the websites on the same server use the database server.";
+      throw new ApiError(text, { serverId: text });
+    }
+  }
+  const server = newDatabaseServer(state, input.customerId, serverId, input.engine, { name: input.name, planId: input.planId, limits: input.limits });
+  void runJob({
+    title: `Create database server ${server.name}`,
+    serverId,
+    databaseServerId: server.id,
+    steps: ["Start database server"],
+    activity: `Created database server ${server.name}`,
+    begin: (d) => {
+      d.databaseServers.push(server);
+      audit(d, "Created database server", `${customer?.name ?? ""} ${server.name}`.trim());
+    },
+    apply: (d) => {
+      const x = d.databaseServers.find((y) => y.id === server.id);
+      if (x) Object.assign(x, { status: "running", usage: firstUsage(x.limits) });
+    },
+  });
+  return Promise.resolve();
+}
+
+/**
+ * Changes the name, the plan or the limits of a database server. A new plan gives its limits.
+ * New limits restart the database server.
+ */
+export function setDatabaseServer(serverId: string, change: { name?: string; planId?: string; limits?: DatabaseLimits }): Promise<void> {
+  if (LIVE) {
+    return call(async () => {
+      const r = await live.request<{ databaseServer: live.ApiDatabaseServer; job: live.ApiJob | null }>("PATCH", `/database-servers/${serverId}`, change);
+      putDatabaseServer(r.databaseServer);
+      void track(r.job);
+    });
+  }
+  const s = databaseServer(serverId);
+  if (s.status === "removing") throw new ApiError("The panel removes this database server.");
+  const name = change.name?.trim() ?? s.name;
+  if (name !== s.name) {
+    if (!DATABASE_SERVER_NAME.test(name)) throw new ApiError("Correct the name.", { name: "Use 1 to 40 lower-case letters, digits and hyphens. Start and end with a letter or a digit." });
+    if (state.databaseServers.some((x) => x.customerId === s.customerId && x.name === name)) throw new ApiError("Correct the name.", { name: "This customer has a database server with this name." });
+  }
+  const plan = change.planId && change.planId !== s.planId ? state.plans.find((p) => p.id === change.planId) : undefined;
+  if (plan && s.databases > plan.databases) {
+    const text = `The ${plan.name} plan allows ${plan.databases} databases in a database server. This database server has ${s.databases}.`;
+    throw new ApiError(text, { planId: text });
+  }
+  const limits = change.limits ?? plan?.databaseLimits;
+  const resize = limits !== undefined && !sameLimits(limits, s.limits);
+  if (resize) {
+    checkDatabaseLimits(limits);
+    refuseOpenChange(s);
+  }
+  update((d) => {
+    const x = d.databaseServers.find((y) => y.id === serverId)!;
+    x.name = name;
+    if (plan) x.planId = plan.id;
+    if (resize) x.limits = { ...limits };
+    audit(d, "Changed database server", name);
+  });
+  if (resize) {
+    void runJob({
+      title: `Change database server ${name}`,
+      serverId: s.serverId,
+      databaseServerId: s.id,
+      steps: ["Start database server"],
+      apply: (d) => {
+        const x = d.databaseServers.find((y) => y.id === serverId);
+        if (x?.usage) x.usage.diskSizeBytes = x.limits.diskBytes;
+      },
+    });
+  }
+  return Promise.resolve();
+}
+
+/** Makes a database server again after its first job failed. */
+export function retryDatabaseServer(serverId: string): Promise<void> {
+  if (LIVE) {
+    return call(async () => {
+      const r = await live.request<{ databaseServer: live.ApiDatabaseServer; job: live.ApiJob }>("POST", `/database-servers/${serverId}/retry`);
+      putDatabaseServer(r.databaseServer);
+      void track(r.job);
+    });
+  }
+  const s = databaseServer(serverId);
+  if (s.status !== "failed") throw new ApiError("The panel made this database server. Only a database server that the panel could not make can be made again.");
+  void runJob({
+    title: `Create database server ${s.name}`,
+    serverId: s.serverId,
+    databaseServerId: s.id,
+    steps: ["Start database server"],
+    begin: (d) => {
+      d.databaseServers.find((y) => y.id === serverId)!.status = "starting";
+      audit(d, "Created database server again", s.name);
+    },
+    apply: (d) => {
+      const x = d.databaseServers.find((y) => y.id === serverId);
+      if (x) Object.assign(x, { status: "running", usage: firstUsage(x.limits) });
+    },
+  });
+  return Promise.resolve();
+}
+
+/** Removes a database server that has no databases and no users. The server removes its data. */
+export function deleteDatabaseServer(serverId: string): Promise<void> {
+  if (LIVE) {
+    return call(async () => {
+      const r = await live.request<JobAnswer>("DELETE", `/database-servers/${serverId}`);
+      update((d) => {
+        const x = d.databaseServers.find((y) => y.id === serverId);
+        if (x) x.status = "removing";
+      });
+      void track(r.job);
+    });
+  }
+  const s = databaseServer(serverId);
+  if (s.status === "removing") throw new ApiError("The panel removes this database server.");
+  const databases = state.databases.filter((x) => x.databaseServerId === serverId).length;
+  const users = state.databaseUsers.filter((x) => x.databaseServerId === serverId).length;
+  if (databases > 0) throw new ApiError(`This database server has ${databases} ${databases === 1 ? "database" : "databases"}. Remove the databases first.`);
+  if (users > 0) throw new ApiError(`This database server has ${users} database ${users === 1 ? "user" : "users"}. Remove the database users first.`);
+  refuseOpenChange(s);
+  void runJob({
+    title: `Remove database server ${s.name}`,
+    serverId: s.serverId,
+    databaseServerId: s.id,
+    steps: ["Stop database server", "Remove data"],
+    activity: `Removed database server ${s.name}`,
+    begin: (d) => {
+      d.databaseServers.find((y) => y.id === serverId)!.status = "removing";
+      audit(d, "Removed database server", s.name);
+    },
+    apply: (d) => {
+      d.databaseServers = d.databaseServers.filter((y) => y.id !== serverId);
+    },
+  });
+  return Promise.resolve();
+}
+
+/**
+ * Mock mode: the database server that gets a new database of a website.
+ *
+ * - With an ID, it is that database server.
+ * - With no ID, it is the first database server of the engine that has space.
+ * - When the customer has no database server of the engine on the server, the panel makes one,
+ *   if the plan of the customer permits. The second value is then true.
+ */
+function serverForDatabase(w: Website, engine: DatabaseEngine, databaseServerId?: string): [DatabaseServer, boolean] {
+  const servers = databaseServersFor(state, w, engine);
+  const planName = (x: DatabaseServer) => state.plans.find((p) => p.id === x.planId)?.name ?? "";
+  if (databaseServerId) {
+    const selected = servers.find((x) => x.id === databaseServerId);
+    if (!selected) {
+      const text = "Select a database server of the customer of this website, on the server of the website, with the engine of the database.";
+      throw new ApiError(text, { databaseServerId: text });
+    }
+    if (selected.databases >= selected.maxDatabases) {
+      const text = `The ${planName(selected)} plan allows ${selected.maxDatabases} databases in a database server. The database server ${selected.name} has ${selected.databases}.`;
+      throw new ApiError(text, { name: text });
+    }
+    return [selected, false];
+  }
+  if (servers.length === 0) return [newDatabaseServer(state, w.customerId, w.serverId, engine), true];
+  const free = servers.find((x) => x.databases < x.maxDatabases);
+  if (!free) {
+    const text = servers.length === 1
+      ? `The database server ${servers[0].name} has ${servers[0].databases} databases, and its plan (${planName(servers[0])}) allows no more. Make a new database server, or give this one a larger plan.`
+      : `Each ${ENGINE_NAME[engine]} database server of this customer has the number of databases that its plan allows. Make a new database server, or give one a larger plan.`;
+    throw new ApiError(text, { name: text });
+  }
+  return [free, false];
+}
 
 /**
  * Makes a database. With createUser, it also makes a user with readwrite access, and gives its password.
  * A Valkey database always has a user with the same name: the user and the database number are the database.
+ * With no database server, the panel selects one, or makes the first one of the engine.
  */
-export function createDatabase(websiteId: string, engine: DatabaseEngine, name: string, createUser = true): Promise<string | null> {
+export function createDatabase(websiteId: string, engine: DatabaseEngine, name: string, createUser = true, databaseServerId?: string): Promise<string | null> {
   if (engine === "valkey") createUser = true;
   if (LIVE) {
     return call(async () => {
-      const r = await live.request<{ password: string | null; job: live.ApiJob }>("POST", `/websites/${websiteId}/databases`, { engine, name: name.trim(), createUser });
+      const r = await live.request<{ password: string | null; job: live.ApiJob }>("POST", `/websites/${websiteId}/databases`, { engine, name: name.trim(), createUser, databaseServerId: databaseServerId || undefined });
       void track(r.job).then(() => refresh());
       await refresh();
       return r.password;
@@ -1230,25 +1561,32 @@ export function createDatabase(websiteId: string, engine: DatabaseEngine, name: 
   if (engine === "valkey" && w.sharedDatabases) {
     throw new ApiError("Correct the engine.", { engine: sharedDatabasesMessage(server?.name ?? "of the website") });
   }
+  // A website from an earlier release keeps its databases in the shared containers.
+  const [target, made] = w.sharedDatabases ? [undefined, false] : serverForDatabase(w, engine, databaseServerId);
   const dbId = id("db");
+  const steps = engine === "valkey" ? ["Create database and user"] : createUser ? ["Create database", "Create user", "Allow the website container only"] : ["Create database"];
   void runJob({
     title: `Create ${ENGINE_NAME[engine]} database ${n}`,
     websiteId,
-    steps: engine === "valkey" ? ["Create database and user"] : createUser ? ["Create database", "Create user", "Allow the website container only"] : ["Create database"],
+    databaseServerId: target?.id,
+    steps: made ? ["Start database server", ...steps] : steps,
     activity: `Created database ${n} for ${w.name}`,
-    begin: (d) => audit(d, "Created database", `${w.name} ${n}`),
+    begin: (d) => {
+      if (target && made) d.databaseServers.push(target);
+      audit(d, "Created database", `${w.name} ${n}`);
+    },
     apply: (d) => {
-      const database: Database = { id: dbId, name: n, engine, websiteId, sizeBytes: 0, serverId: w.serverId };
+      const database: Database = { id: dbId, name: n, engine, websiteId, sizeBytes: 0, serverId: w.serverId, databaseServerId: target?.id, host: DATABASE_HOST[engine], port: target?.port ?? DATABASE_PORT[engine] };
+      const made_ = d.databaseServers.find((x) => x.id === target?.id);
+      if (made_?.status === "starting") Object.assign(made_, { status: "running", usage: firstUsage(made_.limits) });
       if (engine === "valkey") {
-        // Each customer has its own Valkey container on a server. The server gives the smallest
-        // number that no database of the customer has there.
-        const sites = new Set(d.websites.filter((x) => x.customerId === w.customerId && x.serverId === w.serverId).map((x) => x.id));
-        const used = new Set(d.databases.filter((x) => x.engine === "valkey" && sites.has(x.websiteId)).map((x) => x.number));
+        // The server gives the smallest number that no database of the database server has.
+        const used = new Set(d.databases.filter((x) => x.engine === "valkey" && x.databaseServerId === target?.id).map((x) => x.number));
         database.number = Array.from({ length: VALKEY_DATABASES - 1 }, (_, i) => i + 1).find((i) => !used.has(i));
         database.keys = 0;
       }
       d.databases.push(database);
-      if (createUser) d.databaseUsers.push({ id: id("dbu"), name: n, engine, websiteId, grants: [{ databaseId: dbId, database: n, privileges: "readwrite" }], access: "website" });
+      if (createUser) d.databaseUsers.push({ id: id("dbu"), name: n, engine, websiteId, databaseServerId: target?.id, grants: [{ databaseId: dbId, database: n, privileges: "readwrite" }], access: "website" });
     },
   });
   return Promise.resolve(createUser ? newPassword() : null);
@@ -1278,12 +1616,39 @@ function checkGrants(websiteId: string, engine: DatabaseEngine, grants: GrantInp
   }).sort((a, b) => a.database.localeCompare(b.database));
 }
 
-/** Makes a database user with a permission for each database, and gives its password. */
-export function createDatabaseUser(websiteId: string, engine: DatabaseEngine, name: string, grants: GrantInput[]): Promise<string> {
+/**
+ * Mock mode: the database server of a new user. It is the database server of its databases. A
+ * user with no database gets the database server of the request, or the only database server
+ * of the engine that the website can use.
+ */
+function serverOfNewUser(w: Website, engine: DatabaseEngine, grants: GrantInput[], requested?: string): string | undefined {
+  if (w.sharedDatabases) return undefined;
+  const ofGrants = [...new Set(grants.map((g) => state.databases.find((x) => x.id === g.databaseId)?.databaseServerId))];
+  const fail = (key: string, text: string): never => {
+    throw new ApiError(text, { [key]: text });
+  };
+  if (ofGrants.length > 1) fail("grants", "A database user is in one database server. Select databases of one database server, or make a user for each database server.");
+  if (ofGrants[0] && requested && ofGrants[0] !== requested) fail("databaseServerId", "The databases of the user are in a different database server.");
+  const servers = databaseServersFor(state, w, engine);
+  const serverId = ofGrants[0] ?? requested ?? (servers.length === 1 ? servers[0].id : undefined);
+  if (!serverId) {
+    return fail("databaseServerId", servers.length
+      ? "Select the database server of the user."
+      : `This customer has no ${ENGINE_NAME[engine]} database server on the server of the website. Make a database first.`);
+  }
+  if (!servers.some((x) => x.id === serverId)) fail("databaseServerId", "Select a database server of the customer of this website, on the server of the website, with the engine of the user.");
+  return serverId;
+}
+
+/**
+ * Makes a database user with a permission for each database, and gives its password. A user
+ * is in one database server: the database server of its databases, or the one of the request.
+ */
+export function createDatabaseUser(websiteId: string, engine: DatabaseEngine, name: string, grants: GrantInput[], databaseServerId?: string): Promise<string> {
   if (engine === "valkey") throw new ApiError("Correct the engine.", { engine: "A Valkey database has one user, with the same name. Make a Valkey database." });
   if (LIVE) {
     return call(async () => {
-      const r = await live.request<{ password: string; job: live.ApiJob }>("POST", `/websites/${websiteId}/database-users`, { engine, name: name.trim(), grants });
+      const r = await live.request<{ password: string; job: live.ApiJob }>("POST", `/websites/${websiteId}/database-users`, { engine, name: name.trim(), grants, databaseServerId: databaseServerId || undefined });
       void track(r.job);
       await refresh();
       return r.password;
@@ -1292,8 +1657,9 @@ export function createDatabaseUser(websiteId: string, engine: DatabaseEngine, na
   const n = databaseName(websiteId, name);
   if (state.databaseUsers.some((x) => x.name === n && x.engine === engine)) throw new ApiError("This user exists.", { name: "This user exists." });
   const checked = checkGrants(websiteId, engine, grants);
+  const serverId = serverOfNewUser(site(state, websiteId), engine, grants, databaseServerId);
   update((d) => {
-    d.databaseUsers.push({ id: id("dbu"), name: n, engine, websiteId, grants: checked, access: "website" });
+    d.databaseUsers.push({ id: id("dbu"), name: n, engine, websiteId, databaseServerId: serverId, grants: checked, access: "website" });
     audit(d, "Created database user", n);
   });
   return Promise.resolve(newPassword());
@@ -1313,6 +1679,9 @@ export function setDatabaseUser(userId: string, change: { grants?: GrantInput[];
     });
   }
   const grants = change.grants && checkGrants(user.websiteId, user.engine, change.grants);
+  if (grants?.some((g) => state.databases.find((x) => x.id === g.databaseId)?.databaseServerId !== user.databaseServerId)) {
+    throw new ApiError("Select a database in the database server of the user.");
+  }
   update((d) => {
     const u = d.databaseUsers.find((x) => x.id === userId)!;
     if (grants) u.grants = grants;
@@ -1693,9 +2062,10 @@ export function rebootServer(serverId: string) {
 export const sharedDatabaseWebsites = (d: State, serverId: string) => d.websites.filter((w) => w.serverId === serverId && w.sharedDatabases && w.status !== "failed");
 
 /**
- * Gives each customer its own database containers on a server from an earlier release. The
- * panel starts one job for each website that uses the shared containers. The job copies the
- * databases and the database users of the website to the containers of its customer.
+ * Moves the databases of a server from an earlier release to database servers. The panel
+ * starts one job for each website that uses the shared containers. The job copies the
+ * databases and the database users of the website to the database server of its customer with
+ * the usual port of the engine. The panel makes that database server when the customer has none.
  */
 export function moveDatabases(serverId: string) {
   if (LIVE) {
@@ -1706,15 +2076,27 @@ export function moveDatabases(serverId: string) {
   const server = state.servers.find((s) => s.id === serverId)!;
   const moving = new Set(state.jobs.filter((j) => jobActive(j) && j.title.startsWith("Move the databases of ")).map((j) => j.websiteId));
   const sites = sharedDatabaseWebsites(state, serverId).filter((w) => w.status !== "starting" && !moving.has(w.id));
-  if (sites.length) update((d) => audit(d, "Moved databases to the containers of each customer", server.name));
+  if (sites.length) update((d) => audit(d, "Moved databases to database servers", server.name));
   return Promise.all(sites.map((w) => runJob({
     title: `Move the databases of ${w.name}`,
     websiteId: w.id,
     serverId,
-    steps: ["Start database containers", "Stop website", "Copy databases", "Copy users", "Start website", "Remove old copies"],
-    activity: `Moved the databases of ${w.name} to the containers of its customer`,
+    steps: ["Start database servers", "Stop website", "Copy databases", "Copy users", "Start website", "Remove old copies"],
+    activity: `Moved the databases of ${w.name} to the database servers of its customer`,
     apply: (d) => {
       site(d, w.id).sharedDatabases = false;
+      // The apps of the website connect to the usual port, so the databases go to the
+      // database server on that port. The plan does not limit this database server.
+      for (const db of d.databases.filter((x) => x.websiteId === w.id && !x.databaseServerId)) {
+        let target = d.databaseServers.find((x) => x.customerId === w.customerId && x.serverId === serverId && x.engine === db.engine && x.port === DATABASE_PORT[db.engine]);
+        if (!target) {
+          target = { ...newDatabaseServer(d, w.customerId, serverId, db.engine, { checkLimit: false }), status: "running" };
+          target.usage = firstUsage(target.limits);
+          d.databaseServers.push(target);
+        }
+        Object.assign(db, { databaseServerId: target.id, host: target.host, port: target.port });
+        for (const u of d.databaseUsers) if (u.websiteId === w.id && u.engine === db.engine && !u.databaseServerId) u.databaseServerId = target.id;
+      }
     },
   }))).then(() => undefined);
 }
@@ -1982,15 +2364,24 @@ export function setCustomer(customerId: string, change: Partial<Pick<Customer, "
 export function savePlan(plan: Plan) {
   if (LIVE) {
     const exists = state.plans.some((p) => p.id === plan.id);
-    const body = { name: plan.name.trim(), websites: plan.websites, mailboxes: plan.mailboxes, databases: plan.databases, phpExtensions: plan.phpExtensions, limits: plan.limits };
+    const body = { name: plan.name.trim(), websites: plan.websites, mailboxes: plan.mailboxes, databases: plan.databases, phpExtensions: plan.phpExtensions, limits: plan.limits, databaseServers: plan.databaseServers, databaseLimits: plan.databaseLimits };
     return call(() => live.request(exists ? "PATCH" : "POST", exists ? `/plans/${plan.id}` : "/plans", body)).then(() => refresh());
   }
   const errors: Record<string, string> = {};
   if (!plan.name.trim()) errors.name = "Type a name.";
   if (Object.values(plan.limits).some((v) => !(v > 0))) errors.limits = "Each limit must be more than 0.";
+  if (!(plan.databaseServers >= 0)) errors.databaseServers = "Type 0 or more.";
+  if (!(plan.databaseLimits.vcpus > 0)) errors["databaseLimits.vcpus"] = "The CPU limit must be more than 0.";
+  if (!(plan.databaseLimits.memoryBytes >= MIN_DATABASE_MEMORY)) errors["databaseLimits.memoryBytes"] = "A database server needs 512 MB of memory or more.";
+  if (!(plan.databaseLimits.diskBytes >= MIN_DATABASE_DISK)) errors["databaseLimits.diskBytes"] = "A database server needs 1 GB of disk space or more.";
   if (Object.keys(errors).length) throw new ApiError("Correct the plan.", errors);
   update((d) => {
     const i = d.plans.findIndex((p) => p.id === plan.id);
+    // The database servers with the limits of the plan get its new limits. A database server
+    // with limits that an administrator set for it keeps them.
+    if (i >= 0) {
+      for (const x of d.databaseServers) if (x.planId === plan.id && sameLimits(x.limits, d.plans[i].databaseLimits)) x.limits = { ...plan.databaseLimits };
+    }
     if (i >= 0) d.plans[i] = plan;
     else d.plans.push({ ...plan, id: id("plan") });
     audit(d, i >= 0 ? "Changed plan" : "Created plan", plan.name);

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { ApiError, addCustomer, addDomain, addUser, changePassword, createDatabase, createDatabaseUser, createToken, deleteDatabase, deleteDatabaseUser, deleteUser, getState, moveDatabases, publicName, resetState, resetUserPassword, setContext, setDatabaseUser, setDocumentRoot, setPanelCertificate, setSftp, setTotp, splitCommand, timing, verifyDomain } from "./store";
+import { ApiError, addCustomer, addDomain, addUser, changePassword, createDatabase, createDatabaseServer, createDatabaseUser, createToken, deleteDatabase, deleteDatabaseServer, deleteDatabaseUser, deleteUser, getState, moveDatabases, publicName, resetState, resetUserPassword, retryDatabaseServer, savePlan, setContext, setDatabaseServer, setDatabaseUser, setDocumentRoot, setPanelCertificate, setSftp, setTotp, splitCommand, timing, verifyDomain } from "./store";
 import { contextCustomers, visibleWebsites } from "./selectors";
 
 beforeEach(() => {
@@ -63,21 +63,135 @@ describe("databases (CF-01)", () => {
   });
 });
 
-describe("database containers of each customer", () => {
+describe("database servers of each customer", () => {
   const site = (id: string) => getState().websites.find((w) => w.id === id)!;
+  const servers = (customerId = "cus_acme") => getState().databaseServers.filter((s) => s.customerId === customerId);
+  const server = (name: string) => getState().databaseServers.find((s) => s.name === name)!;
+  const wait = () => new Promise((r) => setTimeout(r, 30));
 
-  it("gives the Valkey numbers of each customer on a server", async () => {
-    // The shop has the Valkey database number 1 on its server. A website of a different
-    // customer on the same server has its own Valkey container, so its first number is 1 too.
+  it("gives the Valkey numbers of each database server", async () => {
+    // The shop has the Valkey database number 1 in the database server valkey-1. A website of
+    // a different customer on the same server has no database server: the panel makes one, and
+    // the first number in it is 1 too.
     const other = getState().websites.find((w) => w.serverId === shop().serverId && w.customerId !== shop().customerId && !w.sharedDatabases)!;
+    expect(servers(other.customerId)).toEqual([]);
     await createDatabase(other.id, "valkey", "cache");
     await createDatabase("web_shop", "valkey", "sessions");
-    await new Promise((r) => setTimeout(r, 10));
-    expect(getState().databases.find((d) => d.name === `${other.unixUser}_cache`)).toMatchObject({ number: 1 });
-    expect(getState().databases.find((d) => d.name === `${shop().unixUser}_sessions`)).toMatchObject({ number: 2 });
+    await wait();
+    expect(servers(other.customerId)).toMatchObject([{ name: "valkey-1", engine: "valkey", port: 6379, status: "running", databases: 1, serverId: other.serverId }]);
+    expect(getState().databases.find((d) => d.name === `${other.unixUser}_cache`)).toMatchObject({ number: 1, databaseServerId: servers(other.customerId)[0].id, port: 6379 });
+    expect(getState().databases.find((d) => d.name === `${shop().unixUser}_sessions`)).toMatchObject({ number: 2, databaseServerId: "dbs_3" });
   });
 
-  it("moves the databases of the websites of an earlier release to the containers of each customer", async () => {
+  it("makes a database server with the next port, the next name and the limits of its plan", async () => {
+    await createDatabaseServer({ customerId: "cus_acme", engine: "mariadb" });
+    // The demo data has MariaDB on the ports 3306 and 3307, with the names mariadb-1 and mariadb-reports.
+    expect(server("mariadb-2")).toMatchObject({ port: 3308, host: "mariadb.internal", serverId: "srv_web01", planId: "plan_business", status: "starting", limits: { vcpus: 2, memoryBytes: 1024 ** 3 }, maxDatabases: 50 });
+    await wait();
+    expect(server("mariadb-2").status).toBe("running");
+    expect(getState().jobs[0]).toMatchObject({ title: "Create database server mariadb-2", state: "succeeded", databaseServerId: server("mariadb-2").id });
+
+    await createDatabaseServer({ customerId: "cus_acme", engine: "postgresql", name: "reports", planId: "plan_standard", limits: { vcpus: 0.5, memoryBytes: 768 * 1024 ** 2, diskBytes: 3 * 1024 ** 3 } });
+    expect(server("reports")).toMatchObject({ port: 5433, planId: "plan_standard", limits: { vcpus: 0.5, diskBytes: 3 * 1024 ** 3 }, maxDatabases: 10 });
+    expect(() => createDatabaseServer({ customerId: "cus_acme", engine: "valkey", name: "reports" })).toThrow(/has a database server with this name/);
+    expect(() => createDatabaseServer({ customerId: "cus_acme", engine: "valkey", name: "Bad_Name" })).toThrow(/lower-case letters, digits and hyphens/);
+    expect(() => createDatabaseServer({ customerId: "cus_acme", engine: "valkey", limits: { vcpus: 1, memoryBytes: 100 * 1024 ** 2, diskBytes: 1024 ** 3 } })).toThrow(/512 MB of memory or more/);
+    // The Business plan allows 6 database servers. Acme has 6 now.
+    expect(servers()).toHaveLength(6);
+    expect(() => createDatabaseServer({ customerId: "cus_acme", engine: "valkey" })).toThrow("The Business plan allows 6 database servers.");
+    // The database servers of the customers of a reseller count against the plan of the reseller.
+    expect(() => createDatabaseServer({ customerId: "cus_bakery", engine: "mariadb" })).toThrow("The Business plan of your provider allows 6 database servers in total.");
+    // A suspended customer cannot make a database server.
+    expect(() => createDatabaseServer({ customerId: "cus_lawson", engine: "mariadb" })).toThrow(/suspended/);
+  });
+
+  it("puts a new database in the selected database server, or in the first one with space", async () => {
+    await createDatabase("web_shop", "mariadb", "auto");
+    await createDatabase("web_shop", "mariadb", "picked", true, "dbs_4");
+    await wait();
+    expect(getState().databases.find((d) => d.name === "shop_7f2a_auto")).toMatchObject({ databaseServerId: "dbs_1", port: 3306 });
+    expect(getState().databases.find((d) => d.name === "shop_7f2a_picked")).toMatchObject({ databaseServerId: "dbs_4", host: "mariadb.internal", port: 3307 });
+    expect(getState().databaseUsers.find((u) => u.name === "shop_7f2a_picked")).toMatchObject({ databaseServerId: "dbs_4" });
+    expect(server("mariadb-reports").databases).toBe(1);
+    // A database server of a different engine, or of a different customer, is not possible.
+    expect(() => createDatabase("web_shop", "mariadb", "wrong", true, "dbs_2")).toThrow(/Select a database server of the customer of this website/);
+
+    // The plan of a database server gives the number of its databases.
+    savePlan({ ...getState().plans.find((p) => p.id === "plan_standard")!, databases: 1 });
+    expect(server("mariadb-reports")).toMatchObject({ databases: 1, maxDatabases: 1 });
+    expect(() => createDatabase("web_shop", "mariadb", "more", true, "dbs_4")).toThrow("The Standard plan allows 1 databases in a database server. The database server mariadb-reports has 1.");
+    // With no database server in the request, the database goes to the first one with space.
+    await createDatabase("web_shop", "mariadb", "next");
+    await wait();
+    expect(getState().databases.find((d) => d.name === "shop_7f2a_next")).toMatchObject({ databaseServerId: "dbs_1" });
+    savePlan({ ...getState().plans.find((p) => p.id === "plan_business")!, databases: 1 });
+    expect(() => createDatabase("web_shop", "mariadb", "full")).toThrow("Each MariaDB database server of this customer has the number of databases that its plan allows. Make a new database server, or give one a larger plan.");
+  });
+
+  it("keeps a database user in one database server", async () => {
+    await createDatabase("web_shop", "mariadb", "other", false, "dbs_4");
+    await wait();
+    const other = getState().databases.find((d) => d.name === "shop_7f2a_other")!;
+    expect(() => createDatabaseUser("web_shop", "mariadb", "both", [{ databaseId: "db_1", privileges: "readonly" }, { databaseId: other.id, privileges: "readonly" }])).toThrow(/A database user is in one database server/);
+    // With no database, the request tells the database server when the customer has more than one.
+    expect(() => createDatabaseUser("web_shop", "mariadb", "none", [])).toThrow("Select the database server of the user.");
+    await createDatabaseUser("web_shop", "mariadb", "none", [], "dbs_4");
+    await createDatabaseUser("web_shop", "mariadb", "reader", [{ databaseId: other.id, privileges: "readonly" }]);
+    const reader = getState().databaseUsers.find((u) => u.name === "shop_7f2a_reader")!;
+    expect(reader.databaseServerId).toBe("dbs_4");
+    expect(getState().databaseUsers.find((u) => u.name === "shop_7f2a_none")!.databaseServerId).toBe("dbs_4");
+    expect(() => setDatabaseUser(reader.id, { grants: [{ databaseId: "db_1", privileges: "readonly" }] })).toThrow("Select a database in the database server of the user.");
+  });
+
+  it("changes the name, the plan and the limits of a database server", async () => {
+    timing.stepMs = 5;
+    await setDatabaseServer("dbs_4", { name: "analytics" });
+    expect(server("analytics")).toMatchObject({ planId: "plan_standard", limits: { memoryBytes: 512 * 1024 ** 2 } });
+    expect(getState().jobs.some((j) => j.databaseServerId === "dbs_4")).toBe(false);
+    // A new plan gives its limits, and the server restarts the database server.
+    await setDatabaseServer("dbs_4", { planId: "plan_business" });
+    expect(server("analytics")).toMatchObject({ planId: "plan_business", limits: { vcpus: 2, memoryBytes: 1024 ** 3, diskBytes: 10 * 1024 ** 3 }, maxDatabases: 50 });
+    expect(getState().jobs[0]).toMatchObject({ title: "Change database server analytics", state: "running", steps: ["Start database server"], databaseServerId: "dbs_4" });
+    // One change of the limits at a time.
+    expect(() => setDatabaseServer("dbs_4", { limits: { vcpus: 1, memoryBytes: 1024 ** 3, diskBytes: 10 * 1024 ** 3 } })).toThrow(/A change of this database server is in progress/);
+    await new Promise((r) => setTimeout(r, 30));
+    expect(server("analytics").usage?.diskSizeBytes).toBe(10 * 1024 ** 3);
+    expect(() => setDatabaseServer("dbs_4", { name: "mariadb-1" })).toThrow(/Correct the name/);
+    // The database server must be in the limits of the new plan.
+    savePlan({ ...getState().plans.find((p) => p.id === "plan_starter")!, databases: 2 });
+    expect(() => setDatabaseServer("dbs_1", { planId: "plan_starter" })).toThrow("The Starter plan allows 2 databases in a database server. This database server has 3.");
+  });
+
+  it("gives the new limits of a plan to its database servers, but not to one with its own limits", async () => {
+    await setDatabaseServer("dbs_3", { limits: { vcpus: 1, memoryBytes: 2 * 1024 ** 3, diskBytes: 5 * 1024 ** 3 } });
+    const standard = getState().plans.find((p) => p.id === "plan_standard")!;
+    savePlan({ ...standard, databaseLimits: { vcpus: 2, memoryBytes: 1024 ** 3, diskBytes: 8 * 1024 ** 3 } });
+    expect(server("mariadb-reports").limits).toEqual({ vcpus: 2, memoryBytes: 1024 ** 3, diskBytes: 8 * 1024 ** 3 });
+    expect(server("valkey-1").limits.memoryBytes).toBe(2 * 1024 ** 3);
+    expect(() => savePlan({ ...standard, databaseLimits: { vcpus: 1, memoryBytes: 1024, diskBytes: 1024 } })).toThrow(/Correct the plan/);
+  });
+
+  it("removes a database server with no databases, and makes a failed one again", async () => {
+    expect(() => deleteDatabaseServer("dbs_1")).toThrow("This database server has 3 databases. Remove the databases first.");
+    timing.stepMs = 5;
+    await deleteDatabaseServer("dbs_4");
+    expect(server("mariadb-reports").status).toBe("removing");
+    // A database server that the panel removes gets no new database.
+    expect(() => createDatabase("web_shop", "mariadb", "late", true, "dbs_4")).toThrow(/Select a database server/);
+    expect(() => deleteDatabaseServer("dbs_4")).toThrow("The panel removes this database server.");
+    await new Promise((r) => setTimeout(r, 40));
+    expect(getState().databaseServers.some((s) => s.id === "dbs_4")).toBe(false);
+    expect(getState().jobs[0]).toMatchObject({ title: "Remove database server mariadb-reports", state: "succeeded", steps: ["Stop database server", "Remove data"] });
+
+    expect(() => retryDatabaseServer("dbs_1")).toThrow(/Only a database server that the panel could not make/);
+    getState().databaseServers.find((s) => s.id === "dbs_3")!.status = "failed";
+    await retryDatabaseServer("dbs_3");
+    expect(server("valkey-1").status).toBe("starting");
+    await new Promise((r) => setTimeout(r, 30));
+    expect(server("valkey-1").status).toBe("running");
+  });
+
+  it("moves the databases of the websites of an earlier release to database servers", async () => {
     // The demo data has two websites of an earlier release on web-02.
     const shared = () => getState().websites.filter((w) => w.sharedDatabases);
     expect(shared().map((w) => w.serverId)).toEqual(["srv_web02", "srv_web02"]);
@@ -90,10 +204,13 @@ describe("database containers of each customer", () => {
     // A website that the panel makes now is not on the server yet, so it does not move.
     expect(shared().map((w) => w.status)).toEqual(["starting"]);
     const job = getState().jobs.find((j) => j.title === `Move the databases of ${site(first).name}`)!;
-    expect(job).toMatchObject({ state: "succeeded", serverId: "srv_web02", steps: ["Start database containers", "Stop website", "Copy databases", "Copy users", "Start website", "Remove old copies"] });
+    expect(job).toMatchObject({ state: "succeeded", serverId: "srv_web02", steps: ["Start database servers", "Stop website", "Copy databases", "Copy users", "Start website", "Remove old copies"] });
     expect(getState().jobs.filter((j) => j.title.startsWith("Move the databases of "))).toHaveLength(1);
-    // The website has the Valkey container of its customer now.
+    // The website uses the database servers of its customer now. The customer has none on
+    // web-02, so the panel makes one.
     await createDatabase(first, "valkey", "cache");
+    await wait();
+    expect(servers().find((s) => s.serverId === "srv_web02")).toMatchObject({ engine: "valkey", name: "valkey-2", port: 6379, databases: 1 });
   });
 });
 

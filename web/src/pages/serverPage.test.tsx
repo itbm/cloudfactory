@@ -124,7 +124,7 @@ describe("the server page", () => {
   });
 });
 
-describe("the database containers of each customer", () => {
+describe("the database servers of each customer", () => {
   it("moves the databases of the websites of an earlier release", async () => {
     resetState();
     timing.stepMs = 0;

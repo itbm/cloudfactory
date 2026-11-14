@@ -101,12 +101,12 @@ export function WebsiteMenu({ website, bordered = false }: { website: Website; b
           onClose={() => setStaging(null)}
           footer={<button type="button" className="btn btn-primary" onClick={() => { const id = staging.websiteId; setStaging(null); navigate(`/websites/${id}`); }}>Open the staging copy</button>}
         >
-          <p>The copy has its own copies of the databases. Each engine has a new database user with access to the copies. Put these users in the configuration of the copy, so that it does not change the live data.</p>
+          <p>The copy has its own copies of the databases, in the database server of each source database. Each database server has a new database user with access to the copies. Put these users in the configuration of the copy, so that it does not change the live data.</p>
           {staging.credentials.some((c) => c.engine === "valkey") && <p>The data of a Valkey database is not copied. The copy gets a new, empty Valkey database with its own number. Find the number on the Databases page of the copy.</p>}
           <p><strong>Copy the passwords now.</strong> The panel shows them only once.</p>
           {staging.credentials.map((c) => (
             <div key={c.user} style={{ marginTop: 12 }}>
-              <p className="small">{ENGINE_NAME[c.engine]} user <code>{c.user}</code> · {c.engine === "valkey" ? "new, empty database" : "databases"} {c.databases.map((d) => <code key={d} style={{ marginRight: 6 }}>{d}</code>)}</p>
+              <p className="small">{ENGINE_NAME[c.engine]} user <code>{c.user}</code>{c.host && c.port && <> on <code>{c.host}:{c.port}</code></>} · {c.engine === "valkey" ? "new, empty database" : "databases"} {c.databases.map((d) => <code key={d} style={{ marginRight: 6 }}>{d}</code>)}</p>
               <CopyField value={c.password} label={`Password of ${c.user}`} />
             </div>
           ))}
