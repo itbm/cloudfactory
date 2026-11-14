@@ -861,15 +861,27 @@ func TestTheFirstCustomerPreparesAServerOfAnEarlierRelease(t *testing.T) {
 	if !f.Called("systemctl daemon-reload") || !f.Called("ip address replace 169.254.80.1/20 dev lo") {
 		t.Errorf("calls = %v", f.Calls)
 	}
-	// A unit of this release has the line, so it gets no drop-in file.
-	d, _, _ = deps(t)
+	// A server of an earlier release gets the stop time of the user services.
+	stop := filepath.Join(filepath.Dir(d.addressUnit()), "user@.service.d", "zz-cloudfactory-stop.conf")
+	if b, err := os.ReadFile(stop); err != nil || !strings.HasSuffix(string(b), "[Service]\nTimeoutStopSec=120\n") {
+		t.Errorf("stop time of the user services: %q %v", b, err)
+	}
+	// A unit of this release has the line, so it gets no drop-in file. The agent does not
+	// change the stop time file of the installer.
+	d, f, _ = deps(t)
 	users(d)
+	stop = filepath.Join(filepath.Dir(d.addressUnit()), "user@.service.d", "zz-cloudfactory-stop.conf")
+	os.MkdirAll(filepath.Dir(stop), 0o755)
+	os.WriteFile(stop, []byte("[Service]\nTimeoutStopSec=120\n"), 0o644)
 	os.WriteFile(d.addressUnit(), []byte("[Service]\nExecStart=/usr/sbin/ip address replace 169.254.77.1/32 dev lo\nExecStart=/usr/sbin/ip address replace 169.254.80.1/20 dev lo\n"), 0o644)
 	if err := d.syncDatabaseAccess(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(d.addressUnit() + ".d"); !os.IsNotExist(err) {
 		t.Errorf("a unit of this release got a drop-in file: %v", err)
+	}
+	if b, _ := os.ReadFile(stop); string(b) != "[Service]\nTimeoutStopSec=120\n" || f.Called("systemctl daemon-reload") {
+		t.Errorf("the agent changed the stop time file of the installer: %q, calls = %v", b, f.Calls)
 	}
 	// A firewall file that nftables refuses stays as it is, and the job stops.
 	d, f, _ = deps(t)

@@ -293,6 +293,8 @@ func TestDatabaseUnitOfADatabaseServer(t *testing.T) {
 			"PublishPort=169.254.80.2:" + port + ":" + port + "\n",
 			"Label=io.cloudfactory.database-server=" + id + "\n",
 			"Label=io.cloudfactory.customer=" + customer + "\n",
+			// The database server has the time to write its data before it stops.
+			"StopTimeout=60\n",
 			"[Service]\nRestart=always\nTimeoutStartSec=900\nCPUQuota=150%\nMemoryMax=1073741824\nMemorySwapMax=0\n",
 		} {
 			if !strings.Contains(u, want) {
@@ -315,11 +317,27 @@ func TestDatabaseUnitOfADatabaseServer(t *testing.T) {
 				t.Errorf("the shared %s has no %q:\n%s", engine, want, shared)
 			}
 		}
-		for _, not := range []string{"io.cloudfactory.customer", "io.cloudfactory.database-server", "MemoryMax", "CPUQuota"} {
+		// The unit of a shared container does not change, so the agent does not start a
+		// shared container again.
+		for _, not := range []string{"io.cloudfactory.customer", "io.cloudfactory.database-server", "MemoryMax", "CPUQuota", "StopTimeout"} {
 			if strings.Contains(shared, not) {
 				t.Errorf("the shared %s has %q:\n%s", engine, not, shared)
 			}
 		}
+	}
+}
+
+// systemd must give the user services more time than Podman gives a database server, and the
+// drop-in file must come after the file of Ubuntu.
+func TestStopTimes(t *testing.T) {
+	if UserStopSeconds <= DatabaseStopSeconds || DatabaseStopSeconds >= 90 {
+		t.Errorf("stop times: database server %d s, user services %d s", DatabaseStopSeconds, UserStopSeconds)
+	}
+	if UserStopFile <= "timeout.conf" || !strings.HasSuffix(UserStopFile, ".conf") {
+		t.Errorf("systemd reads %q before timeout.conf", UserStopFile)
+	}
+	if got := UserStopUnit(); got != "[Service]\nTimeoutStopSec=120\n" {
+		t.Errorf("UserStopUnit() = %q", got)
 	}
 }
 
