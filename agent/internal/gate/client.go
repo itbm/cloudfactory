@@ -18,7 +18,11 @@ type Client struct {
 
 // DefaultSocket is the socket of the root helper. Only root and the user of the worker can
 // open it.
-const DefaultSocket = "/run/cloudfactory/gate.sock"
+//
+// The socket has its own directory, which only root and the group of the worker can open.
+// Do not put it in a directory that a different user must go through: /run/cloudfactory has
+// the secret files of the database clients, which the user cf-db reads.
+const DefaultSocket = "/run/cloudfactory-agent/gate.sock"
 
 // open connects to the helper and sends the request. When ctx ends, the connection closes,
 // and the helper stops the command.

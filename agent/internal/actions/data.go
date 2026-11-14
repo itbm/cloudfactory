@@ -1267,9 +1267,6 @@ func (d *Deps) restoreDump(ctx context.Context, s dbServer, name string, feed fu
 		return err
 	}
 	defer d.sql(context.WithoutCancel(ctx), s, drop)
-	if _, err := d.sql(ctx, s, emptyDatabaseSQL(engine, name)); err != nil {
-		return err
-	}
 
 	envFile, err := d.secretFile(ctx, map[bool]string{true: "MYSQL_PWD", false: "PGPASSWORD"}[maria]+"="+pass+"\n")
 	if err != nil {
@@ -1280,14 +1277,24 @@ func (d *Deps) restoreDump(ctx context.Context, s dbServer, name string, feed fu
 	if err != nil {
 		return err
 	}
-	args := []string{"runuser", "-u", DBUser, "--", "env", fmt.Sprintf("XDG_RUNTIME_DIR=/run/user/%d", uid), "podman", "exec", "-i", "--env-file", envFile, c}
-	if maria {
-		// --sandbox refuses client commands such as "system" and "source".
-		args = append(args, "mariadb", "--sandbox", "--user="+tmpUser, "--batch", name)
-	} else {
-		args = append(args, "pg_restore", "--host=127.0.0.1", "--username="+tmpUser, "--role="+pgRole(name, "readwrite"), "--dbname="+name, "--no-owner", "--no-privileges", "--clean", "--if-exists", "--exit-on-error")
+	base := []string{"runuser", "-u", DBUser, "--", "env", fmt.Sprintf("XDG_RUNTIME_DIR=/run/user/%d", uid), "podman", "exec", "-i", "--env-file", envFile, c}
+	// --sandbox refuses client commands such as "system" and "source".
+	client := []string{"mariadb", "--sandbox", "--user=" + tmpUser, "--batch", name}
+	check := client
+	if !maria {
+		client = []string{"pg_restore", "--host=127.0.0.1", "--username=" + tmpUser, "--role=" + pgRole(name, "readwrite"), "--dbname=" + name, "--no-owner", "--no-privileges", "--clean", "--if-exists", "--exit-on-error"}
+		check = []string{"psql", "--host=127.0.0.1", "--username=" + tmpUser, "--dbname=" + name, "--no-psqlrc", "--quiet", "--set=ON_ERROR_STOP=1"}
 	}
-	return feed(ctx, args)
+	// The temporary user signs in before the database loses its data. A fault of the server,
+	// for example a secret file that the database user cannot read, then stops the restore
+	// while the database still has its data.
+	if _, err := d.Run.RunInput(ctx, "SELECT 1;\n", base[0], slices.Concat(base[1:], check)...); err != nil {
+		return fmt.Errorf("the restore did not start, and the database keeps its data: %w", err)
+	}
+	if _, err := d.sql(ctx, s, emptyDatabaseSQL(engine, name)); err != nil {
+		return err
+	}
+	return feed(ctx, slices.Concat(base, client))
 }
 
 // emptyDatabaseSQL removes all data of a database, and keeps the database, its users and their
@@ -1320,6 +1327,10 @@ func (d *Deps) secretsDir() string {
 	}
 	return "/run/cloudfactory/secrets"
 }
+
+// SecretFilesDir gives the directory of the secret files. The user cf-db must go through each
+// directory of this path, so the root helper does not close one of them.
+func (d *Deps) SecretFilesDir() string { return d.secretsDir() }
 
 // secretFile writes a file that only the database service user can read, and gives its path.
 func (d *Deps) secretFile(ctx context.Context, content string) (path string, err error) {

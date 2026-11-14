@@ -56,14 +56,14 @@ Time limits make sure that a job always gets a result:
  panel ──► port 7443 ──► worker (user cf-agent)
                            │  jobs, state, reports, connection to the panel
                            │
-                           │  /run/cloudfactory/gate.sock
+                           │  /run/cloudfactory-agent/gate.sock
                            ▼
                          root helper (root)
                            commands · operations · connections
 ```
 
 systemd starts `cf-agent serve` as root. This process is the root helper. It makes the Unix
-socket `/run/cloudfactory/gate.sock`, starts the worker (`cf-agent work`) as the user
+socket `/run/cloudfactory-agent/gate.sock`, starts the worker (`cf-agent work`) as the user
 `cf-agent`, and waits. When the worker stops, the root helper stops with the same result,
 and systemd starts the two processes again. Thus the service has one unit, and an update, a
 restart and a rollback of the agent operate as with one process.

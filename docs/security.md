@@ -199,7 +199,7 @@ and it starts the work in the directories that the customers control. A fault in
 gives an attacker the rights of `cf-agent`, not the rights of root.
 
 The worker asks the root helper for each step that needs root. The two processes use the
-Unix socket `/run/cloudfactory/gate.sock`. Only root and the group `cf-agent` can open the
+Unix socket `/run/cloudfactory-agent/gate.sock`. Only root and the group `cf-agent` can open the
 socket, and the root helper accepts only a process with the UID of the worker. The root
 helper does only the work of three lists:
 

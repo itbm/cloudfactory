@@ -3,8 +3,14 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
+
+	"github.com/itbm/cloudfactory/agent/internal/actions"
+	"github.com/itbm/cloudfactory/agent/internal/config"
+	"github.com/itbm/cloudfactory/agent/internal/gate"
+	"github.com/itbm/cloudfactory/agent/internal/images"
 )
 
 // workerID gives a UID and a GID for the worker of a test. Only root can give a file to a
@@ -103,6 +109,27 @@ func TestRootDoesNotFollowTheLinksOfTheWorker(t *testing.T) {
 	for _, path := range []string{secret, other, inside} {
 		if owner(t, path) != 0 {
 			t.Errorf("root gave %s to the worker", path)
+		}
+	}
+}
+
+// The root helper closes the directory of its socket for all users except the worker. On a
+// test server, the socket was in /run/cloudfactory: the user cf-db could then not read its
+// secret files below that directory, and the restore of a database failed.
+func TestTheSocketHasItsOwnDirectory(t *testing.T) {
+	dir := filepath.Dir(gate.DefaultSocket)
+	if filepath.Dir(dir) != "/run" {
+		t.Errorf("the directory of the socket is %s; it must be a directory of its own in /run", dir)
+	}
+	d := &actions.Deps{}
+	for name, path := range map[string]string{
+		"the secret files of the database clients": d.SecretFilesDir(),
+		"the run directory of the shared images":   images.DefaultRunRoot,
+		"the data directory":                       config.Defaults().DataDir,
+		"the directory of the websites":            config.Defaults().SitesDir,
+	} {
+		if path == dir || strings.HasPrefix(path, dir+"/") {
+			t.Errorf("%s (%s) is in the directory of the socket", name, path)
 		}
 	}
 }

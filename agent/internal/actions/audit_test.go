@@ -531,6 +531,34 @@ func TestRestoreEmptiesTheDatabaseFirst(t *testing.T) {
 	}
 }
 
+// Server test of the root helper: the database user could not read the secret file, the
+// client did not start, and the database was already empty. The temporary user now signs in
+// before the database loses its data.
+func TestARestoreThatCannotStartKeepsTheDatabase(t *testing.T) {
+	for engine, empty := range map[string]string{"mariadb": "DROP DATABASE", "postgresql": "DROP SCHEMA"} {
+		d, f, _ := deps(t)
+		f.Rules = []execx.Rule{{Prefix: "runuser -u cf-db -- env XDG_RUNTIME_DIR=/run/user/20001 podman exec -i --env-file ", Input: "SELECT 1;", Err: errors.New("exit status 125: permission denied")}}
+		loaded := false
+		err := d.restoreDump(context.Background(), dbServer{Engine: engine}, "acme_x7k2_shop", func(context.Context, []string) error {
+			loaded = true
+			return nil
+		})
+		if err == nil || !strings.Contains(err.Error(), "the database keeps its data") {
+			t.Errorf("%s: err = %v", engine, err)
+		}
+		if all := strings.Join(f.Inputs, ""); loaded || strings.Contains(all, empty) {
+			t.Errorf("%s: the restore emptied or loaded the database:\n%s", engine, all)
+		}
+		// The temporary user and its secret file do not stay.
+		if all := strings.Join(f.Inputs, ""); !strings.Contains(all, "IF EXISTS") {
+			t.Errorf("%s: the temporary user stays:\n%s", engine, all)
+		}
+		if files, _ := os.ReadDir(rootOf(d).secretsDir()); len(files) != 0 {
+			t.Errorf("%s: %d secret files stay", engine, len(files))
+		}
+	}
+}
+
 // Batch 1, finding 6: with no expected status, a redirect passes and a server error fails.
 func TestWatchWithNoStatusAcceptsARedirect(t *testing.T) {
 	d, _, _ := deps(t)
