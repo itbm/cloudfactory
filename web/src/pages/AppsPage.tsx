@@ -6,7 +6,7 @@ import { addImage } from "../api/store";
 import type { UpdatePolicy } from "../api/types";
 import { Topbar } from "../components/Layout";
 import { Card, Field, FormError, Modal, PageHeader, Status } from "../components/ui";
-import { POLICY_LABEL } from "../lib/labels";
+import { jobActive, POLICY_LABEL } from "../lib/labels";
 
 // liveText: the text in live mode. The API of this release has no Git deploys or build containers.
 const CATALOGUE = [
@@ -26,7 +26,7 @@ export function AppsPage() {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ name: "", reference: "", tag: "latest", policy: "manual" as UpdatePolicy, containerPort: "", command: "" });
   const add = useAction(addImage);
-  const pending = state.jobs.filter((j) => j.state === "running" && j.title.startsWith("Add image"));
+  const pending = state.jobs.filter((j) => jobActive(j) && j.title.startsWith("Add image"));
   return (
     <>
       <Topbar />

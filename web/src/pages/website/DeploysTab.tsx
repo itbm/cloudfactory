@@ -4,6 +4,7 @@ import { deployNow, rollbackRelease, setGitSource } from "../../api/store";
 import type { GitSource, Website } from "../../api/types";
 import { Card, ConfirmButton, Field, FormError, JobRow, Status } from "../../components/ui";
 import { relativeTime } from "../../lib/format";
+import { jobActive } from "../../lib/labels";
 
 /** Deploys from Git (FR-1001 to FR-1010). */
 export function DeploysTab({ website }: { website: Website }) {
@@ -21,7 +22,7 @@ export function DeploysTab({ website }: { website: Website }) {
   const deploy = useAction(deployNow);
   const rollback = useAction(rollbackRelease);
   const jobs = state.jobs.filter((j) => j.websiteId === website.id && (j.title === "Deploy" || j.title === "Go back to release")).slice(0, 3);
-  const running = jobs.some((j) => j.state === "running");
+  const running = jobs.some(jobActive);
 
   return (
     <div className="grid-2">

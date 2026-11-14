@@ -602,6 +602,8 @@ a.cell-title:hover { text-decoration: underline; }
 .modal-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 14px 6px 20px; }
 .modal-body { padding: 8px 20px 16px; overflow-y: auto; }
 .modal-body > * + * { margin-top: 14px; }
+/* A dialog with a form has the form as its only child. Its text, alerts and field groups need the same space. */
+.modal-body > form > * + * { margin-top: 14px; }
 .modal-footer { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; padding: 14px 20px; border-top: 1px solid var(--border); }
 
 .field { display: flex; flex-direction: column; gap: 6px; }
@@ -646,6 +648,9 @@ a.cell-title:hover { text-decoration: underline; }
 .section-gap > * + * { margin-top: 20px; }
 .inline-form { display: flex; gap: 8px; align-items: flex-start; flex-wrap: wrap; }
 .inline-form .field { flex: 1 1 200px; }
+/* The fields are side by side: no space above the second field, and a button keeps its size. */
+.inline-form .field + .field { margin-top: 0; }
+.inline-form .field:has(> .btn) { flex: 0 0 auto; }
 
 .notifications { position: relative; }
 .notifications-panel {

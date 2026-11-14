@@ -24,6 +24,11 @@ sha256sum -c install.sh.sha256
 cosign verify-blob --key cosign.pub --signature install.sh.sig install.sh
 ```
 
+GitHub has the address `releases/latest` only for a release that is not a pre-release. If `curl`
+gives `error: 404`, each release is a pre-release. Then put the version of the release in each
+address: replace `latest/download` with `download/v0.1.9`, for example
+`https://github.com/itbm/cloudfactory/releases/download/v0.1.9/install.sh`.
+
 ## Install the panel
 
 Run the script as root on the first server:
@@ -103,6 +108,10 @@ The firewall sends the connections from the server itself to ports 80 and 443 to
 This also applies to the full host name of the server, which `/etc/hosts` usually gives as
 `127.0.1.1`.
 
+A different server cannot connect to such a panel. Thus you cannot add a second server to it.
+The **Add server** dialog shows a warning, and the installation script on the new server stops
+at its checks.
+
 A website can also have a name that Let's Encrypt cannot give a certificate for, for example
 `shop.localhost` or `shop.test`. The edge proxy signs the certificate of such a name with its
 own CA. On the panel server, this is the panel CA, so a browser that trusts the panel CA also
@@ -112,7 +121,9 @@ check for it.
 
 ## Add a server
 
-1. In the panel, go to **Servers > Add server**. Copy the join command.
+1. In the panel, go to **Servers > Add server**. Type a name, select the roles, and copy the
+   join command. The command downloads the installation script of the release of the panel, so
+   the new server gets the same release.
 2. Run the command as root on the new server. For example:
 
    ```sh
@@ -123,6 +134,39 @@ When the panel has a CA, the command has the fingerprint of its root certificate
 (`--panel-ca-sha256`). The new server then trusts a certificate of the panel domain from the
 panel CA. It does not trust other certificates from that CA. The fingerprint is in the output of
 `cf-agent panel certificate` on the panel server.
+
+The two servers must be able to connect to each other:
+
+- The new server connects to the address of the panel on port 443. The script examines this
+  connection in its checks, before it changes the system.
+- The panel connects to the agent of the new server on port 7443. The new server gives its
+  address when it joins, and the script shows this address at the end. The address is the full
+  host name of the new server, for example `web2.example.com`, when the server finds an address
+  for this name. In other cases, for example with the short host name `web2`, it is the IP
+  address that the new server uses for its connection to the panel. If the new server is behind
+  NAT, this IP address is a private address. Then give the public address with `--address`, for
+  example `--address 203.0.113.20`.
+
+About one minute after the server joins, the panel tests the connection to the agent. If the
+panel cannot connect, the server shows as degraded, and the page of the server shows the reason,
+for example `Could not resolve host: web2`. Each job for the server fails until the connection
+works. Correct the DNS or the firewall, then select **Test the connection** on the page of the
+server. With the CLI: `cf servers check SERVER`. If the address is wrong, remove the server and
+add it again.
+
+### Remove a server
+
+You can remove a server that has no websites, for example a server that joined with a wrong
+address. You cannot remove the server of the panel.
+
+1. In the panel, go to **Servers**, select **Manage** for the server, and select
+   **Remove server**. With the CLI: `cf servers remove SERVER`. The panel removes the server
+   and its jobs from its lists. It does not change the server itself.
+2. To add the server again, delete `/etc/cloudfactory/agent.json` on the server. Then run a new
+   join command from **Servers > Add server**.
+
+The backups of the websites that the server had stay in the object storage, in the directory
+`servers/<server-id>/` of the repository.
 
 ## Options
 
@@ -136,7 +180,7 @@ panel CA. It does not trust other certificates from that CA. The fingerprint is 
 | `--panel-ca-sha256 SHA256` | The SHA-256 fingerprint of the root certificate of the panel CA. Use it with `--join`. |
 | `--name NAME`      | The name of the server in the panel. The default is the host name.       |
 | `--roles ROLES`    | The roles of the server: `web`, `database`, `email`, `dns`, `backup`.    |
-| `--address HOST`   | The host name or IP address that the panel uses to reach the server.     |
+| `--address HOST`   | The host name or IP address that the panel uses to reach the server. The default is the full host name, for example `web2.example.com`, when the server finds an address for it. In other cases, the default is the IP address that the server uses for its connection to the panel. |
 | `--panel-ip IP`    | Accept the agent port only from this IP address.                         |
 | `--sftp-port PORT` | The SFTP port of the websites. The default is `2200`. You cannot use port 22. |
 | `--registry URL`   | Use a different image registry, for example a mirror.                    |
@@ -414,6 +458,10 @@ edge proxy (`cf-edge.service`) and the firewall rules (`firewall`). The page of 
 each service that does not run, the reason, and the command that repairs it when there is one.
 A degraded server continues to do work: it gets new websites when no healthy server is
 available, and it makes backups and installs scheduled updates.
+
+A server is also degraded when the panel cannot connect to its agent. The page of the server
+shows the address and the reason. Each job for such a server fails, and a new website goes to a
+different server when one is available. Refer to [Add a server](#add-a-server).
 
 The `firewall` check looks for the table `inet cloudfactory`. If the table is not there, run
 `nft -f /etc/nftables.d-cloudfactory.nft` as root.

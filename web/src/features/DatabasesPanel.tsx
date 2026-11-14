@@ -5,6 +5,7 @@ import { createDatabase, createDatabaseUser, deleteDatabase, deleteDatabaseUser,
 import type { DatabaseEngine, DatabasePrivileges, DatabaseUser } from "../api/types";
 import { Card, ConfirmButton, Field, FormError, Modal } from "../components/ui";
 import { bytes } from "../lib/format";
+import { jobActive } from "../lib/labels";
 
 const ENGINE: Record<DatabaseEngine, string> = { mariadb: "MariaDB", postgresql: "PostgreSQL" };
 const PRIVILEGES: Record<DatabasePrivileges, string> = { readonly: "Read only", readwrite: "Read and write" };
@@ -30,7 +31,7 @@ export function DatabasesPanel({ websiteId }: { websiteId?: string }) {
   const changeUser = useAction(setDatabaseUser);
   const siteName = (id: string) => sites.find((w) => w.id === id)?.name ?? "Removed website";
   const prefix = (id: string) => `${sites.find((w) => w.id === id)?.unixUser ?? ""}_`;
-  const pending = state.jobs.filter((j) => j.state === "running" && j.title.startsWith("Create ") && j.title.includes("database") && (!websiteId || j.websiteId === websiteId));
+  const pending = state.jobs.filter((j) => jobActive(j) && j.title.startsWith("Create ") && j.title.includes("database") && (!websiteId || j.websiteId === websiteId));
 
   const close = () => {
     setDialog(null);

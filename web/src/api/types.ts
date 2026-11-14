@@ -333,8 +333,17 @@ export interface Server {
   updatePolicy: HostUpdatePolicy;
   maintenanceWindow: string;
   pendingUpdates: PackageUpdate[];
+  /** Empty when the server installed no updates yet. */
   lastUpdateAt: string;
   rebootRequired: boolean;
+  /** The panel has a newer agent for this server (live mode). */
+  agentUpdateAvailable?: boolean;
+  /** The host and the port that the panel uses to connect to the agent (live mode). */
+  agentAddress?: string;
+  /** The reason when the panel could not connect to the agent. The jobs of the server then fail. */
+  connectionError?: string;
+  /** This server has the panel. It cannot be removed. */
+  panel?: boolean;
   services: ServerService[];
   /** The port of the SFTP container of the websites (spec section 10). 22 for an agent of release 0.1. */
   sftpPort: number;
@@ -595,4 +604,6 @@ export interface State {
   joinToken: string;
   /** The fingerprint of the panel CA for the join command. */
   joinCaSha256?: string;
+  /** The installation script of the release of the panel, for the join command (live mode). */
+  joinInstallUrl?: string;
 }

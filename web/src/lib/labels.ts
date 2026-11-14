@@ -17,6 +17,9 @@ export const JOB_STATE: Record<JobState, { label: string; tone: Tone }> = {
   failed: { label: "Failed", tone: "danger" },
 };
 
+/** A job that waits for the server, or that the server does now. The panel shows the two as work in progress. */
+export const jobActive = (job: { state: JobState }): boolean => job.state === "queued" || job.state === "running";
+
 export const SERVER_STATE: Record<ServerState, { label: string; tone: Tone }> = {
   healthy: { label: "Healthy", tone: "success" },
   updating: { label: "Updating", tone: "info" },

@@ -1603,16 +1603,22 @@ export function installUpdates(serverId: string, policy?: "security" | "all" | "
       },
     });
   }
-  const kernel = srv.pendingUpdates.some((p) => p.name.startsWith("linux-image"));
+  // The same rule as the panel API: with no policy in the request, a server with the policy "all"
+  // installs all packages, and each other server installs only the security updates. The held
+  // container tools stay (FR-1113).
+  const all = (policy ?? (srv.updatePolicy === "all" ? "all" : "security")) === "all";
+  const installs = (p: { security: boolean; containerTool?: boolean }) => !p.containerTool && (all || p.security);
+  const packages = srv.pendingUpdates.filter(installs);
+  const kernel = packages.some((p) => p.name.startsWith("linux-image"));
   return runJob({
     title: `Install updates on ${srv.name}`,
     serverId,
     steps: ["Download packages", "Install packages", "Restart changed services only"],
-    activity: `Installed ${srv.pendingUpdates.length} updates on ${srv.name}`,
+    activity: `Installed ${packages.length} ${packages.length === 1 ? "update" : "updates"} on ${srv.name}`,
     begin: (d) => audit(d, "Installed host updates", srv.name),
     apply: (d) => {
       const s = d.servers.find((x) => x.id === serverId)!;
-      s.pendingUpdates = [];
+      s.pendingUpdates = s.pendingUpdates.filter((p) => !installs(p));
       s.lastUpdateAt = now();
       if (kernel) s.rebootRequired = true;
     },
@@ -1646,6 +1652,35 @@ export function rebootServer(serverId: string) {
   });
 }
 
+/** The panel connects to the agent of the server again and records the result. */
+export function checkConnection(serverId: string) {
+  if (LIVE) {
+    return call(() => live.request<Parameters<typeof live.toServer>[0]>("POST", `/servers/${serverId}/check-connection`)).then((r) => update((d) => {
+      const i = d.servers.findIndex((s) => s.id === serverId);
+      if (i >= 0) d.servers[i] = live.toServer(r);
+    }));
+  }
+  update((d) => {
+    const s = d.servers.find((x) => x.id === serverId)!;
+    s.connectionError = undefined;
+    if (s.state === "degraded") s.state = "healthy";
+    s.stateDetail = undefined;
+  });
+}
+
+/** Removes a server with no websites from the panel, for example a server that joined with a wrong address. */
+export function removeServer(serverId: string) {
+  if (LIVE) return call(() => live.request("DELETE", `/servers/${serverId}`)).then(() => refresh()).then(() => undefined);
+  const srv = state.servers.find((s) => s.id === serverId)!;
+  const count = state.websites.filter((w) => w.serverId === serverId).length;
+  if (count > 0) throw new ApiError(`This server has ${count} ${count === 1 ? "website" : "websites"}. Delete the websites first.`);
+  update((d) => {
+    d.servers = d.servers.filter((s) => s.id !== serverId);
+    d.jobs = d.jobs.filter((j) => j.serverId !== serverId);
+    audit(d, "Removed server", srv.name);
+  });
+}
+
 export function updateAgent(serverId: string) {
   if (LIVE) return call(() => live.request<JobAnswer>("POST", `/servers/${serverId}/update-agent`)).then((r) => track(r.job));
   const srv = state.servers.find((s) => s.id === serverId)!;
@@ -1665,15 +1700,25 @@ export function updateAgent(serverId: string) {
 
 export function newJoinToken() {
   if (LIVE) {
-    return call(() => live.request<{ token: string; panelCaSha256?: string | null }>("POST", "/servers/join-tokens")).then((r) => update((d) => {
+    return call(() => live.request<{ token: string; panelCaSha256?: string | null; installUrl?: string }>("POST", "/servers/join-tokens")).then((r) => update((d) => {
       d.joinToken = r.token;
       d.joinCaSha256 = r.panelCaSha256 ?? undefined;
+      d.joinInstallUrl = r.installUrl;
     }));
   }
   update((d) => {
     d.joinToken = `cfj_${hex()}${hex()}`;
     audit(d, "Made new server join token", "");
   });
+}
+
+/**
+ * A name or an address that only the computer itself can reach, for example panel.localhost.
+ * A different server cannot connect to a panel with such a name.
+ */
+export function loopbackName(host: string) {
+  const h = host.toLowerCase().replace(/\.$/, "").replace(/^\[|\]$/g, "");
+  return h === "localhost" || h.endsWith(".localhost") || /^127(\.\d+){3}$/.test(h) || h === "::1";
 }
 
 /** Public names only: the same rule as the agent (caddy.PublicName) and the API. */

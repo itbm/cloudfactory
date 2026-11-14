@@ -8,7 +8,7 @@ import { Topbar } from "../components/Layout";
 import { WebsiteMenu } from "../components/WebsiteMenu";
 import { Card, JobRow, Live, Meter, PageHeader, Status, TerraformBadge } from "../components/ui";
 import { bytes, percent, ratio, relativeTime, shortAgo, shortDate } from "../lib/format";
-import { certificateText, RUNTIME_KIND, WEBSITE_STATUS } from "../lib/labels";
+import { certificateText, jobActive, RUNTIME_KIND, WEBSITE_STATUS } from "../lib/labels";
 
 const PAGE_SIZE = 7;
 
@@ -214,7 +214,7 @@ function WebsiteList() {
 
 function Activity() {
   const state = useStore();
-  const running = state.jobs.filter((j) => j.state === "running").slice(0, 3);
+  const running = state.jobs.filter(jobActive).slice(0, 3);
   const rollout = state.rollout;
   return (
     <Card title="Activity" actions={<Live />}>

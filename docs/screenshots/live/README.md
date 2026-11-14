@@ -257,3 +257,47 @@ The backup policy with the storage type. The fields for the credentials of the s
 always show.
 
 ![40-backup-storage-type](40-backup-storage-type.png)
+
+## 41-server-updates
+
+The screenshots 41 to 46 show the panel on a server with Ubuntu 26.04, with a second server
+that has Debian 13.
+
+The page of a server with pending system updates. The table shows 8 packages first, with the
+security updates at the top. The update policy of this server installs only security updates,
+so the button is "Install all updates".
+
+![41-server-updates](41-server-updates.png)
+
+## 42-server-no-connection
+
+A server that the panel cannot reach. The page shows the address of the agent and the cause.
+"Test the connection" examines the connection again.
+
+![42-server-no-connection](42-server-no-connection.png)
+
+## 43-servers-no-connection
+
+The Servers list with a server that the panel cannot reach.
+
+![43-servers-no-connection](43-servers-no-connection.png)
+
+## 44-add-server-localhost
+
+Add server on a panel with the name `panel.localhost`. A different server cannot connect to
+this name. The command uses the installation script of the release of the panel.
+
+![44-add-server-localhost](44-add-server-localhost.png)
+
+## 45-remove-server
+
+"Remove server", for a server that has no websites.
+
+![45-remove-server](45-remove-server.png)
+
+## 46-server-after-restart
+
+The server after "Install all updates" and "Reboot now": no pending updates, the new kernel,
+and no reboot is necessary.
+
+![46-server-after-restart](46-server-after-restart.png)

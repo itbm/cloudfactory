@@ -129,7 +129,7 @@ interface ApiWebsite {
 interface ApiServer {
   id: string; name: string; location: string; roles: Server["roles"]; state: Server["state"]; agentVersion: string | null; os: string | null; kernel: string | null; arch: string | null;
   podmanVersion: string | null; gvisorVersion: string | null; gvisorPlatform: Server["gvisorPlatform"]; bareMetal: boolean; updatePolicy: Server["updatePolicy"]; maintenanceWindow: string;
-  pendingUpdates: Server["pendingUpdates"]; lastUpdateAt: string | null; rebootRequired: boolean; services: Server["services"]; sftpPort?: number | null;
+  pendingUpdates: Server["pendingUpdates"]; lastUpdateAt: string | null; rebootRequired: boolean; agentUpdateAvailable?: boolean; agentAddress?: string | null; connectionError?: string | null; panel?: boolean; services: Server["services"]; sftpPort?: number | null;
   usage: { cpuPercent?: number; memoryPercent?: number; diskPercent?: number } | null;
 }
 interface ApiImage {
@@ -205,7 +205,10 @@ export function toServer(s: ApiServer): Server {
     podmanVersion: s.podmanVersion ?? "", gvisorVersion: s.gvisorVersion ?? "", gvisorPlatform: s.gvisorPlatform, bareMetal: s.bareMetal,
     updatePolicy: s.updatePolicy, maintenanceWindow: s.maintenanceWindow, pendingUpdates: s.pendingUpdates ?? [], lastUpdateAt: s.lastUpdateAt ?? "",
     rebootRequired: s.rebootRequired, services: s.services ?? [], sftpPort: s.sftpPort ?? 22,
-    stateDetail: s.state === "degraded" ? degradedReason(s.services ?? []) : undefined,
+    // A panel of an earlier release does not send the field. Then the state tells the same thing.
+    agentUpdateAvailable: s.agentUpdateAvailable ?? s.state === "agent_update",
+    agentAddress: s.agentAddress ?? undefined, connectionError: s.connectionError ?? undefined, panel: s.panel ?? false,
+    stateDetail: s.state === "degraded" ? (s.connectionError ? "Degraded: the panel cannot connect" : degradedReason(s.services ?? [])) : undefined,
   };
 }
 

@@ -277,8 +277,8 @@ directory with mode 0700:
 
 - The panel and its edge route send `Strict-Transport-Security`, a Content Security Policy,
   `X-Content-Type-Options` and `Referrer-Policy`.
-- The "Add server" command downloads the signed installation script from GitHub Releases
-  (`CF_INSTALL_URL`).
+- The "Add server" command downloads the signed installation script of the release of the
+  panel from GitHub Releases. `CF_INSTALL_URL` gives a different address, for example a mirror.
 - The CSV export of the audit log puts a single quotation mark before a cell that starts with
   `=`, `+`, `-`, `@`, a tab or a carriage return. A spreadsheet program then does not read the
   cell as a formula.

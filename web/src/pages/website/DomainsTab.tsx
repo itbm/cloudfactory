@@ -5,7 +5,7 @@ import { LIVE } from "../../api/mode";
 import { addDomain, checkDns, makePrimary, removeDomain, verifyDomain } from "../../api/store";
 import type { DomainKind, Website } from "../../api/types";
 import { Card, ConfirmButton, Field, FormError, Status } from "../../components/ui";
-import { certificateUntil } from "../../lib/labels";
+import { certificateUntil, jobActive } from "../../lib/labels";
 
 const KIND_LABEL: Record<DomainKind, string> = { primary: "Primary", redirect: "Redirect", alias: "Alias" };
 
@@ -27,7 +27,7 @@ export function DomainsTab({ website }: { website: Website }) {
   const address = LIVE ? website.sftp?.host : "203.0.113.10";
   const isIp = !!address && /^[\d.]+$|:/.test(address);
   const server = state.servers.find((s) => s.id === website.serverId);
-  const checking = (d: string) => state.jobs.some((j) => j.websiteId === website.id && j.state === "running" && j.title === `Check DNS for ${d}`);
+  const checking = (d: string) => state.jobs.some((j) => j.websiteId === website.id && jobActive(j) && j.title === `Check DNS for ${d}`);
 
   return (
     <div className="stack">

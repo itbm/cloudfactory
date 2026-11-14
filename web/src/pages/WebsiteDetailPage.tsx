@@ -10,7 +10,7 @@ import { Topbar } from "../components/Layout";
 import { WebsiteMenu } from "../components/WebsiteMenu";
 import { Card, Empty, FormError, JobRow, Live, Meter, Modal, Status, Tabs, TerraformBadge, TerraformNotice } from "../components/ui";
 import { bytes, longDate, percent, ratio, relativeTime } from "../lib/format";
-import { certificateUntil, WEBSITE_STATUS } from "../lib/labels";
+import { certificateUntil, jobActive, WEBSITE_STATUS } from "../lib/labels";
 import { AccessTab, SshCard } from "./website/AccessTab";
 import { BackupsTab } from "./website/BackupsTab";
 import { CronTab } from "./website/CronTab";
@@ -45,7 +45,7 @@ function UpdateBanner({ website }: { website: Website }) {
   const state = useStore();
   const image = imageOf(state, website)!;
   const [changes, setChanges] = useState(false);
-  const running = state.jobs.find((j) => j.websiteId === website.id && j.state === "running" && j.title.startsWith("Test update"));
+  const running = state.jobs.find((j) => j.websiteId === website.id && jobActive(j) && j.title.startsWith("Test update"));
   if (!updateReady(state, website) || running) return null;
   if (LIVE) {
     // The image rollout updates all websites in stages (FR-1108). The API has no update for one website.

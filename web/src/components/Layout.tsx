@@ -24,6 +24,7 @@ import { features } from "../api/mode";
 import { markNotificationsRead, setContext, signOut } from "../api/store";
 import type { AccountContext, Tone } from "../api/types";
 import { relativeTime } from "../lib/format";
+import { jobActive } from "../lib/labels";
 import { CommandPalette } from "./CommandPalette";
 import { Status } from "./ui";
 
@@ -259,7 +260,8 @@ export function Layout() {
               <NavLink to="/jobs" className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
                 <span aria-hidden="true"><Activity size={18} /></span>
                 Jobs and activity
-                {state.jobs.some((j) => j.state === "running") && <span className="live" style={{ marginLeft: "auto", color: "#9cc0ff" }}>Live</span>}
+                {/* A dot, not a word: with a word, the name of the page does not fit on one line. */}
+                {state.jobs.some(jobActive) && <span className="live" title="A job is in progress" style={{ marginLeft: "auto", color: "#9cc0ff" }}><span className="visually-hidden">A job is in progress</span></span>}
               </NavLink>
             </li>
           </ul>

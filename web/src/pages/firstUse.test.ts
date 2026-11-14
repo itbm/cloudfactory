@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { attention, degradedReason, failedServices, updateReady } from "../api/selectors";
-import { getState, resetState } from "../api/store";
+import { getState, loopbackName, resetState } from "../api/store";
 import type { Rollout } from "../api/types";
-import { certificateText, certificateUntil } from "../lib/labels";
+import { toServer } from "../api/live";
+import { certificateText, certificateUntil, jobActive } from "../lib/labels";
 import { parseTarget } from "./BackupsPage";
+import { joinCommand } from "./ServersPage";
 import { showRollout } from "./UpdatesPage";
 
 const rollout = (over: Partial<Rollout>): Rollout => ({
@@ -94,5 +96,65 @@ describe("a website that the panel could not make", () => {
     expect(items.map((i) => i.id)).toContain(`failed-${website.id}`);
     expect(items.some((i) => i.id.startsWith("dns-") || i.id.startsWith("upd-"))).toBe(false);
     expect(updateReady(state, website)).toBe(false);
+  });
+});
+
+describe("a job that waits for the server", () => {
+  it("counts as work in progress, the same as a job that runs", () => {
+    // The agent does one job at a time. A second job stays "queued" until the first job ends.
+    expect(jobActive({ state: "queued" })).toBe(true);
+    expect(jobActive({ state: "running" })).toBe(true);
+    expect(jobActive({ state: "succeeded" })).toBe(false);
+    expect(jobActive({ state: "failed" })).toBe(false);
+  });
+});
+
+describe("a server from the panel API", () => {
+  const api = (over: object) => toServer({
+    id: "s1", name: "web-01", location: "", roles: ["web"], state: "healthy", agentVersion: "0.1.9", os: null, kernel: null, arch: null,
+    podmanVersion: null, gvisorVersion: null, gvisorPlatform: "systrap", bareMetal: false, updatePolicy: "security", maintenanceWindow: "02:00-05:00",
+    pendingUpdates: [], lastUpdateAt: null, rebootRequired: false, services: [], usage: null, ...over,
+  });
+
+  it("has no date of the last update before the first update", () => {
+    // The page shows "Never" for the empty value. Before, it showed "just now".
+    expect(api({}).lastUpdateAt).toBe("");
+  });
+
+  it("tells when the panel has a newer agent", () => {
+    expect(api({ agentUpdateAvailable: false }).agentUpdateAvailable).toBe(false);
+    expect(api({ state: "degraded", agentUpdateAvailable: true }).agentUpdateAvailable).toBe(true);
+    // A panel of an earlier release does not send the field.
+    expect(api({ state: "agent_update" }).agentUpdateAvailable).toBe(true);
+    expect(api({}).agentUpdateAvailable).toBe(false);
+  });
+
+  it("tells when the panel cannot connect to the agent", () => {
+    const server = api({ state: "degraded", connectionError: "Could not resolve host: web2", agentAddress: "web2:7443", services: [{ name: "cf-agent", state: "running" }] });
+    expect(server.connectionError).toBe("Could not resolve host: web2");
+    expect(server.agentAddress).toBe("web2:7443");
+    expect(server.stateDetail).toBe("Degraded: the panel cannot connect");
+    expect(api({}).connectionError).toBeUndefined();
+    expect(api({ panel: true }).panel).toBe(true);
+  });
+});
+
+describe("the command that adds a server", () => {
+  const base = { token: "cfj_abc", panelHost: "panel.example.com", name: "web-02", roles: ["web", "database"] };
+
+  it("uses the installation script of the release of the panel", () => {
+    // Before, the address was "releases/latest", which GitHub does not have while each release is a pre-release.
+    const url = "https://github.com/itbm/cloudfactory/releases/download/v0.1.9/install.sh";
+    expect(joinCommand({ ...base, installUrl: url, caSha256: "ab12" }))
+      .toBe(`curl -fsSL ${url} | sh -s -- --join cfj_abc --panel https://panel.example.com --panel-ca-sha256 ab12 --name web-02 --roles web,database`);
+  });
+
+  it("has no fingerprint and no name when the panel gives none", () => {
+    expect(joinCommand({ ...base, name: "", roles: [] })).toMatch(/--join cfj_abc --panel https:\/\/panel\.example\.com --roles web$/);
+  });
+
+  it("knows a panel name that a different server cannot reach", () => {
+    for (const host of ["localhost", "panel.localhost", "PANEL.LOCALHOST.", "127.0.0.1", "127.0.1.1", "[::1]"]) expect(loopbackName(host)).toBe(true);
+    for (const host of ["panel.example.com", "panel.internal", "10.0.0.5", "localhost.example.com", "1270.0.0.1"]) expect(loopbackName(host)).toBe(false);
   });
 });
