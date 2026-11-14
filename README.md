@@ -11,7 +11,7 @@ items that are complete and the items that are not complete.
 
 ## Screenshots
 
-These screenshots show the web panel of release 0.1 on the panel API, with sample data. Click a
+These screenshots show the web panel of release 0.1 on the panel API in demonstration mode, with sample data. Click a
 screenshot to see it at full size.
 
 <table>
@@ -27,7 +27,7 @@ screenshot to see it at full size.
   </tr>
   <tr>
     <td width="50%" valign="top">
-      <a href="docs/screenshots/readme/updates.png"><img src="docs/screenshots/readme/updates.png" alt="The Updates page with the runtime images and the servers" width="100%"></a>
+      <a href="docs/screenshots/readme/updates.png"><img src="docs/screenshots/readme/updates.png" alt="The Images and updates page with the runtime images and the servers" width="100%"></a>
       <p>Each runtime is a signed container image. A rollout updates the websites in stages and rolls back a website if its health check fails.</p>
     </td>
     <td width="50%" valign="top">

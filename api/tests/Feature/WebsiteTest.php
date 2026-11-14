@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Enums\DomainKind;
 use App\Enums\Role;
 use App\Jobs\SendJobToAgent;
 use App\Models\AgentJob;
@@ -140,6 +141,22 @@ class WebsiteTest extends TestCase
         $this->postJson("/api/v1/websites/{$website->id}/staging")->assertAccepted()->assertJsonPath('website.name', 'staging.acme.example');
         $this->assertSame($website->id, Website::where('name', 'staging.acme.example')->value('staging_of'));
         $this->postJson("/api/v1/websites/{$website->id}/staging")->assertJsonValidationErrors('name');
+    }
+
+    public function test_a_staging_copy_gets_only_its_own_domain(): void
+    {
+        // The source has two names. The copy must not get them: with the names of the source,
+        // the edge proxy would send the visitors of the live website to the copy, or would
+        // refuse the certificate rule of the copy.
+        $website = $this->website($this->customer(), $this->server(), $this->image());
+        $website->domains()->create(['name' => 'www.acme.example', 'kind' => DomainKind::Alias, 'verification_token' => 'cf-test', 'verified_at' => now()]);
+        $this->actingWith($this->user());
+
+        $response = $this->postJson("/api/v1/websites/{$website->id}/staging")->assertAccepted();
+
+        $job = AgentJob::findOrFail($response->json('job.id'));
+        $this->assertSame($response->json('website.id'), $job->payload['website']['id']);
+        $this->assertSame([['name' => 'staging.acme.example', 'kind' => 'primary']], $job->payload['website']['domains']);
     }
 
     public function test_domains_redirect_or_alias_and_the_primary_stays(): void

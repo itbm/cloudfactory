@@ -315,7 +315,11 @@ class WebsiteController extends Controller
             self::checkWebsiteLimit($source->customer);
             // Audit finding R7: the copy has no SFTP account on the server, so it does not get
             // the SFTP settings of the source. The owner turns SFTP on for the copy.
-            $copy = $source->replicate(['usage', 'managed_by_terraform', 'sftp_enabled', 'sftp_keys']);
+            // replicate() also gives the copy the loaded relations of the source. With the domains
+            // of the source, the agent got the copy with the names of the live website: the edge
+            // proxy made a route for the live names to the copy, and it refused the certificate
+            // rule of a copy with a local name. Thus the copy starts with no relations.
+            $copy = $source->replicate(['usage', 'managed_by_terraform', 'sftp_enabled', 'sftp_keys'])->withoutRelations();
             $copy->fill([
                 'name' => $name,
                 'application' => "Staging copy of {$source->name}",

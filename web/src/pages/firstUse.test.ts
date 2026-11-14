@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { attention, degradedReason, failedServices, updateReady } from "../api/selectors";
-import { getState, loopbackName, resetState } from "../api/store";
+import { getState, loopbackName } from "../api/store";
+import { reset, signedIn, website as site } from "../test/panelApi";
 import type { Rollout } from "../api/types";
 import { toServer } from "../api/live";
 import { certificateText, certificateUntil, jobActive } from "../lib/labels";
@@ -80,10 +81,10 @@ describe("the certificate text of a domain", () => {
 });
 
 describe("a website that the panel could not make", () => {
-  it("shows as the first item that needs attention, with no DNS or update item", () => {
-    resetState();
+  it("shows as the first item that needs attention, with no DNS or update item", async () => {
+    await signedIn("administrator");
     const state = structuredClone(getState());
-    const website = state.websites.find((w) => w.id === "web_shop")!;
+    const website = state.websites.find((w) => w.id === site("shop.acme.example.com").id)!;
     website.domains[0].dnsPointsHere = false;
     const image = state.images.find((i) => i.id === website.runtime.imageId)!;
     image.available = "9.9.9";
@@ -96,6 +97,7 @@ describe("a website that the panel could not make", () => {
     expect(items.map((i) => i.id)).toContain(`failed-${website.id}`);
     expect(items.some((i) => i.id.startsWith("dns-") || i.id.startsWith("upd-"))).toBe(false);
     expect(updateReady(state, website)).toBe(false);
+    reset();
   });
 });
 

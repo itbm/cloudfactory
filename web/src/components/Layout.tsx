@@ -3,28 +3,29 @@ import {
   Bell,
   Boxes,
   ChevronsUpDown,
+  CircleUser,
   Database,
-  Folder,
+  Gauge,
   Globe,
   History,
   Layers,
+  ListChecks,
   LogOut,
-  Mail,
   Menu,
   Search,
   Server,
   Settings2,
-  Signpost,
+  Tags,
   Users,
 } from "lucide-react";
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useStore } from "../api/hooks";
-import { features } from "../api/mode";
 import { markNotificationsRead, setContext, signOut } from "../api/store";
 import type { AccountContext, Tone } from "../api/types";
 import { relativeTime } from "../lib/format";
 import { jobActive } from "../lib/labels";
+import { HOME, NAVIGATION, ROLE_LABEL, type NavEntry, type NavSection } from "../lib/roles";
 import { CommandPalette } from "./CommandPalette";
 import { SecurityNotices } from "./SecurityNotices";
 import { Status } from "./ui";
@@ -36,7 +37,7 @@ interface LayoutState {
 
 const LayoutContext = createContext<LayoutState>({ openSearch: () => {}, toggleNav: () => {} });
 
-const DEFAULT_PLACEHOLDER = "Search websites, domains, mailboxes and jobs";
+const DEFAULT_PLACEHOLDER = "Search websites, domains and jobs";
 
 export function Logo() {
   return (
@@ -170,43 +171,50 @@ function Notifications() {
 
 const TONE_LABEL: Record<Tone, string> = { success: "Done", info: "Information", warning: "Warning", danger: "Problem", neutral: "Note" };
 
-type NavItem = { to: string; label: string; icon: ReactNode; count?: number };
+const ICONS: Record<NavEntry["icon"], ReactNode> = {
+  overview: <Gauge size={18} />,
+  setup: <ListChecks size={18} />,
+  servers: <Server size={18} />,
+  updates: <Layers size={18} />,
+  customers: <Users size={18} />,
+  plans: <Tags size={18} />,
+  websites: <Globe size={18} />,
+  databases: <Database size={18} />,
+  backups: <History size={18} />,
+  apps: <Boxes size={18} />,
+  jobs: <Activity size={18} />,
+  account: <CircleUser size={18} />,
+  settings: <Settings2 size={18} />,
+};
 
-const hosting: NavItem[] = [
-  { to: "/websites", label: "Websites", icon: <Globe size={18} /> },
-  ...(features.dns ? [{ to: "/dns", label: "Domains and DNS", icon: <Signpost size={18} /> }] : []),
-  ...(features.email ? [{ to: "/email", label: "Email", icon: <Mail size={18} /> }] : []),
-  { to: "/databases", label: "Databases", icon: <Database size={18} /> },
-  ...(features.files ? [{ to: "/files", label: "Files", icon: <Folder size={18} /> }] : []),
-  { to: "/backups", label: "Backups", icon: <History size={18} /> },
-  { to: "/apps", label: "Apps", icon: <Boxes size={18} /> },
-];
-
-const administration: NavItem[] = [
-  { to: "/updates", label: "Updates", icon: <Layers size={18} /> },
-  { to: "/servers", label: "Servers", icon: <Server size={18} /> },
-  { to: "/customers", label: "Customers and plans", icon: <Users size={18} /> },
-  { to: "/settings", label: "Settings", icon: <Settings2 size={18} /> },
-];
-
-function NavGroup({ title, items }: { title: string; items: NavItem[] }) {
+/** A count or a mark at the end of a link, for example the number of open setup items. */
+function NavMark({ to }: { to: string }) {
   const state = useStore();
-  const rolloutActive = state.rollout?.state === "running" || state.rollout?.state === "paused";
+  if (to === "/updates" && (state.rollout?.state === "running" || state.rollout?.state === "paused")) {
+    return <span className="count">1<span className="visually-hidden"> in progress</span></span>;
+  }
+  if (to === "/setup" && state.setup && state.setup.open > 0) {
+    return <span className="count">{state.setup.open}<span className="visually-hidden"> open</span></span>;
+  }
+  // A dot, not a word: with a word, the name of the page does not fit on one line.
+  if (to === "/jobs" && state.jobs.some(jobActive)) {
+    return <span className="live" title="A job is in progress" style={{ marginLeft: "auto", color: "#9cc0ff" }}><span className="visually-hidden">A job is in progress</span></span>;
+  }
+  return null;
+}
+
+function NavGroup({ section, index }: { section: NavSection; index: number }) {
+  const id = `nav-${index}`;
   return (
     <>
-      <h2 className="nav-section" id={`nav-${title}`}>{title}</h2>
-      <ul className="nav-list" aria-labelledby={`nav-${title}`}>
-        {items.map((item) => (
+      {section.title && <h2 className="nav-section" id={id}>{section.title}</h2>}
+      <ul className="nav-list" aria-labelledby={section.title ? id : undefined}>
+        {section.items.map((item) => (
           <li key={item.to}>
             <NavLink to={item.to} className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
-              <span aria-hidden="true">{item.icon}</span>
+              <span aria-hidden="true">{ICONS[item.icon]}</span>
               {item.label}
-              {item.to === "/updates" && rolloutActive ? (
-                <span className="count">
-                  1
-                  <span className="visually-hidden"> in progress</span>
-                </span>
-              ) : null}
+              <NavMark to={item.to} />
             </NavLink>
           </li>
         ))}
@@ -237,7 +245,6 @@ export function Layout() {
   const state = useStore();
   const navigate = useNavigate();
   const user = state.session.user;
-  const isAdmin = user.role === "administrator";
   const initials = user.name.split(" ").map((p) => p[0]).join("");
 
   return (
@@ -247,7 +254,7 @@ export function Layout() {
       <a className="skip-link" href="#main">Skip to content</a>
       <div className="app">
         <nav className={`sidebar${navOpen ? " open" : ""}`} aria-label="Main">
-          <NavLink to="/websites" className="brand">
+          <NavLink to={HOME[user.role]} className="brand">
             <Logo />
             <span className="visually-hidden">Cloudfactory home</span>
             <span aria-hidden="true" style={{ color: "#fff" }}>
@@ -255,23 +262,15 @@ export function Layout() {
             </span>
           </NavLink>
           <ContextSwitcher />
-          <NavGroup title="Hosting" items={hosting} />
-          <ul className="nav-list">
-            <li>
-              <NavLink to="/jobs" className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
-                <span aria-hidden="true"><Activity size={18} /></span>
-                Jobs and activity
-                {/* A dot, not a word: with a word, the name of the page does not fit on one line. */}
-                {state.jobs.some(jobActive) && <span className="live" title="A job is in progress" style={{ marginLeft: "auto", color: "#9cc0ff" }}><span className="visually-hidden">A job is in progress</span></span>}
-              </NavLink>
-            </li>
-          </ul>
-          {isAdmin && <NavGroup title="Administration" items={administration} />}
+          {/* Each role has its own menu. A setup that is complete needs no link. */}
+          {NAVIGATION[user.role]
+            .map((section) => ({ ...section, items: section.items.filter((item) => item.to !== "/setup" || (state.setup ? !state.setup.complete : false)) }))
+            .map((section, i) => <NavGroup key={section.title ?? i} section={section} index={i} />)}
           <div className="sidebar-user">
             <span className="avatar" aria-hidden="true">{initials}</span>
             <span style={{ flex: 1 }}>
               <span className="name" style={{ display: "block" }}>{user.name}</span>
-              <span className="role">{isAdmin ? "Administrator" : user.role === "reseller" ? "Reseller" : "Website owner"}</span>
+              <span className="role">{ROLE_LABEL[user.role]}</span>
             </span>
             <button
               type="button"
@@ -293,7 +292,7 @@ export function Layout() {
               <p><strong>The panel could not load new data.</strong> {state.session.loadError} The pages show the data of the last good load. The panel tries again each 15 seconds.</p>
             </div>
           )}
-          {isAdmin && <SecurityNotices />}
+          {state.session.user.role === "administrator" && <SecurityNotices />}
           <Outlet />
         </div>
       </div>
