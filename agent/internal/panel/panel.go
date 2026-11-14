@@ -130,6 +130,21 @@ type Report struct {
 	// PanelCASHA256 is the fingerprint of the root certificate of the panel CA that this agent
 	// trusts. The panel changes to its own CA only when all other servers trust it.
 	PanelCASHA256 string `json:"panelCaSha256,omitempty"`
+	// CronRuns are the results of the cron jobs that ran since the last reports.
+	CronRuns []CronRun `json:"cronRuns,omitempty"`
+}
+
+// CronRun is the result of one run of a cron job of a website.
+type CronRun struct {
+	WebsiteID string `json:"websiteId"`
+	// ID is the ID of the cron job.
+	ID string `json:"id"`
+	// At is the start time (RFC 3339).
+	At string `json:"at"`
+	// ExitCode is the exit code of the command. -1 means that the command did not start.
+	ExitCode int `json:"exitCode"`
+	// Output is the end of the output of the command.
+	Output string `json:"output"`
 }
 
 // PanelCertificate is the certificate method of the panel domain and the state of the

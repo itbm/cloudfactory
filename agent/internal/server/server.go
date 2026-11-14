@@ -16,6 +16,7 @@ import (
 	"github.com/itbm/cloudfactory/agent/internal/actions"
 	"github.com/itbm/cloudfactory/agent/internal/jobs"
 	"github.com/itbm/cloudfactory/agent/internal/pki"
+	"github.com/itbm/cloudfactory/agent/internal/sitefiles"
 	"github.com/itbm/cloudfactory/agent/internal/status"
 )
 
@@ -129,6 +130,121 @@ func (s *Service) SetPanelCertificate(_ context.Context, r *connect.Request[agen
 	return s.submit(s.Deps.SetPanelCertificate(r.Msg))
 }
 
+func (s *Service) SetCronJobs(_ context.Context, r *connect.Request[agentv1.SetCronJobsRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.SetCronJobs(r.Msg))
+}
+
+func (s *Service) RunCronJob(_ context.Context, r *connect.Request[agentv1.RunCronJobRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.RunCronJob(r.Msg))
+}
+
+func (s *Service) Deploy(_ context.Context, r *connect.Request[agentv1.DeployRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.Deploy(r.Msg))
+}
+
+func (s *Service) ActivateRelease(_ context.Context, r *connect.Request[agentv1.ActivateReleaseRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.ActivateRelease(r.Msg))
+}
+
+// fileError gives the error of a file operation or of the logs its code for the panel.
+func fileError(err error) error {
+	var fe *actions.FileError
+	switch {
+	case errors.Is(err, actions.ErrUnknownWebsite):
+		return connect.NewError(connect.CodeNotFound, err)
+	case errors.As(err, &fe):
+		code := connect.CodeUnknown
+		switch fe.Code {
+		case sitefiles.CodeNotFound:
+			code = connect.CodeNotFound
+		case sitefiles.CodeExists:
+			code = connect.CodeAlreadyExists
+		case sitefiles.CodeInvalid:
+			code = connect.CodeInvalidArgument
+		case sitefiles.CodeTooLarge:
+			code = connect.CodeOutOfRange
+		case sitefiles.CodeDenied:
+			code = connect.CodePermissionDenied
+		case sitefiles.CodeFull:
+			code = connect.CodeResourceExhausted
+		}
+		return connect.NewError(code, err)
+	}
+	return connect.NewError(connect.CodeInternal, err)
+}
+
+// files does one file operation and gives the answer of the file manager.
+func (s *Service) files(ctx context.Context, websiteID string, req sitefiles.Request) (sitefiles.Response, error) {
+	resp, err := s.Deps.Files(ctx, websiteID, req)
+	if err != nil {
+		return resp, fileError(err)
+	}
+	return resp, nil
+}
+
+// entry does a file operation that gives one entry.
+func (s *Service) entry(ctx context.Context, websiteID string, req sitefiles.Request) (*connect.Response[agentv1.FileEntry], error) {
+	resp, err := s.files(ctx, websiteID, req)
+	if err != nil {
+		return nil, err
+	}
+	if resp.Entry == nil {
+		return nil, connect.NewError(connect.CodeInternal, errors.New("the file manager gave no entry"))
+	}
+	return connect.NewResponse(actions.FileEntry(*resp.Entry)), nil
+}
+
+func (s *Service) ListFiles(ctx context.Context, r *connect.Request[agentv1.FileRequest]) (*connect.Response[agentv1.FileList], error) {
+	resp, err := s.files(ctx, r.Msg.GetWebsiteId(), sitefiles.Request{Op: sitefiles.OpList, Path: r.Msg.GetPath()})
+	if err != nil {
+		return nil, err
+	}
+	out := &agentv1.FileList{Truncated: resp.Truncated}
+	for _, e := range resp.Entries {
+		out.Entries = append(out.Entries, actions.FileEntry(e))
+	}
+	return connect.NewResponse(out), nil
+}
+
+func (s *Service) ReadFile(ctx context.Context, r *connect.Request[agentv1.FileRequest]) (*connect.Response[agentv1.FileContent], error) {
+	resp, err := s.files(ctx, r.Msg.GetWebsiteId(), sitefiles.Request{Op: sitefiles.OpRead, Path: r.Msg.GetPath()})
+	if err != nil {
+		return nil, err
+	}
+	out := &agentv1.FileContent{Content: resp.Content}
+	if resp.Entry != nil {
+		out.File = actions.FileEntry(*resp.Entry)
+	}
+	return connect.NewResponse(out), nil
+}
+
+func (s *Service) WriteFile(ctx context.Context, r *connect.Request[agentv1.WriteFileRequest]) (*connect.Response[agentv1.FileEntry], error) {
+	return s.entry(ctx, r.Msg.GetWebsiteId(), sitefiles.Request{Op: sitefiles.OpWrite, Path: r.Msg.GetPath(), Content: r.Msg.GetContent(), CreateOnly: r.Msg.GetCreateOnly()})
+}
+
+func (s *Service) MakeDirectory(ctx context.Context, r *connect.Request[agentv1.FileRequest]) (*connect.Response[agentv1.FileEntry], error) {
+	return s.entry(ctx, r.Msg.GetWebsiteId(), sitefiles.Request{Op: sitefiles.OpMkdir, Path: r.Msg.GetPath()})
+}
+
+func (s *Service) MoveFile(ctx context.Context, r *connect.Request[agentv1.MoveFileRequest]) (*connect.Response[agentv1.FileEntry], error) {
+	return s.entry(ctx, r.Msg.GetWebsiteId(), sitefiles.Request{Op: sitefiles.OpMove, Path: r.Msg.GetFrom(), To: r.Msg.GetTo()})
+}
+
+func (s *Service) DeleteFile(ctx context.Context, r *connect.Request[agentv1.FileRequest]) (*connect.Response[agentv1.FileDeleted], error) {
+	if _, err := s.files(ctx, r.Msg.GetWebsiteId(), sitefiles.Request{Op: sitefiles.OpDelete, Path: r.Msg.GetPath()}); err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(&agentv1.FileDeleted{}), nil
+}
+
+func (s *Service) GetLogs(ctx context.Context, r *connect.Request[agentv1.GetLogsRequest]) (*connect.Response[agentv1.Logs], error) {
+	lines, err := s.Deps.Logs(ctx, r.Msg.GetWebsiteId(), int(r.Msg.GetLines()))
+	if err != nil {
+		return nil, fileError(err)
+	}
+	return connect.NewResponse(&agentv1.Logs{Lines: lines}), nil
+}
+
 func (s *Service) GetStatus(ctx context.Context, _ *connect.Request[agentv1.GetStatusRequest]) (*connect.Response[agentv1.HostStatus], error) {
 	r := s.Status.Report(ctx)
 	out := &agentv1.HostStatus{AgentVersion: r.AgentVersion, Kernel: r.Kernel, PodmanVersion: r.PodmanVersion, GvisorVersion: r.GVisorVersion, RebootRequired: r.RebootRequired}
@@ -143,10 +259,14 @@ func (s *Service) GetStatus(ctx context.Context, _ *connect.Request[agentv1.GetS
 	return connect.NewResponse(out), nil
 }
 
+// maxRequest is the largest request. A file of the file manager is in a request as base64
+// text, which is larger than the file (sitefiles.MaxWrite).
+const maxRequest = 8 << 20
+
 // Handler gives the HTTP handler of the service.
 func Handler(s *Service) http.Handler {
 	mux := http.NewServeMux()
-	path, h := agentv1connect.NewAgentServiceHandler(s, connect.WithReadMaxBytes(1<<20))
+	path, h := agentv1connect.NewAgentServiceHandler(s, connect.WithReadMaxBytes(maxRequest))
 	mux.Handle(path, h)
 	return mux
 }
