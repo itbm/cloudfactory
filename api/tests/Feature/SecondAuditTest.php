@@ -221,6 +221,26 @@ class SecondAuditTest extends TestCase
     }
 
     /** F10: the answer for a record that the user cannot see does not show internal names. */
+    public function test_a_customer_does_not_see_paths_and_addresses_of_the_server_in_a_job_error(): void
+    {
+        $customer = $this->customer();
+        $website = $this->website($customer, $this->server(), $this->image());
+        $job = fn (string $error) => AgentJob::create([
+            'action' => AgentAction::CreateWebsite, 'state' => JobState::Failed, 'title' => 'Create website', 'steps' => ['Create Unix user', 'Configure edge proxy'], 'step' => 1,
+            'error' => $error, 'website_id' => $website->id, 'server_id' => $website->server_id, 'payload' => [],
+        ]);
+        $socket = $job('Configure edge proxy: caddy: Get "http://caddy/config/apps/http/servers/edge": dial unix /var/lib/cloudfactory/caddy-admin/admin.sock: connect: no such file or directory');
+        $plain = $job('the website did not answer in 90 seconds');
+        $this->actingWith($this->user(Role::Owner, $customer), ['websites:read']);
+        $this->getJson("/api/v1/jobs/{$socket->id}")->assertOk()
+            ->assertJsonPath('data.error', 'The step "Configure edge proxy" failed on the server. Your provider can see the details.');
+        $this->getJson("/api/v1/jobs/{$plain->id}")->assertOk()->assertJsonPath('data.error', 'the website did not answer in 90 seconds');
+        // An administrator sees the full text.
+        $this->app['auth']->forgetGuards();
+        $this->actingWith($this->user(), ['*']);
+        $this->getJson("/api/v1/jobs/{$socket->id}")->assertOk()->assertJsonPath('data.error', $socket->error);
+    }
+
     public function test_not_found_does_not_show_class_names(): void
     {
         $this->actingWith($this->user());

@@ -161,7 +161,7 @@ function Users() {
                       <button type="button" className="btn btn-sm" onClick={() => setResetting(u)}>Reset password…</button>
                       {u.customerId
                         ? <ConfirmButton className="btn btn-sm btn-danger" title={`Delete ${u.email}?`} confirm="Delete user" message={<p>{u.name} can no longer sign in. The panel deletes the sessions and the API tokens of this user. The websites of the customer stay.</p>} onConfirm={() => void remove.run(u.id)}>Delete</ConfirmButton>
-                        : <button type="button" className="btn btn-sm btn-danger" onClick={() => setDeleting(u)}>Delete…</button>}
+                        : <button type="button" className="btn btn-sm btn-danger" onClick={() => setDeleting(u)}>Delete</button>}
                     </div>
                   )}
                 </td>

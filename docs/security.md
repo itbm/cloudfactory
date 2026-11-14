@@ -261,8 +261,9 @@ directory with mode 0700:
   customer, is suspended.
 - A customer or a reseller does not see the address of the backup storage, the name and the
   client address of an administrator in the audit log, or the command line and the output of
-  a failed job. For these users, the audit log shows "Administrator", and a failed job shows
-  the name of the step.
+  a failed job. For these users, the audit log shows "Administrator". A failed job shows only
+  the name of the step when the error has a command, a path of the server, a socket or a
+  network address.
 - Only an administrator selects a custom image, for a new website and for a runtime change. The
   owner can go back to the previous image.
 - Only a reseller can set a brand. The panel domain of the brand cannot be a reserved domain. A
