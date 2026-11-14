@@ -1,15 +1,16 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAction, useStore } from "../api/hooks";
-import { LIVE } from "../api/mode";
+import { backupsReady } from "../api/selectors";
 import { backupNow, partialDetails, restore, showWebsite, type RestoreScope } from "../api/store";
 import type { Snapshot } from "../api/types";
-import { Card, Field, FormError, JobRow, Modal } from "../components/ui";
+import { Card, Field, FormError, JobRow, Modal, TableWrap } from "../components/ui";
 import { bytes, clockTime, longDate } from "../lib/format";
 
 /** Snapshots and restore (FR-901, FR-903). With websiteId, it shows one website only. */
 export function BackupsPanel({ websiteId }: { websiteId?: string }) {
   const state = useStore();
+  const admin = state.session.user.role === "administrator";
   const [site, setSite] = useState(websiteId ?? "all");
   const shownSite = websiteId ?? site;
   const snaps = state.snapshots.filter((s) => shownSite === "all" || s.websiteId === shownSite).slice(0, websiteId ? 20 : 30);
@@ -41,12 +42,12 @@ export function BackupsPanel({ websiteId }: { websiteId?: string }) {
                 </select>
               </>
             )}
-            {shownSite !== "all" && <button type="button" className="btn btn-primary" disabled={backup.busy} onClick={() => void backup.run(shownSite)}>Back up now</button>}
+            {shownSite !== "all" && backupsReady(state) && <button type="button" className="btn btn-primary" disabled={backup.busy} onClick={() => void backup.run(shownSite)}>Back up now</button>}
           </div>
         }
       >
         {backup.error && <div className="card-body"><FormError error={backup.error} /></div>}
-        <div className="table-wrap">
+        <TableWrap>
           <table>
             <thead><tr><th scope="col">Snapshot</th>{!websiteId && <th scope="col">Website</th>}<th scope="col">Type</th><th scope="col">Size</th><th scope="col">Contents</th><th scope="col"><span className="visually-hidden">Actions</span></th></tr></thead>
             <tbody>
@@ -56,19 +57,21 @@ export function BackupsPanel({ websiteId }: { websiteId?: string }) {
                   {!websiteId && <td><Link to={`/websites/${s.websiteId}/backups`}>{siteName(s.websiteId)}</Link></td>}
                   <td>{s.kind === "nightly" ? "Nightly" : "Manual"}</td>
                   <td>{bytes(s.sizeBytes)}</td>
-                  <td className="small muted">Files{s.databases.length ? `, ${s.databases.length} database${s.databases.length > 1 ? "s" : ""}` : ""}{s.mailboxes.length ? `, ${s.mailboxes.length} mailbox${s.mailboxes.length > 1 ? "es" : ""}` : ""}</td>
+                  <td className="small muted">Files{s.databases.length ? `, ${s.databases.length} database${s.databases.length > 1 ? "s" : ""}` : ""}</td>
                   <td className="cell-actions" style={{ width: 120 }}><button type="button" className="btn btn-sm" onClick={() => setRestoring(s)}>Restore…</button></td>
                 </tr>
               ))}
               {snaps.length === 0 && <tr><td colSpan={6} className="muted">No snapshots.</td></tr>}
             </tbody>
           </table>
-        </div>
+        </TableWrap>
         {shownSite === "all" && partialDetails() && <p className="card-body muted small">There are many websites, so this list shows only the websites that you opened. Select a website to see its snapshots.</p>}
         <p className="card-body muted small" style={{ paddingTop: 12 }}>
           {/* Audit finding R8: the retention policy does not remove manual backups. */}
           The panel keeps the newest {state.backupPolicy.manual ?? 10} manual backups of each website. The retention policy applies to the nightly backups only.{" "}
-          {state.backupPolicy.target ? <>Snapshots are encrypted with restic and kept in object storage on a different server: <code>{state.backupPolicy.target}</code>.</> : "No object storage is set for backups. An administrator sets it in the backup policy."}
+          {!backupsReady(state)
+            ? (admin ? "No object storage is set for backups, so the panel makes no backups. Set it in the backup policy on this page." : "Your provider has not set up backups on this panel, so the panel makes no backups.")
+            : admin ? <>Snapshots are encrypted with restic and kept in object storage on a different server: <code>{state.backupPolicy.target}</code>.</> : "Snapshots are encrypted and kept in object storage, not on the server of the website."}
         </p>
       </Card>
       {restoring && <RestoreDialog snapshot={restoring} onClose={() => setRestoring(null)} />}
@@ -80,7 +83,6 @@ export function BackupsPanel({ websiteId }: { websiteId?: string }) {
 const RESTORE_NOTE: Record<RestoreScope["kind"], string> = {
   website: "The panel puts the files from the backup into the website, and then starts the website again. It does not restore the databases: restore each database separately. Make a backup first if you want to keep the current version.",
   database: "The panel replaces the database with the dump from the backup. Make a backup first if you want to keep the current version.",
-  mailbox: "",
   file: "The panel replaces the file or the folder with the version from the backup. Make a backup first if you want to keep the current version.",
 };
 
@@ -90,7 +92,7 @@ function RestoreDialog({ snapshot, onClose }: { snapshot: Snapshot; onClose: () 
   const [removeNewFiles, setRemoveNewFiles] = useState(false);
   const action = useAction(restore);
   const scope = (): RestoreScope => (kind === "website" ? { kind } : kind === "file" ? { kind, path: item } : { kind, name: item });
-  const options = kind === "database" ? snapshot.databases : kind === "mailbox" ? snapshot.mailboxes : [];
+  const options = kind === "database" ? snapshot.databases : [];
 
   return (
     <Modal
@@ -117,19 +119,18 @@ function RestoreDialog({ snapshot, onClose }: { snapshot: Snapshot; onClose: () 
       <fieldset className="radio-cards">
         <legend>What to restore</legend>
         {([
-          ["website", "Full website", LIVE ? "All files of the website." : "Files, databases and mailboxes."],
+          ["website", "Full website", "All files of the website."],
           ["database", "One database", `${snapshot.databases.length} in this snapshot.`],
-          ["mailbox", "One mailbox", `${snapshot.mailboxes.length} in this snapshot.`],
           ["file", "One file or folder", "Type the path."],
-        ] as const).filter(([k]) => !LIVE || k !== "mailbox").map(([k, label, hint]) => (
+        ] as const).map(([k, label, hint]) => (
           <label key={k} className="radio-card">
-            <input type="radio" name="scope" checked={kind === k} disabled={(k === "database" && !snapshot.databases.length) || (k === "mailbox" && !snapshot.mailboxes.length)} onChange={() => { setKind(k); setItem(""); }} />
+            <input type="radio" name="scope" checked={kind === k} disabled={k === "database" && !snapshot.databases.length} onChange={() => { setKind(k); setItem(""); }} />
             <span><strong>{label}</strong><span>{hint}</span></span>
           </label>
         ))}
       </fieldset>
-      {(kind === "database" || kind === "mailbox") && (
-        <Field label={kind === "database" ? "Database" : "Mailbox"}>
+      {kind === "database" && (
+        <Field label="Database">
           {(p) => (
             <select {...p} className="select" value={item} onChange={(e) => setItem(e.target.value)}>
               <option value="">Select…</option>
@@ -150,7 +151,7 @@ function RestoreDialog({ snapshot, onClose }: { snapshot: Snapshot; onClose: () 
           <p className="muted small">{removeNewFiles ? "The panel deletes each file of the website that the backup does not have. This cannot be undone. Use it after an attack." : "Files that were added after the backup stay."}</p>
         </>
       )}
-      <p className="muted small" style={{ marginTop: 12 }}>{LIVE ? RESTORE_NOTE[kind] : kind === "website" ? "The panel restores to a copy first and does a health check. Then it switches with no downtime." : "The panel replaces the current version. It makes a snapshot of the current version first."}</p>
+      <p className="muted small" style={{ marginTop: 12 }}>{RESTORE_NOTE[kind]}</p>
     </Modal>
   );
 }

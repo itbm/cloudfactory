@@ -3,7 +3,7 @@ import { useAction, useStore } from "../../api/hooks";
 import { setLimits, setWebsitePlan } from "../../api/store";
 import type { Limits, Website } from "../../api/types";
 import { Card, Field, FormError } from "../../components/ui";
-import { GB, MB } from "../../api/seed";
+import { GB, MB } from "../../lib/format";
 
 /** Resource limits of the website (FR-202). Only administrators can change them. */
 export function SettingsTab({ website }: { website: Website }) {
@@ -38,7 +38,7 @@ export function SettingsTab({ website }: { website: Website }) {
       <Card title="Resource limits">
         <form className="card-body" noValidate onSubmit={(e) => { e.preventDefault(); void save.run(); }}>
           <FormError error={save.error} />
-          <p className="muted" style={{ marginBottom: 14 }}>cgroup v2 applies these limits to the container of the website. The plan sets the default values.</p>
+          <p className="muted" style={{ marginBottom: 14 }}>{isAdmin ? "cgroup v2 applies these limits to the container of the website. The plan sets the default values." : "The server applies these limits to the website. They come from the plan. Only your provider can change them."}</p>
           <div className="form-row">
             {fields.map(([k, label]) => (
               <Field key={k} label={label}>
@@ -46,12 +46,16 @@ export function SettingsTab({ website }: { website: Website }) {
               </Field>
             ))}
           </div>
-          <button type="submit" className="btn btn-primary" style={{ marginTop: 14 }} disabled={!isAdmin}>Save limits</button>
+          {isAdmin && <button type="submit" className="btn btn-primary" style={{ marginTop: 14 }}>Save limits</button>}
         </form>
       </Card>
       <div className="stack">
       <Card title="Plan">
         <div className="card-body">
+          {/* CF-07: an owner cannot select the plan. The API refuses it. */}
+          {state.session.user.role === "owner" ? (
+            <p>Plan: <strong>{state.plans.find((p) => p.id === website.planId)?.name ?? "The plan of your account"}</strong>. <span className="muted">Only your provider can change the plan.</span></p>
+          ) : (
           <Field label="Plan" hint="A new plan also sets new resource limits.">
             {(p) => (
               <select {...p} className="select" value={website.planId} onChange={(e) => {
@@ -63,6 +67,7 @@ export function SettingsTab({ website }: { website: Website }) {
               </select>
             )}
           </Field>
+          )}
         </div>
       </Card>
       <Card title="Isolation">
@@ -71,9 +76,10 @@ export function SettingsTab({ website }: { website: Website }) {
             <tbody>
               <tr><th scope="row">Unix user</th><td><code>{website.unixUser}</code></td></tr>
               <tr><th scope="row">Sandbox</th><td>gVisor (runsc), rootless Podman</td></tr>
-              <tr><th scope="row">Network</th><td>Own container network <code>net-{website.unixUser}</code>. No host networking.</td></tr>
-              <tr><th scope="row">Security</th><td>seccomp, no-new-privileges, user namespaces</td></tr>
-              <tr><th scope="row">Static files</th><td>The edge proxy serves them directly, read-only.</td></tr>
+              {/* Audit item U3: this text agrees with the unit that the agent writes (agent/internal/quadlet). */}
+              <tr><th scope="row">Network</th><td>Own network namespace (pasta). No host networking. The website cannot connect to the containers of a different customer.</td></tr>
+              <tr><th scope="row">Security</th><td>No new privileges, no Linux capabilities, read-only image, own user namespace</td></tr>
+              <tr><th scope="row">Files</th><td>The container of the website serves all files, also static files. It can write only to the directory of the website and to <code>/tmp</code>.</td></tr>
             </tbody>
           </table>
         </div>

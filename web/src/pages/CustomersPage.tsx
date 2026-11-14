@@ -1,28 +1,33 @@
 import { useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import { useAction, useStore } from "../api/hooks";
-import { features } from "../api/mode";
-import { addCustomer, addUser, deleteUser, resetUserPassword, savePlan, setBranding, setCustomer, type NewAccess } from "../api/store";
-import type { Customer, ManagedUser, Plan } from "../api/types";
-import { GB, MB } from "../api/seed";
+import { addCustomer, addUser, deleteUser, resetUserPassword, setCustomer, type NewAccess } from "../api/store";
+import type { Customer, ManagedUser } from "../api/types";
 import { ConfirmIdentityFields, NO_CONFIRMATION } from "../components/ConfirmIdentity";
 import { Topbar } from "../components/Layout";
-import { Card, ConfirmButton, Field, FormError, Modal, PageHeader, Status, Tabs } from "../components/ui";
+import { Card, Field, FormError, Modal, PageHeader, RowMenu, Status, TableWrap, Tabs, type RowAction } from "../components/ui";
 import { bytes, shortDate } from "../lib/format";
-import { limitsText } from "../features/DatabaseServersPanel";
+import { ROLE_LABEL } from "../lib/roles";
 import { CopyField } from "./website/AccessTab";
 
+/** The customers and their users. Only an administrator and a reseller have this page. */
 export function CustomersPage() {
-  const [tab, setTab] = useState("customers");
+  const { tab: asked } = useParams();
+  const navigate = useNavigate();
+  const admin = useStore().session.user.role === "administrator";
+  const tab = asked === "users" ? "users" : "customers";
   return (
     <>
-      <Topbar placeholder="Search servers, images, customers and jobs" />
+      <Topbar placeholder={admin ? "Search servers, images, customers and jobs" : undefined} />
       <main id="main" className="content content-wide">
-        <PageHeader title="Customers and plans" description="Resellers add website owners and set their limits. Each customer has users who sign in. A plan sets the default limits for each website and for each database server." />
-        <Tabs label="Sections" current={tab} onSelect={setTab} items={[{ id: "customers", label: "Customers" }, { id: "users", label: "Users" }, { id: "plans", label: "Plans" }, ...(features.branding ? [{ id: "branding", label: "Branding" }] : [])]} />
-        {tab === "customers" && <Customers />}
-        {tab === "users" && <Users />}
-        {tab === "plans" && <Plans />}
-        {tab === "branding" && <Branding />}
+        <PageHeader
+          title="Customers"
+          description={admin
+            ? "Resellers and website owners. Each customer has a plan, and users who sign in."
+            : "The website owners that you give service to. Each customer has a plan, and users who sign in."}
+        />
+        <Tabs label="Sections" current={tab} onSelect={(id) => navigate(id === "users" ? "/customers/users" : "/customers")} items={[{ id: "customers", label: "Customers" }, { id: "users", label: "Users" }]} />
+        {tab === "customers" ? <Customers /> : <Users />}
       </main>
     </>
   );
@@ -31,49 +36,50 @@ export function CustomersPage() {
 function Customers() {
   const state = useStore();
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState<Pick<Customer, "name" | "email" | "planId" | "role">>({ name: "", email: "", planId: state.plans.find((p) => p.id === "plan_standard")?.id ?? state.plans[0]?.id ?? "", role: "owner" });
+  const [form, setForm] = useState<Pick<Customer, "name" | "email" | "planId" | "role">>({ name: "", email: "", planId: state.plans[0]?.id ?? "", role: "owner" });
   // Audit finding B5: the panel sends no email, so it makes the first user and shows a temporary password.
   const [createUser, setCreateUser] = useState(true);
   const [access, setAccess] = useState<NewAccess | null>(null);
+  const [planFor, setPlanFor] = useState<Customer | null>(null);
+  const [suspending, setSuspending] = useState<Customer | null>(null);
   const add = useAction(addCustomer);
   const change = useAction(setCustomer);
   const admin = state.session.user.role === "administrator";
   // Batch 3, issue 2: a reseller cannot change its own plan or suspend itself.
   const own = (c: Customer) => !admin && c.id === state.session.contextId;
-  const plan = (id: string) => state.plans.find((p) => p.id === id)?.name;
+  const plan = (id: string) => state.plans.find((p) => p.id === id);
+  const reseller = (c: Customer) => state.customers.find((r) => r.id === c.resellerId)?.name;
+  // A reseller sees its customers. Its own account is on the page "My account".
+  const customers = state.customers.filter((c) => !own(c));
+  const actions = (c: Customer): RowAction[] => [
+    { label: "Change plan…", onSelect: () => setPlanFor(c) },
+    c.suspended
+      ? { label: "Lift the suspension", onSelect: () => void change.run(c.id, { suspended: false }), disabled: change.busy }
+      : { label: "Suspend…", onSelect: () => setSuspending(c), danger: true },
+  ];
   return (
-    <Card title="Customers" actions={state.session.user.role !== "owner" && <button type="button" className="btn btn-primary" onClick={() => setOpen(true)}>Add customer</button>}>
-      {change.error && <div className="card-body"><FormError error={change.error} /></div>}
-      <div className="table-wrap">
+    <Card title="Customers" actions={<button type="button" className="btn btn-primary" onClick={() => setOpen(true)}>Add customer</button>}>
+      {change.error && !planFor && <div className="card-body"><FormError error={change.error} /></div>}
+      <TableWrap>
         <table>
-          <thead><tr><th scope="col">Customer</th><th scope="col">Role</th><th scope="col">Plan</th><th scope="col">Websites</th><th scope="col">Database servers</th><th scope="col">Since</th><th scope="col">Status</th><th scope="col"><span className="visually-hidden">Actions</span></th></tr></thead>
+          <thead><tr><th scope="col">Customer</th>{admin && <th scope="col">Role</th>}<th scope="col">Plan</th><th scope="col">Websites</th><th scope="col">Database servers</th><th scope="col">Since</th><th scope="col">Status</th><th scope="col"><span className="visually-hidden">Actions</span></th></tr></thead>
           <tbody>
-            {state.customers.map((c) => (
+            {customers.map((c) => (
               <tr key={c.id}>
-                <td><strong>{c.name}</strong><span className="cell-sub">{c.email}{c.resellerId && ` · via ${state.customers.find((r) => r.id === c.resellerId)?.name}`}</span></td>
-                <td>{c.role === "reseller" ? "Reseller" : "Website owner"}</td>
-                <td>
-                  {own(c) ? plan(c.planId) : <>
-                    <label className="visually-hidden" htmlFor={`plan-${c.id}`}>Plan for {c.name}</label>
-                    <select id={`plan-${c.id}`} className="select" value={c.planId} disabled={change.busy} onChange={(e) => void change.run(c.id, { planId: e.target.value })}>
-                      {state.plans.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                    </select>
-                  </>}
-                </td>
-                <td>{state.websites.filter((w) => w.customerId === c.id).length} of {state.plans.find((p) => p.id === c.planId)?.websites ?? "?"}</td>
-                <td>{state.databaseServers.filter((s) => s.customerId === c.id).length} of {state.plans.find((p) => p.id === c.planId)?.databaseServers ?? "?"}</td>
-                <td className="nowrap">{shortDate(c.createdAt)}</td>
+                <td><strong>{c.name}</strong><span className="cell-sub">{c.email}{admin && reseller(c) && ` · customer of ${reseller(c)}`}</span></td>
+                {admin && <td>{c.role === "reseller" ? "Reseller" : "Website owner"}</td>}
+                <td>{plan(c.planId)?.name ?? "No plan"}</td>
+                <td>{state.websites.filter((w) => w.customerId === c.id).length} of {plan(c.planId)?.websites ?? "?"}</td>
+                <td>{state.databaseServers.filter((x) => x.customerId === c.id).length} of {plan(c.planId)?.databaseServers ?? "?"}</td>
+                <td>{shortDate(c.createdAt)}</td>
                 <td>{c.suspended ? <Status tone="danger">Suspended</Status> : <Status tone="success">Active</Status>}</td>
-                <td className="cell-actions" style={{ width: 140 }}>
-                  {own(c) ? <span className="muted small">Your account</span> : c.suspended
-                    ? <button type="button" className="btn btn-sm" disabled={change.busy} onClick={() => void change.run(c.id, { suspended: false })}>Unsuspend</button>
-                    : <ConfirmButton className="btn btn-sm btn-danger" title={`Suspend ${c.name}?`} confirm="Suspend" message={<p>The panel stops the websites of {c.name}{c.role === "reseller" ? " and of its customers" : ""}. Mail is still received. The {plan(c.planId)} plan stays.</p>} onConfirm={() => void change.run(c.id, { suspended: true })}>Suspend</ConfirmButton>}
-                </td>
+                <td className="cell-actions"><RowMenu label={`Actions for ${c.name}`} actions={actions(c)} /></td>
               </tr>
             ))}
+            {customers.length === 0 && <tr><td colSpan={admin ? 7 : 6} className="muted">No customers yet. Add the first customer.</td></tr>}
           </tbody>
         </table>
-      </div>
+      </TableWrap>
       {open && (
         <Modal title="Add customer" onClose={() => { setOpen(false); add.clear(); }} footer={<><button type="button" className="btn" onClick={() => setOpen(false)}>Cancel</button><button type="submit" form="cus" className="btn btn-primary">Add customer</button></>}>
           <form id="cus" noValidate onSubmit={async (e) => {
@@ -96,8 +102,70 @@ function Customers() {
           </form>
         </Modal>
       )}
+      {planFor && <PlanChangeDialog customer={planFor} onClose={() => { setPlanFor(null); change.clear(); }} />}
+      {suspending && (
+        <Modal
+          title={`Suspend ${suspending.name}?`}
+          onClose={() => setSuspending(null)}
+          footer={<><button type="button" className="btn" onClick={() => setSuspending(null)}>Cancel</button><button type="button" className="btn btn-danger-solid" onClick={() => { void change.run(suspending.id, { suspended: true }); setSuspending(null); }}>Suspend</button></>}
+        >
+          <p>The panel stops the websites of {suspending.name}{suspending.role === "reseller" ? " and of its customers" : ""}. The users of the customer cannot sign in. The files, the databases and the {plan(suspending.planId)?.name} plan stay.</p>
+          <p style={{ marginTop: 8 }}>You can lift the suspension at any time. The panel then starts the websites again.</p>
+        </Modal>
+      )}
       {access && <AccessDialog access={access} onClose={() => setAccess(null)} />}
     </Card>
+  );
+}
+
+/**
+ * Audit item U11: a change of the plan of a customer. Before, a selector in the table saved the
+ * change at once. The dialog shows the limits of the two plans and the effect of the change.
+ */
+function PlanChangeDialog({ customer, onClose }: { customer: Customer; onClose: () => void }) {
+  const state = useStore();
+  const [planId, setPlanId] = useState(customer.planId);
+  const change = useAction(setCustomer);
+  const current = state.plans.find((p) => p.id === customer.planId);
+  const next = state.plans.find((p) => p.id === planId);
+  // The plan of a reseller also counts the websites of its customers.
+  const ids = new Set([customer.id, ...(customer.role === "reseller" ? state.customers.filter((c) => c.resellerId === customer.id).map((c) => c.id) : [])]);
+  const websites = state.websites.filter((w) => ids.has(w.customerId)).length;
+  const changed = planId !== customer.planId;
+  const over = !!next && websites > next.websites;
+  return (
+    <Modal
+      title={`Change the plan of ${customer.name}`}
+      onClose={onClose}
+      footer={<><button type="button" className="btn" onClick={onClose}>Cancel</button><button type="button" className="btn btn-primary" disabled={!changed || over || change.busy} onClick={async () => { if ((await change.run(customer.id, { planId })).ok) onClose(); }}>{changed && next ? `Change to ${next.name}` : "Change plan"}</button></>}
+    >
+      <FormError error={change.error} />
+      <Field label="Plan" hint={current ? `The current plan is ${current.name}.` : undefined}>
+        {(p) => <select {...p} className="select" value={planId} onChange={(e) => setPlanId(e.target.value)}>{state.plans.map((pl) => <option key={pl.id} value={pl.id}>{pl.name}</option>)}</select>}
+      </Field>
+      {next && (
+        <table className="kv" style={{ marginTop: 14 }}>
+          <thead className="visually-hidden"><tr><th scope="col">Limit</th><th scope="col">Value</th></tr></thead>
+          <tbody>
+            <tr><th scope="row">Websites</th><td>{next.websites}{current && changed && <span className="muted"> (now {current.websites})</span>}</td></tr>
+            <tr><th scope="row">Databases</th><td>{next.databases}{current && changed && <span className="muted"> (now {current.databases})</span>}</td></tr>
+            <tr><th scope="row">Each website</th><td>{next.limits.vcpus} vCPU, {bytes(next.limits.memoryBytes)} memory, {bytes(next.limits.diskBytes)} disk</td></tr>
+          </tbody>
+        </table>
+      )}
+      {changed && next && over && (
+        <div className="alert alert-warning alert-stack" style={{ marginTop: 14 }} role="alert">
+          <p><strong>This plan is too small.</strong> {customer.name} has {websites} websites, and the {next.name} plan permits {next.websites}. Remove websites first, or select a larger plan.</p>
+        </div>
+      )}
+      {changed && next && !over && (
+        <div className="alert alert-info alert-stack" style={{ marginTop: 14 }} role="status">
+          <p><strong>The effect of the change</strong></p>
+          <p>New websites of {customer.name} get the limits of the {next.name} plan. {customer.name} can then have {next.websites} {next.websites === 1 ? "website" : "websites"}.</p>
+          <p>{websites === 0 ? `${customer.name} has no websites now.` : `The ${websites === 1 ? "website" : `${websites} websites`} that ${customer.name} has now ${websites === 1 ? "keeps its" : "keep their"} plan and limits. To change one website, open its Settings tab.`}</p>
+        </div>
+      )}
+    </Modal>
   );
 }
 
@@ -112,11 +180,9 @@ function AccessDialog({ access, onClose }: { access: NewAccess; onClose: () => v
   );
 }
 
-const ROLE_LABEL: Record<ManagedUser["role"], string> = { administrator: "Administrator", reseller: "Reseller", owner: "Website owner" };
-
 /**
  * Audit finding B5: the users who can sign in. An administrator changes all users. A reseller
- * changes the users of its own customers. A website owner sees the users of its account.
+ * changes the users of its own customers.
  */
 function Users() {
   const state = useStore();
@@ -144,7 +210,7 @@ function Users() {
         <p className="muted">A user signs in with an email and a password. The panel sends no email: a new user gets a temporary password, which you give to the user. The user must set a new password at the first sign-in.</p>
         {remove.error && <FormError error={remove.error} />}
       </div>
-      <div className="table-wrap">
+      <TableWrap>
         <table>
           <thead><tr><th scope="col">User</th><th scope="col">Role</th><th scope="col">Customer</th><th scope="col">Sign-in</th><th scope="col">Since</th><th scope="col"><span className="visually-hidden">Actions</span></th></tr></thead>
           <tbody>
@@ -157,14 +223,12 @@ function Users() {
                   {u.mustChangePassword ? <Status tone="warning">Temporary password</Status> : u.totpEnabled ? <Status tone="success">Password and TOTP</Status> : <Status tone="neutral">Password only</Status>}
                 </td>
                 <td>{u.createdAt ? shortDate(u.createdAt) : ""}</td>
-                <td className="cell-actions" style={{ width: 250 }}>
-                  {self(u) ? <span className="muted small">Your account</span> : canChange(u) && (
-                    <div className="btn-group" style={{ justifyContent: "flex-end" }}>
-                      <button type="button" className="btn btn-sm" onClick={() => setResetting(u)}>Reset password…</button>
-                      {u.customerId
-                        ? <ConfirmButton className="btn btn-sm btn-danger" title={`Delete ${u.email}?`} confirm="Delete user" message={<p>{u.name} can no longer sign in. The panel deletes the sessions and the API tokens of this user. The websites of the customer stay.</p>} onConfirm={() => void remove.run(u.id)}>Delete</ConfirmButton>
-                        : <button type="button" className="btn btn-sm btn-danger" onClick={() => setDeleting(u)}>Delete</button>}
-                    </div>
+                <td className="cell-actions">
+                  {self(u) ? <span className="muted small nowrap">Your account</span> : canChange(u) && (
+                    <RowMenu label={`Actions for ${u.email}`} actions={[
+                      { label: "Reset password…", onSelect: () => setResetting(u) },
+                      { label: "Delete user…", onSelect: () => setDeleting(u), danger: true },
+                    ]} />
                   )}
                 </td>
               </tr>
@@ -172,7 +236,7 @@ function Users() {
             {state.users.length === 0 && <tr><td colSpan={6} className="muted">No users.</td></tr>}
           </tbody>
         </table>
-      </div>
+      </TableWrap>
       {open && (
         <Modal title="Add user" onClose={closeAdd} footer={<><button type="button" className="btn" onClick={closeAdd}>Cancel</button><button type="submit" form="usr" className="btn btn-primary" disabled={add.busy}>{form.customerId ? "Add user" : "Add administrator"}</button></>}>
           <form id="usr" noValidate onSubmit={async (e) => {
@@ -199,7 +263,16 @@ function Users() {
         </Modal>
       )}
       {resetting && <ResetDialog user={resetting} onClose={() => setResetting(null)} onDone={(a) => { setResetting(null); setAccess(a); }} />}
-      {deleting && <DeleteAdministratorDialog user={deleting} onClose={() => setDeleting(null)} />}
+      {deleting && !deleting.customerId && <DeleteAdministratorDialog user={deleting} onClose={() => setDeleting(null)} />}
+      {deleting?.customerId && (
+        <Modal
+          title={`Delete ${deleting.email}?`}
+          onClose={() => setDeleting(null)}
+          footer={<><button type="button" className="btn" onClick={() => setDeleting(null)}>Cancel</button><button type="button" className="btn btn-danger-solid" onClick={() => { void remove.run(deleting.id); setDeleting(null); }}>Delete user</button></>}
+        >
+          <p>{deleting.name} can no longer sign in. The panel deletes the sessions and the API tokens of this user. The websites of the customer stay.</p>
+        </Modal>
+      )}
       {access && <AccessDialog access={access} onClose={() => setAccess(null)} />}
     </Card>
   );
@@ -243,150 +316,3 @@ function DeleteAdministratorDialog({ user, onClose }: { user: ManagedUser; onClo
   );
 }
 
-const EMPTY_PLAN: Plan = {
-  id: "", name: "", limits: { vcpus: 1, memoryBytes: 1 * GB, diskBytes: 10 * GB, diskIoBytesPerSecond: 30 * MB, processes: 75 }, websites: 5, mailboxes: 25, databases: 10, phpExtensions: ["opcache", "intl", "gd", "zip"],
-  databaseServers: 3, databaseLimits: { vcpus: 1, memoryBytes: 512 * MB, diskBytes: 5 * GB },
-};
-const ALL_EXTENSIONS = ["opcache", "intl", "gd", "imagick", "redis", "sodium", "zip", "bcmath", "soap", "xdebug", "pgsql", "mysqli", "pdo_mysql", "pdo_pgsql", "exif", "apcu"];
-
-function Plans() {
-  const state = useStore();
-  const [editing, setEditing] = useState<Plan | null>(null);
-  // Only an administrator makes and changes plans. A reseller sees the plans that it can give.
-  const admin = state.session.user.role === "administrator";
-  return (
-    <Card title="Plans" actions={admin && <button type="button" className="btn btn-primary" onClick={() => setEditing(EMPTY_PLAN)}>New plan</button>}>
-      <div className="table-wrap">
-        <table>
-          <thead><tr><th scope="col">Plan</th><th scope="col">Websites</th><th scope="col">CPU</th><th scope="col">Memory</th><th scope="col">Disk</th><th scope="col">Disk I/O</th><th scope="col">Processes</th><th scope="col">Mailboxes</th><th scope="col">Database servers</th><th scope="col"><span className="visually-hidden">Actions</span></th></tr></thead>
-          <tbody>
-            {state.plans.map((p) => (
-              <tr key={p.id}>
-                <td><strong>{p.name}</strong><span className="cell-sub">{p.phpExtensions.length} PHP extensions</span></td>
-                <td>{p.websites}</td>
-                <td className="nowrap">{p.limits.vcpus} vCPU</td>
-                <td className="nowrap">{bytes(p.limits.memoryBytes)}</td>
-                <td className="nowrap">{bytes(p.limits.diskBytes)}</td>
-                <td className="nowrap">{bytes(p.limits.diskIoBytesPerSecond)}/s</td>
-                <td>{p.limits.processes}</td>
-                <td>{p.mailboxes}</td>
-                <td>
-                  {p.databaseServers}
-                  <span className="cell-sub nowrap">{limitsText(p.databaseLimits)}</span>
-                  <span className="cell-sub nowrap">{p.databases} {p.databases === 1 ? "database" : "databases"} in each one</span>
-                </td>
-                <td className="cell-actions" style={{ width: 100 }}>{admin && <button type="button" className="btn btn-sm" onClick={() => setEditing(p)}>Edit</button>}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {editing && <PlanDialog plan={editing} onClose={() => setEditing(null)} />}
-    </Card>
-  );
-}
-
-type PlanForm = {
-  name: string; websites: string; mailboxes: string; databases: string; vcpus: string; memory: string; disk: string; io: string; processes: string;
-  databaseServers: string; dbVcpus: string; dbMemory: string; dbDisk: string; ext: string[];
-};
-type PlanNumber = Exclude<keyof PlanForm, "name" | "ext">;
-
-/** The fields of a website of the plan, and of a database server of the plan. The third value is the field of the API for the error. */
-const WEBSITE_FIELDS: [PlanNumber, string, string][] = [
-  ["websites", "Websites", "websites"], ["vcpus", "CPU (vCPU)", "limits.vcpus"], ["memory", "Memory (MB)", "limits.memoryBytes"], ["disk", "Disk (GB)", "limits.diskBytes"],
-  ["io", "Disk I/O (MB/s)", "limits.diskIoBytesPerSecond"], ["processes", "Processes", "limits.processes"], ["mailboxes", "Mailboxes", "mailboxes"],
-];
-const DATABASE_FIELDS: [PlanNumber, string, string][] = [
-  ["databaseServers", "Database servers", "databaseServers"], ["databases", "Databases in each one", "databases"],
-  ["dbVcpus", "CPU (vCPU)", "databaseLimits.vcpus"], ["dbMemory", "Memory (MB)", "databaseLimits.memoryBytes"], ["dbDisk", "Disk (GB)", "databaseLimits.diskBytes"],
-];
-
-function PlanDialog({ plan, onClose }: { plan: Plan; onClose: () => void }) {
-  const [f, setF] = useState<PlanForm>({
-    name: plan.name, websites: String(plan.websites), mailboxes: String(plan.mailboxes), databases: String(plan.databases),
-    vcpus: String(plan.limits.vcpus), memory: String(plan.limits.memoryBytes / MB), disk: String(plan.limits.diskBytes / GB), io: String(plan.limits.diskIoBytesPerSecond / MB), processes: String(plan.limits.processes),
-    databaseServers: String(plan.databaseServers), dbVcpus: String(plan.databaseLimits.vcpus), dbMemory: String(plan.databaseLimits.memoryBytes / MB), dbDisk: String(plan.databaseLimits.diskBytes / GB),
-    ext: plan.phpExtensions,
-  });
-  const save = useAction(savePlan);
-  const fields = (list: [PlanNumber, string, string][]) => list.map(([k, label, api]) => (
-    <Field key={k} label={label} error={save.error?.fields[api]}>{(p) => <input {...p} className="input" type="number" min={0} step="any" value={f[k]} onChange={(e) => setF({ ...f, [k]: e.target.value })} />}</Field>
-  ));
-  return (
-    <Modal wide title={plan.id ? `Edit ${plan.name}` : "New plan"} onClose={onClose} footer={<><button type="button" className="btn" onClick={onClose}>Cancel</button><button type="submit" form="plan" className="btn btn-primary">Save plan</button></>}>
-      <form id="plan" noValidate onSubmit={async (e) => {
-        e.preventDefault();
-        const r = await save.run({
-          id: plan.id, name: f.name, websites: +f.websites, mailboxes: +f.mailboxes, databases: +f.databases, phpExtensions: f.ext,
-          limits: { vcpus: +f.vcpus, memoryBytes: +f.memory * MB, diskBytes: +f.disk * GB, diskIoBytesPerSecond: +f.io * MB, processes: +f.processes },
-          databaseServers: +f.databaseServers, databaseLimits: { vcpus: +f.dbVcpus, memoryBytes: Math.round(+f.dbMemory * MB), diskBytes: Math.round(+f.dbDisk * GB) },
-        });
-        if (r.ok) onClose();
-      }}>
-        <FormError error={save.error} shown={["name", ...WEBSITE_FIELDS.map((x) => x[2]), ...DATABASE_FIELDS.map((x) => x[2])]} />
-        <Field label="Name" error={save.error?.fields.name}>{(p) => <input {...p} className="input" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} />}</Field>
-        <fieldset className="form-section">
-          <legend>Websites</legend>
-          <p className="hint">The number of websites and mailboxes of a customer with the plan, and the limits of each website.</p>
-          <div className="form-row">{fields(WEBSITE_FIELDS)}</div>
-        </fieldset>
-        <fieldset className="form-section">
-          <legend>Database servers</legend>
-          <p className="hint">The number of database servers of a customer with the plan, and the limits of each database server. A database server is one container with MariaDB, PostgreSQL or Valkey.</p>
-          <div className="form-row">{fields(DATABASE_FIELDS)}</div>
-          {plan.id && <p className="hint">When you change the CPU, the memory or the disk, the panel restarts the database servers that have the limits of this plan.</p>}
-        </fieldset>
-        <fieldset className="checkbox-list" style={{ marginTop: 14 }}>
-          <legend>PHP extensions that owners can turn on</legend>
-          {ALL_EXTENSIONS.map((x) => (
-            <label key={x} className="check"><input type="checkbox" checked={f.ext.includes(x)} onChange={(e) => setF({ ...f, ext: e.target.checked ? [...f.ext, x] : f.ext.filter((y) => y !== x) })} /><code>{x}</code></label>
-          ))}
-        </fieldset>
-      </form>
-    </Modal>
-  );
-}
-
-/** FR-106: the reseller sets the logo, the colours and the panel domain. */
-function Branding() {
-  const state = useStore();
-  const [f, setF] = useState(state.branding);
-  const [saved, setSaved] = useState(false);
-  const save = useAction(async () => { setBranding(f); setSaved(true); });
-  return (
-    <div className="grid-2">
-      <Card title="Branding for your customers">
-        <form className="card-body" noValidate onSubmit={(e) => { e.preventDefault(); setSaved(false); void save.run(); }}>
-          <FormError error={save.error} />
-          <Field label="Brand name">{(p) => <input {...p} className="input" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} />}</Field>
-          <Field label="Main colour" hint="The panel checks the contrast of the text on this colour." error={save.error?.fields.colour}>
-            {(p) => (
-              <span style={{ display: "flex", gap: 8 }}>
-                <input type="color" aria-label="Pick a colour" value={f.colour} onChange={(e) => setF({ ...f, colour: e.target.value })} style={{ width: 52, height: 44, border: 0, background: "none" }} />
-                <input {...p} className="input mono" value={f.colour} onChange={(e) => setF({ ...f, colour: e.target.value })} />
-              </span>
-            )}
-          </Field>
-          <Field label="Panel domain" hint="Point a CNAME record for this domain to panel.cloudfactory.io." error={save.error?.fields.panelDomain}>{(p) => <input {...p} className="input mono" value={f.panelDomain} onChange={(e) => setF({ ...f, panelDomain: e.target.value })} />}</Field>
-          <Field label="Support email">{(p) => <input {...p} className="input" type="email" value={f.supportEmail} onChange={(e) => setF({ ...f, supportEmail: e.target.value })} />}</Field>
-          <Field label="Logo" hint="SVG or PNG, up to 200 KB.">{(p) => <input {...p} type="file" accept="image/svg+xml,image/png" />}</Field>
-          <div className="btn-group" style={{ marginTop: 14, alignItems: "center" }}>
-            <button type="submit" className="btn btn-primary">Save branding</button>
-            {saved && !save.error && <span className="text-success" role="status">Saved.</span>}
-          </div>
-        </form>
-      </Card>
-      <Card title="Preview">
-        <div className="card-body">
-          <div className="brand-preview" style={{ background: "#0f1b33" }}>
-            <span className="swatch" style={{ background: f.colour, borderColor: f.colour }} aria-hidden="true" />
-            {f.name || "Your brand"}
-          </div>
-          <p className="muted small" style={{ marginTop: 12 }}>Customers sign in at <code>https://{f.panelDomain}</code>.</p>
-          <button type="button" className="btn" style={{ marginTop: 12, background: f.colour, color: "#fff", borderColor: f.colour }}>Example button</button>
-        </div>
-      </Card>
-    </div>
-  );
-}

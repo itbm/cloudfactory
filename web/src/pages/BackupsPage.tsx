@@ -12,7 +12,7 @@ export function BackupsPage() {
     <>
       <Topbar />
       <main id="main" className="content">
-        <PageHeader title="Backups" description="Each night, the panel backs up files, databases and mailboxes to object storage on a different server. You can restore a full website, one database, one mailbox or one file." />
+        <PageHeader title="Backups" description="Each night, the panel backs up files and databases to object storage on a different server. You can restore a full website, one database or one file." />
         <div className="stack">
           {isAdmin && <PolicyCard />}
           <BackupsPanel />

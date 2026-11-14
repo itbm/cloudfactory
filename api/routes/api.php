@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Agent\AgentController;
 use App\Http\Controllers\Agent\JoinController;
+use App\Http\Controllers\Api\AccountController;
 use App\Http\Controllers\Api\AuditController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BackupController;
@@ -17,6 +18,7 @@ use App\Http\Controllers\Api\PlanController;
 use App\Http\Controllers\Api\RolloutController;
 use App\Http\Controllers\Api\RuntimeController;
 use App\Http\Controllers\Api\ServerController;
+use App\Http\Controllers\Api\SetupController;
 use App\Http\Controllers\Api\SftpController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\WebsiteController;
@@ -108,6 +110,8 @@ Route::prefix('v1')->group(function () {
             // The TLS certificate of the panel domain: the CA of the panel or Let's Encrypt.
             Route::get('panel-certificate', [PanelCertificateController::class, 'show']);
             Route::put('panel-certificate', [PanelCertificateController::class, 'update'])->middleware('throttle:10,1');
+            // The setup checklist of the panel, with the effect of each open item.
+            Route::get('setup', [SetupController::class, 'show']);
         });
 
         Route::middleware(['admin', 'scope:images'])->group(function () {
@@ -124,6 +128,8 @@ Route::prefix('v1')->group(function () {
         });
 
         Route::middleware('scope:customers')->group(function () {
+            // The customer of the signed-in user, with its plan, its usage and its users.
+            Route::get('account', [AccountController::class, 'show']);
             Route::get('customers', [CustomerController::class, 'index']);
             Route::post('customers', [CustomerController::class, 'store']);
             Route::patch('customers/{id}', [CustomerController::class, 'update']);

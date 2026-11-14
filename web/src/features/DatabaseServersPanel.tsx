@@ -1,11 +1,10 @@
 import { useState } from "react";
 import { useAction, useStore } from "../api/hooks";
-import { GB, MB } from "../api/seed";
 import { contextCustomers, inContext } from "../api/selectors";
 import { createDatabaseServer, deleteDatabaseServer, retryDatabaseServer, setDatabaseServer } from "../api/store";
 import type { Customer, DatabaseEngine, DatabaseLimits, DatabaseServer, Plan, State } from "../api/types";
-import { Card, Field, FormError, Meter, Modal, Status } from "../components/ui";
-import { bytes } from "../lib/format";
+import { Card, Field, FormError, JobError, Meter, Modal, RowMenu, Status, TableWrap } from "../components/ui";
+import { bytes, GB, MB } from "../lib/format";
 import { DATABASE_PORT, DATABASE_SERVER_STATUS, ENGINE_NAME, jobActive } from "../lib/labels";
 
 const ENGINES: DatabaseEngine[] = ["mariadb", "postgresql", "valkey"];
@@ -57,7 +56,7 @@ export function DatabaseServersPanel() {
         </p>
         <FormError error={retry.error ?? remove.error} />
       </div>
-      <div className="table-wrap">
+      <TableWrap>
         <table>
           <thead>
             <tr>
@@ -83,7 +82,7 @@ export function DatabaseServersPanel() {
                     {showCustomer && <span className="cell-sub">{customer(s.customerId)?.name ?? "Removed customer"}</span>}
                   </td>
                   <td>
-                    {plan(s.planId)?.name ?? "Removed plan"}
+                    {plan(s.planId)?.name ?? "Other plan"}
                     <span className="cell-sub nowrap">{s.limits.vcpus} vCPU</span>
                   </td>
                   <td><Use server={s} /></td>
@@ -95,14 +94,16 @@ export function DatabaseServersPanel() {
                   <td style={{ minWidth: 120 }}>
                     <Status tone={status.tone}>{status.label}</Status>
                     {job && <span className="cell-sub">{job.steps[Math.min(job.step, job.steps.length - 1)]}…</span>}
-                    {failed?.error && <span className="cell-sub text-danger">{failed.error}</span>}
+                    {failed && <JobError job={failed} />}
                   </td>
                   <td className="cell-actions">
-                    <div className="btn-group" style={{ justifyContent: "flex-end", flexWrap: "nowrap" }}>
-                      {s.status === "failed" && <button type="button" className="btn btn-sm" disabled={retry.busy} onClick={() => void retry.run(s.id)}>Try again</button>}
-                      {s.status !== "removing" && <button type="button" className="btn btn-sm" onClick={() => setEditing(s)}>Change</button>}
-                      {s.status !== "removing" && <button type="button" className="btn btn-sm btn-danger" onClick={() => setRemoving(s)}>Remove</button>}
-                    </div>
+                    {s.status !== "removing" && (
+                      <RowMenu label={`Actions for the database server ${s.name}`} actions={[
+                        ...(s.status === "failed" ? [{ label: "Try again", onSelect: () => void retry.run(s.id) }] : []),
+                        { label: "Change", onSelect: () => setEditing(s) },
+                        { label: "Remove", danger: true, onSelect: () => setRemoving(s) },
+                      ]} />
+                    )}
                   </td>
                 </tr>
               );
@@ -110,7 +111,7 @@ export function DatabaseServersPanel() {
             {servers.length === 0 && <tr><td colSpan={7} className="muted">No database servers. The panel makes the first database server of an engine when you make a database.</td></tr>}
           </tbody>
         </table>
-      </div>
+      </TableWrap>
       <p className="card-body muted small" style={{ paddingTop: 12 }}>
         The first database server of an engine has the usual port: <code>{DATABASE_PORT.mariadb}</code> for MariaDB, <code>{DATABASE_PORT.postgresql}</code> for PostgreSQL and <code>{DATABASE_PORT.valkey}</code> for Valkey. A second database server of the same engine gets the next port. An app connects to the host name and the port in the Host column.
       </p>
@@ -358,7 +359,7 @@ function ChangeDialog({ server, onClose }: { server: DatabaseServer; onClose: ()
         <div style={{ marginTop: 14 }}>
           {selectPlan
             ? <PlanField plans={plans} value={planId} onChange={pickPlan} error={change.error?.fields.planId} />
-            : <p>Plan: <strong>{plan?.name ?? "Removed plan"}</strong>. <span className="muted">{limitsText(server.limits)} · {server.maxDatabases} databases. Only an administrator or your reseller can select a different plan.</span></p>}
+            : <p>Plan: <strong>{plan?.name ?? "Other plan"}</strong>. <span className="muted">{limitsText(server.limits)} · {server.maxDatabases} databases. Only an administrator or your reseller can select a different plan.</span></p>}
         </div>
         {admin && (
           <fieldset className="form-section">

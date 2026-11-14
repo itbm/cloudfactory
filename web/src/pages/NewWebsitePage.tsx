@@ -160,7 +160,7 @@ export function NewWebsitePage() {
               ) : (
                 // CF-07: a website gets the plan of its customer. A reseller changes the plan of a customer on the Customers page.
                 <p>Plan: <strong>{state.plans.find((p) => p.id === planId)?.name ?? "The plan of the customer"}</strong>.{" "}
-                  <span className="muted">{reseller && customerId !== state.session.contextId ? <>To change it, change the plan of the customer on the <Link to="/customers">Customers</Link> page.</> : reseller ? "Only an administrator can change the plan of your account." : "Only an administrator or your reseller can change the plan."}</span>
+                  <span className="muted">{reseller && customerId !== state.session.contextId ? <>To change it, change the plan of the customer on the <Link to="/customers">Customers</Link> page.</> : "Only your provider can change the plan of your account."}</span>
                 </p>
               )}
               {webServers.length > 0 && <div style={{ marginTop: 16 }}>

@@ -50,11 +50,31 @@ export const RUNTIME_KIND: Record<RuntimeKind, string> = {
   static: "Static files",
 };
 
+/**
+ * True when a public certificate authority gives certificates for the name. The API and the
+ * agent have the same rule (PanelCertificate::publicName, caddy.PublicName). For a different
+ * name, for example shop.test, the CA of the panel signs the certificate.
+ */
+export function publicName(name: string): boolean {
+  const n = name.toLowerCase().replace(/\.$/, "");
+  if (!n.includes(".") || /^[\d.]+$/.test(n) || n.includes(":")) return false;
+  return ![".localhost", ".local", ".internal", ".home.arpa", ".test", ".example", ".invalid"].some((suffix) => n.endsWith(suffix));
+}
+
+/** Audit item U12: the text for a valid certificate that the CA of the panel signed. */
+export const PANEL_CA_NOTE = "panel CA, not trusted by browsers";
+
+type CertificateOf = Pick<Domain, "certificate" | "dnsPointsHere"> & { name?: string };
+
+/** True when the CA of the panel signed the certificate of the domain. */
+const fromPanelCa = (d: CertificateOf) => d.name !== undefined && !publicName(d.name);
+
 /** Short certificate text for the website list. */
-export function certificateText(d: Pick<Domain, "certificate" | "dnsPointsHere">): string {
+export function certificateText(d: CertificateOf): string {
   const c = d.certificate;
   switch (c.state) {
     case "valid":
+      if (fromPanelCa(d)) return `Valid (${PANEL_CA_NOTE})`;
       return c.expiresAt ? `Valid · renews in ${daysUntil(c.expiresAt)} days` : "Valid";
     case "renewed":
       return c.renewedAt ? `Renewed ${relativeTime(c.renewedAt)}` : "Renewed";
@@ -68,11 +88,12 @@ export function certificateText(d: Pick<Domain, "certificate" | "dnsPointsHere">
   }
 }
 
-export function certificateUntil(d: Pick<Domain, "certificate" | "dnsPointsHere">, websiteFailed = false): string {
+export function certificateUntil(d: CertificateOf, websiteFailed = false): string {
   const c = d.certificate;
   // The panel could not make the website, so the edge proxy does not know the domain. Before,
   // the text was "certificate waits for DNS", which sent the user to the DNS.
   if (websiteFailed && c.state === "pending") return "no certificate yet";
+  if ((c.state === "valid" || c.state === "renewed") && fromPanelCa(d)) return `certificate valid (${PANEL_CA_NOTE})`;
   if (c.state === "valid" || c.state === "renewed") return c.expiresAt ? `certificate valid until ${longDate(c.expiresAt)}` : "certificate valid";
   // Before, this text was "certificate waits for DNS" also when the DNS was correct.
   if (c.state === "pending") return d.dnsPointsHere ? "the edge proxy gets the certificate" : "certificate waits for DNS";

@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { useAction, useStore } from "../api/hooks";
 import { createDatabase, createDatabaseUser, databaseServersFor, deleteDatabase, deleteDatabaseUser, partialDetails, setDatabaseUser, sharedDatabasesMessage, type GrantInput } from "../api/store";
 import type { DatabaseEngine, DatabasePrivileges, DatabaseUser } from "../api/types";
-import { Card, ConfirmButton, Field, FormError, Modal } from "../components/ui";
+import { Card, ConfirmButton, Field, FormError, Modal, RowMenu, TableWrap } from "../components/ui";
 import { bytes, count } from "../lib/format";
 import { DATABASE_HOST, DATABASE_PORT, ENGINE_NAME as ENGINE, jobActive } from "../lib/labels";
 
@@ -31,6 +31,8 @@ export function DatabasesPanel({ websiteId }: { websiteId?: string }) {
   const [dbServer, setDbServer] = useState("");
   const [grants, setGrants] = useState<GrantInput[]>([]);
   const [password, setPassword] = useState<{ user: string; value: string; valkey?: boolean } | null>(null);
+  // The action of a database user that waits for a confirmation.
+  const [asking, setAsking] = useState<{ user: DatabaseUser; action: "password" | "remove" } | null>(null);
   const createDb = useAction(createDatabase);
   const createUser = useAction(createDatabaseUser);
   const changeUser = useAction(setDatabaseUser);
@@ -73,7 +75,7 @@ export function DatabasesPanel({ websiteId }: { websiteId?: string }) {
         title="Databases"
         actions={<button type="button" className="btn btn-primary" onClick={() => setDialog("db")}>New database</button>}
       >
-        <div className="table-wrap">
+        <TableWrap>
           <table>
             <thead>
               <tr><th scope="col">Name</th><th scope="col">Engine</th>{!websiteId && <th scope="col">Website</th>}<th scope="col">Users</th><th scope="col">Size</th><th scope="col">Host</th><th scope="col"><span className="visually-hidden">Actions</span></th></tr>
@@ -109,7 +111,7 @@ export function DatabasesPanel({ websiteId }: { websiteId?: string }) {
               {dbs.length === 0 && pending.length === 0 && <tr><td colSpan={7} className="muted">No databases.</td></tr>}
             </tbody>
           </table>
-        </div>
+        </TableWrap>
         {!websiteId && partialDetails() && <p className="card-body muted small">There are many websites, so this list shows only the websites that you opened. Open a website to see its databases.</p>}
         {dbs.some((d) => d.engine === "valkey") && (
           <p className="card-body muted small" style={{ paddingTop: 12 }}>
@@ -121,7 +123,7 @@ export function DatabasesPanel({ websiteId }: { websiteId?: string }) {
         <div className="card-body" style={{ paddingBottom: 0 }}>
           <FormError error={changeUser.error} />
         </div>
-        <div className="table-wrap">
+        <TableWrap>
           <table>
             <thead>
               <tr><th scope="col">User</th><th scope="col">Engine</th><th scope="col">Permissions</th><th scope="col">Can connect from</th><th scope="col"><span className="visually-hidden">Actions</span></th></tr>
@@ -148,24 +150,45 @@ export function DatabasesPanel({ websiteId }: { websiteId?: string }) {
                     )}
                   </td>
                   <td className="cell-actions">
-                    <div className="btn-group" style={{ justifyContent: "flex-end", flexWrap: "nowrap" }}>
-                      {u.engine !== "valkey" && <button type="button" className="btn btn-sm" onClick={() => edit(u)}>Permissions</button>}
-                      <ConfirmButton className="btn btn-sm" danger={false} title={`Make a new password for ${u.name}?`} confirm="Make new password" message={<p>Apps that use the old password cannot connect.{u.engine === "valkey" && " Valkey closes the connections that are open with the old password."}</p>} onConfirm={async () => {
-                        const r = await changeUser.run(u.id, { resetPassword: true });
-                        if (r.ok && r.value) setPassword({ user: u.name, value: r.value });
-                      }}>New password</ConfirmButton>
-                      {u.engine !== "valkey" && <ConfirmButton className="btn btn-sm btn-danger" title={`Remove user ${u.name}?`} confirm="Remove user" message={<p>Apps that use this user cannot connect.</p>} onConfirm={() => deleteDatabaseUser(u.id)}>Remove</ConfirmButton>}
-                    </div>
+                    {/* Audit item U7: three buttons were wider than the table, and the last one was cut. */}
+                    <RowMenu label={`Actions for ${u.name}`} actions={[
+                      ...(u.engine !== "valkey" ? [{ label: "Change permissions…", onSelect: () => edit(u) }] : []),
+                      { label: "Make a new password…", onSelect: () => setAsking({ user: u, action: "password" }) },
+                      ...(u.engine !== "valkey" ? [{ label: "Remove user…", onSelect: () => setAsking({ user: u, action: "remove" }), danger: true }] : []),
+                    ]} />
                   </td>
                 </tr>
               ))}
               {users.length === 0 && <tr><td colSpan={5} className="muted">No users.</td></tr>}
             </tbody>
           </table>
-        </div>
+        </TableWrap>
         <p className="card-body muted small" style={{ paddingTop: 12 }}>Each customer has its own database servers. By default, only the websites of the customer on the same server can connect to them, and each connection needs a user name and a password. A user is in one database server, and can have access only to the databases of its website in that database server.{users.some((u) => u.engine === "valkey") && " The user of a Valkey database has access to that database only. To remove the user, remove the database."}</p>
       </Card>
 
+      {asking?.action === "password" && (
+        <Modal
+          title={`Make a new password for ${asking.user.name}?`}
+          onClose={() => setAsking(null)}
+          footer={<><button type="button" className="btn" onClick={() => setAsking(null)}>Cancel</button><button type="button" className="btn btn-primary" onClick={async () => {
+            const u = asking.user;
+            setAsking(null);
+            const r = await changeUser.run(u.id, { resetPassword: true });
+            if (r.ok && r.value) setPassword({ user: u.name, value: r.value });
+          }}>Make new password</button></>}
+        >
+          <p>Apps that use the old password cannot connect.{asking.user.engine === "valkey" && " Valkey closes the connections that are open with the old password."}</p>
+        </Modal>
+      )}
+      {asking?.action === "remove" && (
+        <Modal
+          title={`Remove user ${asking.user.name}?`}
+          onClose={() => setAsking(null)}
+          footer={<><button type="button" className="btn" onClick={() => setAsking(null)}>Cancel</button><button type="button" className="btn btn-danger-solid" onClick={() => { void deleteDatabaseUser(asking.user.id); setAsking(null); }}>Remove user</button></>}
+        >
+          <p>Apps that use this user cannot connect.</p>
+        </Modal>
+      )}
       {dialog === "db" && (
         <Modal
           title="New database"

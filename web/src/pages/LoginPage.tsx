@@ -1,26 +1,24 @@
-import { KeyRound } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAction } from "../api/hooks";
-import { features } from "../api/mode";
 import { signIn } from "../api/store";
 import { Logo } from "../components/Layout";
 import { Field, FormError } from "../components/ui";
 
 /**
- * Sign in with a passkey, or with a password (FR-103). The panel asks for a code from the
+ * Sign in with an email and a password (FR-103). The panel asks for a code from the
  * authenticator app only when the account has TOTP, and only after a correct password.
  */
 export function LoginPage() {
   const navigate = useNavigate();
-  const [email, setEmail] = useState(features.passkeys ? "alex@acme.example" : "");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
   const [step, setStep] = useState<"start" | "totp">("start");
-  const passkey = useAction(async () => signIn("passkey"));
-  const pw = useAction(async (totp: string) => signIn("password", totp, { email, password }));
-  const go = () => navigate("/websites");
-  const busy = passkey.busy || pw.busy;
+  const pw = useAction(async (totp: string) => signIn(email, password, totp));
+  // Each role has its own first page (lib/roles.ts).
+  const go = () => navigate("/");
+  const busy = pw.busy;
 
   return (
     <main className="login" id="main">
@@ -33,15 +31,9 @@ export function LoginPage() {
         <p className="muted" style={{ marginBottom: 18 }}>
           {step === "totp"
             ? <>The password is correct. Type the code from your authenticator app for <strong>{email}</strong>.</>
-            : features.passkeys ? "Use a passkey, or your email and your password." : "Use your email and your password."}
+            : "Use your email and your password."}
         </p>
-        <FormError error={passkey.error ?? pw.error} shown={step === "start" ? ["email", "password"] : ["totp"]} />
-        {features.passkeys && step === "start" && <>
-        <button type="button" className="btn btn-primary" style={{ width: "100%" }} disabled={busy} onClick={async () => { if ((await passkey.run()).ok) go(); }}>
-          <KeyRound size={18} aria-hidden="true" /> Sign in with a passkey
-        </button>
-        <div className="divider">or</div>
-        </>}
+        <FormError error={pw.error} shown={step === "start" ? ["email", "password"] : ["totp"]} />
         {step === "start" ? (
           <form noValidate onSubmit={async (e) => {
             e.preventDefault();
@@ -54,9 +46,9 @@ export function LoginPage() {
               setStep("totp");
             }
           }}>
-            <Field label="Email" error={pw.error?.fields.email}>{(p) => <input {...p} className="input" type="email" autoComplete="username webauthn" value={email} onChange={(e) => setEmail(e.target.value)} />}</Field>
+            <Field label="Email" error={pw.error?.fields.email}>{(p) => <input {...p} className="input" type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} />}</Field>
             <Field label="Password" error={pw.error?.fields.password}>{(p) => <input {...p} className="input" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />}</Field>
-            <button type="submit" className={features.passkeys ? "btn" : "btn btn-primary"} style={{ width: "100%", marginTop: 16 }} disabled={busy}>{pw.busy ? "Signing in…" : "Sign in"}</button>
+            <button type="submit" className="btn btn-primary" style={{ width: "100%", marginTop: 16 }} disabled={busy}>{pw.busy ? "Signing in…" : "Sign in"}</button>
           </form>
         ) : (
           <form noValidate onSubmit={async (e) => {
