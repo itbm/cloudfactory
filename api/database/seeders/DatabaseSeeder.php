@@ -28,9 +28,9 @@ class DatabaseSeeder extends Seeder
     {
         $extensions = ['opcache', 'intl', 'gd', 'zip', 'redis', 'imagick', 'bcmath', 'soap', 'exif', 'mysqli', 'pdo_pgsql'];
         $plans = [
-            'Starter' => Plan::create(['name' => 'Starter', 'websites' => 3, 'mailboxes' => 10, 'databases' => 3, 'php_extensions' => array_slice($extensions, 0, 5), 'limits' => self::limits(1, 1, 10)]),
-            'Business' => Plan::create(['name' => 'Business', 'websites' => 10, 'mailboxes' => 50, 'databases' => 10, 'php_extensions' => $extensions, 'limits' => self::limits(2, 2, 40)]),
-            'Agency' => Plan::create(['name' => 'Agency', 'websites' => 50, 'mailboxes' => 200, 'databases' => 50, 'php_extensions' => $extensions, 'limits' => self::limits(4, 4, 100)]),
+            'Starter' => Plan::create(['name' => 'Starter', 'websites' => 3, 'mailboxes' => 10, 'databases' => 3, 'php_extensions' => array_slice($extensions, 0, 5), 'limits' => self::limits(1, 1, 10), 'database_servers' => 3, 'database_limits' => self::databaseLimits(1, 1, 10)]),
+            'Business' => Plan::create(['name' => 'Business', 'websites' => 10, 'mailboxes' => 50, 'databases' => 10, 'php_extensions' => $extensions, 'limits' => self::limits(2, 2, 40), 'database_servers' => 6, 'database_limits' => self::databaseLimits(2, 2, 40)]),
+            'Agency' => Plan::create(['name' => 'Agency', 'websites' => 50, 'mailboxes' => 200, 'databases' => 50, 'php_extensions' => $extensions, 'limits' => self::limits(4, 4, 100), 'database_servers' => 12, 'database_limits' => self::databaseLimits(4, 4, 100)]),
         ];
 
         $acme = Customer::create(['name' => 'Acme Ltd', 'email' => 'it@acme.example', 'role' => 'owner', 'plan_id' => $plans['Business']->id]);
@@ -73,6 +73,12 @@ class DatabaseSeeder extends Seeder
             ]);
             $website->domains()->create(['name' => $name, 'kind' => DomainKind::Primary, 'verification_token' => 'cf-sample', 'verified_at' => now(), 'dns_points_here' => true, 'certificate_state' => 'valid', 'certificate_expires_at' => now()->addDays(60)]);
         }
+    }
+
+    /** A database server has the vCPUs of a website, the half of its memory and the half of its disk space. */
+    private static function databaseLimits(float $vcpus, int $memoryGb, int $diskGb): array
+    {
+        return ['vcpus' => $vcpus, 'memoryBytes' => intdiv($memoryGb * self::GB, 2), 'diskBytes' => intdiv($diskGb * self::GB, 2)];
     }
 
     private static function limits(float $vcpus, int $memoryGb, int $diskGb): array

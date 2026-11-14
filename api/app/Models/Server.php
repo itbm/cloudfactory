@@ -27,7 +27,7 @@ class Server extends Model
      * The parts of a server that it can operate without. An agent of an earlier release does
      * not send "optional", so the panel also knows them by name.
      */
-    public const OPTIONAL_SERVICES = ['disk-quotas'];
+    public const OPTIONAL_SERVICES = ['disk-quotas', 'database-disk-limits'];
 
     /** The states of a server that can do work: a degraded server has a part that does not run. */
     public const WORKING = ['healthy', 'degraded'];
@@ -90,7 +90,7 @@ class Server extends Model
     }
 
     /**
-     * The ID of the customer whose database containers a new website of the customer uses on
+     * The ID of the customer whose database servers a new website of the customer can use on
      * this server. It is null when the agent of the server is from an earlier release: such
      * an agent has only the shared database containers.
      */
@@ -102,6 +102,12 @@ class Server extends Model
     public function websites(): HasMany
     {
         return $this->hasMany(Website::class);
+    }
+
+    /** The database servers of the customers on this server. */
+    public function databaseServers(): HasMany
+    {
+        return $this->hasMany(DatabaseServer::class);
     }
 
     /**

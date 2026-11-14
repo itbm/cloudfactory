@@ -398,10 +398,12 @@ paths:
       summary: Make a staging copy
       description: >-
         FR-205. The copy has the name `staging.<domain>`. It gets a copy of each MariaDB and
-        PostgreSQL database of the website, and one new database user for each engine with
-        read-write access to the copies. The data of a Valkey database is not copied: the copy gets
-        a new, empty Valkey database, with its own user, for each Valkey database of the website.
-        The response shows the passwords of the new users once.
+        PostgreSQL database of the website. Each copy is in the database server of its source
+        database, and each database server gets one new database user with read-write access to
+        the copies in it. The data of a Valkey database is not copied: the copy gets a new, empty
+        Valkey database, with its own user, for each Valkey database of the website. The response
+        shows the passwords of the new users once. The response is 422 when a database server
+        has no space for the copies.
       responses:
         '202':
           description: The job makes the copy.
@@ -421,6 +423,9 @@ paths:
                         user: { type: string }
                         password: { type: string }
                         databases: { type: array, items: { type: string } }
+                        host: { type: string, description: The host name that the application of the copy connects to. }
+                        port: { type: integer }
+                        databaseServerId: { type: [string, 'null'] }
         '422': { $ref: '#/components/responses/Invalid' }
 
   /v1/websites/{websiteId}/domains:
@@ -634,6 +639,11 @@ paths:
                         id: { type: string }
                         engine: { $ref: '#/components/schemas/Engine' }
                         name: { type: string }
+                        databaseServerId:
+                          type: [string, 'null']
+                          description: The database server that has the database. Null for the shared database containers of an earlier release.
+                        host: { type: string, description: 'The host name that the application of the website connects to, for example `mariadb.internal`.' }
+                        port: { type: integer, description: The port of the database server. }
                         sizeBytes: { type: integer, description: Not used for Valkey. }
                         number:
                           type: [integer, 'null']
@@ -643,6 +653,13 @@ paths:
                             null until the job that makes the database is complete.
                         keys: { type: [integer, 'null'], description: Valkey only. The number of keys in the last report of the server. }
                   users: { type: array, items: { $ref: '#/components/schemas/DatabaseUser' } }
+                  servers:
+                    type: array
+                    description: >-
+                      The database servers that can get a database of this website: those of its
+                      customer on its server. Empty for a website that uses the shared database
+                      containers of an earlier release.
+                    items: { $ref: '#/components/schemas/DatabaseServer' }
     post:
       tags: [Databases]
       summary: Create a database
@@ -652,18 +669,27 @@ paths:
         read-write access. Only the website container can connect.
 
 
-        Each customer has its own database containers on a server. The website container connects
-        to them with the host names `mariadb.internal`, `postgres.internal` and `valkey.internal`.
-        A website cannot connect to the database containers of a different customer.
+        Each database is in one database server of the customer of the website (see "Database
+        servers"). The website container connects to it with the host name `mariadb.internal`,
+        `postgres.internal` or `valkey.internal`, and the port of the database server. A website
+        cannot connect to the database servers of a different customer.
 
 
-        A Valkey database is a database number and a user with the same name in the Valkey
-        container of the customer. The application connects to the host `valkey.internal`, port
-        6379, with the user name, the password and the database number. The user has access to
-        that number only. `createUser` must not be false. The response is 422 when the agent of
-        the server did not report the engine (see `databaseEngines` of the server), and when the
-        website uses the shared database containers of an earlier release (see `sharedDatabases`
-        of the website). The list of the databases gives the number when the job is complete.
+        `databaseServerId` selects the database server. With none, the database goes into the
+        first database server of the engine that has space. When the customer has no database
+        server of the engine on the server of the website, the panel makes one with the plan of
+        the customer. The response is 422 when the database server has the number of databases
+        that its plan allows, and when the plan of the customer allows no more database servers.
+
+
+        A Valkey database is a database number and a user with the same name in a Valkey
+        database server. The application connects to the host `valkey.internal` and the port of
+        the database server, with the user name, the password and the database number. The user
+        has access to that number only. `createUser` must not be false. The response is 422 when
+        the agent of the server did not report the engine (see `databaseEngines` of the server),
+        and when the website uses the shared database containers of an earlier release (see
+        `sharedDatabases` of the website). The list of the databases gives the number when the
+        job is complete.
       requestBody:
         required: true
         content:
@@ -675,6 +701,9 @@ paths:
                 engine: { $ref: '#/components/schemas/Engine' }
                 name: { type: string, pattern: '^[a-z0-9][a-z0-9_]{0,31}$', description: The name after the prefix. You can also give the full name. }
                 createUser: { type: boolean, default: true }
+                databaseServerId:
+                  type: [string, 'null']
+                  description: A database server of the customer of the website, on the server of the website, with the engine of the database.
       responses:
         '202':
           description: The password is shown only once. The panel does not keep it.
@@ -687,6 +716,9 @@ paths:
                   name: { type: string }
                   user: { type: [string, 'null'] }
                   password: { type: [string, 'null'] }
+                  databaseServerId: { type: [string, 'null'] }
+                  host: { type: string }
+                  port: { type: integer }
                   job: { $ref: '#/components/schemas/Job' }
         '422': { $ref: '#/components/responses/Invalid' }
 
@@ -714,6 +746,12 @@ paths:
         A user can have access to more than one database of the website, with a permission for each
         database. For example, a sync user can have read-only access to production and read-write
         access to staging. The engine cannot be `valkey`: a Valkey database comes with its user.
+
+
+        A user is in one database server: the database server of its databases. The response is
+        422 when the databases are in more than one database server. A user with no database
+        needs `databaseServerId` when the customer has more than one database server of the
+        engine on the server of the website.
       requestBody:
         required: true
         content:
@@ -726,6 +764,7 @@ paths:
                 name: { type: string, pattern: '^[a-z0-9][a-z0-9_]{0,31}$', description: The name after the prefix. }
                 access: { type: string, enum: [website, anywhere], default: website }
                 grants: { type: array, items: { $ref: '#/components/schemas/GrantInput' } }
+                databaseServerId: { type: [string, 'null'], description: The database server of a user with no database. }
       responses:
         '202': { $ref: '#/components/responses/DatabaseUserJob' }
         '422': { $ref: '#/components/responses/Invalid' }
@@ -738,8 +777,9 @@ paths:
       tags: [Databases]
       summary: Change a database user
       description: >-
-        "grants" replaces all grants of the user. "resetPassword" makes a new password. The user of
-        a Valkey database accepts only "resetPassword".
+        "grants" replaces all grants of the user. Each database must be in the database server of
+        the user. "resetPassword" makes a new password. The user of a Valkey database accepts
+        only "resetPassword".
       requestBody:
         required: true
         content:
@@ -761,6 +801,166 @@ paths:
       responses:
         '202': { $ref: '#/components/responses/JobOnly' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/database-servers:
+    get:
+      tags: [Databases]
+      summary: List database servers
+      description: >-
+        The database servers of the customers that you can see. A customer makes database
+        servers as it makes websites. A database server is one container with one engine
+        (MariaDB, PostgreSQL or Valkey), its own data and its own limits for CPU, memory and
+        disk space. All websites of the customer on the same server can connect to it.
+      parameters:
+        - { name: customerId, in: query, schema: { type: string } }
+        - { name: serverId, in: query, schema: { type: string } }
+        - { name: engine, in: query, schema: { $ref: '#/components/schemas/Engine' } }
+      responses:
+        '200':
+          description: The database servers.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/DatabaseServer' } }
+    post:
+      tags: [Databases]
+      summary: Create a database server
+      description: >-
+        The plan of the customer gives the number of database servers that the customer can
+        have (`databaseServers` of the plan). For a reseller, the database servers of its
+        customers count too. The new database server gets the plan of the customer: the plan
+        gives its limits (`databaseLimits`) and the number of its databases (`databases`). Only
+        an administrator, or the reseller of the customer, can select a different plan. Only an
+        administrator can set `limits`.
+
+
+        The first database server of an engine has the usual port of the engine (3306, 5432 or
+        6379). A second one of the same engine, for the same customer on the same server, has
+        the next port.
+
+
+        The database server is on a server that has a website of the customer: by default the
+        server with the most websites of the customer. The response is 422 when the customer has
+        no website, when the agent of the server cannot operate database servers or the engine,
+        and when the plan allows no more database servers.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [engine]
+              properties:
+                engine: { $ref: '#/components/schemas/Engine' }
+                name:
+                  type: [string, 'null']
+                  pattern: '^[a-z0-9]([a-z0-9-]{0,38}[a-z0-9])?$'
+                  description: A name for the customer, for example "shop". With none, the name is the engine and a number, for example "mariadb-1".
+                customerId: { type: [string, 'null'], description: Default is the customer of the user. }
+                planId: { type: [string, 'null'], description: Default is the plan of the customer. }
+                serverId: { type: [string, 'null'], description: An administrator can select each server with the web role. Other users can select a server that has a website of the customer. }
+                limits: { $ref: '#/components/schemas/DatabaseLimits' }
+      responses:
+        '202':
+          description: The job makes the database server.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  databaseServer: { $ref: '#/components/schemas/DatabaseServer' }
+                  job: { $ref: '#/components/schemas/Job' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { description: The customer is suspended. }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/database-servers/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    get:
+      tags: [Databases]
+      summary: Get a database server
+      responses:
+        '200':
+          description: The database server.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DatabaseServer' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Databases]
+      summary: Change a database server
+      description: >-
+        Changes the name, the plan or the limits. A new plan gives the database server the
+        limits of that plan. Only an administrator, or the reseller of the customer, can select
+        the plan, and only an administrator can set `limits`. The response is 422 when the
+        database server has more databases than the new plan allows, and when a change of the
+        database server is in progress.
+
+
+        New limits restart the database server. The agent makes the disk larger while the
+        database server operates. To make the disk smaller, the agent stops the database server.
+        When the data does not fit on the smaller disk, the job fails, and the database server
+        keeps its plan and its limits.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, pattern: '^[a-z0-9]([a-z0-9-]{0,38}[a-z0-9])?$' }
+                planId: { type: string }
+                limits: { $ref: '#/components/schemas/DatabaseLimits' }
+      responses:
+        '200':
+          description: Changed. `job` is null when the limits did not change.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  databaseServer: { $ref: '#/components/schemas/DatabaseServer' }
+                  job: { oneOf: [{ $ref: '#/components/schemas/Job' }, { type: 'null' }] }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+    delete:
+      tags: [Databases]
+      summary: Remove a database server
+      description: >-
+        The agent stops the database server and removes its data. The response is 422 when the
+        database server has a database or a database user: remove them first. The database
+        server has the status `removing` until the job is complete.
+      responses:
+        '202': { $ref: '#/components/responses/JobOnly' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/database-servers/{id}/retry:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [Databases]
+      summary: Make a failed database server again
+      description: >-
+        For a database server with the status `failed`: the agent could not make it, for example
+        because the server could not pull the image. The response is 422 for each other status.
+      responses:
+        '202':
+          description: The job makes the database server.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  databaseServer: { $ref: '#/components/schemas/DatabaseServer' }
+                  job: { $ref: '#/components/schemas/Job' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: The customer is suspended. }
         '422': { $ref: '#/components/responses/Invalid' }
 
   /v1/websites/{websiteId}/snapshots:
@@ -892,6 +1092,7 @@ paths:
       summary: List jobs
       parameters:
         - { name: websiteId, in: query, schema: { type: string } }
+        - { name: databaseServerId, in: query, schema: { type: string } }
         - { name: serverId, in: query, schema: { type: string } }
         - { name: perPage, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 25 } }
         - { name: state, in: query, schema: { $ref: '#/components/schemas/JobState' } }
@@ -1086,16 +1287,18 @@ paths:
       - { $ref: '#/components/parameters/Id' }
     post:
       tags: [Servers]
-      summary: Give each customer its own database containers
+      summary: Move the databases of a server to database servers
       description: >-
-        Each customer has its own MariaDB, PostgreSQL and Valkey containers on a server. On a
-        server from an earlier release, all websites use one MariaDB container and one PostgreSQL
-        container. This request starts one job for each website of the server that uses the
-        shared containers (see `sharedDatabases` of the website). The job copies the databases
-        and the database users of the website to the containers of its customer. The passwords,
-        the host names and the ports stay the same. The website does not operate during the copy
-        of its databases. When the last website has moved, the agent stops the shared containers.
-        Their data stays on the disk of the server.
+        Each customer has its own database servers. On a server from an earlier release, all
+        websites use one shared MariaDB container and one shared PostgreSQL container. This
+        request starts one job for each website of the server that uses the shared containers
+        (see `sharedDatabases` of the website). The job copies the databases and the database
+        users of the website to database servers of its customer: one for each engine, on the
+        usual port of the engine. The panel makes a database server that the customer does not
+        have, with the plan of the customer. The plan does not limit the number of these
+        database servers. The passwords, the host names and the ports stay the same. The website
+        does not operate during the copy of its databases. When the last website has moved, the
+        agent stops the shared containers. Their data stays on the disk of the server.
 
 
         The response has no job for a website that the panel makes now, and for a website with a
@@ -1849,8 +2052,8 @@ components:
           type: boolean
           description: >-
             True when the website uses the shared database containers of an earlier release.
-            False when it uses the database containers of its customer. A website with the shared
-            containers cannot have a Valkey database.
+            False when its databases are in database servers of its customer. A website with the
+            shared containers cannot have a Valkey database.
         managedByTerraform: { type: boolean }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
@@ -1877,6 +2080,7 @@ components:
         step: { type: integer, description: The number of steps that are complete. }
         error: { type: [string, 'null'], description: An administrator gets the full error of the agent. Other users get a short text. }
         websiteId: { type: [string, 'null'] }
+        databaseServerId: { type: [string, 'null'], description: The database server of the job. A user sees the jobs of the websites and of the database servers of its customers. }
         serverId: { type: string }
         createdAt: { type: string, format: date-time }
         finishedAt: { type: [string, 'null'], format: date-time }
@@ -1954,15 +2158,16 @@ components:
         databaseInstances:
           type: boolean
           description: >-
-            True when the agent of the server gives each customer its own database containers.
+            True when the agent of the server can operate the database servers of customers.
             With an agent of an earlier release, all websites of the server use the same
             database containers.
         sharedDatabaseWebsites:
           type: [integer, 'null']
           description: >-
             The number of websites of the server that use the shared database containers of an
-            earlier release. Send "Give each customer its own database containers" to move their
-            databases. Null when `databaseInstances` is false.
+            earlier release. Send "Move the databases of a server to database servers" to move
+            their databases. Null when `databaseInstances` is false.
+        databaseServers: { type: [integer, 'null'], description: The number of database servers of customers on the server. A server with database servers cannot be removed. }
         os: { type: [string, 'null'] }
         kernel: { type: [string, 'null'] }
         arch: { type: [string, 'null'] }
@@ -2079,12 +2284,50 @@ components:
           properties:
             state: { type: string, enum: [pending, valid, expired, failed] }
             expiresAt: { type: [string, 'null'], format: date-time }
+    DatabaseLimits:
+      type: object
+      description: The limits of a database server. The agent applies the disk limit with a disk image of this size.
+      required: [vcpus, memoryBytes, diskBytes]
+      properties:
+        vcpus: { type: number, exclusiveMinimum: 0 }
+        memoryBytes: { type: integer, minimum: 536870912, description: 512 MB or more. }
+        diskBytes: { type: integer, minimum: 1073741824, description: 1 GB or more. }
+    DatabaseServer:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        engine: { $ref: '#/components/schemas/Engine' }
+        customerId: { type: string }
+        serverId: { type: string, description: The server that has the container. }
+        planId: { type: string, description: The plan gives the limits and the number of databases. }
+        status:
+          type: string
+          enum: [starting, running, stopped, failed, removing]
+          description: >-
+            "starting": the agent makes the database server. "stopped": the agent reports that the
+            container does not operate. "failed": the agent could not make the database server.
+            "removing": the agent removes the database server.
+        host: { type: string, description: 'The host name that a website container connects to: `mariadb.internal`, `postgres.internal` or `valkey.internal`.' }
+        port: { type: integer, description: The port that a website container connects to. }
+        limits: { $ref: '#/components/schemas/DatabaseLimits' }
+        usage:
+          type: [object, 'null']
+          description: The last report of the agent.
+          properties:
+            memoryBytes: { type: integer }
+            diskBytes: { type: integer, description: The disk space that the database server uses. }
+            diskSizeBytes: { type: integer, description: The size of the disk of the database server. 0 when the server does not apply a disk limit. }
+        databases: { type: integer, description: The number of databases in the database server. }
+        maxDatabases: { type: integer, description: The number of databases that the plan of the database server allows. }
+        createdAt: { type: string, format: date-time }
     DatabaseUser:
       type: object
       properties:
         id: { type: string }
         engine: { $ref: '#/components/schemas/Engine' }
         name: { type: string, description: Starts with the Unix user of the website and an underscore. }
+        databaseServerId: { type: [string, 'null'], description: The database server of the user. Null for the shared database containers of an earlier release. }
         access: { type: string, enum: [website, anywhere], description: '"website": only the website container can connect. "anywhere": any address, with TLS.' }
         grants: { type: array, items: { $ref: '#/components/schemas/DatabaseGrant' } }
     DatabaseGrant:
@@ -2097,7 +2340,7 @@ components:
       type: object
       required: [databaseId, privileges]
       properties:
-        databaseId: { type: string, description: A MariaDB or PostgreSQL database of the same website, with the same engine. }
+        databaseId: { type: string, description: 'A MariaDB or PostgreSQL database of the same website, with the same engine, in the database server of the user.' }
         privileges: { type: string, enum: [readonly, readwrite] }
     Customer:
       type: object
@@ -2113,6 +2356,7 @@ components:
         suspended: { type: boolean }
         suspendedBy: { type: [string, 'null'], enum: [administrator, reseller, null] }
         websites: { type: [integer, 'null'] }
+        databaseServers: { type: [integer, 'null'], description: The number of database servers of the customer. }
         createdAt: { type: string, format: date-time }
     PlanInput:
       type: object
@@ -2121,9 +2365,28 @@ components:
         name: { type: string }
         websites: { type: integer, minimum: 1 }
         mailboxes: { type: integer, minimum: 0 }
-        databases: { type: integer, minimum: 0 }
+        databases:
+          type: integer
+          minimum: 0
+          description: >-
+            The number of databases of each database server with the plan. For a website that
+            uses the shared database containers of an earlier release, it is the number of
+            databases of the website.
         phpExtensions: { type: array, items: { type: string } }
-        limits: { $ref: '#/components/schemas/Limits' }
+        limits: { $ref: '#/components/schemas/Limits', description: The limits of each website with the plan. }
+        databaseServers:
+          type: integer
+          minimum: 0
+          description: >-
+            The number of database servers of a customer with the plan. A request with no value
+            keeps the value of the plan. A new plan gets 3.
+        databaseLimits:
+          $ref: '#/components/schemas/DatabaseLimits'
+          description: >-
+            The limits of each database server with the plan. A request with no value keeps the
+            limits of the plan. A new plan gets the vCPUs of a website, the half of its memory
+            and the half of its disk space. A change gives the new limits to the database
+            servers of the plan that have the limits of the plan.
     Plan:
       allOf:
         - { $ref: '#/components/schemas/PlanInput' }
@@ -2174,7 +2437,7 @@ components:
               name: { type: string }
               state: { type: string, enum: [running, stopped, failed] }
               detail: { type: string, maxLength: 1000, description: The reason when the service does not run. }
-              optional: { type: boolean, description: The server can operate without this part. The panel also knows `disk-quotas` as an optional part. }
+              optional: { type: boolean, description: 'The server can operate without this part. The panel also knows `disk-quotas` and `database-disk-limits` as optional parts.' }
         usage:
           type: object
           description: The use of the host in percent.
@@ -2204,7 +2467,7 @@ components:
               expiresAt: { type: string, format: date-time }
         databases:
           type: [array, 'null']
-          description: The size of each database in the shared database containers.
+          description: The size of each database on the server.
           items:
             type: object
             properties:
@@ -2219,7 +2482,19 @@ components:
           items: { $ref: '#/components/schemas/Engine' }
         databaseInstances:
           type: boolean
-          description: True when the agent gives each customer its own database containers. An agent of an earlier release does not send the field.
+          description: True when the agent can operate the database servers of customers. An agent of an earlier release does not send the field.
+        databaseServers:
+          type: [array, 'null']
+          description: The state and the resource use of each database server on the server.
+          items:
+            type: object
+            required: [id, state]
+            properties:
+              id: { type: string }
+              state: { type: string, enum: [running, stopped] }
+              memoryBytes: { type: integer }
+              diskBytes: { type: integer }
+              diskSizeBytes: { type: integer, description: 0 when the server does not apply a disk limit to the database server. }
         sftpPort: { type: [integer, 'null'], minimum: 1, maximum: 65535 }
         panelCertificate:
           type: [object, 'null']

@@ -12,6 +12,7 @@ use App\Http\Resources\WebsiteResource;
 use App\Models\AgentJob;
 use App\Models\Customer;
 use App\Models\Database;
+use App\Models\DatabaseServer;
 use App\Models\Image;
 use App\Models\Plan;
 use App\Models\Server;
@@ -19,6 +20,7 @@ use App\Models\User;
 use App\Models\Website;
 use App\Services\Audit;
 use App\Services\DatabaseNames;
+use App\Services\DatabaseServers;
 use App\Services\DomainPolicy;
 use App\Services\JobDispatcher;
 use Illuminate\Http\JsonResponse;
@@ -127,7 +129,7 @@ class WebsiteController extends Controller
                 'extensions' => $image->isPhp() ? array_values(array_intersect(self::DEFAULT_EXTENSIONS, $plan->php_extensions)) : [],
                 'php_ini' => $image->isPhp() ? ['memory_limit' => '256M', 'upload_max_filesize' => '64M', 'max_execution_time' => '60'] : [],
                 'limits' => $plan->limits,
-                // The website uses the database containers of its customer on the server.
+                // The website can use the database servers of its customer on the server.
                 'database_instance' => $server->databaseInstanceFor($customer->id),
             ]);
             $website->domains()->create($domain);
@@ -171,8 +173,10 @@ class WebsiteController extends Controller
         $plan = null;
         if (isset($data['planId']) && $data['planId'] !== $website->plan_id) {
             $plan = Plan::findOrFail($data['planId']);
-            // Audit finding R6: the website must be in the limits of the new plan.
-            $databases = $website->databases()->count();
+            // Audit finding R6: the website must be in the limits of the new plan. The plan of
+            // a website gives the number of its databases only for the shared database
+            // containers of an earlier release. If not, the plan of each database server does.
+            $databases = $website->database_instance === null ? $website->databases()->count() : 0;
             if ($databases > $plan->databases) {
                 throw ValidationException::withMessages(['planId' => "The {$plan->name} plan allows {$plan->databases} databases. This website has {$databases}."]);
             }
@@ -201,12 +205,14 @@ class WebsiteController extends Controller
     {
         $website = $this->findWebsite($request, $id);
         // The agent also removes the databases and the database users of the website, so that a
-        // later website with the same Unix user does not get them.
+        // later website with the same Unix user does not get them. The database servers of
+        // the customer stay.
+        $ref = fn ($item) => ['engine' => $item->engine, 'name' => $item->name, ...($item->database_server_id ? ['databaseServer' => $item->database_server_id] : [])];
         $job = $this->jobs->dispatch($website->server, AgentAction::DeleteWebsite, [
             'websiteId' => $website->id,
             'unixUser' => $website->unix_user,
-            'databases' => $website->databases()->orderBy('name')->get(['engine', 'name'])->map(fn ($d) => ['engine' => $d->engine, 'name' => $d->name])->all(),
-            'databaseUsers' => $website->databaseUsers()->orderBy('name')->get(['engine', 'name'])->map(fn ($u) => ['engine' => $u->engine, 'name' => $u->name])->all(),
+            'databases' => $website->databases()->orderBy('name')->get()->map($ref)->all(),
+            'databaseUsers' => $website->databaseUsers()->orderBy('name')->get()->map($ref)->all(),
         ], "Remove website {$website->name}", $website);
         Audit::record($request, 'Removed website', $website->name, $website->customer_id);
 
@@ -244,7 +250,8 @@ class WebsiteController extends Controller
             throw ValidationException::withMessages(['website' => 'The panel could not make this staging copy. Delete it, and make the staging copy again.']);
         }
         // A website with no databases does not need the shared database containers of an
-        // earlier release: it gets the containers of its customer when the agent has them now.
+        // earlier release: it can use the database servers of its customer when the agent has
+        // them now.
         $instance = $website->database_instance ?? ($website->databases()->exists() || $website->databaseUsers()->exists() ? null : $website->server->databaseInstanceFor($website->customer_id));
         $website->update(['status' => WebsiteStatus::Starting, 'database_instance' => $instance]);
 
@@ -288,14 +295,21 @@ class WebsiteController extends Controller
         if (Website::where('name', $name)->exists()) {
             throw ValidationException::withMessages(['name' => "{$name} exists."]);
         }
-        // Audit finding R6: the copy gets a copy of each database, and has the same plan.
+        // The copy is a new website, so its databases are in database servers of its customer,
+        // also when the source uses the shared containers of an earlier release. Only an
+        // agent of an earlier release has no database servers.
+        $instance = $source->server->databaseInstanceFor($source->customer_id);
+        // Audit finding R6: the copy gets a copy of each database, and has the same plan. With
+        // the shared containers, that plan gives the number of databases of the copy.
         $databases = $source->databases()->count();
-        if ($databases > $source->plan->databases) {
+        if ($instance === null && $databases > $source->plan->databases) {
             throw ValidationException::withMessages(['name' => "The {$source->plan->name} plan allows {$source->plan->databases} databases for each website. This website has {$databases}."]);
         }
         $proved = DomainController::checkName($this->domains, $name, $source->customer_id, $request);
         $domain = DomainController::newDomain($this->domains, $request, $source->customer_id, $name, DomainKind::Primary, $proved);
-        $copy = DB::transaction(function () use ($source, $name, $domain) {
+        // The copy and its databases are one transaction: when a database server has no space
+        // for the copies, the panel makes nothing.
+        [$copy, $copies, $users, $credentials, $servers] = DB::transaction(function () use ($source, $name, $domain, $instance) {
             // CF-09: a staging copy is a website, so the plan limit applies.
             self::checkWebsiteLimit($source->customer);
             // Audit finding R7: the copy has no SFTP account on the server, so it does not get
@@ -308,15 +322,12 @@ class WebsiteController extends Controller
                 'status' => WebsiteStatus::Starting,
                 'staging_of' => $source->id,
                 'managed_by_terraform' => false,
-                // The copy is a new website, so it uses the database containers of its customer,
-                // also when the source uses the shared containers of an earlier release.
-                'database_instance' => $source->server->databaseInstanceFor($source->customer_id),
+                'database_instance' => $instance,
             ])->save();
             $copy->domains()->create($domain);
 
-            return $copy;
+            return [$copy, ...$this->copyDatabases($source, $copy)];
         });
-        [$copies, $users, $credentials] = $this->copyDatabases($source, $copy);
         $payload = JobDispatcher::websitePayload($copy) + [
             'copyFrom' => $source->id,
             'copyFromUnixUser' => $source->unix_user,
@@ -324,6 +335,8 @@ class WebsiteController extends Controller
             // databases of the live website.
             'copyDatabases' => $copies,
             'copyUsers' => $users,
+            // The database servers of the copies. The agent makes one that it does not have.
+            'databaseServers' => array_map(fn (DatabaseServer $s) => $s->forAgent(), $servers),
         ];
         $job = $this->jobs->dispatch($copy->server, AgentAction::CreateWebsite, $payload, "Make staging copy of {$source->name}", $copy);
         // The passwords are in the payload for the agent only. The panel removes them when the job ends.
@@ -338,46 +351,87 @@ class WebsiteController extends Controller
     }
 
     /**
-     * FR-205: each database of the source gets a copy with the prefix of the copy, and each engine
-     * gets one new user with read-write access to its copies.
+     * FR-205: each database of the source gets a copy with the prefix of the copy. Each copy is
+     * in the database server of its source database, and each database server gets one new
+     * user with read-write access to the copies in it.
      *
-     * @return array{0: list<array>, 1: list<array>, 2: list<array>}
+     * A source database in the shared containers of an earlier release has no database
+     * server. Its copy goes into the first database server of the engine, which the panel
+     * makes when the customer has none.
+     *
+     * The caller runs this in a transaction.
+     *
+     * @return array{0: list<array>, 1: list<array>, 2: list<array>, 3: list<DatabaseServer>}
      */
     private function copyDatabases(Website $source, Website $copy): array
     {
-        $copies = $users = $credentials = [];
+        $copies = $users = $credentials = $servers = [];
         $from = DatabaseNames::prefix($source);
         $to = DatabaseNames::prefix($copy);
-        DB::transaction(function () use ($source, $copy, $from, $to, &$copies, &$users, &$credentials) {
-            foreach ($source->sqlDatabases()->orderBy('name')->get()->groupBy('engine') as $engine => $databases) {
-                $user = $copy->databaseUsers()->create(['engine' => $engine, 'name' => $to.'app', 'access' => 'website']);
+        $shared = $copy->database_instance === null;
+        $connection = fn (string $engine, ?DatabaseServer $server) => [
+            'host' => DatabaseServer::HOSTS[$engine],
+            'port' => $server?->port ?? DatabaseServer::FIRST_PORT[$engine],
+            'databaseServerId' => $server?->id,
+        ];
+        // The database server that gets the copy of a database.
+        $target = function (Database $database) use ($source, $copy, $shared, &$servers): ?DatabaseServer {
+            if ($shared) {
+                return null;
+            }
+            $key = $database->database_server_id ?? 'shared:'.$database->engine;
+            if (! isset($servers[$key])) {
+                $servers[$key] = $database->databaseServer
+                    ?? DatabaseServers::forWebsite($copy)->firstWhere('engine', $database->engine)
+                    ?? DatabaseServers::make($source->customer, $source->server, $database->engine, field: 'name');
+            }
+
+            return $servers[$key];
+        };
+        $all = $source->databases()->with('databaseServer')->orderBy('name')->get();
+        // The plan of each database server gives the number of its databases.
+        foreach ($all->groupBy(fn (Database $d) => $target($d)?->id ?? '') as $serverId => $databases) {
+            if ($serverId !== '') {
+                DatabaseServers::checkSpace($target($databases[0]), $databases->count());
+            }
+        }
+        foreach ($all->whereIn('engine', Database::SQL_ENGINES)->groupBy('engine') as $engine => $ofEngine) {
+            $number = 0;
+            // The database servers in the sequence of their ports: the first database server of
+            // an engine has the user "app". The next ones have "app2", "app3", and so on.
+            foreach ($ofEngine->groupBy(fn (Database $d) => $target($d)?->id ?? '')->sortBy(fn ($databases) => $target($databases[0])?->port ?? 0) as $databases) {
+                $server = $target($databases[0]);
+                $number++;
+                $user = $copy->databaseUsers()->create(['engine' => $engine, 'name' => $to.'app'.($number > 1 ? $number : ''), 'access' => 'website', 'database_server_id' => $server?->id]);
                 $password = Str::password(24, symbols: false);
                 $names = [];
                 foreach ($databases as $database) {
                     $name = $to.substr($database->name, strlen($from));
-                    $new = $copy->databases()->create(['engine' => $engine, 'name' => $name]);
+                    $new = $copy->databases()->create(['engine' => $engine, 'name' => $name, 'database_server_id' => $server?->id]);
                     $user->databases()->attach($new->id, ['privileges' => 'readwrite']);
-                    $copies[] = ['engine' => $engine, 'from' => $database->name, 'to' => $name];
+                    $copies[] = array_filter(['engine' => $engine, 'from' => $database->name, 'to' => $name, 'fromServer' => $database->database_server_id, 'toServer' => $server?->id]);
                     $names[] = $name;
                 }
-                $users[] = ['engine' => $engine, 'name' => $user->name, 'password' => $password];
-                $credentials[] = ['engine' => $engine, 'user' => $user->name, 'password' => $password, 'databases' => $names];
+                $users[] = array_filter(['engine' => $engine, 'name' => $user->name, 'password' => $password, 'databaseServer' => $server?->id]);
+                $credentials[] = ['engine' => $engine, 'user' => $user->name, 'password' => $password, 'databases' => $names] + $connection($engine, $server);
             }
-            // Valkey: the data of a cache is for one website. The copy gets a new, empty Valkey
-            // database for each Valkey database of the source, with its own user and password.
-            // For the agent, a copy user of the engine Valkey is that database.
-            foreach ($source->databases()->where('engine', Database::VALKEY)->orderBy('name')->get() as $database) {
-                $name = $to.substr($database->name, strlen($from));
-                $new = $copy->databases()->create(['engine' => Database::VALKEY, 'name' => $name]);
-                $user = $copy->databaseUsers()->create(['engine' => Database::VALKEY, 'name' => $name, 'access' => 'website']);
-                $user->databases()->attach($new->id, ['privileges' => 'readwrite']);
-                $password = Str::password(24, symbols: false);
-                $users[] = ['engine' => Database::VALKEY, 'name' => $name, 'password' => $password];
-                $credentials[] = ['engine' => Database::VALKEY, 'user' => $name, 'password' => $password, 'databases' => [$name]];
-            }
-        });
+        }
+        // Valkey: the data of a cache is for one website. The copy gets a new, empty Valkey
+        // database for each Valkey database of the source, in the same database server, with
+        // its own user and password. For the agent, a copy user of the engine Valkey is that
+        // database.
+        foreach ($all->where('engine', Database::VALKEY) as $database) {
+            $server = $target($database);
+            $name = $to.substr($database->name, strlen($from));
+            $new = $copy->databases()->create(['engine' => Database::VALKEY, 'name' => $name, 'database_server_id' => $server?->id]);
+            $user = $copy->databaseUsers()->create(['engine' => Database::VALKEY, 'name' => $name, 'access' => 'website', 'database_server_id' => $server?->id]);
+            $user->databases()->attach($new->id, ['privileges' => 'readwrite']);
+            $password = Str::password(24, symbols: false);
+            $users[] = array_filter(['engine' => Database::VALKEY, 'name' => $name, 'password' => $password, 'databaseServer' => $server?->id]);
+            $credentials[] = ['engine' => Database::VALKEY, 'user' => $name, 'password' => $password, 'databases' => [$name]] + $connection(Database::VALKEY, $server);
+        }
 
-        return [$copies, $users, $credentials];
+        return [$copies, $users, $credentials, collect($servers)->unique('id')->sortBy([['engine', 'asc'], ['port', 'asc']])->values()->all()];
     }
 
     /**
@@ -409,7 +463,7 @@ class WebsiteController extends Controller
      * CF-07: an administrator, or the reseller of the customer, can select the plan. R-07: a
      * reseller can select only the plans that the administrator set for it.
      */
-    private static function canChoosePlan(User $user, Customer $customer, string $planId): bool
+    public static function canChoosePlan(User $user, Customer $customer, string $planId): bool
     {
         return $user->isAdministrator() || ($user->role === Role::Reseller && $customer->reseller_id !== null && $customer->reseller_id === $user->customer_id
             && in_array($planId, $user->customer->allowedPlanIds(), true));

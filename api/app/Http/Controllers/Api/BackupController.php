@@ -64,7 +64,9 @@ class BackupController extends Controller
             'websiteId' => $website->id,
             'unixUser' => $website->unix_user,
             'kind' => $kind,
-            'databases' => $website->sqlDatabases()->orderBy('name')->get(['engine', 'name'])->map(fn ($d) => ['engine' => $d->engine, 'name' => $d->name])->all(),
+            // Each database with the ID of its database server. The shared database containers
+            // of an earlier release have no ID.
+            'databases' => $website->sqlDatabases()->orderBy('name')->get()->map(fn ($d) => ['engine' => $d->engine, 'name' => $d->name, ...($d->database_server_id ? ['databaseServer' => $d->database_server_id] : [])])->all(),
             'target' => self::repository($website->server),
             'retention' => $retention,
         ];
@@ -131,7 +133,7 @@ class BackupController extends Controller
             'removeNewFiles' => ['sometimes', 'boolean', 'prohibited_unless:scope,website'],
         ]);
         $removeNewFiles = (bool) ($data['removeNewFiles'] ?? false);
-        $dumpHash = null;
+        $dumpHash = $databaseServer = null;
         if ($data['scope'] === 'database') {
             $request->validate(['item' => [Rule::in($snapshot->databases)]]);
             // CF-06: the agent restores a dump only when its hash agrees with the hash from the backup.
@@ -139,6 +141,13 @@ class BackupController extends Controller
             if (! $dumpHash) {
                 throw ValidationException::withMessages(['item' => 'This backup has no checked dump of the database.']);
             }
+            // The agent restores the dump into the database server that has the database now.
+            [$engine, $name] = array_pad(explode(':', $data['item'], 2), 2, '');
+            $database = $website->databases()->where(['engine' => $engine, 'name' => $name])->first();
+            if (! $database && $website->database_instance !== null) {
+                throw ValidationException::withMessages(['item' => "This website does not have the database {$name} now. Make a database with this name, then restore the backup."]);
+            }
+            $databaseServer = $database?->database_server_id;
         }
         if ($data['scope'] === 'file') {
             $request->validate(['item' => ['regex:#^/[^\0]*$#', 'not_regex:#(^|/)\.\.(/|$)#']]);
@@ -152,6 +161,7 @@ class BackupController extends Controller
             'scope' => $data['scope'],
             'item' => $data['item'] ?? null,
             'dumpSha256' => $dumpHash,
+            ...($databaseServer ? ['databaseServer' => $databaseServer] : []),
             'deleteExtra' => $removeNewFiles,
             // A snapshot from before the change to one repository for each server is in the
             // repository that all servers used. AgentClient then sends the old password.

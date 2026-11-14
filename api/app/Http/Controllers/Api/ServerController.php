@@ -10,12 +10,14 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\JobResource;
 use App\Models\AgentJob;
 use App\Models\Database;
+use App\Models\DatabaseServer;
 use App\Models\DatabaseUser;
 use App\Models\JoinToken;
 use App\Models\Server;
 use App\Models\Website;
 use App\Services\AgentClient;
 use App\Services\Audit;
+use App\Services\DatabaseServers;
 use App\Services\JobDispatcher;
 use App\Services\PanelCertificate;
 use Illuminate\Http\JsonResponse;
@@ -32,12 +34,12 @@ class ServerController extends Controller
 
     public function index(): JsonResponse
     {
-        return response()->json(['data' => Server::withCount(['websites', 'sharedDatabaseWebsites'])->orderBy('name')->get()->map(fn (Server $s) => self::present($s))]);
+        return response()->json(['data' => Server::withCount(['websites', 'sharedDatabaseWebsites', 'databaseServers'])->orderBy('name')->get()->map(fn (Server $s) => self::present($s))]);
     }
 
     public function show(string $id): JsonResponse
     {
-        return response()->json(self::present(Server::withCount(['websites', 'sharedDatabaseWebsites'])->findOrFail($id)));
+        return response()->json(self::present(Server::withCount(['websites', 'sharedDatabaseWebsites', 'databaseServers'])->findOrFail($id)));
     }
 
     public function update(Request $request, string $id): JsonResponse
@@ -156,56 +158,79 @@ class ServerController extends Controller
     }
 
     /**
-     * Gives each customer its own database containers on a server from an earlier release. On
-     * such a server, all websites use one MariaDB container and one PostgreSQL container.
+     * Moves the databases of a server from an earlier release to database servers. On such a
+     * server, all websites use one shared MariaDB container and one shared PostgreSQL
+     * container.
      *
      * The panel starts one job for each website that uses the shared containers. The job copies
-     * the databases and the database users of the website to the containers of its customer.
-     * The passwords, the host names and the ports stay the same. A website does not operate
-     * during the copy of its databases.
+     * the databases and the database users of the website to database servers of its
+     * customer: one for each engine, on the usual port of the engine. The panel makes a
+     * database server that the customer does not have. The passwords, the host names and the
+     * ports stay the same. A website does not operate during the copy of its databases.
      */
     public function moveDatabases(Request $request, string $id): JsonResponse
     {
         $server = Server::findOrFail($id);
         if (! $server->database_instances) {
-            throw ValidationException::withMessages(['server' => "The agent on the server {$server->name} did not report that it can give each customer its own database containers. Update the agent of the server, then try again."]);
+            throw ValidationException::withMessages(['server' => "The agent on the server {$server->name} did not report that it can operate database servers. Update the agent of the server, then try again."]);
         }
         $open = AgentJob::where('server_id', $server->id)->where('action', AgentAction::MoveDatabases->value)
             ->whereIn('state', [JobState::Queued->value, JobState::Running->value])->pluck('website_id')->all();
         $jobs = [];
-        foreach ($server->sharedDatabaseWebsites()->with(['databases', 'databaseUsers.databases'])->orderBy('name')->get() as $website) {
+        foreach ($server->sharedDatabaseWebsites()->with(['databases', 'databaseUsers.databases', 'customer', 'server'])->orderBy('name')->get() as $website) {
             // A website that the panel makes now is not on the server yet. A website with an
             // open job moves already.
             if ($website->status === WebsiteStatus::Starting || in_array($website->id, $open, true)) {
                 continue;
             }
-            $jobs[] = $this->jobs->dispatch($server, AgentAction::MoveDatabases, self::movePayload($website), "Move the databases of {$website->name}", $website);
+            // Null: the panel removes a database server that the website needs. The
+            // administrator moves the databases of this website when the removal is complete.
+            $payload = DB::transaction(fn () => self::movePayload($website));
+            if ($payload !== null) {
+                $jobs[] = $this->jobs->dispatch($server, AgentAction::MoveDatabases, $payload, "Move the databases of {$website->name}", $website);
+            }
         }
         if ($jobs) {
-            Audit::record($request, 'Moved databases to the containers of each customer', $server->name);
+            Audit::record($request, 'Moved databases to database servers', $server->name);
         }
 
         return response()->json(['jobs' => JobResource::collection($jobs)], 202);
     }
 
     /**
-     * The databases and the database users of a website, for the job that moves them. The
-     * agent copies the hash of each password, so the panel does not send a password.
+     * The databases and the database users of a website, for the job that moves them, with
+     * the database server that gets each one. The agent copies the hash of each password, so
+     * the panel does not send a password.
      *
-     * @return array<string, mixed>
+     * The plan of the customer does not limit the database servers of a move: the databases
+     * exist, so they must get a database server.
+     *
+     * @return array<string, mixed>|null
      */
-    public static function movePayload(Website $website): array
+    public static function movePayload(Website $website): ?array
     {
+        /** @var array<string, DatabaseServer> $servers */
+        $servers = [];
+        foreach ([...$website->databases->pluck('engine'), ...$website->databaseUsers->pluck('engine')] as $engine) {
+            $servers[$engine] ??= DatabaseServers::forMove($website, $engine);
+            if ($servers[$engine] === null) {
+                return null;
+            }
+        }
+        ksort($servers);
+
         return [
             'websiteId' => $website->id,
             'unixUser' => $website->unix_user,
             'databaseInstance' => $website->customer_id,
-            'databases' => $website->databases->sortBy('name')->map(fn (Database $d) => ['engine' => $d->engine, 'name' => $d->name])->values()->all(),
+            'databaseServers' => array_values(array_map(fn (DatabaseServer $s) => $s->forAgent(), $servers)),
+            'databases' => $website->databases->sortBy('name')->map(fn (Database $d) => ['engine' => $d->engine, 'name' => $d->name, 'databaseServer' => $servers[$d->engine]->id])->values()->all(),
             'users' => $website->databaseUsers->sortBy('name')->map(fn (DatabaseUser $u) => [
                 'engine' => $u->engine,
                 'name' => $u->name,
                 'access' => $u->access,
                 'grants' => array_map(fn ($g) => ['database' => $g['database'], 'privileges' => $g['privileges']], $u->grants()),
+                'databaseServer' => $servers[$u->engine]->id,
             ])->values()->all(),
         ];
     }
@@ -216,7 +241,7 @@ class ServerController extends Controller
      */
     public function checkConnection(string $id, AgentClient $client): JsonResponse
     {
-        $server = Server::withCount(['websites', 'sharedDatabaseWebsites'])->findOrFail($id);
+        $server = Server::withCount(['websites', 'sharedDatabaseWebsites', 'databaseServers'])->findOrFail($id);
         $client->check($server);
 
         return response()->json(self::present($server));
@@ -229,12 +254,15 @@ class ServerController extends Controller
      */
     public function destroy(Request $request, string $id): JsonResponse
     {
-        $server = Server::withCount(['websites', 'sharedDatabaseWebsites'])->findOrFail($id);
+        $server = Server::withCount(['websites', 'sharedDatabaseWebsites', 'databaseServers'])->findOrFail($id);
         if ($server->local) {
             throw ValidationException::withMessages(['server' => 'This server has the panel. You cannot remove it.']);
         }
         if ($server->websites_count > 0) {
             throw ValidationException::withMessages(['server' => "This server has {$server->websites_count} ".($server->websites_count === 1 ? 'website' : 'websites').'. Delete the websites first.']);
+        }
+        if ($server->database_servers_count > 0) {
+            throw ValidationException::withMessages(['server' => "This server has {$server->database_servers_count} ".($server->database_servers_count === 1 ? 'database server' : 'database servers').'. Remove the database servers first.']);
         }
         DB::transaction(function () use ($server) {
             // The jobs of the server go with it. The audit log keeps the record of the actions.
@@ -293,11 +321,13 @@ class ServerController extends Controller
             'gvisorPlatform' => $s->gvisor_platform,
             // The database engines that the agent of the server can operate.
             'databaseEngines' => $s->database_engines ?? Database::SQL_ENGINES,
-            // True when the agent gives each customer its own database containers.
+            // True when the agent can operate the database servers of customers.
             'databaseInstances' => (bool) $s->database_instances,
             // The number of websites that use the shared database containers of an earlier
-            // release. An administrator moves their databases to the containers of each customer.
+            // release. An administrator moves their databases to database servers.
             'sharedDatabaseWebsites' => $s->database_instances ? ($s->shared_database_websites_count ?? null) : null,
+            // The number of database servers of customers on this server.
+            'databaseServers' => $s->database_servers_count ?? null,
             'bareMetal' => $s->bare_metal,
             'updatePolicy' => $s->update_policy,
             'maintenanceWindow' => $s->maintenance_window,

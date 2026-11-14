@@ -13,9 +13,9 @@ use App\Services\JobOutcome;
 use Tests\TestCase;
 
 /**
- * Valkey is the third database engine. A Valkey database is one database number of the Valkey
- * container of its customer, with one user that has the name of the database. The agent gives
- * the number.
+ * Valkey is the third database engine. A Valkey database is one database number of a Valkey
+ * database server of its customer, with one user that has the name of the database. The agent
+ * gives the number.
  */
 class ValkeyTest extends TestCase
 {
@@ -24,7 +24,7 @@ class ValkeyTest extends TestCase
     private function site(array $server = []): Website
     {
         $customer = $this->customer();
-        // The website uses the database containers of its customer.
+        // The website can use the database servers of its customer.
         $website = $this->website($customer, $this->server($server + ['database_engines' => self::ENGINES, 'database_instances' => true]), $this->image(), attributes: ['database_instance' => $customer->id]);
         $this->actingWith($this->user());
 
@@ -188,8 +188,8 @@ class ValkeyTest extends TestCase
     public function test_a_staging_copy_gets_a_new_empty_valkey_database(): void
     {
         $website = $this->site();
-        $this->cache($website);
-        $website->databases()->create(['engine' => 'mariadb', 'name' => $website->unix_user.'_shop']);
+        $valkey = $this->cache($website)->database_server_id;
+        $maria = $this->postJson("/api/v1/websites/{$website->id}/databases", ['engine' => 'mariadb', 'name' => 'shop'])->assertAccepted()->json('databaseServerId');
 
         $response = $this->postJson("/api/v1/websites/{$website->id}/staging")->assertAccepted();
         $copy = Website::findOrFail($response->json('website.id'));
@@ -201,9 +201,12 @@ class ValkeyTest extends TestCase
 
         $job = AgentJob::findOrFail($response->json('job.id'));
         // The agent copies the data of the MariaDB database only.
-        $this->assertSame([['engine' => 'mariadb', 'from' => $website->unix_user.'_shop', 'to' => $copy->unix_user.'_shop']], $job->payload['copyDatabases']);
-        $this->assertContains(['engine' => 'valkey', 'name' => $name, 'password' => $credentials['valkey']['password']], $job->payload['copyUsers']);
+        $this->assertSame([['engine' => 'mariadb', 'from' => $website->unix_user.'_shop', 'to' => $copy->unix_user.'_shop', 'fromServer' => $maria, 'toServer' => $maria]], $job->payload['copyDatabases']);
+        // The new Valkey database is in the Valkey database server of the source.
+        $this->assertContains(['engine' => 'valkey', 'name' => $name, 'password' => $credentials['valkey']['password'], 'databaseServer' => $valkey], $job->payload['copyUsers']);
         $this->assertSame($name, $copy->databaseUsers()->where('engine', 'valkey')->sole()->name);
+        $this->assertSame($valkey, $copy->databases()->where('engine', 'valkey')->sole()->database_server_id);
+        $this->assertSame(['valkey.internal', 6379], [$credentials['valkey']['host'], $credentials['valkey']['port']]);
 
         $job = $this->finish($job->id, result: ['port' => 20001, 'dnsPointsHere' => true, 'valkey' => [$name => 9]]);
         $this->assertSame(9, $copy->databases()->where('engine', 'valkey')->sole()->number);
@@ -219,7 +222,7 @@ class ValkeyTest extends TestCase
         $jobId = $this->deleteJson("/api/v1/websites/{$website->id}")->assertAccepted()->json('job.id');
 
         $payload = AgentJob::findOrFail($jobId)->payload;
-        $this->assertSame([['engine' => 'valkey', 'name' => $database->name]], $payload['databases']);
-        $this->assertSame([['engine' => 'valkey', 'name' => $database->name]], $payload['databaseUsers']);
+        $this->assertSame([['engine' => 'valkey', 'name' => $database->name, 'databaseServer' => $database->database_server_id]], $payload['databases']);
+        $this->assertSame([['engine' => 'valkey', 'name' => $database->name, 'databaseServer' => $database->database_server_id]], $payload['databaseUsers']);
     }
 }
