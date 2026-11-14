@@ -10,6 +10,8 @@ use App\Http\Resources\WebsiteResource;
 use App\Models\Image;
 use App\Services\Audit;
 use App\Services\JobDispatcher;
+use App\Validation\Input;
+use App\Validation\InputRules;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
@@ -30,11 +32,11 @@ class RuntimeController extends Controller
             'imageId' => ['sometimes', 'exists:images,id'],
             'workerMode' => ['sometimes', 'boolean'],
             'extensions' => ['sometimes', 'array'],
-            'extensions.*' => ['string'],
+            'extensions.*' => ['string', Input::rule('phpExtension')],
             'phpIni' => ['sometimes', 'array'],
             // Batch 1, finding 11: the directory in /app that the web server serves, for example
             // "web". "." is /app itself.
-            'documentRoot' => ['sometimes', 'string', 'max:200', 'regex:#^(\.|[A-Za-z0-9_-][A-Za-z0-9._-]*(/[A-Za-z0-9_-][A-Za-z0-9._-]*)*)$#', 'not_regex:#(^|/)\.\.(/|$)#'],
+            'documentRoot' => ['sometimes', 'string', Input::rule('documentRoot')],
         ]);
         $plan = $website->plan;
         $changes = [];
@@ -86,7 +88,10 @@ class RuntimeController extends Controller
                 if (! in_array($key, self::INI_KEYS, true)) {
                     throw ValidationException::withMessages(["phpIni.{$key}" => "You cannot set {$key}."]);
                 }
-                if ($error = self::checkIni($key, $value, $website->limits['memoryBytes'] ?? PHP_INT_MAX)) {
+                // The agent checks each key and each value with these two rules.
+                $error = self::checkIni($key, $value, $website->limits['memoryBytes'] ?? PHP_INT_MAX)
+                    ?? (Input::valid('iniKey', $key) && Input::valid('iniValue', (string) $value) ? null : InputRules::MESSAGES['iniValue']);
+                if ($error) {
                     throw ValidationException::withMessages(["phpIni.{$key}" => $error]);
                 }
             }

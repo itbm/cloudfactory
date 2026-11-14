@@ -1,0 +1,607 @@
+{
+  "comment": "Examples for each rule of schema/input-rules.json. The tests of the agent (agent/internal/validate) and of the panel API (api/tests/Unit/InputRulesTest.php) run all of them, so that the two always agree. An example is a string, or {\"repeat\": [...]}: a list of strings and of [string, number] pairs. A pair repeats its string that number of times.",
+  "rules": {
+    "unixUser": {
+      "valid": [
+        "acme_x7k2",
+        "a_0000",
+        "abcdefghijklmnop_abcd",
+        "shop1_ab12"
+      ],
+      "invalid": [
+        "",
+        "root",
+        "../etc_abcd",
+        "Acme_x7k2",
+        "acme_x7k",
+        "acme_x7k2a",
+        "1acme_x7k2",
+        "abcdefghijklmnopq_abcd",
+        "acme-x7k2",
+        "acme_x7k2\n"
+      ]
+    },
+    "domain": {
+      "valid": [
+        "example.com",
+        "www.example.com",
+        "ok-name.example",
+        "a.b.c.example",
+        "xn--bcher-kva.example",
+        "1-800.example",
+        "123.example",
+        "example.co.uk",
+        "a1.b2.c3",
+        "shop.acme.example",
+        "panel.localhost",
+        {
+          "repeat": [
+            [
+              "a",
+              63
+            ],
+            ".",
+            [
+              "b",
+              63
+            ],
+            ".",
+            [
+              "c",
+              63
+            ],
+            ".",
+            [
+              "d",
+              61
+            ]
+          ]
+        }
+      ],
+      "invalid": [
+        "example",
+        "-bad.example",
+        "bad-.example",
+        "a.-b.example",
+        "a.b-.example",
+        "a..example",
+        ".example.com",
+        "example.com.",
+        "1.2.3.4",
+        "example.123",
+        "under_score.example",
+        "Example.com",
+        "exa mple.com",
+        "*.example.com",
+        "example.com/path",
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.example",
+        "",
+        "localhost",
+        "acme.example;rm -rf /",
+        "example.com\n",
+        "ex\u00e4mple.com",
+        {
+          "repeat": [
+            [
+              "a",
+              63
+            ],
+            ".",
+            [
+              "b",
+              63
+            ],
+            ".",
+            [
+              "c",
+              63
+            ],
+            ".",
+            [
+              "d",
+              62
+            ]
+          ]
+        }
+      ]
+    },
+    "id": {
+      "valid": [
+        "01JBQ3Z5K8N6T4W2X9Y7R5P3M1",
+        "01m7cr4cv2hjemvaac9b6672mj"
+      ],
+      "invalid": [
+        "",
+        "../../etc/passwd",
+        "01JBQ3Z5K8N6T4W2X9Y7R5P3M",
+        "01JBQ3Z5K8N6T4W2X9Y7R5P3M12",
+        "01JBQ3Z5K8N6T4W2X9Y7R5P3M-",
+        "01JBQ3Z5K8N6T4W2X9Y7R5P3M1\n"
+      ]
+    },
+    "databaseName": {
+      "valid": [
+        "shop_live",
+        "acme_x7k2_shop",
+        "ab",
+        {
+          "repeat": [
+            "a",
+            [
+              "b",
+              62
+            ]
+          ]
+        }
+      ],
+      "invalid": [
+        "",
+        "a",
+        "mysql; DROP",
+        "Shop",
+        "1shop",
+        "shop-live",
+        "shop.live",
+        {
+          "repeat": [
+            "a",
+            [
+              "b",
+              63
+            ]
+          ]
+        }
+      ]
+    },
+    "databaseNameSuffix": {
+      "valid": [
+        "shop",
+        "1",
+        "2026_shop",
+        {
+          "repeat": [
+            [
+              "a",
+              32
+            ]
+          ]
+        }
+      ],
+      "invalid": [
+        "",
+        "_shop",
+        "Shop",
+        "shop-live",
+        "shop live",
+        {
+          "repeat": [
+            [
+              "a",
+              33
+            ]
+          ]
+        }
+      ]
+    },
+    "imageReference": {
+      "valid": [
+        "ghcr.io/itbm/frankenphp-php8.4",
+        "registry.example.com/team/app",
+        "registry.example.com:5000/app",
+        "localhost:5000/app",
+        "quay.io/a/b/c_d-e.f"
+      ],
+      "invalid": [
+        "nginx",
+        "library/nginx",
+        "team/app",
+        "ghcr.io",
+        "ghcr.io/",
+        "ghcr.io//app",
+        "GHCR.io/app",
+        "ghcr.io/App",
+        "--privileged",
+        "ghcr.io/app image",
+        "ghcr.io/app:tag",
+        "",
+        "localhost",
+        "ghcr.io/app\n",
+        {
+          "repeat": [
+            "ghcr.io/",
+            [
+              "a",
+              193
+            ]
+          ]
+        }
+      ]
+    },
+    "imageTag": {
+      "valid": [
+        "1.27",
+        "8.4.0-1",
+        "v2",
+        "latest",
+        "_x",
+        {
+          "repeat": [
+            [
+              "a",
+              128
+            ]
+          ]
+        }
+      ],
+      "invalid": [
+        "",
+        ".1",
+        "-1",
+        "1 2",
+        "a:b",
+        "a/b",
+        {
+          "repeat": [
+            [
+              "a",
+              129
+            ]
+          ]
+        }
+      ]
+    },
+    "image": {
+      "valid": [
+        "ghcr.io/cloudfactory/frankenphp-php8.4:8.4.0-1",
+        "registry.example.com:5000/team/app:v2",
+        "localhost/app:1",
+        "localhost:5000/app:1"
+      ],
+      "invalid": [
+        "",
+        "ghcr.io/cloudfactory/app",
+        "--privileged",
+        "nginx:1.27",
+        "library/nginx:1.27",
+        "ghcr.io/app:",
+        "ghcr.io/app:-1",
+        "ghcr.io/App:1",
+        "ghcr.io/app:1 --privileged",
+        "ghcr.io/app@sha256:ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12"
+      ]
+    },
+    "digest": {
+      "valid": [
+        "",
+        "sha256:ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12"
+      ],
+      "invalid": [
+        "sha256:xyz",
+        "sha256:ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab1",
+        "sha256:ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab120",
+        "sha256:AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12",
+        "sha512:ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12",
+        "ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12"
+      ]
+    },
+    "phpExtension": {
+      "valid": [
+        "gd",
+        "pdo_mysql",
+        "imagick",
+        "a",
+        {
+          "repeat": [
+            [
+              "x",
+              40
+            ]
+          ]
+        }
+      ],
+      "invalid": [
+        "",
+        "GD",
+        "pdo-mysql",
+        "evil.so",
+        "a b",
+        "../x",
+        {
+          "repeat": [
+            [
+              "x",
+              41
+            ]
+          ]
+        }
+      ]
+    },
+    "iniKey": {
+      "valid": [
+        "memory_limit",
+        "opcache.memory_consumption",
+        "date.timezone",
+        "upload_max_filesize",
+        "post_max_size",
+        "max_execution_time",
+        "max_input_vars",
+        "display_errors"
+      ],
+      "invalid": [
+        "",
+        "disable functions",
+        "Memory_limit",
+        "a=b",
+        "opcache.jit2",
+        {
+          "repeat": [
+            [
+              "a",
+              65
+            ]
+          ]
+        }
+      ]
+    },
+    "iniValue": {
+      "valid": [
+        "",
+        "256M",
+        "Europe/London",
+        "On",
+        "E_ALL & ~E_NOTICE",
+        {
+          "repeat": [
+            [
+              "a",
+              200
+            ]
+          ]
+        }
+      ],
+      "invalid": [
+        "1\nextension=evil.so",
+        "a\rb",
+        "a\"b",
+        "a\u0000b",
+        {
+          "repeat": [
+            [
+              "a",
+              201
+            ]
+          ]
+        }
+      ]
+    },
+    "sha256": {
+      "valid": [
+        "ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12",
+        "0000000000000000000000000000000000000000000000000000000000000000"
+      ],
+      "invalid": [
+        "",
+        "AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12AB12",
+        "ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab1",
+        "ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab120",
+        "sha256:ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12",
+        "ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12\n"
+      ]
+    },
+    "version": {
+      "valid": [
+        "0.1.0",
+        "v0.1.9",
+        "1.2.3-rc.1",
+        "10.20.30"
+      ],
+      "invalid": [
+        "",
+        "latest",
+        "1.2",
+        "1.2.3.4",
+        "1.2.3-",
+        "1.2.3+build",
+        "v1.2.3 ",
+        {
+          "repeat": [
+            "1.2.3-",
+            [
+              "a",
+              27
+            ]
+          ]
+        }
+      ]
+    },
+    "restorePath": {
+      "valid": [
+        "/",
+        "/public/index.php",
+        "/public",
+        "/.htaccess",
+        "/a/..b",
+        "/a/b...",
+        "/my files/caf\u00e9.txt",
+        {
+          "repeat": [
+            [
+              "/abcdefg",
+              512
+            ]
+          ]
+        }
+      ],
+      "invalid": [
+        "",
+        "public/index.php",
+        "/../etc/passwd",
+        "/a/..",
+        "/a/../b",
+        "/a/./b",
+        "/a/.",
+        "/.",
+        "/..",
+        "//",
+        "/a//b",
+        "/public/",
+        "/a\u0000b",
+        {
+          "repeat": [
+            [
+              "/abcdefg",
+              512
+            ],
+            "x"
+          ]
+        }
+      ]
+    },
+    "documentRoot": {
+      "valid": [
+        "",
+        ".",
+        "public",
+        "web/htdocs",
+        "a/b/c/d/e/f/g/h",
+        "my-site_1/v1.2",
+        {
+          "repeat": [
+            [
+              "a",
+              100
+            ],
+            "/",
+            [
+              "b",
+              99
+            ]
+          ]
+        }
+      ],
+      "invalid": [
+        "/",
+        "/public",
+        "public/",
+        "..",
+        "../public",
+        "public/../x",
+        "./public",
+        ".well-known",
+        "web/.git",
+        "a//b",
+        "a b",
+        "a/b/c/d/e/f/g/h/i",
+        "public\n",
+        {
+          "repeat": [
+            [
+              "a",
+              101
+            ]
+          ]
+        },
+        {
+          "repeat": [
+            [
+              "a",
+              100
+            ],
+            "/",
+            [
+              "b",
+              100
+            ]
+          ]
+        }
+      ]
+    },
+    "commandArgument": {
+      "valid": [
+        "node",
+        "--port=8080",
+        "a b",
+        "caf\u00e9",
+        {
+          "repeat": [
+            [
+              "a",
+              1024
+            ]
+          ]
+        }
+      ],
+      "invalid": [
+        "",
+        "a\nb",
+        "a\tb",
+        "a\u0000b",
+        "a\u007fb",
+        "a\u001bb",
+        {
+          "repeat": [
+            [
+              "a",
+              1025
+            ]
+          ]
+        },
+        {
+          "repeat": [
+            [
+              "\u00e9",
+              513
+            ]
+          ]
+        }
+      ]
+    },
+    "sshKey": {
+      "valid": [
+        "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGhvc3Qga2V5IGZvciB0ZXN0cyBvbmx5IQ",
+        "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGhvc3Qga2V5IGZvciB0ZXN0cyBvbmx5IQ user@laptop",
+        "ssh-rsa AAAAB3NzaC1yc2E=",
+        "ecdsa-sha2-nistp256 AAAA",
+        "sk-ssh-ed25519@openssh.com AAAA key",
+        {
+          "repeat": [
+            "ssh-rsa ",
+            [
+              "A",
+              8184
+            ]
+          ]
+        }
+      ],
+      "invalid": [
+        "",
+        "ssh-dss AAAA",
+        "ssh-ed25519",
+        "ssh-ed25519 ",
+        "command=\"id\" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGhvc3Qga2V5IGZvciB0ZXN0cyBvbmx5IQ",
+        "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGhvc3Qga2V5IGZvciB0ZXN0cyBvbmx5IQ\n",
+        "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGhvc3Qga2V5IGZvciB0ZXN0cyBvbmx5IQ\nssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGhvc3Qga2V5IGZvciB0ZXN0cyBvbmx5IQ",
+        "ssh-ed25519 AAAA caf\u00e9",
+        {
+          "repeat": [
+            "ssh-rsa ",
+            [
+              "A",
+              8185
+            ]
+          ]
+        },
+        {
+          "repeat": [
+            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGhvc3Qga2V5IGZvciB0ZXN0cyBvbmx5IQ",
+            " ",
+            [
+              "a",
+              201
+            ]
+          ]
+        }
+      ]
+    }
+  }
+}

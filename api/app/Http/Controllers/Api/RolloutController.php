@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Enums\RolloutState;
 use App\Http\Controllers\Controller;
 use App\Models\AgentJob;
 use App\Models\Image;
@@ -13,7 +14,10 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
 
-/** FR-1103 to FR-1107: staged image updates. */
+/**
+ * FR-1103 to FR-1107: staged image updates. "Pause", "resume" and "roll back" give HTTP status
+ * 409 when the state of the rollout does not permit the action (audit finding F06).
+ */
 class RolloutController extends Controller
 {
     public function __construct(private RolloutEngine $engine) {}
@@ -26,7 +30,7 @@ class RolloutController extends Controller
     public function store(Request $request): JsonResponse
     {
         $data = $request->validate(['imageId' => ['required', 'exists:images,id']]);
-        if (Rollout::whereIn('state', ['running', 'paused'])->exists()) {
+        if (Rollout::whereIn('state', RolloutState::activeValues())->exists()) {
             throw ValidationException::withMessages(['imageId' => 'A rollout is in progress. Wait until it is complete, or roll it back.']);
         }
         $image = Image::findOrFail($data['imageId']);
@@ -89,7 +93,7 @@ class RolloutController extends Controller
             'stages' => array_map(fn ($stage, $i) => [
                 'name' => $stage['name'],
                 'websites' => $r->stageTarget($i),
-                'state' => $i < $r->stage || $r->state === 'done' ? 'done' : ($i === $r->stage ? 'in_progress' : 'waiting'),
+                'state' => $i < $r->stage || $r->state === RolloutState::Done ? 'done' : ($i === $r->stage ? 'in_progress' : 'waiting'),
             ], Rollout::STAGES, array_keys(Rollout::STAGES)),
             'websites' => count($r->website_ids),
             'healthy' => count($r->updated_ids),
@@ -99,7 +103,7 @@ class RolloutController extends Controller
             'startedAt' => $r->created_at?->toIso8601String(),
             // The time of the last change of a rollout that has ended. The panel shows an ended
             // rollout for one day only.
-            'finishedAt' => in_array($r->state, ['done', 'rolled_back'], true) ? $r->updated_at?->toIso8601String() : null,
+            'finishedAt' => ! $r->state->active() ? $r->updated_at?->toIso8601String() : null,
         ];
     }
 }

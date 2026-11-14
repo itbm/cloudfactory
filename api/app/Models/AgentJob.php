@@ -13,7 +13,13 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 #[Fillable(['server_id', 'website_id', 'database_server_id', 'rollout_id', 'action', 'title', 'ref', 'payload', 'steps', 'step', 'state', 'error', 'started_at', 'finished_at', 'resent_at'])]
 class AgentJob extends Model
 {
-    use HasUlids;
+    use Concerns\GuardsState, HasUlids;
+
+    /** The table of the permitted changes is in App\Enums\JobState. */
+    public static function stateAttribute(): string
+    {
+        return 'state';
+    }
 
     protected function casts(): array
     {

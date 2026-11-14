@@ -91,6 +91,69 @@ itself, as one root process.
 [security.md](security.md#the-root-helper-of-the-agent) gives what the boundary protects and
 what it does not protect.
 
+## Input rules of the panel and the agent
+
+The panel checks each value before it makes a job. The agent checks each value again before it
+uses the value in a file path, a unit name or a command. The two checks must agree. If the
+panel accepts a value that the agent refuses, the user sees an error only after the job fails.
+
+Thus the rules are in one file, [`schema/input-rules.json`](../schema/input-rules.json). A
+generator writes the Go checks of the agent and the PHP rules of the panel from this file. The
+tests of the two components run the same examples
+([`schema/input-vectors.json`](../schema/input-vectors.json)). CI makes sure that the generated
+files are current. Refer to [development.md](development.md#input-rules).
+
+A pattern in the rules file uses only the syntax that Go and PHP read in the same way. Lengths
+are in bytes in the two languages.
+
+## Jobs that the agent refuses
+
+The agent answers a request that it refuses with an HTTP status from 400 to 499 and a message,
+for example `the PHP extension "x" is not valid`. A second attempt gets the same answer. Thus
+the panel does not try again: the job fails immediately, and the job shows the message of the
+agent.
+
+These errors are temporary, and the panel tries again 4 times in approximately 6 minutes: no
+connection, a status from 500 to 599, status 408 and status 429.
+
+## States of websites, jobs and rollouts
+
+A website, a job and a rollout each have a state. Each state has a table of the changes that
+are permitted. The tables are in the enums `WebsiteStatus`, `JobState` and `RolloutState` in
+[`api/app/Enums`](../api/app/Enums).
+
+| Record  | State         | Can change to                           |
+| ------- | ------------- | --------------------------------------- |
+| Website | `starting`    | `running`, `stopping`, `stopped`, `failed` |
+| Website | `running`     | `stopping`, `stopped`, `starting`, `failed` |
+| Website | `stopping`    | `stopped`, `running`, `starting`, `failed` |
+| Website | `stopped`     | `starting`, `running`, `failed`         |
+| Website | `failed`      | `starting`                              |
+| Job     | `queued`      | `running`, `succeeded`, `failed`        |
+| Job     | `running`     | `queued`, `succeeded`, `failed`         |
+| Job     | `succeeded`   | No change                               |
+| Job     | `failed`      | No change                               |
+| Rollout | `running`     | `paused`, `done`, `rolled_back`         |
+| Rollout | `paused`      | `running`, `rolled_back`                |
+| Rollout | `done`        | No change                               |
+| Rollout | `rolled_back` | No change                               |
+
+The model checks each change of the state against the table when it saves the record
+(`App\Models\Concerns\GuardsState`). The check reads the state in the database, because a
+different request can change the record at the same time. There are three results:
+
+- A request of a user that the table does not permit gets HTTP status 409 with a message, for
+  example "The rollout is rolled back already."
+- A late result from a server that the table does not permit changes nothing. The panel writes
+  a warning to its log. For example, the result of an old power job does not change a website
+  with the state `failed`.
+- The actions "pause", "resume" and "roll back" of a rollout lock the row of the rollout first.
+  Thus two requests at the same time cannot do one action two times.
+
+A test makes each change between each two states of each table
+(`api/tests/Feature/SchemaAndStatesTest.php`). If you change a table, change the test and this
+section too.
+
 ## A website on a server
 
 Each website has:

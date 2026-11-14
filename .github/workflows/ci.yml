@@ -108,6 +108,11 @@ jobs:
           buf lint
           buf generate
           git diff --exit-code -- gen
+      # The input rules of the agent and of the panel API come from schema/input-rules.json.
+      - name: Check that the generated input rules are current
+        run: |
+          go run ./cmd/cf-rules
+          git diff --exit-code -- internal/validate/rules_gen.go ../api/app/Validation/InputRules.php
       - run: test -z "$(gofmt -l .)"
       - run: go vet ./...
       - run: go test -race ./...

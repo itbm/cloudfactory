@@ -212,7 +212,7 @@ class FirstUseTest extends TestCase
         $this->assertSame([$running->id], $jobs->pluck('website_id')->all());
         app(JobOutcome::class)->finish($jobs[0], JobState::Succeeded, null);
 
-        $this->assertSame('done', Rollout::findOrFail($id)->state);
+        $this->assertSame('done', Rollout::findOrFail($id)->state->value);
         $this->assertSame('0.1.9', $image->fresh()->tag);
         // The failed website follows the image. It does not keep the old tag.
         $this->assertNull($failed->fresh()->image_tag);
@@ -250,7 +250,7 @@ class FirstUseTest extends TestCase
             app(JobOutcome::class)->finish($job, JobState::Succeeded, null);
         }
 
-        $this->assertSame('done', Rollout::findOrFail($id)->state);
+        $this->assertSame('done', Rollout::findOrFail($id)->state->value);
         $this->assertNotNull($this->getJson("/api/v1/rollouts/{$id}")->assertOk()->json('finishedAt'));
     }
 

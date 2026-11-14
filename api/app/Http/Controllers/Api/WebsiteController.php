@@ -23,6 +23,7 @@ use App\Services\DatabaseNames;
 use App\Services\DatabaseServers;
 use App\Services\DomainPolicy;
 use App\Services\JobDispatcher;
+use App\Validation\InputRules;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -38,11 +39,11 @@ class WebsiteController extends Controller
 
     /**
      * A lower-case domain name. Audit finding R5: the agent has the same rule
-     * (agent/internal/validate), and the two test it with testdata/names.json. Each label
+     * (agent/internal/validate): the two have it from schema/input-rules.json. Each label
      * starts and ends with a letter or a digit, and the last label is not a number, so that an
      * IP address is not a domain name.
      */
-    public const DOMAIN = '/^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+(?!\d+$)[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/';
+    public const DOMAIN = InputRules::DOMAIN;
 
     /** The PHP extensions of a new website, when the plan has them. The owner can change them. */
     public const DEFAULT_EXTENSIONS = ['opcache', 'intl', 'gd', 'zip', 'mysqli', 'pdo_mysql', 'pdo_pgsql'];
