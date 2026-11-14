@@ -53,9 +53,10 @@ func (d *Deps) makeDataDir(ctx context.Context, dir, user string) error {
 	return err
 }
 
-// dbUnit gives the input for the unit of a database container, and the record of a database
-// server. A database server gets the address of its customer, its port and its limits.
-func (d *Deps) dbUnit(s dbServer) (quadlet.Database, DatabaseServer, error) {
+// databaseUnit gives the input for the unit of a database container. A database server of a
+// customer gets the address of its customer, its port and its limits (record). The shared
+// container of an earlier release has no customer, no address and no record.
+func (d *Deps) databaseUnit(s dbServer, customer, address string, record DatabaseServer) quadlet.Database {
 	dir := d.dbDir(s)
 	u := quadlet.Database{
 		Engine:  s.Engine,
@@ -66,14 +67,7 @@ func (d *Deps) dbUnit(s dbServer) (quadlet.Database, DatabaseServer, error) {
 		Gvisor:  d.runtime(),
 	}
 	if s.ID == "" {
-		return u, DatabaseServer{}, nil
-	}
-	customer, record, address, err := d.State.DatabaseServer(s.ID)
-	if err != nil {
-		return u, record, err
-	}
-	if customer == "" || record.Engine != s.Engine {
-		return u, record, fmt.Errorf("this server does not have %s", s)
+		return u
 	}
 	u.Customer, u.Address, u.Port = customer, address, record.Port
 	u.DataDir = d.dataDir(s)
@@ -82,7 +76,65 @@ func (d *Deps) dbUnit(s dbServer) (quadlet.Database, DatabaseServer, error) {
 	if s.Engine == "valkey" {
 		u.MemoryMB = valkeyDataMB(record.MemoryBytes)
 	}
-	return u, record, nil
+	return u
+}
+
+// dbUnit gives the input for the unit of a database container, and the record of a database
+// server, from the state.
+func (d *Deps) dbUnit(s dbServer) (quadlet.Database, DatabaseServer, error) {
+	if s.ID == "" {
+		return d.databaseUnit(s, "", "", DatabaseServer{}), DatabaseServer{}, nil
+	}
+	customer, record, address, err := d.State.DatabaseServer(s.ID)
+	if err != nil {
+		return quadlet.Database{}, record, err
+	}
+	if customer == "" || record.Engine != s.Engine {
+		return quadlet.Database{}, record, fmt.Errorf("this server does not have %s", s)
+	}
+	return d.databaseUnit(s, customer, address, record), record, nil
+}
+
+// prepareServer makes the directories, the disk, the secret and the unit of a database
+// container. It reports true when the unit changed.
+//
+// The root helper makes the unit from the values of the database server and from its own
+// settings. The worker cannot give the text of a unit of cf-db: a unit can run a program
+// with the rights of cf-db on the host, and cf-db owns the data of all customers.
+func (d *Deps) prepareServer(ctx context.Context, s dbServer, customer, address string, record DatabaseServer) (changed bool, err error) {
+	if d.Gate != nil {
+		err = d.Gate.Call(ctx, opDBPrepare, serverIn{Server: s, Customer: customer, Address: address, Record: record}, &changed)
+		return changed, err
+	}
+	u := d.databaseUnit(s, customer, address, record)
+	// Only cf-db can open the data. The entry point of the image sets the owner in the container.
+	dirs := []string{u.DataDir}
+	if s.ID != "" {
+		dirs = []string{filepath.Dir(d.dbDir(s)), d.dbDir(s)}
+	}
+	for _, dir := range dirs {
+		if err := d.makeDataDir(ctx, dir, DBUser); err != nil {
+			return false, err
+		}
+	}
+	if s.ID != "" {
+		// The disk of the database server has the data directory.
+		if err := d.ensureDisk(ctx, s, record.DiskBytes); err != nil {
+			return false, err
+		}
+		if err := d.makeDataDir(ctx, u.DataDir, DBUser); err != nil {
+			return false, err
+		}
+	}
+	if s.Engine == "valkey" {
+		// Valkey has a user file, not an environment file.
+		if err := d.writeValkeyUsers(ctx, s, u.DataDir); err != nil {
+			return false, err
+		}
+	} else if err := d.writeSuperuserSecret(ctx, s.Engine, u.EnvFile); err != nil {
+		return false, err
+	}
+	return d.Host.WriteUnit(DBUser, s.container()+".container", quadlet.DatabaseUnit(u))
 }
 
 // EnsureDatabaseService starts a database container, if it does not operate, and waits until
@@ -129,34 +181,7 @@ func (d *Deps) EnsureDatabaseService(ctx context.Context, s dbServer) error {
 			return err
 		}
 	}
-	// Only cf-db can open the data. The entry point of the image sets the owner in the container.
-	dirs := []string{u.DataDir}
-	if s.ID != "" {
-		dirs = []string{filepath.Dir(d.dbDir(s)), d.dbDir(s)}
-	}
-	for _, dir := range dirs {
-		if err := d.makeDataDir(ctx, dir, DBUser); err != nil {
-			return err
-		}
-	}
-	if s.ID != "" {
-		// The disk of the database server has the data directory.
-		if err := d.ensureDisk(ctx, s, record.DiskBytes); err != nil {
-			return err
-		}
-		if err := d.makeDataDir(ctx, u.DataDir, DBUser); err != nil {
-			return err
-		}
-	}
-	if s.Engine == "valkey" {
-		// Valkey has a user file, not an environment file.
-		if err := d.writeValkeyUsers(ctx, s, u.DataDir); err != nil {
-			return err
-		}
-	} else if err := d.writeSuperuserSecret(ctx, s.Engine, u.EnvFile); err != nil {
-		return err
-	}
-	changed, err := d.Host.WriteUnit(DBUser, s.container()+".container", quadlet.DatabaseUnit(u))
+	changed, err := d.prepareServer(ctx, s, u.Customer, u.Address, record)
 	if err != nil {
 		return err
 	}
@@ -222,7 +247,7 @@ func (d *Deps) databaseServers() ([]dbServer, error) {
 // has again, for example with the image of a new agent version. It also mounts the disk of
 // each database server, and loads the database access of the websites into the firewall.
 func (d *Deps) RefreshDatabaseServices(ctx context.Context) error {
-	d.removeOldServerData()
+	d.removeOldServerData(ctx)
 	servers, err := d.databaseServers()
 	if err != nil {
 		return err

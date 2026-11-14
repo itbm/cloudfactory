@@ -146,10 +146,7 @@ func (d *Deps) valkeyConnect(ctx context.Context, s dbServer, user, password str
 	}
 	dial := d.ValkeyDial
 	if dial == nil {
-		dial = func(ctx context.Context, address string) (net.Conn, error) {
-			dialer := net.Dialer{Timeout: 5 * time.Second}
-			return dialer.DialContext(ctx, "tcp", address)
-		}
+		dial = d.DialLocal
 	}
 	c, err := dial(ctx, net.JoinHostPort(address, strconv.Itoa(record.Port)))
 	if err != nil {
@@ -170,11 +167,21 @@ func (d *Deps) valkeySecretFile(s dbServer) string { return filepath.Join(d.dbDi
 
 // valkeyAdminConn opens a connection as the administrator. It does not start the container.
 func (d *Deps) valkeyAdminConn(ctx context.Context, s dbServer) (*valkeyConn, error) {
-	b, err := os.ReadFile(d.valkeySecretFile(s))
+	password, err := d.valkeySecret(ctx, s)
 	if err != nil {
 		return nil, fmt.Errorf("read the password of the Valkey administrator: %w", err)
 	}
-	return d.valkeyConnect(ctx, s, valkeyAdmin, strings.TrimSpace(string(b)))
+	return d.valkeyConnect(ctx, s, valkeyAdmin, password)
+}
+
+// valkeySecret gives the password of the administrator of a Valkey database server.
+func (d *Deps) valkeySecret(ctx context.Context, s dbServer) (password string, err error) {
+	if d.Gate != nil {
+		err = d.Gate.Call(ctx, opDBValkeySecret, serverIn{Server: s}, &password)
+		return password, err
+	}
+	b, err := os.ReadFile(d.valkeySecretFile(s))
+	return strings.TrimSpace(string(b)), err
 }
 
 // writeValkeyUsers makes the user file of a new Valkey server, and the password of its

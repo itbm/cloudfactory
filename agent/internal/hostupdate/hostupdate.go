@@ -65,6 +65,27 @@ func Parse(out string) []Update {
 	return updates
 }
 
+// Commands gives each command that this package runs, as a program and its arguments.
+//
+// Second audit, the privilege boundary: the worker of the agent is not root, and the root
+// helper runs these commands for it. The helper accepts only the commands of this list. Add
+// a command here when a method runs a new command.
+func Commands() [][]string {
+	held := func(args ...string) []string { return append(args, Held...) }
+	return [][]string{
+		{"apt-get", "-qq", "update"},
+		{"apt-get", "update"},
+		{"apt-get", "-s", "-o", "Debug::NoLocking=1", "upgrade", "--with-new-pkgs"},
+		held("apt-get", "-s", "-o", "Debug::NoLocking=1", "install", "--only-upgrade", "--allow-change-held-packages"),
+		{"apt-get", "-y", "-d", "upgrade", "--with-new-pkgs"},
+		{"apt-get", "-y", "-o", "Dpkg::Options::=--force-confold", "upgrade", "--with-new-pkgs"},
+		held("apt-get", "-y", "-o", "Dpkg::Options::=--force-confold", "install", "--only-upgrade", "--allow-change-held-packages"),
+		held("apt-mark", "hold"),
+		{"unattended-upgrade", "--verbose"},
+		{"needrestart", "-r", "a", "-l", "-u", "NeedRestart::UI::stdio"},
+	}
+}
+
 // Pending gives the updates that apt can install now, and the updates of the held container
 // tools. It gets new package lists first when the lists are old.
 func (a Apt) Pending(ctx context.Context) ([]Update, error) {

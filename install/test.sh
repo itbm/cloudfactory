@@ -147,6 +147,17 @@ else
 	FAIL=$((FAIL + 1))
 	echo 'FAIL: the firewall rule of the panel database'
 fi
+# Second audit, the privilege boundary: the worker of the agent is the user cf-agent, with no
+# home directory and no shell. The firewall has no rule for that user: the worker connects to
+# the service address and to the database servers only through the root part of the agent.
+if grep -q 'useradd --system --user-group --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin cf-agent' "$HERE/install.sh" &&
+	grep -q 'AgentUser = "cf-agent"' "$HERE/../agent/internal/host/host.go" &&
+	! sed -n '/^firewall_rules() {/,/^}/p' "$HERE/install.sh" | grep -Eq 'id -u cf-agent|agent_uid'; then
+	PASS=$((PASS + 1))
+else
+	FAIL=$((FAIL + 1))
+	echo 'FAIL: the user of the worker of the agent'
+fi
 if ! grep -Eq 'sshd_config|sshd -t|reload_ssh|systemctl (reload|restart) ssh' "$HERE/install.sh"; then PASS=$((PASS + 1)); else FAIL=$((FAIL + 1)); echo 'FAIL: the script changes the SSH service of the host'; fi
 # shellcheck disable=SC2016 # The pattern finds the text $SFTP_PORT in the script.
 if grep -q '^    tcp dport \$SFTP_PORT accept # cloudfactory-sftp$' "$HERE/install.sh" && grep -q 'sftpRuleMarker = "# cloudfactory-sftp"' "$HERE/../agent/internal/actions/sftp.go"; then PASS=$((PASS + 1)); else FAIL=$((FAIL + 1)); echo 'FAIL: the SFTP firewall rule'; fi

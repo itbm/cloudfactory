@@ -63,6 +63,6 @@ class AccountController extends Controller
     {
         $target = (string) (BackupController::policy()['target'] ?? '');
 
-        return ['available' => preg_match(BackupController::TARGET, $target) === 1 && BackupController::credentials() !== []];
+        return ['available' => preg_match(BackupController::TARGET, $target) === 1 && BackupController::hasCredentials()];
     }
 }

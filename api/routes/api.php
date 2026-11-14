@@ -94,6 +94,9 @@ Route::prefix('v1')->group(function () {
             Route::get('backup-policy', [BackupController::class, 'showPolicy']);
             Route::put('backup-policy', [BackupController::class, 'updatePolicy'])->middleware('admin');
             Route::get('backup-policy/repository-password', [BackupController::class, 'showRepositoryPassword'])->middleware('admin');
+            // Second audit, finding F08: the key of one server for the object storage.
+            Route::put('backup-policy/servers/{serverId}/credentials', [BackupController::class, 'updateServerCredentials'])->middleware('admin');
+            Route::delete('backup-policy/servers/{serverId}/credentials', [BackupController::class, 'destroyServerCredentials'])->middleware('admin');
         });
 
         Route::middleware(['admin', 'scope:servers'])->group(function () {

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/itbm/cloudfactory/agent/internal/gate"
 	"github.com/itbm/cloudfactory/agent/internal/host"
 	"github.com/itbm/cloudfactory/agent/internal/panel"
 	"github.com/itbm/cloudfactory/agent/internal/quadlet"
@@ -225,6 +226,9 @@ func (d *Deps) mountDisk(ctx context.Context, s dbServer) error {
 // smaller limit. The disk and its data are then as before.
 var errDiskKeepsSize = errors.New("the disk keeps its size")
 
+// The worker finds this cause with errors.Is, also when the root helper gives the error.
+func init() { gate.RegisterError("disk-keeps-size", errDiskKeepsSize) }
+
 // growMark is the name of a file next to a disk image. It is there while the file system
 // does not have the full size of the image, so that a job that runs again completes the step.
 func growMark(image string) string { return image + ".grow" }
@@ -327,6 +331,27 @@ func (d *Deps) removeDisk(ctx context.Context, s dbServer) error {
 	}
 	_, err := d.Run.Run(ctx, "systemctl", "daemon-reload")
 	return err
+}
+
+// diskState gives the disk space that a database server uses, and the size of its disk. For
+// a database server with no disk image, measure makes the function measure its directory.
+// Only cf-db and root can open the directory.
+func (d *Deps) diskState(ctx context.Context, s dbServer, measure bool) diskOut {
+	out := diskOut{Used: -1}
+	if d.Gate != nil {
+		if err := d.Gate.Call(ctx, opDBDisk, serverIn{Server: s, Measure: measure}, &out); err != nil {
+			return diskOut{Used: -1}
+		}
+		return out
+	}
+	dir := d.diskDir(s)
+	if isMountPoint(dir) {
+		out.Used, out.Size = d.diskUse(s)
+		out.Mounted = true
+	} else if measure {
+		out.Used = dirSize(dir)
+	}
+	return out
 }
 
 // diskUse gives the disk space that a database server uses and the size of its disk, in

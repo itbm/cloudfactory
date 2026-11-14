@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"syscall"
 
 	"github.com/itbm/cloudfactory/agent/internal/gvisor"
 	"github.com/itbm/cloudfactory/agent/internal/pki"
@@ -134,7 +135,9 @@ func (c Config) Check() error {
 	return errors.Join(errs...)
 }
 
-// Save writes the file. Only root can read it, because it holds the agent token.
+// Save writes the file. It holds the agent token, so only root can read a new file. A file
+// that exists keeps its group and its mode: the agent service gives the group of its worker
+// the right to read the file.
 func Save(path string, c Config) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
@@ -144,8 +147,23 @@ func Save(path string, c Config) error {
 		return err
 	}
 	tmp := path + ".tmp"
+	// A temporary file from an earlier save that did not complete can have a different mode.
+	if err := os.Remove(tmp); err != nil && !os.IsNotExist(err) {
+		return err
+	}
 	if err := os.WriteFile(tmp, append(b, '\n'), 0o600); err != nil {
 		return err
+	}
+	if old, err := os.Lstat(path); err == nil && old.Mode().IsRegular() {
+		if st, ok := old.Sys().(*syscall.Stat_t); ok && os.Geteuid() == 0 {
+			if err := os.Chown(tmp, int(st.Uid), int(st.Gid)); err != nil {
+				return err
+			}
+		}
+		// Never more than the owner and the group, and never a write right for the group.
+		if err := os.Chmod(tmp, old.Mode().Perm()&0o640); err != nil {
+			return err
+		}
 	}
 	return os.Rename(tmp, path)
 }

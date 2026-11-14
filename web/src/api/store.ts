@@ -389,6 +389,15 @@ export function setBackupPolicy(policy: BackupPolicy) {
   return call(() => live.request<BackupPolicy>("PUT", "/backup-policy", policy)).then(() => refresh());
 }
 
+/**
+ * Second audit, finding F08: the object storage key of one server. The panel sends it to
+ * that server only. Without credentials, the server uses the shared key again.
+ */
+export function setServerStorageKey(serverId: string, credentials: Record<string, string> | null) {
+  const path = `/backup-policy/servers/${serverId}/credentials`;
+  return call(() => (credentials ? live.request<BackupPolicy>("PUT", path, { credentials }) : live.request<BackupPolicy>("DELETE", path))).then(() => refresh());
+}
+
 // Databases (FR-501, FR-502)
 
 /** CF-01: each database and database user name starts with the Unix user of the website. */

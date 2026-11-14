@@ -41,8 +41,9 @@ class AgentClient
                 ...$payload,
                 // The credentials of the object storage and the password of the repository are not
                 // in the job. The panel adds the current values each time that it sends the job.
+                // Second audit, finding F08: a server with its own key gets that key only.
                 ...($job->action->usesBackupRepository() ? ['credentials' => (object) [
-                    ...BackupController::credentials(),
+                    ...BackupController::credentialsFor($server, $shared),
                     'RESTIC_PASSWORD' => $shared ? (string) BackupController::sharedRepositoryPassword() : $server->backupPassword(),
                 ]] : []),
             ])

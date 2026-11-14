@@ -214,7 +214,8 @@ Then the script does these steps:
 7. Install the AppArmor profiles for Podman and gVisor.
 8. Set the image signature policy. Podman refuses all images that have no valid signature,
    except from a registry that you give with `--allow-unsigned`.
-9. Make the service users.
+9. Make the service users, and the user `cf-agent` for the worker of the agent (refer to
+   [The two processes of the agent](#the-two-processes-of-the-agent)).
 10. Make the group of the website users and the directories for SFTP (refer to [SFTP](#sftp)).
     The script does not change the SSH service of the host.
 11. Turn on the user quotas of the file systems of `/srv/cloudfactory` and `/var/lib/cf-db`.
@@ -274,9 +275,100 @@ restore after you lose the panel. To show them, run `cf backups policy password`
 view in the audit log. Do this again after you add a server, because a new server gets a new
 password.
 
-All servers use the same credentials of the object storage. A person who has root access to
-one server can thus delete the data of all repositories, but cannot read it. To prevent a
-loss of data, turn on versioning or an object lock in the bucket.
+#### One storage key for each server
+
+The credentials in the backup policy are the shared key. Each server that has no key of its
+own gets the shared key. The shared key has access to the repositories of all servers. A
+person who has root access to one of these servers can thus delete or change the data of all
+repositories, but cannot read it.
+
+To prevent this, give each server with the role `web` its own key:
+
+1. Open **Backups**. The card **Storage key of each server** shows each server, the path of
+   its repository in the bucket, and the key that it uses.
+2. At the storage provider, make a key that has access to the path of that server only.
+   Refer to the examples below.
+3. Select **Set key** for the server, type the credentials of the key, and select
+   **Save key**. The panel keeps the key encrypted and does not show it again. The panel
+   sends the key to that server only.
+4. Do steps 2 and 3 again for each server. Do them also after you add a server.
+5. When each server has its own key, you can remove the shared key: select
+   **Remove credentials** in the backup policy, and delete the key at the storage provider.
+   Do this only if you have no backups from an earlier version (refer to
+   [Backups from an earlier version](#backups-from-an-earlier-version)): the panel restores
+   those backups with the shared key. With no shared key, a new server makes no backups
+   until you set its key.
+
+With the API, send `PUT /api/v1/backup-policy/servers/SERVER-ID/credentials` with the
+credentials. `DELETE` on the same address removes the key, and the server uses the shared key
+again. `GET /api/v1/backup-policy` gives the servers and the names of their credentials.
+
+The key of a server must have these permissions below the path of the server, and no
+permissions for other paths: list, read, write and delete. restic deletes old data when the
+panel applies the retention policy.
+
+**Amazon S3 and S3-compatible storage.** Make one IAM user for each server, with an access
+key and this policy. Replace `my-bucket` and `cloudfactory/servers/SERVER-ID` with the bucket
+and the path that the **Backups** page shows for the server:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": "s3:GetBucketLocation",
+      "Resource": "arn:aws:s3:::my-bucket"
+    },
+    {
+      "Effect": "Allow",
+      "Action": "s3:ListBucket",
+      "Resource": "arn:aws:s3:::my-bucket",
+      "Condition": {
+        "StringLike": {
+          "s3:prefix": ["cloudfactory/servers/SERVER-ID", "cloudfactory/servers/SERVER-ID/*"]
+        }
+      }
+    },
+    {
+      "Effect": "Allow",
+      "Action": ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"],
+      "Resource": "arn:aws:s3:::my-bucket/cloudfactory/servers/SERVER-ID/*"
+    }
+  ]
+}
+```
+
+Do not add `s3:DeleteObjectVersion`, `s3:PutBucketVersioning`, `s3:PutLifecycleConfiguration`
+or `s3:PutBucketPolicy`. A storage service that is compatible with S3 can have a different
+method for a key with access to one path. Refer to the documentation of the service.
+
+**Backblaze B2.** Add one application key for each server. Permit access to the backup bucket
+only, set **File name prefix** to the path of the server, and select **Read and Write**.
+
+**Azure Blob Storage and Google Cloud Storage.** Refer to the documentation of the provider
+for a key that has access to one path only. If the provider cannot limit a key to a path, the
+servers must use the shared key. Then versioning or an object lock is the only protection.
+
+After you set a key, start a manual backup of one website on that server. If the backup
+fails with an "access denied" error, compare the path in the policy of the key with the path
+on the **Backups** page.
+
+#### Versioning or object lock
+
+A server must delete old data from its own repository. Thus a person who has root access to
+a server can delete the backups of that server, also with a key for each server. To keep
+deleted data for a set time, do one of these steps at the storage provider:
+
+- **Versioning.** Turn on versioning for the bucket. A delete then hides an object but does
+  not remove it. Add a lifecycle rule that removes the old versions after a time that is
+  longer than the longest backup retention. Give no key of a server the permission to
+  delete object versions.
+- **Object lock.** Turn on the object lock for the bucket, with a default retention time
+  that is longer than the longest backup retention. The storage refuses each delete of an
+  object version until that time ends.
+
+Give no key the permission to change the settings of the bucket.
 
 #### What the panel keeps
 
@@ -739,6 +831,63 @@ Before you update, do these steps:
 2. Tell the website owners that the SFTP port changes to 2200. Their SFTP client also shows a
    new host key on the first connection, because the container has its own host keys.
 
+### The two processes of the agent
+
+The agent service (`cf-agent.service`) has two processes. The root helper runs as root. The
+worker runs as the user `cf-agent`, and it has the agent port and the connection to the
+panel. The worker asks the root helper for each step that needs root, and the root helper
+does only the work of a fixed list. Refer to
+[security.md](security.md#the-root-helper-of-the-agent).
+
+`ps -eo user,args | grep cf-agent` shows the two processes:
+
+```text
+root      /usr/local/bin/cf-agent serve
+cf-agent  /usr/local/bin/cf-agent work --sealed
+```
+
+You do not have to run the script again on a server from release 0.1.9 or an earlier
+release. When the new agent starts, it does these steps:
+
+1. It makes the user and the group `cf-agent`, with no home directory and no shell.
+2. It lets the group `cf-agent` read `/etc/cloudfactory/agent.json` and the TLS key of the
+   agent. It gives the records of the jobs in `/var/lib/cloudfactory/jobs` to the user
+   `cf-agent`.
+3. It starts the worker.
+
+The firewall needs no rule for the user `cf-agent`, and the websites do not restart.
+
+If a step fails, the agent operates as one root process, as in release 0.1.9. The panel then
+shows `agent-root-helper` as an optional part that is off. This does not make the server
+degraded. To see the cause, run `journalctl -u cf-agent | grep "one root process"`.
+
+If the two processes cause a fault, you can make the agent operate as one root process until
+the correction:
+
+1. Run `systemctl edit cf-agent` and add these lines:
+
+   ```ini
+   [Service]
+   Environment=CF_AGENT_ONE_PROCESS=1
+   ```
+
+2. Run `systemctl restart cf-agent`.
+
+With this setting, a fault in the agent gives an attacker the rights of root. Remove the lines
+when you have the correction.
+
+The agent does not update itself to a release that has no root helper, also when you permit
+an older version. `cf-agent rollback` and the automatic rollback after a failed update
+continue to operate, because all releases use the same service unit and the same files.
+
+After the update from release 0.1.9 or an earlier release, the previous binary is one root
+process. If the new agent does not start, the service goes back to that binary, as before.
+When the worker has operated for 10 minutes, the root helper removes that binary. After that
+time, `cf-agent rollback` has no binary until the next update of the agent. Thus a person
+who can stop the worker again and again cannot make the service go back to an agent with no
+root helper. To go back to release 0.1.9 or an earlier release after that time, run the
+`install.sh` of that release as root.
+
 ### Disk quotas
 
 The server applies the disk limit of a website with a user quota. Each website has its own
@@ -804,6 +953,10 @@ different server when one is available. Refer to [Add a server](#add-a-server).
 
 The `firewall` check looks for the table `inet cloudfactory`. If the table is not there, run
 `nft -f /etc/nftables.d-cloudfactory.nft` as root.
+
+The page of the server also shows the optional parts: the disk quotas (`disk-quotas`), the
+disk limits of the database servers (`database-disk-limits`) and the two processes of the
+agent (`agent-root-helper`). An optional part that is off does not make the server degraded.
 
 ### Ports
 

@@ -18,7 +18,7 @@ func diskDeps(t *testing.T) (*Deps, *execx.Fake, dbServer) {
 	t.Helper()
 	d, f, _ := deps(t)
 	users(d)
-	d.Host.LookupGID = func(string) (int, error) { return 991, nil }
+	both(d, func(d *Deps) { d.Host.LookupGID = func(string) (int, error) { return 991, nil } })
 	if err := os.WriteFile(d.LoopControl, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -44,7 +44,7 @@ func TestANewDatabaseServerGetsADisk(t *testing.T) {
 	d, f, s := diskDeps(t)
 	image, dir := d.diskImage(s), d.diskDir(s)
 	// The limit is not a multiple of the block size of the file system.
-	if err := d.ensureDisk(context.Background(), s, 5<<30+100); err != nil {
+	if err := rootOf(d).ensureDisk(context.Background(), s, 5<<30+100); err != nil {
 		t.Fatal(err)
 	}
 	if got := sizeOf(t, image); got != 5<<30 {
@@ -91,7 +91,7 @@ func TestANewDatabaseServerGetsADisk(t *testing.T) {
 	}
 	// The same limit again: the image stays as it is.
 	f.Calls = nil
-	if err := d.ensureDisk(context.Background(), s, 5<<30); err != nil {
+	if err := rootOf(d).ensureDisk(context.Background(), s, 5<<30); err != nil {
 		t.Fatal(err)
 	}
 	for _, c := range f.Calls {
@@ -102,14 +102,14 @@ func TestANewDatabaseServerGetsADisk(t *testing.T) {
 	// A mkfs that fails leaves no image: the next attempt starts again.
 	d, f, s = diskDeps(t)
 	f.Rules = []execx.Rule{{Prefix: "mkfs.ext4", Err: errors.New("no space left on device")}}
-	if err := d.ensureDisk(context.Background(), s, 5<<30); err == nil {
+	if err := rootOf(d).ensureDisk(context.Background(), s, 5<<30); err == nil {
 		t.Fatal("no error")
 	}
 	if _, err := os.Stat(d.diskImage(s)); !os.IsNotExist(err) || f.Called("systemctl enable --now "+mountUnit(d.diskDir(s))) {
 		t.Errorf("an image with no file system: %v %q", err, f.Calls)
 	}
 	f.Rules = nil
-	if err := d.ensureDisk(context.Background(), s, 5<<30); err != nil || sizeOf(t, d.diskImage(s)) != 5<<30 {
+	if err := rootOf(d).ensureDisk(context.Background(), s, 5<<30); err != nil || sizeOf(t, d.diskImage(s)) != 5<<30 {
 		t.Errorf("the second attempt: %v", err)
 	}
 }
@@ -118,21 +118,23 @@ func TestANewDatabaseServerGetsADisk(t *testing.T) {
 func TestALargerLimitMakesTheDiskLarger(t *testing.T) {
 	d, f, s := diskDeps(t)
 	image, dir := d.diskImage(s), d.diskDir(s)
-	if err := d.ensureDisk(context.Background(), s, 5<<30); err != nil {
+	if err := rootOf(d).ensureDisk(context.Background(), s, 5<<30); err != nil {
 		t.Fatal(err)
 	}
-	d.Host.WriteUnit(DBUser, s.container()+".container", "[Container]\n")
+	if _, err := rootOf(d).Host.WriteUnit(DBUser, s.container()+".container", "[Container]\n"); err != nil {
+		t.Fatal(err)
+	}
 	find := "findmnt --noheadings --output SOURCE --mountpoint " + dir
 	f.Rules = []execx.Rule{{Prefix: find, Output: "/dev/loop3\n"}, {Prefix: "resize2fs", Err: errors.New("no memory")}}
 	f.Calls = nil
 	// The file system did not get its new size.
-	if err := d.ensureDisk(context.Background(), s, 10<<30); err == nil {
+	if err := rootOf(d).ensureDisk(context.Background(), s, 10<<30); err == nil {
 		t.Fatal("no error")
 	}
 	// The job runs again with the same limit, and completes the step.
 	f.Rules = f.Rules[:1]
 	f.Calls = nil
-	if err := d.ensureDisk(context.Background(), s, 10<<30); err != nil {
+	if err := rootOf(d).ensureDisk(context.Background(), s, 10<<30); err != nil {
 		t.Fatal(err)
 	}
 	if got := sizeOf(t, image); got != 10<<30 {
@@ -149,12 +151,12 @@ func TestALargerLimitMakesTheDiskLarger(t *testing.T) {
 	}
 	// The step is complete: the same limit does nothing more.
 	f.Calls = nil
-	if err := d.ensureDisk(context.Background(), s, 10<<30); err != nil || f.Called("resize2fs") {
+	if err := rootOf(d).ensureDisk(context.Background(), s, 10<<30); err != nil || f.Called("resize2fs") {
 		t.Errorf("the same limit again: %v %q", err, f.Calls)
 	}
 	// A disk that is not on a loop device stays as it is.
 	f.Rules = []execx.Rule{{Prefix: find, Output: "\n"}}
-	if err := d.ensureDisk(context.Background(), s, 20<<30); err == nil || !strings.Contains(err.Error(), "not on a loop device") {
+	if err := rootOf(d).ensureDisk(context.Background(), s, 20<<30); err == nil || !strings.Contains(err.Error(), "not on a loop device") {
 		t.Errorf("no loop device: %v", err)
 	}
 }
@@ -164,10 +166,12 @@ func TestALargerLimitMakesTheDiskLarger(t *testing.T) {
 func TestASmallerLimitMakesTheDiskSmaller(t *testing.T) {
 	d, f, s := diskDeps(t)
 	image, dir := d.diskImage(s), d.diskDir(s)
-	if err := d.ensureDisk(context.Background(), s, 5<<30); err != nil {
+	if err := rootOf(d).ensureDisk(context.Background(), s, 5<<30); err != nil {
 		t.Fatal(err)
 	}
-	d.Host.WriteUnit(DBUser, s.container()+".container", "[Container]\n")
+	if _, err := rootOf(d).Host.WriteUnit(DBUser, s.container()+".container", "[Container]\n"); err != nil {
+		t.Fatal(err)
+	}
 	unit := mountUnit(dir)
 	steps := []string{
 		"systemctl --user --machine=cf-db@ stop " + s.container() + ".service",
@@ -177,7 +181,7 @@ func TestASmallerLimitMakesTheDiskSmaller(t *testing.T) {
 		"systemctl start " + unit,
 	}
 	f.Calls = nil
-	if err := d.ensureDisk(context.Background(), s, 2<<30); err != nil {
+	if err := rootOf(d).ensureDisk(context.Background(), s, 2<<30); err != nil {
 		t.Fatal(err)
 	}
 	last := -1
@@ -195,7 +199,7 @@ func TestASmallerLimitMakesTheDiskSmaller(t *testing.T) {
 	start := "systemctl --user --machine=cf-db@ start " + s.container() + ".service"
 	f.Rules = []execx.Rule{{Prefix: "resize2fs", Err: errors.New("New size smaller than minimum (300000)")}}
 	f.Calls = nil
-	err := d.ensureDisk(context.Background(), s, 1<<30)
+	err := rootOf(d).ensureDisk(context.Background(), s, 1<<30)
 	if !errors.Is(err, errDiskKeepsSize) || !strings.Contains(err.Error(), "cannot have the new limit of 1024 MB") {
 		t.Errorf("err = %v", err)
 	}
@@ -211,7 +215,7 @@ func TestASmallerLimitMakesTheDiskSmaller(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "data", "ibdata1"), make([]byte, 3<<20), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := d.resizeDisk(context.Background(), s, 2<<20); !errors.Is(err, errDiskKeepsSize) || !strings.Contains(err.Error(), "uses 3 MB") {
+	if err := rootOf(d).resizeDisk(context.Background(), s, 2<<20); !errors.Is(err, errDiskKeepsSize) || !strings.Contains(err.Error(), "uses 3 MB") {
 		t.Errorf("err = %v", err)
 	}
 	if len(f.Calls) != 0 {
@@ -280,7 +284,7 @@ func TestADiskLimitThatFailsChangesNothing(t *testing.T) {
 func TestAServerWithNoLoopDevicesHasNoDiskLimits(t *testing.T) {
 	d, f, _ := deps(t)
 	s := dbServer{ID: mariaServerKey, Engine: "mariadb"}
-	if err := d.ensureDisk(context.Background(), s, 5<<30); err != nil {
+	if err := rootOf(d).ensureDisk(context.Background(), s, 5<<30); err != nil {
 		t.Fatal(err)
 	}
 	if !f.Called("install -d -o cf-db -g cf-db -m 0700 "+d.diskDir(s)) || f.Called("mkfs.ext4") || f.Called("systemctl enable") {
@@ -294,15 +298,15 @@ func TestAServerWithNoLoopDevicesHasNoDiskLimits(t *testing.T) {
 	os.MkdirAll(d.dataDir(s), 0o700)
 	os.WriteFile(d.LoopControl, nil, 0o600)
 	f.Calls = nil
-	if err := d.ensureDisk(context.Background(), s, 5<<30); err != nil || f.Called("mkfs.ext4") || f.Called("systemctl enable") {
+	if err := rootOf(d).ensureDisk(context.Background(), s, 5<<30); err != nil || f.Called("mkfs.ext4") || f.Called("systemctl enable") {
 		t.Errorf("a database server with a directory got a disk image: %v %q", err, f.Calls)
 	}
 	// A database server with no disk limit has a directory too.
 	other := dbServer{ID: pgServerKey, Engine: "postgresql"}
-	if err := d.ensureDisk(context.Background(), other, 0); err != nil || f.Called("mkfs.ext4") {
+	if err := rootOf(d).ensureDisk(context.Background(), other, 0); err != nil || f.Called("mkfs.ext4") {
 		t.Errorf("a database server with no limit got a disk image: %v %q", err, f.Calls)
 	}
-	used, size := d.diskUse(s)
+	used, size := rootOf(d).diskUse(s)
 	if used != 0 || size != 0 {
 		t.Errorf("disk use of a directory = %d of %d", used, size)
 	}

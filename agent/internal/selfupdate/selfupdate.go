@@ -149,10 +149,15 @@ func (u Updater) Verify(r Release) error {
 	return nil
 }
 
+// ManifestRootHelper is the key of the manifest line "rootHelper=1". A release with this line
+// has an agent with a root helper (second audit, the privilege boundary). The root helper
+// installs only such a release for its worker.
+const ManifestRootHelper = "rootHelper"
+
 // Manifest gives the manifest of a release asset. The release workflow writes the same format.
 func Manifest(version, asset string, bin []byte) string {
 	sum := sha256.Sum256(bin)
-	return fmt.Sprintf("version=%s\nasset=%s\nsha256=%s\n", strings.TrimPrefix(version, "v"), asset, hex.EncodeToString(sum[:]))
+	return fmt.Sprintf("version=%s\nasset=%s\nsha256=%s\n%s=1\n", strings.TrimPrefix(version, "v"), asset, hex.EncodeToString(sum[:]), ManifestRootHelper)
 }
 
 // ParseManifest reads the "key=value" lines of a release manifest. The release workflow
@@ -161,6 +166,7 @@ func Manifest(version, asset string, bin []byte) string {
 //	version=0.2.0
 //	asset=cf-agent_linux_amd64
 //	sha256=9f86d0...
+//	rootHelper=1
 func ParseManifest(b []byte) map[string]string {
 	m := map[string]string{}
 	for _, line := range strings.Split(string(b), "\n") {

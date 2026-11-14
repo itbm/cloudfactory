@@ -16,6 +16,7 @@ import (
 	agentv1 "github.com/itbm/cloudfactory/agent/gen/cloudfactory/agent/v1"
 	"github.com/itbm/cloudfactory/agent/internal/caddy"
 	"github.com/itbm/cloudfactory/agent/internal/execx"
+	"github.com/itbm/cloudfactory/agent/internal/gate"
 	"github.com/itbm/cloudfactory/agent/internal/host"
 	"github.com/itbm/cloudfactory/agent/internal/images"
 	"github.com/itbm/cloudfactory/agent/internal/jobs"
@@ -76,12 +77,31 @@ func (f *fakeEdge) Remove(_ context.Context, id string) error {
 	return nil
 }
 
+// deps gives the Deps of the worker of the agent for a test, the fake command runner and the
+// fake edge proxy.
+//
+// The worker has no rights of root: each command and each operation that needs root goes
+// through the gate to a root helper in the same process. The helper has the same settings
+// and the same command runner, and it checks each request with its command policy and its
+// list of operations. Thus the tests of the actions are also tests of the privilege boundary.
+//
+// A test that changes a setting after this call uses both, so that the helper gets the
+// change too.
 func deps(t *testing.T) (*Deps, *execx.Fake, *fakeEdge) {
 	dir := t.TempDir()
 	run := &execx.Fake{}
-	h := &host.Host{Run: run, SitesDir: filepath.Join(dir, "sites"), UnitRoot: filepath.Join(dir, "units"), ConfigRoot: filepath.Join(dir, "config"), LookupUID: func(string) (int, error) { return 20001, nil }}
 	edge := &fakeEdge{sites: map[string]caddy.Site{}}
-	d := &Deps{
+	d, root := settings(dir, run, edge), settings(dir, run, edge)
+	server := &gate.Server{Run: run, Allow: root.Allow, Ops: root.RootOps(), Dial: root.RootDial}
+	d.UseGate(testGate{Gate: server.Local(), root: root})
+	return d, run, edge
+}
+
+// settings gives a Deps with the settings of the tests. It has no gate.
+func settings(dir string, run *execx.Fake, edge *fakeEdge) *Deps {
+	h := &host.Host{Run: run, SitesDir: filepath.Join(dir, "sites"), UnitRoot: filepath.Join(dir, "units"), ConfigRoot: filepath.Join(dir, "config"),
+		LookupUID: func(string) (int, error) { return 20001, nil }, LookupGID: func(string) (int, error) { return 20001, nil }}
+	return &Deps{
 		Host: h, Run: run, Edge: edge, State: NewState(dir),
 		Gvisor:        quadlet.Runtime{RunscPath: "/usr/local/bin/runsc", Platform: "systrap"},
 		Health:        func(context.Context, int, string) (int, error) { return 200, nil },
@@ -101,7 +121,31 @@ func deps(t *testing.T) (*Deps, *execx.Fake, *fakeEdge) {
 		// the tests mount nothing.
 		LoopControl: filepath.Join(dir, "no-loop-control"),
 	}
-	return d, run, edge
+}
+
+// testGate is the gate of the worker of a test. It keeps the Deps of the root helper.
+type testGate struct {
+	gate.Gate
+	root *Deps
+}
+
+// rootOf gives the Deps of the root helper of the worker d.
+func rootOf(d *Deps) *Deps { return d.Gate.(testGate).root }
+
+// both changes a setting of the worker and of its root helper.
+func both(d *Deps, change func(d *Deps)) {
+	change(d)
+	if g, ok := d.Gate.(testGate); ok {
+		change(g.root)
+	}
+}
+
+// direct gives a Deps with no gate: root does all the work in one process. It is the Deps of
+// a command that an administrator runs as root, for example "cf-agent panel install".
+func direct(t *testing.T) (*Deps, *execx.Fake, *fakeEdge) {
+	run := &execx.Fake{}
+	edge := &fakeEdge{sites: map[string]caddy.Site{}}
+	return settings(t.TempDir(), run, edge), run, edge
 }
 
 func website(image string) *agentv1.Website {
@@ -254,14 +298,17 @@ func TestSetRuntimeKeepsTheOldContainerWhenTheHealthCheckFails(t *testing.T) {
 	}
 }
 
-// sharedDeps gives deps with a shared image store. Each pull makes an empty store.
+// sharedDeps gives deps with a shared image store. Each pull makes an empty store. The root
+// helper has the store, and the worker asks the helper.
 func sharedDeps(t *testing.T) (*Deps, *execx.Fake) {
 	d, f, _ := deps(t)
 	dir := t.TempDir()
-	d.Images = &images.Store{Run: f, Root: filepath.Join(dir, "images"), Config: filepath.Join(dir, "website-storage.conf"), RunRoot: filepath.Join(dir, "run"), Group: host.SitesGroup, MountProgram: images.FuseOverlayfs}
-	d.Host.StorageConfig = d.Images.Config
+	store := &images.Store{Run: f, Root: filepath.Join(dir, "images"), Config: filepath.Join(dir, "website-storage.conf"), RunRoot: filepath.Join(dir, "run"), Group: host.SitesGroup, MountProgram: images.FuseOverlayfs}
+	rootOf(d).Images = store
+	d.Images = imagesRoot{d.Gate}
+	both(d, func(d *Deps) { d.Host.StorageConfig = store.Config })
 	f.Rules = append(f.Rules, execx.Rule{Prefix: "podman pull --quiet ", Do: func() error {
-		entries, err := os.ReadDir(d.Images.Root)
+		entries, err := os.ReadDir(store.Root)
 		if err != nil {
 			return err
 		}
@@ -271,13 +318,23 @@ func sharedDeps(t *testing.T) (*Deps, *execx.Fake) {
 			}
 		}
 		// The fake does not know the reference, so the test pulls one image at a time.
-		return os.MkdirAll(filepath.Join(d.Images.Root, ".pull-"+images.StoreName(sharedRef)), 0o700)
+		return os.MkdirAll(filepath.Join(store.Root, ".pull-"+images.StoreName(sharedRef)), 0o700)
 	}})
+	// useradd makes the home directory of a website user. The fake runner does not, so the
+	// homes of the users of the tests are here from the start.
+	for _, user := range []string{"acme_x7k2", "bravo_a1b2"} {
+		if err := os.MkdirAll(d.Host.Home(user), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
 	if err := d.ShareImages(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	return d, f
 }
+
+// sharedStore gives the shared image store of sharedDeps.
+func sharedStore(d *Deps) *images.Store { return rootOf(d).Images.(*images.Store) }
 
 const sharedDigest = "sha256:08af88488ce218936d530b80f6f55dc2afe4d0d91f13f9e6ae350a9e7752128e"
 const sharedRef = "ghcr.io/cloudfactory/frankenphp-php8.4:8.4.0-1@" + sharedDigest
@@ -293,7 +350,7 @@ func TestCreateWebsiteUsesTheSharedImageStore(t *testing.T) {
 	if !f.Called("podman pull --quiet "+sharedRef) || f.Called("runuser -u acme_x7k2 -- env XDG_RUNTIME_DIR=/run/user/20001 podman pull") {
 		t.Errorf("calls = %v", f.Calls)
 	}
-	if _, err := os.Stat(filepath.Join(d.Images.Root, images.StoreName(sharedRef))); err != nil {
+	if _, err := os.Stat(filepath.Join(sharedStore(d).Root, images.StoreName(sharedRef))); err != nil {
 		t.Error(err)
 	}
 
@@ -333,8 +390,8 @@ func TestSetRuntimeRemovesTheOldCopyOfTheWebsiteUser(t *testing.T) {
 	if err := d.ShareImages(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if !f.Called("ln -sfn " + d.Images.Config + " " + d.Host.Home("acme_x7k2") + "/.config/containers/storage.conf") {
-		t.Errorf("calls = %v", f.Calls)
+	if target, err := os.Readlink(filepath.Join(d.Host.Home("acme_x7k2"), ".config/containers/storage.conf")); err != nil || target != sharedStore(d).Config {
+		t.Errorf("link = %q, %v", target, err)
 	}
 	const id = "745a3dfee8c74d346f6d0d6d58de5ba21cb2113df5bde601fe1019622640b993"
 	f.Rules = append([]execx.Rule{
@@ -621,6 +678,7 @@ func TestAFullRestoreCanRemoveTheOtherFiles(t *testing.T) {
 	run(t)(d.CreateWebsite(&agentv1.WebsiteRequest{JobId: jobID, Website: website("ghcr.io/cloudfactory/frankenphp-php8.4:8.4.0-1")}))
 	app := d.Host.AppDir("acme_x7k2")
 	req := &agentv1.RestoreRequest{JobId: jobID2, WebsiteId: websiteID, UnixUser: "acme_x7k2", SnapshotId: "1a2b3c4d", Scope: "website", Target: "s3:b/c", DeleteExtra: true}
+	f.Rules = []execx.Rule{staged(d, jobID2, "acme_x7k2", "public/index.php")}
 	f.Calls = nil
 	if err := run(t)(d.Restore(req)); err != nil {
 		t.Fatal(err)
@@ -656,9 +714,18 @@ func TestAFullRestoreCanRemoveTheOtherFiles(t *testing.T) {
 	}
 }
 
+// staged gives a rule for the fake restic: it "restores" one file of the website of the user
+// into the staging directory of the job.
+func staged(d *Deps, job, user, rel string) execx.Rule {
+	return execx.Rule{Prefix: "restic --repo s3:b/c --password-file  --json --retry-lock 30m restore", Do: func() error {
+		return writeFile(filepath.Join(d.stageDir(job), d.Host.AppDir(user), rel), []byte("<?php\n"))
+	}}
+}
+
 // CF-05: restic restores into an empty directory of root, and the website user copies the files.
 func TestRestoreCopiesFilesAsTheWebsiteUser(t *testing.T) {
 	d, f, _ := deps(t)
+	f.Rules = []execx.Rule{staged(d, jobID, "acme_x7k2", "public/index.php")}
 	err := run(t)(d.Restore(&agentv1.RestoreRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", SnapshotId: "1a2b3c4d", Scope: "file", Item: "/public/index.php", Target: "s3:b/c"}))
 	if err != nil {
 		t.Fatal(err)
@@ -785,7 +852,9 @@ func TestDeleteWebsiteCanRunAgainAfterTheUserIsGone(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The first job removed the user. The record of the website is still in the state.
-	d.Host.LookupUID = func(name string) (int, error) { return 0, user.UnknownUserError(name) }
+	both(d, func(d *Deps) {
+		d.Host.LookupUID = func(name string) (int, error) { return 0, user.UnknownUserError(name) }
+	})
 	f.Calls = nil
 	req := &agentv1.DeleteWebsiteRequest{JobId: jobID2, WebsiteId: websiteID, UnixUser: "acme_x7k2"}
 	if err := run(t)(d.DeleteWebsite(req)); err != nil {
