@@ -198,7 +198,7 @@ func (a *app) server(ctx context.Context, sub string, args []string) error {
 		a.connection(s)
 		if n, _ := s["sharedDatabaseWebsites"].(float64); n > 0 {
 			fmt.Fprintf(a.out, "Websites with the shared database containers of an earlier release: %d\n", int(n))
-			fmt.Fprintln(a.out, "To give each customer its own database containers: cf servers move-databases SERVER")
+			fmt.Fprintln(a.out, "To move their databases to the database servers of each customer: cf servers move-databases SERVER")
 		}
 		if updates, ok := s["pendingUpdates"].([]any); ok && len(updates) > 0 {
 			fmt.Fprintln(a.out, "Pending updates:")
@@ -275,7 +275,7 @@ func (a *app) server(ctx context.Context, sub string, args []string) error {
 		return nil
 	case "move-databases":
 		// One job for each website that uses the shared database containers of an earlier
-		// release. The job moves its databases to the database containers of its customer.
+		// release. The job moves its databases to the database servers of its customer.
 		var out struct {
 			Jobs []client.Job `json:"jobs"`
 		}
@@ -636,7 +636,8 @@ func (a *app) plans(ctx context.Context, sub string) error {
 	if sub != "list" && sub != "ls" {
 		return fmt.Errorf("unknown command plans %s", sub)
 	}
-	return a.list(ctx, "/plans", nil, []string{"name", "websites", "databases", "mailboxes", "id"})
+	// "databases" is the number of databases of each database server with the plan.
+	return a.list(ctx, "/plans", nil, []string{"name", "websites", "mailboxes", "databaseServers", "databases", "id"})
 }
 
 func (a *app) audit(ctx context.Context, sub string, args []string) error {
