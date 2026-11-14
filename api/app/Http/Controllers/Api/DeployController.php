@@ -227,6 +227,7 @@ class DeployController extends Controller
     {
         $website = $this->findWebsite($request, $websiteId);
         WebsiteController::refuseFailed($website);
+        abort_if($website->customer?->isSuspended() ?? false, 409, 'This customer is suspended. Lift the suspension before you change the deploys.');
 
         return $website;
     }

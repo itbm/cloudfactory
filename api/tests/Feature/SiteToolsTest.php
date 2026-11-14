@@ -140,6 +140,7 @@ class SiteToolsTest extends TestCase
         $this->getJson("/api/v1/websites/{$website->id}/files")->assertOk();
         $this->putJson("/api/v1/websites/{$website->id}/files/content", ['path' => '/a', 'content' => 'x'])->assertStatus(409);
         $this->postJson("/api/v1/websites/{$website->id}/cron-jobs", ['schedule' => '* * * * *', 'command' => 'true'])->assertStatus(409);
+        $this->putJson("/api/v1/websites/{$website->id}/deploy", ['repository' => 'https://example.com/a.git', 'branch' => 'main'])->assertStatus(409);
 
         $website->customer->update(['suspended' => false]);
         $website->forceFill(['status' => 'failed'])->save();

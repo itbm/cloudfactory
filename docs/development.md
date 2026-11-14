@@ -54,7 +54,12 @@ server, a suspended customer, a domain that waits for its DNS record.
 The demo agent (`api/app/Demo`) fails these jobs, so that you can see a failure:
 
 - a new website or a new domain with a name that starts with `fail.`;
-- a new database with a name that ends with `_fail`.
+- a new database with a name that ends with `_fail`;
+- a deploy from a repository with `fail` in its address (the build step fails);
+- a cron job with `fail` in its command, when you select **Run now**.
+
+In the demonstration mode, the file manager shows a small set of sample files for each
+website, and keeps your changes in the cache. The logs are sample lines.
 
 The panel ignores `CF_DEMO` when `APP_ENV` is `production`. Do not set it on a server.
 
