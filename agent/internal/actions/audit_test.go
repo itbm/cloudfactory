@@ -364,6 +364,26 @@ func TestLimitsSetTheQuotaAndTheIOLimit(t *testing.T) {
 	}
 }
 
+// A website that was there before the quotas were on gets its limit at the start of the agent.
+func TestTheAgentSetsTheQuotaOfEachWebsiteAtItsStart(t *testing.T) {
+	d, f, _ := deps(t)
+	w := website("ghcr.io/cloudfactory/frankenphp-php8.4:8.4.0-1")
+	w.Limits.DiskBytes = 10 << 30
+	run(t)(d.CreateWebsite(&agentv1.WebsiteRequest{JobId: jobID, Website: w}))
+	// The server has no quotas: the agent sets no limit, at the start too.
+	if err := d.ApplyDiskQuotas(context.Background()); err != nil || f.Called("setquota") {
+		t.Fatalf("err = %v, calls = %v", err, f.Calls)
+	}
+	// The installation script turned on the quotas, and the agent started again.
+	d.QuotaMount = "/"
+	if err := d.ApplyDiskQuotas(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if !f.Called("setquota --user acme_x7k2 9961472 10485760 0 0 /") {
+		t.Errorf("no quota: %v", f.Calls)
+	}
+}
+
 // FR-203 and FR-402: the report has the use of each website and the real certificate state.
 func TestTheReportHasWebsiteUseAndCertificates(t *testing.T) {
 	d, f, _ := deps(t)

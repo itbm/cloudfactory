@@ -200,7 +200,7 @@ func (d *Deps) quotaService() panel.Service {
 	}
 	// The panel shows that the server does not apply the disk limits of the websites.
 	return panel.Service{Name: "disk-quotas", State: "stopped", Optional: true,
-		Detail: "User quotas are off on the file system of the websites, so this server does not apply the disk limit of a plan. To turn them on, see \"Disk quotas\" in the installation guide, and then restart cf-agent."}
+		Detail: "User quotas are off on the file system of the websites, so this server does not apply the disk limit of a website. Refer to \"Disk quotas\" in the installation guide."}
 }
 
 // cgroupUse reads the memory, CPU and process use of a website from the cgroup of its service.

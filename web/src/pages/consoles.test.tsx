@@ -110,7 +110,7 @@ describe("the setup checklist", () => {
       "Use a certificate that browsers trust for the panel Open",
       "Set the object storage for backups Done",
     ]);
-    expect(items[1].textContent).toContain("While this is open: Without project quotas on the file system, a server does not apply the disk limit of a plan.");
+    expect(items[1].textContent).toContain("While this is open: Without user quotas on the file system, a server does not apply the disk limit of a plan.");
     expect(within(items[1]).getByRole("link").getAttribute("href")).toBe(`/servers/${getState().servers.find((s) => s.name === "web-1")!.id}`);
     // A done item has no effect text and no action.
     expect(items[3].textContent).not.toContain("While this is open");
@@ -215,6 +215,43 @@ describe("the UI items of the audit", () => {
     expect(text).toContain("Own network namespace (pasta)");
     expect(text).toContain("The container of the website serves all files");
     expect(text).not.toMatch(/net-shopacme|edge proxy serves/);
+  });
+
+  it("says where the server does not apply the disk limit (U4)", async () => {
+    // 4 of the 5 websites of the owner are on web-1, which has no user quotas.
+    await open("owner", "/");
+    expect(screen.getByRole("region", { name: "Disk" }).textContent).toContain("The limit is not applied for 4 of 5 websites");
+    expect(screen.getByRole("region", { name: "Memory" }).textContent).not.toContain("not applied");
+    cleanup();
+    reset();
+
+    await open("administrator", () => `/websites/${website("shop.acme.example.com").id}`);
+    const card = screen.getByRole("heading", { name: "Resources" }).closest("section")!;
+    expect(card.textContent).toContain("Not applied on this server");
+    expect(within(card).getByRole("link", { name: "See the server" }).getAttribute("href")).toBe(`/servers/${website("shop.acme.example.com").serverId}`);
+    cleanup();
+    reset();
+
+    // An owner cannot open the page of a server, thus the text has no link.
+    await open("owner", () => `/websites/${website("shop.acme.example.com").id}`);
+    const ownerCard = screen.getByRole("heading", { name: "Resources" }).closest("section")!;
+    expect(ownerCard.textContent).toContain("Not applied on this server");
+    expect(within(ownerCard).queryByRole("link", { name: "See the server" })).toBeNull();
+    cleanup();
+    reset();
+
+    await open("administrator", () => `/websites/${website("shop.acme.example.com").id}/settings`);
+    expect(screen.getByRole("spinbutton", { name: "Disk (GB)", description: "Not applied on this server" })).toBeTruthy();
+    cleanup();
+    reset();
+
+    // web-2 has user quotas: the pages of its websites do not have the text.
+    await open("administrator", () => `/websites/${website("storefront.acme.example.com").id}`);
+    expect(screen.getByRole("heading", { name: "Resources" }).closest("section")!.textContent).not.toContain("Not applied");
+    cleanup();
+    reset();
+    await open("administrator", () => `/websites/${website("storefront.acme.example.com").id}/settings`);
+    expect(screen.getByRole("spinbutton", { name: "Disk (GB)" }).getAttribute("aria-describedby")).toBeNull();
   });
 
   it("shows that backups are not set up, with no button that can only fail (U5)", async () => {

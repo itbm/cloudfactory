@@ -77,20 +77,16 @@ class SetupController extends Controller
     private static function diskLimits(): array
     {
         $servers = Server::orderBy('name')->get();
-        $without = $servers->filter(function (Server $server) {
-            $quotas = collect($server->services ?? [])->firstWhere('name', 'disk-quotas');
-
-            // An agent that reports no state for the disk quotas is an agent of an earlier release.
-            return $quotas !== null && ($quotas['state'] ?? '') !== 'running';
-        })->values();
+        // An agent that reports no state for the disk quotas is an agent of an earlier release.
+        $without = $servers->filter(fn (Server $server) => $server->appliesDiskLimits() === false)->values();
         $item = self::item(
             'disk-limits',
             'Turn on disk limits on each server',
             $without->isEmpty(),
-            'Without project quotas on the file system, a server does not apply the disk limit of a plan. One website can fill the disk, and then all websites on that server stop.',
+            'Without user quotas on the file system, a server does not apply the disk limit of a plan. One website can fill the disk, and then all websites on that server stop.',
             $without->isEmpty()
                 ? 'All servers apply the disk limit of each website.'
-                : 'These servers do not apply disk limits: '.$without->pluck('name')->implode(', ').'. Mount /srv/cloudfactory on XFS or ext4 with project quotas (prjquota), then restart the agent.',
+                : 'These servers do not apply disk limits: '.$without->pluck('name')->implode(', ').'. Run the installation script on the server again: it turns on the user quotas of an ext4 file system. For a different file system, refer to "Disk quotas" in the installation guide.',
             'Open the server',
             $without->count() === 1 ? '/servers/'.$without[0]->id : '/servers',
         );

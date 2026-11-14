@@ -130,3 +130,12 @@ export const DATABASE_SERVER_STATUS: Record<DatabaseServerStatus, { label: strin
   failed: { label: "Failed", tone: "danger" },
   removing: { label: "Removing", tone: "info" },
 };
+
+/**
+ * The text next to a disk limit that the server of the website does not apply (audit item U4).
+ * A server applies the limit only when its file system has user quotas.
+ */
+export const DISK_LIMIT_NOT_APPLIED = "Not applied on this server";
+
+/** The same text for a value that is the sum of all shown websites. */
+export const DISK_LIMIT_NOT_APPLIED_ALL = "The limit is not applied";

@@ -9,7 +9,7 @@ import { Topbar } from "../components/Layout";
 import { WebsiteMenu } from "../components/WebsiteMenu";
 import { Card, Empty, FormError, JobError, JobRow, Live, Meter, Status, Tabs, TerraformBadge, TerraformNotice } from "../components/ui";
 import { bytes, longDate, percent, ratio, relativeTime } from "../lib/format";
-import { certificateUntil, jobActive, WEBSITE_STATUS } from "../lib/labels";
+import { certificateUntil, DISK_LIMIT_NOT_APPLIED, jobActive, WEBSITE_STATUS } from "../lib/labels";
 import { AccessTab, SshCard } from "./website/AccessTab";
 import { BackupsTab } from "./website/BackupsTab";
 import { DatabasesTab } from "./website/DatabasesTab";
@@ -91,20 +91,28 @@ export function ResourcesCard({ website }: { website: Website }) {
   const state = useStore();
   const plan = state.plans.find((p) => p.id === website.planId);
   const { use, limits } = website;
-  const rows = [
+  // Audit item U4: a disk limit that the server does not apply must not look like a limit that it applies.
+  const diskNote = website.diskLimitApplied === false ? DISK_LIMIT_NOT_APPLIED : undefined;
+  const rows: [string, string, number, string?][] = [
     ["CPU", `${percent(use.cpuPercent)} of ${limits.vcpus} vCPU`, use.cpuPercent / 100],
     ["Memory", `${bytes(use.memoryBytes)} of ${bytes(limits.memoryBytes)}`, ratio(use.memoryBytes, limits.memoryBytes)],
-    ["Disk", `${bytes(use.diskBytes)} of ${bytes(limits.diskBytes)}`, ratio(use.diskBytes, limits.diskBytes)],
+    ["Disk", `${bytes(use.diskBytes)} of ${bytes(limits.diskBytes)}`, ratio(use.diskBytes, limits.diskBytes), diskNote],
     ["Processes", `${use.processes} of ${limits.processes}`, ratio(use.processes, limits.processes)],
     ["Disk I/O", `${bytes(use.diskIoBytesPerSecond)}/s of ${bytes(limits.diskIoBytesPerSecond)}/s`, ratio(use.diskIoBytesPerSecond, limits.diskIoBytesPerSecond)],
-  ] as const;
+  ];
   return (
     <Card title="Resources">
       <div className="card-body">
-        {rows.map(([label, text, value]) => (
+        {rows.map(([label, text, value, note]) => (
           <div className="resource" key={label}>
             <div className="row"><span>{label}</span><span>{text}</span></div>
-            <Meter value={value} label={`${label}: ${text}`} tone={value >= 0.9 ? "danger" : value >= 0.75 ? "warning" : undefined} />
+            <Meter value={value} label={note ? `${label}: ${text}. ${note}` : `${label}: ${text}`} tone={value >= 0.9 ? "danger" : value >= 0.75 ? "warning" : undefined} />
+            {note && (
+              <p className="note-warning" style={{ marginTop: 6 }}>
+                {note}
+                {state.session.user.role === "administrator" && <>. <Link to={`/servers/${website.serverId}`}>See the server</Link></>}
+              </p>
+            )}
           </div>
         ))}
         <p className="muted small" style={{ marginTop: 16 }}>

@@ -78,6 +78,8 @@ WEBSITE_UID_MAX=59999
 # permits it.
 WEBSITE_SMTP=0
 WEBSITE_NETWORKS=""
+# The script turns on user quotas, which apply the disk limits, unless the operator refuses it.
+DISK_QUOTAS=1
 
 usage() {
 	cat <<'USAGE'
@@ -116,6 +118,9 @@ Options:
                        example 10.0.5.10 or 10.0.5.0/24. The default refuses the private
                        and link-local networks and the services of this server. You can
                        give this option more than one time.
+  --no-disk-quotas     Do not turn on user quotas on the file systems of the websites and the
+                       database servers. The server then does not apply the disk limit of a
+                       website, unless you turn on the quotas yourself.
   --check              Do only the checks. Do not change the system.
   --help               Show this help.
 USAGE
@@ -153,6 +158,7 @@ while [ $# -gt 0 ]; do
 	--allow-unsigned) UNSIGNED_REGISTRIES="$UNSIGNED_REGISTRIES $(value "$@")"; shift ;;
 	--allow-website-smtp) WEBSITE_SMTP=1 ;;
 	--allow-website-network) WEBSITE_NETWORKS="$WEBSITE_NETWORKS $(value "$@")"; shift ;;
+	--no-disk-quotas) DISK_QUOTAS=0 ;;
 	--check) CHECK_ONLY=1 ;;
 	--help | -h) usage; exit 0 ;;
 	*) usage >&2; fail "unknown option: $1" ;;
@@ -483,6 +489,146 @@ check_os
 check_arch
 check_systemd
 check_tools
+# ---------------------------------------------------------------------------
+# Disk quotas. The disk limit of a website, and of a database server that has its own user ID,
+# is a user quota of the file system.
+# ---------------------------------------------------------------------------
+
+# The mount options of journaled user quotas for ext4. With them, the quota file is correct
+# after a power failure, and the server does not have to examine the file system.
+QUOTA_OPTIONS=usrjquota=aquota.user,jqfmt=vfsv1
+# The directories whose files have a disk limit: the websites and the database servers.
+QUOTA_DIRECTORIES="/srv/cloudfactory /var/lib/cf-db"
+# The mount points where this script turned on the quotas. cloudfactory-quota.service turns
+# them on again at each start of the server.
+QUOTA_LIST="$ROOT$CF_ETC/quota-mounts"
+QUOTA_MOUNTS=""
+# The mount points that the script examined in this run.
+QUOTA_SEEN=""
+# 1 when this run turned on the quotas of a file system. The agent then starts again, because
+# it looks for the quotas, and sets the limit of each website, at its start.
+QUOTAS_CHANGED=0
+
+# quota_is_on reports whether user quotas are on for a mount point. "quotaon -p" prints "user
+# quota on / (/dev/vda1) is on". It has a non-zero exit status when a quota is on, so the
+# script reads only the output. The agent does the same check (host.QuotaMount).
+quota_is_on() {
+	case "$(quotaon --print-state --user "$1" 2>/dev/null)" in
+	*"is on"*) return 0 ;;
+	esac
+	return 1
+}
+
+# enable_quotas turns on user quotas on the file system that has a directory, and prints the
+# result. It does not change /etc/fstab. It never stops the installation: a server with no
+# quotas operates, and the panel shows that it does not apply the disk limits.
+enable_quotas() {
+	target=$(findmnt --noheadings --output TARGET --target "$1" 2>/dev/null | head -n 1)
+	fstype=$(findmnt --noheadings --output FSTYPE --target "$1" 2>/dev/null | head -n 1)
+	if [ -z "$target" ]; then
+		info "  $1: the script cannot find the file system, so it does not turn on the quotas."
+		return 0
+	fi
+	# The two directories are usually on one file system.
+	case " $QUOTA_SEEN " in *" $target "*) return 0 ;; esac
+	QUOTA_SEEN="$QUOTA_SEEN $target"
+	if quota_is_on "$target"; then
+		info "  $target ($fstype): the user quotas are on."
+		# Quotas that an earlier run of this script turned on stay in the list. Quotas that the
+		# operator turned on in /etc/fstab are not in the list: the system turns them on.
+		if grep -qxF -- "$target" "$QUOTA_LIST" 2>/dev/null; then
+			QUOTA_MOUNTS="$QUOTA_MOUNTS $target"
+		fi
+		return 0
+	fi
+	case "$fstype" in
+	ext4) ;;
+	xfs)
+		info "  $target (xfs): XFS accepts the quota option only when it mounts the file system. Add the mount option uquota (for the root file system: rootflags=uquota on the kernel command line), restart the server, and run the script again."
+		return 0
+		;;
+	*)
+		info "  $target ($fstype): the script cannot turn on user quotas on this type of file system. The server does not apply the disk limits."
+		return 0
+		;;
+	esac
+	# An ext4 file system with the feature "quota" always counts the disk space. Then
+	# "quotaon" is sufficient. Without the feature, the file system needs the mount options
+	# and a quota file.
+	if ! quotaon --user "$target" 2>/dev/null || ! quota_is_on "$target"; then
+		if ! mount -o "remount,$QUOTA_OPTIONS" "$target" 2>/dev/null; then
+			info "  $target (ext4): the file system does not accept the quota options, for example in a container. The server does not apply the disk limits."
+			return 0
+		fi
+		# -c: make a new quota file. -u: for users. -m: do not mount the file system read-only.
+		if ! quotacheck -cum "$target" >/dev/null 2>&1 || ! quotaon --user "$target" 2>/dev/null || ! quota_is_on "$target"; then
+			info "  $target (ext4): the script cannot turn on the user quotas. The server does not apply the disk limits. Refer to \"Disk quotas\" in the installation guide."
+			return 0
+		fi
+	fi
+	info "  $target (ext4): the script turned on the user quotas."
+	QUOTA_MOUNTS="$QUOTA_MOUNTS $target"
+	QUOTAS_CHANGED=1
+}
+
+# quota_script prints the program that turns on the quotas at each start of the server.
+quota_script() {
+	cat <<SCRIPT
+#!/bin/sh
+# Managed by the Cloudfactory installation script. It turns on the user quotas of the file
+# systems in $CF_ETC/quota-mounts, before a website or a database server starts.
+status=0
+while read -r mount; do
+	[ -n "\$mount" ] || continue
+	case "\$(quotaon --print-state --user "\$mount" 2>/dev/null)" in *"is on"*) continue ;; esac
+	quotaon --user "\$mount" 2>/dev/null && continue
+	if ! mount -o "remount,$QUOTA_OPTIONS" "\$mount" || ! quotaon --user "\$mount"; then
+		echo "cloudfactory: cannot turn on the user quotas on \$mount. The server does not apply the disk limits." >&2
+		status=1
+	fi
+done <$CF_ETC/quota-mounts
+exit \$status
+SCRIPT
+}
+
+# quota_unit prints the unit that runs quota_script. The user managers start the websites and
+# the database servers, and systemd-logind starts the user managers, so the unit comes first.
+quota_unit() {
+	cat <<'UNIT'
+[Unit]
+Description=Cloudfactory disk quotas
+After=local-fs.target systemd-remount-fs.service
+Before=systemd-logind.service systemd-user-sessions.service cf-agent.service cf-sftp.service
+ConditionPathExists=/etc/cloudfactory/quota-mounts
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/lib/cloudfactory/quota-on
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+}
+
+# setup_quotas turns on the quotas for QUOTA_DIRECTORIES, and installs the unit when the
+# script turned on the quotas of a file system.
+setup_quotas() {
+	for dir in $QUOTA_DIRECTORIES; do
+		enable_quotas "$dir"
+	done
+	[ -n "$QUOTA_MOUNTS" ] || return 0
+	install -d -m 0755 "$ROOT$CF_ETC" "$ROOT/usr/local/lib/cloudfactory" "$ROOT/etc/systemd/system"
+	# shellcheck disable=SC2086 # One mount point on each line.
+	printf '%s\n' $QUOTA_MOUNTS >"$QUOTA_LIST"
+	quota_script >"$ROOT/usr/local/lib/cloudfactory/quota-on"
+	chmod 0755 "$ROOT/usr/local/lib/cloudfactory/quota-on"
+	quota_unit >"$ROOT/etc/systemd/system/cloudfactory-quota.service"
+	systemctl daemon-reload
+	systemctl enable cloudfactory-quota.service >/dev/null 2>&1 ||
+		info "  The script cannot enable cloudfactory-quota.service. After a restart of the server, the quotas are off."
+}
+
 check_arguments
 check_panel
 check_ports
@@ -497,6 +643,10 @@ if [ "$CHECK_ONLY" -eq 1 ]; then
 	# The tests of this script read the firewall rules. This does not change the system.
 	if [ -n "$ROOT" ] && [ "${CF_TEST_PRINT:-}" = firewall ]; then
 		firewall_rules
+	fi
+	# The tests of this script run the quota step with fake commands, in the fake system.
+	if [ -n "$ROOT" ] && [ "${CF_TEST_PRINT:-}" = quotas ]; then
+		setup_quotas
 	fi
 	exit 0
 fi
@@ -516,8 +666,8 @@ unset DBUS_SESSION_BUS_ADDRESS XDG_RUNTIME_DIR XDG_SESSION_ID XDG_SESSION_TYPE X
 	XDG_CONFIG_HOME XDG_DATA_HOME XDG_CACHE_HOME XDG_STATE_HOME
 
 STEP=0
-STEPS=14
-[ "$MODE" = panel ] && STEPS=16
+STEPS=15
+[ "$MODE" = panel ] && STEPS=17
 CURRENT=""
 TMP=$(mktemp -d)
 on_exit() {
@@ -767,6 +917,15 @@ install -d -o root -g cf-sites -m 0750 /var/lib/cloudfactory-images
 # The SSH keys and the user list of the SFTP container. Only root can write them.
 install -d -m 0755 "$CF_ETC/sftp" "$CF_ETC/sftp-users"
 
+step "Turn on the disk quotas"
+# The agent sets a user quota for each website, and for each database server that has its own
+# user ID. The quotas must be on before the first website gets its files.
+if [ "$DISK_QUOTAS" -eq 1 ]; then
+	setup_quotas
+else
+	info "  --no-disk-quotas: the script does not turn on the user quotas."
+fi
+
 step "Set the firewall"
 # The agent writes the database access of each website in this directory (firewall_rules).
 install -d -m 0755 "$CF_ETC/firewall"
@@ -904,8 +1063,9 @@ if [ ! -f "$CF_ETC/agent.json" ]; then
 	[ -n "$PANEL_CA_PIN" ] && set -- "$@" --panel-ca-sha256 "$PANEL_CA_PIN"
 	/usr/local/bin/cf-agent join "$@"
 fi
-if [ "$AGENT_CHANGED" -eq 1 ] && systemctl is-active --quiet cf-agent.service; then
-	# An update: the service still has the old binary.
+if { [ "$AGENT_CHANGED" -eq 1 ] || [ "$QUOTAS_CHANGED" -eq 1 ]; } && systemctl is-active --quiet cf-agent.service; then
+	# An update: the service still has the old binary. New quotas: the agent that operates
+	# does not know them, and the websites that are there have no disk limit.
 	systemctl restart cf-agent.service
 fi
 systemctl enable --now --quiet cf-agent.service

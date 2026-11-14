@@ -92,6 +92,8 @@ export function accountUsage(s: State) {
     vcpus,
     memoryBytes: { used: sum((w) => w.use.memoryBytes), limit: sum((w) => w.limits.memoryBytes) },
     diskBytes: { used: sum((w) => w.use.diskBytes), limit: sum((w) => w.limits.diskBytes) },
+    /** The number of websites on a server that does not apply the disk limit. */
+    diskLimitNotApplied: sites.filter((w) => w.diskLimitApplied === false).length,
   };
 }
 

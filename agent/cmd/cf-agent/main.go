@@ -294,6 +294,9 @@ func serve(ctx context.Context) error {
 	}
 	if deps.QuotaMount = h.QuotaMount(ctx, cfg.SitesDir); deps.QuotaMount == "" {
 		slog.Warn("no disk limits: user quotas are off on the file system of the websites", "dir", cfg.SitesDir)
+	} else if err := deps.ApplyDiskQuotas(ctx); err != nil {
+		// The websites that were there before the quotas were on get their limits now.
+		slog.Error("set the disk limits of the websites", "err", err)
 	}
 	// An agent update brings the gVisor version of the new agent. Containers that start after
 	// the switch use it. Containers that operate keep the old version until they restart.

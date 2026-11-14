@@ -188,6 +188,7 @@ The backups of the websites that the server had stay in the object storage, in t
 | `--allow-unsigned REGISTRY` | Let Podman pull unsigned images from this registry. You can use this option more than one time. |
 | `--allow-website-smtp` | Let the websites connect to port 25 (SMTP) of other servers. Refer to [Connections from the websites](#connections-from-the-websites). |
 | `--allow-website-network NETWORK` | Let the websites connect to this private address or network, for example `10.0.5.0/24`. You can use this option more than one time. |
+| `--no-disk-quotas` | Do not turn on the user quotas of the file systems. Without user quotas, the server does not apply the disk limit of a website. Refer to [Disk quotas](#disk-quotas). |
 | `--check`          | Do only the checks. Do not change the system.                            |
 
 ## What the script does
@@ -216,17 +217,20 @@ Then the script does these steps:
 9. Make the service users.
 10. Make the group of the website users and the directories for SFTP (refer to [SFTP](#sftp)).
     The script does not change the SSH service of the host.
-11. Set the firewall. The firewall accepts SSH (port 22), HTTP, HTTPS, the agent port and the
+11. Turn on the user quotas of the file systems of `/srv/cloudfactory` and `/var/lib/cf-db`.
+    The server needs them to apply the disk limit of a website (refer to
+    [Disk quotas](#disk-quotas)). The option `--no-disk-quotas` skips this step.
+12. Set the firewall. The firewall accepts SSH (port 22), HTTP, HTTPS, the agent port and the
     SFTP port. It sends connections to ports 80 and 443 to the edge proxy, also connections
     from the server itself. It also limits the connections that a website opens (refer to
     [Connections from the websites](#connections-from-the-websites)).
-12. Download the agent and check its signature.
-13. Install the agent service and the rollback service.
-14. On the first server only: start the panel in gVisor. The panel has its own PostgreSQL
+13. Download the agent and check its signature.
+14. Install the agent service and the rollback service.
+15. On the first server only: start the panel in gVisor. The panel has its own PostgreSQL
     database in the container `cf-panel-db`.
-15. On the first server only: make the first administrator, and get the certificate of the
+16. On the first server only: make the first administrator, and get the certificate of the
     panel domain from the panel CA (refer to [The panel certificate](#the-panel-certificate)).
-16. Join the panel and start the agent. On the first server, the agent connects to the HTTPS
+17. Join the panel and start the agent. On the first server, the agent connects to the HTTPS
     port of the panel API on the private service address, and accepts only the certificate of
     the panel.
 
@@ -737,18 +741,49 @@ Before you update, do these steps:
 
 ### Disk quotas
 
-The disk limit of a plan needs user quotas on the file system of `/srv/cloudfactory`. The
-script installs the quota tools, but it does not change your file systems. To turn on the
-quotas:
+The server applies the disk limit of a website with a user quota. Each website has its own
+Unix user, and the file system counts the disk space of each user. When a website is at its
+limit, a write to its files fails with the error `Disk quota exceeded`. The other websites
+continue to operate.
 
-1. Add `usrquota` to the mount options of the file system in `/etc/fstab`. For XFS, use
-   `uquota`.
-2. Mount the file system again, or reboot.
-3. For ext4, run `quotacheck -cum MOUNT` and then `quotaon -u MOUNT`.
+The script turns on the user quotas of the file system of `/srv/cloudfactory`, which has the
+files of the websites. It does the same for the file system of `/var/lib/cf-db`, which has the
+files of the database servers. This release does not use the quotas of that file system: each
+database server gets its disk limit from a disk image. The two directories are usually on one
+file system.
+
+The script shows the result for each file system:
+
+| File system | What the script does |
+| ----------- | -------------------- |
+| ext4 | The script mounts the file system again with the options `usrjquota=aquota.user,jqfmt=vfsv1`, makes the quota file with `quotacheck -cum`, and turns on the quotas with `quotaon`. The websites continue to operate. On a large file system, `quotacheck` can use some minutes. |
+| ext4 with the feature `quota` | The script only turns on the quotas with `quotaon`. |
+| XFS | The script changes nothing, because XFS accepts the quota option only when it mounts the file system. Add the mount option `uquota` to the file system in `/etc/fstab`. For the root file system, add `rootflags=uquota` to the kernel command line. Restart the server and run the script again. |
+| A different file system | The script changes nothing. The server does not apply the disk limits. |
+| A file system that has user quotas | The script changes nothing. |
+
+The script does not change `/etc/fstab`. It writes the mount points where it turned on the
+quotas to `/etc/cloudfactory/quota-mounts`. The service `cloudfactory-quota.service` turns on
+the quotas of these mount points at each start of the server, before a website starts.
+
+After the script turns on the quotas, it restarts the agent. At its start, the agent sets the
+disk limit of each website that the server has.
+
+To turn on the quotas on a server of an earlier release, run the installation script on that
+server again. To turn the quotas off again, do these steps:
+
+1. Run `systemctl disable cloudfactory-quota.service`.
+2. Delete `/etc/cloudfactory/quota-mounts`.
+3. Run `quotaoff -u MOUNT` for each mount point.
 4. Restart the agent: `systemctl restart cf-agent`.
 
+A quota does not turn on in some environments, for example in a container that cannot mount
+a file system again. Then the script shows a message and continues.
+
 On a server with no quotas, the panel shows `disk-quotas` as an optional part that is off. This
-does not make the server degraded.
+does not make the server degraded. The setup checklist of the panel has the item
+"Turn on disk limits on each server" until all servers have quotas. The pages of a website
+show "Not applied on this server" next to the disk limit.
 
 The shared runtime images in `/var/lib/cloudfactory-images` belong to root, so they do not
 count toward the disk limit of a website. Each runtime image uses about 0.6 to 0.8 GB one time

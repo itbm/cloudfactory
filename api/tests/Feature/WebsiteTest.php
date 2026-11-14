@@ -121,6 +121,24 @@ class WebsiteTest extends TestCase
         $this->patchJson("/api/v1/websites/{$website->id}", ['limits' => $limits])->assertOk()->assertJsonPath('job.action', 'SetLimits');
     }
 
+    public function test_a_website_shows_if_its_server_applies_the_disk_limit(): void
+    {
+        $customer = $this->customer();
+        $server = $this->server();
+        $website = $this->website($customer, $server, $this->image());
+        $this->actingWith($this->user(Role::Owner, $customer));
+
+        // An agent of an earlier release, or no report yet: the panel does not know.
+        $this->getJson("/api/v1/websites/{$website->id}")->assertOk()->assertJsonPath('data.diskLimitApplied', null);
+
+        $server->update(['services' => [['name' => 'disk-quotas', 'state' => 'stopped', 'optional' => true]]]);
+        $this->getJson("/api/v1/websites/{$website->id}")->assertOk()->assertJsonPath('data.diskLimitApplied', false);
+        $this->getJson('/api/v1/websites')->assertOk()->assertJsonPath('data.0.diskLimitApplied', false);
+
+        $server->update(['services' => [['name' => 'disk-quotas', 'state' => 'running', 'optional' => true]]]);
+        $this->getJson("/api/v1/websites/{$website->id}")->assertOk()->assertJsonPath('data.diskLimitApplied', true);
+    }
+
     public function test_power_actions_change_the_status(): void
     {
         $customer = $this->customer();
