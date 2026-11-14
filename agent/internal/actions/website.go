@@ -59,7 +59,8 @@ func CheckWebsite(w *agentv1.Website) error {
 	if primary == 0 && len(w.GetDomains()) > 0 {
 		errs = append(errs, errors.New("a website with domains must have a primary domain"))
 	}
-	return errors.Join(errs...)
+	_, err := instanceKey(w.GetDatabaseInstance())
+	return errors.Join(append(errs, err)...)
 }
 
 func imageRef(w *agentv1.Website) string {
@@ -190,7 +191,10 @@ func (d *Deps) unit(w *agentv1.Website, port int, suffix string) quadlet.Website
 		SiteDir: d.Host.AppDir(w.GetUnixUser()), IniFile: d.iniPath(w.GetUnixUser(), suffix),
 		Runtime: w.GetRuntime(), WorkerMode: w.GetWorkerMode(), Gvisor: d.runtime(), Suffix: suffix,
 		DocumentRoot: documentRoot(w), ContainerPort: int(w.GetContainerPort()), Command: w.GetCommand(),
-		Limits: quadlet.Limits{VCPUs: l.GetVcpus(), MemoryBytes: l.GetMemoryBytes(), Processes: l.GetProcesses(), DiskIOBytesPerSecond: l.GetDiskIoBytesPerSecond(), BlockDevice: d.BlockDevice},
+		// The database host names of the container point to the database containers of the
+		// customer of the website.
+		DatabaseAddress: d.databaseAddress(w.GetId()),
+		Limits:          quadlet.Limits{VCPUs: l.GetVcpus(), MemoryBytes: l.GetMemoryBytes(), Processes: l.GetProcesses(), DiskIOBytesPerSecond: l.GetDiskIoBytesPerSecond(), BlockDevice: d.BlockDevice},
 	}
 }
 
@@ -329,11 +333,20 @@ func (d *Deps) CreateWebsite(req *agentv1.WebsiteRequest) (jobs.Job, error) {
 		return jobs.Job{}, err
 	}
 	user := w.GetUnixUser()
+	// The customer of the website. The value was checked in CheckWebsite.
+	instance, _ := instanceKey(w.GetDatabaseInstance())
 	var port int
 	var dnsHere bool
 	valkeyNumbers := map[string]any{}
 	return jobs.Job{ID: req.GetJobId(), Key: w.GetId(), Long: req.GetCopyFrom() != "", Steps: []jobs.Step{
 		{Name: "Create Unix user", Do: func(ctx context.Context) error {
+			if instance != "" {
+				// The website uses the database containers of its customer from its first step.
+				// The record also keeps the containers on the server while the job operates.
+				if _, err := d.useDatabases(instance, w.GetId(), false); err != nil {
+					return err
+				}
+			}
 			if err := d.Host.EnsureUser(ctx, user); err != nil {
 				return err
 			}
@@ -365,6 +378,13 @@ func (d *Deps) CreateWebsite(req *agentv1.WebsiteRequest) (jobs.Job, error) {
 			var err error
 			if port, err = d.State.Reserve(&Site{ID: w.GetId(), UnixUser: user, Website: w}); err != nil {
 				return err
+			}
+			if instance != "" {
+				// The firewall lets the new website connect to the database containers of its
+				// customer, and to no other database containers.
+				if err := d.syncDatabaseAccess(ctx); err != nil {
+					return err
+				}
 			}
 			if err := d.startContainer(ctx, w, port, ""); err != nil {
 				return err
@@ -451,69 +471,91 @@ func checkCopies(req *agentv1.WebsiteRequest) error {
 	return errors.Join(errs...)
 }
 
+// copyDatabase makes the database toName in the container to, when it is not there, and
+// loads a dump of the database fromName of the container from into it. The two containers can
+// be different: a staging copy and a move of databases copy between the containers of two
+// releases. The dump goes from the dump client to the restore client, not through the agent,
+// and it loads as a temporary user with access to the new database only (CF-06).
+func (d *Deps) copyDatabase(ctx context.Context, from dbServer, fromName string, to dbServer, toName string) error {
+	if to.Engine == "mariadb" {
+		found, err := d.exists(ctx, to, fmt.Sprintf("SHOW DATABASES LIKE '%s';\n", strings.ReplaceAll(toName, "_", `\\_`)))
+		if err != nil {
+			return err
+		}
+		// A job that runs again after a restart finds the database of its first run.
+		if !found {
+			if _, err := d.sql(ctx, to, fmt.Sprintf("CREATE DATABASE `%s` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;\n", toName)); err != nil {
+				return err
+			}
+		}
+	} else {
+		found, err := d.exists(ctx, to, fmt.Sprintf("SELECT 1 FROM pg_database WHERE datname = '%s';\n", toName))
+		if err != nil {
+			return err
+		}
+		if !found {
+			if _, err := d.sql(ctx, to, pgCreateDatabase(toName)); err != nil {
+				return err
+			}
+		}
+	}
+	err := d.restoreDump(ctx, to, toName, func(ctx context.Context, client []string) error {
+		dump, err := d.dumpCommand(ctx, from, fromName)
+		if err != nil {
+			return err
+		}
+		return d.Run.Pipe(ctx, dump, client)
+	})
+	if err != nil {
+		return fmt.Errorf("copy %s to %s: %w", fromName, toName, err)
+	}
+	return nil
+}
+
 // copyDatabases copies each database of the source website into a new database of the staging
 // copy (FR-205), and makes the users of the copy. The copy never uses the databases of the
-// source. The dump loads as a temporary user with access to the new database only (CF-06).
+// source. The new databases are in the database containers of the customer of the copy.
 //
 // Valkey has no copy of the data: the data of a cache is for one website. A copy user of the
 // engine Valkey makes a new, empty Valkey database with the name of the user. valkeyNumbers
 // gets the database number of each one.
 func (d *Deps) copyDatabases(ctx context.Context, req *agentv1.WebsiteRequest, valkeyNumbers map[string]any) error {
-	host, err := d.mariaHost("website")
-	if err != nil {
-		return err
-	}
+	id := req.GetWebsite().GetId()
 	for _, c := range req.GetCopyDatabases() {
-		engine := c.GetEngine()
-		if engine == "mariadb" {
-			found, err := d.exists(ctx, engine, fmt.Sprintf("SHOW DATABASES LIKE '%s';\n", strings.ReplaceAll(c.GetTo(), "_", `\\_`)))
-			if err != nil {
-				return err
-			}
-			// A job that runs again after a restart finds the database of its first run.
-			if !found {
-				if _, err := d.sql(ctx, engine, fmt.Sprintf("CREATE DATABASE `%s` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;\n", c.GetTo())); err != nil {
-					return err
-				}
-			}
-		} else {
-			found, err := d.exists(ctx, engine, fmt.Sprintf("SELECT 1 FROM pg_database WHERE datname = '%s';\n", c.GetTo()))
-			if err != nil {
-				return err
-			}
-			if !found {
-				if _, err := d.sql(ctx, engine, pgCreateDatabase(c.GetTo())); err != nil {
-					return err
-				}
-			}
-		}
-		from := c.GetFrom()
-		// The dump goes from the dump client to the restore client, not through the agent.
-		err := d.restoreDump(ctx, engine, c.GetTo(), func(ctx context.Context, client []string) error {
-			dump, err := d.dumpCommand(ctx, engine, from)
-			if err != nil {
-				return err
-			}
-			return d.Run.Pipe(ctx, dump, client)
-		})
+		from, err := d.server(req.GetCopyFrom(), c.GetEngine())
 		if err != nil {
-			return fmt.Errorf("copy %s to %s: %w", c.GetFrom(), c.GetTo(), err)
+			return err
+		}
+		to, err := d.server(id, c.GetEngine())
+		if err != nil {
+			return err
+		}
+		if err := d.copyDatabase(ctx, from, c.GetFrom(), to, c.GetTo()); err != nil {
+			return err
 		}
 	}
 	for _, u := range req.GetCopyUsers() {
+		srv, err := d.server(id, u.GetEngine())
+		if err != nil {
+			return err
+		}
 		engine := u.GetEngine()
 		if engine == "valkey" {
-			number, err := d.valkeyCreate(ctx, u.GetName(), req.GetWebsite().GetUnixUser()+"_", u.GetPassword())
+			number, err := d.valkeyCreate(ctx, srv, u.GetName(), req.GetWebsite().GetUnixUser()+"_", u.GetPassword())
 			if err != nil {
 				return err
 			}
 			valkeyNumbers[u.GetName()] = number
 			continue
 		}
-		if err := d.dropUser(ctx, engine, u.GetName()); err != nil {
+		host, err := d.mariaHost(srv, "website")
+		if err != nil {
 			return err
 		}
-		if err := d.createUser(ctx, engine, u.GetName(), u.GetPassword(), host, "website"); err != nil {
+		if err := d.dropUser(ctx, srv, u.GetName()); err != nil {
+			return err
+		}
+		if err := d.createUser(ctx, srv, u.GetName(), u.GetPassword(), host, "website"); err != nil {
 			return err
 		}
 		var b strings.Builder
@@ -523,7 +565,7 @@ func (d *Deps) copyDatabases(ctx context.Context, req *agentv1.WebsiteRequest, v
 			}
 		}
 		if b.Len() > 0 {
-			if _, err := d.sql(ctx, engine, b.String()); err != nil {
+			if _, err := d.sql(ctx, srv, b.String()); err != nil {
 				return err
 			}
 		}
@@ -674,18 +716,32 @@ func (d *Deps) DeleteWebsite(req *agentv1.DeleteWebsiteRequest) (jobs.Job, error
 		{Name: "Remove Unix user", Do: func(ctx context.Context) error {
 			// The names of the databases start with the Unix user. Remove them, so that a later
 			// website with the same Unix user does not get them (CF-01).
+			instance, _, err := d.State.WebsiteDatabases(req.GetWebsiteId())
+			if err != nil {
+				return err
+			}
+			// A container that the server does not have has nothing to remove, for example when
+			// the job runs again after the containers of the customer went.
 			for _, u := range req.GetDatabaseUsers() {
-				if err := d.dropUser(ctx, u.GetEngine(), u.GetName()); err != nil {
+				srv := dbServer{Instance: instance, Engine: u.GetEngine()}
+				if !d.serverExists(srv) {
+					continue
+				}
+				if err := d.dropUser(ctx, srv, u.GetName()); err != nil {
 					return err
 				}
 			}
 			for _, db := range req.GetDatabases() {
-				if db.GetEngine() == "mariadb" {
-					if _, err := d.sql(ctx, db.GetEngine(), mariaRevokeDatabase(db.GetName())); err != nil {
+				srv := dbServer{Instance: instance, Engine: db.GetEngine()}
+				if !d.serverExists(srv) {
+					continue
+				}
+				if srv.Engine == "mariadb" {
+					if _, err := d.sql(ctx, srv, mariaRevokeDatabase(db.GetName())); err != nil {
 						return err
 					}
 				}
-				if err := d.dropDatabase(ctx, db.GetEngine(), db.GetName()); err != nil {
+				if err := d.dropDatabase(ctx, srv, db.GetName()); err != nil {
 					return err
 				}
 			}
@@ -703,6 +759,19 @@ func (d *Deps) DeleteWebsite(req *agentv1.DeleteWebsiteRequest) (jobs.Job, error
 			}
 			if err := d.State.Delete(req.GetWebsiteId()); err != nil {
 				return err
+			}
+			// The last website of a customer on this server takes the database containers of
+			// the customer with it.
+			if err := d.releaseDatabases(ctx, instance, req.GetWebsiteId()); err != nil {
+				return err
+			}
+			// A later website can get the UID of this one, so the firewall forgets the access
+			// of this website. A server with no database containers of customers has no
+			// access file.
+			if _, err := os.Stat(filepath.Join(d.firewallDir(), databaseAccessFile)); instance != "" || err == nil {
+				if err := d.syncDatabaseAccess(ctx); err != nil {
+					return err
+				}
 			}
 			d.PruneImages()
 			return nil

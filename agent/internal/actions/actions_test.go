@@ -26,6 +26,12 @@ const (
 	websiteID = "01JBQ3Z5K8N6T4W2X9Y7R5P3M1"
 	jobID     = "01JBQ3Z5K8N6T4W2X9Y7R5P3M2"
 	jobID2    = "01JBQ3Z5K8N6T4W2X9Y7R5P3M3"
+	// customerID is the ID of the customer of a website that uses the database containers of
+	// its customer. customerKey is the key of those containers, and customerAddress is the
+	// address of the first customer of a server.
+	customerID      = "01JBQ3Z5K8N6T4W2X9Y7R5P3C1"
+	customerKey     = "01jbq3z5k8n6t4w2x9y7r5p3c1"
+	customerAddress = "169.254.80.2"
 )
 
 type fakeEdge struct {
@@ -86,6 +92,11 @@ func deps(t *testing.T) (*Deps, *execx.Fake, *fakeEdge) {
 		DBHome:        filepath.Join(dir, "cf-db"),
 		SftpKeysDir:   filepath.Join(dir, "sftp"),
 		SftpUsersDir:  filepath.Join(dir, "sftp-users"),
+		// The tests never read or change the firewall and the units of the computer. With no
+		// firewall file, the agent does not run nft.
+		FirewallFile: filepath.Join(dir, "cloudfactory.nft"),
+		FirewallDir:  filepath.Join(dir, "firewall"),
+		AddressUnit:  filepath.Join(dir, "cloudfactory-address.service"),
 	}
 	return d, run, edge
 }
@@ -739,11 +750,19 @@ func TestStagingCopyCopiesAsTheWebsiteUsers(t *testing.T) {
 // CF-01: a website that the panel removes takes its databases and users with it.
 func TestDeleteWebsiteRemovesItsDatabases(t *testing.T) {
 	d, f, _ := deps(t)
+	// The databases are in a container that the server has.
+	if err := d.EnsureDatabaseService(context.Background(), dbServer{Engine: "postgresql"}); err != nil {
+		t.Fatal(err)
+	}
 	req := &agentv1.DeleteWebsiteRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2",
-		Databases:     []*agentv1.DatabaseRef{{Engine: "postgresql", Name: "acme_x7k2_shop"}},
+		Databases:     []*agentv1.DatabaseRef{{Engine: "postgresql", Name: "acme_x7k2_shop"}, {Engine: "mariadb", Name: "acme_x7k2_blog"}},
 		DatabaseUsers: []*agentv1.DatabaseRef{{Engine: "postgresql", Name: "acme_x7k2_sync"}}}
 	if err := run(t)(d.DeleteWebsite(req)); err != nil {
 		t.Fatal(err)
+	}
+	// The server has no MariaDB container, so the job does not start one to remove a database.
+	if f.Called("systemctl --user --machine=cf-db@ start cf-mariadb.service") || f.Called("systemctl --user --machine=cf-db@ restart cf-mariadb.service") {
+		t.Errorf("the job started a MariaDB container: %v", f.Calls)
 	}
 	in := strings.Join(f.Inputs, "")
 	if !strings.Contains(in, `DROP ROLE IF EXISTS "acme_x7k2_sync";`) || !strings.Contains(in, `DROP DATABASE IF EXISTS "acme_x7k2_shop" WITH (FORCE);`) {

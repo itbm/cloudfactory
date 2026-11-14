@@ -95,6 +95,9 @@ const (
 	// AgentServiceSetPanelCertificateProcedure is the fully-qualified name of the AgentService's
 	// SetPanelCertificate RPC.
 	AgentServiceSetPanelCertificateProcedure = "/cloudfactory.agent.v1.AgentService/SetPanelCertificate"
+	// AgentServiceMoveDatabasesProcedure is the fully-qualified name of the AgentService's
+	// MoveDatabases RPC.
+	AgentServiceMoveDatabasesProcedure = "/cloudfactory.agent.v1.AgentService/MoveDatabases"
 	// AgentServiceGetStatusProcedure is the fully-qualified name of the AgentService's GetStatus RPC.
 	AgentServiceGetStatusProcedure = "/cloudfactory.agent.v1.AgentService/GetStatus"
 )
@@ -121,6 +124,7 @@ type AgentServiceClient interface {
 	SetSftp(context.Context, *connect.Request[v1.SetSftpRequest]) (*connect.Response[v1.JobAccepted], error)
 	ConfigureHost(context.Context, *connect.Request[v1.ConfigureHostRequest]) (*connect.Response[v1.JobAccepted], error)
 	SetPanelCertificate(context.Context, *connect.Request[v1.SetPanelCertificateRequest]) (*connect.Response[v1.JobAccepted], error)
+	MoveDatabases(context.Context, *connect.Request[v1.MoveDatabasesRequest]) (*connect.Response[v1.JobAccepted], error)
 	// Returns the actual state of the server at once. This method does not make a job.
 	GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.HostStatus], error)
 }
@@ -256,6 +260,12 @@ func NewAgentServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(agentServiceMethods.ByName("SetPanelCertificate")),
 			connect.WithClientOptions(opts...),
 		),
+		moveDatabases: connect.NewClient[v1.MoveDatabasesRequest, v1.JobAccepted](
+			httpClient,
+			baseURL+AgentServiceMoveDatabasesProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("MoveDatabases")),
+			connect.WithClientOptions(opts...),
+		),
 		getStatus: connect.NewClient[v1.GetStatusRequest, v1.HostStatus](
 			httpClient,
 			baseURL+AgentServiceGetStatusProcedure,
@@ -287,6 +297,7 @@ type agentServiceClient struct {
 	setSftp             *connect.Client[v1.SetSftpRequest, v1.JobAccepted]
 	configureHost       *connect.Client[v1.ConfigureHostRequest, v1.JobAccepted]
 	setPanelCertificate *connect.Client[v1.SetPanelCertificateRequest, v1.JobAccepted]
+	moveDatabases       *connect.Client[v1.MoveDatabasesRequest, v1.JobAccepted]
 	getStatus           *connect.Client[v1.GetStatusRequest, v1.HostStatus]
 }
 
@@ -390,6 +401,11 @@ func (c *agentServiceClient) SetPanelCertificate(ctx context.Context, req *conne
 	return c.setPanelCertificate.CallUnary(ctx, req)
 }
 
+// MoveDatabases calls cloudfactory.agent.v1.AgentService.MoveDatabases.
+func (c *agentServiceClient) MoveDatabases(ctx context.Context, req *connect.Request[v1.MoveDatabasesRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return c.moveDatabases.CallUnary(ctx, req)
+}
+
 // GetStatus calls cloudfactory.agent.v1.AgentService.GetStatus.
 func (c *agentServiceClient) GetStatus(ctx context.Context, req *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.HostStatus], error) {
 	return c.getStatus.CallUnary(ctx, req)
@@ -417,6 +433,7 @@ type AgentServiceHandler interface {
 	SetSftp(context.Context, *connect.Request[v1.SetSftpRequest]) (*connect.Response[v1.JobAccepted], error)
 	ConfigureHost(context.Context, *connect.Request[v1.ConfigureHostRequest]) (*connect.Response[v1.JobAccepted], error)
 	SetPanelCertificate(context.Context, *connect.Request[v1.SetPanelCertificateRequest]) (*connect.Response[v1.JobAccepted], error)
+	MoveDatabases(context.Context, *connect.Request[v1.MoveDatabasesRequest]) (*connect.Response[v1.JobAccepted], error)
 	// Returns the actual state of the server at once. This method does not make a job.
 	GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.HostStatus], error)
 }
@@ -548,6 +565,12 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(agentServiceMethods.ByName("SetPanelCertificate")),
 		connect.WithHandlerOptions(opts...),
 	)
+	agentServiceMoveDatabasesHandler := connect.NewUnaryHandler(
+		AgentServiceMoveDatabasesProcedure,
+		svc.MoveDatabases,
+		connect.WithSchema(agentServiceMethods.ByName("MoveDatabases")),
+		connect.WithHandlerOptions(opts...),
+	)
 	agentServiceGetStatusHandler := connect.NewUnaryHandler(
 		AgentServiceGetStatusProcedure,
 		svc.GetStatus,
@@ -596,6 +619,8 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 			agentServiceConfigureHostHandler.ServeHTTP(w, r)
 		case AgentServiceSetPanelCertificateProcedure:
 			agentServiceSetPanelCertificateHandler.ServeHTTP(w, r)
+		case AgentServiceMoveDatabasesProcedure:
+			agentServiceMoveDatabasesHandler.ServeHTTP(w, r)
 		case AgentServiceGetStatusProcedure:
 			agentServiceGetStatusHandler.ServeHTTP(w, r)
 		default:
@@ -685,6 +710,10 @@ func (UnimplementedAgentServiceHandler) ConfigureHost(context.Context, *connect.
 
 func (UnimplementedAgentServiceHandler) SetPanelCertificate(context.Context, *connect.Request[v1.SetPanelCertificateRequest]) (*connect.Response[v1.JobAccepted], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.SetPanelCertificate is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) MoveDatabases(context.Context, *connect.Request[v1.MoveDatabasesRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.MoveDatabases is not implemented"))
 }
 
 func (UnimplementedAgentServiceHandler) GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.HostStatus], error) {

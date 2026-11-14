@@ -24,15 +24,18 @@ import (
 	"github.com/itbm/cloudfactory/agent/internal/quadlet"
 )
 
-// Valkey is the third engine of the shared database containers. One Valkey server has
+// Valkey is the third engine of the database containers. Each customer has its own Valkey
+// container on a server, with its own memory limit, so a customer cannot fill the memory or
+// read the numbers of the Valkey server of a different customer. One Valkey server has
 // numbered databases, not named databases. Thus a Valkey database of a website is:
 //
-//   - one database number of the shared server, from 1 to quadlet.ValkeyDatabases-1, and
+//   - one database number of the Valkey server of its customer, from 1 to
+//     quadlet.ValkeyDatabases-1, and
 //   - one user with the name of the database, which can use only that number.
 //
 // The user file of Valkey (quadlet.ValkeyUsersFile) is the only record of the numbers: the rule
-// "db=N" of each user. The agent gives a new database the smallest number that no user has.
-// The panel gets the number in the result of the job and in each report.
+// "db=N" of each user. The agent gives a new database the smallest number that no user of the
+// customer has. The panel gets the number in the result of the job and in each report.
 //
 // The agent does not use a client in the container. It connects to the published port as the
 // user "default", the administrator, with a password that only root can read.
@@ -129,16 +132,26 @@ func (v *valkeyConn) read(depth int) (any, error) {
 	return nil, fmt.Errorf("valkey: unexpected answer %q", line)
 }
 
-// valkeyConnect opens a connection and logs in.
-func (d *Deps) valkeyConnect(ctx context.Context, user, password string) (*valkeyConn, error) {
+// valkeyConnect opens a connection to the Valkey container of a customer and logs in.
+func (d *Deps) valkeyConnect(ctx context.Context, s dbServer, user, password string) (*valkeyConn, error) {
+	if s.Instance == "" {
+		return nil, errNoSharedValkey
+	}
+	address, err := d.State.DatabaseAddress(s.Instance)
+	if err != nil {
+		return nil, err
+	}
+	if address == "" {
+		return nil, fmt.Errorf("the customer %s has no database containers on this server", s.Instance)
+	}
 	dial := d.ValkeyDial
 	if dial == nil {
-		dial = func(ctx context.Context) (net.Conn, error) {
+		dial = func(ctx context.Context, address string) (net.Conn, error) {
 			dialer := net.Dialer{Timeout: 5 * time.Second}
-			return dialer.DialContext(ctx, "tcp", net.JoinHostPort(quadlet.ServiceAddress, strconv.Itoa(quadlet.DatabasePort("valkey"))))
+			return dialer.DialContext(ctx, "tcp", net.JoinHostPort(address, strconv.Itoa(quadlet.DatabasePort("valkey"))))
 		}
 	}
-	c, err := dial(ctx)
+	c, err := dial(ctx, address)
 	if err != nil {
 		return nil, err
 	}
@@ -151,16 +164,17 @@ func (d *Deps) valkeyConnect(ctx context.Context, user, password string) (*valke
 	return v, nil
 }
 
-// valkeySecretFile holds the password of the administrator of Valkey. Only root can read it.
-func (d *Deps) valkeySecretFile() string { return filepath.Join(d.dbHome(), "valkey.secret") }
+// valkeySecretFile holds the password of the administrator of the Valkey container of a
+// customer. Only root can read it.
+func (d *Deps) valkeySecretFile(s dbServer) string { return filepath.Join(d.dbDir(s), "valkey.secret") }
 
 // valkeyAdminConn opens a connection as the administrator. It does not start the container.
-func (d *Deps) valkeyAdminConn(ctx context.Context) (*valkeyConn, error) {
-	b, err := os.ReadFile(d.valkeySecretFile())
+func (d *Deps) valkeyAdminConn(ctx context.Context, s dbServer) (*valkeyConn, error) {
+	b, err := os.ReadFile(d.valkeySecretFile(s))
 	if err != nil {
 		return nil, fmt.Errorf("read the password of the Valkey administrator: %w", err)
 	}
-	return d.valkeyConnect(ctx, valkeyAdmin, strings.TrimSpace(string(b)))
+	return d.valkeyConnect(ctx, s, valkeyAdmin, strings.TrimSpace(string(b)))
 }
 
 // writeValkeyUsers makes the user file of a new Valkey server, and the password of its
@@ -169,7 +183,7 @@ func (d *Deps) valkeyAdminConn(ctx context.Context) (*valkeyConn, error) {
 //
 // The file belongs to cf-db, which is root in the container. The entry point of the image
 // then gives it to the user valkey of the container, with the data directory.
-func (d *Deps) writeValkeyUsers(ctx context.Context, dataDir string) error {
+func (d *Deps) writeValkeyUsers(ctx context.Context, s dbServer, dataDir string) error {
 	users := filepath.Join(dataDir, quadlet.ValkeyUsersFile)
 	if _, err := os.Lstat(users); err == nil {
 		return nil
@@ -177,7 +191,7 @@ func (d *Deps) writeValkeyUsers(ctx context.Context, dataDir string) error {
 		return err
 	}
 	password := randomHex(48)
-	if _, err := host.WriteFile(d.valkeySecretFile(), password+"\n", 0o600); err != nil {
+	if _, err := host.WriteFile(d.valkeySecretFile(s), password+"\n", 0o600); err != nil {
 		return err
 	}
 	sum := sha256.Sum256([]byte(password))
@@ -190,8 +204,8 @@ func (d *Deps) writeValkeyUsers(ctx context.Context, dataDir string) error {
 
 // valkeyReady checks that Valkey answers the administrator, and that its release can limit a
 // user to one database.
-func (d *Deps) valkeyReady(ctx context.Context) error {
-	v, err := d.valkeyAdminConn(ctx)
+func (d *Deps) valkeyReady(ctx context.Context, s dbServer) error {
+	v, err := d.valkeyAdminConn(ctx, s)
 	if err != nil {
 		return err
 	}
@@ -294,11 +308,11 @@ func parseValkeyUser(line string) (name string, numbers []int) {
 
 // valkeyService starts the container if it does not operate, and opens a connection as the
 // administrator. The caller holds valkeyMu.
-func (d *Deps) valkeyService(ctx context.Context) (*valkeyConn, error) {
-	if err := d.EnsureDatabaseService(ctx, "valkey"); err != nil {
+func (d *Deps) valkeyService(ctx context.Context, s dbServer) (*valkeyConn, error) {
+	if err := d.EnsureDatabaseService(ctx, s); err != nil {
 		return nil, err
 	}
-	return d.valkeyAdminConn(ctx)
+	return d.valkeyAdminConn(ctx, s)
 }
 
 // valkeyCreate makes a Valkey database: a free database number, and a user with the name of
@@ -306,10 +320,10 @@ func (d *Deps) valkeyService(ctx context.Context) (*valkeyConn, error) {
 //
 // A job that runs again after a restart of the agent finds the user of its first run. The
 // password of the job is the proof: then the result is the number of the first run.
-func (d *Deps) valkeyCreate(ctx context.Context, name, prefix, password string) (int, error) {
+func (d *Deps) valkeyCreate(ctx context.Context, s dbServer, name, prefix, password string) (int, error) {
 	d.valkeyMu.Lock()
 	defer d.valkeyMu.Unlock()
-	v, err := d.valkeyService(ctx)
+	v, err := d.valkeyService(ctx, s)
 	if err != nil {
 		return 0, err
 	}
@@ -320,7 +334,7 @@ func (d *Deps) valkeyCreate(ctx context.Context, name, prefix, password string) 
 	}
 	number, found := users[name]
 	if found {
-		c, err := d.valkeyConnect(ctx, name, password)
+		c, err := d.valkeyConnect(ctx, s, name, password)
 		if err != nil || number < 1 {
 			return 0, fmt.Errorf("the database %s exists", name)
 		}
@@ -333,7 +347,7 @@ func (d *Deps) valkeyCreate(ctx context.Context, name, prefix, password string) 
 		for number = 1; number < quadlet.ValkeyDatabases && used[number]; number++ {
 		}
 		if number >= quadlet.ValkeyDatabases {
-			return 0, fmt.Errorf("this server has no free Valkey database: all %d databases are in use", quadlet.ValkeyDatabases-1)
+			return 0, fmt.Errorf("the customer has no free Valkey database on this server: all %d databases are in use", quadlet.ValkeyDatabases-1)
 		}
 		// The database must be empty, also after a removal that did not complete.
 		if _, err := v.do("SELECT", strconv.Itoa(number)); err != nil {
@@ -357,10 +371,10 @@ func (d *Deps) valkeyCreate(ctx context.Context, name, prefix, password string) 
 // valkeyDelete removes a Valkey database: its user first, which also closes the connections
 // of the user, and then all keys of its database number. It does nothing when the database
 // does not exist.
-func (d *Deps) valkeyDelete(ctx context.Context, name string) error {
+func (d *Deps) valkeyDelete(ctx context.Context, s dbServer, name string) error {
 	d.valkeyMu.Lock()
 	defer d.valkeyMu.Unlock()
-	v, err := d.valkeyService(ctx)
+	v, err := d.valkeyService(ctx, s)
 	if err != nil {
 		return err
 	}
@@ -391,10 +405,10 @@ func (d *Deps) valkeyDelete(ctx context.Context, name string) error {
 
 // valkeySetPassword gives the user of a Valkey database a new password, and closes the
 // connections that used the old password.
-func (d *Deps) valkeySetPassword(ctx context.Context, name, password string) error {
+func (d *Deps) valkeySetPassword(ctx context.Context, s dbServer, name, password string) error {
 	d.valkeyMu.Lock()
 	defer d.valkeyMu.Unlock()
-	v, err := d.valkeyService(ctx)
+	v, err := d.valkeyService(ctx, s)
 	if err != nil {
 		return err
 	}
@@ -420,10 +434,10 @@ func (d *Deps) valkeySetPassword(ctx context.Context, name, password string) err
 
 var valkeyKeysRE = regexp.MustCompile(`(?m)^db(\d+):keys=(\d+)`)
 
-// valkeySizes gives the number and the count of keys of each Valkey database. Valkey does not
-// know the size of one database in bytes.
-func (d *Deps) valkeySizes(ctx context.Context) ([]panel.DatabaseSize, error) {
-	v, err := d.valkeyAdminConn(ctx)
+// valkeySizes gives the number and the count of keys of each Valkey database of a customer.
+// Valkey does not know the size of one database in bytes.
+func (d *Deps) valkeySizes(ctx context.Context, s dbServer) ([]panel.DatabaseSize, error) {
+	v, err := d.valkeyAdminConn(ctx, s)
 	if err != nil {
 		return nil, err
 	}
@@ -454,8 +468,8 @@ func (d *Deps) valkeySizes(ctx context.Context) ([]panel.DatabaseSize, error) {
 	return out, nil
 }
 
-// valkeyMemoryMB gives the memory limit of Valkey: the setting of the agent, or one eighth of
-// the memory of the server.
+// valkeyMemoryMB gives the memory limit of the Valkey container of each customer for its
+// data: the setting of the agent, or 1/32 of the memory of the server.
 func (d *Deps) valkeyMemoryMB() int {
 	if d.ValkeyMemoryMB > 0 {
 		return d.ValkeyMemoryMB
@@ -463,9 +477,10 @@ func (d *Deps) valkeyMemoryMB() int {
 	return defaultValkeyMemoryMB(hostMemoryMB("/proc/meminfo"))
 }
 
-// defaultValkeyMemoryMB is one eighth of the memory of the server, from 64 MB to 1024 MB.
+// defaultValkeyMemoryMB is 1/32 of the memory of the server, from 32 MB to 256 MB. Each
+// customer has its own Valkey container, so the limit is for one customer.
 func defaultValkeyMemoryMB(totalMB int) int {
-	return min(max(totalMB/8, 64), 1024)
+	return min(max(totalMB/32, 32), 256)
 }
 
 // hostMemoryMB reads the memory of the server from /proc/meminfo. It gives 0 when it cannot.
@@ -482,69 +497,6 @@ func hostMemoryMB(path string) int {
 		}
 	}
 	return 0
-}
-
-var databasePortsRE = regexp.MustCompile(`\{ 3306, 5432(, 19432)? \}`)
-
-// addValkeyPort gives the firewall file of the installer with the port of Valkey in each
-// list of the database ports. A file of an earlier release has only the ports of MariaDB and
-// PostgreSQL. ok is false when the file has no rule that lets the websites connect to the
-// database ports.
-func addValkeyPort(content string) (next string, ok bool) {
-	next = databasePortsRE.ReplaceAllString(content, "{ 3306, 5432, 6379$1 }")
-	return next, strings.Contains(next, "tcp dport { 3306, 5432, 6379 } accept")
-}
-
-// openValkeyPort lets the website containers connect to the port of Valkey on the service
-// address. With no file, the administrator manages the firewall.
-func (d *Deps) openValkeyPort(ctx context.Context) error {
-	path := d.firewallFile()
-	b, err := os.ReadFile(path)
-	if os.IsNotExist(err) {
-		slog.Warn("Valkey: no Cloudfactory firewall file; let the websites connect to port 6379 on the service address", "file", path)
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	next, ok := addValkeyPort(string(b))
-	if !ok {
-		return fmt.Errorf("the firewall file %s has no rule for the database ports; run the installer again on this server", path)
-	}
-	if next == string(b) {
-		return nil
-	}
-	if _, err := host.WriteFile(path, next, 0o644); err != nil {
-		return err
-	}
-	_, err = d.Run.Run(ctx, "nft", "-f", path)
-	return err
-}
-
-// addValkeyHost gives the host name of Valkey to the container of a website from an earlier
-// release. A unit of this release has the name already. The container starts again only when
-// its unit changes.
-func (d *Deps) addValkeyHost(ctx context.Context, websiteID string) error {
-	site, err := d.State.Get(websiteID)
-	if err != nil || site == nil {
-		return err
-	}
-	u := d.unit(site.Website, site.Port, site.Suffix)
-	u.Stopped = site.Stopped
-	changed, err := d.Host.WriteUnit(site.UnixUser, u.UnitName(), quadlet.ContainerUnit(u))
-	if err != nil || !changed {
-		return err
-	}
-	if _, err := d.Host.Systemctl(ctx, site.UnixUser, "daemon-reload"); err != nil {
-		return err
-	}
-	if site.Stopped {
-		return nil
-	}
-	if _, err := d.Host.Systemctl(ctx, site.UnixUser, "restart", u.ServiceName()); err != nil {
-		return err
-	}
-	return d.waitReady(ctx, site.Port, primaryDomain(site.Website))
 }
 
 // errValkeyNoCopy is the answer to a backup, a restore or a staging copy of a Valkey database.

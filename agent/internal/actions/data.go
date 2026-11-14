@@ -22,19 +22,17 @@ import (
 	"github.com/itbm/cloudfactory/agent/internal/validate"
 )
 
-// DBUser is the Unix user of the shared database containers.
+// DBUser is the Unix user of the database containers.
 const DBUser = "cf-db"
 
 var passwordRE = regexp.MustCompile(`^[A-Za-z0-9]{16,64}$`)
 
+// dbContainer checks an engine, and gives the name of its shared container of an earlier
+// release. dbServer.container gives the name of the container of a customer.
 func dbContainer(engine string) (string, error) {
 	switch engine {
-	case "mariadb":
-		return "cf-mariadb", nil
-	case "postgresql":
-		return "cf-postgresql", nil
-	case "valkey":
-		return "cf-valkey", nil
+	case "mariadb", "postgresql", "valkey":
+		return quadlet.DatabaseContainer(engine, ""), nil
 	}
 	return "", fmt.Errorf("the database engine %q is not valid", engine)
 }
@@ -48,29 +46,29 @@ func sqlEngine(engine string) error {
 	return err
 }
 
-// sql sends statements on stdin to the database client in the shared container. It starts the
+// sql sends statements on stdin to the database client in a database container. It starts the
 // container first if it does not operate.
-func (d *Deps) sql(ctx context.Context, engine, statements string) (string, error) {
-	if err := d.EnsureDatabaseService(ctx, engine); err != nil {
+func (d *Deps) sql(ctx context.Context, s dbServer, statements string) (string, error) {
+	if err := d.EnsureDatabaseService(ctx, s); err != nil {
 		return "", err
 	}
-	return d.sqlNow(ctx, engine, statements)
+	return d.sqlNow(ctx, s, statements)
 }
 
 // sqlNow is sql with no start of the container.
-func (d *Deps) sqlNow(ctx context.Context, engine, statements string) (string, error) {
+func (d *Deps) sqlNow(ctx context.Context, s dbServer, statements string) (string, error) {
+	engine := s.Engine
 	if engine == "valkey" {
 		return "", errors.New("Valkey has no SQL")
 	}
-	c, err := dbContainer(engine)
-	if err != nil {
+	if _, err := dbContainer(engine); err != nil {
 		return "", err
 	}
 	uid, err := d.Host.LookupUID(DBUser)
 	if err != nil {
 		return "", err
 	}
-	args := []string{"-u", DBUser, "--", "env", fmt.Sprintf("XDG_RUNTIME_DIR=/run/user/%d", uid), "podman", "exec", "-i", c}
+	args := []string{"-u", DBUser, "--", "env", fmt.Sprintf("XDG_RUNTIME_DIR=/run/user/%d", uid), "podman", "exec", "-i", s.container()}
 	if engine == "mariadb" {
 		args = append(args, "mariadb", "--user=root", "--batch", "--skip-column-names")
 	} else {
@@ -82,12 +80,18 @@ func (d *Deps) sqlNow(ctx context.Context, engine, statements string) (string, e
 // mariaHost is the host part of a MariaDB user (CF-19). "website" users can connect only from
 // the address that the database server sees for the website containers. "anywhere" users can
 // connect from any address, with TLS.
-func (d *Deps) mariaHost(access string) (string, error) {
+//
+// A container of a customer sees quadlet.DatabaseClientAddress for each website container.
+// The shared container of an earlier release sees quadlet.ServiceAddress.
+func (d *Deps) mariaHost(s dbServer, access string) (string, error) {
 	switch access {
 	case "", "website":
-		host := d.DatabaseClientHost
-		if host == "" {
-			host = quadlet.ServiceAddress
+		host := quadlet.DatabaseClientAddress
+		if s.Instance == "" {
+			host = d.DatabaseClientHost
+			if host == "" {
+				host = quadlet.ServiceAddress
+			}
 		}
 		if !clientHostRE.MatchString(host) {
 			return "", fmt.Errorf("the database client host %q is not valid", host)
@@ -134,8 +138,8 @@ func pgRole(database, privileges string) string {
 }
 
 // exists runs a query that gives one row for each object, and reports whether it gave a row.
-func (d *Deps) exists(ctx context.Context, engine, query string) (bool, error) {
-	out, err := d.sql(ctx, engine, query)
+func (d *Deps) exists(ctx context.Context, s dbServer, query string) (bool, error) {
+	out, err := d.sql(ctx, s, query)
 	return strings.TrimSpace(out) != "", err
 }
 
@@ -159,8 +163,7 @@ func (d *Deps) CreateDatabase(req *agentv1.CreateDatabaseRequest) (jobs.Job, err
 			return jobs.Job{}, errors.New("the database password must have 16 to 64 letters and digits")
 		}
 	}
-	host, err := d.mariaHost(req.GetAccess())
-	if err != nil {
+	if _, err := d.mariaHost(dbServer{}, req.GetAccess()); err != nil {
 		return jobs.Job{}, err
 	}
 	if engine == "valkey" {
@@ -169,29 +172,49 @@ func (d *Deps) CreateDatabase(req *agentv1.CreateDatabaseRequest) (jobs.Job, err
 	maria := engine == "mariadb"
 	steps := []jobs.Step{
 		{Name: "Create database", Do: func(ctx context.Context) error {
-			if maria {
-				// No "IF NOT EXISTS": the job fails when the database exists.
-				_, err := d.sql(ctx, engine, fmt.Sprintf("CREATE DATABASE `%s` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;\n", name))
+			srv, err := d.server(req.GetWebsiteId(), engine)
+			if err != nil {
 				return err
 			}
-			found, err := d.exists(ctx, engine, fmt.Sprintf("SELECT 1 FROM pg_database WHERE datname = '%[1]s' UNION ALL SELECT 1 FROM pg_roles WHERE rolname IN ('%[1]s:rw', '%[1]s:ro');\n", name))
+			if maria {
+				// No "IF NOT EXISTS": the job fails when the database exists.
+				_, err := d.sql(ctx, srv, fmt.Sprintf("CREATE DATABASE `%s` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;\n", name))
+				return err
+			}
+			found, err := d.exists(ctx, srv, fmt.Sprintf("SELECT 1 FROM pg_database WHERE datname = '%[1]s' UNION ALL SELECT 1 FROM pg_roles WHERE rolname IN ('%[1]s:rw', '%[1]s:ro');\n", name))
 			if err != nil {
 				return err
 			}
 			if found {
 				return fmt.Errorf("the database %s exists", name)
 			}
-			_, err = d.sql(ctx, engine, pgCreateDatabase(name))
+			_, err = d.sql(ctx, srv, pgCreateDatabase(name))
 			return err
 		}},
 	}
 	if user != "" {
 		steps = append(steps,
 			jobs.Step{Name: "Create user", Do: func(ctx context.Context) error {
-				return d.createUser(ctx, engine, user, pass, host, req.GetAccess())
+				srv, err := d.server(req.GetWebsiteId(), engine)
+				if err != nil {
+					return err
+				}
+				host, err := d.mariaHost(srv, req.GetAccess())
+				if err != nil {
+					return err
+				}
+				return d.createUser(ctx, srv, user, pass, host, req.GetAccess())
 			}},
 			jobs.Step{Name: "Allow the website container only", Do: func(ctx context.Context) error {
-				_, err := d.sql(ctx, engine, grantSQL(engine, user, host, name, "readwrite"))
+				srv, err := d.server(req.GetWebsiteId(), engine)
+				if err != nil {
+					return err
+				}
+				host, err := d.mariaHost(srv, req.GetAccess())
+				if err != nil {
+					return err
+				}
+				_, err = d.sql(ctx, srv, grantSQL(engine, user, host, name, "readwrite"))
 				return err
 			}},
 		)
@@ -199,9 +222,9 @@ func (d *Deps) CreateDatabase(req *agentv1.CreateDatabaseRequest) (jobs.Job, err
 	return jobs.Job{ID: req.GetJobId(), Key: req.GetWebsiteId(), Steps: steps}, nil
 }
 
-// createValkeyDatabase makes a Valkey database. It always has one user with the same name:
-// the user is the record of the database number. Only the website containers can connect.
-// The result of the job has the number.
+// createValkeyDatabase makes a Valkey database in the Valkey container of the customer of the
+// website. It always has one user with the same name: the user is the record of the database
+// number. Only the website containers can connect. The result of the job has the number.
 func (d *Deps) createValkeyDatabase(req *agentv1.CreateDatabaseRequest) (jobs.Job, error) {
 	name := req.GetName()
 	if req.GetUser() != name {
@@ -213,12 +236,13 @@ func (d *Deps) createValkeyDatabase(req *agentv1.CreateDatabaseRequest) (jobs.Jo
 	var number int
 	return jobs.Job{ID: req.GetJobId(), Key: req.GetWebsiteId(), Steps: []jobs.Step{
 		{Name: "Create database and user", Do: func(ctx context.Context) error {
-			n, err := d.valkeyCreate(ctx, name, req.GetUnixUser()+"_", req.GetPassword())
+			srv, err := d.server(req.GetWebsiteId(), "valkey")
+			if err != nil {
+				return err
+			}
+			n, err := d.valkeyCreate(ctx, srv, name, req.GetUnixUser()+"_", req.GetPassword())
 			number = n
 			return err
-		}},
-		{Name: "Give the host name to the website container", Do: func(ctx context.Context) error {
-			return d.addValkeyHost(ctx, req.GetWebsiteId())
 		}},
 	}, Result: func() map[string]any { return map[string]any{"number": number} }}, nil
 }
@@ -239,26 +263,26 @@ ALTER DEFAULT PRIVILEGES FOR ROLE "%[1]s:rw" IN SCHEMA public GRANT SELECT ON SE
 }
 
 // createUser makes a user. It fails when a user with the name exists, with any host.
-func (d *Deps) createUser(ctx context.Context, engine, user, pass, host, access string) error {
-	if engine == "mariadb" {
-		found, err := d.exists(ctx, engine, fmt.Sprintf("SELECT 1 FROM mysql.user WHERE User = '%s';\n", user))
+func (d *Deps) createUser(ctx context.Context, s dbServer, user, pass, host, access string) error {
+	if s.Engine == "mariadb" {
+		found, err := d.exists(ctx, s, fmt.Sprintf("SELECT 1 FROM mysql.user WHERE User = '%s';\n", user))
 		if err != nil {
 			return err
 		}
 		if found {
 			return fmt.Errorf("the database user %s exists", user)
 		}
-		_, err = d.sql(ctx, engine, fmt.Sprintf("CREATE USER '%s'@'%s' IDENTIFIED BY '%s' %s;\n", user, host, pass, mariaRequire(access)))
+		_, err = d.sql(ctx, s, fmt.Sprintf("CREATE USER '%s'@'%s' IDENTIFIED BY '%s' %s;\n", user, host, pass, mariaRequire(access)))
 		return err
 	}
-	found, err := d.exists(ctx, engine, fmt.Sprintf("SELECT 1 FROM pg_roles WHERE rolname = '%s';\n", user))
+	found, err := d.exists(ctx, s, fmt.Sprintf("SELECT 1 FROM pg_roles WHERE rolname = '%s';\n", user))
 	if err != nil {
 		return err
 	}
 	if found {
 		return fmt.Errorf("the database user %s exists", user)
 	}
-	_, err = d.sql(ctx, engine, fmt.Sprintf("CREATE ROLE \"%s\" LOGIN PASSWORD '%s';\n", user, pass))
+	_, err = d.sql(ctx, s, fmt.Sprintf("CREATE ROLE \"%s\" LOGIN PASSWORD '%s';\n", user, pass))
 	return err
 }
 
@@ -280,8 +304,8 @@ func pgRevokeSQL(user, database string) string {
 }
 
 // mariaCurrentHost gives the host part of a MariaDB user.
-func (d *Deps) mariaCurrentHost(ctx context.Context, user string) (string, error) {
-	out, err := d.sql(ctx, "mariadb", fmt.Sprintf("SELECT Host FROM mysql.user WHERE User = '%s';\n", user))
+func (d *Deps) mariaCurrentHost(ctx context.Context, s dbServer, user string) (string, error) {
+	out, err := d.sql(ctx, s, fmt.Sprintf("SELECT Host FROM mysql.user WHERE User = '%s';\n", user))
 	if err != nil {
 		return "", err
 	}
@@ -319,10 +343,19 @@ func (d *Deps) SetDatabaseUser(req *agentv1.SetDatabaseUserRequest) (jobs.Job, e
 	if (pass != "" || req.GetCreate()) && !passwordRE.MatchString(pass) {
 		errs = append(errs, errors.New("the database password must have 16 to 64 letters and digits"))
 	}
-	host, err := d.mariaHost(req.GetAccess())
+	_, err := d.mariaHost(dbServer{}, req.GetAccess())
 	errs = append(errs, err)
 	if err := errors.Join(errs...); err != nil {
 		return jobs.Job{}, err
+	}
+	// server gives the container of the engine for the website, and the host part of the user.
+	server := func() (dbServer, string, error) {
+		srv, err := d.server(req.GetWebsiteId(), engine)
+		if err != nil {
+			return srv, "", err
+		}
+		host, err := d.mariaHost(srv, req.GetAccess())
+		return srv, host, err
 	}
 	if engine == "valkey" {
 		// The user of a Valkey database comes and goes with its database, and has access to
@@ -335,24 +368,32 @@ func (d *Deps) SetDatabaseUser(req *agentv1.SetDatabaseUserRequest) (jobs.Job, e
 				if pass == "" {
 					return nil
 				}
-				return d.valkeySetPassword(ctx, user, pass)
+				srv, _, err := server()
+				if err != nil {
+					return err
+				}
+				return d.valkeySetPassword(ctx, srv, user, pass)
 			}},
 		}}, nil
 	}
 	maria := engine == "mariadb"
 	return jobs.Job{ID: req.GetJobId(), Key: req.GetWebsiteId(), Steps: []jobs.Step{
 		{Name: "Set user and password", Do: func(ctx context.Context) error {
+			srv, host, err := server()
+			if err != nil {
+				return err
+			}
 			if req.GetCreate() {
-				return d.createUser(ctx, engine, user, pass, host, req.GetAccess())
+				return d.createUser(ctx, srv, user, pass, host, req.GetAccess())
 			}
 			if !maria {
 				if pass == "" {
 					return nil
 				}
-				_, err := d.sql(ctx, engine, fmt.Sprintf("ALTER ROLE \"%s\" WITH LOGIN PASSWORD '%s';\n", user, pass))
+				_, err := d.sql(ctx, srv, fmt.Sprintf("ALTER ROLE \"%s\" WITH LOGIN PASSWORD '%s';\n", user, pass))
 				return err
 			}
-			old, err := d.mariaCurrentHost(ctx, user)
+			old, err := d.mariaCurrentHost(ctx, srv, user)
 			if err != nil {
 				return err
 			}
@@ -364,10 +405,14 @@ func (d *Deps) SetDatabaseUser(req *agentv1.SetDatabaseUserRequest) (jobs.Job, e
 			if pass != "" {
 				fmt.Fprintf(&b, "ALTER USER '%s'@'%s' IDENTIFIED BY '%s';\n", user, host, pass)
 			}
-			_, err = d.sql(ctx, engine, b.String())
+			_, err = d.sql(ctx, srv, b.String())
 			return err
 		}},
 		{Name: "Set access to databases", Do: func(ctx context.Context) error {
+			srv, host, err := server()
+			if err != nil {
+				return err
+			}
 			var b strings.Builder
 			if maria {
 				// Remove all grants, then give the grants of the request.
@@ -380,7 +425,7 @@ func (d *Deps) SetDatabaseUser(req *agentv1.SetDatabaseUserRequest) (jobs.Job, e
 			for _, g := range req.GetGrants() {
 				b.WriteString(grantSQL(engine, user, host, g.GetDatabase(), g.GetPrivileges()))
 			}
-			_, err := d.sql(ctx, engine, b.String())
+			_, err = d.sql(ctx, srv, b.String())
 			return err
 		}},
 	}}, nil
@@ -399,17 +444,24 @@ func (d *Deps) DeleteDatabaseUser(req *agentv1.DeleteDatabaseUserRequest) (jobs.
 		return jobs.Job{}, errors.New("the user of a Valkey database goes with its database; remove the database")
 	}
 	return jobs.Job{ID: req.GetJobId(), Key: req.GetWebsiteId(), Steps: []jobs.Step{
-		{Name: "Remove user", Do: func(ctx context.Context) error { return d.dropUser(ctx, engine, user) }},
+		{Name: "Remove user", Do: func(ctx context.Context) error {
+			srv, err := d.server(req.GetWebsiteId(), engine)
+			if err != nil {
+				return err
+			}
+			return d.dropUser(ctx, srv, user)
+		}},
 	}}, nil
 }
 
-func (d *Deps) dropUser(ctx context.Context, engine, user string) error {
+func (d *Deps) dropUser(ctx context.Context, s dbServer, user string) error {
+	engine := s.Engine
 	if engine == "valkey" {
 		// dropDatabase removes the user of a Valkey database.
 		return nil
 	}
 	if engine == "mariadb" {
-		out, err := d.sql(ctx, engine, fmt.Sprintf("SELECT Host FROM mysql.user WHERE User = '%s';\n", user))
+		out, err := d.sql(ctx, s, fmt.Sprintf("SELECT Host FROM mysql.user WHERE User = '%s';\n", user))
 		if err != nil {
 			return err
 		}
@@ -422,12 +474,12 @@ func (d *Deps) dropUser(ctx context.Context, engine, user string) error {
 		if b.Len() == 0 {
 			return nil
 		}
-		_, err = d.sql(ctx, engine, b.String())
+		_, err = d.sql(ctx, s, b.String())
 		return err
 	}
 	// The group roles own all objects, so the user owns nothing. DROP ROLE also removes the
 	// memberships and the settings of the user.
-	_, err := d.sql(ctx, engine, fmt.Sprintf("DROP ROLE IF EXISTS \"%s\";\n", user))
+	_, err := d.sql(ctx, s, fmt.Sprintf("DROP ROLE IF EXISTS \"%s\";\n", user))
 	return err
 }
 
@@ -447,14 +499,22 @@ func (d *Deps) DeleteDatabase(req *agentv1.DeleteDatabaseRequest) (jobs.Job, err
 	if engine == "valkey" {
 		return jobs.Job{ID: req.GetJobId(), Key: req.GetWebsiteId(), Steps: []jobs.Step{
 			{Name: "Remove database and user", Do: func(ctx context.Context) error {
-				return d.dropDatabase(ctx, engine, name)
+				srv, err := d.server(req.GetWebsiteId(), engine)
+				if err != nil {
+					return err
+				}
+				return d.dropDatabase(ctx, srv, name)
 			}},
 		}}, nil
 	}
 	return jobs.Job{ID: req.GetJobId(), Key: req.GetWebsiteId(), Steps: []jobs.Step{
 		{Name: "Remove access of users", Do: func(ctx context.Context) error {
+			srv, err := d.server(req.GetWebsiteId(), engine)
+			if err != nil {
+				return err
+			}
 			if engine == "mariadb" {
-				_, err := d.sql(ctx, engine, mariaRevokeDatabase(name))
+				_, err := d.sql(ctx, srv, mariaRevokeDatabase(name))
 				return err
 			}
 			var b strings.Builder
@@ -464,11 +524,15 @@ func (d *Deps) DeleteDatabase(req *agentv1.DeleteDatabaseRequest) (jobs.Job, err
 			if b.Len() == 0 {
 				return nil
 			}
-			_, err := d.sql(ctx, engine, b.String())
+			_, err = d.sql(ctx, srv, b.String())
 			return err
 		}},
 		{Name: "Remove database", Do: func(ctx context.Context) error {
-			return d.dropDatabase(ctx, engine, name)
+			srv, err := d.server(req.GetWebsiteId(), engine)
+			if err != nil {
+				return err
+			}
+			return d.dropDatabase(ctx, srv, name)
 		}},
 	}}, nil
 }
@@ -485,15 +549,15 @@ func mariaRevokeDatabase(name string) string {
 	return b.String()
 }
 
-func (d *Deps) dropDatabase(ctx context.Context, engine, name string) error {
-	if engine == "valkey" {
-		return d.valkeyDelete(ctx, name)
+func (d *Deps) dropDatabase(ctx context.Context, s dbServer, name string) error {
+	if s.Engine == "valkey" {
+		return d.valkeyDelete(ctx, s, name)
 	}
-	if engine == "mariadb" {
-		_, err := d.sql(ctx, engine, fmt.Sprintf("DROP DATABASE IF EXISTS `%s`;\n", name))
+	if s.Engine == "mariadb" {
+		_, err := d.sql(ctx, s, fmt.Sprintf("DROP DATABASE IF EXISTS `%s`;\n", name))
 		return err
 	}
-	_, err := d.sql(ctx, engine, fmt.Sprintf("DROP DATABASE IF EXISTS \"%[1]s\" WITH (FORCE);\nDROP ROLE IF EXISTS \"%[1]s:rw\";\nDROP ROLE IF EXISTS \"%[1]s:ro\";\n", name))
+	_, err := d.sql(ctx, s, fmt.Sprintf("DROP DATABASE IF EXISTS \"%[1]s\" WITH (FORCE);\nDROP ROLE IF EXISTS \"%[1]s:rw\";\nDROP ROLE IF EXISTS \"%[1]s:ro\";\n", name))
 	return err
 }
 
@@ -763,7 +827,11 @@ func (d *Deps) Backup(req *agentv1.BackupRequest) (jobs.Job, error) {
 				return err
 			}
 			for _, db := range req.GetDatabases() {
-				sum, err := d.dumpToFile(ctx, db.GetEngine(), db.GetName(), filepath.Join(dumps, dumpFile(db.GetEngine(), db.GetName())))
+				srv, err := d.server(req.GetWebsiteId(), db.GetEngine())
+				if err != nil {
+					return err
+				}
+				sum, err := d.dumpToFile(ctx, srv, db.GetName(), filepath.Join(dumps, dumpFile(db.GetEngine(), db.GetName())))
 				if err != nil {
 					return err
 				}
@@ -807,17 +875,16 @@ func (d *Deps) Backup(req *agentv1.BackupRequest) (jobs.Job, error) {
 // dumpCommand gives the command of a dump that a database user can restore: no owners and no
 // privileges. The PostgreSQL dump uses the custom format, which pg_restore reads. It has no
 // psql commands. The command writes the dump to its stdout.
-func (d *Deps) dumpCommand(ctx context.Context, engine, name string) ([]string, error) {
-	c, _ := dbContainer(engine)
-	if err := d.EnsureDatabaseService(ctx, engine); err != nil {
+func (d *Deps) dumpCommand(ctx context.Context, s dbServer, name string) ([]string, error) {
+	if err := d.EnsureDatabaseService(ctx, s); err != nil {
 		return nil, err
 	}
 	uid, err := d.Host.LookupUID(DBUser)
 	if err != nil {
 		return nil, err
 	}
-	args := []string{"runuser", "-u", DBUser, "--", "env", fmt.Sprintf("XDG_RUNTIME_DIR=/run/user/%d", uid), "podman", "exec", c}
-	if engine == "mariadb" {
+	args := []string{"runuser", "-u", DBUser, "--", "env", fmt.Sprintf("XDG_RUNTIME_DIR=/run/user/%d", uid), "podman", "exec", s.container()}
+	if s.Engine == "mariadb" {
 		args = append(args, "mariadb-dump", "--user=root", "--single-transaction", "--routines", name)
 	} else {
 		args = append(args, "pg_dump", "--username=postgres", "--format=custom", "--no-owner", "--no-privileges", name)
@@ -828,8 +895,8 @@ func (d *Deps) dumpCommand(ctx context.Context, engine, name string) ([]string, 
 // dumpToFile writes a dump to a file and gives its SHA-256 hash. The dump goes from the
 // client to the file, so that a large database does not stay in the memory of the agent
 // (audit batch 2, finding 6).
-func (d *Deps) dumpToFile(ctx context.Context, engine, name, path string) (string, error) {
-	args, err := d.dumpCommand(ctx, engine, name)
+func (d *Deps) dumpToFile(ctx context.Context, s dbServer, name, path string) (string, error) {
+	args, err := d.dumpCommand(ctx, s, name)
 	if err != nil {
 		return "", err
 	}
@@ -964,7 +1031,11 @@ func (d *Deps) Restore(req *agentv1.RestoreRequest) (jobs.Job, error) {
 			if sum != req.GetDumpSha256() {
 				return errors.New("the dump does not agree with the hash from the backup")
 			}
-			return d.restoreDump(ctx, dbEngine, dbName, func(ctx context.Context, client []string) error {
+			srv, err := d.server(req.GetWebsiteId(), dbEngine)
+			if err != nil {
+				return err
+			}
+			return d.restoreDump(ctx, srv, dbName, func(ctx context.Context, client []string) error {
 				f, err := os.Open(path)
 				if err != nil {
 					return err
@@ -1018,8 +1089,8 @@ func (d *Deps) emptyAsUser(ctx context.Context, unixUser, dir string) error {
 //
 // Audit batch 2, finding 5: the database is empty before the restore, so that the result is
 // the database of the backup, with no tables that the website made later.
-func (d *Deps) restoreDump(ctx context.Context, engine, name string, feed func(ctx context.Context, client []string) error) error {
-	c, _ := dbContainer(engine)
+func (d *Deps) restoreDump(ctx context.Context, s dbServer, name string, feed func(ctx context.Context, client []string) error) error {
+	engine, c := s.Engine, s.container()
 	tmpUser := "cfrestore_" + randomHex(8)
 	pass := randomHex(24)
 	maria := engine == "mariadb"
@@ -1031,11 +1102,11 @@ func (d *Deps) restoreDump(ctx context.Context, engine, name string, feed func(c
 		create = fmt.Sprintf("CREATE ROLE \"%[1]s\" LOGIN PASSWORD '%[2]s';\nGRANT \"%[3]s\" TO \"%[1]s\";\n", tmpUser, pass, pgRole(name, "readwrite"))
 		drop = fmt.Sprintf("DROP ROLE IF EXISTS \"%s\";\n", tmpUser)
 	}
-	if _, err := d.sql(ctx, engine, create); err != nil {
+	if _, err := d.sql(ctx, s, create); err != nil {
 		return err
 	}
-	defer d.sql(context.WithoutCancel(ctx), engine, drop)
-	if _, err := d.sql(ctx, engine, emptyDatabaseSQL(engine, name)); err != nil {
+	defer d.sql(context.WithoutCancel(ctx), s, drop)
+	if _, err := d.sql(ctx, s, emptyDatabaseSQL(engine, name)); err != nil {
 		return err
 	}
 

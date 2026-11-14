@@ -38,23 +38,54 @@ type fakeValkey struct {
 	saves    int
 }
 
+// customerValkey is the Valkey container of the customer of the tests.
+var customerValkey = dbServer{Instance: customerKey, Engine: "valkey"}
+
+// newFakeValkey gives the fake Valkey server of the customer of the tests. The website of the
+// tests uses the database containers of that customer. A connection to a different address
+// gets the fake server of that address (fakeValkeyAt).
 func newFakeValkey(d *Deps) *fakeValkey {
-	f := &fakeValkey{version: "9.1.3", passwords: map[string]string{}, rules: map[string][]string{}, keys: map[int]int{}}
-	f.admin = func() string {
-		b, _ := os.ReadFile(d.valkeySecretFile())
-		return strings.TrimSpace(string(b))
+	if _, err := d.useDatabases(customerKey, websiteID, false); err != nil {
+		panic(err)
 	}
-	// The tests never read or change the firewall file of the computer.
-	if d.FirewallFile == "" {
-		d.FirewallFile = filepath.Join(filepath.Dir(d.DBHome), "cloudfactory.nft")
-	}
-	d.ValkeyDial = func(context.Context) (net.Conn, error) {
+	servers := map[string]*fakeValkey{}
+	var mu sync.Mutex
+	d.ValkeyDial = func(_ context.Context, address string) (net.Conn, error) {
+		mu.Lock()
+		f := servers[address]
+		if f == nil {
+			f = &fakeValkey{version: "9.1.3", passwords: map[string]string{}, rules: map[string][]string{}, keys: map[int]int{}}
+			f.admin = func() string {
+				// The customer that has the address has the password of the server.
+				instances, _ := d.State.DatabaseInstances()
+				for key, inst := range instances {
+					if a, _ := quadlet.DatabaseAddress(inst.Number); a == address {
+						b, _ := os.ReadFile(d.valkeySecretFile(dbServer{Instance: key, Engine: "valkey"}))
+						return strings.TrimSpace(string(b))
+					}
+				}
+				return ""
+			}
+			servers[address] = f
+		}
+		mu.Unlock()
 		client, server := net.Pipe()
 		go f.serve(server)
 		return client, nil
 	}
-	return f
+	// A dial with no server makes the fake server of the address.
+	c, _ := d.ValkeyDial(context.Background(), customerAddress)
+	c.Close()
+	fakeValkeyAt = func(address string) *fakeValkey {
+		mu.Lock()
+		defer mu.Unlock()
+		return servers[address]
+	}
+	return servers[customerAddress]
 }
+
+// fakeValkeyAt gives the fake Valkey server of an address, or nil. newFakeValkey sets it.
+var fakeValkeyAt func(address string) *fakeValkey
 
 func (f *fakeValkey) serve(c net.Conn) {
 	defer c.Close()
@@ -229,6 +260,7 @@ func TestValkeyDatabaseGetsANumberAndAUser(t *testing.T) {
 	f.Rules = []execx.Rule{{Prefix: "runuser -u cf-db -- env XDG_RUNTIME_DIR=/run/user/20001 podman image exists", Err: errors.New("no image")}}
 	v := newFakeValkey(d)
 	v.keys[1] = 5
+	data := filepath.Join(d.DBHome, "customers", customerKey, "valkey")
 	job, err := d.CreateDatabase(valkeyRequest("acme_x7k2_cache"))
 	if err := run(t)(job, err); err != nil {
 		t.Fatal(err)
@@ -261,19 +293,27 @@ func TestValkeyDatabaseGetsANumberAndAUser(t *testing.T) {
 	}
 	for _, want := range []string{
 		"runuser -u cf-db -- env XDG_RUNTIME_DIR=/run/user/20001 podman pull --quiet ghcr.io/cloudfactory/valkey:0.1.0",
-		"install -d -o cf-db -g cf-db -m 0700 " + filepath.Join(d.DBHome, "valkey"),
-		"chown cf-db:cf-db " + filepath.Join(d.DBHome, "valkey", "users.acl"),
-		"systemctl --user --machine=cf-db@ restart cf-valkey.service",
+		"install -d -o cf-db -g cf-db -m 0700 " + filepath.Join(d.DBHome, "customers"),
+		"install -d -o cf-db -g cf-db -m 0700 " + filepath.Join(d.DBHome, "customers", customerKey),
+		"install -d -o cf-db -g cf-db -m 0700 " + data,
+		"chown cf-db:cf-db " + filepath.Join(data, "users.acl"),
+		"systemctl --user --machine=cf-db@ restart cf-valkey-" + customerKey + ".service",
+		// The network of the database containers is on "lo" before the container starts.
+		"ip address replace 169.254.80.1/20 dev lo",
 	} {
 		if !f.Called(want) {
 			t.Errorf("no call %q in %v", want, f.Calls)
 		}
 	}
-	u := unitFile(t, d, DBUser, "cf-valkey.container")
+	u := unitFile(t, d, DBUser, "cf-valkey-"+customerKey+".container")
 	for _, want := range []string{
-		"PublishPort=169.254.77.1:6379:6379\n", "Volume=" + filepath.Join(d.DBHome, "valkey") + ":/data:Z\n",
+		// The container of the customer has the address of the customer and its own limits.
+		"ContainerName=cf-valkey-" + customerKey + "\n", "Label=io.cloudfactory.customer=" + customerKey + "\n",
+		"PublishPort=" + customerAddress + ":6379:6379\n", "Volume=" + data + ":/data:Z\n",
 		"Exec=valkey-server --bind 0.0.0.0 --port 6379 --databases 1024 --aclfile /data/users.acl --appendonly yes --save \"\" --maxmemory 128mb --maxmemory-policy allkeys-lru\n",
 		"GlobalArgs=--runtime=/usr/local/bin/runsc ", "ReadOnly=true\n",
+		// Two times the data limit and 128 MB: 384 MB.
+		"MemoryMax=402653184\n", "MemorySwapMax=0\n",
 	} {
 		if !strings.Contains(u, want) {
 			t.Errorf("unit has no %q:\n%s", want, u)
@@ -283,14 +323,14 @@ func TestValkeyDatabaseGetsANumberAndAUser(t *testing.T) {
 		t.Errorf("the Valkey unit has an environment file:\n%s", u)
 	}
 	// The user file has only the hash of the password of the administrator.
-	secret, err := os.ReadFile(d.valkeySecretFile())
+	secret, err := os.ReadFile(d.valkeySecretFile(customerValkey))
 	if err != nil || len(strings.TrimSpace(string(secret))) != 48 {
 		t.Fatalf("secret: %q %v", secret, err)
 	}
-	if fi, _ := os.Stat(d.valkeySecretFile()); fi.Mode().Perm() != 0o600 {
+	if fi, _ := os.Stat(d.valkeySecretFile(customerValkey)); fi.Mode().Perm() != 0o600 {
 		t.Errorf("mode of the secret = %v", fi.Mode().Perm())
 	}
-	users, _ := os.ReadFile(filepath.Join(d.DBHome, "valkey", "users.acl"))
+	users, _ := os.ReadFile(filepath.Join(data, "users.acl"))
 	if !regexp.MustCompile(`^user default on #[0-9a-f]{64} ~\* &\* \+@all\n$`).Match(users) || strings.Contains(string(users), strings.TrimSpace(string(secret))) {
 		t.Errorf("user file: %q", users)
 	}
@@ -410,7 +450,7 @@ func TestStagingCopyGetsNewValkeyDatabases(t *testing.T) {
 	}
 	v.keys[1] = 8
 	w := website("ghcr.io/cloudfactory/frankenphp-php8.4:8.4.0-1")
-	w.Id, w.UnixUser = "01JBQ3Z5K8N6T4W2X9Y7R5P3M8", "acme_s1t2"
+	w.Id, w.UnixUser, w.DatabaseInstance = "01JBQ3Z5K8N6T4W2X9Y7R5P3M8", "acme_s1t2", customerID
 	w.Domains = []*agentv1.Domain{{Name: "staging.acme.example", Kind: "primary"}}
 	job, err := d.CreateWebsite(&agentv1.WebsiteRequest{JobId: jobID2, Website: w, CopyFrom: websiteID, CopyFromUnixUser: "acme_x7k2",
 		CopyUsers: []*agentv1.DatabaseUserCopy{{Engine: "valkey", Name: "acme_s1t2_cache", Password: "Zyxwvutsrqponmlk9876"}}})
@@ -505,47 +545,6 @@ func TestDeleteWebsiteRemovesItsValkeyDatabases(t *testing.T) {
 	}
 }
 
-// A website from an earlier release has no host name for Valkey. The first Valkey database
-// writes its unit again and starts the container again. A later database does not.
-func TestValkeyGivesTheHostNameToAnOldWebsite(t *testing.T) {
-	d, f, _ := deps(t)
-	newFakeValkey(d)
-	run(t)(d.CreateWebsite(&agentv1.WebsiteRequest{JobId: jobID, Website: website("ghcr.io/cloudfactory/frankenphp-php8.4:8.4.0-1")}))
-	dir, _ := d.Host.UnitDir("acme_x7k2")
-	path := filepath.Join(dir, "cf-acme_x7k2.container")
-	b, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	old := strings.Replace(string(b), "AddHost=valkey.internal:169.254.77.1\n", "", 1)
-	if old == string(b) {
-		t.Fatalf("the unit of a new website has no Valkey host name:\n%s", b)
-	}
-	os.WriteFile(path, []byte(old), 0o644)
-	restart := "systemctl --user --machine=acme_x7k2@ restart cf-acme_x7k2.service"
-	count := func() (n int) {
-		for _, c := range f.Calls {
-			if c == restart {
-				n++
-			}
-		}
-		return n
-	}
-	before := count()
-	if err := run(t)(d.CreateDatabase(valkeyRequest("acme_x7k2_cache"))); err != nil {
-		t.Fatal(err)
-	}
-	if u := unitFile(t, d, "acme_x7k2", "cf-acme_x7k2.container"); !strings.Contains(u, "AddHost=valkey.internal:169.254.77.1\n") || count() != before+1 {
-		t.Errorf("restarts = %d, want %d; unit:\n%s", count(), before+1, u)
-	}
-	if err := run(t)(d.CreateDatabase(valkeyRequest("acme_x7k2_queue"))); err != nil {
-		t.Fatal(err)
-	}
-	if count() != before+1 {
-		t.Errorf("the second database started the container again: %d restarts", count()-before)
-	}
-}
-
 func TestValkeyReportHasTheNumberAndTheKeys(t *testing.T) {
 	d, _, _ := deps(t)
 	v := newFakeValkey(d)
@@ -568,43 +567,6 @@ func TestValkeyReportHasTheNumberAndTheKeys(t *testing.T) {
 		if s.Engine != "valkey" || s.Name != want.name || s.Number != want.number || s.Keys == nil || *s.Keys != want.keys || s.SizeBytes != 0 {
 			t.Errorf("size %d = %+v, want %+v", i, s, want)
 		}
-	}
-}
-
-func TestValkeyPortInTheFirewall(t *testing.T) {
-	old := "    ct state new ip daddr 169.254.77.1 tcp dport != { 3306, 5432, 19432 } meta skuid != { 0, 991 } reject with tcp reset\n" +
-		"  chain websites {\n    ip daddr 169.254.77.1 tcp dport { 3306, 5432 } accept\n"
-	want := "    ct state new ip daddr 169.254.77.1 tcp dport != { 3306, 5432, 6379, 19432 } meta skuid != { 0, 991 } reject with tcp reset\n" +
-		"  chain websites {\n    ip daddr 169.254.77.1 tcp dport { 3306, 5432, 6379 } accept\n"
-	if got, ok := addValkeyPort(old); !ok || got != want {
-		t.Errorf("ok = %v, file:\n%s", ok, got)
-	}
-	if got, ok := addValkeyPort(want); !ok || got != want {
-		t.Errorf("a file of this release changed: ok = %v, file:\n%s", ok, got)
-	}
-	if _, ok := addValkeyPort("table inet filter {}\n"); ok {
-		t.Error("a file with no database rule is OK")
-	}
-
-	d, f, _ := deps(t)
-	newFakeValkey(d)
-	d.FirewallFile = filepath.Join(t.TempDir(), "cloudfactory.nft")
-	os.WriteFile(d.FirewallFile, []byte(old), 0o644)
-	if err := run(t)(d.CreateDatabase(valkeyRequest("acme_x7k2_cache"))); err != nil {
-		t.Fatal(err)
-	}
-	if b, _ := os.ReadFile(d.FirewallFile); string(b) != want || !f.Called("nft -f "+d.FirewallFile) {
-		t.Errorf("firewall file:\n%s\ncalls: %v", b, f.Calls)
-	}
-	// A firewall file that the agent cannot change stops the job, because the websites could
-	// not connect to Valkey.
-	d, _, _ = deps(t)
-	v := newFakeValkey(d)
-	d.ReadyTimeout = time.Nanosecond
-	d.FirewallFile = filepath.Join(t.TempDir(), "cloudfactory.nft")
-	os.WriteFile(d.FirewallFile, []byte("table inet cloudfactory {}\n"), 0o644)
-	if err := run(t)(d.CreateDatabase(valkeyRequest("acme_x7k2_cache"))); err == nil || !strings.Contains(err.Error(), "run the installer again") || len(v.rules) != 0 {
-		t.Errorf("err = %v, users = %v", err, v.rules)
 	}
 }
 
@@ -656,7 +618,7 @@ func TestValkeyAnswers(t *testing.T) {
 }
 
 func TestValkeyMemory(t *testing.T) {
-	for total, want := range map[int]int{0: 64, 256: 64, 2048: 256, 4096: 512, 16384: 1024, 262144: 1024} {
+	for total, want := range map[int]int{0: 32, 512: 32, 2048: 64, 4096: 128, 8192: 256, 262144: 256} {
 		if got := defaultValkeyMemoryMB(total); got != want {
 			t.Errorf("%d MB: %d, want %d", total, got, want)
 		}

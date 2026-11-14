@@ -1,6 +1,7 @@
 package quadlet
 
 import (
+	"net"
 	"strings"
 	"testing"
 )
@@ -272,6 +273,91 @@ func TestEachGvisorUnitIgnoresCgroups(t *testing.T) {
 		}
 		if strings.Contains(u, "PidsLimit") || strings.Contains(u, "--memory") || strings.Contains(u, "--cpus") {
 			t.Errorf("%s gives limits to Podman:\n%s", name, u)
+		}
+	}
+}
+
+// The database containers of a customer have their own name, address, label and limits. The
+// shared container of an earlier release keeps its name and the service address.
+func TestDatabaseUnitOfACustomer(t *testing.T) {
+	gv := Runtime{RunscPath: "/usr/local/bin/runsc", Platform: "systrap"}
+	key := "01jbq3z5k8n6t4w2x9y7r5p3c1"
+	ports := map[string]string{"mariadb": "3306", "postgresql": "5432", "valkey": "6379"}
+	for engine, port := range ports {
+		u := DatabaseUnit(Database{Engine: engine, Instance: key, Address: "169.254.80.2", Gvisor: gv, Image: "image", DataDir: "/data", EnvFile: "/env",
+			Limits: Limits{MemoryBytes: 1 << 30, VCPUs: 1.5}})
+		for _, want := range []string{
+			"ContainerName=cf-" + engine + "-" + key + "\n",
+			"PublishPort=169.254.80.2:" + port + ":" + port + "\n",
+			"Label=io.cloudfactory.customer=" + key + "\n",
+			"[Service]\nRestart=always\nTimeoutStartSec=900\nCPUQuota=150%\nMemoryMax=1073741824\nMemorySwapMax=0\n",
+		} {
+			if !strings.Contains(u, want) {
+				t.Errorf("%s of a customer has no %q:\n%s", engine, want, u)
+			}
+		}
+		if strings.Contains(u, ServiceAddress) {
+			t.Errorf("%s of a customer uses the service address:\n%s", engine, u)
+		}
+		shared := DatabaseUnit(Database{Engine: engine, Gvisor: gv, Image: "image", DataDir: "/data", EnvFile: "/env"})
+		for _, want := range []string{"ContainerName=cf-" + engine + "\n", "PublishPort=" + ServiceAddress + ":" + port + ":" + port + "\n"} {
+			if !strings.Contains(shared, want) {
+				t.Errorf("the shared %s has no %q:\n%s", engine, want, shared)
+			}
+		}
+		for _, not := range []string{"io.cloudfactory.customer", "MemoryMax", "CPUQuota"} {
+			if strings.Contains(shared, not) {
+				t.Errorf("the shared %s has %q:\n%s", engine, not, shared)
+			}
+		}
+	}
+}
+
+// The database host names of a website go to the address of the containers of its customer.
+// A website of an earlier release keeps the service address.
+func TestWebsiteDatabaseAddress(t *testing.T) {
+	w := website()
+	w.DatabaseAddress = "169.254.80.9"
+	u := ContainerUnit(w)
+	for _, host := range []string{MariaDBHost, PostgreSQLHost, ValkeyHost} {
+		if want := "AddHost=" + host + ":169.254.80.9\n"; !strings.Contains(u, want) {
+			t.Errorf("no %q:\n%s", want, u)
+		}
+	}
+	u = ContainerUnit(website())
+	for _, host := range []string{MariaDBHost, PostgreSQLHost, ValkeyHost} {
+		if want := "AddHost=" + host + ":" + ServiceAddress + "\n"; !strings.Contains(u, want) {
+			t.Errorf("no %q:\n%s", want, u)
+		}
+	}
+}
+
+// Each address number is an address of the database network, and not the address of the host.
+func TestDatabaseAddress(t *testing.T) {
+	_, network, err := net.ParseCIDR(DatabaseNetwork)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ones, _ := network.Mask.Size(); ones != DatabasePrefix {
+		t.Errorf("prefix %d, not %d", ones, DatabasePrefix)
+	}
+	seen := map[string]bool{DatabaseClientAddress: true}
+	for n := 1; n <= DatabaseAddresses; n++ {
+		a, err := DatabaseAddress(n)
+		ip := net.ParseIP(a)
+		if err != nil || ip == nil || !network.Contains(ip) || seen[a] {
+			t.Fatalf("address %d is %q: %v", n, a, err)
+		}
+		seen[a] = true
+	}
+	for n, want := range map[int]string{1: "169.254.80.2", 254: "169.254.80.255", 255: "169.254.81.0", DatabaseAddresses: "169.254.95.254"} {
+		if a, _ := DatabaseAddress(n); a != want {
+			t.Errorf("address %d is %s, not %s", n, a, want)
+		}
+	}
+	for _, n := range []int{0, -1, DatabaseAddresses + 1} {
+		if _, err := DatabaseAddress(n); err == nil {
+			t.Errorf("address %d: no error", n)
 		}
 	}
 }

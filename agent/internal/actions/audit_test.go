@@ -94,17 +94,22 @@ func TestTheDatabaseServiceKeepsTheOwnerOfItsDataDirectory(t *testing.T) {
 	d, f, _ := deps(t)
 	d.ServiceImage = func(name string) string { return "ghcr.io/cloudfactory/" + name + ":0.1.0" }
 	newFakeValkey(d)
+	// The shared containers of an earlier release, and the containers of a customer.
+	servers := []dbServer{{Engine: "mariadb"}, {Engine: "postgresql"}}
 	for _, engine := range Engines {
-		dir := filepath.Join(d.DBHome, engine)
+		servers = append(servers, dbServer{Instance: customerKey, Engine: engine})
+	}
+	for _, s := range servers {
+		dir := filepath.Join(d.dbDir(s), s.Engine)
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			t.Fatal(err)
 		}
-		if err := d.EnsureDatabaseService(context.Background(), engine); err != nil {
+		if err := d.EnsureDatabaseService(context.Background(), s); err != nil {
 			t.Fatal(err)
 		}
 		for _, c := range f.Calls {
 			if strings.HasSuffix(c, " "+dir) && (strings.HasPrefix(c, "install ") || strings.HasPrefix(c, "chown ") || strings.HasPrefix(c, "chmod ")) {
-				t.Errorf("%s: the agent changed the data directory that exists: %s", engine, c)
+				t.Errorf("%s: the agent changed the data directory that exists: %s", s, c)
 			}
 		}
 	}
@@ -378,7 +383,7 @@ func TestTheReportHasWebsiteUseAndCertificates(t *testing.T) {
 	}
 	// With no table, the report tells the administrator what to do.
 	f.Rules = append(f.Rules, execx.Rule{Prefix: "nft list table inet cloudfactory", Err: errors.New("Error: No such file or directory")})
-	if fw := d.firewallService(context.Background()); fw.State != "stopped" || fw.Optional || !strings.Contains(fw.Detail, "nft -f /etc/nftables.d-cloudfactory.nft") {
+	if fw := d.firewallService(context.Background()); fw.State != "stopped" || fw.Optional || !strings.Contains(fw.Detail, "nft -f "+d.firewallFile()) {
 		t.Errorf("firewall = %+v", fw)
 	}
 }
@@ -471,7 +476,7 @@ func TestRestoreEmptiesTheDatabaseFirst(t *testing.T) {
 		d, f, _ := deps(t)
 		dump := filepath.Join(t.TempDir(), "dump.sql")
 		os.WriteFile(dump, []byte("CREATE TABLE t (id int);\n"), 0o600)
-		err := d.restoreDump(context.Background(), engine, "acme_x7k2_shop", func(ctx context.Context, client []string) error {
+		err := d.restoreDump(context.Background(), dbServer{Engine: engine}, "acme_x7k2_shop", func(ctx context.Context, client []string) error {
 			r, _ := os.Open(dump)
 			defer r.Close()
 			return d.Run.Stream(ctx, r, nil, client[0], client[1:]...)

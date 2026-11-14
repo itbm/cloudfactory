@@ -82,19 +82,28 @@ type Deps struct {
 	// SecretsDir holds short-lived files with passwords for the database clients. The
 	// default is "/run/cloudfactory/secrets".
 	SecretsDir string
-	// DatabaseClientHost is the host part of a MariaDB user that can connect from the website
-	// containers only, for example "10.89.%" (CF-19). The default is quadlet.ServiceAddress.
+	// DatabaseClientHost is the host part of a MariaDB user of the shared container of an
+	// earlier release that can connect from the website containers only, for example "10.89.%"
+	// (CF-19). The default is quadlet.ServiceAddress. In the container of a customer, the
+	// host part is quadlet.DatabaseClientAddress.
 	DatabaseClientHost string
 	// ServiceImage gives the image of a service, for example ServiceImage("mariadb").
 	ServiceImage func(name string) string
 	// DBHome is the home directory of cf-db. The default is "/var/lib/cf-db".
 	DBHome string
-	// ValkeyMemoryMB is the memory limit of the shared Valkey container for its data, in MB.
-	// 0 means one eighth of the memory of the server, from 64 MB to 1024 MB.
+	// DatabaseMemoryMB is the memory limit of the MariaDB container and of the PostgreSQL
+	// container of each customer, in MB. 0 means one quarter of the memory of the server, from
+	// 512 MB to 2048 MB.
+	DatabaseMemoryMB int
+	// DatabaseCPUs is the CPU limit of each database container of a customer, in vCPUs. 0 means
+	// no limit: the kernel then gives each container an equal part when the CPUs are busy.
+	DatabaseCPUs float64
+	// ValkeyMemoryMB is the memory limit of the Valkey container of each customer for its
+	// data, in MB. 0 means 1/32 of the memory of the server, from 32 MB to 256 MB.
 	ValkeyMemoryMB int
-	// ValkeyDial opens a connection to the shared Valkey container. Nil means a connection to
-	// its port on quadlet.ServiceAddress. Tests replace it.
-	ValkeyDial func(ctx context.Context) (net.Conn, error)
+	// ValkeyDial opens a connection to the Valkey container on an address. Nil means a
+	// connection to its port on the address. Tests replace it.
+	ValkeyDial func(ctx context.Context, address string) (net.Conn, error)
 	// SftpKeysDir holds the SSH keys of each website user. The default is "/etc/cloudfactory/sftp".
 	SftpKeysDir string
 	// SftpUsersDir holds the user list of the SFTP container. The default is
@@ -112,6 +121,12 @@ type Deps struct {
 	// FirewallFile is the nftables file of the installer. The default is
 	// "/etc/nftables.d-cloudfactory.nft".
 	FirewallFile string
+	// FirewallDir holds the nftables files of the agent, which FirewallFile includes. The
+	// default is "/etc/cloudfactory/firewall".
+	FirewallDir string
+	// AddressUnit is the systemd unit of the installer that adds the private addresses to
+	// "lo". The default is "/etc/systemd/system/cloudfactory-address.service".
+	AddressUnit string
 	// HostSftpConfig is the SSH configuration of the host from release 0.1. The default is
 	// "/etc/ssh/sshd_config.d/50-cloudfactory-sftp.conf".
 	HostSftpConfig string
@@ -137,11 +152,23 @@ type Deps struct {
 	PanelCertificateWait time.Duration
 	PanelCertificatePoll time.Duration
 
+	// dbMu protects dbReady, dbStart and the list of the websites of each database instance.
 	dbMu sync.Mutex
 	// valkeyMu makes the search for a free Valkey database number and its user one step.
 	valkeyMu sync.Mutex
 	sftpMu   sync.Mutex
-	dbReady  map[string]bool
+	// dbReady has the database containers that this agent process started and that answered.
+	dbReady map[dbServer]bool
+	// dbStart has one lock for the containers of each customer ("" is the shared containers).
+	// The start of a container and the removal of the containers of a customer hold it.
+	dbStart map[string]*sync.Mutex
+	// netMu protects netReady and accessLoaded, and makes each change of the firewall one step.
+	netMu sync.Mutex
+	// netReady is true when this agent process made sure that "lo" has the database network
+	// and that the firewall has its rules.
+	netReady bool
+	// accessLoaded is the content of the database access file that the kernel has.
+	accessLoaded string
 	// backupSlots limits the backups that operate at the same time (BackupSlots).
 	backupSlots chan struct{}
 	rtMu        sync.RWMutex
@@ -182,6 +209,23 @@ type State struct {
 
 type stateFile struct {
 	Sites map[string]*Site `json:"sites"`
+	// Databases has the database containers of each customer on this server. The key is the
+	// ID of the customer in lower case.
+	Databases map[string]*DatabaseInstance `json:"databases,omitempty"`
+}
+
+// DatabaseInstance is what the agent knows about the database containers of one customer.
+type DatabaseInstance struct {
+	// Number is the address number of the customer (quadlet.DatabaseAddress).
+	Number int `json:"number"`
+	// Websites are the IDs of the websites that use the containers. This list is the record
+	// of the database containers of each website: a website that is in no list uses the
+	// shared containers of an earlier release.
+	Websites []string `json:"websites"`
+	// Moving are the IDs of the websites with databases that MoveDatabases copies into the
+	// containers now. They do not use the containers yet. The agent removes the containers
+	// and their data when the two lists are empty.
+	Moving []string `json:"moving,omitempty"`
 }
 
 func (s *State) read() (stateFile, error) {

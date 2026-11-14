@@ -111,11 +111,15 @@ type Report struct {
 	Websites       []Usage   `json:"websites"`
 	// Domains are the DNS and certificate state of each domain on this server.
 	Domains []DomainState `json:"domains"`
-	// Databases are the sizes of the databases in the shared database containers.
+	// Databases are the sizes of the databases in the database containers of this server.
 	Databases []DatabaseSize `json:"databases"`
 	// DatabaseEngines are the database engines that this agent can operate. An agent of an
 	// earlier release does not send them: it has MariaDB and PostgreSQL only.
 	DatabaseEngines []string `json:"databaseEngines,omitempty"`
+	// DatabaseInstances is true when this agent gives each customer its own database
+	// containers (Website.database_instance) and can move the databases of a website to them
+	// (MoveDatabases). An agent of an earlier release does not send it.
+	DatabaseInstances bool `json:"databaseInstances,omitempty"`
 	// SftpPort is the port that the website owners use for SFTP on this server.
 	SftpPort int `json:"sftpPort,omitempty"`
 	// PanelCertificate is the certificate of the panel domain. Only the panel server sends it.

@@ -1,12 +1,15 @@
 package actions
 
 import (
+	"cmp"
 	"context"
 	"crypto/tls"
 	"errors"
+	"maps"
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -120,6 +123,7 @@ func (d *Deps) FillReport(ctx context.Context, r *panel.Report) {
 	}
 	r.Databases = o.dbSizes
 	r.DatabaseEngines = Engines
+	r.DatabaseInstances = true
 	r.Services = append(r.Services, d.firewallService(ctx), d.quotaService())
 }
 
@@ -378,30 +382,29 @@ func (d *Deps) RestoreLocalNames(ctx context.Context) error {
 	return errors.Join(errs...)
 }
 
-// databaseSizes gives the size of each database in the shared database containers that operate.
+// databaseSizes gives the size of each database in the database containers that operate: the
+// containers of each customer, and the shared containers of an earlier release. The name of
+// a database is for one website, so it is in one container only.
 func (d *Deps) databaseSizes(ctx context.Context) []panel.DatabaseSize {
 	out := []panel.DatabaseSize{}
 	d.dbMu.Lock()
-	ready := map[string]bool{}
-	for k, v := range d.dbReady {
-		ready[k] = v
-	}
+	servers := slices.Collect(maps.Keys(d.dbReady))
 	d.dbMu.Unlock()
+	slices.SortFunc(servers, func(a, b dbServer) int {
+		return cmp.Or(cmp.Compare(a.Instance, b.Instance), cmp.Compare(a.Engine, b.Engine))
+	})
 	queries := map[string]string{
 		"mariadb":    "SELECT table_schema, COALESCE(SUM(data_length + index_length), 0) FROM information_schema.tables GROUP BY table_schema;\n",
 		"postgresql": "SELECT datname || '|' || pg_database_size(datname) FROM pg_database WHERE NOT datistemplate;\n",
 	}
-	for _, engine := range Engines {
-		if !ready[engine] {
-			continue
-		}
-		if engine == "valkey" {
-			if sizes, err := d.valkeySizes(ctx); err == nil {
+	for _, s := range servers {
+		if s.Engine == "valkey" {
+			if sizes, err := d.valkeySizes(ctx, s); err == nil {
 				out = append(out, sizes...)
 			}
 			continue
 		}
-		res, err := d.sqlNow(ctx, engine, queries[engine])
+		res, err := d.sqlNow(ctx, s, queries[s.Engine])
 		if err != nil {
 			continue
 		}
@@ -411,7 +414,7 @@ func (d *Deps) databaseSizes(ctx context.Context) []panel.DatabaseSize {
 				continue
 			}
 			if n, err := strconv.ParseInt(strings.TrimSpace(f[1]), 10, 64); err == nil {
-				out = append(out, panel.DatabaseSize{Engine: engine, Name: strings.TrimSpace(f[0]), SizeBytes: n})
+				out = append(out, panel.DatabaseSize{Engine: s.Engine, Name: strings.TrimSpace(f[0]), SizeBytes: n})
 			}
 		}
 	}

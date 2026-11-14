@@ -34,25 +34,30 @@ func valkeyServer(t *testing.T) *Deps {
 		t.Skip("CF_TEST_VALKEY is not set: no real Valkey server")
 	}
 	d, _, _ := deps(t)
-	d.ValkeyDial = func(ctx context.Context) (net.Conn, error) {
+	// The server of the tests is the Valkey container of one customer. The agent connects to
+	// the address of the test, not to the address of the customer.
+	d.ValkeyDial = func(ctx context.Context, _ string) (net.Conn, error) {
 		var dialer net.Dialer
 		return dialer.DialContext(ctx, "tcp", address)
 	}
-	if err := os.MkdirAll(d.dbHome(), 0o700); err != nil {
+	if _, err := d.useDatabases(customerKey, websiteID, false); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(d.valkeySecretFile(), []byte(os.Getenv("CF_TEST_VALKEY_PASSWORD")+"\n"), 0o600); err != nil {
+	if err := os.MkdirAll(d.dbDir(customerValkey), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(d.valkeySecretFile(customerValkey), []byte(os.Getenv("CF_TEST_VALKEY_PASSWORD")+"\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	// The workflow started the container. The agent must not start it.
-	d.dbReady = map[string]bool{"valkey": true}
+	d.dbReady = map[dbServer]bool{customerValkey: true}
 	return d
 }
 
 // rawValkey opens a connection with no login.
 func rawValkey(t *testing.T, d *Deps) *valkeyConn {
 	t.Helper()
-	c, err := d.ValkeyDial(context.Background())
+	c, err := d.ValkeyDial(context.Background(), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,12 +68,12 @@ func rawValkey(t *testing.T, d *Deps) *valkeyConn {
 func TestValkeyServer(t *testing.T) {
 	d := valkeyServer(t)
 	ctx := context.Background()
-	if err := d.valkeyReady(ctx); err != nil {
+	if err := d.valkeyReady(ctx, customerValkey); err != nil {
 		t.Fatal(err)
 	}
 	login := func(name, password string) *valkeyConn {
 		t.Helper()
-		v, err := d.valkeyConnect(ctx, name, password)
+		v, err := d.valkeyConnect(ctx, customerValkey, name, password)
 		if err != nil {
 			t.Fatalf("log in as %s: %v", name, err)
 		}
@@ -107,15 +112,15 @@ func TestValkeyServer(t *testing.T) {
 	const nameB, passB = "site2_cd34_cache", "Bbbbbbbbbbbbbbbb2222"
 	// A run before this one can leave its databases.
 	for _, name := range []string{nameA, nameB, "site3_ef56_cache", valkeyKeepName} {
-		if err := d.valkeyDelete(ctx, name); err != nil {
+		if err := d.valkeyDelete(ctx, customerValkey, name); err != nil {
 			t.Fatal(err)
 		}
 	}
-	numberA, err := d.valkeyCreate(ctx, nameA, "site1_ab12_", passA)
+	numberA, err := d.valkeyCreate(ctx, customerValkey, nameA, "site1_ab12_", passA)
 	if err != nil {
 		t.Fatal(err)
 	}
-	numberB, err := d.valkeyCreate(ctx, nameB, "site2_cd34_", passB)
+	numberB, err := d.valkeyCreate(ctx, customerValkey, nameB, "site2_cd34_", passB)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,7 +133,7 @@ func TestValkeyServer(t *testing.T) {
 	if _, err := rawValkey(t, d).do("PING"); err == nil || !strings.Contains(err.Error(), "NOAUTH") {
 		t.Errorf("PING with no login: %v", err)
 	}
-	if _, err := d.valkeyConnect(ctx, nameA, passB); err == nil {
+	if _, err := d.valkeyConnect(ctx, customerValkey, nameA, passB); err == nil {
 		t.Error("a wrong password was accepted")
 	}
 
@@ -242,7 +247,7 @@ func TestValkeyServer(t *testing.T) {
 	ok(a, "SET", "k", "v")
 
 	// The report has the number and the keys of each database.
-	sizes, err := d.valkeySizes(ctx)
+	sizes, err := d.valkeySizes(ctx, customerValkey)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -258,13 +263,13 @@ func TestValkeyServer(t *testing.T) {
 
 	// A new password: the old password and the old connections stop, and the data stays.
 	const newPassA = "Aaaaaaaaaaaaaaaa9999"
-	if err := d.valkeySetPassword(ctx, nameA, newPassA); err != nil {
+	if err := d.valkeySetPassword(ctx, customerValkey, nameA, newPassA); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := a.do("GET", "k"); err == nil {
 		t.Error("a connection with the old password still works")
 	}
-	if _, err := d.valkeyConnect(ctx, nameA, passA); err == nil {
+	if _, err := d.valkeyConnect(ctx, customerValkey, nameA, passA); err == nil {
 		t.Error("the old password still works")
 	}
 	a = login(nameA, newPassA)
@@ -274,25 +279,25 @@ func TestValkeyServer(t *testing.T) {
 		t.Errorf("after the new password, GET k = %v", got)
 	}
 	// The same job again gives the same number and keeps the data.
-	if n, err := d.valkeyCreate(ctx, nameA, "site1_ab12_", newPassA); err != nil || n != numberA {
+	if n, err := d.valkeyCreate(ctx, customerValkey, nameA, "site1_ab12_", newPassA); err != nil || n != numberA {
 		t.Errorf("the same job again: %d %v", n, err)
 	}
-	if _, err := d.valkeyCreate(ctx, nameA, "site1_ab12_", "Different12345678901"); err == nil {
+	if _, err := d.valkeyCreate(ctx, customerValkey, nameA, "site1_ab12_", "Different12345678901"); err == nil {
 		t.Error("a second database with the same name was made")
 	}
 
 	// A removed database: no user, no connection, no keys. The next database gets its number,
 	// and it is empty.
-	if err := d.valkeyDelete(ctx, nameB); err != nil {
+	if err := d.valkeyDelete(ctx, customerValkey, nameB); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := b.do("GET", "k"); err == nil {
 		t.Error("a connection of the removed database still works")
 	}
-	if _, err := d.valkeyConnect(ctx, nameB, passB); err == nil {
+	if _, err := d.valkeyConnect(ctx, customerValkey, nameB, passB); err == nil {
 		t.Error("the user of the removed database still works")
 	}
-	numberC, err := d.valkeyCreate(ctx, "site3_ef56_cache", "site3_ef56_", "Cccccccccccccccc3333")
+	numberC, err := d.valkeyCreate(ctx, customerValkey, "site3_ef56_cache", "site3_ef56_", "Cccccccccccccccc3333")
 	if err != nil || numberC != numberB {
 		t.Fatalf("number of the third database = %d (website 1: %d, website 2: %d): %v", numberC, numberA, numberB, err)
 	}
@@ -302,7 +307,7 @@ func TestValkeyServer(t *testing.T) {
 		t.Errorf("the new database has %v keys", got)
 	}
 	// The administrator has the last database, and no database after it.
-	admin, err := d.valkeyAdminConn(ctx)
+	admin, err := d.valkeyAdminConn(ctx, customerValkey)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -315,7 +320,7 @@ func TestValkeyServer(t *testing.T) {
 	denied(a, "SHUTDOWN", "NOSAVE")
 
 	// For TestValkeyServerAfterRestart: a database with one key.
-	if _, err := d.valkeyCreate(ctx, valkeyKeepName, "keep_k1p2_", valkeyKeepPassword); err != nil {
+	if _, err := d.valkeyCreate(ctx, customerValkey, valkeyKeepName, "keep_k1p2_", valkeyKeepPassword); err != nil {
 		t.Fatal(err)
 	}
 	keep := login(valkeyKeepName, valkeyKeepPassword)
@@ -335,7 +340,7 @@ func TestValkeyServerAfterRestart(t *testing.T) {
 		t.Skip("CF_TEST_VALKEY_RESTARTED is not set")
 	}
 	ctx := context.Background()
-	admin, err := d.valkeyAdminConn(ctx)
+	admin, err := d.valkeyAdminConn(ctx, customerValkey)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -348,7 +353,7 @@ func TestValkeyServerAfterRestart(t *testing.T) {
 	if !found || number < 1 {
 		t.Fatalf("after the restart, the users are %v", users)
 	}
-	keep, err := d.valkeyConnect(ctx, valkeyKeepName, valkeyKeepPassword)
+	keep, err := d.valkeyConnect(ctx, customerValkey, valkeyKeepName, valkeyKeepPassword)
 	if err != nil {
 		t.Fatal(err)
 	}

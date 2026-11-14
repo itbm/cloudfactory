@@ -61,10 +61,18 @@ type Config struct {
 	// SftpPort is the public port of the SFTP container of the websites. The default is 2200.
 	// Port 22 stays for the SSH service of the host. After a change, restart cf-agent.
 	SftpPort int `json:"sftpPort,omitempty"`
-	// ValkeyMemoryMB is the memory limit of the shared Valkey container for its data, in MB.
-	// The default is one eighth of the memory of the server, from 64 MB to 1024 MB. When the
-	// memory is full, Valkey removes the keys that were not used for the longest time. After
-	// a change, restart cf-agent.
+	// DatabaseMemoryMB is the memory limit of the MariaDB container and of the PostgreSQL
+	// container of each customer, in MB. The default is one quarter of the memory of the
+	// server, from 512 MB to 2048 MB. After a change, restart cf-agent.
+	DatabaseMemoryMB int `json:"databaseMemoryMb,omitempty"`
+	// DatabaseCPUs is the CPU limit of each database container of a customer, in vCPUs, for
+	// example 2. The default is no limit: when the CPUs are busy, the kernel gives each
+	// container an equal part. After a change, restart cf-agent.
+	DatabaseCPUs float64 `json:"databaseCpus,omitempty"`
+	// ValkeyMemoryMB is the memory limit of the Valkey container of each customer for its
+	// data, in MB. The default is 1/32 of the memory of the server, from 32 MB to 256 MB.
+	// When the memory is full, Valkey removes the keys of that customer that were not used
+	// for the longest time. After a change, restart cf-agent.
 	ValkeyMemoryMB int `json:"valkeyMemoryMb,omitempty"`
 	// PublicAddresses are the public IP addresses of a server behind NAT, for example on a
 	// cloud provider. The DNS check accepts them as addresses of this server.
@@ -135,6 +143,12 @@ func (c Config) Check() error {
 	}
 	if c.ValkeyMemoryMB != 0 && c.ValkeyMemoryMB < 16 {
 		errs = append(errs, errors.New("valkeyMemoryMb must be 16 or more"))
+	}
+	if c.DatabaseMemoryMB != 0 && c.DatabaseMemoryMB < 256 {
+		errs = append(errs, errors.New("databaseMemoryMb must be 256 or more"))
+	}
+	if c.DatabaseCPUs < 0 {
+		errs = append(errs, errors.New("databaseCpus must not be less than 0"))
 	}
 	if c.JobTimeoutMinutes < 0 || c.LongJobTimeoutMinutes < 0 {
 		errs = append(errs, errors.New("jobTimeoutMinutes and longJobTimeoutMinutes must not be negative"))

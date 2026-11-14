@@ -34,6 +34,7 @@ service AgentService {
   rpc SetSftp(SetSftpRequest) returns (JobAccepted);
   rpc ConfigureHost(ConfigureHostRequest) returns (JobAccepted);
   rpc SetPanelCertificate(SetPanelCertificateRequest) returns (JobAccepted);
+  rpc MoveDatabases(MoveDatabasesRequest) returns (JobAccepted);
 
   // Returns the actual state of the server at once. This method does not make a job.
   rpc GetStatus(GetStatusRequest) returns (HostStatus);
@@ -81,6 +82,13 @@ message Website {
   // The directory in /app that the web server serves, for example "web". Empty means "public",
   // and "." means /app itself.
   string document_root = 14;
+  // The ID of the customer of the website. Each customer has its own database containers on a
+  // server, and the websites of the customer use them. Empty means the shared database
+  // containers of an earlier release.
+  //
+  // The agent uses this value only in CreateWebsite. After that, it keeps the value of the
+  // website, and only MoveDatabases changes it.
+  string database_instance = 15;
 }
 
 message HealthCheck {
@@ -153,7 +161,8 @@ message DomainRequest {
   string primary = 6;
 }
 
-// Each database and user name starts with the Unix user of the website and "_".
+// Each database and user name starts with the Unix user of the website and "_". The database
+// is in the database containers of the customer of the website (Website.database_instance).
 message CreateDatabaseRequest {
   string job_id = 1;
   string website_id = 2;
@@ -214,6 +223,29 @@ message DeleteDatabaseUserRequest {
 message DatabaseRef {
   string engine = 1;
   string name = 2;
+}
+
+// A database user that MoveDatabases copies. The agent copies the password hash of the user,
+// so the password stays the same.
+message MoveDatabaseUser {
+  string engine = 1;
+  string name = 2;
+  // "website" or "anywhere".
+  string access = 3;
+  repeated DatabaseGrant grants = 4;
+}
+
+// Moves the databases and the database users of a website from the shared database containers
+// of an earlier release to the database containers of its customer. The website does not
+// operate during the copy.
+message MoveDatabasesRequest {
+  string job_id = 1;
+  string website_id = 2;
+  string unix_user = 3;
+  // The ID of the customer of the website.
+  string database_instance = 4;
+  repeated DatabaseRef databases = 5;
+  repeated MoveDatabaseUser users = 6;
 }
 
 message BackupRequest {
