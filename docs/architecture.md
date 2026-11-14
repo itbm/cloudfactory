@@ -298,6 +298,83 @@ the administrators. The image `sftp` has OpenSSH and `libnss-extrausers`.
   service of the host. Until this step is complete, the agent reports port 22 to the panel.
   Refer to [installation.md](installation.md#servers-that-you-installed-with-release-01).
 
+## DNS hosting
+
+A server with the role `dns` and a name server host name is a DNS server. It has one
+container, `cf-dns`, with Knot DNS. The container answers the queries for the zones of all
+customers. It does not resolve other names.
+
+```text
+ resolver ──► port 53, UDP and TCP ──► nftables redirect ──► port 8053
+                                                               │
+                                          cf-dns (rootless Podman, gVisor, user cf-dns)
+                                                               │ reads
+                              /var/lib/cloudfactory/dns/etc    knot.conf and zones/<name>.zone
+                              /var/lib/cloudfactory/dns/db     keys and signatures (KASP, journal)
+```
+
+- The Unix user `cf-dns` runs the container. The installation script does not make the user.
+  The root helper makes it when the server gets its first zone.
+- Root owns `knot.conf` and the zone files, and the container reads them from a read-only
+  volume. The user `cf-dns` owns only the directory of the keys and the signatures.
+- The firewall redirects port 53 to port 8053, as it does for ports 80 and 443. The agent
+  adds the rules, which have the comment `# cloudfactory-dns`, when it starts the DNS server.
+  The installation script keeps the rules when you run it again.
+- The answers to one network have a rate limit (`mod-rrl`), so that an attacker cannot use
+  the server to send traffic to a different address. The server does not give its name or its
+  version.
+
+### The panel sends full zones
+
+The DNS servers do not use zone transfers between them. The panel has the records, and it
+sends each changed zone to each DNS server in a job:
+
+| Job | Work |
+| --- | ---- |
+| `SetDnsZones` | Start the DNS server if necessary, write the zone files, and load the zones. One job has 100 zones at most. |
+| `DeleteDnsZones` | Remove the zones, their files and their keys. |
+
+A zone in a job has its name, its serial and all its records. The root helper does not accept
+a zone file from the worker. It checks each record with the shared input rules and writes the
+zone file itself, so a person who controls the worker or the panel database cannot put a
+directive such as `$INCLUDE` in a zone file.
+
+Each change of a zone gives the zone a higher serial. The panel keeps, for each DNS server,
+the last serial that the server loaded. The state of a zone is `active` when each DNS server
+has the last serial, `updating` while a job runs, and `failed` when a server could not load
+the zone. A server that could not load a change continues to answer with the records that it
+had before. **Send again** on the page of the zone, or `cf dns sync`, sends the zone again.
+
+### Records that the panel makes
+
+- The panel makes the NS records of each zone from the name server host names of the DNS
+  servers. A user cannot change them. When the role `dns` or the name server host name of a
+  server changes, the panel sends all zones again.
+- When a website of the customer has a domain in a zone, the panel makes an A record, and an
+  AAAA record if the server has an IPv6 address, for the domain. The records point to the
+  public addresses that the agent of the server of the website reported. A user can change
+  such a record. Then the record belongs to the user, and the panel does not change it again.
+
+### The name servers of the domain
+
+A zone has an effect only when the registrar of the domain has the name servers of the
+panel. The panel asks the public DNS for the NS records of the domain and shows one of these
+states: the domain uses the name servers of the panel, it uses other name servers, it has no
+name servers, or the panel could not check. When the domain uses the name servers of the
+panel, the panel verifies the domains of the websites in the zone with no TXT record.
+
+### DNSSEC
+
+DNSSEC is off for a new zone. When a user turns it on, the panel makes one ECDSA P-256 key
+(algorithm 13) for the zone. The key signs the zone and its keys (a combined signing key).
+The panel keeps the private key encrypted, as it keeps the other secrets, and sends it to
+each DNS server with the zone, so all servers sign with the same key. The root helper gives
+the key to Knot DNS, and Knot DNS signs the zone with NSEC3 (no more iterations, no salt).
+The panel shows the DS record that the customer gives to the registrar.
+
+The panel does not change the key of a zone on a schedule. To change the key, remove the DS
+record at the registrar, turn DNSSEC off and on, and give the new DS record to the registrar.
+
 ## Databases
 
 A customer makes database servers as it makes websites. A database server is one container

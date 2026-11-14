@@ -54,7 +54,12 @@ server, a suspended customer, a domain that waits for its DNS record.
 The demo agent (`api/app/Demo`) fails these jobs, so that you can see a failure:
 
 - a new website or a new domain with a name that starts with `fail.`;
-- a new database with a name that ends with `_fail`.
+- a new database with a name that ends with `_fail`;
+- a change of a DNS zone with a name that starts with `fail.`.
+
+The demo mode does not ask the public DNS. For a DNS zone with a name that starts with
+`elsewhere.`, it answers that the domain uses the name servers of a registrar. For each other
+zone, it answers that the domain uses the name servers of the panel.
 
 The panel ignores `CF_DEMO` when `APP_ENV` is `production`. Do not set it on a server.
 
@@ -117,6 +122,15 @@ Refer to [`api/README.md`](../api/README.md).
 cd agent
 go test -race ./...
 go vet ./...
+```
+
+The tests use a fake for Knot DNS. One test starts a real Knot DNS server with the
+configuration and the zone files of the root helper, and asks it with `kdig`. It runs only
+when Knot DNS is installed and `CF_TEST_KNOT=1` is set:
+
+```sh
+sudo apt-get install knot knot-dnsutils
+CF_TEST_KNOT=1 go test ./internal/actions -run TestKnotServer
 ```
 
 After you change `agent.proto`, make the Go code again:
