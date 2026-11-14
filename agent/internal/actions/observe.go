@@ -74,7 +74,7 @@ func (d *Deps) FillReport(ctx context.Context, r *panel.Report) {
 	r.SftpPort = d.SftpPortInUse()
 	// The panel server reports the certificate of the panel domain, and the root certificate
 	// of the panel CA, which the panel offers for download.
-	if domain, err := PanelDomain(PanelEnvFile(d.DataDir)); err == nil && d.Edge != nil {
+	if domain, err := d.panelDomain(ctx); err == nil && d.Edge != nil {
 		r.PanelCertificate = d.PanelCertificateState(ctx, domain)
 	}
 	sites, err := d.State.All()
@@ -92,7 +92,7 @@ func (d *Deps) FillReport(ctx context.Context, r *panel.Report) {
 	walk := now.Sub(o.diskAt) > diskEvery
 	if walk {
 		for _, s := range sites {
-			o.disk[s.ID] = dirSize(d.Host.AppDir(s.UnixUser))
+			o.disk[s.ID] = d.siteSize(ctx, s.UnixUser)
 		}
 		o.diskAt = now
 	}
@@ -152,11 +152,12 @@ func (d *Deps) databaseServerUse(ctx context.Context, walk bool) []panel.Databas
 		for _, id := range slices.Sorted(maps.Keys(servers)) {
 			s := dbServer{ID: id, Engine: servers[id].Engine}
 			u := panel.DatabaseServerUse{ID: id, State: "stopped"}
-			if isMountPoint(d.diskDir(s)) {
-				u.DiskBytes, u.DiskSizeBytes = d.diskUse(s)
+			_, measured := o.dbDisk[id]
+			if st := d.diskState(ctx, s, walk || !measured); st.Mounted {
+				u.DiskBytes, u.DiskSizeBytes = st.Used, st.Size
 			} else {
-				if _, ok := o.dbDisk[id]; walk || !ok {
-					o.dbDisk[id] = dirSize(d.diskDir(s))
+				if st.Used >= 0 {
+					o.dbDisk[id] = st.Used
 				}
 				u.DiskBytes = o.dbDisk[id]
 			}

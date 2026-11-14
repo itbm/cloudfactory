@@ -30,7 +30,9 @@ func unitFile(t *testing.T, d *Deps, user, name string) string {
 // Blocker 1: the agent starts the shared database container before the first statement.
 func TestTheFirstDatabaseStartsTheDatabaseContainer(t *testing.T) {
 	d, f, _ := deps(t)
-	d.ServiceImage = func(name string) string { return "ghcr.io/cloudfactory/" + name + ":0.1.0" }
+	both(d, func(d *Deps) {
+		d.ServiceImage = func(name string) string { return "ghcr.io/cloudfactory/" + name + ":0.1.0" }
+	})
 	f.Rules = []execx.Rule{{Prefix: "runuser -u cf-db -- env XDG_RUNTIME_DIR=/run/user/20001 podman image exists", Err: errors.New("no image")}}
 	job, err := d.CreateDatabase(&agentv1.CreateDatabaseRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Engine: "postgresql", Name: "acme_x7k2_shop"})
 	if err := run(t)(job, err); err != nil {
@@ -92,7 +94,9 @@ func TestWebsitesHaveDatabaseHostNames(t *testing.T) {
 // database user of the container, and the database server that operates needs that owner.
 func TestTheDatabaseServiceKeepsTheOwnerOfItsDataDirectory(t *testing.T) {
 	d, f, _ := deps(t)
-	d.ServiceImage = func(name string) string { return "ghcr.io/cloudfactory/" + name + ":0.1.0" }
+	both(d, func(d *Deps) {
+		d.ServiceImage = func(name string) string { return "ghcr.io/cloudfactory/" + name + ":0.1.0" }
+	})
 	newFakeValkey(d)
 	// The shared containers of an earlier release, and the database servers of a customer.
 	servers := []dbServer{{Engine: "mariadb"}, {Engine: "postgresql"}, customerValkey}
@@ -231,8 +235,10 @@ func TestPruneRemovesUnusedData(t *testing.T) {
 func TestSetSftp(t *testing.T) {
 	d, f, _ := deps(t)
 	dir := t.TempDir()
-	d.SftpKeysDir, d.SftpUsersDir = filepath.Join(dir, "sftp"), filepath.Join(dir, "sftp-users")
-	d.Host.LookupGID = func(string) (int, error) { return 20002, nil }
+	both(d, func(d *Deps) {
+		d.SftpKeysDir, d.SftpUsersDir = filepath.Join(dir, "sftp"), filepath.Join(dir, "sftp-users")
+		d.Host.LookupGID = func(string) (int, error) { return 20002, nil }
+	})
 	key := "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGtQx2bS8ZJ4Wm1bZ7zO0Zr3wq8yXc2v1q9w8mL3h4kP owner@laptop"
 	if err := run(t)(d.SetSftp(&agentv1.SetSftpRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Enabled: true, AuthorizedKeys: []string{key}})); err != nil {
 		t.Fatal(err)
@@ -335,7 +341,8 @@ func TestConfigureHostChangesThePlatformOfAllContainers(t *testing.T) {
 	d, f, _ := deps(t)
 	run(t)(d.CreateWebsite(&agentv1.WebsiteRequest{JobId: jobID, Website: website("ghcr.io/cloudfactory/frankenphp-php8.4:8.4.0-1")}))
 	saved := ""
-	d.SavePlatform = func(p string) error { saved = p; return nil }
+	// The root helper keeps the platform in the settings of the agent.
+	rootOf(d).SavePlatform = func(p string) error { saved = p; return nil }
 	if err := run(t)(d.ConfigureHost(&agentv1.ConfigureHostRequest{JobId: jobID2, GvisorPlatform: "systrap"})); err != nil {
 		t.Fatal(err)
 	}
@@ -350,7 +357,7 @@ func TestConfigureHostChangesThePlatformOfAllContainers(t *testing.T) {
 // FR-202: the disk limit is a user quota, and the I/O limit is on the disk of the websites.
 func TestLimitsSetTheQuotaAndTheIOLimit(t *testing.T) {
 	d, f, _ := deps(t)
-	d.QuotaMount, d.BlockDevice = "/srv", "/dev/vda"
+	both(d, func(d *Deps) { d.QuotaMount, d.BlockDevice = "/srv", "/dev/vda" })
 	run(t)(d.CreateWebsite(&agentv1.WebsiteRequest{JobId: jobID, Website: website("ghcr.io/cloudfactory/frankenphp-php8.4:8.4.0-1")}))
 	l := &agentv1.Limits{Vcpus: 2, MemoryBytes: 1 << 30, Processes: 50, DiskBytes: 10 << 30, DiskIoBytesPerSecond: 50 << 20}
 	if err := run(t)(d.SetLimits(&agentv1.SetLimitsRequest{JobId: jobID2, WebsiteId: websiteID, Limits: l})); err != nil {
@@ -600,25 +607,34 @@ func TestBackupSlots(t *testing.T) {
 // image of a new agent version. With no change, the agent does not interrupt the proxy.
 func TestTheEdgeProxyRestartsWhenItsUnitChanged(t *testing.T) {
 	d, f, _ := deps(t)
-	if err := d.EnsureEdge(context.Background(), "ghcr.io/itbm/edge:0.1.0", d.DataDir); err != nil {
-		t.Fatal(err)
+	// The image of the edge proxy is a setting of the agent version. The root helper pulls
+	// only the image of its settings.
+	ensure := func(image string) {
+		t.Helper()
+		both(d, func(d *Deps) { d.EdgeImage = image })
+		if err := d.EnsureEdge(context.Background(), image, d.DataDir); err != nil {
+			t.Fatal(err)
+		}
 	}
+	ensure("ghcr.io/itbm/edge:0.1.0")
 	if !f.Called("systemctl --user --machine=cf-edge@ restart cf-edge.service") {
 		t.Errorf("the first start: %v", f.Calls)
 	}
 	f.Calls = nil
-	if err := d.EnsureEdge(context.Background(), "ghcr.io/itbm/edge:0.1.0", d.DataDir); err != nil {
-		t.Fatal(err)
-	}
+	ensure("ghcr.io/itbm/edge:0.1.0")
 	if f.Called("systemctl --user --machine=cf-edge@ restart") || !f.Called("systemctl --user --machine=cf-edge@ start cf-edge.service") {
 		t.Errorf("with no change: %v", f.Calls)
 	}
 	f.Calls = nil
-	if err := d.EnsureEdge(context.Background(), "ghcr.io/itbm/edge:0.2.0", d.DataDir); err != nil {
-		t.Fatal(err)
-	}
+	ensure("ghcr.io/itbm/edge:0.2.0")
 	if !f.Called("systemctl --user --machine=cf-edge@ daemon-reload") || !f.Called("systemctl --user --machine=cf-edge@ restart cf-edge.service") {
 		t.Errorf("with a new image: %v", f.Calls)
+	}
+	// The worker cannot make the edge user pull a different image.
+	f.Calls = nil
+	f.Rules = []execx.Rule{{Prefix: "runuser -u cf-edge -- env XDG_RUNTIME_DIR=/run/user/20001 podman image exists", Err: errors.New("exit status 1")}}
+	if err := d.EnsureEdge(context.Background(), "registry.example/other/edge:1", d.DataDir); err == nil || f.Called("podman pull") {
+		t.Errorf("a different image: %v, calls = %v", err, f.Calls)
 	}
 }
 

@@ -77,12 +77,14 @@ const podmanDB = "runuser -u cf-db -- env XDG_RUNTIME_DIR=/run/user/990 podman "
 // users gives each Unix user of the tests its own UID, as on a server.
 func users(d *Deps) {
 	ids := map[string]int{DBUser: 990, "acme_x7k2": 20001, "bolt_k3m9": 20002, "acme_s1t2": 20003}
-	d.Host.LookupUID = func(name string) (int, error) {
-		if id, ok := ids[name]; ok {
-			return id, nil
+	both(d, func(d *Deps) {
+		d.Host.LookupUID = func(name string) (int, error) {
+			if id, ok := ids[name]; ok {
+				return id, nil
+			}
+			return 0, user.UnknownUserError(name)
 		}
-		return 0, user.UnknownUserError(name)
-	}
+	})
 }
 
 // customerWebsite gives a website of the first customer of the tests.
@@ -529,7 +531,7 @@ func TestOnlyDeleteDatabaseServerRemovesADatabaseServer(t *testing.T) {
 	// A removal that did not complete left a directory. The agent removes it at its start.
 	old := filepath.Join(d.DBHome, "servers", removedPrefix+mariaServerKey+"-0123abcd")
 	os.MkdirAll(filepath.Join(old, "disk", "data"), 0o700)
-	d.removeOldServerData()
+	d.removeOldServerData(context.Background())
 	if _, err := os.Stat(old); !os.IsNotExist(err) {
 		t.Errorf("the directory of an old removal stays: %v", err)
 	}

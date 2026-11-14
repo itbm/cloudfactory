@@ -19,6 +19,7 @@ import (
 	agentv1 "github.com/itbm/cloudfactory/agent/gen/cloudfactory/agent/v1"
 	"github.com/itbm/cloudfactory/agent/internal/jobs"
 	"github.com/itbm/cloudfactory/agent/internal/quadlet"
+	"github.com/itbm/cloudfactory/agent/internal/safefs"
 	"github.com/itbm/cloudfactory/agent/internal/validate"
 )
 
@@ -842,18 +843,19 @@ func (d *Deps) Backup(req *agentv1.BackupRequest) (jobs.Job, error) {
 	if k := req.GetKind(); k != "manual" && k != "scheduled" {
 		return jobs.Job{}, fmt.Errorf("the backup kind %q is not valid", k)
 	}
-	app := d.Host.AppDir(req.GetUnixUser())
-	dumps := d.dumpDir(req.GetUnixUser())
+	unixUser := req.GetUnixUser()
+	app := d.Host.AppDir(unixUser)
+	dumps := d.dumpDir(unixUser)
 	// Audit finding R8: the dumps are plain text. They stay on the disk only until the upload
 	// is complete or the job fails.
-	removeDumps := func(context.Context) { _ = os.RemoveAll(dumps) }
+	removeDumps := func(ctx context.Context) { _ = d.removeDumps(context.WithoutCancel(ctx), unixUser) }
 	hashes := map[string]any{}
 	var snapshotID string
 	var size float64
 	forgotten := []string{}
 	return jobs.Job{ID: req.GetJobId(), Key: req.GetWebsiteId(), Long: true, Steps: []jobs.Step{
-		{Name: "Snapshot files", Do: func(context.Context) error {
-			_, err := os.Stat(app)
+		{Name: "Snapshot files", Do: func(ctx context.Context) error {
+			_, err := d.appExists(ctx, unixUser)
 			return err
 		}},
 		{Name: "Dump databases", Do: func(ctx context.Context) error {
@@ -863,10 +865,7 @@ func (d *Deps) Backup(req *agentv1.BackupRequest) (jobs.Job, error) {
 			}
 			defer release()
 			// A new directory for each backup, so that the snapshot has no old dumps.
-			if err := os.RemoveAll(dumps); err != nil {
-				return err
-			}
-			if err := os.MkdirAll(dumps, 0o700); err != nil {
+			if err := d.resetDumps(ctx, unixUser); err != nil {
 				return err
 			}
 			for _, db := range req.GetDatabases() {
@@ -874,7 +873,7 @@ func (d *Deps) Backup(req *agentv1.BackupRequest) (jobs.Job, error) {
 				if err != nil {
 					return err
 				}
-				sum, err := d.dumpToFile(ctx, srv, db.GetName(), filepath.Join(dumps, dumpFile(db.GetEngine(), db.GetName())))
+				sum, err := d.dumpToFile(ctx, srv, unixUser, db.GetName())
 				if err != nil {
 					return err
 				}
@@ -935,20 +934,53 @@ func (d *Deps) dumpCommand(ctx context.Context, s dbServer, name string) ([]stri
 	return args, nil
 }
 
-// dumpToFile writes a dump to a file and gives its SHA-256 hash. The dump goes from the
-// client to the file, so that a large database does not stay in the memory of the agent
-// (audit batch 2, finding 6).
-func (d *Deps) dumpToFile(ctx context.Context, s dbServer, name, path string) (string, error) {
+// dumpToFile writes the dump of a database of a website to its file in the dump directory of
+// the website, and gives the SHA-256 hash of the dump.
+func (d *Deps) dumpToFile(ctx context.Context, s dbServer, unixUser, name string) (string, error) {
 	args, err := d.dumpCommand(ctx, s, name)
 	if err != nil {
 		return "", err
 	}
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+	return d.writeDump(ctx, unixUser, s.Engine, name, args)
+}
+
+// resetDumps makes the dump directory of a website new and empty. Only root can read it.
+func (d *Deps) resetDumps(ctx context.Context, unixUser string) error {
+	if d.Gate != nil {
+		return d.Gate.Call(ctx, opDumpsReset, userIn{User: unixUser}, nil)
+	}
+	dumps := d.dumpDir(unixUser)
+	if err := os.RemoveAll(dumps); err != nil {
+		return err
+	}
+	return os.MkdirAll(dumps, 0o700)
+}
+
+// removeDumps removes the dump directory of a website.
+func (d *Deps) removeDumps(ctx context.Context, unixUser string) error {
+	if d.Gate != nil {
+		return d.Gate.Call(ctx, opDumpsRemove, userIn{User: unixUser}, nil)
+	}
+	return os.RemoveAll(d.dumpDir(unixUser))
+}
+
+// writeDump runs a dump command and writes its output to the dump file of a database. It
+// gives the SHA-256 hash of the dump. The dump goes from the client to the file, so that a
+// large database does not stay in the memory of the agent (audit batch 2, finding 6).
+//
+// The root helper makes the path of the file. It runs the command only when its policy
+// accepts the command.
+func (d *Deps) writeDump(ctx context.Context, unixUser, engine, name string, argv []string) (sum string, err error) {
+	if d.Gate != nil {
+		err = d.Gate.Call(ctx, opDumpsWrite, dumpIn{User: unixUser, Engine: engine, Name: name, Argv: argv}, &sum)
+		return sum, err
+	}
+	f, err := os.OpenFile(filepath.Join(d.dumpDir(unixUser), dumpFile(engine, name)), os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
 	if err != nil {
 		return "", err
 	}
 	h := sha256.New()
-	err = d.Run.Stream(ctx, nil, io.MultiWriter(f, h), args[0], args[1:]...)
+	err = d.Run.Stream(ctx, nil, io.MultiWriter(f, h), argv[0], argv[1:]...)
 	if cerr := f.Close(); err == nil {
 		err = cerr
 	}
@@ -958,13 +990,8 @@ func (d *Deps) dumpToFile(ctx context.Context, s dbServer, name, path string) (s
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-// fileHash gives the SHA-256 hash of a file. It reads the file in parts.
-func fileHash(path string) (string, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
+// fileHash gives the SHA-256 hash of an open file. It reads the file in parts.
+func fileHash(f io.Reader) (string, error) {
 	h := sha256.New()
 	if _, err := io.Copy(h, f); err != nil {
 		return "", err
@@ -1040,8 +1067,8 @@ func (d *Deps) Restore(req *agentv1.RestoreRequest) (jobs.Job, error) {
 	if req.GetDeleteExtra() && req.GetScope() != "website" {
 		return jobs.Job{}, errors.New("only the restore of a full website can remove the other files")
 	}
-	staging := filepath.Join(d.DataDir, "restore", req.GetJobId())
-	cleanup := func(context.Context) { _ = os.RemoveAll(staging) }
+	staging := d.stageDir(req.GetJobId())
+	cleanup := func(ctx context.Context) { _ = d.removeStage(context.WithoutCancel(ctx), req.GetJobId()) }
 	return jobs.Job{ID: req.GetJobId(), Key: req.GetWebsiteId(), Long: true, Steps: []jobs.Step{
 		{Name: "Download snapshot", Do: func(ctx context.Context) error {
 			_, err := d.restic(ctx, r, "snapshots", req.GetSnapshotId())
@@ -1049,10 +1076,7 @@ func (d *Deps) Restore(req *agentv1.RestoreRequest) (jobs.Job, error) {
 		}},
 		{Name: "Restore", Do: func(ctx context.Context) error {
 			defer cleanup(ctx)
-			if err := os.RemoveAll(staging); err != nil {
-				return err
-			}
-			if err := os.MkdirAll(staging, 0o700); err != nil {
+			if err := d.makeStage(ctx, req.GetJobId()); err != nil {
 				return err
 			}
 			if _, err := d.restic(ctx, r, "restore", req.GetSnapshotId(), "--target", staging, "--include", include); err != nil {
@@ -1065,10 +1089,9 @@ func (d *Deps) Restore(req *agentv1.RestoreRequest) (jobs.Job, error) {
 						return err
 					}
 				}
-				return d.copyAsUser(ctx, filepath.Join(staging, app), rel, unixUser, app)
+				return d.copyStaged(ctx, req.GetJobId(), unixUser, rel)
 			}
-			path := filepath.Join(staging, include)
-			sum, err := fileHash(path)
+			sum, err := d.stagedDumpHash(ctx, req.GetJobId(), unixUser, dbEngine, dbName)
 			if err != nil {
 				return err
 			}
@@ -1080,12 +1103,7 @@ func (d *Deps) Restore(req *agentv1.RestoreRequest) (jobs.Job, error) {
 				return err
 			}
 			return d.restoreDump(ctx, srv, dbName, func(ctx context.Context, client []string) error {
-				f, err := os.Open(path)
-				if err != nil {
-					return err
-				}
-				defer f.Close()
-				return d.Run.Stream(ctx, f, nil, client[0], client[1:]...)
+				return d.loadStagedDump(ctx, req.GetJobId(), unixUser, dbEngine, dbName, client)
 			})
 		}},
 		{Name: "Health check", Do: func(ctx context.Context) error {
@@ -1102,6 +1120,105 @@ func (d *Deps) Restore(req *agentv1.RestoreRequest) (jobs.Job, error) {
 			return d.waitReady(ctx, site.Port, primaryDomain(site.Website))
 		}},
 	}, OnFailure: cleanup}, nil
+}
+
+// stageDir is the directory of one restore job. restic restores a snapshot into it. Only
+// root can read it.
+func (d *Deps) stageDir(jobID string) string { return filepath.Join(d.DataDir, "restore", jobID) }
+
+// makeStage makes the directory of a restore job new and empty.
+func (d *Deps) makeStage(ctx context.Context, jobID string) error {
+	if d.Gate != nil {
+		return d.Gate.Call(ctx, opRestoreStage, jobIn{Job: jobID}, nil)
+	}
+	staging := d.stageDir(jobID)
+	if err := os.RemoveAll(staging); err != nil {
+		return err
+	}
+	return os.MkdirAll(staging, 0o700)
+}
+
+// removeStage removes the directory of a restore job.
+func (d *Deps) removeStage(ctx context.Context, jobID string) error {
+	if d.Gate != nil {
+		return d.Gate.Call(ctx, opRestoreClean, jobIn{Job: jobID}, nil)
+	}
+	return os.RemoveAll(d.stageDir(jobID))
+}
+
+// staged opens the directory of a restore job. A snapshot has the full path of each file,
+// so the files of a website are in the directory "<stage>/<path of the website>".
+//
+// Second audit, the privilege boundary: a snapshot that does not come from this agent can
+// have a symbolic link in place of a directory. Root would then read files outside the
+// directory of the job. Thus root opens each path below the directory with no symbolic links.
+func (d *Deps) staged(jobID string) (*safefs.Dir, error) { return safefs.Open(d.stageDir(jobID)) }
+
+// copyStaged copies rel of the restored files of a website into the directory of the
+// website. rel is a path in the directory of the website, or "." for all files.
+func (d *Deps) copyStaged(ctx context.Context, jobID, unixUser, rel string) error {
+	if d.Gate != nil {
+		return d.Gate.Call(ctx, opRestoreCopy, copyIn{Job: jobID, User: unixUser, Rel: rel}, nil)
+	}
+	app := d.Host.AppDir(unixUser)
+	stage, err := d.staged(jobID)
+	if err != nil {
+		return err
+	}
+	defer stage.Close()
+	src := strings.TrimPrefix(app, "/")
+	if fi, err := stage.Lstat(src); err != nil {
+		return fmt.Errorf("the snapshot does not have the files of the website: %w", err)
+	} else if !fi.IsDir() {
+		return errors.New("the snapshot does not have the directory of the website")
+	}
+	if rel != "." {
+		// The last part of rel can be a link: tar copies the link, not the file that it
+		// points to.
+		if _, err := stage.Lstat(filepath.Join(src, rel)); err != nil {
+			return fmt.Errorf("the snapshot does not have %s: %w", rel, err)
+		}
+	}
+	return d.copyAsUser(ctx, filepath.Join(d.stageDir(jobID), app), rel, unixUser, app)
+}
+
+// stagedDump opens the restored dump of a database of a website.
+func (d *Deps) stagedDump(jobID, unixUser, engine, name string) (*os.File, error) {
+	stage, err := d.staged(jobID)
+	if err != nil {
+		return nil, err
+	}
+	defer stage.Close()
+	rel := strings.TrimPrefix(filepath.Join(d.dumpDir(unixUser), dumpFile(engine, name)), "/")
+	return stage.OpenFile(rel, os.O_RDONLY, 0)
+}
+
+// stagedDumpHash gives the SHA-256 hash of the restored dump of a database.
+func (d *Deps) stagedDumpHash(ctx context.Context, jobID, unixUser, engine, name string) (sum string, err error) {
+	if d.Gate != nil {
+		err = d.Gate.Call(ctx, opRestoreHash, restoreIn{Job: jobID, User: unixUser, Engine: engine, Name: name}, &sum)
+		return sum, err
+	}
+	f, err := d.stagedDump(jobID, unixUser, engine, name)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	return fileHash(f)
+}
+
+// loadStagedDump runs a database client with the restored dump of a database on its stdin.
+// The root helper runs the command only when its policy accepts the command.
+func (d *Deps) loadStagedDump(ctx context.Context, jobID, unixUser, engine, name string, client []string) error {
+	if d.Gate != nil {
+		return d.Gate.Call(ctx, opRestoreLoad, restoreIn{Job: jobID, User: unixUser, Engine: engine, Name: name, Argv: client}, nil)
+	}
+	f, err := d.stagedDump(jobID, unixUser, engine, name)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	return d.Run.Stream(ctx, f, nil, client[0], client[1:]...)
 }
 
 // copyAsUser copies rel from the directory src (that only root can read) into dst, as the
@@ -1158,7 +1275,7 @@ func (d *Deps) restoreDump(ctx context.Context, s dbServer, name string, feed fu
 	if err != nil {
 		return err
 	}
-	defer os.Remove(envFile)
+	defer d.removeSecret(context.WithoutCancel(ctx), envFile)
 	uid, err := d.Host.LookupUID(DBUser)
 	if err != nil {
 		return err
@@ -1196,17 +1313,26 @@ ALTER DEFAULT PRIVILEGES FOR ROLE "%[1]s:rw" IN SCHEMA public GRANT SELECT ON SE
 `, name)
 }
 
-// secretFile writes a file that only the database service user can read, and gives its path.
-func (d *Deps) secretFile(ctx context.Context, content string) (string, error) {
-	dir := d.SecretsDir
-	if dir == "" {
-		dir = "/run/cloudfactory/secrets"
+// secretsDir holds short-lived files with passwords for the database clients.
+func (d *Deps) secretsDir() string {
+	if d.SecretsDir != "" {
+		return d.SecretsDir
 	}
+	return "/run/cloudfactory/secrets"
+}
+
+// secretFile writes a file that only the database service user can read, and gives its path.
+func (d *Deps) secretFile(ctx context.Context, content string) (path string, err error) {
+	if d.Gate != nil {
+		err = d.Gate.Call(ctx, opSecretMake, secretIn{Content: content}, &path)
+		return path, err
+	}
+	dir := d.secretsDir()
 	// Other users can go through the directory, but cannot list it. The file has a random name.
 	if err := os.MkdirAll(dir, 0o711); err != nil {
 		return "", err
 	}
-	f, err := os.CreateTemp(dir, "env-*")
+	f, err := os.CreateTemp(dir, secretPrefix+"*")
 	if err != nil {
 		return "", err
 	}
@@ -1224,6 +1350,32 @@ func (d *Deps) secretFile(ctx context.Context, content string) (string, error) {
 		return "", err
 	}
 	return f.Name(), nil
+}
+
+// secretPrefix starts the name of each file that secretFile makes.
+const secretPrefix = "env-"
+
+// isSecretFile reports whether path is a file that secretFile made: a file in the directory
+// of the secrets, with a name of secretFile.
+func (d *Deps) isSecretFile(path string) bool {
+	name := filepath.Base(path)
+	return path == filepath.Join(d.secretsDir(), name) && secretNameRE.MatchString(name)
+}
+
+var secretNameRE = regexp.MustCompile(`^` + secretPrefix + `[0-9]{1,20}$`)
+
+// removeSecret removes a file that secretFile made.
+func (d *Deps) removeSecret(ctx context.Context, path string) error {
+	if d.Gate != nil {
+		return d.Gate.Call(ctx, opSecretRemove, pathIn{Path: path}, nil)
+	}
+	if !d.isSecretFile(path) {
+		return fmt.Errorf("%q is not a secret file of the agent", path)
+	}
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
 }
 
 func randomHex(n int) string {

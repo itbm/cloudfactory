@@ -44,7 +44,7 @@ func (d *Deps) SetPanelCertificate(req *agentv1.SetPanelCertificateRequest) (job
 	if err := caddy.PanelMethod(method); err != nil {
 		return jobs.Job{}, err
 	}
-	domain, err := PanelDomain(PanelEnvFile(d.DataDir))
+	domain, err := d.panelDomain(context.Background())
 	if err != nil {
 		return jobs.Job{}, errors.New("this server has no panel")
 	}

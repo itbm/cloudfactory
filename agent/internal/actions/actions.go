@@ -16,9 +16,9 @@ import (
 	agentv1 "github.com/itbm/cloudfactory/agent/gen/cloudfactory/agent/v1"
 	"github.com/itbm/cloudfactory/agent/internal/caddy"
 	"github.com/itbm/cloudfactory/agent/internal/execx"
+	"github.com/itbm/cloudfactory/agent/internal/gate"
 	"github.com/itbm/cloudfactory/agent/internal/host"
 	"github.com/itbm/cloudfactory/agent/internal/hostupdate"
-	"github.com/itbm/cloudfactory/agent/internal/images"
 	"github.com/itbm/cloudfactory/agent/internal/quadlet"
 	"github.com/itbm/cloudfactory/agent/internal/selfupdate"
 )
@@ -46,7 +46,12 @@ type Deps struct {
 	State   *State
 	// Images is the shared read-only store of the runtime images. Nil means that each website
 	// user pulls its own copy, as for a custom image.
-	Images *images.Store
+	Images Images
+	// Gate is the connection to the root helper. It is set in the worker of the agent, which
+	// is not root: each function that needs root then asks the helper (root.go). Nil means
+	// that this process is root and does the work itself: the root helper, or a command of an
+	// administrator such as "cf-agent panel install".
+	Gate gate.Gate
 	// Health requests the home page of a website port and gives the HTTP status.
 	Health func(ctx context.Context, port int, hostname string) (int, error)
 	// DNSPointsHere reports whether a domain resolves to this server.
@@ -157,17 +162,26 @@ type Deps struct {
 	// dbStart has one lock for each database server ("" is the shared containers). The start
 	// and the removal of a database server hold it.
 	dbStart map[string]*sync.Mutex
-	// netMu protects netReady and accessLoaded, and makes each change of the firewall one step.
+	// netMu protects netReady, and makes each change of the firewall one step.
 	netMu sync.Mutex
 	// netReady is true when this agent process made sure that "lo" has the database network
 	// and that the firewall has its rules.
 	netReady bool
-	// accessLoaded is the content of the database access file that the kernel has.
+	// accessMu protects accessLoaded: the content of the database access file that the
+	// kernel has.
+	accessMu     sync.Mutex
 	accessLoaded string
 	// backupSlots limits the backups that operate at the same time (BackupSlots).
 	backupSlots chan struct{}
 	rtMu        sync.RWMutex
 	obs         observer
+}
+
+// Images is the part of the shared image store that the actions use (images.Store).
+type Images interface {
+	Init(ctx context.Context) error
+	Ensure(ctx context.Context, ref string) error
+	Prune(inUse []string) error
 }
 
 // runtime gives the gVisor settings. ConfigureHost can change the platform.
@@ -197,9 +211,40 @@ type Site struct {
 // State keeps the sites and their ports in a file, so that the agent knows them after a restart.
 type State struct {
 	Path string
-	mu   sync.Mutex
+	// Store keeps the state in a different place than the file at Path. The worker of the
+	// agent sets it: only root can read the file, so the root helper reads and writes it.
+	Store StateStore
+	mu    sync.Mutex
 	// FirstPort and LastPort are the host ports for the website containers.
 	FirstPort, LastPort int
+}
+
+// StateStore reads and writes the content of the state file.
+type StateStore interface {
+	// Read gives the content. exists is false when there is no state.
+	Read() (data []byte, exists bool, err error)
+	Write(data []byte) error
+}
+
+// load gives the content of the state file. exists is false with no file.
+func (s *State) load() ([]byte, bool, error) {
+	if s.Store != nil {
+		return s.Store.Read()
+	}
+	b, err := os.ReadFile(s.Path)
+	if os.IsNotExist(err) {
+		return nil, false, nil
+	}
+	return b, err == nil, err
+}
+
+// save writes the content of the state file in one step.
+func (s *State) save(b []byte) error {
+	if s.Store != nil {
+		return s.Store.Write(b)
+	}
+	_, err := host.WriteFile(s.Path, string(b), 0o600)
+	return err
 }
 
 type stateFile struct {
@@ -236,11 +281,8 @@ type DatabaseServer struct {
 
 func (s *State) read() (stateFile, error) {
 	f := stateFile{Sites: map[string]*Site{}}
-	b, err := os.ReadFile(s.Path)
-	if os.IsNotExist(err) {
-		return f, nil
-	}
-	if err != nil {
+	b, exists, err := s.load()
+	if err != nil || !exists {
 		return f, err
 	}
 	if err := json.Unmarshal(b, &f); err != nil {
@@ -269,8 +311,7 @@ func (s *State) write(f stateFile) error {
 	if err != nil {
 		return err
 	}
-	_, err = host.WriteFile(s.Path, string(b), 0o600)
-	return err
+	return s.save(b)
 }
 
 // Get gives a copy of a site, or nil.

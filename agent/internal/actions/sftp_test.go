@@ -30,15 +30,17 @@ const hostSftp01 = "# Managed by the Cloudfactory installer.\nMatch Group cf-sit
 func sftpDeps(t *testing.T) (*Deps, *execx.Fake) {
 	d, f, _ := deps(t)
 	dir := t.TempDir()
-	d.SftpKeysDir = filepath.Join(dir, "sftp")
-	d.SftpUsersDir = filepath.Join(dir, "sftp-users")
-	d.SystemUnitDir = filepath.Join(dir, "systemd")
-	d.FirewallFile = filepath.Join(dir, "firewall.nft")
-	d.HostSftpConfig = filepath.Join(dir, "50-cloudfactory-sftp.conf")
-	d.SftpImage = "ghcr.io/cloudfactory/sftp:0.2.0"
+	both(d, func(d *Deps) {
+		d.SftpKeysDir = filepath.Join(dir, "sftp")
+		d.SftpUsersDir = filepath.Join(dir, "sftp-users")
+		d.SystemUnitDir = filepath.Join(dir, "systemd")
+		d.FirewallFile = filepath.Join(dir, "firewall.nft")
+		d.HostSftpConfig = filepath.Join(dir, "50-cloudfactory-sftp.conf")
+		d.SftpImage = "ghcr.io/cloudfactory/sftp:0.2.0"
+		d.Host.LookupGID = func(string) (int, error) { return 20001, nil }
+	})
 	d.SftpReady = func(context.Context, int) error { return nil }
 	d.ReadyTimeout = time.Millisecond
-	d.Host.LookupGID = func(string) (int, error) { return 20001, nil }
 	return d, f
 }
 
@@ -99,7 +101,7 @@ func TestEnsureSftpMovesSftpFromTheHost(t *testing.T) {
 
 	// A new port changes the unit and the firewall rule.
 	f.Calls = nil
-	d.SftpPort = 2222
+	both(d, func(d *Deps) { d.SftpPort = 2222 })
 	if err := d.EnsureSftp(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -154,12 +156,14 @@ func TestSyncSftpUsersSkipsSystemUsers(t *testing.T) {
 		os.WriteFile(filepath.Join(d.SftpKeysDir, u+".keys"), []byte("restrict ssh-ed25519 AAAA\n"), 0o644)
 	}
 	os.WriteFile(filepath.Join(d.SftpKeysDir, "root.keys"), []byte("restrict ssh-ed25519 AAAA\n"), 0o644)
-	d.Host.LookupUID = func(name string) (int, error) {
-		if name == "other_ab12" {
-			return 0, nil
+	both(d, func(d *Deps) {
+		d.Host.LookupUID = func(name string) (int, error) {
+			if name == "other_ab12" {
+				return 0, nil
+			}
+			return 20001, nil
 		}
-		return 20001, nil
-	}
+	})
 	if err := d.SyncSftpUsers(); err != nil {
 		t.Fatal(err)
 	}
