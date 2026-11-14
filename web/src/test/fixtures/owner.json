@@ -1,0 +1,1127 @@
+{
+    "GET /me": {
+        "status": 200,
+        "body": {
+            "id": 4,
+            "name": "Olu Owner",
+            "email": "owner@example.com",
+            "role": "owner",
+            "customerId": "01m7d7g528vags40qn5e7yz864",
+            "totpEnabled": false,
+            "mustChangePassword": false
+        }
+    },
+    "GET /websites?perPage=100&page=1": {
+        "status": 200,
+        "body": {
+            "data": [
+                {
+                    "id": "01m7d7g58mdbqfqscqnmd6yj9g",
+                    "name": "acme.example",
+                    "application": "WordPress",
+                    "customerId": "01m7d7g528vags40qn5e7yz864",
+                    "serverId": "01m7d7g58hm88e0ypazsy86mgm",
+                    "planId": "01m7d7g526kkygt14qgey7gn6g",
+                    "unixUser": "acmeexam_5466",
+                    "status": "running",
+                    "runtime": {
+                        "imageId": "01m7d7g58eg68ez3z9d9y3e6a5",
+                        "family": "frankenphp",
+                        "image": "ghcr.io/itbm/frankenphp-php8.4:0.1.9",
+                        "digest": "sha256:d7d6deae0d2513f9811ddf0ba35dda532d605c37a724c2b090e9591a99d2b88b",
+                        "signatureVerified": true,
+                        "phpVersion": "8.4",
+                        "workerMode": false,
+                        "extensions": [
+                            "opcache",
+                            "intl",
+                            "gd",
+                            "zip"
+                        ],
+                        "phpIni": {
+                            "memory_limit": "256M",
+                            "upload_max_filesize": "64M"
+                        },
+                        "previousImageId": null,
+                        "documentRoot": ".",
+                        "supportEndsAt": "2028-12-31"
+                    },
+                    "updateReady": true,
+                    "limits": {
+                        "vcpus": 2,
+                        "memoryBytes": 2147483648,
+                        "diskBytes": 42949672960,
+                        "diskIoBytesPerSecond": 52428800,
+                        "processes": 200
+                    },
+                    "usage": {
+                        "cpuPercent": 18,
+                        "memoryBytes": 432013312,
+                        "diskBytes": 6501171200,
+                        "processes": 24
+                    },
+                    "domains": [
+                        {
+                            "name": "acme.example",
+                            "kind": "primary",
+                            "verified": true,
+                            "verification": null,
+                            "dnsPointsHere": true,
+                            "certificate": {
+                                "state": "valid",
+                                "expiresAt": "2026-12-28T10:00:00+00:00"
+                            }
+                        },
+                        {
+                            "name": "www.acme.example",
+                            "kind": "redirect",
+                            "verified": true,
+                            "verification": null,
+                            "dnsPointsHere": true,
+                            "certificate": {
+                                "state": "valid",
+                                "expiresAt": "2027-01-17T10:00:00+00:00"
+                            }
+                        },
+                        {
+                            "name": "acme-outlet.example",
+                            "kind": "alias",
+                            "verified": false,
+                            "verification": {
+                                "type": "TXT",
+                                "name": "_cloudfactory-challenge.acme-outlet.example",
+                                "value": "cf-cb10f79fbbdaaf65ca0db7198e52e95b0f47498b"
+                            },
+                            "dnsPointsHere": false,
+                            "certificate": {
+                                "state": "pending",
+                                "expiresAt": null
+                            }
+                        }
+                    ],
+                    "sftp": {
+                        "enabled": true,
+                        "host": "web-1.panel.example",
+                        "port": 2222,
+                        "username": "acmeexam_5466",
+                        "authorizedKeys": [
+                            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGh0dHBzOi8vY2xvdWRmYWN0b3J5LmV4YW1wbGUvZGVtbw olu@laptop"
+                        ]
+                    },
+                    "stagingOf": null,
+                    "sharedDatabases": false,
+                    "managedByTerraform": false,
+                    "createdAt": "2025-10-30T10:00:00+00:00",
+                    "updatedAt": "2026-11-13T04:00:00+00:00"
+                },
+                {
+                    "id": "01m7d7g58q3q8q3pgv25tqtqa4",
+                    "name": "api.acme.example",
+                    "application": "Laravel",
+                    "customerId": "01m7d7g528vags40qn5e7yz864",
+                    "serverId": "01m7d7g58hm88e0ypazsy86mgm",
+                    "planId": "01m7d7g526kkygt14qgey7gn6g",
+                    "unixUser": "apiacme_9df4",
+                    "status": "running",
+                    "runtime": {
+                        "imageId": "01m7d7g58f1nb0yjvknmbkmbg5",
+                        "family": "frankenphp",
+                        "image": "ghcr.io/itbm/frankenphp-php8.5:0.1.9",
+                        "digest": "sha256:afb8d84dc8308b7282ae0ffc18a43ae2964ce03b9b3d5e8dd6297f3203a6bba1",
+                        "signatureVerified": true,
+                        "phpVersion": "8.5",
+                        "workerMode": true,
+                        "extensions": [
+                            "opcache",
+                            "intl",
+                            "gd",
+                            "zip"
+                        ],
+                        "phpIni": {
+                            "memory_limit": "256M",
+                            "upload_max_filesize": "64M"
+                        },
+                        "previousImageId": null,
+                        "documentRoot": "public",
+                        "supportEndsAt": "2029-12-31"
+                    },
+                    "updateReady": false,
+                    "limits": {
+                        "vcpus": 2,
+                        "memoryBytes": 2147483648,
+                        "diskBytes": 42949672960,
+                        "diskIoBytesPerSecond": 52428800,
+                        "processes": 200
+                    },
+                    "usage": {
+                        "cpuPercent": 9,
+                        "memoryBytes": 314572800,
+                        "diskBytes": 880803840,
+                        "processes": 12
+                    },
+                    "domains": [
+                        {
+                            "name": "api.acme.example",
+                            "kind": "primary",
+                            "verified": true,
+                            "verification": null,
+                            "dnsPointsHere": true,
+                            "certificate": {
+                                "state": "valid",
+                                "expiresAt": "2027-01-05T10:00:00+00:00"
+                            }
+                        },
+                        {
+                            "name": "api.acme.test",
+                            "kind": "alias",
+                            "verified": true,
+                            "verification": null,
+                            "dnsPointsHere": true,
+                            "certificate": {
+                                "state": "valid",
+                                "expiresAt": "2027-02-02T10:00:00+00:00"
+                            }
+                        }
+                    ],
+                    "sftp": {
+                        "enabled": false,
+                        "host": "web-1.panel.example",
+                        "port": 2222,
+                        "username": "apiacme_9df4",
+                        "authorizedKeys": []
+                    },
+                    "stagingOf": null,
+                    "sharedDatabases": false,
+                    "managedByTerraform": false,
+                    "createdAt": "2026-08-11T10:00:00+00:00",
+                    "updatedAt": "2026-11-13T04:00:00+00:00"
+                },
+                {
+                    "id": "01m7d7g58rx9medv7y1perrt9r",
+                    "name": "old.acme.example",
+                    "application": "Website",
+                    "customerId": "01m7d7g528vags40qn5e7yz864",
+                    "serverId": "01m7d7g58hm88e0ypazsy86mgm",
+                    "planId": "01m7d7g526kkygt14qgey7gn6g",
+                    "unixUser": "oldacme_3bc1",
+                    "status": "stopped",
+                    "runtime": {
+                        "imageId": "01m7d7g58f1nb0yjvknmbkmbg6",
+                        "family": "apache-php-fpm",
+                        "image": "ghcr.io/itbm/apache-php8.4:0.1.9",
+                        "digest": "sha256:2c769f34728835f87dbb42aa4aeb6b443fd1ec20ce7100ba72602ebea79af8d2",
+                        "signatureVerified": true,
+                        "phpVersion": "8.4",
+                        "workerMode": false,
+                        "extensions": [
+                            "opcache",
+                            "intl",
+                            "gd",
+                            "zip"
+                        ],
+                        "phpIni": {
+                            "memory_limit": "256M",
+                            "upload_max_filesize": "64M"
+                        },
+                        "previousImageId": null,
+                        "documentRoot": ".",
+                        "supportEndsAt": "2027-01-13"
+                    },
+                    "updateReady": false,
+                    "limits": {
+                        "vcpus": 2,
+                        "memoryBytes": 2147483648,
+                        "diskBytes": 42949672960,
+                        "diskIoBytesPerSecond": 52428800,
+                        "processes": 200
+                    },
+                    "usage": {
+                        "cpuPercent": 0,
+                        "memoryBytes": 0,
+                        "diskBytes": 1992294400,
+                        "processes": 0
+                    },
+                    "domains": [
+                        {
+                            "name": "old.acme.example",
+                            "kind": "primary",
+                            "verified": true,
+                            "verification": null,
+                            "dnsPointsHere": true,
+                            "certificate": {
+                                "state": "valid",
+                                "expiresAt": "2027-01-05T10:00:00+00:00"
+                            }
+                        }
+                    ],
+                    "sftp": {
+                        "enabled": false,
+                        "host": "web-1.panel.example",
+                        "port": 2222,
+                        "username": "oldacme_3bc1",
+                        "authorizedKeys": []
+                    },
+                    "stagingOf": null,
+                    "sharedDatabases": false,
+                    "managedByTerraform": false,
+                    "createdAt": "2025-10-20T10:00:00+00:00",
+                    "updatedAt": "2026-11-13T04:00:00+00:00"
+                },
+                {
+                    "id": "01m7d7g58p3dtbr6bb38seekwb",
+                    "name": "shop.acme.example",
+                    "application": "WooCommerce",
+                    "customerId": "01m7d7g528vags40qn5e7yz864",
+                    "serverId": "01m7d7g58hm88e0ypazsy86mgm",
+                    "planId": "01m7d7g526kkygt14qgey7gn6g",
+                    "unixUser": "shopacme_d812",
+                    "status": "running",
+                    "runtime": {
+                        "imageId": "01m7d7g58eg68ez3z9d9y3e6a5",
+                        "family": "frankenphp",
+                        "image": "ghcr.io/itbm/frankenphp-php8.4:0.1.9",
+                        "digest": "sha256:d7d6deae0d2513f9811ddf0ba35dda532d605c37a724c2b090e9591a99d2b88b",
+                        "signatureVerified": true,
+                        "phpVersion": "8.4",
+                        "workerMode": false,
+                        "extensions": [
+                            "opcache",
+                            "intl",
+                            "gd",
+                            "zip"
+                        ],
+                        "phpIni": {
+                            "memory_limit": "256M",
+                            "upload_max_filesize": "64M"
+                        },
+                        "previousImageId": null,
+                        "documentRoot": ".",
+                        "supportEndsAt": "2028-12-31"
+                    },
+                    "updateReady": true,
+                    "limits": {
+                        "vcpus": 2,
+                        "memoryBytes": 2147483648,
+                        "diskBytes": 42949672960,
+                        "diskIoBytesPerSecond": 52428800,
+                        "processes": 200
+                    },
+                    "usage": {
+                        "cpuPercent": 61,
+                        "memoryBytes": 1814036480,
+                        "diskBytes": 22439526400,
+                        "processes": 58
+                    },
+                    "domains": [
+                        {
+                            "name": "shop.acme.example",
+                            "kind": "primary",
+                            "verified": true,
+                            "verification": null,
+                            "dnsPointsHere": true,
+                            "certificate": {
+                                "state": "valid",
+                                "expiresAt": "2027-01-07T10:00:00+00:00"
+                            }
+                        }
+                    ],
+                    "sftp": {
+                        "enabled": false,
+                        "host": "web-1.panel.example",
+                        "port": 2222,
+                        "username": "shopacme_d812",
+                        "authorizedKeys": []
+                    },
+                    "stagingOf": null,
+                    "sharedDatabases": false,
+                    "managedByTerraform": false,
+                    "createdAt": "2026-04-18T10:00:00+00:00",
+                    "updatedAt": "2026-11-13T04:00:00+00:00"
+                },
+                {
+                    "id": "01m7d7g58q3q8q3pgv25tqtqa5",
+                    "name": "storefront.acme.example",
+                    "application": "Node.js app",
+                    "customerId": "01m7d7g528vags40qn5e7yz864",
+                    "serverId": "01m7d7g58hm88e0ypazsy86mgn",
+                    "planId": "01m7d7g526kkygt14qgey7gn6g",
+                    "unixUser": "storefro_4add",
+                    "status": "running",
+                    "runtime": {
+                        "imageId": "01m7d7g58f1nb0yjvknmbkmbg8",
+                        "family": "node",
+                        "image": "registry.example/acme/storefront:stable",
+                        "digest": null,
+                        "signatureVerified": false,
+                        "phpVersion": null,
+                        "workerMode": false,
+                        "extensions": [],
+                        "phpIni": [],
+                        "previousImageId": null,
+                        "documentRoot": ".",
+                        "supportEndsAt": null
+                    },
+                    "updateReady": false,
+                    "limits": {
+                        "vcpus": 2,
+                        "memoryBytes": 2147483648,
+                        "diskBytes": 42949672960,
+                        "diskIoBytesPerSecond": 52428800,
+                        "processes": 200
+                    },
+                    "usage": {
+                        "cpuPercent": 5,
+                        "memoryBytes": 220200960,
+                        "diskBytes": 398458880,
+                        "processes": 9
+                    },
+                    "domains": [
+                        {
+                            "name": "storefront.acme.example",
+                            "kind": "primary",
+                            "verified": true,
+                            "verification": null,
+                            "dnsPointsHere": true,
+                            "certificate": {
+                                "state": "valid",
+                                "expiresAt": "2027-01-19T10:00:00+00:00"
+                            }
+                        }
+                    ],
+                    "sftp": {
+                        "enabled": false,
+                        "host": "web-2.panel.example",
+                        "port": 2222,
+                        "username": "storefro_4add",
+                        "authorizedKeys": []
+                    },
+                    "stagingOf": null,
+                    "sharedDatabases": false,
+                    "managedByTerraform": false,
+                    "createdAt": "2026-10-25T10:00:00+00:00",
+                    "updatedAt": "2026-11-13T04:00:00+00:00"
+                }
+            ],
+            "links": {
+                "first": "http://localhost/api/v1/websites?page=1",
+                "last": "http://localhost/api/v1/websites?page=1",
+                "prev": null,
+                "next": null
+            },
+            "meta": {
+                "current_page": 1,
+                "from": 1,
+                "last_page": 1,
+                "links": [
+                    {
+                        "url": null,
+                        "label": "&laquo; Previous",
+                        "page": null,
+                        "active": false
+                    },
+                    {
+                        "url": "http://localhost/api/v1/websites?page=1",
+                        "label": "1",
+                        "page": 1,
+                        "active": true
+                    },
+                    {
+                        "url": null,
+                        "label": "Next &raquo;",
+                        "page": null,
+                        "active": false
+                    }
+                ],
+                "path": "http://localhost/api/v1/websites",
+                "per_page": 100,
+                "to": 5,
+                "total": 5
+            }
+        }
+    },
+    "GET /jobs?perPage=50": {
+        "status": 200,
+        "body": {
+            "data": [
+                {
+                    "id": "01m7d7g59mvk8gwngrf99c6ha1",
+                    "title": "Create database",
+                    "ref": "shop.acme.example",
+                    "action": "CreateDatabase",
+                    "state": "succeeded",
+                    "steps": [
+                        "Create database",
+                        "Create user",
+                        "Allow the website container only"
+                    ],
+                    "step": 3,
+                    "error": null,
+                    "websiteId": "01m7d7g58p3dtbr6bb38seekwb",
+                    "serverId": "01m7d7g58hm88e0ypazsy86mgm",
+                    "createdAt": "2026-11-14T09:15:00+00:00",
+                    "finishedAt": "2026-11-14T09:16:00+00:00"
+                },
+                {
+                    "id": "01m7d7g59mvk8gwngrf99c6ha0",
+                    "title": "Create database",
+                    "ref": "shop.acme.example",
+                    "action": "CreateDatabase",
+                    "state": "failed",
+                    "steps": [
+                        "Create database",
+                        "Create user",
+                        "Allow the website container only"
+                    ],
+                    "step": 0,
+                    "error": "The step \"Create database\" failed on the server. Your provider can see the details.",
+                    "websiteId": "01m7d7g58p3dtbr6bb38seekwb",
+                    "serverId": "01m7d7g58hm88e0ypazsy86mgm",
+                    "createdAt": "2026-11-14T09:10:00+00:00",
+                    "finishedAt": "2026-11-14T09:11:00+00:00"
+                },
+                {
+                    "id": "01m7d7g59kk1e2cxbtvzk374pd",
+                    "title": "Create database",
+                    "ref": "api.acme.example",
+                    "action": "CreateDatabase",
+                    "state": "succeeded",
+                    "steps": [
+                        "Create database",
+                        "Create user",
+                        "Allow the website container only"
+                    ],
+                    "step": 3,
+                    "error": null,
+                    "websiteId": "01m7d7g58q3q8q3pgv25tqtqa4",
+                    "serverId": "01m7d7g58hm88e0ypazsy86mgm",
+                    "createdAt": "2026-11-14T08:25:00+00:00",
+                    "finishedAt": "2026-11-14T08:26:00+00:00"
+                },
+                {
+                    "id": "01m7d7g59j7ftad3qw1fhgm7k1",
+                    "title": "Back up",
+                    "ref": "acme.example",
+                    "action": "Backup",
+                    "state": "succeeded",
+                    "steps": [
+                        "Snapshot files",
+                        "Dump databases",
+                        "Upload to object storage",
+                        "Apply retention"
+                    ],
+                    "step": 4,
+                    "error": null,
+                    "websiteId": "01m7d7g58mdbqfqscqnmd6yj9g",
+                    "serverId": "01m7d7g58hm88e0ypazsy86mgm",
+                    "createdAt": "2026-11-14T05:00:00+00:00",
+                    "finishedAt": "2026-11-14T05:01:00+00:00"
+                }
+            ],
+            "links": {
+                "first": "http://localhost/api/v1/jobs?page=1",
+                "last": "http://localhost/api/v1/jobs?page=1",
+                "prev": null,
+                "next": null
+            },
+            "meta": {
+                "current_page": 1,
+                "from": 1,
+                "last_page": 1,
+                "links": [
+                    {
+                        "url": null,
+                        "label": "&laquo; Previous",
+                        "page": null,
+                        "active": false
+                    },
+                    {
+                        "url": "http://localhost/api/v1/jobs?page=1",
+                        "label": "1",
+                        "page": 1,
+                        "active": true
+                    },
+                    {
+                        "url": null,
+                        "label": "Next &raquo;",
+                        "page": null,
+                        "active": false
+                    }
+                ],
+                "path": "http://localhost/api/v1/jobs",
+                "per_page": 50,
+                "to": 4,
+                "total": 4
+            }
+        }
+    },
+    "GET /customers": {
+        "status": 200,
+        "body": {
+            "data": [
+                {
+                    "id": "01m7d7g528vags40qn5e7yz864",
+                    "name": "Acme Ltd",
+                    "email": "it@acme.example",
+                    "role": "owner",
+                    "planId": "01m7d7g526kkygt14qgey7gn6g",
+                    "resellerId": null,
+                    "branding": null,
+                    "allowedPlanIds": null,
+                    "suspended": false,
+                    "suspendedBy": null,
+                    "websites": 5,
+                    "createdAt": "2025-10-10T10:00:00+00:00"
+                }
+            ]
+        }
+    },
+    "GET /plans": {
+        "status": 200,
+        "body": {
+            "data": [
+                {
+                    "id": "01m7d7g526kkygt14qgey7gn6g",
+                    "name": "Business",
+                    "limits": {
+                        "vcpus": 2,
+                        "memoryBytes": 2147483648,
+                        "diskBytes": 42949672960,
+                        "diskIoBytesPerSecond": 52428800,
+                        "processes": 200
+                    },
+                    "websites": 10,
+                    "mailboxes": 100,
+                    "databases": 10,
+                    "phpExtensions": [
+                        "opcache",
+                        "intl",
+                        "gd",
+                        "zip",
+                        "exif",
+                        "bcmath",
+                        "mysqli",
+                        "pdo_mysql",
+                        "pdo_pgsql",
+                        "redis",
+                        "imagick",
+                        "soap"
+                    ]
+                }
+            ]
+        }
+    },
+    "GET /tokens": {
+        "status": 200,
+        "body": {
+            "data": [
+                {
+                    "id": 4,
+                    "name": "Fixtures",
+                    "scopes": [
+                        "*"
+                    ],
+                    "createdAt": "2026-11-14T10:00:00+00:00",
+                    "expiresAt": null,
+                    "lastUsedAt": "2026-11-14T10:00:00+00:00"
+                }
+            ]
+        }
+    },
+    "GET /backup-policy": {
+        "status": 200,
+        "body": {
+            "daily": 7,
+            "weekly": 4,
+            "monthly": 6,
+            "time": "03:00",
+            "manual": 10
+        }
+    },
+    "GET /servers": {
+        "status": 403,
+        "body": {
+            "message": "Only administrators can do this."
+        }
+    },
+    "GET /images": {
+        "status": 403,
+        "body": {
+            "message": "Only administrators can do this."
+        }
+    },
+    "GET /rollouts": {
+        "status": 403,
+        "body": {
+            "message": "Only administrators can do this."
+        }
+    },
+    "GET /audit?perPage=100": {
+        "status": 200,
+        "body": {
+            "data": [
+                {
+                    "id": 8,
+                    "at": "2026-11-14T07:50:00+00:00",
+                    "actor": "Olu Owner",
+                    "ip": "203.0.113.14",
+                    "action": "Added domain",
+                    "target": "acme-outlet.example"
+                },
+                {
+                    "id": 7,
+                    "at": "2026-11-14T05:00:00+00:00",
+                    "actor": "Olu Owner",
+                    "ip": "203.0.113.14",
+                    "action": "Backed up website",
+                    "target": "acme.example"
+                },
+                {
+                    "id": 6,
+                    "at": "2026-11-14T09:15:00+00:00",
+                    "actor": "Olu Owner",
+                    "ip": "203.0.113.14",
+                    "action": "Created database",
+                    "target": "shopacme_d812_cache"
+                }
+            ],
+            "meta": {
+                "currentPage": 1,
+                "lastPage": 1,
+                "total": 3
+            }
+        }
+    },
+    "GET /users": {
+        "status": 200,
+        "body": {
+            "data": [
+                {
+                    "id": 5,
+                    "name": "Morgan Finance",
+                    "email": "finance@acme.example",
+                    "role": "owner",
+                    "customerId": "01m7d7g528vags40qn5e7yz864",
+                    "totpEnabled": false,
+                    "mustChangePassword": false,
+                    "createdAt": "2026-11-14T10:00:00+00:00"
+                },
+                {
+                    "id": 4,
+                    "name": "Olu Owner",
+                    "email": "owner@example.com",
+                    "role": "owner",
+                    "customerId": "01m7d7g528vags40qn5e7yz864",
+                    "totpEnabled": false,
+                    "mustChangePassword": false,
+                    "createdAt": "2026-11-14T10:00:00+00:00"
+                }
+            ]
+        }
+    },
+    "GET /panel-certificate": {
+        "status": 403,
+        "body": {
+            "message": "Only administrators can do this."
+        }
+    },
+    "GET /runtime-images": {
+        "status": 200,
+        "body": {
+            "data": [
+                {
+                    "id": "01m7d7g58f1nb0yjvknmbkmbg6",
+                    "name": "Apache + PHP-FPM · PHP 8.4",
+                    "family": "apache-php-fpm",
+                    "tag": "0.1.9",
+                    "phpVersion": "8.4",
+                    "custom": false,
+                    "supportEndsAt": "2027-01-13T00:00:00+00:00"
+                },
+                {
+                    "id": "01m7d7g58f1nb0yjvknmbkmbg7",
+                    "name": "Apache + PHP-FPM · PHP 8.5",
+                    "family": "apache-php-fpm",
+                    "tag": "0.1.9",
+                    "phpVersion": "8.5",
+                    "custom": false,
+                    "supportEndsAt": "2029-12-31T00:00:00+00:00"
+                },
+                {
+                    "id": "01m7d7g58eg68ez3z9d9y3e6a5",
+                    "name": "FrankenPHP · PHP 8.4",
+                    "family": "frankenphp",
+                    "tag": "0.1.9",
+                    "phpVersion": "8.4",
+                    "custom": false,
+                    "supportEndsAt": "2028-12-31T00:00:00+00:00"
+                },
+                {
+                    "id": "01m7d7g58f1nb0yjvknmbkmbg5",
+                    "name": "FrankenPHP · PHP 8.5",
+                    "family": "frankenphp",
+                    "tag": "0.1.9",
+                    "phpVersion": "8.5",
+                    "custom": false,
+                    "supportEndsAt": "2029-12-31T00:00:00+00:00"
+                }
+            ]
+        }
+    },
+    "GET /websites/01m7d7g58mdbqfqscqnmd6yj9g/databases": {
+        "status": 200,
+        "body": {
+            "prefix": "acmeexam_5466_",
+            "databases": [
+                {
+                    "id": "01m7d7g58yzxedwvn8d42m6p7f",
+                    "engine": "mariadb",
+                    "name": "acmeexam_5466_wp",
+                    "sizeBytes": 325058560,
+                    "number": null,
+                    "keys": null
+                }
+            ],
+            "users": [
+                {
+                    "id": "01m7d7g58z77nbd67ykctfndew",
+                    "engine": "mariadb",
+                    "name": "acmeexam_5466_wp",
+                    "access": "website",
+                    "grants": [
+                        {
+                            "databaseId": "01m7d7g58yzxedwvn8d42m6p7f",
+                            "database": "acmeexam_5466_wp",
+                            "privileges": "readwrite"
+                        }
+                    ]
+                }
+            ]
+        }
+    },
+    "GET /websites/01m7d7g58mdbqfqscqnmd6yj9g/snapshots": {
+        "status": 200,
+        "body": {
+            "data": [
+                {
+                    "id": "01m7d7g5977wxv35jbk0mq9y8a",
+                    "kind": "manual",
+                    "sizeBytes": 3900702720,
+                    "databases": [
+                        "mariadb:acmeexam_5466_wp"
+                    ],
+                    "mailboxes": [],
+                    "createdAt": "2026-11-14T05:00:00+00:00"
+                },
+                {
+                    "id": "01m7d7g5967tssyb5cxs0v0g1r",
+                    "kind": "scheduled",
+                    "sizeBytes": 3897556992,
+                    "databases": [
+                        "mariadb:acmeexam_5466_wp"
+                    ],
+                    "mailboxes": [],
+                    "createdAt": "2026-11-14T03:05:00+00:00"
+                },
+                {
+                    "id": "01m7d7g5977wxv35jbk0mq9y88",
+                    "kind": "scheduled",
+                    "sizeBytes": 3894411264,
+                    "databases": [
+                        "mariadb:acmeexam_5466_wp"
+                    ],
+                    "mailboxes": [],
+                    "createdAt": "2026-11-13T03:05:00+00:00"
+                },
+                {
+                    "id": "01m7d7g5977wxv35jbk0mq9y89",
+                    "kind": "scheduled",
+                    "sizeBytes": 3891265536,
+                    "databases": [
+                        "mariadb:acmeexam_5466_wp"
+                    ],
+                    "mailboxes": [],
+                    "createdAt": "2026-11-12T03:05:00+00:00"
+                }
+            ]
+        }
+    },
+    "GET /websites/01m7d7g58q3q8q3pgv25tqtqa4/databases": {
+        "status": 200,
+        "body": {
+            "prefix": "apiacme_9df4_",
+            "databases": [
+                {
+                    "id": "01m7d7g592bcmdnavdv9a7tyqg",
+                    "engine": "postgresql",
+                    "name": "apiacme_9df4_app",
+                    "sizeBytes": 100663296,
+                    "number": null,
+                    "keys": null
+                },
+                {
+                    "id": "01m7d7g5935vb1b4fj95h2nc81",
+                    "engine": "valkey",
+                    "name": "apiacme_9df4_queue",
+                    "sizeBytes": 0,
+                    "number": 2,
+                    "keys": 227
+                }
+            ],
+            "users": [
+                {
+                    "id": "01m7d7g5935vb1b4fj95h2nc80",
+                    "engine": "postgresql",
+                    "name": "apiacme_9df4_app",
+                    "access": "website",
+                    "grants": [
+                        {
+                            "databaseId": "01m7d7g592bcmdnavdv9a7tyqg",
+                            "database": "apiacme_9df4_app",
+                            "privileges": "readwrite"
+                        }
+                    ]
+                },
+                {
+                    "id": "01m7d7g5935vb1b4fj95h2nc82",
+                    "engine": "valkey",
+                    "name": "apiacme_9df4_queue",
+                    "access": "website",
+                    "grants": [
+                        {
+                            "databaseId": "01m7d7g5935vb1b4fj95h2nc81",
+                            "database": "apiacme_9df4_queue",
+                            "privileges": "readwrite"
+                        }
+                    ]
+                }
+            ]
+        }
+    },
+    "GET /websites/01m7d7g58q3q8q3pgv25tqtqa4/snapshots": {
+        "status": 200,
+        "body": {
+            "data": [
+                {
+                    "id": "01m7d7g599bkfntk3xjhdhx8c6",
+                    "kind": "scheduled",
+                    "sizeBytes": 525336576,
+                    "databases": [
+                        "postgresql:apiacme_9df4_app"
+                    ],
+                    "mailboxes": [],
+                    "createdAt": "2026-11-14T03:09:00+00:00"
+                },
+                {
+                    "id": "01m7d7g599bkfntk3xjhdhx8c7",
+                    "kind": "scheduled",
+                    "sizeBytes": 522190848,
+                    "databases": [
+                        "postgresql:apiacme_9df4_app"
+                    ],
+                    "mailboxes": [],
+                    "createdAt": "2026-11-13T03:09:00+00:00"
+                },
+                {
+                    "id": "01m7d7g59aac84z6frvrgtr2x8",
+                    "kind": "scheduled",
+                    "sizeBytes": 519045120,
+                    "databases": [
+                        "postgresql:apiacme_9df4_app"
+                    ],
+                    "mailboxes": [],
+                    "createdAt": "2026-11-12T03:09:00+00:00"
+                }
+            ]
+        }
+    },
+    "GET /websites/01m7d7g58rx9medv7y1perrt9r/databases": {
+        "status": 200,
+        "body": {
+            "prefix": "oldacme_3bc1_",
+            "databases": [],
+            "users": []
+        }
+    },
+    "GET /websites/01m7d7g58rx9medv7y1perrt9r/snapshots": {
+        "status": 200,
+        "body": {
+            "data": [
+                {
+                    "id": "01m7d7g59bfqtcns5m0w0vfe2d",
+                    "kind": "scheduled",
+                    "sizeBytes": 1192230912,
+                    "databases": [],
+                    "mailboxes": [],
+                    "createdAt": "2026-11-14T03:09:00+00:00"
+                },
+                {
+                    "id": "01m7d7g59bfqtcns5m0w0vfe2e",
+                    "kind": "scheduled",
+                    "sizeBytes": 1189085184,
+                    "databases": [],
+                    "mailboxes": [],
+                    "createdAt": "2026-11-13T03:09:00+00:00"
+                },
+                {
+                    "id": "01m7d7g59c5jjm5c7dxgt1w0jw",
+                    "kind": "scheduled",
+                    "sizeBytes": 1185939456,
+                    "databases": [],
+                    "mailboxes": [],
+                    "createdAt": "2026-11-12T03:09:00+00:00"
+                }
+            ]
+        }
+    },
+    "GET /websites/01m7d7g58p3dtbr6bb38seekwb/databases": {
+        "status": 200,
+        "body": {
+            "prefix": "shopacme_d812_",
+            "databases": [
+                {
+                    "id": "01m7d7g592bcmdnavdv9a7tyqe",
+                    "engine": "valkey",
+                    "name": "shopacme_d812_cache",
+                    "sizeBytes": 0,
+                    "number": 1,
+                    "keys": 18412
+                },
+                {
+                    "id": "01m7d7g591f4ggtx2gfjs3qf48",
+                    "engine": "mariadb",
+                    "name": "shopacme_d812_shop",
+                    "sizeBytes": 1929379840,
+                    "number": null,
+                    "keys": null
+                }
+            ],
+            "users": [
+                {
+                    "id": "01m7d7g592bcmdnavdv9a7tyqf",
+                    "engine": "valkey",
+                    "name": "shopacme_d812_cache",
+                    "access": "website",
+                    "grants": [
+                        {
+                            "databaseId": "01m7d7g592bcmdnavdv9a7tyqe",
+                            "database": "shopacme_d812_cache",
+                            "privileges": "readwrite"
+                        }
+                    ]
+                },
+                {
+                    "id": "01m7d7g5952vrfsyc6cvsantdj",
+                    "engine": "mariadb",
+                    "name": "shopacme_d812_reports",
+                    "access": "anywhere",
+                    "grants": [
+                        {
+                            "databaseId": "01m7d7g591f4ggtx2gfjs3qf48",
+                            "database": "shopacme_d812_shop",
+                            "privileges": "readonly"
+                        }
+                    ]
+                },
+                {
+                    "id": "01m7d7g592bcmdnavdv9a7tyqd",
+                    "engine": "mariadb",
+                    "name": "shopacme_d812_shop",
+                    "access": "website",
+                    "grants": [
+                        {
+                            "databaseId": "01m7d7g591f4ggtx2gfjs3qf48",
+                            "database": "shopacme_d812_shop",
+                            "privileges": "readwrite"
+                        }
+                    ]
+                }
+            ]
+        }
+    },
+    "GET /websites/01m7d7g58p3dtbr6bb38seekwb/snapshots": {
+        "status": 200,
+        "body": {
+            "data": [
+                {
+                    "id": "01m7d7g599bkfntk3xjhdhx8c5",
+                    "kind": "manual",
+                    "sizeBytes": 13463715840,
+                    "databases": [
+                        "mariadb:shopacme_d812_shop"
+                    ],
+                    "mailboxes": [],
+                    "createdAt": "2026-11-14T05:00:00+00:00"
+                },
+                {
+                    "id": "01m7d7g5980khs5dtdbkgg656m",
+                    "kind": "scheduled",
+                    "sizeBytes": 13460570112,
+                    "databases": [
+                        "mariadb:shopacme_d812_shop"
+                    ],
+                    "mailboxes": [],
+                    "createdAt": "2026-11-14T03:10:00+00:00"
+                },
+                {
+                    "id": "01m7d7g5980khs5dtdbkgg656n",
+                    "kind": "scheduled",
+                    "sizeBytes": 13457424384,
+                    "databases": [
+                        "mariadb:shopacme_d812_shop"
+                    ],
+                    "mailboxes": [],
+                    "createdAt": "2026-11-13T03:10:00+00:00"
+                },
+                {
+                    "id": "01m7d7g5980khs5dtdbkgg656p",
+                    "kind": "scheduled",
+                    "sizeBytes": 13454278656,
+                    "databases": [
+                        "mariadb:shopacme_d812_shop"
+                    ],
+                    "mailboxes": [],
+                    "createdAt": "2026-11-12T03:10:00+00:00"
+                }
+            ]
+        }
+    },
+    "GET /websites/01m7d7g58q3q8q3pgv25tqtqa5/databases": {
+        "status": 200,
+        "body": {
+            "prefix": "storefro_4add_",
+            "databases": [],
+            "users": []
+        }
+    },
+    "GET /websites/01m7d7g58q3q8q3pgv25tqtqa5/snapshots": {
+        "status": 200,
+        "body": {
+            "data": [
+                {
+                    "id": "01m7d7g59aac84z6frvrgtr2x9",
+                    "kind": "scheduled",
+                    "sizeBytes": 235929600,
+                    "databases": [],
+                    "mailboxes": [],
+                    "createdAt": "2026-11-14T03:07:00+00:00"
+                },
+                {
+                    "id": "01m7d7g59aac84z6frvrgtr2xa",
+                    "kind": "scheduled",
+                    "sizeBytes": 232783872,
+                    "databases": [],
+                    "mailboxes": [],
+                    "createdAt": "2026-11-13T03:07:00+00:00"
+                },
+                {
+                    "id": "01m7d7g59bfqtcns5m0w0vfe2c",
+                    "kind": "scheduled",
+                    "sizeBytes": 229638144,
+                    "databases": [],
+                    "mailboxes": [],
+                    "createdAt": "2026-11-12T03:07:00+00:00"
+                }
+            ]
+        }
+    }
+}
