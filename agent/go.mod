@@ -8,3 +8,5 @@ require (
 	connectrpc.com/connect v1.21.1
 	google.golang.org/protobuf v1.36.12
 )
+
+require golang.org/x/sys v0.44.0

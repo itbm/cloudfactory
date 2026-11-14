@@ -14,7 +14,7 @@ import (
 // HTTPHealth requests the home page of a website on its port on quadlet.ServiceAddress, as the
 // edge proxy does.
 // It gives the HTTP status. An error means that the website did not answer.
-func HTTPHealth(ctx context.Context, port int, hostname string) (int, error) {
+func (d *Deps) HTTPHealth(ctx context.Context, port int, hostname string) (int, error) {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+net.JoinHostPort(quadlet.ServiceAddress, strconv.Itoa(port))+"/", nil)
@@ -25,7 +25,14 @@ func HTTPHealth(ctx context.Context, port int, hostname string) (int, error) {
 	req.Header.Set("User-Agent", "cloudfactory-agent/health")
 	// The edge proxy terminates TLS. Without this header, many applications redirect to https.
 	req.Header.Set("X-Forwarded-Proto", "https")
-	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	client := &http.Client{
+		// Each check has its own connection, which goes through DialLocal: only root can
+		// connect to the port of a website.
+		Transport: &http.Transport{DisableKeepAlives: true, DialContext: func(ctx context.Context, _, address string) (net.Conn, error) {
+			return d.DialLocal(ctx, address)
+		}},
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return 0, err

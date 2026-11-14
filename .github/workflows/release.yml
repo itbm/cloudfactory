@@ -258,7 +258,10 @@ jobs:
           for arch in amd64 arm64; do
             (cd agent && CGO_ENABLED=0 GOARCH=$arch go build -trimpath -ldflags "-s -w -X main.version=$v" -o "../dist/cf-agent_linux_$arch" ./cmd/cf-agent)
             # R-13: a signed manifest binds the binary to its version (selfupdate.Manifest).
-            printf 'version=%s\nasset=%s\nsha256=%s\n' "$v" "cf-agent_linux_$arch" "$(sha256sum "dist/cf-agent_linux_$arch" | cut -d' ' -f1)" > "dist/cf-agent_linux_$arch.manifest"
+            # "rootHelper=1": the agent has a root helper. The root helper of an agent installs
+            # only a release with this line, so that an update cannot go back to an agent that
+            # is one root process.
+            printf 'version=%s\nasset=%s\nsha256=%s\nrootHelper=1\n' "$v" "cf-agent_linux_$arch" "$(sha256sum "dist/cf-agent_linux_$arch" | cut -d' ' -f1)" > "dist/cf-agent_linux_$arch.manifest"
           done
           for os in linux darwin windows; do
             for arch in amd64 arm64; do

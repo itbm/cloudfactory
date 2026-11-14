@@ -46,7 +46,7 @@ Refer to [docs/screenshots](docs/screenshots/README.md) for screenshots of all p
 | [`web/`](web)          | The web panel. React 19, TypeScript and Vite.                             |
 | [`api/`](api)          | The panel API. Laravel 13 and PHP 8.4 or later.                           |
 | [`openapi/`](openapi)  | The OpenAPI 3.1 document of the panel API.                                |
-| [`agent/`](agent)      | The agent `cf-agent`. Go. It runs as root on each server.                 |
+| [`agent/`](agent)      | The agent `cf-agent`. Go. A worker with few rights and a root helper on each server. |
 | [`schema/`](schema)    | The input rules that the panel API and the agent share, and their examples. |
 | [`cli/`](cli)          | The command line tool `cf`. Go. It uses only the public API.              |
 | [`install/`](install)  | The installation script and its tests.                                    |

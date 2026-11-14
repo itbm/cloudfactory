@@ -739,6 +739,14 @@ for user in cf-edge cf-db cf-panel; do
 	fi
 	loginctl enable-linger "$user"
 done
+# The worker of the agent. The agent service starts as root, and starts its worker as this
+# user. The worker has the agent port, the connection to the panel and the jobs. It is not
+# root: the root part of the agent does only the operations of a fixed list for it. The user
+# has no home directory, no shell and no containers. The agent makes the user on a server
+# from an earlier release.
+if ! id cf-agent >/dev/null 2>&1; then
+	useradd --system --user-group --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin cf-agent
+fi
 install -d -m 0755 /srv/cloudfactory
 # Root owns each directory in sites, so that SFTP can lock a user in it (ChrootDirectory).
 # The home directories are separate, so that SFTP cannot reach them.

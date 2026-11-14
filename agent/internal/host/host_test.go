@@ -22,7 +22,7 @@ func fakeHost(t *testing.T, exists bool) (*Host, *execx.Fake) {
 			return 0, user.UnknownUserError(name)
 		}
 		return 20001, nil
-	}}
+	}, LookupGID: func(string) (int, error) { return 20001, nil }}
 	return h, f
 }
 
@@ -95,37 +95,60 @@ func TestPodmanRunsAsTheUser(t *testing.T) {
 func TestEnsureUserLinksTheSharedStorageConfig(t *testing.T) {
 	h, f := fakeHost(t, true)
 	h.StorageConfig = "/etc/cloudfactory/website-storage.conf"
-	if err := h.EnsureUser(context.Background(), "acme_x7k2"); err != nil {
-		t.Fatal(err)
-	}
 	home := h.Home("acme_x7k2")
-	for _, want := range []string{
-		"install -d -o acme_x7k2 -g acme_x7k2 -m 0700 " + home + "/.config",
-		// Root owns the directory of the link, so the user cannot change it.
-		"install -d -o root -g root -m 0755 " + home + "/.config/containers",
-		"ln -sfn /etc/cloudfactory/website-storage.conf " + home + "/.config/containers/storage.conf",
-	} {
-		if !f.Called(want) {
-			t.Errorf("not called: %s\ncalls: %v", want, f.Calls)
-		}
-	}
-}
-
-func TestLinkStorageConfigRefusesALink(t *testing.T) {
-	h, f := fakeHost(t, true)
-	h.StorageConfig = "/etc/cloudfactory/website-storage.conf"
-	home := h.Home("acme_x7k2")
+	// useradd makes the home directory.
 	if err := os.MkdirAll(home, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink("/etc", filepath.Join(home, ".config")); err != nil {
-		t.Fatal(err)
+	for range 2 {
+		if err := h.EnsureUser(context.Background(), "acme_x7k2"); err != nil {
+			t.Fatal(err)
+		}
 	}
-	if err := h.LinkStorageConfig(context.Background(), "acme_x7k2"); err == nil {
-		t.Error("a link in place of ~/.config was accepted")
+	if fi, err := os.Lstat(filepath.Join(home, ".config")); err != nil || !fi.IsDir() || fi.Mode().Perm() != 0o700 {
+		t.Errorf("~/.config = %v, %v", fi, err)
 	}
-	if f.Called("install") || f.Called("ln") {
+	// Root owns the directory of the link, so the user cannot change it.
+	if fi, err := os.Lstat(filepath.Join(home, ".config/containers")); err != nil || !fi.IsDir() || fi.Mode().Perm() != 0o755 {
+		t.Errorf("~/.config/containers = %v, %v", fi, err)
+	}
+	if got, err := os.Readlink(filepath.Join(home, ".config/containers/storage.conf")); err != nil || got != h.StorageConfig {
+		t.Errorf("storage.conf = %q, %v", got, err)
+	}
+	// Root does this work with file descriptors, not with commands that follow links.
+	if f.Called("ln") || f.Called("install -d -o root -g root") {
 		t.Errorf("calls = %v", f.Calls)
+	}
+}
+
+// Second audit, the privilege boundary: the website user owns its home directory. A link in
+// place of ~/.config or of ~/.config/containers must not send root to a different directory.
+func TestLinkStorageConfigRefusesALink(t *testing.T) {
+	for _, link := range []string{".config", ".config/containers"} {
+		t.Run(link, func(t *testing.T) {
+			h, _ := fakeHost(t, true)
+			h.StorageConfig = "/etc/cloudfactory/website-storage.conf"
+			home := h.Home("acme_x7k2")
+			outside := t.TempDir()
+			if err := os.Chmod(outside, 0o711); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.MkdirAll(filepath.Join(home, filepath.Dir(link)), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(outside, filepath.Join(home, link)); err != nil {
+				t.Fatal(err)
+			}
+			if err := h.LinkStorageConfig(context.Background(), "acme_x7k2"); err == nil {
+				t.Errorf("a link in place of ~/%s was accepted", link)
+			}
+			if fi, _ := os.Stat(outside); fi.Mode().Perm() != 0o711 {
+				t.Errorf("the directory outside the home directory got the mode %v", fi.Mode().Perm())
+			}
+			if entries, _ := os.ReadDir(outside); len(entries) != 0 {
+				t.Errorf("root wrote outside the home directory: %v", entries)
+			}
+		})
 	}
 }
 

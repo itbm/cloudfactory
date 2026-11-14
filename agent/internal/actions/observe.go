@@ -74,7 +74,7 @@ func (d *Deps) FillReport(ctx context.Context, r *panel.Report) {
 	r.SftpPort = d.SftpPortInUse()
 	// The panel server reports the certificate of the panel domain, and the root certificate
 	// of the panel CA, which the panel offers for download.
-	if domain, err := PanelDomain(PanelEnvFile(d.DataDir)); err == nil && d.Edge != nil {
+	if domain, err := d.panelDomain(ctx); err == nil && d.Edge != nil {
 		r.PanelCertificate = d.PanelCertificateState(ctx, domain)
 	}
 	sites, err := d.State.All()
@@ -92,7 +92,7 @@ func (d *Deps) FillReport(ctx context.Context, r *panel.Report) {
 	walk := now.Sub(o.diskAt) > diskEvery
 	if walk {
 		for _, s := range sites {
-			o.disk[s.ID] = dirSize(d.Host.AppDir(s.UnixUser))
+			o.disk[s.ID] = d.siteSize(ctx, s.UnixUser)
 		}
 		o.diskAt = now
 	}
@@ -131,7 +131,7 @@ func (d *Deps) FillReport(ctx context.Context, r *panel.Report) {
 	r.DatabaseServers = d.databaseServerUse(ctx, walk)
 	r.DatabaseEngines = Engines
 	r.DatabaseInstances = true
-	r.Services = append(r.Services, d.firewallService(ctx), d.quotaService(), d.diskService())
+	r.Services = append(r.Services, d.firewallService(ctx), d.helperService(), d.quotaService(), d.diskService())
 }
 
 // databaseServerUse gives the state, the memory and the disk space of each database server of
@@ -152,11 +152,12 @@ func (d *Deps) databaseServerUse(ctx context.Context, walk bool) []panel.Databas
 		for _, id := range slices.Sorted(maps.Keys(servers)) {
 			s := dbServer{ID: id, Engine: servers[id].Engine}
 			u := panel.DatabaseServerUse{ID: id, State: "stopped"}
-			if isMountPoint(d.diskDir(s)) {
-				u.DiskBytes, u.DiskSizeBytes = d.diskUse(s)
+			_, measured := o.dbDisk[id]
+			if st := d.diskState(ctx, s, walk || !measured); st.Mounted {
+				u.DiskBytes, u.DiskSizeBytes = st.Used, st.Size
 			} else {
-				if _, ok := o.dbDisk[id]; walk || !ok {
-					o.dbDisk[id] = dirSize(d.diskDir(s))
+				if st.Used >= 0 {
+					o.dbDisk[id] = st.Used
 				}
 				u.DiskBytes = o.dbDisk[id]
 			}
@@ -191,6 +192,16 @@ func (d *Deps) firewallService(ctx context.Context) panel.Service {
 		s.Detail = "The nftables table \"inet cloudfactory\" is not loaded. Run the installer again on this server, or run: nft -f " + d.firewallFile()
 	}
 	return s
+}
+
+// helperService reports the two processes of the agent. A server can operate with one root
+// process, but then a fault in the agent gives an attacker the rights of root.
+func (d *Deps) helperService() panel.Service {
+	if !d.OneProcess {
+		return panel.Service{Name: "agent-root-helper", State: "running", Optional: true}
+	}
+	return panel.Service{Name: "agent-root-helper", State: "stopped", Optional: true,
+		Detail: "The agent operates as one root process, not as a root helper and a worker with fewer rights. To see the cause, run on the server: journalctl -u cf-agent | grep \"one root process\""}
 }
 
 // quotaService reports the disk limits of the websites. A server can operate without them.
@@ -366,6 +377,9 @@ func (d *Deps) domainState(ctx context.Context, name string) panel.DomainState {
 
 var errNoCertificate = errors.New("the edge proxy has no certificate for the domain")
 
+// edgeHTTPS is the address of the HTTPS port of the edge proxy.
+var edgeHTTPS = net.JoinHostPort(quadlet.ServiceAddress, strconv.Itoa(edgeHTTPSPort))
+
 // certificate gives the expiry time of the certificate that the edge proxy serves for a domain.
 func (d *Deps) certificate(ctx context.Context, domain string) (time.Time, error) {
 	if d.Certificate != nil {
@@ -376,9 +390,13 @@ func (d *Deps) certificate(ctx context.Context, domain string) (time.Time, error
 	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	dialer := tls.Dialer{Config: &tls.Config{ServerName: domain, MinVersion: tls.VersionTLS12}}
-	conn, err := dialer.DialContext(ctx, "tcp", net.JoinHostPort(quadlet.ServiceAddress, "8443"))
+	raw, err := d.DialLocal(ctx, edgeHTTPS)
 	if err != nil {
+		return time.Time{}, err
+	}
+	defer raw.Close()
+	conn := tls.Client(raw, &tls.Config{ServerName: domain, MinVersion: tls.VersionTLS12})
+	if err := conn.HandshakeContext(ctx); err != nil {
 		var verify *tls.CertificateVerificationError
 		var alert tls.AlertError
 		switch {
@@ -388,8 +406,7 @@ func (d *Deps) certificate(ctx context.Context, domain string) (time.Time, error
 		}
 		return time.Time{}, err
 	}
-	defer conn.Close()
-	certs := conn.(*tls.Conn).ConnectionState().PeerCertificates
+	certs := conn.ConnectionState().PeerCertificates
 	if len(certs) == 0 {
 		return time.Time{}, errNoCertificate
 	}
