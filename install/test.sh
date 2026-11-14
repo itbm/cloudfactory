@@ -248,6 +248,19 @@ else
 	FAIL=$((FAIL + 1))
 	echo 'FAIL: the address unit does not add the database network'
 fi
+# The user services get the time to stop their containers. The file comes after "timeout.conf"
+# of Ubuntu (5 seconds), and the installer and the agent write the same file with the same time.
+stop_file=$(sed -n 's#^cat >/etc/systemd/system/user@\.service\.d/\(.*\) <<.UNIT.$#\1#p' "$HERE/install.sh" | grep -v '^cloudfactory-delegate\.conf$')
+stop_time=$(sed -n "/^cat >.*user@\\.service\\.d\\/$stop_file /,/^UNIT\$/s/^TimeoutStopSec=//p" "$HERE/install.sh")
+if [ "$stop_file" = zz-cloudfactory-stop.conf ] && [ "$(printf '%s\n' timeout.conf "$stop_file" | LC_ALL=C sort | tail -n 1)" = "$stop_file" ] &&
+	[ "$stop_time" = 120 ] &&
+	grep -q "UserStopFile = \"$stop_file\"" "$HERE/../agent/internal/quadlet/quadlet.go" &&
+	grep -q "UserStopSeconds = $stop_time\$" "$HERE/../agent/internal/quadlet/quadlet.go"; then
+	PASS=$((PASS + 1))
+else
+	FAIL=$((FAIL + 1))
+	echo "FAIL: the stop time of the user services is not correct (file '$stop_file', time '$stop_time')"
+fi
 
 firewall --allow-website-smtp --allow-website-network 10.0.5.0/24 --allow-website-network fd00:1::/64 --allow-website-network 192.168.7.9 >"$WORK/allowed.nft"
 rule "--allow-website-smtp opens port 25" no 'tcp dport 25 jump refuse' "$WORK/allowed.nft"

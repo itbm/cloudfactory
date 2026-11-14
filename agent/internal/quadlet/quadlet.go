@@ -155,6 +155,29 @@ const (
 	DatabaseAddresses = 4093
 )
 
+// The stop times when the server stops or starts again. A database server must write its data
+// to the disk before it stops. If it gets SIGKILL first, it must repair its data at the next
+// start.
+const (
+	// DatabaseStopSeconds is the time that Podman gives to a database server to stop, before
+	// it stops the container with SIGKILL. The default of Podman is 10 seconds.
+	DatabaseStopSeconds = 60
+	// UserStopSeconds is the time that systemd gives to the services of a Unix user to stop,
+	// before it stops all processes of the user with SIGKILL. It must be more than
+	// DatabaseStopSeconds. Ubuntu sets 5 seconds (UserStopFile).
+	UserStopSeconds = 120
+	// UserStopFile is the drop-in file for "user@.service" with UserStopSeconds. systemd
+	// reads the drop-in files of a unit in the sequence of their names, and the last value
+	// applies. Thus the name must come after "timeout.conf", the file of the systemd package
+	// of Ubuntu with "TimeoutStopSec=5".
+	UserStopFile = "zz-cloudfactory-stop.conf"
+)
+
+// UserStopUnit gives the content of UserStopFile. The installer writes the same lines.
+func UserStopUnit() string {
+	return "[Service]\nTimeoutStopSec=" + strconv.Itoa(UserStopSeconds) + "\n"
+}
+
 // DatabaseAddress gives address number n of DatabaseNetwork for the database servers of a
 // customer. n is from 1 to DatabaseAddresses. Address 1 is 169.254.80.2.
 func DatabaseAddress(n int) (string, error) {
@@ -524,7 +547,10 @@ func DatabaseUnit(d Database) string {
 		}
 	}
 	if d.ID != "" {
-		lines = append(lines, "Label=io.cloudfactory.database-server="+d.ID, "Label=io.cloudfactory.customer="+d.Customer)
+		lines = append(lines, "Label=io.cloudfactory.database-server="+d.ID, "Label=io.cloudfactory.customer="+d.Customer,
+			// The database server writes its data to the disk before it stops. The time must
+			// be less than the stop time of a user service of systemd (90 seconds).
+			"StopTimeout="+strconv.Itoa(DatabaseStopSeconds))
 	}
 	lines = append(lines,
 		"",
