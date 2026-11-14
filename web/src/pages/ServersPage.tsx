@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useAction, useStore } from "../api/hooks";
 import { LIVE } from "../api/mode";
+import { failedServices } from "../api/selectors";
 import { addServer, installUpdates, newJoinToken, rebootServer, setServer, updateAgent } from "../api/store";
 import type { HostUpdatePolicy, Server, ServerRole } from "../api/types";
 import { Topbar } from "../components/Layout";
@@ -9,6 +10,11 @@ import { CopyField } from "./website/AccessTab";
 import { Card, ConfirmButton, Empty, Field, FormError, JobRow, Meter, Modal, PageHeader, Status } from "../components/ui";
 import { relativeTime } from "../lib/format";
 import { HOST_POLICY_LABEL, roleList, SERVER_ROLE, SERVER_STATE } from "../lib/labels";
+
+/** The command that shows why a service does not run. The edge proxy and the panel are services of their own users. */
+function serviceCommand(name: string): string {
+  return name === "cf-edge.service" ? "journalctl _SYSTEMD_USER_UNIT=cf-edge.service -n 50" : `systemctl status ${name}`;
+}
 
 function serverStatus(s: Server) {
   const st = SERVER_STATE[s.state];
@@ -20,16 +26,19 @@ export function ServersTable() {
   return (
     <div className="table-wrap">
       <table>
-        <thead><tr><th scope="col">Server</th><th scope="col">Location</th><th scope="col">Roles</th><th scope="col">Agent</th><th scope="col">CPU</th><th scope="col">Status</th></tr></thead>
+        <thead><tr><th scope="col">Server</th><th scope="col">Location</th><th scope="col">Roles</th><th scope="col">Agent</th><th scope="col">CPU</th><th scope="col">OS updates</th><th scope="col">Status</th><th scope="col"><span className="visually-hidden">Actions</span></th></tr></thead>
         <tbody>
           {state.servers.map((s) => (
             <tr key={s.id}>
               <td><Link className="cell-title mono" to={`/servers/${s.id}`}>{s.name}</Link></td>
-              <td>{s.location}</td>
+              <td>{s.location || "–"}</td>
               <td>{roleList(s.roles)}</td>
               <td><code>{s.agentVersion}</code></td>
               <td>{s.cpuPercent}%</td>
+              <td>{s.pendingUpdates.length > 0 ? <Link to={`/servers/${s.id}`}>{s.pendingUpdates.length} pending</Link> : "None"}</td>
               <td>{serverStatus(s)}</td>
+              {/* The name is also a link, but a button shows more clearly that the server has its own page. */}
+              <td style={{ textAlign: "right" }}><Link className="btn btn-sm" to={`/servers/${s.id}`}>Manage<span className="visually-hidden"> {s.name}</span></Link></td>
             </tr>
           ))}
         </tbody>
@@ -144,6 +153,7 @@ function ServerDetail({ id }: { id: string }) {
   // FR-1113: the container tools are held. The normal updates do not install them.
   const osUpdates = server.pendingUpdates.filter((p) => !p.containerTool);
   const toolUpdates = server.pendingUpdates.filter((p) => p.containerTool);
+  const failed = failedServices(server.services);
   return (
     <>
       <Topbar placeholder="Search servers, images, customers and jobs" />
@@ -152,7 +162,7 @@ function ServerDetail({ id }: { id: string }) {
         <div className="detail-header">
           <div>
             <div className="detail-title"><h1 className="mono">{server.name}</h1>{serverStatus(server)}</div>
-            <p className="detail-meta">{server.location} · {roleList(server.roles)} · {server.os} · {server.arch} · agent {server.agentVersion}</p>
+            <p className="detail-meta">{[server.location, roleList(server.roles), server.os, server.arch].filter(Boolean).join(" · ")} · agent {server.agentVersion}</p>
           </div>
           <div className="btn-group">
             {(LIVE || server.agentVersion !== "0.9.4") && <button type="button" className="btn" disabled={busy || agent.busy} onClick={() => void agent.run(server.id)}>Update agent</button>}
@@ -162,6 +172,25 @@ function ServerDetail({ id }: { id: string }) {
           </div>
         </div>
         <FormError error={reboot.error ?? install.error ?? settings.error ?? agent.error} />
+        {server.state === "degraded" && (
+          <div className="alert alert-warning alert-stack mt" role="status">
+            <p><strong>This server is degraded.</strong>{" "}
+              {failed.length
+                ? <>{failed.length === 1 ? "A necessary service does not run." : "Some necessary services do not run."} The websites on the server can be in operation, but a part of the server does not do its work.</>
+                : "The last job of this server failed. Look at the jobs of the server."}
+            </p>
+            {failed.length > 0 && (
+              <ul style={{ paddingLeft: 20 }}>
+                {failed.map((s) => <li key={s.name}><code>{s.name}</code> is {s.state}.{s.detail ? ` ${s.detail}` : ` To see the cause, run on the server: ${serviceCommand(s.name)}`}</li>)}
+              </ul>
+            )}
+          </div>
+        )}
+        {server.state === "offline" && (
+          <div className="alert alert-danger mt" role="status">
+            <p><strong>This server is offline.</strong> The agent sent no report in the last 5 minutes. Make sure that the server is on and that <code>cf-agent</code> runs: <code>systemctl status cf-agent</code>.</p>
+          </div>
+        )}
         <div className="detail-grid mt">
           <div className="stack">
             <Card title="Operating system updates" actions={osUpdates.length > 0 && <button type="button" className="btn btn-primary" disabled={busy} onClick={() => void install.run(server.id)}>Install updates now</button>}>
@@ -215,7 +244,7 @@ function ServerDetail({ id }: { id: string }) {
                 {([["CPU", server.cpuPercent], ["Memory", server.memoryPercent], ["Disk", server.diskPercent]] as const).map(([l, v]) => (
                   <div className="resource" key={l}><div className="row"><span>{l}</span><span>{v}%</span></div><Meter value={v / 100} label={`${l} ${v}%`} tone={v >= 90 ? "danger" : v >= 75 ? "warning" : undefined} /></div>
                 ))}
-                <p className="muted small" style={{ marginTop: 14 }}>{sites.length} websites on this server.</p>
+                <p className="muted small" style={{ marginTop: 14 }}>{sites.length} {sites.length === 1 ? "website" : "websites"} on this server.</p>
               </div>
             </Card>
             <Card title="Container tools" actions={toolUpdates.length > 0 && (
@@ -247,7 +276,10 @@ function ServerDetail({ id }: { id: string }) {
               <div className="card-body">
                 <ul className="list">
                   {server.services.map((s) => (
-                    <li key={s.name}><span>{s.name}</span><Status tone={s.state === "running" ? "success" : "danger"}>{s.state === "running" ? "Running" : s.state === "stopped" ? "Stopped" : "Failed"}</Status></li>
+                    <li key={s.name}>
+                      <span>{s.name}{s.optional && <span className="muted small"> (optional)</span>}{s.state !== "running" && s.detail && <span className="cell-sub">{s.detail}</span>}</span>
+                      {s.state === "running" ? <Status tone="success">Running</Status> : s.optional ? <Status tone="neutral">Off</Status> : <Status tone="danger">{s.state === "stopped" ? "Stopped" : "Failed"}</Status>}
+                    </li>
                   ))}
                 </ul>
                 <p className="muted small" style={{ marginTop: 14 }}>

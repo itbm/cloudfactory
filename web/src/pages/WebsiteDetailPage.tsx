@@ -4,7 +4,7 @@ import { features, LIVE } from "../api/mode";
 import { Link, useParams } from "react-router-dom";
 import { useAction, useStore } from "../api/hooks";
 import { imageOf, runtimeLabel, supportEnds, tagOf, updateReady } from "../api/selectors";
-import { applyImageUpdate, deployNow, scheduleImageUpdate, setPower, backupNow, showWebsite } from "../api/store";
+import { applyImageUpdate, deployNow, retryWebsite, scheduleImageUpdate, setPower, backupNow, showWebsite } from "../api/store";
 import type { Website } from "../api/types";
 import { Topbar } from "../components/Layout";
 import { WebsiteMenu } from "../components/WebsiteMenu";
@@ -215,11 +215,11 @@ function DomainsCard({ website }: { website: Website }) {
           {website.domains.map((d) => (
             <li key={d.name} style={{ display: "block" }}>
               <strong style={{ fontWeight: 500 }}>{d.name}</strong>
-              {d.kind === "primary" && <span className="cell-sub">Primary · {certificateUntil(d.certificate)}</span>}
+              {d.kind === "primary" && <span className="cell-sub">Primary · {certificateUntil(d, website.status === "failed")}</span>}
               {d.kind === "redirect" && <span className="cell-sub">Redirects to the primary domain</span>}
               {d.kind === "alias" && (
                 d.dnsPointsHere
-                  ? <span className="cell-sub">Alias · {certificateUntil(d.certificate)}</span>
+                  ? <span className="cell-sub">Alias · {certificateUntil(d)}</span>
                   : <span className="cell-sub note-warning">Alias · DNS does not point here yet. <Link to={`/websites/${website.id}/domains`} className="text-warning">Check DNS</Link></span>
               )}
             </li>
@@ -273,6 +273,30 @@ function Overview({ website }: { website: Website }) {
   );
 }
 
+/**
+ * The panel could not make the website. The notice shows the cause from the job, and lets the
+ * user try again. Before, the user had to delete the website and to make it again.
+ */
+function FailedNotice({ website }: { website: Website }) {
+  const state = useStore();
+  const retry = useAction(retryWebsite);
+  const job = state.jobs.find((j) => j.websiteId === website.id && j.state === "failed");
+  const staging = !!website.stagingOf;
+  return (
+    <div className="alert alert-danger alert-stack mt" role="alert">
+      <p><strong>The panel could not make this website.</strong> The website has no container on the server.</p>
+      {job?.error && <p className="cause"><span className="visually-hidden">Cause: </span>{job.error}</p>}
+      <p>
+        {staging
+          ? "Delete this staging copy, and make the staging copy again."
+          : <>Correct the cause, and try again. If the cause is the image, select a different image on the <Link to={`/websites/${website.id}/runtime`}>Runtime</Link> tab: the panel then makes the website with that image.</>}
+      </p>
+      <FormError error={retry.error} />
+      {!staging && <div className="btn-group"><button type="button" className="btn btn-primary" disabled={retry.busy} onClick={() => void retry.run(website.id)}>{retry.busy ? "Starting…" : "Try again"}</button></div>}
+    </div>
+  );
+}
+
 export function WebsiteDetailPage() {
   const { id = "", tab: asked = "overview" } = useParams();
   const tab = TABS.some(([t]) => t === asked) ? asked : "overview";
@@ -317,7 +341,7 @@ export function WebsiteDetailPage() {
               {website.managedByTerraform && <TerraformBadge />}
             </div>
             <p className="detail-meta">
-              {website.application}{server ? ` · server ${server.name} (${server.location})` : ""} · Unix user <code>{website.unixUser}</code> · created {longDate(website.createdAt)}
+              {website.application}{server ? ` · server ${server.name}${server.location ? ` (${server.location})` : ""}` : ""} · Unix user <code>{website.unixUser}</code> · created {longDate(website.createdAt)}
             </p>
           </div>
           <div className="btn-group">
@@ -330,6 +354,7 @@ export function WebsiteDetailPage() {
             <WebsiteMenu website={website} bordered />
           </div>
         </div>
+        {website.status === "failed" && <FailedNotice website={website} />}
         <Tabs label="Website sections" current={tab} items={TABS.map(([tabId, label]) => ({ id: tabId, label, href: tabId === "overview" ? `/websites/${website.id}` : `/websites/${website.id}/${tabId}` }))} />
         {website.managedByTerraform && tab !== "overview" && <div style={{ marginBottom: 20 }}><TerraformNotice resource="this website" /></div>}
         {tab === "overview" && <Overview website={website} />}

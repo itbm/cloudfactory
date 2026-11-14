@@ -2,7 +2,7 @@ import { Plus } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useStore } from "../api/hooks";
-import { accountUsage, attention, runtimeLabel, supportEnds, updateReady, visibleWebsites } from "../api/selectors";
+import { accountUsage, attention, failedServices, runtimeLabel, supportEnds, updateReady, visibleWebsites } from "../api/selectors";
 import type { RuntimeKind, State, Website } from "../api/types";
 import { Topbar } from "../components/Layout";
 import { WebsiteMenu } from "../components/WebsiteMenu";
@@ -84,7 +84,7 @@ function WebsitesTable({ sites }: { sites: Website[] }) {
                   {end && <div className="note-warning" style={{ marginTop: 6 }}>Support ends {shortDate(end)}</div>}
                 </td>
                 <td><Status tone={status.tone}>{status.label}</Status></td>
-                <td className="muted" style={{ minWidth: 150, maxWidth: 170 }}>{certificateText((w.domains.find((d) => d.kind === "primary") ?? w.domains[0]).certificate)}</td>
+                <td className="muted" style={{ minWidth: 150, maxWidth: 170 }}>{w.status === "failed" ? "–" : certificateText(w.domains.find((d) => d.kind === "primary") ?? w.domains[0])}</td>
                 <td style={{ whiteSpace: "nowrap" }}>
                   {w.status !== "running" ? "–" : (
                     <>
@@ -291,7 +291,8 @@ export function WebsitesPage() {
 
 export function HealthPill() {
   const state = useStore();
-  const bad = state.servers.filter((s) => s.state === "degraded" || s.state === "offline" || s.services.some((x) => x.state !== "running"));
+  // An optional part that is off, for example the disk quotas, is not a fault.
+  const bad = state.servers.filter((s) => s.state === "degraded" || s.state === "offline" || failedServices(s.services).length > 0);
   if (bad.length) {
     return <Link to="/servers" className="pill pill-warning"><Status tone="warning">{bad.length} {bad.length === 1 ? "server needs" : "servers need"} attention</Status></Link>;
   }

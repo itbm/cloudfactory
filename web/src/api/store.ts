@@ -196,12 +196,21 @@ let loading: Promise<void> | null = null;
 export function refresh(): Promise<void> {
   if (!LIVE || !live.hasSession()) return Promise.resolve();
   loading ??= live.load(state).then(replace)
-    .catch(() => {
-      // Keep the data that the panel has. A failed first load shows an empty panel.
-      if (state.session.loading) replace({ ...state, session: { ...state.session, loading: false } });
+    .catch((e: unknown) => {
+      // Keep the data that the panel has, and tell the user. Before, a failed first load
+      // showed an empty panel with no message.
+      if (!state.session.signedIn) return;
+      const loadError = e instanceof Error && e.message ? e.message : "The panel API does not answer.";
+      if (state.session.loading || state.session.loadError !== loadError) replace({ ...state, session: { ...state.session, loading: false, loadError } });
     })
     .finally(() => (loading = null));
   return loading;
+}
+
+/** Loads the state again after an error, for the "Try again" button. */
+export function retryLoad(): Promise<void> {
+  if (LIVE && state.session.signedIn) replace({ ...state, session: { ...state.session, loading: !state.session.user.id } });
+  return refresh();
 }
 
 /** Loads the state after a change. A load that started before the change does not count. */
@@ -387,6 +396,33 @@ export function createWebsite(input: NewWebsite): Promise<{ websiteId: string; j
     },
   });
   return { websiteId, job };
+}
+
+/**
+ * Makes a website again after its first job failed, for example because the server could not
+ * pull the image. The agent keeps what the first job made.
+ */
+export function retryWebsite(websiteId: string) {
+  if (LIVE) {
+    return call(() => live.request<JobAnswer>("POST", `/websites/${websiteId}/retry`)).then((r) => {
+      update((d) => { site(d, websiteId).status = "starting"; });
+      return track(r.job);
+    });
+  }
+  const w = state.websites.find((x) => x.id === websiteId)!;
+  return runJob({
+    title: `Create website ${w.name}`,
+    websiteId,
+    steps: ["Create Unix user", "Pull and check image signature", "Start container in gVisor", "Configure edge proxy", "Get TLS certificate"],
+    activity: `Created ${w.name}`,
+    begin: (d) => {
+      site(d, websiteId).status = "starting";
+      audit(d, "Created website again", w.name);
+    },
+    apply: (d) => {
+      site(d, websiteId).status = "running";
+    },
+  });
 }
 
 export function setPower(websiteId: string, action: "start" | "stop" | "restart") {
@@ -1446,8 +1482,13 @@ export function rollBackAll() {
   });
 }
 
-/** The simulated agents move the rollout forward while it runs. */
+/**
+ * The simulated agents move the rollout forward while it runs. In live mode the real agents
+ * do this, and the panel API gives the progress. Before, this function also ran in live
+ * mode: the card showed progress that was not real, and then the page had an error.
+ */
 function rolloutTick() {
+  if (LIVE) return;
   const r = state.rollout;
   if (!r || r.state !== "running") return;
   update((d) => {
@@ -1487,7 +1528,7 @@ function rolloutTick() {
   });
 }
 
-if (typeof window !== "undefined" && !import.meta.env?.VITEST) {
+if (!LIVE && typeof window !== "undefined" && !import.meta.env?.VITEST) {
   setInterval(rolloutTick, timing.rolloutMs);
 }
 
@@ -1700,11 +1741,20 @@ const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
  * user has the email of the customer and a temporary password. The panel sends no email.
  */
 export function addCustomer(input: Pick<Customer, "name" | "email" | "planId" | "role">, createUser = false): Promise<NewAccess | null> | NewAccess | null {
+  const made = makeCustomer(input, createUser);
+  return made instanceof Promise ? made.then((m) => m.access) : made.access;
+}
+
+/**
+ * Makes a customer and gives its ID. The New website page uses it to make the customer and
+ * the website in one step.
+ */
+export function makeCustomer(input: Pick<Customer, "name" | "email" | "planId" | "role">, createUser = false): Promise<{ customerId: string; access: NewAccess | null }> | { customerId: string; access: NewAccess | null } {
   if (LIVE) {
     return call(async () => {
-      const r = await live.request<{ user?: { email: string; temporaryPassword: string } }>("POST", "/customers", { name: input.name.trim(), email: input.email.trim(), planId: input.planId, role: input.role, ...(createUser ? { createUser: true } : {}) });
+      const r = await live.request<{ id: string; user?: { email: string; temporaryPassword: string } }>("POST", "/customers", { name: input.name.trim(), email: input.email.trim(), planId: input.planId, role: input.role, ...(createUser ? { createUser: true } : {}) });
       await reload();
-      return r.user ? { email: r.user.email, temporaryPassword: r.user.temporaryPassword } : null;
+      return { customerId: r.id, access: r.user ? { email: r.user.email, temporaryPassword: r.user.temporaryPassword } : null };
     });
   }
   const errors: Record<string, string> = {};
@@ -1722,7 +1772,7 @@ export function addCustomer(input: Pick<Customer, "name" | "email" | "planId" | 
       audit(d, "Created user", access.email);
     }
   });
-  return access;
+  return { customerId, access };
 }
 
 // Users (audit finding B5)

@@ -1,6 +1,6 @@
 // Values that the UI derives from the state.
 
-import type { AttentionItem, RuntimeImage, SearchResult, State, Website } from "./types";
+import type { AttentionItem, RuntimeImage, SearchResult, Server, State, Website } from "./types";
 import { daysUntil, longDate } from "../lib/format";
 
 export const imageOf = (s: State, w: Website): RuntimeImage | undefined => s.images.find((i) => i.id === w.runtime.imageId);
@@ -11,7 +11,7 @@ export const tagOf = (s: State, w: Website) => w.imageTag ?? imageOf(s, w)?.runn
 export function updateReady(s: State, w: Website): boolean {
   const image = imageOf(s, w);
   // The rollout of an image updates its websites in stages, so the owner does not need to act.
-  return !!image?.available && image.availableNote !== "rolling_out" && tagOf(s, w) !== image.available && w.status !== "stopped";
+  return !!image?.available && image.availableNote !== "rolling_out" && tagOf(s, w) !== image.available && w.status !== "stopped" && w.status !== "failed";
 }
 
 /** FR-306: warn 90 days before the security support for a PHP version stops. */
@@ -55,6 +55,12 @@ export function contextCustomers(s: State) {
 export function attention(s: State): AttentionItem[] {
   const items: AttentionItem[] = [];
   for (const w of visibleWebsites(s)) {
+    // The first problem of a website that the panel could not make is that it has no container.
+    if (w.status === "failed") {
+      items.push({ id: `failed-${w.id}`, tone: "warning", subject: w.name, text: "was not made. Look at the cause, and try again.", action: "Open website", href: `/websites/${w.id}` });
+    }
+  }
+  for (const w of visibleWebsites(s)) {
     const end = supportEnds(s, w);
     if (end) {
       items.push({ id: `php-${w.id}`, tone: "warning", subject: w.name, text: `uses PHP ${w.runtime.phpVersion}. Security support ends on ${longDate(end)}.`, action: "Plan upgrade", href: `/websites/${w.id}/runtime` });
@@ -62,11 +68,12 @@ export function attention(s: State): AttentionItem[] {
   }
   for (const w of visibleWebsites(s)) {
     if (updateReady(s, w)) {
-      items.push({ id: `upd-${w.id}`, tone: "info", subject: w.name, text: `has a security update ready for PHP ${w.runtime.phpVersion}.`, action: "Review update", href: `/websites/${w.id}` });
+      items.push({ id: `upd-${w.id}`, tone: "info", subject: w.name, text: `has an image update ready for PHP ${w.runtime.phpVersion}.`, action: "Review update", href: `/websites/${w.id}` });
     }
   }
   for (const w of visibleWebsites(s)) {
-    const bad = w.domains.find((d) => !d.dnsPointsHere);
+    // The agent examines the DNS of a domain only when the website has a container.
+    const bad = w.status === "failed" ? undefined : w.domains.find((d) => !d.dnsPointsHere);
     if (bad) items.push({ id: `dns-${w.id}-${bad.name}`, tone: "info", subject: bad.name, text: "does not point to this server yet.", action: "Check DNS", href: `/websites/${w.id}/domains` });
   }
   for (const m of s.mailboxes) {
@@ -107,4 +114,16 @@ export function search(s: State, query: string): SearchResult[] {
     ...s.customers.map<SearchResult>((c) => ({ kind: "customer", label: c.name, detail: `Customer · ${c.email}`, href: "/customers" })),
   ];
   return results.filter((r) => r.label.toLowerCase().includes(q) || r.detail.toLowerCase().includes(q)).slice(0, 14);
+}
+
+/** The necessary services of a server that do not run. These are the cause of the state "degraded". */
+export function failedServices(services: Server["services"]): Server["services"] {
+  return services.filter((x) => x.state !== "running" && !x.optional);
+}
+
+/** A short text for the status of a degraded server, for example "Degraded: cf-sftp failed". */
+export function degradedReason(services: Server["services"]): string | undefined {
+  const failed = failedServices(services);
+  if (!failed.length) return undefined;
+  return `Degraded: ${failed.map((x) => `${x.name} ${x.state}`).join(", ")}`;
 }

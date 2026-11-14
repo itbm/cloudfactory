@@ -85,12 +85,17 @@ export function Modal({ title, onClose, children, footer, wide = false }: {
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const titleId = useId();
+  // Most callers give a new onClose function on each render. The effect must not run again
+  // for that, because it moves the focus to the first field: the focus then left the field
+  // that the user typed in, after each character.
+  const close = useRef(onClose);
+  useEffect(() => { close.current = onClose; });
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
     const first = ref.current?.querySelector<HTMLElement>("input, select, textarea, button:not(.modal-close)");
     (first ?? ref.current)?.focus();
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") close.current();
       if (e.key === "Tab" && ref.current) {
         const items = ref.current.querySelectorAll<HTMLElement>("a[href], button:not(:disabled), input, select, textarea");
         if (!items.length) return;
@@ -110,7 +115,7 @@ export function Modal({ title, onClose, children, footer, wide = false }: {
       document.removeEventListener("keydown", onKey);
       previous?.focus();
     };
-  }, [onClose]);
+  }, []);
   return (
     <div className="palette-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div ref={ref} className={`modal${wide ? " modal-wide" : ""}`} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1}>

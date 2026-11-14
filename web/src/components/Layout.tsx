@@ -61,7 +61,7 @@ function ContextSwitcher() {
   if (!shown) return null;
 
   const summary = (c: AccountContext) => {
-    if (c.role === "administrator") return `Administrator · ${state.servers.length} servers`;
+    if (c.role === "administrator") return `Administrator · ${state.servers.length} ${state.servers.length === 1 ? "server" : "servers"}`;
     const customer = state.customers.find((x) => x.id === c.id);
     const plan = state.plans.find((p) => p.id === customer?.planId);
     const count = state.websites.filter((w) => w.customerId === c.id).length;
@@ -285,6 +285,11 @@ export function Layout() {
           </div>
         </nav>
         <div className="main">
+          {state.session.loadError && (
+            <div className="alert alert-warning load-error" role="status">
+              <p><strong>The panel could not load new data.</strong> {state.session.loadError} The pages show the data of the last good load. The panel tries again each 15 seconds.</p>
+            </div>
+          )}
           <Outlet />
         </div>
       </div>

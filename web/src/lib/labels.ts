@@ -1,4 +1,4 @@
-import type { Certificate, HostUpdatePolicy, JobState, RuntimeKind, ServerRole, ServerState, UpdatePolicy, WebsiteStatus } from "../api/types";
+import type { Domain, HostUpdatePolicy, JobState, RuntimeKind, ServerRole, ServerState, UpdatePolicy, WebsiteStatus } from "../api/types";
 import type { Tone } from "../components/ui";
 import { daysUntil, longDate, relativeTime } from "./format";
 
@@ -48,24 +48,32 @@ export const RUNTIME_KIND: Record<RuntimeKind, string> = {
 };
 
 /** Short certificate text for the website list. */
-export function certificateText(c: Certificate): string {
+export function certificateText(d: Pick<Domain, "certificate" | "dnsPointsHere">): string {
+  const c = d.certificate;
   switch (c.state) {
     case "valid":
       return c.expiresAt ? `Valid · renews in ${daysUntil(c.expiresAt)} days` : "Valid";
     case "renewed":
       return c.renewedAt ? `Renewed ${relativeTime(c.renewedAt)}` : "Renewed";
     case "pending":
-      return "Waiting for DNS";
+      // The DNS is correct: the edge proxy gets the certificate now. This takes some minutes at most.
+      return d.dnsPointsHere ? "Getting the certificate" : "Waiting for DNS";
     case "failed":
-      return "Renewal failed";
+      return "No certificate: the request failed";
     case "not_needed":
       return "Not needed while stopped";
   }
 }
 
-export function certificateUntil(c: Certificate): string {
+export function certificateUntil(d: Pick<Domain, "certificate" | "dnsPointsHere">, websiteFailed = false): string {
+  const c = d.certificate;
+  // The panel could not make the website, so the edge proxy does not know the domain. Before,
+  // the text was "certificate waits for DNS", which sent the user to the DNS.
+  if (websiteFailed && c.state === "pending") return "no certificate yet";
   if (c.state === "valid" || c.state === "renewed") return c.expiresAt ? `certificate valid until ${longDate(c.expiresAt)}` : "certificate valid";
-  if (c.state === "pending") return "certificate waits for DNS";
+  // Before, this text was "certificate waits for DNS" also when the DNS was correct.
+  if (c.state === "pending") return d.dnsPointsHere ? "the edge proxy gets the certificate" : "certificate waits for DNS";
+  if (c.state === "failed") return "the edge proxy could not get a certificate";
   return "no certificate";
 }
 

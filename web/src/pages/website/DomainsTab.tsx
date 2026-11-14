@@ -74,7 +74,7 @@ export function DomainsTab({ website }: { website: Website }) {
                           </>
                         )}
                     </td>
-                    <td className="muted">{certificateUntil(d.certificate).replace(/^./, (c) => c.toUpperCase())}</td>
+                    <td className="muted">{certificateUntil(d, website.status === "failed").replace(/^./, (c) => c.toUpperCase())}</td>
                     <td>
                       <div className="btn-group" style={{ justifyContent: "flex-end" }}>
                         {d.verification && (

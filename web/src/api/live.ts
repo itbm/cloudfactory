@@ -26,6 +26,7 @@ import type {
   User,
   Website,
 } from "./types";
+import { degradedReason } from "./selectors";
 
 /** The error of a request. store.ts makes an ApiError from it. */
 export class LiveError extends Error {
@@ -139,7 +140,7 @@ interface ApiImage {
 interface ApiRuntimeImage { id: string; name: string; family: RuntimeImage["family"]; tag: string; phpVersion?: RuntimeImage["phpVersion"] | null; custom: boolean; supportEndsAt: string | null }
 interface ApiRollout {
   id: string; imageId: string; title: string; fromTag: string; toTag: string; severity: Rollout["severity"]; state: Rollout["state"]; stages: Rollout["stages"];
-  websites: number; healthy: number; rolledBack: number; running: number; rollbacks: Rollout["rollbacks"]; startedAt: string;
+  websites: number; healthy: number; rolledBack: number; running: number; rollbacks: Rollout["rollbacks"]; startedAt: string; finishedAt?: string | null;
 }
 interface ApiCustomer { id: string; name: string; email: string; role: Customer["role"]; planId: string; resellerId: string | null; suspended: boolean; createdAt: string }
 interface ApiToken_ { id: number; name: string; scopes: string[]; createdAt: string; expiresAt: string | null; lastUsedAt: string | null }
@@ -204,6 +205,7 @@ export function toServer(s: ApiServer): Server {
     podmanVersion: s.podmanVersion ?? "", gvisorVersion: s.gvisorVersion ?? "", gvisorPlatform: s.gvisorPlatform, bareMetal: s.bareMetal,
     updatePolicy: s.updatePolicy, maintenanceWindow: s.maintenanceWindow, pendingUpdates: s.pendingUpdates ?? [], lastUpdateAt: s.lastUpdateAt ?? "",
     rebootRequired: s.rebootRequired, services: s.services ?? [], sftpPort: s.sftpPort ?? 22,
+    stateDetail: s.state === "degraded" ? degradedReason(s.services ?? []) : undefined,
   };
 }
 
@@ -212,7 +214,7 @@ export function toImage(i: ApiImage, rollouts: ApiRollout[]): RuntimeImage {
   return {
     id: i.id, name: i.name, family: i.family, reference: i.reference, running: i.tag, available: i.availableTag ?? undefined,
     availableNote: i.availableTag && rolling ? "rolling_out" : undefined, phpVersion: i.phpVersion ?? undefined, supportEndsAt: i.supportEndsAt ?? undefined,
-    websites: String(i.websites ?? 0), policy: i.policy, policyNote: i.checkError ? `Last registry check failed: ${i.checkError}` : undefined,
+    websites: String(i.websites ?? 0), policy: i.policy, checkError: i.checkError ?? undefined,
     custom: i.custom, signatureVerified: i.signatureVerified, digest: i.digest ?? "", containerPort: i.containerPort, command: i.command ?? undefined,
   };
 }
@@ -226,7 +228,7 @@ export function toRuntimeImage(i: ApiRuntimeImage): RuntimeImage {
 
 export function toRollout(r: ApiRollout, servers: number): Rollout {
   return {
-    id: r.id, imageId: r.imageId, title: r.title, fromTag: r.fromTag, toTag: r.toTag, severity: r.severity, state: r.state, startedAt: r.startedAt,
+    id: r.id, imageId: r.imageId, title: r.title, fromTag: r.fromTag, toTag: r.toTag, severity: r.severity, state: r.state, startedAt: r.startedAt, finishedAt: r.finishedAt ?? undefined,
     window: "", websites: r.websites, servers, stages: r.stages, healthy: r.healthy, rolledBack: r.rolledBack, rollbacks: r.rollbacks,
     checks: [
       { label: "Signature verified", passed: true },
