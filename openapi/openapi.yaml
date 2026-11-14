@@ -102,12 +102,13 @@ paths:
     get:
       tags: [Auth]
       summary: Get the user of the token
+      description: An administrator or a reseller must turn on TOTP. Until then (totpSetupRequired), a sign-in session can use only this route, /v1/me/password, /v1/me/totp/setup, /v1/me/totp/enable and /v1/auth/logout. Each other route gives 403 with the code totp_setup_required. An API token is not in the scope of this rule.
       responses:
         '200':
           description: The user.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/User' }
+              schema: { $ref: '#/components/schemas/Me' }
         '401': { $ref: '#/components/responses/Unauthenticated' }
 
   /v1/me/password:
@@ -526,7 +527,10 @@ paths:
       description: >-
         Spec section 10. The owner signs in with the user name of the website and an SSH key.
         The server refuses passwords, and allows only SFTP, in the directory of the website. To
-        turn on SFTP, give at least one key.
+        turn on SFTP, give at least one key. SFTP does not turn on for a website that the panel
+        could not make (422) or for a suspended customer (409). A suspension turns SFTP off and
+        stops the open sessions. When the suspension ends, the websites that had SFTP get it
+        again with the same keys.
       requestBody:
         required: true
         content:
@@ -548,6 +552,7 @@ paths:
                   sftp: { $ref: '#/components/schemas/Sftp' }
                   job: { $ref: '#/components/schemas/Job' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: The customer of the website is suspended. }
         '422': { $ref: '#/components/responses/Invalid' }
 
   /v1/websites/{websiteId}/domains/{name}:
@@ -1432,7 +1437,7 @@ paths:
     post:
       tags: [Users]
       summary: Add a user
-      description: The panel sends no email. The answer has a temporary password one time. Give it to the user. The user must set a new password at the first sign-in. An administrator adds users for all customers. A reseller adds users for its own customers only. With customerId null, the new user is an administrator. Only an administrator in a sign-in session can do this. An API token cannot.
+      description: The panel sends no email. The answer has a temporary password one time. Give it to the user. The user must set a new password at the first sign-in. An administrator adds users for all customers. A reseller adds users for its own customers only. With customerId null, the new user is an administrator. Only an administrator in a sign-in session can do this, with the password and, when TOTP is on, a code. An API token cannot. After 5 wrong passwords or codes, the answer is 429 for 15 minutes.
       requestBody:
         required: true
         content:
@@ -1444,6 +1449,8 @@ paths:
                 name: { type: string, maxLength: 200 }
                 email: { type: string, format: email }
                 customerId: { type: [string, 'null'], description: The customer of the user. The role of the user is the role of the customer. Null makes an administrator. }
+                password: { type: string, description: Your password. Necessary when the new user is an administrator. }
+                totp: { type: string, pattern: '^[0-9]{6}$', description: Your TOTP code. Necessary when the new user is an administrator and your TOTP is on. }
       responses:
         '201':
           description: Added.
@@ -1452,6 +1459,7 @@ paths:
               schema: { $ref: '#/components/schemas/NewUser' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '422': { $ref: '#/components/responses/Invalid' }
+        '429': { description: Too many requests, or too many wrong passwords or codes for a change to an administrator. The Retry-After header gives the number of seconds to wait. }
 
   /v1/users/{id}:
     parameters:
@@ -1459,11 +1467,21 @@ paths:
     delete:
       tags: [Users]
       summary: Delete a user
-      description: Deletes the user with all sessions and API tokens. You cannot delete your own user. The rules of POST /v1/users apply.
+      description: Deletes the user with all sessions and API tokens. You cannot delete your own user. The rules of POST /v1/users apply. To delete an administrator, give your password and your TOTP code in the body.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                password: { type: string, description: Your password. Necessary when the user is an administrator. }
+                totp: { type: string, pattern: '^[0-9]{6}$', description: Your TOTP code. Necessary when the user is an administrator and your TOTP is on. }
       responses:
         '204': { description: Deleted. }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+        '429': { description: Too many wrong passwords or codes for a change to an administrator. The Retry-After header gives the number of seconds to wait. }
 
   /v1/users/{id}/reset-password:
     parameters:
@@ -1471,7 +1489,7 @@ paths:
     post:
       tags: [Users]
       summary: Give a user a new temporary password
-      description: The panel deletes all sessions and API tokens of the user, and removes the sign-in lock. The user must set a new password at the next sign-in. You cannot do this for your own user. The rules of POST /v1/users apply.
+      description: The panel deletes all sessions and API tokens of the user, and removes the sign-in lock. The user must set a new password at the next sign-in. You cannot do this for your own user. The rules of POST /v1/users apply. For an administrator, give your password and your TOTP code. The other administrators then see the change in securityNotices of /v1/me for 7 days.
       requestBody:
         content:
           application/json:
@@ -1479,6 +1497,8 @@ paths:
               type: object
               properties:
                 removeTotp: { type: boolean, default: false, description: Also turn off TOTP, for a user who lost the device. }
+                password: { type: string, description: Your password. Necessary when the user is an administrator. }
+                totp: { type: string, pattern: '^[0-9]{6}$', description: Your TOTP code. Necessary when the user is an administrator and your TOTP is on. }
       responses:
         '200':
           description: The user with the temporary password.
@@ -1487,6 +1507,8 @@ paths:
               schema: { $ref: '#/components/schemas/NewUser' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+        '429': { description: Too many requests, or too many wrong passwords or codes for a change to an administrator. The Retry-After header gives the number of seconds to wait. }
 
   /v1/audit:
     get:
@@ -1714,6 +1736,22 @@ components:
         customerId: { type: [string, 'null'] }
         totpEnabled: { type: boolean }
         mustChangePassword: { type: boolean, description: The user has a temporary password and must set a new one. }
+    Me:
+      allOf:
+        - { $ref: '#/components/schemas/User' }
+        - type: object
+          properties:
+            totpSetupRequired: { type: boolean, description: The user is an administrator or a reseller in a sign-in session with no TOTP. The user must turn on TOTP before all other work. }
+            securityNotices:
+              type: array
+              description: For an administrator, the changes that a different person made to the administrator accounts in the last 7 days. Empty for all other users.
+              items:
+                type: object
+                properties:
+                  action: { type: string, enum: [Created administrator, Reset password of administrator, Reset password and removed TOTP of administrator, Deleted administrator] }
+                  target: { type: string, description: The email address of the administrator that changed. }
+                  actor: { type: string }
+                  at: { type: string, format: date-time }
     ManagedUser:
       allOf:
         - { $ref: '#/components/schemas/User' }

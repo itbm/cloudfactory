@@ -33,6 +33,11 @@ The product specification, section 6.4, gives the requirements.
   Refer to [SFTP](#sftp).
 - The agent writes restored files and staging copies as the website user. A symbolic link in
   a backup cannot make the agent write outside the home directory of the website.
+- Root owns the directory of a website (`/srv/cloudfactory/sites/<user>`). The website user
+  owns only the directory `app` in it. As root, the agent makes and changes only these two
+  directories, and it stops if one of them is not a directory. The website user makes the
+  directory `app/public`. Thus a symbolic link that a website puts in its own files cannot
+  make root change the files of a different website.
 
 ## SFTP
 
@@ -54,6 +59,12 @@ The product specification, section 6.4, gives the requirements.
 - The keys and the user list are read-only in the container. Root owns them.
 - The container has its own SSH host keys. A problem in the container does not give the host
   keys of the server.
+- When SFTP goes off for a website, or the last key is removed, the agent stops the open SFTP
+  sessions of that website user. A session does not stay open after the access is removed.
+- When a customer is suspended, the panel turns off SFTP for the websites of the customer and
+  keeps the keys. When the suspension ends, the panel turns SFTP on again for these websites.
+  The panel refuses to turn on SFTP for a suspended customer and for a website in the state
+  `failed`.
 
 ## Databases
 
@@ -91,6 +102,9 @@ The product specification, section 6.4, gives the requirements.
 - The admin API of Caddy listens on a Unix socket, not on a TCP port. Only the user `cf-edge`
   and `root` can open the socket.
 - The panel route is always the first route. A website route cannot replace it.
+- For a stopped website, the route gives a fixed page with the status 503 ("This website is
+  not available"). The proxy does not connect to the port of the stopped website, and the
+  page shows no data of the server.
 
 ## The agent
 
@@ -179,7 +193,8 @@ directory with mode 0700:
 
 ## Users and API tokens
 
-- Users sign in with a password and, if they set it, a TOTP code. A TOTP code works only one
+- Users sign in with a password and a TOTP code. An administrator and a reseller must have
+  TOTP. A website owner can turn it on. A TOTP code works only one
   time. The panel examines the password first, and asks for the code only when the password is
   correct and TOTP is on for the user. Thus a user with no TOTP does not see the code step, and
   a wrong password gives its error immediately. The request for the code shows that the
@@ -191,6 +206,18 @@ directory with mode 0700:
   script has a temporary password also. With a temporary password, the API accepts only the
   password change, the account data and the sign-out. The web panel shows only the form
   **Set a new password**.
+- An administrator or a reseller with no TOTP can sign in, but the API then accepts only the
+  account data, the password change, the TOTP setup and the sign-out (the answer has the code
+  `totp_setup_required`). The web panel shows only the page **Set up an authenticator app**.
+  This rule is for sign-in sessions. An API token has scopes and an expiry date, and its owner
+  made it with the password and a code, so a token continues to work. For a development
+  installation, `CF_REQUIRE_TOTP=false` in the environment of the panel API turns the rule off.
+  Do not use this setting on a server with customers.
+- To make, reset or delete an administrator, the signed-in administrator must give the
+  password again and a TOTP code. A stolen session alone cannot take the other administrator
+  accounts. After 5 incorrect attempts, the panel refuses these changes for 15 minutes.
+- For 7 days after such a change, the web panel shows a notice to each other administrator:
+  who made, reset or deleted which administrator, and when.
 - An administrator can make, reset and delete all users. A reseller can do this only for the
   users of its own customers. An owner sees the list of its users only. Only a sign-in session
   of an administrator can make, reset or delete an administrator. An API token cannot. A user
@@ -336,7 +363,11 @@ These items stay open in release 0.1:
   runtime images of the websites.
 - **Credentials of the object storage.** All servers use the same credentials. A person who
   has root access to one server can delete the backup data of all servers, but cannot read
-  it. Turn on versioning or an object lock in the bucket.
+  it. Until each server has its own key, do these steps at the storage provider:
+  - Use a bucket that has only the Cloudfactory backups.
+  - Turn on versioning or an object lock for the bucket, with a retention time that is longer
+    than the longest backup retention. Deleted data then stays until that time ends.
+  - Give the key no permission to change the bucket settings (versioning, lifecycle, policy).
 - **Custom registry.** An administrator can set a custom registry address. The panel server
   then sends requests to that address.
 - **Join token.** The person who has a join token gives the agent address that the panel

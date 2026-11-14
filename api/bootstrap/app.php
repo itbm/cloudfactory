@@ -4,11 +4,13 @@ use App\Http\Middleware\AuthenticateAgent;
 use App\Http\Middleware\EnsureActive;
 use App\Http\Middleware\EnsureAdministrator;
 use App\Http\Middleware\EnsureScope;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Exceptions\ThrottleRequestsException;
 use Illuminate\Http\Request;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -43,6 +45,14 @@ return Application::configure(basePath: dirname(__DIR__))
         $exceptions->shouldRenderJsonWhen(
             fn (Request $request) => $request->is('api/*') || $request->expectsJson(),
         );
+        // Audit finding F10: the default message for a record that the user cannot see is
+        // "No query results for model [App\Models\Website] <ID>", which shows the names of
+        // internal classes.
+        $exceptions->render(function (NotFoundHttpException $e) {
+            if ($e->getPrevious() instanceof ModelNotFoundException) {
+                return response()->json(['message' => 'Not found.'], 404);
+            }
+        });
         // A rate limit: the default message is "Too Many Attempts.", which does not tell the
         // user what to do. The web panel shows this message, for example on the sign-in page.
         $exceptions->render(function (ThrottleRequestsException $e) {

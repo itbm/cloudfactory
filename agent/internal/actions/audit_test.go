@@ -243,6 +243,18 @@ func TestSetSftp(t *testing.T) {
 	if strings.Contains(string(b), "ssh-ed25519") || strings.Contains(string(passwd), "acme_x7k2") {
 		t.Errorf("SFTP is still on: %s %s", b, passwd)
 	}
+	// Audit finding F05: sshd checks the keys only at the sign-in. The open sessions of the
+	// user stop when SFTP turns off, for example when the panel suspends the customer.
+	kill := "podman exec cf-sftp pkill --signal KILL --euid 20001"
+	if n := strings.Count(strings.Join(f.Calls, "\n"), kill); n != 1 {
+		t.Errorf("the open sessions stop only when SFTP turns off: %d calls of %q in %v", n, kill, f.Calls)
+	}
+	// An error of the command, for example an SFTP image with no pkill, does not fail the job.
+	f.Rules = []execx.Rule{{Prefix: "podman exec cf-sftp pkill", Err: errors.New("executable file not found")}}
+	if err := run(t)(d.SetSftp(&agentv1.SetSftpRequest{JobId: jobID2, WebsiteId: websiteID, UnixUser: "acme_x7k2"})); err != nil {
+		t.Errorf("SFTP did not turn off: %v", err)
+	}
+	f.Rules = nil
 	for _, bad := range []string{`command="sh" ` + key, key + "\nssh-rsa AAAA", "not a key"} {
 		if _, err := d.SetSftp(&agentv1.SetSftpRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Enabled: true, AuthorizedKeys: []string{bad}}); err == nil {
 			t.Errorf("accepted the key %q", bad)

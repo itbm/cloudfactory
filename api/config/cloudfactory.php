@@ -57,6 +57,10 @@ return [
     // repository. In this time, an administrator can restore them with restic.
     'deleted_website_backup_days' => (int) env('CF_DELETED_WEBSITE_BACKUP_DAYS', 30),
 
+    // Audit finding F09: administrators and resellers must turn on TOTP before they can work in
+    // a sign-in session. Set CF_REQUIRE_TOTP=false only for development or a demonstration.
+    'require_totp' => filter_var(env('CF_REQUIRE_TOTP', true), FILTER_VALIDATE_BOOL),
+
     // FR-104: the scopes that an API token can have.
     'scopes' => [
         'websites:read', 'websites:write',

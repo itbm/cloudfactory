@@ -358,7 +358,9 @@ func (d *Deps) localCertificate(ctx context.Context, domain string) (time.Time, 
 }
 
 // RestoreLocalNames sets the routes of the websites that have a local name again, so that a
-// website from an earlier agent version gets the certificate policy of its local names.
+// website from an earlier agent version gets the certificate policy of its local names. It
+// also sets the route of each stopped website, so that a website that an earlier agent version
+// stopped gets the page of a stopped website.
 func (d *Deps) RestoreLocalNames(ctx context.Context) error {
 	sites, err := d.State.All()
 	if err != nil {
@@ -369,8 +371,8 @@ func (d *Deps) RestoreLocalNames(ctx context.Context) error {
 		if s.Website == nil || s.Port == 0 {
 			continue
 		}
-		site := d.site(s.Website, s.Port)
-		if len(caddy.LocalNames(site)) > 0 {
+		site := d.edgeSite(s, s.Website)
+		if len(caddy.LocalNames(site)) > 0 || s.Stopped {
 			errs = append(errs, d.Edge.Apply(ctx, site))
 		}
 	}

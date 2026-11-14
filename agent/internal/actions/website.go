@@ -712,6 +712,7 @@ func (d *Deps) SetWebsitePower(req *agentv1.SetWebsitePowerRequest) (jobs.Job, e
 			}
 			// The unit of a stopped website has no [Install] section, so that systemd does not
 			// start it at boot.
+			wasStopped := site.Stopped
 			site.Stopped = action == "stop"
 			u := d.unit(site.Website, site.Port, site.Suffix)
 			u.Stopped = site.Stopped
@@ -724,7 +725,13 @@ func (d *Deps) SetWebsitePower(req *agentv1.SetWebsitePowerRequest) (jobs.Job, e
 			if _, err = d.Host.Systemctl(ctx, site.UnixUser, action, u.ServiceName()); err != nil {
 				return err
 			}
-			return d.State.Put(site)
+			if err := d.State.Put(site); err != nil {
+				return err
+			}
+			if site.Stopped == wasStopped {
+				return nil
+			}
+			return d.applyStoppedPage(ctx, site)
 		}},
 		{Name: "Health check", Do: func(ctx context.Context) error {
 			if action == "stop" {
@@ -834,7 +841,7 @@ func (d *Deps) changeDomain(req *agentv1.DomainRequest, add bool) (jobs.Job, err
 			domains = append(domains, &agentv1.Domain{Name: req.GetDomain(), Kind: req.GetKind()})
 		}
 		w.Domains = domains
-		if err := d.Edge.Apply(ctx, d.site(w, site.Port)); err != nil {
+		if err := d.Edge.Apply(ctx, d.edgeSite(site, w)); err != nil {
 			return err
 		}
 		site.Website = w

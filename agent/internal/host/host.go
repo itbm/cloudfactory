@@ -138,17 +138,36 @@ func (h *Host) EnsureUser(ctx context.Context, unixUser string) error {
 	} else if uid < WebsiteIDMin || uid > WebsiteIDMax {
 		return fmt.Errorf("the user %s has the UID %d, which is not in the range of the website users (%d to %d)", unixUser, uid, WebsiteIDMin, WebsiteIDMax)
 	}
+	// Audit finding F01: "install -d" follows a symbolic link, and changes the owner and the
+	// mode of the directory that the link points to. Thus root changes only the two directories
+	// that the website user cannot replace: only root can write in SitesDir and in the directory
+	// of the user. A path there that is not a directory is not from the agent, so the agent
+	// stops. The website user controls all that is in "app". Root changes nothing there.
+	for _, dir := range []string{h.SiteRoot(unixUser), h.AppDir(unixUser)} {
+		if fi, err := os.Lstat(dir); err == nil && !fi.IsDir() {
+			return fmt.Errorf("host: %s is not a directory", dir)
+		} else if err != nil && !os.IsNotExist(err) {
+			return err
+		}
+	}
 	for _, args := range [][]string{
 		// CF-04: only the website user can read its files. The edge proxy does not read them.
 		{"chmod", "0700", h.Home(unixUser)},
 		// SFTP needs a directory that root owns and that the user cannot change (ChrootDirectory).
 		{"install", "-d", "-o", "root", "-g", unixUser, "-m", "0750", h.SiteRoot(unixUser)},
-		{"install", "-d", "-o", unixUser, "-g", unixUser, "-m", "0750", h.AppDir(unixUser), filepath.Join(h.AppDir(unixUser), "public")},
+		{"install", "-d", "-o", unixUser, "-g", unixUser, "-m", "0750", h.AppDir(unixUser)},
 		{"loginctl", "enable-linger", unixUser},
 	} {
 		if _, err := h.Run.Run(ctx, args[0], args[1:]...); err != nil {
 			return err
 		}
+	}
+	// The website user makes the default document root. A link at "public" is then only a link
+	// of the user to a place that the user can change. A website operates with no "public"
+	// directory, for example with a different document root, so an error is only in the log.
+	public := filepath.Join(h.AppDir(unixUser), "public")
+	if _, err := h.Run.Run(ctx, "runuser", "-u", unixUser, "--", "mkdir", "-p", "-m", "0750", public); err != nil {
+		slog.Warn("the website user cannot make the default document root", "user", unixUser, "dir", public, "err", err)
 	}
 	if err := h.LinkStorageConfig(ctx, unixUser); err != nil {
 		return err

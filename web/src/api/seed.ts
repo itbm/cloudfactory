@@ -524,6 +524,7 @@ export function seed(): State {
       { id: "pk_2", name: "YubiKey 5C", addedAt: ago(100 * DAY) },
     ],
     totpEnabled: true,
+    securityNotices: [],
     audit: [
       { id: "aud_6", at: ago(25 * MINUTE), actor: "CI deploy key", ip: "198.51.100.23", action: "Deployed", target: "app.example.com 9f8e7d6" },
       { id: "aud_5", at: ago(2 * HOUR), actor: "Alex Morgan", ip: "203.0.113.45", action: "Deployed", target: "shop.example.net a1b2c3d" },

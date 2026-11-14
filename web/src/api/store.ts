@@ -14,6 +14,7 @@ import type {
   ApiToken,
   BackupPolicy,
   Branding,
+  Confirmation,
   CronJob,
   Customer,
   DatabaseEngine,
@@ -55,7 +56,7 @@ function emptyState(): State {
     session: { ...s.session, signedIn: false, user: { id: "", name: "", email: "", role: "owner" }, contextId: "" },
     contexts: [], websites: [], jobs: [], activity: [], notifications: [], servers: [], images: [], rollout: undefined,
     zones: [], mailboxes: [], aliases: [], databases: [], databaseUsers: [], files: {}, snapshots: [], plans: [], customers: [], users: [],
-    tokens: [], passkeys: [], totpEnabled: false, audit: [], alertChannels: [], joinToken: "", joinCaSha256: undefined,
+    tokens: [], passkeys: [], totpEnabled: false, securityNotices: [], audit: [], alertChannels: [], joinToken: "", joinCaSha256: undefined,
     panelCertificate: { domain: "", method: null, state: "pending", letsEncryptAvailable: false, serversWithoutCa: [] },
   };
 }
@@ -1834,11 +1835,28 @@ function checkUserChange(customerId: string | undefined) {
   }
 }
 
-/** Makes a user for a customer. With no customer (null), the user is an administrator. */
-export function addUser(input: { name: string; email: string; customerId: string | null }): Promise<NewAccess> | NewAccess {
+/**
+ * Second audit, finding F09: a change to an administrator needs the password of the signed-in
+ * user and, when TOTP is on, a code. These are the fields that the API gets.
+ */
+function confirmation(confirm: Confirmation | undefined): { password?: string; totp?: string } {
+  return confirm ? { password: confirm.password, totp: confirm.totp.trim() || undefined } : {};
+}
+
+/** The same check as the API (AuthController::confirmIdentity), for the mock data. */
+function checkConfirmation(confirm: Confirmation | undefined, errors: Record<string, string>) {
+  if (!confirm?.password) errors.password = "Type your password to confirm this change.";
+  if (state.totpEnabled && !/^\d{6}$/.test(confirm?.totp.trim() ?? "")) errors.totp = "Type the 6-digit code from your authenticator app.";
+}
+
+/**
+ * Makes a user for a customer. With no customer (null), the user is an administrator, and the
+ * signed-in user must confirm with the password and a TOTP code.
+ */
+export function addUser(input: { name: string; email: string; customerId: string | null }, confirm?: Confirmation): Promise<NewAccess> | NewAccess {
   if (LIVE) {
     return call(async () => {
-      const r = await live.request<live.ApiUser & { temporaryPassword: string }>("POST", "/users", { name: input.name.trim(), email: input.email.trim(), customerId: input.customerId });
+      const r = await live.request<live.ApiUser & { temporaryPassword: string }>("POST", "/users", { name: input.name.trim(), email: input.email.trim(), customerId: input.customerId, ...(input.customerId === null ? confirmation(confirm) : {}) });
       await reload();
       return { email: r.email, temporaryPassword: r.temporaryPassword };
     });
@@ -1849,6 +1867,7 @@ export function addUser(input: { name: string; email: string; customerId: string
   if (!EMAIL.test(input.email)) errors.email = "Type an email address.";
   else if (state.users.some((u) => u.email === input.email.trim())) errors.email = "A user with this email exists already.";
   if (input.customerId !== null && !customer) errors.customerId = "The customer does not exist.";
+  if (input.customerId === null) checkConfirmation(confirm, errors);
   // As in live mode: with one error, the message says what to correct.
   const messages = Object.values(errors);
   if (messages.length) throw new ApiError(messages.length === 1 ? messages[0] : "Correct the errors and try again.", errors);
@@ -1856,9 +1875,18 @@ export function addUser(input: { name: string; email: string; customerId: string
   const access = { email: input.email.trim(), temporaryPassword: newPassword().slice(0, 20) };
   update((d) => {
     d.users.push({ id: id("usr"), name: input.name.trim(), email: access.email, role: customer ? customer.role : "administrator", customerId: customer?.id, totpEnabled: false, mustChangePassword: true, createdAt: now() });
-    audit(d, "Created user", access.email);
+    audit(d, customer ? "Created user" : "Created administrator", access.email);
   });
   return access;
+}
+
+/** Mock data: a change to an administrator needs the password and the code. */
+function confirmAdministratorChange(u: ManagedUser, confirm: Confirmation | undefined) {
+  if (u.customerId) return;
+  const errors: Record<string, string> = {};
+  checkConfirmation(confirm, errors);
+  const messages = Object.values(errors);
+  if (messages.length) throw new ApiError(messages.length === 1 ? messages[0] : "Correct the errors and try again.", errors);
 }
 
 function managedUser(userId: string): ManagedUser {
@@ -1871,10 +1899,10 @@ function managedUser(userId: string): ManagedUser {
  * Gives the user a new temporary password and signs the user out. With removeTotp, the user
  * can sign in with the password only, for example after the loss of a telephone.
  */
-export function resetUserPassword(userId: string, removeTotp = false): Promise<NewAccess> | NewAccess {
+export function resetUserPassword(userId: string, removeTotp = false, confirm?: Confirmation): Promise<NewAccess> | NewAccess {
   if (LIVE) {
     return call(async () => {
-      const r = await live.request<live.ApiUser & { temporaryPassword: string }>("POST", `/users/${userId}/reset-password`, removeTotp ? { removeTotp: true } : {});
+      const r = await live.request<live.ApiUser & { temporaryPassword: string }>("POST", `/users/${userId}/reset-password`, { ...(removeTotp ? { removeTotp: true } : {}), ...confirmation(confirm) });
       await reload();
       return { email: r.email, temporaryPassword: r.temporaryPassword };
     });
@@ -1882,24 +1910,27 @@ export function resetUserPassword(userId: string, removeTotp = false): Promise<N
   const u = managedUser(userId);
   if (u.id === state.session.user.id) throw new ApiError("Change your own password in the settings.");
   checkUserChange(u.customerId);
+  confirmAdministratorChange(u, confirm);
   const access = { email: u.email, temporaryPassword: newPassword().slice(0, 20) };
   update((d) => {
     const x = d.users.find((y) => y.id === userId)!;
     x.mustChangePassword = true;
     if (removeTotp) x.totpEnabled = false;
-    audit(d, removeTotp ? "Reset password and removed TOTP" : "Reset password", u.email);
+    audit(d, `${removeTotp ? "Reset password and removed TOTP" : "Reset password"}${u.customerId ? "" : " of administrator"}`, u.email);
   });
   return access;
 }
 
-export function deleteUser(userId: string) {
-  if (LIVE) return call(() => live.request("DELETE", `/users/${userId}`)).then(() => reload());
+/** With an administrator, the signed-in user must confirm with the password and a TOTP code. */
+export function deleteUser(userId: string, confirm?: Confirmation) {
+  if (LIVE) return call(() => live.request("DELETE", `/users/${userId}`, confirm ? confirmation(confirm) : undefined)).then(() => reload());
   const u = managedUser(userId);
   if (u.id === state.session.user.id) throw new ApiError("You cannot delete your own user.");
   checkUserChange(u.customerId);
+  confirmAdministratorChange(u, confirm);
   update((d) => {
     d.users = d.users.filter((x) => x.id !== userId);
-    audit(d, "Deleted user", u.email);
+    audit(d, u.customerId ? "Deleted user" : "Deleted administrator", u.email);
   });
 }
 
@@ -2019,6 +2050,8 @@ export function setTotp(enabled: boolean, code: string, password: string) {
   if (!enabled && state.passkeys.length === 0) throw new ApiError("Add a passkey before you remove TOTP.");
   update((d) => {
     d.totpEnabled = enabled;
+    // As the API: an administrator or a reseller must have TOTP.
+    d.session.totpSetupRequired = !enabled && d.session.user.role !== "owner";
     audit(d, enabled ? "Set up TOTP" : "Removed TOTP", d.session.user.email);
   });
 }
