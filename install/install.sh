@@ -62,8 +62,8 @@ UNSIGNED_REGISTRIES=""
 SFTP_PORT=2200
 # The private address of the container ports on "lo" (quadlet.ServiceAddress in the agent).
 SERVICE_ADDRESS=169.254.77.1
-# The private network of the database containers on "lo". Each customer has its own database
-# containers on a server, on one address of this network. The agent has the same values
+# The private network of the database servers on "lo". Each customer has its own database
+# servers on a server, on one address of this network. The agent has the same values
 # (quadlet.DatabaseNetwork and quadlet.DatabaseClientAddress).
 DATABASE_NETWORK=169.254.80.0/20
 DATABASE_CLIENT_ADDRESS=169.254.80.1
@@ -321,12 +321,13 @@ firewall_rules() {
 table inet cloudfactory
 delete table inet cloudfactory
 table inet cloudfactory {
-  # Each customer has its own database containers on a server, on one address of the network
-  # $DATABASE_NETWORK. Each element is the UID of a website and the address of the database
-  # containers of its customer. The agent writes the elements in the file
+  # Each customer has its own database servers on a server, on one address of the network
+  # $DATABASE_NETWORK. Each database server has its own port on that address. Each element is
+  # the UID of a website, the address of its customer, and the port of a database server of
+  # its customer. The agent writes the elements in the file
   # $CF_ETC/firewall/database-access.nft, which the last line of this file includes.
   set database_access {
-    typeof meta skuid . ip daddr
+    typeof meta skuid . ip daddr . tcp dport
   }
   chain input {
     type filter hook input priority filter; policy drop;
@@ -347,15 +348,15 @@ table inet cloudfactory {
     # checks only new connections, because the answers of the containers go to the address too.
     #
     # Ports 3306 and 5432 are the shared database containers of an earlier release. A server
-    # has them only until the databases of its websites move to the containers of each customer.
+    # has them only until the databases of its websites move to database servers of each customer.
     #
     # Port 19432 is the database of the panel. Only root and the containers of the panel
     # (cf-panel) can connect to it. Each connection also needs the password.
     ct state new ip daddr $SERVICE_ADDRESS tcp dport 19432 meta skuid != { 0, $panel_uid } reject with tcp reset
     ct state new ip daddr $SERVICE_ADDRESS tcp dport != { 3306, 5432, 19432 } meta skuid != { 0, $edge_uid } reject with tcp reset
-    # The database containers of the customers. Only root (the agent) and the websites can
-    # connect to them. The chain "websites" lets a website connect only to the containers of
-    # its own customer.
+    # The database servers of the customers. Only root (the agent) and the websites can
+    # connect to them. The chain "websites" lets a website connect only to the database
+    # servers of its own customer.
     ct state new ip daddr $DATABASE_NETWORK meta skuid != 0 meta skuid != $WEBSITE_UID_MIN-$WEBSITE_UID_MAX jump refuse
     # Audit finding S1: the limits for the connections that a website container opens. The
     # agent makes each website user with a UID from $WEBSITE_UID_MIN to $WEBSITE_UID_MAX. The
@@ -363,9 +364,9 @@ table inet cloudfactory {
     ct state new meta skuid $WEBSITE_UID_MIN-$WEBSITE_UID_MAX jump websites
   }
   chain websites {
-    # The database containers of the customer of the website: MariaDB, PostgreSQL and Valkey.
-    # A website cannot connect to the database containers of a different customer.
-    meta skuid . ip daddr @database_access tcp dport { 3306, 5432, 6379 } accept
+    # The database servers of the customer of the website: MariaDB, PostgreSQL and Valkey.
+    # A website cannot connect to a database server of a different customer.
+    meta skuid . ip daddr . tcp dport @database_access accept
     # The shared database containers of an earlier release.
     ip daddr $SERVICE_ADDRESS tcp dport { 3306, 5432 } accept
     # DNS. The resolver of the host can have a private or a link-local address.
@@ -578,7 +579,7 @@ step "Add the private service address"
 # (quadlet.ServiceAddress).
 #
 # The second address makes all addresses of the database network local addresses of this
-# server. Each customer has its own database containers on one address of the network. The
+# server. Each customer has its own database servers on one address of the network. The
 # database servers see $DATABASE_CLIENT_ADDRESS as the address of each website container.
 cat >/etc/systemd/system/cloudfactory-address.service <<UNIT
 [Unit]
