@@ -760,7 +760,7 @@ release. When the new agent starts, it does these steps:
    `cf-agent`.
 3. It starts the worker.
 
-The firewall does not change, and the websites do not restart.
+The firewall needs no rule for the user `cf-agent`, and the websites do not restart.
 
 If a step fails, the agent operates as one root process, as in release 0.1.9. The panel then
 shows `agent-root-helper` as an optional part that is off. This does not make the server

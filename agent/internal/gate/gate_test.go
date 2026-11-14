@@ -23,8 +23,15 @@ type sum struct {
 }
 
 // start gives a client that is connected to a helper with a small policy. The helper runs
-// the commands on this computer.
+// the commands on this computer, and accepts the user of the test.
 func start(t *testing.T) (*Client, *Server) {
+	t.Helper()
+	return startFor(t, []uint32{uint32(os.Getuid())})
+}
+
+// startFor is start for a helper that accepts only the users uids. The list is complete
+// before the helper starts: a helper reads it for each connection.
+func startFor(t *testing.T, uids []uint32) (*Client, *Server) {
 	t.Helper()
 	RegisterError("test-known", errKnown)
 	dir := t.TempDir()
@@ -64,7 +71,7 @@ func start(t *testing.T) (*Client, *Server) {
 			}
 			return (&net.Dialer{}).DialContext(ctx, "unix", echo.Addr().String())
 		},
-		UIDs: []uint32{uint32(os.Getuid())},
+		UIDs: uids,
 	}
 	path := filepath.Join(dir, "gate.sock")
 	l, err := net.Listen("unix", path)
@@ -217,8 +224,7 @@ func TestOnlyTheWorkerUserCanConnect(t *testing.T) {
 	if os.Getuid() == 0 {
 		t.Skip("root can always connect")
 	}
-	c, s := start(t)
-	s.UIDs = nil
+	c, _ := startFor(t, nil)
 	if _, err := c.Run(context.Background(), "echo", "x"); err == nil {
 		t.Fatal("a user that is not in the list could connect")
 	}
