@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Enums\AgentAction;
+use App\Enums\WebsiteStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\JobResource;
 use App\Http\Resources\WebsiteResource;
@@ -95,8 +96,21 @@ class RuntimeController extends Controller
             return response()->json(['website' => new WebsiteResource($website), 'job' => null]);
         }
 
+        if ($website->status === WebsiteStatus::Failed) {
+            // An image that never operated is not an image to go back to.
+            unset($changes['previous_image_id'], $changes['previous_image_tag']);
+        }
         $website->update($changes);
         $website->refresh()->load(['image', 'domains']);
+        if ($website->status === WebsiteStatus::Failed) {
+            // The panel could not make this website, so the server has no container to change.
+            // The panel makes the website with the new settings: thus a user can select a
+            // different image when the first image was the cause.
+            $job = WebsiteController::createAgain($this->jobs, $website);
+            Audit::record($request, 'Created website again', $website->name, $website->customer_id);
+
+            return response()->json(['website' => new WebsiteResource($website->refresh()->load(['image', 'domains'])), 'job' => new JobResource($job)], 202);
+        }
         // The agent goes back to the image of before the change when the health check fails.
         $payload = JobDispatcher::websitePayload($website) + [
             'previousImageId' => $revert['image_id'],

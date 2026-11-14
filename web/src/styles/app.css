@@ -283,6 +283,9 @@ kbd {
 .badge-neutral { background: var(--surface-muted); color: var(--text-muted); }
 
 .note-warning { color: var(--warning); font-size: 13.5px; }
+.check-error { max-width: 420px; margin-top: 4px; }
+.check-error summary { cursor: pointer; }
+.check-error span { display: block; margin-top: 4px; color: var(--text-muted); overflow-wrap: anywhere; }
 
 /* Cards */
 
@@ -345,7 +348,9 @@ td { padding: 14px 16px; border-bottom: 1px solid var(--border); vertical-align:
 tbody tr:last-child td { border-bottom: 0; }
 tbody tr:hover { background: #fafbfc; }
 .cell-title { font-weight: 600; color: var(--text); text-decoration: none; }
-.cell-title:hover { text-decoration: underline; color: var(--text); }
+/* A title that opens a page has the link colour, so that the user sees that it is a link. */
+a.cell-title { color: var(--primary); }
+a.cell-title:hover { text-decoration: underline; }
 .cell-sub { display: block; color: var(--text-muted); font-size: 13px; }
 .cell-sub.mono { font-size: 12px; }
 .cell-actions { width: 56px; text-align: right; }
@@ -381,6 +386,11 @@ tbody tr:hover { background: #fafbfc; }
   border: 1px solid var(--border); background: var(--surface-muted);
 }
 .alert + .alert { margin-top: 12px; }
+/* An alert with more than one paragraph, a list or buttons below the text. */
+.alert-stack { display: block; }
+.alert-stack > * + * { margin-top: 8px; }
+.alert-stack .cause { font-family: var(--font-mono); font-size: 13px; overflow-wrap: anywhere; padding: 8px 10px; border-radius: var(--radius-sm); background: rgb(255 255 255 / 60%); }
+.load-error { margin: 16px 32px 0; }
 .alert-warning { background: var(--warning-soft); border-color: var(--warning-border); }
 .alert-danger { background: var(--danger-soft); border-color: var(--danger-border); }
 .alert-info { background: var(--primary-soft); border-color: var(--primary-border); }
@@ -401,14 +411,21 @@ tbody tr:hover { background: #fafbfc; }
   display: flex; gap: 4px; margin: 24px 0; overflow-x: auto;
   border-bottom: 1px solid var(--border);
 }
+/* A tab is a link or a button. The rules remove the default look of a button, so that the two
+   are the same. The selected tab has a different colour, weight and line: colour alone does
+   not show it. */
 .tab {
   display: inline-flex; align-items: center;
-  min-height: var(--target); padding: 0 12px;
-  color: var(--text-muted); text-decoration: none; white-space: nowrap;
-  border-bottom: 2px solid transparent; margin-bottom: -1px;
+  min-height: var(--target); padding: 0 14px;
+  border: 0; border-bottom: 3px solid transparent; border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  margin: 0 0 -1px; background: none;
+  font: inherit; font-weight: 500; color: var(--text-muted);
+  text-decoration: none; white-space: nowrap; cursor: pointer;
 }
-.tab:hover { color: var(--text); }
-.tab[aria-current="page"] { color: var(--text); border-bottom-color: var(--primary); font-weight: 600; }
+.tab:hover { color: var(--text); background: var(--surface-muted); border-bottom-color: var(--border-strong); }
+.tab[aria-current="page"], .tab[aria-current="page"]:hover {
+  color: var(--primary); background: var(--primary-soft); border-bottom-color: var(--primary); font-weight: 600;
+}
 
 .banner {
   display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
@@ -585,6 +602,8 @@ tbody tr:hover { background: #fafbfc; }
 .modal-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 14px 6px 20px; }
 .modal-body { padding: 8px 20px 16px; overflow-y: auto; }
 .modal-body > * + * { margin-top: 14px; }
+/* A dialog with a form has the form as its only child. Its text, alerts and field groups need the same space. */
+.modal-body > form > * + * { margin-top: 14px; }
 .modal-footer { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; padding: 14px 20px; border-top: 1px solid var(--border); }
 
 .field { display: flex; flex-direction: column; gap: 6px; }
@@ -601,6 +620,11 @@ tbody tr:hover { background: #fafbfc; }
 .field-error .input, .field-error .textarea, .field-error select { border-color: var(--danger); }
 .form-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
 .form-row .field + .field { margin-top: 0; }
+.form-section { margin: 18px 0 0; padding: 12px 16px 16px; border: 1px solid var(--border); border-radius: var(--radius-sm); min-width: 0; }
+.form-section legend { padding: 0 6px; font-weight: 600; font-size: 14px; }
+.form-section > .hint { color: var(--text-muted); font-size: 13px; margin-bottom: 10px; }
+.form-section > .form-row + .hint { margin: 10px 0 0; }
+.form-section .form-row { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
 .checkbox-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 4px 12px; margin: 0; padding: 0; border: 0; }
 .checkbox-list legend { font-weight: 600; font-size: 14px; margin-bottom: 6px; }
 .check { display: flex; align-items: center; gap: 8px; min-height: var(--target); }
@@ -624,6 +648,9 @@ tbody tr:hover { background: #fafbfc; }
 .section-gap > * + * { margin-top: 20px; }
 .inline-form { display: flex; gap: 8px; align-items: flex-start; flex-wrap: wrap; }
 .inline-form .field { flex: 1 1 200px; }
+/* The fields are side by side: no space above the second field, and a button keeps its size. */
+.inline-form .field + .field { margin-top: 0; }
+.inline-form .field:has(> .btn) { flex: 0 0 auto; }
 
 .notifications { position: relative; }
 .notifications-panel {

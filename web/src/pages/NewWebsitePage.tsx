@@ -1,12 +1,15 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAction, useStore } from "../api/hooks";
-import { createWebsite } from "../api/store";
+import { ApiError, createWebsite, makeCustomer } from "../api/store";
 import { contextCustomers } from "../api/selectors";
 import type { RuntimeImage } from "../api/types";
 import { Topbar } from "../components/Layout";
 import { Card, Field, FormError, PageHeader } from "../components/ui";
 import { bytes } from "../lib/format";
+
+/** The value of the customer field for a customer that does not exist yet. */
+const NEW_CUSTOMER = "new";
 
 const APPLICATIONS = ["WordPress", "WooCommerce", "Laravel", "Symfony", "Custom PHP", "Node.js app", "Static site"];
 
@@ -35,15 +38,33 @@ export function NewWebsitePage() {
   const [imageId, setImageId] = useState(() => defaultImage(runtimes, "frankenphp"));
   // Batch 3, issue 2: a reseller makes websites for itself and for its customers.
   const customers = contextCustomers(state);
-  const [customerId, setCustomerId] = useState(platform ? customers.find((c) => c.role !== "reseller")?.id ?? customers[0]?.id ?? "" : state.session.contextId);
+  // A website always has a customer. An administrator can make the customer here, so that a
+  // new panel with no customers does not need a different page first.
+  const [customerId, setCustomerId] = useState(platform ? customers.find((c) => c.role !== "reseller")?.id ?? customers[0]?.id ?? NEW_CUSTOMER : state.session.contextId);
+  const [customer, setCustomer] = useState({ name: "", email: "" });
+  const newCustomer = platform && customerId === NEW_CUSTOMER;
   const reseller = state.session.user.role === "reseller";
   const [planId, setPlanId] = useState(() => state.customers.find((c) => c.id === customerId)?.planId ?? state.plans[0]?.id ?? "");
   const [serverId, setServerId] = useState(webServers[0]?.id ?? "");
-  const action = useAction(createWebsite);
+  const action = useAction(async () => {
+    let owner = customerId;
+    if (newCustomer) {
+      try {
+        owner = (await makeCustomer({ name: customer.name, email: customer.email, planId, role: "owner" })).customerId;
+      } catch (e) {
+        // The website has a "name" field also, so the fields of the customer get different names.
+        if (e instanceof ApiError) throw new ApiError(e.message, { ...(e.fields.name ? { customerName: e.fields.name } : {}), ...(e.fields.email ? { customerEmail: e.fields.email } : {}), ...(e.fields.planId ? { planId: e.fields.planId } : {}) });
+        throw e;
+      }
+      // If the website has an error, the next attempt uses this customer and does not make a second one.
+      setCustomerId(owner);
+    }
+    return createWebsite({ name, application, imageId, planId, serverId, customerId: owner });
+  });
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const result = await action.run({ name, application, imageId, planId, serverId, customerId });
+    const result = await action.run();
     if (result.ok) navigate(`/websites/${result.value.websiteId}`);
   };
 
@@ -75,8 +96,8 @@ export function NewWebsitePage() {
                   </select>
                 )}
               </Field>
-              {customers.length > 1 && (
-                <Field label="Customer" error={err.customerId}>
+              {(customers.length > 1 || platform) && (
+                <Field label="Customer" hint={platform ? "Each website belongs to a customer. The plan of the customer sets the limits." : undefined} error={err.customerId}>
                   {(p) => (
                     <select {...p} className="select" value={customerId} onChange={(e) => {
                       setCustomerId(e.target.value);
@@ -84,9 +105,20 @@ export function NewWebsitePage() {
                       if (plan) setPlanId(plan);
                     }}>
                       {customers.map((c) => <option key={c.id} value={c.id}>{c.id === state.session.contextId && !platform ? `${c.name} (this account)` : c.name}</option>)}
+                      {platform && <option value={NEW_CUSTOMER}>New customer…</option>}
                     </select>
                   )}
                 </Field>
+              )}
+              {newCustomer && (
+                <div className="form-row" style={{ marginTop: 14 }}>
+                  <Field label="Name of the new customer" error={err.customerName}>
+                    {(p) => <input {...p} className="input" value={customer.name} onChange={(e) => setCustomer({ ...customer, name: e.target.value })} autoComplete="off" />}
+                  </Field>
+                  <Field label="Email of the new customer" hint="The contact address. To let the customer sign in, add a user on the Customers page." error={err.customerEmail}>
+                    {(p) => <input {...p} className="input" type="email" value={customer.email} onChange={(e) => setCustomer({ ...customer, email: e.target.value })} autoComplete="off" />}
+                  </Field>
+                </div>
               )}
             </div>
           </Card>
@@ -135,7 +167,7 @@ export function NewWebsitePage() {
                 <Field label="Server" error={err.serverId}>
                   {(p) => (
                     <select {...p} className="select" value={serverId} onChange={(e) => setServerId(e.target.value)}>
-                      {webServers.map((s) => <option key={s.id} value={s.id}>{s.name} ({s.location}) · CPU {s.cpuPercent}%</option>)}
+                      {webServers.map((s) => <option key={s.id} value={s.id}>{s.name}{s.location ? ` (${s.location})` : ""} · CPU {s.cpuPercent}%</option>)}
                     </select>
                   )}
                 </Field>

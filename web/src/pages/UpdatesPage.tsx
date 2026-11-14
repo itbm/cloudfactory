@@ -13,7 +13,29 @@ import { ServersTable } from "./ServersPage";
 
 const STAGE_STATE = { done: "done", in_progress: "in progress", waiting: "waiting" } as const;
 
-function RolloutCard({ rollout }: { rollout: Rollout }) {
+/** The browser keeps the ID of the last ended rollout that the user closed. */
+const DISMISSED = "cloudfactory.rollout.dismissed";
+
+function readDismissed(): string {
+  try {
+    return localStorage.getItem(DISMISSED) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * A rollout in progress always shows. A rollout that ended shows for one day, or until the
+ * user closes it. Before, the last rollout stayed on the page for all time.
+ */
+export function showRollout(rollout: Rollout | undefined, dismissed: string, now = Date.now()): boolean {
+  if (!rollout) return false;
+  if (rollout.state === "running" || rollout.state === "paused") return true;
+  if (rollout.id === dismissed) return false;
+  return now - new Date(rollout.finishedAt ?? rollout.startedAt).getTime() < 864e5;
+}
+
+function RolloutCard({ rollout, onDismiss }: { rollout: Rollout; onDismiss: () => void }) {
   const total = rollout.websites;
   const waiting = Math.max(0, total - rollout.healthy - rollout.rolledBack);
   const active = rollout.state === "running" || rollout.state === "paused";
@@ -29,8 +51,10 @@ function RolloutCard({ rollout }: { rollout: Rollout }) {
             {rollout.severity === "security" && <span className="badge badge-warning" style={{ marginLeft: 6 }}>Security</span>}
             {rollout.state === "paused" && <span className="badge badge-neutral" style={{ marginLeft: 6 }}>Paused</span>}
           </h2>
-          <p className="muted" style={{ marginTop: 4 }}>Started {clockTime(rollout.startedAt)} · maintenance window {rollout.window} · {total} websites on {rollout.servers} servers</p>
+          <p className="muted" style={{ marginTop: 4 }}>Started {clockTime(rollout.startedAt)}{rollout.window && <> · maintenance window {rollout.window}</>} · {total} {total === 1 ? "website" : "websites"} on {rollout.servers} {rollout.servers === 1 ? "server" : "servers"}</p>
+          {!active && total === 0 && <p className="muted" style={{ marginTop: 4 }}>No website used this image, so the panel changed the version at once. New websites get {rollout.toTag}.</p>}
         </div>
+        {!active && <button type="button" className="btn" onClick={onDismiss}>Dismiss</button>}
         {active && (
           <div className="btn-group">
             <button type="button" className="btn" disabled={pause.busy} onClick={() => void pause.run(rollout.state === "running")}>{rollout.state === "running" ? "Pause" : "Resume"}</button>
@@ -46,7 +70,7 @@ function RolloutCard({ rollout }: { rollout: Rollout }) {
           <li key={s.name} className={`stage stage-${s.state}`} aria-current={s.state === "in_progress" ? "step" : undefined}>
             <span className="stage-state">Stage {i + 1} · {STAGE_STATE[s.state]}</span>
             <strong>{s.name}</strong>
-            <span>{s.note ?? (s.name === "Everyone" ? `All ${s.websites} websites` : `${s.websites} websites`)}</span>
+            <span>{s.note ?? `${s.name === "Everyone" && s.websites !== 1 ? "All " : ""}${s.websites} ${s.websites === 1 ? "website" : "websites"}`}</span>
           </li>
         ))}
       </ol>
@@ -56,8 +80,8 @@ function RolloutCard({ rollout }: { rollout: Rollout }) {
         <div><strong className={rollout.rolledBack ? "text-danger" : ""}>{rollout.rolledBack}</strong><span>Rolled back</span></div>
       </div>
       <div className="split-meter" role="img" aria-label={`${rollout.healthy} healthy, ${rollout.rolledBack} rolled back, ${waiting} waiting`}>
-        <span className="ok" style={{ width: `${(rollout.healthy / total) * 100}%` }} />
-        <span className="bad" style={{ width: `${(rollout.rolledBack / total) * 100}%` }} />
+        <span className="ok" style={{ width: `${total ? (rollout.healthy / total) * 100 : rollout.state === "done" ? 100 : 0}%` }} />
+        <span className="bad" style={{ width: `${total ? (rollout.rolledBack / total) * 100 : 0}%` }} />
       </div>
       {rollout.rollbacks.map((r) => (
         <div key={r.website} className="alert alert-danger">
@@ -82,6 +106,15 @@ export function UpdatesPage() {
   const start = useAction(startRollout);
   const check = useAction(checkImage);
   const [editing, setEditing] = useState<string | null>(null);
+  const [dismissed, setDismissed] = useState(readDismissed);
+  const dismiss = (id: string) => {
+    setDismissed(id);
+    try {
+      localStorage.setItem(DISMISSED, id);
+    } catch {
+      // Without storage, the card comes back after the next page load, for one day.
+    }
+  };
   const rollout = state.rollout;
   const active = rollout && (rollout.state === "running" || rollout.state === "paused");
   return (
@@ -91,7 +124,7 @@ export function UpdatesPage() {
       </Topbar>
       <main id="main" className="content content-wide">
         <PageHeader title="Updates" description="Every runtime is a signed container image. Roll it out in stages, check each website's health, and roll back on its own if a check fails." />
-        {rollout && <RolloutCard rollout={rollout} />}
+        {rollout && showRollout(rollout, dismissed) && <RolloutCard rollout={rollout} onDismiss={() => dismiss(rollout.id)} />}
         <Card title="Runtime images" className="mt" actions={<Link className="btn" to="/apps">Add your own image</Link>}>
           <FormError error={start.error ?? check.error} />
           <div className="table-wrap">
@@ -103,6 +136,13 @@ export function UpdatesPage() {
                     <td>
                       {i.name}
                       {i.supportEndsAt && new Date(i.supportEndsAt).getTime() - Date.now() < 90 * 864e5 && <span className="cell-sub note-warning">PHP {i.phpVersion} support ends {shortDate(i.supportEndsAt)}</span>}
+                      {/* Before, the full error was a part of the policy text. */}
+                      {i.checkError && (
+                        <details className="cell-sub check-error">
+                          <summary className="note-warning">The last check for a new version failed</summary>
+                          <span className="small">{i.checkError}</span>
+                        </details>
+                      )}
                     </td>
                     <td><code>{i.running}</code></td>
                     <td>
@@ -120,10 +160,11 @@ export function UpdatesPage() {
                           </select>
                         </>
                       ) : (
-                        <button type="button" className="btn-link" style={{ color: "var(--text)", textDecoration: "none", padding: 0, textAlign: "left" }} onClick={() => setEditing(i.id)}>
+                        <>
                           {POLICY_LABEL[i.policy]}{i.policyNote && i.policyNote !== "Email owners about upgrading" ? `, ${i.policyNote.charAt(0).toLowerCase()}${i.policyNote.slice(1)}` : ""}
-                          <span className="visually-hidden"> (change)</span>
-                        </button>
+                          {/* Before, the text itself was the button, and nothing showed that. */}
+                          {" "}<button type="button" className="btn-link small" onClick={() => setEditing(i.id)}>Change<span className="visually-hidden"> the update policy for {i.name}</span></button>
+                        </>
                       )}
                       {i.policyNote === "Email owners about upgrading" && <> · <Link to="/customers">Email owners about upgrading</Link></>}
                     </td>
@@ -142,8 +183,7 @@ export function UpdatesPage() {
         <Card title="Servers" className="mt" actions={<Link className="btn btn-primary" to="/servers?add=1">Add server</Link>}>
           <ServersTable />
           <div className="card-body" style={{ paddingTop: 16, borderTop: "1px solid var(--border)" }}>
-            <p className="muted">To add a server, install the agent on a fresh Linux server and run:</p>
-            <pre className="terminal"><code>cf-agent join {state.system.panelDomain} --token ••••••••</code></pre>
+            <p className="muted">To add a server, select <strong>Add server</strong>. The panel then shows the command to run on the new server.</p>
           </div>
         </Card>
       </main>

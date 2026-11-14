@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/itbm/cloudfactory/agent/internal/quadlet"
@@ -37,6 +38,11 @@ func HTTPHealth(ctx context.Context, port int, hostname string) (int, error) {
 // accepts the public addresses in extra, for a server behind NAT.
 func LocalDNS(extra ...string) func(ctx context.Context, domain string) bool {
 	return func(ctx context.Context, domain string) bool {
+		// RFC 6761: localhost and each name below it is this computer. Not all resolvers answer
+		// for these names, so the agent does not ask.
+		if name := strings.ToLower(strings.TrimSuffix(domain, ".")); name == "localhost" || strings.HasSuffix(name, ".localhost") {
+			return true
+		}
 		ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 		defer cancel()
 		ips, err := net.DefaultResolver.LookupIPAddr(ctx, domain)

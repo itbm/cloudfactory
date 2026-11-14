@@ -41,7 +41,16 @@ paths:
     post:
       tags: [Auth]
       summary: Sign in
-      description: Sign in with an email address, a password and a TOTP code. The token expires after 12 hours. A TOTP code is good one time only. A wrong password and a wrong code give the same error. After 5 failed attempts from one address, the account is locked for that address for 30 seconds, and the time doubles after each further failure, up to one hour. After 100 failed attempts in one hour from all addresses, the account is locked for all addresses.
+      description: >-
+        Sign in with an email address and a password. The token expires after 12 hours. The panel
+        examines the password first. A wrong password gives an error on `email`, also when TOTP is
+        on for the user. When the password is correct and TOTP is on for the user, a request with
+        no `totp` gives status 422 with `totpRequired: true` and an error on `totp`. This answer is
+        not a failed attempt: send the request again with the code. A wrong code gives an error on
+        `totp`, and it is a failed attempt. A TOTP code is good one time only. After 5 failed
+        attempts from one address, the account is locked for that address for 30 seconds, and the
+        time doubles after each further failure, up to one hour. After 100 failed attempts in one
+        hour from all addresses, the account is locked for all addresses.
       security: []
       requestBody:
         required: true
@@ -64,8 +73,20 @@ paths:
                 properties:
                   token: { type: string }
                   expiresAt: { type: string, format: date-time }
-        '422': { $ref: '#/components/responses/Invalid' }
-        '403': { description: The customer of the user is suspended. The panel gives this answer only to a user who also gave a correct TOTP code. A user with no TOTP gets the 422 answer, so that the answer does not show that the password is correct. }
+        '422':
+          description: >-
+            The email address, the password or the code is not correct, or the user must give a
+            TOTP code. `totpRequired` is in the answer only when the password is correct and the
+            request had no code.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/ValidationError' }
+                  - type: object
+                    properties:
+                      totpRequired: { type: boolean, description: The password is correct. Send the request again with `totp`. }
+        '403': { description: The customer of the user is suspended. The panel gives this answer only to a user who also gave a correct TOTP code. A user with no TOTP gets the 422 answer with an error on `email`. }
         '429': { description: Too many attempts from this address, or too many failed attempts for this account. The Retry-After header gives the number of seconds to wait. }
 
   /v1/auth/logout:
@@ -254,8 +275,10 @@ paths:
       summary: Create a website
       description: >-
         FR-201. The panel selects the web server with the fewest websites when you do not give
-        `serverId`. The edge proxy serves the primary domain only after it is verified (refer to
-        "Add a redirect or an alias").
+        `serverId`. A healthy server comes before a degraded server. A server in a different state
+        does not get a website. A PHP website starts with the extensions opcache, intl, gd, zip,
+        mysqli, pdo_mysql and pdo_pgsql when the plan has them. The edge proxy serves the primary
+        domain only after it is verified (refer to "Add a redirect or an alias").
       requestBody:
         required: true
         content:
@@ -331,7 +354,11 @@ paths:
     post:
       tags: [Websites]
       summary: Start, stop or restart a website
-      description: The panel refuses start and restart with status 409 while the customer of the website is suspended.
+      description: >-
+        The panel refuses start and restart with status 409 while the customer of the website is
+        suspended. The panel refuses all actions with status 422 for a website with the status
+        `failed`, because the server has no container for it. Refer to "Make a failed website
+        again".
       requestBody:
         required: true
         content:
@@ -343,6 +370,23 @@ paths:
                 action: { type: string, enum: [start, stop, restart] }
       responses:
         '202': { $ref: '#/components/responses/JobOnly' }
+        '409': { description: The customer of the website is suspended. }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/websites/{id}/retry:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [Websites]
+      summary: Make a failed website again
+      description: >-
+        Starts the job that makes the website again, with the settings that the website has now.
+        Use this request when the first job failed, for example because the server could not pull
+        the image. The job keeps what a previous run made. The panel accepts the request only for
+        a website with the status `failed`. A staging copy cannot be made again: delete it, and
+        make the staging copy again.
+      responses:
+        '202': { $ref: '#/components/responses/WebsiteJob' }
         '409': { description: The customer of the website is suspended. }
         '422': { $ref: '#/components/responses/Invalid' }
 
@@ -527,7 +571,9 @@ paths:
       description: |
         FR-303 to FR-305. Change the image, the PHP extensions, php.ini values or worker mode.
         The agent starts the new container, does a health check, and only then sends traffic to it.
-        If the health check fails, the website stays on the previous image.
+        If the health check fails, the website stays on the previous image. For a website with the
+        status `failed`, the panel makes the website again with the new settings: the job has the
+        action `CreateWebsite`, and there is no previous image to go back to.
       requestBody:
         required: true
         content:
@@ -878,6 +924,7 @@ paths:
                   token: { type: string }
                   expiresAt: { type: string, format: date-time }
                   command: { type: string, description: The install command. When the panel has a CA, the command has its fingerprint (--panel-ca-sha256). }
+                  installUrl: { type: string, description: 'The address of the installation script in the command: the script of the release of this panel, or the value of CF_INSTALL_URL.' }
                   panelCaSha256: { type: [string, 'null'], description: The SHA-256 fingerprint of the root certificate of the panel CA. }
 
   /v1/servers/{id}:
@@ -922,6 +969,17 @@ paths:
                   - type: object
                     properties:
                       job: { oneOf: [{ $ref: '#/components/schemas/Job' }, { type: 'null' }] }
+        '422': { $ref: '#/components/responses/Invalid' }
+    delete:
+      tags: [Servers]
+      summary: Remove a server
+      description: >-
+        Removes a server from the panel, for example a server that joined with a wrong address.
+        The panel also removes the jobs of the server. It does not change the server itself. The
+        answer is status 422 for a server with websites and for the server of the panel.
+      responses:
+        '204': { description: Removed. }
+        '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/Invalid' }
 
   /v1/servers/{id}/install-updates:
@@ -976,6 +1034,23 @@ paths:
                 allowDowngrade: { type: boolean, default: false }
       responses:
         '202': { $ref: '#/components/responses/JobOnly' }
+
+  /v1/servers/{id}/check-connection:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [Servers]
+      summary: Test the connection to the agent
+      description: >-
+        The panel connects to the agent of the server and records the result. `connectionError`
+        of the server is null when the connection works.
+      responses:
+        '200':
+          description: The server, with the result of the test.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Server' }
+        '404': { $ref: '#/components/responses/NotFound' }
 
   /v1/panel-certificate:
     get:
@@ -1776,8 +1851,30 @@ components:
         name: { type: string }
         location: { type: string }
         roles: { type: array, items: { $ref: '#/components/schemas/ServerRole' } }
-        state: { type: string, enum: [joining, healthy, agent_update, degraded, offline, rebooting] }
+        state:
+          type: string
+          enum: [joining, healthy, agent_update, degraded, offline, rebooting]
+          description: >-
+            `degraded`: the agent answers, but a necessary service does not run, or the panel
+            cannot connect to the agent. `services` gives the service and the reason, and
+            `connectionError` gives the reason of a failed connection. A degraded server with
+            a service that does not run continues to do work.
         agentVersion: { type: [string, 'null'] }
+        agentUpdateAvailable:
+          type: boolean
+          description: The panel has a newer agent than the agent of this server. The value is correct also when the state is `degraded` or `offline`.
+        agentAddress:
+          type: [string, 'null']
+          description: The host and the port that the panel uses to connect to the agent, for example `web2.example.com:7443`.
+        connectionError:
+          type: [string, 'null']
+          description: >-
+            The reason when the panel could not connect to the agent, for example
+            `Could not resolve host: web2`. The state is then `degraded`, and the jobs of the
+            server fail. Null when there is no known problem.
+        panel:
+          type: boolean
+          description: This server has the panel. It cannot be removed.
         os: { type: [string, 'null'] }
         kernel: { type: [string, 'null'] }
         arch: { type: [string, 'null'] }
@@ -1790,7 +1887,16 @@ components:
         pendingUpdates: { type: array, items: { type: object } }
         lastUpdateAt: { type: [string, 'null'], format: date-time }
         rebootRequired: { type: boolean }
-        services: { type: array, items: { type: object } }
+        services:
+          type: array
+          description: The services that the agent examines. The panel does not show the `nftables` entry of an agent of release 0.1.
+          items:
+            type: object
+            properties:
+              name: { type: string, description: 'For example cf-agent, ssh, cf-sftp, firewall or disk-quotas.' }
+              state: { type: string, enum: [running, stopped, failed] }
+              optional: { type: boolean, description: The server can operate without this part. An optional part that does not run does not make the server degraded. }
+              detail: { type: [string, 'null'], description: The reason when the service does not run, and the command that repairs it when there is one. }
         sftpPort:
           type: integer
           description: >-
@@ -1856,6 +1962,7 @@ components:
               website: { type: string }
               reason: { type: string }
         startedAt: { type: string, format: date-time }
+        finishedAt: { type: string, format: date-time, nullable: true, description: The time when the rollout ended. Null while the rollout is in progress or paused. }
     Branding:
       type: object
       properties:
@@ -1978,6 +2085,8 @@ components:
             properties:
               name: { type: string }
               state: { type: string, enum: [running, stopped, failed] }
+              detail: { type: string, maxLength: 1000, description: The reason when the service does not run. }
+              optional: { type: boolean, description: The server can operate without this part. The panel also knows `disk-quotas` as an optional part. }
         usage:
           type: object
           description: The use of the host in percent.

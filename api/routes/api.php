@@ -52,6 +52,7 @@ Route::prefix('v1')->group(function () {
             Route::patch('websites/{id}', [WebsiteController::class, 'update']);
             Route::delete('websites/{id}', [WebsiteController::class, 'destroy']);
             Route::post('websites/{id}/power', [WebsiteController::class, 'power']);
+            Route::post('websites/{id}/retry', [WebsiteController::class, 'retry']);
             Route::post('websites/{id}/staging', [WebsiteController::class, 'staging']);
             // Audit finding S5: limits for each customer (AppServiceProvider).
             Route::post('websites/{websiteId}/domains', [DomainController::class, 'store'])->middleware('throttle:domain-changes');
@@ -93,6 +94,8 @@ Route::prefix('v1')->group(function () {
             Route::post('servers/{id}/install-updates', [ServerController::class, 'installUpdates']);
             Route::post('servers/{id}/reboot', [ServerController::class, 'reboot']);
             Route::post('servers/{id}/update-agent', [ServerController::class, 'updateAgent']);
+            Route::post('servers/{id}/check-connection', [ServerController::class, 'checkConnection']);
+            Route::delete('servers/{id}', [ServerController::class, 'destroy']);
             // The TLS certificate of the panel domain: the CA of the panel or Let's Encrypt.
             Route::get('panel-certificate', [PanelCertificateController::class, 'show']);
             Route::put('panel-certificate', [PanelCertificateController::class, 'update'])->middleware('throttle:10,1');

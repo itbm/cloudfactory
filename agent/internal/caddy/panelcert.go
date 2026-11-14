@@ -86,6 +86,71 @@ func PanelPolicy(domain, method string) map[string]any {
 	return map[string]any{"@id": panelPolicyID, "subjects": []string{domain}, "issuers": []any{issuer}}
 }
 
+// LocalNames gives the names of a website that Let's Encrypt cannot give a certificate for,
+// for example test.localhost. The edge proxy signs their certificates with PanelCA.
+func LocalNames(s Site) []string {
+	names := []string{}
+	for _, name := range append(append([]string{}, s.Hosts...), s.Redirects...) {
+		if !PublicName(name) {
+			names = append(names, name)
+		}
+	}
+	return names
+}
+
+func localPolicyID(websiteID string) string { return "cf-" + websiteID + "-tls" }
+
+// LocalPolicy is the TLS automation policy of the local names of one website.
+//
+// With no policy, Caddy signs a certificate for a local name with its default CA ("local"),
+// which is a different CA from PanelCA, and the certificate is valid for 12 hours. Thus a
+// browser that trusts the panel CA did not trust a website on a local name, and the panel
+// showed that the certificate waits. With this policy, the certificate is from PanelCA, as
+// for a panel on a local name.
+func LocalPolicy(websiteID string, names []string) map[string]any {
+	issuer := map[string]any{"module": "internal", "ca": PanelCA, "lifetime": panelLifetime, "sign_with_root": true}
+	return map[string]any{"@id": localPolicyID(websiteID), "subjects": names, "issuers": []any{issuer}}
+}
+
+// applyLocalPolicy sets or removes the policy for the local names of a website.
+func (c *Client) applyLocalPolicy(ctx context.Context, s Site) error {
+	id := localPolicyID(s.WebsiteID)
+	names := LocalNames(s)
+	if len(names) == 0 {
+		return c.remove(ctx, id)
+	}
+	if err := c.setPanelCA(ctx); err != nil {
+		return err
+	}
+	policy := LocalPolicy(s.WebsiteID, names)
+	status, body, err := c.do(ctx, http.MethodPatch, "/id/"+id, policy)
+	if err != nil {
+		return err
+	}
+	if status == http.StatusOK {
+		return nil
+	}
+	if status != http.StatusNotFound && !unknownID(body) {
+		return fmt.Errorf("caddy: patch %s: status %d: %s", id, status, body)
+	}
+	const path = "/config/apps/tls/automation/policies"
+	status, body, err = c.do(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return err
+	}
+	var policies []any
+	if status == http.StatusOK {
+		_ = json.Unmarshal(body, &policies)
+	}
+	if len(policies) == 0 {
+		// PUT makes the objects in the path that do not exist (apps/tls/automation).
+		return c.putOrPatch(ctx, path, []any{policy})
+	}
+	// A POST on a list adds the value at the end. Each policy has its own subjects, so the
+	// sequence of the website policies is not important.
+	return c.expect(ctx, http.MethodPost, path, policy, http.StatusOK)
+}
+
 // SetPanelCertificate sets the certificate method of the panel domain. It keeps the routes and
 // the policies of the websites.
 func (c *Client) SetPanelCertificate(ctx context.Context, domain, method string) error {

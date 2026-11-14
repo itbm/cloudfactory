@@ -21,13 +21,19 @@ use Illuminate\Validation\ValidationException;
 class AuthController extends Controller
 {
     /**
-     * Sign in with an email, a password and a TOTP code. The answer holds a session token.
+     * Sign in with an email and a password, and a TOTP code when TOTP is on for the account.
+     * The answer holds a session token.
+     *
+     * The panel checks the password first. A wrong email or password gives an error at once.
+     * When the password is correct and the account has TOTP, the panel asks for the code: the
+     * client then sends the same request with the code. An account with no TOTP needs no code.
+     * Thus the answer shows that a password is correct to a person who does not have the
+     * second factor. The limit of failed attempts (CF-12) applies to the password and to the
+     * code.
      *
      * CF-12: each account has its own limit of failed attempts. CF-14: the panel checks a
      * password hash also when the email is not known, so that the time does not show which
      * emails have accounts. CF-08: the users of a suspended customer cannot sign in.
-     * R-08: the panel checks the password and the code together, and gives one error for both,
-     * so that the answer does not show that a password is correct.
      */
     public function login(Request $request): JsonResponse
     {
@@ -43,22 +49,29 @@ class AuthController extends Controller
         }
         $user = User::where('email', $data['email'])->first();
         $passwordOk = Hash::check($data['password'], $user?->password ?? self::dummyHash()) && $user;
+        // Audit finding S8: with no second factor, the answer for a suspended account must not
+        // show that the password is correct.
+        if (! $passwordOk || ($user->isSuspended() && ! $user->totp_secret)) {
+            self::failed($data['email'], $ip);
+            throw ValidationException::withMessages(['email' => 'The email or the password is not correct.']);
+        }
+        $code = $data['totp'] ?? '';
+        if ($user->totp_secret && $code === '') {
+            // Not a failed attempt: the client does not know that the account has TOTP before
+            // this answer. "totpRequired" tells the client to ask for the code.
+            return response()->json([
+                'message' => 'Type the code from your authenticator app.',
+                'errors' => ['totp' => ['Type the code from your authenticator app.']],
+                'totpRequired' => true,
+            ], 422);
+        }
         // The code is checked (and used up) only after a correct password.
-        if (! $passwordOk || ! Totp::consume($user, $data['totp'] ?? '')) {
-            if (LoginThrottle::fail($data['email'], $ip)) {
-                Audit::system('Locked sign-in after failed attempts', "{$data['email']} from {$ip}");
-            }
-            throw ValidationException::withMessages(['email' => 'The email, the password or the code is not correct.']);
+        if (! Totp::consume($user, $code)) {
+            self::failed($data['email'], $ip);
+            throw ValidationException::withMessages(['totp' => 'The code is not correct. A code works one time only.']);
         }
         if ($user->isSuspended()) {
-            // Audit finding S8: with no second factor, the answer for a suspended account must
-            // not show that the password is correct. A user who gave a correct code has shown
-            // more than the password, and gets the reason.
-            if (! $user->totp_secret) {
-                LoginThrottle::fail($data['email'], $ip);
-                throw ValidationException::withMessages(['email' => 'The email, the password or the code is not correct.']);
-            }
-
+            // A user who gave a correct code has shown more than the password, and gets the reason.
             return response()->json(['message' => 'This account is suspended. Contact your provider.'], 403);
         }
         LoginThrottle::clear($data['email'], $ip);
@@ -72,6 +85,14 @@ class AuthController extends Controller
 
     /** The name of the token of a sign-in. */
     public const SESSION = 'Web session';
+
+    /** Counts a failed sign-in, and records the lock in the audit log when the attempt starts one. */
+    private static function failed(string $email, string $ip): void
+    {
+        if (LoginThrottle::fail($email, $ip)) {
+            Audit::system('Locked sign-in after failed attempts', "{$email} from {$ip}");
+        }
+    }
 
     /**
      * Audit finding S8: sign out. The panel deletes the token of this request, so that a copy

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"sort"
@@ -25,7 +26,42 @@ type Client struct {
 
 // New gives a client for a panel, for example "https://panel.example.com".
 func New(baseURL, token string) *Client {
-	return &Client{BaseURL: strings.TrimRight(baseURL, "/"), Token: token, HTTP: &http.Client{Timeout: 60 * time.Second}}
+	return &Client{BaseURL: strings.TrimRight(baseURL, "/"), Token: token, HTTP: &http.Client{Timeout: 60 * time.Second, Transport: transport()}}
+}
+
+// transport is the default transport with one change: a name in "localhost", for example
+// panel.localhost, is the computer itself (RFC 6761). A browser knows this. The resolver of Go
+// asks the DNS for such a name, and on a computer with no local resolver the answer is "no such
+// host". Thus the CLI connects to the loopback address for such a name, and uses no proxy.
+func transport() *http.Transport {
+	t := http.DefaultTransport.(*http.Transport).Clone()
+	dialer := &net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}
+	t.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		return dialer.DialContext(ctx, network, loopbackAddress(addr))
+	}
+	t.Proxy = func(r *http.Request) (*url.URL, error) {
+		if localName(r.URL.Hostname()) {
+			return nil, nil
+		}
+		return http.ProxyFromEnvironment(r)
+	}
+	return t
+}
+
+// localName is true for "localhost" and for each name in "localhost".
+func localName(host string) bool {
+	name := strings.ToLower(strings.TrimSuffix(host, "."))
+	return name == "localhost" || strings.HasSuffix(name, ".localhost")
+}
+
+// loopbackAddress changes the host of "panel.localhost:443" to "localhost". /etc/hosts gives
+// the IPv4 and the IPv6 loopback address for this name.
+func loopbackAddress(addr string) string {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil || !localName(host) {
+		return addr
+	}
+	return net.JoinHostPort("localhost", port)
 }
 
 // Error is an error answer from the panel.

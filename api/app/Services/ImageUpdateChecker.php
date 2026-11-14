@@ -5,7 +5,6 @@ namespace App\Services;
 use App\Enums\UpdatePolicy;
 use App\Models\Image;
 use App\Models\Rollout;
-use App\Models\Website;
 use App\Services\Registry\CosignVerifier;
 use App\Services\Registry\RegistryClient;
 use Throwable;
@@ -19,7 +18,8 @@ use Throwable;
  * - An image that an administrator added keeps its tag. The panel looks for a new digest
  *   of the same tag.
  *
- * The update policy of the image then decides what happens (FR-1106):
+ * An image that no website uses changes to the new version at once, unless its policy is
+ * manual. For an image with websites, the update policy decides what happens (FR-1106):
  * - automatic: the panel starts a rollout.
  * - security_automatic: the panel starts a rollout for a rebuild of the same release only.
  *   A new release waits for an administrator.
@@ -117,17 +117,25 @@ class ImageUpdateChecker
     {
         Audit::system('Found image update', "{$image->name}: {$result}");
 
+        $busy = Rollout::where('image_id', $image->id)->whereIn('state', ['running', 'paused'])->exists();
+        $used = $image->inUse();
+        // An image that no website uses has nothing to roll out and nothing to check. The panel
+        // changes it at once, so that an old version does not stay in the list and new websites
+        // get the new version. With the manual policy, the administrator decides.
+        if (! $used && ! $busy && $image->policy !== UpdatePolicy::Manual && $image->available_tag !== null) {
+            $from = $image->tag;
+            $image->changeVersion($image->available_tag, $image->available_digest);
+            Audit::system('Changed image version', "{$image->name}: {$from} to {$image->tag}. No website uses the image.");
+
+            return;
+        }
+
         $automatic = match ($image->policy) {
             UpdatePolicy::Automatic => true,
             UpdatePolicy::SecurityAutomatic => self::isRebuild($image->tag, $image->available_tag),
             UpdatePolicy::Manual => false,
         };
-        if (! $automatic) {
-            return;
-        }
-        $busy = Rollout::where('image_id', $image->id)->whereIn('state', ['running', 'paused'])->exists();
-        $used = Website::where('image_id', $image->id)->exists();
-        if ($busy || ! $used) {
+        if (! $automatic || $busy || ! $used) {
             return;
         }
         $rollout = $this->rollouts->start($image);

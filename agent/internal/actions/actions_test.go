@@ -177,6 +177,25 @@ func TestCreateWebsite(t *testing.T) {
 	if job.Result()["dnsPointsHere"] != true {
 		t.Error("no DNS result")
 	}
+	// A new PHP website gets the default page. The website user writes it, and only in an empty directory.
+	page := `runuser -u acme_x7k2 -- sh -c [ -n "$(ls -A "$1" 2>/dev/null)" ] || cat >"$1/index.php" sh ` + filepath.Join(d.Host.AppDir("acme_x7k2"), "public")
+	if !f.Called(page) {
+		t.Errorf("no default page: %v", f.Calls)
+	}
+}
+
+// A custom image and a website with a different document root get no default page.
+func TestNoDefaultPageForACustomImage(t *testing.T) {
+	d, f, _ := deps(t)
+	custom := website("ghcr.io/acme/app:1")
+	custom.Runtime, custom.Extensions, custom.PhpIni = "custom", nil, nil
+	d.writeDefaultPage(context.Background(), custom)
+	other := website("ghcr.io/cloudfactory/frankenphp-php8.4:8.4.0-1")
+	other.DocumentRoot = "web"
+	d.writeDefaultPage(context.Background(), other)
+	if f.Called("runuser -u acme_x7k2 -- sh -c") {
+		t.Errorf("calls = %v", f.Calls)
+	}
 }
 
 func TestSetRuntimeSwitchesWithNoStop(t *testing.T) {

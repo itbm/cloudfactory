@@ -61,17 +61,25 @@ Use a new server with Debian 13 or Ubuntu 26.04. Run this command as root:
 curl -fsSL https://github.com/itbm/cloudfactory/releases/latest/download/install.sh | sh -s -- --domain panel.example.com
 ```
 
+GitHub has the address `releases/latest` only for a release that is not a pre-release. If the
+command gives `error: 404`, each release is a pre-release. Then put the version of the release in
+the address, for example
+`https://github.com/itbm/cloudfactory/releases/download/v0.1.9/install.sh`.
+
 The script does all checks before it changes the system. The panel gets a TLS certificate from
 its own certificate authority, so any domain works, also `panel.localhost`. Add the root
 certificate to your browser, or change to Let's Encrypt in **Settings > Panel certificate** when
 the domain is public.
 
-To add a second server, copy the join command in the panel (**Servers > Add server**). It looks
-like this:
+To add a second server, copy the join command in the panel (**Servers > Add server**). The
+command uses the installation script of the release of the panel. It looks like this:
 
 ```sh
-curl -fsSL https://github.com/itbm/cloudfactory/releases/latest/download/install.sh | sh -s -- --join TOKEN --panel https://panel.example.com --panel-ca-sha256 FINGERPRINT
+curl -fsSL https://github.com/itbm/cloudfactory/releases/download/v0.1.9/install.sh | sh -s -- --join TOKEN --panel https://panel.example.com --panel-ca-sha256 FINGERPRINT
 ```
+
+The new server must be able to connect to the panel. Thus a panel on `panel.localhost` cannot
+have a second server.
 
 Refer to [docs/installation.md](docs/installation.md) for all options and for the steps to verify
 the script before you run it.

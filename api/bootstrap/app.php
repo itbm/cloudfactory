@@ -7,6 +7,7 @@ use App\Http\Middleware\EnsureScope;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Http\Exceptions\ThrottleRequestsException;
 use Illuminate\Http\Request;
 
 return Application::configure(basePath: dirname(__DIR__))
@@ -23,6 +24,11 @@ return Application::configure(basePath: dirname(__DIR__))
             'agent' => AuthenticateAgent::class,
             'active' => EnsureActive::class,
         ]);
+        // The panel has no sign-in page in the API: the web panel is a different container. By
+        // default, the framework sends a guest to the route "login". That route does not exist,
+        // so a request with no token and no "Accept: application/json" header (for example from
+        // curl) got status 500 and an exception in the log. Now it gets status 401.
+        $middleware->redirectGuestsTo(null);
         // Audit batch 3, finding 1: all requests come through the edge proxy, which sets
         // X-Forwarded-For to the address of the client. The API ports are open only on the
         // service address of the host (CF-10), so only the edge proxy and the local agent can
@@ -37,4 +43,11 @@ return Application::configure(basePath: dirname(__DIR__))
         $exceptions->shouldRenderJsonWhen(
             fn (Request $request) => $request->is('api/*') || $request->expectsJson(),
         );
+        // A rate limit: the default message is "Too Many Attempts.", which does not tell the
+        // user what to do. The web panel shows this message, for example on the sign-in page.
+        $exceptions->render(function (ThrottleRequestsException $e) {
+            $seconds = max(1, (int) ($e->getHeaders()['Retry-After'] ?? 60));
+
+            return response()->json(['message' => "Too many requests. Try again in {$seconds} seconds."], 429, $e->getHeaders());
+        });
     })->create();

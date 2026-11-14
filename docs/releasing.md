@@ -84,6 +84,12 @@ server.
      **Publish release**. The workflow adds the files to this release when it finishes.
      Until then, the release has no files.
 
+Do not select **Set as a pre-release** for a release that the installation command of the
+README must find. GitHub has the address `releases/latest/download/install.sh` only for a
+release that is not a pre-release. While each release is a pre-release, that address gives
+error 404, and a new user must put the version in the address. The **Add server** command of
+the panel always uses the version of the panel, so it works in the two cases.
+
 The workflow [`release.yml`](../.github/workflows/release.yml) then does these steps:
 
 1. Build each image for x86-64 and ARM64. The build uses the layers of the last build from
@@ -119,6 +125,11 @@ adds a new image, check the visibility of its package. To make a package public:
 Each image job of the release workflow checks its package and the package `build-cache` first.
 If a package is not public, the job gives a warning with the link to its settings. The job does
 not stop.
+
+The publish job does the check again after it adds the tags. If an image package is not public,
+the job stops with an error before it publishes the release, because a server cannot pull the
+image: a website with that image fails with `unauthorized`. Make the package public, then run
+the publish job again from the **Actions** tab.
 
 ## Build cache
 

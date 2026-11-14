@@ -5,6 +5,7 @@ import { addSshKey, removeSshKey, setAccess, setSftp } from "../../api/store";
 import type { SftpAccess, Website } from "../../api/types";
 import { Card, ConfirmButton, Field, FormError, Toggle } from "../../components/ui";
 import { relativeTime } from "../../lib/format";
+import { jobActive } from "../../lib/labels";
 
 function sftpUrl(website: Website) {
   if (website.sftp) return `sftp://${website.sftp.username}@${website.sftp.host}${website.sftp.port === 22 ? "" : `:${website.sftp.port}`}`;
@@ -101,7 +102,7 @@ function SftpTab({ website, sftp }: { website: Website; sftp: SftpAccess }) {
   const state = useStore();
   const [key, setKey] = useState("");
   // The panel saves a change when the agent has applied it. Until then, a second change would start from the old state.
-  const applying = state.jobs.some((j) => j.websiteId === website.id && (j.state === "queued" || j.state === "running") && j.title.endsWith("SFTP access"));
+  const applying = state.jobs.some((j) => j.websiteId === website.id && jobActive(j) && j.title.endsWith("SFTP access"));
   const action = useAction((next: Partial<Parameters<typeof setSftp>[1]>) => setSftp(website.id, { enabled: sftp.enabled, authorizedKeys: sftp.authorizedKeys, ...next }));
   // SFTP accepts keys only. The last key cannot go while SFTP is on.
   const lastKey = sftp.enabled && sftp.authorizedKeys.length === 1;

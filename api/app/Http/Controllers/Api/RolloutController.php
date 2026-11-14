@@ -97,6 +97,9 @@ class RolloutController extends Controller
             'running' => AgentJob::where('rollout_id', $r->id)->where('state', 'running')->count(),
             'rollbacks' => array_map(fn ($rb) => ['website' => $names[$rb['websiteId']] ?? $rb['websiteId'], 'reason' => $rb['reason']], $r->rolled_back),
             'startedAt' => $r->created_at?->toIso8601String(),
+            // The time of the last change of a rollout that has ended. The panel shows an ended
+            // rollout for one day only.
+            'finishedAt' => in_array($r->state, ['done', 'rolled_back'], true) ? $r->updated_at?->toIso8601String() : null,
         ];
     }
 }

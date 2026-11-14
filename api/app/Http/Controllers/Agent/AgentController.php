@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Agent;
 
 use App\Enums\JobState;
 use App\Http\Controllers\Controller;
+use App\Jobs\CheckAgentConnection;
 use App\Jobs\SendJobToAgent;
 use App\Models\AgentJob;
 use App\Models\Database;
@@ -71,6 +72,9 @@ class AgentController extends Controller
             'services' => ['array'],
             'services.*.name' => ['required', 'string'],
             'services.*.state' => ['required', Rule::in(['running', 'stopped', 'failed'])],
+            // The reason for a service that does not run, and a part that the server can operate without.
+            'services.*.detail' => ['nullable', 'string', 'max:1000'],
+            'services.*.optional' => ['boolean'],
             'usage' => ['array'],
             'usage.cpuPercent' => ['numeric', 'between:0,100'],
             'usage.memoryPercent' => ['numeric', 'between:0,100'],
@@ -105,7 +109,9 @@ class AgentController extends Controller
             'panelCaSha256' => ['nullable', 'string', 'regex:/^[0-9a-f]{64}$/'],
         ]);
 
-        $failed = collect($data['services'] ?? [])->contains(fn ($s) => $s['state'] !== 'running');
+        // A server is degraded when a necessary service does not run. An optional part, for
+        // example the disk quotas, does not change the state.
+        $failed = Server::hasFailedService($data['services'] ?? []);
         $wasOffline = $server->state === 'offline';
         $server->update([
             'agent_version' => $data['agentVersion'],
@@ -122,6 +128,12 @@ class AgentController extends Controller
             // A server that was offline is back with this report.
             'state' => in_array($server->state, ['rebooting', 'joining'], true) ? $server->state : ($failed ? 'degraded' : 'healthy'),
         ]);
+        // The first report of a new server: its agent listens now, so the panel tests that it can
+        // connect to the address that the server gave when it joined.
+        if ($server->connection_checked_at === null) {
+            $server->update(['connection_checked_at' => now()]);
+            CheckAgentConnection::dispatch($server->id);
+        }
         // Audit finding R11: the panel kept the jobs of this server while it was offline.
         if ($wasOffline) {
             foreach (AgentJob::where('server_id', $server->id)->where('state', JobState::Queued->value)->orderBy('created_at')->pluck('id') as $jobId) {

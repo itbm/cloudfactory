@@ -5,6 +5,7 @@ import { changeRuntime, revertRuntime, setDocumentRoot, setPhpSettings, setWorke
 import type { Website } from "../../api/types";
 import { Card, Field, FormError, Toggle } from "../../components/ui";
 import { longDate } from "../../lib/format";
+import { jobActive } from "../../lib/labels";
 
 export function RuntimeTab({ website }: { website: Website }) {
   const state = useStore();
@@ -29,7 +30,7 @@ export function RuntimeTab({ website }: { website: Website }) {
     return setPhpSettings(website.id, extensions, parsed);
   });
   const prev = website.runtime.previous && state.images.find((i) => i.id === website.runtime.previous!.imageId);
-  const busy = state.jobs.some((j) => j.websiteId === website.id && j.state === "running" && j.title.startsWith("Change runtime"));
+  const busy = state.jobs.some((j) => j.websiteId === website.id && jobActive(j) && j.title.startsWith("Change runtime"));
   const end = supportEnds(state, website);
 
   return (
@@ -54,7 +55,7 @@ export function RuntimeTab({ website }: { website: Website }) {
                 </label>
               ))}
             </fieldset>
-            <p className="hint" style={{ marginTop: 10 }}>The panel starts the new image on a copy, does a health check, and then switches. It keeps the previous image so that you can go back in one action.</p>
+            <p className="hint" style={{ marginTop: 10 }}>The panel starts the new image on a copy, does a health check, and then switches. It records the previous image so that you can go back in one action.</p>
             <div className="btn-group" style={{ marginTop: 14 }}>
               <button type="submit" className="btn btn-primary" disabled={imageId === website.runtime.imageId || busy}>{busy ? "Changing…" : "Change runtime"}</button>
               {prev && <button type="button" className="btn" disabled={busy} onClick={() => void revert.run(website.id)}>Go back to {prev.name}</button>}

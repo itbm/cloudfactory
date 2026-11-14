@@ -44,7 +44,7 @@ func fakePanel(t *testing.T, failJob bool) (*httptest.Server, *[]string) {
 			}
 			w.WriteHeader(http.StatusAccepted)
 			w.Write([]byte(`{"website":{"id":"W3"},"job":{"id":"J1","title":"Create website new.example","state":"queued"}}`))
-		case r.URL.Path == "/api/v1/websites/W1/power":
+		case r.URL.Path == "/api/v1/websites/W1/power", r.URL.Path == "/api/v1/websites/W1/retry":
 			w.WriteHeader(http.StatusAccepted)
 			w.Write([]byte(`{"job":{"id":"J1","title":"Restart acme.example","state":"queued"}}`))
 		case r.URL.Path == "/api/v1/jobs/J1":
@@ -96,6 +96,19 @@ func TestRestartWaitsForTheJob(t *testing.T) {
 	}
 	if (*calls)[1] != "POST /api/v1/websites/W1/power" {
 		t.Errorf("calls = %v", *calls)
+	}
+}
+
+func TestRetryMakesAFailedWebsiteAgain(t *testing.T) {
+	srv, calls := fakePanel(t, false)
+	defer srv.Close()
+	a, out := testApp(srv)
+
+	if err := a.dispatch(context.Background(), []string{"websites", "retry", "acme.example"}); err != nil {
+		t.Fatal(err)
+	}
+	if (*calls)[1] != "POST /api/v1/websites/W1/retry" || !strings.Contains(out.String(), "complete.") {
+		t.Errorf("calls = %v, output:\n%s", *calls, out)
 	}
 }
 
@@ -308,7 +321,19 @@ func pagedPanel(t *testing.T) (*httptest.Server, *[]string) {
 			calls = append(calls, string(b))
 			w.Write(b)
 		case r.URL.Path == "/api/v1/servers":
-			w.Write([]byte(`{"data":[{"id":"S1","name":"web-1","pendingUpdates":[{"name":"podman","from":"5.6.0","to":"5.6.1","containerTool":true}]}]}`))
+			w.Write([]byte(`{"data":[{"id":"S1","name":"web-1","agentAddress":"203.0.113.10:7443","connectionError":null,"pendingUpdates":[{"name":"podman","from":"5.6.0","to":"5.6.1","containerTool":true}]},{"id":"S2","name":"web-2","state":"degraded","agentAddress":"web-2:7443","connectionError":"Could not resolve host: web-2"}]}`))
+		case r.URL.Path == "/api/v1/servers/S2/check-connection":
+			calls = append(calls, r.Method+" "+r.URL.Path)
+			w.Write([]byte(`{"id":"S2","name":"web-2","agentAddress":"web-2:7443","connectionError":"Could not resolve host: web-2"}`))
+		case r.URL.Path == "/api/v1/servers/S1/check-connection":
+			calls = append(calls, r.Method+" "+r.URL.Path)
+			w.Write([]byte(`{"id":"S1","name":"web-1","agentAddress":"203.0.113.10:7443","connectionError":null}`))
+		case r.URL.Path == "/api/v1/servers/S2" && r.Method == http.MethodDelete:
+			calls = append(calls, r.Method+" "+r.URL.Path)
+			w.WriteHeader(http.StatusNoContent)
+		case r.URL.Path == "/api/v1/servers/S1" && r.Method == http.MethodDelete:
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			w.Write([]byte(`{"message":"This server has the panel. You cannot remove it.","errors":{"server":["This server has the panel. You cannot remove it."]}}`))
 		case r.URL.Path == "/api/v1/servers/S1/install-updates":
 			b, _ := io.ReadAll(r.Body)
 			calls = append(calls, string(b))
@@ -433,6 +458,54 @@ func TestServerUpdateWithTheToolsPolicy(t *testing.T) {
 	}
 	if body := (*calls)[len(*calls)-1]; body != `{"policy":"tools"}` {
 		t.Errorf("body = %s", body)
+	}
+}
+
+func TestServerConnectionAndRemove(t *testing.T) {
+	srv, calls := pagedPanel(t)
+	defer srv.Close()
+	a, out := testApp(srv)
+	// The page of a server gives the reason when the panel cannot connect to it.
+	if err := a.dispatch(context.Background(), []string{"servers", "get", "web-2"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"The panel cannot connect to this server at web-2:7443: Could not resolve host: web-2", "cf servers remove SERVER"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("output does not have %q:\n%s", want, out)
+		}
+	}
+	out.Reset()
+	if err := a.dispatch(context.Background(), []string{"servers", "get", "web-1"}); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out.String(), "cannot connect") {
+		t.Errorf("a server with a good connection shows a fault:\n%s", out)
+	}
+	out.Reset()
+	// A failed test is an error, so that a script can stop.
+	if err := a.dispatch(context.Background(), []string{"servers", "check", "web-2"}); err == nil || !strings.Contains(out.String(), "Could not resolve host: web-2") {
+		t.Errorf("check of a server with no connection: err = %v, output:\n%s", err, out)
+	}
+	out.Reset()
+	if err := a.dispatch(context.Background(), []string{"servers", "check", "web-1"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.TrimSpace(out.String()); got != "The panel can connect to web-1 at 203.0.113.10:7443." {
+		t.Errorf("output = %q", got)
+	}
+	out.Reset()
+	if err := a.dispatch(context.Background(), []string{"servers", "remove", "web-2"}); err != nil {
+		t.Fatal(err)
+	}
+	if last := (*calls)[len(*calls)-1]; last != "DELETE /api/v1/servers/S2" {
+		t.Errorf("last call = %s", last)
+	}
+	if !strings.Contains(out.String(), "The server web-2 is removed from the panel.") {
+		t.Errorf("output:\n%s", out)
+	}
+	// The panel refuses its own server. The CLI gives the reason of the panel.
+	if err := a.dispatch(context.Background(), []string{"servers", "remove", "web-1"}); err == nil || !strings.Contains(err.Error(), "You cannot remove it") {
+		t.Errorf("remove of the panel server: err = %v", err)
 	}
 }
 

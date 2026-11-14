@@ -33,6 +33,7 @@ Usage:
   cf websites set WEBSITE [--plan ID] [--app NAME] [--vcpus N] [--memory-mb N] [--disk-gb N] [--io-mb N] [--processes N]
   cf websites delete WEBSITE
   cf websites start|stop|restart|staging WEBSITE      staging shows the passwords of the new database users once.
+  cf websites retry WEBSITE                            Make a website again after the first job failed.
   cf domains add WEBSITE DOMAIN --kind redirect|alias  A new domain needs a DNS TXT record. The command shows it.
   cf domains verify WEBSITE DOMAIN                     Check the TXT record. Then the edge proxy serves the domain.
   cf domains remove WEBSITE DOMAIN
@@ -68,6 +69,8 @@ Usage:
   cf servers reboot SERVER
   cf servers update-agent SERVER [--version VERSION] [--allow-downgrade]
   cf servers join-token
+  cf servers check SERVER                  Tests the connection from the panel to the server.
+  cf servers remove SERVER                 Removes a server that has no websites from the panel.
   cf panel-certificate show
   cf panel-certificate set internal|letsencrypt
                        "internal": a certificate from the panel CA. "letsencrypt" needs a public domain.
@@ -299,6 +302,11 @@ func (a *app) login(ctx context.Context, args []string) error {
 		body["totp"] = *totp
 	}
 	if err := c.Do(ctx, http.MethodPost, "/auth/login", nil, body, &out); err != nil {
+		// The password is correct, but TOTP is on for the account and the command had no code.
+		var answer *client.Error
+		if *totp == "" && errors.As(err, &answer) && len(answer.Fields["totp"]) > 0 {
+			return errors.New("TOTP is on for this account: run the command again with --totp CODE")
+		}
 		return err
 	}
 	if err := saveSettings(settings{Panel: *panel, Token: out.Token, Session: true}); err != nil {
@@ -613,7 +621,7 @@ func (a *app) websites(ctx context.Context, sub string, args []string) error {
 		return a.change(ctx, http.MethodPost, "/websites", body)
 	case "set":
 		return a.websiteSet(ctx, args)
-	case "delete", "start", "stop", "restart", "staging":
+	case "delete", "start", "stop", "restart", "staging", "retry":
 		if err := need(args, 1, "a website"); err != nil {
 			return err
 		}
@@ -626,6 +634,8 @@ func (a *app) websites(ctx context.Context, sub string, args []string) error {
 			return a.change(ctx, http.MethodDelete, "/websites/"+w.ID, nil)
 		case "staging":
 			return a.change(ctx, http.MethodPost, "/websites/"+w.ID+"/staging", nil)
+		case "retry":
+			return a.change(ctx, http.MethodPost, "/websites/"+w.ID+"/retry", nil)
 		}
 		return a.change(ctx, http.MethodPost, "/websites/"+w.ID+"/power", map[string]string{"action": sub})
 	}
@@ -1009,7 +1019,7 @@ func (a *app) servers(ctx context.Context, sub string, args []string) error {
 	switch sub {
 	case "list", "ls":
 		return a.simpleList(ctx, "/servers", []string{"name", "state", "roles", "agentVersion", "rebootRequired", "id"})
-	case "get", "set", "update", "reboot", "update-agent":
+	case "get", "set", "update", "reboot", "update-agent", "check", "remove", "rm":
 		return a.server(ctx, sub, args)
 	case "join-token":
 		var out struct {

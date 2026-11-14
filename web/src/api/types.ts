@@ -250,6 +250,8 @@ export interface Rollout {
   severity: "security" | "feature";
   state: "running" | "paused" | "rolled_back" | "done";
   startedAt: string;
+  /** The time when the rollout ended. A rollout in progress has none. */
+  finishedAt?: string;
   window: string;
   websites: number;
   servers: number;
@@ -275,6 +277,8 @@ export interface RuntimeImage {
   websites: string;
   policy: UpdatePolicy;
   policyNote?: string;
+  /** The error of the last check of the registry for a new version. */
+  checkError?: string;
   /** Images that an administrator added (FR-307). */
   custom: boolean;
   signatureVerified: boolean;
@@ -302,6 +306,10 @@ export interface PackageUpdate {
 export interface ServerService {
   name: string;
   state: "running" | "stopped" | "failed";
+  /** A part that the server can operate without, for example the disk quotas. */
+  optional?: boolean;
+  /** The reason that the service does not run, and what to do. */
+  detail?: string | null;
 }
 
 export interface Server {
@@ -325,8 +333,17 @@ export interface Server {
   updatePolicy: HostUpdatePolicy;
   maintenanceWindow: string;
   pendingUpdates: PackageUpdate[];
+  /** Empty when the server installed no updates yet. */
   lastUpdateAt: string;
   rebootRequired: boolean;
+  /** The panel has a newer agent for this server (live mode). */
+  agentUpdateAvailable?: boolean;
+  /** The host and the port that the panel uses to connect to the agent (live mode). */
+  agentAddress?: string;
+  /** The reason when the panel could not connect to the agent. The jobs of the server then fail. */
+  connectionError?: string;
+  /** This server has the panel. It cannot be removed. */
+  panel?: boolean;
   services: ServerService[];
   /** The port of the SFTP container of the websites (spec section 10). 22 for an agent of release 0.1. */
   sftpPort: number;
@@ -551,7 +568,11 @@ export interface State {
    * mustChangePassword: the user has a temporary password. The panel shows only the form for
    * a new password.
    */
-  session: { signedIn: boolean; loading?: boolean; mustChangePassword?: boolean; user: User; contextId: string };
+  session: {
+    signedIn: boolean; loading?: boolean; mustChangePassword?: boolean; user: User; contextId: string;
+    /** The error of the last load from the API. The panel then shows the data of the load before it. */
+    loadError?: string;
+  };
   contexts: AccountContext[];
   websites: Website[];
   jobs: Job[];
@@ -583,4 +604,6 @@ export interface State {
   joinToken: string;
   /** The fingerprint of the panel CA for the join command. */
   joinCaSha256?: string;
+  /** The installation script of the release of the panel, for the join command (live mode). */
+  joinInstallUrl?: string;
 }

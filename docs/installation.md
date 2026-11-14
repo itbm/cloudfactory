@@ -24,6 +24,11 @@ sha256sum -c install.sh.sha256
 cosign verify-blob --key cosign.pub --signature install.sh.sig install.sh
 ```
 
+GitHub has the address `releases/latest` only for a release that is not a pre-release. If `curl`
+gives `error: 404`, each release is a pre-release. Then put the version of the release in each
+address: replace `latest/download` with `download/v0.1.9`, for example
+`https://github.com/itbm/cloudfactory/releases/download/v0.1.9/install.sh`.
+
 ## Install the panel
 
 Run the script as root on the first server:
@@ -103,9 +108,22 @@ The firewall sends the connections from the server itself to ports 80 and 443 to
 This also applies to the full host name of the server, which `/etc/hosts` usually gives as
 `127.0.1.1`.
 
+A different server cannot connect to such a panel. Thus you cannot add a second server to it.
+The **Add server** dialog shows a warning, and the installation script on the new server stops
+at its checks.
+
+A website can also have a name that Let's Encrypt cannot give a certificate for, for example
+`shop.localhost` or `shop.test`. The edge proxy signs the certificate of such a name with its
+own CA. On the panel server, this is the panel CA, so a browser that trusts the panel CA also
+trusts the website. The panel shows the certificate as active when the edge proxy serves it.
+A name that ends in `.localhost` always points to the server, so the panel does not do a DNS
+check for it.
+
 ## Add a server
 
-1. In the panel, go to **Servers > Add server**. Copy the join command.
+1. In the panel, go to **Servers > Add server**. Type a name, select the roles, and copy the
+   join command. The command downloads the installation script of the release of the panel, so
+   the new server gets the same release.
 2. Run the command as root on the new server. For example:
 
    ```sh
@@ -116,6 +134,39 @@ When the panel has a CA, the command has the fingerprint of its root certificate
 (`--panel-ca-sha256`). The new server then trusts a certificate of the panel domain from the
 panel CA. It does not trust other certificates from that CA. The fingerprint is in the output of
 `cf-agent panel certificate` on the panel server.
+
+The two servers must be able to connect to each other:
+
+- The new server connects to the address of the panel on port 443. The script examines this
+  connection in its checks, before it changes the system.
+- The panel connects to the agent of the new server on port 7443. The new server gives its
+  address when it joins, and the script shows this address at the end. The address is the full
+  host name of the new server, for example `web2.example.com`, when the server finds an address
+  for this name. In other cases, for example with the short host name `web2`, it is the IP
+  address that the new server uses for its connection to the panel. If the new server is behind
+  NAT, this IP address is a private address. Then give the public address with `--address`, for
+  example `--address 203.0.113.20`.
+
+About one minute after the server joins, the panel tests the connection to the agent. If the
+panel cannot connect, the server shows as degraded, and the page of the server shows the reason,
+for example `Could not resolve host: web2`. Each job for the server fails until the connection
+works. Correct the DNS or the firewall, then select **Test the connection** on the page of the
+server. With the CLI: `cf servers check SERVER`. If the address is wrong, remove the server and
+add it again.
+
+### Remove a server
+
+You can remove a server that has no websites, for example a server that joined with a wrong
+address. You cannot remove the server of the panel.
+
+1. In the panel, go to **Servers**, select **Manage** for the server, and select
+   **Remove server**. With the CLI: `cf servers remove SERVER`. The panel removes the server
+   and its jobs from its lists. It does not change the server itself.
+2. To add the server again, delete `/etc/cloudfactory/agent.json` on the server. Then run a new
+   join command from **Servers > Add server**.
+
+The backups of the websites that the server had stay in the object storage, in the directory
+`servers/<server-id>/` of the repository.
 
 ## Options
 
@@ -129,7 +180,7 @@ panel CA. It does not trust other certificates from that CA. The fingerprint is 
 | `--panel-ca-sha256 SHA256` | The SHA-256 fingerprint of the root certificate of the panel CA. Use it with `--join`. |
 | `--name NAME`      | The name of the server in the panel. The default is the host name.       |
 | `--roles ROLES`    | The roles of the server: `web`, `database`, `email`, `dns`, `backup`.    |
-| `--address HOST`   | The host name or IP address that the panel uses to reach the server.     |
+| `--address HOST`   | The host name or IP address that the panel uses to reach the server. The default is the full host name, for example `web2.example.com`, when the server finds an address for it. In other cases, the default is the IP address that the server uses for its connection to the panel. |
 | `--panel-ip IP`    | Accept the agent port only from this IP address.                         |
 | `--sftp-port PORT` | The SFTP port of the websites. The default is `2200`. You cannot use port 22. |
 | `--registry URL`   | Use a different image registry, for example a mirror.                    |
@@ -187,11 +238,16 @@ that you run it.
 The panel does not make backups until you set the object storage.
 
 1. Sign in as an administrator and open **Backups**.
-2. In **Object storage**, type a restic repository on a different server from the websites,
-   for example `s3:s3.eu-west-2.amazonaws.com/my-bucket/cloudfactory` or `b2:my-bucket:cloudfactory`.
-3. Type the credentials of the object storage, for example the access key ID and the secret
-   access key. The panel keeps them encrypted and does not show them again.
-4. Select **Save policy**.
+2. In **Object storage**, select the storage type: S3 or compatible, Backblaze B2, Azure Blob
+   Storage or Google Cloud Storage.
+3. Type the location on a different server from the websites, for example
+   `s3.eu-west-2.amazonaws.com/my-bucket/cloudfactory` for S3 or `my-bucket:cloudfactory` for
+   B2. The page shows the restic repository that it makes from the type and the location, for
+   example `s3:s3.eu-west-2.amazonaws.com/my-bucket/cloudfactory`. You can also paste a full
+   restic repository.
+4. Type the credentials of the object storage in **Credentials**, for example the access key
+   ID and the secret access key. The panel keeps them encrypted and does not show them again.
+5. Select **Save policy**.
 
 The time of the nightly backups is in UTC. With the CLI, put the credentials in the
 environment, then run `cf backups policy set --target REPOSITORY --credentials-from-env`.
@@ -291,6 +347,23 @@ cf-agent panel unlock you@example.com
 If you updated the agent on the panel server in a different way, run `cf-agent panel update`
 as root there. This command changes the panel to the version of the agent.
 
+The update also changes the official runtime images to the tag of the new release. An image
+that no website uses changes immediately. An image that websites use shows the new tag on the
+**Updates** page, and you start the rollout there. An image with the update policy `manual`
+does not change.
+
+### A website that the panel could not make
+
+If the first job of a new website fails, the website has the status **Failed**. The page of the
+website shows the cause from the agent, for example an image that the server could not pull.
+
+1. Correct the cause.
+2. On the page of the website, select **Try again**. With the CLI: `cf websites retry WEBSITE`.
+
+If the cause is the image, select a different image on the **Runtime** tab. The panel then
+makes the website with that image. You cannot start, stop or restart a failed website, and a
+rollout does not include it.
+
 ### SFTP
 
 The owner of a website signs in with SFTP as the Unix user of the website, on port 2200 (or
@@ -370,11 +443,28 @@ quotas:
 3. For ext4, run `quotacheck -cum MOUNT` and then `quotaon -u MOUNT`.
 4. Restart the agent: `systemctl restart cf-agent`.
 
-The panel shows the service `disk-quotas` as stopped on a server with no quotas.
+On a server with no quotas, the panel shows `disk-quotas` as an optional part that is off. This
+does not make the server degraded.
 
 The shared runtime images in `/var/lib/cloudfactory-images` belong to root, so they do not
 count toward the disk limit of a website. Each runtime image uses about 0.6 to 0.8 GB one time
 for each server, not one time for each website.
+
+### The state of a server
+
+A server is **degraded** when its agent answers but a necessary service does not run. The
+necessary services are the agent (`cf-agent`), SSH (`ssh`), the SFTP container (`cf-sftp`), the
+edge proxy (`cf-edge.service`) and the firewall rules (`firewall`). The page of the server shows
+each service that does not run, the reason, and the command that repairs it when there is one.
+A degraded server continues to do work: it gets new websites when no healthy server is
+available, and it makes backups and installs scheduled updates.
+
+A server is also degraded when the panel cannot connect to its agent. The page of the server
+shows the address and the reason. Each job for such a server fails, and a new website goes to a
+different server when one is available. Refer to [Add a server](#add-a-server).
+
+The `firewall` check looks for the table `inet cloudfactory`. If the table is not there, run
+`nft -f /etc/nftables.d-cloudfactory.nft` as root.
 
 ### Ports
 
@@ -421,11 +511,14 @@ commas. Otherwise the sign-in limits apply to the address of the proxy.
 
 ### Check on a real server
 
-Nobody has installed release 0.1 on a real Debian 13 or Ubuntu 26.04 server yet. After you
-install it, check these items, and report a problem in the issues of the repository:
+Release 0.1.9 was installed in a virtual machine with Debian 13 and in a virtual machine with
+Ubuntu 26.04. On both, the installation completed, the administrator signed in, and a website
+started and answered through the edge proxy on the private service address `169.254.77.1`.
+The virtual machines had no hardware virtualisation, so gVisor used the `systrap` platform.
 
-- The edge proxy reaches a website through the private service address `169.254.77.1`.
-  This was checked with Debian 13 packages in a container, not on a real server.
+These items were not checked on a real server. After you install the release, check them, and
+report a problem in the issues of the repository:
+
 - A website container can connect to MariaDB and PostgreSQL.
 - Files that you upload with SFTP have the correct owner in the website container
   (`--userns=keep-id` in gVisor). The SFTP image was checked with Docker and the same

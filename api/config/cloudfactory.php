@@ -29,8 +29,12 @@ return [
     'panel_domain' => env('CF_PANEL_DOMAIN', 'panel.cloudfactory.io'),
 
     // R-14: the address of the installation script in the "Add server" command. Each GitHub
-    // release has the script with its signature (docs/installation.md).
-    'install_url' => env('CF_INSTALL_URL', 'https://github.com/itbm/cloudfactory/releases/latest/download/install.sh'),
+    // release has the script with its signature (docs/installation.md). With no value, the
+    // panel gives the script of its own release, so that a new server gets the same release.
+    // The address "releases/latest" is not sufficient: GitHub gives 404 for it when each
+    // release is a pre-release.
+    'install_url' => env('CF_INSTALL_URL'),
+    'repository' => env('CF_REPOSITORY', 'itbm/cloudfactory'),
 
     // Audit finding S5: the maximum number of domains of one website. Each domain starts a
     // certificate order, and Let's Encrypt limits the orders of a server.

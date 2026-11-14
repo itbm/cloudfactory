@@ -102,6 +102,73 @@ func TestANewPanelGetsTheInternalCertificate(t *testing.T) {
 	}
 }
 
+// A website on a local name, for example shop.localhost, gets its certificate from the panel
+// CA. Before, the certificate came from the default CA of Caddy, which no browser trusted.
+func TestAWebsiteOnALocalNameGetsACertificateFromThePanelCA(t *testing.T) {
+	fake := &fakeCaddy{loaded: true}
+	srv := httptest.NewServer(fake)
+	defer srv.Close()
+	c := New(srv.URL)
+	ctx := context.Background()
+
+	if err := c.ApplyPanel(ctx, "panel.localhost", PanelInternal, 19080, 19081); err != nil {
+		t.Fatal(err)
+	}
+	fake.calls = nil
+	site := Site{WebsiteID: "W1", Port: 20001, Hosts: []string{"shop.localhost", "shop.example.com"}, Redirects: []string{"www.shop.localhost"}, Primary: "shop.localhost"}
+	for range 2 {
+		if err := c.Apply(ctx, site); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(fake.tls) != 2 || fake.tls[0]["@id"] != "cf-panel-tls" {
+		t.Fatalf("policies = %v", fake.tls)
+	}
+	b, _ := json.Marshal(fake.tls[1])
+	for _, want := range []string{`"@id":"cf-W1-tls"`, `"subjects":["shop.localhost","www.shop.localhost"]`, `"module":"internal"`, `"ca":"cloudfactory"`, `"sign_with_root":true`, `"lifetime":"2160h"`} {
+		if !strings.Contains(string(b), want) {
+			t.Errorf("policy does not contain %s: %s", want, b)
+		}
+	}
+	// The policy comes before the route, so that Caddy does not use its default CA first.
+	calls := strings.Join(fake.calls, ", ")
+	if p, r := strings.Index(calls, "POST /config/apps/tls/automation/policies"), strings.Index(calls, "POST /config/apps/http/servers/edge/routes"); p < 0 || r < p {
+		t.Errorf("calls = %v", fake.calls)
+	}
+
+	// With only public names, the website has no policy: Caddy uses Let's Encrypt.
+	site.Hosts, site.Redirects, site.Primary = []string{"shop.example.com"}, nil, "shop.example.com"
+	if err := c.Apply(ctx, site); err != nil {
+		t.Fatal(err)
+	}
+	if len(fake.tls) != 1 || fake.tls[0]["@id"] != "cf-panel-tls" {
+		t.Errorf("policies = %v", fake.tls)
+	}
+
+	// The removal of the website removes its policy also.
+	site.Hosts = []string{"shop.localhost"}
+	if err := c.Apply(ctx, site); err != nil || len(fake.tls) != 2 {
+		t.Fatalf("Apply: %v, policies = %v", err, fake.tls)
+	}
+	if err := c.Remove(ctx, "W1"); err != nil || len(fake.tls) != 1 || len(fake.routes) != 1 {
+		t.Errorf("Remove: %v, policies = %v, routes = %v", err, fake.tls, fake.routes)
+	}
+}
+
+// A server with no panel has no TLS app in the configuration of the edge proxy.
+func TestALocalNameOnAServerWithNoPanel(t *testing.T) {
+	fake := &fakeCaddy{loaded: true}
+	srv := httptest.NewServer(fake)
+	defer srv.Close()
+
+	if err := New(srv.URL).Apply(context.Background(), Site{WebsiteID: "W1", Port: 20001, Hosts: []string{"intranet.internal"}, Primary: "intranet.internal"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(fake.tls) != 1 || fake.tls[0]["@id"] != "cf-W1-tls" || fake.cas[PanelCA] == nil {
+		t.Errorf("policies = %v, CAs = %v", fake.tls, fake.cas)
+	}
+}
+
 func TestTheMethodChangesInPlaceAndKeepsOtherPolicies(t *testing.T) {
 	other := map[string]any{"subjects": []any{"shop.example"}, "issuers": []any{map[string]any{"module": "acme"}}}
 	fake := &fakeCaddy{loaded: true, tls: []map[string]any{other}, cas: map[string]map[string]any{PanelCA: {"name": "old"}}}

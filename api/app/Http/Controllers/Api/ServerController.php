@@ -10,11 +10,13 @@ use App\Http\Resources\JobResource;
 use App\Models\AgentJob;
 use App\Models\JoinToken;
 use App\Models\Server;
+use App\Services\AgentClient;
 use App\Services\Audit;
 use App\Services\JobDispatcher;
 use App\Services\PanelCertificate;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -81,10 +83,22 @@ class ServerController extends Controller
             'token' => $token,
             'expiresAt' => now()->addDay()->toIso8601String(),
             // R-14: the same signed installation script from GitHub Releases as in the README.
-            'command' => 'curl -fsSL '.config('cloudfactory.install_url')." | sh -s -- --join {$token} --panel https://".config('cloudfactory.panel_domain')
+            'command' => 'curl -fsSL '.self::installUrl()." | sh -s -- --join {$token} --panel https://".config('cloudfactory.panel_domain')
                 .($pin ? " --panel-ca-sha256 {$pin}" : ''),
+            'installUrl' => self::installUrl(),
             'panelCaSha256' => $pin,
         ], 201);
+    }
+
+    /**
+     * The installation script for a new server: the script of the release of this panel. Before,
+     * the address was "releases/latest", which GitHub does not have while each release is a
+     * pre-release. Then the command of the panel failed with error 404.
+     */
+    public static function installUrl(): string
+    {
+        return config('cloudfactory.install_url')
+            ?: 'https://github.com/'.config('cloudfactory.repository').'/releases/download/v'.config('cloudfactory.agent.latest_version').'/install.sh';
     }
 
     /**
@@ -137,11 +151,64 @@ class ServerController extends Controller
         return response()->json(['job' => new JobResource($job)], 202);
     }
 
+    /**
+     * Tests the connection from the panel to the agent of the server, and gives the server with
+     * the result. The administrator uses this after a change of the DNS or of a firewall.
+     */
+    public function checkConnection(string $id, AgentClient $client): JsonResponse
+    {
+        $server = Server::withCount('websites')->findOrFail($id);
+        $client->check($server);
+
+        return response()->json(self::present($server));
+    }
+
+    /**
+     * Removes a server from the panel, for example a server that joined with a wrong address.
+     * The panel does not change the server itself. A server with websites stays: delete or
+     * move its websites first.
+     */
+    public function destroy(Request $request, string $id): JsonResponse
+    {
+        $server = Server::withCount('websites')->findOrFail($id);
+        if ($server->local) {
+            throw ValidationException::withMessages(['server' => 'This server has the panel. You cannot remove it.']);
+        }
+        if ($server->websites_count > 0) {
+            throw ValidationException::withMessages(['server' => "This server has {$server->websites_count} ".($server->websites_count === 1 ? 'website' : 'websites').'. Delete the websites first.']);
+        }
+        DB::transaction(function () use ($server) {
+            // The jobs of the server go with it. The audit log keeps the record of the actions.
+            AgentJob::where('server_id', $server->id)->delete();
+            $server->delete();
+        });
+        Audit::record($request, 'Removed server', $server->name);
+
+        return response()->json(null, 204);
+    }
+
+    /** The host and the port of the agent address, for example "web2.example.com:7443". */
+    private static function address(?string $agentUrl): ?string
+    {
+        $parts = $agentUrl ? parse_url($agentUrl) : false;
+        if (! $parts || empty($parts['host'])) {
+            return null;
+        }
+
+        return $parts['host'].(isset($parts['port']) ? ':'.$parts['port'] : '');
+    }
+
     public static function present(Server $s): array
     {
         $state = $s->state;
-        if ($state === 'healthy' && $s->agent_version && version_compare($s->agent_version, config('cloudfactory.agent.latest_version'), '<')) {
+        $agentUpdate = $s->agent_version && version_compare($s->agent_version, config('cloudfactory.agent.latest_version'), '<');
+        if ($state === 'healthy' && $agentUpdate) {
             $state = 'agent_update';
+        }
+        // The agent reports to the panel, but the panel cannot connect to the agent: the jobs of
+        // the server fail. Thus the server is not healthy.
+        if ($s->connection_error !== null && in_array($state, ['healthy', 'agent_update'], true)) {
+            $state = 'degraded';
         }
 
         return [
@@ -151,6 +218,14 @@ class ServerController extends Controller
             'roles' => $s->roles,
             'state' => $state,
             'agentVersion' => $s->agent_version,
+            // The state can be "degraded" or "offline" while the agent is old. Thus the panel tells this apart.
+            'agentUpdateAvailable' => (bool) $agentUpdate,
+            // The address that the panel uses to connect to the agent, and the reason when the
+            // last connection failed.
+            'agentAddress' => self::address($s->agent_url),
+            'connectionError' => $s->connection_error,
+            // The server of the panel. It cannot be removed.
+            'panel' => (bool) $s->local,
             'os' => $s->os,
             'kernel' => $s->kernel,
             'arch' => $s->arch,
@@ -164,7 +239,7 @@ class ServerController extends Controller
             'pendingUpdates' => $s->pending_updates ?? [],
             'lastUpdateAt' => $s->last_update_at?->toIso8601String(),
             'rebootRequired' => $s->reboot_required,
-            'services' => $s->services ?? [],
+            'services' => Server::presentServices($s->services),
             // Spec section 10: the port of the SFTP container. 22 means an agent of release 0.1.
             'sftpPort' => $s->sftp_port ?? 22,
             'usage' => $s->usage,

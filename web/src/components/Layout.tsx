@@ -24,6 +24,7 @@ import { features } from "../api/mode";
 import { markNotificationsRead, setContext, signOut } from "../api/store";
 import type { AccountContext, Tone } from "../api/types";
 import { relativeTime } from "../lib/format";
+import { jobActive } from "../lib/labels";
 import { CommandPalette } from "./CommandPalette";
 import { Status } from "./ui";
 
@@ -61,7 +62,7 @@ function ContextSwitcher() {
   if (!shown) return null;
 
   const summary = (c: AccountContext) => {
-    if (c.role === "administrator") return `Administrator · ${state.servers.length} servers`;
+    if (c.role === "administrator") return `Administrator · ${state.servers.length} ${state.servers.length === 1 ? "server" : "servers"}`;
     const customer = state.customers.find((x) => x.id === c.id);
     const plan = state.plans.find((p) => p.id === customer?.planId);
     const count = state.websites.filter((w) => w.customerId === c.id).length;
@@ -259,7 +260,8 @@ export function Layout() {
               <NavLink to="/jobs" className={({ isActive }) => `nav-link${isActive ? " active" : ""}`}>
                 <span aria-hidden="true"><Activity size={18} /></span>
                 Jobs and activity
-                {state.jobs.some((j) => j.state === "running") && <span className="live" style={{ marginLeft: "auto", color: "#9cc0ff" }}>Live</span>}
+                {/* A dot, not a word: with a word, the name of the page does not fit on one line. */}
+                {state.jobs.some(jobActive) && <span className="live" title="A job is in progress" style={{ marginLeft: "auto", color: "#9cc0ff" }}><span className="visually-hidden">A job is in progress</span></span>}
               </NavLink>
             </li>
           </ul>
@@ -285,6 +287,11 @@ export function Layout() {
           </div>
         </nav>
         <div className="main">
+          {state.session.loadError && (
+            <div className="alert alert-warning load-error" role="status">
+              <p><strong>The panel could not load new data.</strong> {state.session.loadError} The pages show the data of the last good load. The panel tries again each 15 seconds.</p>
+            </div>
+          )}
           <Outlet />
         </div>
       </div>

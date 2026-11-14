@@ -298,3 +298,49 @@ func TestLoginAndLogout(t *testing.T) {
 		t.Errorf("err = %v, output:\n%s", err, out.String())
 	}
 }
+
+// The panel examines the password first. When TOTP is on for the account and the command has no
+// code, the command tells the user to give the code.
+func TestLoginTellsTheUserToGiveTheCode(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var in map[string]any
+		json.NewDecoder(r.Body).Decode(&in)
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case in["password"] != "CorrectPassword123":
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			w.Write([]byte(`{"message":"The email or the password is not correct.","errors":{"email":["The email or the password is not correct."]}}`))
+		case in["totp"] == nil:
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			w.Write([]byte(`{"message":"Type the code from your authenticator app.","errors":{"totp":["Type the code from your authenticator app."]},"totpRequired":true}`))
+		default:
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			w.Write([]byte(`{"message":"The code is not correct.","errors":{"totp":["The code is not correct. A code works one time only."]}}`))
+		}
+	}))
+	defer srv.Close()
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	t.Setenv("HOME", dir)
+	t.Setenv("CF_TOKEN", "")
+	t.Setenv("CF_PANEL", "")
+	var out bytes.Buffer
+	a := &app{out: &out, err: &out}
+	ctx := context.Background()
+
+	t.Setenv("CF_PASSWORD", "CorrectPassword123")
+	err := a.dispatch(ctx, []string{"login", "--panel", srv.URL, "--email", "admin@panel.example"})
+	if err == nil || !strings.Contains(err.Error(), "--totp CODE") {
+		t.Errorf("no code: err = %v", err)
+	}
+	// A wrong code keeps the message of the panel.
+	err = a.dispatch(ctx, []string{"login", "--panel", srv.URL, "--email", "admin@panel.example", "--totp", "000000"})
+	if err == nil || !strings.Contains(err.Error(), "The code is not correct") {
+		t.Errorf("wrong code: err = %v", err)
+	}
+	t.Setenv("CF_PASSWORD", "WrongPassword123")
+	err = a.dispatch(ctx, []string{"login", "--panel", srv.URL, "--email", "admin@panel.example"})
+	if err == nil || !strings.Contains(err.Error(), "The email or the password is not correct") {
+		t.Errorf("wrong password: err = %v", err)
+	}
+}

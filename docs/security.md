@@ -180,9 +180,12 @@ directory with mode 0700:
 ## Users and API tokens
 
 - Users sign in with a password and, if they set it, a TOTP code. A TOTP code works only one
-  time. The panel checks the password and the code together and gives one error for both, so
-  the answer does not show that a password is correct. A suspended account with no TOTP gets
-  the same answer for a correct and an incorrect password.
+  time. The panel examines the password first, and asks for the code only when the password is
+  correct and TOTP is on for the user. Thus a user with no TOTP does not see the code step, and
+  a wrong password gives its error immediately. The request for the code shows that the
+  password is correct. This is the same as for most services. The sign-in limits protect the
+  password: a wrong password and a wrong code are failed attempts. A suspended account with no
+  TOTP gets the same answer for a correct and an incorrect password.
 - The panel sends no email. An administrator or a reseller makes a user, and the panel shows a
   temporary password of 20 characters one time. The first administrator from the installation
   script has a temporary password also. With a temporary password, the API accepts only the
@@ -274,8 +277,8 @@ directory with mode 0700:
 
 - The panel and its edge route send `Strict-Transport-Security`, a Content Security Policy,
   `X-Content-Type-Options` and `Referrer-Policy`.
-- The "Add server" command downloads the signed installation script from GitHub Releases
-  (`CF_INSTALL_URL`).
+- The "Add server" command downloads the signed installation script of the release of the
+  panel from GitHub Releases. `CF_INSTALL_URL` gives a different address, for example a mirror.
 - The CSV export of the audit log puts a single quotation mark before a cell that starts with
   `=`, `+`, `-`, `@`, a tab or a carriage return. A spreadsheet program then does not read the
   cell as a formula.

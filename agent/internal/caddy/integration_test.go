@@ -119,4 +119,43 @@ func testPanelCertificate(t *testing.T, c *Client) {
 	if last != nil {
 		t.Fatalf("internal certificate after the change back: %v", last)
 	}
+	testLocalWebsite(t, c, address, root)
+}
+
+// testLocalWebsite checks that a website on a local name gets a certificate from the panel
+// CA, and not from the default CA of Caddy.
+func testLocalWebsite(t *testing.T, c *Client, address, root string) {
+	ctx := context.Background()
+	site := Site{WebsiteID: "ILOCAL", Port: 20002, Hosts: []string{"shop.localhost", "shop.example.net"}, Redirects: []string{"www.shop.localhost"}, Primary: "shop.localhost"}
+	for range 2 {
+		if err := c.Apply(ctx, site); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, name := range []string{"shop.localhost", "www.shop.localhost"} {
+		var last error
+		for range 20 {
+			chain, err := ServedCertificate(ctx, address, name)
+			if last = err; err == nil {
+				if last = CheckPanelCertificate(chain, name, PanelInternal, root, nil, time.Now()); last == nil {
+					t.Logf("%s: issuer %q, expires %s", name, chain[0].Issuer.CommonName, chain[0].NotAfter)
+					break
+				}
+			}
+			time.Sleep(500 * time.Millisecond)
+		}
+		if last != nil {
+			t.Errorf("%s: %v", name, last)
+		}
+	}
+	// The panel keeps its certificate.
+	if chain, err := ServedCertificate(ctx, address, "panel.localhost"); err != nil || CheckPanelCertificate(chain, "panel.localhost", PanelInternal, root, nil, time.Now()) != nil {
+		t.Errorf("panel.localhost after the website: %v", err)
+	}
+	if err := c.Remove(ctx, site.WebsiteID); err != nil {
+		t.Fatal(err)
+	}
+	if status, _, _ := c.do(ctx, http.MethodGet, "/id/"+localPolicyID(site.WebsiteID), nil); status == http.StatusOK {
+		t.Error("the policy of the website stays after the removal")
+	}
 }

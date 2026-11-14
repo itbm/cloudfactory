@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/itbm/cloudfactory/agent/internal/caddy"
 	"github.com/itbm/cloudfactory/agent/internal/panel"
 	"github.com/itbm/cloudfactory/agent/internal/quadlet"
 )
@@ -118,12 +119,29 @@ func (d *Deps) FillReport(ctx context.Context, r *panel.Report) {
 		o.dbAt = now
 	}
 	r.Databases = o.dbSizes
-	quota := "running"
-	if d.QuotaMount == "" {
-		// The panel shows that the server does not apply the disk limits of the websites.
-		quota = "stopped"
+	r.Services = append(r.Services, d.firewallService(ctx), d.quotaService())
+}
+
+// firewallService reports the firewall of Cloudfactory. The agent checks the table in the
+// kernel, not the nftables service: the installer loads the rules with nft, and the service
+// starts for the first time only when the server starts again.
+func (d *Deps) firewallService(ctx context.Context) panel.Service {
+	s := panel.Service{Name: "firewall", State: "running"}
+	if _, err := d.Run.Run(ctx, "nft", "list", "table", "inet", "cloudfactory"); err != nil {
+		s.State = "stopped"
+		s.Detail = "The nftables table \"inet cloudfactory\" is not loaded. Run the installer again on this server, or run: nft -f " + d.firewallFile()
 	}
-	r.Services = append(r.Services, panel.Service{Name: "disk-quotas", State: quota})
+	return s
+}
+
+// quotaService reports the disk limits of the websites. A server can operate without them.
+func (d *Deps) quotaService() panel.Service {
+	if d.QuotaMount != "" {
+		return panel.Service{Name: "disk-quotas", State: "running", Optional: true}
+	}
+	// The panel shows that the server does not apply the disk limits of the websites.
+	return panel.Service{Name: "disk-quotas", State: "stopped", Optional: true,
+		Detail: "User quotas are off on the file system of the websites, so this server does not apply the disk limit of a plan. To turn them on, see \"Disk quotas\" in the installation guide, and then restart cf-agent."}
 }
 
 // cgroupUse reads the memory, CPU and process use of a website from the cgroup of its service.
@@ -294,6 +312,9 @@ func (d *Deps) certificate(ctx context.Context, domain string) (time.Time, error
 	if d.Certificate != nil {
 		return d.Certificate(ctx, domain)
 	}
+	if !caddy.PublicName(domain) {
+		return d.localCertificate(ctx, domain)
+	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	dialer := tls.Dialer{Config: &tls.Config{ServerName: domain, MinVersion: tls.VersionTLS12}}
@@ -314,6 +335,46 @@ func (d *Deps) certificate(ctx context.Context, domain string) (time.Time, error
 		return time.Time{}, errNoCertificate
 	}
 	return certs[0].NotAfter, nil
+}
+
+// localCertificate gives the expiry time of the certificate of a local name, for example
+// shop.localhost. The panel CA of the edge proxy signs these certificates (caddy.LocalPolicy),
+// and the system does not trust that CA, so the agent checks the chain with the root
+// certificate of the panel CA. Before, the certificate of a local name was "pending" for all time.
+func (d *Deps) localCertificate(ctx context.Context, domain string) (time.Time, error) {
+	chain, err := d.servedCertificate(ctx, domain)
+	if err != nil {
+		return time.Time{}, errNoCertificate
+	}
+	root, err := d.Edge.PanelCARoot(ctx)
+	if err != nil {
+		return time.Time{}, err
+	}
+	if err := caddy.CheckPanelCertificate(chain, domain, caddy.PanelInternal, root, nil, time.Now()); err != nil {
+		// For example a certificate from the default CA of Caddy, from before the policy.
+		return time.Time{}, errNoCertificate
+	}
+	return chain[0].NotAfter, nil
+}
+
+// RestoreLocalNames sets the routes of the websites that have a local name again, so that a
+// website from an earlier agent version gets the certificate policy of its local names.
+func (d *Deps) RestoreLocalNames(ctx context.Context) error {
+	sites, err := d.State.All()
+	if err != nil {
+		return err
+	}
+	var errs []error
+	for _, s := range sites {
+		if s.Website == nil || s.Port == 0 {
+			continue
+		}
+		site := d.site(s.Website, s.Port)
+		if len(caddy.LocalNames(site)) > 0 {
+			errs = append(errs, d.Edge.Apply(ctx, site))
+		}
+	}
+	return errors.Join(errs...)
 }
 
 // databaseSizes gives the size of each database in the shared database containers that operate.

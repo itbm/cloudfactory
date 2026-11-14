@@ -105,6 +105,11 @@ func (c *Client) Apply(ctx context.Context, s Site) error {
 	if len(s.Hosts) == 0 {
 		return c.Remove(ctx, s.WebsiteID)
 	}
+	// The certificate policy comes before the routes. With the routes first, Caddy would
+	// start to get a certificate for a local name from its default CA.
+	if err := c.applyLocalPolicy(ctx, s); err != nil {
+		return err
+	}
 	redirect := "cf-" + s.WebsiteID + "-redirect"
 	if len(s.Redirects) > 0 {
 		if err := c.put(ctx, redirect, RedirectRoute(s)); err != nil {
@@ -131,9 +136,10 @@ func (c *Client) put(ctx context.Context, id string, route map[string]any) error
 	return fmt.Errorf("caddy: patch %s: status %d: %s", id, status, body)
 }
 
-// Remove deletes the routes of a website. A route that does not exist is not an error.
+// Remove deletes the routes and the certificate policy of a website. A route that does not
+// exist is not an error.
 func (c *Client) Remove(ctx context.Context, websiteID string) error {
-	for _, id := range []string{"cf-" + websiteID, "cf-" + websiteID + "-redirect"} {
+	for _, id := range []string{"cf-" + websiteID, "cf-" + websiteID + "-redirect", localPolicyID(websiteID)} {
 		if err := c.remove(ctx, id); err != nil {
 			return err
 		}

@@ -88,11 +88,50 @@ class JobOutcome
         }
     }
 
+    /**
+     * The agent gives the DNS state of the first domain with the result of the job. Before, the
+     * panel waited for the next report of the agent, and a new website showed "Waiting for DNS"
+     * for about one minute, also for a name such as shop.localhost that always points here.
+     *
+     * @param  array<string, mixed>  $result
+     */
+    private function websiteMade(Website $website, array $result): bool
+    {
+        $website->update(['status' => WebsiteStatus::Running]);
+        if (array_key_exists('dnsPointsHere', $result)) {
+            $website->domains()->where('name', $website->name)->update(['dns_points_here' => (bool) $result['dnsPointsHere']]);
+        }
+
+        return true;
+    }
+
+    /**
+     * The packages that stay after an update job. The server installs all packages only with the
+     * policy "all". With "security" it installs the security updates, and with "tools" the held
+     * container tools (FR-1113). Before, the panel showed no pending package after each of these
+     * jobs, until the next report of the agent.
+     *
+     * @param  list<array<string, mixed>>  $pending
+     * @return list<array<string, mixed>>
+     */
+    public static function updatesLeft(array $pending, string $policy): array
+    {
+        return array_values(array_filter($pending, function (array $package) use ($policy) {
+            $tool = (bool) ($package['containerTool'] ?? false);
+
+            return match ($policy) {
+                'tools' => ! $tool,
+                'all' => $tool,
+                default => $tool || ! ($package['security'] ?? false),
+            };
+        }));
+    }
+
     private function applySuccess(AgentJob $job, ?Website $website, array $result): void
     {
         $p = $job->payload;
         match ($job->action) {
-            AgentAction::CreateWebsite => $website?->update(['status' => WebsiteStatus::Running]),
+            AgentAction::CreateWebsite => $website && $this->websiteMade($website, $result),
             AgentAction::SetWebsitePower => $website?->update([
                 'status' => ($p['power'] ?? '') === 'stop' ? WebsiteStatus::Stopped : WebsiteStatus::Running,
             ]),
@@ -117,7 +156,7 @@ class JobOutcome
             AgentAction::DeleteDatabase => $website?->databases()->where(['engine' => $p['engine'] ?? '', 'name' => $p['name'] ?? ''])->delete(),
             AgentAction::DeleteDatabaseUser => $website?->databaseUsers()->where(['engine' => $p['engine'] ?? '', 'name' => $p['name'] ?? ''])->delete(),
             AgentAction::InstallHostUpdates => $job->server->update([
-                'pending_updates' => [],
+                'pending_updates' => self::updatesLeft($job->server->pending_updates ?? [], (string) ($p['policy'] ?? 'security')),
                 'last_update_at' => now(),
                 'reboot_required' => (bool) ($result['rebootRequired'] ?? $job->server->reboot_required),
             ]),

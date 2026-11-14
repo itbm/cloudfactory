@@ -119,6 +119,11 @@ func (f *fakeCaddy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, `{"error":"key already exists: policies"}`, http.StatusConflict)
 		case r.Method == http.MethodPut:
 			readJSON(r, &f.tls)
+		case r.Method == http.MethodPost && f.tls != nil:
+			// A POST on a list adds the value at the end.
+			var policy map[string]any
+			readJSON(r, &policy)
+			f.tls = append(f.tls, policy)
 		default:
 			http.Error(w, "unexpected", http.StatusTeapot)
 		}
@@ -131,6 +136,12 @@ func (f *fakeCaddy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		for i, route := range f.routes {
 			if route["@id"] == id {
 				f.routes = append(f.routes[:i], f.routes[i+1:]...)
+				return
+			}
+		}
+		for i, policy := range f.tls {
+			if policy["@id"] == id {
+				f.tls = append(f.tls[:i], f.tls[i+1:]...)
 				return
 			}
 		}

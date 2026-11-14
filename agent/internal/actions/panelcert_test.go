@@ -156,3 +156,57 @@ func TestTheReportOfThePanelServerHasThePanelCertificate(t *testing.T) {
 		t.Errorf("panel certificate of a server with no panel = %+v", r.PanelCertificate)
 	}
 }
+
+// A website on a local name has a certificate from the panel CA. The system does not trust
+// that CA, so the report checks the chain with the root certificate of the CA.
+func TestTheReportAcceptsTheCertificateOfALocalName(t *testing.T) {
+	d, edge := panelServer(t, "shop.localhost", false)
+	st := d.domainState(context.Background(), "shop.localhost")
+	if st.Certificate != "valid" || !st.DNSPointsHere || st.ExpiresAt == "" {
+		t.Errorf("state = %+v", st)
+	}
+
+	// A certificate from a different CA, for example the default CA of Caddy, is not valid.
+	other, otherKey := certificateFor(t, "Caddy Local Authority", nil, nil)
+	leaf, _ := certificateFor(t, "shop.localhost", other, otherKey)
+	d.ServedCertificate = func(context.Context, string) ([]*x509.Certificate, error) {
+		return []*x509.Certificate{leaf, other}, nil
+	}
+	d.DNSPointsHere = LocalDNS()
+	if st := d.domainState(context.Background(), "shop.localhost"); st.Certificate != "pending" || !st.DNSPointsHere {
+		t.Errorf("state = %+v", st)
+	}
+	_ = edge
+}
+
+// RFC 6761: a name below localhost is this computer, with no DNS request.
+func TestLocalhostNamesPointHere(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // A DNS request would fail: the context has ended.
+	for _, name := range []string{"localhost", "shop.localhost", "A.B.Localhost."} {
+		if !LocalDNS()(ctx, name) {
+			t.Errorf("%s does not point here", name)
+		}
+	}
+	if LocalDNS()(ctx, "localhost.example.com") {
+		t.Error("localhost.example.com points here with no DNS answer")
+	}
+}
+
+// After an update of the agent, the websites with a local name get their certificate policy.
+func TestRestoreLocalNamesAppliesOnlyTheWebsitesWithALocalName(t *testing.T) {
+	d, _, edge := deps(t)
+	local := website("ghcr.io/cloudfactory/frankenphp-php8.4:8.4.0-1")
+	local.Domains = []*agentv1.Domain{{Name: "shop.localhost", Kind: "primary"}}
+	run(t)(d.CreateWebsite(&agentv1.WebsiteRequest{JobId: jobID, Website: local}))
+	edge.mu.Lock()
+	edge.sites = map[string]caddy.Site{}
+	edge.mu.Unlock()
+
+	if err := d.RestoreLocalNames(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if s, ok := edge.sites[websiteID]; !ok || s.Hosts[0] != "shop.localhost" || s.Port == 0 {
+		t.Errorf("sites = %+v", edge.sites)
+	}
+}

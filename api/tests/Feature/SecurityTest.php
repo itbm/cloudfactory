@@ -286,9 +286,9 @@ class SecurityTest extends TestCase
         $code = Totp::code($secret);
 
         $this->postJson('/api/v1/auth/login', ['email' => $user->email, 'password' => 'password', 'totp' => $code])->assertOk();
-        $this->postJson('/api/v1/auth/login', ['email' => $user->email, 'password' => 'password', 'totp' => $code])->assertJsonValidationErrors('email');
+        $this->postJson('/api/v1/auth/login', ['email' => $user->email, 'password' => 'password', 'totp' => $code])->assertJsonValidationErrors('totp');
         // An older code is refused too.
-        $this->postJson('/api/v1/auth/login', ['email' => $user->email, 'password' => 'password', 'totp' => Totp::code($secret, time() - 30)])->assertJsonValidationErrors('email');
+        $this->postJson('/api/v1/auth/login', ['email' => $user->email, 'password' => 'password', 'totp' => Totp::code($secret, time() - 30)])->assertJsonValidationErrors('totp');
     }
 
     /**

@@ -101,7 +101,8 @@ class Website extends Model
     public function updateReady(): bool
     {
         $available = $this->image->available_tag;
-        if ($available === null || $this->status === WebsiteStatus::Stopped) {
+        // A website that the panel could not make has no container to update.
+        if ($available === null || in_array($this->status, [WebsiteStatus::Stopped, WebsiteStatus::Failed], true)) {
             return false;
         }
         // FR-1110: an image that an administrator added can get a new digest for the same tag.
