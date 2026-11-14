@@ -163,6 +163,11 @@ type HostUse struct {
 type Service struct {
 	Name  string `json:"name"`
 	State string `json:"state"`
+	// Detail tells the administrator why the service does not run, and what to do.
+	Detail string `json:"detail,omitempty"`
+	// Optional is true for a part that a server can operate without. The panel does not show
+	// the server as degraded when an optional part is off.
+	Optional bool `json:"optional,omitempty"`
 }
 
 // Usage is the resource use of one website (FR-203).

@@ -306,6 +306,9 @@ func serve(ctx context.Context) error {
 	if err := deps.EnsureEdge(ctx, deps.EdgeImage, cfg.DataDir); err != nil {
 		slog.Error("start edge proxy", "err", err)
 	}
+	if err := deps.RestoreLocalNames(ctx); err != nil {
+		slog.Error("set the certificates of the local names", "err", err)
+	}
 	if err := deps.ShareImages(ctx); err != nil {
 		slog.Error("start the shared image store", "err", err)
 	}
@@ -323,7 +326,7 @@ func serve(ctx context.Context) error {
 	if job, ok := deps.ResumeReboot(); ok {
 		runner.Resume(job)
 	}
-	collector := status.Collector{Run: run, Apt: apt, AgentVersion: version, GVisorVersion: gv.Current, Services: []string{"cf-agent", "nftables", "ssh", "cf-sftp"}, UserServices: []string{host.EdgeUser + ":cf-edge.service"}, DiskPath: cfg.SitesDir, Extra: deps.FillReport}
+	collector := status.Collector{Run: run, Apt: apt, AgentVersion: version, GVisorVersion: gv.Current, Services: []string{"cf-agent", "ssh", "cf-sftp"}, UserServices: []string{host.EdgeUser + ":cf-edge.service"}, DiskPath: cfg.SitesDir, Extra: deps.FillReport}
 
 	go reportLoop(ctx, reporter, collector, time.Duration(cfg.ReportSeconds)*time.Second, cfg.PanelServerCertificateSHA256 == "", savePanelCAPin)
 	go func() {

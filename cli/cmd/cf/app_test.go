@@ -44,7 +44,7 @@ func fakePanel(t *testing.T, failJob bool) (*httptest.Server, *[]string) {
 			}
 			w.WriteHeader(http.StatusAccepted)
 			w.Write([]byte(`{"website":{"id":"W3"},"job":{"id":"J1","title":"Create website new.example","state":"queued"}}`))
-		case r.URL.Path == "/api/v1/websites/W1/power":
+		case r.URL.Path == "/api/v1/websites/W1/power", r.URL.Path == "/api/v1/websites/W1/retry":
 			w.WriteHeader(http.StatusAccepted)
 			w.Write([]byte(`{"job":{"id":"J1","title":"Restart acme.example","state":"queued"}}`))
 		case r.URL.Path == "/api/v1/jobs/J1":
@@ -96,6 +96,19 @@ func TestRestartWaitsForTheJob(t *testing.T) {
 	}
 	if (*calls)[1] != "POST /api/v1/websites/W1/power" {
 		t.Errorf("calls = %v", *calls)
+	}
+}
+
+func TestRetryMakesAFailedWebsiteAgain(t *testing.T) {
+	srv, calls := fakePanel(t, false)
+	defer srv.Close()
+	a, out := testApp(srv)
+
+	if err := a.dispatch(context.Background(), []string{"websites", "retry", "acme.example"}); err != nil {
+		t.Fatal(err)
+	}
+	if (*calls)[1] != "POST /api/v1/websites/W1/retry" || !strings.Contains(out.String(), "complete.") {
+		t.Errorf("calls = %v, output:\n%s", *calls, out)
 	}
 }
 

@@ -340,6 +340,7 @@ func (d *Deps) CreateWebsite(req *agentv1.WebsiteRequest) (jobs.Job, error) {
 				return err
 			}
 			if req.GetCopyFrom() == "" {
+				d.writeDefaultPage(ctx, w)
 				return nil
 			}
 			// A staging copy (FR-205) starts with the files of the source website. CF-05: the
@@ -381,6 +382,40 @@ func (d *Deps) CreateWebsite(req *agentv1.WebsiteRequest) (jobs.Job, error) {
 			return nil
 		}},
 	}, Result: func() map[string]any { return map[string]any{"port": port, "dnsPointsHere": dnsHere} }}, nil
+}
+
+// defaultPage is the first page of a new PHP website. The images have the same page in
+// /app/public (images/frankenphp/index.php), but the directory of the website covers it, so
+// a new website gave only an empty 404 answer.
+const defaultPage = `<?php
+// The default page of a new website. Upload your files to replace it.
+header('Content-Type: text/html; charset=utf-8');
+?><!doctype html>
+<html lang="en-GB">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Website is ready</title>
+<body style="font-family: system-ui, sans-serif; max-width: 40rem; margin: 4rem auto; padding: 0 1rem">
+<h1>This website is ready</h1>
+<p>Cloudfactory made this page. Upload your files with SFTP to replace it.</p>
+<p>PHP <?= htmlspecialchars(PHP_VERSION) ?></p>
+</body>
+</html>
+`
+
+// writeDefaultPage puts the default page in the document root of a new PHP website, when the
+// directory is empty. The website user writes the file: root does not write in a directory
+// that a tenant controls (CF-05). A website can operate with no page, so an error is only in
+// the log.
+func (d *Deps) writeDefaultPage(ctx context.Context, w *agentv1.Website) {
+	if w.GetRuntime() == "custom" || (w.GetDocumentRoot() != "" && w.GetDocumentRoot() != "public") {
+		return
+	}
+	dir := filepath.Join(d.Host.AppDir(w.GetUnixUser()), "public")
+	if _, err := d.Run.RunInput(ctx, defaultPage, "runuser", "-u", w.GetUnixUser(), "--", "sh", "-c",
+		`[ -n "$(ls -A "$1" 2>/dev/null)" ] || cat >"$1/index.php"`, "sh", dir); err != nil {
+		slog.Warn("no default page for the new website", "website", w.GetId(), "err", err)
+	}
 }
 
 // checkCopies checks the databases and the users of a staging copy. Each source database

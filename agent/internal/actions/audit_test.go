@@ -364,8 +364,21 @@ func TestTheReportHasWebsiteUseAndCertificates(t *testing.T) {
 	if len(r.Domains) != 1 || r.Domains[0].Certificate != "valid" || !r.Domains[0].DNSPointsHere || r.Domains[0].ExpiresAt == "" {
 		t.Errorf("domains = %+v", r.Domains)
 	}
-	if r.Services[len(r.Services)-1] != (panel.Service{Name: "disk-quotas", State: "stopped"}) {
+	// A server can operate with no disk quotas, so the part is optional and tells the reason.
+	if q := r.Services[len(r.Services)-1]; q.Name != "disk-quotas" || q.State != "stopped" || !q.Optional || q.Detail == "" {
 		t.Errorf("services = %+v", r.Services)
+	}
+	// The firewall is the table in the kernel, not the nftables service.
+	if f := r.Services[len(r.Services)-2]; f != (panel.Service{Name: "firewall", State: "running"}) {
+		t.Errorf("services = %+v", r.Services)
+	}
+	if !f.Called("nft list table inet cloudfactory") {
+		t.Errorf("no check of the firewall table: %v", f.Calls)
+	}
+	// With no table, the report tells the administrator what to do.
+	f.Rules = append(f.Rules, execx.Rule{Prefix: "nft list table inet cloudfactory", Err: errors.New("Error: No such file or directory")})
+	if fw := d.firewallService(context.Background()); fw.State != "stopped" || fw.Optional || !strings.Contains(fw.Detail, "nft -f /etc/nftables.d-cloudfactory.nft") {
+		t.Errorf("firewall = %+v", fw)
 	}
 }
 
