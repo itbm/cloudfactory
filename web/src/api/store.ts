@@ -17,6 +17,7 @@ import type {
   DatabaseLimits,
   DatabasePrivileges,
   DatabaseServer,
+  MailAlias,
   DomainKind,
   HostUpdatePolicy,
   Job,
@@ -44,7 +45,7 @@ export function emptyState(): State {
   return {
     session: { signedIn: false, user: { id: "", name: "", email: "", role: "owner" }, contextId: "" },
     contexts: [], websites: [], jobs: [], activity: [], notifications: [], servers: [], images: [], rollout: undefined,
-    databaseServers: [], databases: [], databaseUsers: [], snapshots: [], plans: [], customers: [], users: [],
+    databaseServers: [], mailDomains: [], mailboxes: [], mailAliases: [], databases: [], databaseUsers: [], snapshots: [], plans: [], customers: [], users: [],
     backupPolicy: { daily: 7, weekly: 4, monthly: 6, time: "03:00", target: "", credentialNames: [] },
     tokens: [], totpEnabled: false, securityNotices: [], audit: [], joinToken: "", joinCaSha256: undefined,
     panelDomain: "",
@@ -484,6 +485,107 @@ export function deleteDatabaseServer(serverId: string): Promise<void> {
   });
 }
 
+// Email
+
+/** The DNS record that shows who controls a domain. The panel asks for it when a different customer can own the domain. */
+export interface MailVerification { type: string; name: string; value: string }
+
+/** The error of a new mail domain that needs a DNS record first. */
+export class MailVerificationError extends ApiError {
+  constructor(message: string, readonly verification: MailVerification) {
+    super(message, {});
+  }
+}
+
+/** Adds a mail domain. The job makes the DKIM keys, and then the domain has its DNS records. */
+export function createMailDomain(input: { name: string; customerId?: string; serverId?: string }): Promise<void> {
+  return call(async () => {
+    try {
+      const r = await live.request<{ mailDomain: live.ApiMailDomain; job: live.ApiJob }>("POST", "/mail/domains", { name: input.name.trim().toLowerCase(), customerId: input.customerId || undefined, serverId: input.serverId || undefined });
+      update((d) => { d.mailDomains = [...d.mailDomains.filter((x) => x.id !== r.mailDomain.id), live.toMailDomain(r.mailDomain)]; });
+      void track(r.job).then(() => refresh());
+    } catch (e) {
+      const verification = e instanceof live.LiveError ? (e.body as { verification?: MailVerification } | undefined)?.verification : undefined;
+      if (verification) throw new MailVerificationError((e as Error).message, verification);
+      throw e;
+    }
+  });
+}
+
+/** Reads the DNS records of a mail domain now. */
+export function checkMailDomain(domainId: string): Promise<void> {
+  return call(async () => {
+    const r = await live.request<live.ApiMailDomain>("POST", `/mail/domains/${domainId}/check`);
+    update((d) => { d.mailDomains = d.mailDomains.map((x) => (x.id === domainId ? live.toMailDomain(r) : x)); });
+  });
+}
+
+/** Adds a mail domain again after its first job failed. */
+export function retryMailDomain(domainId: string): Promise<void> {
+  return call(async () => {
+    const r = await live.request<{ mailDomain: live.ApiMailDomain; job: live.ApiJob }>("POST", `/mail/domains/${domainId}/retry`);
+    update((d) => { d.mailDomains = d.mailDomains.map((x) => (x.id === domainId ? live.toMailDomain(r.mailDomain) : x)); });
+    void track(r.job).then(() => refresh());
+  });
+}
+
+/** Marks a row "removing" until the job is complete. */
+function removing(list: "mailDomains" | "mailboxes" | "mailAliases", id: string, job: live.ApiJob | null) {
+  update((d) => {
+    const x = d[list].find((y) => y.id === id);
+    if (x) x.status = "removing";
+  });
+  void track(job).then(() => refresh());
+}
+
+/** Removes a mail domain that has no mailboxes and no addresses. */
+export function deleteMailDomain(domainId: string): Promise<void> {
+  return call(async () => removing("mailDomains", domainId, (await live.request<JobAnswer>("DELETE", `/mail/domains/${domainId}`)).job));
+}
+
+/** Makes a mailbox. The answer has the password: the panel shows it one time. */
+export function createMailbox(input: { domainId: string; localPart: string; quotaBytes: number }): Promise<string> {
+  return call(async () => {
+    const r = await live.request<{ mailbox: live.ApiMailbox; password: string; job: live.ApiJob }>("POST", "/mail/mailboxes", { ...input, localPart: input.localPart.trim().toLowerCase() });
+    update((d) => { d.mailboxes = [...d.mailboxes, live.toMailbox(r.mailbox)]; });
+    void track(r.job).then(() => refresh());
+    return r.password;
+  });
+}
+
+/** Changes the size of a mailbox, or gives it a new password. The answer is the new password, or "". */
+export function setMailbox(mailboxId: string, change: { quotaBytes?: number; newPassword?: boolean }): Promise<string> {
+  return call(async () => {
+    const r = await live.request<{ mailbox: live.ApiMailbox; password: string | null; job: live.ApiJob | null }>("PATCH", `/mail/mailboxes/${mailboxId}`, change);
+    update((d) => { d.mailboxes = d.mailboxes.map((x) => (x.id === mailboxId ? live.toMailbox(r.mailbox) : x)); });
+    if (r.job) void track(r.job).then(() => refresh());
+    return r.password ?? "";
+  });
+}
+
+/** Removes a mailbox and its messages. */
+export function deleteMailbox(mailboxId: string): Promise<void> {
+  return call(async () => removing("mailboxes", mailboxId, (await live.request<JobAnswer>("DELETE", `/mail/mailboxes/${mailboxId}`)).job));
+}
+
+/** Makes an alias or a forwarder. */
+export function createMailAlias(input: { domainId: string; localPart: string; kind: MailAlias["kind"]; destinations: string[] }): Promise<void> {
+  return call(async () => {
+    const r = await live.request<{ mailAlias: MailAlias; job: live.ApiJob }>("POST", "/mail/aliases", { ...input, localPart: input.localPart.trim().toLowerCase() });
+    update((d) => { d.mailAliases = [...d.mailAliases, r.mailAlias]; });
+    void track(r.job).then(() => refresh());
+  });
+}
+
+export function deleteMailAlias(aliasId: string): Promise<void> {
+  return call(async () => removing("mailAliases", aliasId, (await live.request<JobAnswer>("DELETE", `/mail/aliases/${aliasId}`)).job));
+}
+
+/** Turns on email for a server, or changes the host name of its mail server. */
+export function setServerMail(serverId: string, hostname: string) {
+  return call(() => live.request<JobAnswer>("PUT", `/servers/${serverId}/mail`, { hostname: hostname.trim().toLowerCase() })).then((r) => track(r.job).then(() => refresh()));
+}
+
 /**
  * Makes a database. With createUser, it also makes a user with readwrite access, and gives its password.
  * A Valkey database always has a user with the same name: the user and the database number are the database.
@@ -725,7 +827,7 @@ export function setCustomer(customerId: string, change: Partial<Pick<Customer, "
 
 export function savePlan(plan: Plan) {
   const exists = state.plans.some((p) => p.id === plan.id);
-  const body = { name: plan.name.trim(), websites: plan.websites, mailboxes: plan.mailboxes, databases: plan.databases, phpExtensions: plan.phpExtensions, limits: plan.limits, databaseServers: plan.databaseServers, databaseLimits: plan.databaseLimits };
+  const body = { name: plan.name.trim(), websites: plan.websites, mailboxes: plan.mailboxes, mailStorageBytes: plan.mailStorageBytes, databases: plan.databases, phpExtensions: plan.phpExtensions, limits: plan.limits, databaseServers: plan.databaseServers, databaseLimits: plan.databaseLimits };
   return call(() => live.request(exists ? "PATCH" : "POST", exists ? `/plans/${plan.id}` : "/plans", body)).then(() => refresh());
 }
 

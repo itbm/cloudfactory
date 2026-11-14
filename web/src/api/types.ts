@@ -300,6 +300,8 @@ export interface Server {
   rebootRequired: boolean;
   /** The panel has a newer agent for this server. */
   agentUpdateAvailable?: boolean;
+  /** The mail server of this server. Undefined when email is off. */
+  mail?: ServerMail;
   /** The host and the port that the panel uses to connect to the agent. */
   agentAddress?: string;
   /** The reason when the panel could not connect to the agent. The jobs of the server then fail. */
@@ -328,6 +330,72 @@ export interface DatabaseLimits {
  * starting: the panel makes the database server. failed: the panel could not make it.
  * removing: the panel removes it, and it gets no new database.
  */
+// Email
+//
+// A customer has mail domains. Each mail domain has mailboxes, and addresses that send their
+// mail to other addresses: aliases and forwarders. The mail server of a server has the mail
+// of all customers on that server.
+
+export type MailStatus = "pending" | "active" | "failed" | "removing";
+
+/** A DNS record that the owner of a mail domain adds. */
+export interface MailRecord {
+  type: string;
+  name: string;
+  value: string;
+  /** "mx", "spf", "dkim" or "dmarc". */
+  purpose: string;
+  /** Null before the first check of the DNS. */
+  found: boolean | null;
+}
+
+export interface MailDomain {
+  id: string;
+  name: string;
+  customerId: string;
+  serverId: string;
+  status: MailStatus;
+  /** Mail programs connect to this host name: IMAP on port 993, SMTP on port 465 or 587. */
+  mailHost: string;
+  records: MailRecord[];
+  /** True when the last check found all records. */
+  dnsReady: boolean;
+  dnsCheckedAt?: string;
+  mailboxes: number;
+  aliases: number;
+}
+
+export interface Mailbox {
+  id: string;
+  address: string;
+  localPart: string;
+  domainId: string;
+  customerId: string;
+  status: MailStatus;
+  quotaBytes: number;
+  /** The size of the messages, from the last report of the server. */
+  usedBytes: number;
+}
+
+export interface MailAlias {
+  id: string;
+  address: string;
+  localPart: string;
+  domainId: string;
+  customerId: string;
+  /** alias: the destinations are mailboxes of the customer. forwarder: they are other addresses. */
+  kind: "alias" | "forwarder";
+  destinations: string[];
+  status: MailStatus;
+}
+
+/** The mail server of a server. An administrator turns it on. */
+export interface ServerMail {
+  hostname: string;
+  status: "starting" | "running" | "failed";
+  domains: number;
+}
+
 export type DatabaseServerStatus = "starting" | "running" | "stopped" | "failed" | "removing";
 
 /**
@@ -465,7 +533,10 @@ export interface Plan {
   name: string;
   limits: Limits;
   websites: number;
+  /** The number of mailboxes of a customer with the plan. */
   mailboxes: number;
+  /** The total size of the mailboxes of a customer with the plan. */
+  mailStorageBytes: number;
   /** The number of databases of each database server with the plan. */
   databases: number;
   phpExtensions: string[];
@@ -592,6 +663,9 @@ export interface State {
   images: RuntimeImage[];
   rollout?: Rollout;
   databaseServers: DatabaseServer[];
+  mailDomains: MailDomain[];
+  mailboxes: Mailbox[];
+  mailAliases: MailAlias[];
   databases: Database[];
   databaseUsers: DatabaseUser[];
   snapshots: Snapshot[];

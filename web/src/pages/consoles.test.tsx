@@ -28,19 +28,19 @@ describe("the console of each role", () => {
   it("gives each role its own first page and its own menu", async () => {
     await open("administrator", "/");
     expect(heading()).toBe("Overview");
-    expect(menu()).toEqual(["Overview", "Finish setup", "Servers", "Images and updates", "Customers", "Plans", "Websites", "Databases", "Backups", "Apps", "Jobs and activity", "Settings"]);
+    expect(menu()).toEqual(["Overview", "Finish setup", "Servers", "Images and updates", "Customers", "Plans", "Websites", "Databases", "Email", "Backups", "Apps", "Jobs and activity", "Settings"]);
     cleanup();
     reset();
 
     await open("reseller", "/");
     expect(heading()).toBe("Customers");
-    expect(menu()).toEqual(["Customers", "Plans", "Websites", "Databases", "Backups", "Apps", "Jobs and activity", "My account", "Settings"]);
+    expect(menu()).toEqual(["Customers", "Plans", "Websites", "Databases", "Email", "Backups", "Apps", "Jobs and activity", "My account", "Settings"]);
     cleanup();
     reset();
 
     await open("owner", "/");
     expect(heading()).toBe("My websites");
-    expect(menu()).toEqual(["My websites", "Databases", "Backups", "Apps", "Activity", "My account", "Settings"]);
+    expect(menu()).toEqual(["My websites", "Databases", "Email", "Backups", "Apps", "Activity", "My account", "Settings"]);
   });
 
   it("has no link from the menu of an owner or a reseller to a page that the role cannot open", () => {
@@ -139,7 +139,7 @@ describe("the overview of the administrator", () => {
     await open("administrator", "/overview");
     const main = screen.getByRole("main");
     expect(main.textContent).toContain("3 setup items are open");
-    expect(within(main).getByRole("link", { name: "Servers: 3. 1 needs attention" })).toBeTruthy();
+    expect(within(main).getByRole("link", { name: "Servers: 4. 1 needs attention" })).toBeTruthy();
     expect(within(main).getByRole("link", { name: "Failed jobs: 1. Not resolved" })).toBeTruthy();
     expect(main.textContent).toContain("web-3 is degraded: cf-sftp failed.");
     expect(main.textContent).toContain("Node.js app could not be checked for updates.");
@@ -191,9 +191,10 @@ describe("the UI items of the audit", () => {
     expect((within(dialog).getByRole("button", { name: "Change to Starter" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it("shows no mailbox words (U13)", async () => {
+  it("shows the email limits of each plan", async () => {
+    // Audit item U13 removed the mailbox words when the panel had no email. Now it has email.
     await open("administrator", "/plans");
-    expect(screen.getByRole("main").textContent).not.toMatch(/mailbox/i);
+    expect(screen.getByRole("main").textContent).toContain("100 mailboxes25 GB of mail storage");
   });
 
   it("does not show Up to date after a failed check of an image (U9)", async () => {

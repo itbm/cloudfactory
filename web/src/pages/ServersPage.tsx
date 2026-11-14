@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useAction, useStore } from "../api/hooks";
 import { failedServices } from "../api/selectors";
-import { checkConnection, installUpdates, loopbackName, newJoinToken, rebootServer, refresh, removeServer, setServer, updateAgent } from "../api/store";
+import { checkConnection, installUpdates, loopbackName, newJoinToken, rebootServer, refresh, removeServer, setServer, setServerMail, updateAgent } from "../api/store";
 import type { HostUpdatePolicy, Server, ServerRole } from "../api/types";
 import { Topbar } from "../components/Layout";
 import { CopyField } from "./website/AccessTab";
@@ -150,6 +150,41 @@ export function ServersPage() {
 /** The number of packages that the server page shows before the user asks for all. */
 const PACKAGE_ROWS = 8;
 
+const MAIL_SERVER_STATUS: Record<NonNullable<Server["mail"]>["status"], { label: string; tone: "info" | "success" | "danger" }> = {
+  starting: { label: "Starting", tone: "info" },
+  running: { label: "Running", tone: "success" },
+  failed: { label: "Failed", tone: "danger" },
+};
+
+/**
+ * Email on a server. An administrator turns it on with a host name. The server then has one
+ * mail server for the mail domains of the customers.
+ */
+function MailCard({ server, busy }: { server: Server; busy: boolean }) {
+  const mail = server.mail;
+  const [hostname, setHostname] = useState(mail?.hostname ?? "");
+  const save = useAction(setServerMail);
+  const status = mail && MAIL_SERVER_STATUS[mail.status];
+  return (
+    <Card title="Email" actions={status && <Status tone={status.tone}>{status.label}</Status>}>
+      <div className="card-body">
+        {mail
+          ? <p>The mail server of this server has the host name <code>{mail.hostname}</code> and {mail.domains} {mail.domains === 1 ? "mail domain" : "mail domains"}. It listens on the ports 25, 465, 587 and 993.</p>
+          : <p>Email is off on this server. Turn it on to give the customers mailboxes on their own domains. The server then runs one mail server (Stalwart) in its own container, and opens the ports 25, 465, 587 and 993.</p>}
+        {mail?.status === "failed" && <p className="text-danger" style={{ marginTop: 8 }}>The last job of the mail server failed. Look at the jobs of the server, correct the cause, and save the host name again.</p>}
+        <FormError error={save.error} shown={["hostname"]} />
+        <form className="inline-form" style={{ marginTop: 14 }} noValidate onSubmit={(e) => { e.preventDefault(); void save.run(server.id, hostname); }}>
+          <Field label="Host name of the mail server" hint="Mail programs connect to this name, and the server gets a TLS certificate for it. The name needs an A or AAAA record with the address of this server. The reverse DNS of the address must give the same name." error={save.error?.fields.hostname}>
+            {(p) => <input {...p} className="input" value={hostname} onChange={(e) => setHostname(e.target.value)} autoCapitalize="none" spellCheck={false} placeholder={`mail.${server.name}.example.net`} />}
+          </Field>
+          <div className="field"><span className="label" aria-hidden="true">&nbsp;</span><button type="submit" className="btn" disabled={busy || save.busy || !hostname.trim() || (hostname.trim().toLowerCase() === mail?.hostname && mail?.status === "running")}>{mail ? "Save" : "Turn on email"}</button></div>
+        </form>
+        {mail && mail.domains > 0 && <p className="muted small" style={{ marginTop: 10 }}>A new host name changes the MX and SPF records that each mail domain needs. The customers must change their DNS records.</p>}
+      </div>
+    </Card>
+  );
+}
+
 function ServerDetail({ id }: { id: string }) {
   const state = useStore();
   const server = state.servers.find((s) => s.id === id);
@@ -271,6 +306,7 @@ function ServerDetail({ id }: { id: string }) {
                 </div>
               )}
             </Card>
+            <MailCard server={server} busy={busy} />
             <Card title="Update policy">
               <div className="card-body">
                 <Field label="Host updates" hint="Security updates install each day, in less than 24 hours after their release.">

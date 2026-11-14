@@ -11,6 +11,9 @@ import type {
   Database,
   DatabaseGrant,
   DatabaseServer,
+  MailAlias,
+  MailDomain,
+  Mailbox,
   DatabaseUser,
   DomainVerification,
   Job,
@@ -33,7 +36,7 @@ import { degradedReason } from "./selectors";
 
 /** The error of a request. store.ts makes an ApiError from it. */
 export class LiveError extends Error {
-  constructor(message: string, readonly fields: Record<string, string> = {}, readonly status = 0) {
+  constructor(message: string, readonly fields: Record<string, string> = {}, readonly status = 0, /** The answer of the API. Some answers have more fields than the errors. */ readonly body?: unknown) {
     super(message);
     this.name = "LiveError";
   }
@@ -93,7 +96,7 @@ export async function request<T>(method: string, path: string, body?: unknown): 
   // With one error, the message says what to correct. Some forms do not show each field.
   const messages = Object.values(fields);
   const message = res.status === 422 ? (messages.length === 1 ? messages[0] : "Correct the errors and try again.") : (data as { message?: string }).message || `The panel API gave status ${res.status}.`;
-  throw new LiveError(message, fields, res.status);
+  throw new LiveError(message, fields, res.status, data);
 }
 
 /** Reads all pages of a paginated list. Batch 1, finding 9: it reads each page, with no limit. */
@@ -135,7 +138,7 @@ interface ApiWebsite {
 interface ApiServer {
   id: string; name: string; location: string; roles: Server["roles"]; state: Server["state"]; agentVersion: string | null; os: string | null; kernel: string | null; arch: string | null;
   podmanVersion: string | null; gvisorVersion: string | null; gvisorPlatform: Server["gvisorPlatform"]; bareMetal: boolean; updatePolicy: Server["updatePolicy"]; maintenanceWindow: string;
-  pendingUpdates: Server["pendingUpdates"]; lastUpdateAt: string | null; rebootRequired: boolean; agentUpdateAvailable?: boolean; agentAddress?: string | null; connectionError?: string | null; panel?: boolean; databaseEngines?: Database["engine"][]; databaseInstances?: boolean; services: Server["services"]; sftpPort?: number | null;
+  pendingUpdates: Server["pendingUpdates"]; lastUpdateAt: string | null; rebootRequired: boolean; agentUpdateAvailable?: boolean; agentAddress?: string | null; connectionError?: string | null; panel?: boolean; databaseEngines?: Database["engine"][]; databaseInstances?: boolean; services: Server["services"]; sftpPort?: number | null; mail?: Server["mail"] | null;
   usage: { cpuPercent?: number; memoryPercent?: number; diskPercent?: number } | null;
 }
 interface ApiImage {
@@ -237,6 +240,7 @@ export function toServer(s: ApiServer): Server {
     agentAddress: s.agentAddress ?? undefined, connectionError: s.connectionError ?? undefined, panel: s.panel ?? false,
     databaseEngines: s.databaseEngines ?? undefined,
     databaseInstances: s.databaseInstances ?? false,
+    mail: s.mail ?? undefined,
     stateDetail: s.state === "degraded" ? (s.connectionError ? "Degraded: the panel cannot connect" : degradedReason(s.services ?? [])) : undefined,
   };
 }
@@ -269,6 +273,10 @@ export function toRollout(r: ApiRollout, servers: number): Rollout {
   };
 }
 
+interface ApiMailDomain extends Omit<MailDomain, "dnsCheckedAt"> { dnsCheckedAt: string | null }
+interface ApiMailbox extends Omit<Mailbox, "usedBytes"> { usedBytes: number | null }
+export const toMailDomain = (d: ApiMailDomain): MailDomain => ({ ...d, records: d.records ?? [], dnsCheckedAt: d.dnsCheckedAt ?? undefined });
+export const toMailbox = (m: ApiMailbox): Mailbox => ({ ...m, usedBytes: m.usedBytes ?? 0 });
 export const toDatabaseServer = (s: ApiDatabaseServer): DatabaseServer => ({ ...s, usage: s.usage ?? undefined, createdAt: s.createdAt ?? "" });
 
 const toCustomer = (c: ApiCustomer): Customer => ({ id: c.id, name: c.name, email: c.email, planId: c.planId, role: c.role, resellerId: c.resellerId ?? undefined, createdAt: c.createdAt, suspended: c.suspended });
@@ -302,7 +310,7 @@ export async function load(previous: State): Promise<State> {
   const admin = me.role === "administrator";
   const optional = <T>(p: Promise<T>, fallback: T) => p.catch(() => fallback);
 
-  const [websites, jobs, customers, plans, tokens, policy, servers, images, rollouts, audit, users, certificate, setup, account, databaseServers] = await Promise.all([
+  const [websites, jobs, customers, plans, tokens, policy, servers, images, rollouts, audit, users, certificate, setup, account, databaseServers, mailDomains, mailboxes, mailAliases] = await Promise.all([
     all<ApiWebsite>("/websites"),
     request<{ data: ApiJob[] }>("GET", "/jobs?perPage=50").then((r) => r.data),
     optional(request<{ data: ApiCustomer[] }>("GET", "/customers").then((r) => r.data), []),
@@ -319,6 +327,10 @@ export async function load(previous: State): Promise<State> {
     admin ? Promise.resolve(null) : optional(request<ApiAccount>("GET", "/account"), null),
     // The database servers of the customers that the user can see.
     optional(request<{ data: ApiDatabaseServer[] }>("GET", "/database-servers").then((r) => r.data), []),
+    // Email. A panel of an earlier release, or a token with no mail scope, gives no lists.
+    optional(request<{ data: ApiMailDomain[] }>("GET", "/mail/domains").then((r) => r.data), []),
+    optional(request<{ data: ApiMailbox[] }>("GET", "/mail/mailboxes").then((r) => r.data), []),
+    optional(request<{ data: MailAlias[] }>("GET", "/mail/aliases").then((r) => r.data), []),
   ]);
   // A customer or a reseller cannot list all images. They get the images for a new website.
   const runtimes = admin ? images.map((i) => toImage(i, rollouts))
@@ -360,6 +372,9 @@ export async function load(previous: State): Promise<State> {
     images: runtimes,
     rollout: current ? toRollout(current, servers.length) : undefined,
     databaseServers: databaseServers.map(toDatabaseServer),
+    mailDomains: mailDomains.map(toMailDomain),
+    mailboxes: mailboxes.map(toMailbox),
+    mailAliases,
     databases: [...kept(previous.databases), ...perSite.flatMap((s) => s.databases)],
     databaseUsers: [...kept(previous.databaseUsers), ...perSite.flatMap((s) => s.users)],
     snapshots: [...kept(previous.snapshots), ...perSite.flatMap((s) => s.snapshots)].sort((a, b) => b.at.localeCompare(a.at)),
@@ -455,4 +470,4 @@ export async function waitForJob(job: ApiJob | Job, onChange: (job: Job) => void
   return current;
 }
 
-export type { ApiDatabaseServer, ApiJob, ApiPanelCertificate, ApiUser, ApiWebsite };
+export type { ApiDatabaseServer, ApiMailDomain, ApiMailbox, ApiJob, ApiPanelCertificate, ApiUser, ApiWebsite };

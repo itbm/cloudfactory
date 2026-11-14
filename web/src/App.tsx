@@ -8,6 +8,7 @@ import { AppsPage } from "./pages/AppsPage";
 import { BackupsPage } from "./pages/BackupsPage";
 import { CustomersPage } from "./pages/CustomersPage";
 import { DatabasesPage } from "./pages/DatabasesPage";
+import { EmailPage } from "./pages/EmailPage";
 import { JobsPage } from "./pages/JobsPage";
 import { LoginPage } from "./pages/LoginPage";
 import { NewWebsitePage } from "./pages/NewWebsitePage";
@@ -82,6 +83,7 @@ export function App() {
           <Route path="websites/:id" element={<WebsiteDetailPage />} />
           <Route path="websites/:id/:tab" element={<WebsiteDetailPage />} />
           <Route path="databases" element={<DatabasesPage />} />
+          <Route path="email" element={<EmailPage />} />
           <Route path="backups" element={<BackupsPage />} />
           <Route path="apps" element={<AppsPage />} />
           <Route path="jobs" element={<JobsPage />} />
