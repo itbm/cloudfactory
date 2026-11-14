@@ -79,7 +79,7 @@
         "localhost",
         "acme.example;rm -rf /",
         "example.com\n",
-        "ex\u00e4mple.com",
+        "exämple.com",
         {
           "repeat": [
             [
@@ -422,7 +422,7 @@
         "/.htaccess",
         "/a/..b",
         "/a/b...",
-        "/my files/caf\u00e9.txt",
+        "/my files/café.txt",
         {
           "repeat": [
             [
@@ -521,7 +521,7 @@
         "node",
         "--port=8080",
         "a b",
-        "caf\u00e9",
+        "café",
         {
           "repeat": [
             [
@@ -536,7 +536,7 @@
         "a\nb",
         "a\tb",
         "a\u0000b",
-        "a\u007fb",
+        "ab",
         "a\u001bb",
         {
           "repeat": [
@@ -549,7 +549,7 @@
         {
           "repeat": [
             [
-              "\u00e9",
+              "é",
               513
             ]
           ]
@@ -581,7 +581,7 @@
         "command=\"id\" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGhvc3Qga2V5IGZvciB0ZXN0cyBvbmx5IQ",
         "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGhvc3Qga2V5IGZvciB0ZXN0cyBvbmx5IQ\n",
         "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGhvc3Qga2V5IGZvciB0ZXN0cyBvbmx5IQ\nssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGhvc3Qga2V5IGZvciB0ZXN0cyBvbmx5IQ",
-        "ssh-ed25519 AAAA caf\u00e9",
+        "ssh-ed25519 AAAA café",
         {
           "repeat": [
             "ssh-rsa ",
@@ -634,7 +634,7 @@
         "abcdefghijklmnop ",
         "abcdefghijklmnop\n",
         "abcdefghijklmnop$x",
-        "abcdefghijklmn\u00e9p",
+        "abcdefghijklmnép",
         "abcdefghijklmnop\\"
       ]
     },
@@ -667,6 +667,207 @@
             ]
           ]
         }
+      ]
+    },
+    "dnsRecordName": {
+      "valid": [
+        "@",
+        "*",
+        "www",
+        "mail",
+        "_dmarc",
+        "selector1._domainkey",
+        "*.dev",
+        "a.b.c",
+        "_sip._tcp",
+        "xn--bcher-kva",
+        "1"
+      ],
+      "invalid": [
+        "",
+        "@.www",
+        "www.",
+        "WWW",
+        ".www",
+        "a..b",
+        "*.*",
+        "**",
+        "www.*",
+        "-a",
+        "a-",
+        "a_b",
+        "__a",
+        "$ORIGIN",
+        "a b",
+        "www\n",
+        "@\n",
+        "(",
+        "a;b",
+        {
+          "repeat": [
+            [
+              "a.",
+              100
+            ],
+            "a"
+          ]
+        }
+      ]
+    },
+    "dnsHost": {
+      "valid": [
+        "mail.example.com",
+        "example.com",
+        "sel._domainkey.provider.example",
+        "a.b.c.example",
+        "xn--bcher-kva.example"
+      ],
+      "invalid": [
+        "",
+        "example",
+        "example.com.",
+        "Example.com",
+        "mail.example.123",
+        "-a.example.com",
+        "a..example.com",
+        "a b.example.com",
+        "example.com\n",
+        "*.example.com",
+        "@",
+        "example._com",
+        "1.2.3.4"
+      ]
+    },
+    "ipv4": {
+      "valid": [
+        "203.0.113.10",
+        "0.0.0.0",
+        "255.255.255.255",
+        "10.1.2.3"
+      ],
+      "invalid": [
+        "",
+        "256.1.1.1",
+        "1.2.3",
+        "1.2.3.4.5",
+        "01.2.3.4",
+        "1.2.3.4\n",
+        "1.2.3.4 ",
+        "a.b.c.d",
+        "::1",
+        "1.2.3.-4"
+      ]
+    },
+    "ipv6": {
+      "valid": [
+        "2001:db8::10",
+        "::1",
+        "::",
+        "2001:db8:0:0:0:0:0:1",
+        "fe80::1:2:3:4",
+        "2001:db8::",
+        "1:2:3:4:5:6:7:8",
+        "::ffff:102:304"
+      ],
+      "invalid": [
+        "",
+        "2001:DB8::10",
+        "2001:db8:::1",
+        "1:2:3:4:5:6:7",
+        "1:2:3:4:5:6:7:8:9",
+        "::ffff:1.2.3.4",
+        "fe80::1%eth0",
+        "12345::1",
+        "g::1",
+        "2001:db8::1\n",
+        "1.2.3.4",
+        "::1 "
+      ]
+    },
+    "dnsTxt": {
+      "valid": [
+        "v=spf1 include:_spf.example.com -all",
+        "v=DMARC1; p=none",
+        "a",
+        "say \"hello\" \\ there",
+        "$ORIGIN ( ; )",
+        {
+          "repeat": [
+            [
+              "a",
+              2048
+            ]
+          ]
+        }
+      ],
+      "invalid": [
+        "",
+        "a\nb",
+        "a\n",
+        "tab\there",
+        "café",
+        "\u0000",
+        {
+          "repeat": [
+            [
+              "a",
+              2049
+            ]
+          ]
+        }
+      ]
+    },
+    "dnsSrv": {
+      "valid": [
+        "5 5060 sip.example.com",
+        "0 0 a.example",
+        "65535 65535 _x.example.com"
+      ],
+      "invalid": [
+        "",
+        "5 5060",
+        "5 5060 sip",
+        "65536 1 sip.example.com",
+        "1 65536 sip.example.com",
+        "05 1 sip.example.com",
+        "5 5060 sip.example.com.",
+        "5  5060 sip.example.com",
+        "5 5060 sip.example.com\n",
+        "-1 1 sip.example.com",
+        "5 5060 sip.example.1"
+      ]
+    },
+    "dnsCaa": {
+      "valid": [
+        "0 issue \"letsencrypt.org\"",
+        "0 issuewild \";\"",
+        "128 iodef \"mailto:security@example.com\"",
+        "0 issue \"\""
+      ],
+      "invalid": [
+        "",
+        "0 issue letsencrypt.org",
+        "1 issue \"a\"",
+        "0 other \"a\"",
+        "0 issue \"a\"b\"",
+        "0 issue \"a\\\"",
+        "0 issue \"a\"\n",
+        "0 issue \"a\nb\"",
+        "0  issue \"a\""
+      ]
+    },
+    "dnssecKey": {
+      "valid": [
+        "-----BEGIN PRIVATE KEY-----\nMIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgXPp0NcPTfuvVAfE7\nRjCRMBMbsS2I+3iUFIIvnyXoBcehRANCAASI5sgdyL1vcLknQnyjpcAydWTQcaua\nxOe3eVPUWceCz/Q9Xi15X/z+tg8LVRAv9SDdnZL3H8oKg1qI8YEwSygP\n-----END PRIVATE KEY-----\n"
+      ],
+      "invalid": [
+        "",
+        "-----BEGIN EC PRIVATE KEY-----\nMIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgXPp0NcPTfuvVAfE7\nRjCRMBMbsS2I+3iUFIIvnyXoBcehRANCAASI5sgdyL1vcLknQnyjpcAydWTQcaua\nxOe3eVPUWceCz/Q9Xi15X/z+tg8LVRAv9SDdnZL3H8oKg1qI8YEwSygP\n-----END EC PRIVATE KEY-----\n",
+        "-----BEGIN PRIVATE KEY-----\nMIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgXPp0NcPTfuvVAfE7\nRjCRMBMbsS2I+3iUFIIvnyXoBcehRANCAASI5sgdyL1vcLknQnyjpcAydWTQcaua\nxOe3eVPUWceCz/Q9Xi15X/z+tg8LVRAv9SDdnZL3H8oKg1qI8YEwSygP\n-----END PRIVATE KEY-----",
+        "-----BEGIN PRIVATE KEY-----\nMIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgXPp0NcPTfuvVAfE7\nRjCRMBMbsS2I+3iUFIIvnyXoBcehRANCAASI5sgdyL1vcLknQnyjpcAydWTQcaua\nxOe3eVPUWceCz/Q9Xi15X/z+tg8LVRAv9SDdnZL3H8oKg1qI8YEwSygP\n-----END PRIVATE KEY-----\nx",
+        "-----BEGIN PRIVATE KEY-----\nMI HAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgXPp0NcPTfuvVAfE7\nRjCRMBMbsS2I+3iUFIIvnyXoBcehRANCAASI5sgdyL1vcLknQnyjpcAydWTQcaua\nxOe3eVPUWceCz/Q9Xi15X/z+tg8LVRAv9SDdnZL3H8oKg1qI8YEwSygP\n-----END PRIVATE KEY-----\n",
+        "-----BEGIN PRIVATE KEY-----\n-----END PRIVATE KEY-----\n",
+        "-----BEGIN PRIVATE KEY-----\r\nMIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgXPp0NcPTfuvVAfE7\r\nRjCRMBMbsS2I+3iUFIIvnyXoBcehRANCAASI5sgdyL1vcLknQnyjpcAydWTQcaua\r\nxOe3eVPUWceCz/Q9Xi15X/z+tg8LVRAv9SDdnZL3H8oKg1qI8YEwSygP\r\n-----END PRIVATE KEY-----\r\n"
       ]
     }
   }

@@ -27,6 +27,24 @@ final class InputRules
     /** The digest of an image. An empty digest is permitted. */
     public const DIGEST = '/^(?:\\z|(?:^sha256:[0-9a-f]{64}$))/D';
 
+    /** The value of a CAA record: the flags (0 or 128), the tag and a text in quotation marks. The text has no quotation mark and no backslash. */
+    public const DNS_CAA = '/^(?:^(0|128) (issue|issuewild|iodef) "[ !#-\\[\\]-~]{0,255}"$)/D';
+
+    /** The full host name in the value of a CNAME, NS, MX or SRV record, in lower case, with no dot at the end. A label can start with an underscore. The last label is not a number. */
+    public const DNS_HOST = '/^(?=[\\s\\S]{0,253}\\z)(?![\\s\\S]*?(?:\\.[0-9]+$))(?:^((_[a-z0-9]([a-z0-9-]{0,60}[a-z0-9])?|[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)\\.)+[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$)/D';
+
+    /** The name of a DNS record in its zone, without the name of the zone: "@" for the zone itself, "*" for a wildcard, or labels such as "www", "_dmarc" and "*.dev". A label can start with an underscore. */
+    public const DNS_RECORD_NAME = '/^(?=[\\s\\S]{0,200}\\z)(?:^(@|\\*|(\\*\\.)?(_[a-z0-9]([a-z0-9-]{0,60}[a-z0-9])?|[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)(\\.(_[a-z0-9]([a-z0-9-]{0,60}[a-z0-9])?|[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?))*)$)/D';
+
+    /** The value of an SRV record after the priority: the weight, the port and the host name of the target. */
+    public const DNS_SRV = '/^(?=[\\s\\S]{0,270}\\z)(?![\\s\\S]*?(?:\\.[0-9]+$))(?:^(0|[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]) (0|[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]) ((_[a-z0-9]([a-z0-9-]{0,60}[a-z0-9])?|[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)\\.)+[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$)/D';
+
+    /** The text of a TXT record: printable ASCII characters. The agent adds the quotation marks and divides a long text into parts of 255 characters. */
+    public const DNS_TXT = '/^(?=[\\s\\S]{0,2048}\\z)(?:^[ -~]+$)/D';
+
+    /** The private DNSSEC key of a zone: an ECDSA P-256 key in the PKCS #8 PEM format. The panel makes it. */
+    public const DNSSEC_KEY = '/^(?=[\\s\\S]{0,600}\\z)(?:^-----BEGIN PRIVATE KEY-----\\n([A-Za-z0-9+\\/]{1,76}={0,2}\\n){1,8}-----END PRIVATE KEY-----\\n$)/D';
+
     /** A directory in /app, for example "public" or "web/htdocs". "." is /app. It has at most 8 parts. A part does not start with a dot. An empty value is permitted: the agent then uses the default of the image. */
     public const DOCUMENT_ROOT = '/^(?:\\z|(?=[\\s\\S]{0,200}\\z)(?:^(\\.|[A-Za-z0-9_-][A-Za-z0-9._-]{0,99}(\\/[A-Za-z0-9_-][A-Za-z0-9._-]{0,99}){0,7})$))/D';
 
@@ -50,6 +68,12 @@ final class InputRules
 
     /** A php.ini value. It is on one line and has no double quotes. */
     public const INI_VALUE = '/^(?=[\\s\\S]{0,200}\\z)(?:^[^"\\n\\r\\x00]*$)/D';
+
+    /** An IPv4 address in the usual form, for the value of an A record. */
+    public const IPV4 = '/^(?:^(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(\\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3}$)/D';
+
+    /** An IPv6 address in lower case, for the value of an AAAA record. It has only hexadecimal groups and colons: no IPv4 part and no zone. */
+    public const IPV6 = '/^(?:^(([0-9a-f]{1,4}:){7}[0-9a-f]{1,4}|([0-9a-f]{1,4}:){1,7}:|([0-9a-f]{1,4}:){1,6}:[0-9a-f]{1,4}|([0-9a-f]{1,4}:){1,5}(:[0-9a-f]{1,4}){1,2}|([0-9a-f]{1,4}:){1,4}(:[0-9a-f]{1,4}){1,3}|([0-9a-f]{1,4}:){1,3}(:[0-9a-f]{1,4}){1,4}|([0-9a-f]{1,4}:){1,2}(:[0-9a-f]{1,4}){1,5}|[0-9a-f]{1,4}:(:[0-9a-f]{1,4}){1,6}|:(:[0-9a-f]{1,4}){1,7}|::)$)/D';
 
     /** The name of a PHP extension. */
     public const PHP_EXTENSION = '/^(?:^[a-z0-9_]{1,40}$)/D';
@@ -77,6 +101,12 @@ final class InputRules
         'databaseNameSuffix' => self::DATABASE_NAME_SUFFIX,
         'databasePassword' => self::DATABASE_PASSWORD,
         'digest' => self::DIGEST,
+        'dnsCaa' => self::DNS_CAA,
+        'dnsHost' => self::DNS_HOST,
+        'dnsRecordName' => self::DNS_RECORD_NAME,
+        'dnsSrv' => self::DNS_SRV,
+        'dnsTxt' => self::DNS_TXT,
+        'dnssecKey' => self::DNSSEC_KEY,
         'documentRoot' => self::DOCUMENT_ROOT,
         'domain' => self::DOMAIN,
         'id' => self::ID,
@@ -85,6 +115,8 @@ final class InputRules
         'imageTag' => self::IMAGE_TAG,
         'iniKey' => self::INI_KEY,
         'iniValue' => self::INI_VALUE,
+        'ipv4' => self::IPV4,
+        'ipv6' => self::IPV6,
         'phpExtension' => self::PHP_EXTENSION,
         'restorePath' => self::RESTORE_PATH,
         'sha256' => self::SHA256,
@@ -101,6 +133,12 @@ final class InputRules
         'databaseNameSuffix' => 'Use 1 to 32 lower-case letters, digits and underscores. Start with a letter or a digit.',
         'databasePassword' => 'Use 16 to 64 letters and digits.',
         'digest' => 'Enter a digest: sha256: and 64 hexadecimal digits in lower case.',
+        'dnsCaa' => 'Enter the flags, the tag and the value in quotation marks, for example: 0 issue "letsencrypt.org".',
+        'dnsHost' => 'Enter a full host name in lower-case letters, for example mail.example.com.',
+        'dnsRecordName' => 'Use @ for the zone itself, or a name such as www, mail or _dmarc. Use lower-case letters, digits, hyphens and dots. Do not put the name of the zone at the end.',
+        'dnsSrv' => 'Enter the weight, the port and the host name, for example: 5 5060 sip.example.com.',
+        'dnsTxt' => 'Enter 1 to 2048 characters. Use only the letters, digits and signs of ASCII. Do not put quotation marks around the text.',
+        'dnssecKey' => 'Enter a private key in the PKCS #8 PEM format.',
         'documentRoot' => 'Enter a directory in /app, for example public or web/htdocs. Use letters, digits, dots, underscores and hyphens, and at most 8 parts.',
         'domain' => 'Enter a domain name in lower-case letters, for example shop.example.com.',
         'id' => 'Enter an ID of 26 letters and digits.',
@@ -109,6 +147,8 @@ final class InputRules
         'imageTag' => 'Use 1 to 128 letters, digits, underscores, dots and hyphens. Do not start with a dot or a hyphen.',
         'iniKey' => 'Use 1 to 64 lower-case letters, underscores and dots.',
         'iniValue' => 'Use at most 200 characters on one line, with no double quotes.',
+        'ipv4' => 'Enter an IPv4 address, for example 203.0.113.10.',
+        'ipv6' => 'Enter an IPv6 address in lower-case letters, for example 2001:db8::10.',
         'phpExtension' => 'Use 1 to 40 lower-case letters, digits and underscores.',
         'restorePath' => 'Enter a path that starts with /, for example /public/index.php. Do not use "//", "." or ".." parts, or a / at the end.',
         'sha256' => 'Enter 64 hexadecimal digits in lower case.',
@@ -116,6 +156,9 @@ final class InputRules
         'unixUser' => 'Use a name such as acme_x7k2: a letter, at most 15 letters or digits, an underscore, and 4 letters or digits.',
         'version' => 'Enter a version, for example 0.1.0.',
     ];
+
+    /** The types of DNS record that a user can make. */
+    public const DNS_RECORD_TYPES = ['A', 'AAAA', 'CNAME', 'MX', 'TXT', 'SRV', 'CAA', 'NS'];
 
     /** Names that the database servers use (CF-01). */
     public const RESERVED_DATABASE_NAMES = ['mysql', 'sys', 'information_schema', 'performance_schema', 'postgres', 'template0', 'template1', 'root', 'mariadb.sys', 'healthcheck'];
@@ -125,4 +168,16 @@ final class InputRules
 
     /** The largest number of arguments of a start command. */
     public const MAX_COMMAND_ARGUMENTS = 32;
+
+    /** The largest number of records in a DNS zone. */
+    public const MAX_DNS_RECORDS_PER_ZONE = 1000;
+
+    /** The smallest TTL of a DNS record, in seconds. */
+    public const MIN_DNS_SHORT_TTL = 60;
+
+    /** The largest TTL of a DNS record, in seconds. */
+    public const MAX_DNS_TTL = 604800;
+
+    /** The largest number of DNS zones in one job of the agent. */
+    public const MAX_DNS_ZONES_PER_JOB = 100;
 }

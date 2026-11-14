@@ -36,6 +36,17 @@ type set struct {
 type limit struct {
 	Doc   string `json:"doc"`
 	Value int    `json:"value"`
+	// Smallest is true for the smallest permitted number. The constant then starts with
+	// "Min", not with "Max".
+	Smallest bool `json:"smallest"`
+}
+
+// prefix gives the start of the name of the constant of a limit.
+func (l limit) prefix() string {
+	if l.Smallest {
+		return "Min"
+	}
+	return "Max"
 }
 
 type schema struct {
@@ -200,7 +211,8 @@ func goFile(s *schema) ([]byte, error) {
 		w("}\n\n")
 	}
 	for _, key := range keys(s.Limits) {
-		w("// Max%s: %s\nconst Max%s = %d\n\n", goName(key, rule{}), s.Limits[key].Doc, goName(key, rule{}), s.Limits[key].Value)
+		l := s.Limits[key]
+		w("// %s%s: %s\nconst %[1]s%[2]s = %[4]d\n\n", l.prefix(), goName(key, rule{}), l.Doc, l.Value)
 	}
 	return format.Source(b.Bytes())
 }
@@ -256,7 +268,8 @@ func phpFile(s *schema) []byte {
 		w("\n    /** %s */\n    public const %s = [%s];\n", s.Sets[key].Doc, phpName(key), strings.Join(quoted, ", "))
 	}
 	for _, key := range keys(s.Limits) {
-		w("\n    /** %s */\n    public const MAX_%s = %d;\n", s.Limits[key].Doc, phpName(key), s.Limits[key].Value)
+		l := s.Limits[key]
+		w("\n    /** %s */\n    public const %s_%s = %d;\n", l.Doc, strings.ToUpper(l.prefix()), phpName(key), l.Value)
 	}
 	w("}\n")
 	return b.Bytes()
