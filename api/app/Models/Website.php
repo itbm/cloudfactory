@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 #[Fillable([
     'name', 'application', 'customer_id', 'server_id', 'plan_id', 'image_id', 'image_tag', 'previous_image_id',
@@ -93,6 +94,16 @@ class Website extends Model
     public function releases(): HasMany
     {
         return $this->hasMany(Release::class)->latest();
+    }
+
+    public function cronJobs(): HasMany
+    {
+        return $this->hasMany(CronJob::class)->oldest()->orderBy('id');
+    }
+
+    public function gitSource(): HasOne
+    {
+        return $this->hasOne(GitSource::class);
     }
 
     public function snapshots(): HasMany

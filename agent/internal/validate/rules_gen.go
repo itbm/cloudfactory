@@ -15,6 +15,29 @@ var ruleCommandArgument = rule{
 // One argument of the start command of a custom image. It has no control characters.
 func CommandArgument(s string) error { return ruleCommandArgument.check(s) }
 
+var ruleCommandLine = rule{
+	what:      "command",
+	pattern:   regexp.MustCompile(`^[^\x00-\x1f\x7f]+$`),
+	maxLength: 1000,
+}
+
+// CommandLine checks a value with the rule "commandLine" of schema/input-rules.json.
+//
+// One command line for the shell of a website container: the command of a cron job or a build command of a deploy. It is on one line and has no control characters.
+func CommandLine(s string) error { return ruleCommandLine.check(s) }
+
+var ruleCronSchedule = rule{
+	what:      "cron schedule",
+	pattern:   regexp.MustCompile(`^(\*|[0-5]?[0-9](-[0-5]?[0-9])?)(/[1-9][0-9]?)?(,(\*|[0-5]?[0-9](-[0-5]?[0-9])?)(/[1-9][0-9]?)?)* (\*|([01]?[0-9]|2[0-3])(-([01]?[0-9]|2[0-3]))?)(/[1-9][0-9]?)?(,(\*|([01]?[0-9]|2[0-3])(-([01]?[0-9]|2[0-3]))?)(/[1-9][0-9]?)?)* (\*|(0?[1-9]|[12][0-9]|3[01])(-(0?[1-9]|[12][0-9]|3[01]))?)(/[1-9][0-9]?)?(,(\*|(0?[1-9]|[12][0-9]|3[01])(-(0?[1-9]|[12][0-9]|3[01]))?)(/[1-9][0-9]?)?)* (\*|(0?[1-9]|1[0-2])(-(0?[1-9]|1[0-2]))?)(/[1-9][0-9]?)?(,(\*|(0?[1-9]|1[0-2])(-(0?[1-9]|1[0-2]))?)(/[1-9][0-9]?)?)* (\*|[0-7](-[0-7])?)(/[1-9][0-9]?)?(,(\*|[0-7](-[0-7])?)(/[1-9][0-9]?)?)*$`),
+	maxLength: 200,
+	echo:      true,
+}
+
+// CronSchedule checks a value with the rule "cronSchedule" of schema/input-rules.json.
+//
+// The schedule of a cron job: minute, hour, day of the month, month and day of the week, with one space between them. Each field is "*", a number, a range or a list, with an optional step. The day of the week is 0 to 7, and 0 and 7 are Sunday.
+func CronSchedule(s string) error { return ruleCronSchedule.check(s) }
+
 var ruleDatabaseClientHost = rule{
 	what:    "database client host",
 	pattern: regexp.MustCompile(`^[A-Za-z0-9.:%/_-]{1,255}$`),
@@ -95,6 +118,44 @@ var ruleDomain = rule{
 //
 // A domain name in lower case. Each label has 1 to 63 characters. The last label is not a number, so that the name is not an IP address (audit finding R5).
 func Domain(s string) error { return ruleDomain.check(s) }
+
+var ruleFilePath = rule{
+	what:      "path",
+	pattern:   regexp.MustCompile(`^(/|(/[^/\x00-\x1f\x7f]+)+)$`),
+	not:       []*regexp.Regexp{regexp.MustCompile(`/\.\.?(/|$)`)},
+	maxLength: 1024,
+	echo:      true,
+}
+
+// FilePath checks a value with the rule "filePath" of schema/input-rules.json.
+//
+// The path of a file or a directory in the files of a website, for the file manager. "/" is the directory of the website, which the container has at /app. The path has no empty part, no "." part, no ".." part, no control characters and no "/" at the end.
+func FilePath(s string) error { return ruleFilePath.check(s) }
+
+var ruleGitBranch = rule{
+	what:    "Git branch",
+	pattern: regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/-]{0,99}$`),
+	not:     []*regexp.Regexp{regexp.MustCompile(`\.\.`), regexp.MustCompile(`//`), regexp.MustCompile(`[/.]$`), regexp.MustCompile(`\.lock$`)},
+	echo:    true,
+}
+
+// GitBranch checks a value with the rule "gitBranch" of schema/input-rules.json.
+//
+// The name of a Git branch. It cannot start with "-".
+func GitBranch(s string) error { return ruleGitBranch.check(s) }
+
+var ruleGitRepository = rule{
+	what:      "Git repository",
+	pattern:   regexp.MustCompile(`^(https://[A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?(:[0-9]{1,5})?/[A-Za-z0-9_][A-Za-z0-9._~/-]{0,199}|ssh://[a-z0-9_][a-z0-9_-]{0,31}@[A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?(:[0-9]{1,5})?/[A-Za-z0-9_][A-Za-z0-9._~/-]{0,199}|[a-z0-9_][a-z0-9_-]{0,31}@[A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?:[A-Za-z0-9_][A-Za-z0-9._~/-]{0,199})$`),
+	not:       []*regexp.Regexp{regexp.MustCompile(`\.\.`), regexp.MustCompile(`//[^/]*//`)},
+	maxLength: 300,
+	echo:      true,
+}
+
+// GitRepository checks a value with the rule "gitRepository" of schema/input-rules.json.
+//
+// The address of a Git repository: HTTPS with no user name and no password, SSH as a URL, or the short SSH form "git@host:path". It cannot start with "-", and it cannot name a file or a helper program.
+func GitRepository(s string) error { return ruleGitRepository.check(s) }
 
 var ruleID = rule{
 	what:    "ID",
@@ -191,6 +252,28 @@ var ruleRestorePath = rule{
 // The path of a file or a directory in a website. It starts with "/". It has no empty part, no "." part, no ".." part and no "/" at the end.
 func RestorePath(s string) error { return ruleRestorePath.check(s) }
 
+var ruleSecretName = rule{
+	what:    "name of a deploy secret",
+	pattern: regexp.MustCompile(`^[A-Z_][A-Z0-9_]{0,63}$`),
+	echo:    true,
+}
+
+// SecretName checks a value with the rule "secretName" of schema/input-rules.json.
+//
+// The name of an environment variable that a deploy gives to the build commands.
+func SecretName(s string) error { return ruleSecretName.check(s) }
+
+var ruleSecretValue = rule{
+	what:      "value of a deploy secret",
+	pattern:   regexp.MustCompile(`^[^\x00\n\r]+$`),
+	maxLength: 4096,
+}
+
+// SecretValue checks a value with the rule "secretValue" of schema/input-rules.json.
+//
+// The value of a deploy secret. It is on one line.
+func SecretValue(s string) error { return ruleSecretValue.check(s) }
+
 var ruleSHA256 = rule{
 	what:    "SHA-256 hash",
 	pattern: regexp.MustCompile(`^[0-9a-f]{64}$`),
@@ -239,6 +322,8 @@ func Version(s string) error { return ruleVersion.check(s) }
 // rules has each rule by its name in schema/input-rules.json.
 var rules = map[string]*rule{
 	"commandArgument":    &ruleCommandArgument,
+	"commandLine":        &ruleCommandLine,
+	"cronSchedule":       &ruleCronSchedule,
 	"databaseClientHost": &ruleDatabaseClientHost,
 	"databaseName":       &ruleDatabaseName,
 	"databaseNameSuffix": &ruleDatabaseNameSuffix,
@@ -246,6 +331,9 @@ var rules = map[string]*rule{
 	"digest":             &ruleDigest,
 	"documentRoot":       &ruleDocumentRoot,
 	"domain":             &ruleDomain,
+	"filePath":           &ruleFilePath,
+	"gitBranch":          &ruleGitBranch,
+	"gitRepository":      &ruleGitRepository,
 	"id":                 &ruleID,
 	"image":              &ruleImage,
 	"imageReference":     &ruleImageReference,
@@ -254,6 +342,8 @@ var rules = map[string]*rule{
 	"iniValue":           &ruleIniValue,
 	"phpExtension":       &ruleExtension,
 	"restorePath":        &ruleRestorePath,
+	"secretName":         &ruleSecretName,
+	"secretValue":        &ruleSecretValue,
 	"sha256":             &ruleSHA256,
 	"sshKey":             &ruleSSHKey,
 	"unixUser":           &ruleUnixUser,
@@ -266,5 +356,14 @@ var reservedDatabaseNames = []string{"mysql", "sys", "information_schema", "perf
 // A database name does not start with one of these (CF-01).
 var reservedDatabasePrefixes = []string{"pg_"}
 
+// MaxBuildCommands: The largest number of build commands of a deploy.
+const MaxBuildCommands = 10
+
 // MaxCommandArguments: The largest number of arguments of a start command.
 const MaxCommandArguments = 32
+
+// MaxCronJobs: The largest number of cron jobs of a website.
+const MaxCronJobs = 20
+
+// MaxDeploySecrets: The largest number of secrets of a deploy.
+const MaxDeploySecrets = 50

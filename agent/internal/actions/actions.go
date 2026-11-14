@@ -153,6 +153,14 @@ type Deps struct {
 	SavePanelCA func(fingerprint string) error
 	// EdgeImage is the image of the edge proxy of this agent version.
 	EdgeImage string
+	// AgentBinary is the path of the program of the agent. The file manager starts it as the
+	// Unix user of a website. The default is "/usr/local/bin/cf-agent".
+	AgentBinary string
+	// CronLimit is the time limit of the command of a cron job. The default is 1 hour.
+	CronLimit time.Duration
+	// BuildLimit is the time limit of each step of a deploy that runs commands. The default
+	// is 20 minutes.
+	BuildLimit time.Duration
 
 	// CgroupRoot is "/sys/fs/cgroup". Tests use a different directory.
 	CgroupRoot string
@@ -196,6 +204,7 @@ type Deps struct {
 	backupSlots chan struct{}
 	rtMu        sync.RWMutex
 	obs         observer
+	cron        cronRuns
 }
 
 // Images is the part of the shared image store that the actions use (images.Store).
@@ -276,6 +285,8 @@ type stateFile struct {
 	// Databases has the record of each customer that has a website or a database server on
 	// this server. The key is the ID of the customer in lower case.
 	Databases map[string]*DatabaseInstance `json:"databases,omitempty"`
+	// Cron has the cron jobs of each website. The key is the ID of the website.
+	Cron map[string][]CronEntry `json:"cron,omitempty"`
 }
 
 // DatabaseInstance is what the agent knows about the database servers of one customer. The
@@ -384,6 +395,7 @@ func (s *State) Delete(id string) error {
 		return err
 	}
 	delete(f.Sites, id)
+	delete(f.Cron, id)
 	return s.write(f)
 }
 

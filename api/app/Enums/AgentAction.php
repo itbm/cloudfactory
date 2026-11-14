@@ -30,6 +30,10 @@ enum AgentAction: string
     case SetPanelCertificate = 'SetPanelCertificate';
     case SetDatabaseServer = 'SetDatabaseServer';
     case DeleteDatabaseServer = 'DeleteDatabaseServer';
+    case SetCronJobs = 'SetCronJobs';
+    case RunCronJob = 'RunCronJob';
+    case Deploy = 'Deploy';
+    case ActivateRelease = 'ActivateRelease';
     case SetMesh = 'SetMesh';
     case RotateMeshKey = 'RotateMeshKey';
 
@@ -59,6 +63,12 @@ enum AgentAction: string
             self::SetSftp => ['Set SFTP access'],
             self::ConfigureHost => ['Save settings', 'Restart websites', 'Restart services'],
             self::SetPanelCertificate => ['Change certificate method', 'Get TLS certificate'],
+            self::SetCronJobs => ['Save the cron jobs'],
+            self::RunCronJob => ['Run the command'],
+            // The steps after "Build" are the steps of SetRuntime: the agent starts the website
+            // from the new release with no stop.
+            self::Deploy => ['Get the code', 'Build', ...self::SetRuntime->steps(), 'Remove old releases'],
+            self::ActivateRelease => ['Check the release', ...self::SetRuntime->steps()],
             self::SetMesh => ['Set tunnels and firewall', 'Check tunnels'],
             self::RotateMeshKey => ['Make new key'],
         };

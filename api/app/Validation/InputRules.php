@@ -12,6 +12,12 @@ final class InputRules
     /** One argument of the start command of a custom image. It has no control characters. */
     public const COMMAND_ARGUMENT = '/^(?=[\\s\\S]{0,1024}\\z)(?:^[^\\x00-\\x1f\\x7f]+$)/D';
 
+    /** One command line for the shell of a website container: the command of a cron job or a build command of a deploy. It is on one line and has no control characters. */
+    public const COMMAND_LINE = '/^(?=[\\s\\S]{0,1000}\\z)(?:^[^\\x00-\\x1f\\x7f]+$)/D';
+
+    /** The schedule of a cron job: minute, hour, day of the month, month and day of the week, with one space between them. Each field is "*", a number, a range or a list, with an optional step. The day of the week is 0 to 7, and 0 and 7 are Sunday. */
+    public const CRON_SCHEDULE = '/^(?=[\\s\\S]{0,200}\\z)(?:^(\\*|[0-5]?[0-9](-[0-5]?[0-9])?)(\\/[1-9][0-9]?)?(,(\\*|[0-5]?[0-9](-[0-5]?[0-9])?)(\\/[1-9][0-9]?)?)* (\\*|([01]?[0-9]|2[0-3])(-([01]?[0-9]|2[0-3]))?)(\\/[1-9][0-9]?)?(,(\\*|([01]?[0-9]|2[0-3])(-([01]?[0-9]|2[0-3]))?)(\\/[1-9][0-9]?)?)* (\\*|(0?[1-9]|[12][0-9]|3[01])(-(0?[1-9]|[12][0-9]|3[01]))?)(\\/[1-9][0-9]?)?(,(\\*|(0?[1-9]|[12][0-9]|3[01])(-(0?[1-9]|[12][0-9]|3[01]))?)(\\/[1-9][0-9]?)?)* (\\*|(0?[1-9]|1[0-2])(-(0?[1-9]|1[0-2]))?)(\\/[1-9][0-9]?)?(,(\\*|(0?[1-9]|1[0-2])(-(0?[1-9]|1[0-2]))?)(\\/[1-9][0-9]?)?)* (\\*|[0-7](-[0-7])?)(\\/[1-9][0-9]?)?(,(\\*|[0-7](-[0-7])?)(\\/[1-9][0-9]?)?)*$)/D';
+
     /** The host part of a MariaDB user: an address, a network, a host name or a pattern with a percent sign. */
     public const DATABASE_CLIENT_HOST = '/^(?:^[A-Za-z0-9.:%\\/_-]{1,255}$)/D';
 
@@ -32,6 +38,15 @@ final class InputRules
 
     /** A domain name in lower case. Each label has 1 to 63 characters. The last label is not a number, so that the name is not an IP address (audit finding R5). */
     public const DOMAIN = '/^(?=[\\s\\S]{0,253}\\z)(?![\\s\\S]*?(?:\\.[0-9]+$))(?:^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$)/D';
+
+    /** The path of a file or a directory in the files of a website, for the file manager. "/" is the directory of the website, which the container has at /app. The path has no empty part, no "." part, no ".." part, no control characters and no "/" at the end. */
+    public const FILE_PATH = '/^(?=[\\s\\S]{0,1024}\\z)(?![\\s\\S]*?(?:\\/\\.\\.?(\\/|$)))(?:^(\\/|(\\/[^\\/\\x00-\\x1f\\x7f]+)+)$)/D';
+
+    /** The name of a Git branch. It cannot start with "-". */
+    public const GIT_BRANCH = '/^(?![\\s\\S]*?(?:\\.\\.))(?![\\s\\S]*?(?:\\/\\/))(?![\\s\\S]*?(?:[\\/.]$))(?![\\s\\S]*?(?:\\.lock$))(?:^[A-Za-z0-9][A-Za-z0-9._\\/-]{0,99}$)/D';
+
+    /** The address of a Git repository: HTTPS with no user name and no password, SSH as a URL, or the short SSH form "git@host:path". It cannot start with "-", and it cannot name a file or a helper program. */
+    public const GIT_REPOSITORY = '/^(?=[\\s\\S]{0,300}\\z)(?![\\s\\S]*?(?:\\.\\.))(?![\\s\\S]*?(?:\\/\\/[^\\/]*\\/\\/))(?:^(https:\\/\\/[A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?(:[0-9]{1,5})?\\/[A-Za-z0-9_][A-Za-z0-9._~\\/-]{0,199}|ssh:\\/\\/[a-z0-9_][a-z0-9_-]{0,31}@[A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?(:[0-9]{1,5})?\\/[A-Za-z0-9_][A-Za-z0-9._~\\/-]{0,199}|[a-z0-9_][a-z0-9_-]{0,31}@[A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?:[A-Za-z0-9_][A-Za-z0-9._~\\/-]{0,199})$)/D';
 
     /** A ULID from the panel. */
     public const ID = '/^(?:^[0-9A-Za-z]{26}$)/D';
@@ -57,6 +72,12 @@ final class InputRules
     /** The path of a file or a directory in a website. It starts with "/". It has no empty part, no "." part, no ".." part and no "/" at the end. */
     public const RESTORE_PATH = '/^(?=[\\s\\S]{0,4096}\\z)(?![\\s\\S]*?(?:\\/\\.\\.?(\\/|$)))(?:^(\\/|(\\/[^\\/\\x00]+)+)$)/D';
 
+    /** The name of an environment variable that a deploy gives to the build commands. */
+    public const SECRET_NAME = '/^(?:^[A-Z_][A-Z0-9_]{0,63}$)/D';
+
+    /** The value of a deploy secret. It is on one line. */
+    public const SECRET_VALUE = '/^(?=[\\s\\S]{0,4096}\\z)(?:^[^\\x00\\n\\r]+$)/D';
+
     /** A SHA-256 hash in lower-case hexadecimal. */
     public const SHA256 = '/^(?:^[0-9a-f]{64}$)/D';
 
@@ -72,6 +93,8 @@ final class InputRules
     /** Each pattern by the name of its rule in schema/input-rules.json. */
     public const PATTERNS = [
         'commandArgument' => self::COMMAND_ARGUMENT,
+        'commandLine' => self::COMMAND_LINE,
+        'cronSchedule' => self::CRON_SCHEDULE,
         'databaseClientHost' => self::DATABASE_CLIENT_HOST,
         'databaseName' => self::DATABASE_NAME,
         'databaseNameSuffix' => self::DATABASE_NAME_SUFFIX,
@@ -79,6 +102,9 @@ final class InputRules
         'digest' => self::DIGEST,
         'documentRoot' => self::DOCUMENT_ROOT,
         'domain' => self::DOMAIN,
+        'filePath' => self::FILE_PATH,
+        'gitBranch' => self::GIT_BRANCH,
+        'gitRepository' => self::GIT_REPOSITORY,
         'id' => self::ID,
         'image' => self::IMAGE,
         'imageReference' => self::IMAGE_REFERENCE,
@@ -87,6 +113,8 @@ final class InputRules
         'iniValue' => self::INI_VALUE,
         'phpExtension' => self::PHP_EXTENSION,
         'restorePath' => self::RESTORE_PATH,
+        'secretName' => self::SECRET_NAME,
+        'secretValue' => self::SECRET_VALUE,
         'sha256' => self::SHA256,
         'sshKey' => self::SSH_KEY,
         'unixUser' => self::UNIX_USER,
@@ -96,6 +124,8 @@ final class InputRules
     /** The text that tells a person how to correct a value. */
     public const MESSAGES = [
         'commandArgument' => 'Each argument must have 1 to 1024 characters and no control characters.',
+        'commandLine' => 'Enter a command of 1 to 1000 characters on one line.',
+        'cronSchedule' => 'Enter 5 fields: minute, hour, day of the month, month and day of the week. For example */5 * * * * or 0 3 * * 1.',
         'databaseClientHost' => 'Use an address, a network or a host name. Use only letters, digits and the characters . : % / _ -',
         'databaseName' => 'Use 2 to 63 lower-case letters, digits and underscores. Start with a letter.',
         'databaseNameSuffix' => 'Use 1 to 32 lower-case letters, digits and underscores. Start with a letter or a digit.',
@@ -103,6 +133,9 @@ final class InputRules
         'digest' => 'Enter a digest: sha256: and 64 hexadecimal digits in lower case.',
         'documentRoot' => 'Enter a directory in /app, for example public or web/htdocs. Use letters, digits, dots, underscores and hyphens, and at most 8 parts.',
         'domain' => 'Enter a domain name in lower-case letters, for example shop.example.com.',
+        'filePath' => 'Enter a path that starts with /, for example /public/index.php. Do not use "//", "." or ".." parts, or a / at the end.',
+        'gitBranch' => 'Enter the name of a branch, for example main. Use letters, digits, dots, underscores, hyphens and slashes.',
+        'gitRepository' => 'Enter the address of a Git repository, for example https://github.com/acme/shop.git or git@github.com:acme/shop.git.',
         'id' => 'Enter an ID of 26 letters and digits.',
         'image' => 'Enter an image reference with its registry and a tag, for example ghcr.io/team/app:1.2.',
         'imageReference' => 'Enter an image reference with its registry and no tag, for example ghcr.io/team/app.',
@@ -111,6 +144,8 @@ final class InputRules
         'iniValue' => 'Use at most 200 characters on one line, with no double quotes.',
         'phpExtension' => 'Use 1 to 40 lower-case letters, digits and underscores.',
         'restorePath' => 'Enter a path that starts with /, for example /public/index.php. Do not use "//", "." or ".." parts, or a / at the end.',
+        'secretName' => 'Use 1 to 64 capital letters, digits and underscores. Do not start with a digit.',
+        'secretValue' => 'Enter a value of 1 to 4096 characters on one line.',
         'sha256' => 'Enter 64 hexadecimal digits in lower case.',
         'sshKey' => 'Enter one public SSH key on one line, for example: ssh-ed25519 AAAA... name. Do not put options before the key.',
         'unixUser' => 'Use a name such as acme_x7k2: a letter, at most 15 letters or digits, an underscore, and 4 letters or digits.',
@@ -123,6 +158,15 @@ final class InputRules
     /** A database name does not start with one of these (CF-01). */
     public const RESERVED_DATABASE_PREFIXES = ['pg_'];
 
+    /** The largest number of build commands of a deploy. */
+    public const MAX_BUILD_COMMANDS = 10;
+
     /** The largest number of arguments of a start command. */
     public const MAX_COMMAND_ARGUMENTS = 32;
+
+    /** The largest number of cron jobs of a website. */
+    public const MAX_CRON_JOBS = 20;
+
+    /** The largest number of secrets of a deploy. */
+    public const MAX_DEPLOY_SECRETS = 50;
 }

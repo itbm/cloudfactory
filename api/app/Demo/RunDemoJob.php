@@ -20,7 +20,9 @@ use Illuminate\Foundation\Queue\Queueable;
  * To show a failure, the demo agent fails these jobs:
  * - a new website or a new domain with a name that starts with "fail.", for example
  *   "fail.example.com";
- * - a new database with a name that ends with "_fail".
+ * - a new database with a name that ends with "_fail";
+ * - a deploy from a repository with "fail" in its address;
+ * - a cron job with "fail" in its command.
  */
 class RunDemoJob implements ShouldQueue
 {
@@ -81,6 +83,14 @@ class RunDemoJob implements ShouldQueue
                 'step' => 0,
                 'error' => 'runuser -u cf-db -- podman exec cf-mariadb mariadb --execute "CREATE DATABASE": exit status 1: ERROR 2002 (HY000): Can\'t connect to local server through socket \'/run/mysqld/mysqld.sock\' (2)',
             ],
+            $job->action === AgentAction::Deploy && str_contains((string) ($p['repository'] ?? ''), 'fail') => [
+                'step' => 1,
+                'error' => "a build command failed: exit status 2: Installing dependencies from lock file\nYour lock file does not contain a compatible set of packages. Please run composer update.",
+            ],
+            $job->action === AgentAction::RunCronJob && str_contains((string) ($p['cronJob']['command'] ?? ''), 'fail') => [
+                'step' => 0,
+                'error' => 'the command ended with exit code 1: PHP Fatal error:  Uncaught RuntimeException: The export did not complete in /app/src/export.php:18',
+            ],
             default => null,
         };
     }
@@ -99,6 +109,14 @@ class RunDemoJob implements ShouldQueue
             AgentAction::CreateDatabase => ($p['engine'] ?? '') === Database::VALKEY ? ['number' => self::freeValkeyNumber($job)] : [],
             AgentAction::Backup => ['snapshotId' => bin2hex(random_bytes(32)), 'sizeBytes' => random_int(40, 900) * 1024 ** 2, 'dumps' => [], 'forgotten' => []],
             AgentAction::InstallHostUpdates => ['rebootRequired' => false],
+            AgentAction::RunCronJob => ['cronJobId' => $p['cronJob']['id'] ?? '', 'exitCode' => 0, 'output' => "Running scheduled tasks.\nDone in 0.4 s.", 'ranAt' => now()->toIso8601String()],
+            AgentAction::Deploy => [
+                'releaseId' => $p['releaseId'] ?? '',
+                'commit' => sha1((string) ($p['releaseId'] ?? '')),
+                'message' => 'Update the '.(['home page', 'checkout form', 'product list', 'contact page'][crc32((string) ($p['releaseId'] ?? '')) % 4]),
+                'removed' => [],
+                'documentRoot' => $p['website']['documentRoot'] ?? '',
+            ],
             AgentAction::UpdateAgent => ['version' => config('cloudfactory.agent.latest_version')],
             // Each peer answers through its tunnel.
             AgentAction::SetMesh => ['mesh' => [

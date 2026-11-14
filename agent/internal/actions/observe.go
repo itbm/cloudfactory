@@ -72,6 +72,7 @@ const (
 // certificate of the panel to a status report.
 func (d *Deps) FillReport(ctx context.Context, r *panel.Report) {
 	r.SftpPort = d.SftpPortInUse()
+	r.CronRuns = d.cronReport()
 	// The panel server reports the certificate of the panel domain, and the root certificate
 	// of the panel CA, which the panel offers for download.
 	if domain, err := d.panelDomain(ctx); err == nil && d.Edge != nil {

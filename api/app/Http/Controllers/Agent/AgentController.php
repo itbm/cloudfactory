@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Jobs\CheckAgentConnection;
 use App\Jobs\SendJobToAgent;
 use App\Models\AgentJob;
+use App\Models\CronJob;
 use App\Models\Database;
 use App\Models\DatabaseServer;
 use App\Models\Domain;
@@ -17,6 +18,7 @@ use App\Services\PanelCertificate;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 /** Reports from the agents: job progress, results and the actual state of the server. */
@@ -135,6 +137,13 @@ class AgentController extends Controller
             'mesh.tunnels.*.roundTripMicros' => ['integer', 'min:0'],
             // The panel CA that the agent trusts. An agent of an earlier release does not send it.
             'panelCaSha256' => ['nullable', 'string', 'regex:/^[0-9a-f]{64}$/'],
+            // The results of the cron jobs that ran since the last reports.
+            'cronRuns' => ['nullable', 'array', 'max:10000'],
+            'cronRuns.*.websiteId' => ['required', 'string', 'max:64'],
+            'cronRuns.*.id' => ['required', 'string', 'max:64'],
+            'cronRuns.*.at' => ['required', 'date'],
+            'cronRuns.*.exitCode' => ['required', 'integer'],
+            'cronRuns.*.output' => ['nullable', 'string'],
         ]);
 
         // A server is degraded when a necessary service does not run. An optional part, for
@@ -195,6 +204,13 @@ class AgentController extends Controller
             if ($values) {
                 Database::whereIn('website_id', $websiteIds)->where(['engine' => $d['engine'], 'name' => $d['name']])->update($values);
             }
+        }
+        // The agent sends each result in more than one report. The panel keeps the newest run.
+        foreach ($data['cronRuns'] ?? [] as $run) {
+            $at = Carbon::parse($run['at']);
+            CronJob::whereIn('website_id', $websiteIds)->where('website_id', $run['websiteId'])->whereKey($run['id'])
+                ->where(fn ($q) => $q->whereNull('last_run_at')->orWhere('last_run_at', '<', $at))
+                ->update(['last_run_at' => $at, 'last_exit_code' => $run['exitCode'], 'last_output' => Str::limit((string) ($run['output'] ?? ''), 4000)]);
         }
         // The agent reports the ID of a database server in lower case, as the panel has it.
         foreach ($data['databaseServers'] ?? [] as $use) {
