@@ -209,10 +209,10 @@ directory with mode 0700:
 - An administrator or a reseller with no TOTP can sign in, but the API then accepts only the
   account data, the password change, the TOTP setup and the sign-out (the answer has the code
   `totp_setup_required`). The web panel shows only the page **Set up an authenticator app**.
-  This rule is for sign-in sessions. An API token has scopes and an expiry date, and its owner
-  made it with the password and a code, so a token continues to work. For a development
-  installation, `CF_REQUIRE_TOTP=false` in the environment of the panel API turns the rule off.
-  Do not use this setting on a server with customers.
+  This rule is for sign-in sessions. An API token continues to work: it has scopes and an
+  expiry date, and it cannot make, reset or delete an administrator. For a development
+  installation, `CF_REQUIRE_TOTP=false` in the environment of the panel API turns the rule
+  off. Do not use this setting on a server with customers.
 - To make, reset or delete an administrator, the signed-in administrator must give the
   password again and a TOTP code. A stolen session alone cannot take the other administrator
   accounts. After 5 incorrect attempts, the panel refuses these changes for 15 minutes.
