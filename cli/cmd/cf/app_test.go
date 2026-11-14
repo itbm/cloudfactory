@@ -231,21 +231,24 @@ func TestDatabaseUserGrantsUseTheDatabaseIDs(t *testing.T) {
 	}
 }
 
-// A Valkey database has a database number. The tool shows how an application connects.
+// A Valkey database has a database number. The tool shows how an application connects: the
+// host name and the port are those of the database server of the database.
 func TestValkeyDatabaseShowsTheConnection(t *testing.T) {
 	number := "null"
+	var wantServer any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case r.URL.Path == "/api/v1/websites":
 			w.Write([]byte(`{"data":[{"id":"W1","name":"shop.example","status":"running"}]}`))
 		case r.URL.Path == "/api/v1/websites/W1/databases" && r.Method == http.MethodGet:
-			w.Write([]byte(`{"prefix":"u1a2_","databases":[{"id":"D1","engine":"mariadb","name":"u1a2_prod","sizeBytes":4096,"number":null,"keys":null},` +
-				`{"id":"D2","engine":"valkey","name":"u1a2_cache","sizeBytes":0,"number":` + number + `,"keys":` + number + `}],"users":[]}`))
+			w.Write([]byte(`{"prefix":"u1a2_","databases":[{"id":"D1","engine":"mariadb","name":"u1a2_prod","databaseServerId":"DS1","host":"mariadb.internal","port":3306,"sizeBytes":4096,"number":null,"keys":null},` +
+				`{"id":"D2","engine":"valkey","name":"u1a2_cache","databaseServerId":"DS2","host":"valkey.internal","port":6380,"sizeBytes":0,"number":` + number + `,"keys":` + number + `}],"users":[],` +
+				`"servers":[{"id":"DS1","name":"mariadb-1","engine":"mariadb"},{"id":"DS2","name":"valkey-sessions","engine":"valkey"}]}`))
 		case r.URL.Path == "/api/v1/websites/W1/databases":
 			var body map[string]any
 			json.NewDecoder(r.Body).Decode(&body)
-			if body["engine"] != "valkey" || body["name"] != "cache" || body["createUser"] != true {
+			if body["engine"] != "valkey" || body["name"] != "cache" || body["createUser"] != true || body["databaseServerId"] != wantServer {
 				t.Errorf("request = %v", body)
 			}
 			w.WriteHeader(http.StatusAccepted)
@@ -264,19 +267,23 @@ func TestValkeyDatabaseShowsTheConnection(t *testing.T) {
 	if err := a.dispatch(context.Background(), []string{"databases", "create", "shop.example", "--engine", "valkey", "--name", "cache"}); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"Password: pw-1", "Host: valkey.internal", "Port: 6379", "User: u1a2_cache", "The database number comes when the job is complete."} {
+	for _, want := range []string{"Password: pw-1", "Host: valkey.internal", "Port: 6380", "User: u1a2_cache", "The database number comes when the job is complete."} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("output has no %q: %s", want, out)
 		}
 	}
 
-	number = "7"
+	// The name of a database server becomes its ID in the request.
+	number, wantServer = "7", "DS2"
 	out.Reset()
-	if err := a.dispatch(context.Background(), []string{"databases", "create", "shop.example", "--engine", "valkey", "--name", "cache"}); err != nil {
+	if err := a.dispatch(context.Background(), []string{"databases", "create", "shop.example", "--engine", "valkey", "--name", "cache", "--database-server", "valkey-sessions"}); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out.String(), "Database number: 7") {
 		t.Errorf("output: %s", out)
+	}
+	if err := a.dispatch(context.Background(), []string{"databases", "create", "shop.example", "--engine", "valkey", "--name", "cache", "--database-server", "valkey-9"}); err == nil || !strings.Contains(err.Error(), `cannot use a database server "valkey-9"`) {
+		t.Errorf("err = %v", err)
 	}
 
 	out.Reset()
@@ -284,8 +291,9 @@ func TestValkeyDatabaseShowsTheConnection(t *testing.T) {
 		t.Fatal(err)
 	}
 	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
-	if len(lines) != 4 || strings.Join(strings.Fields(lines[1]), " ") != "NAME ENGINE SIZEBYTES NUMBER KEYS ID" ||
-		strings.Join(strings.Fields(lines[2]), " ") != "u1a2_prod mariadb 4096 - - D1" || strings.Join(strings.Fields(lines[3]), " ") != "u1a2_cache valkey - 7 7 D2" {
+	if len(lines) != 4 || strings.Join(strings.Fields(lines[1]), " ") != "NAME ENGINE DATABASESERVER HOST PORT SIZEBYTES NUMBER KEYS ID" ||
+		strings.Join(strings.Fields(lines[2]), " ") != "u1a2_prod mariadb mariadb-1 mariadb.internal 3306 4096 - - D1" ||
+		strings.Join(strings.Fields(lines[3]), " ") != "u1a2_cache valkey valkey-sessions valkey.internal 6380 - 7 7 D2" {
 		t.Errorf("output: %s", out)
 	}
 }
@@ -528,7 +536,7 @@ func TestServerUpdateWithTheToolsPolicy(t *testing.T) {
 }
 
 // A server of an earlier release has shared database containers. The command starts one job
-// for each website that moves to the database containers of its customer.
+// for each website that moves to the database servers of its customer.
 func TestServerMoveDatabases(t *testing.T) {
 	srv, calls := pagedPanel(t)
 	defer srv.Close()

@@ -1,14 +1,13 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { useAction, useStore } from "../api/hooks";
-import { createDatabase, createDatabaseUser, deleteDatabase, deleteDatabaseUser, partialDetails, setDatabaseUser, sharedDatabasesMessage, type GrantInput } from "../api/store";
+import { createDatabase, createDatabaseUser, databaseServersFor, deleteDatabase, deleteDatabaseUser, partialDetails, setDatabaseUser, sharedDatabasesMessage, type GrantInput } from "../api/store";
 import type { DatabaseEngine, DatabasePrivileges, DatabaseUser } from "../api/types";
 import { Card, ConfirmButton, Field, FormError, Modal, RowMenu, TableWrap } from "../components/ui";
 import { bytes, count } from "../lib/format";
-import { ENGINE_NAME as ENGINE, jobActive } from "../lib/labels";
+import { DATABASE_HOST, DATABASE_PORT, ENGINE_NAME as ENGINE, jobActive } from "../lib/labels";
 
 const ENGINE_RELEASE: Record<DatabaseEngine, string> = { mariadb: "MariaDB 12.3", postgresql: "PostgreSQL 18", valkey: "Valkey 9.1" };
-const HOST: Record<DatabaseEngine, string> = { mariadb: "mariadb.internal:3306", postgresql: "postgres.internal:5432", valkey: "valkey.internal:6379" };
 const PRIVILEGES: Record<DatabasePrivileges, string> = { readonly: "Read only", readwrite: "Read and write" };
 /** A database user has an SQL engine. The user of a Valkey database comes with the database. */
 const SQL_ENGINES: DatabaseEngine[] = ["mariadb", "postgresql"];
@@ -28,6 +27,8 @@ export function DatabasesPanel({ websiteId }: { websiteId?: string }) {
   const [name, setName] = useState("");
   const [site, setSite] = useState(websiteId ?? sites[0]?.id ?? "");
   const [withUser, setWithUser] = useState(true);
+  // The database server of a new database or a new user. "" lets the panel select it.
+  const [dbServer, setDbServer] = useState("");
   const [grants, setGrants] = useState<GrantInput[]>([]);
   const [password, setPassword] = useState<{ user: string; value: string; valkey?: boolean } | null>(null);
   // The action of a database user that waits for a confirmation.
@@ -36,6 +37,10 @@ export function DatabasesPanel({ websiteId }: { websiteId?: string }) {
   const createUser = useAction(createDatabaseUser);
   const changeUser = useAction(setDatabaseUser);
   const siteName = (id: string) => sites.find((w) => w.id === id)?.name ?? "Removed website";
+  const serverName = (id?: string) => state.databaseServers.find((x) => x.id === id)?.name;
+  // The database servers that the selected website can use: those of its customer on its server.
+  const website = sites.find((w) => w.id === site);
+  const usable = website?.sharedDatabases ? [] : databaseServersFor(state, website, engine);
   const prefix = (id: string) => `${sites.find((w) => w.id === id)?.unixUser ?? ""}_`;
   // The reason when a website cannot have a Valkey database: an agent of an earlier release
   // cannot operate Valkey, and the shared database containers of an earlier release have none.
@@ -52,6 +57,7 @@ export function DatabasesPanel({ websiteId }: { websiteId?: string }) {
     setDialog(null);
     setEngine("mariadb");
     setName("");
+    setDbServer("");
     setGrants([]);
     setWithUser(true);
     createDb.clear();
@@ -89,7 +95,8 @@ export function DatabasesPanel({ websiteId }: { websiteId?: string }) {
                     </td>
                     <td>{d.engine === "valkey" ? (d.keys === undefined ? <span className="muted">No report</span> : `${count(d.keys)} ${d.keys === 1 ? "key" : "keys"}`) : bytes(d.sizeBytes)}</td>
                     <td>
-                      <code>{HOST[d.engine]}</code>
+                      <code>{d.host ?? DATABASE_HOST[d.engine]}:{d.port ?? DATABASE_PORT[d.engine]}</code>
+                      <span className="cell-sub">{d.databaseServerId ? serverName(d.databaseServerId) ?? "Database server" : "Shared container of an earlier release"}</span>
                       {d.engine === "valkey" && <span className="cell-sub">{d.number === undefined ? "The number comes when the job is complete" : <>Database number <strong>{d.number}</strong></>}</span>}
                     </td>
                     <td className="cell-actions" style={{ width: 120 }}>
@@ -108,7 +115,7 @@ export function DatabasesPanel({ websiteId }: { websiteId?: string }) {
         {!websiteId && partialDetails() && <p className="card-body muted small">There are many websites, so this list shows only the websites that you opened. Open a website to see its databases.</p>}
         {dbs.some((d) => d.engine === "valkey") && (
           <p className="card-body muted small" style={{ paddingTop: 12 }}>
-            To connect to a Valkey database, an app uses the host <code>valkey.internal</code>, the port <code>6379</code>, the user name, the password and the database number. Valkey is compatible with Redis: for PHP, turn on the extension <code>redis</code> on the Runtime tab. Each customer has its own Valkey container on a server. All the Valkey databases of the customer there share its memory: when the memory is full, Valkey removes the keys that were not used for the longest time. A backup has no Valkey data.
+            To connect to a Valkey database, an app uses the host name and the port in the Host column, the user name, the password and the database number. Valkey is compatible with Redis: for PHP, turn on the extension <code>redis</code> on the Runtime tab. All the databases of a Valkey database server share its memory: when the memory is full, Valkey removes the keys that were not used for the longest time. A backup has no Valkey data.
           </p>
         )}
       </Card>
@@ -125,7 +132,7 @@ export function DatabasesPanel({ websiteId }: { websiteId?: string }) {
               {users.map((u) => (
                 <tr key={u.id}>
                   <td><code>{u.name}</code>{!websiteId && <span className="cell-sub">{siteName(u.websiteId)}</span>}</td>
-                  <td>{ENGINE[u.engine]}</td>
+                  <td>{ENGINE[u.engine]}{u.databaseServerId && <span className="cell-sub">{serverName(u.databaseServerId) ?? "Database server"}</span>}</td>
                   <td>
                     {u.grants.length
                       ? u.grants.map((g) => <span key={g.databaseId} className="grant"><code>{g.database}</code> <span className={`badge ${g.privileges === "readonly" ? "badge-neutral" : "badge-info"}`}>{PRIVILEGES[g.privileges]}</span></span>)
@@ -156,7 +163,7 @@ export function DatabasesPanel({ websiteId }: { websiteId?: string }) {
             </tbody>
           </table>
         </TableWrap>
-        <p className="card-body muted small" style={{ paddingTop: 12 }}>Each customer has its own database containers on a server. By default, only the websites of the customer can connect to them, and each connection needs a user name and a password. A user can have access only to the databases of its website.{users.some((u) => u.engine === "valkey") && " The user of a Valkey database has access to that database only. To remove the user, remove the database."}</p>
+        <p className="card-body muted small" style={{ paddingTop: 12 }}>Each customer has its own database servers. By default, only the websites of the customer on the same server can connect to them, and each connection needs a user name and a password. A user is in one database server, and can have access only to the databases of its website in that database server.{users.some((u) => u.engine === "valkey") && " The user of a Valkey database has access to that database only. To remove the user, remove the database."}</p>
       </Card>
 
       {asking?.action === "password" && (
@@ -191,14 +198,33 @@ export function DatabasesPanel({ websiteId }: { websiteId?: string }) {
           <form id="new-db" noValidate onSubmit={async (e) => {
             e.preventDefault();
             const full = prefix(site) + name.trim();
-            const result = await createDb.run(site, engine, name, engine === "valkey" || withUser);
+            const result = await createDb.run(site, engine, name, engine === "valkey" || withUser, dbServer || undefined);
             if (result.ok) {
               close();
               if (result.value) setPassword({ user: full, value: result.value, valkey: engine === "valkey" });
             }
           }}>
             <FormError error={createDb.error} />
-            <DbFields engines={ALL_ENGINES} noValkey={noValkey(site)} engine={engine} setEngine={setEngine} name={name} setName={setName} site={site} setSite={(s) => { setSite(s); if (engine === "valkey" && noValkey(s)) setEngine("mariadb"); }} showSite={!websiteId} prefix={prefix(site)} error={createDb.error?.fields.name} engineError={createDb.error?.fields.engine} />
+            <DbFields engines={ALL_ENGINES} noValkey={noValkey(site)} engine={engine} setEngine={(e) => { setEngine(e); setDbServer(""); }} name={name} setName={setName} site={site} setSite={(s) => { setSite(s); setDbServer(""); if (engine === "valkey" && noValkey(s)) setEngine("mariadb"); }} showSite={!websiteId} prefix={prefix(site)} error={createDb.error?.fields.name} engineError={createDb.error?.fields.engine}>
+              {!website?.sharedDatabases && (
+                <div style={{ marginTop: 14 }}>
+                  <Field
+                    label="Database server"
+                    hint={usable.length === 0
+                      ? <>The customer has no {ENGINE[engine]} database server on the server of this website. The panel makes one with the plan of the customer.</>
+                      : <>The websites of the customer on the same server can connect to it. {websiteId ? <>To make more database servers, go to the <Link to="/databases">Databases</Link> page.</> : "To make more database servers, select New database server on this page."}</>}
+                    error={createDb.error?.fields.databaseServerId}
+                  >
+                    {(p) => (
+                      <select {...p} className="select" value={dbServer} onChange={(e) => setDbServer(e.target.value)}>
+                        <option value="">{usable.length === 0 ? `New ${ENGINE[engine]} database server` : "Automatic: the first database server with space"}</option>
+                        {usable.map((x) => <option key={x.id} value={x.id} disabled={x.databases >= x.maxDatabases}>{x.name} · port {x.port} · {x.databases} of {x.maxDatabases} databases</option>)}
+                      </select>
+                    )}
+                  </Field>
+                </div>
+              )}
+            </DbFields>
             {engine === "valkey" ? (
               <p className="muted small" style={{ marginTop: 12 }}>Valkey keeps keys and values in memory, for a cache, sessions and queues. It is compatible with Redis. The database gets a number, and a user with the same name as the database. An app connects with the user name, the password and the number.</p>
             ) : (
@@ -219,12 +245,24 @@ export function DatabasesPanel({ websiteId }: { websiteId?: string }) {
           <form id="new-user" noValidate onSubmit={async (e) => {
             e.preventDefault();
             const full = prefix(site) + name.trim();
-            const result = await createUser.run(site, engine, name, grants);
+            const result = await createUser.run(site, engine, name, grants, usable.length > 1 ? dbServer || usable[0].id : undefined);
             if (result.ok) { close(); setPassword({ user: full, value: result.value }); }
           }}>
             <FormError error={createUser.error} />
-            <DbFields engines={SQL_ENGINES} engine={engine} setEngine={(e) => { setEngine(e); setGrants([]); }} name={name} setName={setName} site={site} setSite={(s) => { setSite(s); setGrants([]); }} showSite={!websiteId} prefix={prefix(site)} error={createUser.error?.fields.name} engineError={createUser.error?.fields.engine} />
-            <GrantEditor websiteId={site} engine={engine} grants={grants} setGrants={setGrants} />
+            <DbFields engines={SQL_ENGINES} engine={engine} setEngine={(e) => { setEngine(e); setDbServer(""); setGrants([]); }} name={name} setName={setName} site={site} setSite={(s) => { setSite(s); setDbServer(""); setGrants([]); }} showSite={!websiteId} prefix={prefix(site)} error={createUser.error?.fields.name} engineError={createUser.error?.fields.engine}>
+              {usable.length > 1 && (
+                <div style={{ marginTop: 14 }}>
+                  <Field label="Database server" hint="A user is in one database server. It can have access only to the databases in it." error={createUser.error?.fields.databaseServerId}>
+                    {(p) => (
+                      <select {...p} className="select" value={dbServer || usable[0].id} onChange={(e) => { setDbServer(e.target.value); setGrants([]); }}>
+                        {usable.map((x) => <option key={x.id} value={x.id}>{x.name} · port {x.port}</option>)}
+                      </select>
+                    )}
+                  </Field>
+                </div>
+              )}
+            </DbFields>
+            <GrantEditor websiteId={site} engine={engine} databaseServerId={usable.length > 1 ? dbServer || usable[0].id : undefined} grants={grants} setGrants={setGrants} />
           </form>
         </Modal>
       )}
@@ -239,7 +277,7 @@ export function DatabasesPanel({ websiteId }: { websiteId?: string }) {
             if ((await changeUser.run(dialog.id, { grants })).ok) close();
           }}>
             <FormError error={changeUser.error} />
-            <GrantEditor websiteId={dialog.websiteId} engine={dialog.engine} grants={grants} setGrants={setGrants} />
+            <GrantEditor websiteId={dialog.websiteId} engine={dialog.engine} databaseServerId={dialog.databaseServerId} grants={grants} setGrants={setGrants} />
           </form>
         </Modal>
       )}
@@ -257,10 +295,13 @@ export function DatabasesPanel({ websiteId }: { websiteId?: string }) {
   );
 }
 
-/** One row for each database of the website with the same engine: no access, read only, or read and write. */
-function GrantEditor({ websiteId, engine, grants, setGrants }: { websiteId: string; engine: DatabaseEngine; grants: GrantInput[]; setGrants: (g: GrantInput[]) => void }) {
+/**
+ * One row for each database of the website with the same engine: no access, read only, or read
+ * and write. With a database server, it shows only the databases in that database server.
+ */
+function GrantEditor({ websiteId, engine, databaseServerId, grants, setGrants }: { websiteId: string; engine: DatabaseEngine; databaseServerId?: string; grants: GrantInput[]; setGrants: (g: GrantInput[]) => void }) {
   const state = useStore();
-  const dbs = state.databases.filter((d) => d.websiteId === websiteId && d.engine === engine);
+  const dbs = state.databases.filter((d) => d.websiteId === websiteId && d.engine === engine && (!databaseServerId || d.databaseServerId === databaseServerId));
   const set = (databaseId: string, value: DatabasePrivileges | "") => {
     const rest = grants.filter((g) => g.databaseId !== databaseId);
     setGrants(value ? [...rest, { databaseId, privileges: value }] : rest);
@@ -268,7 +309,7 @@ function GrantEditor({ websiteId, engine, grants, setGrants }: { websiteId: stri
   return (
     <fieldset className="grant-list" style={{ marginTop: 14 }}>
       <legend>Permissions</legend>
-      {dbs.length === 0 && <p className="muted small">This website has no {ENGINE[engine]} databases.</p>}
+      {dbs.length === 0 && <p className="muted small">This website has no {ENGINE[engine]} databases{databaseServerId ? " in this database server" : ""}.</p>}
       {dbs.map((d) => (
         <div key={d.id} className="grant-row">
           <label htmlFor={`grant-${d.id}`}><code>{d.name}</code></label>
@@ -284,7 +325,8 @@ function GrantEditor({ websiteId, engine, grants, setGrants }: { websiteId: stri
   );
 }
 
-function DbFields(props: { engines: DatabaseEngine[]; noValkey?: string; engine: DatabaseEngine; setEngine: (e: DatabaseEngine) => void; name: string; setName: (n: string) => void; site: string; setSite: (s: string) => void; showSite: boolean; prefix: string; error?: string; engineError?: string }) {
+/** The fields of a new database or a new user. The children come after the engine, before the name. */
+function DbFields(props: { engines: DatabaseEngine[]; noValkey?: string; engine: DatabaseEngine; setEngine: (e: DatabaseEngine) => void; name: string; setName: (n: string) => void; site: string; setSite: (s: string) => void; showSite: boolean; prefix: string; error?: string; engineError?: string; children?: ReactNode }) {
   const state = useStore();
   return (
     <>
@@ -311,6 +353,7 @@ function DbFields(props: { engines: DatabaseEngine[]; noValkey?: string; engine:
       </fieldset>
       {props.engines.includes("valkey") && props.noValkey && <p className="muted small" style={{ marginTop: 6 }}>{props.noValkey}</p>}
       {props.engineError && <p className="text-danger small" role="alert" style={{ marginTop: 6 }}>{props.engineError}</p>}
+      {props.children}
       <div style={{ marginTop: 14 }}>
         <Field label="Name" hint={<>Each name starts with <code>{props.prefix}</code>, the Unix user of the website. Use lower-case letters, digits and underscores.</>} error={props.error}>
           {(p) => (

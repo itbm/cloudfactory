@@ -61,7 +61,7 @@ function Customers() {
       {change.error && !planFor && <div className="card-body"><FormError error={change.error} /></div>}
       <TableWrap>
         <table>
-          <thead><tr><th scope="col">Customer</th>{admin && <th scope="col">Role</th>}<th scope="col">Plan</th><th scope="col">Websites</th><th scope="col">Since</th><th scope="col">Status</th><th scope="col"><span className="visually-hidden">Actions</span></th></tr></thead>
+          <thead><tr><th scope="col">Customer</th>{admin && <th scope="col">Role</th>}<th scope="col">Plan</th><th scope="col">Websites</th><th scope="col">Database servers</th><th scope="col">Since</th><th scope="col">Status</th><th scope="col"><span className="visually-hidden">Actions</span></th></tr></thead>
           <tbody>
             {customers.map((c) => (
               <tr key={c.id}>
@@ -69,6 +69,7 @@ function Customers() {
                 {admin && <td>{c.role === "reseller" ? "Reseller" : "Website owner"}</td>}
                 <td>{plan(c.planId)?.name ?? "No plan"}</td>
                 <td>{state.websites.filter((w) => w.customerId === c.id).length} of {plan(c.planId)?.websites ?? "?"}</td>
+                <td>{state.databaseServers.filter((x) => x.customerId === c.id).length} of {plan(c.planId)?.databaseServers ?? "?"}</td>
                 <td>{shortDate(c.createdAt)}</td>
                 <td>{c.suspended ? <Status tone="danger">Suspended</Status> : <Status tone="success">Active</Status>}</td>
                 <td className="cell-actions"><RowMenu label={`Actions for ${c.name}`} actions={actions(c)} /></td>

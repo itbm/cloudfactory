@@ -73,7 +73,7 @@ describe("the console of each role", () => {
       cleanup();
       render(<MemoryRouter initialEntries={[path.replace("SITE", website("shop.acme.example.com").id)]}><App /></MemoryRouter>);
       const text = document.body.textContent ?? "";
-      expect(text, path).not.toMatch(/administrator|undefined|cgroup|Servers|Finish setup/i);
+      expect(text, path).not.toMatch(/administrator|undefined|cgroup|(?<!database )servers|Finish setup/i);
       cleanup();
       reset();
     }

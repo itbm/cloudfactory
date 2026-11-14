@@ -26,8 +26,10 @@ export function AccountPage() {
   const reseller = customer.role === "reseller";
   const self = state.session.user.id;
   const provided = provider ? provider.name : "the operator of this panel";
+  const databaseServers = state.databaseServers.filter((x) => x.customerId === customer.id).length;
   const rows = plan ? [
     { label: "Websites", text: `${usage.websites} of ${plan.websites}`, value: ratio(usage.websites, plan.websites) },
+    { label: "Database servers", text: `${databaseServers} of ${plan.databaseServers}`, value: ratio(databaseServers, plan.databaseServers) },
   ] : [];
   return (
     <>

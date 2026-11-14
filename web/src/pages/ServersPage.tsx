@@ -226,9 +226,9 @@ function ServerDetail({ id }: { id: string }) {
         )}
         {shared > 0 && (
           <div className="alert alert-warning alert-stack mt" role="status">
-            <p><strong>{shared === 1 ? "1 website on this server uses" : `${shared} websites on this server use`} the shared database containers of an earlier release.</strong> Each customer can have its own MariaDB, PostgreSQL and Valkey containers on the server. Then a customer cannot change the service of a different customer.</p>
+            <p><strong>{shared === 1 ? "1 website on this server uses" : `${shared} websites on this server use`} the shared database containers of an earlier release.</strong> Each customer can have its own database servers: containers with MariaDB, PostgreSQL or Valkey, each with its own limits. Then a customer cannot change the service of a different customer.</p>
             <ul style={{ paddingLeft: 20 }}>
-              <li>The panel copies the databases and the database users of each website to the containers of its customer. The passwords, the host names and the ports stay the same.</li>
+              <li>The panel copies the databases and the database users of each website to a database server of its customer. The panel makes this database server with the plan of the customer when the customer has none. The passwords, the host names and the ports stay the same.</li>
               <li>Each website stops during the copy of its databases. A large database needs more time.</li>
               <li>A website with the shared containers cannot have a Valkey database.</li>
             </ul>

@@ -13,7 +13,9 @@ import type {
   BackupPolicy,
   Customer,
   DatabaseEngine,
+  DatabaseLimits,
   DatabasePrivileges,
+  DatabaseServer,
   DomainKind,
   HostUpdatePolicy,
   Job,
@@ -41,7 +43,7 @@ export function emptyState(): State {
   return {
     session: { signedIn: false, user: { id: "", name: "", email: "", role: "owner" }, contextId: "" },
     contexts: [], websites: [], jobs: [], activity: [], notifications: [], servers: [], images: [], rollout: undefined,
-    databases: [], databaseUsers: [], snapshots: [], plans: [], customers: [], users: [],
+    databaseServers: [], databases: [], databaseUsers: [], snapshots: [], plans: [], customers: [], users: [],
     backupPolicy: { daily: 7, weekly: 4, monthly: 6, time: "03:00", target: "", credentialNames: [] },
     tokens: [], totpEnabled: false, audit: [], joinToken: "", joinCaSha256: undefined,
     panelDomain: "",
@@ -249,6 +251,10 @@ export interface StagingCredential {
   user: string;
   password: string;
   databases: string[];
+  /** The host name and the port of the database server of the user. */
+  host?: string;
+  port?: number;
+  databaseServerId?: string | null;
 }
 
 export function createStagingCopy(websiteId: string): Promise<{ websiteId: string; job: Promise<Job>; credentials?: StagingCredential[] }> | { websiteId: string; job: Promise<Job>; credentials?: StagingCredential[] } {
@@ -393,16 +399,94 @@ export type GrantInput = { databaseId: string; privileges: DatabasePrivileges };
 
 /** The message for a Valkey database of a website with the shared database containers of an earlier release. */
 export const sharedDatabasesMessage = (server: string) =>
-  `This website uses the shared database containers of an earlier release, which have no Valkey. An administrator must move the databases of the server ${server} to the containers of each customer first.`;
+  `This website uses the shared database containers of an earlier release, which have no Valkey. An administrator must move the databases of the server ${server} to database servers first.`;
+
+// Database servers
+//
+// A customer makes database servers as it makes websites. Each one is a container with one
+// engine and its own limits. The plan of the customer gives the number of its database
+// servers. The plan of a database server gives its limits and the number of its databases.
+
+/** The database servers that a website can use: those of its customer on its server. */
+export function databaseServersFor(s: State, website: Pick<Website, "customerId" | "serverId"> | undefined, engine?: DatabaseEngine): DatabaseServer[] {
+  if (!website) return [];
+  return s.databaseServers
+    .filter((x) => x.customerId === website.customerId && x.serverId === website.serverId && x.status !== "removing" && (!engine || x.engine === engine))
+    .sort((a, b) => a.port - b.port);
+}
+
+function putDatabaseServer(server: live.ApiDatabaseServer) {
+  update((d) => {
+    const next = live.toDatabaseServer(server);
+    d.databaseServers = d.databaseServers.some((x) => x.id === next.id) ? d.databaseServers.map((x) => (x.id === next.id ? next : x)) : [...d.databaseServers, next];
+  });
+}
+
+export interface DatabaseServerInput {
+  customerId: string;
+  engine: DatabaseEngine;
+  /** With no name, the panel gives a name, for example "mariadb-2". */
+  name?: string;
+  /** With no plan, the database server gets the plan of the customer. */
+  planId?: string;
+  /** With no server, the panel uses the server with the most websites of the customer. */
+  serverId?: string;
+  /** Only an administrator sets limits. The other users select a plan. */
+  limits?: DatabaseLimits;
+}
+
+/** Makes a database server. The promise resolves when the panel has put the job in the queue. */
+export function createDatabaseServer(input: DatabaseServerInput): Promise<void> {
+  return call(async () => {
+    const body = { engine: input.engine, customerId: input.customerId, name: input.name?.trim() || undefined, planId: input.planId || undefined, serverId: input.serverId || undefined, limits: input.limits };
+    const r = await live.request<{ databaseServer: live.ApiDatabaseServer; job: live.ApiJob }>("POST", "/database-servers", body);
+    putDatabaseServer(r.databaseServer);
+    void track(r.job).then(() => refresh());
+  });
+}
+
+/**
+ * Changes the name, the plan or the limits of a database server. A new plan gives its limits.
+ * New limits restart the database server.
+ */
+export function setDatabaseServer(serverId: string, change: { name?: string; planId?: string; limits?: DatabaseLimits }): Promise<void> {
+  return call(async () => {
+    const r = await live.request<{ databaseServer: live.ApiDatabaseServer; job: live.ApiJob | null }>("PATCH", `/database-servers/${serverId}`, change);
+    putDatabaseServer(r.databaseServer);
+    if (r.job) void track(r.job).then(() => refresh());
+  });
+}
+
+/** Makes a database server again after its first job failed. */
+export function retryDatabaseServer(serverId: string): Promise<void> {
+  return call(async () => {
+    const r = await live.request<{ databaseServer: live.ApiDatabaseServer; job: live.ApiJob }>("POST", `/database-servers/${serverId}/retry`);
+    putDatabaseServer(r.databaseServer);
+    void track(r.job).then(() => refresh());
+  });
+}
+
+/** Removes a database server that has no databases and no users. The server removes its data. */
+export function deleteDatabaseServer(serverId: string): Promise<void> {
+  return call(async () => {
+    const r = await live.request<JobAnswer>("DELETE", `/database-servers/${serverId}`);
+    update((d) => {
+      const x = d.databaseServers.find((y) => y.id === serverId);
+      if (x) x.status = "removing";
+    });
+    void track(r.job).then(() => refresh());
+  });
+}
 
 /**
  * Makes a database. With createUser, it also makes a user with readwrite access, and gives its password.
  * A Valkey database always has a user with the same name: the user and the database number are the database.
+ * With no database server, the panel selects one, or makes the first one of the engine.
  */
-export function createDatabase(websiteId: string, engine: DatabaseEngine, name: string, createUser = true): Promise<string | null> {
+export function createDatabase(websiteId: string, engine: DatabaseEngine, name: string, createUser = true, databaseServerId?: string): Promise<string | null> {
   if (engine === "valkey") createUser = true;
   return call(async () => {
-    const r = await live.request<{ password: string | null; job: live.ApiJob }>("POST", `/websites/${websiteId}/databases`, { engine, name: name.trim(), createUser });
+    const r = await live.request<{ password: string | null; job: live.ApiJob }>("POST", `/websites/${websiteId}/databases`, { engine, name: name.trim(), createUser, databaseServerId: databaseServerId || undefined });
     void track(r.job).then(() => refresh());
     await refresh();
     return r.password;
@@ -415,11 +499,14 @@ export function deleteDatabase(databaseId: string) {
   return call(() => live.request<JobAnswer>("DELETE", `/websites/${db.websiteId}/databases/${databaseId}`)).then((r) => track(r.job)).then(() => refresh());
 }
 
-/** Makes a database user with a permission for each database, and gives its password. */
-export function createDatabaseUser(websiteId: string, engine: DatabaseEngine, name: string, grants: GrantInput[]): Promise<string> {
+/**
+ * Makes a database user with a permission for each database, and gives its password. A user
+ * is in one database server: the database server of its databases, or the one of the request.
+ */
+export function createDatabaseUser(websiteId: string, engine: DatabaseEngine, name: string, grants: GrantInput[], databaseServerId?: string): Promise<string> {
   if (engine === "valkey") throw new ApiError("Correct the engine.", { engine: "A Valkey database has one user, with the same name. Make a Valkey database." });
   return call(async () => {
-    const r = await live.request<{ password: string; job: live.ApiJob }>("POST", `/websites/${websiteId}/database-users`, { engine, name: name.trim(), grants });
+    const r = await live.request<{ password: string; job: live.ApiJob }>("POST", `/websites/${websiteId}/database-users`, { engine, name: name.trim(), grants, databaseServerId: databaseServerId || undefined });
     void track(r.job);
     await refresh();
     return r.password;
@@ -510,9 +597,10 @@ export function rebootServer(serverId: string) {
 export const sharedDatabaseWebsites = (d: State, serverId: string) => d.websites.filter((w) => w.serverId === serverId && w.sharedDatabases && w.status !== "failed");
 
 /**
- * Gives each customer its own database containers on a server from an earlier release. The
- * panel starts one job for each website that uses the shared containers. The job copies the
- * databases and the database users of the website to the containers of its customer.
+ * Moves the databases of a server from an earlier release to database servers. The panel
+ * starts one job for each website that uses the shared containers. The job copies the
+ * databases and the database users of the website to the database server of its customer with
+ * the usual port of the engine. The panel makes that database server when the customer has none.
  */
 export function moveDatabases(serverId: string) {
   return call(() => live.request<{ jobs: live.ApiJob[] }>("POST", `/servers/${serverId}/move-databases`))
@@ -634,7 +722,7 @@ export function setCustomer(customerId: string, change: Partial<Pick<Customer, "
 
 export function savePlan(plan: Plan) {
   const exists = state.plans.some((p) => p.id === plan.id);
-  const body = { name: plan.name.trim(), websites: plan.websites, mailboxes: plan.mailboxes, databases: plan.databases, phpExtensions: plan.phpExtensions, limits: plan.limits };
+  const body = { name: plan.name.trim(), websites: plan.websites, mailboxes: plan.mailboxes, databases: plan.databases, phpExtensions: plan.phpExtensions, limits: plan.limits, databaseServers: plan.databaseServers, databaseLimits: plan.databaseLimits };
   return call(() => live.request(exists ? "PATCH" : "POST", exists ? `/plans/${plan.id}` : "/plans", body)).then(() => refresh());
 }
 

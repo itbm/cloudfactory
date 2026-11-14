@@ -141,7 +141,7 @@ describe("the server page", () => {
   });
 });
 
-describe("the database containers of each customer", () => {
+describe("the database servers of each customer", () => {
   /** Two websites of web-2 use the shared database containers of an earlier release. */
   const earlier = () => {
     const sites = getState().websites.filter((w) => w.serverId === server().id).slice(0, 2);

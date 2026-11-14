@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DETAIL_LIMIT, LiveError, load, request, setUnauthorisedHandler, toJob, toPanelCertificate, toRuntimeImage, toServer, toWebsite } from "./live";
+import { DETAIL_LIMIT, LiveError, load, request, setUnauthorisedHandler, toDatabaseServer, toJob, toPanelCertificate, toRuntimeImage, toServer, toWebsite } from "./live";
 import { emptyState } from "./store";
 import { defaultImage } from "../pages/NewWebsitePage";
 
@@ -96,6 +96,20 @@ describe("mappers", () => {
     expect(toServer(server).databaseInstances).toBe(false);
   });
 
+  it("maps a database server, and the database server of a job", () => {
+    const api = { id: "ds1", name: "mariadb-1", engine: "mariadb" as const, customerId: "c1", serverId: "s1", planId: "p1", status: "starting" as const, host: "mariadb.internal", port: 3306,
+      limits: { vcpus: 1, memoryBytes: 536870912, diskBytes: 5368709120 }, usage: null, databases: 0, maxDatabases: 10, createdAt: null };
+    // A new database server has no report of the server yet.
+    expect(toDatabaseServer(api)).toEqual({ ...api, usage: undefined, createdAt: "" });
+    const usage = { memoryBytes: 1024, diskBytes: 2048, diskSizeBytes: 4096 };
+    expect(toDatabaseServer({ ...api, status: "running", usage, createdAt: "2026-11-14T10:00:00+00:00" })).toMatchObject({ status: "running", usage, createdAt: "2026-11-14T10:00:00+00:00" });
+    const job = { id: "j1", title: "Create database server mariadb-1", ref: null, state: "running" as const, steps: ["Start database server"], step: 0, error: null, websiteId: null, serverId: "s1", createdAt: "2026-11-14T10:00:00Z", finishedAt: null };
+    expect(toJob({ ...job, databaseServerId: "ds1" }).databaseServerId).toBe("ds1");
+    expect(toJob({ ...job, databaseServerId: null }).databaseServerId).toBeUndefined();
+    // A panel of an earlier release does not send the field.
+    expect(toJob(job).databaseServerId).toBeUndefined();
+  });
+
   it("keeps the TXT record of a domain that is not verified (CF-03)", () => {
     const verification = { type: "TXT" as const, name: "_cloudfactory-challenge.new.example", value: "cf-abc" };
     const w = toWebsite({
@@ -188,7 +202,9 @@ describe("load with a temporary password (audit finding B5)", () => {
       if (path === "/users") return json({ data: [{ id: 2, name: "Owner", email: "o@example.com", role: "owner", customerId: "c1", totpEnabled: false, mustChangePassword: true, createdAt: "2026-11-10T09:00:00+00:00" }, { id: 1, name: "Admin", email: "a@example.com", role: "administrator", customerId: null, totpEnabled: true, mustChangePassword: false, createdAt: null }] });
       if (path.startsWith("/websites?")) return json({ data: [{ id: "w1", name: "a.example", application: "", customerId: "c1", serverId: "s1", planId: "p1", unixUser: "a_1a2b", status: "running", runtime: { imageId: "i1", family: "frankenphp", image: "x:1", phpVersion: "8.4", workerMode: false, extensions: [], phpIni: {}, previousImageId: null }, limits: { vcpus: 1, memoryBytes: 1, diskBytes: 1, diskIoBytesPerSecond: 1, processes: 100 }, usage: {}, domains: [], stagingOf: null, managedByTerraform: false, createdAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-02T00:00:00Z" }], meta: { last_page: 1 } });
       if (path === "/websites/w1/snapshots") return json({ data: [{ id: "s1", kind: "scheduled", sizeBytes: 5, databases: [], mailboxes: [], createdAt: "2026-11-10T03:00:00Z" }, { id: "s2", kind: "manual", sizeBytes: 5, databases: [], mailboxes: [], createdAt: "2026-11-09T12:00:00Z" }] });
-      if (path === "/websites/w1/databases") return json({ databases: [{ id: "d1", engine: "valkey", name: "a_1a2b_cache", sizeBytes: 0, number: 3, keys: 12 }, { id: "d2", engine: "valkey", name: "a_1a2b_new", sizeBytes: 0, number: null, keys: null }, { id: "d3", engine: "mariadb", name: "a_1a2b_wp", sizeBytes: 4096, number: null, keys: null }], users: [] });
+      if (path === "/websites/w1/databases") return json({ databases: [{ id: "d1", engine: "valkey", name: "a_1a2b_cache", sizeBytes: 0, number: 3, keys: 12, databaseServerId: "ds2", host: "valkey.internal", port: 6380 }, { id: "d2", engine: "valkey", name: "a_1a2b_new", sizeBytes: 0, number: null, keys: null, databaseServerId: "ds2", host: "valkey.internal", port: 6380 }, { id: "d3", engine: "mariadb", name: "a_1a2b_wp", sizeBytes: 4096, number: null, keys: null, databaseServerId: null, host: "mariadb.internal", port: 3306 }], users: [{ id: "u1", engine: "mariadb", name: "a_1a2b_wp", access: "website", databaseServerId: null, grants: [] }, { id: "u2", engine: "valkey", name: "a_1a2b_cache", access: "website", databaseServerId: "ds2", grants: [] }] });
+      if (path === "/database-servers") return json({ data: [{ id: "ds2", name: "valkey-2", engine: "valkey", customerId: "c1", serverId: "s1", planId: "p1", status: "running", host: "valkey.internal", port: 6380, limits: { vcpus: 1, memoryBytes: 536870912, diskBytes: 1073741824 }, usage: { memoryBytes: 1000, diskBytes: 2000, diskSizeBytes: 3000 }, databases: 2, maxDatabases: 10, createdAt: "2026-11-12T08:00:00+00:00" }] });
+      if (path === "/plans") return json({ data: [{ id: "p1", name: "Starter", limits: { vcpus: 1, memoryBytes: 1, diskBytes: 1, diskIoBytesPerSecond: 1, processes: 100 }, websites: 1, mailboxes: 0, databases: 10, phpExtensions: [], databaseServers: 3, databaseLimits: { vcpus: 1, memoryBytes: 536870912, diskBytes: 1073741824 } }] });
       if (path.startsWith("/backup-policy")) return json({ daily: 7, weekly: 4, monthly: 6, time: "03:00", target: "s3:x/y", manual: 10 });
       return json({ data: [] });
     }));
@@ -203,5 +219,11 @@ describe("load with a temporary password (audit finding B5)", () => {
     expect(state.backupPolicy.manual).toBe(10);
     // Valkey: the number is not known until the agent made the database.
     expect(state.databases.map((d) => [d.name, d.number, d.keys, d.sizeBytes])).toEqual([["a_1a2b_cache", 3, 12, 0], ["a_1a2b_new", undefined, undefined, 0], ["a_1a2b_wp", undefined, undefined, 4096]]);
+    // The database servers of the customers, and the database server of each database and user.
+    // A database in the shared database containers of an earlier release has none.
+    expect(state.databaseServers).toMatchObject([{ id: "ds2", name: "valkey-2", port: 6380, databases: 2, maxDatabases: 10, usage: { diskSizeBytes: 3000 } }]);
+    expect(state.databases.map((d) => [d.databaseServerId, d.host, d.port])).toEqual([["ds2", "valkey.internal", 6380], ["ds2", "valkey.internal", 6380], [undefined, "mariadb.internal", 3306]]);
+    expect(state.databaseUsers.map((u) => [u.name, u.databaseServerId])).toEqual([["a_1a2b_wp", undefined], ["a_1a2b_cache", "ds2"]]);
+    expect(state.plans[0]).toMatchObject({ databases: 10, databaseServers: 3, databaseLimits: { memoryBytes: 536870912 } });
   });
 });

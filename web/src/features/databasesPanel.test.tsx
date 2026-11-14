@@ -109,6 +109,6 @@ describe("Valkey in the databases panel", () => {
     fireEvent.click(screen.getByRole("button", { name: "New database" }));
     const dialog = screen.getByRole("dialog");
     expect((within(dialog).getByRole("radio", { name: /Valkey/ }) as HTMLInputElement).disabled).toBe(true);
-    expect(dialog.textContent).toContain("This website uses the shared database containers of an earlier release, which have no Valkey. An administrator must move the databases of the server web-1 to the containers of each customer first.");
+    expect(dialog.textContent).toContain("This website uses the shared database containers of an earlier release, which have no Valkey. An administrator must move the databases of the server web-1 to database servers first.");
   });
 });

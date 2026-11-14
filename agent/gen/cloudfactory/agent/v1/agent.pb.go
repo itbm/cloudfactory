@@ -396,7 +396,7 @@ type DatabaseServer struct {
 	// "mariadb", "postgresql" or "valkey".
 	Engine string `protobuf:"bytes,3,opt,name=engine,proto3" json:"engine,omitempty"`
 	// The port on the address of the customer. The first database server of an engine has the
-	// usual port of the engine (3306, 5432 or 6379), and each subsequent one has the next port.
+	// usual port of the engine (3306, 5432 or 6379). A second one has the next port.
 	Port int32 `protobuf:"varint,4,opt,name=port,proto3" json:"port,omitempty"`
 	// The limits of the container: vcpus, memory_bytes and disk_bytes. 0 means no limit.
 	Limits        *Limits `protobuf:"bytes,5,opt,name=limits,proto3" json:"limits,omitempty"`

@@ -112,6 +112,24 @@ The certificate of the panel domain.
 
 ![admin-16-panel-certificate](admin-16-panel-certificate.png)
 
+### admin-17-databases
+
+The database servers of each customer, with their plans, their use and their host names. Below them, the page shows the databases and the database users of all websites.
+
+![admin-17-databases](admin-17-databases.png)
+
+### admin-18-new-database-server
+
+A new database server for a customer. The plan gives its limits and the number of its databases. Only an administrator can set limits that are different from the plan.
+
+![admin-18-new-database-server](admin-18-new-database-server.png)
+
+### admin-19-edit-plan
+
+The values of a plan for websites and for database servers.
+
+![admin-19-edit-plan](admin-19-edit-plan.png)
+
 ## Reseller console
 
 A reseller signs in to the Customers page. The menu has no page of the platform.
@@ -255,3 +273,9 @@ The setup checklist.
 The customers as cards.
 
 ![phone-08-admin-customers](phone-08-admin-customers.png)
+
+### phone-09-owner-databases
+
+The database servers and the databases of an owner as cards.
+
+![phone-09-owner-databases](phone-09-owner-databases.png)

@@ -9,6 +9,7 @@ use App\Enums\Role;
 use App\Models\AgentJob;
 use App\Models\AuditEntry;
 use App\Models\Customer;
+use App\Models\DatabaseServer;
 use App\Models\Image;
 use App\Models\Plan;
 use App\Models\Rollout;
@@ -73,9 +74,12 @@ class DemoSeeder extends Seeder
     private function plans(): void
     {
         $extensions = ['opcache', 'intl', 'gd', 'zip', 'exif', 'bcmath', 'mysqli', 'pdo_mysql', 'pdo_pgsql', 'redis', 'imagick', 'soap'];
-        foreach ([['Starter', 1, 1, 10, 3], ['Business', 2, 2, 40, 10], ['Agency', 4, 4, 100, 50]] as [$name, $cpu, $memory, $disk, $sites]) {
+        // name, vCPUs, memory (GB), disk (GB), websites, then for the database servers: number, databases in each one, memory (MB), disk (GB)
+        foreach ([['Starter', 1, 1, 10, 3, 2, 5, 512, 2], ['Business', 2, 2, 40, 10, 6, 20, 1024, 10], ['Agency', 4, 4, 100, 50, 20, 50, 2048, 20]] as [$name, $cpu, $memory, $disk, $sites, $databaseServers, $databases, $databaseMemory, $databaseDisk]) {
             $this->plans[$name] = Plan::create([
-                'name' => $name, 'websites' => $sites, 'mailboxes' => $sites * 10, 'databases' => $sites,
+                'name' => $name, 'websites' => $sites, 'mailboxes' => $sites * 10, 'databases' => $databases,
+                'database_servers' => $databaseServers,
+                'database_limits' => ['vcpus' => min($cpu, 2), 'memoryBytes' => $databaseMemory * self::MB, 'diskBytes' => $databaseDisk * self::GB],
                 'php_extensions' => $name === 'Starter' ? array_slice($extensions, 0, 8) : $extensions,
                 'limits' => ['vcpus' => $cpu, 'memoryBytes' => $memory * self::GB, 'diskBytes' => $disk * self::GB, 'diskIoBytesPerSecond' => 50 * self::MB, 'processes' => 100 * $cpu],
             ]);
@@ -233,14 +237,44 @@ class DemoSeeder extends Seeder
             [$site, $engine, $suffix, $size] = $row;
             $website = $this->websites[$site];
             $name = $website->unix_user.'_'.$suffix;
-            $database = $website->databases()->create(['engine' => $engine, 'name' => $name, 'size_bytes' => $size * self::MB, 'number' => $row[4] ?? null, 'key_count' => $row[5] ?? null]);
-            $user = $website->databaseUsers()->create(['engine' => $engine, 'name' => $name, 'access' => 'website']);
+            $server = $this->databaseServer($website, $engine, $size);
+            $database = $website->databases()->create(['engine' => $engine, 'name' => $name, 'size_bytes' => $size * self::MB, 'number' => $row[4] ?? null, 'key_count' => $row[5] ?? null, 'database_server_id' => $server->id]);
+            $user = $website->databaseUsers()->create(['engine' => $engine, 'name' => $name, 'access' => 'website', 'database_server_id' => $server->id]);
             $user->databases()->attach($database->id, ['privileges' => 'readwrite']);
         }
         // A second user that only reads, for example for a reporting tool.
         $shop = $this->websites['shop.acme.example.com'];
-        $reports = $shop->databaseUsers()->create(['engine' => 'mariadb', 'name' => $shop->unix_user.'_reports', 'access' => 'anywhere']);
+        $reports = $shop->databaseUsers()->create(['engine' => 'mariadb', 'name' => $shop->unix_user.'_reports', 'access' => 'anywhere', 'database_server_id' => $shop->databases()->where('engine', 'mariadb')->value('database_server_id')]);
         $reports->databases()->attach($shop->databases()->where('engine', 'mariadb')->value('id'), ['privileges' => 'readonly']);
+
+        // A second MariaDB server of one customer, with a smaller plan and no databases yet. It has the next port.
+        $acme = $this->customers['acme'];
+        $starter = $this->plans['Starter'];
+        DatabaseServer::create([
+            'customer_id' => $acme->id, 'server_id' => $shop->server_id, 'plan_id' => $starter->id, 'engine' => 'mariadb', 'name' => 'mariadb-reports',
+            'port' => DatabaseServer::FIRST_PORT['mariadb'] + 1, 'limits' => $starter->database_limits, 'status' => DatabaseServer::RUNNING,
+            'usage' => ['memoryBytes' => 96 * self::MB, 'diskBytes' => 70 * self::MB, 'diskSizeBytes' => $starter->database_limits['diskBytes']],
+        ]);
+    }
+
+    /**
+     * The database server of a customer for one engine on the server of a website. Each
+     * database of the demo data is in the first database server of its engine.
+     */
+    private function databaseServer(Website $website, string $engine, int $sizeMb): DatabaseServer
+    {
+        $plan = $website->customer->plan;
+        $server = DatabaseServer::firstOrCreate(
+            ['customer_id' => $website->customer_id, 'server_id' => $website->server_id, 'engine' => $engine, 'port' => DatabaseServer::FIRST_PORT[$engine]],
+            ['plan_id' => $plan->id, 'name' => $engine.'-1', 'limits' => $plan->database_limits, 'status' => DatabaseServer::RUNNING, 'usage' => ['memoryBytes' => 0, 'diskBytes' => 0, 'diskSizeBytes' => $plan->database_limits['diskBytes']]],
+        );
+        // The use is an example: it grows with the size of the databases.
+        $usage = $server->usage;
+        $usage['diskBytes'] += (64 + $sizeMb) * self::MB;
+        $usage['memoryBytes'] = (int) min($plan->database_limits['memoryBytes'] * 0.8, 120 * self::MB + $usage['diskBytes'] / 4);
+        $server->update(['usage' => $usage]);
+
+        return $server;
     }
 
     private function backups(): void
