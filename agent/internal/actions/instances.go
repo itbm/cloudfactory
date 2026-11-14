@@ -922,7 +922,8 @@ func accessContent(elements []accessElement) (string, error) {
 // syncDatabaseAccess makes sure that "lo" has the database network, and that the firewall
 // lets each website connect to the database servers of its own customer only. The agent calls
 // it after each change of the websites and of the database servers, and at its start. The
-// first call also makes sure that the database servers have the time to stop (keepStopTime).
+// first call also makes sure that the database servers have the time to stop
+// (ensureDatabaseNetwork).
 //
 // The file of the installer includes the access file, so the kernel gets the elements again
 // when the server starts or when somebody loads the file of the installer.
@@ -931,9 +932,6 @@ func (d *Deps) syncDatabaseAccess(ctx context.Context) error {
 	defer d.netMu.Unlock()
 	if !d.netReady {
 		if err := d.ensureDatabaseNetwork(ctx); err != nil {
-			return err
-		}
-		if err := d.keepStopTime(ctx); err != nil {
 			return err
 		}
 		d.netReady = true
@@ -946,7 +944,8 @@ func (d *Deps) syncDatabaseAccess(ctx context.Context) error {
 }
 
 // ensureDatabaseNetwork adds the database network to "lo", and the rules of the database
-// servers to the firewall of the installer.
+// servers to the firewall of the installer. It also makes sure that the database servers
+// have the time to stop (keepStopTime).
 func (d *Deps) ensureDatabaseNetwork(ctx context.Context) error {
 	if d.Gate != nil {
 		return d.Gate.Call(ctx, opDBNetwork, nil, nil)
@@ -954,7 +953,10 @@ func (d *Deps) ensureDatabaseNetwork(ctx context.Context) error {
 	if err := d.addDatabaseAddress(ctx); err != nil {
 		return err
 	}
-	return d.openDatabaseNetwork(ctx)
+	if err := d.openDatabaseNetwork(ctx); err != nil {
+		return err
+	}
+	return d.keepStopTime(ctx)
 }
 
 // loadDatabaseAccess writes the database access file and loads it into the kernel.
