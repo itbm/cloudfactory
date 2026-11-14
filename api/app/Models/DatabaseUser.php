@@ -10,9 +10,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 /**
  * FR-502: a database user of a website. A user can have access to more than one database of the
- * website, with a permission for each database ("readonly" or "readwrite").
+ * website, with a permission for each database ("readonly" or "readwrite"). The user and its
+ * databases are in the same database server.
  */
-#[Fillable(['website_id', 'engine', 'name', 'access'])]
+#[Fillable(['website_id', 'engine', 'name', 'access', 'database_server_id'])]
 class DatabaseUser extends Model
 {
     use HasUlids;
@@ -20,6 +21,12 @@ class DatabaseUser extends Model
     public function website(): BelongsTo
     {
         return $this->belongsTo(Website::class);
+    }
+
+    /** Null for a user in the shared database containers of an earlier release. */
+    public function databaseServer(): BelongsTo
+    {
+        return $this->belongsTo(DatabaseServer::class);
     }
 
     public function databases(): BelongsToMany

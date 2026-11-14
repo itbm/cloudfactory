@@ -7,6 +7,7 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"sync"
@@ -81,13 +82,22 @@ type Deps struct {
 	// SecretsDir holds short-lived files with passwords for the database clients. The
 	// default is "/run/cloudfactory/secrets".
 	SecretsDir string
-	// DatabaseClientHost is the host part of a MariaDB user that can connect from the website
-	// containers only, for example "10.89.%" (CF-19). The default is quadlet.ServiceAddress.
+	// DatabaseClientHost is the host part of a MariaDB user of the shared container of an
+	// earlier release that can connect from the website containers only, for example "10.89.%"
+	// (CF-19). The default is quadlet.ServiceAddress. In the container of a customer, the
+	// host part is quadlet.DatabaseClientAddress.
 	DatabaseClientHost string
 	// ServiceImage gives the image of a service, for example ServiceImage("mariadb").
 	ServiceImage func(name string) string
 	// DBHome is the home directory of cf-db. The default is "/var/lib/cf-db".
 	DBHome string
+	// LoopControl is the device that makes loop devices. A server that has it gives each
+	// database server a disk image with the size of its disk limit. The default is
+	// "/dev/loop-control". Tests replace it.
+	LoopControl string
+	// ValkeyDial opens a connection to a Valkey database server on an address and a port
+	// ("address:port"). Nil means a TCP connection. Tests replace it.
+	ValkeyDial func(ctx context.Context, address string) (net.Conn, error)
 	// SftpKeysDir holds the SSH keys of each website user. The default is "/etc/cloudfactory/sftp".
 	SftpKeysDir string
 	// SftpUsersDir holds the user list of the SFTP container. The default is
@@ -105,6 +115,12 @@ type Deps struct {
 	// FirewallFile is the nftables file of the installer. The default is
 	// "/etc/nftables.d-cloudfactory.nft".
 	FirewallFile string
+	// FirewallDir holds the nftables files of the agent, which FirewallFile includes. The
+	// default is "/etc/cloudfactory/firewall".
+	FirewallDir string
+	// AddressUnit is the systemd unit of the installer that adds the private addresses to
+	// "lo". The default is "/etc/systemd/system/cloudfactory-address.service".
+	AddressUnit string
 	// HostSftpConfig is the SSH configuration of the host from release 0.1. The default is
 	// "/etc/ssh/sshd_config.d/50-cloudfactory-sftp.conf".
 	HostSftpConfig string
@@ -130,9 +146,24 @@ type Deps struct {
 	PanelCertificateWait time.Duration
 	PanelCertificatePoll time.Duration
 
-	dbMu    sync.Mutex
-	sftpMu  sync.Mutex
-	dbReady map[string]bool
+	// dbMu protects dbReady and dbStart, and makes each change of the records of the customers
+	// and of their database servers one step.
+	dbMu sync.Mutex
+	// valkeyMu makes the search for a free Valkey database number and its user one step.
+	valkeyMu sync.Mutex
+	sftpMu   sync.Mutex
+	// dbReady has the database containers that this agent process started and that answered.
+	dbReady map[dbServer]bool
+	// dbStart has one lock for each database server ("" is the shared containers). The start
+	// and the removal of a database server hold it.
+	dbStart map[string]*sync.Mutex
+	// netMu protects netReady and accessLoaded, and makes each change of the firewall one step.
+	netMu sync.Mutex
+	// netReady is true when this agent process made sure that "lo" has the database network
+	// and that the firewall has its rules.
+	netReady bool
+	// accessLoaded is the content of the database access file that the kernel has.
+	accessLoaded string
 	// backupSlots limits the backups that operate at the same time (BackupSlots).
 	backupSlots chan struct{}
 	rtMu        sync.RWMutex
@@ -173,6 +204,34 @@ type State struct {
 
 type stateFile struct {
 	Sites map[string]*Site `json:"sites"`
+	// Databases has the record of each customer that has a website or a database server on
+	// this server. The key is the ID of the customer in lower case.
+	Databases map[string]*DatabaseInstance `json:"databases,omitempty"`
+}
+
+// DatabaseInstance is what the agent knows about the database servers of one customer. The
+// record stays while the customer has a website or a database server on this server.
+type DatabaseInstance struct {
+	// Number is the address number of the customer (quadlet.DatabaseAddress).
+	Number int `json:"number"`
+	// Websites are the IDs of the websites that can use the database servers of the customer.
+	// A website that is in no list uses the shared containers of an earlier release.
+	Websites []string `json:"websites"`
+	// Servers are the database servers of the customer. The key is the ID of the database
+	// server in lower case.
+	Servers map[string]*DatabaseServer `json:"servers,omitempty"`
+}
+
+// DatabaseServer is what the agent knows about one database server of a customer.
+type DatabaseServer struct {
+	// Engine is "mariadb", "postgresql" or "valkey".
+	Engine string `json:"engine"`
+	// Port is the port of the database server on the address of its customer.
+	Port int `json:"port"`
+	// The limits of the container. 0 means no limit.
+	VCPUs       float64 `json:"vcpus,omitempty"`
+	MemoryBytes int64   `json:"memoryBytes,omitempty"`
+	DiskBytes   int64   `json:"diskBytes,omitempty"`
 }
 
 func (s *State) read() (stateFile, error) {

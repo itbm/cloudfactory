@@ -10,6 +10,7 @@ import type {
   Customer,
   Database,
   DatabaseGrant,
+  DatabaseServer,
   DatabaseUser,
   DomainVerification,
   Job,
@@ -120,19 +121,19 @@ interface ApiMe {
   totpSetupRequired?: boolean; securityNotices?: { action: string; target: string; actor: string; at: string | null }[];
 }
 interface ApiUser { id: number; name: string; email: string; role: User["role"]; customerId: string | null; totpEnabled: boolean; mustChangePassword: boolean; createdAt: string | null }
-interface ApiJob { id: string; title: string; ref: string | null; state: Job["state"]; steps: string[]; step: number; error: string | null; websiteId: string | null; serverId: string | null; createdAt: string; finishedAt: string | null }
+interface ApiJob { id: string; title: string; ref: string | null; state: Job["state"]; steps: string[]; step: number; error: string | null; websiteId: string | null; serverId: string | null; databaseServerId?: string | null; createdAt: string; finishedAt: string | null }
 interface ApiWebsite {
   id: string; name: string; application: string; customerId: string; serverId: string; planId: string; unixUser: string; status: Website["status"];
   runtime: { imageId: string; family: string; image: string; phpVersion: string | null; workerMode: boolean; extensions: string[]; phpIni: Record<string, string>; previousImageId: string | null; documentRoot?: string };
   sftp?: { enabled: boolean; host: string | null; port: number; username: string; authorizedKeys: string[] };
   limits: Limits; usage: Partial<Website["use"]> | null;
   domains?: { name: string; kind: Website["domains"][number]["kind"]; dnsPointsHere: boolean; certificate: { state: Website["domains"][number]["certificate"]["state"]; expiresAt: string | null }; verified?: boolean; verification?: DomainVerification | null }[];
-  stagingOf: string | null; managedByTerraform: boolean; createdAt: string; updatedAt: string;
+  stagingOf: string | null; sharedDatabases?: boolean; managedByTerraform: boolean; createdAt: string; updatedAt: string;
 }
 interface ApiServer {
   id: string; name: string; location: string; roles: Server["roles"]; state: Server["state"]; agentVersion: string | null; os: string | null; kernel: string | null; arch: string | null;
   podmanVersion: string | null; gvisorVersion: string | null; gvisorPlatform: Server["gvisorPlatform"]; bareMetal: boolean; updatePolicy: Server["updatePolicy"]; maintenanceWindow: string;
-  pendingUpdates: Server["pendingUpdates"]; lastUpdateAt: string | null; rebootRequired: boolean; agentUpdateAvailable?: boolean; agentAddress?: string | null; connectionError?: string | null; panel?: boolean; services: Server["services"]; sftpPort?: number | null;
+  pendingUpdates: Server["pendingUpdates"]; lastUpdateAt: string | null; rebootRequired: boolean; agentUpdateAvailable?: boolean; agentAddress?: string | null; connectionError?: string | null; panel?: boolean; databaseEngines?: Database["engine"][]; databaseInstances?: boolean; sharedDatabaseWebsites?: number | null; services: Server["services"]; sftpPort?: number | null;
   usage: { cpuPercent?: number; memoryPercent?: number; diskPercent?: number } | null;
 }
 interface ApiImage {
@@ -152,6 +153,7 @@ interface ApiPanelCertificate {
   domain: string; method: PanelCertificate["method"]; state: PanelCertificate["state"]; expiresAt: string | null; caCertificate: string | null; caSha256: string | null;
   reportedAt: string | null; letsEncryptAvailable: boolean; serversWithoutCa: string[]; job: ApiJob | null;
 }
+interface ApiDatabaseServer extends Omit<DatabaseServer, "usage" | "createdAt"> { usage: DatabaseServer["usage"] | null; createdAt: string | null }
 interface ApiSnapshot { id: string; kind: "scheduled" | "manual"; sizeBytes: number; databases: string[]; mailboxes: string[]; createdAt: string }
 
 // Mapping from the API shapes to the state of the UI.
@@ -168,6 +170,7 @@ export function toJob(j: ApiJob): Job {
   return {
     id: j.id, title: j.title, ref: j.ref ?? undefined, state: j.state, steps: j.steps ?? [], step: j.step ?? 0, error: j.error ?? undefined,
     createdAt: j.createdAt, finishedAt: j.finishedAt ?? undefined, websiteId: j.websiteId ?? undefined, serverId: j.serverId ?? undefined,
+    databaseServerId: j.databaseServerId ?? undefined,
   };
 }
 
@@ -196,7 +199,7 @@ export function toWebsite(w: ApiWebsite): Website {
     releases: [], previews: [], cron: [], sshKeys: [], shellEnabled: false,
     sftp: w.sftp ? { ...w.sftp, host: w.sftp.host ?? location.host.replace(/:\d+$/, ""), authorizedKeys: w.sftp.authorizedKeys ?? [] } : undefined,
     lastChange: { at: w.updatedAt, summary: "Last change" },
-    stagingOf: w.stagingOf ?? undefined, managedByTerraform: w.managedByTerraform, imageTag: tagOfReference(w.runtime.image) || undefined, imageReference: w.runtime.image || undefined,
+    stagingOf: w.stagingOf ?? undefined, sharedDatabases: w.sharedDatabases ?? false, managedByTerraform: w.managedByTerraform, imageTag: tagOfReference(w.runtime.image) || undefined, imageReference: w.runtime.image || undefined,
   };
 }
 
@@ -211,6 +214,8 @@ export function toServer(s: ApiServer): Server {
     // A panel of an earlier release does not send the field. Then the state tells the same thing.
     agentUpdateAvailable: s.agentUpdateAvailable ?? s.state === "agent_update",
     agentAddress: s.agentAddress ?? undefined, connectionError: s.connectionError ?? undefined, panel: s.panel ?? false,
+    databaseEngines: s.databaseEngines ?? undefined,
+    databaseInstances: s.databaseInstances ?? false, sharedDatabaseWebsites: s.sharedDatabaseWebsites ?? undefined,
     stateDetail: s.state === "degraded" ? (s.connectionError ? "Degraded: the panel cannot connect" : degradedReason(s.services ?? [])) : undefined,
   };
 }
@@ -243,6 +248,8 @@ export function toRollout(r: ApiRollout, servers: number): Rollout {
   };
 }
 
+export const toDatabaseServer = (s: ApiDatabaseServer): DatabaseServer => ({ ...s, usage: s.usage ?? undefined, createdAt: s.createdAt ?? "" });
+
 const toCustomer = (c: ApiCustomer): Customer => ({ id: c.id, name: c.name, email: c.email, planId: c.planId, role: c.role, resellerId: c.resellerId ?? undefined, createdAt: c.createdAt, suspended: c.suspended });
 
 export const toUser = (u: ApiUser): ManagedUser => ({
@@ -274,7 +281,7 @@ export async function load(previous: State): Promise<State> {
   const admin = me.role === "administrator";
   const optional = <T>(p: Promise<T>, fallback: T) => p.catch(() => fallback);
 
-  const [websites, jobs, customers, plans, tokens, policy, servers, images, rollouts, audit, users, certificate] = await Promise.all([
+  const [websites, jobs, customers, plans, tokens, policy, servers, images, rollouts, audit, users, certificate, databaseServers] = await Promise.all([
     all<ApiWebsite>("/websites"),
     request<{ data: ApiJob[] }>("GET", "/jobs?perPage=50").then((r) => r.data),
     optional(request<{ data: ApiCustomer[] }>("GET", "/customers").then((r) => r.data), []),
@@ -287,6 +294,8 @@ export async function load(previous: State): Promise<State> {
     optional(request<{ data: ApiAudit[] }>("GET", "/audit?perPage=100").then((r) => r.data), []),
     optional(request<{ data: ApiUser[] }>("GET", "/users").then((r) => r.data), []),
     admin ? optional(request<ApiPanelCertificate>("GET", "/panel-certificate"), null) : Promise.resolve(null),
+    // The database servers of the customers that the user can see.
+    optional(request<{ data: ApiDatabaseServer[] }>("GET", "/database-servers").then((r) => r.data), []),
   ]);
   // A customer or a reseller cannot list all images. They get the images for a new website.
   const runtimes = admin ? images.map((i) => toImage(i, rollouts))
@@ -327,6 +336,7 @@ export async function load(previous: State): Promise<State> {
     images: runtimes,
     rollout: current ? toRollout(current, servers.length) : undefined,
     zones: [], mailboxes: [], aliases: [], files: {},
+    databaseServers: databaseServers.map(toDatabaseServer),
     databases: [...kept(previous.databases), ...perSite.flatMap((s) => s.databases)],
     databaseUsers: [...kept(previous.databaseUsers), ...perSite.flatMap((s) => s.users)],
     snapshots: [...kept(previous.snapshots), ...perSite.flatMap((s) => s.snapshots)].sort((a, b) => b.at.localeCompare(a.at)),
@@ -350,12 +360,12 @@ export async function load(previous: State): Promise<State> {
 async function websiteDetails(w: { id: string; serverId: string }) {
   const optional = <T>(p: Promise<T>, fallback: T) => p.catch(() => fallback);
   const [db, snaps] = await Promise.all([
-    optional(request<{ databases: { id: string; engine: Database["engine"]; name: string; sizeBytes: number }[]; users: { id: string; engine: Database["engine"]; name: string; grants: DatabaseGrant[]; access: DatabaseUser["access"] }[] }>("GET", `/websites/${w.id}/databases`), { databases: [], users: [] }),
+    optional(request<{ databases: { id: string; engine: Database["engine"]; name: string; sizeBytes: number; number?: number | null; keys?: number | null; databaseServerId?: string | null; host?: string; port?: number }[]; users: { id: string; engine: Database["engine"]; name: string; grants: DatabaseGrant[]; access: DatabaseUser["access"]; databaseServerId?: string | null }[] }>("GET", `/websites/${w.id}/databases`), { databases: [], users: [] }),
     optional(request<{ data: ApiSnapshot[] }>("GET", `/websites/${w.id}/snapshots`).then((r) => r.data), []),
   ]);
   return {
-    databases: db.databases.map((d): Database => ({ id: d.id, name: d.name, engine: d.engine, websiteId: w.id, sizeBytes: d.sizeBytes ?? 0, serverId: w.serverId })),
-    users: db.users.map((u): DatabaseUser => ({ id: u.id, name: u.name, engine: u.engine, websiteId: w.id, grants: u.grants ?? [], access: u.access })),
+    databases: db.databases.map((d): Database => ({ id: d.id, name: d.name, engine: d.engine, websiteId: w.id, sizeBytes: d.sizeBytes ?? 0, serverId: w.serverId, number: d.number ?? undefined, keys: d.keys ?? undefined, databaseServerId: d.databaseServerId ?? undefined, host: d.host, port: d.port })),
+    users: db.users.map((u): DatabaseUser => ({ id: u.id, name: u.name, engine: u.engine, websiteId: w.id, databaseServerId: u.databaseServerId ?? undefined, grants: u.grants ?? [], access: u.access })),
     snapshots: snaps.map((s): Snapshot => ({ id: s.id, at: s.createdAt, kind: s.kind === "manual" ? "manual" : "nightly", sizeBytes: s.sizeBytes ?? 0, websiteId: w.id, databases: s.databases ?? [], mailboxes: s.mailboxes ?? [] })),
   };
 }
@@ -423,4 +433,4 @@ export async function waitForJob(job: ApiJob | Job, onChange: (job: Job) => void
   return current;
 }
 
-export type { ApiJob, ApiPanelCertificate, ApiUser, ApiWebsite };
+export type { ApiDatabaseServer, ApiJob, ApiPanelCertificate, ApiUser, ApiWebsite };

@@ -319,10 +319,14 @@ func serve(ctx context.Context) error {
 	if err := deps.ShareImages(ctx); err != nil {
 		slog.Error("start the shared image store", "err", err)
 	}
-	// The database containers get the images of this agent version.
-	if err := deps.RefreshDatabaseServices(ctx); err != nil {
-		slog.Error("start database containers", "err", err)
-	}
+	// The database containers get the images of this agent version. A server can have the
+	// containers of many customers, so the agent does not wait for them: a job that needs a
+	// container waits for that container only.
+	go func() {
+		if err := deps.RefreshDatabaseServices(ctx); err != nil {
+			slog.Error("start database containers", "err", err)
+		}
+	}()
 	// The SFTP container of the websites. On a server from release 0.1, this also moves SFTP
 	// from the SSH service of the host to the container.
 	if err := deps.EnsureSftp(ctx); err != nil {

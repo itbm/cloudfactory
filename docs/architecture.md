@@ -76,9 +76,10 @@ bridge networks have the same problem for all connections, so websites do not us
 
 An nftables rule refuses a new connection to a website port on `169.254.77.1` unless it comes
 from root or from the user `cf-edge`. pasta opens each connection as the Unix user of the
-container, so a website cannot connect to a different website. All websites can connect to
-the database ports 3306 and 5432. The database password keeps each website to its own
-databases.
+container, so a website cannot connect to a different website.
+
+The database servers are not on this address. Each customer has its own database servers on
+an address of the database network. Refer to [Databases](#databases).
 
 ### Shared runtime images
 
@@ -189,6 +190,203 @@ the administrators. The image `sftp` has OpenSSH and `libnss-extrausers`.
   service of the host. Until this step is complete, the agent reports port 22 to the panel.
   Refer to [installation.md](installation.md#servers-that-you-installed-with-release-01).
 
+## Databases
+
+A customer makes database servers as it makes websites. A database server is one container
+with one database engine: MariaDB, PostgreSQL or Valkey. It has its own data, its own
+superuser, its own port and its own limits. Each database of a website is in one database
+server of the customer of the website, on the server of the website.
+
+- A customer cannot change the service of a different customer, because the customers do
+  not use the same containers. The Unix user `cf-db` runs each container in its own gVisor
+  sandbox.
+- A customer can have more than one database server of an engine, for example one MariaDB
+  database server for its shop and one for its reports.
+- All websites of the customer on the server can connect to each database server of the
+  customer there. The database users and their permissions keep these websites apart.
+
+The panel has the rules, and the agent applies them:
+
+| Item | Source |
+| ---- | ------ |
+| The number of database servers of a customer | The plan of the customer (`databaseServers`). The database servers of the customers of a reseller count against the plan of the reseller too. |
+| The limits of a database server: vCPUs, memory and disk space | The plan of the database server (`databaseLimits`). An administrator can set different limits for one database server. |
+| The number of databases in a database server | The plan of the database server (`databases`) |
+| The plan of a database server | The plan of the customer. An administrator, or the reseller of the customer, can select a different plan. |
+
+The panel makes a database server in two cases: when a user makes one (API
+`POST /v1/database-servers`), and when a website gets its first database of an engine and its
+customer has no database server of that engine on the server. The agent has the actions
+`SetDatabaseServer` (make, or change the limits) and `DeleteDatabaseServer`. The panel removes
+only a database server that has no databases and no database users.
+
+| Container | Engine | Ports | Host name in a website container |
+| --------- | ------ | ----- | -------------------------------- |
+| `cf-mariadb-<id>` | MariaDB | 3306 to 3355 | `mariadb.internal` |
+| `cf-postgresql-<id>` | PostgreSQL | 5432 to 5481 | `postgres.internal` |
+| `cf-valkey-<id>` | Valkey | 6379 to 6428 | `valkey.internal` |
+
+`<id>` is the ID of the database server in the panel, in lower case. The first database
+server of an engine of a customer on a server has the usual port of the engine. The next one
+has the next port, for example 3307. Thus a customer can have 50 database servers of each
+engine on a server. A database server keeps its port. The name of each database and each
+database user starts with the Unix user of the website.
+
+The files of a database server are in `/var/lib/cf-db/servers/<id>`:
+
+| Path | Content |
+| ---- | ------- |
+| `disk.img` | The disk image of the database server. Refer to [Disk limit](#disk-limit). |
+| `disk` | The mount point of the disk image |
+| `disk/data` | The data directory |
+| `mariadb.env`, `postgresql.env` | The superuser password. Only `cf-db` can read it. |
+| `valkey.secret` | The password of the Valkey administrator. Only root can read it. |
+
+### The database network
+
+The installer adds `169.254.80.1/20` to the loopback interface. This makes each address of the
+network `169.254.80.0/20` a local address of the server, and the addresses never leave the
+server. The agent gives each customer one address of the network on a server, from
+`169.254.80.2` to `169.254.95.254`. Thus a server can have database servers for 4093
+customers. The database servers of a customer publish their ports only on the address of the
+customer.
+
+- Each website container gets the three host names with the address of its customer
+  (`AddHost=` in the unit). Thus an application uses the same host names on all servers, for
+  all customers. The panel shows the port of each database.
+- The agent keeps the record of the customers in `/var/lib/cloudfactory/sites.json`: the
+  address number of each customer, the websites that can use its database servers, and each
+  database server with its engine, its port and its limits.
+- The firewall has the set `database_access`. Each element is the UID of a website, the
+  address of its customer and the port of one database server of its customer. A website can
+  connect only to the addresses and ports in its elements. The agent writes the elements in
+  `/etc/cloudfactory/firewall/database-access.nft` and loads the file after each change of
+  the websites and of the database servers. Refer to [security.md](security.md#firewall).
+- The database servers see `169.254.80.1` as the address of each website container. A MariaDB
+  user with the access "website" can connect only from this address.
+
+The database servers of a customer stay when the last website of the customer on a server is
+removed. A user removes a database server in the panel. The address of a customer is free
+again when the customer has no website and no database server on the server.
+
+### Limits of a database server
+
+The agent gets the limits of each database server from the panel. The settings
+`databaseMemoryMb`, `valkeyMemoryMb` and `databaseCpus` of an earlier version of this release
+are not used.
+
+| Limit | How the agent applies it |
+| ----- | ------------------------ |
+| vCPUs | `CPUQuota` on the cgroup of the service of the container |
+| Memory | `MemoryMax` on the cgroup of the service, with no swap. The panel accepts 512 MB or more. |
+| Disk space | A file system with the size of the limit. The panel accepts 1 GB or more. |
+
+- A database server that uses all its memory or all its CPU time does not take them from
+  other containers. When MariaDB or PostgreSQL uses more memory than its limit, the kernel
+  stops that database server, and systemd starts it again.
+- Valkey gets a limit for its data from the memory limit: half of the memory limit after
+  128 MB, and not less than 32 MB. For example, 512 MB of memory give 192 MB of data. Valkey
+  needs the other memory for the connections, for the gVisor sandbox, and to write its data
+  file again.
+- PostgreSQL gets a limit for its write-ahead log from the disk limit: one eighth of the
+  disk, from 64 MB to 1 GB.
+- The limits do not reserve memory or CPU time. The sum of the limits can be more than the
+  server has. Each container also uses memory when its databases have no work.
+- A change of the vCPUs or of the memory restarts the database server. The open connections
+  stop, and the data stays.
+- Each MariaDB user can have 100 connections at the same time, and each PostgreSQL user 80.
+  A database server accepts 151 connections (MariaDB) or 100 connections (PostgreSQL). Thus
+  the application of one website cannot use all connections of its database server.
+
+The status report of the agent has the memory and the disk space that each database server
+uses. The panel shows them next to the limits.
+
+### Disk limit
+
+All database containers have the Unix user `cf-db`, so a user quota cannot limit one
+database server. Thus each database server has its own file system:
+
+1. The agent makes the file `disk.img` with the size of the disk limit, and makes an ext4
+   file system in it. The file is sparse: it uses only the disk space that the database
+   server uses.
+2. A systemd mount unit mounts the file as a loop device on `disk`, now and at each start of
+   the server. The mount is a part of `local-fs.target`, so it is there before the user
+   manager of `cf-db` starts the container.
+3. The data directory `disk/data` is in that file system.
+
+A database server that fills its disk gets the error "no space left on device". It cannot
+fill the disk of the server, and the database servers of other customers continue to operate.
+
+- When the mount is not there, the data directory is not there, and Podman does not start
+  the container. Thus a database server never starts with an empty directory in place of its
+  data.
+- A larger limit makes the file system larger while the database server operates.
+- A smaller limit stops the database server, makes the file system smaller and starts the
+  database server again. If the data needs more space than the new limit, the job fails and
+  the disk keeps its size.
+- A server with no loop devices (no `/dev/loop-control`, for example a container of an LXC
+  host) cannot mount a disk image. The data directory is then a directory on the disk of the
+  server, with no limit. The panel then shows `database-disk-limits` as an optional part of
+  the server that is off. This does not make the server degraded.
+- The disk quota of a website does not include its databases.
+
+### The shared containers of an earlier release
+
+In release 0.1.9 and earlier, all websites of a server used one MariaDB container
+(`cf-mariadb`) and one PostgreSQL container (`cf-postgresql`) on the private service address
+`169.254.77.1`. Their data is in `/var/lib/cf-db/mariadb` and `/var/lib/cf-db/postgresql`.
+
+A website from such a release keeps the shared containers until an administrator moves the
+databases of its server. The databases of a website go to the database server of its customer
+that has the usual port of the engine, because the applications connect to that port. The
+panel makes that database server when the customer does not have it, also when the plan of
+the customer permits no more database servers. The agent has the action `MoveDatabases` for
+one website:
+
+1. Start the database servers.
+2. Stop the website.
+3. Copy each database from the shared container to its database server.
+4. Make each database user in its database server, with the same password. The agent copies
+   the hash of the password, not the password.
+5. Start the website with the host names of the address of its customer.
+6. Remove the old copies from the shared containers.
+
+Before step 5, a failure starts the website again with the shared containers. After step 5,
+the job only removes the old copies, and a job that runs again does only that. When the last
+website of the server has moved, the agent stops the shared containers. Their data
+directories stay on the disk. Refer to
+[installation.md](installation.md#move-the-databases-of-a-server-from-an-earlier-release).
+
+An agent of this release adds the database network and the firewall rules to a server that
+the installer of an earlier release prepared. If the firewall file does not have the rules
+of the installer, the job stops and tells you to run the installer again.
+
+### Valkey
+
+Valkey has no databases with names. It has databases with numbers, and all users can use all
+numbers by default. Thus the agent makes a Valkey database from two parts:
+
+- A database number from 1 to 1023. Valkey starts with 1024 databases. A new connection is in
+  database 0, so no website gets database 0.
+- A Valkey user with the name of the database. The access rule `db=<number>` of Valkey 9.1
+  keeps the user in its database number. The rules also remove the commands of an
+  administrator and the commands that change or show other databases.
+
+The websites of one customer can use the same Valkey database server, so these rules keep the
+websites of one customer apart. The user file of Valkey, `users.acl` in the data directory of
+the database server, is the record of the users and their numbers. The agent reads the file
+through Valkey, gives a new database the smallest free number of the database server, and
+sends the number to the panel in the result of the job and in each report. The agent connects
+to Valkey as the administrator user `default`. The password of this user is in
+`/var/lib/cf-db/servers/<id>/valkey.secret`, which only root can read. The agent refuses a
+Valkey release before 9.1.2, because earlier releases do not have the rule for database
+numbers.
+
+All the Valkey databases of one database server use the memory limit of that database server.
+When the memory is full, Valkey removes the keys of that database server that were not used
+for the longest time. A customer that needs a separate limit for one website makes a second
+Valkey database server. Refer to [installation.md](installation.md#valkey).
+
 ## Change of runtime without downtime
 
 The agent uses a blue and green method:
@@ -236,8 +434,9 @@ not keep them.
 
 - Each server with the role `web` has its own repository, `<target>/servers/<server ID>`, and
   its own password. The panel makes the password at the first use and keeps it encrypted.
-- A backup has the files of the website and a dump of each database. The panel keeps the
-  SHA-256 sum of each dump, and the agent compares the dump with this sum before a restore.
+- A backup has the files of the website and a dump of each MariaDB and PostgreSQL database.
+  The panel keeps the SHA-256 sum of each dump, and the agent compares the dump with this sum
+  before a restore. A backup has no Valkey data.
 - Each snapshot has the tags `website=<website ID>` and `kind=scheduled` (a nightly backup) or
   `kind=manual` (a backup that a user starts). The retention policy removes only scheduled
   backups. The panel keeps the 10 newest manual backups of each website.

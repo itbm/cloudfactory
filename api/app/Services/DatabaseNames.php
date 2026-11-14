@@ -15,7 +15,7 @@ class DatabaseNames
     /** The part of the name that the user types. */
     public const SUFFIX = '/^[a-z0-9][a-z0-9_]{0,31}$/';
 
-    /** Names that the shared database servers use. The agent refuses them too. */
+    /** Names that the database servers use. The agent refuses them too. */
     public const RESERVED = ['mysql', 'sys', 'information_schema', 'performance_schema', 'postgres', 'template0', 'template1', 'root', 'mariadb.sys', 'healthcheck'];
 
     public static function prefix(Website $website): string

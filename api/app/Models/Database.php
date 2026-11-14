@@ -8,14 +8,41 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
-#[Fillable(['website_id', 'engine', 'name', 'size_bytes'])]
+#[Fillable(['website_id', 'engine', 'name', 'size_bytes', 'number', 'key_count', 'database_server_id'])]
 class Database extends Model
 {
     use HasUlids;
 
+    /** The engines of a database server. */
+    public const ENGINES = ['mariadb', 'postgresql', 'valkey'];
+
+    /**
+     * The engines with SQL. A backup has a dump of each of their databases, and a staging copy
+     * copies them. A user of these engines can have access to more than one database.
+     */
+    public const SQL_ENGINES = ['mariadb', 'postgresql'];
+
+    /**
+     * Valkey: a database is one database number of a Valkey database server of its customer,
+     * with one user that has the name of the database. A backup and a staging copy do not
+     * include its data.
+     */
+    public const VALKEY = 'valkey';
+
+    protected function casts(): array
+    {
+        return ['number' => 'integer', 'key_count' => 'integer', 'size_bytes' => 'integer'];
+    }
+
     public function website(): BelongsTo
     {
         return $this->belongsTo(Website::class);
+    }
+
+    /** Null for a database in the shared database containers of an earlier release. */
+    public function databaseServer(): BelongsTo
+    {
+        return $this->belongsTo(DatabaseServer::class);
     }
 
     public function users(): BelongsToMany

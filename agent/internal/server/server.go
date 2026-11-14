@@ -113,6 +113,18 @@ func (s *Service) SetSftp(_ context.Context, r *connect.Request[agentv1.SetSftpR
 	return s.submit(s.Deps.SetSftp(r.Msg))
 }
 
+func (s *Service) MoveDatabases(_ context.Context, r *connect.Request[agentv1.MoveDatabasesRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.MoveDatabases(r.Msg))
+}
+
+func (s *Service) SetDatabaseServer(_ context.Context, r *connect.Request[agentv1.DatabaseServerRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.SetDatabaseServer(r.Msg))
+}
+
+func (s *Service) DeleteDatabaseServer(_ context.Context, r *connect.Request[agentv1.DeleteDatabaseServerRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.DeleteDatabaseServer(r.Msg))
+}
+
 func (s *Service) ConfigureHost(_ context.Context, r *connect.Request[agentv1.ConfigureHostRequest]) (*connect.Response[agentv1.JobAccepted], error) {
 	return s.submit(s.Deps.ConfigureHost(r.Msg))
 }

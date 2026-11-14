@@ -12,6 +12,7 @@ use App\Models\Plan;
 use App\Models\User;
 use App\Models\Website;
 use App\Services\Audit;
+use App\Services\DatabaseServers;
 use App\Services\DomainPolicy;
 use App\Services\JobDispatcher;
 use Illuminate\Http\JsonResponse;
@@ -29,7 +30,7 @@ class CustomerController extends Controller
     {
         $ids = $request->user()->visibleCustomerIds();
 
-        return response()->json(['data' => Customer::withCount('websites')
+        return response()->json(['data' => Customer::withCount(['websites', 'databaseServers'])
             ->when($ids !== null, fn ($q) => $q->whereIn('id', $ids))
             ->orderBy('name')->get()->map(fn (Customer $c) => self::present($c))]);
     }
@@ -212,8 +213,8 @@ class CustomerController extends Controller
     }
 
     /**
-     * Audit finding R6: a customer cannot move to a plan that allows fewer websites than the
-     * customer has. For a reseller, the websites of its customers count too.
+     * Audit finding R6: a customer cannot move to a plan that allows fewer websites, or fewer
+     * database servers, than the customer has. For a reseller, those of its customers count too.
      *
      * @throws ValidationException
      */
@@ -225,6 +226,10 @@ class CustomerController extends Controller
         $websites = Website::whereIn('customer_id', $ids)->count();
         if ($websites > $plan->websites) {
             throw ValidationException::withMessages(['planId' => "The {$plan->name} plan allows {$plan->websites} websites. {$customer->name} has {$websites}."]);
+        }
+        $databaseServers = DatabaseServers::countFor($customer);
+        if ($databaseServers > $plan->database_servers) {
+            throw ValidationException::withMessages(['planId' => "The {$plan->name} plan allows {$plan->database_servers} database servers. {$customer->name} has {$databaseServers}."]);
         }
     }
 
@@ -250,6 +255,7 @@ class CustomerController extends Controller
             'suspended' => $c->suspended,
             'suspendedBy' => $c->suspended_by,
             'websites' => $c->websites_count ?? null,
+            'databaseServers' => $c->database_servers_count ?? null,
             'createdAt' => $c->created_at?->toIso8601String(),
         ];
     }

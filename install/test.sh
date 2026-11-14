@@ -172,7 +172,12 @@ line() { grep -nxF -- "    $1" "$2" | head -n 1 | cut -d: -f1 | grep . || echo 0
 
 firewall >"$WORK/default.nft"
 rule "the website users go to the website chain" yes 'ct state new meta skuid 20000-59999 jump websites' "$WORK/default.nft"
-rule "a website reaches the shared databases" yes 'ip daddr 169.254.77.1 tcp dport { 3306, 5432 } accept' "$WORK/default.nft"
+rule "a website reaches the database servers of its customer" yes 'meta skuid . ip daddr . tcp dport @database_access accept' "$WORK/default.nft"
+rule "the rule of the database servers has no list of ports" no 'meta skuid . ip daddr @database_access tcp dport { 3306, 5432, 6379 } accept' "$WORK/default.nft"
+rule "a website of an earlier release reaches the shared databases" yes 'ip daddr 169.254.77.1 tcp dport { 3306, 5432 } accept' "$WORK/default.nft"
+rule "the shared database address has no Valkey port" no 'ip daddr 169.254.77.1 tcp dport { 3306, 5432, 6379 } accept' "$WORK/default.nft"
+rule "only root and the websites reach the database network" yes 'ct state new ip daddr 169.254.80.0/20 meta skuid != 0 meta skuid != 20000-59999 jump refuse' "$WORK/default.nft"
+rule "the set of the database access has the UID, the address and the port" yes 'typeof meta skuid . ip daddr . tcp dport' "$WORK/default.nft"
 rule "a website reaches the DNS resolver" yes 'meta l4proto { tcp, udp } th dport 53 accept' "$WORK/default.nft"
 rule "a website does not reach the services of the server" yes 'fib daddr type { local, broadcast, multicast } jump refuse' "$WORK/default.nft"
 rule "a website does not reach link-local and private networks" yes 'ip daddr { 0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 168.63.129.16, 169.254.0.0/16, 172.16.0.0/12, 192.168.0.0/16, 224.0.0.0/3 } jump refuse' "$WORK/default.nft"
@@ -199,6 +204,50 @@ jump=$(line 'ct state new meta skuid 20000-59999 jump websites' "$WORK/default.n
 databases=$(line 'ip daddr 169.254.77.1 tcp dport { 3306, 5432 } accept' "$WORK/default.nft")
 local_rule=$(line 'fib daddr type { local, broadcast, multicast } jump refuse' "$WORK/default.nft")
 if [ "$other" -gt 0 ] && [ "$other" -lt "$jump" ] && [ "$databases" -gt 0 ] && [ "$databases" -lt "$local_rule" ]; then PASS=$((PASS + 1)); else FAIL=$((FAIL + 1)); echo 'FAIL: the order of the website firewall rules'; fi
+# Each customer has its own database servers. The rule that closes the database network for
+# the other users comes before the website chain. The rule for the database servers of the
+# customer of a website is the first rule of the website chain, and the set that it uses
+# comes before the chains.
+network=$(line 'ct state new ip daddr 169.254.80.0/20 meta skuid != 0 meta skuid != 20000-59999 jump refuse' "$WORK/default.nft")
+access=$(line 'meta skuid . ip daddr . tcp dport @database_access accept' "$WORK/default.nft")
+chain=$(grep -nxF '  chain websites {' "$WORK/default.nft" | head -n 1 | cut -d: -f1 | grep . || echo 0)
+access_set=$(grep -nxF '  set database_access {' "$WORK/default.nft" | head -n 1 | cut -d: -f1 | grep . || echo 0)
+first_chain=$(grep -n '^  chain ' "$WORK/default.nft" | head -n 1 | cut -d: -f1 | grep . || echo 0)
+if [ "$network" -gt 0 ] && [ "$network" -lt "$jump" ] && [ "$chain" -gt 0 ] && [ "$access" -lt "$databases" ] && [ "$access_set" -gt 0 ] && [ "$access_set" -lt "$first_chain" ] &&
+	[ "$(sed -n "$((chain + 1)),${access}p" "$WORK/default.nft" | grep -cv '^ *#')" -eq 1 ]; then
+	PASS=$((PASS + 1))
+else
+	FAIL=$((FAIL + 1))
+	echo 'FAIL: the order of the firewall rules of the database servers'
+fi
+# The last line includes the files of the agent, after the table. The agent writes the
+# database access of the websites there.
+if [ "$(grep -v -e '^$' -e '^#' "$WORK/default.nft" | tail -n 2 | tr '\n' ' ')" = '} include "/etc/cloudfactory/firewall/*.nft" ' ]; then PASS=$((PASS + 1)); else FAIL=$((FAIL + 1)); echo 'FAIL: the firewall rules do not include the files of the agent'; fi
+# The installer and the agent use the same database network, the same address of the host in
+# it, the same set and the same file of elements.
+# shellcheck disable=SC2016 # The patterns are text of the script, not variables of this test.
+if grep -qx 'DATABASE_NETWORK=169.254.80.0/20' "$HERE/install.sh" && grep -qx 'DATABASE_CLIENT_ADDRESS=169.254.80.1' "$HERE/install.sh" &&
+	grep -q 'DatabaseNetwork = "169.254.80.0/20"' "$HERE/../agent/internal/quadlet/quadlet.go" &&
+	grep -q 'DatabaseClientAddress = "169.254.80.1"' "$HERE/../agent/internal/quadlet/quadlet.go" &&
+	grep -q 'databaseAccessSet  = "database_access"' "$HERE/../agent/internal/actions/instances.go" &&
+	grep -q 'databaseAccessFile = "database-access.nft"' "$HERE/../agent/internal/actions/instances.go" &&
+	grep -q '$CF_ETC/firewall/database-access.nft' "$HERE/install.sh" &&
+	grep -q 'install -d -m 0755 "$CF_ETC/firewall"' "$HERE/install.sh"; then
+	PASS=$((PASS + 1))
+else
+	FAIL=$((FAIL + 1))
+	echo 'FAIL: the installer and the agent do not agree about the database network'
+fi
+# The address unit adds the database network to "lo" at each start of the server, and a second
+# run of the installer starts the unit again, so that a server of an earlier release gets it.
+# shellcheck disable=SC2016 # The patterns are text of the script, not variables of this test.
+if grep -qxF 'ExecStart=/usr/sbin/ip address replace $DATABASE_CLIENT_ADDRESS/${DATABASE_NETWORK#*/} dev lo' "$HERE/install.sh" &&
+	grep -q '^systemctl restart cloudfactory-address.service$' "$HERE/install.sh"; then
+	PASS=$((PASS + 1))
+else
+	FAIL=$((FAIL + 1))
+	echo 'FAIL: the address unit does not add the database network'
+fi
 
 firewall --allow-website-smtp --allow-website-network 10.0.5.0/24 --allow-website-network fd00:1::/64 --allow-website-network 192.168.7.9 >"$WORK/allowed.nft"
 rule "--allow-website-smtp opens port 25" no 'tcp dport 25 jump refuse' "$WORK/allowed.nft"

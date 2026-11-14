@@ -91,6 +91,7 @@ jobs:
           - { image: sftp, context: images/sftp, file: images/sftp/Containerfile, args: '' }
           - { image: mariadb, context: images/mariadb, file: images/mariadb/Containerfile, args: '' }
           - { image: postgresql, context: images/postgresql, file: images/postgresql/Containerfile, args: '' }
+          - { image: valkey, context: images/valkey, file: images/valkey/Containerfile, args: '' }
           - { image: panel-api, context: ., file: images/panel-api/Containerfile, args: '' }
           - { image: panel-web, context: ., file: images/panel-web/Containerfile, args: '' }
     steps:
