@@ -18,7 +18,7 @@ shows what this repository has now.
 | The panel certificate: a new panel gets a certificate from its own CA, also for `localhost` and `panel.localhost`. An administrator downloads the root certificate and changes to Let's Encrypt in **Settings > Panel certificate**. The agent goes back to the previous method if the new certificate does not come | `agent/internal/caddy/panelcert.go`, `api/app/Http/Controllers/Api/PanelCertificateController.php`, `web/src/pages/SettingsPage.tsx` |
 | A firewall for the connections that a website opens: no private networks, no cloud metadata service, no port 25 | `install/install.sh` |
 | OpenAPI 3.1 document, with a test that compares it to the routes | `openapi/`, `api/tests/Feature/OpenApiTest.php` |
-| Agent: websites, limits, runtime changes without downtime, domains and TLS, MariaDB and PostgreSQL databases, backups and restores, host security updates, reboots, gVisor install and rollback, signed self-update with rollback | `agent/` |
+| Agent: websites, limits, runtime changes without downtime, domains and TLS, MariaDB, PostgreSQL and Valkey databases, backups and restores, host security updates, reboots, gVisor install and rollback, signed self-update with rollback | `agent/` |
 | Mutual TLS between the panel and each agent, with pinned certificates | `agent/internal/server`, `api/app/Services/AgentClient.php` |
 | Rollouts in batches with a canary, a health check, a stop and a roll back | `api/app/Services/RolloutEngine.php` |
 | SFTP for each website in its own gVisor container on port 2200: SSH keys only (no passwords), locked in the directory of the website. The agent moves servers of release 0.1 from the SSH service of the host | `images/sftp`, `agent/internal/actions/sftp.go`, `api/app/Http/Controllers/Api/SftpController.php` |
@@ -26,7 +26,7 @@ shows what this repository has now.
 | `cf` CLI for all public API areas, with `--json` and `--no-wait`. Lists read all pages | `cli/` |
 | Installation script with checks before changes, for a panel and for a new server | `install/` |
 | Shared read-only runtime images: one copy of each image on a server for all websites, so a new website starts with no pull | `agent/internal/images` |
-| Images: FrankenPHP and Apache with PHP-FPM for PHP 8.4 and 8.5, the Caddy edge, the panel API and web, MariaDB, PostgreSQL and SFTP | `images/` |
+| Images: FrankenPHP and Apache with PHP-FPM for PHP 8.4 and 8.5, the Caddy edge, the panel API and web, MariaDB, PostgreSQL, Valkey and SFTP | `images/` |
 | CI, image scans, signed multi-arch releases with SBOMs, and a daily rebuild (the schedule is off, refer to [releasing.md](releasing.md#daily-image-rebuild)) | `.github/workflows/` |
 
 ## Not complete

@@ -77,8 +77,8 @@ bridge networks have the same problem for all connections, so websites do not us
 An nftables rule refuses a new connection to a website port on `169.254.77.1` unless it comes
 from root or from the user `cf-edge`. pasta opens each connection as the Unix user of the
 container, so a website cannot connect to a different website. All websites can connect to
-the database ports 3306 and 5432. The database password keeps each website to its own
-databases.
+the database ports 3306 (MariaDB), 5432 (PostgreSQL) and 6379 (Valkey). The database password
+keeps each website to its own databases.
 
 ### Shared runtime images
 
@@ -189,6 +189,41 @@ the administrators. The image `sftp` has OpenSSH and `libnss-extrausers`.
   service of the host. Until this step is complete, the agent reports port 22 to the panel.
   Refer to [installation.md](installation.md#servers-that-you-installed-with-release-01).
 
+## Databases
+
+Each server has one shared container for each database engine that its websites use. The Unix
+user `cf-db` runs these containers in gVisor. The agent starts a container when a website
+needs the engine for the first time.
+
+| Container | Engine | Port on `169.254.77.1` | Host name in a website container |
+| --------- | ------ | ---------------------- | -------------------------------- |
+| `cf-mariadb` | MariaDB | 3306 | `mariadb.internal` |
+| `cf-postgresql` | PostgreSQL | 5432 | `postgres.internal` |
+| `cf-valkey` | Valkey | 6379 | `valkey.internal` |
+
+The name of each database and each database user starts with the Unix user of the website.
+The data is in `/var/lib/cf-db/<engine>`.
+
+Valkey has no databases with names. It has databases with numbers, and all users can use all
+numbers by default. Thus the agent makes a Valkey database from two parts:
+
+- A database number from 1 to 1023. Valkey starts with 1024 databases. A new connection is in
+  database 0, so no website gets database 0.
+- A Valkey user with the name of the database. The access rule `db=<number>` of Valkey 9.1
+  keeps the user in its database number. The rules also remove the commands of an
+  administrator and the commands that change or show other databases.
+
+The user file of Valkey, `/var/lib/cf-db/valkey/users.acl`, is the record of the users and
+their numbers. The agent reads the file through Valkey, gives a new database the smallest free
+number, and sends the number to the panel in the result of the job and in each report. The
+agent connects to Valkey as the administrator user `default`. The password of this user is
+in `/var/lib/cf-db/valkey.secret`, which only root can read. The agent refuses a Valkey
+release before 9.1.2, because earlier releases do not have the rule for database numbers.
+
+All the Valkey databases of a server use one memory limit (`valkeyMemoryMb`). When the memory
+is full, Valkey removes the keys that were not used for the longest time. Refer to
+[installation.md](installation.md#valkey).
+
 ## Change of runtime without downtime
 
 The agent uses a blue and green method:
@@ -236,8 +271,9 @@ not keep them.
 
 - Each server with the role `web` has its own repository, `<target>/servers/<server ID>`, and
   its own password. The panel makes the password at the first use and keeps it encrypted.
-- A backup has the files of the website and a dump of each database. The panel keeps the
-  SHA-256 sum of each dump, and the agent compares the dump with this sum before a restore.
+- A backup has the files of the website and a dump of each MariaDB and PostgreSQL database.
+  The panel keeps the SHA-256 sum of each dump, and the agent compares the dump with this sum
+  before a restore. A backup has no Valkey data.
 - Each snapshot has the tags `website=<website ID>` and `kind=scheduled` (a nightly backup) or
   `kind=manual` (a backup that a user starts). The retention policy removes only scheduled
   backups. The panel keeps the 10 newest manual backups of each website.

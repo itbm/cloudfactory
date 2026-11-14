@@ -39,7 +39,7 @@ describe("databases (CF-01)", () => {
 
   it("gives a Valkey database a number and a user with the same name", async () => {
     // The demo data has one Valkey database with the number 1 on the server of the shop.
-    expect(await createDatabase("web_shop", "valkey", "sessions", false)).toMatch(/^.{24}$/);
+    expect(await createDatabase("web_shop", "valkey", "sessions", false)).toMatch(/^[a-zA-Z2-9]{24}$/);
     await new Promise((r) => setTimeout(r, 10));
     const name = `${shop().unixUser}_sessions`;
     expect(getState().databases.find((d) => d.name === name)).toMatchObject({ engine: "valkey", number: 2, keys: 0 });
@@ -51,7 +51,7 @@ describe("databases (CF-01)", () => {
     expect(() => setDatabaseUser(user.id, { grants: [] })).toThrow(ApiError);
     expect(() => deleteDatabaseUser(user.id)).toThrow(ApiError);
     expect(() => createDatabaseUser("web_shop", "valkey", "more", [])).toThrow(ApiError);
-    expect(await setDatabaseUser(user.id, { resetPassword: true })).toMatch(/^.{24}$/);
+    expect(await setDatabaseUser(user.id, { resetPassword: true })).toMatch(/^[a-zA-Z2-9]{24}$/);
 
     deleteDatabase(getState().databases.find((d) => d.name === name)!.id);
     expect(getState().databaseUsers.some((u) => u.name === name)).toBe(false);

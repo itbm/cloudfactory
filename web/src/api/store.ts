@@ -1191,7 +1191,8 @@ function databaseName(websiteId: string, name: string) {
   return prefix + suffix;
 }
 
-const newPassword = () => Array.from(crypto.getRandomValues(new Uint8Array(24)), (b) => "abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789"[b % 56]).join("");
+const PASSWORD_CHARACTERS = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const newPassword = () => Array.from(crypto.getRandomValues(new Uint8Array(24)), (b) => PASSWORD_CHARACTERS[b % PASSWORD_CHARACTERS.length]).join("");
 
 export type GrantInput = { databaseId: string; privileges: DatabasePrivileges };
 

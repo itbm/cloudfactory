@@ -397,8 +397,10 @@ paths:
       tags: [Websites]
       summary: Make a staging copy
       description: >-
-        FR-205. The copy has the name `staging.<domain>`. It gets a copy of each database of the
-        website, and one new database user for each engine with read-write access to the copies.
+        FR-205. The copy has the name `staging.<domain>`. It gets a copy of each MariaDB and
+        PostgreSQL database of the website, and one new database user for each engine with
+        read-write access to the copies. The data of a Valkey database is not copied: the copy gets
+        a new, empty Valkey database, with its own user, for each Valkey database of the website.
         The response shows the passwords of the new users once.
       responses:
         '202':
@@ -632,7 +634,14 @@ paths:
                         id: { type: string }
                         engine: { $ref: '#/components/schemas/Engine' }
                         name: { type: string }
-                        sizeBytes: { type: integer }
+                        sizeBytes: { type: integer, description: Not used for Valkey. }
+                        number:
+                          type: [integer, 'null']
+                          minimum: 1
+                          description: >-
+                            Valkey only. The database number that the application selects. The value is
+                            null until the job that makes the database is complete.
+                        keys: { type: [integer, 'null'], description: Valkey only. The number of keys in the last report of the server. }
                   users: { type: array, items: { $ref: '#/components/schemas/DatabaseUser' } }
     post:
       tags: [Databases]
@@ -641,6 +650,14 @@ paths:
         FR-501 and FR-502. The full name is the prefix of the website and the name that you give,
         for example "acme_x7k2_shop". By default the panel also makes a user with the same name and
         read-write access. Only the website container can connect.
+
+
+        A Valkey database is a database number and a user with the same name in the shared Valkey
+        container of the server. The application connects to the host `valkey.internal`, port 6379,
+        with the user name, the password and the database number. The user has access to that
+        number only. `createUser` must not be false. The response is 422 when the agent of the
+        server did not report the engine (see `databaseEngines` of the server). The list of the
+        databases gives the number when the job is complete.
       requestBody:
         required: true
         content:
@@ -674,7 +691,9 @@ paths:
     delete:
       tags: [Databases]
       summary: Remove a database
-      description: The agent removes the access of each user to the database, then the database. The users stay.
+      description: >-
+        The agent removes the access of each user to the database, then the database. The users
+        stay. The user of a Valkey database goes with the database.
       responses:
         '202': { $ref: '#/components/responses/JobOnly' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -688,7 +707,7 @@ paths:
       description: >-
         A user can have access to more than one database of the website, with a permission for each
         database. For example, a sync user can have read-only access to production and read-write
-        access to staging.
+        access to staging. The engine cannot be `valkey`: a Valkey database comes with its user.
       requestBody:
         required: true
         content:
@@ -712,7 +731,9 @@ paths:
     patch:
       tags: [Databases]
       summary: Change a database user
-      description: '"grants" replaces all grants of the user. "resetPassword" makes a new password.'
+      description: >-
+        "grants" replaces all grants of the user. "resetPassword" makes a new password. The user of
+        a Valkey database accepts only "resetPassword".
       requestBody:
         required: true
         content:
@@ -730,9 +751,11 @@ paths:
     delete:
       tags: [Databases]
       summary: Remove a database user
+      description: The response is 422 for the user of a Valkey database. Remove the database.
       responses:
         '202': { $ref: '#/components/responses/JobOnly' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
 
   /v1/websites/{websiteId}/snapshots:
     parameters:
@@ -1812,14 +1835,14 @@ components:
         finishedAt: { type: [string, 'null'], format: date-time }
     Engine:
       type: string
-      enum: [mariadb, postgresql]
+      enum: [mariadb, postgresql, valkey]
     Snapshot:
       type: object
       properties:
         id: { type: string }
         kind: { type: string, enum: [scheduled, manual] }
         sizeBytes: { type: integer }
-        databases: { type: array, items: { type: string }, description: For example "mariadb:shop". Use this value as the restore item. }
+        databases: { type: array, items: { type: string }, description: For example "mariadb:shop". Use this value as the restore item. A snapshot has no Valkey data. }
         mailboxes: { type: array, items: { type: string } }
         createdAt: { type: string, format: date-time }
     BackupPolicy:
@@ -1875,6 +1898,12 @@ components:
         panel:
           type: boolean
           description: This server has the panel. It cannot be removed.
+        databaseEngines:
+          type: array
+          items: { $ref: '#/components/schemas/Engine' }
+          description: >-
+            The database engines that the agent of the server can operate. An agent of an earlier
+            release has `mariadb` and `postgresql` only. Update the agent to get `valkey`.
         os: { type: [string, 'null'] }
         kernel: { type: [string, 'null'] }
         arch: { type: [string, 'null'] }
@@ -2009,7 +2038,7 @@ components:
       type: object
       required: [databaseId, privileges]
       properties:
-        databaseId: { type: string, description: A database of the same website, with the same engine. }
+        databaseId: { type: string, description: A MariaDB or PostgreSQL database of the same website, with the same engine. }
         privileges: { type: string, enum: [readonly, readwrite] }
     Customer:
       type: object
@@ -2123,6 +2152,12 @@ components:
               engine: { $ref: '#/components/schemas/Engine' }
               name: { type: string }
               sizeBytes: { type: integer }
+              number: { type: integer, minimum: 1, description: Valkey only. The database number. }
+              keys: { type: integer, minimum: 0, description: Valkey only. The number of keys. }
+        databaseEngines:
+          type: [array, 'null']
+          description: The database engines that the agent can operate. An agent of an earlier release does not send the field.
+          items: { $ref: '#/components/schemas/Engine' }
         sftpPort: { type: [integer, 'null'], minimum: 1, maximum: 65535 }
         panelCertificate:
           type: [object, 'null']

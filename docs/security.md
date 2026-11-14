@@ -71,6 +71,21 @@ The product specification, section 6.4, gives the requirements.
 - A backup keeps the SHA-256 sum of each database dump. Before a restore, the agent compares the
   dump with this sum. If they are different, the agent stops. The restore uses a temporary
   database user with the permissions of the website only.
+- A Valkey database is a database number and a user with the name of the database. The access
+  rules of Valkey keep the user in its database number: the user cannot select, move, copy to,
+  swap or empty a different database. The user gets no command of an administrator (for
+  example `CONFIG`, `ACL`, `MONITOR`, `CLIENT LIST` and `CLIENT KILL`), no function, and no
+  list of the channels. It can use only the channels with a name that starts with the prefix
+  of the website. Each connection needs a user and a password: Valkey has no user with no
+  password.
+- The Valkey users are not limited to a client address, because each connection of a website
+  comes from the private service address. The password is the only secret. A Valkey user
+  cannot have the access "anywhere".
+- `INFO` shows numbers of the Valkey server to each Valkey user, for example the number of
+  keys of each database number and the memory in use. It shows no keys and no values.
+- All the Valkey databases of a server use one memory limit. A website that fills the memory
+  makes Valkey remove keys of other websites. Thus Valkey is for data that an application can
+  make again.
 
 ## Domains
 

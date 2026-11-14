@@ -407,6 +407,107 @@ Optional: the website users cannot sign in to the SSH service of the host, becau
 no key there and a locked password. To refuse them on the host in all cases, add
 `DenyGroups cf-sites` to the SSH configuration of the host.
 
+### Valkey
+
+Valkey is a key-value store that keeps its data in memory. Use it for a cache, for sessions
+and for queues. An application that can use Redis can use Valkey with the same client library.
+
+Each server has one Valkey container, `cf-valkey`, for all the websites of the server. The
+agent starts the container when you make the first Valkey database on the server. The agent of
+the server must be from a release that has Valkey. If it is not, the panel does not let you
+select Valkey. Update the agent (refer to [Update to a new release](#update-to-a-new-release)).
+
+A Valkey database has three parts:
+
+- A database number from 1 to 1023. The agent gives the smallest number that is free on the
+  server.
+- A user with the name of the database. The user has access to this database number only.
+- A password. The panel shows it one time only.
+
+To make a Valkey database:
+
+1. On the page of the website, go to **Databases** and select **New database**.
+2. Select **Valkey**, type a name and select **Create database**.
+3. Copy the password.
+4. When the job is complete, read the database number in the list of the databases.
+
+With the CLI: `cf databases create WEBSITE --engine valkey --name cache`. The command shows
+the password, and then the host, the port, the user and the database number.
+
+Give these values to the application:
+
+| Setting | Value |
+| ------- | ----- |
+| Host | `valkey.internal` |
+| Port | `6379` |
+| User | The name of the database, for example `acme_x7k2_cache` |
+| Password | The password from the panel |
+| Database number | The number from the list of the databases, for example `3` |
+| TLS | Off. The connection does not leave the server. |
+
+As an address: `redis://acme_x7k2_cache:PASSWORD@valkey.internal:6379/3`.
+
+The application must select its database number. A new connection starts in database 0, and
+the user has no access to database 0. If the application does not select its number, Valkey
+answers each command with `NOPERM`.
+
+For a PHP website, turn on the extension `redis` on the **Runtime** tab. The plan of the
+website must permit this extension.
+
+Example for Laravel (`.env`). Laravel uses one database for the cache and one for all other
+data. Give the two settings the same number:
+
+```sh
+REDIS_HOST=valkey.internal
+REDIS_PORT=6379
+REDIS_USERNAME=acme_x7k2_cache
+REDIS_PASSWORD=PASSWORD
+REDIS_DB=3
+REDIS_CACHE_DB=3
+```
+
+Example for WordPress with the plugin Redis Object Cache (`wp-config.php`):
+
+```php
+define( 'WP_REDIS_HOST', 'valkey.internal' );
+define( 'WP_REDIS_PORT', 6379 );
+define( 'WP_REDIS_PASSWORD', [ 'acme_x7k2_cache', 'PASSWORD' ] );
+define( 'WP_REDIS_DATABASE', 3 );
+```
+
+To make a new password, select **New password** for the user of the database, or use
+`cf database-users set WEBSITE USER --reset-password`. Valkey closes the connections that use
+the old password.
+
+These limits apply:
+
+- **Memory.** All the Valkey databases of a server use one memory limit. The default is one
+  eighth of the memory of the server, not less than 64 MB and not more than 1024 MB. When the
+  memory is full, Valkey removes the keys that were not used for the longest time, from all
+  websites. Do not keep data in Valkey that the application cannot make again.
+- **Backups.** A backup has no Valkey data, and a restore does not change it. Valkey keeps
+  its data on the disk of the server (an append-only file), so the data stays after a restart.
+- **Staging copy.** The data of a Valkey database is not copied. The copy gets a new, empty
+  Valkey database with its own number, user and password for each Valkey database of the
+  website.
+- **Users.** A Valkey database always has one user. The user can connect only from the
+  container of the website. You cannot give it more databases or remove it. To remove the
+  user, remove the database.
+- **Channels.** All databases use the same channels for publish and subscribe. A website can
+  use only the channels with a name that starts with its prefix, for example
+  `acme_x7k2_events`.
+- **Commands.** Valkey refuses the commands of an administrator (for example `CONFIG`, `ACL`,
+  `MONITOR` and `CLIENT LIST`) and the commands that change or show other databases (for
+  example `FLUSHALL`, `SWAPDB`, `MOVE`, `FUNCTION`, `SCRIPT FLUSH` and `PUBSUB`). To remove
+  all the keys of the database, use `FLUSHDB`. Scripts with `EVAL` are permitted.
+
+To change the memory limit of a server:
+
+1. Set `"valkeyMemoryMb"` in `/etc/cloudfactory/agent.json`, for example
+   `"valkeyMemoryMb": 512`. The minimum is 16.
+2. Restart the agent: `systemctl restart cf-agent`. The agent starts Valkey again with the new
+   limit. The open connections stop, and the data stays.
+
 ### Servers that you installed with release 0.1
 
 Release 0.1 used the SSH service of the host for SFTP, on port 22. Later releases move SFTP to
@@ -469,9 +570,15 @@ The `firewall` check looks for the table `inet cloudfactory`. If the table is no
 ### Ports
 
 The firewall accepts only SSH, SFTP, HTTP, HTTPS and the agent port. It does not accept the
-database ports 3306 (MariaDB) and 5432 (PostgreSQL), so the databases are not open to the
-internet. A database user with the access "anywhere" can connect only after you add a rule
-for its port to `/etc/nftables.d-cloudfactory.nft`. Give only the addresses that need it.
+database ports 3306 (MariaDB), 5432 (PostgreSQL) and 6379 (Valkey), so the databases are not
+open to the internet. A database user with the access "anywhere" can connect only after you
+add a rule for its port to `/etc/nftables.d-cloudfactory.nft`. Give only the addresses that
+need it. A Valkey user cannot have the access "anywhere".
+
+On a server that you installed with a release that had no Valkey, the agent adds port 6379 to
+the database rules in `/etc/nftables.d-cloudfactory.nft` when it makes the first Valkey
+database. If you changed these rules, the job stops and tells you to run the installation
+script again on the server.
 
 The firewall also has an output rule for the private service address `169.254.77.1`. Only
 root and the edge proxy (`cf-edge`) can open a new connection to a port there, except the
@@ -484,7 +591,7 @@ connection of these users, thus to each connection that a website opens:
 
 | Destination | Result |
 | ----------- | ------ |
-| MariaDB and PostgreSQL on the private service address | Permitted |
+| MariaDB, PostgreSQL and Valkey on the private service address | Permitted |
 | DNS (port 53) | Permitted |
 | The addresses of this server, on the HTTP and HTTPS ports | Permitted |
 | All other services of this server, for example SSH and the agent port | Refused |
@@ -520,6 +627,9 @@ These items were not checked on a real server. After you install the release, ch
 report a problem in the issues of the repository:
 
 - A website container can connect to MariaDB and PostgreSQL.
+- Valkey in gVisor, and a website container that connects to it. The access rules of the
+  Valkey users are checked with a real Valkey server when the Valkey image is built, but not
+  in gVisor.
 - Files that you upload with SFTP have the correct owner in the website container
   (`--userns=keep-id` in gVisor). The SFTP image was checked with Docker and the same
   capabilities, not in gVisor.

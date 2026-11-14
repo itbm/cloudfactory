@@ -117,7 +117,8 @@ Servers pull the images with no login. Thus, before production, each image packa
 
 A package that the release workflow makes for the first time can get a visibility that is not
 the same as the visibility of the repository or of the other packages. Thus, after a release
-adds a new image, check the visibility of its package. To make a package public:
+adds a new image, check the visibility of its package. For example, the first release with
+Valkey makes the package `valkey`. To make a package public:
 
 1. Open `https://github.com/users/<owner>/packages/container/<package>/settings`.
 2. In **Danger Zone**, select **Change visibility**, then **Public**.
