@@ -8,15 +8,13 @@ import type { SearchResult } from "../api/types";
 const KIND_LABEL: Record<SearchResult["kind"], string> = {
   website: "Website",
   domain: "Domain",
-  mailbox: "Mailbox",
   job: "Job",
   server: "Server",
   image: "Image",
   customer: "Customer",
-  zone: "DNS zone",
 };
 
-/** The search box (UI rule: ⌘K or Ctrl+K). It finds websites, domains, mailboxes and jobs. */
+/** The search box (UI rule: ⌘K or Ctrl+K). It finds websites, domains and jobs. */
 export function CommandPalette({ open, onClose, placeholder }: { open: boolean; onClose: () => void; placeholder: string }) {
   const state = useStore();
   const navigate = useNavigate();

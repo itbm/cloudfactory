@@ -3,7 +3,7 @@ import { useAction, useStore } from "../../api/hooks";
 import { setLimits, setWebsitePlan } from "../../api/store";
 import type { Limits, Website } from "../../api/types";
 import { Card, Field, FormError } from "../../components/ui";
-import { GB, MB } from "../../api/seed";
+import { GB, MB } from "../../lib/format";
 
 /** Resource limits of the website (FR-202). Only administrators can change them. */
 export function SettingsTab({ website }: { website: Website }) {

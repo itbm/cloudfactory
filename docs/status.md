@@ -33,7 +33,7 @@ shows what this repository has now.
 
 | Item | Notes |
 | ---- | ----- |
-| Areas without an API | The API of release 0.1 has no DNS, email, files, cron, deploys, SSH shell, logs, passkeys, alerts, branding or system settings. In live mode the web panel hides these areas. In mock mode it shows them with sample data. |
+| Areas without an API | The API of release 0.1 has no DNS, email, files, cron, deploys, SSH shell, logs, passkeys, alerts, branding or system settings. The web panel has no pages for these areas. |
 | Staging copy | A staging copy gets the files only. It keeps the database settings of the original website, so it uses the live databases. |
 | Restore of a full website | A restore of the full website restores the files only. Restore each database separately. |
 | Email from the panel | The panel sends no email. A new user gets a temporary password from the person who makes the user. |

@@ -1,5 +1,4 @@
-// The client for the real panel API (openapi/openapi.yaml). store.ts calls these functions
-// when the panel runs in live mode (see mode.ts). Each function sends one request, and then
+// The client for the panel API (openapi/openapi.yaml). store.ts calls these functions. Each function sends one request, and then
 // loads the changed data again. A change that makes a job gives a promise that resolves when
 // the agent has finished the job.
 
@@ -149,7 +148,7 @@ interface ApiPanelCertificate {
   domain: string; method: PanelCertificate["method"]; state: PanelCertificate["state"]; expiresAt: string | null; caCertificate: string | null; caSha256: string | null;
   reportedAt: string | null; letsEncryptAvailable: boolean; serversWithoutCa: string[]; job: ApiJob | null;
 }
-interface ApiSnapshot { id: string; kind: "scheduled" | "manual"; sizeBytes: number; databases: string[]; mailboxes: string[]; createdAt: string }
+interface ApiSnapshot { id: string; kind: "scheduled" | "manual"; sizeBytes: number; databases: string[]; createdAt: string }
 
 // Mapping from the API shapes to the state of the UI.
 
@@ -190,7 +189,6 @@ export function toWebsite(w: ApiWebsite): Website {
       name: d.name, kind: d.kind, dnsPointsHere: d.dnsPointsHere, certificate: { state: d.certificate.state, expiresAt: d.certificate.expiresAt ?? undefined },
       ...(d.verified === false && d.verification ? { verification: d.verification } : {}),
     })),
-    releases: [], previews: [], cron: [], sshKeys: [], shellEnabled: false,
     sftp: w.sftp ? { ...w.sftp, host: w.sftp.host ?? location.host.replace(/:\d+$/, ""), authorizedKeys: w.sftp.authorizedKeys ?? [] } : undefined,
     lastChange: { at: w.updatedAt, summary: "Last change" },
     stagingOf: w.stagingOf ?? undefined, sharedDatabases: w.sharedDatabases ?? false, managedByTerraform: w.managedByTerraform, imageTag: tagOfReference(w.runtime.image) || undefined, imageReference: w.runtime.image || undefined,
@@ -320,7 +318,6 @@ export async function load(previous: State): Promise<State> {
     servers: servers.map(toServer),
     images: runtimes,
     rollout: current ? toRollout(current, servers.length) : undefined,
-    zones: [], mailboxes: [], aliases: [], files: {},
     databases: [...kept(previous.databases), ...perSite.flatMap((s) => s.databases)],
     databaseUsers: [...kept(previous.databaseUsers), ...perSite.flatMap((s) => s.users)],
     snapshots: [...kept(previous.snapshots), ...perSite.flatMap((s) => s.snapshots)].sort((a, b) => b.at.localeCompare(a.at)),
@@ -329,12 +326,9 @@ export async function load(previous: State): Promise<State> {
     customers: customers.map(toCustomer),
     users: users.map(toUser),
     tokens: tokens.map(toToken),
-    passkeys: [],
     totpEnabled: me.totpEnabled,
     audit: audit.map(toAudit),
-    alertChannels: [],
-    branding: { ...previous.branding, panelDomain: location.host },
-    system: { ...previous.system, panelDomain: location.host },
+    panelDomain: location.host,
     panelCertificate: certificate ? toPanelCertificate(certificate) : previous.panelCertificate,
   };
 }
@@ -349,7 +343,7 @@ async function websiteDetails(w: { id: string; serverId: string }) {
   return {
     databases: db.databases.map((d): Database => ({ id: d.id, name: d.name, engine: d.engine, websiteId: w.id, sizeBytes: d.sizeBytes ?? 0, serverId: w.serverId, number: d.number ?? undefined, keys: d.keys ?? undefined })),
     users: db.users.map((u): DatabaseUser => ({ id: u.id, name: u.name, engine: u.engine, websiteId: w.id, grants: u.grants ?? [], access: u.access })),
-    snapshots: snaps.map((s): Snapshot => ({ id: s.id, at: s.createdAt, kind: s.kind === "manual" ? "manual" : "nightly", sizeBytes: s.sizeBytes ?? 0, websiteId: w.id, databases: s.databases ?? [], mailboxes: s.mailboxes ?? [] })),
+    snapshots: snaps.map((s): Snapshot => ({ id: s.id, at: s.createdAt, kind: s.kind === "manual" ? "manual" : "nightly", sizeBytes: s.sizeBytes ?? 0, websiteId: w.id, databases: s.databases ?? [] })),
   };
 }
 

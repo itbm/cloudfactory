@@ -1,9 +1,8 @@
 import { useState } from "react";
 import { useAction, useStore } from "../api/hooks";
-import { features } from "../api/mode";
-import { addCustomer, addUser, deleteUser, resetUserPassword, savePlan, setBranding, setCustomer, type NewAccess } from "../api/store";
+import { addCustomer, addUser, deleteUser, resetUserPassword, savePlan, setCustomer, type NewAccess } from "../api/store";
 import type { Customer, ManagedUser, Plan } from "../api/types";
-import { GB, MB } from "../api/seed";
+import { GB, MB } from "../lib/format";
 import { Topbar } from "../components/Layout";
 import { Card, ConfirmButton, Field, FormError, Modal, PageHeader, Status, Tabs } from "../components/ui";
 import { bytes, shortDate } from "../lib/format";
@@ -16,11 +15,10 @@ export function CustomersPage() {
       <Topbar placeholder="Search servers, images, customers and jobs" />
       <main id="main" className="content content-wide">
         <PageHeader title="Customers and plans" description="Resellers add website owners and set their limits. Each customer has users who sign in. A plan sets the default limits for each website." />
-        <Tabs label="Sections" current={tab} onSelect={setTab} items={[{ id: "customers", label: "Customers" }, { id: "users", label: "Users" }, { id: "plans", label: "Plans" }, ...(features.branding ? [{ id: "branding", label: "Branding" }] : [])]} />
+        <Tabs label="Sections" current={tab} onSelect={setTab} items={[{ id: "customers", label: "Customers" }, { id: "users", label: "Users" }, { id: "plans", label: "Plans" }]} />
         {tab === "customers" && <Customers />}
         {tab === "users" && <Users />}
         {tab === "plans" && <Plans />}
-        {tab === "branding" && <Branding />}
       </main>
     </>
   );
@@ -274,48 +272,5 @@ function PlanDialog({ plan, onClose }: { plan: Plan; onClose: () => void }) {
         </fieldset>
       </form>
     </Modal>
-  );
-}
-
-/** FR-106: the reseller sets the logo, the colours and the panel domain. */
-function Branding() {
-  const state = useStore();
-  const [f, setF] = useState(state.branding);
-  const [saved, setSaved] = useState(false);
-  const save = useAction(async () => { setBranding(f); setSaved(true); });
-  return (
-    <div className="grid-2">
-      <Card title="Branding for your customers">
-        <form className="card-body" noValidate onSubmit={(e) => { e.preventDefault(); setSaved(false); void save.run(); }}>
-          <FormError error={save.error} />
-          <Field label="Brand name">{(p) => <input {...p} className="input" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} />}</Field>
-          <Field label="Main colour" hint="The panel checks the contrast of the text on this colour." error={save.error?.fields.colour}>
-            {(p) => (
-              <span style={{ display: "flex", gap: 8 }}>
-                <input type="color" aria-label="Pick a colour" value={f.colour} onChange={(e) => setF({ ...f, colour: e.target.value })} style={{ width: 52, height: 44, border: 0, background: "none" }} />
-                <input {...p} className="input mono" value={f.colour} onChange={(e) => setF({ ...f, colour: e.target.value })} />
-              </span>
-            )}
-          </Field>
-          <Field label="Panel domain" hint="Point a CNAME record for this domain to panel.cloudfactory.io." error={save.error?.fields.panelDomain}>{(p) => <input {...p} className="input mono" value={f.panelDomain} onChange={(e) => setF({ ...f, panelDomain: e.target.value })} />}</Field>
-          <Field label="Support email">{(p) => <input {...p} className="input" type="email" value={f.supportEmail} onChange={(e) => setF({ ...f, supportEmail: e.target.value })} />}</Field>
-          <Field label="Logo" hint="SVG or PNG, up to 200 KB.">{(p) => <input {...p} type="file" accept="image/svg+xml,image/png" />}</Field>
-          <div className="btn-group" style={{ marginTop: 14, alignItems: "center" }}>
-            <button type="submit" className="btn btn-primary">Save branding</button>
-            {saved && !save.error && <span className="text-success" role="status">Saved.</span>}
-          </div>
-        </form>
-      </Card>
-      <Card title="Preview">
-        <div className="card-body">
-          <div className="brand-preview" style={{ background: "#0f1b33" }}>
-            <span className="swatch" style={{ background: f.colour, borderColor: f.colour }} aria-hidden="true" />
-            {f.name || "Your brand"}
-          </div>
-          <p className="muted small" style={{ marginTop: 12 }}>Customers sign in at <code>https://{f.panelDomain}</code>.</p>
-          <button type="button" className="btn" style={{ marginTop: 12, background: f.colour, color: "#fff", borderColor: f.colour }}>Example button</button>
-        </div>
-      </Card>
-    </div>
   );
 }

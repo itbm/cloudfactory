@@ -1,6 +1,10 @@
 // Formatting helpers. All output uses British English (NFR-09).
 
 const LOCALE = "en-GB";
+
+export const MB = 1024 ** 2;
+export const GB = 1024 ** 3;
+export const DAY = 24 * 3600_000;
 const rtf = new Intl.RelativeTimeFormat(LOCALE, { numeric: "auto" });
 
 const UNITS: [Intl.RelativeTimeFormatUnit, number][] = [

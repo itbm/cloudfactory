@@ -1,97 +1,50 @@
 import { ArrowUpRight, ShieldCheck } from "lucide-react";
-import { useEffect, useState } from "react";
-import { features, LIVE } from "../api/mode";
+import { useEffect } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useAction, useStore } from "../api/hooks";
 import { imageOf, runtimeLabel, supportEnds, tagOf, updateReady } from "../api/selectors";
-import { applyImageUpdate, deployNow, retryWebsite, scheduleImageUpdate, setPower, backupNow, showWebsite } from "../api/store";
+import { retryWebsite, setPower, backupNow, showWebsite } from "../api/store";
 import type { Website } from "../api/types";
 import { Topbar } from "../components/Layout";
 import { WebsiteMenu } from "../components/WebsiteMenu";
-import { Card, Empty, FormError, JobRow, Live, Meter, Modal, Status, Tabs, TerraformBadge, TerraformNotice } from "../components/ui";
+import { Card, Empty, FormError, JobRow, Live, Meter, Status, Tabs, TerraformBadge, TerraformNotice } from "../components/ui";
 import { bytes, longDate, percent, ratio, relativeTime } from "../lib/format";
 import { certificateUntil, jobActive, WEBSITE_STATUS } from "../lib/labels";
 import { AccessTab, SshCard } from "./website/AccessTab";
 import { BackupsTab } from "./website/BackupsTab";
-import { CronTab } from "./website/CronTab";
 import { DatabasesTab } from "./website/DatabasesTab";
-import { DeploysTab } from "./website/DeploysTab";
 import { DomainsTab } from "./website/DomainsTab";
-import { EmailTab } from "./website/EmailTab";
-import { FilesTab } from "./website/FilesTab";
-import { LogsTab } from "./website/LogsTab";
 import { RuntimeTab } from "./website/RuntimeTab";
 import { SettingsTab } from "./website/SettingsTab";
 
-const ALL_TABS = [
-  ["overview", "Overview", true],
-  ["domains", "Domains", true],
-  ["runtime", "Runtime", true],
-  ["databases", "Databases", true],
-  ["email", "Email", features.email],
-  ["files", "Files", features.files],
-  ["cron", "Cron jobs", features.cron],
-  ["backups", "Backups", true],
-  ["logs", "Logs", features.logs],
-  ["deploys", "Deploys", features.deploys],
-  ["access", LIVE ? "SFTP" : "SFTP and SSH", features.access],
-  ["settings", "Settings", true],
+const TABS = [
+  ["overview", "Overview"],
+  ["domains", "Domains"],
+  ["runtime", "Runtime"],
+  ["databases", "Databases"],
+  ["backups", "Backups"],
+  ["access", "SFTP"],
+  ["settings", "Settings"],
 ] as const;
-
-// In live mode the panel shows only the sections that the API of this release has.
-const TABS = ALL_TABS.filter(([, , shown]) => shown).map(([id, label]) => [id, label] as const);
 
 function UpdateBanner({ website }: { website: Website }) {
   const state = useStore();
   const image = imageOf(state, website)!;
-  const [changes, setChanges] = useState(false);
   const running = state.jobs.find((j) => j.websiteId === website.id && jobActive(j) && j.title.startsWith("Test update"));
   if (!updateReady(state, website) || running) return null;
-  if (LIVE) {
-    // The image rollout updates all websites in stages (FR-1108). The API has no update for one website.
-    const admin = state.session.user.role === "administrator";
-    return (
-      <section className="banner" aria-labelledby="update-title">
-        <ShieldCheck className="banner-icon" size={26} aria-hidden="true" />
-        <div className="banner-text">
-          <h2 id="update-title">An update is ready for this website</h2>
-          <p>
-            {image.name} {image.available} is signed and ready. The rollout updates the websites in stages, with a health check for each website.
-            If the check fails, the website goes back to {tagOf(state, website)}. {admin ? "" : "Your provider starts the rollout. You do not need to do anything."}
-          </p>
-        </div>
-        {admin && <div className="btn-group"><Link className="btn btn-primary" to="/updates">Go to Updates</Link></div>}
-      </section>
-    );
-  }
+  // The image rollout updates all websites in stages (FR-1108). The API has no update for one website.
+  const admin = state.session.user.role === "administrator";
   return (
     <section className="banner" aria-labelledby="update-title">
       <ShieldCheck className="banner-icon" size={26} aria-hidden="true" />
       <div className="banner-text">
-        <h2 id="update-title">A security update is ready for this website</h2>
+        <h2 id="update-title">An update is ready for this website</h2>
         <p>
-          {image.name.split(" · ")[0]} {image.available} with the latest PHP {website.runtime.phpVersion} patch. The image is signed and passed its scan.
-          We test it on a copy of this site first, then switch with no downtime. If the health check fails, we switch back.
+          {image.name} {image.available} is signed and ready. The rollout updates the websites in stages, with a health check for each website.
+          If the check fails, the website goes back to {tagOf(state, website)}. {admin ? "" : "Your provider starts the rollout. You do not need to do anything."}
         </p>
-        {website.updateScheduledAt && <p className="small"><strong>Scheduled for {website.updateScheduledAt}.</strong></p>}
       </div>
-      <div className="btn-group">
-        <button type="button" className="btn btn-primary" onClick={() => void applyImageUpdate(website.id)}>Update now</button>
-        <button type="button" className="btn" onClick={() => scheduleImageUpdate(website.id, "02:00")} disabled={website.updateScheduledAt === "02:00"}>
-          {website.updateScheduledAt === "02:00" ? "Scheduled for 02:00" : "Schedule for 02:00"}
-        </button>
-        <button type="button" className="btn-link" onClick={() => setChanges(true)}>What changed</button>
-      </div>
-      {changes && (
-        <Modal title={`What changed in ${image.available}`} onClose={() => setChanges(false)} footer={<button type="button" className="btn" onClick={() => setChanges(false)}>Close</button>}>
-          <ul>
-            <li>PHP {website.runtime.phpVersion}: security fixes for CVE-2026-1182 and CVE-2026-1190.</li>
-            <li>FrankenPHP {image.available}: a fix for a memory leak in worker mode.</li>
-            <li>Base image: updated OpenSSL and curl packages.</li>
-          </ul>
-          <p className="muted">Signature: verified with the Cloudfactory release key. Scan: 0 critical, 0 high. SBOM attached.</p>
-        </Modal>
-      )}
+      {admin && <div className="btn-group"><Link className="btn btn-primary" to="/updates">Go to Updates</Link></div>}
     </section>
   );
 }
@@ -154,42 +107,6 @@ export function ResourcesCard({ website }: { website: Website }) {
         <p className="muted small" style={{ marginTop: 16 }}>
           Limits come from the {plan?.name} plan. <Link to={`/websites/${website.id}/settings`}>Change plan</Link>
         </p>
-      </div>
-    </Card>
-  );
-}
-
-function DeploysCard({ website }: { website: Website }) {
-  const live = website.releases.find((r) => r.live) ?? website.releases[0];
-  return (
-    <Card title="Deploys" actions={website.git && <button type="button" className="btn" onClick={() => void deployNow(website.id)}>Deploy now</button>}>
-      <div className="card-body">
-        {website.git ? (
-          <>
-            <p className="muted">From Git: <code>{website.git.repository}</code>, branch <code>{website.git.branch}</code>. {website.git.trigger === "webhook" ? "Deploys on every push." : `Checks for changes every ${website.git.scheduleMinutes} minutes.`}</p>
-            {live && (
-              <div className="box" style={{ marginTop: 14 }}>
-                <span><code>{live.ref}</code> {live.message}</span>
-                <span className={live.state === "failed" ? "text-danger" : "text-success"}>{live.state === "failed" ? "Failed" : "Succeeded"} in {live.durationSeconds} s · {relativeTime(live.at)}</span>
-              </div>
-            )}
-            {website.previews.length > 0 && (
-              <>
-                <h3 style={{ marginTop: 18, marginBottom: 6 }}>Preview sites for pull requests</h3>
-                <ul className="list">
-                  {website.previews.map((p) => (
-                    <li key={p.url} style={{ padding: "6px 0", borderTop: 0 }}>
-                      <a href={p.url} className="mono">{p.url.replace("https://", "")}</a>
-                      <span className="muted">{p.title}</span>
-                    </li>
-                  ))}
-                </ul>
-              </>
-            )}
-          </>
-        ) : (
-          <p className="muted">No Git repository. <Link to={`/websites/${website.id}/deploys`}>Connect a repository</Link> to deploy on each push.</p>
-        )}
       </div>
     </Card>
   );
@@ -260,12 +177,11 @@ function Overview({ website }: { website: Website }) {
         <div className="stack">
           <RuntimeCard website={website} />
           <ResourcesCard website={website} />
-          {features.deploys && <DeploysCard website={website} />}
         </div>
         <div className="stack">
           <JobsCard website={website} />
           <DomainsCard website={website} />
-          {features.access && <SshCard website={website} />}
+          <SshCard website={website} />
           <BackupsCard website={website} />
         </div>
       </div>
@@ -349,7 +265,6 @@ export function WebsiteDetailPage() {
               Visit site <ArrowUpRight size={16} aria-hidden="true" />
               <span className="visually-hidden">(opens in a new tab)</span>
             </a>
-            {features.files && <Link className="btn" to={`/websites/${website.id}/files`}>File manager</Link>}
             <button type="button" className="btn" disabled={website.status !== "running" || restart.busy} onClick={() => void restart.run(website.id, "restart")}>Restart</button>
             <WebsiteMenu website={website} bordered />
           </div>
@@ -361,12 +276,7 @@ export function WebsiteDetailPage() {
         {tab === "domains" && <DomainsTab website={website} />}
         {tab === "runtime" && <RuntimeTab website={website} />}
         {tab === "databases" && <DatabasesTab website={website} />}
-        {tab === "email" && <EmailTab website={website} />}
-        {tab === "files" && <FilesTab website={website} />}
-        {tab === "cron" && <CronTab website={website} />}
         {tab === "backups" && <BackupsTab website={website} />}
-        {tab === "logs" && <LogsTab website={website} />}
-        {tab === "deploys" && <DeploysTab website={website} />}
         {tab === "access" && <AccessTab website={website} />}
         {tab === "settings" && <SettingsTab website={website} />}
       </main>

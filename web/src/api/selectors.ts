@@ -76,11 +76,6 @@ export function attention(s: State): AttentionItem[] {
     const bad = w.status === "failed" ? undefined : w.domains.find((d) => !d.dnsPointsHere);
     if (bad) items.push({ id: `dns-${w.id}-${bad.name}`, tone: "info", subject: bad.name, text: "does not point to this server yet.", action: "Check DNS", href: `/websites/${w.id}/domains` });
   }
-  for (const m of s.mailboxes) {
-    const pct = Math.round((m.usedBytes / m.quotaBytes) * 100);
-    // FR-603: warn when a mailbox is 90% full.
-    if (pct >= 90) items.push({ id: `mbx-${m.id}`, tone: "info", subject: m.address, text: `is ${pct}% full.`, action: "Manage mailbox", href: "/email" });
-  }
   return items;
 }
 
@@ -106,8 +101,6 @@ export function search(s: State, query: string): SearchResult[] {
   const results: SearchResult[] = [
     ...s.websites.map<SearchResult>((w) => ({ kind: "website", label: w.name, detail: w.application, href: `/websites/${w.id}` })),
     ...s.websites.flatMap((w) => w.domains.filter((d) => d.name !== w.name).map<SearchResult>((d) => ({ kind: "domain", label: d.name, detail: `Domain of ${w.name}`, href: `/websites/${w.id}/domains` }))),
-    ...s.zones.map<SearchResult>((z) => ({ kind: "zone", label: z.name, detail: `DNS zone · ${z.records.length} records`, href: `/dns/${z.name}` })),
-    ...s.mailboxes.map<SearchResult>((m) => ({ kind: "mailbox", label: m.address, detail: `Mailbox · ${Math.round((m.usedBytes / m.quotaBytes) * 100)}% full`, href: "/email" })),
     ...s.jobs.map<SearchResult>((j) => ({ kind: "job", label: j.ref ? `${j.title} ${j.ref}` : j.title, detail: `Job · ${j.state}`, href: j.websiteId ? `/websites/${j.websiteId}` : j.serverId ? `/servers/${j.serverId}` : "/jobs" })),
     ...s.servers.map<SearchResult>((sv) => ({ kind: "server", label: sv.name, detail: `Server · ${sv.location}`, href: `/servers/${sv.id}` })),
     ...s.images.map<SearchResult>((i) => ({ kind: "image", label: i.name, detail: `Runtime image · ${i.running}`, href: "/updates" })),

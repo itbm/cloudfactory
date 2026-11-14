@@ -4,23 +4,19 @@ import {
   Boxes,
   ChevronsUpDown,
   Database,
-  Folder,
   Globe,
   History,
   Layers,
   LogOut,
-  Mail,
   Menu,
   Search,
   Server,
   Settings2,
-  Signpost,
   Users,
 } from "lucide-react";
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useStore } from "../api/hooks";
-import { features } from "../api/mode";
 import { markNotificationsRead, setContext, signOut } from "../api/store";
 import type { AccountContext, Tone } from "../api/types";
 import { relativeTime } from "../lib/format";
@@ -35,7 +31,7 @@ interface LayoutState {
 
 const LayoutContext = createContext<LayoutState>({ openSearch: () => {}, toggleNav: () => {} });
 
-const DEFAULT_PLACEHOLDER = "Search websites, domains, mailboxes and jobs";
+const DEFAULT_PLACEHOLDER = "Search websites, domains and jobs";
 
 export function Logo() {
   return (
@@ -173,10 +169,7 @@ type NavItem = { to: string; label: string; icon: ReactNode; count?: number };
 
 const hosting: NavItem[] = [
   { to: "/websites", label: "Websites", icon: <Globe size={18} /> },
-  ...(features.dns ? [{ to: "/dns", label: "Domains and DNS", icon: <Signpost size={18} /> }] : []),
-  ...(features.email ? [{ to: "/email", label: "Email", icon: <Mail size={18} /> }] : []),
   { to: "/databases", label: "Databases", icon: <Database size={18} /> },
-  ...(features.files ? [{ to: "/files", label: "Files", icon: <Folder size={18} /> }] : []),
   { to: "/backups", label: "Backups", icon: <History size={18} /> },
   { to: "/apps", label: "Apps", icon: <Boxes size={18} /> },
 ];

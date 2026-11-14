@@ -22,29 +22,56 @@ npm test
 npm run build
 ```
 
-The web panel has two modes:
+The web panel has no sample data of its own. It always uses the panel API at `/api/v1`
+(`web/src/api/live.ts`). For development, demonstrations and screenshots, use the
+demonstration mode of the API. In this mode, the API has sample data and a demo agent, so each
+job completes with no server.
 
-| Mode | API | Used by |
-| ---- | --- | ------- |
-| live | The panel API at `/api/v1` (`web/src/api/live.ts`) | The production build |
-| mock | An API in memory with sample data (`web/src/api/store.ts`) | `npm run dev`, the tests and the screenshots |
+1. In `api/.env`, set `CF_DEMO=true`.
+2. Start the API and the demo agent:
 
-Set `VITE_API_MODE=live` or `VITE_API_MODE=mock` to select a mode. In live mode, the panel
-hides the areas that the API of release 0.1 does not have. Refer to [status.md](status.md).
+   ```sh
+   cd api
+   php artisan demo:serve --fresh        # http://127.0.0.1:8000
+   ```
 
-To use live mode with a local API:
+   `--fresh` deletes all data and makes the sample data again.
+
+3. Start the web panel:
+
+   ```sh
+   cd web
+   npm run dev                           # http://localhost:5173, sends /api to port 8000
+   ```
+
+Sign in as `admin@example.com`, `reseller@example.com` or `owner@example.com`. The password
+is `password`. The sample users have no TOTP.
+
+The sample data (`api/database/seeders/DemoSeeder.php`) has an example of each state that a
+page can show: a website that the panel could not make, a server with updates, a degraded
+server, a suspended customer, a domain that waits for its DNS record.
+
+The demo agent (`api/app/Demo`) fails these jobs, so that you can see a failure:
+
+- a new website or a new domain with a name that starts with `fail.`;
+- a new database with a name that ends with `_fail`.
+
+The panel ignores `CF_DEMO` when `APP_ENV` is `production`. Do not set it on a server.
+
+### Tests of the web panel
+
+The tests use the answers of the real API for the sample data. The files are in
+`web/src/test/fixtures`, one for each role. `web/src/test/panelApi.ts` puts them in the place
+of `fetch`.
+
+After you change an answer of the API or the demo seeder, write the files again:
 
 ```sh
 cd api
-php artisan migrate:fresh --seed
-php artisan serve                      # http://127.0.0.1:8000
-
-cd ../web
-VITE_API_MODE=live npm run dev         # sends /api to port 8000
+php artisan demo:fixtures
 ```
 
-Sign in as `admin@example.com`, `reseller@example.com` or `owner@example.com`. The password
-is `password`. The sample users have no TOTP, so leave the code empty.
+The API test `DemoTest` fails when the files do not agree with the API.
 
 ## Panel API
 

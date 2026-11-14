@@ -1,5 +1,5 @@
 // Types for the panel API. They follow the schemas in openapi/openapi.yaml.
-// Replace this file with the generated client when the panel API exists.
+// live.ts maps the answers of the API to these types.
 
 export type Role = "administrator" | "reseller" | "owner";
 
@@ -87,33 +87,6 @@ export interface Domain {
   verification?: DomainVerification;
 }
 
-export interface Release {
-  id: string;
-  ref: string;
-  message: string;
-  at: string;
-  state: JobState;
-  durationSeconds: number;
-  live: boolean;
-  /** The deploy ran a database migration, so no automatic rollback (FR-1009). */
-  migration: boolean;
-}
-
-export interface GitSource {
-  repository: string;
-  branch: string;
-  trigger: "webhook" | "schedule";
-  scheduleMinutes: number;
-  buildCommands: string[];
-  deployKey: string;
-  secrets: string[];
-}
-
-export interface PreviewSite {
-  url: string;
-  title: string;
-}
-
 export interface Limits {
   vcpus: number;
   memoryBytes: number;
@@ -128,22 +101,6 @@ export interface ResourceUse {
   diskBytes: number;
   processes: number;
   diskIoBytesPerSecond: number;
-}
-
-export interface CronJob {
-  id: string;
-  schedule: string;
-  command: string;
-  enabled: boolean;
-  lastRunAt?: string;
-  lastResult?: "succeeded" | "failed";
-}
-
-export interface SshKey {
-  id: string;
-  name: string;
-  fingerprint: string;
-  addedAt: string;
 }
 
 export interface SftpAccess {
@@ -169,14 +126,8 @@ export interface Website {
   limits: Limits;
   use: ResourceUse;
   domains: Domain[];
-  git?: GitSource;
-  releases: Release[];
-  previews: PreviewSite[];
-  cron: CronJob[];
-  sshKeys: SshKey[];
-  /** The SFTP access from the panel API (live mode). */
+  /** The SFTP access from the panel API. */
   sftp?: SftpAccess;
-  shellEnabled: boolean;
   lastChange: LastChange;
   /** A staging copy points to its source website (FR-205). */
   stagingOf?: string;
@@ -188,9 +139,8 @@ export interface Website {
   managedByTerraform: boolean;
   /** The image tag that the website uses. When it is not set, the website uses the running tag of its image. */
   imageTag?: string;
-  /** The full image reference with its tag, in live mode. */
+  /** The full image reference with its tag. */
   imageReference?: string;
-  updateScheduledAt?: string;
 }
 
 export type JobState = "queued" | "running" | "succeeded" | "failed";
@@ -341,9 +291,9 @@ export interface Server {
   /** Empty when the server installed no updates yet. */
   lastUpdateAt: string;
   rebootRequired: boolean;
-  /** The panel has a newer agent for this server (live mode). */
+  /** The panel has a newer agent for this server. */
   agentUpdateAvailable?: boolean;
-  /** The host and the port that the panel uses to connect to the agent (live mode). */
+  /** The host and the port that the panel uses to connect to the agent. */
   agentAddress?: string;
   /** The reason when the panel could not connect to the agent. The jobs of the server then fail. */
   connectionError?: string;
@@ -353,46 +303,11 @@ export interface Server {
   databaseEngines?: DatabaseEngine[];
   /** True when the agent of the server gives each customer its own database containers. */
   databaseInstances?: boolean;
-  /** The number of websites that use the shared database containers of an earlier release (live mode). */
+  /** The number of websites that use the shared database containers of an earlier release. */
   sharedDatabaseWebsites?: number;
   services: ServerService[];
   /** The port of the SFTP container of the websites (spec section 10). 22 for an agent of release 0.1. */
   sftpPort: number;
-}
-
-export type DnsRecordType = "A" | "AAAA" | "CNAME" | "MX" | "TXT" | "SRV" | "CAA" | "NS";
-
-export interface DnsRecord {
-  id: string;
-  type: DnsRecordType;
-  name: string;
-  value: string;
-  ttl: number;
-  priority?: number;
-  /** Records that the panel makes and keeps (FR-602). */
-  managed?: "mail" | "website" | "ns";
-}
-
-export interface DnsZone {
-  name: string;
-  customerId: string;
-  nameservers: string[];
-  records: DnsRecord[];
-  managedByTerraform: boolean;
-}
-
-export interface Mailbox {
-  id: string;
-  address: string;
-  quotaBytes: number;
-  usedBytes: number;
-}
-
-export interface MailAlias {
-  id: string;
-  kind: "alias" | "forwarder";
-  source: string;
-  destinations: string[];
 }
 
 export type DatabaseEngine = "mariadb" | "postgresql" | "valkey";
@@ -429,15 +344,6 @@ export interface DatabaseUser {
   access: "website" | "anywhere";
 }
 
-export interface FileNode {
-  path: string;
-  name: string;
-  type: "dir" | "file";
-  sizeBytes: number;
-  modifiedAt: string;
-  content?: string;
-}
-
 export interface Snapshot {
   id: string;
   at: string;
@@ -446,7 +352,6 @@ export interface Snapshot {
   sizeBytes: number;
   websiteId: string;
   databases: string[];
-  mailboxes: string[];
 }
 
 export interface BackupPolicy {
@@ -510,13 +415,6 @@ export interface Customer {
   suspended: boolean;
 }
 
-export interface Branding {
-  name: string;
-  colour: string;
-  panelDomain: string;
-  supportEmail: string;
-}
-
 export type TokenScope =
   | "websites:read" | "websites:write"
   | "dns:read" | "dns:write"
@@ -540,13 +438,6 @@ export interface ApiToken {
   prefix: string;
 }
 
-export interface Passkey {
-  id: string;
-  name: string;
-  addedAt: string;
-  lastUsedAt?: string;
-}
-
 export interface AuditEntry {
   id: string;
   at: string;
@@ -556,22 +447,8 @@ export interface AuditEntry {
   target: string;
 }
 
-export interface AlertChannel {
-  id: string;
-  kind: "email" | "webhook";
-  target: string;
-  events: string[];
-}
-
-export interface SystemSettings {
-  registry: string;
-  registryMirror: string;
-  panelDomain: string;
-  timezone: string;
-}
-
 export interface SearchResult {
-  kind: "website" | "domain" | "mailbox" | "job" | "server" | "image" | "customer" | "zone";
+  kind: "website" | "domain" | "job" | "server" | "image" | "customer";
   label: string;
   detail: string;
   href: string;
@@ -579,7 +456,7 @@ export interface SearchResult {
 
 export interface State {
   /**
-   * loading: in live mode, the panel has a session but has not loaded the data yet.
+   * loading: the panel has a session but has not loaded the data yet.
    * mustChangePassword: the user has a temporary password. The panel shows only the form for
    * a new password.
    */
@@ -596,29 +473,23 @@ export interface State {
   servers: Server[];
   images: RuntimeImage[];
   rollout?: Rollout;
-  zones: DnsZone[];
-  mailboxes: Mailbox[];
-  aliases: MailAlias[];
   databases: Database[];
   databaseUsers: DatabaseUser[];
-  files: Record<string, FileNode[]>;
   snapshots: Snapshot[];
   backupPolicy: BackupPolicy;
   plans: Plan[];
   customers: Customer[];
   /** The users that the signed-in user can see (audit finding B5). */
   users: ManagedUser[];
-  branding: Branding;
   tokens: ApiToken[];
-  passkeys: Passkey[];
   totpEnabled: boolean;
   audit: AuditEntry[];
-  alertChannels: AlertChannel[];
-  system: SystemSettings;
+  /** The host name of the panel, for the join command and the DNS hints. */
+  panelDomain: string;
   panelCertificate: PanelCertificate;
   joinToken: string;
   /** The fingerprint of the panel CA for the join command. */
   joinCaSha256?: string;
-  /** The installation script of the release of the panel, for the join command (live mode). */
+  /** The installation script of the release of the panel, for the join command. */
   joinInstallUrl?: string;
 }

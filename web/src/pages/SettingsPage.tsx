@@ -1,19 +1,15 @@
 import { useState } from "react";
 import { useAction, useStore } from "../api/hooks";
-import { addAlertChannel, addPasskey, changePassword, createToken, removeAlertChannel, removePasskey, revokeToken, setPanelCertificate, setSystem, setTotp, startTotpSetup, testAlertChannel } from "../api/store";
-import { features, LIVE } from "../api/mode";
-import type { AlertChannel, PanelCertificateMethod, TokenScope } from "../api/types";
+import { changePassword, createToken, revokeToken, setPanelCertificate, setTotp, startTotpSetup } from "../api/store";
+import type { PanelCertificateMethod, TokenScope } from "../api/types";
 import { Topbar } from "../components/Layout";
 import { Card, ConfirmButton, Field, FormError, JobRow, Modal, PageHeader, Status, Tabs } from "../components/ui";
 import { auditCsv } from "../lib/csv";
 import { daysUntil, longDate, relativeTime, shortDate } from "../lib/format";
 import { CopyField } from "./website/AccessTab";
 
-// The live API has no DNS or email scopes in release 0.1 (FR-104).
-const SCOPES: TokenScope[] = LIVE
-  ? ["websites:read", "websites:write", "databases:read", "databases:write", "backups:read", "backups:write", "servers:read", "servers:write", "images:read", "images:write", "customers:read", "customers:write", "users:read", "users:write", "audit:read", "tokens:read", "tokens:write"]
-  : ["websites:read", "websites:write", "dns:read", "dns:write", "email:read", "email:write", "databases:read", "databases:write", "backups:read", "backups:write", "servers:read", "servers:write"];
-const EVENTS = ["Server health", "Failed update", "Failed deploy", "Failed backup", "Mailbox 90% full", "Certificate failed", "PHP support ends"];
+// The API has no DNS or email scopes in release 0.1 (FR-104).
+const SCOPES: TokenScope[] = ["websites:read", "websites:write", "databases:read", "databases:write", "backups:read", "backups:write", "servers:read", "servers:write", "images:read", "images:write", "customers:read", "customers:write", "users:read", "users:write", "audit:read", "tokens:read", "tokens:write"];
 
 export function SettingsPage() {
   const state = useStore();
@@ -23,9 +19,7 @@ export function SettingsPage() {
     { id: "security", label: "Sign-in and security" },
     { id: "tokens", label: "API tokens" },
     { id: "audit", label: "Audit log" },
-    ...(features.alerts ? [{ id: "alerts", label: "Alerts" }] : []),
     ...(isAdmin ? [{ id: "certificate", label: "Panel certificate" }] : []),
-    ...(isAdmin && features.system ? [{ id: "system", label: "System" }] : []),
   ];
   return (
     <>
@@ -36,24 +30,19 @@ export function SettingsPage() {
         {tab === "security" && <Security />}
         {tab === "tokens" && <Tokens />}
         {tab === "audit" && <Audit />}
-        {tab === "alerts" && <Alerts />}
         {tab === "certificate" && <PanelCertificateSettings />}
-        {tab === "system" && <System />}
       </main>
     </>
   );
 }
 
-/** FR-103 and R-01: the password, passkeys and TOTP. */
+/** FR-103 and R-01: the password and TOTP. */
 function Security() {
   const state = useStore();
-  const [adding, setAdding] = useState(false);
-  const [name, setName] = useState("");
   const [totpMode, setTotpMode] = useState<"on" | "off" | null>(null);
   const [setup, setSetup] = useState<{ secret: string; uri: string } | null>(null);
   const [code, setCode] = useState("");
   const [password, setPassword] = useState("");
-  const remove = useAction(removePasskey);
   const totp = useAction(setTotp);
   const start = useAction(startTotpSetup);
   const closeTotp = () => { setTotpMode(null); setSetup(null); setCode(""); setPassword(""); totp.clear(); };
@@ -69,9 +58,7 @@ function Security() {
           <FormError error={start.error ?? (totpMode ? null : totp.error)} />
           <p>{state.totpEnabled ? <Status tone="success">On</Status> : <Status tone="warning">Off</Status>}</p>
           <p className="muted" style={{ marginTop: 8 }}>
-            {features.passkeys
-              ? "Use a time-based one-time password with your password when a passkey is not available."
-              : "Ask for a code from an app on your phone each time you sign in. Then a stolen password alone does not give access to your account."}
+            "Ask for a code from an app on your phone each time you sign in. Then a stolen password alone does not give access to your account."
           </p>
           <div className="btn-group" style={{ marginTop: 14 }}>
             {state.totpEnabled
@@ -80,34 +67,6 @@ function Security() {
           </div>
         </div>
       </Card>
-      {features.passkeys && (
-      <Card title="Passkeys" actions={<button type="button" className="btn btn-primary" onClick={() => setAdding(true)}>Add passkey</button>}>
-        <div className="card-body" style={{ paddingBottom: 0 }}><FormError error={remove.error} /></div>
-        <div className="table-wrap">
-          <table>
-            <thead><tr><th scope="col">Name</th><th scope="col">Added</th><th scope="col">Last used</th><th scope="col"><span className="visually-hidden">Actions</span></th></tr></thead>
-            <tbody>
-              {state.passkeys.map((p) => (
-                <tr key={p.id}>
-                  <td>{p.name}</td>
-                  <td>{shortDate(p.addedAt)}</td>
-                  <td>{p.lastUsedAt ? relativeTime(p.lastUsedAt) : "Never"}</td>
-                  <td className="cell-actions" style={{ width: 110 }}>
-                    <ConfirmButton className="btn btn-sm btn-danger" title={`Remove ${p.name}?`} confirm="Remove" message={<p>You cannot sign in with this passkey after you remove it.</p>} onConfirm={() => void remove.run(p.id)}>Remove</ConfirmButton>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
-      )}
-      {adding && (
-        <Modal title="Add passkey" onClose={() => setAdding(false)} footer={<><button type="button" className="btn" onClick={() => setAdding(false)}>Cancel</button><button type="button" className="btn btn-primary" onClick={() => { addPasskey(name); setAdding(false); setName(""); }}>Continue</button></>}>
-          <p>Your browser asks you to confirm with Touch ID, Windows Hello or a security key.</p>
-          <Field label="Name for this passkey">{(p) => <input {...p} className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Work laptop" />}</Field>
-        </Modal>
-      )}
       {totpMode && (
         <Modal
           title={totpMode === "on" ? "Set up an authenticator app" : "Turn off the authenticator app"}
@@ -216,11 +175,9 @@ function Tokens() {
             <div style={{ marginTop: 14 }}>
               <Field label="Your password" hint="Type your password again to make a token." error={create.error?.fields.password}>{(p) => <input {...p} className="input" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />}</Field>
             </div>
-            {(state.totpEnabled || LIVE) && (
-              <div style={{ marginTop: 14 }}>
-              <Field label="6-digit code" hint={LIVE ? "Open your authenticator app. Leave it empty if your account has no TOTP." : "Open your authenticator app."} error={create.error?.fields.totp}>{(p) => <input {...p} className="input" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={totp} onChange={(e) => setTotpCode(e.target.value)} />}</Field>
-              </div>
-            )}
+            <div style={{ marginTop: 14 }}>
+              <Field label="6-digit code" hint="Open your authenticator app. Leave it empty if your account has no TOTP." error={create.error?.fields.totp}>{(p) => <input {...p} className="input" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={totp} onChange={(e) => setTotpCode(e.target.value)} />}</Field>
+            </div>
           </form>
         </Modal>
       )}
@@ -264,81 +221,6 @@ function Audit() {
           </tbody>
         </table>
       </div>
-    </Card>
-  );
-}
-
-/** FR-1303: alerts by email and by webhook. */
-function Alerts() {
-  const state = useStore();
-  const [open, setOpen] = useState(false);
-  const [kind, setKind] = useState<AlertChannel["kind"]>("email");
-  const [target, setTarget] = useState("");
-  const [events, setEvents] = useState<string[]>(["Server health", "Failed update"]);
-  const add = useAction(addAlertChannel);
-  return (
-    <Card title="Alerts" actions={<button type="button" className="btn btn-primary" onClick={() => setOpen(true)}>Add alert</button>}>
-      <div className="table-wrap">
-        <table>
-          <thead><tr><th scope="col">Send to</th><th scope="col">Events</th><th scope="col"><span className="visually-hidden">Actions</span></th></tr></thead>
-          <tbody>
-            {state.alertChannels.map((c) => (
-              <tr key={c.id}>
-                <td><strong>{c.kind === "email" ? "Email" : "Webhook"}</strong><span className="cell-sub mono">{c.target}</span></td>
-                <td><ul className="tag-list">{c.events.map((e) => <li key={e}><span className="tag" style={{ fontFamily: "inherit" }}>{e}</span></li>)}</ul></td>
-                <td>
-                  <div className="btn-group" style={{ justifyContent: "flex-end" }}>
-                    <button type="button" className="btn btn-sm" onClick={() => void testAlertChannel(c.id)}>Send test</button>
-                    <ConfirmButton className="btn btn-sm btn-danger" title="Remove alert?" confirm="Remove" message={<p>{c.target} stops getting alerts.</p>} onConfirm={() => removeAlertChannel(c.id)}>Remove</ConfirmButton>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {open && (
-        <Modal title="Add alert" onClose={() => { setOpen(false); add.clear(); }} footer={<><button type="button" className="btn" onClick={() => setOpen(false)}>Cancel</button><button type="submit" form="alc" className="btn btn-primary">Add alert</button></>}>
-          <form id="alc" noValidate onSubmit={async (e) => { e.preventDefault(); if ((await add.run(kind, target, events)).ok) { setOpen(false); setTarget(""); } }}>
-            <FormError error={add.error} />
-            <fieldset className="radio-cards">
-              <legend>Send by</legend>
-              <label className="radio-card"><input type="radio" checked={kind === "email"} onChange={() => setKind("email")} /><span><strong>Email</strong></span></label>
-              <label className="radio-card"><input type="radio" checked={kind === "webhook"} onChange={() => setKind("webhook")} /><span><strong>Webhook</strong><span>A JSON POST, signed with HMAC-SHA256.</span></span></label>
-            </fieldset>
-            <Field label={kind === "email" ? "Email address" : "HTTPS URL"} error={add.error?.fields.target}>{(p) => <input {...p} className="input" value={target} onChange={(e) => setTarget(e.target.value)} />}</Field>
-            <fieldset className="checkbox-list" style={{ marginTop: 14 }}>
-              <legend>Events</legend>
-              {EVENTS.map((ev) => <label key={ev} className="check"><input type="checkbox" checked={events.includes(ev)} onChange={(e) => setEvents(e.target.checked ? [...events, ev] : events.filter((x) => x !== ev))} />{ev}</label>)}
-            </fieldset>
-          </form>
-        </Modal>
-      )}
-    </Card>
-  );
-}
-
-/** FR-1813: a different registry URL, for example a mirror. */
-function System() {
-  const state = useStore();
-  const [f, setF] = useState(state.system);
-  const [saved, setSaved] = useState(false);
-  const save = useAction(async () => { setSystem(f); setSaved(true); });
-  return (
-    <Card title="System">
-      <form className="card-body" noValidate onSubmit={(e) => { e.preventDefault(); setSaved(false); void save.run(); }} style={{ maxWidth: 640 }}>
-        <FormError error={save.error} />
-        <Field label="Panel domain">{(p) => <input {...p} className="input mono" value={f.panelDomain} onChange={(e) => setF({ ...f, panelDomain: e.target.value })} />}</Field>
-        <Field label="Image registry" hint="The agents pull signed images from this registry.">{(p) => <input {...p} className="input mono" value={f.registry} readOnly />}</Field>
-        <Field label="Registry mirror" hint="Optional. The agents try the mirror first, then the registry. Signatures are still checked." error={save.error?.fields.registryMirror}>
-          {(p) => <input {...p} className="input mono" value={f.registryMirror} onChange={(e) => setF({ ...f, registryMirror: e.target.value })} placeholder="registry.example.com/cloudfactory" />}
-        </Field>
-        <Field label="Time zone">{(p) => <select {...p} className="select" value={f.timezone} onChange={(e) => setF({ ...f, timezone: e.target.value })}>{["Europe/London", "Europe/Amsterdam", "Europe/Berlin", "UTC", "America/New_York"].map((t) => <option key={t}>{t}</option>)}</select>}</Field>
-        <div className="btn-group" style={{ marginTop: 14, alignItems: "center" }}>
-          <button type="submit" className="btn btn-primary">Save</button>
-          {saved && !save.error && <span className="text-success" role="status">Saved.</span>}
-        </div>
-      </form>
     </Card>
   );
 }

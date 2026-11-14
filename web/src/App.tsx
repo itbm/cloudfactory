@@ -1,15 +1,11 @@
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { useStore } from "./api/hooks";
 import { retryLoad, signOut } from "./api/store";
-import { features } from "./api/mode";
 import { Layout } from "./components/Layout";
 import { AppsPage } from "./pages/AppsPage";
 import { BackupsPage } from "./pages/BackupsPage";
 import { CustomersPage } from "./pages/CustomersPage";
 import { DatabasesPage } from "./pages/DatabasesPage";
-import { DnsPage } from "./pages/DnsPage";
-import { EmailPage } from "./pages/EmailPage";
-import { FilesPage } from "./pages/FilesPage";
 import { JobsPage } from "./pages/JobsPage";
 import { LoginPage } from "./pages/LoginPage";
 import { NewWebsitePage } from "./pages/NewWebsitePage";
@@ -62,11 +58,7 @@ export function App() {
         <Route path="websites/new" element={<NewWebsitePage />} />
         <Route path="websites/:id" element={<WebsiteDetailPage />} />
         <Route path="websites/:id/:tab" element={<WebsiteDetailPage />} />
-        {features.dns && <Route path="dns" element={<DnsPage />} />}
-        {features.dns && <Route path="dns/:zone" element={<DnsPage />} />}
-        {features.email && <Route path="email" element={<EmailPage />} />}
         <Route path="databases" element={<DatabasesPage />} />
-        {features.files && <Route path="files" element={<FilesPage />} />}
         <Route path="backups" element={<BackupsPage />} />
         <Route path="apps" element={<AppsPage />} />
         <Route path="jobs" element={<JobsPage />} />

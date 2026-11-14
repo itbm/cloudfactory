@@ -2,7 +2,6 @@ import { Check } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useAction, useStore } from "../api/hooks";
-import { LIVE } from "../api/mode";
 import { checkImage, pauseRollout, rollBackAll, setImagePolicy, startRollout } from "../api/store";
 import type { Rollout, UpdatePolicy } from "../api/types";
 import { Topbar } from "../components/Layout";
@@ -172,7 +171,7 @@ export function UpdatesPage() {
                       {i.available && i.availableNote !== "rolling_out" && (
                         <button type="button" className="btn btn-sm" disabled={!!active} onClick={() => void start.run(i.id)}>Start rollout</button>
                       )}
-                      {LIVE && !i.available && <button type="button" className="btn btn-sm" disabled={check.busy} onClick={() => void check.run(i.id)}>Check now</button>}
+                      {!i.available && <button type="button" className="btn btn-sm" disabled={check.busy} onClick={() => void check.run(i.id)}>Check now</button>}
                     </td>
                   </tr>
                 ))}

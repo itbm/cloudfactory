@@ -1,9 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useAction, useStore } from "../api/hooks";
-import { LIVE } from "../api/mode";
 import { failedServices } from "../api/selectors";
-import { addServer, checkConnection, installUpdates, loopbackName, moveDatabases, newJoinToken, rebootServer, removeServer, setServer, sharedDatabaseWebsites, updateAgent } from "../api/store";
+import { checkConnection, installUpdates, loopbackName, moveDatabases, newJoinToken, rebootServer, refresh, removeServer, setServer, sharedDatabaseWebsites, updateAgent } from "../api/store";
 import type { HostUpdatePolicy, Server, ServerRole } from "../api/types";
 import { Topbar } from "../components/Layout";
 import { CopyField } from "./website/AccessTab";
@@ -64,19 +63,15 @@ function AddServerDialog({ onClose }: { onClose: () => void }) {
   const state = useStore();
   const navigate = useNavigate();
   const [name, setName] = useState("");
-  const [location, setLocation] = useState("");
   const [roles, setRoles] = useState<ServerRole[]>(["web"]);
-  const add = useAction(addServer);
   const token = useAction(newJoinToken);
   const makeToken = token.run;
-  // In live mode each dialog gets a new token, because the panel shows a token only once.
-  useEffect(() => { if (LIVE) void makeToken(); }, [makeToken]);
+  // Each dialog gets a new token, because the panel shows a token only once.
+  useEffect(() => { void makeToken(); }, [makeToken]);
   const name_ = name.trim().toLowerCase();
-  const cmd = LIVE
-    ? joinCommand({ installUrl: state.joinInstallUrl, token: state.joinToken, panelHost: window.location.host, caSha256: state.joinCaSha256, name: name_, roles })
-    : `curl -fsSL ${INSTALL_URL} | sh -s -- --join ${state.joinToken}`;
+  const cmd = joinCommand({ installUrl: state.joinInstallUrl, token: state.joinToken, panelHost: window.location.host, caSha256: state.joinCaSha256, name: name_, roles });
   // A different server cannot connect to a name such as panel.localhost.
-  const local = LIVE && loopbackName(window.location.hostname);
+  const local = loopbackName(window.location.hostname);
   return (
     <Modal
       title="Add server"
@@ -84,31 +79,30 @@ function AddServerDialog({ onClose }: { onClose: () => void }) {
       onClose={onClose}
       footer={<><button type="button" className="btn" onClick={onClose}>Cancel</button><button type="submit" form="srv" className="btn btn-primary">Wait for the server</button></>}
     >
-      <form id="srv" noValidate onSubmit={async (e) => {
+      {/* The server joins when the installation script runs on it. The panel then shows it. */}
+      <form id="srv" noValidate onSubmit={(e) => {
         e.preventDefault();
-        const r = await add.run(name, location, roles);
-        if (r.ok) navigate(r.value.serverId ? `/servers/${r.value.serverId}` : "/servers");
+        void refresh();
+        onClose();
+        navigate("/servers");
       }}>
-        <FormError error={add.error} />
         <p>1. Get a new server with Debian 13 or Ubuntu 26.04 LTS, on x86-64 or ARM64.</p>
-        {LIVE && <p>2. Give the server a name and roles. The command below changes to match.</p>}
-        <p>{LIVE ? "3" : "2"}. Sign in to the server as root and run this command. The script checks the system first. It does not change the system until all checks pass.</p>
+        <p>2. Give the server a name and roles. The command below changes to match.</p>
+        <p>3. Sign in to the server as root and run this command. The script checks the system first. It does not change the system until all checks pass.</p>
         {local && (
           <div className="alert alert-warning" role="status">
             <p><strong>A different server cannot connect to <code>{window.location.hostname}</code>.</strong> This name is only for the computer of the panel, so the command below fails on a new server. To add servers, install the panel with a domain or an address that the new server can reach.</p>
           </div>
         )}
         {/* The panel shows a token only once. Before the token comes, there is no command to copy. */}
-        {LIVE && !state.joinToken
+        {!state.joinToken
           ? <p className="muted" role="status">{token.error ? "The panel could not make a token." : "The panel makes a token…"}</p>
           : <CopyField value={cmd} label="Join command" />}
         <p className="muted small">The token is for one server and expires in 24 hours. <button type="button" className="btn-link" disabled={token.busy} onClick={() => void token.run()}>Make a new token</button></p>
-        {LIVE && <p className="muted small">The panel must also connect to the new server, on port 7443. If the new server is behind NAT, add <code>--address</code> with its public IP address to the command.</p>}
+        <p className="muted small">The panel must also connect to the new server, on port 7443. If the new server is behind NAT, add <code>--address</code> with its public IP address to the command.</p>
         <FormError error={token.error} />
-        {!LIVE && <p>3. Give the server a name and roles. The panel shows it when the agent connects.</p>}
         <div className="form-row">
-          <Field label="Name" error={add.error?.fields.name}>{(p) => <input {...p} className="input mono" value={name} onChange={(e) => setName(e.target.value)} placeholder="web-03" autoCapitalize="none" />}</Field>
-          {!LIVE && <Field label="Location">{(p) => <input {...p} className="input" value={location} onChange={(e) => setLocation(e.target.value)} placeholder="London" />}</Field>}
+          <Field label="Name">{(p) => <input {...p} className="input mono" value={name} onChange={(e) => setName(e.target.value)} placeholder="web-03" autoCapitalize="none" />}</Field>
         </div>
         <fieldset className="checkbox-list">
           <legend>Roles</legend>
@@ -119,7 +113,6 @@ function AddServerDialog({ onClose }: { onClose: () => void }) {
             </label>
           ))}
         </fieldset>
-        {add.error?.fields.roles && <p className="error text-danger">{add.error.fields.roles}</p>}
       </form>
     </Modal>
   );
@@ -200,7 +193,7 @@ function ServerDetail({ id }: { id: string }) {
             <p className="detail-meta">{[server.location, roleList(server.roles), server.os, server.arch].filter(Boolean).join(" · ")} · agent {server.agentVersion}</p>
           </div>
           <div className="btn-group">
-            {(LIVE ? server.agentUpdateAvailable : server.agentVersion !== "0.9.4") && <button type="button" className="btn" disabled={busy || agent.busy} onClick={() => void agent.run(server.id)}>Update agent</button>}
+            {server.agentUpdateAvailable && <button type="button" className="btn" disabled={busy || agent.busy} onClick={() => void agent.run(server.id)}>Update agent</button>}
             <ConfirmButton className="btn" danger={false} title={`Reboot ${server.name}?`} confirm="Reboot now" message={<p>The websites on this server stop for less than 3 minutes. The panel reboots only one server of each role at a time. To reboot in the maintenance window ({server.maintenanceWindow}), wait for the planned reboot.</p>} onConfirm={() => void reboot.run(server.id)}>
               Reboot now
             </ConfirmButton>

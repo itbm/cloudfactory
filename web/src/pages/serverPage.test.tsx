@@ -1,14 +1,28 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import { afterEach, describe, expect, it } from "vitest";
-import { getState, resetState, timing } from "../api/store";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { getState } from "../api/store";
+import type { Server } from "../api/types";
+import { apiJob, reset, signedIn, type PanelApi } from "../test/panelApi";
 import { ServersPage } from "./ServersPage";
 
-afterEach(cleanup);
+let api: PanelApi;
+beforeEach(async () => { api = await signedIn("administrator"); });
+afterEach(() => {
+  cleanup();
+  reset();
+});
 
-const page = (id = "srv_web01") => render(
-  <MemoryRouter initialEntries={[`/servers/${id}`]}>
+/** A server of the sample data. web-1 has websites and is the panel server. web-3 has one failed website. */
+const server = (name = "web-2") => getState().servers.find((s) => s.name === name)!;
+/** Changes the server in the answers of the API, for the load after a change. */
+const inApi = (name: string, change: (s: Record<string, unknown>) => void) =>
+  api.change<{ data: Record<string, unknown>[] }>("/servers", (body) => change(body.data.find((s) => s.name === name)!));
+const packages = (list: Server["pendingUpdates"]) => { server().pendingUpdates = list; inApi("web-2", (s) => { s.pendingUpdates = list; }); };
+
+const page = (name = "web-2") => render(
+  <MemoryRouter initialEntries={[`/servers/${server(name).id}`]}>
     <Routes><Route path="/servers/:id" element={<ServersPage />} /></Routes>
   </MemoryRouter>,
 );
@@ -16,9 +30,7 @@ const packageRows = () => screen.getAllByRole("row").filter((r) => r.textContent
 
 describe("the server page", () => {
   it("shows a long list of packages in a short form, with the security updates first", () => {
-    resetState();
-    const server = getState().servers.find((s) => s.id === "srv_web01")!;
-    server.pendingUpdates = Array.from({ length: 20 }, (_, i) => ({ name: `pkg-${i}`, from: "1.0", to: "1.1", security: i >= 15 }));
+    packages(Array.from({ length: 20 }, (_, i) => ({ name: `pkg-${i}`, from: "1.0", to: "1.1", security: i >= 15 })));
     page();
 
     expect(packageRows()).toHaveLength(8);
@@ -31,35 +43,36 @@ describe("the server page", () => {
   });
 
   it("shows no button for a short list of packages", () => {
-    resetState();
     page();
     expect(screen.queryByRole("button", { name: /packages$/ })).toBeNull();
   });
 
   it("does not give a time for the last update before the first update", () => {
-    resetState();
-    getState().servers.find((s) => s.id === "srv_web01")!.lastUpdateAt = "";
-    page();
+    // web-3 of the sample data installed no update.
+    page("web-3");
     // Before, the page showed "just now" for a server that installed no update.
     expect(screen.getByRole("row", { name: /Last update/ }).textContent).toBe("Last updateNever");
   });
 
   it("does not let the user start the updates again while a job waits for the server", () => {
-    resetState();
-    const state = getState();
-    state.jobs.unshift({ id: "job_wait", title: "Install updates on web-01", state: "queued", steps: ["Download packages", "Install", "Health check"], step: 0, serverId: "srv_web01", createdAt: new Date().toISOString() });
+    getState().jobs.unshift({ id: "job_wait", title: "Install updates on web-2", state: "queued", steps: ["Download packages", "Install", "Health check"], step: 0, serverId: server().id, createdAt: new Date().toISOString() });
     page();
     expect((screen.getByRole("button", { name: "Install security updates" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("tells which packages an update installs", async () => {
-    resetState();
-    timing.stepMs = 0;
-    const server = () => getState().servers.find((s) => s.id === "srv_web01")!;
-    server().pendingUpdates = [
+    server().updatePolicy = "security";
+    inApi("web-2", (s) => { s.updatePolicy = "security"; });
+    packages([
       { name: "pkg-security", from: "1.0", to: "1.1", security: true },
       { name: "pkg-other", from: "1.0", to: "1.1", security: false },
-    ];
+    ]);
+    // The API starts a job. When the job is complete, the server has only the packages that the policy leaves.
+    api.on("POST /servers/*/install-updates", (body) => {
+      const policy = (body as { policy?: string } | undefined)?.policy ?? "security";
+      inApi("web-2", (s) => { s.pendingUpdates = policy === "all" ? [] : [{ name: "pkg-other", from: "1.0", to: "1.1", security: false }]; });
+      return [202, { job: apiJob({ action: "InstallHostUpdates", title: "Install updates on web-2", serverId: server().id }) }];
+    });
     page();
     // The policy of the server is "security": the default action leaves the other package.
     expect(screen.getByText(/The other package stays until you select Install all updates/)).toBeTruthy();
@@ -72,95 +85,104 @@ describe("the server page", () => {
     expect(screen.queryByRole("button", { name: "Install security updates" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Install all updates" }));
     await waitFor(() => expect(server().pendingUpdates).toEqual([]));
+    expect(api.changes.filter((c) => c.path.endsWith("/install-updates")).map((c) => c.body)).toEqual([{ policy: "security" }, { policy: "all" }]);
   });
 
   it("has one action for a server that installs all updates", () => {
-    resetState();
-    const server = getState().servers.find((s) => s.id === "srv_web01")!;
-    server.updatePolicy = "all";
-    server.pendingUpdates = [{ name: "pkg-other", from: "1.0", to: "1.1", security: false }];
+    server().updatePolicy = "all";
+    packages([{ name: "pkg-other", from: "1.0", to: "1.1", security: false }]);
     page();
     expect(screen.getByRole("button", { name: "Install updates now" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Install all updates" })).toBeNull();
   });
 
   it("shows why the panel cannot connect to a server, and tests the connection again", async () => {
-    resetState();
-    const server = () => getState().servers.find((s) => s.id === "srv_web01")!;
-    Object.assign(server(), { state: "degraded", connectionError: "Could not resolve host: web-01", agentAddress: "web-01:7443" });
+    Object.assign(server(), { state: "degraded", stateDetail: "Degraded: the panel cannot connect", connectionError: "Could not resolve host: web-2", agentAddress: "web-2:7443" });
     page();
     const alert = screen.getByRole("alert");
     expect(alert.textContent).toContain("The panel cannot connect to this server.");
-    expect(alert.textContent).toContain("web-01:7443: Could not resolve host: web-01.");
+    expect(alert.textContent).toContain("web-2:7443: Could not resolve host: web-2.");
     // The text for a service that does not run is not there: the cause is the connection.
     expect(screen.queryByText("This server is degraded.")).toBeNull();
 
+    // The API tests the connection, and gives the server with the result.
+    let answer: unknown;
+    inApi("web-2", (s) => { answer = s; });
+    api.on("POST /servers/*/check-connection", () => answer);
     fireEvent.click(screen.getByRole("button", { name: "Test the connection" }));
     await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
     expect(server().state).toBe("healthy");
   });
 
   it("removes a server only when it has no websites", async () => {
-    resetState();
     page();
-    // web-01 has websites.
+    // web-2 has websites.
     expect((screen.getByRole("button", { name: "Remove server" }) as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByText(/Delete the websites before you remove the server/)).toBeTruthy();
     cleanup();
 
+    const id = server().id;
     const state = getState();
-    state.websites = state.websites.filter((w) => w.serverId !== "srv_web01");
+    state.websites = state.websites.filter((w) => w.serverId !== id);
+    api.on("DELETE /servers/*", () => {
+      api.change<{ data: { id: string }[] }>("/servers", (body) => { body.data = body.data.filter((s) => s.id !== id); });
+      return [204, null];
+    });
     page();
     fireEvent.click(screen.getByRole("button", { name: "Remove server" }));
     fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Remove server" }));
-    await waitFor(() => expect(getState().servers.some((s) => s.id === "srv_web01")).toBe(false));
+    await waitFor(() => expect(getState().servers.some((s) => s.id === id)).toBe(false));
+    expect(api.changes.at(-1)).toMatchObject({ method: "DELETE", path: `/servers/${id}` });
   });
 
   it("has no remove action for the server of the panel", () => {
-    resetState();
-    getState().servers.find((s) => s.id === "srv_web01")!.panel = true;
-    page();
+    page("web-1");
     expect(screen.queryByRole("button", { name: "Remove server" })).toBeNull();
   });
 });
 
 describe("the database containers of each customer", () => {
+  /** Two websites of web-2 use the shared database containers of an earlier release. */
+  const earlier = () => {
+    const sites = getState().websites.filter((w) => w.serverId === server().id).slice(0, 2);
+    sites.forEach((w) => { w.sharedDatabases = true; });
+    Object.assign(server(), { sharedDatabaseWebsites: 2 });
+    return sites;
+  };
+
   it("moves the databases of the websites of an earlier release", async () => {
-    resetState();
-    timing.stepMs = 0;
-    // The demo data has two websites of an earlier release on web-02.
-    getState().servers.find((s) => s.id === "srv_web02")!.state = "healthy";
-    const shared = () => getState().websites.filter((w) => w.sharedDatabases);
-    page("srv_web02");
+    const sites = earlier();
+    api.on("POST /servers/*/move-databases", () => [202, { jobs: sites.map((w, i) => apiJob({ id: `move-${i}`, action: "MoveDatabases", title: `Move the databases of ${w.name}`, websiteId: w.id, serverId: server().id })) }]);
+    page();
     expect(screen.getByText("2 websites on this server use the shared database containers of an earlier release.")).toBeTruthy();
     expect(screen.getByText(/Each website stops during the copy of its databases/)).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Move the databases" }));
     const dialog = screen.getByRole("dialog");
-    expect(dialog.textContent).toContain("Move the databases on web-02?");
+    expect(dialog.textContent).toContain("Move the databases on web-2?");
     expect(dialog.textContent).toContain("If a job fails, the website starts again with the shared containers");
     fireEvent.click(within(dialog).getByRole("button", { name: "Move the databases" }));
 
-    await waitFor(() => expect(shared()).toEqual([]));
+    // The answers of the API have no website with the shared containers.
+    await waitFor(() => expect(getState().websites.filter((w) => w.sharedDatabases)).toEqual([]));
     await waitFor(() => expect(screen.queryByText(/shared database containers of an earlier release/)).toBeNull());
-    expect(getState().jobs.filter((j) => j.serverId === "srv_web02" && j.title.startsWith("Move the databases of ")).map((j) => j.state)).toEqual(["succeeded", "succeeded"]);
+    expect(api.changes.at(-1)).toMatchObject({ method: "POST", path: `/servers/${server().id}/move-databases` });
   });
 
   it("shows nothing for a server with no website of an earlier release, and for an agent of an earlier release", () => {
-    resetState();
     page();
     expect(screen.queryByRole("button", { name: "Move the databases" })).toBeNull();
     cleanup();
     // The agent of an earlier release cannot move the databases. The page offers the update of the agent.
-    getState().servers.find((s) => s.id === "srv_web02")!.databaseInstances = false;
-    page("srv_web02");
+    earlier();
+    server().databaseInstances = false;
+    page();
     expect(screen.queryByRole("button", { name: "Move the databases" })).toBeNull();
   });
 
   it("counts the websites that the panel API reports", () => {
-    resetState();
-    // In live mode, the list of the panel can have a part of the websites only.
-    Object.assign(getState().servers.find((s) => s.id === "srv_web01")!, { sharedDatabaseWebsites: 1 });
+    // With many websites, the list of the panel can have a part of the websites only.
+    Object.assign(server(), { sharedDatabaseWebsites: 1 });
     page();
     expect(screen.getByText("1 website on this server uses the shared database containers of an earlier release.")).toBeTruthy();
   });

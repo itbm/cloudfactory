@@ -1,7 +1,5 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
 import { useAction, useStore } from "../../api/hooks";
-import { LIVE } from "../../api/mode";
 import { addDomain, checkDns, makePrimary, removeDomain, verifyDomain } from "../../api/store";
 import type { DomainKind, Website } from "../../api/types";
 import { Card, ConfirmButton, Field, FormError, Status } from "../../components/ui";
@@ -24,7 +22,7 @@ export function DomainsTab({ website }: { website: Website }) {
   const check = useAction(checkDns);
   const primary = useAction(makePrimary);
   // The address of the server, when the panel knows it.
-  const address = LIVE ? website.sftp?.host : "203.0.113.10";
+  const address = website.sftp?.host;
   const isIp = !!address && /^[\d.]+$|:/.test(address);
   const server = state.servers.find((s) => s.id === website.serverId);
   const checking = (d: string) => state.jobs.some((j) => j.websiteId === website.id && jobActive(j) && j.title === `Check DNS for ${d}`);
@@ -42,12 +40,10 @@ export function DomainsTab({ website }: { website: Website }) {
             </thead>
             <tbody>
               {website.domains.map((d) => {
-                const zone = state.zones.find((z) => d.name === z.name || d.name.endsWith(`.${z.name}`));
                 return (
                   <tr key={d.name}>
                     <td>
                       <strong>{d.name}</strong>
-                      {zone && <span className="cell-sub">DNS zone on this panel: <Link to={`/dns/${zone.name}`}>{zone.name}</Link></span>}
                     </td>
                     <td>{KIND_LABEL[d.kind]}{d.kind === "redirect" && <span className="cell-sub">301 to the primary domain</span>}</td>
                     <td>

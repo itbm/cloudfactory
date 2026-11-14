@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DETAIL_LIMIT, LiveError, load, request, setUnauthorisedHandler, toJob, toPanelCertificate, toRuntimeImage, toServer, toWebsite } from "./live";
-import { seed } from "./seed";
+import { emptyState } from "./store";
 import { defaultImage } from "../pages/NewWebsitePage";
 
 const answer = (status: number, body: unknown) =>
@@ -157,7 +157,7 @@ describe("load (batch 1, finding 9)", () => {
       if (path.startsWith("/backup-policy")) return json({ daily: 7, weekly: 4, monthly: 6, time: "03:00", target: "s3:x/y" });
       return json({ data: [] });
     }));
-    const state = await load(seed());
+    const state = await load(emptyState());
     expect(pages).toBeGreaterThan(50);
     expect(state.websites).toHaveLength(pages);
     expect(state.websites[0].sftp).toMatchObject({ enabled: true, host: "web-01.example" });
@@ -174,7 +174,7 @@ describe("load with a temporary password (audit finding B5)", () => {
       if (url === "/api/v1/me") return new Response(JSON.stringify({ id: 7, name: "New", email: "new@example.com", role: "owner", customerId: "c1", totpEnabled: false, mustChangePassword: true }), { status: 200 });
       return new Response(JSON.stringify({ message: "Set a new password first. Your password is temporary.", code: "password_change_required" }), { status: 403 });
     }));
-    const state = await load({ ...seed(), websites: [], users: [] });
+    const state = await load({ ...emptyState(), websites: [], users: [] });
     expect(calls).toEqual(["/api/v1/me"]);
     expect(state.session).toMatchObject({ signedIn: true, mustChangePassword: true, user: { id: "7", email: "new@example.com" } });
     expect(state.totpEnabled).toBe(false);
@@ -192,7 +192,7 @@ describe("load with a temporary password (audit finding B5)", () => {
       if (path.startsWith("/backup-policy")) return json({ daily: 7, weekly: 4, monthly: 6, time: "03:00", target: "s3:x/y", manual: 10 });
       return json({ data: [] });
     }));
-    const state = await load(seed());
+    const state = await load(emptyState());
     expect(state.session.mustChangePassword).toBeUndefined();
     expect(state.users).toEqual([
       { id: "2", name: "Owner", email: "o@example.com", role: "owner", customerId: "c1", totpEnabled: false, mustChangePassword: true, createdAt: "2026-11-10T09:00:00+00:00" },

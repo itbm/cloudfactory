@@ -1,17 +1,13 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAction, useStore } from "../../api/hooks";
-import { addSshKey, removeSshKey, setAccess, setSftp } from "../../api/store";
+import { setSftp } from "../../api/store";
 import type { SftpAccess, Website } from "../../api/types";
 import { Card, ConfirmButton, Field, FormError, Toggle } from "../../components/ui";
-import { relativeTime } from "../../lib/format";
 import { jobActive } from "../../lib/labels";
 
-function sftpUrl(website: Website) {
-  if (website.sftp) return `sftp://${website.sftp.username}@${website.sftp.host}${website.sftp.port === 22 ? "" : `:${website.sftp.port}`}`;
-  const server = website.serverId.replace("srv_", "").replace(/(\D+)(\d+)/, "$1-$2");
-  // Mock mode: the default port of the SFTP container.
-  return `sftp://${website.unixUser}@${server}.cloudfactory.io:2200`;
+function sftpUrl(sftp: SftpAccess) {
+  return `sftp://${sftp.username}@${sftp.host}${sftp.port === 22 ? "" : `:${sftp.port}`}`;
 }
 
 export function CopyField({ value, label }: { value: string; label: string }) {
@@ -34,29 +30,17 @@ export function CopyField({ value, label }: { value: string; label: string }) {
   );
 }
 
-/** The SFTP and SSH card on the overview. */
+/** The SFTP card on the overview. */
 export function SshCard({ website }: { website: Website }) {
-  if (website.sftp) {
-    const sftp = website.sftp;
-    return (
-      <Card title="SFTP">
-        <div className="card-body">
-          {sftp.enabled ? <CopyField value={sftpUrl(website)} label="SFTP address" /> : <p>SFTP is off.</p>}
-          <p className="muted small" style={{ marginTop: 14 }}>
-            {sftp.authorizedKeys.length} SSH {sftp.authorizedKeys.length === 1 ? "key" : "keys"}. Sign in with an SSH key. Passwords are not accepted. <Link to={`/websites/${website.id}/access`}>Manage SFTP</Link>
-          </p>
-        </div>
-      </Card>
-    );
-  }
+  const sftp = website.sftp;
+  if (!sftp) return null;
   return (
-    <Card title="SFTP and SSH">
+    <Card title="SFTP">
       <div className="card-body">
-        <CopyField value={sftpUrl(website)} label="SFTP address" />
+        {sftp.enabled ? <CopyField value={sftpUrl(sftp)} label="SFTP address" /> : <p>SFTP is off.</p>}
         <p className="muted small" style={{ marginTop: 14 }}>
-          Sign in with an SSH key. {website.sshKeys.length} {website.sshKeys.length === 1 ? "key" : "keys"} added. <Link to={`/websites/${website.id}/access`}>Manage keys</Link>
+          {sftp.authorizedKeys.length} SSH {sftp.authorizedKeys.length === 1 ? "key" : "keys"}. Sign in with an SSH key. Passwords are not accepted. <Link to={`/websites/${website.id}/access`}>Manage SFTP</Link>
         </p>
-        <p className="muted small" style={{ marginTop: 10 }}>SSH shell: {website.shellEnabled ? "on" : "off"}. The shell opens inside this website's container only.</p>
       </div>
     </Card>
   );
@@ -95,7 +79,7 @@ function KeyRow({ value, onRemove, busy }: { value: string; onRemove: () => void
 }
 
 /**
- * Spec section 10, live mode: the owner signs in with SFTP as the Unix user of the website, with
+ * Spec section 10: the owner signs in with SFTP as the Unix user of the website, with
  * an SSH key. The server refuses passwords, and allows only SFTP, in the directory of the website.
  */
 function SftpTab({ website, sftp }: { website: Website; sftp: SftpAccess }) {
@@ -118,7 +102,7 @@ function SftpTab({ website, sftp }: { website: Website; sftp: SftpAccess }) {
           <div className="card-body">
             <FormError error={change.error && !change.error.fields.key ? change.error : null} />
             {applying && <p className="alert alert-info" role="status" style={{ marginBottom: 12 }}>The server is applying the change. This takes some seconds.</p>}
-            <CopyField value={sftpUrl(website)} label="SFTP address" />
+            <CopyField value={sftpUrl(sftp)} label="SFTP address" />
             <table className="kv" style={{ marginTop: 14 }}>
               <tbody>
                 <tr><th scope="row">Host</th><td><code>{sftp.host}</code></td></tr>
@@ -160,66 +144,8 @@ function SftpTab({ website, sftp }: { website: Website; sftp: SftpAccess }) {
   );
 }
 
-/** SFTP and SSH access (FR-801, FR-802). */
+/** SFTP access (FR-801). The SSH shell is for a later release. */
 export function AccessTab({ website }: { website: Website }) {
-  if (website.sftp) return <SftpTab website={website} sftp={website.sftp} />;
-  return <MockAccessTab website={website} />;
-}
-
-function MockAccessTab({ website }: { website: Website }) {
-  const [name, setName] = useState("");
-  const [key, setKey] = useState("");
-  const add = useAction(async () => {
-    addSshKey(website.id, name, key);
-    setName("");
-    setKey("");
-  });
-  return (
-    <div className="grid-2">
-      <div className="stack">
-        <Card title="Connection">
-          <div className="card-body">
-            <CopyField value={sftpUrl(website)} label="SFTP address" />
-            <div style={{ marginTop: 16 }} className="section-gap">
-              <Toggle checked={website.shellEnabled} label="SSH shell" onChange={(v) => setAccess(website.id, { shellEnabled: v })}>
-                SSH shell: {website.shellEnabled ? "on" : "off"}. The shell opens inside the website container, as {website.unixUser}. It cannot reach the host.
-              </Toggle>
-            </div>
-          </div>
-        </Card>
-      </div>
-      <div className="stack">
-        <Card title="SSH keys">
-          <div className="table-wrap">
-            <table>
-              <thead><tr><th scope="col">Name</th><th scope="col">Fingerprint</th><th scope="col">Added</th><th scope="col"><span className="visually-hidden">Actions</span></th></tr></thead>
-              <tbody>
-                {website.sshKeys.map((k) => (
-                  <tr key={k.id}>
-                    <td>{k.name}</td>
-                    <td><code>{k.fingerprint}</code></td>
-                    <td>{relativeTime(k.addedAt)}</td>
-                    <td className="cell-actions" style={{ width: 120 }}>
-                      <ConfirmButton className="btn btn-sm btn-danger" title={`Remove ${k.name}?`} confirm="Remove key" message={<p>This key cannot sign in after you remove it.</p>} onConfirm={() => removeSshKey(website.id, k.id)}>Remove</ConfirmButton>
-                    </td>
-                  </tr>
-                ))}
-                {website.sshKeys.length === 0 && <tr><td colSpan={4} className="muted">No SSH keys.</td></tr>}
-              </tbody>
-            </table>
-          </div>
-          <form className="card-body" style={{ paddingTop: 16 }} noValidate onSubmit={(e) => { e.preventDefault(); void add.run(); }}>
-            <FormError error={add.error} />
-            <Field label="Name">
-              {(p) => <input {...p} className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="My laptop" />}
-            </Field>
-            <Field label="Public key" error={add.error?.fields.key}>
-              {(p) => <textarea {...p} className="textarea" rows={3} value={key} onChange={(e) => setKey(e.target.value)} placeholder="ssh-ed25519 AAAA…" spellCheck={false} />}
-            </Field>
-            <button type="submit" className="btn btn-primary" style={{ marginTop: 12 }}>Add key</button>
-          </form>
-        </Card>
-      </div>
-    </div>
-  );
+  if (!website.sftp) return <p className="muted">The server of this website does not report its SFTP access.</p>;
+  return <SftpTab website={website} sftp={website.sftp} />;
 }

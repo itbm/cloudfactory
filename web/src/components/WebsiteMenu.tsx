@@ -1,7 +1,6 @@
 import { MoreHorizontal } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { features } from "../api/mode";
 import { createStagingCopy, deleteWebsite, setPower, type StagingCredential } from "../api/store";
 import type { Website } from "../api/types";
 import { ENGINE_NAME } from "../lib/labels";
@@ -75,7 +74,6 @@ export function WebsiteMenu({ website, bordered = false }: { website: Website; b
       {open && (
         <ul className="context-menu menu-list" role="menu">
           {item("Open", () => navigate(`/websites/${website.id}`))}
-          {features.files && item("File manager", () => navigate(`/websites/${website.id}/files`))}
           {running
             ? item("Stop", () => setConfirm("stop"), busy)
             : item("Start", () => attempt("Cannot start the website", () => setPower(website.id, "start")), busy)}
