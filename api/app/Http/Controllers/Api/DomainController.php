@@ -7,9 +7,11 @@ use App\Enums\DomainKind;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\JobResource;
 use App\Http\Resources\WebsiteResource;
+use App\Models\AgentJob;
 use App\Models\Domain;
 use App\Models\Website;
 use App\Services\Audit;
+use App\Services\Dns\Zones;
 use App\Services\DomainPolicy;
 use App\Services\JobDispatcher;
 use App\Validation\Input;
@@ -30,7 +32,7 @@ class DomainController extends Controller
 {
     use Concerns;
 
-    public function __construct(private JobDispatcher $jobs, private DomainPolicy $policy) {}
+    public function __construct(private JobDispatcher $jobs, private DomainPolicy $policy, private Zones $zones) {}
 
     public function store(Request $request, string $websiteId): JsonResponse
     {
@@ -48,6 +50,8 @@ class DomainController extends Controller
         $proved = self::checkName($this->policy, $data['name'], $website->customer_id, $request);
         $domain = $website->domains()->create(self::newDomain($this->policy, $request, $website->customer_id, $data['name'], DomainKind::from($data['kind']), $proved));
         $job = $domain->verified() ? $this->addRoute($website, $domain) : null;
+        // A DNS zone of the customer with the name in it gets the address records of the website.
+        $this->zones->websiteDomainAdded($website, $domain->name);
         Audit::record($request, 'Added domain', "{$website->name} {$data['name']}", $website->customer_id);
 
         return response()->json(['domain' => WebsiteResource::domain($domain), 'job' => $job ? new JobResource($job) : null], 202);
@@ -121,6 +125,7 @@ class DomainController extends Controller
         $job = $domain->verified()
             ? $this->jobs->dispatch($website->server, AgentAction::RemoveDomain, ['websiteId' => $website->id, 'domain' => $name], "Remove domain {$name}", $website)
             : null;
+        $this->zones->websiteDomainRemoved($website->customer_id, $name);
         Audit::record($request, 'Removed domain', "{$website->name} {$name}", $website->customer_id);
 
         return response()->json(['job' => $job ? new JobResource($job) : null], 202);
@@ -189,6 +194,7 @@ class DomainController extends Controller
             $domain->delete();
             Audit::record($request, 'Removed domain, because a different customer proved control of it', "{$website->name} {$name}", $website->customer_id);
         }
+        app(Zones::class)->websiteDomainRemoved($website->customer_id, $name);
         // The edge proxy of the other website stops serving the domain.
         if ($served) {
             app(JobDispatcher::class)->dispatch($website->server, AgentAction::RemoveDomain, ['websiteId' => $website->id, 'domain' => $name], "Remove domain {$name}", $website);
@@ -206,13 +212,19 @@ class DomainController extends Controller
         ];
     }
 
-    private function addRoute(Website $website, Domain $domain)
+    private function addRoute(Website $website, Domain $domain): AgentJob
+    {
+        return self::serve($this->jobs, $website, $domain);
+    }
+
+    /** Tells the edge proxy of the website to serve a verified domain, and to get its certificate. */
+    public static function serve(JobDispatcher $jobs, Website $website, Domain $domain): AgentJob
     {
         if ($domain->certificate_state !== 'pending') {
             $domain->update(['certificate_state' => 'pending']);
         }
 
-        return $this->jobs->dispatch($website->server, AgentAction::AddDomain, [
+        return $jobs->dispatch($website->server, AgentAction::AddDomain, [
             'websiteId' => $website->id,
             'unixUser' => $website->unix_user,
             'domain' => $domain->name,

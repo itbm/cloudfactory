@@ -11,6 +11,7 @@ use App\Models\Plan;
 use App\Models\Server;
 use App\Models\User;
 use App\Models\Website;
+use App\Services\Dns\Lookup;
 use App\Services\DomainPolicy;
 use App\Services\Totp;
 use Laravel\Sanctum\Sanctum;
@@ -97,6 +98,29 @@ trait Hosting
         $this->app->instance(DomainPolicy::class, $policy);
 
         return $policy;
+    }
+
+    /** A public DNS that answers NS queries from the array. The test can change the array later. */
+    protected function fakeNameServers(array &$ns): Lookup
+    {
+        $lookup = new class($ns) extends Lookup
+        {
+            public function __construct(public array &$ns) {}
+
+            public function nameServers(string $zone): array
+            {
+                return $this->ns[$zone] ?? [];
+            }
+        };
+        $this->app->instance(Lookup::class, $lookup);
+
+        return $lookup;
+    }
+
+    /** A server that answers DNS queries, with a name server host name. */
+    protected function dnsServer(string $host = 'ns1.hosting.example', array $attributes = []): Server
+    {
+        return $this->server($attributes + ['name' => 'dns-'.substr(md5($host), 0, 5), 'roles' => ['dns'], 'dns' => true, 'dns_name' => $host]);
     }
 
     /** Sign in as the user with a token that has these scopes. */

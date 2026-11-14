@@ -3,8 +3,10 @@
 namespace App\Providers;
 
 use App\Demo\DemoAgentClient;
+use App\Demo\DemoLookup;
 use App\Models\Server;
 use App\Services\AgentClient;
+use App\Services\Dns\Lookup;
 use Database\Seeders\DemoSeeder;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\ServiceProvider;
@@ -24,6 +26,8 @@ class DemoServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->bind(AgentClient::class, fn () => self::enabled() ? new DemoAgentClient : new AgentClient);
+        // The demonstration mode asks no real resolver for the name servers of a zone.
+        $this->app->bind(Lookup::class, fn () => self::enabled() ? new DemoLookup : new Lookup);
     }
 
     public function boot(): void

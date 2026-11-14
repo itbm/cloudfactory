@@ -10,6 +10,8 @@ use App\Models\AgentJob;
 use App\Models\AuditEntry;
 use App\Models\Customer;
 use App\Models\DatabaseServer;
+use App\Models\DnsRecord;
+use App\Models\DnsZone;
 use App\Models\Image;
 use App\Models\Plan;
 use App\Models\Rollout;
@@ -18,6 +20,8 @@ use App\Models\Setting;
 use App\Models\Snapshot;
 use App\Models\User;
 use App\Models\Website;
+use App\Services\Dns\Dnssec;
+use App\Services\Dns\Zones;
 use App\Services\PanelCertificate;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Crypt;
@@ -58,6 +62,9 @@ class DemoSeeder extends Seeder
     /** @var array<string, Website> */
     private array $websites = [];
 
+    /** @var array<string, DnsZone> */
+    private array $zones = [];
+
     public function run(): void
     {
         $this->plans();
@@ -65,6 +72,7 @@ class DemoSeeder extends Seeder
         $this->images();
         $this->servers();
         $this->websites();
+        $this->dns();
         $this->databases();
         $this->backups();
         $this->jobsAndRollout();
@@ -74,11 +82,11 @@ class DemoSeeder extends Seeder
     private function plans(): void
     {
         $extensions = ['opcache', 'intl', 'gd', 'zip', 'exif', 'bcmath', 'mysqli', 'pdo_mysql', 'pdo_pgsql', 'redis', 'imagick', 'soap'];
-        // name, vCPUs, memory (GB), disk (GB), websites, then for the database servers: number, databases in each one, memory (MB), disk (GB)
-        foreach ([['Starter', 1, 1, 10, 3, 2, 5, 512, 2], ['Business', 2, 2, 40, 10, 6, 20, 1024, 10], ['Agency', 4, 4, 100, 50, 20, 50, 2048, 20]] as [$name, $cpu, $memory, $disk, $sites, $databaseServers, $databases, $databaseMemory, $databaseDisk]) {
+        // name, vCPUs, memory (GB), disk (GB), websites, then for the database servers: number, databases in each one, memory (MB), disk (GB), then the DNS zones
+        foreach ([['Starter', 1, 1, 10, 3, 2, 5, 512, 2, 2], ['Business', 2, 2, 40, 10, 6, 20, 1024, 10, 10], ['Agency', 4, 4, 100, 50, 20, 50, 2048, 20, 50]] as [$name, $cpu, $memory, $disk, $sites, $databaseServers, $databases, $databaseMemory, $databaseDisk, $zones]) {
             $this->plans[$name] = Plan::create([
                 'name' => $name, 'websites' => $sites, 'mailboxes' => $sites * 10, 'databases' => $databases,
-                'database_servers' => $databaseServers,
+                'database_servers' => $databaseServers, 'dns_zones' => $zones,
                 'database_limits' => ['vcpus' => min($cpu, 2), 'memoryBytes' => $databaseMemory * self::MB, 'diskBytes' => $databaseDisk * self::GB],
                 'php_extensions' => $name === 'Starter' ? array_slice($extensions, 0, 8) : $extensions,
                 'limits' => ['vcpus' => $cpu, 'memoryBytes' => $memory * self::GB, 'diskBytes' => $disk * self::GB, 'diskIoBytesPerSecond' => 50 * self::MB, 'processes' => 100 * $cpu],
@@ -144,17 +152,20 @@ class DemoSeeder extends Seeder
             'gvisor_version' => 'release-20261019.0', 'pending_updates' => [], 'last_seen_at' => now(), 'connection_checked_at' => now(), 'sftp_port' => 2222,
             'database_engines' => ['mariadb', 'postgresql', 'valkey'], 'database_instances' => true,
         ];
+        // Two servers answer DNS queries. The customers give their host names to the registrar of a domain.
+        $dns = fn (int $n) => ['dns' => true, 'dns_name' => "ns{$n}.panel.example", 'addresses' => ["203.0.113.{$n}0", "2001:db8:{$n}0::1"]];
+        $dnsService = [['name' => 'cf-dns', 'state' => 'running']];
         // The panel server. Its disk quotas are off, as on a server with a file system that has no user quotas.
         $this->servers['web-1'] = Server::create([
-            ...$common, 'name' => 'web-1', 'location' => 'London', 'roles' => ['web', 'database'], 'state' => 'healthy', 'local' => true, 'agent_url' => 'https://web-1.panel.example:7443',
-            'services' => [...$services, ['name' => 'disk-quotas', 'state' => 'stopped', 'optional' => true, 'detail' => 'User quotas are off on the file system of the websites, so this server does not apply the disk limit of a website. Refer to "Disk quotas" in the installation guide.']],
+            ...$common, 'name' => 'web-1', 'location' => 'London', 'roles' => ['web', 'database', 'dns'], 'state' => 'healthy', 'local' => true, 'agent_url' => 'https://web-1.panel.example:7443', ...$dns(1),
+            'services' => [...$services, ...$dnsService, ['name' => 'disk-quotas', 'state' => 'stopped', 'optional' => true, 'detail' => 'User quotas are off on the file system of the websites, so this server does not apply the disk limit of a website. Refer to "Disk quotas" in the installation guide.']],
             'usage' => ['cpuPercent' => 23, 'memoryPercent' => 58, 'diskPercent' => 41], 'last_update_at' => now()->subDays(3),
         ]);
         // Updates wait, and the last update needs a restart.
         $this->servers['web-2'] = Server::create([
-            ...$common, 'name' => 'web-2', 'location' => 'Amsterdam', 'roles' => ['web', 'database'], 'state' => 'healthy', 'os' => 'Ubuntu 26.04 LTS', 'kernel' => '6.17.0-8', 'arch' => 'arm64',
-            'podman_version' => '5.6.0', 'agent_url' => 'https://web-2.panel.example:7443', 'reboot_required' => true, 'update_policy' => 'manual',
-            'services' => [...$services, ['name' => 'disk-quotas', 'state' => 'running', 'optional' => true]],
+            ...$common, 'name' => 'web-2', 'location' => 'Amsterdam', 'roles' => ['web', 'database', 'dns'], 'state' => 'healthy', 'os' => 'Ubuntu 26.04 LTS', 'kernel' => '6.17.0-8', 'arch' => 'arm64',
+            'podman_version' => '5.6.0', 'agent_url' => 'https://web-2.panel.example:7443', 'reboot_required' => true, 'update_policy' => 'manual', ...$dns(2),
+            'services' => [...$services, ...$dnsService, ['name' => 'disk-quotas', 'state' => 'running', 'optional' => true]],
             'pending_updates' => [
                 ['name' => 'openssl', 'from' => '3.5.1-1', 'to' => '3.5.1-2', 'security' => true],
                 ['name' => 'libc6', 'from' => '2.42-1', 'to' => '2.42-2', 'security' => true],
@@ -165,7 +176,7 @@ class DemoSeeder extends Seeder
         ]);
         // A necessary service does not run, and the agent is from an earlier release.
         $this->servers['web-3'] = Server::create([
-            ...$common, 'name' => 'web-3', 'location' => 'Frankfurt', 'roles' => ['web'], 'state' => 'degraded', 'agent_version' => '0.1.8', 'agent_url' => 'https://web-3.panel.example:7443',
+            ...$common, 'name' => 'web-3', 'location' => 'Frankfurt', 'roles' => ['web'], 'state' => 'degraded', 'agent_version' => '0.1.8', 'agent_url' => 'https://web-3.panel.example:7443', 'addresses' => ['203.0.113.30'],
             'services' => [
                 ...$running(['edge', 'firewall', 'podman']),
                 ['name' => 'cf-sftp', 'state' => 'failed', 'detail' => 'The container stopped with exit code 125: the port 2222 is in use.'],
@@ -222,6 +233,64 @@ class DemoSeeder extends Seeder
         $domain('cornerbakery.example.org', ['name' => 'cornerbakery-orders.example.org', 'kind' => DomainKind::Alias, 'dns_points_here' => false, 'certificate_state' => 'pending']);
         // A name for a private network gets a certificate from the panel CA, not from Let's Encrypt.
         $domain('api.acme.example.com', ['name' => 'api.acme.test', 'kind' => DomainKind::Alias, 'dns_points_here' => true, 'certificate_state' => 'valid', 'certificate_expires_at' => now()->addDays(80)]);
+    }
+
+    /**
+     * DNS hosting: a zone with DNSSEC, a zone that waits for the registrar, and a zone that
+     * one DNS server did not take. Each zone has the records of the websites of its customer.
+     */
+    private function dns(): void
+    {
+        $servers = Zones::servers();
+        $elsewhere = ['ns1.registrar.example', 'ns2.registrar.example'];
+        // name, customer, days since creation, name servers in the public DNS (null: the panel), DNSSEC, the DNS server that failed
+        $rows = [
+            ['acme.example.com', 'acme', 370, null, true, null],
+            // The registrar of this domain does not send the queries to the panel yet.
+            ['acme-outlet.example.com', 'acme', 0, $elsewhere, false, null],
+            ['northwind.example.com', 'northwind', 280, null, false, null],
+            ['cornerbakery.example.org', 'bakery', 100, null, false, null],
+            // One DNS server did not take the last change: the page shows "Send again".
+            ['harbourbooks.example.net', 'books', 38, null, false, 'web-2'],
+        ];
+        foreach ($rows as [$name, $customer, $days, $seen, $dnssec, $failed]) {
+            $key = $dnssec ? Dnssec::generate() : null;
+            $serial = now()->subHours(strlen($name))->timestamp;
+            $zone = new DnsZone([
+                'customer_id' => $this->customers[$customer]->id, 'name' => $name, 'serial' => $serial, 'status' => DnsZone::ACTIVE,
+                'delegation' => $seen === null ? DnsZone::HERE : DnsZone::ELSEWHERE, 'delegation_name_servers' => $seen ?? $servers->pluck('dns_name')->all(),
+                'delegation_checked_at' => now()->subMinutes(9), 'dnssec' => $dnssec, 'dnssec_key' => $key['key'] ?? null,
+                'dnssec_public_key' => $key['publicKey'] ?? null, 'dnssec_key_tag' => $key['keyTag'] ?? null,
+                'sync' => $servers->mapWithKeys(fn (Server $s) => [$s->id => ['serial' => $serial, 'state' => $s->name === $failed ? 'failed' : 'ok']])->all(),
+            ]);
+            $zone->created_at = now()->subDays($days);
+            $zone->save();
+            foreach ($servers as $server) {
+                $zone->records()->create(['name' => '@', 'type' => 'NS', 'ttl' => Zones::NS_TTL, 'value' => $server->dns_name, 'managed' => DnsRecord::NS]);
+            }
+            // The A and AAAA records of the domains of the websites of the customer in the zone.
+            foreach (Website::with(['domains', 'server'])->where('customer_id', $zone->customer_id)->get() as $website) {
+                foreach ($website->domains as $domain) {
+                    foreach ($zone->contains($domain->name) ? ($website->server->addresses ?? []) : [] as $address) {
+                        $zone->records()->create(['name' => $zone->relative($domain->name), 'type' => str_contains($address, ':') ? 'AAAA' : 'A', 'ttl' => Zones::WEBSITE_TTL, 'value' => $address, 'managed' => DnsRecord::WEBSITE]);
+                    }
+                }
+            }
+            $this->zones[$name] = $zone;
+        }
+        // The records that the customers made: email at a different provider, and some services.
+        $record = fn (string $zone, string $name, string $type, string $value, ?int $priority = null, int $ttl = 3600) => $this->zones[$zone]->records()->create(compact('name', 'type', 'value', 'priority', 'ttl'));
+        $record('acme.example.com', '@', 'MX', 'mx1.mail.example', 10);
+        $record('acme.example.com', '@', 'MX', 'mx2.mail.example', 20);
+        $record('acme.example.com', '@', 'TXT', 'v=spf1 include:_spf.mail.example -all');
+        $record('acme.example.com', '_dmarc', 'TXT', 'v=DMARC1; p=quarantine; rua=mailto:dmarc@acme.example.com');
+        $record('acme.example.com', '@', 'CAA', '0 issue "letsencrypt.org"');
+        $record('acme.example.com', 'status', 'CNAME', 'acme.status.example', null, 300);
+        $record('acme.example.com', '_sip._tcp', 'SRV', '5 5060 sip.voice.example', 10);
+        $record('acme.example.com', 'vpn', 'A', '198.51.100.24');
+        $record('cornerbakery.example.org', '@', 'MX', 'mail.cornerbakery.example.org', 10);
+        $record('cornerbakery.example.org', 'mail', 'A', '198.51.100.80');
+        $record('harbourbooks.example.net', '@', 'TXT', 'v=spf1 -all');
     }
 
     private function databases(): void
@@ -334,6 +403,16 @@ class DemoSeeder extends Seeder
             'error' => 'systemctl start cf-site-'.$this->websites['events.harbourbooks.example.net']->unix_user.'.service: exit status 1: the container did not answer the health check on port 8080 in 90 seconds',
         ]);
 
+        // The DNS servers got a zone. One DNS server did not take the last change of a different zone.
+        foreach (['web-1', 'web-2'] as $server) {
+            $job($server, AgentAction::SetDnsZones, 'Add TXT record to acme.example.com', JobState::Succeeded, 140, null, ['ref' => 'acme.example.com', 'dns_zone_id' => $this->zones['acme.example.com']->id]);
+        }
+        $books = ['ref' => 'harbourbooks.example.net', 'dns_zone_id' => $this->zones['harbourbooks.example.net']->id];
+        $job('web-1', AgentAction::SetDnsZones, 'Add TXT record to harbourbooks.example.net', JobState::Succeeded, 33, null, $books);
+        $job('web-2', AgentAction::SetDnsZones, 'Add TXT record to harbourbooks.example.net', JobState::Failed, 33, null, [
+            ...$books, 'step' => 2, 'error' => 'knotc -b zone-reload harbourbooks.example.net: exit status 1: error: [harbourbooks.example.net.] (operation timed out)',
+        ]);
+
         // A rollout that ended yesterday. One website went back to the earlier image.
         $sites = collect(['old.acme.example.com', 'cornerbakery.example.org'])->map(fn ($n) => $this->websites[$n]->id);
         $rollout = new Rollout([
@@ -365,7 +444,8 @@ class DemoSeeder extends Seeder
             [$admin, 'Signed in', '', 6], [$admin, 'Started rollout', 'Apache + PHP-FPM · PHP 8.4 0.1.9', 1800], [$admin, 'Suspended customer', 'Lawson & Co', 2900],
             [$reseller, 'Created customer', 'Harbour Books', 64800], [$reseller, 'Created website', 'events.harbourbooks.example.net', 25],
             [$owner, 'Created database', $this->websites['shop.acme.example.com']->unix_user.'_cache', 45], [$owner, 'Backed up website', 'acme.example.com', 300],
-            [$owner, 'Added domain', 'acme-outlet.example.com', 130],
+            [$owner, 'Added domain', 'acme-outlet.example.com', 130], [$owner, 'Added DNS record', 'acme.example.com TXT @', 140],
+            [$owner, 'Created DNS zone', 'acme-outlet.example.com', 120],
         ];
         foreach ($entries as [$user, $action, $target, $minutesAgo]) {
             $entry = new AuditEntry(['user_id' => $user->id, 'actor' => $user->name, 'ip' => '203.0.113.'.(10 + $user->id), 'action' => $action, 'target' => $target, 'customer_id' => $user->customer_id]);

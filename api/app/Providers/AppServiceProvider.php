@@ -27,6 +27,8 @@ class AppServiceProvider extends ServiceProvider
         // that one customer cannot use up the certificate orders of a server. An administrator
         // has no limit, for example for a migration of many websites.
         RateLimiter::for('domain-changes', fn (Request $request) => self::forCustomer($request, Limit::perHour(30), 'domain-changes'));
+        // Each change of a DNS zone makes one job for each DNS server.
+        RateLimiter::for('dns-changes', fn (Request $request) => self::forCustomer($request, Limit::perMinute(60), 'dns-changes'));
         RateLimiter::for('domain-checks', fn (Request $request) => self::forCustomer($request, Limit::perMinute(10), 'domain-checks'));
     }
 

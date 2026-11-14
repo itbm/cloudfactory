@@ -11,6 +11,7 @@ use App\Models\Database;
 use App\Models\DatabaseServer;
 use App\Models\Domain;
 use App\Models\Server;
+use App\Services\Dns\Zones;
 use App\Services\JobOutcome;
 use App\Services\PanelCertificate;
 use Illuminate\Http\JsonResponse;
@@ -112,6 +113,11 @@ class AgentController extends Controller
             'databaseServers.*.memoryBytes' => ['integer', 'min:0'],
             'databaseServers.*.diskBytes' => ['integer', 'min:0'],
             'databaseServers.*.diskSizeBytes' => ['integer', 'min:0'],
+            // DNS hosting: true when the agent can operate the DNS server, and the public
+            // addresses of the server. An agent of an earlier release does not send them.
+            'dns' => ['boolean'],
+            'addresses' => ['nullable', 'array', 'max:16'],
+            'addresses.*' => ['string', 'ip'],
             // Spec section 10: the port of the SFTP container. An agent of release 0.1 does not send it.
             'sftpPort' => ['nullable', 'integer', 'between:1,65535'],
             // The certificate of the panel domain. Only the agent on the panel server sends it.
@@ -129,6 +135,8 @@ class AgentController extends Controller
         // example the disk quotas, does not change the state.
         $failed = Server::hasFailedService($data['services'] ?? []);
         $wasOffline = $server->state === 'offline';
+        $answered = Zones::servers()->contains('id', $server->id);
+        $addresses = $server->addresses ?? [];
         $server->update([
             'agent_version' => $data['agentVersion'],
             'kernel' => $data['kernel'] ?? $server->kernel,
@@ -143,6 +151,8 @@ class AgentController extends Controller
             'panel_ca_sha256' => $data['panelCaSha256'] ?? null,
             'database_engines' => $data['databaseEngines'] ?? null,
             'database_instances' => $data['databaseInstances'] ?? false,
+            'dns' => $data['dns'] ?? false,
+            'addresses' => $data['addresses'] ?? $server->addresses,
             // A server that was offline is back with this report.
             'state' => in_array($server->state, ['rebooting', 'joining'], true) ? $server->state : ($failed ? 'degraded' : 'healthy'),
         ]);
@@ -157,6 +167,14 @@ class AgentController extends Controller
             foreach (AgentJob::where('server_id', $server->id)->where('state', JobState::Queued->value)->orderBy('created_at')->pluck('id') as $jobId) {
                 SendJobToAgent::dispatch($jobId);
             }
+        }
+        // The agent can operate DNS now, for example after an update: the zones get the NS
+        // record of this server, and the server gets the zones.
+        if ($answered !== Zones::servers()->contains('id', $server->id)) {
+            app(Zones::class)->pushAll();
+        }
+        if (($server->addresses ?? []) !== $addresses) {
+            app(Zones::class)->serverAddressesChanged($server);
         }
         // FR-203: the current resource use of each website.
         foreach ($data['websites'] ?? [] as $use) {

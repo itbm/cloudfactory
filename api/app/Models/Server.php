@@ -15,7 +15,7 @@ use Illuminate\Support\Facades\DB;
     'name', 'location', 'roles', 'state', 'agent_url', 'agent_version', 'certificate_fingerprint', 'certificate_pem', 'agent_token_hash',
     'os', 'kernel', 'arch', 'podman_version', 'gvisor_version', 'gvisor_platform', 'bare_metal', 'update_policy',
     'maintenance_window', 'pending_updates', 'reboot_required', 'services', 'usage', 'last_update_at', 'last_seen_at', 'local',
-    'sftp_port', 'panel_ca_sha256', 'connection_error', 'connection_checked_at', 'database_engines', 'database_instances',
+    'sftp_port', 'panel_ca_sha256', 'connection_error', 'connection_checked_at', 'database_engines', 'database_instances', 'dns_name', 'dns', 'addresses',
 ])]
 #[Hidden(['agent_token_hash', 'backup_password', 'backup_credentials'])]
 class Server extends Model
@@ -80,6 +80,8 @@ class Server extends Model
             'usage' => 'array',
             'database_engines' => 'array',
             'database_instances' => 'boolean',
+            'dns' => 'boolean',
+            'addresses' => 'array',
             'bare_metal' => 'boolean',
             'reboot_required' => 'boolean',
             'local' => 'boolean',

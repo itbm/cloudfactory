@@ -13,6 +13,7 @@ use App\Models\Domain;
 use App\Models\Rollout;
 use App\Models\Snapshot;
 use App\Models\Website;
+use App\Services\Dns\Zones;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -85,6 +86,9 @@ class JobOutcome
             ? $this->applySuccess($job, $website, $result)
             : $this->applyFailure($job, $website);
         $this->databaseServersOf($job, $state === JobState::Succeeded);
+        if (in_array($job->action, [AgentAction::SetDnsZones, AgentAction::DeleteDnsZones], true)) {
+            Zones::jobFinished($job, $state === JobState::Succeeded);
+        }
 
         if ($job->rollout_id && ($rollout = Rollout::find($job->rollout_id))) {
             $this->rollouts->jobFinished($rollout, $job);
@@ -289,6 +293,10 @@ class JobOutcome
      */
     private function deleteWebsite(Website $website): bool
     {
+        // The DNS zones of the customer lose the records that the panel made for the website.
+        foreach ($website->domains()->pluck('name') as $name) {
+            app(Zones::class)->websiteDomainRemoved($website->customer_id, $name);
+        }
         BackupRemoval::updateOrCreate(['website_id' => $website->id], [
             'website_name' => $website->name,
             'server_id' => $website->server_id,
@@ -323,6 +331,10 @@ class JobOutcome
     private static function withoutPasswords(array $payload): array
     {
         unset($payload['password']);
+        // The DNS servers have the DNSSEC keys now. The zone keeps its key.
+        if (is_array($payload['zones'] ?? null)) {
+            $payload['zones'] = array_map(fn ($z) => is_array($z) ? array_diff_key($z, ['dnssecKey' => true]) : $z, $payload['zones']);
+        }
         if (isset($payload['copyUsers'])) {
             $payload['copyUsers'] = array_map(fn ($u) => array_diff_key($u, ['password' => true]), $payload['copyUsers']);
         }

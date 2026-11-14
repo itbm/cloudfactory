@@ -19,7 +19,8 @@ use Illuminate\Foundation\Queue\Queueable;
  * To show a failure, the demo agent fails these jobs:
  * - a new website or a new domain with a name that starts with "fail.", for example
  *   "fail.example.com";
- * - a new database with a name that ends with "_fail".
+ * - a new database with a name that ends with "_fail";
+ * - a DNS zone with a name that starts with "fail.".
  */
 class RunDemoJob implements ShouldQueue
 {
@@ -79,6 +80,10 @@ class RunDemoJob implements ShouldQueue
             $job->action === AgentAction::CreateDatabase && str_ends_with((string) ($p['name'] ?? ''), '_fail') => [
                 'step' => 0,
                 'error' => 'runuser -u cf-db -- podman exec cf-mariadb mariadb --execute "CREATE DATABASE": exit status 1: ERROR 2002 (HY000): Can\'t connect to local server through socket \'/run/mysqld/mysqld.sock\' (2)',
+            ],
+            $job->action === AgentAction::SetDnsZones && collect($p['zones'] ?? [])->contains(fn ($z) => str_starts_with((string) ($z['name'] ?? ''), 'fail.')) => [
+                'step' => 2,
+                'error' => 'knotc -b zone-reload '.collect($p['zones'])->pluck('name')->first(fn ($n) => str_starts_with((string) $n, 'fail.')).': exit status 1: error: (operation timed out)',
             ],
             default => null,
         };
