@@ -86,6 +86,10 @@ func serve(ctx context.Context) error {
 	root.QuotaMount = root.Host.QuotaMount(ctx, cfg.SitesDir)
 	root.FindDatabaseQuotas(ctx)
 	srv := &gate.Server{Run: run, Allow: root.Allow, Ops: root.RootOps(), Dial: root.RootDial}
+	// The tunnels to other servers operate after a restart with no connection to the panel.
+	if err := root.RestoreMesh(ctx); err != nil {
+		slog.Error("start the tunnels of the mesh", "err", err)
+	}
 
 	if os.Getenv(oneProcessEnv) == "1" {
 		slog.Warn("the agent operates as one root process, because " + oneProcessEnv + " is set")

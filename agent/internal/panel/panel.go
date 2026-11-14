@@ -127,6 +127,9 @@ type Report struct {
 	SftpPort int `json:"sftpPort,omitempty"`
 	// PanelCertificate is the certificate of the panel domain. Only the panel server sends it.
 	PanelCertificate *PanelCertificate `json:"panelCertificate,omitempty"`
+	// Mesh is the tunnel key of this server and the state of its tunnels to other servers. An
+	// agent of an earlier release does not send it.
+	Mesh *Mesh `json:"mesh,omitempty"`
 	// PanelCASHA256 is the fingerprint of the root certificate of the panel CA that this agent
 	// trusts. The panel changes to its own CA only when all other servers trust it.
 	PanelCASHA256 string `json:"panelCaSha256,omitempty"`
@@ -145,6 +148,29 @@ type CronRun struct {
 	ExitCode int `json:"exitCode"`
 	// Output is the end of the output of the command.
 	Output string `json:"output"`
+}
+
+// Mesh is the state of the encrypted tunnels of one server (package mesh).
+type Mesh struct {
+	// PublicKey is the public tunnel key of this server. The private key stays on the server.
+	PublicKey string `json:"publicKey"`
+	// Version is the version of the mesh state that the server has. 0 means none.
+	Version int64 `json:"version"`
+	// Address is the mesh address of this server, or "" when it is not in the mesh.
+	Address string   `json:"address,omitempty"`
+	Tunnels []Tunnel `json:"tunnels"`
+}
+
+// Tunnel is the state of the tunnel to one other server.
+type Tunnel struct {
+	// Server is the ID of the other server in the panel.
+	Server string `json:"server"`
+	// HandshakeAt is the time of the last handshake in seconds since 1970. 0 means never.
+	HandshakeAt int64 `json:"handshakeAt"`
+	// Reachable is true when the other server answered an echo request through the tunnel.
+	Reachable bool `json:"reachable"`
+	// RoundTripMicros is the round-trip time of that request in microseconds.
+	RoundTripMicros int64 `json:"roundTripMicros,omitempty"`
 }
 
 // PanelCertificate is the certificate method of the panel domain and the state of the

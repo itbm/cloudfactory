@@ -26,6 +26,7 @@ import type {
   HostUpdatePolicy,
   Job,
   LogLine,
+  Mesh,
   Plan,
   ServerRole,
   State,
@@ -765,6 +766,57 @@ export function setPanelCertificate(method: PanelCertificateMethod) {
     update((d) => { d.panelCertificate = live.toPanelCertificate(r); });
     return track(r.job);
   });
+}
+
+// The mesh: the encrypted tunnels between the servers
+//
+// Each change gives the jobs that send the new state to the servers. The page shows the
+// result of each job, and the servers report the state of each tunnel each minute.
+
+type MeshJobs = { jobs?: live.ApiJob[] };
+
+/** Waits for the jobs of a change to the mesh, then reads the mesh again. */
+const trackAll = (jobs: live.ApiJob[] = []) => (jobs.length > 0 ? Promise.all(jobs.map((job) => track(job))).then(() => undefined) : refresh());
+
+/** Changes the address range or the UDP port of the mesh. Possible only while the mesh has no tunnel. */
+export function setMesh(change: { range?: string; port?: number }) {
+  return call(() => live.request<Mesh>("PATCH", "/mesh", change)).then((mesh) => update((d) => { d.mesh = mesh; }));
+}
+
+/**
+ * Makes a tunnel between two servers. The promise is complete when the API accepts the
+ * request, so that a dialog can show an error of the API. The jobs continue after that.
+ */
+export function makeTunnel(serverA: string, serverB: string) {
+  return call(() => live.request<MeshJobs>("POST", "/mesh/tunnels", { servers: [serverA, serverB] })).then((r) => { void trackAll(r.jobs); });
+}
+
+/** Sends the mesh state to the two servers of a tunnel again. Each server then tests the tunnel. */
+export function repairTunnel(tunnelId: string) {
+  return call(() => live.request<MeshJobs>("POST", `/mesh/tunnels/${tunnelId}/repair`)).then((r) => trackAll(r.jobs));
+}
+
+export function removeTunnel(tunnelId: string) {
+  return call(() => live.request<MeshJobs>("DELETE", `/mesh/tunnels/${tunnelId}`)).then((r) => trackAll(r.jobs));
+}
+
+/**
+ * Sets the public IP address for the tunnel traffic of a server. Null: the panel finds the
+ * address. The promise is complete when the API accepts the address.
+ */
+export function setTunnelAddress(serverId: string, tunnelAddress: string | null) {
+  return call(() => live.request<Mesh & MeshJobs>("PATCH", `/mesh/servers/${serverId}`, { tunnelAddress })).then(({ jobs, ...mesh }) => {
+    update((d) => { d.mesh = mesh; });
+    void trackAll(jobs);
+  });
+}
+
+/**
+ * Makes a new tunnel key on a server. The private key does not leave the server. The tunnels
+ * of the server do not operate until its peers have the new public key.
+ */
+export function rotateTunnelKey(serverId: string) {
+  return call(() => live.request<JobAnswer>("POST", `/mesh/servers/${serverId}/rotate-key`)).then((r) => track(r.job));
 }
 
 // Customers, plans and branding (FR-102, FR-106, FR-202)

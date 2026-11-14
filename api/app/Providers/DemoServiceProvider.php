@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use App\Demo\DemoAgentClient;
+use App\Models\MeshTunnel;
 use App\Models\Server;
 use App\Services\AgentClient;
 use Database\Seeders\DemoSeeder;
@@ -42,6 +43,10 @@ class DemoServiceProvider extends ServiceProvider
         $this->callAfterResolving(Schedule::class, function (Schedule $schedule) {
             if (self::enabled()) {
                 $schedule->call(fn () => Server::whereIn('state', Server::WORKING)->update(['last_seen_at' => now()]))->everyMinute();
+                // The sample tunnels keep the state that their servers reported.
+                $schedule->call(fn () => MeshTunnel::all()->each(fn (MeshTunnel $t) => $t->update([
+                    'status' => array_map(fn (array $side) => ['reportedAt' => now()->getTimestamp()] + $side, $t->status ?? []),
+                ])))->everyMinute();
             }
         });
     }

@@ -570,6 +570,55 @@ export interface Confirmation {
   totp: string;
 }
 
+/** One server in the list of the mesh. */
+export interface MeshServer {
+  id: string;
+  name: string;
+  location: string | null;
+  state: Server["state"];
+  /** False for an agent of an earlier release: the server cannot have tunnels. */
+  supported: boolean;
+  publicKey: string | null;
+  /** The address of the server in the mesh. A server gets it with its first tunnel. */
+  address: string | null;
+  /** The public IP address for the tunnel traffic. Null: the panel finds it. */
+  tunnelAddress: string | null;
+  tunnels: number;
+  /** True when the server has the mesh state that the panel wants. */
+  current: boolean;
+}
+
+/** What one server of a tunnel reported about the tunnel. */
+export interface MeshTunnelSide {
+  serverId: string;
+  server: string | null;
+  /** Null: the server did not report the tunnel in the last minutes. */
+  reachable: boolean | null;
+  handshakeAt: string | null;
+  roundTripMs: number | null;
+}
+
+/** An encrypted tunnel between two servers. */
+export interface MeshTunnel {
+  id: string;
+  state: "up" | "down" | "waiting";
+  roundTripMs: number | null;
+  /** True when an administrator made the tunnel. */
+  pinned: boolean;
+  sides: MeshTunnelSide[];
+  createdAt: string | null;
+}
+
+/** The mesh: the encrypted tunnels between the servers of the panel. */
+export interface Mesh {
+  /** The address range of the mesh, for example "10.207.0.0/16". */
+  range: string;
+  /** The UDP port of the tunnels. */
+  port: number;
+  servers: MeshServer[];
+  tunnels: MeshTunnel[];
+}
+
 export interface State {
   /**
    * loading: the panel has a session but has not loaded the data yet.
@@ -592,6 +641,8 @@ export interface State {
   images: RuntimeImage[];
   rollout?: Rollout;
   databaseServers: DatabaseServer[];
+  /** The mesh. Only an administrator has it. */
+  mesh?: Mesh;
   databases: Database[];
   databaseUsers: DatabaseUser[];
   snapshots: Snapshot[];

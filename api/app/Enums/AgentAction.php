@@ -34,6 +34,8 @@ enum AgentAction: string
     case RunCronJob = 'RunCronJob';
     case Deploy = 'Deploy';
     case ActivateRelease = 'ActivateRelease';
+    case SetMesh = 'SetMesh';
+    case RotateMeshKey = 'RotateMeshKey';
 
     /** The steps that the agent reports for this action. */
     public function steps(): array
@@ -67,6 +69,8 @@ enum AgentAction: string
             // from the new release with no stop.
             self::Deploy => ['Get the code', 'Build', ...self::SetRuntime->steps(), 'Remove old releases'],
             self::ActivateRelease => ['Check the release', ...self::SetRuntime->steps()],
+            self::SetMesh => ['Set tunnels and firewall', 'Check tunnels'],
+            self::RotateMeshKey => ['Make new key'],
         };
     }
 

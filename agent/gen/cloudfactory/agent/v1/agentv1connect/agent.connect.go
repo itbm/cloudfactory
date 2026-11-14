@@ -111,6 +111,11 @@ const (
 	// AgentServiceActivateReleaseProcedure is the fully-qualified name of the AgentService's
 	// ActivateRelease RPC.
 	AgentServiceActivateReleaseProcedure = "/cloudfactory.agent.v1.AgentService/ActivateRelease"
+	// AgentServiceSetMeshProcedure is the fully-qualified name of the AgentService's SetMesh RPC.
+	AgentServiceSetMeshProcedure = "/cloudfactory.agent.v1.AgentService/SetMesh"
+	// AgentServiceRotateMeshKeyProcedure is the fully-qualified name of the AgentService's
+	// RotateMeshKey RPC.
+	AgentServiceRotateMeshKeyProcedure = "/cloudfactory.agent.v1.AgentService/RotateMeshKey"
 	// AgentServiceGetStatusProcedure is the fully-qualified name of the AgentService's GetStatus RPC.
 	AgentServiceGetStatusProcedure = "/cloudfactory.agent.v1.AgentService/GetStatus"
 	// AgentServiceListFilesProcedure is the fully-qualified name of the AgentService's ListFiles RPC.
@@ -158,6 +163,8 @@ type AgentServiceClient interface {
 	RunCronJob(context.Context, *connect.Request[v1.RunCronJobRequest]) (*connect.Response[v1.JobAccepted], error)
 	Deploy(context.Context, *connect.Request[v1.DeployRequest]) (*connect.Response[v1.JobAccepted], error)
 	ActivateRelease(context.Context, *connect.Request[v1.ActivateReleaseRequest]) (*connect.Response[v1.JobAccepted], error)
+	SetMesh(context.Context, *connect.Request[v1.SetMeshRequest]) (*connect.Response[v1.JobAccepted], error)
+	RotateMeshKey(context.Context, *connect.Request[v1.RotateMeshKeyRequest]) (*connect.Response[v1.JobAccepted], error)
 	// Returns the actual state of the server at once. This method does not make a job.
 	GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.HostStatus], error)
 	// The file manager and the logs of a website. These methods do not make a job: they give
@@ -339,6 +346,18 @@ func NewAgentServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(agentServiceMethods.ByName("ActivateRelease")),
 			connect.WithClientOptions(opts...),
 		),
+		setMesh: connect.NewClient[v1.SetMeshRequest, v1.JobAccepted](
+			httpClient,
+			baseURL+AgentServiceSetMeshProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("SetMesh")),
+			connect.WithClientOptions(opts...),
+		),
+		rotateMeshKey: connect.NewClient[v1.RotateMeshKeyRequest, v1.JobAccepted](
+			httpClient,
+			baseURL+AgentServiceRotateMeshKeyProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("RotateMeshKey")),
+			connect.WithClientOptions(opts...),
+		),
 		getStatus: connect.NewClient[v1.GetStatusRequest, v1.HostStatus](
 			httpClient,
 			baseURL+AgentServiceGetStatusProcedure,
@@ -418,6 +437,8 @@ type agentServiceClient struct {
 	runCronJob           *connect.Client[v1.RunCronJobRequest, v1.JobAccepted]
 	deploy               *connect.Client[v1.DeployRequest, v1.JobAccepted]
 	activateRelease      *connect.Client[v1.ActivateReleaseRequest, v1.JobAccepted]
+	setMesh              *connect.Client[v1.SetMeshRequest, v1.JobAccepted]
+	rotateMeshKey        *connect.Client[v1.RotateMeshKeyRequest, v1.JobAccepted]
 	getStatus            *connect.Client[v1.GetStatusRequest, v1.HostStatus]
 	listFiles            *connect.Client[v1.FileRequest, v1.FileList]
 	readFile             *connect.Client[v1.FileRequest, v1.FileContent]
@@ -558,6 +579,16 @@ func (c *agentServiceClient) ActivateRelease(ctx context.Context, req *connect.R
 	return c.activateRelease.CallUnary(ctx, req)
 }
 
+// SetMesh calls cloudfactory.agent.v1.AgentService.SetMesh.
+func (c *agentServiceClient) SetMesh(ctx context.Context, req *connect.Request[v1.SetMeshRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return c.setMesh.CallUnary(ctx, req)
+}
+
+// RotateMeshKey calls cloudfactory.agent.v1.AgentService.RotateMeshKey.
+func (c *agentServiceClient) RotateMeshKey(ctx context.Context, req *connect.Request[v1.RotateMeshKeyRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return c.rotateMeshKey.CallUnary(ctx, req)
+}
+
 // GetStatus calls cloudfactory.agent.v1.AgentService.GetStatus.
 func (c *agentServiceClient) GetStatus(ctx context.Context, req *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.HostStatus], error) {
 	return c.getStatus.CallUnary(ctx, req)
@@ -626,6 +657,8 @@ type AgentServiceHandler interface {
 	RunCronJob(context.Context, *connect.Request[v1.RunCronJobRequest]) (*connect.Response[v1.JobAccepted], error)
 	Deploy(context.Context, *connect.Request[v1.DeployRequest]) (*connect.Response[v1.JobAccepted], error)
 	ActivateRelease(context.Context, *connect.Request[v1.ActivateReleaseRequest]) (*connect.Response[v1.JobAccepted], error)
+	SetMesh(context.Context, *connect.Request[v1.SetMeshRequest]) (*connect.Response[v1.JobAccepted], error)
+	RotateMeshKey(context.Context, *connect.Request[v1.RotateMeshKeyRequest]) (*connect.Response[v1.JobAccepted], error)
 	// Returns the actual state of the server at once. This method does not make a job.
 	GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.HostStatus], error)
 	// The file manager and the logs of a website. These methods do not make a job: they give
@@ -803,6 +836,18 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(agentServiceMethods.ByName("ActivateRelease")),
 		connect.WithHandlerOptions(opts...),
 	)
+	agentServiceSetMeshHandler := connect.NewUnaryHandler(
+		AgentServiceSetMeshProcedure,
+		svc.SetMesh,
+		connect.WithSchema(agentServiceMethods.ByName("SetMesh")),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentServiceRotateMeshKeyHandler := connect.NewUnaryHandler(
+		AgentServiceRotateMeshKeyProcedure,
+		svc.RotateMeshKey,
+		connect.WithSchema(agentServiceMethods.ByName("RotateMeshKey")),
+		connect.WithHandlerOptions(opts...),
+	)
 	agentServiceGetStatusHandler := connect.NewUnaryHandler(
 		AgentServiceGetStatusProcedure,
 		svc.GetStatus,
@@ -905,6 +950,10 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 			agentServiceDeployHandler.ServeHTTP(w, r)
 		case AgentServiceActivateReleaseProcedure:
 			agentServiceActivateReleaseHandler.ServeHTTP(w, r)
+		case AgentServiceSetMeshProcedure:
+			agentServiceSetMeshHandler.ServeHTTP(w, r)
+		case AgentServiceRotateMeshKeyProcedure:
+			agentServiceRotateMeshKeyHandler.ServeHTTP(w, r)
 		case AgentServiceGetStatusProcedure:
 			agentServiceGetStatusHandler.ServeHTTP(w, r)
 		case AgentServiceListFilesProcedure:
@@ -1032,6 +1081,14 @@ func (UnimplementedAgentServiceHandler) Deploy(context.Context, *connect.Request
 
 func (UnimplementedAgentServiceHandler) ActivateRelease(context.Context, *connect.Request[v1.ActivateReleaseRequest]) (*connect.Response[v1.JobAccepted], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.ActivateRelease is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) SetMesh(context.Context, *connect.Request[v1.SetMeshRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.SetMesh is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) RotateMeshKey(context.Context, *connect.Request[v1.RotateMeshKeyRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.RotateMeshKey is not implemented"))
 }
 
 func (UnimplementedAgentServiceHandler) GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.HostStatus], error) {

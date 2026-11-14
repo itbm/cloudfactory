@@ -8,6 +8,7 @@ use App\Models\AgentJob;
 use App\Models\Database;
 use App\Models\Website;
 use App\Services\JobOutcome;
+use App\Services\Mesh;
 use App\Services\PanelCertificate;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -117,6 +118,16 @@ class RunDemoJob implements ShouldQueue
                 'documentRoot' => $p['website']['documentRoot'] ?? '',
             ],
             AgentAction::UpdateAgent => ['version' => config('cloudfactory.agent.latest_version')],
+            // Each peer answers through its tunnel.
+            AgentAction::SetMesh => ['mesh' => [
+                'publicKey' => $job->server->mesh_public_key,
+                'version' => $job->server->mesh_wanted_version,
+                'address' => $job->server->mesh_address,
+                'tunnels' => array_map(fn (array $peer) => [
+                    'server' => $peer['server'], 'handshakeAt' => now()->getTimestamp(), 'reachable' => true, 'roundTripMicros' => random_int(4000, 24000),
+                ], Mesh::stateFor($job->server)['peers']),
+            ]],
+            AgentAction::RotateMeshKey => ['publicKey' => base64_encode(random_bytes(32))],
             AgentAction::SetPanelCertificate => ['panelCertificate' => [
                 ...array_intersect_key(PanelCertificate::current(), array_flip(['domain', 'caCertificate'])),
                 'method' => $p['method'] ?? 'internal',

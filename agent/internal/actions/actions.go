@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"sync"
@@ -132,6 +133,15 @@ type Deps struct {
 	// AddressUnit is the systemd unit of the installer that adds the private addresses to
 	// "lo". The default is "/etc/systemd/system/cloudfactory-address.service".
 	AddressUnit string
+	// MeshDir holds the tunnel key and the mesh state of this server. Only root can read
+	// it. The default is "/etc/cloudfactory/mesh".
+	MeshDir string
+	// MeshPing sends one echo request from a mesh address to a mesh address and gives the
+	// round-trip time. Nil means mesh.Ping. Tests replace it.
+	MeshPing func(ctx context.Context, from, to netip.Addr, timeout time.Duration) (time.Duration, error)
+	// MeshWait is the maximum time that SetMesh waits for the answers of the peers. The
+	// default is 10 seconds.
+	MeshWait time.Duration
 	// HostSftpConfig is the SSH configuration of the host from release 0.1. The default is
 	// "/etc/ssh/sshd_config.d/50-cloudfactory-sftp.conf".
 	HostSftpConfig string
@@ -188,6 +198,8 @@ type Deps struct {
 	// kernel has.
 	accessMu     sync.Mutex
 	accessLoaded string
+	// meshMu makes each change of the tunnels one step.
+	meshMu sync.Mutex
 	// backupSlots limits the backups that operate at the same time (BackupSlots).
 	backupSlots chan struct{}
 	rtMu        sync.RWMutex

@@ -109,6 +109,13 @@ Usage:
   cf servers join-token
   cf servers check SERVER                  Tests the connection from the panel to the server.
   cf servers remove SERVER                 Removes a server that has no websites from the panel.
+  cf mesh show                             The encrypted tunnels between the servers, with their state.
+  cf mesh connect SERVER SERVER            Makes a tunnel between two servers.
+  cf mesh repair SERVER SERVER             Sends the tunnel state to the two servers again and tests the tunnel.
+  cf mesh disconnect SERVER SERVER         Removes the tunnel between two servers.
+  cf mesh rotate-key SERVER                Makes a new tunnel key on a server. Its tunnels stop for a short time.
+  cf mesh set-address SERVER ADDRESS|auto  Sets the public IP address for the tunnel traffic of a server.
+  cf mesh set [--range CIDR] [--port N]    Possible only while the mesh has no tunnel.
   cf panel-certificate show
   cf panel-certificate set internal|letsencrypt
                        "internal": a certificate from the panel CA. "letsencrypt" needs a public domain.
@@ -291,6 +298,8 @@ func (a *app) dispatch(ctx context.Context, args []string) error {
 		return a.jobs(ctx, sub, rest)
 	case "servers", "server":
 		return a.servers(ctx, sub, rest)
+	case "mesh":
+		return a.mesh(ctx, sub, rest)
 	case "panel-certificate":
 		return a.panelCertificate(ctx, sub, rest)
 	case "images", "image":
