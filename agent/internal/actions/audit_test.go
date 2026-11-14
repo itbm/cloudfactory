@@ -406,8 +406,16 @@ func TestTheReportHasWebsiteUseAndCertificates(t *testing.T) {
 		t.Errorf("services = %+v", r.Services)
 	}
 	// The firewall is the table in the kernel, not the nftables service.
-	if f := r.Services[len(r.Services)-3]; f != (panel.Service{Name: "firewall", State: "running"}) {
+	if f := r.Services[len(r.Services)-4]; f != (panel.Service{Name: "firewall", State: "running"}) {
 		t.Errorf("services = %+v", r.Services)
+	}
+	// The agent has a worker with fewer rights. As one root process, it tells the panel.
+	if h := r.Services[len(r.Services)-3]; h != (panel.Service{Name: "agent-root-helper", State: "running", Optional: true}) {
+		t.Errorf("services = %+v", r.Services)
+	}
+	d.OneProcess = true
+	if h := d.helperService(); h.State != "stopped" || !h.Optional || !strings.Contains(h.Detail, "one root process") {
+		t.Errorf("the part of the root helper = %+v", h)
 	}
 	if !f.Called("nft list table inet cloudfactory") {
 		t.Errorf("no check of the firewall table: %v", f.Calls)

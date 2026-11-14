@@ -426,6 +426,8 @@ func work(ctx context.Context, cfg config.Config, g gate.Gate) error {
 	deps.MaxWatch = 5 * time.Minute
 	deps.Edge = edgeClient(cfg, deps)
 	deps.UseGate(g)
+	// As root, this process is the root helper also: the agent has no worker.
+	deps.OneProcess = os.Geteuid() == 0
 
 	apt := deps.Apt
 	if err := apt.Hold(ctx); err != nil {

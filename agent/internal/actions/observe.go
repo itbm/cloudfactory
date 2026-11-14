@@ -131,7 +131,7 @@ func (d *Deps) FillReport(ctx context.Context, r *panel.Report) {
 	r.DatabaseServers = d.databaseServerUse(ctx, walk)
 	r.DatabaseEngines = Engines
 	r.DatabaseInstances = true
-	r.Services = append(r.Services, d.firewallService(ctx), d.quotaService(), d.diskService())
+	r.Services = append(r.Services, d.firewallService(ctx), d.helperService(), d.quotaService(), d.diskService())
 }
 
 // databaseServerUse gives the state, the memory and the disk space of each database server of
@@ -192,6 +192,16 @@ func (d *Deps) firewallService(ctx context.Context) panel.Service {
 		s.Detail = "The nftables table \"inet cloudfactory\" is not loaded. Run the installer again on this server, or run: nft -f " + d.firewallFile()
 	}
 	return s
+}
+
+// helperService reports the two processes of the agent. A server can operate with one root
+// process, but then a fault in the agent gives an attacker the rights of root.
+func (d *Deps) helperService() panel.Service {
+	if !d.OneProcess {
+		return panel.Service{Name: "agent-root-helper", State: "running", Optional: true}
+	}
+	return panel.Service{Name: "agent-root-helper", State: "stopped", Optional: true,
+		Detail: "The agent operates as one root process, not as a root helper and a worker with fewer rights. To see the cause, run on the server: journalctl -u cf-agent | grep \"one root process\""}
 }
 
 // quotaService reports the disk limits of the websites. A server can operate without them.

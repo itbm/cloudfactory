@@ -103,6 +103,9 @@ type Deps struct {
 	// EdgeSocket is the path of the admin socket of the edge proxy. The root helper connects
 	// the worker to it (DialEdge).
 	EdgeSocket string
+	// OneProcess is true when the agent operates as one root process: it has no worker with
+	// fewer rights. The status report shows it (helperService).
+	OneProcess bool
 	// ValkeyDial opens a connection to a Valkey database server on an address and a port
 	// ("address:port"). Nil means a TCP connection. Tests replace it.
 	ValkeyDial func(ctx context.Context, address string) (net.Conn, error)
