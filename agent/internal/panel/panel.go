@@ -123,6 +123,12 @@ type Report struct {
 	// (DatabaseServer, Website.database_instance). An agent of an earlier release does not
 	// send it.
 	DatabaseInstances bool `json:"databaseInstances,omitempty"`
+	// DNS is true when this agent can operate a DNS server (SetDnsZones). An agent of an
+	// earlier release does not send it.
+	DNS bool `json:"dns,omitempty"`
+	// Addresses are the public IP addresses of this server. The panel uses them for the DNS
+	// records of the websites on this server.
+	Addresses []string `json:"addresses,omitempty"`
 	// SftpPort is the port that the website owners use for SFTP on this server.
 	SftpPort int `json:"sftpPort,omitempty"`
 	// PanelCertificate is the certificate of the panel domain. Only the panel server sends it.

@@ -23,6 +23,10 @@ import (
 // EdgeUser is the Unix user of the edge proxy. It cannot read the files of the websites (CF-04).
 const EdgeUser = "cf-edge"
 
+// DnsUser is the Unix user of the DNS server of a server with the role "dns". The root helper
+// of the agent makes it when the server gets its first zone.
+const DnsUser = "cf-dns"
+
 // AgentUser is the Unix user of the worker of the agent. The worker has the connection to
 // the panel and the jobs. It is not root: the root helper of the agent does the work that
 // needs root (package gate).
@@ -257,6 +261,33 @@ func (h *Host) startUserManager(ctx context.Context, unixUser string) error {
 	}
 	_, err = h.Run.Run(ctx, "systemctl", "start", fmt.Sprintf("user@%d.service", uid))
 	return err
+}
+
+// EnsureServiceUser makes the Unix user of a service of the agent if it does not exist, as the
+// installer makes the user of the edge proxy: a system user with rootless containers, no
+// password and no login shell. Its user services start at boot. Only root calls this function.
+func (h *Host) EnsureServiceUser(ctx context.Context, unixUser string) error {
+	if _, err := h.LookupUID(unixUser); err != nil {
+		var unknown user.UnknownUserError
+		if !errors.As(err, &unknown) {
+			return err
+		}
+		if _, err := h.Run.Run(ctx, "useradd", "--system", "--create-home", "--home-dir", "/var/lib/"+unixUser, "--shell", "/usr/sbin/nologin", "--add-subids-for-system", unixUser); err != nil {
+			return err
+		}
+	}
+	uid, err := h.LookupUID(unixUser)
+	if err != nil {
+		return err
+	}
+	// A system user. A website user or the user of a database server never has this name.
+	if uid == 0 || uid >= DatabaseIDMin {
+		return fmt.Errorf("the user %s has the UID %d, which is not the UID of a service user", unixUser, uid)
+	}
+	if _, err := h.Run.Run(ctx, "loginctl", "enable-linger", unixUser); err != nil {
+		return err
+	}
+	return h.startUserManager(ctx, unixUser)
 }
 
 // EnsureDatabaseUser makes the Unix user of a database server if it does not exist, with its

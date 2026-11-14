@@ -121,6 +121,14 @@ func (s *Service) DeleteDatabaseServer(_ context.Context, r *connect.Request[age
 	return s.submit(s.Deps.DeleteDatabaseServer(r.Msg))
 }
 
+func (s *Service) SetDnsZones(_ context.Context, r *connect.Request[agentv1.SetDnsZonesRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.SetDnsZones(r.Msg))
+}
+
+func (s *Service) DeleteDnsZones(_ context.Context, r *connect.Request[agentv1.DeleteDnsZonesRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.DeleteDnsZones(r.Msg))
+}
+
 func (s *Service) ConfigureHost(_ context.Context, r *connect.Request[agentv1.ConfigureHostRequest]) (*connect.Response[agentv1.JobAccepted], error) {
 	return s.submit(s.Deps.ConfigureHost(r.Msg))
 }

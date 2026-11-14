@@ -116,6 +116,14 @@ jobs:
       - run: test -z "$(gofmt -l .)"
       - run: go vet ./...
       - run: go test -race ./...
+      # The DNS actions have a test with a real Knot DNS server: Knot must accept the
+      # configuration and the zone files of the agent (internal/actions/dns_knot_test.go).
+      - name: Test the DNS actions with Knot DNS
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends knot knot-dnsutils
+          sudo systemctl stop knot.service || true
+          CF_TEST_KNOT=1 go test ./internal/actions -run '^TestKnotServer' -count=1
       - name: Build for x86-64 and ARM64
         run: |
           GOARCH=amd64 CGO_ENABLED=0 go build -o /dev/null ./cmd/cf-agent

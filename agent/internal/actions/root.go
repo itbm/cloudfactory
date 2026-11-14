@@ -69,6 +69,12 @@ const (
 	opSftpStart  = "sftp.start"
 	opSftpRetire = "sftp.retire"
 
+	opDnsStart  = "dns.start"
+	opDnsWrite  = "dns.write"
+	opDnsLoad   = "dns.load"
+	opDnsRemove = "dns.remove"
+	opDnsStatus = "dns.status"
+
 	opDBPrepare      = "db.prepare"
 	opDBRemoveData   = "db.removeData"
 	opDBRemoveOld    = "db.removeOld"
@@ -211,7 +217,7 @@ type accessElement struct {
 // database server, and it cannot give the text of one of their units: the user of a database
 // server owns the data of a customer, and root does file work in the directory of the
 // database servers. The root helper makes their units from its own settings.
-var serviceUsers = []string{host.EdgeUser}
+var serviceUsers = []string{host.EdgeUser, host.DnsUser}
 
 // websiteUser checks that name is the Unix user of a website: the name has the form of a
 // website user, and a user that exists has a UID in the range of the website users. The
@@ -508,6 +514,16 @@ func (d *Deps) RootOps() map[string]gate.Handler {
 		opSftpSync:   none(func(context.Context, gate.None) error { return d.SyncSftpUsers() }),
 		opSftpStart:  none(func(ctx context.Context, _ gate.None) error { return d.startSftp(ctx) }),
 		opSftpRetire: none(func(ctx context.Context, _ gate.None) error { return d.retireHostSftp(ctx) }),
+
+		// The DNS server. The helper checks each zone again, writes the zone files and the
+		// configuration itself, and runs the tools of Knot as the DNS user.
+		opDnsStart:  none(func(ctx context.Context, _ gate.None) error { return d.startDns(ctx) }),
+		opDnsWrite:  none(func(ctx context.Context, in dnsWriteIn) error { return d.writeDnsZones(ctx, in.Zones) }),
+		opDnsLoad:   none(func(ctx context.Context, in dnsNamesIn) error { return d.loadDnsZones(ctx, in.Names) }),
+		opDnsRemove: none(func(ctx context.Context, in dnsNamesIn) error { return d.removeDnsZones(ctx, in.Names) }),
+		opDnsStatus: gate.Op(func(ctx context.Context, _ gate.None) (dnsStatusOut, error) {
+			return dnsStatusOut{Enabled: d.DnsEnabled(ctx)}, nil
+		}),
 
 		// The database containers: their directories, disks and secrets, and the firewall.
 		opDBPrepare: gate.Op(func(ctx context.Context, in serverIn) (bool, error) {

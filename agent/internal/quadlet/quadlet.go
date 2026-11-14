@@ -593,6 +593,63 @@ type Sftp struct {
 	Gvisor      Runtime
 }
 
+// Dns is the DNS server of a server with the role "dns": one container, cf-dns, with Knot DNS.
+type Dns struct {
+	Image string
+	// ConfigDir has knot.conf and the zone files. Root owns it, and the container reads it.
+	ConfigDir string
+	// DataDir has the journal, the timers and the DNSSEC keys of Knot. The DNS user owns it.
+	DataDir string
+	Gvisor  Runtime
+}
+
+// DnsPort is the port of the DNS server on the host, for UDP and TCP. A rootless container
+// cannot open port 53, so the firewall redirects port 53 to this port.
+const DnsPort = 8053
+
+// DnsUnitName is the Quadlet unit of the DNS server, in the unit directory of the DNS user.
+const DnsUnitName = "cf-dns.container"
+
+// DnsUnit gives the unit of the DNS server. The DNS user runs the container, in gVisor. The
+// container opens no connection: the panel sends each zone to each DNS server, so there are
+// no zone transfers.
+func DnsUnit(d Dns) string {
+	return Header + strings.Join([]string{
+		"[Unit]",
+		"Description=Cloudfactory DNS server",
+		"",
+		"[Container]",
+		"ContainerName=cf-dns",
+		"Image=" + d.Image,
+		"Pull=never",
+		"GlobalArgs=" + d.Gvisor.GlobalArgs(),
+		// Knot sees the real client address, which the rate limit of the answers uses.
+		"Network=" + PastaNetwork,
+		fmt.Sprintf("PublishPort=%d:%d/udp", DnsPort, DnsPort),
+		fmt.Sprintf("PublishPort=%d:%d/tcp", DnsPort, DnsPort),
+		// The container cannot change its configuration or a zone file.
+		"Volume=" + d.ConfigDir + ":/etc/knot:ro",
+		"Volume=" + d.DataDir + ":/var/lib/knot:Z",
+		"Label=io.cloudfactory.service=dns",
+		"NoNewPrivileges=true",
+		"DropCapability=all",
+		"ReadOnly=true",
+		"Tmpfs=/run/knot",
+		"Tmpfs=/tmp",
+		"",
+		"[Service]",
+		"Restart=always",
+		// The limits are on the cgroup of the service (Runtime.GlobalArgs).
+		"MemoryMax=1G",
+		"MemorySwapMax=0",
+		"TasksMax=1024",
+		"",
+		"[Install]",
+		"WantedBy=default.target",
+		"",
+	}, "\n")
+}
+
 // DefaultSftpPort is the public SFTP port of a server when the settings do not give one.
 // Port 22 stays for the SSH service of the host.
 const DefaultSftpPort = 2200

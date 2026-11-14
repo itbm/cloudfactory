@@ -36,6 +36,8 @@ service AgentService {
   rpc SetPanelCertificate(SetPanelCertificateRequest) returns (JobAccepted);
   rpc SetDatabaseServer(DatabaseServerRequest) returns (JobAccepted);
   rpc DeleteDatabaseServer(DeleteDatabaseServerRequest) returns (JobAccepted);
+  rpc SetDnsZones(SetDnsZonesRequest) returns (JobAccepted);
+  rpc DeleteDnsZones(DeleteDnsZonesRequest) returns (JobAccepted);
 
   // Returns the actual state of the server at once. This method does not make a job.
   rpc GetStatus(GetStatusRequest) returns (HostStatus);
@@ -388,6 +390,54 @@ message Service {
   string name = 1;
   // "running", "stopped" or "failed".
   string state = 2;
+}
+
+// One record of a DNS zone. The agent checks each field and writes the zone file itself: the
+// panel sends no text of a zone file.
+message DnsRecord {
+  // The name in the zone: "@" for the zone itself, or labels such as "www" and "_dmarc".
+  string name = 1;
+  // "A", "AAAA", "CNAME", "MX", "TXT", "SRV", "CAA" or "NS".
+  string type = 2;
+  // In seconds, from 60 to 604800.
+  int32 ttl = 3;
+  // A: an IPv4 address. AAAA: an IPv6 address. CNAME, MX and NS: a host name with no dot at
+  // the end. TXT: the text, with no quotation marks around it. SRV: "weight port target".
+  // CAA: 'flags tag "value"'.
+  string value = 4;
+  // MX and SRV only.
+  int32 priority = 5;
+}
+
+// A DNS zone with all its records. The zone has one or more NS records with the name "@": the
+// first one is the primary name server in the SOA record.
+message DnsZone {
+  string name = 1;
+  // The time of the last change, in seconds. The agent does not replace a zone with a zone
+  // that has a smaller serial.
+  int64 serial = 2;
+  repeated DnsRecord records = 3;
+  // The private DNSSEC key of the zone: an ECDSA P-256 key in the PKCS #8 PEM format. Empty
+  // when DNSSEC is off. The DNS server then removes the keys and the signatures of the zone.
+  string dnssec_key = 4;
+  // The key tag of the key. The agent imports the key only when the DNS server does not
+  // have a key with this tag.
+  int32 dnssec_key_tag = 5;
+}
+
+// Writes DNS zones on this server, and starts the DNS server (the container cf-dns) if it
+// does not operate. Each zone replaces the zone with the same name. The other zones stay.
+message SetDnsZonesRequest {
+  string job_id = 1;
+  // At most 100 zones.
+  repeated DnsZone zones = 2;
+}
+
+// Removes DNS zones from this server, with their DNSSEC keys. A zone that the server does
+// not have is not an error.
+message DeleteDnsZonesRequest {
+  string job_id = 1;
+  repeated string names = 2;
 }
 
 message HostStatus {

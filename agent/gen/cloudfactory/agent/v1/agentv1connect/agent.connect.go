@@ -101,6 +101,12 @@ const (
 	// AgentServiceDeleteDatabaseServerProcedure is the fully-qualified name of the AgentService's
 	// DeleteDatabaseServer RPC.
 	AgentServiceDeleteDatabaseServerProcedure = "/cloudfactory.agent.v1.AgentService/DeleteDatabaseServer"
+	// AgentServiceSetDnsZonesProcedure is the fully-qualified name of the AgentService's SetDnsZones
+	// RPC.
+	AgentServiceSetDnsZonesProcedure = "/cloudfactory.agent.v1.AgentService/SetDnsZones"
+	// AgentServiceDeleteDnsZonesProcedure is the fully-qualified name of the AgentService's
+	// DeleteDnsZones RPC.
+	AgentServiceDeleteDnsZonesProcedure = "/cloudfactory.agent.v1.AgentService/DeleteDnsZones"
 	// AgentServiceGetStatusProcedure is the fully-qualified name of the AgentService's GetStatus RPC.
 	AgentServiceGetStatusProcedure = "/cloudfactory.agent.v1.AgentService/GetStatus"
 )
@@ -129,6 +135,8 @@ type AgentServiceClient interface {
 	SetPanelCertificate(context.Context, *connect.Request[v1.SetPanelCertificateRequest]) (*connect.Response[v1.JobAccepted], error)
 	SetDatabaseServer(context.Context, *connect.Request[v1.DatabaseServerRequest]) (*connect.Response[v1.JobAccepted], error)
 	DeleteDatabaseServer(context.Context, *connect.Request[v1.DeleteDatabaseServerRequest]) (*connect.Response[v1.JobAccepted], error)
+	SetDnsZones(context.Context, *connect.Request[v1.SetDnsZonesRequest]) (*connect.Response[v1.JobAccepted], error)
+	DeleteDnsZones(context.Context, *connect.Request[v1.DeleteDnsZonesRequest]) (*connect.Response[v1.JobAccepted], error)
 	// Returns the actual state of the server at once. This method does not make a job.
 	GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.HostStatus], error)
 }
@@ -276,6 +284,18 @@ func NewAgentServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(agentServiceMethods.ByName("DeleteDatabaseServer")),
 			connect.WithClientOptions(opts...),
 		),
+		setDnsZones: connect.NewClient[v1.SetDnsZonesRequest, v1.JobAccepted](
+			httpClient,
+			baseURL+AgentServiceSetDnsZonesProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("SetDnsZones")),
+			connect.WithClientOptions(opts...),
+		),
+		deleteDnsZones: connect.NewClient[v1.DeleteDnsZonesRequest, v1.JobAccepted](
+			httpClient,
+			baseURL+AgentServiceDeleteDnsZonesProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("DeleteDnsZones")),
+			connect.WithClientOptions(opts...),
+		),
 		getStatus: connect.NewClient[v1.GetStatusRequest, v1.HostStatus](
 			httpClient,
 			baseURL+AgentServiceGetStatusProcedure,
@@ -309,6 +329,8 @@ type agentServiceClient struct {
 	setPanelCertificate  *connect.Client[v1.SetPanelCertificateRequest, v1.JobAccepted]
 	setDatabaseServer    *connect.Client[v1.DatabaseServerRequest, v1.JobAccepted]
 	deleteDatabaseServer *connect.Client[v1.DeleteDatabaseServerRequest, v1.JobAccepted]
+	setDnsZones          *connect.Client[v1.SetDnsZonesRequest, v1.JobAccepted]
+	deleteDnsZones       *connect.Client[v1.DeleteDnsZonesRequest, v1.JobAccepted]
 	getStatus            *connect.Client[v1.GetStatusRequest, v1.HostStatus]
 }
 
@@ -422,6 +444,16 @@ func (c *agentServiceClient) DeleteDatabaseServer(ctx context.Context, req *conn
 	return c.deleteDatabaseServer.CallUnary(ctx, req)
 }
 
+// SetDnsZones calls cloudfactory.agent.v1.AgentService.SetDnsZones.
+func (c *agentServiceClient) SetDnsZones(ctx context.Context, req *connect.Request[v1.SetDnsZonesRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return c.setDnsZones.CallUnary(ctx, req)
+}
+
+// DeleteDnsZones calls cloudfactory.agent.v1.AgentService.DeleteDnsZones.
+func (c *agentServiceClient) DeleteDnsZones(ctx context.Context, req *connect.Request[v1.DeleteDnsZonesRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return c.deleteDnsZones.CallUnary(ctx, req)
+}
+
 // GetStatus calls cloudfactory.agent.v1.AgentService.GetStatus.
 func (c *agentServiceClient) GetStatus(ctx context.Context, req *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.HostStatus], error) {
 	return c.getStatus.CallUnary(ctx, req)
@@ -451,6 +483,8 @@ type AgentServiceHandler interface {
 	SetPanelCertificate(context.Context, *connect.Request[v1.SetPanelCertificateRequest]) (*connect.Response[v1.JobAccepted], error)
 	SetDatabaseServer(context.Context, *connect.Request[v1.DatabaseServerRequest]) (*connect.Response[v1.JobAccepted], error)
 	DeleteDatabaseServer(context.Context, *connect.Request[v1.DeleteDatabaseServerRequest]) (*connect.Response[v1.JobAccepted], error)
+	SetDnsZones(context.Context, *connect.Request[v1.SetDnsZonesRequest]) (*connect.Response[v1.JobAccepted], error)
+	DeleteDnsZones(context.Context, *connect.Request[v1.DeleteDnsZonesRequest]) (*connect.Response[v1.JobAccepted], error)
 	// Returns the actual state of the server at once. This method does not make a job.
 	GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.HostStatus], error)
 }
@@ -594,6 +628,18 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(agentServiceMethods.ByName("DeleteDatabaseServer")),
 		connect.WithHandlerOptions(opts...),
 	)
+	agentServiceSetDnsZonesHandler := connect.NewUnaryHandler(
+		AgentServiceSetDnsZonesProcedure,
+		svc.SetDnsZones,
+		connect.WithSchema(agentServiceMethods.ByName("SetDnsZones")),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentServiceDeleteDnsZonesHandler := connect.NewUnaryHandler(
+		AgentServiceDeleteDnsZonesProcedure,
+		svc.DeleteDnsZones,
+		connect.WithSchema(agentServiceMethods.ByName("DeleteDnsZones")),
+		connect.WithHandlerOptions(opts...),
+	)
 	agentServiceGetStatusHandler := connect.NewUnaryHandler(
 		AgentServiceGetStatusProcedure,
 		svc.GetStatus,
@@ -646,6 +692,10 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 			agentServiceSetDatabaseServerHandler.ServeHTTP(w, r)
 		case AgentServiceDeleteDatabaseServerProcedure:
 			agentServiceDeleteDatabaseServerHandler.ServeHTTP(w, r)
+		case AgentServiceSetDnsZonesProcedure:
+			agentServiceSetDnsZonesHandler.ServeHTTP(w, r)
+		case AgentServiceDeleteDnsZonesProcedure:
+			agentServiceDeleteDnsZonesHandler.ServeHTTP(w, r)
 		case AgentServiceGetStatusProcedure:
 			agentServiceGetStatusHandler.ServeHTTP(w, r)
 		default:
@@ -743,6 +793,14 @@ func (UnimplementedAgentServiceHandler) SetDatabaseServer(context.Context, *conn
 
 func (UnimplementedAgentServiceHandler) DeleteDatabaseServer(context.Context, *connect.Request[v1.DeleteDatabaseServerRequest]) (*connect.Response[v1.JobAccepted], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.DeleteDatabaseServer is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) SetDnsZones(context.Context, *connect.Request[v1.SetDnsZonesRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.SetDnsZones is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) DeleteDnsZones(context.Context, *connect.Request[v1.DeleteDnsZonesRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.DeleteDnsZones is not implemented"))
 }
 
 func (UnimplementedAgentServiceHandler) GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.HostStatus], error) {
