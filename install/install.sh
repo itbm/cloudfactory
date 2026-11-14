@@ -397,6 +397,32 @@ ${website_networks}    # The edge proxy on the addresses of this server, so that
 NFT
 }
 
+# With --join, this server must connect to the panel. The script examines the connection before
+# it changes the system. Before, a wrong address stopped the script only at the last step, after
+# it installed all packages. The certificate of the panel can be from the panel CA, so this check
+# does not examine the certificate: the agent does that with the fingerprint when it joins.
+check_panel() {
+	[ "$MODE" = join ] || return 0
+	case "$PANEL_URL" in
+	https://*) ;;
+	*) return 0 ;;
+	esac
+	command -v curl >/dev/null 2>&1 || return 0
+	if curl -ksS -o /dev/null --connect-timeout 10 --max-time 20 "$PANEL_URL/" 2>/dev/null; then
+		return 0
+	fi
+	panel_host=${PANEL_URL#https://}
+	panel_host=${panel_host%%/*}
+	case "$panel_host" in
+	localhost | localhost:* | *.localhost | *.localhost:* | 127.* | "[::1]" | "[::1]:"*)
+		problem "this server cannot connect to the panel at $PANEL_URL. This address is a name for the computer itself, so only the panel server can use it. Install the panel with a domain or an address that this server can reach."
+		;;
+	*)
+		problem "this server cannot connect to the panel at $PANEL_URL. Make sure that the address is correct, that its DNS record points to the panel server, and that port 443 of the panel server is open for this server."
+		;;
+	esac
+}
+
 check_ports() {
 	command -v ss >/dev/null 2>&1 || return 0
 	ports=$SFTP_PORT
@@ -432,6 +458,7 @@ check_arch
 check_systemd
 check_tools
 check_arguments
+check_panel
 check_ports
 check_resources
 

@@ -26,7 +26,9 @@ fake() {
 	printf '#!/bin/sh\necho %s\n' "${3:-x86_64}" >"$root/bin/uname"
 	printf '#!/bin/sh\necho 0\n' >"$root/bin/id"
 	printf '#!/bin/sh\necho %s\n' "${4:-localhost}" >"$root/bin/hostname"
-	chmod +x "$root/bin/uname" "$root/bin/id" "$root/bin/hostname"
+	# The check of the connection to the panel: only panel.example.com answers.
+	printf '#!/bin/sh\ncase "$*" in *https://panel.example.com/) exit 0 ;; *) exit 7 ;; esac\n' >"$root/bin/curl"
+	chmod +x "$root/bin/uname" "$root/bin/id" "$root/bin/hostname" "$root/bin/curl"
 	printf '%s' "$root"
 }
 
@@ -55,6 +57,10 @@ expect "Rocky Linux stops" 1 "this operating system is rocky 9" "$(fake rocky 9)
 expect "32-bit ARM stops" 1 "the CPU architecture armv7l is not supported" "$(fake debian 13 armv7l)" $panel
 expect "no change after a failed check" 1 "The script did not change the system." "$(fake debian 12)" $panel
 expect "join needs https" 1 "--join needs --panel with an https:// address." "$(fake debian 13)" --join cfj_abc --panel http://panel.example.com
+expect "join stops when the panel does not answer" 1 "this server cannot connect to the panel at https://panel.example.net. Make sure that the address is correct" "$(fake debian 13)" --join cfj_abc --panel https://panel.example.net
+expect "join stops for a panel on localhost" 1 "This address is a name for the computer itself" "$(fake debian 13)" --join cfj_abc --panel https://panel.localhost
+expect "join stops for a panel on localhost with a port" 1 "This address is a name for the computer itself" "$(fake debian 13)" --join cfj_abc --panel https://panel.localhost:8443
+expect "join stops before a change of the system" 1 "The script did not change the system." "$(fake debian 13)" --join cfj_abc --panel https://panel.example.net
 expect "panel needs a domain" 1 "Give the domain of the panel with --domain" "$(fake debian 13)" --email admin@example.com
 expect "no options: the host name is the domain" 0 "All checks passed." "$(fake debian 13 x86_64 panel.example.com)"
 expect "option needs a value" 1 "the option --join needs a value." "$(fake debian 13)" --join

@@ -192,9 +192,10 @@ func (a *app) server(ctx context.Context, sub string, args []string) error {
 		if a.json {
 			return a.printJSON(s)
 		}
-		for _, k := range []string{"name", "id", "state", "roles", "os", "kernel", "agentVersion", "podmanVersion", "gvisorVersion", "gvisorPlatform", "updatePolicy", "maintenanceWindow", "rebootRequired"} {
+		for _, k := range []string{"name", "id", "state", "roles", "agentAddress", "os", "kernel", "agentVersion", "podmanVersion", "gvisorVersion", "gvisorPlatform", "updatePolicy", "maintenanceWindow", "rebootRequired"} {
 			fmt.Fprintf(a.out, "%-18s %s\n", k+":", cell(s[k]))
 		}
+		a.connection(s)
 		if updates, ok := s["pendingUpdates"].([]any); ok && len(updates) > 0 {
 			fmt.Fprintln(a.out, "Pending updates:")
 			for _, u := range updates {
@@ -253,8 +254,42 @@ func (a *app) server(ctx context.Context, sub string, args []string) error {
 			body["allowDowngrade"] = true
 		}
 		return a.change(ctx, http.MethodPost, path+"/update-agent", body)
+	case "check":
+		// The panel connects to the agent now and gives the server with the result.
+		var out map[string]any
+		if err := a.api.Do(ctx, http.MethodPost, path+"/check-connection", nil, nil, &out); err != nil {
+			return err
+		}
+		if a.json {
+			return a.printJSON(out)
+		}
+		if reason, _ := out["connectionError"].(string); reason != "" {
+			a.connection(out)
+			return fmt.Errorf("the panel cannot connect to %s", cell(out["name"]))
+		}
+		fmt.Fprintf(a.out, "The panel can connect to %s at %s.\n", cell(out["name"]), cell(out["agentAddress"]))
+		return nil
+	case "remove", "rm":
+		// The panel refuses a server that has websites, and the server of the panel.
+		if err := a.api.Do(ctx, http.MethodDelete, path, nil, nil, nil); err != nil {
+			return err
+		}
+		fmt.Fprintf(a.out, "The server %s is removed from the panel. The panel did not change the server itself.\n", cell(s["name"]))
+		return nil
 	}
 	return fmt.Errorf("unknown command servers %s", sub)
+}
+
+// connection prints the reason when the panel cannot connect to the agent of a server. Then
+// the jobs of the server fail.
+func (a *app) connection(s map[string]any) {
+	reason, _ := s["connectionError"].(string)
+	if reason == "" {
+		return
+	}
+	fmt.Fprintf(a.out, "The panel cannot connect to this server at %s: %s\n", cell(s["agentAddress"]), reason)
+	fmt.Fprintln(a.out, "Make sure that the panel can find this address and that port 7443 of the server is open for the panel.")
+	fmt.Fprintln(a.out, "If the address is wrong, remove the server (cf servers remove SERVER) and join it again with --address.")
 }
 
 // images lists, adds and changes runtime images (FR-307, FR-1110).

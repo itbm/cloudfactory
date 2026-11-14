@@ -113,7 +113,7 @@ func join(ctx context.Context, args []string) error {
 	hostname, _ := os.Hostname()
 	name := fs.String("name", strings.Split(hostname, ".")[0], "the name of this server in the panel")
 	roles := fs.String("roles", "web", "the roles of this server, separated by commas")
-	address := fs.String("address", hostname, "the host name or IP address that the panel uses to reach this server")
+	address := fs.String("address", "", "the host name or IP address that the panel uses to reach this server; the default is the full host name (for example web2.example.com) when it has an address, and the IP address of the connection to the panel in other cases")
 	registry := fs.String("registry", config.Defaults().Registry, "the registry of the images, for example a mirror")
 	configPath := fs.String("config", config.DefaultPath, "the settings file")
 	public := fs.String("public-ip", "", "the public IP addresses of this server behind NAT, separated by commas")
@@ -146,6 +146,10 @@ func join(ctx context.Context, args []string) error {
 	}
 	if _, err := os.Stat(*configPath); err == nil {
 		return fmt.Errorf("%s exists; this server has already joined a panel", *configPath)
+	}
+	if *address == "" {
+		// Most new servers have a host name that only /etc/hosts knows. The panel cannot find it.
+		*address = panel.AddressSource{}.Default(ctx, hostname, *panelURL)
 	}
 
 	if err := validate.SftpPort(*sftpPort); err != nil {
@@ -193,7 +197,7 @@ func join(ctx context.Context, args []string) error {
 		return err
 	}
 	resp, err := panel.New(cfg.PanelURL, "", &cert, cfg.PanelServerCertificateSHA256, cfg.PanelCASHA256).Join(ctx, panel.JoinRequest{
-		Token: *token, Name: *name, AgentURL: "https://" + *address + cfg.Listen,
+		Token: *token, Name: *name, AgentURL: panel.AgentURL(*address, cfg.Listen),
 		CertificateSHA256: fp, CertificatePEM: string(certPEM), AgentVersion: version,
 		OS: osID, OSName: osName, Kernel: strings.TrimSpace(string(kernel)), Arch: archName(),
 		BareMetal: bareMetal(ctx, run), PodmanVersion: strings.TrimSpace(podman), GVisorVersion: gv.Current(),
@@ -212,6 +216,9 @@ func join(ctx context.Context, args []string) error {
 		return err
 	}
 	fmt.Printf("This server joined the panel as %s (%s).\n", *name, resp.ServerID)
+	// The administrator sees the address before the first job. A wrong address shows on the
+	// page of the server in the panel after about one minute.
+	fmt.Printf("The panel connects to this server at %s. If the panel cannot reach this address, the page of the server in the panel shows the reason.\n", panel.AgentURL(*address, cfg.Listen))
 	return nil
 }
 
