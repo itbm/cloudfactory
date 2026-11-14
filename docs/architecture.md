@@ -520,6 +520,11 @@ not keep them.
 
 - Each server with the role `web` has its own repository, `<target>/servers/<server ID>`, and
   its own password. The panel makes the password at the first use and keeps it encrypted.
+- Each of these servers can have its own key for the object storage, which an administrator
+  sets (`PUT /v1/backup-policy/servers/{serverId}/credentials`). The panel sends that key
+  with the jobs of that server only (`BackupController::credentialsFor`). A server with no
+  key of its own gets the shared key of the backup policy. A restore from the repository
+  that all servers used in an earlier version always gets the shared key.
 - A backup has the files of the website and a dump of each MariaDB and PostgreSQL database.
   The panel keeps the SHA-256 sum of each dump, and the agent compares the dump with this sum
   before a restore. A backup has no Valkey data.

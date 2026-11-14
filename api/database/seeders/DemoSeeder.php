@@ -351,6 +351,8 @@ class DemoSeeder extends Seeder
         // The object storage of the backups. The demo agent does not connect to it.
         Setting::put('backup_policy', [...config('cloudfactory.backups'), 'target' => 's3:s3.eu-central.example/cloudfactory-backups']);
         Setting::put('backup_credentials', Crypt::encryptString(json_encode(['AWS_ACCESS_KEY_ID' => 'demo', 'AWS_SECRET_ACCESS_KEY' => 'demo'])));
+        // One server has its own key. The other servers use the shared key, and the Backups page says so.
+        $this->servers['web-1']->setBackupCredentials(['AWS_ACCESS_KEY_ID' => 'demo-web-1', 'AWS_SECRET_ACCESS_KEY' => 'demo']);
         PanelCertificate::record(['domain' => PanelCertificate::domain(), 'method' => 'internal', 'state' => 'valid', 'expiresAt' => now()->addDays(85)->toIso8601String(), 'caCertificate' => self::certificate()]);
 
         $admin = User::where('email', 'admin@example.com')->first();

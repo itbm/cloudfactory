@@ -47,6 +47,12 @@ class SecretsAtRestTest extends TestCase
         ])->assertOk();
         $secrets[] = 'AKIAEXAMPLEKEYID0001';
         $secrets[] = 'wJalrXUtnFEMI-secret-access-key-0001';
+        // The key of one server for the object storage (second audit, finding F08).
+        $auth()->putJson("/api/v1/backup-policy/servers/{$website->server_id}/credentials", [
+            'credentials' => ['AWS_ACCESS_KEY_ID' => 'AKIAEXAMPLEKEYID0002', 'AWS_SECRET_ACCESS_KEY' => 'wJalrXUtnFEMI-secret-access-key-0002'],
+        ])->assertOk();
+        $secrets[] = 'AKIAEXAMPLEKEYID0002';
+        $secrets[] = 'wJalrXUtnFEMI-secret-access-key-0002';
 
         // Database passwords. The jobs that carry them are not finished yet.
         $database = $auth()->postJson("/api/v1/websites/{$website->id}/databases", ['engine' => 'mariadb', 'name' => 'shop'])->assertAccepted();

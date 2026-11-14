@@ -419,6 +419,21 @@ export interface BackupPolicy {
   credentialNames?: string[];
   /** The number of manual backups that the panel keeps for each website. */
   manual?: number;
+  /** Administrators only: each server that has a backup repository, and whether it has its own key. */
+  servers?: ServerStorageKey[];
+}
+
+/**
+ * Second audit, finding F08: the object storage key of one server. A server with no
+ * credential names uses the shared key of the backup policy.
+ */
+export interface ServerStorageKey {
+  serverId: string;
+  /** The name of the server. */
+  server: string;
+  /** The restic repository of the server. The key of the server must have access to this path only. */
+  repository: string | null;
+  credentialNames: string[];
 }
 
 /** The certificate method of the panel domain. */

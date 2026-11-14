@@ -18,7 +18,7 @@ use Illuminate\Support\Facades\DB;
     'maintenance_window', 'pending_updates', 'reboot_required', 'services', 'usage', 'last_update_at', 'last_seen_at', 'local',
     'sftp_port', 'panel_ca_sha256', 'connection_error', 'connection_checked_at', 'database_engines', 'database_instances',
 ])]
-#[Hidden(['agent_token_hash', 'backup_password'])]
+#[Hidden(['agent_token_hash', 'backup_password', 'backup_credentials'])]
 class Server extends Model
 {
     use HasFactory, HasUlids;
@@ -140,5 +140,30 @@ class Server extends Model
 
             return Crypt::decryptString($value);
         });
+    }
+
+    /**
+     * Second audit, finding F08: the key of this server for the object storage, as restic
+     * environment variables. It is empty when the server uses the key in the backup policy.
+     * The storage provider limits the key to the repository of this server, and only this
+     * server gets it.
+     *
+     * @return array<string, string>
+     */
+    public function backupCredentials(): array
+    {
+        $value = DB::table('servers')->where('id', $this->id)->value('backup_credentials');
+
+        return is_string($value) ? (array) json_decode(Crypt::decryptString($value), true) : [];
+    }
+
+    /**
+     * Sets the key of this server for the object storage. An empty list removes it.
+     *
+     * @param  array<string, string>  $credentials
+     */
+    public function setBackupCredentials(array $credentials): void
+    {
+        $this->forceFill(['backup_credentials' => $credentials === [] ? null : Crypt::encryptString(json_encode((object) $credentials))])->save();
     }
 }

@@ -7,12 +7,18 @@ use App\Enums\JobState;
 use App\Enums\Role;
 use App\Http\Controllers\Api\AuthController;
 use App\Models\AgentJob;
+use App\Models\Setting;
+use App\Models\Snapshot;
 use App\Models\User;
+use App\Services\AgentClient;
 use App\Services\JobOutcome;
 use App\Services\Totp;
+use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
-/** The findings of the second full audit (F01, F05, F09 and F10). */
+/** The findings of the second full audit (F01, F05, F08, F09 and F10). */
 class SecondAuditTest extends TestCase
 {
     private const KEY = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGtQx2bS8ZJ4Wm1bZ7zO0Zr3wq8yXc2v1q9w8mL3h4kP owner@laptop';
@@ -253,5 +259,96 @@ class SecondAuditTest extends TestCase
         $this->app['auth']->forgetGuards();
         $this->actingWith($this->user(Role::Owner, $this->customer(null, ['name' => 'Other Ltd'])));
         $this->getJson("/api/v1/websites/{$website->id}")->assertNotFound()->assertExactJson(['message' => 'Not found.']);
+    }
+
+    private const POLICY = ['daily' => 7, 'weekly' => 4, 'monthly' => 6, 'time' => '03:00', 'target' => 's3:s3.amazonaws.com/backups'];
+
+    private const SHARED = ['AWS_ACCESS_KEY_ID' => 'AKIASHARED', 'AWS_SECRET_ACCESS_KEY' => 'shared-secret'];
+
+    private const OWN = ['AWS_ACCESS_KEY_ID' => 'AKIAWEB1', 'AWS_SECRET_ACCESS_KEY' => 'web-1-secret'];
+
+    /** The credentials that the agent of the server of a job gets, with no repository password. */
+    private function sentCredentials(string $jobId): array
+    {
+        $sent = null;
+        Http::fake(function ($request) use (&$sent) {
+            $sent = (array) $request->data()['credentials'];
+
+            return Http::response(['jobId' => 'x']);
+        });
+        app(AgentClient::class)->send(AgentJob::with('server')->findOrFail($jobId));
+        unset($sent['RESTIC_PASSWORD']);
+
+        return $sent;
+    }
+
+    /** F08: a server with its own key for the object storage gets that key, and no other server gets it. */
+    public function test_a_server_gets_only_its_own_storage_key(): void
+    {
+        $one = $this->server(['name' => 'web-1', 'certificate_pem' => 'x', 'certificate_fingerprint' => str_repeat('a', 64)]);
+        $two = $this->server(['name' => 'web-2', 'certificate_pem' => 'x', 'certificate_fingerprint' => str_repeat('b', 64)]);
+        $this->server(['name' => 'db-1', 'roles' => ['database']]);
+        $first = $this->website($this->customer(), $one, $this->image(), 'one.example');
+        $second = $this->website($first->customer, $two, $first->image, 'two.example');
+        $this->actingWith($this->user());
+        $this->putJson('/api/v1/backup-policy', self::POLICY + ['credentials' => self::SHARED])->assertOk()
+            ->assertJsonPath('servers.0', ['serverId' => $one->id, 'server' => 'web-1', 'repository' => self::POLICY['target'].'/servers/'.$one->id, 'credentialNames' => []])
+            ->assertJsonCount(2, 'servers');
+
+        $url = "/api/v1/backup-policy/servers/{$one->id}/credentials";
+        $this->putJson($url, ['credentials' => ['PATH' => '/tmp']])->assertJsonValidationErrors('credentials.PATH');
+        $this->putJson($url, ['credentials' => []])->assertJsonValidationErrors('credentials');
+        $this->putJson($url, ['credentials' => self::OWN])->assertOk()
+            ->assertJsonPath('servers.0.credentialNames', ['AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY'])
+            ->assertJsonPath('servers.1.credentialNames', [])
+            ->assertJsonMissingPath('servers.0.credentials')->assertDontSee('web-1-secret');
+        $this->assertDatabaseHas('audit_entries', ['action' => 'Set storage key of server', 'target' => 'web-1']);
+        // The key is encrypted at rest, and the API does not show it with the server.
+        $this->assertStringNotContainsString('web-1-secret', (string) DB::table('servers')->where('id', $one->id)->value('backup_credentials'));
+        $this->getJson("/api/v1/servers/{$one->id}")->assertOk()->assertDontSee('AKIAWEB1')->assertJsonMissingPath('data.backupCredentials');
+
+        $backup = fn ($website) => $this->postJson("/api/v1/websites/{$website->id}/snapshots")->assertAccepted()->json('job.id');
+        $this->assertSame(self::OWN, $this->sentCredentials($backup($first)));
+        $this->assertSame(self::SHARED, $this->sentCredentials($backup($second)));
+
+        // A snapshot in the repository that all servers used needs the shared key.
+        Setting::put('backup_repository_password', Crypt::encryptString('the-old-password'));
+        $old = Snapshot::create(['website_id' => $first->id, 'kind' => 'scheduled', 'restic_id' => 'abc12345', 'databases' => [], 'mailboxes' => [], 'shared_repository' => true]);
+        $restore = "/api/v1/websites/{$first->id}/snapshots/{$old->id}/restore";
+        $this->assertSame(self::SHARED, $this->sentCredentials($this->postJson($restore, ['scope' => 'website'])->assertAccepted()->json('job.id')));
+
+        // With no shared key, the server still gets its own key. The other server gets no key.
+        $this->putJson('/api/v1/backup-policy', self::POLICY + ['credentials' => []])->assertOk();
+        $this->assertSame(self::OWN, $this->sentCredentials($backup($first)));
+        $this->assertSame([], $this->sentCredentials($backup($second)));
+        $this->postJson($restore, ['scope' => 'website'])->assertJsonValidationErrors('snapshot');
+        $this->getJson('/api/v1/account')->assertOk()->assertJsonPath('backups.available', false);
+        // When each server with websites has its own key, the panel can make backups with no shared key.
+        $this->putJson("/api/v1/backup-policy/servers/{$two->id}/credentials", ['credentials' => ['AWS_ACCESS_KEY_ID' => 'AKIAWEB2', 'AWS_SECRET_ACCESS_KEY' => 'web-2-secret']])->assertOk();
+        $this->getJson('/api/v1/account')->assertOk()->assertJsonPath('backups.available', true);
+
+        // Without its key, a server uses the shared key again.
+        $this->putJson('/api/v1/backup-policy', self::POLICY + ['credentials' => self::SHARED])->assertOk();
+        $this->deleteJson($url)->assertOk()->assertJsonPath('servers.0.credentialNames', []);
+        $this->assertDatabaseHas('audit_entries', ['action' => 'Removed storage key of server', 'target' => 'web-1']);
+        $this->assertSame(self::SHARED, $this->sentCredentials($backup($first)));
+    }
+
+    /** F08: only an administrator sets the key of a server, and only for a server that has a repository. */
+    public function test_only_an_administrator_sets_the_storage_key_of_a_server(): void
+    {
+        $web = $this->server(['name' => 'web-1']);
+        $database = $this->server(['name' => 'db-1', 'roles' => ['database']]);
+        $this->actingWith($this->user());
+        $this->putJson("/api/v1/backup-policy/servers/{$database->id}/credentials", ['credentials' => self::OWN])->assertNotFound();
+        $this->deleteJson("/api/v1/backup-policy/servers/{$database->id}/credentials")->assertNotFound();
+        $this->putJson("/api/v1/backup-policy/servers/{$web->id}/credentials", ['credentials' => self::OWN])->assertOk();
+
+        $this->app['auth']->forgetGuards();
+        $this->actingWith($this->user(Role::Reseller, $this->customer()));
+        $this->putJson("/api/v1/backup-policy/servers/{$web->id}/credentials", ['credentials' => self::OWN])->assertForbidden();
+        $this->deleteJson("/api/v1/backup-policy/servers/{$web->id}/credentials")->assertForbidden();
+        // A reseller does not see the servers.
+        $this->getJson('/api/v1/backup-policy')->assertOk()->assertJsonMissingPath('servers')->assertJsonMissingPath('credentialNames');
     }
 }

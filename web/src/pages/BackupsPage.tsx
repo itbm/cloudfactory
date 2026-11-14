@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { useAction, useStore } from "../api/hooks";
-import { ApiError, setBackupPolicy } from "../api/store";
+import { ApiError, setBackupPolicy, setServerStorageKey } from "../api/store";
+import type { ServerStorageKey } from "../api/types";
 import { Topbar } from "../components/Layout";
-import { Card, Field, FormError, PageHeader } from "../components/ui";
+import { Card, ConfirmButton, Field, FormError, Modal, PageHeader, Status, TableWrap } from "../components/ui";
 import { BackupsPanel } from "../features/BackupsPanel";
 
 export function BackupsPage() {
@@ -15,6 +16,7 @@ export function BackupsPage() {
         <PageHeader title="Backups" description="Each night, the panel backs up files and databases to object storage on a different server. You can restore a full website, one database or one file." />
         <div className="stack">
           {isAdmin && <PolicyCard />}
+          {isAdmin && <ServerKeysCard />}
           <BackupsPanel />
         </div>
       </main>
@@ -150,5 +152,127 @@ function PolicyCard() {
         </div>
       </form>
     </Card>
+  );
+}
+
+/** The restic repository with no storage type and no host: the bucket and the path that a key must have access to. */
+export function storagePath(repository: string): string {
+  const { type, location } = parseTarget(repository);
+  // S3 has "host/bucket/path", with an optional "https://" before the host.
+  return type === "s3" ? location.replace(/^https?:\/\//, "").split("/").slice(1).join("/") : location;
+}
+
+/**
+ * Second audit, finding F08: each server can have its own key for the object storage. The
+ * storage provider limits the key to the path of the server, and the panel sends it to that
+ * server only. This card shows the servers that still use the shared key.
+ */
+function ServerKeysCard() {
+  const p = useStore().backupPolicy;
+  const [editing, setEditing] = useState<ServerStorageKey | null>(null);
+  const remove = useAction((serverId: string) => setServerStorageKey(serverId, null));
+  const servers = p.servers ?? [];
+  if (!p.target || servers.length === 0) return null;
+  const fields = STORAGE[parseTarget(p.target).type].credentials;
+  const hasShared = (p.credentialNames ?? []).length > 0;
+  const own = (s: ServerStorageKey) => s.credentialNames.length > 0;
+  // A key from before a change of the storage type cannot open the storage of the new type.
+  const otherType = (s: ServerStorageKey) => own(s) && !fields.some((f) => s.credentialNames.includes(f.name));
+  const shared = servers.filter((s) => !own(s));
+  return (
+    <Card title="Storage key of each server">
+      <div className="card-body">
+        <FormError error={remove.error} />
+        <p className="hint" style={{ marginTop: 0 }}>
+          At the storage provider, make one key for each server. Give the key access to the path of that server only. The panel sends each key to its server only.
+          A person who has root access to one server can then not delete or change the backups of the other servers.
+        </p>
+        {shared.length > 0 && servers.length > 1 && hasShared && (
+          <div className="alert alert-warning" role="note" style={{ marginTop: 12 }}>
+            <p>
+              <strong>{shared.length === servers.length ? "All servers use" : shared.length === 1 ? "1 server uses" : `${shared.length} servers use`} the shared key.</strong>{" "}
+              A person who has root access to one of {shared.length === 1 ? "the servers with the shared key" : "these servers"} can delete or change the backups of all servers. Set a key for each server.
+            </p>
+          </div>
+        )}
+      </div>
+      <TableWrap>
+        <table>
+          <thead><tr><th scope="col">Server</th><th scope="col">Path of the server</th><th scope="col">Key</th><th scope="col"><span className="visually-hidden">Actions</span></th></tr></thead>
+          <tbody>
+            {servers.map((s) => (
+              <tr key={s.serverId}>
+                <td><span className="cell-title mono">{s.server}</span></td>
+                <td><code style={{ overflowWrap: "anywhere" }}>{s.repository ? storagePath(s.repository) : "–"}</code></td>
+                <td>
+                  {otherType(s) ? <Status tone="warning">Own key, for a different storage type</Status>
+                    : own(s) ? <Status tone="success">Own key</Status>
+                      : hasShared ? <Status tone={servers.length > 1 ? "warning" : "neutral"}>Shared key</Status>
+                        : <Status tone="danger">No key</Status>}
+                </td>
+                <td style={{ textAlign: "right" }}>
+                  <div className="btn-group" style={{ justifyContent: "flex-end" }}>
+                    <button type="button" className="btn btn-sm" onClick={() => setEditing(s)}>{own(s) ? "Change key" : "Set key"}<span className="visually-hidden"> of {s.server}</span></button>
+                    {own(s) && (
+                      <ConfirmButton
+                        className="btn btn-sm"
+                        title={`Remove the key of ${s.server}?`}
+                        message={<p>{hasShared ? `The server ${s.server} then uses the shared key, which has access to the backups of all servers.` : `No shared key is set, so the backups of the websites on ${s.server} fail until you set a key.`} Delete the key at the storage provider also.</p>}
+                        confirm="Remove key"
+                        onConfirm={() => void remove.run(s.serverId)}
+                        disabled={remove.busy}
+                      >
+                        Remove key<span className="visually-hidden"> of {s.server}</span>
+                      </ConfirmButton>
+                    )}
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </TableWrap>
+      {editing && <ServerKeyDialog server={editing} onClose={() => setEditing(null)} />}
+    </Card>
+  );
+}
+
+function ServerKeyDialog({ server, onClose }: { server: ServerStorageKey; onClose: () => void }) {
+  const p = useStore().backupPolicy;
+  const fields = STORAGE[parseTarget(p.target).type].credentials;
+  const [secrets, setSecrets] = useState<Record<string, string>>({});
+  const save = useAction(async () => {
+    const typed = Object.fromEntries(fields.filter((f) => secrets[f.name]?.trim()).map((f) => [f.name, secrets[f.name].trim()]));
+    const missing = fields.filter((f) => !f.optional && !typed[f.name]);
+    if (missing.length) {
+      throw new ApiError("Type each credential of the key.", Object.fromEntries(missing.map((f) => [`credentials.${f.name}`, `Type the ${f.label.toLowerCase()}.`])));
+    }
+    await setServerStorageKey(server.serverId, typed);
+  });
+  const err = save.error?.fields ?? {};
+  return (
+    <Modal
+      title={`Storage key of ${server.server}`}
+      onClose={onClose}
+      wide
+      footer={<><button type="button" className="btn" onClick={onClose}>Cancel</button><button type="submit" form="server-key" className="btn btn-primary" disabled={save.busy}>Save key</button></>}
+    >
+      <form id="server-key" noValidate onSubmit={async (e) => { e.preventDefault(); if ((await save.run()).ok) onClose(); }}>
+        <FormError error={save.error} shown={fields.map((f) => `credentials.${f.name}`)} />
+        <p>Make a key at the storage provider that can read, write, list and delete only below this path:</p>
+        <p style={{ marginTop: 8 }}><code style={{ overflowWrap: "anywhere" }}>{server.repository ? storagePath(server.repository) : ""}</code></p>
+        <p className="hint">
+          The panel keeps the key encrypted, does not show it again, and sends it to {server.server} only.
+          {server.credentialNames.length > 0 && " The new key replaces the key that the server has."}
+        </p>
+        <div className="form-row" style={{ marginTop: 14 }}>
+          {fields.map((c) => (
+            <Field key={c.name} label={`${c.label}${c.optional ? " (optional)" : ""}`} error={err[`credentials.${c.name}`]}>
+              {(f) => <input {...f} className="input mono" type={c.secret ? "password" : "text"} autoComplete="off" spellCheck={false} value={secrets[c.name] ?? ""} onChange={(e) => setSecrets({ ...secrets, [c.name]: e.target.value })} />}
+            </Field>
+          ))}
+        </div>
+      </form>
+    </Modal>
   );
 }
