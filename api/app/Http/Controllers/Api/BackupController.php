@@ -64,7 +64,7 @@ class BackupController extends Controller
             'websiteId' => $website->id,
             'unixUser' => $website->unix_user,
             'kind' => $kind,
-            'databases' => $website->databases()->orderBy('name')->get(['engine', 'name'])->map(fn ($d) => ['engine' => $d->engine, 'name' => $d->name])->all(),
+            'databases' => $website->sqlDatabases()->orderBy('name')->get(['engine', 'name'])->map(fn ($d) => ['engine' => $d->engine, 'name' => $d->name])->all(),
             'target' => self::repository($website->server),
             'retention' => $retention,
         ];

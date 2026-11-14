@@ -399,6 +399,46 @@ func TestValkeyRefusesBadRequests(t *testing.T) {
 	}
 }
 
+// A staging copy does not get the data of a Valkey database: it gets a new, empty Valkey
+// database with its own number, user and password.
+func TestStagingCopyGetsNewValkeyDatabases(t *testing.T) {
+	d, _, _ := deps(t)
+	v := newFakeValkey(d)
+	os.MkdirAll(d.Host.AppDir("acme_x7k2"), 0o755)
+	if err := run(t)(d.CreateDatabase(valkeyRequest("acme_x7k2_cache"))); err != nil {
+		t.Fatal(err)
+	}
+	v.keys[1] = 8
+	w := website("ghcr.io/cloudfactory/frankenphp-php8.4:8.4.0-1")
+	w.Id, w.UnixUser = "01JBQ3Z5K8N6T4W2X9Y7R5P3M8", "acme_s1t2"
+	w.Domains = []*agentv1.Domain{{Name: "staging.acme.example", Kind: "primary"}}
+	job, err := d.CreateWebsite(&agentv1.WebsiteRequest{JobId: jobID2, Website: w, CopyFrom: websiteID, CopyFromUnixUser: "acme_x7k2",
+		CopyUsers: []*agentv1.DatabaseUserCopy{{Engine: "valkey", Name: "acme_s1t2_cache", Password: "Zyxwvutsrqponmlk9876"}}})
+	if err := run(t)(job, err); err != nil {
+		t.Fatal(err)
+	}
+	numbers, _ := job.Result()["valkey"].(map[string]any)
+	if numbers["acme_s1t2_cache"] != 2 {
+		t.Errorf("result = %v", job.Result())
+	}
+	rules := strings.Join(v.rules["acme_s1t2_cache"], " ")
+	if !strings.Contains(rules, "db=2") || !strings.Contains(rules, "&acme_s1t2_*") || v.passwords["acme_s1t2_cache"] != "Zyxwvutsrqponmlk9876" {
+		t.Errorf("rules of the copy = %s", rules)
+	}
+	// The database of the source website keeps its keys and its user.
+	if v.keys[1] != 8 || !strings.Contains(strings.Join(v.rules["acme_x7k2_cache"], " "), "db=1") {
+		t.Errorf("source: %d keys, rules %v", v.keys[1], v.rules["acme_x7k2_cache"])
+	}
+	// A website that is not a copy has no Valkey numbers in its result.
+	plain, err := d.CreateWebsite(&agentv1.WebsiteRequest{JobId: jobID, Website: website("ghcr.io/cloudfactory/frankenphp-php8.4:8.4.0-1")})
+	if err := run(t)(plain, err); err != nil {
+		t.Fatal(err)
+	}
+	if _, has := plain.Result()["valkey"]; has {
+		t.Errorf("result = %v", plain.Result())
+	}
+}
+
 func TestValkeyNewPasswordClosesTheOldConnections(t *testing.T) {
 	d, _, _ := deps(t)
 	v := newFakeValkey(d)

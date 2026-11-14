@@ -11,6 +11,7 @@ use App\Http\Resources\JobResource;
 use App\Http\Resources\WebsiteResource;
 use App\Models\AgentJob;
 use App\Models\Customer;
+use App\Models\Database;
 use App\Models\Image;
 use App\Models\Plan;
 use App\Models\Server;
@@ -340,7 +341,7 @@ class WebsiteController extends Controller
         $from = DatabaseNames::prefix($source);
         $to = DatabaseNames::prefix($copy);
         DB::transaction(function () use ($source, $copy, $from, $to, &$copies, &$users, &$credentials) {
-            foreach ($source->databases()->orderBy('name')->get()->groupBy('engine') as $engine => $databases) {
+            foreach ($source->sqlDatabases()->orderBy('name')->get()->groupBy('engine') as $engine => $databases) {
                 $user = $copy->databaseUsers()->create(['engine' => $engine, 'name' => $to.'app', 'access' => 'website']);
                 $password = Str::password(24, symbols: false);
                 $names = [];
@@ -353,6 +354,18 @@ class WebsiteController extends Controller
                 }
                 $users[] = ['engine' => $engine, 'name' => $user->name, 'password' => $password];
                 $credentials[] = ['engine' => $engine, 'user' => $user->name, 'password' => $password, 'databases' => $names];
+            }
+            // Valkey: the data of a cache is for one website. The copy gets a new, empty Valkey
+            // database for each Valkey database of the source, with its own user and password.
+            // For the agent, a copy user of the engine Valkey is that database.
+            foreach ($source->databases()->where('engine', Database::VALKEY)->orderBy('name')->get() as $database) {
+                $name = $to.substr($database->name, strlen($from));
+                $new = $copy->databases()->create(['engine' => Database::VALKEY, 'name' => $name]);
+                $user = $copy->databaseUsers()->create(['engine' => Database::VALKEY, 'name' => $name, 'access' => 'website']);
+                $user->databases()->attach($new->id, ['privileges' => 'readwrite']);
+                $password = Str::password(24, symbols: false);
+                $users[] = ['engine' => Database::VALKEY, 'name' => $name, 'password' => $password];
+                $credentials[] = ['engine' => Database::VALKEY, 'user' => $name, 'password' => $password, 'databases' => [$name]];
             }
         });
 

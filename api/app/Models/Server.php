@@ -15,7 +15,7 @@ use Illuminate\Support\Facades\DB;
     'name', 'location', 'roles', 'state', 'agent_url', 'agent_version', 'certificate_fingerprint', 'certificate_pem', 'agent_token_hash',
     'os', 'kernel', 'arch', 'podman_version', 'gvisor_version', 'gvisor_platform', 'bare_metal', 'update_policy',
     'maintenance_window', 'pending_updates', 'reboot_required', 'services', 'usage', 'last_update_at', 'last_seen_at', 'local',
-    'sftp_port', 'panel_ca_sha256', 'connection_error', 'connection_checked_at',
+    'sftp_port', 'panel_ca_sha256', 'connection_error', 'connection_checked_at', 'database_engines',
 ])]
 #[Hidden(['agent_token_hash', 'backup_password'])]
 class Server extends Model
@@ -67,6 +67,7 @@ class Server extends Model
             'pending_updates' => 'array',
             'services' => 'array',
             'usage' => 'array',
+            'database_engines' => 'array',
             'bare_metal' => 'boolean',
             'reboot_required' => 'boolean',
             'local' => 'boolean',
@@ -75,6 +76,15 @@ class Server extends Model
             'last_seen_at' => 'datetime',
             'connection_checked_at' => 'datetime',
         ];
+    }
+
+    /**
+     * True when the agent of the server can operate the database engine. An agent of an
+     * earlier release does not report its engines: it has the engines with SQL only.
+     */
+    public function hasDatabaseEngine(string $engine): bool
+    {
+        return in_array($engine, $this->database_engines ?? Database::SQL_ENGINES, true);
     }
 
     public function websites(): HasMany

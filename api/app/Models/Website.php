@@ -71,6 +71,12 @@ class Website extends Model
         return $this->hasMany(Database::class);
     }
 
+    /** The databases that a backup and a staging copy include: not the Valkey databases. */
+    public function sqlDatabases(): HasMany
+    {
+        return $this->databases()->whereIn('engine', Database::SQL_ENGINES);
+    }
+
     public function databaseUsers(): HasMany
     {
         return $this->hasMany(DatabaseUser::class);

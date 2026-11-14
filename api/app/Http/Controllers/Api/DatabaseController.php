@@ -19,8 +19,12 @@ use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
 /**
- * FR-501 and FR-502: MariaDB and PostgreSQL databases. The names start with the Unix user of
- * the website (CF-01). DatabaseUserController changes the users and their access.
+ * FR-501 and FR-502: MariaDB, PostgreSQL and Valkey databases. The names start with the Unix
+ * user of the website (CF-01). DatabaseUserController changes the users and their access.
+ *
+ * A Valkey database is one database number of the shared Valkey server. It always has one user
+ * with the same name. The agent gives the number, and the panel shows it when the job is
+ * complete.
  */
 class DatabaseController extends Controller
 {
@@ -34,9 +38,23 @@ class DatabaseController extends Controller
 
         return response()->json([
             'prefix' => DatabaseNames::prefix($website),
-            'databases' => $website->databases()->orderBy('name')->get()->map(fn (Database $d) => ['id' => $d->id, 'engine' => $d->engine, 'name' => $d->name, 'sizeBytes' => $d->size_bytes]),
+            'databases' => $website->databases()->orderBy('name')->get()->map(fn (Database $d) => self::present($d)),
             'users' => $website->databaseUsers()->with('databases')->orderBy('name')->get()->map(fn (DatabaseUser $u) => DatabaseUserController::present($u)),
         ]);
+    }
+
+    public static function present(Database $d): array
+    {
+        return [
+            'id' => $d->id,
+            'engine' => $d->engine,
+            'name' => $d->name,
+            'sizeBytes' => $d->size_bytes,
+            // Valkey only: the database number that the application selects, and the number of
+            // keys. The number is null until the agent made the database.
+            'number' => $d->number,
+            'keys' => $d->key_count,
+        ];
     }
 
     /** Makes a database. By default it also makes a user with the same name and read-write access. */
@@ -44,12 +62,20 @@ class DatabaseController extends Controller
     {
         $website = $this->findWebsite($request, $websiteId);
         $data = $request->validate([
-            'engine' => ['required', Rule::in(['mariadb', 'postgresql'])],
+            'engine' => ['required', Rule::in(Database::ENGINES)],
             'name' => ['required', 'string', 'max:64'],
             'createUser' => ['sometimes', 'boolean'],
         ]);
         $name = DatabaseNames::full($website, 'name', $data['name']);
         $withUser = $data['createUser'] ?? true;
+        if ($data['engine'] === Database::VALKEY) {
+            if (! $withUser) {
+                throw ValidationException::withMessages(['createUser' => 'A Valkey database always has a user with the same name.']);
+            }
+            if (! $website->server->hasDatabaseEngine(Database::VALKEY)) {
+                throw ValidationException::withMessages(['engine' => "The agent on the server {$website->server->name} did not report that it can operate Valkey. Update the agent of the server, then try again."]);
+            }
+        }
         if (Database::where(['engine' => $data['engine'], 'name' => $name])->exists()) {
             throw ValidationException::withMessages(['name' => 'This database exists.']);
         }

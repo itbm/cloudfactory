@@ -8,6 +8,7 @@ use App\Enums\ServerRole;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\JobResource;
 use App\Models\AgentJob;
+use App\Models\Database;
 use App\Models\JoinToken;
 use App\Models\Server;
 use App\Services\AgentClient;
@@ -232,6 +233,8 @@ class ServerController extends Controller
             'podmanVersion' => $s->podman_version,
             'gvisorVersion' => $s->gvisor_version,
             'gvisorPlatform' => $s->gvisor_platform,
+            // The database engines that the agent of the server can operate.
+            'databaseEngines' => $s->database_engines ?? Database::SQL_ENGINES,
             'bareMetal' => $s->bare_metal,
             'updatePolicy' => $s->update_policy,
             'maintenanceWindow' => $s->maintenance_window,

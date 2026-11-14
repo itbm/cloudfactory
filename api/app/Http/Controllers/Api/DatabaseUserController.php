@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Enums\AgentAction;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\JobResource;
+use App\Models\Database;
 use App\Models\DatabaseUser;
 use App\Models\Website;
 use App\Services\Audit;
@@ -20,6 +21,9 @@ use Illuminate\Validation\ValidationException;
 /**
  * FR-502: database users. A user can have access to more than one database of the website, with
  * a permission for each database. For example, a sync user can read "shop" and change "staging".
+ *
+ * Valkey is different: a Valkey database has one user with the same name, which comes and goes
+ * with the database. The user can get a new password. All other changes are refused.
  */
 class DatabaseUserController extends Controller
 {
@@ -32,8 +36,11 @@ class DatabaseUserController extends Controller
     public function store(Request $request, string $websiteId): JsonResponse
     {
         $website = $this->findWebsite($request, $websiteId);
+        if ($request->input('engine') === Database::VALKEY) {
+            throw ValidationException::withMessages(['engine' => 'A Valkey database has one user, with the name of the database. Make a Valkey database to get its user.']);
+        }
         $data = $request->validate([
-            'engine' => ['required', Rule::in(['mariadb', 'postgresql'])],
+            'engine' => ['required', Rule::in(Database::SQL_ENGINES)],
             'name' => ['required', 'string', 'max:64'],
             'access' => ['sometimes', Rule::in(['website', 'anywhere'])],
             ...self::grantRules(),
@@ -67,6 +74,9 @@ class DatabaseUserController extends Controller
             'resetPassword' => ['sometimes', 'boolean'],
             ...self::grantRules(),
         ]);
+        if ($user->engine === Database::VALKEY && (isset($data['access']) || array_key_exists('grants', $data) || ! ($data['resetPassword'] ?? false))) {
+            throw ValidationException::withMessages(['user' => 'A Valkey user has access to its own database only, from the container of the website only. You can only make a new password.']);
+        }
         DB::transaction(function () use ($website, $user, $data) {
             if (isset($data['access'])) {
                 $user->update(['access' => $data['access']]);
@@ -86,6 +96,9 @@ class DatabaseUserController extends Controller
     {
         $website = $this->findWebsite($request, $websiteId);
         $user = $website->databaseUsers()->findOrFail($userId);
+        if ($user->engine === Database::VALKEY) {
+            throw ValidationException::withMessages(['user' => 'The user of a Valkey database goes with its database. Remove the database.']);
+        }
         // Batch 1, finding 4: the panel removes the row when the job succeeds (JobOutcome).
         $job = $this->jobs->dispatch($website->server, AgentAction::DeleteDatabaseUser, [
             'websiteId' => $website->id,

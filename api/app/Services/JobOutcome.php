@@ -7,6 +7,7 @@ use App\Enums\JobState;
 use App\Enums\WebsiteStatus;
 use App\Models\AgentJob;
 use App\Models\BackupRemoval;
+use App\Models\Database;
 use App\Models\Domain;
 use App\Models\Rollout;
 use App\Models\Snapshot;
@@ -98,6 +99,12 @@ class JobOutcome
     private function websiteMade(Website $website, array $result): bool
     {
         $website->update(['status' => WebsiteStatus::Running]);
+        // A staging copy: the database number of each new Valkey database.
+        foreach (is_array($result['valkey'] ?? null) ? $result['valkey'] : [] as $name => $number) {
+            if (is_string($name) && is_int($number) && $number > 0) {
+                $website->databases()->where(['engine' => Database::VALKEY, 'name' => $name])->update(['number' => $number]);
+            }
+        }
         if (array_key_exists('dnsPointsHere', $result)) {
             $website->domains()->where('name', $website->name)->update(['dns_points_here' => (bool) $result['dnsPointsHere']]);
         }
@@ -153,7 +160,8 @@ class JobOutcome
             ]),
             AgentAction::Backup => $website && $this->recordSnapshot($website, $p, $result),
             // Batch 1, finding 4: the panel removes the row when the item is gone from the server.
-            AgentAction::DeleteDatabase => $website?->databases()->where(['engine' => $p['engine'] ?? '', 'name' => $p['name'] ?? ''])->delete(),
+            AgentAction::CreateDatabase => $website && $this->databaseMade($website, $p, $result),
+            AgentAction::DeleteDatabase => $website && $this->databaseRemoved($website, $p),
             AgentAction::DeleteDatabaseUser => $website?->databaseUsers()->where(['engine' => $p['engine'] ?? '', 'name' => $p['name'] ?? ''])->delete(),
             AgentAction::InstallHostUpdates => $job->server->update([
                 'pending_updates' => self::updatesLeft($job->server->pending_updates ?? [], (string) ($p['policy'] ?? 'security')),
@@ -192,6 +200,28 @@ class JobOutcome
         };
     }
 
+    /** Valkey: the agent gives the database number, which the application needs to connect. */
+    private function databaseMade(Website $website, array $p, array $result): bool
+    {
+        if (($p['engine'] ?? '') === Database::VALKEY && is_int($result['number'] ?? null) && $result['number'] > 0) {
+            $website->databases()->where(['engine' => Database::VALKEY, 'name' => $p['name'] ?? ''])->update(['number' => $result['number']]);
+        }
+
+        return true;
+    }
+
+    /** The user of a Valkey database goes with its database. The users of the other engines stay. */
+    private function databaseRemoved(Website $website, array $p): bool
+    {
+        $engine = $p['engine'] ?? '';
+        $website->databases()->where(['engine' => $engine, 'name' => $p['name'] ?? ''])->delete();
+        if ($engine === Database::VALKEY) {
+            $website->databaseUsers()->where(['engine' => $engine, 'name' => $p['name'] ?? ''])->delete();
+        }
+
+        return true;
+    }
+
     private function removeNewDatabase(?Website $website, array $p): void
     {
         if (! $website) {
@@ -226,7 +256,7 @@ class JobOutcome
             'restic_id' => $result['snapshotId'] ?? null,
             'size_bytes' => (int) ($result['sizeBytes'] ?? 0),
             // The agent restores a database by "engine:name".
-            'databases' => $website->databases()->get()->map(fn ($d) => "{$d->engine}:{$d->name}")->all(),
+            'databases' => $website->sqlDatabases()->get()->map(fn ($d) => "{$d->engine}:{$d->name}")->all(),
             'mailboxes' => [],
             // CF-06: the restore checks each dump against the hash from the backup.
             'dump_hashes' => self::dumpHashes($result['dumps'] ?? []),

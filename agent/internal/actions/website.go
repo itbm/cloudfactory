@@ -331,6 +331,7 @@ func (d *Deps) CreateWebsite(req *agentv1.WebsiteRequest) (jobs.Job, error) {
 	user := w.GetUnixUser()
 	var port int
 	var dnsHere bool
+	valkeyNumbers := map[string]any{}
 	return jobs.Job{ID: req.GetJobId(), Key: w.GetId(), Long: req.GetCopyFrom() != "", Steps: []jobs.Step{
 		{Name: "Create Unix user", Do: func(ctx context.Context) error {
 			if err := d.Host.EnsureUser(ctx, user); err != nil {
@@ -354,7 +355,7 @@ func (d *Deps) CreateWebsite(req *agentv1.WebsiteRequest) (jobs.Job, error) {
 			)
 		}},
 		{Name: "Copy databases", Do: func(ctx context.Context) error {
-			return d.copyDatabases(ctx, req)
+			return d.copyDatabases(ctx, req, valkeyNumbers)
 		}},
 		{Name: "Pull and check image signature", Do: func(ctx context.Context) error {
 			return d.pullImage(ctx, w)
@@ -381,7 +382,14 @@ func (d *Deps) CreateWebsite(req *agentv1.WebsiteRequest) (jobs.Job, error) {
 			dnsHere = d.DNSPointsHere(ctx, primaryDomain(w))
 			return nil
 		}},
-	}, Result: func() map[string]any { return map[string]any{"port": port, "dnsPointsHere": dnsHere} }}, nil
+	}, Result: func() map[string]any {
+		result := map[string]any{"port": port, "dnsPointsHere": dnsHere}
+		if len(valkeyNumbers) > 0 {
+			// The database number of each new Valkey database of a staging copy.
+			result["valkey"] = valkeyNumbers
+		}
+		return result
+	}}, nil
 }
 
 // defaultPage is the first page of a new PHP website. The images have the same page in
@@ -431,7 +439,10 @@ func checkCopies(req *agentv1.WebsiteRequest) error {
 		errs = append(errs, validate.TenantDatabaseName(req.GetCopyFromUnixUser(), c.GetFrom()), validate.TenantDatabaseName(user, c.GetTo()))
 	}
 	for _, u := range req.GetCopyUsers() {
-		errs = append(errs, sqlEngine(u.GetEngine()))
+		// A user of the engine Valkey is a new, empty Valkey database with the name of the user.
+		if _, err := dbContainer(u.GetEngine()); err != nil {
+			errs = append(errs, err)
+		}
 		errs = append(errs, validate.TenantDatabaseName(user, u.GetName()))
 		if !passwordRE.MatchString(u.GetPassword()) {
 			errs = append(errs, errors.New("the database password must have 16 to 64 letters and digits"))
@@ -443,7 +454,11 @@ func checkCopies(req *agentv1.WebsiteRequest) error {
 // copyDatabases copies each database of the source website into a new database of the staging
 // copy (FR-205), and makes the users of the copy. The copy never uses the databases of the
 // source. The dump loads as a temporary user with access to the new database only (CF-06).
-func (d *Deps) copyDatabases(ctx context.Context, req *agentv1.WebsiteRequest) error {
+//
+// Valkey has no copy of the data: the data of a cache is for one website. A copy user of the
+// engine Valkey makes a new, empty Valkey database with the name of the user. valkeyNumbers
+// gets the database number of each one.
+func (d *Deps) copyDatabases(ctx context.Context, req *agentv1.WebsiteRequest, valkeyNumbers map[string]any) error {
 	host, err := d.mariaHost("website")
 	if err != nil {
 		return err
@@ -487,6 +502,14 @@ func (d *Deps) copyDatabases(ctx context.Context, req *agentv1.WebsiteRequest) e
 	}
 	for _, u := range req.GetCopyUsers() {
 		engine := u.GetEngine()
+		if engine == "valkey" {
+			number, err := d.valkeyCreate(ctx, u.GetName(), req.GetWebsite().GetUnixUser()+"_", u.GetPassword())
+			if err != nil {
+				return err
+			}
+			valkeyNumbers[u.GetName()] = number
+			continue
+		}
 		if err := d.dropUser(ctx, engine, u.GetName()); err != nil {
 			return err
 		}
