@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BackupController;
 use App\Http\Controllers\Api\CustomerController;
 use App\Http\Controllers\Api\DatabaseController;
+use App\Http\Controllers\Api\DatabaseServerController;
 use App\Http\Controllers\Api\DatabaseUserController;
 use App\Http\Controllers\Api\DomainController;
 use App\Http\Controllers\Api\ImageController;
@@ -77,6 +78,13 @@ Route::prefix('v1')->group(function () {
             Route::post('websites/{websiteId}/database-users', [DatabaseUserController::class, 'store']);
             Route::patch('websites/{websiteId}/database-users/{userId}', [DatabaseUserController::class, 'update']);
             Route::delete('websites/{websiteId}/database-users/{userId}', [DatabaseUserController::class, 'destroy']);
+            // The database servers of a customer: containers with their own limits, as websites.
+            Route::get('database-servers', [DatabaseServerController::class, 'index']);
+            Route::post('database-servers', [DatabaseServerController::class, 'store']);
+            Route::get('database-servers/{id}', [DatabaseServerController::class, 'show']);
+            Route::patch('database-servers/{id}', [DatabaseServerController::class, 'update']);
+            Route::delete('database-servers/{id}', [DatabaseServerController::class, 'destroy']);
+            Route::post('database-servers/{id}/retry', [DatabaseServerController::class, 'retry']);
         });
 
         Route::middleware('scope:backups')->group(function () {

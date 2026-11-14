@@ -8,15 +8,16 @@ use App\Enums\Role;
 use App\Enums\WebsiteStatus;
 use App\Models\AgentJob;
 use App\Models\Customer;
+use App\Models\DatabaseServer;
 use App\Models\Server;
 use App\Models\Website;
 use App\Services\JobOutcome;
 use Tests\TestCase;
 
 /**
- * Each customer has its own database containers on a server, so a customer cannot change the
+ * Each customer has its own database servers on a server, so a customer cannot change the
  * service of a different customer. A website of an earlier release uses the shared database
- * containers until an administrator moves the databases of its server.
+ * containers until an administrator moves the databases of its server to database servers.
  */
 class DatabaseInstanceTest extends TestCase
 {
@@ -33,7 +34,7 @@ class DatabaseInstanceTest extends TestCase
         return $job->fresh();
     }
 
-    public function test_a_new_website_uses_the_database_containers_of_its_customer(): void
+    public function test_a_new_website_uses_the_database_servers_of_its_customer(): void
     {
         $this->actingWith($this->user());
         $customer = $this->customer();
@@ -72,7 +73,7 @@ class DatabaseInstanceTest extends TestCase
         $this->postJson("/api/v1/websites/{$website->id}/databases", ['engine' => 'mariadb', 'name' => 'shop'])->assertAccepted();
     }
 
-    public function test_the_agent_reports_that_it_has_database_containers_for_each_customer(): void
+    public function test_the_agent_reports_that_it_can_operate_database_servers(): void
     {
         $server = $this->server(['local' => true, 'agent_token_hash' => hash('sha256', 'cfa_instances'), 'certificate_fingerprint' => self::LOCAL_FINGERPRINT, 'connection_checked_at' => now()]);
         $this->assertFalse($server->fresh()->database_instances);
@@ -87,7 +88,7 @@ class DatabaseInstanceTest extends TestCase
         $this->assertNull($server->fresh()->databaseInstanceFor('01jbq3z5k8n6t4w2x9y7r5p3c1'));
     }
 
-    public function test_a_staging_copy_uses_the_containers_of_its_customer_also_when_the_source_does_not(): void
+    public function test_a_staging_copy_uses_the_database_servers_of_its_customer_also_when_the_source_does_not(): void
     {
         $this->actingWith($this->user());
         $customer = $this->customer();
@@ -102,9 +103,21 @@ class DatabaseInstanceTest extends TestCase
         $job = AgentJob::findOrFail($response->json('job.id'));
         $this->assertSame($customer->id, $job->payload['website']['databaseInstance']);
         $this->assertSame($source->id, $job->payload['copyFrom']);
+        // The copy of a database in the shared containers goes into a database server, which
+        // the panel makes when the customer has none.
+        $server = DatabaseServer::sole();
+        $this->assertSame([$customer->id, $source->server_id, 'mariadb', 3306, 'starting'], [$server->customer_id, $server->server_id, $server->engine, $server->port, $server->status]);
+        $this->assertSame([['engine' => 'mariadb', 'from' => $source->unix_user.'_shop', 'to' => $copy->unix_user.'_shop', 'toServer' => $server->id]], $job->payload['copyDatabases']);
+        $this->assertEquals([$server->forAgent()], $job->payload['databaseServers']);
+        $this->assertSame($server->id, $job->payload['copyUsers'][0]['databaseServer']);
+        $this->assertSame($server->id, $copy->databases()->sole()->database_server_id);
+        $this->assertNull($source->databases()->sole()->database_server_id);
+        // The agent made the database server with the copy.
+        $this->finish($job->id);
+        $this->assertSame('running', $server->fresh()->status);
     }
 
-    public function test_a_failed_website_with_no_databases_gets_the_containers_of_its_customer_at_the_next_attempt(): void
+    public function test_a_failed_website_with_no_databases_gets_the_database_servers_of_its_customer_at_the_next_attempt(): void
     {
         $this->actingWith($this->user());
         $customer = $this->customer();
@@ -122,12 +135,14 @@ class DatabaseInstanceTest extends TestCase
         $this->assertNull($withData->fresh()->database_instance);
     }
 
-    public function test_an_administrator_moves_the_databases_of_a_server_to_the_containers_of_each_customer(): void
+    public function test_an_administrator_moves_the_databases_of_a_server_to_database_servers(): void
     {
         $this->actingWith($this->user());
         $server = $this->newServer();
         $image = $this->image();
-        $acme = $this->customer();
+        // The plan of the customer does not limit the database servers of a move: the
+        // databases exist, so they must get a database server.
+        $acme = $this->customer($this->plan(['database_servers' => 0]));
         $bolt = Customer::create(['name' => 'Bolt', 'email' => 'it@bolt.example', 'role' => 'owner', 'plan_id' => $acme->plan_id]);
         $shop = $this->website($acme, $server, $image);
         $blog = $this->website($bolt, $server, $image, 'bolt.example');
@@ -150,26 +165,42 @@ class DatabaseInstanceTest extends TestCase
         $jobs = AgentJob::where('action', AgentAction::MoveDatabases->value)->get()->keyBy('website_id');
         $this->assertEqualsCanonicalizing([$shop->id, $blog->id], $jobs->keys()->all());
         $this->assertSame("Move the databases of {$shop->name}", $jobs[$shop->id]->title);
-        $this->assertSame(['Start database containers', 'Stop website', 'Copy databases', 'Copy users', 'Start website', 'Remove old copies'], $jobs[$shop->id]->steps);
-        $this->assertSame([
+        $this->assertSame(['Start database servers', 'Stop website', 'Copy databases', 'Copy users', 'Start website', 'Remove old copies'], $jobs[$shop->id]->steps);
+        // The panel made one database server for each engine of the website, on the usual
+        // port of the engine: the applications of the website connect to that port.
+        $servers = DatabaseServer::where('customer_id', $acme->id)->get()->keyBy('engine');
+        $this->assertSame(['mariadb', 'postgresql'], $servers->keys()->sort()->values()->all());
+        $this->assertSame([3306, 5432, 'starting', $server->id], [$servers['mariadb']->port, $servers['postgresql']->port, $servers['mariadb']->status, $servers['mariadb']->server_id]);
+        $this->assertEquals([
             'websiteId' => $shop->id,
             'unixUser' => $shop->unix_user,
             'databaseInstance' => $acme->id,
-            'databases' => [['engine' => 'postgresql', 'name' => $shop->unix_user.'_data'], ['engine' => 'mariadb', 'name' => $name]],
+            'databaseServers' => [$servers['mariadb']->forAgent(), $servers['postgresql']->forAgent()],
+            'databases' => [
+                ['engine' => 'postgresql', 'name' => $shop->unix_user.'_data', 'databaseServer' => $servers['postgresql']->id],
+                ['engine' => 'mariadb', 'name' => $name, 'databaseServer' => $servers['mariadb']->id],
+            ],
             'users' => [
-                ['engine' => 'postgresql', 'name' => $shop->unix_user.'_reader', 'access' => 'website', 'grants' => [['database' => $shop->unix_user.'_data', 'privileges' => 'readonly']]],
-                ['engine' => 'mariadb', 'name' => $name, 'access' => 'anywhere', 'grants' => [['database' => $name, 'privileges' => 'readwrite']]],
+                ['engine' => 'postgresql', 'name' => $shop->unix_user.'_reader', 'access' => 'website', 'grants' => [['database' => $shop->unix_user.'_data', 'privileges' => 'readonly']], 'databaseServer' => $servers['postgresql']->id],
+                ['engine' => 'mariadb', 'name' => $name, 'access' => 'anywhere', 'grants' => [['database' => $name, 'privileges' => 'readwrite']], 'databaseServer' => $servers['mariadb']->id],
             ],
         ], $jobs[$shop->id]->payload);
-        // A website with no databases moves too: it gets the host names of the new containers.
-        $this->assertSame(['websiteId' => $blog->id, 'unixUser' => $blog->unix_user, 'databaseInstance' => $bolt->id, 'databases' => [], 'users' => []], $jobs[$blog->id]->payload);
+        // A website with no databases moves too: it can use the database servers of its
+        // customer after the move. It needs no database server now.
+        $this->assertSame(['websiteId' => $blog->id, 'unixUser' => $blog->unix_user, 'databaseInstance' => $bolt->id, 'databaseServers' => [], 'databases' => [], 'users' => []], $jobs[$blog->id]->payload);
+        $this->assertSame(0, DatabaseServer::where('customer_id', $bolt->id)->count());
 
         // A second request does not start a second job for a website that moves already.
         $this->postJson("/api/v1/servers/{$server->id}/move-databases")->assertAccepted()->assertJsonCount(0, 'jobs');
 
-        // The website uses the containers of its customer when the job is complete.
+        // When the job is complete, the website uses the database servers of its customer,
+        // and each database and each user is in its database server.
         $this->finish($jobs[$shop->id]->id);
         $this->assertSame($acme->id, $shop->fresh()->database_instance);
+        $this->assertSame([$servers['mariadb']->id, $servers['postgresql']->id], [$database->fresh()->database_server_id, $data->fresh()->database_server_id]);
+        $this->assertSame([$servers['mariadb']->id, $servers['postgresql']->id], [$user->fresh()->database_server_id, $reader->fresh()->database_server_id]);
+        $this->assertSame(['running', 'running'], [$servers['mariadb']->fresh()->status, $servers['postgresql']->fresh()->status]);
+        $this->getJson("/api/v1/websites/{$shop->id}/databases")->assertJsonCount(2, 'servers')->assertJsonPath('databases.0.databaseServerId', $servers['postgresql']->id);
         // After a failure, the website keeps the shared containers, and the move can start again.
         $this->finish($jobs[$blog->id]->id, JobState::Failed);
         $this->assertNull($blog->fresh()->database_instance);
@@ -179,18 +210,49 @@ class DatabaseInstanceTest extends TestCase
         foreach ([$new, $starting, $failed, $other] as $website) {
             $this->assertSame(0, AgentJob::where('action', AgentAction::MoveDatabases->value)->where('website_id', $website->id)->count(), $website->name);
         }
-        // Valkey is available for the website after the move.
+        // A new database goes into the database server of the move.
+        $this->postJson("/api/v1/websites/{$shop->id}/databases", ['engine' => 'mariadb', 'name' => 'blog'])->assertAccepted()->assertJsonPath('databaseServerId', $servers['mariadb']->id);
+        // Valkey is available for the website after the move, when the plan of the customer
+        // allows a database server for it.
+        $this->postJson("/api/v1/websites/{$shop->id}/databases", ['engine' => 'valkey', 'name' => 'cache'])->assertJsonValidationErrors('engine');
+        $acme->plan->update(['database_servers' => 3]);
         $this->postJson("/api/v1/websites/{$shop->id}/databases", ['engine' => 'valkey', 'name' => 'cache'])->assertAccepted();
     }
 
-    public function test_the_move_needs_an_agent_that_has_containers_for_each_customer(): void
+    public function test_a_move_uses_the_database_server_that_the_customer_has_on_the_usual_port(): void
+    {
+        $this->actingWith($this->user());
+        $server = $this->newServer();
+        $customer = $this->customer();
+        $old = $this->website($customer, $server, $this->image());
+        $database = $old->databases()->create(['engine' => 'mariadb', 'name' => $old->unix_user.'_shop']);
+        $this->website($customer, $server, $this->image(), 'new.example', ['database_instance' => $customer->id]);
+        $first = DatabaseServer::findOrFail($this->postJson('/api/v1/database-servers', ['engine' => 'mariadb', 'customerId' => $customer->id])->assertAccepted()->json('databaseServer.id'));
+        $second = DatabaseServer::findOrFail($this->postJson('/api/v1/database-servers', ['engine' => 'mariadb', 'customerId' => $customer->id])->assertAccepted()->json('databaseServer.id'));
+        $this->assertSame([3306, 3307], [$first->port, $second->port]);
+
+        // The panel removes the database server on the usual port: the website waits.
+        $first->update(['status' => 'removing']);
+        $this->postJson("/api/v1/servers/{$server->id}/move-databases")->assertAccepted()->assertJsonCount(0, 'jobs');
+        $first->update(['status' => 'running']);
+
+        $jobId = $this->postJson("/api/v1/servers/{$server->id}/move-databases")->assertAccepted()->assertJsonCount(1, 'jobs')->json('jobs.0.id');
+        $payload = AgentJob::findOrFail($jobId)->payload;
+        $this->assertEquals([$first->forAgent()], $payload['databaseServers']);
+        $this->assertSame($first->id, $payload['databases'][0]['databaseServer']);
+        $this->assertSame(2, DatabaseServer::count());
+        $this->finish($jobId);
+        $this->assertSame($first->id, $database->fresh()->database_server_id);
+    }
+
+    public function test_the_move_needs_an_agent_that_can_operate_database_servers(): void
     {
         $this->actingWith($this->user());
         $server = $this->server();
         $this->website($this->customer(), $server, $this->image());
 
         $this->postJson("/api/v1/servers/{$server->id}/move-databases")
-            ->assertJsonValidationErrors(['server' => "The agent on the server {$server->name} did not report that it can give each customer its own database containers. Update the agent of the server, then try again."]);
+            ->assertJsonValidationErrors(['server' => "The agent on the server {$server->name} did not report that it can operate database servers. Update the agent of the server, then try again."]);
         $this->assertSame(0, AgentJob::count());
     }
 

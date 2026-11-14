@@ -91,18 +91,12 @@ type Deps struct {
 	ServiceImage func(name string) string
 	// DBHome is the home directory of cf-db. The default is "/var/lib/cf-db".
 	DBHome string
-	// DatabaseMemoryMB is the memory limit of the MariaDB container and of the PostgreSQL
-	// container of each customer, in MB. 0 means one quarter of the memory of the server, from
-	// 512 MB to 2048 MB.
-	DatabaseMemoryMB int
-	// DatabaseCPUs is the CPU limit of each database container of a customer, in vCPUs. 0 means
-	// no limit: the kernel then gives each container an equal part when the CPUs are busy.
-	DatabaseCPUs float64
-	// ValkeyMemoryMB is the memory limit of the Valkey container of each customer for its
-	// data, in MB. 0 means 1/32 of the memory of the server, from 32 MB to 256 MB.
-	ValkeyMemoryMB int
-	// ValkeyDial opens a connection to the Valkey container on an address. Nil means a
-	// connection to its port on the address. Tests replace it.
+	// LoopControl is the device that makes loop devices. A server that has it gives each
+	// database server a disk image with the size of its disk limit. The default is
+	// "/dev/loop-control". Tests replace it.
+	LoopControl string
+	// ValkeyDial opens a connection to a Valkey database server on an address and a port
+	// ("address:port"). Nil means a TCP connection. Tests replace it.
 	ValkeyDial func(ctx context.Context, address string) (net.Conn, error)
 	// SftpKeysDir holds the SSH keys of each website user. The default is "/etc/cloudfactory/sftp".
 	SftpKeysDir string
@@ -152,15 +146,16 @@ type Deps struct {
 	PanelCertificateWait time.Duration
 	PanelCertificatePoll time.Duration
 
-	// dbMu protects dbReady, dbStart and the list of the websites of each database instance.
+	// dbMu protects dbReady and dbStart, and makes each change of the records of the customers
+	// and of their database servers one step.
 	dbMu sync.Mutex
 	// valkeyMu makes the search for a free Valkey database number and its user one step.
 	valkeyMu sync.Mutex
 	sftpMu   sync.Mutex
 	// dbReady has the database containers that this agent process started and that answered.
 	dbReady map[dbServer]bool
-	// dbStart has one lock for the containers of each customer ("" is the shared containers).
-	// The start of a container and the removal of the containers of a customer hold it.
+	// dbStart has one lock for each database server ("" is the shared containers). The start
+	// and the removal of a database server hold it.
 	dbStart map[string]*sync.Mutex
 	// netMu protects netReady and accessLoaded, and makes each change of the firewall one step.
 	netMu sync.Mutex
@@ -209,23 +204,34 @@ type State struct {
 
 type stateFile struct {
 	Sites map[string]*Site `json:"sites"`
-	// Databases has the database containers of each customer on this server. The key is the
-	// ID of the customer in lower case.
+	// Databases has the record of each customer that has a website or a database server on
+	// this server. The key is the ID of the customer in lower case.
 	Databases map[string]*DatabaseInstance `json:"databases,omitempty"`
 }
 
-// DatabaseInstance is what the agent knows about the database containers of one customer.
+// DatabaseInstance is what the agent knows about the database servers of one customer. The
+// record stays while the customer has a website or a database server on this server.
 type DatabaseInstance struct {
 	// Number is the address number of the customer (quadlet.DatabaseAddress).
 	Number int `json:"number"`
-	// Websites are the IDs of the websites that use the containers. This list is the record
-	// of the database containers of each website: a website that is in no list uses the
-	// shared containers of an earlier release.
+	// Websites are the IDs of the websites that can use the database servers of the customer.
+	// A website that is in no list uses the shared containers of an earlier release.
 	Websites []string `json:"websites"`
-	// Moving are the IDs of the websites with databases that MoveDatabases copies into the
-	// containers now. They do not use the containers yet. The agent removes the containers
-	// and their data when the two lists are empty.
-	Moving []string `json:"moving,omitempty"`
+	// Servers are the database servers of the customer. The key is the ID of the database
+	// server in lower case.
+	Servers map[string]*DatabaseServer `json:"servers,omitempty"`
+}
+
+// DatabaseServer is what the agent knows about one database server of a customer.
+type DatabaseServer struct {
+	// Engine is "mariadb", "postgresql" or "valkey".
+	Engine string `json:"engine"`
+	// Port is the port of the database server on the address of its customer.
+	Port int `json:"port"`
+	// The limits of the container. 0 means no limit.
+	VCPUs       float64 `json:"vcpus,omitempty"`
+	MemoryBytes int64   `json:"memoryBytes,omitempty"`
+	DiskBytes   int64   `json:"diskBytes,omitempty"`
 }
 
 func (s *State) read() (stateFile, error) {

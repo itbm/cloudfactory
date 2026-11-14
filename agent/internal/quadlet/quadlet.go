@@ -97,14 +97,15 @@ type Website struct {
 	Command []string
 	// Stopped is true when the owner stopped the website. Then systemd does not start it at boot.
 	Stopped bool
-	// DatabaseAddress is the address of the database containers of the customer of the
-	// website (DatabaseAddress). Empty means ServiceAddress, where the shared database
-	// containers of an earlier release publish their ports.
+	// DatabaseAddress is the address of the database servers of the customer of the website
+	// (DatabaseAddress). Empty means ServiceAddress, where the shared database containers of
+	// an earlier release publish their ports.
 	DatabaseAddress string
 }
 
 // Database host names in each website container. They point to the address of the database
-// containers of the customer of the website. Each engine has its usual port (DatabasePort).
+// servers of the customer of the website. The first database server of an engine has the usual
+// port of the engine (DatabasePort), and a second one has the next port (DatabasePorts).
 const (
 	MariaDBHost    = "mariadb.internal"
 	PostgreSQLHost = "postgres.internal"
@@ -132,15 +133,15 @@ func (w Website) ServiceName() string { return w.ContainerName() + ".service" }
 // websites and the panel on this address (install.sh).
 const ServiceAddress = "169.254.77.1"
 
-// The network of the database containers on the loopback interface of the host. Each customer
-// has its own database containers on a server (one for each engine that the customer uses),
-// and they publish their ports on one address of this network. The installer and the agent add
+// The network of the database servers on the loopback interface of the host. Each customer
+// has its own database servers on a server, and they publish their ports on one address of
+// this network: the address of the customer. The installer and the agent add
 // DatabaseClientAddress to "lo" with the prefix of the network. For the loopback interface,
 // the kernel then makes each address of the network a local address, so the agent does not add
 // an address for each customer.
 //
-// The host firewall lets a website connect only to the address of its own customer
-// (install.sh, the set database_access).
+// The host firewall lets a website connect only to the ports of the database servers of its
+// own customer, on the address of its own customer (install.sh, the set database_access).
 const (
 	DatabaseNetwork = "169.254.80.0/20"
 	// DatabaseClientAddress is the source address of each connection to an address of
@@ -150,11 +151,11 @@ const (
 	// DatabasePrefix is the prefix length of DatabaseNetwork.
 	DatabasePrefix = 20
 	// DatabaseAddresses is the number of customers of one server that can have database
-	// containers: the addresses from 169.254.80.2 to 169.254.95.254.
+	// servers: the addresses from 169.254.80.2 to 169.254.95.254.
 	DatabaseAddresses = 4093
 )
 
-// DatabaseAddress gives address number n of DatabaseNetwork for the database containers of a
+// DatabaseAddress gives address number n of DatabaseNetwork for the database servers of a
 // customer. n is from 1 to DatabaseAddresses. Address 1 is 169.254.80.2.
 func DatabaseAddress(n int) (string, error) {
 	if n < 1 || n > DatabaseAddresses {
@@ -332,18 +333,22 @@ func EdgeUnit(e Edge) string {
 }
 
 // Database is the input for the unit of a database container (FR-501). The user cf-db runs
-// the containers, each one in its own gVisor sandbox. Each customer has its own container for
-// each engine, so a customer cannot use the memory, the connections or the settings of the
+// the containers, each one in its own gVisor sandbox. Each database server of a customer is
+// one container, so a customer cannot use the memory, the connections or the settings of the
 // database server of a different customer. Each website connects with its own database user.
 type Database struct {
 	// Engine is "mariadb", "postgresql" or "valkey".
 	Engine string
-	// Instance is the ID of the customer, in lower case. Empty is the shared container of an
+	// ID is the ID of the database server, in lower case. Empty is the shared container of an
 	// earlier release, for all customers.
-	Instance string
-	// Address is the address on which the container publishes its port: an address of
-	// DatabaseNetwork. Empty means ServiceAddress.
+	ID string
+	// Customer is the ID of the customer of the database server, in lower case.
+	Customer string
+	// Address is the address on which the container publishes its port: the address of the
+	// customer in DatabaseNetwork. Empty means ServiceAddress.
 	Address string
+	// Port is the port on Address. 0 means the usual port of the engine (DatabasePort).
+	Port int
 	// Limits are the limits of the container. The shared container has none.
 	Limits Limits
 	Image  string
@@ -355,20 +360,34 @@ type Database struct {
 	Gvisor  Runtime
 	// MemoryMB is the memory limit of Valkey for its data, in MB.
 	MemoryMB int
+	// DiskBytes is the disk limit of the database server. 0 means no limit.
+	DiskBytes int64
 }
 
-// DatabaseContainer is the name of the container of an engine for one customer, for example
-// "cf-mariadb-01jbq3z5k8n6t4w2x9y7r5p3m1". With no instance, it is the shared container of
-// an earlier release, for example "cf-mariadb".
-func DatabaseContainer(engine, instance string) string {
-	if instance == "" {
+// PostgresWALMB gives the limit of PostgreSQL for its write-ahead log, in MB, for a disk
+// limit. The usual limit of PostgreSQL is 1 GB, which is all the disk of a small database
+// server. The limit is one eighth of the disk, not less than 64 MB and not more than the
+// usual 1 GB. With no disk limit, the result is 0: PostgreSQL uses its usual limit.
+func PostgresWALMB(diskBytes int64) int {
+	if diskBytes <= 0 {
+		return 0
+	}
+	return int(min(max(diskBytes>>20/8, 64), 1024))
+}
+
+// DatabaseContainer is the name of the container of a database server, for example
+// "cf-mariadb-01jbq3z5k8n6t4w2x9y7r5p3m1". With no ID, it is the shared container of an
+// earlier release, for example "cf-mariadb".
+func DatabaseContainer(engine, id string) string {
+	if id == "" {
 		return "cf-" + engine
 	}
-	return "cf-" + engine + "-" + instance
+	return "cf-" + engine + "-" + id
 }
 
-// DatabasePort is the port of an engine on the address of its container. The website
-// containers connect to it through the host names MariaDBHost, PostgreSQLHost and ValkeyHost.
+// DatabasePort is the usual port of an engine. It is the port of the engine in its container,
+// and the port of the first database server of the engine on the address of a customer. The
+// website containers connect through the host names MariaDBHost, PostgreSQLHost and ValkeyHost.
 func DatabasePort(engine string) int {
 	switch engine {
 	case "postgresql":
@@ -379,9 +398,23 @@ func DatabasePort(engine string) int {
 	return 3306
 }
 
-// ValkeyDatabases is the number of databases of the Valkey container of a customer. Database
-// 0 is for no website: a new connection starts there, and a website user has no access to it.
-// Thus one customer can have 1023 Valkey databases on a server.
+// DatabasePorts is the number of ports of each engine on the address of a customer: the usual
+// port of the engine and the ports after it. Thus one customer can have 50 database servers
+// of each engine on a server. The ranges of the three engines do not have a port in common.
+const DatabasePorts = 50
+
+// CheckDatabasePort checks the port of a database server of an engine.
+func CheckDatabasePort(engine string, port int) error {
+	first := DatabasePort(engine)
+	if port < first || port >= first+DatabasePorts {
+		return fmt.Errorf("quadlet: %d is not a port of a %s database server (%d to %d)", port, engine, first, first+DatabasePorts-1)
+	}
+	return nil
+}
+
+// ValkeyDatabases is the number of databases of a Valkey database server. Database 0 is for
+// no website: a new connection starts there, and a website user has no access to it. Thus one
+// Valkey database server can have 1023 databases.
 const ValkeyDatabases = 1024
 
 // ValkeyUsersFile is the name of the user file of Valkey in its data directory.
@@ -417,15 +450,21 @@ func ValkeyArgs(d Database) []string {
 // socket for the agent: the agent connects to the published port as the administrator, with a
 // password that only root can read.
 func DatabaseUnit(d Database) string {
-	name := DatabaseContainer(d.Engine, d.Instance)
+	name := DatabaseContainer(d.Engine, d.ID)
 	port := strconv.Itoa(DatabasePort(d.Engine))
-	description := "Cloudfactory " + map[string]string{"mariadb": "MariaDB", "postgresql": "PostgreSQL", "valkey": "Valkey"}[d.Engine] + " service"
+	published := port
+	if d.Port > 0 {
+		published = strconv.Itoa(d.Port)
+	}
+	description := "Cloudfactory " + map[string]string{"mariadb": "MariaDB", "postgresql": "PostgreSQL", "valkey": "Valkey"}[d.Engine]
 	address := d.Address
 	if address == "" {
 		address = ServiceAddress
 	}
-	if d.Instance != "" {
-		description += " of customer " + d.Instance
+	if d.ID != "" {
+		description += " database server " + d.ID
+	} else {
+		description += " service"
 	}
 	lines := []string{
 		"[Unit]",
@@ -437,8 +476,9 @@ func DatabaseUnit(d Database) string {
 		"Pull=never",
 		"GlobalArgs=" + d.Gvisor.GlobalArgs(),
 		// Only on a private address of "lo": other computers cannot connect. The host firewall
-		// lets only the websites of the customer connect to the address of the customer.
-		"PublishPort=" + address + ":" + port + ":" + port,
+		// lets only the websites of the customer connect to this port on the address of the
+		// customer.
+		"PublishPort=" + address + ":" + published + ":" + port,
 		"Label=io.cloudfactory.service=" + d.Engine,
 		"NoNewPrivileges=true",
 		"DropCapability=all",
@@ -477,9 +517,14 @@ func DatabaseUnit(d Database) string {
 			"EnvironmentFile="+d.EnvFile,
 			`Environment="POSTGRES_INITDB_ARGS=--auth-host=scram-sha-256 --auth-local=trust"`,
 		)
+		if wal := PostgresWALMB(d.DiskBytes); wal > 0 {
+			// The write-ahead log does not fill a small disk. The smallest size that
+			// PostgreSQL keeps is two log files of 16 MB.
+			lines = append(lines, fmt.Sprintf("Exec=postgres -c max_wal_size=%dMB -c min_wal_size=32MB", wal))
+		}
 	}
-	if d.Instance != "" {
-		lines = append(lines, "Label=io.cloudfactory.customer="+d.Instance)
+	if d.ID != "" {
+		lines = append(lines, "Label=io.cloudfactory.database-server="+d.ID, "Label=io.cloudfactory.customer="+d.Customer)
 	}
 	lines = append(lines,
 		"",
@@ -487,8 +532,8 @@ func DatabaseUnit(d Database) string {
 		"Restart=always",
 		"TimeoutStartSec=900",
 	)
-	// The limits are on the cgroup of the service (Runtime.GlobalArgs). A customer that uses
-	// all its memory or CPU time does not take them from the containers of other customers.
+	// The limits are on the cgroup of the service (Runtime.GlobalArgs). A database server that
+	// uses all its memory or CPU time does not take them from other containers.
 	lines = append(lines, LimitProperties(d.Limits)...)
 	lines = append(lines,
 		"",

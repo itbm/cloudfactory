@@ -3,8 +3,6 @@ package actions
 import (
 	"context"
 	"errors"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -19,15 +17,38 @@ const (
 )
 
 // moveRequest gives the move of one MariaDB database and one PostgreSQL database, each with
-// one user, of the website of the tests.
+// one user, of the website of the tests. The databases go to the MariaDB database server and
+// the PostgreSQL database server of the customer of the website.
 func moveRequest() *agentv1.MoveDatabasesRequest {
 	return &agentv1.MoveDatabasesRequest{
 		JobId: jobID2, WebsiteId: websiteID, UnixUser: "acme_x7k2", DatabaseInstance: customerID,
-		Databases: []*agentv1.DatabaseRef{{Engine: "mariadb", Name: "acme_x7k2_shop"}, {Engine: "postgresql", Name: "acme_x7k2_data"}},
-		Users: []*agentv1.MoveDatabaseUser{
-			{Engine: "mariadb", Name: "acme_x7k2_shop", Access: "website", Grants: []*agentv1.DatabaseGrant{{Database: "acme_x7k2_shop", Privileges: "readwrite"}}},
-			{Engine: "postgresql", Name: "acme_x7k2_reader", Access: "website", Grants: []*agentv1.DatabaseGrant{{Database: "acme_x7k2_data", Privileges: "readonly"}}},
+		DatabaseServers: []*agentv1.DatabaseServer{databaseServer("mariadb"), databaseServer("postgresql")},
+		Databases: []*agentv1.DatabaseRef{
+			{Engine: "mariadb", Name: "acme_x7k2_shop", DatabaseServer: mariaServerID},
+			{Engine: "postgresql", Name: "acme_x7k2_data", DatabaseServer: pgServerID},
 		},
+		Users: []*agentv1.MoveDatabaseUser{
+			{Engine: "mariadb", Name: "acme_x7k2_shop", Access: "website", DatabaseServer: mariaServerID, Grants: []*agentv1.DatabaseGrant{{Database: "acme_x7k2_shop", Privileges: "readwrite"}}},
+			{Engine: "postgresql", Name: "acme_x7k2_reader", Access: "website", DatabaseServer: pgServerID, Grants: []*agentv1.DatabaseGrant{{Database: "acme_x7k2_data", Privileges: "readonly"}}},
+		},
+	}
+}
+
+// movedServers checks the database servers of the customer after a move that failed: the
+// database servers stay, because the panel has them, and the website cannot use them.
+func movedServers(t *testing.T, d *Deps) {
+	t.Helper()
+	for engine, key := range map[string]string{"mariadb": mariaServerKey, "postgresql": pgServerKey} {
+		if !d.serverExists(dbServer{ID: key, Engine: engine}) {
+			t.Errorf("the %s database server of the customer is gone", engine)
+		}
+		if !d.serverExists(dbServer{Engine: engine}) {
+			t.Errorf("the shared %s container is gone", engine)
+		}
+	}
+	instances, _ := d.State.DatabaseInstances()
+	if inst := instances[customerKey]; len(inst.Servers) != 2 || len(inst.Websites) != 0 {
+		t.Errorf("record of the customer: %+v", inst)
 	}
 }
 
@@ -63,9 +84,9 @@ func inputsOf(f *execx.Fake, prefix string) string {
 	return b.String()
 }
 
-// A move copies the databases and the users of a website into the containers of its
+// A move copies the databases and the users of a website into database servers of its
 // customer, with the same password hashes, while the website does not operate. Then the
-// website uses the new containers and the old copies go.
+// website uses the database servers and the old copies go.
 func TestMoveDatabases(t *testing.T) {
 	d, f, _ := deps(t)
 	oldWebsite(t, d, f)
@@ -73,39 +94,45 @@ func TestMoveDatabases(t *testing.T) {
 	if err := run(t)(d.MoveDatabases(moveRequest())); err != nil {
 		t.Fatal(err)
 	}
-	mariaNew, pgNew := podmanDB+"exec -i cf-mariadb-"+customerKey+" ", podmanDB+"exec -i cf-postgresql-"+customerKey+" "
+	mariaNew, pgNew := podmanDB+"exec -i cf-mariadb-"+mariaServerKey+" ", podmanDB+"exec -i cf-postgresql-"+pgServerKey+" "
 	mariaOld, pgOld := podmanDB+"exec -i cf-mariadb ", podmanDB+"exec -i cf-postgresql "
 
-	// The copy goes from the shared container to the container of the customer.
-	for _, want := range []string{
-		podmanDB + "exec cf-mariadb mariadb-dump",
-		podmanDB + "exec cf-postgresql pg_dump",
+	// The database servers have the limits of the request.
+	for engine, key := range map[string]string{"mariadb": mariaServerKey, "postgresql": pgServerKey} {
+		if u := unitFile(t, d, DBUser, "cf-"+engine+"-"+key+".container"); !strings.Contains(u, "MemoryMax=1073741824\n") || !strings.Contains(u, "PublishPort="+customerAddress+":") {
+			t.Errorf("the unit of the %s database server:\n%s", engine, u)
+		}
+	}
+	// The copy goes from the shared container to the database server of the customer.
+	for want, key := range map[string]string{
+		podmanDB + "exec cf-mariadb mariadb-dump": mariaServerKey,
+		podmanDB + "exec cf-postgresql pg_dump":   pgServerKey,
 	} {
 		found := false
 		for _, c := range f.Calls {
 			from, to, pipe := strings.Cut(c, " | ")
-			found = found || pipe && strings.HasPrefix(from, want) && strings.Contains(to, "-"+customerKey+" ")
+			found = found || pipe && strings.HasPrefix(from, want) && strings.Contains(to, "-"+key+" ")
 		}
 		if !found {
-			t.Errorf("no copy %q into a container of the customer: %q", want, f.Calls)
+			t.Errorf("no copy %q into the database server %s: %q", want, key, f.Calls)
 		}
 	}
-	// The users have the hashes of their passwords, the address that a container of a customer
-	// sees for a website, and their access.
+	// The users have the hashes of their passwords, the address that a database server sees
+	// for a website, and their access.
 	for _, want := range []string{
-		"CREATE USER 'acme_x7k2_shop'@'169.254.80.1' IDENTIFIED VIA mysql_native_password USING '" + mariaHash + "' REQUIRE NONE;\n",
+		"CREATE USER 'acme_x7k2_shop'@'169.254.80.1' IDENTIFIED VIA mysql_native_password USING '" + mariaHash + "' REQUIRE NONE WITH MAX_USER_CONNECTIONS 100;\n",
 		"GRANT ALL PRIVILEGES ON `acme\\_x7k2\\_shop`.* TO 'acme_x7k2_shop'@'169.254.80.1';\n",
 	} {
 		if in := inputsOf(f, mariaNew); !strings.Contains(in, want) {
-			t.Errorf("the MariaDB container of the customer got no %q:\n%s", want, in)
+			t.Errorf("the MariaDB database server of the customer got no %q:\n%s", want, in)
 		}
 	}
 	for _, want := range []string{
-		"CREATE ROLE \"acme_x7k2_reader\" LOGIN PASSWORD '" + pgVerifier + "';\n",
+		"CREATE ROLE \"acme_x7k2_reader\" LOGIN CONNECTION LIMIT 80 PASSWORD '" + pgVerifier + "';\n",
 		"GRANT \"acme_x7k2_data:ro\" TO \"acme_x7k2_reader\";\n",
 	} {
 		if in := inputsOf(f, pgNew); !strings.Contains(in, want) {
-			t.Errorf("the PostgreSQL container of the customer got no %q:\n%s", want, in)
+			t.Errorf("the PostgreSQL database server of the customer got no %q:\n%s", want, in)
 		}
 	}
 	// The website stops before the copy and starts after it, with the address of the customer.
@@ -124,7 +151,7 @@ func TestMoveDatabases(t *testing.T) {
 	if key, address, err := d.State.WebsiteDatabases(websiteID); key != customerKey || address != customerAddress || err != nil {
 		t.Errorf("the website uses %q at %q: %v", key, address, err)
 	}
-	if got, want := accessFile(t, d), "{ 20001 . "+customerAddress+" }"; !strings.Contains(got, want) {
+	if got, want := accessFile(t, d), "{ 20001 . "+customerAddress+" . 3306, 20001 . "+customerAddress+" . 5432 }"; !strings.Contains(got, want) {
 		t.Errorf("the firewall access has no %q:\n%s", want, got)
 	}
 	// The old copies go, after the website started.
@@ -167,16 +194,20 @@ func TestMoveDatabases(t *testing.T) {
 		}
 	}
 	if in := inputsOf(f, mariaNew) + inputsOf(f, pgNew); strings.Contains(in, "CREATE") || strings.Contains(in, "DROP") {
-		t.Errorf("the second run changed the containers of the customer:\n%s", in)
+		t.Errorf("the second run changed the database servers of the customer:\n%s", in)
 	}
 }
 
-// When the copy fails, the website starts again with the shared containers, the containers
-// of the customer go, and the shared containers keep the data.
+// When the copy fails, the website starts again with the shared containers, the copies in
+// the database servers of the customer go, and the shared containers keep the data.
 func TestMoveDatabasesFailure(t *testing.T) {
 	d, f, _ := deps(t)
 	oldWebsite(t, d, f)
-	f.Rules = append([]execx.Rule{{Prefix: podmanDB + "exec cf-postgresql pg_dump", Err: errors.New("no space left on device")}}, f.Rules...)
+	mariaNew := podmanDB + "exec -i cf-mariadb-" + mariaServerKey + " "
+	f.Rules = append([]execx.Rule{
+		{Prefix: podmanDB + "exec cf-postgresql pg_dump", Err: errors.New("no space left on device")},
+		{Prefix: mariaNew, Input: "SELECT Host FROM mysql.user WHERE User = 'acme_x7k2_shop'", Output: "169.254.80.1\n"},
+	}, f.Rules...)
 	f.Calls, f.Inputs = nil, nil
 	err := run(t)(d.MoveDatabases(moveRequest()))
 	if err == nil || !strings.Contains(err.Error(), "no space left on device") {
@@ -188,19 +219,9 @@ func TestMoveDatabasesFailure(t *testing.T) {
 		t.Errorf("stop %d, start %d: %q", stop, start, f.Calls)
 	}
 	if key, _, _ := d.State.WebsiteDatabases(websiteID); key != "" {
-		t.Errorf("the website uses the containers of %q", key)
+		t.Errorf("the website uses the database servers of %q", key)
 	}
-	if instances, _ := d.State.DatabaseInstances(); len(instances) != 0 {
-		t.Errorf("the containers of the customer stay in the record: %+v", instances)
-	}
-	for _, engine := range []string{"mariadb", "postgresql"} {
-		if d.serverExists(dbServer{Instance: customerKey, Engine: engine}) {
-			t.Errorf("the %s container of the customer stays", engine)
-		}
-		if !d.serverExists(dbServer{Engine: engine}) {
-			t.Errorf("the shared %s container is gone", engine)
-		}
-	}
+	movedServers(t, d)
 	if u := unitFile(t, d, "acme_x7k2", "cf-acme_x7k2.container"); !strings.Contains(u, "AddHost=mariadb.internal:169.254.77.1\n") {
 		t.Errorf("the website does not use the shared containers:\n%s", u)
 	}
@@ -211,16 +232,25 @@ func TestMoveDatabasesFailure(t *testing.T) {
 	if got := accessFile(t, d); strings.Contains(got, customerAddress) {
 		t.Errorf("the website has access to the address of the customer:\n%s", got)
 	}
-	// No file of the copy stays for the next containers of the customer.
-	if entries, _ := os.ReadDir(filepath.Join(d.DBHome, "customers")); len(entries) != 0 {
-		t.Errorf("files of the customer stay: %v", entries)
+	// No copy stays in the database servers for the next move.
+	in := inputsOf(f, mariaNew)
+	for _, want := range []string{"DROP USER IF EXISTS 'acme_x7k2_shop'@'169.254.80.1';\n", "DROP DATABASE IF EXISTS `acme_x7k2_shop`"} {
+		if !strings.Contains(in, want) {
+			t.Errorf("the MariaDB database server of the customer got no %q:\n%s", want, in)
+		}
+	}
+	// The next move uses the same database servers.
+	f.Rules = f.Rules[1:]
+	if err := run(t)(d.MoveDatabases(moveRequest())); err != nil {
+		t.Fatalf("the second move: %v", err)
+	}
+	if key, _, _ := d.State.WebsiteDatabases(websiteID); key != customerKey {
+		t.Errorf("after the second move, the website uses the database servers of %q", key)
 	}
 }
 
-// When a different website of the customer uses the containers, a move that fails removes
-// only its copies from them.
 // A website that answered with the shared containers, and that does not answer with the
-// containers of its customer, gets the shared containers again.
+// database servers of its customer, gets the shared containers again.
 func TestMoveDatabasesGoesBackWhenTheWebsiteDoesNotAnswer(t *testing.T) {
 	d, f, _ := deps(t)
 	oldWebsite(t, d, f)
@@ -238,26 +268,16 @@ func TestMoveDatabasesGoesBackWhenTheWebsiteDoesNotAnswer(t *testing.T) {
 		t.Fatalf("error: %v", err)
 	}
 	if key, _, _ := d.State.WebsiteDatabases(websiteID); key != "" {
-		t.Errorf("the website uses the containers of %q", key)
+		t.Errorf("the website uses the database servers of %q", key)
 	}
 	if site, _ := d.State.Get(websiteID); site.Website.GetDatabaseInstance() != "" {
 		t.Errorf("the record of the website has the customer %q", site.Website.GetDatabaseInstance())
 	}
-	if instances, _ := d.State.DatabaseInstances(); len(instances) != 0 {
-		t.Errorf("the containers of the customer stay in the record: %+v", instances)
-	}
-	for _, engine := range []string{"mariadb", "postgresql"} {
-		if d.serverExists(dbServer{Instance: customerKey, Engine: engine}) {
-			t.Errorf("the %s container of the customer stays", engine)
-		}
-		if !d.serverExists(dbServer{Engine: engine}) {
-			t.Errorf("the shared %s container is gone", engine)
-		}
-	}
+	movedServers(t, d)
 	if u := unitFile(t, d, "acme_x7k2", "cf-acme_x7k2.container"); !strings.Contains(u, "AddHost=mariadb.internal:169.254.77.1\n") {
 		t.Errorf("the website does not use the shared containers:\n%s", u)
 	}
-	// The website started two times: with the new containers, and then with the shared containers.
+	// The website started two times: with the database servers, and then with the shared containers.
 	restarts := 0
 	for _, c := range f.Calls {
 		if c == "systemctl --user --machine=acme_x7k2@ restart cf-acme_x7k2.service" {
@@ -274,8 +294,9 @@ func TestMoveDatabasesGoesBackWhenTheWebsiteDoesNotAnswer(t *testing.T) {
 	if got := accessFile(t, d); strings.Contains(got, customerAddress) {
 		t.Errorf("the website has access to the address of the customer:\n%s", got)
 	}
-	if entries, _ := os.ReadDir(filepath.Join(d.DBHome, "customers")); len(entries) != 0 {
-		t.Errorf("files of the customer stay: %v", entries)
+	// The copies in the database servers go.
+	if in := inputsOf(f, podmanDB+"exec -i cf-postgresql-"+pgServerKey+" "); !strings.Contains(in, "DROP ROLE IF EXISTS \"acme_x7k2_reader\";\n") || !strings.Contains(in, "DROP DATABASE") {
+		t.Errorf("the PostgreSQL database server of the customer keeps the copies:\n%s", in)
 	}
 }
 
@@ -290,10 +311,10 @@ func TestMoveDatabasesOfAWebsiteThatDoesNotAnswer(t *testing.T) {
 		t.Fatal(err)
 	}
 	if key, _, _ := d.State.WebsiteDatabases(websiteID); key != customerKey {
-		t.Errorf("the website uses the containers of %q", key)
+		t.Errorf("the website uses the database servers of %q", key)
 	}
 	if u := unitFile(t, d, "acme_x7k2", "cf-acme_x7k2.container"); !strings.Contains(u, "AddHost=mariadb.internal:"+customerAddress+"\n") {
-		t.Errorf("the website does not use the containers of its customer:\n%s", u)
+		t.Errorf("the website does not use the database servers of its customer:\n%s", u)
 	}
 	// The old copies are gone, and the shared containers too: no website uses them.
 	if old := inputsOf(f, podmanDB+"exec -i cf-mariadb "); !strings.Contains(old, "DROP DATABASE") {
@@ -306,7 +327,9 @@ func TestMoveDatabasesOfAWebsiteThatDoesNotAnswer(t *testing.T) {
 	}
 }
 
-func TestMoveDatabasesFailureKeepsTheContainersOfTheCustomer(t *testing.T) {
+// When a different website of the customer uses a database server, a move that fails removes
+// only its copies from it.
+func TestMoveDatabasesFailureKeepsTheOtherDatabases(t *testing.T) {
 	d, f, _ := deps(t)
 	oldWebsite(t, d, f)
 	second := customerWebsite()
@@ -315,10 +338,10 @@ func TestMoveDatabasesFailureKeepsTheContainersOfTheCustomer(t *testing.T) {
 	if err := run(t)(d.CreateWebsite(&agentv1.WebsiteRequest{JobId: jobID, Website: second})); err != nil {
 		t.Fatal(err)
 	}
-	if err := run(t)(d.CreateDatabase(mariaRequest(otherWebsiteID, "acme_s1t2", "acme_s1t2_blog"))); err != nil {
+	if err := run(t)(d.CreateDatabase(mariaRequest(otherWebsiteID, "acme_s1t2", "acme_s1t2_blog", databaseServer("mariadb")))); err != nil {
 		t.Fatal(err)
 	}
-	mariaNew := podmanDB + "exec -i cf-mariadb-" + customerKey + " "
+	mariaNew := podmanDB + "exec -i cf-mariadb-" + mariaServerKey + " "
 	f.Rules = append([]execx.Rule{
 		{Prefix: podmanDB + "exec cf-postgresql pg_dump", Err: errors.New("no space left on device")},
 		{Prefix: mariaNew, Input: "SELECT Host FROM mysql.user WHERE User = 'acme_x7k2_shop'", Output: "169.254.80.1\n"},
@@ -327,24 +350,28 @@ func TestMoveDatabasesFailureKeepsTheContainersOfTheCustomer(t *testing.T) {
 	if err := run(t)(d.MoveDatabases(moveRequest())); err == nil {
 		t.Fatal("no error")
 	}
-	if !d.serverExists(dbServer{Instance: customerKey, Engine: "mariadb"}) {
-		t.Error("the MariaDB container of the customer is gone")
+	if !d.serverExists(dbServer{ID: mariaServerKey, Engine: "mariadb"}) {
+		t.Error("the MariaDB database server of the customer is gone")
 	}
-	if f.Called("systemctl --user --machine=cf-db@ stop cf-mariadb-" + customerKey + ".service") {
-		t.Error("the MariaDB container of the customer stopped")
+	if f.Called("systemctl --user --machine=cf-db@ stop cf-mariadb-" + mariaServerKey + ".service") {
+		t.Error("the MariaDB database server of the customer stopped")
 	}
 	in := inputsOf(f, mariaNew)
 	for _, want := range []string{"DROP USER IF EXISTS 'acme_x7k2_shop'@'169.254.80.1';\n", "DROP DATABASE IF EXISTS `acme_x7k2_shop`"} {
 		if !strings.Contains(in, want) {
-			t.Errorf("the container of the customer got no %q:\n%s", want, in)
+			t.Errorf("the database server of the customer got no %q:\n%s", want, in)
 		}
 	}
 	if strings.Contains(in, "acme_s1t2") {
 		t.Errorf("the move changed the database of the second website:\n%s", in)
 	}
 	instances, _ := d.State.DatabaseInstances()
-	if inst := instances[customerKey]; len(inst.Websites) != 1 || inst.Websites[0] != otherWebsiteID || len(inst.Moving) != 0 {
+	if inst := instances[customerKey]; len(inst.Websites) != 1 || inst.Websites[0] != otherWebsiteID || len(inst.Servers) != 2 {
 		t.Errorf("record of the customer: %+v", inst)
+	}
+	// The second website keeps its access to the database servers of the customer.
+	if got, want := accessFile(t, d), "{ 20003 . "+customerAddress+" . 3306, 20003 . "+customerAddress+" . 5432 }"; !strings.Contains(got, want) {
+		t.Errorf("the firewall access has no %q:\n%s", want, got)
 	}
 }
 
@@ -360,6 +387,16 @@ func TestMoveDatabasesChecksTheRequest(t *testing.T) {
 		"privileges that are not known":   func(r *agentv1.MoveDatabasesRequest) { r.Users[0].Grants[0].Privileges = "all" },
 		"an access that is not known":     func(r *agentv1.MoveDatabasesRequest) { r.Users[0].Access = "everywhere" },
 		"a Unix user that is not correct": func(r *agentv1.MoveDatabasesRequest) { r.UnixUser = "root" },
+		"a database with no server":       func(r *agentv1.MoveDatabasesRequest) { r.Databases[0].DatabaseServer = "" },
+		"a server that is not there":      func(r *agentv1.MoveDatabasesRequest) { r.Databases[1].DatabaseServer = otherServerID },
+		"a server of another engine":      func(r *agentv1.MoveDatabasesRequest) { r.Databases[0].DatabaseServer = pgServerID },
+		"a user in a different server":    func(r *agentv1.MoveDatabasesRequest) { r.Users[0].DatabaseServer = pgServerID },
+		"a user with no server":           func(r *agentv1.MoveDatabasesRequest) { r.Users[1].DatabaseServer = "" },
+		"a server of another customer":    func(r *agentv1.MoveDatabasesRequest) { r.DatabaseServers[0].Customer = otherCustomerID },
+		"a Valkey database server": func(r *agentv1.MoveDatabasesRequest) {
+			r.DatabaseServers = append(r.DatabaseServers, databaseServer("valkey"))
+		},
+		"a server with a bad port": func(r *agentv1.MoveDatabasesRequest) { r.DatabaseServers[1].Port = 3306 },
 	} {
 		req := moveRequest()
 		change(req)

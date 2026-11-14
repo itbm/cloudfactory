@@ -38,14 +38,21 @@ type fakeValkey struct {
 	saves    int
 }
 
-// customerValkey is the Valkey container of the customer of the tests.
-var customerValkey = dbServer{Instance: customerKey, Engine: "valkey"}
+// customerValkey is the Valkey database server of the customer of the tests.
+var customerValkey = dbServer{ID: valkeyServerKey, Engine: "valkey"}
 
-// newFakeValkey gives the fake Valkey server of the customer of the tests. The website of the
-// tests uses the database containers of that customer. A connection to a different address
-// gets the fake server of that address (fakeValkeyAt).
+// valkeyAddress is the address and the port of the Valkey database server of the tests.
+const valkeyAddress = customerAddress + ":6379"
+
+// newFakeValkey gives the fake Valkey server for the Valkey database server of the customer
+// of the tests. The website of the tests can use the database servers of that customer, and
+// the state has the database server. A connection to a different address or port gets the
+// fake server of that address and port (fakeValkeyAt).
 func newFakeValkey(d *Deps) *fakeValkey {
-	if _, err := d.useDatabases(customerKey, websiteID, false); err != nil {
+	if _, err := d.useDatabases(customerKey, websiteID); err != nil {
+		panic(err)
+	}
+	if _, err := d.putServer(customerKey, valkeyServerKey, recordOf(databaseServer("valkey")), false); err != nil {
 		panic(err)
 	}
 	servers := map[string]*fakeValkey{}
@@ -56,12 +63,15 @@ func newFakeValkey(d *Deps) *fakeValkey {
 		if f == nil {
 			f = &fakeValkey{version: "9.1.3", passwords: map[string]string{}, rules: map[string][]string{}, keys: map[int]int{}}
 			f.admin = func() string {
-				// The customer that has the address has the password of the server.
+				// The database server that has the address and the port has the password.
 				instances, _ := d.State.DatabaseInstances()
-				for key, inst := range instances {
-					if a, _ := quadlet.DatabaseAddress(inst.Number); a == address {
-						b, _ := os.ReadFile(d.valkeySecretFile(dbServer{Instance: key, Engine: "valkey"}))
-						return strings.TrimSpace(string(b))
+				for _, inst := range instances {
+					a, _ := quadlet.DatabaseAddress(inst.Number)
+					for id, srv := range inst.Servers {
+						if net.JoinHostPort(a, strconv.Itoa(srv.Port)) == address {
+							b, _ := os.ReadFile(d.valkeySecretFile(dbServer{ID: id, Engine: "valkey"}))
+							return strings.TrimSpace(string(b))
+						}
 					}
 				}
 				return ""
@@ -74,17 +84,18 @@ func newFakeValkey(d *Deps) *fakeValkey {
 		return client, nil
 	}
 	// A dial with no server makes the fake server of the address.
-	c, _ := d.ValkeyDial(context.Background(), customerAddress)
+	c, _ := d.ValkeyDial(context.Background(), valkeyAddress)
 	c.Close()
 	fakeValkeyAt = func(address string) *fakeValkey {
 		mu.Lock()
 		defer mu.Unlock()
 		return servers[address]
 	}
-	return servers[customerAddress]
+	return servers[valkeyAddress]
 }
 
-// fakeValkeyAt gives the fake Valkey server of an address, or nil. newFakeValkey sets it.
+// fakeValkeyAt gives the fake Valkey server of an address and a port, or nil. newFakeValkey
+// sets it.
 var fakeValkeyAt func(address string) *fakeValkey
 
 func (f *fakeValkey) serve(c net.Conn) {
@@ -248,19 +259,20 @@ func (f *fakeValkey) got(command string) bool {
 	return slices.ContainsFunc(f.commands, func(c string) bool { return strings.HasPrefix(c, command) })
 }
 
+// valkeyRequest gives the request for a Valkey database of the website of the tests, in the
+// Valkey database server of its customer.
 func valkeyRequest(name string) *agentv1.CreateDatabaseRequest {
-	return &agentv1.CreateDatabaseRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Engine: "valkey", Name: name, User: name, Password: "Abcdefghijklmnop1234", Access: "website"}
+	return &agentv1.CreateDatabaseRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Engine: "valkey", Name: name, User: name, Password: "Abcdefghijklmnop1234", Access: "website", DatabaseServer: databaseServer("valkey")}
 }
 
 // A Valkey database is a database number and a user that can use only that number.
 func TestValkeyDatabaseGetsANumberAndAUser(t *testing.T) {
 	d, f, _ := deps(t)
-	d.ValkeyMemoryMB = 128
 	d.ServiceImage = func(name string) string { return "ghcr.io/cloudfactory/" + name + ":0.1.0" }
 	f.Rules = []execx.Rule{{Prefix: "runuser -u cf-db -- env XDG_RUNTIME_DIR=/run/user/20001 podman image exists", Err: errors.New("no image")}}
 	v := newFakeValkey(d)
 	v.keys[1] = 5
-	data := filepath.Join(d.DBHome, "customers", customerKey, "valkey")
+	data := dataOf(d, valkeyServerKey)
 	job, err := d.CreateDatabase(valkeyRequest("acme_x7k2_cache"))
 	if err := run(t)(job, err); err != nil {
 		t.Fatal(err)
@@ -293,27 +305,30 @@ func TestValkeyDatabaseGetsANumberAndAUser(t *testing.T) {
 	}
 	for _, want := range []string{
 		"runuser -u cf-db -- env XDG_RUNTIME_DIR=/run/user/20001 podman pull --quiet ghcr.io/cloudfactory/valkey:0.1.0",
-		"install -d -o cf-db -g cf-db -m 0700 " + filepath.Join(d.DBHome, "customers"),
-		"install -d -o cf-db -g cf-db -m 0700 " + filepath.Join(d.DBHome, "customers", customerKey),
+		"install -d -o cf-db -g cf-db -m 0700 " + filepath.Join(d.DBHome, "servers"),
+		"install -d -o cf-db -g cf-db -m 0700 " + serverDir(d, valkeyServerKey),
+		"install -d -o cf-db -g cf-db -m 0700 " + filepath.Join(serverDir(d, valkeyServerKey), "disk"),
 		"install -d -o cf-db -g cf-db -m 0700 " + data,
 		"chown cf-db:cf-db " + filepath.Join(data, "users.acl"),
-		"systemctl --user --machine=cf-db@ restart cf-valkey-" + customerKey + ".service",
-		// The network of the database containers is on "lo" before the container starts.
+		"systemctl --user --machine=cf-db@ restart cf-valkey-" + valkeyServerKey + ".service",
+		// The network of the database servers is on "lo" before the container starts.
 		"ip address replace 169.254.80.1/20 dev lo",
 	} {
 		if !f.Called(want) {
 			t.Errorf("no call %q in %v", want, f.Calls)
 		}
 	}
-	u := unitFile(t, d, DBUser, "cf-valkey-"+customerKey+".container")
+	u := unitFile(t, d, DBUser, "cf-valkey-"+valkeyServerKey+".container")
 	for _, want := range []string{
-		// The container of the customer has the address of the customer and its own limits.
-		"ContainerName=cf-valkey-" + customerKey + "\n", "Label=io.cloudfactory.customer=" + customerKey + "\n",
+		// The database server has the address of its customer and its own limits.
+		"ContainerName=cf-valkey-" + valkeyServerKey + "\n", "Label=io.cloudfactory.customer=" + customerKey + "\n",
+		"Label=io.cloudfactory.database-server=" + valkeyServerKey + "\n",
 		"PublishPort=" + customerAddress + ":6379:6379\n", "Volume=" + data + ":/data:Z\n",
-		"Exec=valkey-server --bind 0.0.0.0 --port 6379 --databases 1024 --aclfile /data/users.acl --appendonly yes --save \"\" --maxmemory 128mb --maxmemory-policy allkeys-lru\n",
+		// The memory limit of the database server is 1 GB. The data limit is the half of the
+		// memory that is above 128 MB: 448 MB.
+		"Exec=valkey-server --bind 0.0.0.0 --port 6379 --databases 1024 --aclfile /data/users.acl --appendonly yes --save \"\" --maxmemory 448mb --maxmemory-policy allkeys-lru\n",
 		"GlobalArgs=--runtime=/usr/local/bin/runsc ", "ReadOnly=true\n",
-		// Two times the data limit and 128 MB: 384 MB.
-		"MemoryMax=402653184\n", "MemorySwapMax=0\n",
+		"CPUQuota=100%\n", "MemoryMax=1073741824\n", "MemorySwapMax=0\n",
 	} {
 		if !strings.Contains(u, want) {
 			t.Errorf("unit has no %q:\n%s", want, u)
@@ -352,7 +367,7 @@ func TestValkeyNumbersAreNotSharedAndComeBack(t *testing.T) {
 		t.Fatalf("numbers = %v", numbers)
 	}
 	v.keys[2] = 9
-	req := &agentv1.DeleteDatabaseRequest{JobId: jobID2, WebsiteId: websiteID, UnixUser: "acme_x7k2", Engine: "valkey", Name: "acme_x7k2_queue", Users: []string{"acme_x7k2_queue"}}
+	req := &agentv1.DeleteDatabaseRequest{JobId: jobID2, WebsiteId: websiteID, UnixUser: "acme_x7k2", Engine: "valkey", Name: "acme_x7k2_queue", Users: []string{"acme_x7k2_queue"}, DatabaseServer: valkeyServerID}
 	if err := run(t)(d.DeleteDatabase(req)); err != nil {
 		t.Fatal(err)
 	}
@@ -416,24 +431,24 @@ func TestValkeyRefusesBadRequests(t *testing.T) {
 			t.Errorf("%s: the agent accepted the request", name)
 		}
 	}
-	user := &agentv1.SetDatabaseUserRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Engine: "valkey", Name: "acme_x7k2_two", Password: "Abcdefghijklmnop1234", Create: true}
+	user := &agentv1.SetDatabaseUserRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Engine: "valkey", Name: "acme_x7k2_two", Password: "Abcdefghijklmnop1234", Create: true, DatabaseServer: databaseServer("valkey")}
 	if _, err := d.SetDatabaseUser(user); err == nil {
 		t.Error("the agent made a second Valkey user")
 	}
-	if _, err := d.DeleteDatabaseUser(&agentv1.DeleteDatabaseUserRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Engine: "valkey", Name: "acme_x7k2_cache"}); err == nil {
+	if _, err := d.DeleteDatabaseUser(&agentv1.DeleteDatabaseUserRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Engine: "valkey", Name: "acme_x7k2_cache", DatabaseServer: valkeyServerID}); err == nil {
 		t.Error("the agent removed a Valkey user without its database")
 	}
 	// A backup, a restore and a staging copy have no Valkey data.
-	backup := &agentv1.BackupRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Target: "s3:bucket", Kind: "manual", Databases: []*agentv1.DatabaseRef{{Engine: "valkey", Name: "acme_x7k2_cache"}}}
+	backup := &agentv1.BackupRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Target: "s3:bucket", Kind: "manual", Databases: []*agentv1.DatabaseRef{{Engine: "valkey", Name: "acme_x7k2_cache", DatabaseServer: valkeyServerID}}}
 	if _, err := d.Backup(backup); !errors.Is(err, errValkeyNoCopy) {
 		t.Errorf("backup: %v", err)
 	}
-	restore := &agentv1.RestoreRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Target: "s3:bucket", SnapshotId: "0123abcd", Scope: "database", Item: "valkey:acme_x7k2_cache", DumpSha256: strings.Repeat("a", 64)}
+	restore := &agentv1.RestoreRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Target: "s3:bucket", SnapshotId: "0123abcd", Scope: "database", Item: "valkey:acme_x7k2_cache", DumpSha256: strings.Repeat("a", 64), DatabaseServer: valkeyServerID}
 	if _, err := d.Restore(restore); !errors.Is(err, errValkeyNoCopy) {
 		t.Errorf("restore: %v", err)
 	}
 	copyReq := &agentv1.WebsiteRequest{CopyFrom: "01JBQ3Z5K8N6T4W2X9Y7R5P3M9", CopyFromUnixUser: "acme_x7k2", Website: &agentv1.Website{UnixUser: "acme_s1t2"},
-		CopyDatabases: []*agentv1.DatabaseCopy{{Engine: "valkey", From: "acme_x7k2_cache", To: "acme_s1t2_cache"}}}
+		CopyDatabases: []*agentv1.DatabaseCopy{{Engine: "valkey", From: "acme_x7k2_cache", To: "acme_s1t2_cache", FromServer: valkeyServerID, ToServer: valkeyServerID}}}
 	if err := checkCopies(copyReq); !errors.Is(err, errValkeyNoCopy) {
 		t.Errorf("staging copy: %v", err)
 	}
@@ -453,7 +468,8 @@ func TestStagingCopyGetsNewValkeyDatabases(t *testing.T) {
 	w.Id, w.UnixUser, w.DatabaseInstance = "01JBQ3Z5K8N6T4W2X9Y7R5P3M8", "acme_s1t2", customerID
 	w.Domains = []*agentv1.Domain{{Name: "staging.acme.example", Kind: "primary"}}
 	job, err := d.CreateWebsite(&agentv1.WebsiteRequest{JobId: jobID2, Website: w, CopyFrom: websiteID, CopyFromUnixUser: "acme_x7k2",
-		CopyUsers: []*agentv1.DatabaseUserCopy{{Engine: "valkey", Name: "acme_s1t2_cache", Password: "Zyxwvutsrqponmlk9876"}}})
+		DatabaseServers: []*agentv1.DatabaseServer{databaseServer("valkey")},
+		CopyUsers:       []*agentv1.DatabaseUserCopy{{Engine: "valkey", Name: "acme_s1t2_cache", Password: "Zyxwvutsrqponmlk9876", DatabaseServer: valkeyServerID}}})
 	if err := run(t)(job, err); err != nil {
 		t.Fatal(err)
 	}
@@ -486,7 +502,7 @@ func TestValkeyNewPasswordClosesTheOldConnections(t *testing.T) {
 		t.Fatal(err)
 	}
 	rules := slices.Clone(v.rules["acme_x7k2_cache"])
-	req := &agentv1.SetDatabaseUserRequest{JobId: jobID2, WebsiteId: websiteID, UnixUser: "acme_x7k2", Engine: "valkey", Name: "acme_x7k2_cache", Password: "Zyxwvutsrqponmlk9876", Access: "website",
+	req := &agentv1.SetDatabaseUserRequest{JobId: jobID2, WebsiteId: websiteID, UnixUser: "acme_x7k2", Engine: "valkey", Name: "acme_x7k2_cache", Password: "Zyxwvutsrqponmlk9876", Access: "website", DatabaseServer: databaseServer("valkey"),
 		Grants: []*agentv1.DatabaseGrant{{Database: "acme_x7k2_cache", Privileges: "readwrite"}}, WebsiteDatabases: []string{"acme_x7k2_cache"}}
 	if err := run(t)(d.SetDatabaseUser(req)); err != nil {
 		t.Fatal(err)
@@ -536,7 +552,8 @@ func TestDeleteWebsiteRemovesItsValkeyDatabases(t *testing.T) {
 	}
 	v.keys[1] = 4
 	req := &agentv1.DeleteWebsiteRequest{JobId: jobID2, WebsiteId: websiteID, UnixUser: "acme_x7k2",
-		Databases: []*agentv1.DatabaseRef{{Engine: "valkey", Name: "acme_x7k2_cache"}}, DatabaseUsers: []*agentv1.DatabaseRef{{Engine: "valkey", Name: "acme_x7k2_cache"}}}
+		Databases:     []*agentv1.DatabaseRef{{Engine: "valkey", Name: "acme_x7k2_cache", DatabaseServer: valkeyServerID}},
+		DatabaseUsers: []*agentv1.DatabaseRef{{Engine: "valkey", Name: "acme_x7k2_cache", DatabaseServer: valkeyServerID}}}
 	if err := run(t)(d.DeleteWebsite(req)); err != nil {
 		t.Fatal(err)
 	}
@@ -617,19 +634,12 @@ func TestValkeyAnswers(t *testing.T) {
 	}
 }
 
-func TestValkeyMemory(t *testing.T) {
-	for total, want := range map[int]int{0: 32, 512: 32, 2048: 64, 4096: 128, 8192: 256, 262144: 256} {
-		if got := defaultValkeyMemoryMB(total); got != want {
-			t.Errorf("%d MB: %d, want %d", total, got, want)
+// The data limit of a Valkey database server comes from the memory limit of its container.
+func TestValkeyDataLimit(t *testing.T) {
+	for memoryMB, want := range map[int64]int{0: 256, 128: 32, 256: 64, 512: 192, 1024: 448, 4096: 1984} {
+		if got := valkeyDataMB(memoryMB << 20); got != want {
+			t.Errorf("%d MB: %d, want %d", memoryMB, got, want)
 		}
-	}
-	path := filepath.Join(t.TempDir(), "meminfo")
-	os.WriteFile(path, []byte("MemTotal:        4000000 kB\nMemFree:  100 kB\n"), 0o644)
-	if got := hostMemoryMB(path); got != 3906 {
-		t.Errorf("memory = %d MB", got)
-	}
-	if got := hostMemoryMB(filepath.Join(t.TempDir(), "none")); got != 0 {
-		t.Errorf("memory with no file = %d", got)
 	}
 	if args := strings.Join(quadlet.ValkeyArgs(quadlet.Database{}), " "); !strings.Contains(args, "--maxmemory 256mb") {
 		t.Errorf("args = %s", args)

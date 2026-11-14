@@ -28,7 +28,6 @@ export function AccountPage() {
   const provided = provider ? provider.name : "the operator of this panel";
   const rows = plan ? [
     { label: "Websites", text: `${usage.websites} of ${plan.websites}`, value: ratio(usage.websites, plan.websites) },
-    { label: "Databases", text: `${usage.databases} of ${plan.databases}`, value: ratio(usage.databases, plan.databases) },
   ] : [];
   return (
     <>
@@ -55,7 +54,7 @@ export function AccountPage() {
                     {usage.websites >= plan.websites
                       ? `You use all the websites of your plan. To add a website, ask ${provided} for a larger plan.`
                       : `You can add ${plan.websites - usage.websites} more ${plan.websites - usage.websites === 1 ? "website" : "websites"}.`}
-                    {" "}Your websites use {bytes(usage.diskBytes)} of disk space.
+                    {" "}Your websites have {usage.databases} {usage.databases === 1 ? "database" : "databases"} and use {bytes(usage.diskBytes)} of disk space.
                   </p>
                   {reseller && usage.customers !== undefined && <p className="muted small" style={{ marginTop: 8 }}>You have {usage.customers} {usage.customers === 1 ? "customer" : "customers"}. Their websites are not in these numbers. <Link to="/customers">Open customers</Link></p>}
                 </>

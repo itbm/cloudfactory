@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"slices"
 	"strings"
 
 	agentv1 "github.com/itbm/cloudfactory/agent/gen/cloudfactory/agent/v1"
@@ -37,18 +36,36 @@ func (d *Deps) serverExists(s dbServer) bool {
 	return err == nil
 }
 
+// existingServer gives the container of a database server ID from a request, when this
+// server has the container. An empty ID is the shared container of an earlier release.
+func (d *Deps) existingServer(id, engine string) (dbServer, bool) {
+	key, err := serverKey(id)
+	if err != nil {
+		return dbServer{}, false
+	}
+	s := dbServer{ID: key, Engine: engine}
+	if key != "" {
+		if customer, record, _, err := d.State.DatabaseServer(key); err != nil || customer == "" || record.Engine != engine {
+			return s, false
+		}
+	}
+	return s, d.serverExists(s)
+}
+
 // MoveDatabases moves the databases and the database users of a website from the shared
-// database containers of an earlier release to the database containers of its customer. The
-// panel sends it for each website of a server from an earlier release.
+// database containers of an earlier release to database servers of its customer. The panel
+// sends it for each website of a server from an earlier release, with the database servers
+// that get the databases.
 //
 // The website does not operate during the copy, so that the copy has all the data. The
-// password of each user stays the same: the agent copies its hash. The host names and the
-// ports in the website container stay the same too, so the website needs no new settings.
+// password of each user stays the same: the agent copies its hash. The host names in the
+// website container stay the same too. The ports stay the same when the database server is
+// the first one of its engine for the customer, so the website needs no new settings then.
 //
-// The website uses the new containers from the step "Start website". A failure before the end
-// of that step starts the website again with the shared containers, and removes the new
+// The website uses the database servers from the step "Start website". A failure before the
+// end of that step starts the website again with the shared containers, and removes the new
 // copies. That includes a website that answered before the move and does not answer with the
-// new containers: the agent does the same for a new runtime that does not answer. After that
+// database servers: the agent does the same for a new runtime that does not answer. After that
 // step, the job only removes the old copies, and a job that runs again does only that.
 func (d *Deps) MoveDatabases(req *agentv1.MoveDatabasesRequest) (jobs.Job, error) {
 	id, unixUser := req.GetWebsiteId(), req.GetUnixUser()
@@ -57,13 +74,31 @@ func (d *Deps) MoveDatabases(req *agentv1.MoveDatabasesRequest) (jobs.Job, error
 	if req.GetDatabaseInstance() == "" {
 		errs = append(errs, errors.New("the request has no database instance"))
 	}
-	names := map[string]bool{}
+	// The engine of each database server of the request.
+	servers := map[string]string{}
+	for _, s := range req.GetDatabaseServers() {
+		errs = append(errs, checkDatabaseServer(s), sqlEngine(s.GetEngine()))
+		if s.GetId() == "" || s.GetCustomer() != req.GetDatabaseInstance() {
+			errs = append(errs, errors.New("each database server of the request is a database server of the customer of the website"))
+		}
+		servers[s.GetId()] = s.GetEngine()
+	}
+	target := func(what, name, engine, server string) error {
+		if got, ok := servers[server]; !ok || server == "" {
+			return fmt.Errorf("the request does not have the database server of the %s %s", what, name)
+		} else if got != engine {
+			return fmt.Errorf("the database server of the %s %s has the engine %s, not %s", what, name, got, engine)
+		}
+		return nil
+	}
+	// The database server of each database of the request.
+	names := map[string]string{}
 	for _, db := range req.GetDatabases() {
-		errs = append(errs, sqlEngine(db.GetEngine()), validate.TenantDatabaseName(unixUser, db.GetName()))
-		names[db.GetEngine()+":"+db.GetName()] = true
+		errs = append(errs, sqlEngine(db.GetEngine()), validate.TenantDatabaseName(unixUser, db.GetName()), target("database", db.GetName(), db.GetEngine(), db.GetDatabaseServer()))
+		names[db.GetEngine()+":"+db.GetName()] = db.GetDatabaseServer()
 	}
 	for _, u := range req.GetUsers() {
-		errs = append(errs, sqlEngine(u.GetEngine()), validate.TenantDatabaseName(unixUser, u.GetName()))
+		errs = append(errs, sqlEngine(u.GetEngine()), validate.TenantDatabaseName(unixUser, u.GetName()), target("user", u.GetName(), u.GetEngine(), u.GetDatabaseServer()))
 		if _, err := d.mariaHost(dbServer{}, u.GetAccess()); err != nil {
 			errs = append(errs, err)
 		}
@@ -71,44 +106,40 @@ func (d *Deps) MoveDatabases(req *agentv1.MoveDatabasesRequest) (jobs.Job, error
 			if _, err := mariaPrivileges(g.GetPrivileges()); err != nil {
 				errs = append(errs, err)
 			}
-			if !names[u.GetEngine()+":"+g.GetDatabase()] {
+			if server, ok := names[u.GetEngine()+":"+g.GetDatabase()]; !ok {
 				errs = append(errs, fmt.Errorf("the database %s is not a database of the request", g.GetDatabase()))
+			} else if server != u.GetDatabaseServer() {
+				errs = append(errs, fmt.Errorf("the database %s and the user %s do not have the same database server", g.GetDatabase(), u.GetName()))
 			}
 		}
 	}
 	if err := errors.Join(errs...); err != nil {
 		return jobs.Job{}, err
 	}
-	// The engines of the request, in the order of Engines.
-	var engines []string
-	for _, engine := range Engines {
-		used := false
-		for _, db := range req.GetDatabases() {
-			used = used || db.GetEngine() == engine
-		}
-		for _, u := range req.GetUsers() {
-			used = used || u.GetEngine() == engine
-		}
-		if used {
-			engines = append(engines, engine)
-		}
+	old := func(engine, _ string) (dbServer, bool) {
+		s := dbServer{Engine: engine}
+		return s, d.serverExists(s)
 	}
-	old := func(engine string) dbServer { return dbServer{Engine: engine} }
-	next := func(engine string) dbServer { return dbServer{Instance: key, Engine: engine} }
+	// next gives the database server of the customer that gets a database or a user.
+	next := func(engine, server string) (dbServer, bool) {
+		s, err := d.serverOf(key, server, engine)
+		return s, err == nil && d.serverExists(s)
+	}
 
 	var site *Site
-	// moved is true when the website uses the containers of its customer already: an earlier
-	// run of this job came to the step "Start website".
+	// moved is true when the website uses the database servers of its customer already: an
+	// earlier run of this job came to the step "Start website".
 	var moved bool
 	// stopped is true while this job keeps the website stopped.
 	var stopped bool
 	// answered is true when the website answered before the job changed it. Then the website
-	// must answer with the new containers too.
+	// must answer with the database servers too.
 	var answered bool
-	// switched is true when the record and the unit of the website can have the new containers.
+	// switched is true when the record and the unit of the website can have the address of the
+	// customer.
 	var switched bool
 	return jobs.Job{ID: req.GetJobId(), Key: id, Long: true, Steps: []jobs.Step{
-		{Name: "Start database containers", Do: func(ctx context.Context) error {
+		{Name: "Start database servers", Do: func(ctx context.Context) error {
 			var err error
 			if site, err = d.State.Get(id); err != nil {
 				return err
@@ -124,17 +155,13 @@ func (d *Deps) MoveDatabases(req *agentv1.MoveDatabasesRequest) (jobs.Job, error
 				return err
 			}
 			if current != "" && current != key {
-				return fmt.Errorf("the website uses the database containers of the customer %s", current)
+				return fmt.Errorf("the website uses the database servers of the customer %s", current)
 			}
 			if moved = current == key; moved {
 				return nil
 			}
-			// The record keeps the containers on the server during the copy.
-			if _, err := d.useDatabases(key, id, true); err != nil {
-				return err
-			}
-			for _, engine := range engines {
-				if err := d.EnsureDatabaseService(ctx, next(engine)); err != nil {
+			for _, s := range req.GetDatabaseServers() {
+				if _, err := d.ensureServer(ctx, s, false); err != nil {
 					return err
 				}
 			}
@@ -158,7 +185,11 @@ func (d *Deps) MoveDatabases(req *agentv1.MoveDatabasesRequest) (jobs.Job, error
 				return nil
 			}
 			for _, db := range req.GetDatabases() {
-				if err := d.copyDatabase(ctx, old(db.GetEngine()), db.GetName(), next(db.GetEngine()), db.GetName()); err != nil {
+				to, err := d.serverOf(key, db.GetDatabaseServer(), db.GetEngine())
+				if err != nil {
+					return err
+				}
+				if err := d.copyDatabase(ctx, dbServer{Engine: db.GetEngine()}, db.GetName(), to, db.GetName()); err != nil {
 					return err
 				}
 			}
@@ -169,16 +200,21 @@ func (d *Deps) MoveDatabases(req *agentv1.MoveDatabasesRequest) (jobs.Job, error
 				return nil
 			}
 			for _, u := range req.GetUsers() {
-				if err := d.copyUser(ctx, old(u.GetEngine()), next(u.GetEngine()), u); err != nil {
+				to, err := d.serverOf(key, u.GetDatabaseServer(), u.GetEngine())
+				if err != nil {
+					return err
+				}
+				if err := d.copyUser(ctx, dbServer{Engine: u.GetEngine()}, to, u); err != nil {
 					return fmt.Errorf("copy the user %s: %w", u.GetName(), err)
 				}
 			}
 			return nil
 		}},
 		{Name: "Start website", Do: func(ctx context.Context) error {
-			// From this record, each action of the website uses the containers of its customer.
+			// From this record, each action of the website uses the database servers of its
+			// customer, and the firewall lets the website connect to them.
 			switched = true
-			if _, err := d.useDatabases(key, id, false); err != nil {
+			if _, err := d.useDatabases(key, id); err != nil {
 				return err
 			}
 			if err := d.syncDatabaseAccess(ctx); err != nil {
@@ -188,10 +224,10 @@ func (d *Deps) MoveDatabases(req *agentv1.MoveDatabasesRequest) (jobs.Job, error
 			if err := d.State.Put(site); err != nil {
 				return err
 			}
-			// The new unit gives the database host names the address of the new containers.
+			// The new unit gives the database host names the address of the customer.
 			if err := d.restartWithUnit(ctx, site); err != nil {
 				if answered {
-					return fmt.Errorf("the website answered with the shared database containers, and it does not answer with the database containers of its customer, so it gets the shared containers again: %w", err)
+					return fmt.Errorf("the website answered with the shared database containers, and it does not answer with the database servers of its customer, so it gets the shared containers again: %w", err)
 				}
 				// The move is not the cause: the website did not answer before the move.
 				slog.Warn("the website does not answer after the move of its databases, as before the move", "website", id, "err", err)
@@ -217,22 +253,19 @@ func (d *Deps) MoveDatabases(req *agentv1.MoveDatabasesRequest) (jobs.Job, error
 				slog.Error("start the website again with the shared database containers", "website", id, "err", err)
 			}
 		}
-		// The website does not use the new containers. When a different website of the customer
-		// uses them, the copies of this job go. If not, the containers go, with the copies.
-		other := func(website string) bool { return website != id }
-		if instances, err := d.State.DatabaseInstances(); err == nil && slices.ContainsFunc(instances[key].Websites, other) {
-			if err := d.removeMoved(ctx, req, next); err != nil {
-				slog.Error("remove the copies of a move that failed", "website", id, "err", err)
-			}
-		}
-		if err := d.releaseDatabases(ctx, key, id); err != nil {
-			slog.Error("remove the database containers of a move that failed", "website", id, "err", err)
+		// The website does not use the database servers. The copies of this job go. The
+		// database servers stay: they are database servers of the customer in the panel.
+		if err := d.removeMoved(ctx, req, next); err != nil {
+			slog.Error("remove the copies of a move that failed", "website", id, "err", err)
 		}
 		if !switched {
 			return
 		}
-		// The step "Start website" gave the website the new containers. The record of the
-		// containers does not have the website now, so the unit gets the shared containers again.
+		// The step "Start website" gave the website the address of its customer. Without the
+		// record of the website, the unit gets the shared containers again.
+		if err := d.releaseDatabases(key, id); err != nil {
+			slog.Error("remove the record of a move that failed", "website", id, "err", err)
+		}
 		site.Website.DatabaseInstance = ""
 		if err := errors.Join(d.State.Put(site), d.syncDatabaseAccess(ctx)); err != nil {
 			slog.Error("give the website the shared database containers again", "website", id, "err", err)
@@ -244,18 +277,19 @@ func (d *Deps) MoveDatabases(req *agentv1.MoveDatabasesRequest) (jobs.Job, error
 }
 
 // removeMoved removes the users and the databases of a move from the containers that server
-// gives. It does not start a container that the server does not have.
-func (d *Deps) removeMoved(ctx context.Context, req *agentv1.MoveDatabasesRequest, server func(engine string) dbServer) error {
+// gives for an engine and a database server ID of the request. It does not start a container
+// that the server does not have.
+func (d *Deps) removeMoved(ctx context.Context, req *agentv1.MoveDatabasesRequest, server func(engine, id string) (dbServer, bool)) error {
 	for _, u := range req.GetUsers() {
-		if s := server(u.GetEngine()); d.serverExists(s) {
+		if s, ok := server(u.GetEngine(), u.GetDatabaseServer()); ok {
 			if err := d.dropUser(ctx, s, u.GetName()); err != nil {
 				return err
 			}
 		}
 	}
 	for _, db := range req.GetDatabases() {
-		s := server(db.GetEngine())
-		if !d.serverExists(s) {
+		s, ok := server(db.GetEngine(), db.GetDatabaseServer())
+		if !ok {
 			continue
 		}
 		if s.Engine == "mariadb" {
@@ -301,7 +335,7 @@ func (d *Deps) copyUser(ctx context.Context, from, to dbServer, u *agentv1.MoveD
 			return errors.New("the shared PostgreSQL container does not have a user with this name and a SCRAM-SHA-256 password")
 		}
 		// PostgreSQL keeps a password that is a SCRAM-SHA-256 verifier as it is.
-		create = fmt.Sprintf("CREATE ROLE \"%s\" LOGIN PASSWORD '%s';\n", name, verifier)
+		create = fmt.Sprintf("CREATE ROLE \"%s\" LOGIN CONNECTION LIMIT %d PASSWORD '%s';\n", name, pgUserConnections, verifier)
 	}
 	if err := d.dropUser(ctx, to, name); err != nil {
 		return err

@@ -13,55 +13,61 @@ import (
 	"strings"
 	"sync"
 
+	agentv1 "github.com/itbm/cloudfactory/agent/gen/cloudfactory/agent/v1"
 	"github.com/itbm/cloudfactory/agent/internal/host"
 	"github.com/itbm/cloudfactory/agent/internal/quadlet"
 	"github.com/itbm/cloudfactory/agent/internal/validate"
 )
 
-// Each customer has its own database containers on a server: one container for each engine
-// that the customer uses. The websites of the customer on the server use them. Thus a
-// customer cannot use the memory, the connections, the settings or the superuser of the
-// database server of a different customer.
+// A customer has its own database servers on a server. A database server is one database
+// container with one engine. It has its own limits (vCPUs, memory and disk space), and each
+// database is in one database server. Thus a customer cannot use the memory, the disk space,
+// the connections, the settings or the superuser of the database server of a different
+// customer.
 //
 //   - The user cf-db runs each container in its own gVisor sandbox, with its own data
-//     directory, its own superuser password, and its own memory limit.
-//   - The containers of one customer publish their ports on one address of
-//     quadlet.DatabaseNetwork. The host names "mariadb.internal", "postgres.internal" and
-//     "valkey.internal" in each website container point to the address of its customer.
-//   - The host firewall lets a website connect only to the address of its own customer
-//     (the set database_access).
+//     directory and its own superuser password.
+//   - All database servers of one customer publish their ports on one address of
+//     quadlet.DatabaseNetwork: the address of the customer. Each database server has its own
+//     port. The host names "mariadb.internal", "postgres.internal" and "valkey.internal" in
+//     each website container point to the address of the customer of the website.
+//   - The host firewall lets a website connect only to the ports of the database servers of
+//     its own customer, on the address of its own customer (the set database_access).
 //
 // The panel sends the ID of the customer with a new website (Website.database_instance). The
-// agent records the website in the state, with the database containers of the customer
-// (DatabaseInstance.Websites). That record tells each later action which containers the
-// website uses. A website from an earlier release has no record: it uses the shared
-// containers of that release until MoveDatabases moves its databases.
+// agent records the website in the state, with the customer (DatabaseInstance.Websites). A
+// website from an earlier release has no record: it uses the shared containers of that
+// release until MoveDatabases moves its databases.
+//
+// The panel sends each database server with the request that needs it first, and the ID of
+// the database server with each later request. The agent records each database server in the
+// state (DatabaseInstance.Servers).
 
 // dbServer is one database container of this server.
 type dbServer struct {
-	// Instance is the ID of a customer in lower case. Empty is the shared container of an
+	// ID is the ID of a database server in lower case. Empty is the shared container of an
 	// earlier release, for all customers.
-	Instance string
+	ID string
 	// Engine is "mariadb", "postgresql" or "valkey".
 	Engine string
 }
 
 // container is the name of the Podman container and of its unit.
-func (s dbServer) container() string { return quadlet.DatabaseContainer(s.Engine, s.Instance) }
+func (s dbServer) container() string { return quadlet.DatabaseContainer(s.Engine, s.ID) }
 
 // String names the container in an error message.
 func (s dbServer) String() string {
-	if s.Instance == "" {
+	if s.ID == "" {
 		return "shared " + s.Engine
 	}
-	return s.Engine + " of customer " + s.Instance
+	return "the " + s.Engine + " database server " + s.ID
 }
 
 // errNoSharedValkey is the answer when a website from an earlier release asks for Valkey.
-var errNoSharedValkey = errors.New("this website uses the shared database containers of an earlier release, which have no Valkey; move the databases of the website to the database containers of its customer first")
+var errNoSharedValkey = errors.New("this website uses the shared database containers of an earlier release, which have no Valkey; move the databases of the website to database servers of its customer first")
 
-// instanceKey checks the ID of a customer from the panel, and gives the key of its database
-// containers: the ID in lower case. An empty ID gives an empty key.
+// instanceKey checks the ID of a customer from the panel, and gives the key of its record:
+// the ID in lower case. An empty ID gives an empty key.
 func instanceKey(id string) (string, error) {
 	if id == "" {
 		return "", nil
@@ -72,74 +78,267 @@ func instanceKey(id string) (string, error) {
 	return strings.ToLower(id), nil
 }
 
-// server gives the database container of an engine for a website: the container of the
-// customer of the website, or the shared container of an earlier release. A step calls it when
-// it runs, because an earlier job can move the databases of the website.
-func (d *Deps) server(websiteID, engine string) (dbServer, error) {
+// serverKey checks the ID of a database server from the panel, and gives its key: the ID in
+// lower case. An empty ID gives an empty key.
+func serverKey(id string) (string, error) {
+	if id == "" {
+		return "", nil
+	}
+	if err := validate.ID(id); err != nil {
+		return "", fmt.Errorf("the database server: %w", err)
+	}
+	return strings.ToLower(id), nil
+}
+
+// checkDatabaseServer checks a database server from the panel. An empty database server is
+// correct: it means the shared container of an earlier release.
+func checkDatabaseServer(s *agentv1.DatabaseServer) error {
+	if s.GetId() == "" {
+		return nil
+	}
+	_, idErr := serverKey(s.GetId())
+	_, customerErr := instanceKey(s.GetCustomer())
+	errs := []error{idErr, customerErr}
+	if s.GetCustomer() == "" {
+		errs = append(errs, errors.New("the database server has no customer"))
+	}
+	if _, err := dbContainer(s.GetEngine()); err != nil {
+		errs = append(errs, err)
+	} else if err := quadlet.CheckDatabasePort(s.GetEngine(), int(s.GetPort())); err != nil {
+		errs = append(errs, err)
+	}
+	l := s.GetLimits()
+	if l.GetVcpus() < 0 || l.GetMemoryBytes() < 0 || l.GetDiskBytes() < 0 {
+		errs = append(errs, errors.New("a limit of the database server is less than 0"))
+	}
+	if m := l.GetMemoryBytes(); m > 0 && m < minDatabaseMemory {
+		errs = append(errs, fmt.Errorf("the memory limit of a database server must be %d MB or more", minDatabaseMemory>>20))
+	}
+	if b := l.GetDiskBytes(); b > 0 && b < minDatabaseDisk {
+		errs = append(errs, fmt.Errorf("the disk limit of a database server must be %d MB or more", minDatabaseDisk>>20))
+	}
+	return errors.Join(errs...)
+}
+
+const (
+	// minDatabaseMemory is the smallest memory limit of a database server. A database server
+	// with less memory does not start in gVisor.
+	minDatabaseMemory = 256 << 20
+	// minDatabaseDisk is the smallest disk limit of a database server. An empty MariaDB or
+	// PostgreSQL data directory and the journal of the file system need some hundred MB.
+	minDatabaseDisk = 1 << 30
+)
+
+// recordOf gives the record of a database server from the panel.
+func recordOf(s *agentv1.DatabaseServer) DatabaseServer {
+	l := s.GetLimits()
+	return DatabaseServer{Engine: s.GetEngine(), Port: int(s.GetPort()), VCPUs: l.GetVcpus(), MemoryBytes: l.GetMemoryBytes(), DiskBytes: l.GetDiskBytes()}
+}
+
+// server gives the database container for a database or a database user of a website. id is
+// the ID of the database server from the request. An empty ID is the shared container of an
+// earlier release. A step calls the function when it runs, because an earlier job can move
+// the databases of the website.
+//
+// The function refuses a database server of a different customer, and a request that does
+// not agree with the record of the website: MoveDatabases can run between the request of the
+// panel and the step.
+func (d *Deps) server(websiteID, id, engine string) (dbServer, error) {
 	if _, err := dbContainer(engine); err != nil {
 		return dbServer{}, err
 	}
-	key, _, err := d.State.WebsiteDatabases(websiteID)
-	return dbServer{Instance: key, Engine: engine}, err
+	customer, _, err := d.State.WebsiteDatabases(websiteID)
+	if err != nil {
+		return dbServer{}, err
+	}
+	if id == "" {
+		if customer != "" {
+			return dbServer{}, errors.New("the website uses the database servers of its customer, and the request has no database server; send the request again")
+		}
+		return dbServer{Engine: engine}, nil
+	}
+	if customer == "" {
+		return dbServer{}, errors.New("the website uses the shared database containers of an earlier release, and the request has a database server; move the databases of the website first")
+	}
+	return d.serverOf(customer, id, engine)
 }
 
-// dbDir holds the files of the database containers of one customer, or of the shared
-// containers: the data directory and the secret of each engine.
+// serverOf gives the container of a database server of a customer. It refuses a database
+// server that this server does not have, or that has a different customer or engine.
+func (d *Deps) serverOf(customer, id, engine string) (dbServer, error) {
+	key, err := serverKey(id)
+	if err != nil {
+		return dbServer{}, err
+	}
+	owner, record, _, err := d.State.DatabaseServer(key)
+	if err != nil {
+		return dbServer{}, err
+	}
+	switch {
+	case owner == "":
+		return dbServer{}, fmt.Errorf("this server does not have the database server %s", key)
+	case owner != customer:
+		return dbServer{}, fmt.Errorf("the database server %s is not a database server of the customer %s", key, customer)
+	case record.Engine != engine:
+		return dbServer{}, fmt.Errorf("the database server %s has the engine %s, not %s", key, record.Engine, engine)
+	}
+	return dbServer{ID: key, Engine: engine}, nil
+}
+
+// checkWebsiteServer checks the database server of a request for a database or a database
+// user of an engine.
+func checkWebsiteServer(s *agentv1.DatabaseServer, engine string) error {
+	if err := checkDatabaseServer(s); err != nil {
+		return err
+	}
+	if s.GetId() != "" && s.GetEngine() != engine {
+		return fmt.Errorf("the database server has the engine %s, not %s", s.GetEngine(), engine)
+	}
+	return nil
+}
+
+// websiteServer is server for a request that has the database server itself, not only its ID.
+// It makes a database server of the customer of the website that this server does not have,
+// and starts it.
+func (d *Deps) websiteServer(ctx context.Context, websiteID string, s *agentv1.DatabaseServer, engine string) (dbServer, error) {
+	if s.GetId() != "" {
+		customer, _, err := d.State.WebsiteDatabases(websiteID)
+		if err != nil {
+			return dbServer{}, err
+		}
+		if key, _ := instanceKey(s.GetCustomer()); customer != "" && customer != key {
+			return dbServer{}, fmt.Errorf("the database server %s is not a database server of the customer of the website", s.GetId())
+		}
+		// With no customer, server refuses the request: the website uses the shared containers.
+		if customer != "" {
+			if _, err := d.ensureServer(ctx, s, false); err != nil {
+				return dbServer{}, err
+			}
+		}
+	}
+	return d.server(websiteID, s.GetId(), engine)
+}
+
+// ensureServer makes sure that this server has a database server from the panel, and that
+// the database server operates. It gives the container. An empty database server gives the
+// shared container of an earlier release, which the function does not start.
+//
+// A database server that the agent has keeps its limits. Only SetDatabaseServer changes them
+// (update), because a change restarts the database server.
+func (d *Deps) ensureServer(ctx context.Context, s *agentv1.DatabaseServer, update bool) (dbServer, error) {
+	if s.GetId() == "" {
+		return dbServer{Engine: s.GetEngine()}, nil
+	}
+	key, _ := serverKey(s.GetId())
+	customer, _ := instanceKey(s.GetCustomer())
+	srv := dbServer{ID: key, Engine: s.GetEngine()}
+	// put records the limits, and makes the next step write the unit and the disk again.
+	put := func(record DatabaseServer, update bool) (bool, error) {
+		lock := d.instanceLock(key)
+		lock.Lock()
+		defer lock.Unlock()
+		changed, err := d.putServer(customer, key, record, update)
+		if changed {
+			d.dbMu.Lock()
+			delete(d.dbReady, srv)
+			d.dbMu.Unlock()
+		}
+		return changed, err
+	}
+	owner, old, _, err := d.State.DatabaseServer(key)
+	if err != nil {
+		return srv, err
+	}
+	// A new database server: the firewall lets the websites of the customer connect to its
+	// port. New limits: the unit and the disk get them.
+	changed, err := put(recordOf(s), update)
+	if err != nil {
+		return srv, err
+	}
+	err = d.EnsureDatabaseService(ctx, srv)
+	if changed && owner != "" && errors.Is(err, errDiskKeepsSize) {
+		// The disk cannot have the new limit. The database server keeps all its old limits,
+		// and operates with them: a job that fails changes nothing.
+		_, putErr := put(old, true)
+		return srv, errors.Join(err, putErr, d.EnsureDatabaseService(ctx, srv))
+	}
+	return srv, err
+}
+
+// putServer is State.PutDatabaseServer. It holds dbMu, so that it is one step with the check
+// in releaseDatabases.
+func (d *Deps) putServer(customer, key string, record DatabaseServer, update bool) (bool, error) {
+	d.dbMu.Lock()
+	defer d.dbMu.Unlock()
+	return d.State.PutDatabaseServer(customer, key, record, update)
+}
+
+// dbDir holds the files of one database server, or of the shared containers: the data
+// directory and the secret of each engine.
 func (d *Deps) dbDir(s dbServer) string {
-	if s.Instance == "" {
+	if s.ID == "" {
 		return d.dbHome()
 	}
-	return filepath.Join(d.dbHome(), "customers", s.Instance)
+	return filepath.Join(d.dbHome(), "servers", s.ID)
 }
 
-// UseDatabases records that a website uses the database containers of a customer, and gives
-// the address of the containers. The first website of a customer gets the smallest free
-// address number for the customer. The search and the record are one step with one lock.
-//
-// With moving set, the website only keeps the containers on the server: MoveDatabases copies
-// the databases of the website into them, and the website uses them after a second call with
-// moving not set. With no website, the function only makes the record of the customer.
-func (s *State) UseDatabases(key, websiteID string, moving bool) (string, error) {
+// record gives the record of a customer in f, or a new record with the smallest free address
+// number.
+func (f *stateFile) record(key string) (*DatabaseInstance, error) {
+	if f.Databases == nil {
+		f.Databases = map[string]*DatabaseInstance{}
+	}
+	if inst := f.Databases[key]; inst != nil {
+		return inst, nil
+	}
+	used := map[int]bool{}
+	for _, i := range f.Databases {
+		used[i.Number] = true
+	}
+	n := 1
+	for used[n] {
+		n++
+	}
+	if n > quadlet.DatabaseAddresses {
+		return nil, fmt.Errorf("this server has database servers for %d customers, and it has no address for one more", quadlet.DatabaseAddresses)
+	}
+	inst := &DatabaseInstance{Number: n, Websites: []string{}}
+	f.Databases[key] = inst
+	return inst, nil
+}
+
+// forget removes the record of a customer that has no website and no database server.
+func (f *stateFile) forget(key string) {
+	if inst := f.Databases[key]; inst != nil && len(inst.Websites) == 0 && len(inst.Servers) == 0 {
+		delete(f.Databases, key)
+	}
+}
+
+// UseDatabases records that a website can use the database servers of a customer, and gives
+// the address of the customer. The first record of a customer gets the smallest free address
+// number. The search and the record are one step with one lock. With no website, the function
+// only makes the record of the customer.
+func (s *State) UseDatabases(key, websiteID string) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	f, err := s.read()
 	if err != nil {
 		return "", err
 	}
-	if f.Databases == nil {
-		f.Databases = map[string]*DatabaseInstance{}
-	}
 	if websiteID != "" {
 		for other, inst := range f.Databases {
 			if other != key && slices.Contains(inst.Websites, websiteID) {
-				return "", fmt.Errorf("the website %s uses the database containers of the customer %s", websiteID, other)
+				return "", fmt.Errorf("the website %s uses the database servers of the customer %s", websiteID, other)
 			}
 		}
 	}
-	inst, changed := f.Databases[key], false
-	if inst == nil {
-		used := map[int]bool{}
-		for _, i := range f.Databases {
-			used[i.Number] = true
-		}
-		n := 1
-		for used[n] {
-			n++
-		}
-		if n > quadlet.DatabaseAddresses {
-			return "", fmt.Errorf("this server has database containers for %d customers, and it has no address for one more", quadlet.DatabaseAddresses)
-		}
-		inst = &DatabaseInstance{Number: n, Websites: []string{}}
-		f.Databases[key], changed = inst, true
+	known := f.Databases[key] != nil
+	inst, err := f.record(key)
+	if err != nil {
+		return "", err
 	}
-	switch {
-	case websiteID == "" || slices.Contains(inst.Websites, websiteID):
-	case moving:
-		if !slices.Contains(inst.Moving, websiteID) {
-			inst.Moving, changed = append(inst.Moving, websiteID), true
-		}
-	default:
-		inst.Moving = slices.DeleteFunc(inst.Moving, func(id string) bool { return id == websiteID })
+	changed := !known
+	if websiteID != "" && !slices.Contains(inst.Websites, websiteID) {
 		inst.Websites, changed = append(inst.Websites, websiteID), true
 	}
 	if changed {
@@ -150,31 +349,105 @@ func (s *State) UseDatabases(key, websiteID string, moving bool) (string, error)
 	return quadlet.DatabaseAddress(inst.Number)
 }
 
-// ReleaseDatabases records that a website does not use the database containers of a customer.
-// It reports true, and removes the record of the containers, when no website uses them then.
-// With no record, it also reports true: a first attempt removed the record.
-func (s *State) ReleaseDatabases(key, websiteID string) (bool, error) {
+// ReleaseDatabases records that a website does not use the database servers of a customer.
+// The record of a customer with no website and no database server goes, and its address is
+// free for a different customer.
+func (s *State) ReleaseDatabases(key, websiteID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	f, err := s.read()
+	if err != nil {
+		return err
+	}
+	inst := f.Databases[key]
+	if inst == nil {
+		return nil
+	}
+	inst.Websites = slices.DeleteFunc(inst.Websites, func(id string) bool { return id == websiteID })
+	f.forget(key)
+	return s.write(f)
+}
+
+// PutDatabaseServer records a database server of a customer. It reports true when the record
+// is new or changed. The engine, the port and the customer of a database server do not
+// change. With update not set, a database server that the state has keeps its limits.
+func (s *State) PutDatabaseServer(customer, key string, record DatabaseServer, update bool) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	f, err := s.read()
 	if err != nil {
 		return false, err
 	}
-	inst := f.Databases[key]
-	if inst == nil {
-		return true, nil
+	for other, inst := range f.Databases {
+		if old := inst.Servers[key]; old != nil && other != customer {
+			return false, fmt.Errorf("the database server %s is a database server of the customer %s", key, other)
+		}
 	}
-	same := func(id string) bool { return id == websiteID }
-	inst.Websites, inst.Moving = slices.DeleteFunc(inst.Websites, same), slices.DeleteFunc(inst.Moving, same)
-	unused := len(inst.Websites) == 0 && len(inst.Moving) == 0
-	if unused {
-		delete(f.Databases, key)
+	inst, err := f.record(customer)
+	if err != nil {
+		return false, err
 	}
-	return unused, s.write(f)
+	if old := inst.Servers[key]; old != nil {
+		switch {
+		case old.Engine != record.Engine:
+			return false, fmt.Errorf("the database server %s has the engine %s, not %s", key, old.Engine, record.Engine)
+		case old.Port != record.Port:
+			return false, fmt.Errorf("the database server %s has the port %d, not %d", key, old.Port, record.Port)
+		case !update || *old == record:
+			return false, nil
+		}
+	} else {
+		for other, srv := range inst.Servers {
+			if srv.Port == record.Port {
+				return false, fmt.Errorf("the database server %s of the customer has the port %d", other, record.Port)
+			}
+		}
+	}
+	if inst.Servers == nil {
+		inst.Servers = map[string]*DatabaseServer{}
+	}
+	inst.Servers[key] = &record
+	return true, s.write(f)
 }
 
-// WebsiteDatabases gives the key and the address of the database containers that a website
-// uses. Both are "" for a website that uses the shared containers of an earlier release.
+// DeleteDatabaseServer removes the record of a database server. The record of a customer with
+// no website and no database server goes too.
+func (s *State) DeleteDatabaseServer(key string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	f, err := s.read()
+	if err != nil {
+		return err
+	}
+	for customer, inst := range f.Databases {
+		if inst.Servers[key] != nil {
+			delete(inst.Servers, key)
+			f.forget(customer)
+			return s.write(f)
+		}
+	}
+	return nil
+}
+
+// DatabaseServer gives the customer, the record and the address of a database server. The
+// customer is "" when the state does not have the database server.
+func (s *State) DatabaseServer(key string) (customer string, record DatabaseServer, address string, err error) {
+	all, err := s.DatabaseInstances()
+	if err != nil {
+		return "", record, "", err
+	}
+	for customer, inst := range all {
+		if srv := inst.Servers[key]; srv != nil {
+			address, err := quadlet.DatabaseAddress(inst.Number)
+			return customer, *srv, address, err
+		}
+	}
+	return "", record, "", nil
+}
+
+// WebsiteDatabases gives the customer whose database servers a website can use, and the
+// address of that customer. Both are "" for a website that uses the shared containers of an
+// earlier release.
 func (s *State) WebsiteDatabases(websiteID string) (key, address string, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -191,7 +464,7 @@ func (s *State) WebsiteDatabases(websiteID string) (key, address string, err err
 	return "", "", nil
 }
 
-// DatabaseInstances gives a copy of the record of the database containers of each customer.
+// DatabaseInstances gives a copy of the record of each customer.
 func (s *State) DatabaseInstances() (map[string]DatabaseInstance, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -201,44 +474,46 @@ func (s *State) DatabaseInstances() (map[string]DatabaseInstance, error) {
 	}
 	out := map[string]DatabaseInstance{}
 	for key, inst := range f.Databases {
-		out[key] = *inst
+		c := DatabaseInstance{Number: inst.Number, Websites: slices.Clone(inst.Websites), Servers: map[string]*DatabaseServer{}}
+		for id, srv := range inst.Servers {
+			record := *srv
+			c.Servers[id] = &record
+		}
+		out[key] = c
 	}
 	return out, nil
 }
 
-// DatabaseAddress gives the address of the database containers of a customer, or "" when the
-// customer has none on this server.
-func (s *State) DatabaseAddress(key string) (string, error) {
-	all, err := s.DatabaseInstances()
-	if err != nil {
-		return "", err
-	}
-	inst, ok := all[key]
-	if !ok {
-		return "", nil
-	}
-	return quadlet.DatabaseAddress(inst.Number)
-}
-
 // databaseAddress gives the address for the database host names of a website container: the
-// address of the containers of its customer, or "" for the shared containers.
+// address of its customer, or "" for the shared containers.
 func (d *Deps) databaseAddress(websiteID string) string {
 	_, address, err := d.State.WebsiteDatabases(websiteID)
 	if err != nil {
-		slog.Error("read the database containers of a website", "website", websiteID, "err", err)
+		slog.Error("read the database servers of a website", "website", websiteID, "err", err)
 	}
 	return address
 }
 
-// useDatabases is State.UseDatabases. It holds dbMu, so that it is one step with the check in
-// releaseDatabases.
-func (d *Deps) useDatabases(key, websiteID string, moving bool) (string, error) {
+// useDatabases is State.UseDatabases. It holds dbMu, as each change of the records does.
+func (d *Deps) useDatabases(key, websiteID string) (string, error) {
 	d.dbMu.Lock()
 	defer d.dbMu.Unlock()
-	return d.State.UseDatabases(key, websiteID, moving)
+	return d.State.UseDatabases(key, websiteID)
 }
 
-// instanceLock gives the lock of the containers of one customer. "" is the shared containers.
+// releaseDatabases records that a website does not use the database servers of its customer.
+// The database servers of the customer stay: only DeleteDatabaseServer removes one.
+func (d *Deps) releaseDatabases(key, websiteID string) error {
+	if key == "" {
+		return nil
+	}
+	d.dbMu.Lock()
+	defer d.dbMu.Unlock()
+	return d.State.ReleaseDatabases(key, websiteID)
+}
+
+// instanceLock gives the lock of one database server. "" is the shared containers. The start
+// and the removal of a database server hold it.
 func (d *Deps) instanceLock(key string) *sync.Mutex {
 	d.dbMu.Lock()
 	defer d.dbMu.Unlock()
@@ -251,87 +526,59 @@ func (d *Deps) instanceLock(key string) *sync.Mutex {
 	return d.dbStart[key]
 }
 
-// releaseDatabases records that a website does not use the database containers of its
-// customer. When that was the last website of the customer on this server, the agent stops
-// the containers of the customer and removes their data. The panel removes the databases of a
-// website before the website, so the containers have no data of a website then.
-//
-// A new website of the same customer can start at the same time. The lock of the customer
-// and dbMu make each of the two wait for the other: the new website either keeps the
-// containers, or gets new ones after the removal is complete.
-func (d *Deps) releaseDatabases(ctx context.Context, key, websiteID string) error {
-	if key == "" {
-		return nil
-	}
-	lock := d.instanceLock(key)
-	lock.Lock()
-	defer lock.Unlock()
+// stopServer stops the container of a database server and removes its unit. It is safe to
+// run it again after a failure. The caller holds the lock of the database server.
+func (d *Deps) stopServer(ctx context.Context, s dbServer) error {
 	d.dbMu.Lock()
-	unused, err := d.State.ReleaseDatabases(key, websiteID)
-	if unused {
-		for _, engine := range Engines {
-			delete(d.dbReady, dbServer{Instance: key, Engine: engine})
-		}
-	}
+	delete(d.dbReady, s)
 	d.dbMu.Unlock()
-	if err != nil || !unused {
-		return err
-	}
-	return d.removeInstance(ctx, key)
-}
-
-// removeInstance stops the database containers of a customer and removes their units and
-// their data. It is safe to run it again after a failure. The caller holds the lock of the
-// customer.
-func (d *Deps) removeInstance(ctx context.Context, key string) error {
 	dir, err := d.Host.UnitDir(DBUser)
 	if err != nil {
 		return err
 	}
-	reload := false
-	for _, engine := range Engines {
-		s := dbServer{Instance: key, Engine: engine}
-		unit := s.container() + ".container"
-		if _, err := os.Stat(filepath.Join(dir, unit)); err != nil {
-			continue
-		}
-		if _, err := d.Host.Systemctl(ctx, DBUser, "stop", s.container()+".service"); err != nil {
-			return err
-		}
-		if err := d.Host.RemoveUnit(DBUser, unit); err != nil {
-			return err
-		}
-		reload = true
+	unit := s.container() + ".container"
+	if _, err := os.Stat(filepath.Join(dir, unit)); err != nil {
+		return nil
 	}
-	if reload {
-		if _, err := d.Host.Systemctl(ctx, DBUser, "daemon-reload"); err != nil {
-			return err
-		}
-	}
-	// The directory gets a different name in one step, so that new containers of the same
-	// customer never start with a part of the old data.
-	data := d.dbDir(dbServer{Instance: key})
-	if _, err := os.Lstat(data); err == nil {
-		removed := filepath.Join(filepath.Dir(data), removedPrefix+key+"-"+randomHex(8))
-		if err := os.Rename(data, removed); err != nil {
-			return err
-		}
-		if err := os.RemoveAll(removed); err != nil {
-			return err
-		}
-	} else if !os.IsNotExist(err) {
+	if _, err := d.Host.Systemctl(ctx, DBUser, "stop", s.container()+".service"); err != nil {
 		return err
 	}
-	return nil
+	if err := d.Host.RemoveUnit(DBUser, unit); err != nil {
+		return err
+	}
+	_, err = d.Host.Systemctl(ctx, DBUser, "daemon-reload")
+	return err
 }
 
-// removedPrefix starts the name of a data directory that removeInstance removes.
+// removeServerData removes the disk and the files of a database server that does not
+// operate. It is safe to run it again after a failure. The caller holds the lock of the
+// database server.
+func (d *Deps) removeServerData(ctx context.Context, s dbServer) error {
+	data := d.dbDir(s)
+	if _, err := os.Lstat(data); os.IsNotExist(err) {
+		return nil
+	} else if err != nil {
+		return err
+	}
+	if err := d.removeDisk(ctx, s); err != nil {
+		return err
+	}
+	// The directory gets a different name in one step, so that a new database server with the
+	// same ID never starts with a part of the old data.
+	removed := filepath.Join(filepath.Dir(data), removedPrefix+s.ID+"-"+randomHex(8))
+	if err := os.Rename(data, removed); err != nil {
+		return err
+	}
+	return os.RemoveAll(removed)
+}
+
+// removedPrefix starts the name of a data directory that removeServerData removes.
 const removedPrefix = ".removed-"
 
-// removeOldInstanceData removes the data directories of a removal that did not complete, for
+// removeOldServerData removes the data directories of a removal that did not complete, for
 // example because the agent stopped.
-func (d *Deps) removeOldInstanceData() {
-	dir := filepath.Join(d.dbHome(), "customers")
+func (d *Deps) removeOldServerData() {
+	dir := filepath.Join(d.dbHome(), "servers")
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return
@@ -339,7 +586,7 @@ func (d *Deps) removeOldInstanceData() {
 	for _, e := range entries {
 		if strings.HasPrefix(e.Name(), removedPrefix) {
 			if err := os.RemoveAll(filepath.Join(dir, e.Name())); err != nil {
-				slog.Warn("remove the data of old database containers", "dir", e.Name(), "err", err)
+				slog.Warn("remove the data of an old database server", "dir", e.Name(), "err", err)
 			}
 		}
 	}
@@ -400,29 +647,15 @@ func (d *Deps) retireSharedDatabases(ctx context.Context) error {
 	return err
 }
 
-// databaseLimits gives the limits of a database container of a customer.
-func (d *Deps) databaseLimits(engine string) quadlet.Limits {
-	mb := d.databaseMemoryMB()
-	if engine == "valkey" {
-		// Valkey needs memory above its data limit: for the copy of the data when it writes
-		// the append-only file again, for the connections, and for the gVisor sandbox.
-		mb = 2*d.valkeyMemoryMB() + 128
+// valkeyDataMB gives the memory limit of a Valkey database server for its data, in MB, from
+// the memory limit of its container. Valkey needs memory above its data limit: for the copy
+// of the data when it writes the append-only file again, for the connections, and for the
+// gVisor sandbox. With no limit of the container, the data limit is 256 MB.
+func valkeyDataMB(memoryBytes int64) int {
+	if memoryBytes <= 0 {
+		return 256
 	}
-	return quadlet.Limits{VCPUs: d.DatabaseCPUs, MemoryBytes: int64(mb) << 20}
-}
-
-// databaseMemoryMB gives the memory limit of a MariaDB or PostgreSQL container of a customer:
-// the setting of the agent, or one quarter of the memory of the server.
-func (d *Deps) databaseMemoryMB() int {
-	if d.DatabaseMemoryMB > 0 {
-		return d.DatabaseMemoryMB
-	}
-	return defaultDatabaseMemoryMB(hostMemoryMB("/proc/meminfo"))
-}
-
-// defaultDatabaseMemoryMB is one quarter of the memory of the server, from 512 MB to 2048 MB.
-func defaultDatabaseMemoryMB(totalMB int) int {
-	return min(max(totalMB/4, 512), 2048)
+	return max(int(memoryBytes>>20-128)/2, 32)
 }
 
 func (d *Deps) firewallDir() string {
@@ -440,7 +673,9 @@ func (d *Deps) addressUnit() string {
 }
 
 // databaseAccessSet is the nftables set of the installer with the database access of the
-// websites, and databaseAccessFile is the file of the agent with its elements.
+// websites, and databaseAccessFile is the file of the agent with its elements. Each element is
+// the UID of a website, the address of its customer, and the port of a database server of its
+// customer.
 const (
 	databaseAccessSet  = "database_access"
 	databaseAccessFile = "database-access.nft"
@@ -491,7 +726,7 @@ var websiteJumpRE = regexp.MustCompile(`^(\s*)ct state new meta skuid (\d+)-(\d+
 //
 //   - the set database_access,
 //   - a rule that lets only root and the websites connect to the database network,
-//   - a rule that lets a website connect to the address of its customer, and
+//   - a rule that lets a website connect to the database servers of its customer, and
 //   - the include of the files of the agent in dir.
 //
 // It gives an error when the file does not have the rules of the installer.
@@ -505,9 +740,9 @@ func addDatabaseRules(content, dir string) (string, error) {
 	for _, l := range lines {
 		if m := websiteJumpRE.FindStringSubmatch(l); m != nil && !jump {
 			out = append(out,
-				m[1]+"# The database containers of the customers. Only root (the agent) and the websites can",
-				m[1]+"# connect to them. The chain \"websites\" lets a website connect only to the containers of",
-				m[1]+"# its own customer.",
+				m[1]+"# The database servers of the customers. Only root (the agent) and the websites can",
+				m[1]+"# connect to them. The chain \"websites\" lets a website connect only to the database",
+				m[1]+"# servers of its own customer.",
 				m[1]+fmt.Sprintf("ct state new ip daddr %s meta skuid != 0 meta skuid != %s-%s jump refuse", quadlet.DatabaseNetwork, m[2], m[3]),
 			)
 			jump = true
@@ -518,10 +753,11 @@ func addDatabaseRules(content, dir string) (string, error) {
 		case "table inet cloudfactory {":
 			if !table {
 				out = append(out,
-					in+"# Each element is the UID of a website and the address of the database containers of",
-					in+"# its customer. The agent writes the elements in "+filepath.Join(dir, databaseAccessFile)+".",
+					in+"# Each element is the UID of a website, the address of its customer, and the port of a",
+					in+"# database server of its customer. The agent writes the elements in",
+					in+"# "+filepath.Join(dir, databaseAccessFile)+".",
 					in+"set "+databaseAccessSet+" {",
-					in+"  typeof meta skuid . ip daddr",
+					in+"  typeof meta skuid . ip daddr . tcp dport",
 					in+"}",
 				)
 				table = true
@@ -529,28 +765,28 @@ func addDatabaseRules(content, dir string) (string, error) {
 		case "chain websites {":
 			if !chain {
 				out = append(out,
-					in+"# The database containers of the customer of the website: MariaDB, PostgreSQL and Valkey.",
-					in+"# A website cannot connect to the database containers of a different customer.",
-					in+fmt.Sprintf("meta skuid . ip daddr @%s tcp dport { 3306, 5432, 6379 } accept", databaseAccessSet),
+					in+"# The database servers of the customer of the website: MariaDB, PostgreSQL and Valkey.",
+					in+"# A website cannot connect to a database server of a different customer.",
+					in+fmt.Sprintf("meta skuid . ip daddr . tcp dport @%s accept", databaseAccessSet),
 				)
 				chain = true
 			}
 		}
 	}
 	if !table || !jump || !chain || !strings.Contains(content, "chain refuse {") {
-		return "", errors.New("the file does not have the rules of the installer, so the agent cannot add the rules of the database containers")
+		return "", errors.New("the file does not have the rules of the installer, so the agent cannot add the rules of the database servers")
 	}
 	out = append(out, "# The elements of the set "+databaseAccessSet+". The agent writes them.", `include "`+dir+`/*.nft"`, "")
 	return strings.Join(out, "\n"), nil
 }
 
 // openDatabaseNetwork makes sure that the firewall of the installer has the rules of the
-// database containers of the customers. With no file, the administrator manages the firewall.
+// database servers of the customers. With no file, the administrator manages the firewall.
 func (d *Deps) openDatabaseNetwork(ctx context.Context) error {
 	path := d.firewallFile()
 	b, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
-		slog.Warn("no Cloudfactory firewall file; let each website connect only to the database address of its customer in your firewall", "file", path, "network", quadlet.DatabaseNetwork)
+		slog.Warn("no Cloudfactory firewall file; let each website connect only to the database servers of its customer in your firewall", "file", path, "network", quadlet.DatabaseNetwork)
 		return nil
 	}
 	if err != nil {
@@ -573,18 +809,18 @@ func (d *Deps) openDatabaseNetwork(ctx context.Context) error {
 	}
 	defer os.Remove(check)
 	if _, err := d.Run.Run(ctx, "nft", "-c", "-f", check); err != nil {
-		return fmt.Errorf("nftables refuses the rules of the database containers for %s (%w); run the installer again on this server", path, err)
+		return fmt.Errorf("nftables refuses the rules of the database servers for %s (%w); run the installer again on this server", path, err)
 	}
 	if _, err := host.WriteFile(path, next, 0o644); err != nil {
 		return err
 	}
-	slog.Info("added the rules of the database containers of the customers to the firewall", "file", path)
+	slog.Info("added the rules of the database servers of the customers to the firewall", "file", path)
 	_, err = d.Run.Run(ctx, "nft", "-f", path)
 	return err
 }
 
 // databaseAccess gives the content of the database access file: one element for each website
-// that uses the database containers of its customer.
+// and each database server of its customer.
 func (d *Deps) databaseAccess() (string, error) {
 	sites, err := d.State.All()
 	if err != nil {
@@ -615,14 +851,16 @@ func (d *Deps) databaseAccess() (string, error) {
 			if err != nil {
 				continue
 			}
-			elements = append(elements, fmt.Sprintf("%d . %s", uid, address))
+			for _, srv := range inst.Servers {
+				elements = append(elements, fmt.Sprintf("%d . %s . %d", uid, address, srv.Port))
+			}
 		}
 	}
 	slices.Sort(elements)
 	elements = slices.Compact(elements)
 	var b strings.Builder
 	b.WriteString(quadlet.Header)
-	b.WriteString("# Each element is the UID of a website and the address of the database containers of its\n# customer. A website can connect only to that address of the database network.\n")
+	b.WriteString("# Each element is the UID of a website, the address of its customer, and the port of a\n# database server of its customer. A website can connect to no other address or port of the\n# database network.\n")
 	fmt.Fprintf(&b, "flush set inet cloudfactory %s\n", databaseAccessSet)
 	if len(elements) > 0 {
 		fmt.Fprintf(&b, "add element inet cloudfactory %s { %s }\n", databaseAccessSet, strings.Join(elements, ", "))
@@ -631,8 +869,8 @@ func (d *Deps) databaseAccess() (string, error) {
 }
 
 // syncDatabaseAccess makes sure that "lo" has the database network, and that the firewall
-// lets each website connect to the database containers of its own customer only. The agent
-// calls it after each change of the websites that use database containers, and at its start.
+// lets each website connect to the database servers of its own customer only. The agent calls
+// it after each change of the websites and of the database servers, and at its start.
 //
 // The file of the installer includes the access file, so the kernel gets the elements again
 // when the server starts or when somebody loads the file of the installer.

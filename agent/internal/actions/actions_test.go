@@ -26,9 +26,9 @@ const (
 	websiteID = "01JBQ3Z5K8N6T4W2X9Y7R5P3M1"
 	jobID     = "01JBQ3Z5K8N6T4W2X9Y7R5P3M2"
 	jobID2    = "01JBQ3Z5K8N6T4W2X9Y7R5P3M3"
-	// customerID is the ID of the customer of a website that uses the database containers of
-	// its customer. customerKey is the key of those containers, and customerAddress is the
-	// address of the first customer of a server.
+	// customerID is the ID of the customer of a website that uses the database servers of its
+	// customer. customerKey is the key of the record of the customer, and customerAddress is
+	// the address of the first customer of a server.
 	customerID      = "01JBQ3Z5K8N6T4W2X9Y7R5P3C1"
 	customerKey     = "01jbq3z5k8n6t4w2x9y7r5p3c1"
 	customerAddress = "169.254.80.2"
@@ -97,6 +97,9 @@ func deps(t *testing.T) (*Deps, *execx.Fake, *fakeEdge) {
 		FirewallFile: filepath.Join(dir, "cloudfactory.nft"),
 		FirewallDir:  filepath.Join(dir, "firewall"),
 		AddressUnit:  filepath.Join(dir, "cloudfactory-address.service"),
+		// A server with no loop devices: the disk of a database server is a directory, and
+		// the tests mount nothing.
+		LoopControl: filepath.Join(dir, "no-loop-control"),
 	}
 	return d, run, edge
 }
@@ -395,7 +398,7 @@ func TestCreateDatabaseSendsThePasswordOnStdin(t *testing.T) {
 	in := strings.Join(f.Inputs, "")
 	for _, want := range []string{
 		"CREATE DATABASE `acme_x7k2_shop` CHARACTER SET",
-		"CREATE USER 'acme_x7k2_shop'@'169.254.77.1' IDENTIFIED BY 'Abcdefghijklmnop1234' REQUIRE NONE;",
+		"CREATE USER 'acme_x7k2_shop'@'169.254.77.1' IDENTIFIED BY 'Abcdefghijklmnop1234' REQUIRE NONE WITH MAX_USER_CONNECTIONS 100;",
 		"GRANT ALL PRIVILEGES ON `acme\\_x7k2\\_shop`.* TO 'acme_x7k2_shop'@'169.254.77.1';",
 	} {
 		if !strings.Contains(in, want) {
@@ -454,7 +457,7 @@ func TestPostgreSQLDatabaseHasGroupRoles(t *testing.T) {
 		`CREATE DATABASE "acme_x7k2_shop" OWNER "acme_x7k2_shop:rw";`,
 		`REVOKE ALL ON DATABASE "acme_x7k2_shop" FROM PUBLIC;`,
 		`ALTER DEFAULT PRIVILEGES FOR ROLE "acme_x7k2_shop:rw" IN SCHEMA public GRANT SELECT ON TABLES TO "acme_x7k2_shop:ro";`,
-		`CREATE ROLE "acme_x7k2_shop" LOGIN PASSWORD`,
+		`CREATE ROLE "acme_x7k2_shop" LOGIN CONNECTION LIMIT 80 PASSWORD`,
 		`GRANT "acme_x7k2_shop:rw" TO "acme_x7k2_shop";`,
 		`ALTER ROLE "acme_x7k2_shop" IN DATABASE "acme_x7k2_shop" SET role = 'acme_x7k2_shop:rw';`,
 	} {
@@ -484,7 +487,7 @@ func TestSetDatabaseUserGivesAPermissionForEachDatabase(t *testing.T) {
 		in := strings.Join(f.Inputs, "")
 		want := []string{
 			"RENAME USER 'acme_x7k2_sync'@'169.254.77.1' TO 'acme_x7k2_sync'@'%';",
-			"ALTER USER 'acme_x7k2_sync'@'%' REQUIRE SSL;",
+			"ALTER USER 'acme_x7k2_sync'@'%' REQUIRE SSL WITH MAX_USER_CONNECTIONS 100;",
 			"REVOKE ALL PRIVILEGES, GRANT OPTION FROM 'acme_x7k2_sync'@'%';",
 			"GRANT SELECT, SHOW VIEW ON `acme\\_x7k2\\_prod`.* TO 'acme_x7k2_sync'@'%';",
 			"GRANT ALL PRIVILEGES ON `acme\\_x7k2\\_staging`.* TO 'acme_x7k2_sync'@'%';",

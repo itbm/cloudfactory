@@ -341,9 +341,8 @@ func (d *Deps) CreateWebsite(req *agentv1.WebsiteRequest) (jobs.Job, error) {
 	return jobs.Job{ID: req.GetJobId(), Key: w.GetId(), Long: req.GetCopyFrom() != "", Steps: []jobs.Step{
 		{Name: "Create Unix user", Do: func(ctx context.Context) error {
 			if instance != "" {
-				// The website uses the database containers of its customer from its first step.
-				// The record also keeps the containers on the server while the job operates.
-				if _, err := d.useDatabases(instance, w.GetId(), false); err != nil {
+				// The website can use the database servers of its customer from its first step.
+				if _, err := d.useDatabases(instance, w.GetId()); err != nil {
 					return err
 				}
 			}
@@ -380,8 +379,8 @@ func (d *Deps) CreateWebsite(req *agentv1.WebsiteRequest) (jobs.Job, error) {
 				return err
 			}
 			if instance != "" {
-				// The firewall lets the new website connect to the database containers of its
-				// customer, and to no other database containers.
+				// The firewall lets the new website connect to the database servers of its
+				// customer, and to no other database servers.
 				if err := d.syncDatabaseAccess(ctx); err != nil {
 					return err
 				}
@@ -449,13 +448,21 @@ func (d *Deps) writeDefaultPage(ctx context.Context, w *agentv1.Website) {
 // checkCopies checks the databases and the users of a staging copy. Each source database
 // belongs to the source website, and each new name starts with the Unix user of the copy.
 func checkCopies(req *agentv1.WebsiteRequest) error {
-	if (len(req.GetCopyDatabases()) > 0 || len(req.GetCopyUsers()) > 0) && req.GetCopyFrom() == "" {
+	if (len(req.GetCopyDatabases()) > 0 || len(req.GetCopyUsers()) > 0 || len(req.GetDatabaseServers()) > 0) && req.GetCopyFrom() == "" {
 		return errors.New("only a staging copy copies databases")
 	}
 	var errs []error
 	user := req.GetWebsite().GetUnixUser()
+	for _, s := range req.GetDatabaseServers() {
+		errs = append(errs, checkDatabaseServer(s))
+		if s.GetId() == "" || s.GetCustomer() != req.GetWebsite().GetDatabaseInstance() {
+			errs = append(errs, errors.New("each database server of a staging copy is a database server of the customer of the copy"))
+		}
+	}
 	for _, c := range req.GetCopyDatabases() {
-		errs = append(errs, sqlEngine(c.GetEngine()))
+		_, from := serverKey(c.GetFromServer())
+		_, to := serverKey(c.GetToServer())
+		errs = append(errs, sqlEngine(c.GetEngine()), from, to)
 		errs = append(errs, validate.TenantDatabaseName(req.GetCopyFromUnixUser(), c.GetFrom()), validate.TenantDatabaseName(user, c.GetTo()))
 	}
 	for _, u := range req.GetCopyUsers() {
@@ -463,7 +470,8 @@ func checkCopies(req *agentv1.WebsiteRequest) error {
 		if _, err := dbContainer(u.GetEngine()); err != nil {
 			errs = append(errs, err)
 		}
-		errs = append(errs, validate.TenantDatabaseName(user, u.GetName()))
+		_, err := serverKey(u.GetDatabaseServer())
+		errs = append(errs, err, validate.TenantDatabaseName(user, u.GetName()))
 		if !passwordRE.MatchString(u.GetPassword()) {
 			errs = append(errs, errors.New("the database password must have 16 to 64 letters and digits"))
 		}
@@ -514,19 +522,24 @@ func (d *Deps) copyDatabase(ctx context.Context, from dbServer, fromName string,
 
 // copyDatabases copies each database of the source website into a new database of the staging
 // copy (FR-205), and makes the users of the copy. The copy never uses the databases of the
-// source. The new databases are in the database containers of the customer of the copy.
+// source. The new databases are in database servers of the customer of the copy.
 //
 // Valkey has no copy of the data: the data of a cache is for one website. A copy user of the
 // engine Valkey makes a new, empty Valkey database with the name of the user. valkeyNumbers
 // gets the database number of each one.
 func (d *Deps) copyDatabases(ctx context.Context, req *agentv1.WebsiteRequest, valkeyNumbers map[string]any) error {
 	id := req.GetWebsite().GetId()
+	for _, s := range req.GetDatabaseServers() {
+		if _, err := d.ensureServer(ctx, s, false); err != nil {
+			return err
+		}
+	}
 	for _, c := range req.GetCopyDatabases() {
-		from, err := d.server(req.GetCopyFrom(), c.GetEngine())
+		from, err := d.server(req.GetCopyFrom(), c.GetFromServer(), c.GetEngine())
 		if err != nil {
 			return err
 		}
-		to, err := d.server(id, c.GetEngine())
+		to, err := d.server(id, c.GetToServer(), c.GetEngine())
 		if err != nil {
 			return err
 		}
@@ -535,7 +548,7 @@ func (d *Deps) copyDatabases(ctx context.Context, req *agentv1.WebsiteRequest, v
 		}
 	}
 	for _, u := range req.GetCopyUsers() {
-		srv, err := d.server(id, u.GetEngine())
+		srv, err := d.server(id, u.GetDatabaseServer(), u.GetEngine())
 		if err != nil {
 			return err
 		}
@@ -560,7 +573,7 @@ func (d *Deps) copyDatabases(ctx context.Context, req *agentv1.WebsiteRequest, v
 		}
 		var b strings.Builder
 		for _, c := range req.GetCopyDatabases() {
-			if c.GetEngine() == engine {
+			if c.GetEngine() == engine && strings.EqualFold(c.GetToServer(), u.GetDatabaseServer()) {
 				b.WriteString(grantSQL(engine, u.GetName(), host, c.GetTo(), "readwrite"))
 			}
 		}
@@ -688,7 +701,8 @@ func (d *Deps) SetRuntime(req *agentv1.WebsiteRequest) (jobs.Job, error) {
 func (d *Deps) DeleteWebsite(req *agentv1.DeleteWebsiteRequest) (jobs.Job, error) {
 	errs := []error{validate.ID(req.GetWebsiteId()), validate.UnixUser(req.GetUnixUser())}
 	for _, db := range append(slices.Clone(req.GetDatabases()), req.GetDatabaseUsers()...) {
-		errs = append(errs, validate.TenantDatabaseName(req.GetUnixUser(), db.GetName()))
+		_, err := serverKey(db.GetDatabaseServer())
+		errs = append(errs, err, validate.TenantDatabaseName(req.GetUnixUser(), db.GetName()))
 		if _, err := dbContainer(db.GetEngine()); err != nil {
 			errs = append(errs, err)
 		}
@@ -720,11 +734,12 @@ func (d *Deps) DeleteWebsite(req *agentv1.DeleteWebsiteRequest) (jobs.Job, error
 			if err != nil {
 				return err
 			}
-			// A container that the server does not have has nothing to remove, for example when
-			// the job runs again after the containers of the customer went.
+			// A container that the server does not have has nothing to remove, for example a
+			// database server that the customer removed. The job can run again after the record
+			// of the website went, so it does not use the record to find the containers.
 			for _, u := range req.GetDatabaseUsers() {
-				srv := dbServer{Instance: instance, Engine: u.GetEngine()}
-				if !d.serverExists(srv) {
+				srv, ok := d.existingServer(u.GetDatabaseServer(), u.GetEngine())
+				if !ok {
 					continue
 				}
 				if err := d.dropUser(ctx, srv, u.GetName()); err != nil {
@@ -732,8 +747,8 @@ func (d *Deps) DeleteWebsite(req *agentv1.DeleteWebsiteRequest) (jobs.Job, error
 				}
 			}
 			for _, db := range req.GetDatabases() {
-				srv := dbServer{Instance: instance, Engine: db.GetEngine()}
-				if !d.serverExists(srv) {
+				srv, ok := d.existingServer(db.GetDatabaseServer(), db.GetEngine())
+				if !ok {
 					continue
 				}
 				if srv.Engine == "mariadb" {
@@ -760,14 +775,13 @@ func (d *Deps) DeleteWebsite(req *agentv1.DeleteWebsiteRequest) (jobs.Job, error
 			if err := d.State.Delete(req.GetWebsiteId()); err != nil {
 				return err
 			}
-			// The last website of a customer on this server takes the database containers of
-			// the customer with it.
-			if err := d.releaseDatabases(ctx, instance, req.GetWebsiteId()); err != nil {
+			// The database servers of the customer stay on this server.
+			if err := d.releaseDatabases(instance, req.GetWebsiteId()); err != nil {
 				return err
 			}
 			// A later website can get the UID of this one, so the firewall forgets the access
-			// of this website. A server with no database containers of customers has no
-			// access file.
+			// of this website. A server with no database servers of customers has no access
+			// file.
 			if _, err := os.Stat(filepath.Join(d.firewallDir(), databaseAccessFile)); instance != "" || err == nil {
 				if err := d.syncDatabaseAccess(ctx); err != nil {
 					return err

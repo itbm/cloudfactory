@@ -276,10 +276,6 @@ func serve(ctx context.Context) error {
 		EdgeImage:    cfg.Registry + "/edge:" + version,
 		SftpImage:    cfg.Registry + "/sftp:" + version,
 		SftpPort:     cfg.SftpPort,
-		// 0 means the defaults, which come from the memory of the server.
-		DatabaseMemoryMB: cfg.DatabaseMemoryMB,
-		DatabaseCPUs:     cfg.DatabaseCPUs,
-		ValkeyMemoryMB:   cfg.ValkeyMemoryMB,
 		SavePlatform: func(platform string) error {
 			c, err := config.Load(config.DefaultPath)
 			if err != nil {

@@ -34,6 +34,11 @@ class Customer extends Model
         return $this->hasMany(User::class);
     }
 
+    public function databaseServers(): HasMany
+    {
+        return $this->hasMany(DatabaseServer::class);
+    }
+
     public function reseller(): BelongsTo
     {
         return $this->belongsTo(Customer::class, 'reseller_id');
