@@ -129,6 +129,35 @@ The product specification, section 6.4, gives the requirements.
   request for a database or a database user that has no database server, and a database
   server of a different customer.
 
+## Email
+
+- One mail server (Stalwart) on a server has the mail of all customers of that server. The
+  panel permits a change of a mail domain, a mailbox or an address only to a user of its
+  customer, to the reseller of that customer and to an administrator.
+- The container `cf-mail` runs in gVisor as the Unix user `cf-mail`, not as root. It has no
+  capabilities, cannot get new privileges, and has a read-only root file system.
+- The management API of the mail server has all rights on the mail. It is only on the
+  private service address `169.254.77.1:19025`, which the firewall keeps for root and the edge
+  proxy. Each request also needs the password of the administrator. The worker of the agent
+  connects through the root helper.
+- The worker cannot run a program as `cf-mail`, and cannot run a program in the container.
+  The root helper lets it only pull the image of this agent version, and start and stop the
+  service.
+- The root helper makes the unit, the settings and the firewall rules from its own settings.
+  The worker sends only the host name, and the root helper examines it.
+- The root helper copies the certificate of the mail host name from the storage of the edge
+  proxy. The user `cf-edge` owns that storage, so the root helper reads the files with no
+  symbolic links, and accepts only a certificate for the host name with its own key.
+- The panel sends the bcrypt hash of a mailbox password to the agent. The panel does not keep
+  the password, and the job record has no hash after the job.
+- A customer adds a domain that a different customer could own only after a DNS TXT record
+  shows that the customer controls the domain, as for a website domain.
+- The mail server opens connections only to the DNS and to port 25 of public addresses. It
+  cannot connect to a service of the server, to a private network or to the metadata service
+  of a cloud provider.
+- The mail server refuses mail for a domain that it does not have (no open relay). A mail
+  program must sign in to send mail.
+
 ## Domains
 
 - The edge proxy serves a domain only after the customer verifies it. To verify a domain, the
@@ -204,7 +233,7 @@ helper does only the work of three lists:
 | --- | --- |
 | Commands | A program as the Unix user of a website (`runuser -u <user>`). A command of a fixed form as the Unix user of a database server or as `cf-edge`, for example a database client in the container of that database server. Some root commands with fixed arguments: the commands of the status report, the updates of the operating system, the reboot, and restic with paths that the root helper examines. |
 | Operations | Root work that has a name, for example `user.ensure`, `unit.write`, `user.quota` and `db.prepare`. Each operation has typed values, and the root helper examines each value. |
-| Connections | The admin socket of the edge proxy, and some ports on the private service address and on the database network. |
+| Connections | The admin socket of the edge proxy, and some ports on the private service address and on the database network. One of these ports is the management API of the mail server. |
 
 These rules apply to the three lists:
 
@@ -514,6 +543,10 @@ The table also limits the outgoing connections:
   private networks (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `100.64.0.0/10`), the
   link-local addresses (`169.254.0.0/16`, `fe80::/10`), the unique local addresses
   (`fc00::/7`), multicast, and port 25 of other servers.
+- On a server with email, the agent adds the file `/etc/cloudfactory/firewall/mail.nft`. It
+  opens the mail ports 25, 465, 587 and 993 and redirects them to the ports of the mail
+  container. The chain `mail` gets each new connection of the user `cf-mail`. It permits DNS
+  and port 25 of public addresses, and refuses all other connections.
 - The options `--allow-website-smtp` and `--allow-website-network` of the installation script
   open port 25 or a private network for the websites. Refer to
   [installation.md](installation.md#connections-from-the-websites).

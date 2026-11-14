@@ -14,7 +14,7 @@ import { MAIL_STATUS } from "../lib/labels";
 import { CopyField } from "./website/AccessTab";
 
 const PURPOSE: Record<string, string> = {
-  mx: "MX: other mail servers send the mail of the domain to this server",
+  mx: "Other mail servers send the mail of the domain to this server",
   spf: "SPF: this server can send mail for the domain",
   dkim: "DKIM: the key that signs the mail of the domain",
   dmarc: "DMARC: what other servers do with mail that fails the checks",
@@ -75,7 +75,7 @@ function DomainsCard({ domains }: { domains: MailDomain[] }) {
   return (
     <Card title="Mail domains" actions={<button type="button" className="btn btn-primary" onClick={() => setCreating(true)}>Add mail domain</button>}>
       <div className="card-body" style={{ paddingBottom: 12 }}>
-        <p className="muted">A mail domain is the part of an address after the @ sign. Each domain needs four DNS records. Without them, other mail servers do not deliver mail to the domain, or they put its mail in the spam folder.</p>
+        <p className="muted">A mail domain is the part of an address after the @ sign. Each domain needs DNS records for MX, SPF, DKIM and DMARC. Without them, other mail servers do not deliver mail to the domain, or they put its mail in the spam folder.</p>
         <FormError error={check.error ?? retry.error ?? remove.error} />
       </div>
       <TableWrap>
@@ -86,7 +86,7 @@ function DomainsCard({ domains }: { domains: MailDomain[] }) {
               <th scope="col">Status</th>
               <th scope="col">DNS records</th>
               <th scope="col">Mailboxes</th>
-              <th scope="col">Aliases and forwarders</th>
+              <th scope="col">Other addresses</th>
               <th scope="col"><span className="visually-hidden">Actions</span></th>
             </tr>
           </thead>

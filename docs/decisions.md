@@ -177,3 +177,15 @@ agent into a worker with the user `cf-agent` and a root helper (refer to
 
 The boundary has limits: the worker can still act as each website user, and it manages the
 database servers. [security.md](security.md#the-root-helper-of-the-agent) gives the full list.
+
+## Stalwart for email, in one container for each server
+
+| Item | Decision | Reason |
+| ---- | -------- | ------ |
+| Mail server | Stalwart, release 1.1 or later | One program has SMTP, IMAP, DKIM, SPF, DMARC and the size limits of the mailboxes, and a management API for each change. Postfix with Dovecot and Rspamd is three services with configuration files and no API. |
+| Licence | AGPL-3.0, the licence of Cloudfactory | Cloudfactory uses the image of Stalwart with no change to the program. Mox (MIT) and Apache James (Apache-2.0) are alternatives with a different licence. A change to one of them replaces only the package `agent/internal/stalwart` and the image. |
+| Number of containers | One for each server, for all customers | A server has one port 25 and one reputation of its address. The panel keeps the customers apart. |
+| Ports | The mail server listens above 1024, and nftables redirects the public ports | The container has no capabilities and does not run as root. The edge proxy uses the same method. |
+| Certificate | The edge proxy gets it, and the root helper copies it | The server has one ACME client, and the mail server needs no port 80. |
+| Passwords | The panel makes a password and sends a bcrypt hash | The agent and the job records never have the password. |
+| Webmail, spam training, calendars | Not in this release | The first release has the parts that each mail program needs. |

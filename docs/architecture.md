@@ -298,6 +298,46 @@ the administrators. The image `sftp` has OpenSSH and `libnss-extrausers`.
   service of the host. Until this step is complete, the agent reports port 22 to the panel.
   Refer to [installation.md](installation.md#servers-that-you-installed-with-release-01).
 
+## Email
+
+A server can have one mail server for the mail domains of the customers. An administrator
+turns it on for a server with a host name (`PUT /v1/servers/{id}/mail`, or
+`cf servers mail SERVER --hostname NAME`). The mail server is Stalwart, release 1.1 or later,
+in the container `cf-mail` of the Unix user `cf-mail`. The image `mail` is the image of
+Stalwart with no file capabilities.
+
+```text
+ other mail servers ──► port 25  ─┐
+ mail programs ──► 465, 587, 993 ─┼─► nftables redirect ──► cf-mail (rootless Podman, gVisor)
+                                  │      ports 2025, 2465, 2587 and 2993
+ worker of the agent ──► root helper ──► 169.254.77.1:19025 ──► management API (port 8080)
+```
+
+One container has the mail of all customers of the server, because a server has one port 25.
+The panel keeps the customers apart: each mail domain has one customer, and the panel sends a
+job only for a domain of that customer.
+
+| Part | Where | Notes |
+| ---- | ----- | ----- |
+| Mail domains, mailboxes, aliases and forwarders | The database of the panel, and the data store of the mail server | The panel is the source. The agent applies each change through the management API (`agent/internal/stalwart`). |
+| Settings of the mail server | The data store of the mail server, in `/var/lib/cf-mail/data` | The file `/etc/cloudfactory/mail/config.json` names only the data store. Root owns it. |
+| Password of the administrator of the management API | `/etc/cloudfactory/mail/admin.env` | Only root and the group `cf-mail` can read the file. The root helper gives the password to the worker. |
+| TLS certificate | `/etc/cloudfactory/mail/certs` | The edge proxy gets and renews the certificate of the mail host name. The root helper copies it for the mail server, at the start of the agent and one time each day. |
+| Passwords of the mailboxes | The mail server keeps a bcrypt hash | The panel makes the hash and sends only the hash. The panel shows the password one time. The agent never has it. |
+
+The first start of the mail server is in the recovery mode of Stalwart, which has only the
+management API. The agent sets the listeners, the host name and the certificate, and then
+starts the mail server again. Thus the mail server never listens with the default settings of
+its image.
+
+A new mail domain gets two DKIM keys from the mail server. The result of the job has the DNS
+records that the owner of the domain adds: MX, SPF, DKIM and DMARC. The panel reads the DNS
+when the user asks (`POST /v1/mail/domains/{id}/check`) and shows which records it found.
+
+The status report of the agent has the state of the mail server and the size of the messages
+of each mailbox. The plan of a customer gives the number of its mailboxes and the total size
+of these mailboxes.
+
 ## Databases
 
 A customer makes database servers as it makes websites. A database server is one container
