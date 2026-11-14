@@ -571,18 +571,29 @@ enable_quotas() {
 	QUOTAS_CHANGED=1
 }
 
-# quota_script prints the program that turns on the quotas at each start of the server.
+# quota_script prints the program that turns on the quotas at each start of the server. After
+# a restart, the file system does not have the quota options, and the quota file is there.
+# "quotaon" has the exit status 0 also when it turns on nothing, so the program reads the state.
 quota_script() {
 	cat <<SCRIPT
 #!/bin/sh
 # Managed by the Cloudfactory installation script. It turns on the user quotas of the file
 # systems in $CF_ETC/quota-mounts, before a website or a database server starts.
+is_on() {
+	case "\$(quotaon --print-state --user "\$1" 2>/dev/null)" in *"is on"*) return 0 ;; esac
+	return 1
+}
 status=0
 while read -r mount; do
 	[ -n "\$mount" ] || continue
-	case "\$(quotaon --print-state --user "\$mount" 2>/dev/null)" in *"is on"*) continue ;; esac
-	quotaon --user "\$mount" 2>/dev/null && continue
-	if ! mount -o "remount,$QUOTA_OPTIONS" "\$mount" || ! quotaon --user "\$mount"; then
+	is_on "\$mount" && continue
+	# An ext4 file system with the feature "quota" needs only this command.
+	quotaon --user "\$mount" 2>/dev/null
+	is_on "\$mount" && continue
+	if mount -o "remount,$QUOTA_OPTIONS" "\$mount"; then
+		quotaon --user "\$mount"
+	fi
+	if ! is_on "\$mount"; then
 		echo "cloudfactory: cannot turn on the user quotas on \$mount. The server does not apply the disk limits." >&2
 		status=1
 	fi
@@ -627,6 +638,10 @@ setup_quotas() {
 	systemctl daemon-reload
 	systemctl enable cloudfactory-quota.service >/dev/null 2>&1 ||
 		info "  The script cannot enable cloudfactory-quota.service. After a restart of the server, the quotas are off."
+	# A server of an earlier release has websites that had no disk limit until now.
+	if [ "$QUOTAS_CHANGED" -eq 1 ] && [ -n "$(ls -A "$ROOT/srv/cloudfactory/sites" 2>/dev/null)" ]; then
+		info "  The websites of this server get their disk limits now. A website that uses more disk space than its limit cannot write files. Refer to \"Disk quotas\" in the installation guide."
+	fi
 }
 
 check_arguments

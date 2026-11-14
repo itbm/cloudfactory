@@ -327,7 +327,8 @@ fi
 # to the file "calls". The fake file systems have the type in "fstype". The quotas of the root
 # file system are on when the file "on_" is there, and "on_var_lib_cf-db" is for a file system
 # at /var/lib/cf-db. "quotaon" turns them on only after a remount with the quota options
-# ("remounted_"), or on a file system that always counts ("feature").
+# ("remounted_"), or on a file system that always counts ("feature"). As the real command, it
+# has the exit status 0 also when it turns on nothing.
 quota_root() {
 	root="$WORK/quota-$1"
 	cp -R "$(fake debian 13)" "$root"
@@ -343,7 +344,8 @@ quota_root() {
 		printf 'slug=$(printf "%%s" "$3$2" | sed "s/^--user//; s/--user$//" | tr / _)\n'
 		printf 'case "$1" in --print-state) if [ -e "$R/on$slug" ]; then echo "user quota on $3 (/dev/vda1) is on"; else echo "user quota on $3 (/dev/vda1) is off"; fi; exit 0 ;; esac\n'
 		printf 'echo "quotaon $*" >>"$R/calls"\n'
-		printf 'if [ -e "$R/remounted$slug" ] || [ -e "$R/feature" ]; then : >"$R/on$slug"; exit 0; fi\nexit 1\n'
+		printf 'if [ -e "$R/remounted$slug" ] || [ -e "$R/feature" ]; then : >"$R/on$slug"; exit 0; fi\n'
+		printf 'echo "quotaon: Mountpoint (or device) $2 not found or has no quota enabled." >&2\nexit 0\n'
 	} >"$root/bin/quotaon"
 	# shellcheck disable=SC2016
 	printf '#!/bin/sh\necho "mount $*" >>"%s/calls"\n[ -e "%s/no-remount" ] && exit 32\n: >"%s/remounted$(printf "%%s" "$3" | tr / _)"\n' "$root" "$root" "$root" >"$root/bin/mount"
@@ -371,6 +373,7 @@ called() {
 root=$(quota_root ext4)
 out=$(quotas "$root")
 said "the script turns on the quotas of an ext4 file system" "/ (ext4): the script turned on the user quotas." "$out"
+case "$out" in *"get their disk limits now"*) FAIL=$((FAIL + 1)); echo 'FAIL: a server with no websites gets no message about the limits of websites' ;; *) PASS=$((PASS + 1)) ;; esac
 called "the file system gets the journaled quota options" yes "mount -o remount,usrjquota=aquota.user,jqfmt=vfsv1 /" "$root"
 called "the script makes the quota file" yes "quotacheck -cum /" "$root"
 called "the unit turns on the quotas at each start" yes "systemctl enable cloudfactory-quota.service" "$root"
@@ -402,6 +405,24 @@ out=$(quotas "$root")
 said "a second run finds the quotas" "/ (ext4): the user quotas are on." "$out"
 called "a second run does not mount the file system again" no "mount -o remount,usrjquota=aquota.user,jqfmt=vfsv1 /" "$root"
 if [ "$(cat "$root/etc/cloudfactory/quota-mounts")" = "/" ]; then PASS=$((PASS + 1)); else FAIL=$((FAIL + 1)); echo 'FAIL: a second run keeps the list of the unit'; fi
+# The program of the unit on a file system that refuses the options after a restart: the
+# program tells the cause and has a failure status, so that systemd shows the unit as failed.
+rm "$root/on_" "$root/remounted_"
+: >"$root/no-remount"
+if PATH="$root/bin:$PATH" sh "$root/quota-on.sh" 2>"$root/quota-on.err"; then got=0; else got=$?; fi
+if [ "$got" -eq 1 ] && [ ! -e "$root/on_" ] && grep -qF 'cannot turn on the user quotas on /.' "$root/quota-on.err"; then
+	PASS=$((PASS + 1))
+else
+	FAIL=$((FAIL + 1))
+	echo 'FAIL: the unit reports a file system that refuses the quota options'
+	cat "$root/quota-on.err"
+fi
+
+# A server that has websites: the script tells the operator that the websites get their limits.
+root=$(quota_root websites)
+mkdir -p "$root/srv/cloudfactory/sites/acme_yz3g"
+out=$(quotas "$root")
+said "a server with websites gets a message about the new limits" "The websites of this server get their disk limits now." "$out"
 
 # Quotas that the operator turned on in /etc/fstab: the script changes nothing and makes no unit.
 root=$(quota_root operator)
