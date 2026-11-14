@@ -1,4 +1,4 @@
-# The shared Valkey service image. The release pipeline signs it like all other images (FR-1101).
+# The Valkey service image. Each customer has its own container. The release pipeline signs the image like all other images (FR-1101).
 # SPDX-License-Identifier: AGPL-3.0-only
 # The agent needs release 9.1.2 or later: from release 9.1, a user can have access to one
 # database number only, and release 9.1.2 closes the last way out of that database.
