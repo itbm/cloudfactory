@@ -376,6 +376,42 @@ message MeshPeer {
   string endpoint = 4;
   // The mesh address of the other server.
   string address = 5;
+  // The addresses of the network members on the other server that a website of this server
+  // can connect to. The tunnel sends the traffic for these addresses to the other server.
+  repeated string members = 6;
+}
+
+// One network member on this server: a database server with a name ("<name>.internal") and
+// an address of the mesh range. The name and the address are the same on each server.
+message NetworkMember {
+  // The ID of the database server.
+  string id = 1;
+  // The member address.
+  string address = 2;
+  // The port that the member answers on: the usual port of its engine.
+  int32 port = 3;
+  // The mesh addresses of the other servers that have a website in a network of the member.
+  // Only these servers can connect to the member through a tunnel.
+  repeated string servers = 4;
+}
+
+// The name of one network member for a website.
+message NetworkName {
+  // The host name, for example "shop-db.internal".
+  string name = 1;
+  // The member address.
+  string address = 2;
+  // The port of the member.
+  int32 port = 3;
+}
+
+// One website of this server, with the network members that it can connect to. The agent
+// writes the names in the hosts file of the website container, and the firewall lets only
+// this website connect to these members.
+message NetworkWebsite {
+  // The ID of the website.
+  string id = 1;
+  repeated NetworkName names = 2;
 }
 
 // The full mesh state of one server: its tunnels to other servers. The traffic between the
@@ -391,6 +427,10 @@ message Mesh {
   // The UDP port of the tunnels on this server.
   int32 port = 4;
   repeated MeshPeer peers = 5;
+  // The networks of the customers on this server. A server with no tunnel can have them:
+  // then the request has the range, and no address and no peers.
+  repeated NetworkMember members = 6;
+  repeated NetworkWebsite websites = 7;
 }
 
 // Sets the tunnels of this server. The request always has the full state, so the agent can

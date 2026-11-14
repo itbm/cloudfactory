@@ -78,7 +78,27 @@ describe("the network page", () => {
     await waitFor(() => expect(screen.getByText("Set the tunnels of web-2")).toBeTruthy());
   });
 
+  it("keeps a tunnel that a website uses", () => {
+    // In the demo data, a website on one server uses a database server on the other.
+    expect(mesh().tunnels[0].inUse).toBe(true);
+    mesh().servers[1].networks = false;
+    page();
+    expect(row(/web-1 and web-2/).textContent).toContain("A website uses a database server on the other server.");
+    fireEvent.click(screen.getByRole("button", { name: "Actions for the tunnel between web-1 and web-2" }));
+    expect(screen.getByRole("menuitem", { name: "Remove" }).getAttribute("aria-disabled") ?? String((screen.getByRole("menuitem", { name: "Remove" }) as HTMLButtonElement).disabled)).toBe("true");
+    expect((screen.getByRole("menuitem", { name: "Repair" }) as HTMLButtonElement).disabled).toBe(false);
+    // The agent of a server from before the networks: the page tells the administrator.
+    expect(screen.getAllByRole("status").map((e) => e.textContent).join(" ")).toContain(`${mesh().servers[1].name} cannot use the network names of database servers.`);
+  });
+
+  it("names a tunnel that the panel made for a network", () => {
+    Object.assign(mesh().tunnels[0], { pinned: false, inUse: true });
+    page();
+    expect(row(/web-1 and web-2/).textContent).toContain("The panel made it: a website uses a database server on the other server.");
+  });
+
   it("removes a tunnel after a question", async () => {
+    Object.assign(mesh().tunnels[0], { inUse: false });
     const id = mesh().tunnels[0].id;
     api.on("DELETE /mesh/tunnels/*", () => {
       inApi((m) => { m.tunnels = []; });

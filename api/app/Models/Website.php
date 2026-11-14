@@ -4,6 +4,8 @@ namespace App\Models;
 
 use App\Enums\WebsiteStatus;
 use App\Models\Concerns\GuardsState;
+use App\Services\Mesh;
+use App\Services\Networks;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -42,6 +44,31 @@ class Website extends Model
             'stopped_by_suspension' => 'boolean',
             'sftp_closed_by_suspension' => 'boolean',
         ];
+    }
+
+    /**
+     * A new website is a member of the network "default" of its customer. The mesh state of
+     * the servers changes with the websites (Mesh::refresh).
+     */
+    protected static function booted(): void
+    {
+        static::created(function (Website $website) {
+            Networks::join($website);
+            Mesh::refreshLater();
+        });
+        static::updated(function (Website $website) {
+            if ($website->wasChanged('customer_id')) {
+                Networks::leave($website);
+                Networks::join($website);
+            }
+            if ($website->wasChanged(['customer_id', 'server_id'])) {
+                Mesh::refreshLater();
+            }
+        });
+        static::deleted(function (Website $website) {
+            Networks::leave($website);
+            Mesh::refreshLater();
+        });
     }
 
     public function customer(): BelongsTo

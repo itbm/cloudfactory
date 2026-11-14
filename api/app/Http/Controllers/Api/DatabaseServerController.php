@@ -16,6 +16,7 @@ use App\Models\Website;
 use App\Services\Audit;
 use App\Services\DatabaseServers;
 use App\Services\JobDispatcher;
+use App\Services\Networks;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -71,12 +72,12 @@ class DatabaseServerController extends Controller
     {
         $data = $request->validate([
             'engine' => ['required', Rule::in(Database::ENGINES)],
-            'name' => ['sometimes', 'nullable', 'string', 'regex:'.DatabaseServers::NAME],
+            'name' => ['sometimes', 'nullable', 'string', 'regex:'.DatabaseServers::NAME, Rule::notIn(Networks::RESERVED)],
             'customerId' => ['nullable', 'exists:customers,id'],
             'planId' => ['nullable', 'exists:plans,id'],
             'serverId' => ['nullable', 'exists:servers,id'],
             ...self::limitRules(),
-        ], ['name.regex' => 'Use 1 to 40 lower-case letters, digits and hyphens. Start and end with a letter or a digit.']);
+        ], ['name.regex' => 'Use 1 to 40 lower-case letters, digits and hyphens. Start and end with a letter or a digit.', 'name.not_in' => 'Each website has this name for the database servers of its engine. Use a different name, for example :input-1.']);
         $user = $request->user();
         $customerId = $data['customerId'] ?? $user->customer_id;
         if (! $customerId || ! $user->canSeeCustomer($customerId)) {
@@ -139,10 +140,10 @@ class DatabaseServerController extends Controller
     {
         $server = $this->find($request, $id);
         $data = $request->validate([
-            'name' => ['sometimes', 'string', 'regex:'.DatabaseServers::NAME],
+            'name' => ['sometimes', 'string', 'regex:'.DatabaseServers::NAME, Rule::notIn(Networks::RESERVED)],
             'planId' => ['sometimes', 'exists:plans,id'],
             ...self::limitRules(),
-        ], ['name.regex' => 'Use 1 to 40 lower-case letters, digits and hyphens. Start and end with a letter or a digit.']);
+        ], ['name.regex' => 'Use 1 to 40 lower-case letters, digits and hyphens. Start and end with a letter or a digit.', 'name.not_in' => 'Each website has this name for the database servers of its engine. Use a different name, for example :input-1.']);
         $user = $request->user();
         if (isset($data['limits']) && ! $user->isAdministrator()) {
             return response()->json(['message' => 'Only administrators can set resource limits.'], 403);
@@ -273,6 +274,11 @@ class DatabaseServerController extends Controller
             // name and this port.
             'host' => $s->host(),
             'port' => $s->port,
+            // Each website that is in a network with the database server connects to this
+            // host name and this port, on the same server and on a different server. Null for
+            // a database server with a name that an engine uses.
+            'networkHost' => Networks::hostOf($s),
+            'networkPort' => Networks::portOf($s->engine),
             'limits' => $s->limits,
             // The last report of the agent: "memoryBytes", "diskBytes" and "diskSizeBytes".
             'usage' => $s->usage,

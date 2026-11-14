@@ -5,12 +5,14 @@ namespace App\Http\Controllers\Api;
 use App\Enums\AgentAction;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\JobResource;
+use App\Models\DatabaseServer;
 use App\Models\MeshTunnel;
 use App\Models\Server;
 use App\Models\Setting;
 use App\Services\Audit;
 use App\Services\JobDispatcher;
 use App\Services\Mesh;
+use App\Services\Networks;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -50,6 +52,9 @@ class MeshController extends Controller
             Setting::put('mesh', $settings);
             // The addresses of the old range are not in the new range.
             Server::whereNotNull('mesh_address')->update(['mesh_address' => null]);
+            // The network members get addresses of the new range.
+            DatabaseServer::whereNotNull('mesh_address')->update(['mesh_address' => null]);
+            $this->mesh->refresh();
             Audit::record($request, 'Changed mesh settings', "{$settings['range']} port {$settings['port']}");
         }
 
@@ -104,6 +109,10 @@ class MeshController extends Controller
     {
         $tunnel = MeshTunnel::findOrFail($id);
         $names = Server::whereIn('id', [$tunnel->server_a_id, $tunnel->server_b_id])->orderBy('name')->pluck('name')->join(' and ');
+        // The panel makes the tunnel again when a network needs it, so the answer says why.
+        if (isset(Networks::pairs()[$tunnel->server_a_id.' '.$tunnel->server_b_id])) {
+            throw ValidationException::withMessages(['tunnel' => "A website on one of the servers {$names} uses a database server on the other. The panel removes the tunnel when no website needs it."]);
+        }
         $jobs = $this->mesh->disconnect($tunnel);
         Audit::record($request, 'Removed tunnel', $names);
 
@@ -132,6 +141,7 @@ class MeshController extends Controller
     {
         $servers = Server::orderBy('name')->get()->keyBy('id');
         $tunnels = MeshTunnel::orderBy('created_at')->get();
+        $used = Networks::pairs();
         $count = $tunnels->flatMap(fn (MeshTunnel $t) => [$t->server_a_id, $t->server_b_id])->countBy();
 
         return [
@@ -143,6 +153,9 @@ class MeshController extends Controller
                 'state' => $s->state,
                 // False for an agent of an earlier release: it cannot have tunnels.
                 'supported' => Mesh::supports($s),
+                // False for an agent from before the networks: a website on it cannot use a
+                // database server by its network name.
+                'networks' => Networks::supports($s),
                 'publicKey' => $s->mesh_public_key,
                 'address' => $s->mesh_address,
                 // The public IP address for the tunnel traffic. Null: the panel finds it from
@@ -152,16 +165,18 @@ class MeshController extends Controller
                 // True when the server has the mesh state that the panel wants.
                 'current' => $s->mesh_version === $s->mesh_wanted_version,
             ])->all(),
-            'tunnels' => $tunnels->map(fn (MeshTunnel $t) => self::presentTunnel($t, $servers))->all(),
+            'tunnels' => $tunnels->map(fn (MeshTunnel $t) => self::presentTunnel($t, $servers, $used))->all(),
         ];
     }
 
     /**
      * @param  Collection<string, Server>  $servers
+     * @param  array<string, mixed>|null  $used  The pairs of servers that a network uses (Networks::pairs).
      * @return array<string, mixed>
      */
-    public static function presentTunnel(MeshTunnel $t, Collection $servers): array
+    public static function presentTunnel(MeshTunnel $t, Collection $servers, ?array $used = null): array
     {
+        $used ??= Networks::pairs();
         $sides = array_map(function (string $id) use ($t, $servers) {
             $side = $t->side($id);
 
@@ -181,7 +196,12 @@ class MeshController extends Controller
             'state' => $t->state(),
             // The larger of the two measured round-trip times, in milliseconds.
             'roundTripMs' => $times ? max($times) : null,
+            // True for a tunnel that an administrator made. False for a tunnel that the panel
+            // made for a network.
             'pinned' => $t->pinned,
+            // True when a website on one server uses a database server on the other. The
+            // panel keeps such a tunnel.
+            'inUse' => isset($used[$t->server_a_id.' '.$t->server_b_id]),
             'sides' => $sides,
             'createdAt' => $t->created_at?->toIso8601String(),
         ];

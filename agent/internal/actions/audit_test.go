@@ -89,11 +89,34 @@ func TestWebsitesHaveDatabaseHostNames(t *testing.T) {
 	d, _, _ := deps(t)
 	run(t)(d.CreateWebsite(&agentv1.WebsiteRequest{JobId: jobID, Website: website("ghcr.io/cloudfactory/frankenphp-php8.4:8.4.0-1")}))
 	u := unitFile(t, d, "acme_x7k2", "cf-acme_x7k2.container")
-	for _, want := range []string{"AddHost=mariadb.internal:" + customerAddress + "\n", "AddHost=postgres.internal:" + customerAddress + "\n", "AddHost=valkey.internal:" + customerAddress + "\n", "Environment=CF_DOCUMENT_ROOT=/app/public\n"} {
+	// The names are in the hosts file of the website. The container has the file as its
+	// /etc/hosts, so the agent can add a name with no restart of the container.
+	for _, want := range []string{"PodmanArgs=--no-hosts\n", "Volume=" + d.hostsPath("acme_x7k2") + ":/etc/hosts:ro\n", "Environment=CF_DOCUMENT_ROOT=/app/public\n"} {
 		if !strings.Contains(u, want) {
 			t.Errorf("unit has no %q:\n%s", want, u)
 		}
 	}
+	if strings.Contains(u, "AddHost") {
+		t.Errorf("the unit and the hosts file have the names:\n%s", u)
+	}
+	if hosts := websiteHostsFile(t, d, "acme_x7k2"); !strings.Contains(hosts, "127.0.0.1 localhost\n") || !hasDatabaseNames(hosts, customerAddress) {
+		t.Errorf("the hosts file:\n%s", hosts)
+	}
+}
+
+// websiteHostsFile gives the hosts file of a website.
+func websiteHostsFile(t *testing.T, d *Deps, unixUser string) string {
+	t.Helper()
+	b, err := os.ReadFile(d.hostsPath(unixUser))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
+}
+
+// hasDatabaseNames reports whether a hosts file has the names of the engines for an address.
+func hasDatabaseNames(hosts, address string) bool {
+	return strings.Contains(hosts, address+" mariadb.internal postgres.internal valkey.internal\n")
 }
 
 // After a restart, the agent starts the database servers again (RefreshDatabaseServices). A

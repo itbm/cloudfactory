@@ -2433,6 +2433,7 @@ components:
               location: { type: string }
               state: { type: string }
               supported: { type: boolean, description: False when the agent of the server is from a release that cannot have tunnels. }
+              networks: { type: boolean, description: False when the agent of the server is from a release that cannot operate network members. A website on such a server cannot use the network name of a database server. }
               publicKey: { type: [string, 'null'], description: The public tunnel key that the agent reported. }
               address: { type: [string, 'null'], description: The mesh address of the server. }
               tunnelAddress: { type: [string, 'null'], description: The public IP address for the tunnel traffic. Null until the panel finds it or an administrator sets it. }
@@ -2451,7 +2452,8 @@ components:
             that the other does not answer. `waiting`: a server did not report the tunnel in the
             last three minutes.
         roundTripMs: { type: [number, 'null'], description: The larger of the two measured round-trip times, in milliseconds. }
-        pinned: { type: boolean, description: True for a tunnel that an administrator made. }
+        pinned: { type: boolean, description: True for a tunnel that an administrator made. False for a tunnel that the panel made because a website on one server uses a database server on the other. }
+        inUse: { type: boolean, description: True when a website on one server uses a database server on the other. The panel keeps such a tunnel. }
         sides:
           type: array
           description: What each of the two servers reported last.
@@ -2653,6 +2655,14 @@ components:
             "removing": the agent removes the database server.
         host: { type: string, description: 'The host name that a website container connects to: `mariadb.internal`, `postgres.internal` or `valkey.internal`.' }
         port: { type: integer, description: The port that a website container connects to. }
+        networkHost:
+          type: [string, 'null']
+          description: >-
+            The network name of the database server, for example `shop-db.internal`. Each website
+            that is in a network with the database server connects to this name and to
+            `networkPort`, on the same server and on a different server. Null for a database
+            server with a name that an engine uses (`mariadb`, `postgres` or `valkey`).
+        networkPort: { type: integer, description: 'The port for `networkHost`: the usual port of the engine (3306, 5432 or 6379).' }
         limits: { $ref: '#/components/schemas/DatabaseLimits' }
         usage:
           type: [object, 'null']

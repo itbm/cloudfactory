@@ -20,6 +20,7 @@ import (
 	"github.com/itbm/cloudfactory/agent/internal/gate"
 	"github.com/itbm/cloudfactory/agent/internal/host"
 	"github.com/itbm/cloudfactory/agent/internal/hostupdate"
+	"github.com/itbm/cloudfactory/agent/internal/mesh"
 	"github.com/itbm/cloudfactory/agent/internal/quadlet"
 	"github.com/itbm/cloudfactory/agent/internal/selfupdate"
 )
@@ -192,6 +193,13 @@ type Deps struct {
 	accessLoaded string
 	// meshMu makes each change of the tunnels one step.
 	meshMu sync.Mutex
+	// networkMu makes each change of the networks one step in the worker.
+	networkMu sync.Mutex
+	// networkLoaded is the content of the firewall file of the networks that the kernel
+	// has. networkWarned is set after the warning for a server with no firewall file. meshMu
+	// protects the two.
+	networkLoaded string
+	networkWarned bool
 	// backupSlots limits the backups that operate at the same time (BackupSlots).
 	backupSlots chan struct{}
 	rtMu        sync.RWMutex
@@ -276,6 +284,8 @@ type stateFile struct {
 	// Databases has the record of each customer that has a website or a database server on
 	// this server. The key is the ID of the customer in lower case.
 	Databases map[string]*DatabaseInstance `json:"databases,omitempty"`
+	// Network has the networks of the customers on this server, from the panel (network.go).
+	Network *mesh.Network `json:"network,omitempty"`
 }
 
 // DatabaseInstance is what the agent knows about the database servers of one customer. The

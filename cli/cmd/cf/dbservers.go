@@ -36,8 +36,19 @@ func limitsText(v any) string {
 	return fmt.Sprintf("%s vCPU, %s memory, %s disk", cell(l["vcpus"]), byteSize(l["memoryBytes"]), byteSize(l["diskBytes"]))
 }
 
-// address gives the host name and the port that a website container connects to.
+// address gives the host name and the port that a website container connects to: the network
+// name of the database server, which is the same on each server. A database server with no
+// network name has the name of its engine, for the websites on its own server.
 func address(row map[string]any) string {
+	if row["networkHost"] != nil && row["networkPort"] != nil {
+		return cell(row["networkHost"]) + ":" + cell(row["networkPort"])
+	}
+	return localAddress(row)
+}
+
+// localAddress gives the name of the engine and the port of the database server on its own
+// server. Only the websites on the same server can use it.
+func localAddress(row map[string]any) string {
 	if row["host"] == nil || row["port"] == nil {
 		return "-"
 	}
@@ -205,6 +216,9 @@ func (a *app) databaseServers(ctx context.Context, sub string, args []string) er
 			}
 			fmt.Fprintf(a.out, "Name:       %s\nID:         %s\nEngine:     %s\nStatus:     %s\nCustomer:   %s\nServer:     %s\nPlan:       %s\nAddress:    %s\nLimits:     %s\nDatabases:  %s of %s\n",
 				cell(s["name"]), cell(s["id"]), cell(s["engine"]), cell(s["status"]), cell(s["customerId"]), cell(s["serverId"]), cell(s["planId"]), address(s), limitsText(s["limits"]), cell(s["databases"]), cell(s["maxDatabases"]))
+			if local := localAddress(s); local != address(s) {
+				fmt.Fprintf(a.out, "Also:       %s for the websites on the same server\n", local)
+			}
 			// The last report of the server. A new database server has none.
 			if u, ok := s["usage"].(map[string]any); ok && u["memoryBytes"] != nil {
 				fmt.Fprintf(a.out, "Use:        %s memory, %s of %s disk\n", byteSize(u["memoryBytes"]), byteSize(u["diskBytes"]), byteSize(u["diskSizeBytes"]))

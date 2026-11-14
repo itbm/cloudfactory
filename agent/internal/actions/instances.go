@@ -895,7 +895,13 @@ func (d *Deps) syncDatabaseAccess(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return d.loadDatabaseAccess(ctx, elements)
+	if err := d.loadDatabaseAccess(ctx, elements); err != nil {
+		return err
+	}
+	// The names and the access of the networks change with the websites and the database
+	// servers too (network.go).
+	d.syncNetworkLater(ctx)
+	return nil
 }
 
 // ensureDatabaseNetwork adds the database network to "lo", and the rules of the database

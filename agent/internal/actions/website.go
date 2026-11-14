@@ -219,6 +219,7 @@ func (d *Deps) unit(w *agentv1.Website, port int, suffix string) quadlet.Website
 		// The database host names of the container point to the database containers of the
 		// customer of the website.
 		DatabaseAddress: d.databaseAddress(w.GetId()),
+		HostsFile:       d.hostsFileOf(w.GetUnixUser()),
 		Limits:          quadlet.Limits{VCPUs: l.GetVcpus(), MemoryBytes: l.GetMemoryBytes(), Processes: l.GetProcesses(), DiskIOBytesPerSecond: l.GetDiskIoBytesPerSecond(), BlockDevice: d.BlockDevice},
 	}
 }
@@ -819,6 +820,8 @@ func (d *Deps) DeleteWebsite(req *agentv1.DeleteWebsiteRequest) (jobs.Job, error
 				if err := d.syncDatabaseAccess(ctx); err != nil {
 					return err
 				}
+			} else {
+				d.syncNetworkLater(ctx)
 			}
 			d.PruneImages()
 			return nil

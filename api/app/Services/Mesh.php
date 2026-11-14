@@ -234,6 +234,7 @@ class Mesh
             }
             Server::whereKey($server->id)->increment('mesh_wanted_version');
             $server->refresh();
+            $server->update(['mesh_state_hash' => self::fingerprint($server)]);
             // A job that the panel did not send yet sends the new state.
             $waiting = AgentJob::where('server_id', $server->id)->where('action', AgentAction::SetMesh->value)->where('state', JobState::Queued->value)->first();
             $jobs[] = $waiting ?? $this->jobs->dispatch($server, AgentAction::SetMesh, [], "Set the tunnels of {$server->name}");
@@ -243,8 +244,10 @@ class Mesh
     }
 
     /**
-     * The mesh state of a server for its agent: its address and its peers, with the keys. A
-     * server with no tunnel is not in the mesh: it has no interface and no open tunnel port.
+     * The mesh state of a server for its agent: its address and its peers, with the keys, and
+     * the networks of the customers on the server (Networks). A server with no tunnel is not
+     * in the mesh: it has no interface and no open tunnel port. It can have network members:
+     * a website finds a database server on its own server with the same name.
      *
      * @return array<string, mixed>
      */
@@ -252,13 +255,15 @@ class Mesh
     {
         $settings = self::settings();
         $peers = [];
-        foreach (self::tunnelsOf($server) as $tunnel) {
+        $complete = collect();
+        foreach ($server->mesh_address ? self::tunnelsOf($server) : [] as $tunnel) {
             $other = Server::find($tunnel->otherId($server->id));
             $address = $other ? self::tunnelAddress($other) : null;
             // A peer that is not complete gets its tunnel when the panel has its values.
             if (! $other || ! $other->mesh_public_key || ! $other->mesh_address || $address === null) {
                 continue;
             }
+            $complete[$other->id] = $other;
             $peers[] = [
                 'server' => $other->id,
                 'publicKey' => $other->mesh_public_key,
@@ -268,8 +273,17 @@ class Mesh
             ];
         }
         usort($peers, fn ($x, $y) => strcmp($x['server'], $y['server']));
-        if (! $peers || ! $server->mesh_address) {
-            return ['version' => $server->mesh_wanted_version, 'peers' => []];
+        $networks = Networks::stateFor($server, $complete);
+        foreach ($peers as &$peer) {
+            if (isset($networks['peerMembers'][$peer['server']])) {
+                $peer['members'] = $networks['peerMembers'][$peer['server']];
+            }
+        }
+        unset($peer);
+        // An agent from before the networks does not know the fields, so it does not get them.
+        $members = array_filter(['members' => $networks['members'], 'websites' => $networks['websites']]);
+        if (! $peers) {
+            return ['version' => $server->mesh_wanted_version, ...($members ? ['range' => $settings['range']] : []), 'peers' => [], ...$members];
         }
 
         return [
@@ -278,7 +292,83 @@ class Mesh
             'address' => $server->mesh_address,
             'port' => $settings['port'],
             'peers' => $peers,
+            ...$members,
         ];
+    }
+
+    /** The hash of the mesh state of a server, with no version. */
+    private static function fingerprint(Server $server): string
+    {
+        $state = self::stateFor($server);
+        unset($state['version']);
+
+        return hash('sha256', json_encode($state));
+    }
+
+    /**
+     * Makes the mesh agree with the networks of the customers, after a change of a website, of
+     * a database server or of a network.
+     *
+     * - Two servers get a tunnel when one has a website and the other has a database server
+     *   of a network of that website.
+     * - A tunnel that the panel made for the networks goes when no network uses it. A tunnel
+     *   that an administrator made stays.
+     * - Each server whose state is different gets the new state.
+     *
+     * @return list<AgentJob>
+     */
+    public function refresh(): array
+    {
+        Networks::$links = null;
+        Networks::$links = Networks::links();
+        try {
+            $servers = Server::whereNotNull('mesh_public_key')->get()->keyBy('id');
+            $needed = Networks::pairs();
+            foreach ($needed as $key => [$a, $b]) {
+                $one = $servers->get($a);
+                $two = $servers->get($b);
+                // A server that cannot have the tunnel now gets it later: a report of its
+                // agent starts this function again.
+                if (! $one || ! $two || ! Networks::supports($one) || ! Networks::supports($two)
+                    || self::tunnelAddress($one) === null || self::tunnelAddress($two) === null) {
+                    continue;
+                }
+                try {
+                    self::addressFor($one);
+                    self::addressFor($two);
+                } catch (ValidationException) {
+                    continue;
+                }
+                MeshTunnel::firstOrCreate(['server_a_id' => $a, 'server_b_id' => $b], ['preshared_key' => base64_encode(random_bytes(32)), 'pinned' => false]);
+            }
+            foreach (MeshTunnel::where('pinned', false)->get() as $tunnel) {
+                if (! isset($needed[$tunnel->server_a_id.' '.$tunnel->server_b_id])) {
+                    $tunnel->delete();
+                }
+            }
+            $changed = [];
+            foreach ($servers as $server) {
+                $server->refresh();
+                // A server that never got a state has the state of a server with no tunnel.
+                $previous = $server->mesh_state_hash ?? hash('sha256', json_encode(['peers' => []]));
+                if (self::fingerprint($server) !== $previous) {
+                    $changed[] = $server;
+                }
+            }
+
+            return $this->sync(...$changed);
+        } finally {
+            Networks::$links = null;
+        }
+    }
+
+    /**
+     * Calls refresh after the current database transaction, so that a job never has a record
+     * that the transaction removes again.
+     */
+    public static function refreshLater(): void
+    {
+        DB::afterCommit(fn () => app(self::class)->refresh());
     }
 
     /**
@@ -294,8 +384,16 @@ class Mesh
             return;
         }
         $version = max(0, (int) ($mesh['version'] ?? 0));
+        // An agent that can operate network members reports it. A server that can do it now,
+        // or that has its first key now, gets its part of the networks.
+        $networks = (bool) ($mesh['networks'] ?? false);
+        $new = $server->mesh_public_key === null || $server->mesh_networks !== $networks;
         $this->keyOf($server, $key);
-        $server->update(['mesh_version' => $version]);
+        $server->update(['mesh_version' => $version, 'mesh_networks' => $networks]);
+        if ($new) {
+            $this->refresh();
+            $server->refresh();
+        }
 
         $tunnels = self::tunnelsOf($server)->keyBy(fn (MeshTunnel $t) => $t->otherId($server->id));
         foreach (is_array($mesh['tunnels'] ?? null) ? $mesh['tunnels'] : [] as $reported) {

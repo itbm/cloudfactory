@@ -344,9 +344,16 @@ export interface DatabaseServer {
   /** The plan gives the limits and the number of databases. */
   planId: string;
   status: DatabaseServerStatus;
-  /** The host name and the port that a website container connects to. */
+  /** The host name and the port that a website container on the same server connects to. */
   host: string;
   port: number;
+  /**
+   * The network name and its port, for example "shop-db.internal" and 3306. Each website in a
+   * network with the database server connects to them, on the same server and on a different
+   * server. Null for a database server with a name that an engine uses.
+   */
+  networkHost: string | null;
+  networkPort: number;
   limits: DatabaseLimits;
   /** The last report of the server. diskSizeBytes is the size of the file system of the data. */
   usage?: { memoryBytes?: number; diskBytes?: number; diskSizeBytes?: number };
@@ -578,6 +585,8 @@ export interface MeshServer {
   state: Server["state"];
   /** False for an agent of an earlier release: the server cannot have tunnels. */
   supported: boolean;
+  /** False for an agent from before the networks: it cannot operate network members. */
+  networks: boolean;
   publicKey: string | null;
   /** The address of the server in the mesh. A server gets it with its first tunnel. */
   address: string | null;
@@ -603,8 +612,10 @@ export interface MeshTunnel {
   id: string;
   state: "up" | "down" | "waiting";
   roundTripMs: number | null;
-  /** True when an administrator made the tunnel. */
+  /** True when an administrator made the tunnel. False when the panel made it for a network. */
   pinned: boolean;
+  /** True when a website on one server uses a database server on the other. */
+  inUse: boolean;
   sides: MeshTunnelSide[];
   createdAt: string | null;
 }

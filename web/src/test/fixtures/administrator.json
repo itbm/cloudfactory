@@ -18,16 +18,16 @@
         "body": {
             "data": [
                 {
-                    "id": "01m7e3qvck16e4wkk6czzsszn7",
+                    "id": "01m7e74bsxx6d5h4tw36baze7j",
                     "name": "acme.example.com",
                     "application": "WordPress",
-                    "customerId": "01m7e3qv62sar309026scs8zag",
-                    "serverId": "01m7e3qvcd6n3cmngsf7xqx85h",
-                    "planId": "01m7e3qv6096q6ehzj0cgscb4j",
+                    "customerId": "01m7e74bkdz9pw40vg5swzv16s",
+                    "serverId": "01m7e74bsq9gmm3mk3j9jmd85a",
+                    "planId": "01m7e74bka81wt2bpd06vr16pb",
                     "unixUser": "acmeexam_322a",
                     "status": "running",
                     "runtime": {
-                        "imageId": "01m7e3qvcbz9pxnd9c9gj4f9k3",
+                        "imageId": "01m7e74bsmb0zb6sf5csd9qyv4",
                         "family": "frankenphp",
                         "image": "ghcr.io/itbm/frankenphp-php8.4:0.1.9",
                         "digest": "sha256:d7d6deae0d2513f9811ddf0ba35dda532d605c37a724c2b090e9591a99d2b88b",
@@ -117,16 +117,16 @@
                     "updatedAt": "2026-11-13T04:00:00+00:00"
                 },
                 {
-                    "id": "01m7e3qvcpe744j4m1k0ackc7b",
+                    "id": "01m7e74btkz8zzhhw2jzrb8txm",
                     "name": "api.acme.example.com",
                     "application": "Laravel",
-                    "customerId": "01m7e3qv62sar309026scs8zag",
-                    "serverId": "01m7e3qvcd6n3cmngsf7xqx85h",
-                    "planId": "01m7e3qv6096q6ehzj0cgscb4j",
+                    "customerId": "01m7e74bkdz9pw40vg5swzv16s",
+                    "serverId": "01m7e74bsq9gmm3mk3j9jmd85a",
+                    "planId": "01m7e74bka81wt2bpd06vr16pb",
                     "unixUser": "apiacme_97c4",
                     "status": "running",
                     "runtime": {
-                        "imageId": "01m7e3qvcbz9pxnd9c9gj4f9k4",
+                        "imageId": "01m7e74bsnnh6ghv271ve14htp",
                         "family": "frankenphp",
                         "image": "ghcr.io/itbm/frankenphp-php8.5:0.1.9",
                         "digest": "sha256:afb8d84dc8308b7282ae0ffc18a43ae2964ce03b9b3d5e8dd6297f3203a6bba1",
@@ -199,16 +199,16 @@
                     "updatedAt": "2026-11-13T04:00:00+00:00"
                 },
                 {
-                    "id": "01m7e3qvcrc54f1x17b9kma8j4",
+                    "id": "01m7e74bv002ym47999xgm9ds9",
                     "name": "cornerbakery.example.org",
                     "application": "WordPress",
-                    "customerId": "01m7e3qv61b8yhpjhmzdszj09j",
-                    "serverId": "01m7e3qvcd6n3cmngsf7xqx85j",
-                    "planId": "01m7e3qv5y5nx6y3m5epv0fcv2",
+                    "customerId": "01m7e74bkcgf387tbwcmqch890",
+                    "serverId": "01m7e74bsq9gmm3mk3j9jmd85b",
+                    "planId": "01m7e74bk8pbtxzny1mf4x6tdt",
                     "unixUser": "cornerba_f8cd",
                     "status": "running",
                     "runtime": {
-                        "imageId": "01m7e3qvcc7vc2r6keyx31w8hj",
+                        "imageId": "01m7e74bsnnh6ghv271ve14htq",
                         "family": "apache-php-fpm",
                         "image": "ghcr.io/itbm/apache-php8.4:0.1.9",
                         "digest": "sha256:2c769f34728835f87dbb42aa4aeb6b443fd1ec20ce7100ba72602ebea79af8d2",
@@ -283,16 +283,16 @@
                     "updatedAt": "2026-11-13T04:00:00+00:00"
                 },
                 {
-                    "id": "01m7e3qvct6aczr92k1dzknk0r",
+                    "id": "01m7e74bv7mp2brz2z65vtn35m",
                     "name": "events.harbourbooks.example.net",
                     "application": "Laravel",
-                    "customerId": "01m7e3qv61b8yhpjhmzdszj09k",
-                    "serverId": "01m7e3qvcebx3bcmadxggev72w",
-                    "planId": "01m7e3qv6096q6ehzj0cgscb4j",
+                    "customerId": "01m7e74bkcgf387tbwcmqch891",
+                    "serverId": "01m7e74bsq9gmm3mk3j9jmd85c",
+                    "planId": "01m7e74bka81wt2bpd06vr16pb",
                     "unixUser": "eventsha_08d5",
                     "status": "failed",
                     "runtime": {
-                        "imageId": "01m7e3qvcbz9pxnd9c9gj4f9k4",
+                        "imageId": "01m7e74bsnnh6ghv271ve14htp",
                         "family": "frankenphp",
                         "image": "ghcr.io/itbm/frankenphp-php8.5:0.1.9",
                         "digest": "sha256:afb8d84dc8308b7282ae0ffc18a43ae2964ce03b9b3d5e8dd6297f3203a6bba1",
@@ -354,16 +354,16 @@
                     "updatedAt": "2026-11-14T10:00:00+00:00"
                 },
                 {
-                    "id": "01m7e3qvcsenfm3n3rypcvmxar",
+                    "id": "01m7e74bv3t4hj6er8yyxshhhd",
                     "name": "harbourbooks.example.net",
                     "application": "WooCommerce",
-                    "customerId": "01m7e3qv61b8yhpjhmzdszj09k",
-                    "serverId": "01m7e3qvcd6n3cmngsf7xqx85j",
-                    "planId": "01m7e3qv6096q6ehzj0cgscb4j",
+                    "customerId": "01m7e74bkcgf387tbwcmqch891",
+                    "serverId": "01m7e74bsq9gmm3mk3j9jmd85b",
+                    "planId": "01m7e74bka81wt2bpd06vr16pb",
                     "unixUser": "harbourb_fe76",
                     "status": "running",
                     "runtime": {
-                        "imageId": "01m7e3qvcbz9pxnd9c9gj4f9k3",
+                        "imageId": "01m7e74bsmb0zb6sf5csd9qyv4",
                         "family": "frankenphp",
                         "image": "ghcr.io/itbm/frankenphp-php8.4:0.1.9",
                         "digest": "sha256:d7d6deae0d2513f9811ddf0ba35dda532d605c37a724c2b090e9591a99d2b88b",
@@ -425,16 +425,16 @@
                     "updatedAt": "2026-11-13T04:00:00+00:00"
                 },
                 {
-                    "id": "01m7e3qvct6aczr92k1dzknk0s",
+                    "id": "01m7e74bvadp0kz626z5sga7x1",
                     "name": "lawson.example.org",
                     "application": "WordPress",
-                    "customerId": "01m7e3qv62sar309026scs8zah",
-                    "serverId": "01m7e3qvcd6n3cmngsf7xqx85h",
-                    "planId": "01m7e3qv5y5nx6y3m5epv0fcv2",
+                    "customerId": "01m7e74bkdz9pw40vg5swzv16t",
+                    "serverId": "01m7e74bsq9gmm3mk3j9jmd85a",
+                    "planId": "01m7e74bk8pbtxzny1mf4x6tdt",
                     "unixUser": "lawsonex_cf75",
                     "status": "stopped",
                     "runtime": {
-                        "imageId": "01m7e3qvcc7vc2r6keyx31w8hk",
+                        "imageId": "01m7e74bsnnh6ghv271ve14htr",
                         "family": "apache-php-fpm",
                         "image": "ghcr.io/itbm/apache-php8.5:0.1.9",
                         "digest": "sha256:707e91ce9f46389590cf776dd5a4c242e6531092036831db7675fe9687db7d6d",
@@ -496,16 +496,16 @@
                     "updatedAt": "2026-11-13T04:00:00+00:00"
                 },
                 {
-                    "id": "01m7e3qvcqtympr2ac0xermw97",
+                    "id": "01m7e74btww7r06e0yn2fd6j02",
                     "name": "northwind.example.com",
                     "application": "WordPress",
-                    "customerId": "01m7e3qv61b8yhpjhmzdszj09h",
-                    "serverId": "01m7e3qvcd6n3cmngsf7xqx85j",
-                    "planId": "01m7e3qv6096q6ehzj0cgscb4k",
+                    "customerId": "01m7e74bkcgf387tbwcmqch88z",
+                    "serverId": "01m7e74bsq9gmm3mk3j9jmd85b",
+                    "planId": "01m7e74bkb7b6s42byzamhastq",
                     "unixUser": "northwin_8223",
                     "status": "running",
                     "runtime": {
-                        "imageId": "01m7e3qvcbz9pxnd9c9gj4f9k4",
+                        "imageId": "01m7e74bsnnh6ghv271ve14htp",
                         "family": "frankenphp",
                         "image": "ghcr.io/itbm/frankenphp-php8.5:0.1.9",
                         "digest": "sha256:afb8d84dc8308b7282ae0ffc18a43ae2964ce03b9b3d5e8dd6297f3203a6bba1",
@@ -567,16 +567,16 @@
                     "updatedAt": "2026-11-13T04:00:00+00:00"
                 },
                 {
-                    "id": "01m7e3qvcqtympr2ac0xermw96",
+                    "id": "01m7e74btsvqagpq5azktzd23b",
                     "name": "old.acme.example.com",
                     "application": "Website",
-                    "customerId": "01m7e3qv62sar309026scs8zag",
-                    "serverId": "01m7e3qvcd6n3cmngsf7xqx85h",
-                    "planId": "01m7e3qv6096q6ehzj0cgscb4j",
+                    "customerId": "01m7e74bkdz9pw40vg5swzv16s",
+                    "serverId": "01m7e74bsq9gmm3mk3j9jmd85a",
+                    "planId": "01m7e74bka81wt2bpd06vr16pb",
                     "unixUser": "oldacme_ab58",
                     "status": "stopped",
                     "runtime": {
-                        "imageId": "01m7e3qvcc7vc2r6keyx31w8hj",
+                        "imageId": "01m7e74bsnnh6ghv271ve14htq",
                         "family": "apache-php-fpm",
                         "image": "ghcr.io/itbm/apache-php8.4:0.1.9",
                         "digest": "sha256:2c769f34728835f87dbb42aa4aeb6b443fd1ec20ce7100ba72602ebea79af8d2",
@@ -638,16 +638,16 @@
                     "updatedAt": "2026-11-13T04:00:00+00:00"
                 },
                 {
-                    "id": "01m7e3qvcntr77ffhs8pqt44s4",
+                    "id": "01m7e74btgd3jm95pfxhpvzcdh",
                     "name": "shop.acme.example.com",
                     "application": "WooCommerce",
-                    "customerId": "01m7e3qv62sar309026scs8zag",
-                    "serverId": "01m7e3qvcd6n3cmngsf7xqx85h",
-                    "planId": "01m7e3qv6096q6ehzj0cgscb4j",
+                    "customerId": "01m7e74bkdz9pw40vg5swzv16s",
+                    "serverId": "01m7e74bsq9gmm3mk3j9jmd85a",
+                    "planId": "01m7e74bka81wt2bpd06vr16pb",
                     "unixUser": "shopacme_9e69",
                     "status": "running",
                     "runtime": {
-                        "imageId": "01m7e3qvcbz9pxnd9c9gj4f9k3",
+                        "imageId": "01m7e74bsmb0zb6sf5csd9qyv4",
                         "family": "frankenphp",
                         "image": "ghcr.io/itbm/frankenphp-php8.4:0.1.9",
                         "digest": "sha256:d7d6deae0d2513f9811ddf0ba35dda532d605c37a724c2b090e9591a99d2b88b",
@@ -709,16 +709,16 @@
                     "updatedAt": "2026-11-13T04:00:00+00:00"
                 },
                 {
-                    "id": "01m7e3qvcpe744j4m1k0ackc7c",
+                    "id": "01m7e74btpbasyygcgp00ahxa5",
                     "name": "storefront.acme.example.com",
                     "application": "Node.js app",
-                    "customerId": "01m7e3qv62sar309026scs8zag",
-                    "serverId": "01m7e3qvcd6n3cmngsf7xqx85j",
-                    "planId": "01m7e3qv6096q6ehzj0cgscb4j",
+                    "customerId": "01m7e74bkdz9pw40vg5swzv16s",
+                    "serverId": "01m7e74bsq9gmm3mk3j9jmd85b",
+                    "planId": "01m7e74bka81wt2bpd06vr16pb",
                     "unixUser": "storefro_a970",
                     "status": "running",
                     "runtime": {
-                        "imageId": "01m7e3qvcc7vc2r6keyx31w8hm",
+                        "imageId": "01m7e74bsp9p0g9s6j5z42bw4n",
                         "family": "node",
                         "image": "registry.example/acme/storefront:stable",
                         "digest": null,
@@ -814,7 +814,7 @@
         "body": {
             "data": [
                 {
-                    "id": "01m7e3qvdnbr0fj2h99fbdrjfq",
+                    "id": "01m7e74bxsves9rnxc1t46kh0z",
                     "title": "Create website",
                     "ref": "events.harbourbooks.example.net",
                     "action": "CreateWebsite",
@@ -829,14 +829,14 @@
                     ],
                     "step": 3,
                     "error": "systemctl start cf-site-eventsha_08d5.service: exit status 1: the container did not answer the health check on port 8080 in 90 seconds",
-                    "websiteId": "01m7e3qvct6aczr92k1dzknk0r",
+                    "websiteId": "01m7e74bv7mp2brz2z65vtn35m",
                     "databaseServerId": null,
-                    "serverId": "01m7e3qvcebx3bcmadxggev72w",
+                    "serverId": "01m7e74bsq9gmm3mk3j9jmd85c",
                     "createdAt": "2026-11-14T09:35:00+00:00",
                     "finishedAt": "2026-11-14T09:36:00+00:00"
                 },
                 {
-                    "id": "01m7e3qvdnbr0fj2h99fbdrjfp",
+                    "id": "01m7e74bxsves9rnxc1t46kh0y",
                     "title": "Create database",
                     "ref": "shop.acme.example.com",
                     "action": "CreateDatabase",
@@ -848,14 +848,14 @@
                     ],
                     "step": 3,
                     "error": null,
-                    "websiteId": "01m7e3qvcntr77ffhs8pqt44s4",
+                    "websiteId": "01m7e74btgd3jm95pfxhpvzcdh",
                     "databaseServerId": null,
-                    "serverId": "01m7e3qvcd6n3cmngsf7xqx85h",
+                    "serverId": "01m7e74bsq9gmm3mk3j9jmd85a",
                     "createdAt": "2026-11-14T09:15:00+00:00",
                     "finishedAt": "2026-11-14T09:16:00+00:00"
                 },
                 {
-                    "id": "01m7e3qvdnbr0fj2h99fbdrjfn",
+                    "id": "01m7e74bxsves9rnxc1t46kh0x",
                     "title": "Create database",
                     "ref": "shop.acme.example.com",
                     "action": "CreateDatabase",
@@ -867,14 +867,14 @@
                     ],
                     "step": 0,
                     "error": "runuser -u cf-db -- env XDG_RUNTIME_DIR=/run/user/994 podman exec cf-valkey valkey-cli -s /run/valkey/valkey.sock PING: exit status 1: Could not connect to Valkey at /run/valkey/valkey.sock: No such file or directory",
-                    "websiteId": "01m7e3qvcntr77ffhs8pqt44s4",
+                    "websiteId": "01m7e74btgd3jm95pfxhpvzcdh",
                     "databaseServerId": null,
-                    "serverId": "01m7e3qvcd6n3cmngsf7xqx85h",
+                    "serverId": "01m7e74bsq9gmm3mk3j9jmd85a",
                     "createdAt": "2026-11-14T09:10:00+00:00",
                     "finishedAt": "2026-11-14T09:11:00+00:00"
                 },
                 {
-                    "id": "01m7e3qvdnbr0fj2h99fbdrjfm",
+                    "id": "01m7e74bxrje7jfwawfvdvyqn4",
                     "title": "Add domain cornerbakery-orders.example.org",
                     "ref": "cornerbakery.example.org",
                     "action": "AddDomain",
@@ -886,14 +886,14 @@
                     ],
                     "step": 3,
                     "error": null,
-                    "websiteId": "01m7e3qvcrc54f1x17b9kma8j4",
+                    "websiteId": "01m7e74bv002ym47999xgm9ds9",
                     "databaseServerId": null,
-                    "serverId": "01m7e3qvcd6n3cmngsf7xqx85j",
+                    "serverId": "01m7e74bsq9gmm3mk3j9jmd85b",
                     "createdAt": "2026-11-14T08:50:00+00:00",
                     "finishedAt": "2026-11-14T08:51:00+00:00"
                 },
                 {
-                    "id": "01m7e3qvdm4sce44b8bmm1g4x4",
+                    "id": "01m7e74bxrje7jfwawfvdvyqn3",
                     "title": "Create database",
                     "ref": "api.acme.example.com",
                     "action": "CreateDatabase",
@@ -905,14 +905,14 @@
                     ],
                     "step": 3,
                     "error": null,
-                    "websiteId": "01m7e3qvcpe744j4m1k0ackc7b",
+                    "websiteId": "01m7e74btkz8zzhhw2jzrb8txm",
                     "databaseServerId": null,
-                    "serverId": "01m7e3qvcd6n3cmngsf7xqx85h",
+                    "serverId": "01m7e74bsq9gmm3mk3j9jmd85a",
                     "createdAt": "2026-11-14T08:25:00+00:00",
                     "finishedAt": "2026-11-14T08:26:00+00:00"
                 },
                 {
-                    "id": "01m7e3qvdm4sce44b8bmm1g4x2",
+                    "id": "01m7e74bxq8ht2vvk1vtvyd5th",
                     "title": "Back up",
                     "ref": "acme.example.com",
                     "action": "Backup",
@@ -925,14 +925,14 @@
                     ],
                     "step": 4,
                     "error": null,
-                    "websiteId": "01m7e3qvck16e4wkk6czzsszn7",
+                    "websiteId": "01m7e74bsxx6d5h4tw36baze7j",
                     "databaseServerId": null,
-                    "serverId": "01m7e3qvcd6n3cmngsf7xqx85h",
+                    "serverId": "01m7e74bsq9gmm3mk3j9jmd85a",
                     "createdAt": "2026-11-14T05:00:00+00:00",
                     "finishedAt": "2026-11-14T05:01:00+00:00"
                 },
                 {
-                    "id": "01m7e3qvdm4sce44b8bmm1g4x3",
+                    "id": "01m7e74bxq8ht2vvk1vtvyd5tj",
                     "title": "Install updates on web-2",
                     "ref": null,
                     "action": "InstallHostUpdates",
@@ -946,7 +946,7 @@
                     "error": null,
                     "websiteId": null,
                     "databaseServerId": null,
-                    "serverId": "01m7e3qvcd6n3cmngsf7xqx85j",
+                    "serverId": "01m7e74bsq9gmm3mk3j9jmd85b",
                     "createdAt": "2026-11-02T10:00:00+00:00",
                     "finishedAt": "2026-11-02T10:01:00+00:00"
                 }
@@ -993,11 +993,11 @@
         "body": {
             "data": [
                 {
-                    "id": "01m7e3qv62sar309026scs8zag",
+                    "id": "01m7e74bkdz9pw40vg5swzv16s",
                     "name": "Acme Ltd",
                     "email": "it@acme.example.com",
                     "role": "owner",
-                    "planId": "01m7e3qv6096q6ehzj0cgscb4j",
+                    "planId": "01m7e74bka81wt2bpd06vr16pb",
                     "resellerId": null,
                     "branding": null,
                     "allowedPlanIds": null,
@@ -1008,12 +1008,12 @@
                     "createdAt": "2025-10-10T10:00:00+00:00"
                 },
                 {
-                    "id": "01m7e3qv61b8yhpjhmzdszj09j",
+                    "id": "01m7e74bkcgf387tbwcmqch890",
                     "name": "Corner Bakery",
                     "email": "hello@cornerbakery.example.org",
                     "role": "owner",
-                    "planId": "01m7e3qv5y5nx6y3m5epv0fcv2",
-                    "resellerId": "01m7e3qv61b8yhpjhmzdszj09h",
+                    "planId": "01m7e74bk8pbtxzny1mf4x6tdt",
+                    "resellerId": "01m7e74bkcgf387tbwcmqch88z",
                     "branding": null,
                     "allowedPlanIds": null,
                     "suspended": false,
@@ -1023,12 +1023,12 @@
                     "createdAt": "2026-07-17T10:00:00+00:00"
                 },
                 {
-                    "id": "01m7e3qv61b8yhpjhmzdszj09k",
+                    "id": "01m7e74bkcgf387tbwcmqch891",
                     "name": "Harbour Books",
                     "email": "it@harbourbooks.example.net",
                     "role": "owner",
-                    "planId": "01m7e3qv6096q6ehzj0cgscb4j",
-                    "resellerId": "01m7e3qv61b8yhpjhmzdszj09h",
+                    "planId": "01m7e74bka81wt2bpd06vr16pb",
+                    "resellerId": "01m7e74bkcgf387tbwcmqch88z",
                     "branding": null,
                     "allowedPlanIds": null,
                     "suspended": false,
@@ -1038,11 +1038,11 @@
                     "createdAt": "2026-09-30T10:00:00+00:00"
                 },
                 {
-                    "id": "01m7e3qv62sar309026scs8zah",
+                    "id": "01m7e74bkdz9pw40vg5swzv16t",
                     "name": "Lawson & Co",
                     "email": "office@lawson.example.org",
                     "role": "owner",
-                    "planId": "01m7e3qv5y5nx6y3m5epv0fcv2",
+                    "planId": "01m7e74bk8pbtxzny1mf4x6tdt",
                     "resellerId": null,
                     "branding": null,
                     "allowedPlanIds": null,
@@ -1053,17 +1053,17 @@
                     "createdAt": "2026-04-28T10:00:00+00:00"
                 },
                 {
-                    "id": "01m7e3qv61b8yhpjhmzdszj09h",
+                    "id": "01m7e74bkcgf387tbwcmqch88z",
                     "name": "Northwind Agency",
                     "email": "ops@northwind.example.com",
                     "role": "reseller",
-                    "planId": "01m7e3qv6096q6ehzj0cgscb4k",
+                    "planId": "01m7e74bkb7b6s42byzamhastq",
                     "resellerId": null,
                     "branding": null,
                     "allowedPlanIds": [
-                        "01m7e3qv6096q6ehzj0cgscb4k",
-                        "01m7e3qv5y5nx6y3m5epv0fcv2",
-                        "01m7e3qv6096q6ehzj0cgscb4j"
+                        "01m7e74bkb7b6s42byzamhastq",
+                        "01m7e74bk8pbtxzny1mf4x6tdt",
+                        "01m7e74bka81wt2bpd06vr16pb"
                     ],
                     "suspended": false,
                     "suspendedBy": null,
@@ -1079,7 +1079,7 @@
         "body": {
             "data": [
                 {
-                    "id": "01m7e3qv6096q6ehzj0cgscb4k",
+                    "id": "01m7e74bkb7b6s42byzamhastq",
                     "name": "Agency",
                     "limits": {
                         "vcpus": 4,
@@ -1113,7 +1113,7 @@
                     }
                 },
                 {
-                    "id": "01m7e3qv6096q6ehzj0cgscb4j",
+                    "id": "01m7e74bka81wt2bpd06vr16pb",
                     "name": "Business",
                     "limits": {
                         "vcpus": 2,
@@ -1147,7 +1147,7 @@
                     }
                 },
                 {
-                    "id": "01m7e3qv5y5nx6y3m5epv0fcv2",
+                    "id": "01m7e74bk8pbtxzny1mf4x6tdt",
                     "name": "Starter",
                     "limits": {
                         "vcpus": 1,
@@ -1224,24 +1224,24 @@
             ],
             "servers": [
                 {
-                    "serverId": "01m7e3qvcd6n3cmngsf7xqx85h",
+                    "serverId": "01m7e74bsq9gmm3mk3j9jmd85a",
                     "server": "web-1",
-                    "repository": "s3:s3.eu-central.example/cloudfactory-backups/servers/01m7e3qvcd6n3cmngsf7xqx85h",
+                    "repository": "s3:s3.eu-central.example/cloudfactory-backups/servers/01m7e74bsq9gmm3mk3j9jmd85a",
                     "credentialNames": [
                         "AWS_ACCESS_KEY_ID",
                         "AWS_SECRET_ACCESS_KEY"
                     ]
                 },
                 {
-                    "serverId": "01m7e3qvcd6n3cmngsf7xqx85j",
+                    "serverId": "01m7e74bsq9gmm3mk3j9jmd85b",
                     "server": "web-2",
-                    "repository": "s3:s3.eu-central.example/cloudfactory-backups/servers/01m7e3qvcd6n3cmngsf7xqx85j",
+                    "repository": "s3:s3.eu-central.example/cloudfactory-backups/servers/01m7e74bsq9gmm3mk3j9jmd85b",
                     "credentialNames": []
                 },
                 {
-                    "serverId": "01m7e3qvcebx3bcmadxggev72w",
+                    "serverId": "01m7e74bsq9gmm3mk3j9jmd85c",
                     "server": "web-3",
-                    "repository": "s3:s3.eu-central.example/cloudfactory-backups/servers/01m7e3qvcebx3bcmadxggev72w",
+                    "repository": "s3:s3.eu-central.example/cloudfactory-backups/servers/01m7e74bsq9gmm3mk3j9jmd85c",
                     "credentialNames": []
                 }
             ]
@@ -1252,7 +1252,7 @@
         "body": {
             "data": [
                 {
-                    "id": "01m7e3qvcd6n3cmngsf7xqx85h",
+                    "id": "01m7e74bsq9gmm3mk3j9jmd85a",
                     "name": "web-1",
                     "location": "London",
                     "roles": [
@@ -1326,7 +1326,7 @@
                     "lastSeenAt": "2026-11-14T10:00:00+00:00"
                 },
                 {
-                    "id": "01m7e3qvcd6n3cmngsf7xqx85j",
+                    "id": "01m7e74bsq9gmm3mk3j9jmd85b",
                     "name": "web-2",
                     "location": "Amsterdam",
                     "roles": [
@@ -1426,7 +1426,7 @@
                     "lastSeenAt": "2026-11-14T10:00:00+00:00"
                 },
                 {
-                    "id": "01m7e3qvcebx3bcmadxggev72w",
+                    "id": "01m7e74bsq9gmm3mk3j9jmd85c",
                     "name": "web-3",
                     "location": "Frankfurt",
                     "roles": [
@@ -1506,7 +1506,7 @@
         "body": {
             "data": [
                 {
-                    "id": "01m7e3qvcc7vc2r6keyx31w8hj",
+                    "id": "01m7e74bsnnh6ghv271ve14htq",
                     "name": "Apache + PHP-FPM · PHP 8.4",
                     "family": "apache-php-fpm",
                     "reference": "ghcr.io/itbm/apache-php8.4",
@@ -1526,7 +1526,7 @@
                     "websites": 2
                 },
                 {
-                    "id": "01m7e3qvcc7vc2r6keyx31w8hk",
+                    "id": "01m7e74bsnnh6ghv271ve14htr",
                     "name": "Apache + PHP-FPM · PHP 8.5",
                     "family": "apache-php-fpm",
                     "reference": "ghcr.io/itbm/apache-php8.5",
@@ -1546,7 +1546,7 @@
                     "websites": 1
                 },
                 {
-                    "id": "01m7e3qvcbz9pxnd9c9gj4f9k3",
+                    "id": "01m7e74bsmb0zb6sf5csd9qyv4",
                     "name": "FrankenPHP · PHP 8.4",
                     "family": "frankenphp",
                     "reference": "ghcr.io/itbm/frankenphp-php8.4",
@@ -1566,7 +1566,7 @@
                     "websites": 3
                 },
                 {
-                    "id": "01m7e3qvcbz9pxnd9c9gj4f9k4",
+                    "id": "01m7e74bsnnh6ghv271ve14htp",
                     "name": "FrankenPHP · PHP 8.5",
                     "family": "frankenphp",
                     "reference": "ghcr.io/itbm/frankenphp-php8.5",
@@ -1586,7 +1586,7 @@
                     "websites": 3
                 },
                 {
-                    "id": "01m7e3qvcc7vc2r6keyx31w8hm",
+                    "id": "01m7e74bsp9p0g9s6j5z42bw4n",
                     "name": "Node.js app",
                     "family": "node",
                     "reference": "registry.example/acme/storefront",
@@ -1616,8 +1616,8 @@
         "body": {
             "data": [
                 {
-                    "id": "01m7e3qvdpbekq4qgyyxdh3sma",
-                    "imageId": "01m7e3qvcc7vc2r6keyx31w8hj",
+                    "id": "01m7e74bxvjw5vrcjsgkzxevw3",
+                    "imageId": "01m7e74bsnnh6ghv271ve14htq",
                     "title": "Apache + PHP-FPM · PHP 8.4 0.1.9",
                     "fromTag": "0.1.8",
                     "toTag": "0.1.9",
@@ -1756,7 +1756,7 @@
                     "name": "Bea Baker",
                     "email": "bea@cornerbakery.example.org",
                     "role": "owner",
-                    "customerId": "01m7e3qv61b8yhpjhmzdszj09j",
+                    "customerId": "01m7e74bkcgf387tbwcmqch890",
                     "totpEnabled": false,
                     "mustChangePassword": true,
                     "createdAt": "2026-11-14T10:00:00+00:00"
@@ -1766,7 +1766,7 @@
                     "name": "Hari Books",
                     "email": "hari@harbourbooks.example.net",
                     "role": "owner",
-                    "customerId": "01m7e3qv61b8yhpjhmzdszj09k",
+                    "customerId": "01m7e74bkcgf387tbwcmqch891",
                     "totpEnabled": false,
                     "mustChangePassword": false,
                     "createdAt": "2026-11-14T10:00:00+00:00"
@@ -1776,7 +1776,7 @@
                     "name": "Lee Lawson",
                     "email": "lee@lawson.example.org",
                     "role": "owner",
-                    "customerId": "01m7e3qv62sar309026scs8zah",
+                    "customerId": "01m7e74bkdz9pw40vg5swzv16t",
                     "totpEnabled": false,
                     "mustChangePassword": false,
                     "createdAt": "2026-11-14T10:00:00+00:00"
@@ -1786,7 +1786,7 @@
                     "name": "Morgan Finance",
                     "email": "finance@acme.example.com",
                     "role": "owner",
-                    "customerId": "01m7e3qv62sar309026scs8zag",
+                    "customerId": "01m7e74bkdz9pw40vg5swzv16s",
                     "totpEnabled": false,
                     "mustChangePassword": false,
                     "createdAt": "2026-11-14T10:00:00+00:00"
@@ -1796,7 +1796,7 @@
                     "name": "Olu Owner",
                     "email": "owner@example.com",
                     "role": "owner",
-                    "customerId": "01m7e3qv62sar309026scs8zag",
+                    "customerId": "01m7e74bkdz9pw40vg5swzv16s",
                     "totpEnabled": false,
                     "mustChangePassword": false,
                     "createdAt": "2026-11-14T10:00:00+00:00"
@@ -1816,7 +1816,7 @@
                     "name": "Sam Reseller",
                     "email": "reseller@example.com",
                     "role": "reseller",
-                    "customerId": "01m7e3qv61b8yhpjhmzdszj09h",
+                    "customerId": "01m7e74bkcgf387tbwcmqch88z",
                     "totpEnabled": false,
                     "mustChangePassword": false,
                     "createdAt": "2026-11-14T10:00:00+00:00"
@@ -1831,8 +1831,8 @@
             "method": "internal",
             "state": "valid",
             "expiresAt": "2027-02-07T10:00:00+00:00",
-            "caCertificate": "-----BEGIN CERTIFICATE-----\nMIICGzCCAcCgAwIBAgIBADAKBggqhkjOPQQDAjBsMSUwIwYDVQQDDBxDbG91ZGZh\nY3RvcnkgcGFuZWwgQ0EgKGRlbW8pMQswCQYDVQQGEwJBVTETMBEGA1UECAwKU29t\nZS1TdGF0ZTEhMB8GA1UECgwYSW50ZXJuZXQgV2lkZ2l0cyBQdHkgTHRkMB4XDTI2\nMTExNDIyNDQzN1oXDTM2MTExMTIyNDQzN1owbDElMCMGA1UEAwwcQ2xvdWRmYWN0\nb3J5IHBhbmVsIENBIChkZW1vKTELMAkGA1UEBhMCQVUxEzARBgNVBAgMClNvbWUt\nU3RhdGUxITAfBgNVBAoMGEludGVybmV0IFdpZGdpdHMgUHR5IEx0ZDBZMBMGByqG\nSM49AgEGCCqGSM49AwEHA0IABLiKLwYFFbTXCbOJeHmz/XtC7nsiri9qACJcHZfd\njdkJbT9tqjgpe6SfOzAdybLUt2dgb2jrCC4plSALCGQaZfKjUzBRMB0GA1UdDgQW\nBBQUsTcG2w8HlH2F6tADxmnzfnlHzDAfBgNVHSMEGDAWgBQUsTcG2w8HlH2F6tAD\nxmnzfnlHzDAPBgNVHRMBAf8EBTADAQH/MAoGCCqGSM49BAMCA0kAMEYCIQD7KhEb\n031fSEKYOp30BUpBc8Cd8jeSf/4GAl6S4+gMIQIhAJfHFmydp2fW6wtyMlJOKu36\nT2aproVYuyVQV0YVNklS\n-----END CERTIFICATE-----\n",
-            "caSha256": "450cd5bbaa8257cf0c683e01c8b635b6393406a75fe9c692eadd9ddccf5d4106",
+            "caCertificate": "-----BEGIN CERTIFICATE-----\nMIICGjCCAcCgAwIBAgIBADAKBggqhkjOPQQDAjBsMSUwIwYDVQQDDBxDbG91ZGZh\nY3RvcnkgcGFuZWwgQ0EgKGRlbW8pMQswCQYDVQQGEwJBVTETMBEGA1UECAwKU29t\nZS1TdGF0ZTEhMB8GA1UECgwYSW50ZXJuZXQgV2lkZ2l0cyBQdHkgTHRkMB4XDTI2\nMTExNDIzNDM1M1oXDTM2MTExMTIzNDM1M1owbDElMCMGA1UEAwwcQ2xvdWRmYWN0\nb3J5IHBhbmVsIENBIChkZW1vKTELMAkGA1UEBhMCQVUxEzARBgNVBAgMClNvbWUt\nU3RhdGUxITAfBgNVBAoMGEludGVybmV0IFdpZGdpdHMgUHR5IEx0ZDBZMBMGByqG\nSM49AgEGCCqGSM49AwEHA0IABGs/OAGg63ALu71gZyGrgQrZo7XCS6kak98pCREt\nFRfdWNNacJvIkTNXPjBgGteXqITmEwgjrRk0slGOrHlzCrSjUzBRMB0GA1UdDgQW\nBBTPl7U4nCVbytJpPqyT+xEywJ2HATAfBgNVHSMEGDAWgBTPl7U4nCVbytJpPqyT\n+xEywJ2HATAPBgNVHRMBAf8EBTADAQH/MAoGCCqGSM49BAMCA0gAMEUCIQD2CXeq\nd8SSZx5Rx9uL9O4Nr5EJyIolBZbPbOeUlKUILgIgc3T43aM9z3B4Ce4KcWErINlR\nuqcdHr7521/rLRQZfwE=\n-----END CERTIFICATE-----\n",
+            "caSha256": "7cf39977a7491c8f0a63c545cc74af66c69bd4ba0af2abc334fdd8bd05c3c4c5",
             "reportedAt": "2026-11-14T10:00:00+00:00",
             "letsEncryptAvailable": true,
             "serversWithoutCa": [
@@ -1847,7 +1847,7 @@
         "body": {
             "data": [
                 {
-                    "id": "01m7e3qvcc7vc2r6keyx31w8hj",
+                    "id": "01m7e74bsnnh6ghv271ve14htq",
                     "name": "Apache + PHP-FPM · PHP 8.4",
                     "family": "apache-php-fpm",
                     "tag": "0.1.9",
@@ -1856,7 +1856,7 @@
                     "supportEndsAt": "2027-01-13T00:00:00+00:00"
                 },
                 {
-                    "id": "01m7e3qvcc7vc2r6keyx31w8hk",
+                    "id": "01m7e74bsnnh6ghv271ve14htr",
                     "name": "Apache + PHP-FPM · PHP 8.5",
                     "family": "apache-php-fpm",
                     "tag": "0.1.9",
@@ -1865,7 +1865,7 @@
                     "supportEndsAt": "2029-12-31T00:00:00+00:00"
                 },
                 {
-                    "id": "01m7e3qvcbz9pxnd9c9gj4f9k3",
+                    "id": "01m7e74bsmb0zb6sf5csd9qyv4",
                     "name": "FrankenPHP · PHP 8.4",
                     "family": "frankenphp",
                     "tag": "0.1.9",
@@ -1874,7 +1874,7 @@
                     "supportEndsAt": "2028-12-31T00:00:00+00:00"
                 },
                 {
-                    "id": "01m7e3qvcbz9pxnd9c9gj4f9k4",
+                    "id": "01m7e74bsnnh6ghv271ve14htp",
                     "name": "FrankenPHP · PHP 8.5",
                     "family": "frankenphp",
                     "tag": "0.1.9",
@@ -1883,7 +1883,7 @@
                     "supportEndsAt": "2029-12-31T00:00:00+00:00"
                 },
                 {
-                    "id": "01m7e3qvcc7vc2r6keyx31w8hm",
+                    "id": "01m7e74bsp9p0g9s6j5z42bw4n",
                     "name": "Node.js app",
                     "family": "node",
                     "tag": "stable",
@@ -1930,7 +1930,7 @@
                     "detail": "These servers do not apply disk limits: web-1. Run the installation script on the server again: it turns on the user quotas of an ext4 file system. For a different file system, refer to \"Disk quotas\" in the installation guide.",
                     "action": {
                         "label": "Open the server",
-                        "target": "/servers/01m7e3qvcd6n3cmngsf7xqx85h"
+                        "target": "/servers/01m7e74bsq9gmm3mk3j9jmd85a"
                     }
                 },
                 {
@@ -1965,15 +1965,17 @@
         "body": {
             "data": [
                 {
-                    "id": "01m7e3qvcw8cfg30jefgkqc6y7",
+                    "id": "01m7e74bvf723n7j7d79sp3gdk",
                     "name": "mariadb-1",
                     "engine": "mariadb",
-                    "customerId": "01m7e3qv62sar309026scs8zag",
-                    "serverId": "01m7e3qvcd6n3cmngsf7xqx85h",
-                    "planId": "01m7e3qv6096q6ehzj0cgscb4j",
+                    "customerId": "01m7e74bkdz9pw40vg5swzv16s",
+                    "serverId": "01m7e74bsq9gmm3mk3j9jmd85a",
+                    "planId": "01m7e74bka81wt2bpd06vr16pb",
                     "status": "running",
                     "host": "mariadb.internal",
                     "port": 3306,
+                    "networkHost": "mariadb-1.internal",
+                    "networkPort": 3306,
                     "limits": {
                         "vcpus": 2,
                         "memoryBytes": 1073741824,
@@ -1989,15 +1991,17 @@
                     "createdAt": "2026-11-14T10:00:00+00:00"
                 },
                 {
-                    "id": "01m7e3qvd4y6qja68v4mw6zcbv",
+                    "id": "01m7e74bwb17s520hd3fsk71jz",
                     "name": "mariadb-1",
                     "engine": "mariadb",
-                    "customerId": "01m7e3qv61b8yhpjhmzdszj09h",
-                    "serverId": "01m7e3qvcd6n3cmngsf7xqx85j",
-                    "planId": "01m7e3qv6096q6ehzj0cgscb4k",
+                    "customerId": "01m7e74bkcgf387tbwcmqch88z",
+                    "serverId": "01m7e74bsq9gmm3mk3j9jmd85b",
+                    "planId": "01m7e74bkb7b6s42byzamhastq",
                     "status": "running",
                     "host": "mariadb.internal",
                     "port": 3306,
+                    "networkHost": "mariadb-1.internal",
+                    "networkPort": 3306,
                     "limits": {
                         "vcpus": 2,
                         "memoryBytes": 2147483648,
@@ -2013,15 +2017,17 @@
                     "createdAt": "2026-11-14T10:00:00+00:00"
                 },
                 {
-                    "id": "01m7e3qvd6thrgnrfmggh60qsg",
+                    "id": "01m7e74bwgjn27b3e4p48qrjf2",
                     "name": "mariadb-1",
                     "engine": "mariadb",
-                    "customerId": "01m7e3qv61b8yhpjhmzdszj09j",
-                    "serverId": "01m7e3qvcd6n3cmngsf7xqx85j",
-                    "planId": "01m7e3qv5y5nx6y3m5epv0fcv2",
+                    "customerId": "01m7e74bkcgf387tbwcmqch890",
+                    "serverId": "01m7e74bsq9gmm3mk3j9jmd85b",
+                    "planId": "01m7e74bk8pbtxzny1mf4x6tdt",
                     "status": "running",
                     "host": "mariadb.internal",
                     "port": 3306,
+                    "networkHost": "mariadb-1.internal",
+                    "networkPort": 3306,
                     "limits": {
                         "vcpus": 1,
                         "memoryBytes": 536870912,
@@ -2037,15 +2043,17 @@
                     "createdAt": "2026-11-14T10:00:00+00:00"
                 },
                 {
-                    "id": "01m7e3qvd7g2d6kas8q7baswkw",
+                    "id": "01m7e74bwp1acmhnkxp3erps3t",
                     "name": "mariadb-1",
                     "engine": "mariadb",
-                    "customerId": "01m7e3qv61b8yhpjhmzdszj09k",
-                    "serverId": "01m7e3qvcd6n3cmngsf7xqx85j",
-                    "planId": "01m7e3qv6096q6ehzj0cgscb4j",
+                    "customerId": "01m7e74bkcgf387tbwcmqch891",
+                    "serverId": "01m7e74bsq9gmm3mk3j9jmd85b",
+                    "planId": "01m7e74bka81wt2bpd06vr16pb",
                     "status": "running",
                     "host": "mariadb.internal",
                     "port": 3306,
+                    "networkHost": "mariadb-1.internal",
+                    "networkPort": 3306,
                     "limits": {
                         "vcpus": 2,
                         "memoryBytes": 1073741824,
@@ -2061,15 +2069,17 @@
                     "createdAt": "2026-11-14T10:00:00+00:00"
                 },
                 {
-                    "id": "01m7e3qvd8eaf8z518b36378j4",
+                    "id": "01m7e74bww00d9qc5a47y0wemz",
                     "name": "mariadb-1",
                     "engine": "mariadb",
-                    "customerId": "01m7e3qv62sar309026scs8zah",
-                    "serverId": "01m7e3qvcd6n3cmngsf7xqx85h",
-                    "planId": "01m7e3qv5y5nx6y3m5epv0fcv2",
+                    "customerId": "01m7e74bkdz9pw40vg5swzv16t",
+                    "serverId": "01m7e74bsq9gmm3mk3j9jmd85a",
+                    "planId": "01m7e74bk8pbtxzny1mf4x6tdt",
                     "status": "running",
                     "host": "mariadb.internal",
                     "port": 3306,
+                    "networkHost": "mariadb-1.internal",
+                    "networkPort": 3306,
                     "limits": {
                         "vcpus": 1,
                         "memoryBytes": 536870912,
@@ -2085,15 +2095,17 @@
                     "createdAt": "2026-11-14T10:00:00+00:00"
                 },
                 {
-                    "id": "01m7e3qvda87zmkhjfwq41w8y9",
+                    "id": "01m7e74bx302dvbz86m0cdgbxz",
                     "name": "mariadb-reports",
                     "engine": "mariadb",
-                    "customerId": "01m7e3qv62sar309026scs8zag",
-                    "serverId": "01m7e3qvcd6n3cmngsf7xqx85h",
-                    "planId": "01m7e3qv5y5nx6y3m5epv0fcv2",
+                    "customerId": "01m7e74bkdz9pw40vg5swzv16s",
+                    "serverId": "01m7e74bsq9gmm3mk3j9jmd85a",
+                    "planId": "01m7e74bk8pbtxzny1mf4x6tdt",
                     "status": "running",
                     "host": "mariadb.internal",
                     "port": 3307,
+                    "networkHost": "mariadb-reports.internal",
+                    "networkPort": 3306,
                     "limits": {
                         "vcpus": 1,
                         "memoryBytes": 536870912,
@@ -2109,15 +2121,17 @@
                     "createdAt": "2026-11-14T10:00:00+00:00"
                 },
                 {
-                    "id": "01m7e3qvd2p9vmgwg10qrg2tzv",
+                    "id": "01m7e74bw2va66mg5s4h4g95rg",
                     "name": "postgresql-1",
                     "engine": "postgresql",
-                    "customerId": "01m7e3qv62sar309026scs8zag",
-                    "serverId": "01m7e3qvcd6n3cmngsf7xqx85h",
-                    "planId": "01m7e3qv6096q6ehzj0cgscb4j",
+                    "customerId": "01m7e74bkdz9pw40vg5swzv16s",
+                    "serverId": "01m7e74bsq9gmm3mk3j9jmd85a",
+                    "planId": "01m7e74bka81wt2bpd06vr16pb",
                     "status": "running",
                     "host": "postgres.internal",
                     "port": 5432,
+                    "networkHost": "postgresql-1.internal",
+                    "networkPort": 5432,
                     "limits": {
                         "vcpus": 2,
                         "memoryBytes": 1073741824,
@@ -2133,15 +2147,17 @@
                     "createdAt": "2026-11-14T10:00:00+00:00"
                 },
                 {
-                    "id": "01m7e3qvd1fwpxg4ng0q2azje6",
+                    "id": "01m7e74bvv2kjsdvqs39d8655q",
                     "name": "valkey-1",
                     "engine": "valkey",
-                    "customerId": "01m7e3qv62sar309026scs8zag",
-                    "serverId": "01m7e3qvcd6n3cmngsf7xqx85h",
-                    "planId": "01m7e3qv6096q6ehzj0cgscb4j",
+                    "customerId": "01m7e74bkdz9pw40vg5swzv16s",
+                    "serverId": "01m7e74bsq9gmm3mk3j9jmd85a",
+                    "planId": "01m7e74bka81wt2bpd06vr16pb",
                     "status": "running",
                     "host": "valkey.internal",
                     "port": 6379,
+                    "networkHost": "valkey-1.internal",
+                    "networkPort": 6379,
                     "limits": {
                         "vcpus": 2,
                         "memoryBytes": 1073741824,
@@ -2166,11 +2182,12 @@
             "port": 51820,
             "servers": [
                 {
-                    "id": "01m7e3qvcd6n3cmngsf7xqx85h",
+                    "id": "01m7e74bsq9gmm3mk3j9jmd85a",
                     "name": "web-1",
                     "location": "London",
                     "state": "healthy",
                     "supported": true,
+                    "networks": true,
                     "publicKey": "iXv0CjS/cgPRvUY7/t88nL29gfj6d2R4pRQdOhDkRbQ=",
                     "address": "10.207.0.1",
                     "tunnelAddress": "203.0.113.10",
@@ -2178,11 +2195,12 @@
                     "current": true
                 },
                 {
-                    "id": "01m7e3qvcd6n3cmngsf7xqx85j",
+                    "id": "01m7e74bsq9gmm3mk3j9jmd85b",
                     "name": "web-2",
                     "location": "Amsterdam",
                     "state": "healthy",
                     "supported": true,
+                    "networks": true,
                     "publicKey": "BlnXjpxY25Kf7teFPwZ1AiGnj8PFjd8uat5LSYmCQqY=",
                     "address": "10.207.0.2",
                     "tunnelAddress": "203.0.113.20",
@@ -2190,11 +2208,12 @@
                     "current": true
                 },
                 {
-                    "id": "01m7e3qvcebx3bcmadxggev72w",
+                    "id": "01m7e74bsq9gmm3mk3j9jmd85c",
                     "name": "web-3",
                     "location": "Frankfurt",
                     "state": "degraded",
                     "supported": false,
+                    "networks": false,
                     "publicKey": null,
                     "address": null,
                     "tunnelAddress": null,
@@ -2204,20 +2223,21 @@
             ],
             "tunnels": [
                 {
-                    "id": "01m7e3qvcgsmyvtqb7hxb057vg",
+                    "id": "01m7e74bst644wxd2j8s9q1jvv",
                     "state": "up",
                     "roundTripMs": 7.55,
                     "pinned": true,
+                    "inUse": true,
                     "sides": [
                         {
-                            "serverId": "01m7e3qvcd6n3cmngsf7xqx85h",
+                            "serverId": "01m7e74bsq9gmm3mk3j9jmd85a",
                             "server": "web-1",
                             "reachable": true,
                             "handshakeAt": "2026-11-14T09:59:20+00:00",
                             "roundTripMs": 7.4
                         },
                         {
-                            "serverId": "01m7e3qvcd6n3cmngsf7xqx85j",
+                            "serverId": "01m7e74bsq9gmm3mk3j9jmd85b",
                             "server": "web-2",
                             "reachable": true,
                             "handshakeAt": "2026-11-14T09:59:20+00:00",
@@ -2229,16 +2249,16 @@
             ]
         }
     },
-    "GET /websites/01m7e3qvck16e4wkk6czzsszn7/databases": {
+    "GET /websites/01m7e74bsxx6d5h4tw36baze7j/databases": {
         "status": 200,
         "body": {
             "prefix": "acmeexam_322a_",
             "databases": [
                 {
-                    "id": "01m7e3qvcx4545kcevq45k7gqe",
+                    "id": "01m7e74bvpk1gr5snh1vjv57c1",
                     "engine": "mariadb",
                     "name": "acmeexam_322a_wp",
-                    "databaseServerId": "01m7e3qvcw8cfg30jefgkqc6y7",
+                    "databaseServerId": "01m7e74bvf723n7j7d79sp3gdk",
                     "host": "mariadb.internal",
                     "port": 3306,
                     "sizeBytes": 325058560,
@@ -2248,14 +2268,14 @@
             ],
             "users": [
                 {
-                    "id": "01m7e3qvcyy4ryngce7mpbzsp5",
+                    "id": "01m7e74bvqp3e8mc409738sta5",
                     "engine": "mariadb",
                     "name": "acmeexam_322a_wp",
                     "access": "website",
-                    "databaseServerId": "01m7e3qvcw8cfg30jefgkqc6y7",
+                    "databaseServerId": "01m7e74bvf723n7j7d79sp3gdk",
                     "grants": [
                         {
-                            "databaseId": "01m7e3qvcx4545kcevq45k7gqe",
+                            "databaseId": "01m7e74bvpk1gr5snh1vjv57c1",
                             "database": "acmeexam_322a_wp",
                             "privileges": "readwrite"
                         }
@@ -2264,15 +2284,17 @@
             ],
             "servers": [
                 {
-                    "id": "01m7e3qvcw8cfg30jefgkqc6y7",
+                    "id": "01m7e74bvf723n7j7d79sp3gdk",
                     "name": "mariadb-1",
                     "engine": "mariadb",
-                    "customerId": "01m7e3qv62sar309026scs8zag",
-                    "serverId": "01m7e3qvcd6n3cmngsf7xqx85h",
-                    "planId": "01m7e3qv6096q6ehzj0cgscb4j",
+                    "customerId": "01m7e74bkdz9pw40vg5swzv16s",
+                    "serverId": "01m7e74bsq9gmm3mk3j9jmd85a",
+                    "planId": "01m7e74bka81wt2bpd06vr16pb",
                     "status": "running",
                     "host": "mariadb.internal",
                     "port": 3306,
+                    "networkHost": "mariadb-1.internal",
+                    "networkPort": 3306,
                     "limits": {
                         "vcpus": 2,
                         "memoryBytes": 1073741824,
@@ -2288,15 +2310,17 @@
                     "createdAt": "2026-11-14T10:00:00+00:00"
                 },
                 {
-                    "id": "01m7e3qvda87zmkhjfwq41w8y9",
+                    "id": "01m7e74bx302dvbz86m0cdgbxz",
                     "name": "mariadb-reports",
                     "engine": "mariadb",
-                    "customerId": "01m7e3qv62sar309026scs8zag",
-                    "serverId": "01m7e3qvcd6n3cmngsf7xqx85h",
-                    "planId": "01m7e3qv5y5nx6y3m5epv0fcv2",
+                    "customerId": "01m7e74bkdz9pw40vg5swzv16s",
+                    "serverId": "01m7e74bsq9gmm3mk3j9jmd85a",
+                    "planId": "01m7e74bk8pbtxzny1mf4x6tdt",
                     "status": "running",
                     "host": "mariadb.internal",
                     "port": 3307,
+                    "networkHost": "mariadb-reports.internal",
+                    "networkPort": 3306,
                     "limits": {
                         "vcpus": 1,
                         "memoryBytes": 536870912,
@@ -2312,15 +2336,17 @@
                     "createdAt": "2026-11-14T10:00:00+00:00"
                 },
                 {
-                    "id": "01m7e3qvd2p9vmgwg10qrg2tzv",
+                    "id": "01m7e74bw2va66mg5s4h4g95rg",
                     "name": "postgresql-1",
                     "engine": "postgresql",
-                    "customerId": "01m7e3qv62sar309026scs8zag",
-                    "serverId": "01m7e3qvcd6n3cmngsf7xqx85h",
-                    "planId": "01m7e3qv6096q6ehzj0cgscb4j",
+                    "customerId": "01m7e74bkdz9pw40vg5swzv16s",
+                    "serverId": "01m7e74bsq9gmm3mk3j9jmd85a",
+                    "planId": "01m7e74bka81wt2bpd06vr16pb",
                     "status": "running",
                     "host": "postgres.internal",
                     "port": 5432,
+                    "networkHost": "postgresql-1.internal",
+                    "networkPort": 5432,
                     "limits": {
                         "vcpus": 2,
                         "memoryBytes": 1073741824,
@@ -2336,15 +2362,17 @@
                     "createdAt": "2026-11-14T10:00:00+00:00"
                 },
                 {
-                    "id": "01m7e3qvd1fwpxg4ng0q2azje6",
+                    "id": "01m7e74bvv2kjsdvqs39d8655q",
                     "name": "valkey-1",
                     "engine": "valkey",
-                    "customerId": "01m7e3qv62sar309026scs8zag",
-                    "serverId": "01m7e3qvcd6n3cmngsf7xqx85h",
-                    "planId": "01m7e3qv6096q6ehzj0cgscb4j",
+                    "customerId": "01m7e74bkdz9pw40vg5swzv16s",
+                    "serverId": "01m7e74bsq9gmm3mk3j9jmd85a",
+                    "planId": "01m7e74bka81wt2bpd06vr16pb",
                     "status": "running",
                     "host": "valkey.internal",
                     "port": 6379,
+                    "networkHost": "valkey-1.internal",
+                    "networkPort": 6379,
                     "limits": {
                         "vcpus": 2,
                         "memoryBytes": 1073741824,
@@ -2362,12 +2390,12 @@
             ]
         }
     },
-    "GET /websites/01m7e3qvck16e4wkk6czzsszn7/snapshots": {
+    "GET /websites/01m7e74bsxx6d5h4tw36baze7j/snapshots": {
         "status": 200,
         "body": {
             "data": [
                 {
-                    "id": "01m7e3qvdb9dqx831zw39a0r87",
+                    "id": "01m7e74bxcgpf9tebp3jk8a8kb",
                     "kind": "manual",
                     "sizeBytes": 3900702720,
                     "databases": [
@@ -2377,7 +2405,7 @@
                     "createdAt": "2026-11-14T05:00:00+00:00"
                 },
                 {
-                    "id": "01m7e3qvdb9dqx831zw39a0r84",
+                    "id": "01m7e74bxbagtqcj15z0d3fxdp",
                     "kind": "scheduled",
                     "sizeBytes": 3897556992,
                     "databases": [
@@ -2387,7 +2415,7 @@
                     "createdAt": "2026-11-14T03:09:00+00:00"
                 },
                 {
-                    "id": "01m7e3qvdb9dqx831zw39a0r85",
+                    "id": "01m7e74bxbagtqcj15z0d3fxdq",
                     "kind": "scheduled",
                     "sizeBytes": 3894411264,
                     "databases": [
@@ -2397,7 +2425,7 @@
                     "createdAt": "2026-11-13T03:09:00+00:00"
                 },
                 {
-                    "id": "01m7e3qvdb9dqx831zw39a0r86",
+                    "id": "01m7e74bxbagtqcj15z0d3fxdr",
                     "kind": "scheduled",
                     "sizeBytes": 3891265536,
                     "databases": [
@@ -2409,16 +2437,16 @@
             ]
         }
     },
-    "GET /websites/01m7e3qvcpe744j4m1k0ackc7b/databases": {
+    "GET /websites/01m7e74btkz8zzhhw2jzrb8txm/databases": {
         "status": 200,
         "body": {
             "prefix": "apiacme_97c4_",
             "databases": [
                 {
-                    "id": "01m7e3qvd3aw3xddz2y6nfw9yn",
+                    "id": "01m7e74bw8b9pr994vty5a55q4",
                     "engine": "postgresql",
                     "name": "apiacme_97c4_app",
-                    "databaseServerId": "01m7e3qvd2p9vmgwg10qrg2tzv",
+                    "databaseServerId": "01m7e74bw2va66mg5s4h4g95rg",
                     "host": "postgres.internal",
                     "port": 5432,
                     "sizeBytes": 100663296,
@@ -2426,10 +2454,10 @@
                     "keys": null
                 },
                 {
-                    "id": "01m7e3qvd4y6qja68v4mw6zcbs",
+                    "id": "01m7e74bw9rn2620z5kz0kj0ze",
                     "engine": "valkey",
                     "name": "apiacme_97c4_queue",
-                    "databaseServerId": "01m7e3qvd1fwpxg4ng0q2azje6",
+                    "databaseServerId": "01m7e74bvv2kjsdvqs39d8655q",
                     "host": "valkey.internal",
                     "port": 6379,
                     "sizeBytes": 0,
@@ -2439,28 +2467,28 @@
             ],
             "users": [
                 {
-                    "id": "01m7e3qvd3aw3xddz2y6nfw9yp",
+                    "id": "01m7e74bw9rn2620z5kz0kj0zd",
                     "engine": "postgresql",
                     "name": "apiacme_97c4_app",
                     "access": "website",
-                    "databaseServerId": "01m7e3qvd2p9vmgwg10qrg2tzv",
+                    "databaseServerId": "01m7e74bw2va66mg5s4h4g95rg",
                     "grants": [
                         {
-                            "databaseId": "01m7e3qvd3aw3xddz2y6nfw9yn",
+                            "databaseId": "01m7e74bw8b9pr994vty5a55q4",
                             "database": "apiacme_97c4_app",
                             "privileges": "readwrite"
                         }
                     ]
                 },
                 {
-                    "id": "01m7e3qvd4y6qja68v4mw6zcbt",
+                    "id": "01m7e74bwangz4vt7m80mgx0jh",
                     "engine": "valkey",
                     "name": "apiacme_97c4_queue",
                     "access": "website",
-                    "databaseServerId": "01m7e3qvd1fwpxg4ng0q2azje6",
+                    "databaseServerId": "01m7e74bvv2kjsdvqs39d8655q",
                     "grants": [
                         {
-                            "databaseId": "01m7e3qvd4y6qja68v4mw6zcbs",
+                            "databaseId": "01m7e74bw9rn2620z5kz0kj0ze",
                             "database": "apiacme_97c4_queue",
                             "privileges": "readwrite"
                         }
@@ -2469,15 +2497,17 @@
             ],
             "servers": [
                 {
-                    "id": "01m7e3qvcw8cfg30jefgkqc6y7",
+                    "id": "01m7e74bvf723n7j7d79sp3gdk",
                     "name": "mariadb-1",
                     "engine": "mariadb",
-                    "customerId": "01m7e3qv62sar309026scs8zag",
-                    "serverId": "01m7e3qvcd6n3cmngsf7xqx85h",
-                    "planId": "01m7e3qv6096q6ehzj0cgscb4j",
+                    "customerId": "01m7e74bkdz9pw40vg5swzv16s",
+                    "serverId": "01m7e74bsq9gmm3mk3j9jmd85a",
+                    "planId": "01m7e74bka81wt2bpd06vr16pb",
                     "status": "running",
                     "host": "mariadb.internal",
                     "port": 3306,
+                    "networkHost": "mariadb-1.internal",
+                    "networkPort": 3306,
                     "limits": {
                         "vcpus": 2,
                         "memoryBytes": 1073741824,
@@ -2493,15 +2523,17 @@
                     "createdAt": "2026-11-14T10:00:00+00:00"
                 },
                 {
-                    "id": "01m7e3qvda87zmkhjfwq41w8y9",
+                    "id": "01m7e74bx302dvbz86m0cdgbxz",
                     "name": "mariadb-reports",
                     "engine": "mariadb",
-                    "customerId": "01m7e3qv62sar309026scs8zag",
-                    "serverId": "01m7e3qvcd6n3cmngsf7xqx85h",
-                    "planId": "01m7e3qv5y5nx6y3m5epv0fcv2",
+                    "customerId": "01m7e74bkdz9pw40vg5swzv16s",
+                    "serverId": "01m7e74bsq9gmm3mk3j9jmd85a",
+                    "planId": "01m7e74bk8pbtxzny1mf4x6tdt",
                     "status": "running",
                     "host": "mariadb.internal",
                     "port": 3307,
+                    "networkHost": "mariadb-reports.internal",
+                    "networkPort": 3306,
                     "limits": {
                         "vcpus": 1,
                         "memoryBytes": 536870912,
@@ -2517,15 +2549,17 @@
                     "createdAt": "2026-11-14T10:00:00+00:00"
                 },
                 {
-                    "id": "01m7e3qvd2p9vmgwg10qrg2tzv",
+                    "id": "01m7e74bw2va66mg5s4h4g95rg",
                     "name": "postgresql-1",
                     "engine": "postgresql",
-                    "customerId": "01m7e3qv62sar309026scs8zag",
-                    "serverId": "01m7e3qvcd6n3cmngsf7xqx85h",
-                    "planId": "01m7e3qv6096q6ehzj0cgscb4j",
+                    "customerId": "01m7e74bkdz9pw40vg5swzv16s",
+                    "serverId": "01m7e74bsq9gmm3mk3j9jmd85a",
+                    "planId": "01m7e74bka81wt2bpd06vr16pb",
                     "status": "running",
                     "host": "postgres.internal",
                     "port": 5432,
+                    "networkHost": "postgresql-1.internal",
+                    "networkPort": 5432,
                     "limits": {
                         "vcpus": 2,
                         "memoryBytes": 1073741824,
@@ -2541,15 +2575,17 @@
                     "createdAt": "2026-11-14T10:00:00+00:00"
                 },
                 {
-                    "id": "01m7e3qvd1fwpxg4ng0q2azje6",
+                    "id": "01m7e74bvv2kjsdvqs39d8655q",
                     "name": "valkey-1",
                     "engine": "valkey",
-                    "customerId": "01m7e3qv62sar309026scs8zag",
-                    "serverId": "01m7e3qvcd6n3cmngsf7xqx85h",
-                    "planId": "01m7e3qv6096q6ehzj0cgscb4j",
+                    "customerId": "01m7e74bkdz9pw40vg5swzv16s",
+                    "serverId": "01m7e74bsq9gmm3mk3j9jmd85a",
+                    "planId": "01m7e74bka81wt2bpd06vr16pb",
                     "status": "running",
                     "host": "valkey.internal",
                     "port": 6379,
+                    "networkHost": "valkey-1.internal",
+                    "networkPort": 6379,
                     "limits": {
                         "vcpus": 2,
                         "memoryBytes": 1073741824,
@@ -2567,12 +2603,12 @@
             ]
         }
     },
-    "GET /websites/01m7e3qvcpe744j4m1k0ackc7b/snapshots": {
+    "GET /websites/01m7e74btkz8zzhhw2jzrb8txm/snapshots": {
         "status": 200,
         "body": {
             "data": [
                 {
-                    "id": "01m7e3qvddwcetw8ttqh4zh4cv",
+                    "id": "01m7e74bxebkh8wy5eq72gw25f",
                     "kind": "scheduled",
                     "sizeBytes": 525336576,
                     "databases": [
@@ -2582,7 +2618,7 @@
                     "createdAt": "2026-11-14T03:04:00+00:00"
                 },
                 {
-                    "id": "01m7e3qvddwcetw8ttqh4zh4cw",
+                    "id": "01m7e74bxebkh8wy5eq72gw25g",
                     "kind": "scheduled",
                     "sizeBytes": 522190848,
                     "databases": [
@@ -2592,7 +2628,7 @@
                     "createdAt": "2026-11-13T03:04:00+00:00"
                 },
                 {
-                    "id": "01m7e3qvddwcetw8ttqh4zh4cx",
+                    "id": "01m7e74bxf74d8d13tmj9165gs",
                     "kind": "scheduled",
                     "sizeBytes": 519045120,
                     "databases": [
@@ -2604,16 +2640,16 @@
             ]
         }
     },
-    "GET /websites/01m7e3qvcrc54f1x17b9kma8j4/databases": {
+    "GET /websites/01m7e74bv002ym47999xgm9ds9/databases": {
         "status": 200,
         "body": {
             "prefix": "cornerba_f8cd_",
             "databases": [
                 {
-                    "id": "01m7e3qvd6thrgnrfmggh60qsh",
+                    "id": "01m7e74bwn822endbs2p4h7949",
                     "engine": "mariadb",
                     "name": "cornerba_f8cd_wp",
-                    "databaseServerId": "01m7e3qvd6thrgnrfmggh60qsg",
+                    "databaseServerId": "01m7e74bwgjn27b3e4p48qrjf2",
                     "host": "mariadb.internal",
                     "port": 3306,
                     "sizeBytes": 230686720,
@@ -2623,14 +2659,14 @@
             ],
             "users": [
                 {
-                    "id": "01m7e3qvd6thrgnrfmggh60qsj",
+                    "id": "01m7e74bwp1acmhnkxp3erps3s",
                     "engine": "mariadb",
                     "name": "cornerba_f8cd_wp",
                     "access": "website",
-                    "databaseServerId": "01m7e3qvd6thrgnrfmggh60qsg",
+                    "databaseServerId": "01m7e74bwgjn27b3e4p48qrjf2",
                     "grants": [
                         {
-                            "databaseId": "01m7e3qvd6thrgnrfmggh60qsh",
+                            "databaseId": "01m7e74bwn822endbs2p4h7949",
                             "database": "cornerba_f8cd_wp",
                             "privileges": "readwrite"
                         }
@@ -2639,15 +2675,17 @@
             ],
             "servers": [
                 {
-                    "id": "01m7e3qvd6thrgnrfmggh60qsg",
+                    "id": "01m7e74bwgjn27b3e4p48qrjf2",
                     "name": "mariadb-1",
                     "engine": "mariadb",
-                    "customerId": "01m7e3qv61b8yhpjhmzdszj09j",
-                    "serverId": "01m7e3qvcd6n3cmngsf7xqx85j",
-                    "planId": "01m7e3qv5y5nx6y3m5epv0fcv2",
+                    "customerId": "01m7e74bkcgf387tbwcmqch890",
+                    "serverId": "01m7e74bsq9gmm3mk3j9jmd85b",
+                    "planId": "01m7e74bk8pbtxzny1mf4x6tdt",
                     "status": "running",
                     "host": "mariadb.internal",
                     "port": 3306,
+                    "networkHost": "mariadb-1.internal",
+                    "networkPort": 3306,
                     "limits": {
                         "vcpus": 1,
                         "memoryBytes": 536870912,
@@ -2665,12 +2703,12 @@
             ]
         }
     },
-    "GET /websites/01m7e3qvcrc54f1x17b9kma8j4/snapshots": {
+    "GET /websites/01m7e74bv002ym47999xgm9ds9/snapshots": {
         "status": 200,
         "body": {
             "data": [
                 {
-                    "id": "01m7e3qvdgnn0dfwx1f7ymdvq4",
+                    "id": "01m7e74bxjq96rym3brc1s08mq",
                     "kind": "scheduled",
                     "sizeBytes": 5722079232,
                     "databases": [
@@ -2680,7 +2718,7 @@
                     "createdAt": "2026-11-14T03:08:00+00:00"
                 },
                 {
-                    "id": "01m7e3qvdha0b6q4ccwazb4bey",
+                    "id": "01m7e74bxktkqxmfas0ysgdx91",
                     "kind": "scheduled",
                     "sizeBytes": 5718933504,
                     "databases": [
@@ -2690,7 +2728,7 @@
                     "createdAt": "2026-11-13T03:08:00+00:00"
                 },
                 {
-                    "id": "01m7e3qvdha0b6q4ccwazb4bez",
+                    "id": "01m7e74bxktkqxmfas0ysgdx92",
                     "kind": "scheduled",
                     "sizeBytes": 5715787776,
                     "databases": [
@@ -2702,7 +2740,7 @@
             ]
         }
     },
-    "GET /websites/01m7e3qvct6aczr92k1dzknk0r/databases": {
+    "GET /websites/01m7e74bv7mp2brz2z65vtn35m/databases": {
         "status": 200,
         "body": {
             "prefix": "eventsha_08d5_",
@@ -2711,22 +2749,22 @@
             "servers": []
         }
     },
-    "GET /websites/01m7e3qvct6aczr92k1dzknk0r/snapshots": {
+    "GET /websites/01m7e74bv7mp2brz2z65vtn35m/snapshots": {
         "status": 200,
         "body": {
             "data": []
         }
     },
-    "GET /websites/01m7e3qvcsenfm3n3rypcvmxar/databases": {
+    "GET /websites/01m7e74bv3t4hj6er8yyxshhhd/databases": {
         "status": 200,
         "body": {
             "prefix": "harbourb_fe76_",
             "databases": [
                 {
-                    "id": "01m7e3qvd7g2d6kas8q7baswkx",
+                    "id": "01m7e74bwvetmq7sykswy2dx70",
                     "engine": "mariadb",
                     "name": "harbourb_fe76_shop",
-                    "databaseServerId": "01m7e3qvd7g2d6kas8q7baswkw",
+                    "databaseServerId": "01m7e74bwp1acmhnkxp3erps3t",
                     "host": "mariadb.internal",
                     "port": 3306,
                     "sizeBytes": 796917760,
@@ -2736,14 +2774,14 @@
             ],
             "users": [
                 {
-                    "id": "01m7e3qvd8eaf8z518b36378j3",
+                    "id": "01m7e74bww00d9qc5a47y0wemy",
                     "engine": "mariadb",
                     "name": "harbourb_fe76_shop",
                     "access": "website",
-                    "databaseServerId": "01m7e3qvd7g2d6kas8q7baswkw",
+                    "databaseServerId": "01m7e74bwp1acmhnkxp3erps3t",
                     "grants": [
                         {
-                            "databaseId": "01m7e3qvd7g2d6kas8q7baswkx",
+                            "databaseId": "01m7e74bwvetmq7sykswy2dx70",
                             "database": "harbourb_fe76_shop",
                             "privileges": "readwrite"
                         }
@@ -2752,15 +2790,17 @@
             ],
             "servers": [
                 {
-                    "id": "01m7e3qvd7g2d6kas8q7baswkw",
+                    "id": "01m7e74bwp1acmhnkxp3erps3t",
                     "name": "mariadb-1",
                     "engine": "mariadb",
-                    "customerId": "01m7e3qv61b8yhpjhmzdszj09k",
-                    "serverId": "01m7e3qvcd6n3cmngsf7xqx85j",
-                    "planId": "01m7e3qv6096q6ehzj0cgscb4j",
+                    "customerId": "01m7e74bkcgf387tbwcmqch891",
+                    "serverId": "01m7e74bsq9gmm3mk3j9jmd85b",
+                    "planId": "01m7e74bka81wt2bpd06vr16pb",
                     "status": "running",
                     "host": "mariadb.internal",
                     "port": 3306,
+                    "networkHost": "mariadb-1.internal",
+                    "networkPort": 3306,
                     "limits": {
                         "vcpus": 2,
                         "memoryBytes": 1073741824,
@@ -2778,12 +2818,12 @@
             ]
         }
     },
-    "GET /websites/01m7e3qvcsenfm3n3rypcvmxar/snapshots": {
+    "GET /websites/01m7e74bv3t4hj6er8yyxshhhd/snapshots": {
         "status": 200,
         "body": {
             "data": [
                 {
-                    "id": "01m7e3qvdjc7jy9vmsn0bpf8ka",
+                    "id": "01m7e74bxnmp2f817zgmx4w7nb",
                     "kind": "manual",
                     "sizeBytes": 8053063680,
                     "databases": [
@@ -2793,7 +2833,7 @@
                     "createdAt": "2026-11-14T05:00:00+00:00"
                 },
                 {
-                    "id": "01m7e3qvdha0b6q4ccwazb4bf0",
+                    "id": "01m7e74bxktkqxmfas0ysgdx93",
                     "kind": "scheduled",
                     "sizeBytes": 8049917952,
                     "databases": [
@@ -2803,7 +2843,7 @@
                     "createdAt": "2026-11-14T03:08:00+00:00"
                 },
                 {
-                    "id": "01m7e3qvdjc7jy9vmsn0bpf8k8",
+                    "id": "01m7e74bxmbvb0em6sgn2z07fr",
                     "kind": "scheduled",
                     "sizeBytes": 8046772224,
                     "databases": [
@@ -2813,7 +2853,7 @@
                     "createdAt": "2026-11-13T03:08:00+00:00"
                 },
                 {
-                    "id": "01m7e3qvdjc7jy9vmsn0bpf8k9",
+                    "id": "01m7e74bxnmp2f817zgmx4w7na",
                     "kind": "scheduled",
                     "sizeBytes": 8043626496,
                     "databases": [
@@ -2825,16 +2865,16 @@
             ]
         }
     },
-    "GET /websites/01m7e3qvct6aczr92k1dzknk0s/databases": {
+    "GET /websites/01m7e74bvadp0kz626z5sga7x1/databases": {
         "status": 200,
         "body": {
             "prefix": "lawsonex_cf75_",
             "databases": [
                 {
-                    "id": "01m7e3qvd928mtystyyt3vw615",
+                    "id": "01m7e74bx1km4sj7s6dja6g4zs",
                     "engine": "mariadb",
                     "name": "lawsonex_cf75_wp",
-                    "databaseServerId": "01m7e3qvd8eaf8z518b36378j4",
+                    "databaseServerId": "01m7e74bww00d9qc5a47y0wemz",
                     "host": "mariadb.internal",
                     "port": 3306,
                     "sizeBytes": 92274688,
@@ -2844,14 +2884,14 @@
             ],
             "users": [
                 {
-                    "id": "01m7e3qvd928mtystyyt3vw616",
+                    "id": "01m7e74bx2mk98qgvk5ttyw81p",
                     "engine": "mariadb",
                     "name": "lawsonex_cf75_wp",
                     "access": "website",
-                    "databaseServerId": "01m7e3qvd8eaf8z518b36378j4",
+                    "databaseServerId": "01m7e74bww00d9qc5a47y0wemz",
                     "grants": [
                         {
-                            "databaseId": "01m7e3qvd928mtystyyt3vw615",
+                            "databaseId": "01m7e74bx1km4sj7s6dja6g4zs",
                             "database": "lawsonex_cf75_wp",
                             "privileges": "readwrite"
                         }
@@ -2860,15 +2900,17 @@
             ],
             "servers": [
                 {
-                    "id": "01m7e3qvd8eaf8z518b36378j4",
+                    "id": "01m7e74bww00d9qc5a47y0wemz",
                     "name": "mariadb-1",
                     "engine": "mariadb",
-                    "customerId": "01m7e3qv62sar309026scs8zah",
-                    "serverId": "01m7e3qvcd6n3cmngsf7xqx85h",
-                    "planId": "01m7e3qv5y5nx6y3m5epv0fcv2",
+                    "customerId": "01m7e74bkdz9pw40vg5swzv16t",
+                    "serverId": "01m7e74bsq9gmm3mk3j9jmd85a",
+                    "planId": "01m7e74bk8pbtxzny1mf4x6tdt",
                     "status": "running",
                     "host": "mariadb.internal",
                     "port": 3306,
+                    "networkHost": "mariadb-1.internal",
+                    "networkPort": 3306,
                     "limits": {
                         "vcpus": 1,
                         "memoryBytes": 536870912,
@@ -2886,12 +2928,12 @@
             ]
         }
     },
-    "GET /websites/01m7e3qvct6aczr92k1dzknk0s/snapshots": {
+    "GET /websites/01m7e74bvadp0kz626z5sga7x1/snapshots": {
         "status": 200,
         "body": {
             "data": [
                 {
-                    "id": "01m7e3qvdjc7jy9vmsn0bpf8kb",
+                    "id": "01m7e74bxpfcaqyvjrcbnd8edw",
                     "kind": "scheduled",
                     "sizeBytes": 1506803712,
                     "databases": [
@@ -2901,7 +2943,7 @@
                     "createdAt": "2026-11-14T03:02:00+00:00"
                 },
                 {
-                    "id": "01m7e3qvdkzwr1k3pswj52f58m",
+                    "id": "01m7e74bxpfcaqyvjrcbnd8edx",
                     "kind": "scheduled",
                     "sizeBytes": 1503657984,
                     "databases": [
@@ -2911,7 +2953,7 @@
                     "createdAt": "2026-11-13T03:02:00+00:00"
                 },
                 {
-                    "id": "01m7e3qvdkzwr1k3pswj52f58n",
+                    "id": "01m7e74bxpfcaqyvjrcbnd8edy",
                     "kind": "scheduled",
                     "sizeBytes": 1500512256,
                     "databases": [
@@ -2923,16 +2965,16 @@
             ]
         }
     },
-    "GET /websites/01m7e3qvcqtympr2ac0xermw97/databases": {
+    "GET /websites/01m7e74btww7r06e0yn2fd6j02/databases": {
         "status": 200,
         "body": {
             "prefix": "northwin_8223_",
             "databases": [
                 {
-                    "id": "01m7e3qvd5vdgj7krzxpyknns0",
+                    "id": "01m7e74bwf9ee9nmsmnkkwxz0a",
                     "engine": "mariadb",
                     "name": "northwin_8223_wp",
-                    "databaseServerId": "01m7e3qvd4y6qja68v4mw6zcbv",
+                    "databaseServerId": "01m7e74bwb17s520hd3fsk71jz",
                     "host": "mariadb.internal",
                     "port": 3306,
                     "sizeBytes": 146800640,
@@ -2942,14 +2984,14 @@
             ],
             "users": [
                 {
-                    "id": "01m7e3qvd5vdgj7krzxpyknns1",
+                    "id": "01m7e74bwgjn27b3e4p48qrjf1",
                     "engine": "mariadb",
                     "name": "northwin_8223_wp",
                     "access": "website",
-                    "databaseServerId": "01m7e3qvd4y6qja68v4mw6zcbv",
+                    "databaseServerId": "01m7e74bwb17s520hd3fsk71jz",
                     "grants": [
                         {
-                            "databaseId": "01m7e3qvd5vdgj7krzxpyknns0",
+                            "databaseId": "01m7e74bwf9ee9nmsmnkkwxz0a",
                             "database": "northwin_8223_wp",
                             "privileges": "readwrite"
                         }
@@ -2958,15 +3000,17 @@
             ],
             "servers": [
                 {
-                    "id": "01m7e3qvd4y6qja68v4mw6zcbv",
+                    "id": "01m7e74bwb17s520hd3fsk71jz",
                     "name": "mariadb-1",
                     "engine": "mariadb",
-                    "customerId": "01m7e3qv61b8yhpjhmzdszj09h",
-                    "serverId": "01m7e3qvcd6n3cmngsf7xqx85j",
-                    "planId": "01m7e3qv6096q6ehzj0cgscb4k",
+                    "customerId": "01m7e74bkcgf387tbwcmqch88z",
+                    "serverId": "01m7e74bsq9gmm3mk3j9jmd85b",
+                    "planId": "01m7e74bkb7b6s42byzamhastq",
                     "status": "running",
                     "host": "mariadb.internal",
                     "port": 3306,
+                    "networkHost": "mariadb-1.internal",
+                    "networkPort": 3306,
                     "limits": {
                         "vcpus": 2,
                         "memoryBytes": 2147483648,
@@ -2984,12 +3028,12 @@
             ]
         }
     },
-    "GET /websites/01m7e3qvcqtympr2ac0xermw97/snapshots": {
+    "GET /websites/01m7e74btww7r06e0yn2fd6j02/snapshots": {
         "status": 200,
         "body": {
             "data": [
                 {
-                    "id": "01m7e3qvdgnn0dfwx1f7ymdvq1",
+                    "id": "01m7e74bxh8rm5mhwn7y4smdrm",
                     "kind": "scheduled",
                     "sizeBytes": 1947205632,
                     "databases": [
@@ -2999,7 +3043,7 @@
                     "createdAt": "2026-11-14T03:05:00+00:00"
                 },
                 {
-                    "id": "01m7e3qvdgnn0dfwx1f7ymdvq2",
+                    "id": "01m7e74bxh8rm5mhwn7y4smdrn",
                     "kind": "scheduled",
                     "sizeBytes": 1944059904,
                     "databases": [
@@ -3009,7 +3053,7 @@
                     "createdAt": "2026-11-13T03:05:00+00:00"
                 },
                 {
-                    "id": "01m7e3qvdgnn0dfwx1f7ymdvq3",
+                    "id": "01m7e74bxjq96rym3brc1s08mp",
                     "kind": "scheduled",
                     "sizeBytes": 1940914176,
                     "databases": [
@@ -3021,7 +3065,7 @@
             ]
         }
     },
-    "GET /websites/01m7e3qvcqtympr2ac0xermw96/databases": {
+    "GET /websites/01m7e74btsvqagpq5azktzd23b/databases": {
         "status": 200,
         "body": {
             "prefix": "oldacme_ab58_",
@@ -3029,15 +3073,17 @@
             "users": [],
             "servers": [
                 {
-                    "id": "01m7e3qvcw8cfg30jefgkqc6y7",
+                    "id": "01m7e74bvf723n7j7d79sp3gdk",
                     "name": "mariadb-1",
                     "engine": "mariadb",
-                    "customerId": "01m7e3qv62sar309026scs8zag",
-                    "serverId": "01m7e3qvcd6n3cmngsf7xqx85h",
-                    "planId": "01m7e3qv6096q6ehzj0cgscb4j",
+                    "customerId": "01m7e74bkdz9pw40vg5swzv16s",
+                    "serverId": "01m7e74bsq9gmm3mk3j9jmd85a",
+                    "planId": "01m7e74bka81wt2bpd06vr16pb",
                     "status": "running",
                     "host": "mariadb.internal",
                     "port": 3306,
+                    "networkHost": "mariadb-1.internal",
+                    "networkPort": 3306,
                     "limits": {
                         "vcpus": 2,
                         "memoryBytes": 1073741824,
@@ -3053,15 +3099,17 @@
                     "createdAt": "2026-11-14T10:00:00+00:00"
                 },
                 {
-                    "id": "01m7e3qvda87zmkhjfwq41w8y9",
+                    "id": "01m7e74bx302dvbz86m0cdgbxz",
                     "name": "mariadb-reports",
                     "engine": "mariadb",
-                    "customerId": "01m7e3qv62sar309026scs8zag",
-                    "serverId": "01m7e3qvcd6n3cmngsf7xqx85h",
-                    "planId": "01m7e3qv5y5nx6y3m5epv0fcv2",
+                    "customerId": "01m7e74bkdz9pw40vg5swzv16s",
+                    "serverId": "01m7e74bsq9gmm3mk3j9jmd85a",
+                    "planId": "01m7e74bk8pbtxzny1mf4x6tdt",
                     "status": "running",
                     "host": "mariadb.internal",
                     "port": 3307,
+                    "networkHost": "mariadb-reports.internal",
+                    "networkPort": 3306,
                     "limits": {
                         "vcpus": 1,
                         "memoryBytes": 536870912,
@@ -3077,15 +3125,17 @@
                     "createdAt": "2026-11-14T10:00:00+00:00"
                 },
                 {
-                    "id": "01m7e3qvd2p9vmgwg10qrg2tzv",
+                    "id": "01m7e74bw2va66mg5s4h4g95rg",
                     "name": "postgresql-1",
                     "engine": "postgresql",
-                    "customerId": "01m7e3qv62sar309026scs8zag",
-                    "serverId": "01m7e3qvcd6n3cmngsf7xqx85h",
-                    "planId": "01m7e3qv6096q6ehzj0cgscb4j",
+                    "customerId": "01m7e74bkdz9pw40vg5swzv16s",
+                    "serverId": "01m7e74bsq9gmm3mk3j9jmd85a",
+                    "planId": "01m7e74bka81wt2bpd06vr16pb",
                     "status": "running",
                     "host": "postgres.internal",
                     "port": 5432,
+                    "networkHost": "postgresql-1.internal",
+                    "networkPort": 5432,
                     "limits": {
                         "vcpus": 2,
                         "memoryBytes": 1073741824,
@@ -3101,15 +3151,17 @@
                     "createdAt": "2026-11-14T10:00:00+00:00"
                 },
                 {
-                    "id": "01m7e3qvd1fwpxg4ng0q2azje6",
+                    "id": "01m7e74bvv2kjsdvqs39d8655q",
                     "name": "valkey-1",
                     "engine": "valkey",
-                    "customerId": "01m7e3qv62sar309026scs8zag",
-                    "serverId": "01m7e3qvcd6n3cmngsf7xqx85h",
-                    "planId": "01m7e3qv6096q6ehzj0cgscb4j",
+                    "customerId": "01m7e74bkdz9pw40vg5swzv16s",
+                    "serverId": "01m7e74bsq9gmm3mk3j9jmd85a",
+                    "planId": "01m7e74bka81wt2bpd06vr16pb",
                     "status": "running",
                     "host": "valkey.internal",
                     "port": 6379,
+                    "networkHost": "valkey-1.internal",
+                    "networkPort": 6379,
                     "limits": {
                         "vcpus": 2,
                         "memoryBytes": 1073741824,
@@ -3127,12 +3179,12 @@
             ]
         }
     },
-    "GET /websites/01m7e3qvcqtympr2ac0xermw96/snapshots": {
+    "GET /websites/01m7e74btsvqagpq5azktzd23b/snapshots": {
         "status": 200,
         "body": {
             "data": [
                 {
-                    "id": "01m7e3qvdfp0dmcn5rfe5yh4fd",
+                    "id": "01m7e74bxggvmh3jwyatf3stqb",
                     "kind": "scheduled",
                     "sizeBytes": 1192230912,
                     "databases": [],
@@ -3140,7 +3192,7 @@
                     "createdAt": "2026-11-14T03:04:00+00:00"
                 },
                 {
-                    "id": "01m7e3qvdfp0dmcn5rfe5yh4fe",
+                    "id": "01m7e74bxggvmh3jwyatf3stqc",
                     "kind": "scheduled",
                     "sizeBytes": 1189085184,
                     "databases": [],
@@ -3148,7 +3200,7 @@
                     "createdAt": "2026-11-13T03:04:00+00:00"
                 },
                 {
-                    "id": "01m7e3qvdfp0dmcn5rfe5yh4ff",
+                    "id": "01m7e74bxh8rm5mhwn7y4smdrk",
                     "kind": "scheduled",
                     "sizeBytes": 1185939456,
                     "databases": [],
@@ -3158,16 +3210,16 @@
             ]
         }
     },
-    "GET /websites/01m7e3qvcntr77ffhs8pqt44s4/databases": {
+    "GET /websites/01m7e74btgd3jm95pfxhpvzcdh/databases": {
         "status": 200,
         "body": {
             "prefix": "shopacme_9e69_",
             "databases": [
                 {
-                    "id": "01m7e3qvd1fwpxg4ng0q2azje7",
+                    "id": "01m7e74bw1thdhgs932c3wackn",
                     "engine": "valkey",
                     "name": "shopacme_9e69_cache",
-                    "databaseServerId": "01m7e3qvd1fwpxg4ng0q2azje6",
+                    "databaseServerId": "01m7e74bvv2kjsdvqs39d8655q",
                     "host": "valkey.internal",
                     "port": 6379,
                     "sizeBytes": 0,
@@ -3175,10 +3227,10 @@
                     "keys": 18412
                 },
                 {
-                    "id": "01m7e3qvd0rcsq9v5sa0j4bvxr",
+                    "id": "01m7e74bvt68et62x3r59gxgq8",
                     "engine": "mariadb",
                     "name": "shopacme_9e69_shop",
-                    "databaseServerId": "01m7e3qvcw8cfg30jefgkqc6y7",
+                    "databaseServerId": "01m7e74bvf723n7j7d79sp3gdk",
                     "host": "mariadb.internal",
                     "port": 3306,
                     "sizeBytes": 1929379840,
@@ -3188,42 +3240,42 @@
             ],
             "users": [
                 {
-                    "id": "01m7e3qvd2p9vmgwg10qrg2tzt",
+                    "id": "01m7e74bw1thdhgs932c3wackp",
                     "engine": "valkey",
                     "name": "shopacme_9e69_cache",
                     "access": "website",
-                    "databaseServerId": "01m7e3qvd1fwpxg4ng0q2azje6",
+                    "databaseServerId": "01m7e74bvv2kjsdvqs39d8655q",
                     "grants": [
                         {
-                            "databaseId": "01m7e3qvd1fwpxg4ng0q2azje7",
+                            "databaseId": "01m7e74bw1thdhgs932c3wackn",
                             "database": "shopacme_9e69_cache",
                             "privileges": "readwrite"
                         }
                     ]
                 },
                 {
-                    "id": "01m7e3qvd928mtystyyt3vw617",
+                    "id": "01m7e74bx2mk98qgvk5ttyw81q",
                     "engine": "mariadb",
                     "name": "shopacme_9e69_reports",
                     "access": "anywhere",
-                    "databaseServerId": "01m7e3qvcw8cfg30jefgkqc6y7",
+                    "databaseServerId": "01m7e74bvf723n7j7d79sp3gdk",
                     "grants": [
                         {
-                            "databaseId": "01m7e3qvd0rcsq9v5sa0j4bvxr",
+                            "databaseId": "01m7e74bvt68et62x3r59gxgq8",
                             "database": "shopacme_9e69_shop",
                             "privileges": "readonly"
                         }
                     ]
                 },
                 {
-                    "id": "01m7e3qvd1fwpxg4ng0q2azje5",
+                    "id": "01m7e74bvt68et62x3r59gxgq9",
                     "engine": "mariadb",
                     "name": "shopacme_9e69_shop",
                     "access": "website",
-                    "databaseServerId": "01m7e3qvcw8cfg30jefgkqc6y7",
+                    "databaseServerId": "01m7e74bvf723n7j7d79sp3gdk",
                     "grants": [
                         {
-                            "databaseId": "01m7e3qvd0rcsq9v5sa0j4bvxr",
+                            "databaseId": "01m7e74bvt68et62x3r59gxgq8",
                             "database": "shopacme_9e69_shop",
                             "privileges": "readwrite"
                         }
@@ -3232,15 +3284,17 @@
             ],
             "servers": [
                 {
-                    "id": "01m7e3qvcw8cfg30jefgkqc6y7",
+                    "id": "01m7e74bvf723n7j7d79sp3gdk",
                     "name": "mariadb-1",
                     "engine": "mariadb",
-                    "customerId": "01m7e3qv62sar309026scs8zag",
-                    "serverId": "01m7e3qvcd6n3cmngsf7xqx85h",
-                    "planId": "01m7e3qv6096q6ehzj0cgscb4j",
+                    "customerId": "01m7e74bkdz9pw40vg5swzv16s",
+                    "serverId": "01m7e74bsq9gmm3mk3j9jmd85a",
+                    "planId": "01m7e74bka81wt2bpd06vr16pb",
                     "status": "running",
                     "host": "mariadb.internal",
                     "port": 3306,
+                    "networkHost": "mariadb-1.internal",
+                    "networkPort": 3306,
                     "limits": {
                         "vcpus": 2,
                         "memoryBytes": 1073741824,
@@ -3256,15 +3310,17 @@
                     "createdAt": "2026-11-14T10:00:00+00:00"
                 },
                 {
-                    "id": "01m7e3qvda87zmkhjfwq41w8y9",
+                    "id": "01m7e74bx302dvbz86m0cdgbxz",
                     "name": "mariadb-reports",
                     "engine": "mariadb",
-                    "customerId": "01m7e3qv62sar309026scs8zag",
-                    "serverId": "01m7e3qvcd6n3cmngsf7xqx85h",
-                    "planId": "01m7e3qv5y5nx6y3m5epv0fcv2",
+                    "customerId": "01m7e74bkdz9pw40vg5swzv16s",
+                    "serverId": "01m7e74bsq9gmm3mk3j9jmd85a",
+                    "planId": "01m7e74bk8pbtxzny1mf4x6tdt",
                     "status": "running",
                     "host": "mariadb.internal",
                     "port": 3307,
+                    "networkHost": "mariadb-reports.internal",
+                    "networkPort": 3306,
                     "limits": {
                         "vcpus": 1,
                         "memoryBytes": 536870912,
@@ -3280,15 +3336,17 @@
                     "createdAt": "2026-11-14T10:00:00+00:00"
                 },
                 {
-                    "id": "01m7e3qvd2p9vmgwg10qrg2tzv",
+                    "id": "01m7e74bw2va66mg5s4h4g95rg",
                     "name": "postgresql-1",
                     "engine": "postgresql",
-                    "customerId": "01m7e3qv62sar309026scs8zag",
-                    "serverId": "01m7e3qvcd6n3cmngsf7xqx85h",
-                    "planId": "01m7e3qv6096q6ehzj0cgscb4j",
+                    "customerId": "01m7e74bkdz9pw40vg5swzv16s",
+                    "serverId": "01m7e74bsq9gmm3mk3j9jmd85a",
+                    "planId": "01m7e74bka81wt2bpd06vr16pb",
                     "status": "running",
                     "host": "postgres.internal",
                     "port": 5432,
+                    "networkHost": "postgresql-1.internal",
+                    "networkPort": 5432,
                     "limits": {
                         "vcpus": 2,
                         "memoryBytes": 1073741824,
@@ -3304,15 +3362,17 @@
                     "createdAt": "2026-11-14T10:00:00+00:00"
                 },
                 {
-                    "id": "01m7e3qvd1fwpxg4ng0q2azje6",
+                    "id": "01m7e74bvv2kjsdvqs39d8655q",
                     "name": "valkey-1",
                     "engine": "valkey",
-                    "customerId": "01m7e3qv62sar309026scs8zag",
-                    "serverId": "01m7e3qvcd6n3cmngsf7xqx85h",
-                    "planId": "01m7e3qv6096q6ehzj0cgscb4j",
+                    "customerId": "01m7e74bkdz9pw40vg5swzv16s",
+                    "serverId": "01m7e74bsq9gmm3mk3j9jmd85a",
+                    "planId": "01m7e74bka81wt2bpd06vr16pb",
                     "status": "running",
                     "host": "valkey.internal",
                     "port": 6379,
+                    "networkHost": "valkey-1.internal",
+                    "networkPort": 6379,
                     "limits": {
                         "vcpus": 2,
                         "memoryBytes": 1073741824,
@@ -3330,12 +3390,12 @@
             ]
         }
     },
-    "GET /websites/01m7e3qvcntr77ffhs8pqt44s4/snapshots": {
+    "GET /websites/01m7e74btgd3jm95pfxhpvzcdh/snapshots": {
         "status": 200,
         "body": {
             "data": [
                 {
-                    "id": "01m7e3qvdc7pacqv0rpq7v8ntf",
+                    "id": "01m7e74bxdmjmf45x8svv94f11",
                     "kind": "manual",
                     "sizeBytes": 13463715840,
                     "databases": [
@@ -3345,7 +3405,7 @@
                     "createdAt": "2026-11-14T05:00:00+00:00"
                 },
                 {
-                    "id": "01m7e3qvdc7pacqv0rpq7v8ntc",
+                    "id": "01m7e74bxcgpf9tebp3jk8a8kc",
                     "kind": "scheduled",
                     "sizeBytes": 13460570112,
                     "databases": [
@@ -3355,7 +3415,7 @@
                     "createdAt": "2026-11-14T03:05:00+00:00"
                 },
                 {
-                    "id": "01m7e3qvdc7pacqv0rpq7v8ntd",
+                    "id": "01m7e74bxdmjmf45x8svv94f0z",
                     "kind": "scheduled",
                     "sizeBytes": 13457424384,
                     "databases": [
@@ -3365,7 +3425,7 @@
                     "createdAt": "2026-11-13T03:05:00+00:00"
                 },
                 {
-                    "id": "01m7e3qvdc7pacqv0rpq7v8nte",
+                    "id": "01m7e74bxdmjmf45x8svv94f10",
                     "kind": "scheduled",
                     "sizeBytes": 13454278656,
                     "databases": [
@@ -3377,7 +3437,7 @@
             ]
         }
     },
-    "GET /websites/01m7e3qvcpe744j4m1k0ackc7c/databases": {
+    "GET /websites/01m7e74btpbasyygcgp00ahxa5/databases": {
         "status": 200,
         "body": {
             "prefix": "storefro_a970_",
@@ -3386,12 +3446,12 @@
             "servers": []
         }
     },
-    "GET /websites/01m7e3qvcpe744j4m1k0ackc7c/snapshots": {
+    "GET /websites/01m7e74btpbasyygcgp00ahxa5/snapshots": {
         "status": 200,
         "body": {
             "data": [
                 {
-                    "id": "01m7e3qvdek24ws5yv4cmycm7x",
+                    "id": "01m7e74bxf74d8d13tmj9165gt",
                     "kind": "scheduled",
                     "sizeBytes": 235929600,
                     "databases": [],
@@ -3399,7 +3459,7 @@
                     "createdAt": "2026-11-14T03:02:00+00:00"
                 },
                 {
-                    "id": "01m7e3qvdek24ws5yv4cmycm7y",
+                    "id": "01m7e74bxf74d8d13tmj9165gv",
                     "kind": "scheduled",
                     "sizeBytes": 232783872,
                     "databases": [],
@@ -3407,7 +3467,7 @@
                     "createdAt": "2026-11-13T03:02:00+00:00"
                 },
                 {
-                    "id": "01m7e3qvdek24ws5yv4cmycm7z",
+                    "id": "01m7e74bxggvmh3jwyatf3stqa",
                     "kind": "scheduled",
                     "sizeBytes": 229638144,
                     "databases": [],

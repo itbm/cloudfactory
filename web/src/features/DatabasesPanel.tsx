@@ -161,7 +161,7 @@ export function DatabasesPanel({ websiteId }: { websiteId?: string }) {
             </tbody>
           </table>
         </TableWrap>
-        <p className="card-body muted small" style={{ paddingTop: 12 }}>Each customer has its own database servers. By default, only the websites of the customer on the same server can connect to them, and each connection needs a user name and a password. A user is in one database server, and can have access only to the databases of its website in that database server.{users.some((u) => u.engine === "valkey") && " The user of a Valkey database has access to that database only. To remove the user, remove the database."}</p>
+        <p className="card-body muted small" style={{ paddingTop: 12 }}>Each customer has its own database servers. By default, only the websites of the customer can connect to them, and each connection needs a user name and a password. A user is in one database server, and can have access only to the databases of its website in that database server.{users.some((u) => u.engine === "valkey") && " The user of a Valkey database has access to that database only. To remove the user, remove the database."}</p>
       </Card>
 
       {asking?.action === "password" && (
@@ -209,7 +209,7 @@ export function DatabasesPanel({ websiteId }: { websiteId?: string }) {
                   label="Database server"
                   hint={usable.length === 0
                     ? <>The customer has no {ENGINE[engine]} database server on the server of this website. The panel makes one with the plan of the customer.</>
-                    : <>The websites of the customer on the same server can connect to it. {websiteId ? <>To make more database servers, go to the <Link to="/databases">Databases</Link> page.</> : "To make more database servers, select New database server on this page."}</>}
+                    : <>The websites of the customer can connect to it. {websiteId ? <>To make more database servers, go to the <Link to="/databases">Databases</Link> page.</> : "To make more database servers, select New database server on this page."}</>}
                   error={createDb.error?.fields.databaseServerId}
                 >
                   {(p) => (

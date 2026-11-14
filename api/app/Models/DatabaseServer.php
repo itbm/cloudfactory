@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Services\Mesh;
+use App\Services\Networks;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
@@ -55,6 +57,27 @@ class DatabaseServer extends Model
     protected function casts(): array
     {
         return ['limits' => 'array', 'usage' => 'array', 'port' => 'integer'];
+    }
+
+    /**
+     * A new database server is a member of the network "default" of its customer. The mesh
+     * state of the servers changes with the database servers (Mesh::refresh).
+     */
+    protected static function booted(): void
+    {
+        static::created(function (DatabaseServer $server) {
+            Networks::join($server);
+            Mesh::refreshLater();
+        });
+        static::updated(function (DatabaseServer $server) {
+            if ($server->wasChanged(['name', 'status', 'server_id'])) {
+                Mesh::refreshLater();
+            }
+        });
+        static::deleted(function (DatabaseServer $server) {
+            Networks::leave($server);
+            Mesh::refreshLater();
+        });
     }
 
     public function customer(): BelongsTo

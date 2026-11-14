@@ -101,6 +101,10 @@ type Website struct {
 	// (DatabaseAddress). With no address, the container has no database host names: the agent
 	// has no record of the customer of the website.
 	DatabaseAddress string
+	// HostsFile is the path of the hosts file of the website on the host, or "". With a
+	// path, the container has this file as its /etc/hosts, and the file has the database
+	// host names.
+	HostsFile string
 }
 
 // Database host names in each website container. They point to the address of the database
@@ -233,8 +237,15 @@ func ContainerUnit(w Website) string {
 		containerPort = w.ContainerPort
 	}
 	line("PublishPort", ServiceAddress+":"+strconv.Itoa(w.Port)+":"+strconv.Itoa(containerPort))
-	// The database servers of the customer publish their ports on this address.
-	if w.DatabaseAddress != "" {
+	// The hosts file of the website has the names of the database servers of the customer
+	// and of the members of the networks of the website. The agent changes the file in
+	// place, so the container gets a new name with no restart. Podman makes no hosts file.
+	if w.HostsFile != "" {
+		line("PodmanArgs", "--no-hosts")
+		line("Volume", w.HostsFile+":/etc/hosts:ro")
+	} else if w.DatabaseAddress != "" {
+		// A website with no hosts file. The database servers of the customer publish their
+		// ports on this address.
 		line("AddHost", MariaDBHost+":"+w.DatabaseAddress)
 		line("AddHost", PostgreSQLHost+":"+w.DatabaseAddress)
 		line("AddHost", ValkeyHost+":"+w.DatabaseAddress)

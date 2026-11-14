@@ -39,6 +39,7 @@ const (
 	opMeshApply  = "mesh.apply"
 	opMeshStatus = "mesh.status"
 	opMeshRotate = "mesh.rotate"
+	// The operation of the networks is in network.go: opNetworkApply.
 )
 
 // The files of the mesh in the mesh directory. Only root can read the directory.
@@ -68,7 +69,7 @@ func (d *Deps) meshDir() string {
 func meshFromRequest(m *agentv1.Mesh) mesh.State {
 	s := mesh.State{Version: m.GetVersion(), Range: m.GetRange(), Address: m.GetAddress(), Port: int(m.GetPort()), Peers: []mesh.Peer{}}
 	for _, p := range m.GetPeers() {
-		s.Peers = append(s.Peers, mesh.Peer{Server: p.GetServer(), PublicKey: p.GetPublicKey(), PresharedKey: p.GetPresharedKey(), Endpoint: p.GetEndpoint(), Address: p.GetAddress()})
+		s.Peers = append(s.Peers, mesh.Peer{Server: p.GetServer(), PublicKey: p.GetPublicKey(), PresharedKey: p.GetPresharedKey(), Endpoint: p.GetEndpoint(), Address: p.GetAddress(), Members: p.GetMembers()})
 	}
 	return s
 }
@@ -84,10 +85,20 @@ func (d *Deps) SetMesh(req *agentv1.SetMeshRequest) (jobs.Job, error) {
 	if err := state.Check(); err != nil {
 		return jobs.Job{}, err
 	}
+	network := networkFromRequest(req.GetMesh())
+	if err := network.Check(); err != nil {
+		return jobs.Job{}, err
+	}
 	var status *panel.Mesh
 	return jobs.Job{ID: req.GetJobId(), Key: meshJobKey, Steps: []jobs.Step{
 		{Name: "Set tunnels and firewall", Do: func(ctx context.Context) error {
 			return d.applyMesh(ctx, state)
+		}},
+		{Name: "Set names and access of networks", Do: func(ctx context.Context) error {
+			if err := d.State.SetNetwork(network); err != nil {
+				return err
+			}
+			return d.syncNetwork(ctx)
 		}},
 		{Name: "Check tunnels", Do: func(ctx context.Context) error {
 			var err error
@@ -302,6 +313,22 @@ func (d *Deps) loadMesh(ctx context.Context, s, previous mesh.State, install boo
 // mesh, writes the elements of the sets, and loads them. managed is false when the server
 // has no firewall file of the installer: then the administrator manages the firewall.
 func (d *Deps) loadMeshFirewall(ctx context.Context, s mesh.State) (managed bool, err error) {
+	managed, err = d.addMeshRules(ctx, map[string]string{meshFirewallFile: s.Firewall(quadlet.Header)})
+	if err != nil || !managed {
+		return managed, err
+	}
+	// The kernel can have no elements after a restart of the firewall by hand, so the agent
+	// loads the file each time. The load is one step for the kernel.
+	_, err = d.Run.Run(ctx, "nft", "-f", filepath.Join(d.firewallDir(), meshFirewallFile))
+	return true, err
+}
+
+// addMeshRules makes sure that the firewall file of the installer has the rules of the mesh
+// and of the networks, and writes files of the agent in the firewall directory (the name and
+// the content of each file). It does not load a file of the agent, but when it adds the
+// rules, it loads the file of the installer, which includes them. managed is false when the
+// server has no firewall file of the installer.
+func (d *Deps) addMeshRules(ctx context.Context, files map[string]string) (managed bool, err error) {
 	path := d.firewallFile()
 	b, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
@@ -325,35 +352,35 @@ func (d *Deps) loadMeshFirewall(ctx context.Context, s mesh.State) (managed bool
 	if err != nil {
 		return false, fmt.Errorf("the firewall file %s: %w; run the installer again on this server", path, err)
 	}
-	file := filepath.Join(d.firewallDir(), meshFirewallFile)
-	content := s.Firewall(quadlet.Header)
-	if next != string(b) {
-		// The file of the installer includes the file of the mesh, so the two change in one
-		// step: nftables checks the new rules with the new elements.
-		check := path + ".new"
-		if _, err := host.WriteFile(check, next, 0o644); err != nil {
-			return false, err
+	write := func() error {
+		for name, content := range files {
+			if _, err := host.WriteFile(filepath.Join(d.firewallDir(), name), content, 0o644); err != nil {
+				return err
+			}
 		}
-		defer os.Remove(check)
-		if _, err := d.Run.Run(ctx, "nft", "-c", "-f", check); err != nil {
-			return false, fmt.Errorf("nftables refuses the rules of the mesh for %s (%w); run the installer again on this server", path, err)
-		}
-		if _, err := host.WriteFile(path, next, 0o644); err != nil {
-			return false, err
-		}
-		if _, err := host.WriteFile(file, content, 0o644); err != nil {
-			return false, err
-		}
-		slog.Info("added the rules of the mesh to the firewall", "file", path)
-		_, err = d.Run.Run(ctx, "nft", "-f", path)
-		return true, err
+		return nil
 	}
-	if _, err := host.WriteFile(file, content, 0o644); err != nil {
+	if next == string(b) {
+		return true, write()
+	}
+	// The file of the installer includes the files of the agent, so they change in one
+	// step: nftables checks the new rules with the new elements.
+	check := path + ".new"
+	if _, err := host.WriteFile(check, next, 0o644); err != nil {
 		return false, err
 	}
-	// The kernel can have no elements after a restart of the firewall by hand, so the agent
-	// loads the file each time. The load is one step for the kernel.
-	_, err = d.Run.Run(ctx, "nft", "-f", file)
+	defer os.Remove(check)
+	if _, err := d.Run.Run(ctx, "nft", "-c", "-f", check); err != nil {
+		return false, fmt.Errorf("nftables refuses the rules of the mesh for %s (%w); run the installer again on this server", path, err)
+	}
+	if _, err := host.WriteFile(path, next, 0o644); err != nil {
+		return false, err
+	}
+	if err := write(); err != nil {
+		return false, err
+	}
+	slog.Info("added the rules of the mesh and of the networks to the firewall", "file", path)
+	_, err = d.Run.Run(ctx, "nft", "-f", path)
 	return true, err
 }
 
@@ -396,7 +423,7 @@ func (d *Deps) meshStatus(ctx context.Context) (*panel.Mesh, error) {
 	if err != nil {
 		return nil, err
 	}
-	out := &panel.Mesh{Tunnels: []panel.Tunnel{}}
+	out := &panel.Mesh{Tunnels: []panel.Tunnel{}, Networks: true}
 	if out.PublicKey, err = mesh.PublicKey(key); err != nil {
 		return nil, err
 	}

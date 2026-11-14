@@ -43,6 +43,10 @@ describe("the database servers panel", () => {
     expect(maria.textContent).toContain("Running");
     // The second MariaDB server of the customer has the next port.
     expect(row("mariadb-reports").textContent).toContain("mariadb.internal:3307");
+    // The network name is first: it is the same for each website of the customer, on each
+    // server. It has the usual port of the engine, also for a second database server.
+    expect(row("mariadb-reports").textContent).toContain("mariadb-reports.internal:3306");
+    expect(row("mariadb-reports").textContent).toMatch(/Also mariadb\.internal:3307 on /);
     expect(row("valkey-1").textContent).toContain("valkey.internal:6379");
     // An owner cannot read the plans of other customers, so the panel has no name for this plan.
     expect(row("mariadb-reports").textContent).toContain("Other plan");

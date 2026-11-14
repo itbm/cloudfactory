@@ -144,6 +144,9 @@ type Mesh struct {
 	// Address is the mesh address of this server, or "" when it is not in the mesh.
 	Address string   `json:"address,omitempty"`
 	Tunnels []Tunnel `json:"tunnels"`
+	// Networks is true: this agent can operate the members of the networks of the customers
+	// (package mesh, network.go). An agent from before the networks does not send it.
+	Networks bool `json:"networks"`
 }
 
 // Tunnel is the state of the tunnel to one other server.

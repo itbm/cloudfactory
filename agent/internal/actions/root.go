@@ -640,6 +640,9 @@ func (d *Deps) RootOps() map[string]gate.Handler {
 		opMeshApply:  none(func(ctx context.Context, in meshIn) error { return d.applyMesh(ctx, in.State) }),
 		opMeshStatus: gate.Op(func(ctx context.Context, _ gate.None) (*panel.Mesh, error) { return d.meshStatus(ctx) }),
 		opMeshRotate: gate.Op(func(ctx context.Context, _ gate.None) (string, error) { return d.rotateMeshKey(ctx) }),
+		// The networks: the helper checks each rule and each name (mesh.Rules.Check and
+		// mesh.HostsFile), and it makes each path itself.
+		opNetworkApply: none(func(ctx context.Context, in networkIn) error { return d.applyNetwork(ctx, in) }),
 
 		opPanelDomain: gate.Op(func(ctx context.Context, _ gate.None) (string, error) { return d.panelDomain(ctx) }),
 

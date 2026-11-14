@@ -335,6 +335,10 @@ only a database server that has no databases and no database users.
 | `cf-postgresql-<id>` | PostgreSQL | 5432 to 5481 | `postgres.internal` |
 | `cf-valkey-<id>` | Valkey | 6379 to 6428 | `valkey.internal` |
 
+A website can also connect to a database server by its network name, for example
+`shop-db.internal`, with the usual port of the engine. That name is the same on each server.
+Refer to [The networks of the customers](#the-networks-of-the-customers).
+
 `<id>` is the ID of the database server in the panel, in lower case. The first database
 server of an engine of a customer on a server has the usual port of the engine. The next one
 has the next port, for example 3307. Thus a customer can have 50 database servers of each
@@ -664,9 +668,96 @@ of each tunnel. The agent sends a report each minute.
 - When you remove a server from the panel, the panel removes its tunnels from the other
   servers.
 
-In this release, an administrator makes each tunnel (**Network > Make tunnel**, or
-`cf mesh connect SERVER SERVER`). A server with an agent from an earlier release cannot have
+The panel makes a tunnel when a website on one server uses a database server on the other
+server (refer to [The networks of the customers](#the-networks-of-the-customers)). It removes
+that tunnel when no website needs it. An administrator can also make a tunnel
+(**Network > Make tunnel**, or `cf mesh connect SERVER SERVER`). The panel does not remove a
+tunnel of an administrator. A server with an agent from an earlier release cannot have
 tunnels until you update its agent.
+
+## The networks of the customers
+
+A network is a private network of one customer. Its members are websites and database
+servers of the customer. A website can connect to each database server that is in a network
+with it. The database server can be on the server of the website or on a different server.
+
+Each customer has the network `default`. Each new website and each new database server of
+the customer is a member of it. In this release, `default` is the only network.
+
+### Names and addresses
+
+A database server has one name for the websites: the name of the database server and
+`.internal`, for example `shop-db.internal`. It answers on the usual port of its engine:
+3306 for MariaDB, 5432 for PostgreSQL and 6379 for Valkey. The name and the port are the
+same for each website, on each server. Thus the configuration of an app does not change when
+the database server or the website is on a different server.
+
+The panel gives each database server one address of the mesh range (the member address).
+The addresses of the servers are the first 254 addresses of the range, and the member
+addresses are after them. A member address does not change. The name points to the member
+address on each server.
+
+The names `mariadb.internal`, `postgres.internal` and `valkey.internal` stay. They point to
+the database servers of the customer on the server of the website, where each database
+server has its own port. A database server cannot have the name `mariadb`, `postgres`,
+`valkey` or `localhost`.
+
+### What each server gets
+
+The panel sends the networks of a server with its mesh state (the action `SetMesh`):
+
+- The members on the server. Each member has its address, its port, and the mesh addresses
+  of the other servers that have a website in a network with it.
+- The websites on the server that are in a network with a database server. Each website has
+  the name, the address and the port of each database server that it can connect to.
+- For each tunnel, the addresses of the members on the other server that a website of this
+  server uses. WireGuard sends the traffic for these addresses into that tunnel.
+
+A server with no tunnel also gets its members and its websites, with the address range. A
+website then uses the same name for a database server on its own server.
+
+The agent does this with the networks:
+
+1. The worker keeps the networks in its state. From them and from its records of the
+   websites and the database servers, it makes the firewall rules and the names of each
+   website. It leaves out a member or a website that the server does not have yet.
+2. The root helper examines each rule and each name. Then it loads the firewall elements from
+   `/etc/cloudfactory/firewall/network.nft` and writes the hosts file of each website:
+   `/etc/cloudfactory/websites/<user>/hosts`.
+3. The worker does the two steps again after each change of the websites and the database
+   servers, and when the agent starts.
+
+The container of a website has the hosts file of the website as its `/etc/hosts`. The agent
+changes the file in place, so a container that operates gets a new name with no restart. A
+website from an earlier release has the three names of the engines in its unit. It gets the
+hosts file, and thus the network names, when the agent writes its unit again: at the next
+restart, deploy or change of the runtime.
+
+### The path of a connection
+
+A website connects to `shop-db.internal:3306`, which is the member address.
+
+- **The database server is on a different server.** The firewall of the server of the website
+  lets only the Unix user of that website connect to the member address and the port. The
+  tunnel carries the connection. On the server of the database server, the firewall accepts
+  the connection only from a server that has a website in a network with the member. Then it
+  changes the destination to the address and the port of the container.
+- **The database server is on the same server.** The firewall changes the destination to the
+  address and the port of the container. It lets only the Unix user of a website that is in
+  a network with the member do this.
+
+In the two cases, the database server sees the address `169.254.80.1` as the client. This is
+the address that it sees for each website container. Thus a database user that can connect
+from a website can connect from each website of the networks of the database server, with
+its password.
+
+The panel changes the mesh after each change of a website, a database server or a network.
+It makes the tunnels that the networks need, removes the tunnels that it made and that no
+network needs, and sends the new state only to the servers whose state is different.
+
+In this release, a network member is a database server. The panel makes the databases and
+the database users of a database server through a website on the same server. A later
+release adds websites as members, private websites, and networks with a name.
 
 ## Change of runtime without downtime
 

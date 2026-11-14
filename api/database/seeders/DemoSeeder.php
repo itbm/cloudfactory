@@ -67,6 +67,7 @@ class DemoSeeder extends Seeder
         $this->servers();
         $this->websites();
         $this->databases();
+        $this->settleMesh();
         $this->backups();
         $this->jobsAndRollout();
         $this->settingsAndAudit();
@@ -185,11 +186,23 @@ class DemoSeeder extends Seeder
     {
         [$one, $two] = [$this->servers['web-1'], $this->servers['web-2']];
         $key = fn (string $name) => base64_encode(hash('sha256', 'demo tunnel key of '.$name, true));
-        $one->update(['mesh_public_key' => $key('web-1'), 'mesh_address' => '10.207.0.1', 'mesh_endpoint' => '203.0.113.10', 'mesh_version' => 1, 'mesh_wanted_version' => 1]);
-        $two->update(['mesh_public_key' => $key('web-2'), 'mesh_address' => '10.207.0.2', 'mesh_endpoint' => '203.0.113.20', 'mesh_version' => 1, 'mesh_wanted_version' => 1]);
+        $one->update(['mesh_public_key' => $key('web-1'), 'mesh_address' => '10.207.0.1', 'mesh_endpoint' => '203.0.113.10', 'mesh_version' => 1, 'mesh_wanted_version' => 1, 'mesh_networks' => true]);
+        $two->update(['mesh_public_key' => $key('web-2'), 'mesh_address' => '10.207.0.2', 'mesh_endpoint' => '203.0.113.20', 'mesh_version' => 1, 'mesh_wanted_version' => 1, 'mesh_networks' => true]);
         [$a, $b] = strcmp($one->id, $two->id) < 0 ? [$one, $two] : [$two, $one];
         $side = fn (int $micros) => ['reachable' => true, 'handshakeAt' => now()->subSeconds(40)->getTimestamp(), 'roundTripMicros' => $micros, 'reportedAt' => now()->getTimestamp()];
         MeshTunnel::create(['server_a_id' => $a->id, 'server_b_id' => $b->id, 'preshared_key' => $key('web-1 and web-2'), 'pinned' => true, 'status' => [$a->id => $side(7400), $b->id => $side(7550)]]);
+    }
+
+    /**
+     * The websites and the database servers of the demo data changed the mesh state of the
+     * servers. In the demo data, each server has the state already.
+     */
+    private function settleMesh(): void
+    {
+        AgentJob::where('action', AgentAction::SetMesh->value)->delete();
+        foreach (Server::whereNotNull('mesh_public_key')->get() as $server) {
+            $server->update(['mesh_version' => $server->mesh_wanted_version]);
+        }
     }
 
     private function websites(): void

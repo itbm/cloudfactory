@@ -27,7 +27,7 @@ func meshPanel(t *testing.T, state string) (*httptest.Server, *[]string) {
 			`{"id":"S1","name":"web-1","supported":true,"publicKey":"KEY1","address":"10.207.0.1","tunnelAddress":"203.0.113.10","tunnels":1,"current":true},` +
 			`{"id":"S2","name":"web-2","supported":true,"publicKey":"KEY2","address":"10.207.0.2","tunnelAddress":null,"tunnels":1,"current":true},` +
 			`{"id":"S3","name":"web-3","supported":false,"publicKey":null,"address":null,"tunnelAddress":null,"tunnels":0,"current":true}],` +
-			`"tunnels":[{"id":"T1","state":"` + state + `","roundTripMs":7.55,"pinned":true,"sides":[` +
+			`"tunnels":[{"id":"T1","state":"` + state + `","roundTripMs":7.55,"pinned":true,"inUse":true,"sides":[` +
 			`{"serverId":"S1","server":"web-1","reachable":true,"handshakeAt":"2026-11-14T09:59:20+00:00","roundTripMs":7.4},` +
 			`{"serverId":"S2","server":"web-2","reachable":true,"handshakeAt":"2026-11-14T09:59:40+00:00","roundTripMs":7.55}]}]}`
 		switch {
@@ -84,7 +84,7 @@ func TestMeshShow(t *testing.T) {
 		"web-2 10.207.0.2 automatic KEY2 1 in the mesh",
 		"web-3 - automatic - 0 update the agent",
 		// The most recent handshake of the two servers.
-		"web-1 and web-2 up 2026-11-14T09:59:40+00:00 7.5 ms",
+		"web-1 and web-2 up 2026-11-14T09:59:40+00:00 7.5 ms administrator, in use",
 	} {
 		if !slices.Contains(lines, want) {
 			t.Errorf("no line %q in:\n%s", want, out)

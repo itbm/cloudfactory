@@ -163,7 +163,7 @@ class JobOutcome
             AgentAction::CreateDatabase => $website && $this->databaseMade($website, $p, $result),
             AgentAction::DeleteDatabase => $website && $this->databaseRemoved($website, $p),
             // The panel removes the record when the database server is gone from the server.
-            AgentAction::DeleteDatabaseServer => DatabaseServer::whereKey($job->database_server_id)->where('status', DatabaseServer::REMOVING)->delete(),
+            AgentAction::DeleteDatabaseServer => $this->databaseServerRemoved($job),
             AgentAction::DeleteDatabaseUser => $website?->databaseUsers()->where(['engine' => $p['engine'] ?? '', 'name' => $p['name'] ?? ''])->delete(),
             AgentAction::InstallHostUpdates => $job->server->update([
                 'pending_updates' => self::updatesLeft($job->server->pending_updates ?? [], (string) ($p['policy'] ?? 'security')),
@@ -205,10 +205,24 @@ class JobOutcome
             AgentAction::Reboot => $job->server->update(['state' => 'degraded']),
             AgentAction::SetDatabaseServer => $this->databaseServerKept($job, $p),
             // The database server is on the server still.
-            AgentAction::DeleteDatabaseServer => DatabaseServer::whereKey($job->database_server_id)->where('status', DatabaseServer::REMOVING)
-                ->update(['status' => in_array($p['previousStatus'] ?? '', [DatabaseServer::RUNNING, DatabaseServer::STOPPED, DatabaseServer::FAILED], true) ? $p['previousStatus'] : DatabaseServer::RUNNING]),
+            AgentAction::DeleteDatabaseServer => $this->databaseServerStays($job, $p),
             default => null,
         };
+    }
+
+    /** The agent removed a database server. Its record goes, and the networks do not have it. */
+    private function databaseServerRemoved(AgentJob $job): void
+    {
+        DatabaseServer::whereKey($job->database_server_id)->where('status', DatabaseServer::REMOVING)->delete();
+        Mesh::refreshLater();
+    }
+
+    /** The agent could not remove a database server. It is a member of its networks again. */
+    private function databaseServerStays(AgentJob $job, array $p): void
+    {
+        DatabaseServer::whereKey($job->database_server_id)->where('status', DatabaseServer::REMOVING)
+            ->update(['status' => in_array($p['previousStatus'] ?? '', [DatabaseServer::RUNNING, DatabaseServer::STOPPED, DatabaseServer::FAILED], true) ? $p['previousStatus'] : DatabaseServer::RUNNING]);
+        Mesh::refreshLater();
     }
 
     /**
