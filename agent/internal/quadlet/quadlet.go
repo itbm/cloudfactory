@@ -188,6 +188,19 @@ func DatabaseAddress(n int) (string, error) {
 	return fmt.Sprintf("169.254.%d.%d", v>>8, v&0xff), nil
 }
 
+// DatabaseNumber gives the address number of an address of DatabaseNetwork for the database
+// servers of a customer. It is the opposite of DatabaseAddress.
+func DatabaseNumber(address string) (int, error) {
+	var a, b int
+	if n, err := fmt.Sscanf(address, "169.254.%d.%d", &a, &b); err == nil && n == 2 {
+		number := a<<8 + b - (80<<8 + 1)
+		if got, err := DatabaseAddress(number); err == nil && got == address {
+			return number, nil
+		}
+	}
+	return 0, fmt.Errorf("quadlet: %q is not an address of the database servers of a customer", address)
+}
+
 // HostLoopback is the address in the edge and panel containers that pasta maps to 127.0.0.1
 // on the host. The panel connects to the agent port through it.
 const HostLoopback = "169.254.1.3"

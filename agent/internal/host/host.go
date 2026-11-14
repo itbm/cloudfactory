@@ -15,11 +15,17 @@ import (
 	"time"
 
 	"github.com/itbm/cloudfactory/agent/internal/execx"
+	"github.com/itbm/cloudfactory/agent/internal/safefs"
 	"github.com/itbm/cloudfactory/agent/internal/validate"
 )
 
 // EdgeUser is the Unix user of the edge proxy. It cannot read the files of the websites (CF-04).
 const EdgeUser = "cf-edge"
+
+// AgentUser is the Unix user of the worker of the agent. The worker has the connection to
+// the panel and the jobs. It is not root: the root helper of the agent does the work that
+// needs root (package gate).
+const AgentUser = "cf-agent"
 
 // WebsiteIDMin and WebsiteIDMax are the limits of the UID and the GID of a website user. The
 // installer has the same values (WEBSITE_UID_MIN and WEBSITE_UID_MAX in install.sh).
@@ -63,6 +69,23 @@ type Host struct {
 	// between them. Zero means 20 attempts with 500 ms. Tests use a short time.
 	RemoveTries int
 	RemoveDelay time.Duration
+	// Root is set in the worker of the agent, which is not root. The methods that change a
+	// user, a unit or a quota then ask the root helper. Run is then the connection to the
+	// root helper too, and the helper checks each command of Systemctl and Podman.
+	Root Root
+}
+
+// Root has the methods of Host that only root can do. The root helper has a Host with no
+// Root, and does them there.
+type Root interface {
+	EnsureUser(ctx context.Context, unixUser string) error
+	LinkStorageConfig(ctx context.Context, unixUser string) error
+	RemoveUser(ctx context.Context, unixUser string) error
+	WriteUnit(unixUser, name, content string) (bool, error)
+	RemoveUnit(unixUser, name string) error
+	SetDiskQuota(ctx context.Context, unixUser, mount string, bytes int64) error
+	BlockDevice(ctx context.Context, dir string) (string, error)
+	QuotaMount(ctx context.Context, dir string) string
 }
 
 // New gives a Host with the standard paths.
@@ -115,6 +138,9 @@ func (h *Host) ConfigDir(unixUser string) string { return filepath.Join(h.Config
 func (h *Host) EnsureUser(ctx context.Context, unixUser string) error {
 	if err := validate.UnixUser(unixUser); err != nil {
 		return err
+	}
+	if h.Root != nil {
+		return h.Root.EnsureUser(ctx, unixUser)
 	}
 	// Other users can go through the directories, but cannot list them.
 	if _, err := h.Run.Run(ctx, "install", "-d", "-m", "0711", filepath.Dir(h.Home(unixUser)), h.SitesDir); err != nil {
@@ -185,31 +211,62 @@ func (h *Host) EnsureUser(ctx context.Context, unixUser string) error {
 // LinkStorageConfig makes ~/.config/containers/storage.conf of a website user a link to
 // StorageConfig, so that each Podman command of the user, also the ones that systemd starts,
 // uses the shared image store. Root owns ~/.config/containers, so the user cannot change the
-// link, and the agent never writes in a directory that the user controls (R-16).
+// link (R-16).
+//
+// Second audit, the privilege boundary: the website user owns its home directory, and can put
+// a link in place of each path in it. Thus root opens these paths with no symbolic links
+// (package safefs). A link in place of ~/.config or of ~/.config/containers is an error.
 func (h *Host) LinkStorageConfig(ctx context.Context, unixUser string) error {
+	if h.Root != nil {
+		return h.Root.LinkStorageConfig(ctx, unixUser)
+	}
 	if h.StorageConfig == "" {
 		return nil
 	}
 	if err := validate.UnixUser(unixUser); err != nil {
 		return err
 	}
-	config := filepath.Join(h.Home(unixUser), ".config")
-	dir := filepath.Join(config, "containers")
-	for _, p := range []string{config, dir} {
-		if fi, err := os.Lstat(p); err == nil && fi.Mode()&os.ModeSymlink != 0 {
-			return fmt.Errorf("host: %s is a symbolic link", p)
-		}
+	uid, gid, err := h.fileOwner(unixUser)
+	if err != nil {
+		return err
 	}
-	for _, args := range [][]string{
-		{"install", "-d", "-o", unixUser, "-g", unixUser, "-m", "0700", config},
-		{"install", "-d", "-o", "root", "-g", "root", "-m", "0755", dir},
-		{"ln", "-sfn", h.StorageConfig, filepath.Join(dir, "storage.conf")},
-	} {
-		if _, err := h.Run.Run(ctx, args[0], args[1:]...); err != nil {
+	rootUID, rootGID := 0, 0
+	if os.Geteuid() != 0 {
+		rootUID, rootGID = safefs.Keep, safefs.Keep
+	}
+	home, err := safefs.Open(h.Home(unixUser))
+	if err != nil {
+		return err
+	}
+	defer home.Close()
+	const config, containers = ".config", ".config/containers"
+	for _, dir := range []struct {
+		rel      string
+		mode     os.FileMode
+		uid, gid int
+	}{{config, 0o700, uid, gid}, {containers, 0o755, rootUID, rootGID}} {
+		if err := home.MkdirAll(dir.rel, dir.mode, dir.uid, dir.gid); err != nil {
+			return err
+		}
+		// A directory from an earlier release gets the owner and the mode again.
+		if err := home.SetDir(dir.rel, dir.mode, dir.uid, dir.gid); err != nil {
 			return err
 		}
 	}
-	return nil
+	return home.Symlink(h.StorageConfig, containers+"/storage.conf")
+}
+
+// fileOwner gives the UID and the GID for the files of a user. Only root can give a file
+// to a different user: a process that is not root, for example a test, keeps the owner.
+func (h *Host) fileOwner(unixUser string) (uid, gid int, err error) {
+	if os.Geteuid() != 0 {
+		return safefs.Keep, safefs.Keep, nil
+	}
+	if uid, err = h.LookupUID(unixUser); err != nil {
+		return 0, 0, err
+	}
+	gid, err = h.GID(unixUser)
+	return uid, gid, err
 }
 
 // RemoveUser stops the user services and removes the user and its files. It is safe to run it
@@ -222,6 +279,9 @@ func (h *Host) LinkStorageConfig(ctx context.Context, unixUser string) error {
 func (h *Host) RemoveUser(ctx context.Context, unixUser string) error {
 	if err := validate.UnixUser(unixUser); err != nil {
 		return err
+	}
+	if h.Root != nil {
+		return h.Root.RemoveUser(ctx, unixUser)
 	}
 	uid, err := h.LookupUID(unixUser)
 	if err == nil {
@@ -282,6 +342,9 @@ func (h *Host) UnitDir(unixUser string) (string, error) {
 
 // WriteUnit writes a Quadlet unit for a user. It returns true when the file changed.
 func (h *Host) WriteUnit(unixUser, name, content string) (bool, error) {
+	if h.Root != nil {
+		return h.Root.WriteUnit(unixUser, name, content)
+	}
 	if strings.ContainsAny(name, "/\\") {
 		return false, fmt.Errorf("host: the unit name %q is not valid", name)
 	}
@@ -294,6 +357,12 @@ func (h *Host) WriteUnit(unixUser, name, content string) (bool, error) {
 
 // RemoveUnit removes a Quadlet unit. A unit that does not exist is not an error.
 func (h *Host) RemoveUnit(unixUser, name string) error {
+	if h.Root != nil {
+		return h.Root.RemoveUnit(unixUser, name)
+	}
+	if strings.ContainsAny(name, "/\\") {
+		return fmt.Errorf("host: the unit name %q is not valid", name)
+	}
 	dir, err := h.UnitDir(unixUser)
 	if err != nil {
 		return nil
@@ -354,6 +423,9 @@ func WriteFile(path, content string, mode os.FileMode) (bool, error) {
 // BlockDevice gives the disk of the file system of dir, for example "/dev/vda" for "/dev/vda1".
 // The I/O limit of cgroup v2 needs a whole disk or a device-mapper volume, not a partition.
 func (h *Host) BlockDevice(ctx context.Context, dir string) (string, error) {
+	if h.Root != nil {
+		return h.Root.BlockDevice(ctx, dir)
+	}
 	out, err := h.Run.Run(ctx, "findmnt", "--noheadings", "--output", "SOURCE", "--target", dir)
 	if err != nil {
 		return "", err
@@ -377,6 +449,9 @@ func (h *Host) BlockDevice(ctx context.Context, dir string) (string, error) {
 
 // QuotaMount gives the mount point of dir when user quotas are on there, or "".
 func (h *Host) QuotaMount(ctx context.Context, dir string) string {
+	if h.Root != nil {
+		return h.Root.QuotaMount(ctx, dir)
+	}
 	out, err := h.Run.Run(ctx, "findmnt", "--noheadings", "--output", "TARGET", "--target", dir)
 	if err != nil {
 		return ""
@@ -396,6 +471,9 @@ func (h *Host) QuotaMount(ctx context.Context, dir string) string {
 func (h *Host) SetDiskQuota(ctx context.Context, unixUser, mount string, bytes int64) error {
 	if err := validate.UnixUser(unixUser); err != nil {
 		return err
+	}
+	if h.Root != nil {
+		return h.Root.SetDiskQuota(ctx, unixUser, mount, bytes)
 	}
 	hard := bytes / 1024
 	soft := hard * 95 / 100

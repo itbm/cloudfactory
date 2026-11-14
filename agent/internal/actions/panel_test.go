@@ -25,7 +25,7 @@ func index(calls []string, prefix string) int {
 // Audit findings B4 and R4: the panel keeps its data in PostgreSQL. The database starts
 // before the API, and the API gets the password of the database.
 func TestInstallPanelStartsTheDatabaseFirst(t *testing.T) {
-	d, f, _ := deps(t)
+	d, f, _ := direct(t)
 	p := testPanel(t.TempDir())
 	if err := d.InstallPanel(context.Background(), p); err != nil {
 		t.Fatal(err)
@@ -95,7 +95,7 @@ func TestInstallPanelStartsTheDatabaseFirst(t *testing.T) {
 
 // A second run keeps the password and does not stop a service that operates.
 func TestInstallPanelAgainKeepsThePasswordAndTheServices(t *testing.T) {
-	d, f, _ := deps(t)
+	d, f, _ := direct(t)
 	p := testPanel(t.TempDir())
 	if err := d.InstallPanel(context.Background(), p); err != nil {
 		t.Fatal(err)
@@ -137,7 +137,7 @@ func TestInstallPanelAgainKeepsThePasswordAndTheServices(t *testing.T) {
 // the directory back to cf-panel. The database then could not open its files ("could not open
 // file global/pg_filenode.map: Permission denied"), and step 14 of the script stopped.
 func TestInstallPanelAgainKeepsTheOwnerOfTheDatabaseDirectory(t *testing.T) {
-	d, f, _ := deps(t)
+	d, f, _ := direct(t)
 	p := testPanel(t.TempDir())
 	if err := d.InstallPanel(context.Background(), p); err != nil {
 		t.Fatal(err)
@@ -163,7 +163,7 @@ func TestInstallPanelAgainKeepsTheOwnerOfTheDatabaseDirectory(t *testing.T) {
 
 // A password file with no password is a fault that the administrator must see.
 func TestInstallPanelStopsOnABadPasswordFile(t *testing.T) {
-	d, _, _ := deps(t)
+	d, _, _ := direct(t)
 	p := testPanel(t.TempDir())
 	os.MkdirAll(p.DataDir, 0o700)
 	os.WriteFile(p.PanelDatabaseEnv(), []byte("POSTGRES_PASSWORD=x\n"), 0o600)
@@ -175,7 +175,7 @@ func TestInstallPanelStopsOnABadPasswordFile(t *testing.T) {
 // Audit finding S7: an update of the panel sets the version that the panel offers to the
 // other servers, and keeps the other settings.
 func TestInstallPanelSetsTheVersionInTheSettings(t *testing.T) {
-	d, f, _ := deps(t)
+	d, f, _ := direct(t)
 	p := testPanel(t.TempDir())
 	env := p.DataDir + "/panel.env"
 	os.MkdirAll(p.DataDir, 0o755)
@@ -200,7 +200,7 @@ func TestInstallPanelSetsTheVersionInTheSettings(t *testing.T) {
 
 // Audit findings B5 and S3: root on the panel server can reset a password and remove a lock.
 func TestThePanelAccountCommandsRunInTheAPIContainer(t *testing.T) {
-	d, f, _ := deps(t)
+	d, f, _ := direct(t)
 	f.Rules = []execx.Rule{{Prefix: "runuser -u cf-panel", Output: "Temporary password for admin@example.com: abc\n"}}
 	out, err := d.ResetPanelPassword(context.Background(), "admin@example.com", true)
 	if err != nil || !strings.Contains(out, "Temporary password") {

@@ -91,7 +91,7 @@ func (d *Deps) checkAllWebsites(ctx context.Context) error {
 // continues the job (ResumeReboot), and only that part sends the result.
 func (d *Deps) rebootAndWait(ctx context.Context) error {
 	if err := d.Reboot(ctx); err != nil {
-		os.Remove(d.rebootMarker())
+		d.clearRebootMark(ctx)
 		return err
 	}
 	wait := d.RebootWait
@@ -103,7 +103,7 @@ func (d *Deps) rebootAndWait(ctx context.Context) error {
 		return jobs.ErrInterrupted
 	case <-time.After(wait):
 		// The server did not shut down. The job must not continue after a later restart.
-		os.Remove(d.rebootMarker())
+		d.clearRebootMark(ctx)
 		return fmt.Errorf("the server did not shut down in %s after the reboot command", wait)
 	}
 }
@@ -129,7 +129,7 @@ func (d *Deps) RebootJob(req *agentv1.HostRequest) (jobs.Job, error) {
 	steps := d.rebootSteps()
 	reboot := steps[2].Do
 	steps[2].Do = func(ctx context.Context) error {
-		if err := os.WriteFile(d.rebootMarker(), []byte(req.GetJobId()), 0o600); err != nil {
+		if err := d.markReboot(ctx, req.GetJobId()); err != nil {
 			return err
 		}
 		return reboot(ctx)
@@ -139,12 +139,7 @@ func (d *Deps) RebootJob(req *agentv1.HostRequest) (jobs.Job, error) {
 
 // ResumeReboot gives the rest of a reboot job after a reboot, or false.
 func (d *Deps) ResumeReboot() (jobs.Job, bool) {
-	b, err := os.ReadFile(d.rebootMarker())
-	if err != nil {
-		return jobs.Job{}, false
-	}
-	os.Remove(d.rebootMarker())
-	id := strings.TrimSpace(string(b))
+	id := d.takeRebootMark(context.Background())
 	if validate.ID(id) != nil {
 		return jobs.Job{}, false
 	}
@@ -163,8 +158,9 @@ func (d *Deps) UpdateAgent(req *agentv1.UpdateAgentRequest) (jobs.Job, error) {
 			return err
 		}},
 		{Name: "Check signature", Do: func(context.Context) error { return d.Updater.Verify(rel) }},
-		{Name: "Keep previous binary for rollback", Do: func(context.Context) error { return d.Updater.KeepPrevious() }},
-		{Name: "Restart agent", Do: func(context.Context) error { return d.Updater.Replace(rel.Binary) }},
+		{Name: "Keep previous binary for rollback", Do: func(context.Context) error { return d.keepAgent() }},
+		// The root helper checks the version and the signature again before it changes the binary.
+		{Name: "Restart agent", Do: func(context.Context) error { return d.replaceAgent(rel, req.GetAllowDowngrade()) }},
 	}, Result: func() map[string]any { return map[string]any{"version": strings.TrimPrefix(req.GetVersion(), "v")} },
 		// systemd starts the new binary. If it does not start, systemd runs "cf-agent rollback".
 		After: d.Restart}, nil
@@ -182,12 +178,8 @@ func (d *Deps) EnsureEdge(ctx context.Context, image string, dataDir string) err
 			return err
 		}
 	}
-	// The admin socket directory: only the edge user (and root) can open it (CF-13).
-	if _, err := d.Run.Run(ctx, "install", "-d", "-o", host.EdgeUser, "-g", host.EdgeUser, "-m", "0700", filepath.Join(dataDir, quadlet.EdgeAdminDir)); err != nil {
-		return err
-	}
-	unit := quadlet.EdgeUnit(quadlet.Edge{Image: image, DataDir: dataDir, Gvisor: d.runtime(), HTTPPort: 8080, HTTPSPort: 8443})
-	changed, err := d.Host.WriteUnit(host.EdgeUser, "cf-edge.container", unit)
+	// The admin socket directory, and the unit.
+	changed, err := d.prepareEdge(ctx, image, dataDir)
 	if err != nil {
 		return err
 	}
@@ -237,15 +229,7 @@ func (d *Deps) ConfigureHost(req *agentv1.ConfigureHostRequest) (jobs.Job, error
 					return errors.New("the KVM platform needs /dev/kvm, which this server does not have")
 				}
 			}
-			if d.SavePlatform != nil {
-				if err := d.SavePlatform(platform); err != nil {
-					return err
-				}
-			}
-			d.rtMu.Lock()
-			d.Gvisor.Platform = platform
-			d.rtMu.Unlock()
-			return nil
+			return d.savePlatform(platform)
 		}},
 		{Name: "Restart websites", Do: func(ctx context.Context) error {
 			sites, err := d.State.All()

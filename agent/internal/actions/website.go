@@ -16,7 +16,6 @@ import (
 
 	agentv1 "github.com/itbm/cloudfactory/agent/gen/cloudfactory/agent/v1"
 	"github.com/itbm/cloudfactory/agent/internal/caddy"
-	"github.com/itbm/cloudfactory/agent/internal/host"
 	"github.com/itbm/cloudfactory/agent/internal/images"
 	"github.com/itbm/cloudfactory/agent/internal/jobs"
 	"github.com/itbm/cloudfactory/agent/internal/quadlet"
@@ -214,7 +213,7 @@ func (d *Deps) site(w *agentv1.Website, port int) caddy.Site {
 func (d *Deps) startContainer(ctx context.Context, w *agentv1.Website, port int, suffix string) error {
 	u := d.unit(w, port, suffix)
 	if w.GetRuntime() != "custom" {
-		if _, err := host.WriteFile(u.IniFile, quadlet.PHPIni(w.GetPhpVersion(), w.GetExtensions(), w.GetPhpIni()), 0o644); err != nil {
+		if err := d.writeIni(ctx, w.GetUnixUser(), suffix, quadlet.PHPIni(w.GetPhpVersion(), w.GetExtensions(), w.GetPhpIni())); err != nil {
 			return err
 		}
 	}
@@ -621,7 +620,7 @@ func (d *Deps) SetRuntime(req *agentv1.WebsiteRequest) (jobs.Job, error) {
 				u := d.unit(w, newPort, newSuffix)
 				u.Stopped = true
 				if w.GetRuntime() != "custom" {
-					if _, err := host.WriteFile(u.IniFile, quadlet.PHPIni(w.GetPhpVersion(), w.GetExtensions(), w.GetPhpIni()), 0o644); err != nil {
+					if err := d.writeIni(ctx, user, newSuffix, quadlet.PHPIni(w.GetPhpVersion(), w.GetExtensions(), w.GetPhpIni())); err != nil {
 						return err
 					}
 				}
@@ -760,13 +759,10 @@ func (d *Deps) DeleteWebsite(req *agentv1.DeleteWebsiteRequest) (jobs.Job, error
 					return err
 				}
 			}
-			if err := os.RemoveAll(d.dumpDir(user)); err != nil {
+			if err := d.removeDumps(ctx, user); err != nil {
 				return err
 			}
-			if err := os.Remove(filepath.Join(d.sftpKeysDir(), user+".keys")); err != nil && !os.IsNotExist(err) {
-				return err
-			}
-			if err := d.SyncSftpUsers(); err != nil {
+			if err := d.removeSftpKeys(ctx, user); err != nil {
 				return err
 			}
 			if err := d.Host.RemoveUser(ctx, user); err != nil {

@@ -268,7 +268,9 @@ func valkeyRequest(name string) *agentv1.CreateDatabaseRequest {
 // A Valkey database is a database number and a user that can use only that number.
 func TestValkeyDatabaseGetsANumberAndAUser(t *testing.T) {
 	d, f, _ := deps(t)
-	d.ServiceImage = func(name string) string { return "ghcr.io/cloudfactory/" + name + ":0.1.0" }
+	both(d, func(d *Deps) {
+		d.ServiceImage = func(name string) string { return "ghcr.io/cloudfactory/" + name + ":0.1.0" }
+	})
 	f.Rules = []execx.Rule{{Prefix: "runuser -u cf-db -- env XDG_RUNTIME_DIR=/run/user/20001 podman image exists", Err: errors.New("no image")}}
 	v := newFakeValkey(d)
 	v.keys[1] = 5

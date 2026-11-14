@@ -70,6 +70,36 @@ buf generate
 CI makes the code again and fails if the result is different from the files in the
 repository.
 
+### Root work in the agent
+
+The worker of the agent is not root (refer to
+[architecture.md](architecture.md#the-processes-of-the-agent)). When an action needs root,
+use one of the three lists of the root helper. Obey these rules:
+
+- **A command.** Add its form to the policy in `internal/actions/policy.go`. Give a root
+  command a full list of fixed arguments. Do not add a form that lets the worker select a
+  program, an option or a path of root.
+- **An operation.** Add a name and a function to `RootOps` in `internal/actions/root.go`. The
+  values are typed. Let the worker give a name (a Unix user, the ID of a database server, the
+  ID of a job), not a path, and make each path from the settings of the root helper. Examine
+  each value in the function, because the root helper does not trust the worker.
+- **A connection.** Add the address to `allowAddress` in `internal/actions/dial.go`, and open
+  the connection with `DialLocal` or `DialEdge`.
+- A function with two sides starts with `if d.Gate != nil { return d.Gate.Call(...) }`. The
+  code after this line runs only in the root helper.
+- When root must open a file in a directory that a different user controls, use the package
+  `internal/safefs`, not `os`.
+- Add a refusal case to `internal/actions/boundary_test.go` for each new command, operation
+  and connection.
+
+The tests of the actions use the two sides: the test `Deps` is a worker, with a root helper
+in the same process. CI runs the tests as a user that is not root. Run them also as root,
+because some tests of the root helper need root:
+
+```sh
+sudo go test ./internal/actions/ ./internal/safefs/ ./cmd/cf-agent/
+```
+
 The test `internal/caddy/integration_test.go` uses a real edge container. To run it:
 
 ```sh

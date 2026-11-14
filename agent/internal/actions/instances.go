@@ -554,6 +554,9 @@ func (d *Deps) stopServer(ctx context.Context, s dbServer) error {
 // operate. It is safe to run it again after a failure. The caller holds the lock of the
 // database server.
 func (d *Deps) removeServerData(ctx context.Context, s dbServer) error {
+	if d.Gate != nil {
+		return d.Gate.Call(ctx, opDBRemoveData, serverIn{Server: s}, nil)
+	}
 	data := d.dbDir(s)
 	if _, err := os.Lstat(data); os.IsNotExist(err) {
 		return nil
@@ -577,7 +580,13 @@ const removedPrefix = ".removed-"
 
 // removeOldServerData removes the data directories of a removal that did not complete, for
 // example because the agent stopped.
-func (d *Deps) removeOldServerData() {
+func (d *Deps) removeOldServerData(ctx context.Context) {
+	if d.Gate != nil {
+		if err := d.Gate.Call(ctx, opDBRemoveOld, nil, nil); err != nil {
+			slog.Warn("remove the data of old database servers", "err", err)
+		}
+		return
+	}
 	dir := filepath.Join(d.dbHome(), "servers")
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -843,12 +852,12 @@ func (d *Deps) openDatabaseNetwork(ctx context.Context) error {
 	return err
 }
 
-// databaseAccess gives the content of the database access file: one element for each website
-// and each database server of its customer.
-func (d *Deps) databaseAccess() (string, error) {
+// databaseAccess gives the database access of the websites: one element for each website and
+// each database server of its customer.
+func (d *Deps) databaseAccess() ([]accessElement, error) {
 	sites, err := d.State.All()
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	users := map[string]string{}
 	for _, s := range sites {
@@ -856,14 +865,10 @@ func (d *Deps) databaseAccess() (string, error) {
 	}
 	instances, err := d.State.DatabaseInstances()
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	elements := []string{}
+	elements := []accessElement{}
 	for _, inst := range instances {
-		address, err := quadlet.DatabaseAddress(inst.Number)
-		if err != nil {
-			return "", err
-		}
 		for _, id := range inst.Websites {
 			// A new website has no container before the state has it. A website that the
 			// agent removes has no Unix user at the end of the job.
@@ -876,18 +881,40 @@ func (d *Deps) databaseAccess() (string, error) {
 				continue
 			}
 			for _, srv := range inst.Servers {
-				elements = append(elements, fmt.Sprintf("%d . %s . %d", uid, address, srv.Port))
+				elements = append(elements, accessElement{UID: uid, Number: inst.Number, Port: srv.Port})
 			}
 		}
 	}
-	slices.Sort(elements)
-	elements = slices.Compact(elements)
+	return elements, nil
+}
+
+// accessContent gives the content of the database access file for the elements. It checks
+// each element: the UID of a website user, an address of the database network, and a port of
+// a database server. Thus the file never opens a different address or port, and never opens
+// a port for a user that is not a website.
+func accessContent(elements []accessElement) (string, error) {
+	lines := make([]string, 0, len(elements))
+	for _, e := range elements {
+		if e.UID < host.WebsiteIDMin || e.UID > host.WebsiteIDMax {
+			return "", fmt.Errorf("the UID %d is not the UID of a website user", e.UID)
+		}
+		address, err := quadlet.DatabaseAddress(e.Number)
+		if err != nil {
+			return "", err
+		}
+		if !slices.ContainsFunc(Engines, func(engine string) bool { return quadlet.CheckDatabasePort(engine, e.Port) == nil }) {
+			return "", fmt.Errorf("%d is not a port of a database server", e.Port)
+		}
+		lines = append(lines, fmt.Sprintf("%d . %s . %d", e.UID, address, e.Port))
+	}
+	slices.Sort(lines)
+	lines = slices.Compact(lines)
 	var b strings.Builder
 	b.WriteString(quadlet.Header)
 	b.WriteString("# Each element is the UID of a website, the address of its customer, and the port of a\n# database server of its customer. A website can connect to no other address or port of the\n# database network.\n")
 	fmt.Fprintf(&b, "flush set inet cloudfactory %s\n", databaseAccessSet)
-	if len(elements) > 0 {
-		fmt.Fprintf(&b, "add element inet cloudfactory %s { %s }\n", databaseAccessSet, strings.Join(elements, ", "))
+	if len(lines) > 0 {
+		fmt.Fprintf(&b, "add element inet cloudfactory %s { %s }\n", databaseAccessSet, strings.Join(lines, ", "))
 	}
 	return b.String(), nil
 }
@@ -895,7 +922,8 @@ func (d *Deps) databaseAccess() (string, error) {
 // syncDatabaseAccess makes sure that "lo" has the database network, and that the firewall
 // lets each website connect to the database servers of its own customer only. The agent calls
 // it after each change of the websites and of the database servers, and at its start. The
-// first call also makes sure that the database servers have the time to stop (keepStopTime).
+// first call also makes sure that the database servers have the time to stop
+// (ensureDatabaseNetwork).
 //
 // The file of the installer includes the access file, so the kernel gets the elements again
 // when the server starts or when somebody loads the file of the installer.
@@ -903,25 +931,51 @@ func (d *Deps) syncDatabaseAccess(ctx context.Context) error {
 	d.netMu.Lock()
 	defer d.netMu.Unlock()
 	if !d.netReady {
-		if err := d.addDatabaseAddress(ctx); err != nil {
-			return err
-		}
-		if err := d.openDatabaseNetwork(ctx); err != nil {
-			return err
-		}
-		if err := d.keepStopTime(ctx); err != nil {
+		if err := d.ensureDatabaseNetwork(ctx); err != nil {
 			return err
 		}
 		d.netReady = true
+	}
+	elements, err := d.databaseAccess()
+	if err != nil {
+		return err
+	}
+	return d.loadDatabaseAccess(ctx, elements)
+}
+
+// ensureDatabaseNetwork adds the database network to "lo", and the rules of the database
+// servers to the firewall of the installer. It also makes sure that the database servers
+// have the time to stop (keepStopTime).
+func (d *Deps) ensureDatabaseNetwork(ctx context.Context) error {
+	if d.Gate != nil {
+		return d.Gate.Call(ctx, opDBNetwork, nil, nil)
+	}
+	if err := d.addDatabaseAddress(ctx); err != nil {
+		return err
+	}
+	if err := d.openDatabaseNetwork(ctx); err != nil {
+		return err
+	}
+	return d.keepStopTime(ctx)
+}
+
+// loadDatabaseAccess writes the database access file and loads it into the kernel.
+func (d *Deps) loadDatabaseAccess(ctx context.Context, elements []accessElement) error {
+	if d.Gate != nil {
+		return d.Gate.Call(ctx, opDBAccess, accessIn{Elements: elements}, nil)
+	}
+	// The check is first: the helper accepts no element that is not correct, also when it
+	// does not load the elements.
+	content, err := accessContent(elements)
+	if err != nil {
+		return err
 	}
 	if _, err := os.Stat(d.firewallFile()); os.IsNotExist(err) {
 		// The administrator manages the firewall (openDatabaseNetwork).
 		return nil
 	}
-	content, err := d.databaseAccess()
-	if err != nil {
-		return err
-	}
+	d.accessMu.Lock()
+	defer d.accessMu.Unlock()
 	file := filepath.Join(d.firewallDir(), databaseAccessFile)
 	if _, err := host.WriteFile(file, content, 0o644); err != nil {
 		return err

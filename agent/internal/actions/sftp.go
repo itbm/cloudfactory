@@ -119,36 +119,55 @@ func (d *Deps) SetSftp(req *agentv1.SetSftpRequest) (jobs.Job, error) {
 	if err := errors.Join(errs...); err != nil {
 		return jobs.Job{}, err
 	}
-	keysFile := filepath.Join(d.sftpKeysDir(), user+".keys")
 	return jobs.Job{ID: req.GetJobId(), Key: req.GetWebsiteId(), Steps: []jobs.Step{
 		{Name: "Set SFTP access", Do: func(ctx context.Context) error {
-			// "restrict" turns off forwarding and terminals for each key.
-			var keys strings.Builder
-			keys.WriteString("# Managed by the Cloudfactory agent. Change the keys in the panel.\n")
-			if req.GetEnabled() {
-				for _, k := range req.GetAuthorizedKeys() {
-					keys.WriteString("restrict " + k + "\n")
-				}
-			}
-			// sshd reads the file as the user, so the user can read it but not change it.
-			if _, err := host.WriteFile(keysFile, keys.String(), 0o644); err != nil {
-				return err
-			}
-			// "!" locks the password, also a password from an earlier version, so that the
-			// website user cannot sign in to the SSH service of the host with a password.
-			if _, err := d.Run.Run(ctx, "usermod", "--password", "!", user); err != nil {
-				return err
-			}
-			// Only a user with a key is in the user list of the SFTP container.
-			if err := d.SyncSftpUsers(); err != nil {
-				return err
-			}
-			if !req.GetEnabled() || len(req.GetAuthorizedKeys()) == 0 {
-				d.closeSftpSessions(ctx, user)
-			}
-			return nil
+			return d.setSftpKeys(ctx, user, req.GetEnabled(), req.GetAuthorizedKeys())
 		}},
 	}}, nil
+}
+
+// setSftpKeys writes the SSH keys of a website user, and the user list of the SFTP container.
+// With no key, it stops the open sessions of the user.
+func (d *Deps) setSftpKeys(ctx context.Context, user string, enabled bool, authorized []string) error {
+	if d.Gate != nil {
+		return d.Gate.Call(ctx, opSftpSet, sftpIn{User: user, Enabled: enabled, Keys: authorized}, nil)
+	}
+	// "restrict" turns off forwarding and terminals for each key.
+	var keys strings.Builder
+	keys.WriteString("# Managed by the Cloudfactory agent. Change the keys in the panel.\n")
+	if enabled {
+		for _, k := range authorized {
+			keys.WriteString("restrict " + k + "\n")
+		}
+	}
+	// sshd reads the file as the user, so the user can read it but not change it.
+	if _, err := host.WriteFile(filepath.Join(d.sftpKeysDir(), user+".keys"), keys.String(), 0o644); err != nil {
+		return err
+	}
+	// "!" locks the password, also a password from an earlier version, so that the
+	// website user cannot sign in to the SSH service of the host with a password.
+	if _, err := d.Run.Run(ctx, "usermod", "--password", "!", user); err != nil {
+		return err
+	}
+	// Only a user with a key is in the user list of the SFTP container.
+	if err := d.SyncSftpUsers(); err != nil {
+		return err
+	}
+	if !enabled || len(authorized) == 0 {
+		d.closeSftpSessions(ctx, user)
+	}
+	return nil
+}
+
+// removeSftpKeys removes the SSH keys of a website user that the agent removes.
+func (d *Deps) removeSftpKeys(ctx context.Context, user string) error {
+	if d.Gate != nil {
+		return d.Gate.Call(ctx, opSftpRemove, userIn{User: user}, nil)
+	}
+	if err := os.Remove(filepath.Join(d.sftpKeysDir(), user+".keys")); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return d.SyncSftpUsers()
 }
 
 // closeSftpSessions stops the open SFTP sessions of a website user. sshd checks the keys only
@@ -172,7 +191,14 @@ func (d *Deps) closeSftpSessions(ctx context.Context, user string) {
 // SyncSftpUsers writes the user list of the SFTP container: each website user that has at
 // least one SSH key in SftpKeysDir. A user with no key does not exist in the container, so it
 // cannot sign in.
+//
+// Only the root helper makes the list, from the user database of the host. The SFTP container
+// gives a session the UID and the GID of the list, so a list from the worker could give a
+// session the rights of root on the files of all websites.
 func (d *Deps) SyncSftpUsers() error {
+	if d.Gate != nil {
+		return d.Gate.Call(context.Background(), opSftpSync, nil, nil)
+	}
 	d.sftpMu.Lock()
 	defer d.sftpMu.Unlock()
 	entries, err := os.ReadDir(d.sftpKeysDir())
@@ -252,6 +278,33 @@ func (d *Deps) EnsureSftp(ctx context.Context) error {
 	if err := validate.SftpPort(port); err != nil {
 		return err
 	}
+	if err := d.startSftp(ctx); err != nil {
+		return err
+	}
+	ready := d.SftpReady
+	if ready == nil {
+		ready = d.sshBanner
+	}
+	if err := d.waitSftp(ctx, ready, port); err != nil {
+		return fmt.Errorf("SFTP: the container does not answer on port %d, so SFTP stays on the SSH service of the host: %w", port, err)
+	}
+	return d.retireHostSftp(ctx)
+}
+
+// startSftp makes the directories and the unit of the SFTP container, starts the container,
+// and opens its port in the firewall. Root runs the container, so the root helper does all
+// of this with its own settings: the worker gives no image and no port.
+func (d *Deps) startSftp(ctx context.Context) error {
+	if d.Gate != nil {
+		return d.Gate.Call(ctx, opSftpStart, nil, nil)
+	}
+	if d.SftpImage == "" {
+		return errors.New("SFTP: no image")
+	}
+	port := d.sftpPort()
+	if err := validate.SftpPort(port); err != nil {
+		return err
+	}
 	for _, dir := range []struct {
 		path string
 		mode os.FileMode
@@ -291,17 +344,7 @@ func (d *Deps) EnsureSftp(ctx context.Context) error {
 	} else if _, err := d.Run.Run(ctx, "systemctl", "start", sftpServiceName); err != nil {
 		return err
 	}
-	if err := d.openSftpPort(ctx, port); err != nil {
-		return err
-	}
-	ready := d.SftpReady
-	if ready == nil {
-		ready = sshBanner
-	}
-	if err := d.waitSftp(ctx, ready, port); err != nil {
-		return fmt.Errorf("SFTP: the container does not answer on port %d, so SFTP stays on the SSH service of the host: %w", port, err)
-	}
-	return d.retireHostSftp(ctx)
+	return d.openSftpPort(ctx, port)
 }
 
 func (d *Deps) waitSftp(ctx context.Context, ready func(context.Context, int) error, port int) error {
@@ -326,9 +369,10 @@ func (d *Deps) waitSftp(ctx context.Context, ready func(context.Context, int) er
 // sshBanner connects to the SFTP port and reads the SSH version line of the server. The agent
 // uses ServiceAddress, not 127.0.0.1: pasta sends a connection from the host loopback address
 // to the loopback address in the container, where gVisor does not listen (quadlet.ServiceAddress).
-func sshBanner(ctx context.Context, port int) error {
-	dialer := net.Dialer{Timeout: 5 * time.Second}
-	conn, err := dialer.DialContext(ctx, "tcp", net.JoinHostPort(quadlet.ServiceAddress, strconv.Itoa(port)))
+func (d *Deps) sshBanner(ctx context.Context, port int) error {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	conn, err := d.DialLocal(ctx, net.JoinHostPort(quadlet.ServiceAddress, strconv.Itoa(port)))
 	if err != nil {
 		return err
 	}
@@ -398,6 +442,9 @@ func indent(line string) string {
 // host. The agent removes only the file of the installer. If an administrator changed the
 // file (the first line is different), the agent keeps it.
 func (d *Deps) retireHostSftp(ctx context.Context) error {
+	if d.Gate != nil {
+		return d.Gate.Call(ctx, opSftpRetire, nil, nil)
+	}
 	path := d.hostSftpConfig()
 	b, err := os.ReadFile(path)
 	if os.IsNotExist(err) {

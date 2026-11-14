@@ -283,9 +283,16 @@ func (c *Client) PanelCARoot(ctx context.Context) (string, error) {
 // ServedCertificate gives the certificate chain that the edge proxy at address sends for a
 // domain, as a browser gets it. It does not check the chain.
 func ServedCertificate(ctx context.Context, address, domain string) ([]*x509.Certificate, error) {
+	return ServedCertificateVia(ctx, func(ctx context.Context, address string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, "tcp", address)
+	}, address, domain)
+}
+
+// ServedCertificateVia is ServedCertificate with a function that opens the connection.
+func ServedCertificateVia(ctx context.Context, dial func(ctx context.Context, address string) (net.Conn, error), address, domain string) ([]*x509.Certificate, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	raw, err := (&net.Dialer{}).DialContext(ctx, "tcp", address)
+	raw, err := dial(ctx, address)
 	if err != nil {
 		return nil, fmt.Errorf("connect to the edge proxy: %w", err)
 	}
