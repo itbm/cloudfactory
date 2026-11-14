@@ -77,6 +77,7 @@ func (d *Deps) FillReport(ctx context.Context, r *panel.Report) {
 	if domain, err := d.panelDomain(ctx); err == nil && d.Edge != nil {
 		r.PanelCertificate = d.PanelCertificateState(ctx, domain)
 	}
+	r.Mesh = d.meshReport(ctx)
 	sites, err := d.State.All()
 	if err != nil {
 		return

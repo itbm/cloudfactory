@@ -121,6 +121,14 @@ func (s *Service) SetDatabaseServer(_ context.Context, r *connect.Request[agentv
 	return s.submit(s.Deps.SetDatabaseServer(r.Msg))
 }
 
+func (s *Service) SetMesh(_ context.Context, r *connect.Request[agentv1.SetMeshRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.SetMesh(r.Msg))
+}
+
+func (s *Service) RotateMeshKey(_ context.Context, r *connect.Request[agentv1.RotateMeshKeyRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.RotateMeshKey(r.Msg))
+}
+
 func (s *Service) DeleteDatabaseServer(_ context.Context, r *connect.Request[agentv1.DeleteDatabaseServerRequest]) (*connect.Response[agentv1.JobAccepted], error) {
 	return s.submit(s.Deps.DeleteDatabaseServer(r.Msg))
 }

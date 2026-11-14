@@ -120,6 +120,9 @@ func settings(dir string, run *execx.Fake, edge *fakeEdge) *Deps {
 		// A server with no loop devices: the disk of a database server is a directory, and
 		// the tests mount nothing.
 		LoopControl: filepath.Join(dir, "no-loop-control"),
+		// The tunnel key and the mesh state of the tests are never in /etc.
+		MeshDir:  filepath.Join(dir, "mesh"),
+		MeshWait: time.Millisecond,
 	}
 }
 
