@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Enums\AgentAction;
 use App\Http\Controllers\Api\BackupController;
 use App\Models\AgentJob;
 use App\Models\Server;
@@ -42,6 +43,9 @@ class AgentClient
                 // The credentials of the object storage and the password of the repository are not
                 // in the job. The panel adds the current values each time that it sends the job.
                 // Second audit, finding F08: a server with its own key gets that key only.
+                // The mesh state has the secret key of each pair of servers. It is not in the job:
+                // the panel adds the current state each time that it sends the job.
+                ...($job->action === AgentAction::SetMesh ? ['mesh' => Mesh::stateFor($server)] : []),
                 ...($job->action->usesBackupRepository() ? ['credentials' => (object) [
                     ...BackupController::credentialsFor($server, $shared),
                     'RESTIC_PASSWORD' => $shared ? (string) BackupController::sharedRepositoryPassword() : $server->backupPassword(),

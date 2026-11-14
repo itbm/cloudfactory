@@ -173,6 +173,11 @@ class JobOutcome
                 'reboot_required' => (bool) ($result['rebootRequired'] ?? $job->server->reboot_required),
             ]),
             AgentAction::Reboot => $job->server->update(['state' => 'healthy', 'reboot_required' => false]),
+            // The result has the state of each tunnel. The panel does not wait for the next report.
+            AgentAction::SetMesh => is_array($result['mesh'] ?? null) && app(Mesh::class)->reported($job->server, $result['mesh']),
+            // The peers of the server get its new public key.
+            AgentAction::RotateMeshKey => is_string($result['publicKey'] ?? null) && Mesh::validKey($result['publicKey'])
+                && app(Mesh::class)->keyOf($job->server, $result['publicKey']),
             AgentAction::UpdateAgent => $job->server->update([
                 'agent_version' => $result['version'] ?? config('cloudfactory.agent.latest_version'),
                 'state' => 'healthy',

@@ -13,6 +13,7 @@ use App\Http\Controllers\Api\DatabaseUserController;
 use App\Http\Controllers\Api\DomainController;
 use App\Http\Controllers\Api\ImageController;
 use App\Http\Controllers\Api\JobController;
+use App\Http\Controllers\Api\MeshController;
 use App\Http\Controllers\Api\PanelCertificateController;
 use App\Http\Controllers\Api\PlanController;
 use App\Http\Controllers\Api\RolloutController;
@@ -110,6 +111,14 @@ Route::prefix('v1')->group(function () {
             Route::post('servers/{id}/check-connection', [ServerController::class, 'checkConnection']);
             Route::post('servers/{id}/move-databases', [ServerController::class, 'moveDatabases']);
             Route::delete('servers/{id}', [ServerController::class, 'destroy']);
+            // The mesh: the encrypted tunnels between the servers.
+            Route::get('mesh', [MeshController::class, 'show']);
+            Route::patch('mesh', [MeshController::class, 'update']);
+            Route::patch('mesh/servers/{id}', [MeshController::class, 'updateServer']);
+            Route::post('mesh/servers/{id}/rotate-key', [MeshController::class, 'rotateKey']);
+            Route::post('mesh/tunnels', [MeshController::class, 'storeTunnel']);
+            Route::post('mesh/tunnels/{id}/repair', [MeshController::class, 'repairTunnel']);
+            Route::delete('mesh/tunnels/{id}', [MeshController::class, 'destroyTunnel']);
             // The TLS certificate of the panel domain: the CA of the panel or Let's Encrypt.
             Route::get('panel-certificate', [PanelCertificateController::class, 'show']);
             Route::put('panel-certificate', [PanelCertificateController::class, 'update'])->middleware('throttle:10,1');
