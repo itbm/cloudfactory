@@ -14,9 +14,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * - "limits" are the limits of each website with the plan.
  * - "database_limits" are the limits of each database server with the plan: "vcpus",
  *   "memoryBytes" and "diskBytes".
- * - "databases" is the number of databases of each database server with the plan. For a
- *   website with the shared database containers of an earlier release, it is the number of
- *   databases of the website.
+ * - "databases" is the number of databases of each database server with the plan.
  * - "websites" and "database_servers" are the numbers of websites and of database servers of a
  *   customer with the plan.
  */

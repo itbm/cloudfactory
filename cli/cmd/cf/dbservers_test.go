@@ -276,7 +276,7 @@ func TestDatabaseUsersShowAndSelectTheDatabaseServer(t *testing.T) {
 		case r.URL.Path == "/api/v1/websites/W1/databases":
 			w.Write([]byte(`{"prefix":"u1a2_","databases":[{"id":"D1","engine":"mariadb","name":"u1a2_prod","databaseServerId":"DS1","host":"mariadb.internal","port":3306}],` +
 				`"users":[{"id":"U1","engine":"mariadb","name":"u1a2_prod","access":"website","databaseServerId":"DS1","grants":[{"databaseId":"D1","database":"u1a2_prod","privileges":"readwrite"}]},` +
-				`{"id":"U2","engine":"mariadb","name":"u1a2_old","access":"website","databaseServerId":null,"grants":[]}],` +
+				`{"id":"U2","engine":"mariadb","name":"u1a2_old","access":"website","databaseServerId":"DS2","grants":[]}],` +
 				`"servers":[{"id":"DS1","name":"mariadb-1","engine":"mariadb"},{"id":"DS2","name":"mariadb-reports","engine":"mariadb"}]}`))
 		case r.URL.Path == "/api/v1/websites/W1/database-users":
 			body, _ := io.ReadAll(r.Body)
@@ -300,13 +300,13 @@ func TestDatabaseUsersShowAndSelectTheDatabaseServer(t *testing.T) {
 		t.Errorf("err = %v", err)
 	}
 
-	// A user in the shared database containers of an earlier release has no database server.
+	// The list gives the name of the database server of each user.
 	out.Reset()
 	if err := a.dispatch(context.Background(), []string{"database-users", "list", "shop.example"}); err != nil {
 		t.Fatal(err)
 	}
 	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
-	if len(lines) != 3 || row(lines[0]) != "NAME ENGINE DATABASESERVER GRANTS ACCESS ID" || row(lines[1]) != "u1a2_prod mariadb mariadb-1 u1a2_prod=readwrite website U1" || row(lines[2]) != "u1a2_old mariadb - website U2" {
+	if len(lines) != 3 || row(lines[0]) != "NAME ENGINE DATABASESERVER GRANTS ACCESS ID" || row(lines[1]) != "u1a2_prod mariadb mariadb-1 u1a2_prod=readwrite website U1" || row(lines[2]) != "u1a2_old mariadb mariadb-reports website U2" {
 		t.Errorf("output:\n%s", out)
 	}
 }

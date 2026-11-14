@@ -25,7 +25,7 @@ import (
 //     run each program as that user: the user has only the rights of its website.
 //   - A command of a fixed form as the user of a service or of a database server, for
 //     example a database client in a database container. The worker cannot run a program of
-//     its choice as cf-edge, as cf-db or as the user of a database server.
+//     its choice as cf-edge or as the user of a database server.
 //   - A command as root. Each one has a fixed form, and each path in it is a path that the
 //     helper makes from its own settings.
 //
@@ -86,8 +86,6 @@ func (d *Deps) allowRunuser(args []string) error {
 	}
 	user, command := args[1], args[3:]
 	switch {
-	case user == DBUser:
-		return d.allowDatabasePodman(user, command)
 	case strings.HasPrefix(user, host.DatabaseUserPrefix):
 		// The user must exist: the root helper makes it before the first command (db.prepare).
 		if err := d.databaseUser(user); err != nil {

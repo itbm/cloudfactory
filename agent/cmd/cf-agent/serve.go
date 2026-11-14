@@ -214,7 +214,6 @@ func newDeps(cfg config.Config, run execx.Runner) (*actions.Deps, error) {
 		Arch:               runtime.GOARCH,
 		ResticPasswordFile: resticKey,
 		DataDir:            cfg.DataDir,
-		DatabaseClientHost: cfg.DatabaseClientHost,
 		// The images of the services have the version of the agent. The release signs them.
 		ServiceImage: func(name string) string { return cfg.Registry + "/" + name + ":" + version },
 		EdgeImage:    cfg.Registry + "/edge:" + version,

@@ -325,28 +325,33 @@ class AuditFixesTest extends TestCase
         $image = $this->image();
         $website = $this->website($customer, $server, $image, 'one.example');
         $this->website($customer, $server, $image, 'two.example');
-        $website->databases()->create(['engine' => 'mariadb', 'name' => 'a_one']);
-        $website->databases()->create(['engine' => 'mariadb', 'name' => 'a_two']);
+        $databaseServer = $this->databaseServerOf($website);
+        $website->databases()->create(['engine' => 'mariadb', 'name' => 'a_one', 'database_server_id' => $databaseServer->id]);
+        $website->databases()->create(['engine' => 'mariadb', 'name' => 'a_two', 'database_server_id' => $databaseServer->id]);
         $this->actingWith($this->user());
 
         $this->patchJson("/api/v1/customers/{$customer->id}", ['planId' => $small->id])
             ->assertJsonValidationErrors(['planId' => 'The Small plan allows 1 websites. Acme Ltd has 2.']);
-        $this->patchJson("/api/v1/websites/{$website->id}", ['planId' => $small->id])
-            ->assertJsonValidationErrors(['planId' => 'The Small plan allows 1 databases. This website has 2.']);
+        // The plan of a database server gives the number of its databases.
+        $this->patchJson("/api/v1/database-servers/{$databaseServer->id}", ['planId' => $small->id])
+            ->assertJsonValidationErrors(['planId' => 'The Small plan allows 1 databases in a database server. This database server has 2.']);
         $this->assertSame($big->id, $customer->fresh()->plan_id);
-        $this->assertSame($big->id, $website->fresh()->plan_id);
+        $this->assertSame($big->id, $databaseServer->fresh()->plan_id);
     }
 
     public function test_a_staging_copy_needs_space_for_its_databases(): void
     {
-        $plan = $this->plan(['databases' => 1]);
+        $plan = $this->plan(['databases' => 3]);
         $customer = $this->customer($plan);
         $website = $this->website($customer, $this->server(), $this->image());
-        $website->databases()->create(['engine' => 'mariadb', 'name' => 'a_one']);
-        $website->databases()->create(['engine' => 'mariadb', 'name' => 'a_two']);
+        $databaseServer = $this->databaseServerOf($website);
+        $website->databases()->create(['engine' => 'mariadb', 'name' => 'a_one', 'database_server_id' => $databaseServer->id]);
+        $website->databases()->create(['engine' => 'mariadb', 'name' => 'a_two', 'database_server_id' => $databaseServer->id]);
         $this->actingWith($this->user());
 
-        $this->postJson("/api/v1/websites/{$website->id}/staging")->assertJsonValidationErrors('name');
+        // The copies go into the database server of the source databases. It has no space for 2 more.
+        $this->postJson("/api/v1/websites/{$website->id}/staging")
+            ->assertJsonValidationErrors(['name' => 'The Business plan allows 3 databases in a database server. The database server mariadb-1 has 2.']);
         $this->assertSame(1, Website::count());
     }
 

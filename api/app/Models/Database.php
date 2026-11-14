@@ -39,7 +39,7 @@ class Database extends Model
         return $this->belongsTo(Website::class);
     }
 
-    /** Null for a database in the shared database containers of an earlier release. */
+    /** The database server of the customer of the website that has the database. */
     public function databaseServer(): BelongsTo
     {
         return $this->belongsTo(DatabaseServer::class);

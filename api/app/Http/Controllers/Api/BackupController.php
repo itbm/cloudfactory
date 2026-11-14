@@ -66,9 +66,8 @@ class BackupController extends Controller
             'websiteId' => $website->id,
             'unixUser' => $website->unix_user,
             'kind' => $kind,
-            // Each database with the ID of its database server. The shared database containers
-            // of an earlier release have no ID.
-            'databases' => $website->sqlDatabases()->orderBy('name')->get()->map(fn ($d) => ['engine' => $d->engine, 'name' => $d->name, ...($d->database_server_id ? ['databaseServer' => $d->database_server_id] : [])])->all(),
+            // Each database with the ID of its database server.
+            'databases' => $website->sqlDatabases()->orderBy('name')->get()->map(fn ($d) => ['engine' => $d->engine, 'name' => $d->name, 'databaseServer' => $d->database_server_id])->all(),
             'target' => self::repository($website->server),
             'retention' => $retention,
         ];
@@ -146,10 +145,10 @@ class BackupController extends Controller
             // The agent restores the dump into the database server that has the database now.
             [$engine, $name] = array_pad(explode(':', $data['item'], 2), 2, '');
             $database = $website->databases()->where(['engine' => $engine, 'name' => $name])->first();
-            if (! $database && $website->database_instance !== null) {
+            if (! $database) {
                 throw ValidationException::withMessages(['item' => "This website does not have the database {$name} now. Make a database with this name, then restore the backup."]);
             }
-            $databaseServer = $database?->database_server_id;
+            $databaseServer = $database->database_server_id;
         }
         if ($data['scope'] === 'file') {
             $request->validate(['item' => [Input::rule('restorePath')]]);

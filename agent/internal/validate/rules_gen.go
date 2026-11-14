@@ -260,7 +260,7 @@ var rules = map[string]*rule{
 	"version":            &ruleVersion,
 }
 
-// Names that the shared database servers use (CF-01).
+// Names that the database servers use (CF-01).
 var reservedDatabaseNames = []string{"mysql", "sys", "information_schema", "performance_schema", "postgres", "template0", "template1", "root", "mariadb.sys", "healthcheck"}
 
 // A database name does not start with one of these (CF-01).

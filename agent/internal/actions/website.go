@@ -365,11 +365,9 @@ func (d *Deps) CreateWebsite(req *agentv1.WebsiteRequest) (jobs.Job, error) {
 	valkeyNumbers := map[string]any{}
 	return jobs.Job{ID: req.GetJobId(), Key: w.GetId(), Long: req.GetCopyFrom() != "", Steps: []jobs.Step{
 		{Name: "Create Unix user", Do: func(ctx context.Context) error {
-			if instance != "" {
-				// The website can use the database servers of its customer from its first step.
-				if _, err := d.useDatabases(instance, w.GetId()); err != nil {
-					return err
-				}
+			// The website can use the database servers of its customer from its first step.
+			if _, err := d.useDatabases(instance, w.GetId()); err != nil {
+				return err
 			}
 			if err := d.Host.EnsureUser(ctx, user); err != nil {
 				return err
@@ -403,12 +401,10 @@ func (d *Deps) CreateWebsite(req *agentv1.WebsiteRequest) (jobs.Job, error) {
 			if port, err = d.State.Reserve(&Site{ID: w.GetId(), UnixUser: user, Website: w}); err != nil {
 				return err
 			}
-			if instance != "" {
-				// The firewall lets the new website connect to the database servers of its
-				// customer, and to no other database servers.
-				if err := d.syncDatabaseAccess(ctx); err != nil {
-					return err
-				}
+			// The firewall lets the new website connect to the database servers of its
+			// customer, and to no other database servers.
+			if err := d.syncDatabaseAccess(ctx); err != nil {
+				return err
 			}
 			if err := d.startContainer(ctx, w, port, ""); err != nil {
 				return err
@@ -492,7 +488,7 @@ func checkCopies(req *agentv1.WebsiteRequest) error {
 	}
 	for _, u := range req.GetCopyUsers() {
 		// A user of the engine Valkey is a new, empty Valkey database with the name of the user.
-		if _, err := dbContainer(u.GetEngine()); err != nil {
+		if err := checkEngine(u.GetEngine()); err != nil {
 			errs = append(errs, err)
 		}
 		_, err := serverKey(u.GetDatabaseServer())
@@ -504,11 +500,11 @@ func checkCopies(req *agentv1.WebsiteRequest) error {
 	return errors.Join(errs...)
 }
 
-// copyDatabase makes the database toName in the container to, when it is not there, and
-// loads a dump of the database fromName of the container from into it. The two containers can
-// be different: a staging copy and a move of databases copy between the containers of two
-// releases. The dump goes from the dump client to the restore client, not through the agent,
-// and it loads as a temporary user with access to the new database only (CF-06).
+// copyDatabase makes the database toName in the database server to, when it is not there, and
+// loads a dump of the database fromName of the database server from into it. The two database
+// servers can be different. The dump goes from the dump client to the restore client, not
+// through the agent, and it loads as a temporary user with access to the new database only
+// (CF-06).
 func (d *Deps) copyDatabase(ctx context.Context, from dbServer, fromName string, to dbServer, toName string) error {
 	if to.Engine == "mariadb" {
 		found, err := d.exists(ctx, to, fmt.Sprintf("SHOW DATABASES LIKE '%s';\n", strings.ReplaceAll(toName, "_", `\\_`)))
@@ -586,7 +582,7 @@ func (d *Deps) copyDatabases(ctx context.Context, req *agentv1.WebsiteRequest, v
 			valkeyNumbers[u.GetName()] = number
 			continue
 		}
-		host, err := d.mariaHost(srv, "website")
+		host, err := mariaHost("website")
 		if err != nil {
 			return err
 		}
@@ -620,6 +616,8 @@ func (d *Deps) SetRuntime(req *agentv1.WebsiteRequest) (jobs.Job, error) {
 		return jobs.Job{}, err
 	}
 	user := w.GetUnixUser()
+	// The customer of the website. The value was checked in CheckWebsite.
+	instance, _ := instanceKey(w.GetDatabaseInstance())
 	hostname := primaryDomain(w)
 	var old *Site
 	var newPort int
@@ -635,6 +633,19 @@ func (d *Deps) SetRuntime(req *agentv1.WebsiteRequest) (jobs.Job, error) {
 			}
 			if old == nil {
 				return errors.New("the agent does not know this website; create it first")
+			}
+			// A website from an earlier release has no record of its customer. The new unit
+			// then has the address of the customer, and the firewall lets the website connect
+			// to the database servers of its customer.
+			if known, _, err := d.State.WebsiteDatabases(w.GetId()); err != nil {
+				return err
+			} else if known == "" {
+				if _, err := d.useDatabases(instance, w.GetId()); err != nil {
+					return err
+				}
+				if err := d.syncDatabaseAccess(ctx); err != nil {
+					return err
+				}
 			}
 			return d.pullImage(ctx, w)
 		}},
@@ -728,7 +739,7 @@ func (d *Deps) DeleteWebsite(req *agentv1.DeleteWebsiteRequest) (jobs.Job, error
 	for _, db := range append(slices.Clone(req.GetDatabases()), req.GetDatabaseUsers()...) {
 		_, err := serverKey(db.GetDatabaseServer())
 		errs = append(errs, err, validate.TenantDatabaseName(req.GetUnixUser(), db.GetName()))
-		if _, err := dbContainer(db.GetEngine()); err != nil {
+		if err := checkEngine(db.GetEngine()); err != nil {
 			errs = append(errs, err)
 		}
 	}

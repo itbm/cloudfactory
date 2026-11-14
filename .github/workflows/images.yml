@@ -60,21 +60,23 @@ jobs:
         run: |
           set -eu
           if [ "$IMAGE" = mariadb ] || [ "$IMAGE" = postgresql ]; then
-            # The settings of quadlet.DatabaseUnit. The user cf-db owns the data directory (mode
-            # 0700) on a server, and that user is root in the container.
+            # The settings of quadlet.DatabaseUnit. The Unix user of the database server owns
+            # the data directory (mode 0700) on a server. That user is the user 999 in the
+            # container, which is the database user of the image. The container has no
+            # capability.
             data="$RUNNER_TEMP/db"
-            sudo install -d -o root -g root -m 0700 "$data"
-            caps="--cap-drop=all --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER --cap-add SETUID --cap-add SETGID"
+            sudo install -d -o 999 -g 999 -m 0700 "$data"
+            caps="--cap-drop=all --user 999:999"
             if [ "$IMAGE" = mariadb ]; then
               # shellcheck disable=SC2086 # caps holds several options.
-              docker run -d --name smoke $caps --security-opt no-new-privileges --read-only --tmpfs /tmp --tmpfs /run/mysqld \
+              docker run -d --name smoke $caps --security-opt no-new-privileges --read-only --tmpfs /tmp --tmpfs /run/mysqld:mode=1777 \
                 -v "$data:/var/lib/mysql" -e MARIADB_ROOT_PASSWORD=smoke -e MYSQL_PWD=smoke -e MARIADB_ROOT_HOST=localhost \
                 -e MARIADB_AUTO_UPGRADE=1 mariadb:test
               query() { docker exec smoke mariadb --user=root --skip-column-names --execute='SELECT VERSION()'; }
               marker=mysql
             else
               # shellcheck disable=SC2086 # caps holds several options.
-              docker run -d --name smoke $caps --security-opt no-new-privileges --read-only --tmpfs /tmp --tmpfs /var/run/postgresql \
+              docker run -d --name smoke $caps --security-opt no-new-privileges --read-only --tmpfs /tmp --tmpfs /var/run/postgresql:mode=1777 \
                 --shm-size 256m -v "$data:/var/lib/postgresql/data" -e POSTGRES_PASSWORD=smoke \
                 -e 'POSTGRES_INITDB_ARGS=--auth-host=scram-sha-256 --auth-local=trust' postgresql:test
               query() { docker exec smoke psql --username=postgres --tuples-only --no-align --command='SELECT version()'; }
@@ -98,11 +100,14 @@ jobs:
             # The settings of quadlet.DatabaseUnit and the user file of the agent: the
             # administrator with the hash of its password. Then the tests of the agent make
             # Valkey databases on this server, and check that a user stays in its database.
+            # The user 999 of the container owns the data directory and the user file, and the
+            # container has no capability.
             data="$RUNNER_TEMP/valkey"
-            sudo install -d -o root -g root -m 0700 "$data"
+            sudo install -d -o 999 -g 999 -m 0700 "$data"
             printf 'user default on #%s ~* &* +@all\n' "$(printf %s smoke-password | sha256sum | cut -d' ' -f1)" | sudo tee "$data/users.acl" >/dev/null
+            sudo chown 999:999 "$data/users.acl"
             sudo chmod 0600 "$data/users.acl"
-            docker run -d --name smoke --cap-drop=all --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER --cap-add SETUID --cap-add SETGID \
+            docker run -d --name smoke --cap-drop=all --user 999:999 \
               --security-opt no-new-privileges --read-only --tmpfs /tmp -p 127.0.0.1:16379:6379 -v "$data:/data" valkey:test \
               valkey-server --bind 0.0.0.0 --port 6379 --databases 1024 --aclfile /data/users.acl --appendonly yes --save "" --maxmemory 64mb --maxmemory-policy allkeys-lru
             ready() { timeout 5 bash -c 'exec 3<>/dev/tcp/127.0.0.1/16379 && printf "PING\r\n" >&3 && head -c 7 <&3' 2>/dev/null | grep -q NOAUTH; }

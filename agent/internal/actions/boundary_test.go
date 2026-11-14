@@ -24,12 +24,15 @@ import (
 // worker that an attacker controls gets no rights of root from the helper.
 
 // boundary gives a worker with the Unix users of a server: two website users, the service
-// users, and three users that are not for the worker.
+// user of the edge proxy, and the users that are not for the worker.
 func boundary(t *testing.T) (*Deps, *execx.Fake) {
 	t.Helper()
 	d, f, _ := deps(t)
 	ids := map[string]int{
-		"acme_x7k2": 20001, "bolt_k3m9": 20002, DBUser: 990, "cf-edge": 991,
+		"acme_x7k2": 20001, "bolt_k3m9": 20002, "cf-edge": 991,
+		// The user of the shared database containers of an earlier release. A server from
+		// that release has it. The worker cannot use it.
+		oldDBUser: 990,
 		// Two users of an administrator. The name of the first has the form of a website
 		// user, and the name of the second has the form of the user of a database server.
 		"admin_ab12": 1000, adminDBUser: 1001,
@@ -52,6 +55,7 @@ func boundary(t *testing.T) (*Deps, *execx.Fake) {
 }
 
 const (
+	oldDBUser  = "cf-db"
 	dbPodman   = "runuser -u cf-db -- env XDG_RUNTIME_DIR=/run/user/990 podman "
 	edgePodman = "runuser -u cf-edge -- env XDG_RUNTIME_DIR=/run/user/991 podman "
 	mariaName  = "cf-mariadb-" + mariaServerKey
@@ -78,10 +82,7 @@ func TestTheRootHelperRunsTheCommandsOfThePolicy(t *testing.T) {
 		serverPodman + "exec --env-file " + filepath.Join(root.secretsDir(), "env-12") + " " + mariaName + " mariadb --sandbox",
 		serverPodman + "image exists " + root.serviceImage("mariadb"),
 		serverPodman + "pull --quiet " + root.serviceImage("mariadb"),
-		// The service users: a database client in a shared database container, and the images
-		// of this agent version.
-		dbPodman + "exec cf-postgresql pg_isready",
-		dbPodman + "pull --quiet " + root.serviceImage("mariadb"),
+		// The service user of the edge proxy: the image of this agent version.
 		edgePodman + "image exists ghcr.io/itbm/edge:0.2.0",
 		// The user managers.
 		"systemctl --user --machine=acme_x7k2@ daemon-reload",
@@ -89,7 +90,6 @@ func TestTheRootHelperRunsTheCommandsOfThePolicy(t *testing.T) {
 		"systemctl --user --machine=acme_x7k2@ set-property --runtime cf-acme_x7k2.service CPUQuota=100% MemoryMax=1073741824 TasksMax=100",
 		systemctlOf(mariaServerKey) + "stop " + mariaName + ".service",
 		systemctlOf(mariaServerKey) + "show --property=ControlGroup --value " + mariaName + ".service",
-		"systemctl --user --machine=cf-db@ stop cf-mariadb.service",
 		"systemctl --user --machine=cf-edge@ is-active cf-edge.service",
 		// Root.
 		"systemctl is-active ssh",
@@ -193,7 +193,11 @@ func TestTheRootHelperRefusesCommandsOutsideThePolicy(t *testing.T) {
 		adminPodman + "exec cf-mariadb-" + adminKey + " mariadb",
 		adminPodman + "pull --quiet " + root.serviceImage("mariadb"),
 		"runuser -u " + adminDBUser + " -- id",
-		// The worker cannot run a program of its choice as a service user.
+		// The worker runs no program as the user of the shared database containers of an
+		// earlier release.
+		dbPodman + "exec cf-postgresql pg_isready",
+		dbPodman + "pull --quiet " + root.serviceImage("mariadb"),
+		"systemctl --user --machine=cf-db@ stop cf-mariadb.service",
 		"runuser -u cf-db -- sh -c id",
 		"runuser -u cf-db -- podman ps",
 		"runuser -u cf-db -- env LD_PRELOAD=/tmp/x.so podman ps",
@@ -360,22 +364,23 @@ func TestTheRootHelperRefusesValuesOutsideTheLimits(t *testing.T) {
 		"a quota for root":                    {opUserQuota, quotaIn{User: "root", Bytes: 1}},
 		"a quota less than 0":                 {opUserQuota, quotaIn{User: "acme_x7k2", Bytes: -1}},
 
-		"a unit of the database user":   {opUnitWrite, unitIn{User: DBUser, Name: mariaName + ".container", Content: "[Container]\n"}},
-		"a unit of the edge user":       {opUnitWrite, unitIn{User: "cf-edge", Name: "cf-edge.container", Content: "[Container]\n"}},
-		"a unit of root":                {opUnitWrite, unitIn{User: "root", Name: "x.container", Content: "[Container]\n"}},
-		"a unit of an administrator":    {opUnitWrite, unitIn{User: "admin_ab12", Name: "x.container", Content: "[Container]\n"}},
-		"a unit name with a path":       {opUnitWrite, unitIn{User: "acme_x7k2", Name: "../x.container", Content: "[Container]\n"}},
-		"a unit name with a directory":  {opUnitWrite, unitIn{User: "acme_x7k2", Name: "a/x.container", Content: "[Container]\n"}},
-		"a service unit":                {opUnitWrite, unitIn{User: "acme_x7k2", Name: "x.service", Content: "[Service]\n"}},
-		"a timer unit":                  {opUnitWrite, unitIn{User: "acme_x7k2", Name: "x.timer", Content: "[Timer]\n"}},
-		"a unit of a database server":   {opUnitWrite, unitIn{User: serverUser, Name: mariaName + ".container", Content: "[Container]\n"}},
-		"remove the unit of the edge":   {opUnitRemove, unitIn{User: "cf-edge", Name: "cf-edge.container"}},
-		"remove a different cf-db unit": {opUnitRemove, unitIn{User: DBUser, Name: "cf-edge.container"}},
-		"remove a cf-db unit by path":   {opUnitRemove, unitIn{User: DBUser, Name: "../cf-mariadb.container"}},
-		"remove a unit of root":         {opUnitRemove, unitIn{User: "root", Name: "x.container"}},
+		"a unit of the old database user": {opUnitWrite, unitIn{User: oldDBUser, Name: mariaName + ".container", Content: "[Container]\n"}},
+		"a unit of the edge user":         {opUnitWrite, unitIn{User: "cf-edge", Name: "cf-edge.container", Content: "[Container]\n"}},
+		"a unit of root":                  {opUnitWrite, unitIn{User: "root", Name: "x.container", Content: "[Container]\n"}},
+		"a unit of an administrator":      {opUnitWrite, unitIn{User: "admin_ab12", Name: "x.container", Content: "[Container]\n"}},
+		"a unit name with a path":         {opUnitWrite, unitIn{User: "acme_x7k2", Name: "../x.container", Content: "[Container]\n"}},
+		"a unit name with a directory":    {opUnitWrite, unitIn{User: "acme_x7k2", Name: "a/x.container", Content: "[Container]\n"}},
+		"a service unit":                  {opUnitWrite, unitIn{User: "acme_x7k2", Name: "x.service", Content: "[Service]\n"}},
+		"a timer unit":                    {opUnitWrite, unitIn{User: "acme_x7k2", Name: "x.timer", Content: "[Timer]\n"}},
+		"a unit of a database server":     {opUnitWrite, unitIn{User: serverUser, Name: mariaName + ".container", Content: "[Container]\n"}},
+		"remove the unit of the edge":     {opUnitRemove, unitIn{User: "cf-edge", Name: "cf-edge.container"}},
+		"remove a different cf-db unit":   {opUnitRemove, unitIn{User: oldDBUser, Name: "cf-edge.container"}},
+		"remove a cf-db unit by path":     {opUnitRemove, unitIn{User: oldDBUser, Name: "../cf-mariadb.container"}},
+		"remove a cf-db unit":             {opUnitRemove, unitIn{User: oldDBUser, Name: "cf-mariadb.container"}},
+		"remove a unit of root":           {opUnitRemove, unitIn{User: "root", Name: "x.container"}},
 
-		"remove the unit of a server as cf-db":         {opUnitRemove, unitIn{User: DBUser, Name: mariaName + ".container"}},
-		"remove a shared unit as a server":             {opUnitRemove, unitIn{User: serverUser, Name: "cf-mariadb.container"}},
+		"remove the unit of a server as cf-db":         {opUnitRemove, unitIn{User: oldDBUser, Name: mariaName + ".container"}},
+		"remove a unit with no ID as a server":         {opUnitRemove, unitIn{User: serverUser, Name: "cf-mariadb.container"}},
 		"remove the unit of a different server":        {opUnitRemove, unitIn{User: serverUser, Name: "cf-mariadb-" + pgServerKey + ".container"}},
 		"remove the unit of a server by path":          {opUnitRemove, unitIn{User: serverUser, Name: "../" + mariaName + ".container"}},
 		"remove a unit of an administrator":            {opUnitRemove, unitIn{User: adminDBUser, Name: "cf-mariadb-" + adminKey + ".container"}},
@@ -396,26 +401,26 @@ func TestTheRootHelperRefusesValuesOutsideTheLimits(t *testing.T) {
 		"an SFTP key with two lines":     {opSftpSet, sftpIn{User: "acme_x7k2", Enabled: true, Keys: []string{"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGb9ECWmMtLzH8r1Fd1bAQJ5gN1nT3eb0v0f5c0pZzYp\nroot:x:0:0::/:/bin/sh"}}},
 		"remove the SFTP keys of a path": {opSftpRemove, userIn{User: "../../etc/passwd"}},
 
-		"a database server with a path":         {opDBPrepare, prepare(func(in *serverIn) { in.Server.ID = "../../etc" })},
-		"a database server in upper case":       {opDBPrepare, prepare(func(in *serverIn) { in.Server.ID = mariaServerID })},
-		"an engine that is not there":           {opDBPrepare, prepare(func(in *serverIn) { in.Server.Engine = "mongodb" })},
-		"a customer with a path":                {opDBPrepare, prepare(func(in *serverIn) { in.Customer = "../x" })},
-		"no customer":                           {opDBPrepare, prepare(func(in *serverIn) { in.Customer = "" })},
-		"an address outside the network":        {opDBPrepare, prepare(func(in *serverIn) { in.Address = "0.0.0.0" })},
-		"an address with a unit line":           {opDBPrepare, prepare(func(in *serverIn) { in.Address = customerAddress + "\nPodmanArgs=--privileged" })},
-		"a port of a different service":         {opDBPrepare, prepare(func(in *serverIn) { in.Record.Port = 22 })},
-		"a record of a different engine":        {opDBPrepare, prepare(func(in *serverIn) { in.Record.Engine = "postgresql" })},
-		"a limit less than 0":                   {opDBPrepare, prepare(func(in *serverIn) { in.Record.DiskBytes = -1 })},
-		"a shared container with a customer":    {opDBPrepare, serverIn{Server: dbServer{Engine: "mariadb"}, Customer: customerKey}},
-		"a shared Valkey container":             {opDBPrepare, serverIn{Server: dbServer{Engine: "valkey"}}},
-		"remove the data of a shared server":    {opDBRemoveData, serverIn{Server: dbServer{Engine: "mariadb"}}},
-		"remove the data of a path":             {opDBRemoveData, serverIn{Server: dbServer{ID: "..", Engine: "mariadb"}}},
-		"the disk of a path":                    {opDBDisk, serverIn{Server: dbServer{ID: "../..", Engine: "mariadb"}}},
-		"the Valkey secret of a MariaDB server": {opDBValkeySecret, serverIn{Server: maria}},
-		"database access for root":              {opDBAccess, accessIn{Elements: []accessElement{{UID: 0, Number: 1, Port: 3306}}}},
-		"database access for an administrator":  {opDBAccess, accessIn{Elements: []accessElement{{UID: 1000, Number: 1, Port: 3306}}}},
-		"database access to the SSH port":       {opDBAccess, accessIn{Elements: []accessElement{{UID: 20001, Number: 1, Port: 22}}}},
-		"database access outside the network":   {opDBAccess, accessIn{Elements: []accessElement{{UID: 20001, Number: 1 << 20, Port: 3306}}}},
+		"a database server with a path":          {opDBPrepare, prepare(func(in *serverIn) { in.Server.ID = "../../etc" })},
+		"a database server in upper case":        {opDBPrepare, prepare(func(in *serverIn) { in.Server.ID = mariaServerID })},
+		"an engine that is not there":            {opDBPrepare, prepare(func(in *serverIn) { in.Server.Engine = "mongodb" })},
+		"a customer with a path":                 {opDBPrepare, prepare(func(in *serverIn) { in.Customer = "../x" })},
+		"no customer":                            {opDBPrepare, prepare(func(in *serverIn) { in.Customer = "" })},
+		"an address outside the network":         {opDBPrepare, prepare(func(in *serverIn) { in.Address = "0.0.0.0" })},
+		"an address with a unit line":            {opDBPrepare, prepare(func(in *serverIn) { in.Address = customerAddress + "\nPodmanArgs=--privileged" })},
+		"a port of a different service":          {opDBPrepare, prepare(func(in *serverIn) { in.Record.Port = 22 })},
+		"a record of a different engine":         {opDBPrepare, prepare(func(in *serverIn) { in.Record.Engine = "postgresql" })},
+		"a limit less than 0":                    {opDBPrepare, prepare(func(in *serverIn) { in.Record.DiskBytes = -1 })},
+		"a database server with no ID":           {opDBPrepare, prepare(func(in *serverIn) { in.Server.ID = "" })},
+		"remove the data of a server with no ID": {opDBRemoveData, serverIn{Server: dbServer{Engine: "mariadb"}}},
+		"the disk of a server with no ID":        {opDBDisk, serverIn{Server: dbServer{Engine: "mariadb"}}},
+		"remove the data of a path":              {opDBRemoveData, serverIn{Server: dbServer{ID: "..", Engine: "mariadb"}}},
+		"the disk of a path":                     {opDBDisk, serverIn{Server: dbServer{ID: "../..", Engine: "mariadb"}}},
+		"the Valkey secret of a MariaDB server":  {opDBValkeySecret, serverIn{Server: maria}},
+		"database access for root":               {opDBAccess, accessIn{Elements: []accessElement{{UID: 0, Number: 1, Port: 3306}}}},
+		"database access for an administrator":   {opDBAccess, accessIn{Elements: []accessElement{{UID: 1000, Number: 1, Port: 3306}}}},
+		"database access to the SSH port":        {opDBAccess, accessIn{Elements: []accessElement{{UID: 20001, Number: 1, Port: 22}}}},
+		"database access outside the network":    {opDBAccess, accessIn{Elements: []accessElement{{UID: 20001, Number: 1 << 20, Port: 3306}}}},
 
 		"a php.ini with a path":           {opSiteIni, iniIn{User: "acme_x7k2", Suffix: "/../../x", Content: "a=b\n"}},
 		"a php.ini of root":               {opSiteIni, iniIn{User: "root", Content: "a=b\n"}},

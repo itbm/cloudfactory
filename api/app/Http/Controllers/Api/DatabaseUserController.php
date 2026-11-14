@@ -59,7 +59,7 @@ class DatabaseUserController extends Controller
         $server = self::serverOfNewUser($website, $data['engine'], $grantServers, $data['databaseServerId'] ?? null);
 
         $user = DB::transaction(function () use ($website, $data, $name, $grants, $server) {
-            $user = $website->databaseUsers()->create(['engine' => $data['engine'], 'name' => $name, 'access' => $data['access'] ?? 'website', 'database_server_id' => $server?->id]);
+            $user = $website->databaseUsers()->create(['engine' => $data['engine'], 'name' => $name, 'access' => $data['access'] ?? 'website', 'database_server_id' => $server->id]);
             $user->databases()->attach($grants);
 
             return $user;
@@ -122,7 +122,7 @@ class DatabaseUserController extends Controller
             'engine' => $user->engine,
             'name' => $user->name,
             'websiteDatabases' => self::websiteDatabases($website, $user),
-            ...($user->database_server_id ? ['databaseServer' => $user->database_server_id] : []),
+            'databaseServer' => $user->database_server_id,
         ], "Remove database user {$user->name}", $website, databaseServer: $user->databaseServer);
         Audit::record($request, 'Removed database user', "{$website->name} {$user->name}", $website->customer_id);
 
@@ -136,7 +136,6 @@ class DatabaseUserController extends Controller
             'engine' => $u->engine,
             'name' => $u->name,
             'access' => $u->access,
-            // Null for a user in the shared database containers of an earlier release.
             'databaseServerId' => $u->database_server_id,
             'grants' => $u->grants(),
         ];
@@ -155,8 +154,7 @@ class DatabaseUserController extends Controller
      * Checks that each database belongs to the website and has the engine of the user.
      *
      * The second value has the database servers of the databases: the ID of each one, with the
-     * request field of its first database. The ID is "" for the shared database containers of
-     * an earlier release.
+     * request field of its first database.
      *
      * @return array{0: array<string, array{privileges: string}>, 1: array<string, string>}
      */
@@ -184,15 +182,8 @@ class DatabaseUserController extends Controller
      *
      * @throws ValidationException
      */
-    private static function serverOfNewUser(Website $website, string $engine, array $grantServers, ?string $requested): ?DatabaseServer
+    private static function serverOfNewUser(Website $website, string $engine, array $grantServers, ?string $requested): DatabaseServer
     {
-        if ($website->database_instance === null) {
-            if ($requested !== null) {
-                throw ValidationException::withMessages(['databaseServerId' => "This website uses the shared database containers of an earlier release. An administrator must move the databases of the server {$website->server->name} to database servers first."]);
-            }
-
-            return null;
-        }
         if (count($grantServers) > 1) {
             throw ValidationException::withMessages([array_values($grantServers)[1] => 'A database user is in one database server. Select databases of one database server, or make a user for each database server.']);
         }
@@ -234,7 +225,7 @@ class DatabaseUserController extends Controller
             'grants' => array_map(fn ($g) => ['database' => $g['database'], 'privileges' => $g['privileges']], $user->grants()),
             'websiteDatabases' => self::websiteDatabases($website, $user),
             // The agent makes a database server that it does not have.
-            'databaseServer' => $user->databaseServer?->forAgent(),
+            'databaseServer' => $user->databaseServer->forAgent(),
         ], fn ($v) => $v !== null), "{$title} {$user->name}", $website, databaseServer: $user->databaseServer);
     }
 

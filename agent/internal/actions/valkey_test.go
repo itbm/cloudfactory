@@ -313,7 +313,7 @@ func TestValkeyDatabaseGetsANumberAndAUser(t *testing.T) {
 	}
 	for _, want := range []string{
 		podmanOf(valkeyServerKey) + "pull --quiet ghcr.io/cloudfactory/valkey:0.1.0",
-		"install -d -o root -g root -m 0711 " + filepath.Join(d.DBHome, "servers") + " " + filepath.Join(d.DBHome, "homes"),
+		"install -d -o root -g root -m 0711 " + d.DBHome + " " + filepath.Join(d.DBHome, "servers") + " " + filepath.Join(d.DBHome, "homes"),
 		"install -d -o root -g " + account + " -m 0750 " + serverDir(d, valkeyServerKey),
 		// Root owns the directory of the disk, and the user owns the data directory.
 		"install -d -o root -g " + account + " -m 0750 " + filepath.Join(serverDir(d, valkeyServerKey), "disk"),

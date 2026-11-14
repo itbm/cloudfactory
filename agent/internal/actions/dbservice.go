@@ -17,8 +17,7 @@ import (
 // Engines are the database engines of the database containers.
 var Engines = []string{"mariadb", "postgresql", "valkey"}
 
-// dbHome holds the data of the database containers. It is also the home directory of the user
-// cf-db of the shared containers of an earlier release.
+// dbHome holds the data of the database servers. Root owns it.
 //
 //	servers/<id>   the files of one database server (dbDir). Root owns the directory, and
 //	               only root and the Unix user of the database server can open it.
@@ -28,10 +27,10 @@ func (d *Deps) dbHome() string {
 	if d.DBHome != "" {
 		return d.DBHome
 	}
-	return "/var/lib/" + DBUser
+	return "/var/lib/cf-db"
 }
 
-// DatabaseDir gives the directory of the data of the database containers. The agent reads the
+// DatabaseDir gives the directory of the data of the database servers. The agent reads the
 // user quotas of its file system at its start.
 func (d *Deps) DatabaseDir() string { return d.dbHome() }
 
@@ -58,11 +57,11 @@ func (d *Deps) serviceImage(name string) string {
 	return "ghcr.io/cloudfactory/" + name + ":latest"
 }
 
-// makeDataDir makes the data directory of a database container, with the owner user and mode
-// 0700. It does not change a directory that exists.
+// makeDataDir makes a data directory with the owner user and mode 0700. It does not change a
+// directory that exists.
 //
-// The entry point of the image of a shared container gives the directory to the database user
-// of the container (for example postgres, UID 999), which is a different UID on the host. The
+// The entry point of the image of the panel database gives its directory to the database
+// user of the container (postgres, UID 999), which is a different UID on the host. The
 // database server then opens each file through this directory. "install -d" on a directory
 // that exists sets the owner and the mode again. A database server that operates then cannot
 // open its files ("could not open file global/pg_filenode.map: Permission denied"), until the
@@ -78,53 +77,46 @@ func (d *Deps) makeDataDir(ctx context.Context, dir, user string) error {
 	return err
 }
 
-// databaseUnit gives the input for the unit of a database container. A database server of a
-// customer gets the address of its customer, its port and its limits (record). The shared
-// container of an earlier release has no customer, no address and no record.
+// databaseUnit gives the input for the unit of a database server: the address of its
+// customer, its port and its limits (record).
 func (d *Deps) databaseUnit(s dbServer, customer, address string, record DatabaseServer) quadlet.Database {
-	dir := d.dbDir(s)
 	u := quadlet.Database{
-		Engine:  s.Engine,
-		ID:      s.ID,
-		Image:   d.serviceImage(s.Engine),
-		DataDir: filepath.Join(dir, s.Engine),
-		EnvFile: filepath.Join(dir, s.Engine+".env"),
-		Gvisor:  d.runtime(),
+		Engine:    s.Engine,
+		ID:        s.ID,
+		Image:     d.serviceImage(s.Engine),
+		DataDir:   d.dataDir(s),
+		EnvFile:   filepath.Join(d.dbDir(s), s.Engine+".env"),
+		Gvisor:    d.runtime(),
+		Customer:  customer,
+		Address:   address,
+		Port:      record.Port,
+		Limits:    quadlet.Limits{VCPUs: record.VCPUs, MemoryBytes: record.MemoryBytes},
+		DiskBytes: record.DiskBytes,
 	}
-	if s.ID == "" {
-		return u
-	}
-	u.Customer, u.Address, u.Port = customer, address, record.Port
-	u.DataDir = d.dataDir(s)
-	u.Limits = quadlet.Limits{VCPUs: record.VCPUs, MemoryBytes: record.MemoryBytes}
-	u.DiskBytes = record.DiskBytes
 	if s.Engine == "valkey" {
 		u.MemoryMB = valkeyDataMB(record.MemoryBytes)
 	}
 	return u
 }
 
-// dbUnit gives the input for the unit of a database container, and the record of a database
+// dbUnit gives the input for the unit of a database server, and the record of the database
 // server, from the state.
 func (d *Deps) dbUnit(s dbServer) (quadlet.Database, DatabaseServer, error) {
-	if s.ID == "" {
-		return d.databaseUnit(s, "", "", DatabaseServer{}), DatabaseServer{}, nil
-	}
 	customer, record, address, err := d.State.DatabaseServer(s.ID)
 	if err != nil {
 		return quadlet.Database{}, record, err
 	}
-	if customer == "" || record.Engine != s.Engine {
+	if s.ID == "" || customer == "" || record.Engine != s.Engine {
 		return quadlet.Database{}, record, fmt.Errorf("this server does not have %s", s)
 	}
 	return d.databaseUnit(s, customer, address, record), record, nil
 }
 
 // prepareServer makes the Unix user, the directories, the disk, the secret and the unit of a
-// database container. It reports true when the unit changed.
+// database server. It reports true when the unit changed.
 //
 // The root helper makes the unit from the values of the database server and from its own
-// settings. The worker cannot give the text of the unit of a database container: a unit can
+// settings. The worker cannot give the text of the unit of a database server: a unit can
 // run a program with the rights of its user on the host, and that user owns the data of a
 // customer.
 func (d *Deps) prepareServer(ctx context.Context, s dbServer, customer, address string, record DatabaseServer) (changed bool, err error) {
@@ -134,24 +126,16 @@ func (d *Deps) prepareServer(ctx context.Context, s dbServer, customer, address 
 	}
 	u := d.databaseUnit(s, customer, address, record)
 	user := dbUser(s)
-	if s.ID == "" {
-		// A shared container of an earlier release. Only cf-db can open the data. The entry
-		// point of the image sets the owner in the container.
-		if err := d.makeDataDir(ctx, u.DataDir, user); err != nil {
-			return false, err
-		}
-	} else {
-		if err := d.prepareAccount(ctx, s); err != nil {
-			return false, err
-		}
-		// The disk of the database server has the data directory. Root owns the directory
-		// of the disk, so the user cannot put a link in the place of the data directory.
-		if err := d.ensureDisk(ctx, s, record.DiskBytes); err != nil {
-			return false, err
-		}
-		if err := d.makeDataDir(ctx, u.DataDir, user); err != nil {
-			return false, err
-		}
+	if err := d.prepareAccount(ctx, s); err != nil {
+		return false, err
+	}
+	// The disk of the database server has the data directory. Root owns the directory of the
+	// disk, so the user cannot put a link in the place of the data directory.
+	if err := d.ensureDisk(ctx, s, record.DiskBytes); err != nil {
+		return false, err
+	}
+	if err := d.makeDataDir(ctx, u.DataDir, user); err != nil {
+		return false, err
 	}
 	if s.Engine == "valkey" {
 		// Valkey has a user file, not an environment file.
@@ -161,7 +145,7 @@ func (d *Deps) prepareServer(ctx context.Context, s dbServer, customer, address 
 	} else if err := d.writeSuperuserSecret(ctx, s, u.EnvFile); err != nil {
 		return false, err
 	}
-	if s.ID != "" && d.Images != nil {
+	if d.Images != nil {
 		// The image is in the shared store of root, so it does not use the disk limit of the
 		// database server. With no shared store, the user of the database server pulls it
 		// (EnsureDatabaseService).
@@ -180,22 +164,9 @@ func (d *Deps) prepareServer(ctx context.Context, s dbServer, customer, address 
 //   - Root owns the directory of the database server. Only root and the user of the database
 //     server can open it (mode 0750), and the user cannot change it.
 func (d *Deps) prepareAccount(ctx context.Context, s dbServer) error {
-	home := d.dbHome()
-	if fi, err := os.Stat(home); os.IsNotExist(err) {
-		if _, err := d.Run.Run(ctx, "install", "-d", "-m", "0711", home); err != nil {
-			return err
-		}
-	} else if err != nil {
-		return err
-	} else if fi.Mode().Perm()&0o011 != 0o011 {
-		// The home directory of cf-db from an earlier release has mode 0700.
-		if err := os.Chmod(home, fi.Mode().Perm()|0o011); err != nil {
-			return err
-		}
-	}
-	// On a server from an earlier release, cf-db owns "servers". The directory gets root as
-	// its owner, and the directories of the other database servers stay closed (mode 0700).
-	if _, err := d.Run.Run(ctx, "install", "-d", "-o", "root", "-g", "root", "-m", "0711", filepath.Dir(d.dbDir(s)), filepath.Dir(d.dbUserHome(s))); err != nil {
+	// Root owns the three directories. "install -d" also sets the owner and the mode of a
+	// directory that exists.
+	if _, err := d.Run.Run(ctx, "install", "-d", "-o", "root", "-g", "root", "-m", "0711", d.dbHome(), filepath.Dir(d.dbDir(s)), filepath.Dir(d.dbUserHome(s))); err != nil {
 		return err
 	}
 	user := dbUser(s)
@@ -206,18 +177,15 @@ func (d *Deps) prepareAccount(ctx context.Context, s dbServer) error {
 	return err
 }
 
-// EnsureDatabaseService starts a database container, if it does not operate, and waits until
-// it accepts connections. systemd starts it again at boot. The state has the record of a
+// EnsureDatabaseService starts a database server, if it does not operate, and waits until it
+// accepts connections. systemd starts it again at boot. The state has the record of a
 // database server before this function starts it (ensureServer).
 //
 // The start of a container can take minutes. Only the jobs of the same database server wait
 // for it: each database server has its own lock.
 func (d *Deps) EnsureDatabaseService(ctx context.Context, s dbServer) error {
-	if _, err := dbContainer(s.Engine); err != nil {
+	if err := checkEngine(s.Engine); err != nil {
 		return err
-	}
-	if s.Engine == "valkey" && s.ID == "" {
-		return errNoSharedValkey
 	}
 	ready := func() bool {
 		d.dbMu.Lock()
@@ -237,12 +205,10 @@ func (d *Deps) EnsureDatabaseService(ctx context.Context, s dbServer) error {
 	if err != nil {
 		return err
 	}
-	if s.ID != "" {
-		// The address of the container must be on "lo" before Podman publishes the port. The
-		// firewall lets the websites of the customer connect to the port.
-		if err := d.syncDatabaseAccess(ctx); err != nil {
-			return err
-		}
+	// The address of the container must be on "lo" before Podman publishes the port. The
+	// firewall lets the websites of the customer connect to the port.
+	if err := d.syncDatabaseAccess(ctx); err != nil {
+		return err
 	}
 	// The root helper makes the Unix user of the database server first: the commands below
 	// run as that user.
@@ -252,9 +218,9 @@ func (d *Deps) EnsureDatabaseService(ctx context.Context, s dbServer) error {
 	}
 	user := dbUser(s)
 	// A database server finds its image in the shared store of root. With no shared store,
-	// and for a shared container of an earlier release, the user pulls the image.
+	// the user pulls the image.
 	if _, err := d.Host.Podman(ctx, user, "image", "exists", u.Image); err != nil {
-		if s.ID != "" && d.Images != nil {
+		if d.Images != nil {
 			// The user does not pull a copy: a copy would use the disk limit of the database
 			// server, and the firewall refuses the connections of the user.
 			return fmt.Errorf("the user %s cannot read the image %s in the shared image store: %w", user, u.Image, err)
@@ -294,24 +260,13 @@ func (d *Deps) EnsureDatabaseService(ctx context.Context, s dbServer) error {
 	return nil
 }
 
-// databaseServers gives the database containers that this server has: the database servers
-// of each customer, and the shared containers of an earlier release. A shared container is
-// there when cf-db has its unit.
+// databaseServers gives the database servers that this server has, for each customer.
 func (d *Deps) databaseServers() ([]dbServer, error) {
 	instances, err := d.State.DatabaseInstances()
 	if err != nil {
 		return nil, err
 	}
 	var out []dbServer
-	// A server with no user cf-db has no shared container.
-	if dir, err := d.Host.UnitDir(DBUser); err == nil {
-		for _, engine := range Engines {
-			s := dbServer{Engine: engine}
-			if _, err := os.Stat(filepath.Join(dir, s.container()+".container")); err == nil {
-				out = append(out, s)
-			}
-		}
-	}
 	for _, customer := range slices.Sorted(maps.Keys(instances)) {
 		servers := instances[customer].Servers
 		for _, id := range slices.Sorted(maps.Keys(servers)) {
@@ -321,7 +276,7 @@ func (d *Deps) databaseServers() ([]dbServer, error) {
 	return out, nil
 }
 
-// RefreshDatabaseServices writes the units of the database containers that the server already
+// RefreshDatabaseServices writes the units of the database servers that the server already
 // has again, for example with the image of a new agent version. It also mounts the disk of
 // each database server, and loads the database access of the websites into the firewall.
 func (d *Deps) RefreshDatabaseServices(ctx context.Context) error {
@@ -349,17 +304,11 @@ func (d *Deps) RefreshDatabaseServices(ctx context.Context) error {
 // password. MariaDB needs the password, so the client gets it in MYSQL_PWD from the
 // environment of the container.
 //
-// Podman reads the file as the Unix user of the container. For a database server, root owns
-// the file and the group of the user can read it, so the user cannot change it.
+// Podman reads the file as the Unix user of the database server. Root owns the file and the
+// group of the user can read it, so the user cannot change it.
 func (d *Deps) writeSuperuserSecret(ctx context.Context, s dbServer, path string) error {
-	user, owner, mode := dbUser(s), "root:"+dbUser(s), os.FileMode(0o640)
-	if s.ID == "" {
-		owner, mode = user+":"+user, 0o600
-	}
+	owner, mode := "root:"+dbUser(s), os.FileMode(0o640)
 	if _, err := os.Stat(path); err == nil {
-		if s.ID == "" {
-			return nil
-		}
 		// A job that stopped after it wrote the file can leave the file with no owner and
 		// mode for the user. Thus each job sets them again.
 		if err := os.Chmod(path, mode); err != nil {

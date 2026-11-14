@@ -12,7 +12,9 @@ import (
 
 	agentv1 "github.com/itbm/cloudfactory/agent/gen/cloudfactory/agent/v1"
 	"github.com/itbm/cloudfactory/agent/internal/execx"
+	"github.com/itbm/cloudfactory/agent/internal/host"
 	"github.com/itbm/cloudfactory/agent/internal/panel"
+	"google.golang.org/protobuf/proto"
 )
 
 // Tests for the findings of the completeness audit.
@@ -27,48 +29,53 @@ func unitFile(t *testing.T, d *Deps, user, name string) string {
 	return string(b)
 }
 
-// Blocker 1: the agent starts the shared database container before the first statement.
-func TestTheFirstDatabaseStartsTheDatabaseContainer(t *testing.T) {
+// Blocker 1: the agent starts the database server before the first statement.
+func TestTheFirstDatabaseStartsTheDatabaseServer(t *testing.T) {
 	d, f, _ := deps(t)
 	both(d, func(d *Deps) {
 		d.ServiceImage = func(name string) string { return "ghcr.io/cloudfactory/" + name + ":0.1.0" }
 	})
-	f.Rules = []execx.Rule{{Prefix: "runuser -u cf-db -- env XDG_RUNTIME_DIR=/run/user/20001 podman image exists", Err: errors.New("no image")}}
-	job, err := d.CreateDatabase(&agentv1.CreateDatabaseRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Engine: "postgresql", Name: "acme_x7k2_shop"})
+	if err := run(t)(d.CreateWebsite(&agentv1.WebsiteRequest{JobId: jobID, Website: website("ghcr.io/cloudfactory/frankenphp-php8.4:8.4.0-1")})); err != nil {
+		t.Fatal(err)
+	}
+	pgUser, pgName := host.DatabaseUser(pgServerKey), "cf-postgresql-"+pgServerKey
+	f.Rules = []execx.Rule{{Prefix: podmanOf(pgServerKey) + "image exists", Err: errors.New("no image")}}
+	job, err := d.CreateDatabase(&agentv1.CreateDatabaseRequest{JobId: jobID2, WebsiteId: websiteID, UnixUser: "acme_x7k2", Engine: "postgresql", Name: "acme_x7k2_shop", DatabaseServer: databaseServer("postgresql")})
 	if err := run(t)(job, err); err != nil {
 		t.Fatal(err)
 	}
 	for _, want := range []string{
-		"runuser -u cf-db -- env XDG_RUNTIME_DIR=/run/user/20001 podman pull --quiet ghcr.io/cloudfactory/postgresql:0.1.0",
-		"install -d -o cf-db -g cf-db -m 0700 " + filepath.Join(d.DBHome, "postgresql"),
-		"systemctl --user --machine=cf-db@ restart cf-postgresql.service",
+		podmanOf(pgServerKey) + "pull --quiet ghcr.io/cloudfactory/postgresql:0.1.0",
+		"install -d -o " + pgUser + " -g " + pgUser + " -m 0700 " + dataOf(d, pgServerKey),
+		systemctlOf(pgServerKey) + "restart " + pgName + ".service",
 	} {
 		if !f.Called(want) {
 			t.Errorf("no call %q in %v", want, f.Calls)
 		}
 	}
-	u := unitFile(t, d, DBUser, "cf-postgresql.container")
-	for _, want := range []string{"PublishPort=169.254.77.1:5432:5432", "--auth-host=scram-sha-256", "Volume=" + filepath.Join(d.DBHome, "postgresql") + ":/var/lib/postgresql/data:Z"} {
+	u := unitFile(t, d, pgUser, pgName+".container")
+	for _, want := range []string{"PublishPort=" + customerAddress + ":5432:5432", "--auth-host=scram-sha-256", "Volume=" + dataOf(d, pgServerKey) + ":/var/lib/postgresql/data:Z"} {
 		if !strings.Contains(u, want) {
 			t.Errorf("unit has no %q:\n%s", want, u)
 		}
 	}
-	secret, err := os.ReadFile(filepath.Join(d.DBHome, "postgresql.env"))
+	secret, err := os.ReadFile(filepath.Join(serverDir(d, pgServerKey), "postgresql.env"))
 	if err != nil || !strings.HasPrefix(string(secret), "POSTGRES_PASSWORD=") {
 		t.Errorf("superuser secret: %q %v", secret, err)
 	}
 	// Audit batch 2, finding 4: the MariaDB client gets the root password from the container.
-	run(t)(d.CreateDatabase(&agentv1.CreateDatabaseRequest{JobId: "01JBQ3Z5K8N6T4W2X9Y7R5P3M4", WebsiteId: websiteID, UnixUser: "acme_x7k2", Engine: "mariadb", Name: "acme_x7k2_blog"}))
-	secret, err = os.ReadFile(filepath.Join(d.DBHome, "mariadb.env"))
+	run(t)(d.CreateDatabase(&agentv1.CreateDatabaseRequest{JobId: "01JBQ3Z5K8N6T4W2X9Y7R5P3M4", WebsiteId: websiteID, UnixUser: "acme_x7k2", Engine: "mariadb", Name: "acme_x7k2_blog", DatabaseServer: databaseServer("mariadb")}))
+	env := filepath.Join(serverDir(d, mariaServerKey), "mariadb.env")
+	secret, err = os.ReadFile(env)
 	if err != nil || !strings.Contains(string(secret), "MARIADB_ROOT_PASSWORD=") || !strings.Contains(string(secret), "\nMYSQL_PWD=") {
 		t.Errorf("root secret: %q %v", secret, err)
 	}
-	if u := unitFile(t, d, DBUser, "cf-mariadb.container"); !strings.Contains(u, "EnvironmentFile="+filepath.Join(d.DBHome, "mariadb.env")) || strings.Contains(u, "RANDOM_ROOT") {
+	if u := unitFile(t, d, host.DatabaseUser(mariaServerKey), "cf-mariadb-"+mariaServerKey+".container"); !strings.Contains(u, "EnvironmentFile="+env) || strings.Contains(u, "RANDOM_ROOT") {
 		t.Errorf("mariadb unit:\n%s", u)
 	}
 	// The container starts once. Later statements use it.
 	n := len(f.Calls)
-	run(t)(d.DeleteDatabase(&agentv1.DeleteDatabaseRequest{JobId: jobID2, WebsiteId: websiteID, UnixUser: "acme_x7k2", Engine: "postgresql", Name: "acme_x7k2_shop"}))
+	run(t)(d.DeleteDatabase(&agentv1.DeleteDatabaseRequest{JobId: "01JBQ3Z5K8N6T4W2X9Y7R5P3M5", WebsiteId: websiteID, UnixUser: "acme_x7k2", Engine: "postgresql", Name: "acme_x7k2_shop", DatabaseServer: pgServerID}))
 	for _, c := range f.Calls[n:] {
 		if strings.Contains(c, "systemctl") {
 			t.Errorf("the container started again: %s", c)
@@ -76,30 +83,29 @@ func TestTheFirstDatabaseStartsTheDatabaseContainer(t *testing.T) {
 	}
 }
 
-// Blocker 2: each website container has a host name for each database engine.
+// Blocker 2: each website container has a host name for each database engine. The names
+// point to the address of the customer of the website.
 func TestWebsitesHaveDatabaseHostNames(t *testing.T) {
 	d, _, _ := deps(t)
 	run(t)(d.CreateWebsite(&agentv1.WebsiteRequest{JobId: jobID, Website: website("ghcr.io/cloudfactory/frankenphp-php8.4:8.4.0-1")}))
 	u := unitFile(t, d, "acme_x7k2", "cf-acme_x7k2.container")
-	for _, want := range []string{"AddHost=mariadb.internal:169.254.77.1\n", "AddHost=postgres.internal:169.254.77.1\n", "AddHost=valkey.internal:169.254.77.1\n", "Environment=CF_DOCUMENT_ROOT=/app/public\n"} {
+	for _, want := range []string{"AddHost=mariadb.internal:" + customerAddress + "\n", "AddHost=postgres.internal:" + customerAddress + "\n", "AddHost=valkey.internal:" + customerAddress + "\n", "Environment=CF_DOCUMENT_ROOT=/app/public\n"} {
 		if !strings.Contains(u, want) {
 			t.Errorf("unit has no %q:\n%s", want, u)
 		}
 	}
 }
 
-// Blocker 3: the agent makes the repository, and restic gets the credentials in its environment.
-// After a restart, the agent starts the shared database containers again (RefreshDatabaseServices).
-// A data directory that exists keeps its owner: the entry point of the image gave it to the
-// database user of the container, and the database server that operates needs that owner.
+// After a restart, the agent starts the database servers again (RefreshDatabaseServices). A
+// data directory that exists keeps its owner and its mode: the database server that operates
+// needs them.
 func TestTheDatabaseServiceKeepsTheOwnerOfItsDataDirectory(t *testing.T) {
 	d, f, _ := deps(t)
 	both(d, func(d *Deps) {
 		d.ServiceImage = func(name string) string { return "ghcr.io/cloudfactory/" + name + ":0.1.0" }
 	})
 	newFakeValkey(d)
-	// The shared containers of an earlier release, and the database servers of a customer.
-	servers := []dbServer{{Engine: "mariadb"}, {Engine: "postgresql"}, customerValkey}
+	servers := []dbServer{customerValkey}
 	for _, engine := range []string{"mariadb", "postgresql"} {
 		spec := databaseServer(engine)
 		key, _ := serverKey(spec.GetId())
@@ -109,10 +115,7 @@ func TestTheDatabaseServiceKeepsTheOwnerOfItsDataDirectory(t *testing.T) {
 		servers = append(servers, dbServer{ID: key, Engine: engine})
 	}
 	for _, s := range servers {
-		dir := filepath.Join(d.dbDir(s), s.Engine)
-		if s.ID != "" {
-			dir = d.dataDir(s)
-		}
+		dir := d.dataDir(s)
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			t.Fatal(err)
 		}
@@ -127,6 +130,7 @@ func TestTheDatabaseServiceKeepsTheOwnerOfItsDataDirectory(t *testing.T) {
 	}
 }
 
+// Blocker 3: the agent makes the repository, and restic gets the credentials in its environment.
 func TestBackupMakesTheRepositoryAndUsesTheCredentials(t *testing.T) {
 	d, f, _ := deps(t)
 	os.MkdirAll(d.Host.AppDir("acme_x7k2"), 0o755)
@@ -285,24 +289,44 @@ func TestSetSftp(t *testing.T) {
 // FR-205: a staging copy gets its own copies of the databases and its own user.
 func TestStagingCopyCopiesTheDatabases(t *testing.T) {
 	d, f, _ := deps(t)
+	// The source website is a website of the customer. Its database is in the MariaDB
+	// database server of the customer.
+	const source = "01JBQ3Z5K8N6T4W2X9Y7R5P3M9"
+	if _, err := d.useDatabases(customerKey, source); err != nil {
+		t.Fatal(err)
+	}
 	w := website("ghcr.io/cloudfactory/frankenphp-php8.4:8.4.0-1")
 	w.UnixUser = "staging_ab12"
-	req := &agentv1.WebsiteRequest{JobId: jobID, Website: w, CopyFrom: "01JBQ3Z5K8N6T4W2X9Y7R5P3M9", CopyFromUnixUser: "acme_x7k2",
-		CopyDatabases: []*agentv1.DatabaseCopy{{Engine: "mariadb", From: "acme_x7k2_shop", To: "staging_ab12_shop"}},
-		CopyUsers:     []*agentv1.DatabaseUserCopy{{Engine: "mariadb", Name: "staging_ab12_app", Password: "Abcdefgh12345678"}}}
+	req := &agentv1.WebsiteRequest{JobId: jobID, Website: w, CopyFrom: source, CopyFromUnixUser: "acme_x7k2",
+		CopyDatabases:   []*agentv1.DatabaseCopy{{Engine: "mariadb", From: "acme_x7k2_shop", To: "staging_ab12_shop", FromServer: mariaServerID, ToServer: mariaServerID}},
+		CopyUsers:       []*agentv1.DatabaseUserCopy{{Engine: "mariadb", Name: "staging_ab12_app", Password: "Abcdefgh12345678", DatabaseServer: mariaServerID}},
+		DatabaseServers: []*agentv1.DatabaseServer{databaseServer("mariadb")}}
 	if err := run(t)(d.CreateWebsite(req)); err != nil {
 		t.Fatal(err)
 	}
 	all := strings.Join(f.Inputs, "")
-	for _, want := range []string{"CREATE DATABASE `staging_ab12_shop`", "CREATE USER 'staging_ab12_app'@'169.254.77.1'", "GRANT ALL PRIVILEGES ON `staging\\_ab12\\_shop`.* TO 'staging_ab12_app'@'169.254.77.1'"} {
+	for _, want := range []string{"CREATE DATABASE `staging_ab12_shop`", "CREATE USER 'staging_ab12_app'@'169.254.80.1'", "GRANT ALL PRIVILEGES ON `staging\\_ab12\\_shop`.* TO 'staging_ab12_app'@'169.254.80.1'"} {
 		if !strings.Contains(all, want) {
 			t.Errorf("no %q in the SQL:\n%s", want, all)
 		}
 	}
 	// The dump goes from one client to the other, not through the memory of the agent.
-	if !f.Called("runuser -u cf-db -- env XDG_RUNTIME_DIR=/run/user/20001 podman exec cf-mariadb mariadb-dump --user=root --single-transaction --routines acme_x7k2_shop | runuser -u cf-db") ||
+	client := podmanOf(mariaServerKey) + "exec"
+	if !f.Called(client+" cf-mariadb-"+mariaServerKey+" mariadb-dump --user=root --single-transaction --routines acme_x7k2_shop | "+client) ||
 		!strings.Contains(strings.Join(f.Calls, "\n"), "mariadb --sandbox --user=cfrestore_") {
 		t.Errorf("no copy of the source: %v", f.Calls)
+	}
+	// A copy needs the database server of each database and of each user.
+	for name, change := range map[string]func(r *agentv1.WebsiteRequest){
+		"a source":   func(r *agentv1.WebsiteRequest) { r.CopyDatabases[0].FromServer = "" },
+		"a new copy": func(r *agentv1.WebsiteRequest) { r.CopyDatabases[0].ToServer = "" },
+		"a user":     func(r *agentv1.WebsiteRequest) { r.CopyUsers[0].DatabaseServer = "" },
+	} {
+		bad := proto.Clone(req).(*agentv1.WebsiteRequest)
+		change(bad)
+		if _, err := d.CreateWebsite(bad); !errors.Is(err, errNoDatabaseServer) {
+			t.Errorf("%s with no database server: %v", name, err)
+		}
 	}
 	// The copy cannot name a database of a different website.
 	req.CopyDatabases[0].From = "other_zz99_shop"
@@ -560,9 +584,10 @@ func TestRestoreEmptiesTheDatabaseFirst(t *testing.T) {
 		"postgresql": "DROP SCHEMA IF EXISTS public CASCADE;\nCREATE SCHEMA public AUTHORIZATION pg_database_owner;",
 	} {
 		d, f, _ := deps(t)
+		customerServers(t, d, engine)
 		dump := filepath.Join(t.TempDir(), "dump.sql")
 		os.WriteFile(dump, []byte("CREATE TABLE t (id int);\n"), 0o600)
-		err := d.restoreDump(context.Background(), dbServer{Engine: engine}, "acme_x7k2_shop", func(ctx context.Context, client []string) error {
+		err := d.restoreDump(context.Background(), testServer(engine), "acme_x7k2_shop", func(ctx context.Context, client []string) error {
 			r, _ := os.Open(dump)
 			defer r.Close()
 			return d.Run.Stream(ctx, r, nil, client[0], client[1:]...)
@@ -584,9 +609,11 @@ func TestRestoreEmptiesTheDatabaseFirst(t *testing.T) {
 func TestARestoreThatCannotStartKeepsTheDatabase(t *testing.T) {
 	for engine, empty := range map[string]string{"mariadb": "DROP DATABASE", "postgresql": "DROP SCHEMA"} {
 		d, f, _ := deps(t)
-		f.Rules = []execx.Rule{{Prefix: "runuser -u cf-db -- env XDG_RUNTIME_DIR=/run/user/20001 podman exec -i --env-file ", Input: "SELECT 1;", Err: errors.New("exit status 125: permission denied")}}
+		customerServers(t, d, engine)
+		srv := testServer(engine)
+		f.Rules = []execx.Rule{{Prefix: podmanOf(srv.ID) + "exec -i --env-file ", Input: "SELECT 1;", Err: errors.New("exit status 125: permission denied")}}
 		loaded := false
-		err := d.restoreDump(context.Background(), dbServer{Engine: engine}, "acme_x7k2_shop", func(context.Context, []string) error {
+		err := d.restoreDump(context.Background(), srv, "acme_x7k2_shop", func(context.Context, []string) error {
 			loaded = true
 			return nil
 		})
@@ -725,7 +752,8 @@ func TestTheEdgeProxyRestartsWhenItsUnitChanged(t *testing.T) {
 // PostgreSQL server, where each user can read the names of all databases and all users.
 func TestPostgreSQLRefusesWebsiteUsersInItsOwnDatabases(t *testing.T) {
 	d, f, _ := deps(t)
-	req := &agentv1.CreateDatabaseRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Engine: "postgresql", Name: "acme_x7k2_shop"}
+	customerServers(t, d)
+	req := &agentv1.CreateDatabaseRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Engine: "postgresql", Name: "acme_x7k2_shop", DatabaseServer: databaseServer("postgresql")}
 	if err := run(t)(d.CreateDatabase(req)); err != nil {
 		t.Fatal(err)
 	}
@@ -749,7 +777,8 @@ func TestPostgreSQLRefusesWebsiteUsersInItsOwnDatabases(t *testing.T) {
 	}
 	// MariaDB has no such databases for its users.
 	d, f, _ = deps(t)
-	req.Engine = "mariadb"
+	customerServers(t, d)
+	req.Engine, req.DatabaseServer = "mariadb", databaseServer("mariadb")
 	if err := run(t)(d.CreateDatabase(req)); err != nil {
 		t.Fatal(err)
 	}
@@ -762,11 +791,12 @@ func TestPostgreSQLRefusesWebsiteUsersInItsOwnDatabases(t *testing.T) {
 // next job starts the container again. Before, each job failed until the agent started again.
 func TestTheAgentStartsADatabaseContainerAgainAfterItStopped(t *testing.T) {
 	d, f, _ := deps(t)
-	req := &agentv1.CreateDatabaseRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Engine: "postgresql", Name: "acme_x7k2_shop"}
+	customerServers(t, d)
+	req := &agentv1.CreateDatabaseRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Engine: "postgresql", Name: "acme_x7k2_shop", DatabaseServer: databaseServer("postgresql")}
 	if err := run(t)(d.CreateDatabase(req)); err != nil {
 		t.Fatal(err)
 	}
-	const start = "systemctl --user --machine=cf-db@ start cf-postgresql.service"
+	start := systemctlOf(pgServerKey) + "start cf-postgresql-" + pgServerKey + ".service"
 	starts := func() (n int) {
 		for _, c := range f.Calls {
 			if c == start || c == strings.Replace(start, " start ", " restart ", 1) {
@@ -780,7 +810,7 @@ func TestTheAgentStartsADatabaseContainerAgainAfterItStopped(t *testing.T) {
 	}
 
 	// The statement fails, but the server accepts connections: the container operates.
-	exec := "runuser -u cf-db -- env XDG_RUNTIME_DIR=/run/user/20001 podman exec -i cf-postgresql "
+	exec := execOf("postgresql", pgServerKey)
 	f.Rules = []execx.Rule{{Prefix: exec + "psql", Input: "acme_x7k2_blog", Err: errors.New("exit status 3")}}
 	req.Name = "acme_x7k2_blog"
 	if err := run(t)(d.CreateDatabase(req)); err == nil {
@@ -816,12 +846,13 @@ func TestTheAgentStartsADatabaseContainerAgainAfterItStopped(t *testing.T) {
 // of its database server. A user from before the limit gets it with the next change.
 func TestADatabaseUserHasAConnectionLimit(t *testing.T) {
 	for engine, want := range map[string]string{
-		"mariadb":    "ALTER USER 'acme_x7k2_sync'@'169.254.77.1' REQUIRE NONE WITH MAX_USER_CONNECTIONS 100;\n",
+		"mariadb":    "ALTER USER 'acme_x7k2_sync'@'169.254.80.1' REQUIRE NONE WITH MAX_USER_CONNECTIONS 100;\n",
 		"postgresql": "ALTER ROLE \"acme_x7k2_sync\" WITH LOGIN CONNECTION LIMIT 80;\n",
 	} {
 		d, f, _ := deps(t)
-		f.Rules = []execx.Rule{{Prefix: "runuser -u cf-db", Input: "SELECT Host FROM mysql.user", Output: "169.254.77.1\n"}}
-		req := &agentv1.SetDatabaseUserRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Engine: engine, Name: "acme_x7k2_sync", Access: "website"}
+		customerServers(t, d)
+		f.Rules = []execx.Rule{{Prefix: podmanOf(mariaServerKey), Input: "SELECT Host FROM mysql.user", Output: "169.254.80.1\n"}}
+		req := &agentv1.SetDatabaseUserRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Engine: engine, Name: "acme_x7k2_sync", Access: "website", DatabaseServer: databaseServer(engine)}
 		if err := run(t)(d.SetDatabaseUser(req)); err != nil {
 			t.Fatalf("%s: %v", engine, err)
 		}

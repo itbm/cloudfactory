@@ -199,7 +199,7 @@ class DemoSeeder extends Seeder
                 'name' => $name, 'application' => $application, 'customer_id' => $owner->id, 'server_id' => $this->servers[$server]->id, 'plan_id' => $plan->id,
                 'image_id' => $this->images[$image]->id, 'unix_user' => self::unixUser($name), 'status' => $status,
                 'extensions' => $image === 'node' ? [] : ['opcache', 'intl', 'gd', 'zip'], 'php_ini' => $image === 'node' ? [] : ['memory_limit' => '256M', 'upload_max_filesize' => '64M'],
-                'limits' => $plan->limits, 'database_instance' => $owner->id, 'document_root' => $application === 'Laravel' ? 'public' : '.',
+                'limits' => $plan->limits, 'document_root' => $application === 'Laravel' ? 'public' : '.',
                 'usage' => ['cpuPercent' => $use[0], 'memoryBytes' => $use[1] * self::MB, 'diskBytes' => $use[2] * self::MB, 'processes' => $use[3]],
                 ...$more,
             ]);

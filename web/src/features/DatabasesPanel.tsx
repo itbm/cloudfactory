@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { useAction, useStore } from "../api/hooks";
-import { createDatabase, createDatabaseUser, databaseServersFor, deleteDatabase, deleteDatabaseUser, partialDetails, setDatabaseUser, sharedDatabasesMessage, type GrantInput } from "../api/store";
+import { createDatabase, createDatabaseUser, databaseServersFor, deleteDatabase, deleteDatabaseUser, partialDetails, setDatabaseUser, type GrantInput } from "../api/store";
 import type { DatabaseEngine, DatabasePrivileges, DatabaseUser } from "../api/types";
 import { Card, ConfirmButton, Field, FormError, Modal, RowMenu, TableWrap } from "../components/ui";
 import { bytes, count } from "../lib/format";
@@ -40,16 +40,14 @@ export function DatabasesPanel({ websiteId }: { websiteId?: string }) {
   const serverName = (id?: string) => state.databaseServers.find((x) => x.id === id)?.name;
   // The database servers that the selected website can use: those of its customer on its server.
   const website = sites.find((w) => w.id === site);
-  const usable = website?.sharedDatabases ? [] : databaseServersFor(state, website, engine);
+  const usable = databaseServersFor(state, website, engine);
   const prefix = (id: string) => `${sites.find((w) => w.id === id)?.unixUser ?? ""}_`;
   // The reason when a website cannot have a Valkey database: an agent of an earlier release
-  // cannot operate Valkey, and the shared database containers of an earlier release have none.
-  // When the panel does not know the server, the API makes the check.
+  // cannot operate Valkey. When the panel does not know the server, the API makes the check.
   const noValkey = (id: string) => {
     const website = sites.find((w) => w.id === id);
     const server = state.servers.find((s) => s.id === website?.serverId);
-    if (server?.databaseEngines && !server.databaseEngines.includes("valkey")) return `The agent on the server ${server.name} cannot operate Valkey. Update the agent of the server.`;
-    return website?.sharedDatabases ? sharedDatabasesMessage(server?.name ?? "of the website") : undefined;
+    return server?.databaseEngines && !server.databaseEngines.includes("valkey") ? `The agent on the server ${server.name} cannot operate Valkey. Update the agent of the server.` : undefined;
   };
   const pending = state.jobs.filter((j) => jobActive(j) && j.title.startsWith("Create ") && j.title.includes("database") && (!websiteId || j.websiteId === websiteId));
 
@@ -96,7 +94,7 @@ export function DatabasesPanel({ websiteId }: { websiteId?: string }) {
                     <td>{d.engine === "valkey" ? (d.keys === undefined ? <span className="muted">No report</span> : `${count(d.keys)} ${d.keys === 1 ? "key" : "keys"}`) : bytes(d.sizeBytes)}</td>
                     <td>
                       <code>{d.host ?? DATABASE_HOST[d.engine]}:{d.port ?? DATABASE_PORT[d.engine]}</code>
-                      <span className="cell-sub">{d.databaseServerId ? serverName(d.databaseServerId) ?? "Database server" : "Shared container of an earlier release"}</span>
+                      <span className="cell-sub">{serverName(d.databaseServerId) ?? "Database server"}</span>
                       {d.engine === "valkey" && <span className="cell-sub">{d.number === undefined ? "The number comes when the job is complete" : <>Database number <strong>{d.number}</strong></>}</span>}
                     </td>
                     <td className="cell-actions" style={{ width: 120 }}>
@@ -206,24 +204,22 @@ export function DatabasesPanel({ websiteId }: { websiteId?: string }) {
           }}>
             <FormError error={createDb.error} />
             <DbFields engines={ALL_ENGINES} noValkey={noValkey(site)} engine={engine} setEngine={(e) => { setEngine(e); setDbServer(""); }} name={name} setName={setName} site={site} setSite={(s) => { setSite(s); setDbServer(""); if (engine === "valkey" && noValkey(s)) setEngine("mariadb"); }} showSite={!websiteId} prefix={prefix(site)} error={createDb.error?.fields.name} engineError={createDb.error?.fields.engine}>
-              {!website?.sharedDatabases && (
-                <div style={{ marginTop: 14 }}>
-                  <Field
-                    label="Database server"
-                    hint={usable.length === 0
-                      ? <>The customer has no {ENGINE[engine]} database server on the server of this website. The panel makes one with the plan of the customer.</>
-                      : <>The websites of the customer on the same server can connect to it. {websiteId ? <>To make more database servers, go to the <Link to="/databases">Databases</Link> page.</> : "To make more database servers, select New database server on this page."}</>}
-                    error={createDb.error?.fields.databaseServerId}
-                  >
-                    {(p) => (
-                      <select {...p} className="select" value={dbServer} onChange={(e) => setDbServer(e.target.value)}>
-                        <option value="">{usable.length === 0 ? `New ${ENGINE[engine]} database server` : "Automatic: the first database server with space"}</option>
-                        {usable.map((x) => <option key={x.id} value={x.id} disabled={x.databases >= x.maxDatabases}>{x.name} · port {x.port} · {x.databases} of {x.maxDatabases} databases</option>)}
-                      </select>
-                    )}
-                  </Field>
-                </div>
-              )}
+              <div style={{ marginTop: 14 }}>
+                <Field
+                  label="Database server"
+                  hint={usable.length === 0
+                    ? <>The customer has no {ENGINE[engine]} database server on the server of this website. The panel makes one with the plan of the customer.</>
+                    : <>The websites of the customer on the same server can connect to it. {websiteId ? <>To make more database servers, go to the <Link to="/databases">Databases</Link> page.</> : "To make more database servers, select New database server on this page."}</>}
+                  error={createDb.error?.fields.databaseServerId}
+                >
+                  {(p) => (
+                    <select {...p} className="select" value={dbServer} onChange={(e) => setDbServer(e.target.value)}>
+                      <option value="">{usable.length === 0 ? `New ${ENGINE[engine]} database server` : "Automatic: the first database server with space"}</option>
+                      {usable.map((x) => <option key={x.id} value={x.id} disabled={x.databases >= x.maxDatabases}>{x.name} · port {x.port} · {x.databases} of {x.maxDatabases} databases</option>)}
+                    </select>
+                  )}
+                </Field>
+              </div>
             </DbFields>
             {engine === "valkey" ? (
               <p className="muted small" style={{ marginTop: 12 }}>Valkey keeps keys and values in memory, for a cache, sessions and queues. It is compatible with Redis. The database gets a number, and a user with the same name as the database. An app connects with the user name, the password and the number.</p>

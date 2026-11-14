@@ -135,9 +135,6 @@ func (v *valkeyConn) read(depth int) (any, error) {
 
 // valkeyConnect opens a connection to a Valkey database server and logs in.
 func (d *Deps) valkeyConnect(ctx context.Context, s dbServer, user, password string) (*valkeyConn, error) {
-	if s.ID == "" {
-		return nil, errNoSharedValkey
-	}
 	customer, record, address, err := d.State.DatabaseServer(s.ID)
 	if err != nil {
 		return nil, err

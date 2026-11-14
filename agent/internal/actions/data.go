@@ -24,20 +24,11 @@ import (
 	"github.com/itbm/cloudfactory/agent/internal/validate"
 )
 
-// DBUser is the Unix user of the shared database containers of an earlier release. A database
-// server of a customer has its own Unix user (dbUser).
-const DBUser = "cf-db"
-
-// dbUser gives the Unix user of a database container. Each database server of a customer has
-// its own user, as each website has: the user owns the data files, and the disk limit of the
-// database server is the user quota of that user. The user has the name "db-" and the ID of
-// the database server, so the root helper finds it from the ID.
-func dbUser(s dbServer) string {
-	if s.ID == "" {
-		return DBUser
-	}
-	return host.DatabaseUser(s.ID)
-}
+// dbUser gives the Unix user of a database server. Each database server has its own user, as
+// each website has: the user owns the data files, and the disk limit of the database server
+// is the user quota of that user. The user has the name "db-" and the ID of the database
+// server, so the root helper finds it from the ID.
+func dbUser(s dbServer) string { return host.DatabaseUser(s.ID) }
 
 // dbExec gives the start of a command that runs a program in a database container, as the
 // Unix user of the container:
@@ -53,23 +44,20 @@ func (d *Deps) dbExec(s dbServer, options ...string) ([]string, error) {
 	return append(append(args, options...), s.container()), nil
 }
 
-// dbContainer checks an engine, and gives the name of its shared container of an earlier
-// release. dbServer.container gives the name of the container of a database server.
-func dbContainer(engine string) (string, error) {
-	switch engine {
-	case "mariadb", "postgresql", "valkey":
-		return quadlet.DatabaseContainer(engine, ""), nil
+// checkEngine checks the name of a database engine.
+func checkEngine(engine string) error {
+	if slices.Contains(Engines, engine) {
+		return nil
 	}
-	return "", fmt.Errorf("the database engine %q is not valid", engine)
+	return fmt.Errorf("the database engine %q is not valid", engine)
 }
 
-// sqlEngine is dbContainer for the actions that use SQL or a dump. Valkey has neither.
+// sqlEngine is checkEngine for the actions that use SQL or a dump. Valkey has neither.
 func sqlEngine(engine string) error {
 	if engine == "valkey" {
 		return errValkeyNoCopy
 	}
-	_, err := dbContainer(engine)
-	return err
+	return checkEngine(engine)
 }
 
 // sql sends statements on stdin to the database client in a database container. It starts the
@@ -99,7 +87,7 @@ func (d *Deps) sqlNow(ctx context.Context, s dbServer, statements string) (strin
 	if engine == "valkey" {
 		return "", errors.New("Valkey has no SQL")
 	}
-	if _, err := dbContainer(engine); err != nil {
+	if err := checkEngine(engine); err != nil {
 		return "", err
 	}
 	args, err := d.dbExec(s, "-i")
@@ -118,22 +106,11 @@ func (d *Deps) sqlNow(ctx context.Context, s dbServer, statements string) (strin
 // the address that the database server sees for the website containers. "anywhere" users can
 // connect from any address, with TLS.
 //
-// A database server of a customer sees quadlet.DatabaseClientAddress for each website
-// container. The shared container of an earlier release sees quadlet.ServiceAddress.
-func (d *Deps) mariaHost(s dbServer, access string) (string, error) {
+// A database server sees quadlet.DatabaseClientAddress for each website container.
+func mariaHost(access string) (string, error) {
 	switch access {
 	case "", "website":
-		host := quadlet.DatabaseClientAddress
-		if s.ID == "" {
-			host = d.DatabaseClientHost
-			if host == "" {
-				host = quadlet.ServiceAddress
-			}
-		}
-		if err := validate.DatabaseClientHost(host); err != nil {
-			return "", err
-		}
-		return host, nil
+		return quadlet.DatabaseClientAddress, nil
 	case "anywhere":
 		return "%", nil
 	}
@@ -207,7 +184,7 @@ func (d *Deps) CreateDatabase(req *agentv1.CreateDatabaseRequest) (jobs.Job, err
 	if err := errors.Join(validate.ID(req.GetWebsiteId()), validate.TenantDatabaseName(unixUser, name)); err != nil {
 		return jobs.Job{}, err
 	}
-	if _, err := dbContainer(engine); err != nil {
+	if err := checkEngine(engine); err != nil {
 		return jobs.Job{}, err
 	}
 	if user != "" {
@@ -218,7 +195,7 @@ func (d *Deps) CreateDatabase(req *agentv1.CreateDatabaseRequest) (jobs.Job, err
 			return jobs.Job{}, errors.New("the database password must have 16 to 64 letters and digits")
 		}
 	}
-	if _, err := d.mariaHost(dbServer{}, req.GetAccess()); err != nil {
+	if _, err := mariaHost(req.GetAccess()); err != nil {
 		return jobs.Job{}, err
 	}
 	if err := checkWebsiteServer(req.GetDatabaseServer(), engine); err != nil {
@@ -257,7 +234,7 @@ func (d *Deps) CreateDatabase(req *agentv1.CreateDatabaseRequest) (jobs.Job, err
 				if err != nil {
 					return err
 				}
-				host, err := d.mariaHost(srv, req.GetAccess())
+				host, err := mariaHost(req.GetAccess())
 				if err != nil {
 					return err
 				}
@@ -268,7 +245,7 @@ func (d *Deps) CreateDatabase(req *agentv1.CreateDatabaseRequest) (jobs.Job, err
 				if err != nil {
 					return err
 				}
-				host, err := d.mariaHost(srv, req.GetAccess())
+				host, err := mariaHost(req.GetAccess())
 				if err != nil {
 					return err
 				}
@@ -381,7 +358,7 @@ func (d *Deps) mariaCurrentHost(ctx context.Context, s dbServer, user string) (s
 func (d *Deps) SetDatabaseUser(req *agentv1.SetDatabaseUserRequest) (jobs.Job, error) {
 	unixUser, user, engine := req.GetUnixUser(), req.GetName(), req.GetEngine()
 	errs := []error{validate.ID(req.GetWebsiteId()), validate.TenantDatabaseName(unixUser, user)}
-	if _, err := dbContainer(engine); err != nil {
+	if err := checkEngine(engine); err != nil {
 		errs = append(errs, err)
 	}
 	all := map[string]bool{}
@@ -402,7 +379,7 @@ func (d *Deps) SetDatabaseUser(req *agentv1.SetDatabaseUserRequest) (jobs.Job, e
 	if (pass != "" || req.GetCreate()) && validate.DatabasePassword(pass) != nil {
 		errs = append(errs, errors.New("the database password must have 16 to 64 letters and digits"))
 	}
-	_, err := d.mariaHost(dbServer{}, req.GetAccess())
+	_, err := mariaHost(req.GetAccess())
 	errs = append(errs, err, checkWebsiteServer(req.GetDatabaseServer(), engine))
 	if err := errors.Join(errs...); err != nil {
 		return jobs.Job{}, err
@@ -413,7 +390,7 @@ func (d *Deps) SetDatabaseUser(req *agentv1.SetDatabaseUserRequest) (jobs.Job, e
 		if err != nil {
 			return srv, "", err
 		}
-		host, err := d.mariaHost(srv, req.GetAccess())
+		host, err := mariaHost(req.GetAccess())
 		return srv, host, err
 	}
 	if engine == "valkey" {
@@ -499,7 +476,7 @@ func (d *Deps) DeleteDatabaseUser(req *agentv1.DeleteDatabaseUserRequest) (jobs.
 	if err := errors.Join(validate.ID(req.GetWebsiteId()), validate.TenantDatabaseName(unixUser, user), serverErr); err != nil {
 		return jobs.Job{}, err
 	}
-	if _, err := dbContainer(engine); err != nil {
+	if err := checkEngine(engine); err != nil {
 		return jobs.Job{}, err
 	}
 	if engine == "valkey" {
@@ -553,7 +530,7 @@ func (d *Deps) DeleteDatabase(req *agentv1.DeleteDatabaseRequest) (jobs.Job, err
 	for _, u := range req.GetUsers() {
 		errs = append(errs, validate.TenantDatabaseName(unixUser, u))
 	}
-	if _, err := dbContainer(engine); err != nil {
+	if err := checkEngine(engine); err != nil {
 		errs = append(errs, err)
 	}
 	if err := errors.Join(errs...); err != nil {

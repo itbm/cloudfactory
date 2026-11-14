@@ -455,9 +455,8 @@ func (d *Deps) RestoreLocalNames(ctx context.Context) error {
 	return errors.Join(errs...)
 }
 
-// databaseSizes gives the size of each database in the database containers that operate: the
-// database servers of each customer, and the shared containers of an earlier release. The
-// name of a database is for one website, so it is in one container only.
+// databaseSizes gives the size of each database in the database servers that operate. The
+// name of a database is for one website, so it is in one database server only.
 func (d *Deps) databaseSizes(ctx context.Context) []panel.DatabaseSize {
 	out := []panel.DatabaseSize{}
 	d.dbMu.Lock()
