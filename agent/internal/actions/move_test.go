@@ -120,7 +120,7 @@ func TestMoveDatabases(t *testing.T) {
 	// The users have the hashes of their passwords, the address that a database server sees
 	// for a website, and their access.
 	for _, want := range []string{
-		"CREATE USER 'acme_x7k2_shop'@'169.254.80.1' IDENTIFIED VIA mysql_native_password USING '" + mariaHash + "' REQUIRE NONE;\n",
+		"CREATE USER 'acme_x7k2_shop'@'169.254.80.1' IDENTIFIED VIA mysql_native_password USING '" + mariaHash + "' REQUIRE NONE WITH MAX_USER_CONNECTIONS 100;\n",
 		"GRANT ALL PRIVILEGES ON `acme\\_x7k2\\_shop`.* TO 'acme_x7k2_shop'@'169.254.80.1';\n",
 	} {
 		if in := inputsOf(f, mariaNew); !strings.Contains(in, want) {
@@ -128,7 +128,7 @@ func TestMoveDatabases(t *testing.T) {
 		}
 	}
 	for _, want := range []string{
-		"CREATE ROLE \"acme_x7k2_reader\" LOGIN PASSWORD '" + pgVerifier + "';\n",
+		"CREATE ROLE \"acme_x7k2_reader\" LOGIN CONNECTION LIMIT 80 PASSWORD '" + pgVerifier + "';\n",
 		"GRANT \"acme_x7k2_data:ro\" TO \"acme_x7k2_reader\";\n",
 	} {
 		if in := inputsOf(f, pgNew); !strings.Contains(in, want) {

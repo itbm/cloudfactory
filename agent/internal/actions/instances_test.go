@@ -214,7 +214,7 @@ func TestEachDatabaseServerHasItsOwnContainer(t *testing.T) {
 	}
 	in := strings.Join(f.Inputs, "")
 	for _, want := range []string{
-		"CREATE USER 'acme_x7k2_shop'@'169.254.80.1' IDENTIFIED BY 'Abcdefghijklmnop1234' REQUIRE NONE;",
+		"CREATE USER 'acme_x7k2_shop'@'169.254.80.1' IDENTIFIED BY 'Abcdefghijklmnop1234' REQUIRE NONE WITH MAX_USER_CONNECTIONS 100;",
 		"GRANT ALL PRIVILEGES ON `bolt\\_k3m9\\_shop`.* TO 'bolt_k3m9_shop'@'169.254.80.1';",
 	} {
 		if !strings.Contains(in, want) {

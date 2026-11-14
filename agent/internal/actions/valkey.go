@@ -312,7 +312,15 @@ func (d *Deps) valkeyService(ctx context.Context, s dbServer) (*valkeyConn, erro
 	if err := d.EnsureDatabaseService(ctx, s); err != nil {
 		return nil, err
 	}
-	return d.valkeyAdminConn(ctx, s)
+	c, err := d.valkeyAdminConn(ctx, s)
+	if err != nil && ctx.Err() == nil {
+		// The container possibly stopped after the agent started it. The next call starts
+		// it again and waits for it (see sql).
+		d.dbMu.Lock()
+		delete(d.dbReady, s)
+		d.dbMu.Unlock()
+	}
+	return c, err
 }
 
 // valkeyCreate makes a Valkey database: a free database number, and a user with the name of

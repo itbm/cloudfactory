@@ -48,11 +48,23 @@ func sqlEngine(engine string) error {
 
 // sql sends statements on stdin to the database client in a database container. It starts the
 // container first if it does not operate.
+//
+// The agent starts a database container one time and then records that it answered. When
+// statements fail, the container possibly stopped after that, for example because the server
+// had no memory for it. Then the agent forgets the record, so that the next call starts the
+// container again and waits for it. Without this, each later job would fail until the agent
+// starts again.
 func (d *Deps) sql(ctx context.Context, s dbServer, statements string) (string, error) {
 	if err := d.EnsureDatabaseService(ctx, s); err != nil {
 		return "", err
 	}
-	return d.sqlNow(ctx, s, statements)
+	out, err := d.sqlNow(ctx, s, statements)
+	if err != nil && ctx.Err() == nil && d.databaseListens(ctx, s) != nil {
+		d.dbMu.Lock()
+		delete(d.dbReady, s)
+		d.dbMu.Unlock()
+	}
+	return out, err
 }
 
 // sqlNow is sql with no start of the container.
@@ -109,12 +121,32 @@ var clientHostRE = regexp.MustCompile(`^[A-Za-z0-9.:%/_-]{1,255}$`)
 // escapes "_". Then a grant on "acme_x7k2_shop" never matches a different database.
 func mariaDB(name string) string { return "`" + strings.ReplaceAll(name, "_", `\_`) + "`" }
 
+// The maximum number of connections of one database user at the same time. A database
+// server accepts 151 connections (MariaDB) or 100 connections (PostgreSQL, with 3 of them for
+// the superuser). With a limit for each user, the application of one website cannot use all
+// connections of its database server: the other websites of the customer and the agent can
+// connect.
+const (
+	mariaUserConnections = 100
+	pgUserConnections    = 80
+)
+
+// mariaRequire gives the options of a MariaDB user: TLS for a user that can connect from any
+// address, and the connection limit.
 func mariaRequire(access string) string {
+	require := "REQUIRE NONE"
 	if access == "anywhere" {
-		return "REQUIRE SSL"
+		require = "REQUIRE SSL"
 	}
-	return "REQUIRE NONE"
+	return fmt.Sprintf("%s WITH MAX_USER_CONNECTIONS %d", require, mariaUserConnections)
 }
+
+// pgHarden is the SQL that the agent sends to a PostgreSQL server each time it starts the
+// server. By default, each user can connect to the databases "postgres" and "template1",
+// and read the names of all databases and all users there. The users of the websites get no
+// access to these two databases. A user connects only to its own databases
+// (pgCreateDatabase). The superuser of the agent can always connect.
+const pgHarden = "REVOKE CONNECT ON DATABASE postgres, template1 FROM PUBLIC;\n"
 
 // mariaPrivileges gives the MariaDB privileges for "readonly" and "readwrite".
 func mariaPrivileges(p string) (string, error) {
@@ -286,7 +318,7 @@ func (d *Deps) createUser(ctx context.Context, s dbServer, user, pass, host, acc
 	if found {
 		return fmt.Errorf("the database user %s exists", user)
 	}
-	_, err = d.sql(ctx, s, fmt.Sprintf("CREATE ROLE \"%s\" LOGIN PASSWORD '%s';\n", user, pass))
+	_, err = d.sql(ctx, s, fmt.Sprintf("CREATE ROLE \"%s\" LOGIN CONNECTION LIMIT %d PASSWORD '%s';\n", user, pgUserConnections, pass))
 	return err
 }
 
@@ -391,10 +423,12 @@ func (d *Deps) SetDatabaseUser(req *agentv1.SetDatabaseUserRequest) (jobs.Job, e
 				return d.createUser(ctx, srv, user, pass, host, req.GetAccess())
 			}
 			if !maria {
-				if pass == "" {
-					return nil
+				// A user from before the connection limit gets the limit with each change.
+				statement := fmt.Sprintf("ALTER ROLE \"%s\" WITH LOGIN CONNECTION LIMIT %d", user, pgUserConnections)
+				if pass != "" {
+					statement += fmt.Sprintf(" PASSWORD '%s'", pass)
 				}
-				_, err := d.sql(ctx, srv, fmt.Sprintf("ALTER ROLE \"%s\" WITH LOGIN PASSWORD '%s';\n", user, pass))
+				_, err := d.sql(ctx, srv, statement+";\n")
 				return err
 			}
 			old, err := d.mariaCurrentHost(ctx, srv, user)

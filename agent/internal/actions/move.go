@@ -335,7 +335,7 @@ func (d *Deps) copyUser(ctx context.Context, from, to dbServer, u *agentv1.MoveD
 			return errors.New("the shared PostgreSQL container does not have a user with this name and a SCRAM-SHA-256 password")
 		}
 		// PostgreSQL keeps a password that is a SCRAM-SHA-256 verifier as it is.
-		create = fmt.Sprintf("CREATE ROLE \"%s\" LOGIN PASSWORD '%s';\n", name, verifier)
+		create = fmt.Sprintf("CREATE ROLE \"%s\" LOGIN CONNECTION LIMIT %d PASSWORD '%s';\n", name, pgUserConnections, verifier)
 	}
 	if err := d.dropUser(ctx, to, name); err != nil {
 		return err

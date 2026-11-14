@@ -398,7 +398,7 @@ func TestCreateDatabaseSendsThePasswordOnStdin(t *testing.T) {
 	in := strings.Join(f.Inputs, "")
 	for _, want := range []string{
 		"CREATE DATABASE `acme_x7k2_shop` CHARACTER SET",
-		"CREATE USER 'acme_x7k2_shop'@'169.254.77.1' IDENTIFIED BY 'Abcdefghijklmnop1234' REQUIRE NONE;",
+		"CREATE USER 'acme_x7k2_shop'@'169.254.77.1' IDENTIFIED BY 'Abcdefghijklmnop1234' REQUIRE NONE WITH MAX_USER_CONNECTIONS 100;",
 		"GRANT ALL PRIVILEGES ON `acme\\_x7k2\\_shop`.* TO 'acme_x7k2_shop'@'169.254.77.1';",
 	} {
 		if !strings.Contains(in, want) {
@@ -457,7 +457,7 @@ func TestPostgreSQLDatabaseHasGroupRoles(t *testing.T) {
 		`CREATE DATABASE "acme_x7k2_shop" OWNER "acme_x7k2_shop:rw";`,
 		`REVOKE ALL ON DATABASE "acme_x7k2_shop" FROM PUBLIC;`,
 		`ALTER DEFAULT PRIVILEGES FOR ROLE "acme_x7k2_shop:rw" IN SCHEMA public GRANT SELECT ON TABLES TO "acme_x7k2_shop:ro";`,
-		`CREATE ROLE "acme_x7k2_shop" LOGIN PASSWORD`,
+		`CREATE ROLE "acme_x7k2_shop" LOGIN CONNECTION LIMIT 80 PASSWORD`,
 		`GRANT "acme_x7k2_shop:rw" TO "acme_x7k2_shop";`,
 		`ALTER ROLE "acme_x7k2_shop" IN DATABASE "acme_x7k2_shop" SET role = 'acme_x7k2_shop:rw';`,
 	} {
@@ -487,7 +487,7 @@ func TestSetDatabaseUserGivesAPermissionForEachDatabase(t *testing.T) {
 		in := strings.Join(f.Inputs, "")
 		want := []string{
 			"RENAME USER 'acme_x7k2_sync'@'169.254.77.1' TO 'acme_x7k2_sync'@'%';",
-			"ALTER USER 'acme_x7k2_sync'@'%' REQUIRE SSL;",
+			"ALTER USER 'acme_x7k2_sync'@'%' REQUIRE SSL WITH MAX_USER_CONNECTIONS 100;",
 			"REVOKE ALL PRIVILEGES, GRANT OPTION FROM 'acme_x7k2_sync'@'%';",
 			"GRANT SELECT, SHOW VIEW ON `acme\\_x7k2\\_prod`.* TO 'acme_x7k2_sync'@'%';",
 			"GRANT ALL PRIVILEGES ON `acme\\_x7k2\\_staging`.* TO 'acme_x7k2_sync'@'%';",

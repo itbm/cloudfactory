@@ -175,6 +175,12 @@ func (d *Deps) EnsureDatabaseService(ctx context.Context, s dbServer) error {
 	if err := d.waitDatabase(ctx, s); err != nil {
 		return err
 	}
+	if s.Engine == "postgresql" {
+		// The users of the websites cannot connect to the databases of the server itself.
+		if _, err := d.sqlNow(ctx, s, pgHarden); err != nil {
+			return err
+		}
+	}
 	d.dbMu.Lock()
 	if d.dbReady == nil {
 		d.dbReady = map[dbServer]bool{}

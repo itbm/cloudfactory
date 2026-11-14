@@ -609,3 +609,113 @@ func TestTheEdgeProxyRestartsWhenItsUnitChanged(t *testing.T) {
 		t.Errorf("with a new image: %v", f.Calls)
 	}
 }
+
+// The users of the websites cannot connect to the databases "postgres" and "template1" of a
+// PostgreSQL server, where each user can read the names of all databases and all users.
+func TestPostgreSQLRefusesWebsiteUsersInItsOwnDatabases(t *testing.T) {
+	d, f, _ := deps(t)
+	req := &agentv1.CreateDatabaseRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Engine: "postgresql", Name: "acme_x7k2_shop"}
+	if err := run(t)(d.CreateDatabase(req)); err != nil {
+		t.Fatal(err)
+	}
+	const revoke = "REVOKE CONNECT ON DATABASE postgres, template1 FROM PUBLIC;\n"
+	first, create := index(f.Inputs, revoke), -1
+	for i, in := range f.Inputs {
+		if strings.Contains(in, `CREATE DATABASE "acme_x7k2_shop"`) {
+			create = i
+		}
+	}
+	if first < 0 || create < first {
+		t.Fatalf("the agent sends %q before the first database: revoke at %d, database at %d", revoke, first, create)
+	}
+	// One time for each start of the server by the agent, not with each job.
+	req.Name = "acme_x7k2_blog"
+	if err := run(t)(d.CreateDatabase(req)); err != nil {
+		t.Fatal(err)
+	}
+	if n := strings.Count(strings.Join(f.Inputs, ""), revoke); n != 1 {
+		t.Errorf("the agent sent the statement %d times, want 1", n)
+	}
+	// MariaDB has no such databases for its users.
+	d, f, _ = deps(t)
+	req.Engine = "mariadb"
+	if err := run(t)(d.CreateDatabase(req)); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(strings.Join(f.Inputs, ""), "REVOKE CONNECT") {
+		t.Error("the agent sent the PostgreSQL statement to MariaDB")
+	}
+}
+
+// A database container that stopped after the agent started it: the statements fail, and the
+// next job starts the container again. Before, each job failed until the agent started again.
+func TestTheAgentStartsADatabaseContainerAgainAfterItStopped(t *testing.T) {
+	d, f, _ := deps(t)
+	req := &agentv1.CreateDatabaseRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Engine: "postgresql", Name: "acme_x7k2_shop"}
+	if err := run(t)(d.CreateDatabase(req)); err != nil {
+		t.Fatal(err)
+	}
+	const start = "systemctl --user --machine=cf-db@ start cf-postgresql.service"
+	starts := func() (n int) {
+		for _, c := range f.Calls {
+			if c == start || c == strings.Replace(start, " start ", " restart ", 1) {
+				n++
+			}
+		}
+		return n
+	}
+	if starts() != 1 {
+		t.Fatalf("the agent started the container %d times, want 1:\n%s", starts(), strings.Join(f.Calls, "\n"))
+	}
+
+	// The statement fails, but the server accepts connections: the container operates.
+	exec := "runuser -u cf-db -- env XDG_RUNTIME_DIR=/run/user/20001 podman exec -i cf-postgresql "
+	f.Rules = []execx.Rule{{Prefix: exec + "psql", Input: "acme_x7k2_blog", Err: errors.New("exit status 3")}}
+	req.Name = "acme_x7k2_blog"
+	if err := run(t)(d.CreateDatabase(req)); err == nil {
+		t.Fatal("the job has no error")
+	}
+	f.Rules = nil
+	if err := run(t)(d.CreateDatabase(req)); err != nil {
+		t.Fatal(err)
+	}
+	if starts() != 1 {
+		t.Errorf("the agent started a container that operates: %d starts", starts())
+	}
+
+	// The statement fails, and the server accepts no connections: the container stopped.
+	f.Rules = []execx.Rule{
+		{Prefix: exec + "psql", Input: "acme_x7k2_data", Err: errors.New("exit status 2")},
+		{Prefix: exec + "pg_isready", Err: errors.New("exit status 2")},
+	}
+	req.Name = "acme_x7k2_data"
+	if err := run(t)(d.CreateDatabase(req)); err == nil {
+		t.Fatal("the job has no error")
+	}
+	f.Rules = nil
+	if err := run(t)(d.CreateDatabase(req)); err != nil {
+		t.Fatal(err)
+	}
+	if starts() != 2 {
+		t.Errorf("the agent started the container %d times, want 2", starts())
+	}
+}
+
+// A database user has a connection limit, so that one application cannot use all connections
+// of its database server. A user from before the limit gets it with the next change.
+func TestADatabaseUserHasAConnectionLimit(t *testing.T) {
+	for engine, want := range map[string]string{
+		"mariadb":    "ALTER USER 'acme_x7k2_sync'@'169.254.77.1' REQUIRE NONE WITH MAX_USER_CONNECTIONS 100;\n",
+		"postgresql": "ALTER ROLE \"acme_x7k2_sync\" WITH LOGIN CONNECTION LIMIT 80;\n",
+	} {
+		d, f, _ := deps(t)
+		f.Rules = []execx.Rule{{Prefix: "runuser -u cf-db", Input: "SELECT Host FROM mysql.user", Output: "169.254.77.1\n"}}
+		req := &agentv1.SetDatabaseUserRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Engine: engine, Name: "acme_x7k2_sync", Access: "website"}
+		if err := run(t)(d.SetDatabaseUser(req)); err != nil {
+			t.Fatalf("%s: %v", engine, err)
+		}
+		if in := strings.Join(f.Inputs, ""); !strings.Contains(in, want) {
+			t.Errorf("%s: inputs do not contain %q:\n%s", engine, want, in)
+		}
+	}
+}
