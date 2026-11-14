@@ -205,6 +205,21 @@ func TestDialOnlyListedSockets(t *testing.T) {
 	}
 }
 
+// A target of the list that does not listen is not a refusal. The log of the root helper shows
+// a refusal only for a name that is not in the list.
+func TestAFailedConnectionIsNotARefusal(t *testing.T) {
+	_, err := (&net.Dialer{}).DialContext(context.Background(), "unix", filepath.Join(t.TempDir(), "no.sock"))
+	if err == nil || !dialFailed(err) {
+		t.Fatalf("a socket that does not exist: dialFailed(%v) is not true", err)
+	}
+	if !dialFailed(errors.Join(errKnown, err)) {
+		t.Fatal("a network error in a different error: dialFailed is not true")
+	}
+	if dialFailed(errors.New("the name is not in the list")) {
+		t.Fatal("a name that is not in the list: dialFailed is true")
+	}
+}
+
 // The time limit of a job stops the command in the helper.
 func TestTheEndOfTheRequestStopsTheCommand(t *testing.T) {
 	c, _ := start(t)

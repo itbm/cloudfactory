@@ -277,10 +277,23 @@ func (s *Server) dial(ctx context.Context, name string) (net.Conn, error) {
 	}
 	conn, err := s.Dial(ctx, name)
 	if err != nil {
-		slog.Warn("root helper: refused a connection", "name", name, "err", err)
+		if dialFailed(err) {
+			slog.Info("root helper: a connection of the list did not open", "name", name, "err", err)
+		} else {
+			slog.Warn("root helper: refused a connection", "name", name, "err", err)
+		}
 		return nil, fmt.Errorf("root helper: the connection %q: %w", name, err)
 	}
 	return conn, nil
+}
+
+// dialFailed reports whether the error is from the network, not from the list. The name is
+// then in the list, but its target does not accept connections, for example the edge proxy
+// while the server starts. The log must not show this as a refusal: a refusal tells the
+// operator that the worker asked for a connection that it must not have.
+func dialFailed(err error) bool {
+	var op *net.OpError
+	return errors.As(err, &op)
 }
 
 func closeWrite(c net.Conn) {
