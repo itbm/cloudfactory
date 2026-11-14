@@ -12,6 +12,8 @@ import type {
   DatabaseGrant,
   DatabaseServer,
   DatabaseUser,
+  DnsRecord,
+  DnsZone,
   DomainVerification,
   Job,
   Limits,
@@ -123,7 +125,7 @@ interface ApiMe {
   totpSetupRequired?: boolean; securityNotices?: { action: string; target: string; actor: string; at: string | null }[];
 }
 interface ApiUser { id: number; name: string; email: string; role: User["role"]; customerId: string | null; totpEnabled: boolean; mustChangePassword: boolean; createdAt: string | null }
-interface ApiJob { id: string; title: string; ref: string | null; action?: string | null; state: Job["state"]; steps: string[]; step: number; error: string | null; websiteId: string | null; serverId: string | null; databaseServerId?: string | null; createdAt: string; finishedAt: string | null }
+interface ApiJob { id: string; title: string; ref: string | null; action?: string | null; state: Job["state"]; steps: string[]; step: number; error: string | null; websiteId: string | null; serverId: string | null; databaseServerId?: string | null; dnsZoneId?: string | null; createdAt: string; finishedAt: string | null }
 interface ApiWebsite {
   id: string; name: string; application: string; customerId: string; serverId: string; planId: string; unixUser: string; status: Website["status"];
   runtime: { imageId: string; family: string; image: string; phpVersion: string | null; workerMode: boolean; extensions: string[]; phpIni: Record<string, string>; previousImageId: string | null; documentRoot?: string; digest?: string | null; signatureVerified?: boolean };
@@ -135,7 +137,7 @@ interface ApiWebsite {
 interface ApiServer {
   id: string; name: string; location: string; roles: Server["roles"]; state: Server["state"]; agentVersion: string | null; os: string | null; kernel: string | null; arch: string | null;
   podmanVersion: string | null; gvisorVersion: string | null; gvisorPlatform: Server["gvisorPlatform"]; bareMetal: boolean; updatePolicy: Server["updatePolicy"]; maintenanceWindow: string;
-  pendingUpdates: Server["pendingUpdates"]; lastUpdateAt: string | null; rebootRequired: boolean; agentUpdateAvailable?: boolean; agentAddress?: string | null; connectionError?: string | null; panel?: boolean; databaseEngines?: Database["engine"][]; databaseInstances?: boolean; services: Server["services"]; sftpPort?: number | null;
+  pendingUpdates: Server["pendingUpdates"]; lastUpdateAt: string | null; rebootRequired: boolean; agentUpdateAvailable?: boolean; agentAddress?: string | null; connectionError?: string | null; panel?: boolean; databaseEngines?: Database["engine"][]; databaseInstances?: boolean; services: Server["services"]; sftpPort?: number | null; dnsName?: string | null; dns?: boolean; addresses?: string[];
   usage: { cpuPercent?: number; memoryPercent?: number; diskPercent?: number } | null;
 }
 interface ApiImage {
@@ -156,6 +158,13 @@ interface ApiPanelCertificate {
   reportedAt: string | null; letsEncryptAvailable: boolean; serversWithoutCa: string[]; job: ApiJob | null;
 }
 interface ApiDatabaseServer extends Omit<DatabaseServer, "usage" | "createdAt"> { usage: DatabaseServer["usage"] | null; createdAt: string | null }
+interface ApiDnsRecord extends Omit<DnsRecord, "priority" | "managed"> { priority: number | null; managed: DnsRecord["managed"] | null }
+interface ApiDnsZone extends Omit<DnsZone, "delegation" | "dnssec" | "records" | "createdAt"> {
+  delegation: { state: DnsZone["delegation"]["state"]; nameServers: string[]; checkedAt: string | null };
+  dnssec: { enabled: boolean; ds: DnsZone["dnssec"]["ds"] | null; dnskey: string | null };
+  createdAt: string | null;
+  records?: ApiDnsRecord[];
+}
 interface ApiSnapshot { id: string; kind: "scheduled" | "manual"; sizeBytes: number; databases: string[]; createdAt: string }
 
 // Mapping from the API shapes to the state of the UI.
@@ -172,7 +181,7 @@ export function toJob(j: ApiJob): Job {
   return {
     id: j.id, title: j.title, ref: j.ref ?? undefined, action: j.action ?? undefined, state: j.state, steps: j.steps ?? [], step: j.step ?? 0, error: j.error ?? undefined,
     createdAt: j.createdAt, finishedAt: j.finishedAt ?? undefined, websiteId: j.websiteId ?? undefined, serverId: j.serverId ?? undefined,
-    databaseServerId: j.databaseServerId ?? undefined,
+    databaseServerId: j.databaseServerId ?? undefined, dnsZoneId: j.dnsZoneId ?? undefined,
   };
 }
 
@@ -180,7 +189,7 @@ interface ApiAccount {
   customer: Account["customer"] | null;
   provider: { name: string; email: string } | null;
   plan: Plan | null;
-  usage: { websites: number; databases: number; diskBytes: number; customers: number | null } | null;
+  usage: { websites: number; databases: number; diskBytes: number; customers: number | null; dnsZones?: number } | null;
   backups?: { available: boolean };
   users: ApiUser[];
 }
@@ -189,7 +198,7 @@ export function toAccount(a: ApiAccount): Account {
   const usage = a.usage ?? { websites: 0, databases: 0, diskBytes: 0, customers: null };
   return {
     customer: a.customer!, provider: a.provider ?? undefined, plan: a.plan ?? undefined,
-    usage: { websites: usage.websites, databases: usage.databases, diskBytes: usage.diskBytes, customers: usage.customers ?? undefined },
+    usage: { websites: usage.websites, databases: usage.databases, diskBytes: usage.diskBytes, customers: usage.customers ?? undefined, dnsZones: usage.dnsZones ?? 0 },
     backupsAvailable: a.backups?.available ?? true,
     users: a.users.map(toUser),
   };
@@ -237,6 +246,7 @@ export function toServer(s: ApiServer): Server {
     agentAddress: s.agentAddress ?? undefined, connectionError: s.connectionError ?? undefined, panel: s.panel ?? false,
     databaseEngines: s.databaseEngines ?? undefined,
     databaseInstances: s.databaseInstances ?? false,
+    dnsName: s.dnsName ?? undefined, dns: s.dns ?? false, addresses: s.addresses ?? [],
     stateDetail: s.state === "degraded" ? (s.connectionError ? "Degraded: the panel cannot connect" : degradedReason(s.services ?? [])) : undefined,
   };
 }
@@ -271,6 +281,25 @@ export function toRollout(r: ApiRollout, servers: number): Rollout {
 
 export const toDatabaseServer = (s: ApiDatabaseServer): DatabaseServer => ({ ...s, usage: s.usage ?? undefined, createdAt: s.createdAt ?? "" });
 
+export const toDnsRecord = (r: ApiDnsRecord): DnsRecord => ({ id: r.id, name: r.name, type: r.type, value: r.value, ttl: r.ttl, priority: r.priority ?? undefined, managed: r.managed ?? undefined });
+
+export const toDnsZone = (z: ApiDnsZone): DnsZone => ({
+  ...z,
+  delegation: { state: z.delegation.state, nameServers: z.delegation.nameServers ?? [], checkedAt: z.delegation.checkedAt ?? undefined },
+  dnssec: { enabled: z.dnssec.enabled, ds: z.dnssec.ds ?? undefined, dnskey: z.dnssec.dnskey ?? undefined },
+  createdAt: z.createdAt ?? "",
+  records: z.records?.map(toDnsRecord),
+});
+
+/** The zones that the user opened. Each load reads their records again. */
+const shownZones = new Set<string>();
+
+/** Reads one zone with its records. The next loads also read the records of the zone. */
+export async function dnsZone(id: string): Promise<DnsZone> {
+  shownZones.add(id);
+  return toDnsZone(await request<ApiDnsZone>("GET", `/dns-zones/${id}`));
+}
+
 const toCustomer = (c: ApiCustomer): Customer => ({ id: c.id, name: c.name, email: c.email, planId: c.planId, role: c.role, resellerId: c.resellerId ?? undefined, createdAt: c.createdAt, suspended: c.suspended });
 
 export const toUser = (u: ApiUser): ManagedUser => ({
@@ -302,7 +331,7 @@ export async function load(previous: State): Promise<State> {
   const admin = me.role === "administrator";
   const optional = <T>(p: Promise<T>, fallback: T) => p.catch(() => fallback);
 
-  const [websites, jobs, customers, plans, tokens, policy, servers, images, rollouts, audit, users, certificate, setup, account, databaseServers] = await Promise.all([
+  const [websites, jobs, customers, plans, tokens, policy, servers, images, rollouts, audit, users, certificate, setup, account, databaseServers, dns] = await Promise.all([
     all<ApiWebsite>("/websites"),
     request<{ data: ApiJob[] }>("GET", "/jobs?perPage=50").then((r) => r.data),
     optional(request<{ data: ApiCustomer[] }>("GET", "/customers").then((r) => r.data), []),
@@ -319,7 +348,15 @@ export async function load(previous: State): Promise<State> {
     admin ? Promise.resolve(null) : optional(request<ApiAccount>("GET", "/account"), null),
     // The database servers of the customers that the user can see.
     optional(request<{ data: ApiDatabaseServer[] }>("GET", "/database-servers").then((r) => r.data), []),
+    // The DNS zones, and the name servers that a customer gives to the registrar of a domain.
+    optional(request<{ data: ApiDnsZone[]; nameServers?: string[] }>("GET", "/dns-zones"), { data: [], nameServers: [] }),
   ]);
+  // The list has no records. The panel reads the records of the zones that the user opened.
+  const zoneDetails = new Map<string, DnsZone>();
+  await Promise.all(dns.data.filter((z) => shownZones.has(z.id)).map(async (z) => {
+    const detail = await optional(dnsZone(z.id), null);
+    if (detail) zoneDetails.set(z.id, detail);
+  }));
   // A customer or a reseller cannot list all images. They get the images for a new website.
   const runtimes = admin ? images.map((i) => toImage(i, rollouts))
     : (await optional(request<{ data: ApiRuntimeImage[] }>("GET", "/runtime-images").then((r) => r.data), [])).map(toRuntimeImage);
@@ -354,12 +391,14 @@ export async function load(previous: State): Promise<State> {
     activity: done.map((j) => ({ id: `act_${j.id}`, text: j.title, ref: j.ref, at: j.finishedAt ?? j.createdAt })),
     notifications: failed.map((j) => {
       const known = previous.notifications.find((n) => n.id === `ntf_${j.id}`);
-      return { id: `ntf_${j.id}`, tone: "danger" as const, text: `${j.title}${j.ref ? ` ${j.ref}` : ""} failed. ${jobFailure(j, me.role).text} Reference ${jobFailure(j, me.role).reference}.`, at: j.finishedAt ?? j.createdAt, read: known?.read ?? false, href: j.websiteId ? `/websites/${j.websiteId}` : "/jobs" };
+      return { id: `ntf_${j.id}`, tone: "danger" as const, text: `${j.title}${j.ref ? ` ${j.ref}` : ""} failed. ${jobFailure(j, me.role).text} Reference ${jobFailure(j, me.role).reference}.`, at: j.finishedAt ?? j.createdAt, read: known?.read ?? false, href: j.websiteId ? `/websites/${j.websiteId}` : j.dnsZoneId ? `/dns/${j.dnsZoneId}` : "/jobs" };
     }),
     servers: servers.map(toServer),
     images: runtimes,
     rollout: current ? toRollout(current, servers.length) : undefined,
     databaseServers: databaseServers.map(toDatabaseServer),
+    dnsZones: dns.data.map((z) => zoneDetails.get(z.id) ?? { ...toDnsZone(z), records: previous.dnsZones.find((x) => x.id === z.id && x.serial === z.serial)?.records }),
+    nameServers: dns.nameServers ?? [],
     databases: [...kept(previous.databases), ...perSite.flatMap((s) => s.databases)],
     databaseUsers: [...kept(previous.databaseUsers), ...perSite.flatMap((s) => s.users)],
     snapshots: [...kept(previous.snapshots), ...perSite.flatMap((s) => s.snapshots)].sort((a, b) => b.at.localeCompare(a.at)),
@@ -455,4 +494,4 @@ export async function waitForJob(job: ApiJob | Job, onChange: (job: Job) => void
   return current;
 }
 
-export type { ApiDatabaseServer, ApiJob, ApiPanelCertificate, ApiUser, ApiWebsite };
+export type { ApiDatabaseServer, ApiDnsRecord, ApiDnsZone, ApiJob, ApiPanelCertificate, ApiUser, ApiWebsite };
