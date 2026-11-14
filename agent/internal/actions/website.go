@@ -117,8 +117,8 @@ func (d *Deps) removeOldImage(ctx context.Context, unixUser, oldRef, newRef stri
 	}
 }
 
-// PruneImages removes the shared images that no website on the server uses. An error does not
-// stop a job: it only keeps an image for longer.
+// PruneImages removes the shared images that no website and no database server on the server
+// uses. An error does not stop a job: it only keeps an image for longer.
 func (d *Deps) PruneImages() {
 	if d.Images == nil {
 		return
@@ -134,9 +134,35 @@ func (d *Deps) PruneImages() {
 			refs = append(refs, imageRef(s.Website))
 		}
 	}
-	if err := d.Images.Prune(refs); err != nil {
+	if err := d.Images.Prune(append(refs, d.unitImages()...)); err != nil {
 		slog.Warn("remove unused images", "err", err)
 	}
+}
+
+// unitImages gives the image of each Quadlet unit of the Unix users of this server: the
+// websites and the database servers. The shared image store keeps these images.
+//
+// A database server uses the image of an agent version. After an update of the agent, a
+// database server keeps the image of the earlier version until the agent writes its unit
+// again and starts it again. Its container must not lose the files of that image before.
+func (d *Deps) unitImages() []string {
+	files, err := filepath.Glob(filepath.Join(d.Host.UnitRoot, "*", "*.container"))
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, file := range files {
+		b, err := os.ReadFile(file)
+		if err != nil {
+			continue
+		}
+		for _, line := range strings.Split(string(b), "\n") {
+			if image, ok := strings.CutPrefix(line, "Image="); ok && image != "" {
+				out = append(out, image)
+			}
+		}
+	}
+	return out
 }
 
 // ShareImages starts the shared image store when the agent starts. It links the storage
@@ -888,11 +914,15 @@ func (d *Deps) SetLimits(req *agentv1.SetLimitsRequest) (jobs.Job, error) {
 
 // applyDiskQuota sets the disk limit of a website user (FR-202), when the server has user
 // quotas. The status report tells the panel when it does not.
+//
+// The function also sets the quota of a website with no disk limit, to remove a limit: the
+// website can have a limit from an earlier plan, and a new user can get the UID of a user
+// that the agent removed. The database servers have the same rule (setDiskQuota).
 func (d *Deps) applyDiskQuota(ctx context.Context, unixUser string, l *agentv1.Limits) error {
-	if d.QuotaMount == "" || l.GetDiskBytes() <= 0 {
+	if d.QuotaMount == "" {
 		return nil
 	}
-	return d.Host.SetDiskQuota(ctx, unixUser, d.QuotaMount, l.GetDiskBytes())
+	return d.Host.SetDiskQuota(ctx, unixUser, d.QuotaMount, max(l.GetDiskBytes(), 0))
 }
 
 // AddDomain and RemoveDomain change the domains of a website (FR-401 to FR-403).

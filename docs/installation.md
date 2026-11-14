@@ -219,8 +219,8 @@ Then the script does these steps:
 10. Make the group of the website users and the directories for SFTP (refer to [SFTP](#sftp)).
     The script does not change the SSH service of the host.
 11. Turn on the user quotas of the file systems of `/srv/cloudfactory` and `/var/lib/cf-db`.
-    The server needs them to apply the disk limit of a website (refer to
-    [Disk quotas](#disk-quotas)). The option `--no-disk-quotas` skips this step.
+    The server needs them to apply the disk limit of a website and of a database server
+    (refer to [Disk quotas](#disk-quotas)). The option `--no-disk-quotas` skips this step.
 12. Set the firewall. The firewall accepts SSH (port 22), HTTP, HTTPS, the agent port and the
     SFTP port. It sends connections to ports 80 and 443 to the edge proxy, also connections
     from the server itself. It also limits the connections that a website opens (refer to
@@ -618,17 +618,25 @@ the image, correct the cause and select **Try again**. With the CLI:
 
 - **Memory.** When MariaDB or PostgreSQL uses more memory than its limit, the kernel stops
   that database server, and systemd starts it again. For Valkey, refer to [Valkey](#valkey).
-- **Disk space.** Each database server has a disk image file with the size of its disk
-  limit, in `/var/lib/cf-db/servers`. The file uses only the disk space that the database
-  server uses. A database server that fills its disk gets the error "no space left on
-  device" and cannot write. Remove data, or give it more disk space. The sum of the disk
-  limits can be more than the disk of the server, so monitor the free disk space of the
-  server.
-- **Servers with no loop devices.** The disk image needs the device `/dev/loop-control`. A
-  virtual machine and a physical server have it. A container of an LXC host usually does
-  not. On such a server, the database servers have no disk limit, and the panel shows
-  `database-disk-limits` as an optional part that is off. This does not make the server
-  degraded.
+- **Disk space.** The server applies the disk limit of a database server as it applies the
+  disk limit of a website: with the user quota of the Unix user of the database server
+  (refer to [Disk quotas](#disk-quotas)). A database server that is at its limit gets the
+  error "disk quota exceeded" and cannot write. MariaDB can then stop and start again, and
+  PostgreSQL can refuse connections, until the database server has free disk space. Give the
+  database server more disk space first, and then remove the data that is not necessary.
+  The sum of the disk limits can be more than the disk of the server, so monitor the free
+  disk space of the server.
+- **A smaller disk limit.** The new limit must be more than the disk space that the
+  database server uses. If it is not, the job fails and the limit stays as it is.
+- **Servers with no user quotas.** On a file system with no user quotas, each database
+  server has a disk image file with the size of its disk limit, in `/var/lib/cf-db/servers`.
+  The file uses only the disk space that the database server uses. A database server that
+  fills its disk gets the error "no space left on device". The disk image needs the device
+  `/dev/loop-control`. A virtual machine and a physical server have it. A container of an
+  LXC host usually does not.
+- **Servers with no user quotas and no loop devices.** On such a server, the database
+  servers have no disk limit, and the panel shows `database-disk-limits` as an optional part
+  that is off. This does not make the server degraded.
 - **Connections.** Each MariaDB user can have 100 connections at the same time, and each
   PostgreSQL user 80.
 - **Memory of the server.** Each container uses memory, also when its databases have no
@@ -638,8 +646,13 @@ the image, correct the cause and select **Try again**. With the CLI:
   write its data to the disk. The installer gives the containers of the server this time on
   Ubuntu, where the default is 5 seconds. A server of an earlier release gets the setting
   from the agent of this release, when the agent adds the database network.
-- **Unix user.** All database containers of a server run as the Unix user `cf-db`, each in
-  its own gVisor sandbox. The database files of all customers have this owner on the host.
+- **Unix user.** Each database server has its own Unix user with the name `db-<id>`, as each
+  website has its own Unix user. `<id>` is the ID of the database server in lower case. The
+  user owns the files of the database server in `/var/lib/cf-db/servers/<id>`, and has a UID
+  from 10000 to 19999. The removal of a database server removes the user. Do not make users
+  of your own with a UID in this range or in the range of the website users (20000 to 59999).
+- **Connections from a database server.** A database server answers its clients, and opens
+  no connection itself. The firewall refuses each connection that a database server opens.
 - **Disk quota of a website.** The disk quota of a website applies to the files of the
   website only, not to its databases.
 
@@ -890,16 +903,16 @@ root helper. To go back to release 0.1.9 or an earlier release after that time, 
 
 ### Disk quotas
 
-The server applies the disk limit of a website with a user quota. Each website has its own
-Unix user, and the file system counts the disk space of each user. When a website is at its
-limit, a write to its files fails with the error `Disk quota exceeded`. The other websites
-continue to operate.
+The server applies the disk limit of a website and of a database server with a user quota.
+Each website and each database server has its own Unix user, and the file system counts the
+disk space of each user. When a website or a database server is at its limit, a write to its
+files fails with the error `Disk quota exceeded`. The other websites and database servers
+continue to operate. A website or a database server with no disk limit has no user quota:
+the agent removes the user quota when you remove the limit.
 
 The script turns on the user quotas of the file system of `/srv/cloudfactory`, which has the
 files of the websites. It does the same for the file system of `/var/lib/cf-db`, which has the
-files of the database servers. This release does not use the quotas of that file system: each
-database server gets its disk limit from a disk image. The two directories are usually on one
-file system.
+files of the database servers. The two directories are usually on one file system.
 
 The script shows the result for each file system:
 
@@ -918,7 +931,8 @@ service cannot turn on the quotas, `systemctl status cloudfactory-quota.service`
 service as failed with the cause, and the panel shows `disk-quotas` as off.
 
 After the script turns on the quotas, it restarts the agent. At its start, the agent sets the
-disk limit of each website that the server has.
+disk limit of each website and of each database server that the server has. A database server
+that has a disk image keeps the disk image.
 
 To turn on the quotas on a server of an earlier release, run the installation script on that
 server again. To turn the quotas off again, do these steps:
@@ -934,7 +948,9 @@ a file system again. Then the script shows a message and continues.
 On a server with no quotas, the panel shows `disk-quotas` as an optional part that is off. This
 does not make the server degraded. The setup checklist of the panel has the item
 "Turn on disk limits on each server" until all servers have quotas. The pages of a website
-show "Not applied on this server" next to the disk limit.
+show "Not applied on this server" next to the disk limit. A new database server on such a
+server gets a disk image, if the server has loop devices (refer to
+[Limits of a database server](#limits-of-a-database-server)).
 
 The shared runtime images in `/var/lib/cloudfactory-images` belong to root, so they do not
 count toward the disk limit of a website. Each runtime image uses about 0.6 to 0.8 GB one time

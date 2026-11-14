@@ -25,10 +25,11 @@ var (
 	pgVerifierRE = regexp.MustCompile(`^SCRAM-SHA-256\$[0-9]{1,9}:[A-Za-z0-9+/=]{1,128}\$[A-Za-z0-9+/=]{1,128}:[A-Za-z0-9+/=]{1,128}$`)
 )
 
-// serverExists reports whether cf-db has the unit of a database container. A statement that
-// only removes data does not start a container that the server does not have.
+// serverExists reports whether the Unix user of a database container has the unit of the
+// container. A statement that only removes data does not start a container that the server
+// does not have.
 func (d *Deps) serverExists(s dbServer) bool {
-	dir, err := d.Host.UnitDir(DBUser)
+	dir, err := d.Host.UnitDir(dbUser(s))
 	if err != nil {
 		return false
 	}

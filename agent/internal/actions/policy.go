@@ -23,8 +23,9 @@ import (
 //
 //   - A command as the Unix user of a website ("runuser -u <user> -- ..."). The worker can
 //     run each program as that user: the user has only the rights of its website.
-//   - A command of a fixed form as the user of a service, for example a database client in a
-//     database container. The worker cannot run a program of its choice as cf-db or cf-edge.
+//   - A command of a fixed form as the user of a service or of a database server, for
+//     example a database client in a database container. The worker cannot run a program of
+//     its choice as cf-edge, as cf-db or as the user of a database server.
 //   - A command as root. Each one has a fixed form, and each path in it is a path that the
 //     helper makes from its own settings.
 //
@@ -84,10 +85,16 @@ func (d *Deps) allowRunuser(args []string) error {
 		return errors.New(`runuser must be "runuser -u <user> -- <command>"`)
 	}
 	user, command := args[1], args[3:]
-	switch user {
-	case DBUser:
-		return d.allowDatabasePodman(command)
-	case host.EdgeUser:
+	switch {
+	case user == DBUser:
+		return d.allowDatabasePodman(user, command)
+	case strings.HasPrefix(user, host.DatabaseUserPrefix):
+		// The user must exist: the root helper makes it before the first command (db.prepare).
+		if err := d.databaseUser(user); err != nil {
+			return fmt.Errorf("runuser: %w", err)
+		}
+		return d.allowDatabasePodman(user, command)
+	case user == host.EdgeUser:
 		podman, err := d.podmanOf(user, command)
 		if err != nil {
 			return err
@@ -130,22 +137,18 @@ func allowImage(podman, images []string) error {
 // databaseClients are the programs that the worker can run in a database container.
 var databaseClients = []string{"mariadb", "mariadb-admin", "mariadb-dump", "psql", "pg_isready", "pg_dump", "pg_restore"}
 
-// allowDatabasePodman checks a Podman command as cf-db: the image of a database container,
-// or a database client in a database container. The client runs in the container, so its
-// arguments cannot name a file of the host.
+// allowDatabasePodman checks a Podman command as the Unix user of a database container: the
+// image of a database engine, or a database client in a database container of that user. The
+// client runs in the container, so its arguments cannot name a file of the host.
 //
 //	podman exec [-i] [--env-file <secret file>] <database container> <client> <arguments>
-func (d *Deps) allowDatabasePodman(command []string) error {
-	podman, err := d.podmanOf(DBUser, command)
+func (d *Deps) allowDatabasePodman(user string, command []string) error {
+	podman, err := d.podmanOf(user, command)
 	if err != nil {
 		return err
 	}
 	if podman[0] != "exec" {
-		images := make([]string, 0, len(Engines))
-		for _, engine := range Engines {
-			images = append(images, d.serviceImage(engine))
-		}
-		return allowImage(podman, images)
+		return allowImage(podman, d.serviceImages())
 	}
 	rest := podman[1:]
 	if len(rest) > 0 && rest[0] == "-i" {
@@ -160,8 +163,8 @@ func (d *Deps) allowDatabasePodman(command []string) error {
 	if len(rest) < 2 {
 		return errors.New("podman exec needs a container and a program")
 	}
-	if !isDatabaseContainer(rest[0]) {
-		return fmt.Errorf("%q is not a database container", rest[0])
+	if !containerOf(user, rest[0]) {
+		return fmt.Errorf("%q is not a database container of %s", rest[0], user)
 	}
 	if !slices.Contains(databaseClients, rest[1]) {
 		return fmt.Errorf("%q is not a database client", rest[1])
@@ -176,8 +179,9 @@ var (
 	limitPropertyRE = regexp.MustCompile(`^(CPUQuota=[0-9]{1,9}%|(MemoryMax|MemorySwapMax|TasksMax)=[0-9]{1,19}|IO(Read|Write)BandwidthMax=/dev/[A-Za-z0-9/_.-]{1,100} [0-9]{1,19})$`)
 )
 
-// allowUserSystemctl checks a systemctl command for the user manager of a website user or of
-// a service user. args are the arguments after "systemctl --user".
+// allowUserSystemctl checks a systemctl command for the user manager of a website user, of
+// the user of a database server or of a service user. args are the arguments after
+// "systemctl --user".
 //
 // An option such as "--system" or "--host" would send the command to a different manager.
 // Thus each form has a fixed list of options.

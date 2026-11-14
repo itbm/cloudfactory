@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"os/user"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -25,8 +26,11 @@ import (
 // the connections, the settings or the superuser of the database server of a different
 // customer.
 //
-//   - The user cf-db runs each container in its own gVisor sandbox, with its own data
-//     directory and its own superuser password.
+//   - Each database server has its own Unix user, as each website has (dbUser). The user
+//     runs the container in its own gVisor sandbox, with its own data directory and its own
+//     superuser password. The user owns the data, and the disk limit of the database server
+//     is the user quota of the user (dbdisk.go). A database server cannot read the files of
+//     a different database server.
 //   - All database servers of one customer publish their ports on one address of
 //     quadlet.DatabaseNetwork: the address of the customer. Each database server has its own
 //     port. The host names "mariadb.internal", "postgres.internal" and "valkey.internal" in
@@ -532,30 +536,47 @@ func (d *Deps) stopServer(ctx context.Context, s dbServer) error {
 	d.dbMu.Lock()
 	delete(d.dbReady, s)
 	d.dbMu.Unlock()
-	dir, err := d.Host.UnitDir(DBUser)
+	account := dbUser(s)
+	dir, err := d.Host.UnitDir(account)
 	if err != nil {
+		var unknown user.UnknownUserError
+		if s.ID != "" && errors.As(err, &unknown) {
+			// The database server has no Unix user, so it has no container.
+			return nil
+		}
 		return err
 	}
 	unit := s.container() + ".container"
 	if _, err := os.Stat(filepath.Join(dir, unit)); err != nil {
 		return nil
 	}
-	if _, err := d.Host.Systemctl(ctx, DBUser, "stop", s.container()+".service"); err != nil {
+	if _, err := d.Host.Systemctl(ctx, account, "stop", s.container()+".service"); err != nil {
 		return err
 	}
-	if err := d.Host.RemoveUnit(DBUser, unit); err != nil {
+	if err := d.Host.RemoveUnit(account, unit); err != nil {
 		return err
 	}
-	_, err = d.Host.Systemctl(ctx, DBUser, "daemon-reload")
+	_, err = d.Host.Systemctl(ctx, account, "daemon-reload")
 	return err
 }
 
-// removeServerData removes the disk and the files of a database server that does not
-// operate. It is safe to run it again after a failure. The caller holds the lock of the
-// database server.
+// removeServerData removes the Unix user, the disk and the files of a database server that
+// does not operate. It is safe to run it again after a failure. The caller holds the lock
+// of the database server.
 func (d *Deps) removeServerData(ctx context.Context, s dbServer) error {
 	if d.Gate != nil {
 		return d.Gate.Call(ctx, opDBRemoveData, serverIn{Server: s}, nil)
+	}
+	user := dbUser(s)
+	if _, err := d.Host.LookupUID(user); err == nil && d.DBQuotaMount != "" {
+		// A later user can get the same UID. It must not get the limit of this user.
+		if err := d.Host.SetDatabaseQuota(ctx, user, d.DBQuotaMount, 0); err != nil {
+			slog.Warn("remove the user quota of a database server", "server", s.ID, "err", err)
+		}
+	}
+	// This stops all processes of the user, and removes its home directory and its units.
+	if err := d.Host.RemoveDatabaseUser(ctx, user); err != nil {
+		return err
 	}
 	data := d.dbDir(s)
 	if _, err := os.Lstat(data); os.IsNotExist(err) {

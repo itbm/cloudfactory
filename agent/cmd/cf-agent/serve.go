@@ -81,8 +81,10 @@ func serve(ctx context.Context) error {
 	root.SavePanelCA = func(fingerprint string) error {
 		return changeConfig(func(c *config.Config) { c.PanelCASHA256 = fingerprint })
 	}
-	// The disk limit of a website needs user quotas on the file system of the websites.
+	// The disk limit of a website needs user quotas on the file system of the websites. The
+	// disk limit of a database server is a user quota also, when its file system has them.
 	root.QuotaMount = root.Host.QuotaMount(ctx, cfg.SitesDir)
+	root.FindDatabaseQuotas(ctx)
 	srv := &gate.Server{Run: run, Allow: root.Allow, Ops: root.RootOps(), Dial: root.RootDial}
 
 	if os.Getenv(oneProcessEnv) == "1" {
@@ -494,6 +496,11 @@ func work(ctx context.Context, cfg config.Config, g gate.Gate) error {
 	} else if err := deps.ApplyDiskQuotas(ctx); err != nil {
 		// The websites that were there before the quotas were on get their limits now.
 		slog.Error("set the disk limits of the websites", "err", err)
+	}
+	// The status report tells the panel when the server does not apply the disk limit of a
+	// database server.
+	if deps.DBQuotaMount = deps.DatabaseQuotaMount(ctx); deps.DBQuotaMount == "" {
+		slog.Info("user quotas are off on the file system of the database servers; a new database server with a disk limit gets a disk image", "dir", deps.DatabaseDir())
 	}
 	// The edge proxy operates in gVisor like all other containers. Its image is signed (FR-1101).
 	if err := deps.EnsureEdge(ctx, deps.EdgeImage, cfg.DataDir); err != nil {

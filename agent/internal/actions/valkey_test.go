@@ -19,6 +19,7 @@ import (
 
 	agentv1 "github.com/itbm/cloudfactory/agent/gen/cloudfactory/agent/v1"
 	"github.com/itbm/cloudfactory/agent/internal/execx"
+	"github.com/itbm/cloudfactory/agent/internal/host"
 	"github.com/itbm/cloudfactory/agent/internal/quadlet"
 )
 
@@ -49,6 +50,9 @@ const valkeyAddress = customerAddress + ":6379"
 // the state has the database server. A connection to a different address or port gets the
 // fake server of that address and port (fakeValkeyAt).
 func newFakeValkey(d *Deps) *fakeValkey {
+	// The agent writes the user file of Valkey in the data directory, which "install -d"
+	// makes on a server. Thus the fake runner makes the directories in these tests.
+	rootOf(d).Run.(*execx.Fake).MakeDirs = true
 	if _, err := d.useDatabases(customerKey, websiteID); err != nil {
 		panic(err)
 	}
@@ -271,9 +275,11 @@ func TestValkeyDatabaseGetsANumberAndAUser(t *testing.T) {
 	both(d, func(d *Deps) {
 		d.ServiceImage = func(name string) string { return "ghcr.io/cloudfactory/" + name + ":0.1.0" }
 	})
-	f.Rules = []execx.Rule{{Prefix: "runuser -u cf-db -- env XDG_RUNTIME_DIR=/run/user/20001 podman image exists", Err: errors.New("no image")}}
+	// A server with no shared image store: the user of the database server pulls the image.
+	f.Rules = []execx.Rule{{Prefix: podmanOf(valkeyServerKey) + "image exists", Err: errors.New("no image")}}
 	v := newFakeValkey(d)
 	v.keys[1] = 5
+	account := host.DatabaseUser(valkeyServerKey)
 	data := dataOf(d, valkeyServerKey)
 	job, err := d.CreateDatabase(valkeyRequest("acme_x7k2_cache"))
 	if err := run(t)(job, err); err != nil {
@@ -306,13 +312,13 @@ func TestValkeyDatabaseGetsANumberAndAUser(t *testing.T) {
 		}
 	}
 	for _, want := range []string{
-		"runuser -u cf-db -- env XDG_RUNTIME_DIR=/run/user/20001 podman pull --quiet ghcr.io/cloudfactory/valkey:0.1.0",
-		"install -d -o cf-db -g cf-db -m 0700 " + filepath.Join(d.DBHome, "servers"),
-		"install -d -o cf-db -g cf-db -m 0700 " + serverDir(d, valkeyServerKey),
-		"install -d -o cf-db -g cf-db -m 0700 " + filepath.Join(serverDir(d, valkeyServerKey), "disk"),
-		"install -d -o cf-db -g cf-db -m 0700 " + data,
-		"chown cf-db:cf-db " + filepath.Join(data, "users.acl"),
-		"systemctl --user --machine=cf-db@ restart cf-valkey-" + valkeyServerKey + ".service",
+		podmanOf(valkeyServerKey) + "pull --quiet ghcr.io/cloudfactory/valkey:0.1.0",
+		"install -d -o root -g root -m 0711 " + filepath.Join(d.DBHome, "servers") + " " + filepath.Join(d.DBHome, "homes"),
+		"install -d -o root -g " + account + " -m 0750 " + serverDir(d, valkeyServerKey),
+		// Root owns the directory of the disk, and the user owns the data directory.
+		"install -d -o root -g " + account + " -m 0750 " + filepath.Join(serverDir(d, valkeyServerKey), "disk"),
+		"install -d -o " + account + " -g " + account + " -m 0700 " + data,
+		systemctlOf(valkeyServerKey) + "restart cf-valkey-" + valkeyServerKey + ".service",
 		// The network of the database servers is on "lo" before the container starts.
 		"ip address replace 169.254.80.1/20 dev lo",
 	} {
@@ -320,7 +326,7 @@ func TestValkeyDatabaseGetsANumberAndAUser(t *testing.T) {
 			t.Errorf("no call %q in %v", want, f.Calls)
 		}
 	}
-	u := unitFile(t, d, DBUser, "cf-valkey-"+valkeyServerKey+".container")
+	u := unitFile(t, d, host.DatabaseUser(valkeyServerKey), "cf-valkey-"+valkeyServerKey+".container")
 	for _, want := range []string{
 		// The database server has the address of its customer and its own limits.
 		"ContainerName=cf-valkey-" + valkeyServerKey + "\n", "Label=io.cloudfactory.customer=" + customerKey + "\n",
@@ -645,5 +651,50 @@ func TestValkeyDataLimit(t *testing.T) {
 	}
 	if args := strings.Join(quadlet.ValkeyArgs(quadlet.Database{}), " "); !strings.Contains(args, "--maxmemory 256mb") {
 		t.Errorf("args = %s", args)
+	}
+}
+
+// The Unix user of a database server owns the data directory, and can put a symbolic link in
+// it. The root helper does not write the user file of Valkey through a link.
+func TestTheValkeyUserFileDoesNotFollowALink(t *testing.T) {
+	d, _, _ := deps(t)
+	root, s := rootOf(d), customerValkey
+	other := t.TempDir()
+	if err := os.MkdirAll(root.diskDir(s), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	// The data directory is a link to a directory of a different owner.
+	if err := os.Symlink(other, root.dataDir(s)); err != nil {
+		t.Fatal(err)
+	}
+	if err := root.writeValkeyUsers(s, root.dataDir(s)); err == nil {
+		t.Error("the root helper wrote the user file through a link in the place of the data directory")
+	}
+	if entries, _ := os.ReadDir(other); len(entries) != 0 {
+		t.Errorf("the root helper wrote in the target of the link: %v", entries)
+	}
+	if _, err := os.Stat(root.valkeySecretFile(s)); !os.IsNotExist(err) {
+		t.Errorf("the root helper made a password for a user file that it did not write: %v", err)
+	}
+	// The user file is a link to a file of a different owner: the file stays as it is.
+	os.Remove(root.dataDir(s))
+	os.MkdirAll(root.dataDir(s), 0o700)
+	secret := filepath.Join(other, "shadow")
+	os.WriteFile(secret, []byte("x"), 0o600)
+	os.Symlink(secret, filepath.Join(root.dataDir(s), quadlet.ValkeyUsersFile))
+	if err := root.writeValkeyUsers(s, root.dataDir(s)); err != nil {
+		t.Errorf("a user file that is a link: %v", err)
+	}
+	if b, _ := os.ReadFile(secret); string(b) != "x" {
+		t.Errorf("the target of the link changed: %q", b)
+	}
+	// A directory with no user file gets the file, with the mode 0600.
+	os.Remove(filepath.Join(root.dataDir(s), quadlet.ValkeyUsersFile))
+	if err := root.writeValkeyUsers(s, root.dataDir(s)); err != nil {
+		t.Fatal(err)
+	}
+	fi, err := os.Lstat(filepath.Join(root.dataDir(s), quadlet.ValkeyUsersFile))
+	if err != nil || !fi.Mode().IsRegular() || fi.Mode().Perm() != 0o600 {
+		t.Errorf("the user file: %v %v", fi, err)
 	}
 }

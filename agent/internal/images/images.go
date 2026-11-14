@@ -1,6 +1,8 @@
 // Package images keeps one read-only copy of each runtime image on the server. All website
 // users share it, so a server with 100 websites keeps one copy of each image, not 100, and a
-// new website starts without a pull (NFR-03).
+// new website starts without a pull (NFR-03). The users of the database servers share the
+// images of the database engines in the same way. An image that root owns does not use the
+// disk quota of a website or of a database server.
 //
 // Each image has its own small Podman store in Root, named by the SHA-256 of the image
 // reference. Only root writes a store. The agent pulls the image into a temporary store, so
@@ -141,6 +143,21 @@ func (s *Store) Ensure(ctx context.Context, ref string) error {
 	if !Shareable(ref) {
 		return fmt.Errorf("images: %q has no digest", ref)
 	}
+	return s.ensure(ctx, ref)
+}
+
+// EnsureService is Ensure for the image of a service of the agent, for example the image of a
+// database server. The reference has the version of the agent as its tag, and no digest: a
+// release does not change the content of its tags. Only the root helper calls it, with a
+// reference that it makes from its own settings.
+func (s *Store) EnsureService(ctx context.Context, ref string) error {
+	if ref == "" || strings.HasPrefix(ref, "-") {
+		return fmt.Errorf("images: %q is not an image reference", ref)
+	}
+	return s.ensure(ctx, ref)
+}
+
+func (s *Store) ensure(ctx context.Context, ref string) error {
 	name := StoreName(ref)
 	s.mu.Lock()
 	if s.recent == nil {
@@ -257,9 +274,10 @@ func ShareMetadata(store string) error {
 	return errors.Join(errs...)
 }
 
-// Prune removes the images that no website uses. inUse has the image reference of each
-// website on the server. The agent keeps an image that a job asked for in the last
-// KeepRecent, because the job has not recorded it yet.
+// Prune removes the images that no website and no database server uses. inUse has the image
+// reference of each website on the server, and the images of the database servers. The agent
+// keeps an image that a job asked for in the last KeepRecent, because the job has not
+// recorded it yet.
 //
 // A store goes in two steps. The first prune removes it from Config. The next prune removes
 // its files. So a Podman command of a website user that read Config before the change still
@@ -267,9 +285,8 @@ func ShareMetadata(store string) error {
 func (s *Store) Prune(inUse []string) error {
 	keep := map[string]bool{}
 	for _, ref := range inUse {
-		if Shareable(ref) {
-			keep[StoreName(ref)] = true
-		}
+		// A reference with no store, for example the image of a custom website, changes nothing.
+		keep[StoreName(ref)] = true
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()

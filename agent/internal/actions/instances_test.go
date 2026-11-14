@@ -15,6 +15,8 @@ import (
 
 	agentv1 "github.com/itbm/cloudfactory/agent/gen/cloudfactory/agent/v1"
 	"github.com/itbm/cloudfactory/agent/internal/execx"
+	"github.com/itbm/cloudfactory/agent/internal/host"
+	"github.com/itbm/cloudfactory/agent/internal/images"
 	"github.com/itbm/cloudfactory/agent/internal/quadlet"
 )
 
@@ -81,6 +83,9 @@ func users(d *Deps) {
 		d.Host.LookupUID = func(name string) (int, error) {
 			if id, ok := ids[name]; ok {
 				return id, nil
+			}
+			if strings.HasPrefix(name, host.DatabaseUserPrefix) {
+				return testUID(name)
 			}
 			return 0, user.UnknownUserError(name)
 		}
@@ -151,15 +156,21 @@ func TestEachDatabaseServerHasItsOwnContainer(t *testing.T) {
 	if err := run(t)(d.CreateDatabase(mariaRequest(otherWebsiteID, "bolt_k3m9", "bolt_k3m9_shop", otherServer()))); err != nil {
 		t.Fatal(err)
 	}
-	if !f.Called("install -d -o cf-db -g cf-db -m 0700 " + filepath.Join(d.DBHome, "servers")) {
+	// Root owns the directories that lead to the files of the database servers.
+	if !f.Called("install -d -o root -g root -m 0711 " + filepath.Join(d.DBHome, "servers") + " " + filepath.Join(d.DBHome, "homes")) {
 		t.Errorf("no directory for the database servers: %v", f.Calls)
 	}
 	secrets := map[string]bool{}
 	for key, c := range map[string]struct{ customer, address string }{mariaServerKey: {customerKey, customerAddress}, otherServerKey: {otherCustomerKey, otherAddress}} {
 		data := dataOf(d, key)
-		u := unitFile(t, d, DBUser, "cf-mariadb-"+key+".container")
+		// Each database server has its own Unix user, with its own units.
+		account := host.DatabaseUser(key)
+		u := unitFile(t, d, account, "cf-mariadb-"+key+".container")
 		for _, want := range []string{
 			"Description=Cloudfactory MariaDB database server " + key + "\n",
+			// The database server starts as the database user of the image, which is the
+			// Unix user of the database server on the host.
+			"UserNS=keep-id:uid=999,gid=999\n", "User=999\n", "Group=999\n", "DropCapability=all\n",
 			"ContainerName=cf-mariadb-" + key + "\n",
 			"PublishPort=" + c.address + ":3306:3306\n",
 			"Volume=" + data + ":/var/lib/mysql:Z\n",
@@ -177,17 +188,26 @@ func TestEachDatabaseServerHasItsOwnContainer(t *testing.T) {
 		if strings.Contains(u, quadlet.ServiceAddress) {
 			t.Errorf("the unit of %s uses the service address:\n%s", key, u)
 		}
+		if strings.Contains(u, "AddCapability") {
+			t.Errorf("the unit of %s has a capability:\n%s", key, u)
+		}
 		secret, err := os.ReadFile(filepath.Join(serverDir(d, key), "mariadb.env"))
 		if err != nil || !strings.Contains(string(secret), "MARIADB_ROOT_PASSWORD=") {
 			t.Fatalf("superuser secret of %s: %q %v", key, secret, err)
 		}
 		secrets[string(secret)] = true
 		for _, want := range []string{
-			"install -d -o cf-db -g cf-db -m 0700 " + serverDir(d, key),
-			// A server with no loop devices: the disk of the database server is a directory.
-			"install -d -o cf-db -g cf-db -m 0700 " + filepath.Join(serverDir(d, key), "disk"),
-			"install -d -o cf-db -g cf-db -m 0700 " + data,
-			"systemctl --user --machine=cf-db@ restart cf-mariadb-" + key + ".service",
+			// The home directory of the user, and its user services at each start of the server.
+			"chmod 0700 " + filepath.Join(d.DBHome, "homes", account),
+			"loginctl enable-linger " + account,
+			// Only root and the user of the database server can open its directory.
+			"install -d -o root -g " + account + " -m 0750 " + serverDir(d, key),
+			// A server with no user quotas and no loop devices: the disk of the database
+			// server is a directory. Root owns it, and the user owns only the data directory.
+			"install -d -o root -g " + account + " -m 0750 " + filepath.Join(serverDir(d, key), "disk"),
+			"install -d -o " + account + " -g " + account + " -m 0700 " + data,
+			"chown root:" + account + " " + filepath.Join(serverDir(d, key), "mariadb.env"),
+			systemctlOf(key) + "restart cf-mariadb-" + key + ".service",
 		} {
 			if !f.Called(want) {
 				t.Errorf("no call %q", want)
@@ -202,11 +222,11 @@ func TestEachDatabaseServerHasItsOwnContainer(t *testing.T) {
 	for i, c := range f.Calls {
 		in := f.Inputs[i]
 		switch {
-		case strings.HasPrefix(c, podmanDB+"exec -i cf-mariadb-"+mariaServerKey+" "):
+		case strings.HasPrefix(c, podmanOf(mariaServerKey)+"exec -i cf-mariadb-"+mariaServerKey+" "):
 			if strings.Contains(in, "bolt_k3m9") {
 				t.Errorf("a statement of the second customer is in the database server of the first: %s", in)
 			}
-		case strings.HasPrefix(c, podmanDB+"exec -i cf-mariadb-"+otherServerKey+" "):
+		case strings.HasPrefix(c, podmanOf(otherServerKey)+"exec -i cf-mariadb-"+otherServerKey+" "):
 			if strings.Contains(in, "acme_x7k2") {
 				t.Errorf("a statement of the first customer is in the database server of the second: %s", in)
 			}
@@ -243,8 +263,8 @@ func TestEachDatabaseServerHasItsOwnContainer(t *testing.T) {
 	}
 	// The report has the databases of all database servers.
 	f.Rules = []execx.Rule{
-		{Prefix: podmanDB + "exec -i cf-mariadb-" + mariaServerKey + " ", Output: "acme_x7k2_shop\t4096\n"},
-		{Prefix: podmanDB + "exec -i cf-mariadb-" + otherServerKey + " ", Output: "bolt_k3m9_shop\t8192\n"},
+		{Prefix: podmanOf(mariaServerKey) + "exec -i cf-mariadb-" + mariaServerKey + " ", Output: "acme_x7k2_shop\t4096\n"},
+		{Prefix: podmanOf(otherServerKey) + "exec -i cf-mariadb-" + otherServerKey + " ", Output: "bolt_k3m9_shop\t8192\n"},
 	}
 	sizes := d.databaseSizes(context.Background())
 	if len(sizes) != 2 || sizes[0].Name != "acme_x7k2_shop" || sizes[0].SizeBytes != 4096 || sizes[1].Name != "bolt_k3m9_shop" || sizes[1].SizeBytes != 8192 {
@@ -267,7 +287,7 @@ func TestACustomerCanHaveTwoDatabaseServersOfOneEngine(t *testing.T) {
 	if err := run(t)(d.CreateDatabase(mariaRequest(websiteID, "acme_x7k2", "acme_x7k2_blog", secondServer()))); err != nil {
 		t.Fatal(err)
 	}
-	u := unitFile(t, d, DBUser, "cf-mariadb-"+secondServerKey+".container")
+	u := unitFile(t, d, host.DatabaseUser(secondServerKey), "cf-mariadb-"+secondServerKey+".container")
 	for _, want := range []string{
 		"PublishPort=" + customerAddress + ":3307:3306\n",
 		"Volume=" + dataOf(d, secondServerKey) + ":/var/lib/mysql:Z\n",
@@ -282,13 +302,13 @@ func TestACustomerCanHaveTwoDatabaseServersOfOneEngine(t *testing.T) {
 	// Each database is in its database server only.
 	for i, c := range f.Calls {
 		in := f.Inputs[i]
-		first := strings.HasPrefix(c, podmanDB+"exec -i cf-mariadb-"+mariaServerKey+" ")
-		second := strings.HasPrefix(c, podmanDB+"exec -i cf-mariadb-"+secondServerKey+" ")
+		first := strings.HasPrefix(c, podmanOf(mariaServerKey)+"exec -i cf-mariadb-"+mariaServerKey+" ")
+		second := strings.HasPrefix(c, podmanOf(secondServerKey)+"exec -i cf-mariadb-"+secondServerKey+" ")
 		if first && strings.Contains(in, "acme_x7k2_blog") || second && strings.Contains(in, "acme_x7k2_shop") {
 			t.Errorf("a statement is in the incorrect database server: %s\n%s", c, in)
 		}
 	}
-	if !strings.Contains(inputsOf(f, podmanDB+"exec -i cf-mariadb-"+secondServerKey+" "), "CREATE DATABASE `acme_x7k2_blog`") {
+	if !strings.Contains(inputsOf(f, podmanOf(secondServerKey)+"exec -i cf-mariadb-"+secondServerKey+" "), "CREATE DATABASE `acme_x7k2_blog`") {
 		t.Errorf("the second database server has no database:\n%s", strings.Join(f.Inputs, ""))
 	}
 	// A later request has only the ID of the database server.
@@ -298,7 +318,7 @@ func TestACustomerCanHaveTwoDatabaseServersOfOneEngine(t *testing.T) {
 		t.Fatal(err)
 	}
 	for i, c := range f.Calls {
-		if strings.Contains(f.Inputs[i], "DROP DATABASE") && !strings.HasPrefix(c, podmanDB+"exec -i cf-mariadb-"+secondServerKey+" ") {
+		if strings.Contains(f.Inputs[i], "DROP DATABASE") && !strings.HasPrefix(c, podmanOf(secondServerKey)+"exec -i cf-mariadb-"+secondServerKey+" ") {
 			t.Errorf("the agent removed the database in a different database server: %s", c)
 		}
 	}
@@ -371,8 +391,9 @@ func TestSetDatabaseServerChangesTheLimits(t *testing.T) {
 		t.Fatal(err)
 	}
 	unit := "cf-postgresql-" + pgServerKey
-	restart := "systemctl --user --machine=cf-db@ restart " + unit + ".service"
-	if u := unitFile(t, d, DBUser, unit+".container"); !strings.Contains(u, "MemoryMax=1073741824\n") || !strings.Contains(u, "PublishPort="+customerAddress+":5432:5432\n") || !f.Called(restart) {
+	account := host.DatabaseUser(pgServerKey)
+	restart := systemctlOf(pgServerKey) + "restart " + unit + ".service"
+	if u := unitFile(t, d, account, unit+".container"); !strings.Contains(u, "MemoryMax=1073741824\n") || !strings.Contains(u, "PublishPort="+customerAddress+":5432:5432\n") || !f.Called(restart) {
 		t.Fatalf("the database server did not start: %v\n%s", f.Calls, u)
 	}
 	if access := accessFile(t, d); strings.Contains(access, "add element") {
@@ -392,7 +413,7 @@ func TestSetDatabaseServerChangesTheLimits(t *testing.T) {
 	if err := run(t)(d.CreateDatabase(req)); err != nil {
 		t.Fatal(err)
 	}
-	if u := unitFile(t, d, DBUser, unit+".container"); !strings.Contains(u, "MemoryMax=1073741824\n") || f.Called(restart) {
+	if u := unitFile(t, d, account, unit+".container"); !strings.Contains(u, "MemoryMax=1073741824\n") || f.Called(restart) {
 		t.Errorf("a request for a database changed the limits: %v\n%s", f.Calls, u)
 	}
 	// The same limits again: no restart.
@@ -403,7 +424,7 @@ func TestSetDatabaseServerChangesTheLimits(t *testing.T) {
 	if err := run(t)(d.SetDatabaseServer(&agentv1.DatabaseServerRequest{JobId: jobID, DatabaseServer: larger})); err != nil {
 		t.Fatal(err)
 	}
-	u := unitFile(t, d, DBUser, unit+".container")
+	u := unitFile(t, d, account, unit+".container")
 	for _, want := range []string{"CPUQuota=200%\n", "MemoryMax=2147483648\n", "MemorySwapMax=0\n"} {
 		if !strings.Contains(u, want) {
 			t.Errorf("the unit has no %q:\n%s", want, u)
@@ -452,7 +473,8 @@ func TestOnlyDeleteDatabaseServerRemovesADatabaseServer(t *testing.T) {
 	}
 	data := serverDir(d, mariaServerKey)
 	unit := "cf-mariadb-" + mariaServerKey
-	stop := "systemctl --user --machine=cf-db@ stop " + unit + ".service"
+	account := host.DatabaseUser(mariaServerKey)
+	stop := systemctlOf(mariaServerKey) + "stop " + unit + ".service"
 	// The first website goes: its database goes, and the database server stays.
 	req := &agentv1.DeleteWebsiteRequest{JobId: jobID2, WebsiteId: websiteID, UnixUser: "acme_x7k2",
 		Databases:     []*agentv1.DatabaseRef{{Engine: "mariadb", Name: "acme_x7k2_shop", DatabaseServer: mariaServerID}},
@@ -498,9 +520,16 @@ func TestOnlyDeleteDatabaseServerRemovesADatabaseServer(t *testing.T) {
 	if !f.Called(stop) {
 		t.Errorf("the container did not stop: %v", f.Calls)
 	}
-	dir, _ := d.Host.UnitDir(DBUser)
+	dir, _ := d.Host.UnitDir(account)
 	if _, err := os.Stat(filepath.Join(dir, unit+".container")); !os.IsNotExist(err) {
 		t.Errorf("the unit stays: %v", err)
+	}
+	// The Unix user of the database server goes, with its home directory, after the container.
+	if stopped, removed := index(f.Calls, stop), index(f.Calls, "userdel --remove "+account); !(stopped >= 0 && stopped < removed) {
+		t.Errorf("stop %d, removal of the user %d in %v", stopped, removed, f.Calls)
+	}
+	if f.Called("userdel --remove " + host.DatabaseUser(otherServerKey)) {
+		t.Errorf("the user of a different database server went: %v", f.Calls)
 	}
 	if _, err := os.Stat(data); !os.IsNotExist(err) {
 		t.Errorf("the data stays: %v", err)
@@ -918,15 +947,14 @@ func TestCreateWebsiteChecksTheDatabaseInstance(t *testing.T) {
 // server has, before it sends SQL.
 func TestTheWaitForADatabaseServerNeedsItsTcpPort(t *testing.T) {
 	// The test host gives each user the UID 20001.
-	const podman = "runuser -u cf-db -- env XDG_RUNTIME_DIR=/run/user/20001 podman "
 	keys := map[string]string{"mariadb": mariaServerKey, "postgresql": pgServerKey}
 	probes := map[string]string{
-		"mariadb":    podman + "exec -i cf-mariadb-" + mariaServerKey + " mariadb-admin --protocol=tcp --host=127.0.0.1 --port=3306 --connect-timeout=5 ping",
-		"postgresql": podman + "exec -i cf-postgresql-" + pgServerKey + " pg_isready --quiet --host=127.0.0.1 --port=5432 --timeout=5",
+		"mariadb":    podmanOf(mariaServerKey) + "exec -i cf-mariadb-" + mariaServerKey + " mariadb-admin --protocol=tcp --host=127.0.0.1 --port=3306 --connect-timeout=5 ping",
+		"postgresql": podmanOf(pgServerKey) + "exec -i cf-postgresql-" + pgServerKey + " pg_isready --quiet --host=127.0.0.1 --port=5432 --timeout=5",
 	}
 	sql := map[string]string{
-		"mariadb":    podman + "exec -i cf-mariadb-" + mariaServerKey + " mariadb --user=root",
-		"postgresql": podman + "exec -i cf-postgresql-" + pgServerKey + " psql",
+		"mariadb":    podmanOf(mariaServerKey) + "exec -i cf-mariadb-" + mariaServerKey + " mariadb --user=root",
+		"postgresql": podmanOf(pgServerKey) + "exec -i cf-postgresql-" + pgServerKey + " psql",
 	}
 	for engine, probe := range probes {
 		d, f, _ := deps(t)
@@ -987,7 +1015,7 @@ func TestBackupAndRestoreUseTheDatabaseServerOfADatabase(t *testing.T) {
 	for name, key := range map[string]string{"acme_x7k2_shop": mariaServerKey, "acme_x7k2_blog": secondServerKey} {
 		found := false
 		for _, c := range f.Calls {
-			found = found || strings.HasPrefix(c, podmanDB+"exec cf-mariadb-"+key+" mariadb-dump") && strings.HasSuffix(c, " "+name)
+			found = found || strings.HasPrefix(c, podmanOf(key)+"exec cf-mariadb-"+key+" mariadb-dump") && strings.HasSuffix(c, " "+name)
 		}
 		if !found {
 			t.Errorf("no dump of %s from the database server %s: %q", name, key, f.Calls)
@@ -1003,7 +1031,7 @@ func TestBackupAndRestoreUseTheDatabaseServerOfADatabase(t *testing.T) {
 			t.Errorf("the restore used a different database server: %s", c)
 		}
 	}
-	if in := inputsOf(f, podmanDB+"exec -i cf-mariadb-"+secondServerKey+" "); !strings.Contains(in, "GRANT ALL PRIVILEGES ON `acme\\_x7k2\\_blog`.* TO 'cfrestore_") {
+	if in := inputsOf(f, podmanOf(secondServerKey)+"exec -i cf-mariadb-"+secondServerKey+" "); !strings.Contains(in, "GRANT ALL PRIVILEGES ON `acme\\_x7k2\\_blog`.* TO 'cfrestore_") {
 		t.Errorf("the database server of the database got no restore:\n%s", in)
 	}
 	// A database server that is not an ID of the panel stops each request.
@@ -1020,5 +1048,98 @@ func TestBackupAndRestoreUseTheDatabaseServerOfADatabase(t *testing.T) {
 	}
 	if _, err := d.DeleteDatabaseUser(&agentv1.DeleteDatabaseUserRequest{JobId: jobID2, WebsiteId: websiteID, UnixUser: "acme_x7k2", Engine: "mariadb", Name: "acme_x7k2_shop", DatabaseServer: "../../etc"}); err == nil {
 		t.Error("the agent accepted the database server of a user to remove")
+	}
+}
+
+// The removal of a database server removes the user quota of its Unix user before the user:
+// a later user can get the same UID, and must not get the limit.
+func TestTheRemovalOfADatabaseServerRemovesItsUserQuota(t *testing.T) {
+	d, f, _ := deps(t)
+	users(d)
+	quotas(d)
+	if err := run(t)(d.SetDatabaseServer(&agentv1.DatabaseServerRequest{JobId: jobID, DatabaseServer: databaseServer("mariadb")})); err != nil {
+		t.Fatal(err)
+	}
+	if !f.Called(setquota("4980736", "5242880")) {
+		t.Fatalf("the database server has no user quota: %q", f.Calls)
+	}
+	if err := run(t)(d.DeleteDatabaseServer(&agentv1.DeleteDatabaseServerRequest{JobId: jobID2, DatabaseServer: mariaServerID})); err != nil {
+		t.Fatal(err)
+	}
+	account := host.DatabaseUser(mariaServerKey)
+	stop := index(f.Calls, systemctlOf(mariaServerKey)+"stop cf-mariadb-"+mariaServerKey+".service")
+	quota := index(f.Calls, setquota("0", "0"))
+	remove := index(f.Calls, "userdel --remove "+account)
+	if !(stop >= 0 && stop < quota && quota < remove) {
+		t.Errorf("stop %d, quota %d, removal of the user %d in %q", stop, quota, remove, f.Calls)
+	}
+	if _, err := os.Stat(serverDir(d, mariaServerKey)); !os.IsNotExist(err) {
+		t.Errorf("the data stays: %v", err)
+	}
+}
+
+// The image of a database server is in the shared image store of root. The user of the
+// database server reads it there, and does not pull its own copy: a copy would use the disk
+// limit of the database server.
+func TestADatabaseServerUsesTheSharedImageStore(t *testing.T) {
+	d, f := sharedDeps(t)
+	users(d)
+	account := host.DatabaseUser(mariaServerKey)
+	// useradd makes the home directory of the user. The fake runner does not.
+	if err := os.MkdirAll(filepath.Join(d.DBHome, "homes", account), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	image := d.serviceImage("mariadb")
+	store := sharedStore(d)
+	f.Rules = append([]execx.Rule{{Prefix: "podman pull --quiet " + image, Do: func() error {
+		return os.MkdirAll(filepath.Join(store.Root, ".pull-"+images.StoreName(image)), 0o700)
+	}}}, f.Rules...)
+	if err := run(t)(d.SetDatabaseServer(&agentv1.DatabaseServerRequest{JobId: jobID, DatabaseServer: databaseServer("mariadb")})); err != nil {
+		t.Fatal(err)
+	}
+	// Podman of the user reads the shared store.
+	if target, err := os.Readlink(filepath.Join(d.DBHome, "homes", account, ".config", "containers", "storage.conf")); err != nil || target != store.Config {
+		t.Errorf("storage.conf of the user = %q %v", target, err)
+	}
+	pull := index(f.Calls, "podman pull --quiet "+image)
+	exists := index(f.Calls, podmanOf(mariaServerKey)+"image exists "+image)
+	start := index(f.Calls, systemctlOf(mariaServerKey)+"restart cf-mariadb-"+mariaServerKey+".service")
+	if !(pull >= 0 && pull < exists && exists < start) || f.Called(podmanOf(mariaServerKey)+"pull") {
+		t.Errorf("pull %d, check %d, start %d in %q", pull, exists, start, f.Calls)
+	}
+	dir := filepath.Join(store.Root, images.StoreName(image))
+	if _, err := os.Stat(dir); err != nil {
+		t.Fatal(err)
+	}
+	if u := unitFile(t, d, account, "cf-mariadb-"+mariaServerKey+".container"); !strings.Contains(u, "Image="+image+"\nPull=never\n") {
+		t.Errorf("unit:\n%s", u)
+	}
+	// The unit of the database server names the image, so the store keeps it. The time of
+	// the job is not the cause: the store has no record of a job after the agent starts again.
+	store.Now = func() time.Time { return time.Now().Add(2 * images.KeepRecent) }
+	for i := 0; i < 2; i++ {
+		d.PruneImages()
+	}
+	if conf, _ := os.ReadFile(store.Config); !strings.Contains(string(conf), dir) {
+		t.Errorf("the image of the database server is not shared after the prune: %s", conf)
+	}
+	if _, err := os.Stat(dir); err != nil {
+		t.Errorf("the image of the database server went: %v", err)
+	}
+	// An image that the user of the database server cannot read is an error. The user does
+	// not pull a copy.
+	d, f = sharedDeps(t)
+	users(d)
+	os.MkdirAll(filepath.Join(d.DBHome, "homes", account), 0o700)
+	store = sharedStore(d)
+	f.Rules = append([]execx.Rule{
+		{Prefix: podmanOf(mariaServerKey) + "image exists", Err: errors.New("exit status 1")},
+		{Prefix: "podman pull --quiet " + image, Do: func() error {
+			return os.MkdirAll(filepath.Join(store.Root, ".pull-"+images.StoreName(image)), 0o700)
+		}},
+	}, f.Rules...)
+	err := run(t)(d.SetDatabaseServer(&agentv1.DatabaseServerRequest{JobId: jobID, DatabaseServer: databaseServer("mariadb")}))
+	if err == nil || !strings.Contains(err.Error(), "shared image store") || f.Called(podmanOf(mariaServerKey)+"pull") {
+		t.Errorf("an image that the user cannot read: %v %q", err, f.Calls)
 	}
 }

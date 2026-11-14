@@ -13,5 +13,9 @@ ARG CF_REFRESH
 RUN apt-get update \
  && apt-get upgrade -y --no-install-recommends \
  && rm -rf /var/lib/apt/lists/*
+# The agent starts each database server as the user 999 and the group 999, which is the user
+# postgres of the base image. The Unix user of the database server on the host owns the data
+# files, and has this ID in the container. A base image with a different ID stops the build.
+RUN test "$(id -u postgres):$(id -g postgres)" = 999:999
 LABEL org.opencontainers.image.source="https://github.com/itbm/cloudfactory" \
       org.opencontainers.image.description="Cloudfactory PostgreSQL service"

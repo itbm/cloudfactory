@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unsafe"
 
 	"github.com/itbm/cloudfactory/agent/internal/execx"
 )
@@ -386,5 +387,180 @@ func TestEnsureUserDoesNotFollowALinkOfTheWebsiteUser(t *testing.T) {
 		if dir != h.SitesDir && dir != filepath.Dir(h.Home("acme_x7k2")) {
 			t.Errorf("root changed %s after the check failed", dir)
 		}
+	}
+}
+
+const databaseUser = "db-01jbq3z5k8n6t4w2x9y7r5p3d1"
+
+func TestCheckDatabaseUser(t *testing.T) {
+	if got := DatabaseUser("01jbq3z5k8n6t4w2x9y7r5p3d1"); got != databaseUser {
+		t.Errorf("DatabaseUser = %q", got)
+	}
+	if err := CheckDatabaseUser(databaseUser); err != nil {
+		t.Error(err)
+	}
+	for _, bad := range []string{
+		"", "db-", "cf-db", "root", "acme_x7k2", "db-01JBQ3Z5K8N6T4W2X9Y7R5P3D1", "db-01jbq3z5k8n6t4w2x9y7r5p3d", "db-01jbq3z5k8n6t4w2x9y7r5p3d12",
+		"db-../../../../../../../etc", databaseUser + "\n", " " + databaseUser, "db-01jbq3z5k8n6t4w2x9y7r5p3d/",
+	} {
+		if err := CheckDatabaseUser(bad); err == nil {
+			t.Errorf("the user %q was accepted", bad)
+		}
+	}
+}
+
+// The user of a database server is as a website user, with a UID in a different range: the
+// firewall has a different rule for each range.
+func TestEnsureDatabaseUserMakesTheUserOnce(t *testing.T) {
+	h, f := fakeHost(t, false)
+	home := filepath.Join(t.TempDir(), "homes", databaseUser)
+	// useradd makes the user and its home directory.
+	f.Rules = []execx.Rule{{Prefix: "useradd", Do: func() error {
+		h.LookupUID = func(string) (int, error) { return 10004, nil }
+		return os.MkdirAll(home, 0o700)
+	}}}
+	h.StorageConfig = "/etc/cloudfactory/website-storage.conf"
+	if err := h.EnsureDatabaseUser(context.Background(), databaseUser, home); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"useradd -K UID_MIN=10000 -K UID_MAX=19999 -K GID_MIN=10000 -K GID_MAX=19999 --create-home --home-dir " + home + " --shell /usr/sbin/nologin --user-group --groups cf-sites " + databaseUser,
+		"chmod 0700 " + home,
+		"loginctl enable-linger " + databaseUser,
+		"systemctl start user@10004.service",
+	}
+	if !slices.Equal(f.Calls, want) {
+		t.Errorf("calls = %q, want %q", f.Calls, want)
+	}
+	// Podman of the user reads the shared image store.
+	if target, err := os.Readlink(filepath.Join(home, ".config", "containers", "storage.conf")); err != nil || target != h.StorageConfig {
+		t.Errorf("storage.conf = %q %v", target, err)
+	}
+
+	// The user exists: no useradd.
+	f.Calls = nil
+	if err := h.EnsureDatabaseUser(context.Background(), databaseUser, home); err != nil {
+		t.Fatal(err)
+	}
+	if f.Called("useradd") || !f.Called("systemctl start user@10004.service") {
+		t.Errorf("calls = %q", f.Calls)
+	}
+
+	// A user that the agent did not make has a UID outside the range. The agent does not use it.
+	for _, uid := range []int{994, 1001, 9999, 20000} {
+		h, f = fakeHost(t, true)
+		h.LookupUID = func(string) (int, error) { return uid, nil }
+		if err := h.EnsureDatabaseUser(context.Background(), databaseUser, home); err == nil || !strings.Contains(err.Error(), "not in the range") {
+			t.Errorf("a user with the UID %d was accepted: %v", uid, err)
+		}
+		if len(f.Calls) != 0 {
+			t.Errorf("the agent ran commands for a user with the UID %d: %q", uid, f.Calls)
+		}
+	}
+	// A name that is not the name of a database server.
+	h, f = fakeHost(t, false)
+	for _, bad := range []string{"root", "cf-db", "acme_x7k2", "db-x"} {
+		if err := h.EnsureDatabaseUser(context.Background(), bad, home); err == nil {
+			t.Errorf("the user %q was accepted", bad)
+		}
+		if err := h.RemoveDatabaseUser(context.Background(), bad); err == nil {
+			t.Errorf("the removal of the user %q was accepted", bad)
+		}
+		if err := h.SetDatabaseQuota(context.Background(), bad, "/var/lib", 1<<30); err == nil {
+			t.Errorf("a quota for the user %q was accepted", bad)
+		}
+	}
+	if len(f.Calls) != 0 {
+		t.Errorf("calls = %q", f.Calls)
+	}
+}
+
+func TestRemoveDatabaseUser(t *testing.T) {
+	h, f := fakeHost(t, true)
+	h.LookupUID = func(string) (int, error) { return 10004, nil }
+	units := filepath.Join(h.UnitRoot, "10004")
+	if err := os.MkdirAll(units, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// userdel removes the user.
+	f.Rules = []execx.Rule{{Prefix: "userdel", Do: func() error {
+		h.LookupUID = func(name string) (int, error) { return 0, user.UnknownUserError(name) }
+		return nil
+	}}}
+	if err := h.RemoveDatabaseUser(context.Background(), databaseUser); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"loginctl disable-linger " + databaseUser,
+		"systemctl stop user@10004.service",
+		"systemctl stop user-10004.slice",
+		"pkill --signal KILL --uid 10004",
+		"userdel --remove " + databaseUser,
+	}
+	if !slices.Equal(f.Calls, want) {
+		t.Errorf("calls = %q, want %q", f.Calls, want)
+	}
+	// A later user can get the UID 10004. It must not get the units of this user.
+	if _, err := os.Stat(units); !os.IsNotExist(err) {
+		t.Errorf("the units of the user stay: %v", err)
+	}
+	// The user is not there: the second removal runs no command.
+	f.Calls = nil
+	if err := h.RemoveDatabaseUser(context.Background(), databaseUser); err != nil || len(f.Calls) != 0 {
+		t.Errorf("the second removal: %v %q", err, f.Calls)
+	}
+}
+
+func TestSetDatabaseQuota(t *testing.T) {
+	h, f := fakeHost(t, true)
+	// The hard limit is the disk limit, in units of 1024 bytes. The soft limit is 95% of it.
+	if err := h.SetDatabaseQuota(context.Background(), databaseUser, "/var/lib", 5<<30); err != nil {
+		t.Fatal(err)
+	}
+	// 0 removes the limit.
+	if err := h.SetDatabaseQuota(context.Background(), databaseUser, "/var/lib", 0); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"setquota --user " + databaseUser + " 4980736 5242880 0 0 /var/lib",
+		"setquota --user " + databaseUser + " 0 0 0 0 /var/lib",
+	}
+	if !slices.Equal(f.Calls, want) {
+		t.Errorf("calls = %q, want %q", f.Calls, want)
+	}
+}
+
+func TestQuotaUse(t *testing.T) {
+	h, f := fakeHost(t, true)
+	// A test has no file system with user quotas, so the function of the kernel is a fake.
+	h.ReadQuota = func(mount string, uid int) (int64, int64, error) {
+		if mount != "/var/lib" || uid != 10004 {
+			t.Errorf("ReadQuota(%q, %d)", mount, uid)
+		}
+		return 123 << 20, 5 << 30, nil
+	}
+	used, limit, err := h.QuotaUse(context.Background(), "/var/lib", 10004)
+	if err != nil || used != 123<<20 || limit != 5<<30 {
+		t.Errorf("QuotaUse = %d, %d, %v", used, limit, err)
+	}
+	if len(f.Calls) != 0 {
+		t.Errorf("calls = %q", f.Calls)
+	}
+	// The file system must be on a block device: quotactl(2) gets the device.
+	h.ReadQuota = nil
+	f.Rules = []execx.Rule{{Prefix: "findmnt --noheadings --output SOURCE --mountpoint /var/lib", Output: "tank/data\n"}}
+	if _, _, err := h.QuotaUse(context.Background(), "/var/lib", 10004); err == nil || !strings.Contains(err.Error(), "not on a block device") {
+		t.Errorf("a file system with no block device: %v", err)
+	}
+}
+
+// dqblk has the layout of "struct if_dqblk" of the kernel: quotactl(2) writes 72 bytes.
+func TestTheQuotaStructHasTheSizeOfTheKernel(t *testing.T) {
+	if got := unsafe.Sizeof(dqblk{}); got != 72 {
+		t.Errorf("size of dqblk = %d", got)
+	}
+	// QCMD(Q_GETQUOTA, USRQUOTA) = (0x800007 << 8) | 0.
+	if getUserQuota != 0x80000700 {
+		t.Errorf("getUserQuota = %#x", getUserQuota)
 	}
 }
