@@ -44,6 +44,14 @@ class SftpController extends Controller
         if ($data['enabled'] && $keys === []) {
             throw ValidationException::withMessages(['authorizedKeys' => 'Add an SSH public key to turn on SFTP.']);
         }
+        if ($data['enabled']) {
+            // Audit finding F01: a website that the panel could not make has files on the server,
+            // but no container. Its owner must not change these files before "Try again", which
+            // makes the directories of the website again.
+            WebsiteController::refuseFailed($website);
+            // Audit finding F05: a suspension turns SFTP off. It stays off until the suspension ends.
+            abort_if($website->customer?->isSuspended() ?? false, 409, 'This customer is suspended. Lift the suspension before you turn on SFTP.');
+        }
         // SFTP that is off and stays off: the request changes only the keys. The titles say so.
         [$title, $event] = match (true) {
             (bool) $data['enabled'] => ['Set SFTP access', 'Changed SFTP access'],

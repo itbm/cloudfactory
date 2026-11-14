@@ -15,6 +15,7 @@ import { OverviewPage } from "./pages/OverviewPage";
 import { PlansPage } from "./pages/PlansPage";
 import { ServersPage } from "./pages/ServersPage";
 import { SetPasswordPage } from "./pages/SetPasswordPage";
+import { SetTotpPage } from "./pages/SetTotpPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { SetupPage } from "./pages/SetupPage";
 import { UpdatesPage } from "./pages/UpdatesPage";
@@ -44,6 +45,8 @@ function RequireSignIn({ children }: { children: React.ReactNode }) {
   }
   // Audit finding B5: a temporary password gives access only to the form for a new password.
   if (state.session.mustChangePassword) return <SetPasswordPage />;
+  // Second audit, finding F09: an administrator or a reseller sets up TOTP first.
+  if (state.session.totpSetupRequired) return <SetTotpPage />;
   return children;
 }
 

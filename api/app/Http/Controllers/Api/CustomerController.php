@@ -144,6 +144,11 @@ class CustomerController extends Controller
     /**
      * A suspension stops the websites of the customer, and of the customers of a reseller. When it
      * ends, only the websites that the suspension stopped start again.
+     *
+     * Audit finding F05: a suspension also turns off the SFTP access of each website, and the
+     * agent stops the open SFTP sessions. Before, a suspended customer could still change its
+     * files with SFTP. When the suspension ends, the websites that had SFTP get it again, with
+     * the same keys.
      */
     private function applySuspension(Customer $customer): void
     {
@@ -156,9 +161,24 @@ class CustomerController extends Controller
             if ($customer->suspended && in_array($website->status, [WebsiteStatus::Running, WebsiteStatus::Starting], true)) {
                 $website->update(['status' => WebsiteStatus::Stopping, 'stopped_by_suspension' => true]);
                 $this->jobs->dispatch($website->server, AgentAction::SetWebsitePower, ['websiteId' => $website->id, 'unixUser' => $website->unix_user, 'power' => 'stop'], "Stop {$website->name} (suspended)", $website);
+            } elseif (! $customer->suspended && $website->stopped_by_suspension && $website->status === WebsiteStatus::Failed) {
+                // The panel could not make this website, so it has no container to start.
+                $website->update(['stopped_by_suspension' => false]);
             } elseif (! $customer->suspended && $website->stopped_by_suspension) {
                 $website->update(['status' => WebsiteStatus::Starting, 'stopped_by_suspension' => false]);
                 $this->jobs->dispatch($website->server, AgentAction::SetWebsitePower, ['websiteId' => $website->id, 'unixUser' => $website->unix_user, 'power' => 'start'], "Start {$website->name} (suspension ended)", $website);
+            }
+            // The result of the job records the new SFTP state of the website (JobOutcome). The
+            // keys stay in the panel, so that the owner does not add them again.
+            $sftp = ['websiteId' => $website->id, 'unixUser' => $website->unix_user, 'authorizedKeys' => $website->sftp_keys ?? []];
+            if ($customer->suspended && $website->sftp_enabled) {
+                $website->update(['sftp_closed_by_suspension' => true]);
+                $this->jobs->dispatch($website->server, AgentAction::SetSftp, ['enabled' => false] + $sftp, "Turn off SFTP access of {$website->name} (suspended)", $website);
+            } elseif (! $customer->suspended && $website->sftp_closed_by_suspension) {
+                $website->update(['sftp_closed_by_suspension' => false]);
+                if (($website->sftp_keys ?? []) !== [] && $website->status !== WebsiteStatus::Failed) {
+                    $this->jobs->dispatch($website->server, AgentAction::SetSftp, ['enabled' => true] + $sftp, "Turn on SFTP access of {$website->name} (suspension ended)", $website);
+                }
             }
         }
     }

@@ -11,10 +11,18 @@ use Illuminate\Support\Str;
 class JobResource extends JsonResource
 {
     /**
+     * The marks of an error text that shows the server from the inside: a host command, a
+     * path on the host, a socket or a network address (second audit, finding U2).
+     */
+    private const INTERNAL = '/: exit status \d+|: signal: |executable file not found'
+        .'|\/(var|srv|run|etc|usr|home|root|tmp|opt|proc|sys|dev)\/'
+        .'|\bdial (tcp|unix)\b|\bunix:|https?:\/\/|\b\d{1,3}(\.\d{1,3}){3}\b'
+        .'|permission denied|no such file or directory|connection refused/i';
+
+    /**
      * Audit finding S9: an administrator sees the full error of the agent. For other users,
-     * the error of a host command becomes the name of the step, because the full text has the
-     * command line and the output of the command. Other errors are one line of 300 characters
-     * at most, for example "the website did not answer".
+     * an error that shows the server from the inside becomes the name of the step. Other
+     * errors are one line of 300 characters at most, for example "the website did not answer".
      */
     private static function errorFor(Request $request, AgentJob $job): ?string
     {
@@ -22,7 +30,7 @@ class JobResource extends JsonResource
         if ($error === null || $request->user()?->isAdministrator()) {
             return $error;
         }
-        if (preg_match('/: exit status \d+|: signal: |executable file not found/', $error)) {
+        if (preg_match(self::INTERNAL, $error)) {
             $step = $job->steps[$job->step] ?? null;
 
             return ($step ? "The step \"{$step}\" failed on the server." : 'A step failed on the server.').' Your provider can see the details.';

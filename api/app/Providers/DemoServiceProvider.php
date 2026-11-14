@@ -29,6 +29,11 @@ class DemoServiceProvider extends ServiceProvider
     public function boot(): void
     {
         // The sample servers have this agent release, and one has an earlier release.
+        // The sample administrator and the sample reseller have no TOTP. The demonstration mode
+        // does not ask them to set it up, unless CF_REQUIRE_TOTP has a value.
+        if (self::enabled() && env('CF_REQUIRE_TOTP') === null) {
+            config(['cloudfactory.require_totp' => false]);
+        }
         if (self::enabled() && env('CF_AGENT_LATEST') === null) {
             config(['cloudfactory.agent.latest_version' => DemoSeeder::AGENT]);
         }

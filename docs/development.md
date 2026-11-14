@@ -101,6 +101,11 @@ php artisan demo:fixtures
 ```
 
 The API test `DemoTest` fails when the files do not agree with the API.
+Sign in as `admin@example.com`, `reseller@example.com` or `owner@example.com`. The password
+is `password`. The sample users have no TOTP, so leave the code empty. In the
+demonstration mode, the panel does not ask the sample administrator and the sample reseller
+to set up TOTP. To see the page **Set up an authenticator app**, set `CF_REQUIRE_TOTP=true`
+in `api/.env`.
 
 ## Panel API
 

@@ -543,14 +543,30 @@ export interface Account {
   users: ManagedUser[];
 }
 
+/** Second audit, finding F09: a change to an administrator account that a different person made. */
+export interface SecurityNotice {
+  action: string;
+  target: string;
+  actor: string;
+  at: string;
+}
+
+/** The password and the TOTP code of the signed-in user, to confirm a change to an administrator. */
+export interface Confirmation {
+  password: string;
+  totp: string;
+}
+
 export interface State {
   /**
    * loading: the panel has a session but has not loaded the data yet.
    * mustChangePassword: the user has a temporary password. The panel shows only the form for
    * a new password.
+   * totpSetupRequired: the user is an administrator or a reseller with no TOTP. The panel
+   * shows only the page that sets up TOTP (second audit, finding F09).
    */
   session: {
-    signedIn: boolean; loading?: boolean; mustChangePassword?: boolean; user: User; contextId: string;
+    signedIn: boolean; loading?: boolean; mustChangePassword?: boolean; totpSetupRequired?: boolean; user: User; contextId: string;
     /** The error of the last load from the API. The panel then shows the data of the load before it. */
     loadError?: string;
   };
@@ -573,6 +589,8 @@ export interface State {
   users: ManagedUser[];
   tokens: ApiToken[];
   totpEnabled: boolean;
+  /** Changes that a different person made to the administrator accounts in the last 7 days. */
+  securityNotices: SecurityNotice[];
   audit: AuditEntry[];
   /** The host name of the panel, for the join command and the DNS hints. */
   panelDomain: string;

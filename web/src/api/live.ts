@@ -118,7 +118,10 @@ const shown = new Set<string>();
 
 // Shapes of the API (openapi/openapi.yaml, components/schemas).
 
-interface ApiMe { id: number; name: string; email: string; role: User["role"]; customerId: string | null; totpEnabled: boolean; mustChangePassword?: boolean }
+interface ApiMe {
+  id: number; name: string; email: string; role: User["role"]; customerId: string | null; totpEnabled: boolean; mustChangePassword?: boolean;
+  totpSetupRequired?: boolean; securityNotices?: { action: string; target: string; actor: string; at: string | null }[];
+}
 interface ApiUser { id: number; name: string; email: string; role: User["role"]; customerId: string | null; totpEnabled: boolean; mustChangePassword: boolean; createdAt: string | null }
 interface ApiJob { id: string; title: string; ref: string | null; action?: string | null; state: Job["state"]; steps: string[]; step: number; error: string | null; websiteId: string | null; serverId: string | null; databaseServerId?: string | null; createdAt: string; finishedAt: string | null }
 interface ApiWebsite {
@@ -291,6 +294,11 @@ export async function load(previous: State): Promise<State> {
   if (me.mustChangePassword) {
     return { ...previous, session: { signedIn: true, mustChangePassword: true, user, contextId: previous.session.contextId }, totpEnabled: me.totpEnabled };
   }
+  // Second audit, finding F09: an administrator or a reseller must set up TOTP first. The API
+  // refuses each other request until then.
+  if (me.totpSetupRequired) {
+    return { ...previous, session: { signedIn: true, totpSetupRequired: true, user, contextId: previous.session.contextId }, totpEnabled: false };
+  }
   const admin = me.role === "administrator";
   const optional = <T>(p: Promise<T>, fallback: T) => p.catch(() => fallback);
 
@@ -361,6 +369,7 @@ export async function load(previous: State): Promise<State> {
     users: users.map(toUser),
     tokens: tokens.map(toToken),
     totpEnabled: me.totpEnabled,
+    securityNotices: (me.securityNotices ?? []).map((n) => ({ ...n, at: n.at ?? "" })),
     audit: audit.map(toAudit),
     panelDomain: location.host,
     panelCertificate: certificate ? toPanelCertificate(certificate) : previous.panelCertificate,

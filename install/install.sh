@@ -919,7 +919,7 @@ if [ "$MODE" = panel ]; then
 	if [ -n "${PASSWORD:-}" ]; then
 		info "Sign in as $EMAIL with this password: $PASSWORD"
 		info "This password is temporary. The panel asks you for a new password when you sign in."
-		info "Then open Settings and set up an authenticator app (TOTP)."
+		info "Then the panel asks you to set up an authenticator app (TOTP). Have the app ready."
 		info "This password is also in your terminal history and in any log of this script."
 	fi
 else

@@ -27,6 +27,7 @@ import { relativeTime } from "../lib/format";
 import { jobActive } from "../lib/labels";
 import { HOME, NAVIGATION, ROLE_LABEL, type NavEntry, type NavSection } from "../lib/roles";
 import { CommandPalette } from "./CommandPalette";
+import { SecurityNotices } from "./SecurityNotices";
 import { Status } from "./ui";
 
 interface LayoutState {
@@ -291,6 +292,7 @@ export function Layout() {
               <p><strong>The panel could not load new data.</strong> {state.session.loadError} The pages show the data of the last good load. The panel tries again each 15 seconds.</p>
             </div>
           )}
+          {state.session.user.role === "administrator" && <SecurityNotices />}
           <Outlet />
         </div>
       </div>

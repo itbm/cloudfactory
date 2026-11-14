@@ -194,11 +194,25 @@ describe("load with a temporary password (audit finding B5)", () => {
     expect(state.totpEnabled).toBe(false);
   });
 
+  it("reads only the user when an administrator must set up TOTP (second audit, finding F09)", async () => {
+    const calls: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      calls.push(url);
+      if (url === "/api/v1/me") return new Response(JSON.stringify({ id: 3, name: "Admin", email: "a@example.com", role: "administrator", customerId: null, totpEnabled: false, mustChangePassword: false, totpSetupRequired: true, securityNotices: [] }), { status: 200 });
+      return new Response(JSON.stringify({ message: "Set up TOTP first.", code: "totp_setup_required" }), { status: 403 });
+    }));
+    const state = await load(emptyState());
+    expect(calls).toEqual(["/api/v1/me"]);
+    expect(state.session).toMatchObject({ signedIn: true, totpSetupRequired: true, user: { id: "3", role: "administrator" } });
+    expect(state.session.mustChangePassword).toBeUndefined();
+    expect(state.totpEnabled).toBe(false);
+  });
+
   it("reads the users and the kind of each snapshot after the password change", async () => {
     vi.stubGlobal("fetch", vi.fn(async (url: string) => {
       const path = url.replace("/api/v1", "");
       const json = (b: unknown) => new Response(JSON.stringify(b), { status: 200 });
-      if (path === "/me") return json({ id: 1, name: "Admin", email: "a@example.com", role: "administrator", customerId: null, totpEnabled: true, mustChangePassword: false });
+      if (path === "/me") return json({ id: 1, name: "Admin", email: "a@example.com", role: "administrator", customerId: null, totpEnabled: true, mustChangePassword: false, totpSetupRequired: false, securityNotices: [{ action: "Created administrator", target: "new@example.com", actor: "Other Admin", at: "2026-11-13T10:00:00+00:00" }] });
       if (path === "/users") return json({ data: [{ id: 2, name: "Owner", email: "o@example.com", role: "owner", customerId: "c1", totpEnabled: false, mustChangePassword: true, createdAt: "2026-11-10T09:00:00+00:00" }, { id: 1, name: "Admin", email: "a@example.com", role: "administrator", customerId: null, totpEnabled: true, mustChangePassword: false, createdAt: null }] });
       if (path.startsWith("/websites?")) return json({ data: [{ id: "w1", name: "a.example", application: "", customerId: "c1", serverId: "s1", planId: "p1", unixUser: "a_1a2b", status: "running", runtime: { imageId: "i1", family: "frankenphp", image: "x:1", phpVersion: "8.4", workerMode: false, extensions: [], phpIni: {}, previousImageId: null }, limits: { vcpus: 1, memoryBytes: 1, diskBytes: 1, diskIoBytesPerSecond: 1, processes: 100 }, usage: {}, domains: [], stagingOf: null, managedByTerraform: false, createdAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-02T00:00:00Z" }], meta: { last_page: 1 } });
       if (path === "/websites/w1/snapshots") return json({ data: [{ id: "s1", kind: "scheduled", sizeBytes: 5, databases: [], mailboxes: [], createdAt: "2026-11-10T03:00:00Z" }, { id: "s2", kind: "manual", sizeBytes: 5, databases: [], mailboxes: [], createdAt: "2026-11-09T12:00:00Z" }] });
@@ -210,6 +224,8 @@ describe("load with a temporary password (audit finding B5)", () => {
     }));
     const state = await load(emptyState());
     expect(state.session.mustChangePassword).toBeUndefined();
+    expect(state.session.totpSetupRequired).toBeUndefined();
+    expect(state.securityNotices).toEqual([{ action: "Created administrator", target: "new@example.com", actor: "Other Admin", at: "2026-11-13T10:00:00+00:00" }]);
     expect(state.users).toEqual([
       { id: "2", name: "Owner", email: "o@example.com", role: "owner", customerId: "c1", totpEnabled: false, mustChangePassword: true, createdAt: "2026-11-10T09:00:00+00:00" },
       { id: "1", name: "Admin", email: "a@example.com", role: "administrator", customerId: undefined, totpEnabled: true, mustChangePassword: false, createdAt: "" },

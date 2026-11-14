@@ -11,6 +11,7 @@ import * as live from "./live";
 import type {
   ApiToken,
   BackupPolicy,
+  Confirmation,
   Customer,
   DatabaseEngine,
   DatabaseLimits,
@@ -45,7 +46,7 @@ export function emptyState(): State {
     contexts: [], websites: [], jobs: [], activity: [], notifications: [], servers: [], images: [], rollout: undefined,
     databaseServers: [], databases: [], databaseUsers: [], snapshots: [], plans: [], customers: [], users: [],
     backupPolicy: { daily: 7, weekly: 4, monthly: 6, time: "03:00", target: "", credentialNames: [] },
-    tokens: [], totpEnabled: false, audit: [], joinToken: "", joinCaSha256: undefined,
+    tokens: [], totpEnabled: false, securityNotices: [], audit: [], joinToken: "", joinCaSha256: undefined,
     panelDomain: "",
     panelCertificate: { domain: "", method: null, state: "pending", letsEncryptAvailable: false, serversWithoutCa: [] },
   };
@@ -691,10 +692,21 @@ export function makeCustomer(input: Pick<Customer, "name" | "email" | "planId" |
 
 // Users (audit finding B5)
 
-/** Makes a user for a customer. With no customer (null), the user is an administrator. */
-export function addUser(input: { name: string; email: string; customerId: string | null }): Promise<NewAccess> | NewAccess {
+/**
+ * Second audit, finding F09: a change to an administrator needs the password of the signed-in
+ * user and, when TOTP is on, a code. These are the fields that the API gets.
+ */
+function confirmation(confirm: Confirmation | undefined): { password?: string; totp?: string } {
+  return confirm ? { password: confirm.password, totp: confirm.totp.trim() || undefined } : {};
+}
+
+/**
+ * Makes a user for a customer. With no customer (null), the user is an administrator, and the
+ * signed-in user must confirm with the password and a TOTP code.
+ */
+export function addUser(input: { name: string; email: string; customerId: string | null }, confirm?: Confirmation): Promise<NewAccess> | NewAccess {
   return call(async () => {
-    const r = await live.request<live.ApiUser & { temporaryPassword: string }>("POST", "/users", { name: input.name.trim(), email: input.email.trim(), customerId: input.customerId });
+    const r = await live.request<live.ApiUser & { temporaryPassword: string }>("POST", "/users", { name: input.name.trim(), email: input.email.trim(), customerId: input.customerId, ...(input.customerId === null ? confirmation(confirm) : {}) });
     await reload();
     return { email: r.email, temporaryPassword: r.temporaryPassword };
   });
@@ -704,16 +716,17 @@ export function addUser(input: { name: string; email: string; customerId: string
  * Gives the user a new temporary password and signs the user out. With removeTotp, the user
  * can sign in with the password only, for example after the loss of a telephone.
  */
-export function resetUserPassword(userId: string, removeTotp = false): Promise<NewAccess> | NewAccess {
+export function resetUserPassword(userId: string, removeTotp = false, confirm?: Confirmation): Promise<NewAccess> | NewAccess {
   return call(async () => {
-    const r = await live.request<live.ApiUser & { temporaryPassword: string }>("POST", `/users/${userId}/reset-password`, removeTotp ? { removeTotp: true } : {});
+    const r = await live.request<live.ApiUser & { temporaryPassword: string }>("POST", `/users/${userId}/reset-password`, { ...(removeTotp ? { removeTotp: true } : {}), ...confirmation(confirm) });
     await reload();
     return { email: r.email, temporaryPassword: r.temporaryPassword };
   });
 }
 
-export function deleteUser(userId: string) {
-  return call(() => live.request("DELETE", `/users/${userId}`)).then(() => reload());
+/** With an administrator, the signed-in user must confirm with the password and a TOTP code. */
+export function deleteUser(userId: string, confirm?: Confirmation) {
+  return call(() => live.request("DELETE", `/users/${userId}`, confirm ? confirmation(confirm) : undefined)).then(() => reload());
 }
 
 export function setCustomer(customerId: string, change: Partial<Pick<Customer, "planId" | "suspended">>) {

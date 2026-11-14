@@ -85,7 +85,9 @@ function Security() {
               <CopyField value={setup.secret.replace(/(.{4})/g, "$1 ").trim()} label="TOTP key" />
               <p className="muted" style={{ marginTop: 8, marginBottom: 12 }}>The key is valid for 10 minutes. Keep a copy in a safe place, in case you lose your phone.</p>
             </>}
-            {totpMode === "off" && <p style={{ marginBottom: 12 }}>You then sign in with your password only. Type your password and a code from the app.</p>}
+            {totpMode === "off" && (state.session.user.role === "owner"
+              ? <p style={{ marginBottom: 12 }}>You then sign in with your password only. Type your password and a code from the app.</p>
+              : <p style={{ marginBottom: 12 }}>Use this to move to a new authenticator app. Your role must have TOTP, so the panel then shows only the page that sets up TOTP again. Type your password and a code from the app.</p>)}
             <Field label="Password" error={totp.error?.fields.password}>{(p) => <input {...p} className="input" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />}</Field>
             <Field label="6-digit code from the app" error={totp.error?.fields.code}>{(p) => <input {...p} className="input" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={code} onChange={(e) => setCode(e.target.value)} />}</Field>
           </form>

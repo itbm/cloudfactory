@@ -44,8 +44,11 @@ class UserController extends Controller
         if ($response = self::refuse($request, $customer, $data['customerId'] !== null)) {
             return $response;
         }
+        if ($customer === null) {
+            AuthController::confirmIdentity($request);
+        }
         [$user, $password] = self::make($data['name'], $data['email'], $customer);
-        Audit::record($request, 'Created user', $user->email, $customer?->id);
+        Audit::record($request, $customer === null ? 'Created administrator' : 'Created user', $user->email, $customer?->id);
 
         return response()->json(self::present($user) + ['temporaryPassword' => $password], 201);
     }
@@ -64,8 +67,13 @@ class UserController extends Controller
         if ($response = self::refuse($request, $target->customer, $target->customer_id !== null)) {
             return $response;
         }
+        $administrator = $target->customer_id === null;
+        if ($administrator) {
+            AuthController::confirmIdentity($request);
+        }
         $password = self::reset($target, (bool) ($data['removeTotp'] ?? false));
-        Audit::record($request, ($data['removeTotp'] ?? false) ? 'Reset password and removed TOTP' : 'Reset password', $target->email, $target->customer_id);
+        $action = ($data['removeTotp'] ?? false) ? 'Reset password and removed TOTP' : 'Reset password';
+        Audit::record($request, $administrator ? "{$action} of administrator" : $action, $target->email, $target->customer_id);
 
         return response()->json(self::present($target->fresh()) + ['temporaryPassword' => $password]);
     }
@@ -79,11 +87,14 @@ class UserController extends Controller
         if ($response = self::refuse($request, $target->customer, $target->customer_id !== null)) {
             return $response;
         }
+        if ($target->customer_id === null) {
+            AuthController::confirmIdentity($request);
+        }
         DB::transaction(function () use ($target) {
             $target->tokens()->delete();
             $target->delete();
         });
-        Audit::record($request, 'Deleted user', $target->email, $target->customer_id);
+        Audit::record($request, $target->customer_id === null ? 'Deleted administrator' : 'Deleted user', $target->email, $target->customer_id);
 
         return response()->json(null, 204);
     }
@@ -130,7 +141,9 @@ class UserController extends Controller
      * - A website owner cannot change users.
      * - A reseller changes only the users of its own customers, not of its own account.
      * - Only an administrator in a sign-in session changes administrators. An API token with
-     *   the users scope cannot, because a new administrator has all rights.
+     *   the users scope cannot, because a new administrator has all rights. Audit finding F09:
+     *   the administrator also gives the password and, when TOTP is on, a code
+     *   (AuthController::confirmIdentity).
      */
     private static function refuse(Request $request, ?Customer $customer, bool $forCustomer): ?JsonResponse
     {

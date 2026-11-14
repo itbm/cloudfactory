@@ -548,6 +548,7 @@ func (a *app) users(ctx context.Context, sub string, args []string) error {
 		email := fs.String("email", "", "the email address. The user signs in with it.")
 		customer := fs.String("customer", "", "the ID of the customer of the user")
 		admin := fs.Bool("administrator", false, "make an administrator, who has no customer")
+		totp := fs.String("totp", "", "the code from your authenticator app, for a new administrator")
 		if err := fs.Parse(args); err != nil {
 			return err
 		}
@@ -558,6 +559,8 @@ func (a *app) users(ctx context.Context, sub string, args []string) error {
 		body := map[string]any{"name": *name, "email": *email, "customerId": nil}
 		if *customer != "" {
 			body["customerId"] = *customer
+		} else if err := a.confirm(body, *totp); err != nil {
+			return err
 		}
 		var out map[string]any
 		if err := a.api.Do(ctx, http.MethodPost, "/users", nil, body, &out); err != nil {
@@ -575,21 +578,32 @@ func (a *app) users(ctx context.Context, sub string, args []string) error {
 		}
 		fs := flag.NewFlagSet(sub, flag.ContinueOnError)
 		removeTotp := fs.Bool("remove-totp", false, "also remove TOTP, for a user who lost the authenticator app")
+		totp := fs.String("totp", "", "the code from your authenticator app, for a change to an administrator")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
-		id, err := a.userID(ctx, args[0])
+		id, administrator, err := a.userRef(ctx, args[0])
 		if err != nil {
 			return err
 		}
+		body := map[string]any{}
+		if administrator {
+			if err := a.confirm(body, *totp); err != nil {
+				return err
+			}
+		}
 		if sub != "reset-password" {
-			if err := a.api.Do(ctx, http.MethodDelete, "/users/"+id, nil, nil, nil); err != nil {
+			// A request with no values has no body.
+			var send any
+			if len(body) > 0 {
+				send = body
+			}
+			if err := a.api.Do(ctx, http.MethodDelete, "/users/"+id, nil, send, nil); err != nil {
 				return err
 			}
 			fmt.Fprintln(a.out, "The user is deleted.")
 			return nil
 		}
-		body := map[string]any{}
 		if *removeTotp {
 			body["removeTotp"] = true
 		}
@@ -607,29 +621,51 @@ func (a *app) users(ctx context.Context, sub string, args []string) error {
 	return fmt.Errorf("unknown command users %s", sub)
 }
 
-// userID gives the ID of a user from an ID or an email address.
-func (a *app) userID(ctx context.Context, ref string) (string, error) {
-	if !strings.Contains(ref, "@") {
+// confirm adds the password of the signed-in user, and the TOTP code when there is one, to the
+// body of a change to an administrator. The panel refuses the change with no password (audit
+// finding F09). The password comes from CF_PASSWORD or stdin.
+func (a *app) confirm(body map[string]any, totp string) error {
+	fmt.Fprintln(a.err, "A change to an administrator needs your password, and your TOTP code (--totp) when TOTP is on.")
+	password, err := a.password()
+	if err != nil {
+		return err
+	}
+	body["password"] = password
+	if totp != "" {
+		body["totp"] = totp
+	}
+	return nil
+}
+
+// userRef gives the ID of a user from an ID or an email address, and reports whether the user
+// is an administrator. A user with an ID that the list does not have is not an administrator
+// for this command: the panel gives the error.
+func (a *app) userRef(ctx context.Context, ref string) (id string, administrator bool, err error) {
+	byEmail := strings.Contains(ref, "@")
+	if !byEmail {
 		if _, err := strconv.Atoi(ref); err != nil {
-			return "", fmt.Errorf("%q is not an email address or the ID of a user", ref)
+			return "", false, fmt.Errorf("%q is not an email address or the ID of a user", ref)
 		}
-		return ref, nil
 	}
 	var out struct {
 		Data []struct {
 			ID    int    `json:"id"`
 			Email string `json:"email"`
+			Role  string `json:"role"`
 		} `json:"data"`
 	}
 	if err := a.api.Do(ctx, http.MethodGet, "/users", nil, nil, &out); err != nil {
-		return "", err
+		return "", false, err
 	}
 	for _, u := range out.Data {
-		if strings.EqualFold(u.Email, ref) {
-			return strconv.Itoa(u.ID), nil
+		if (byEmail && strings.EqualFold(u.Email, ref)) || (!byEmail && strconv.Itoa(u.ID) == ref) {
+			return strconv.Itoa(u.ID), u.Role == "administrator", nil
 		}
 	}
-	return "", fmt.Errorf("there is no user %s", ref)
+	if byEmail {
+		return "", false, fmt.Errorf("there is no user %s", ref)
+	}
+	return ref, false, nil
 }
 
 func (a *app) plans(ctx context.Context, sub string) error {

@@ -83,8 +83,13 @@ class UserTest extends TestCase
         $this->withToken($api)->postJson('/api/v1/users', $body)->assertForbidden();
         $this->app['auth']->forgetGuards();
 
-        $this->withToken($this->signIn($admin))->postJson('/api/v1/users', $body)
+        // Audit finding F09: the session also needs the password and a code of the administrator.
+        $secret = $this->totp($admin);
+        $session = $this->signIn($admin);
+        $this->withToken($session)->postJson('/api/v1/users', $body)->assertUnprocessable()->assertJsonValidationErrors('password');
+        $this->withToken($session)->postJson('/api/v1/users', $body + ['password' => 'password', 'totp' => Totp::code($secret)])
             ->assertCreated()->assertJsonPath('role', 'administrator')->assertJsonPath('customerId', null);
+        $this->assertDatabaseHas('audit_entries', ['action' => 'Created administrator', 'target' => 'second@panel.example']);
     }
 
     public function test_a_reseller_changes_only_the_users_of_its_own_customers(): void
@@ -175,8 +180,11 @@ class UserTest extends TestCase
     {
         $admin = $this->user();
         $second = $this->user();
+        $secret = $this->totp($admin);
         $this->withToken($this->signIn($admin))->deleteJson("/api/v1/users/{$admin->id}")->assertForbidden();
-        $this->withToken($this->signIn($admin))->deleteJson("/api/v1/users/{$second->id}")->assertNoContent();
+        // Audit finding F09: the administrator confirms with the password and a code.
+        $this->withToken($this->signIn($admin))->deleteJson("/api/v1/users/{$second->id}")->assertUnprocessable()->assertJsonValidationErrors('password');
+        $this->withToken($this->signIn($admin))->deleteJson("/api/v1/users/{$second->id}", ['password' => 'password', 'totp' => Totp::code($secret)])->assertNoContent();
         $this->assertDatabaseMissing('users', ['id' => $second->id]);
     }
 
