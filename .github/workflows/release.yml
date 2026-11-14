@@ -370,6 +370,28 @@ jobs:
             test "sha256:$got" = "$digest" || { echo "::error::$ref:$tag has the digest sha256:$got, not $digest."; exit 1; }
             echo "$ref:$tag -> $digest"
           done
+      # Servers pull the images with no login. In release 0.1.9, two packages were private, and
+      # each website with those images failed with "unauthorized". Thus the release stops here
+      # until each package is public. The image jobs give only a warning before the build.
+      - name: Check that a server can pull each image with no login
+        env:
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          set -eu
+          owner=$(printf '%s' "$OWNER" | tr '[:upper:]' '[:lower:]')
+          private=0
+          for f in digests/*; do
+            read -r image tag digest < "$f"
+            token=$(curl -sS "https://ghcr.io/token?scope=repository:$owner/$image:pull" | jq -r '.token // empty')
+            code=$(curl -sS -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $token" "https://ghcr.io/v2/$owner/$image/tags/list")
+            if [ "$code" = 200 ]; then
+              echo "ghcr.io/$owner/$image is public."
+            else
+              echo "::error::The package ghcr.io/$owner/$image is not public (HTTP $code). Servers cannot pull it. Make it public at https://github.com/users/$owner/packages/container/$image/settings (Danger Zone, Change visibility), then run this job again. See docs/releasing.md."
+              private=1
+            fi
+          done
+          test "$private" -eq 0
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         if: github.event_name != 'workflow_dispatch'
         with:

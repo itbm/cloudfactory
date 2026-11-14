@@ -5,13 +5,16 @@ data of `php artisan db:seed`. No agent was connected, so the jobs stay at step 
 
 ## 01-sign-in
 
-Sign in with the email and the password.
+Sign in with the email and the password. The page shows no field for a code. The screenshots
+01, 02, 15 and 37 show release 0.1.9 with the fixes of the first-use test, on a server with
+Ubuntu 26.04.
 
 ![01-sign-in](01-sign-in.png)
 
 ## 02-sign-in-error
 
-A wrong password. The API gives the error.
+A wrong password. The panel checks the password first and gives the error at once, also for
+an account with TOTP.
 
 ![02-sign-in-error](02-sign-in-error.png)
 
@@ -87,12 +90,12 @@ Updates, after "Check now". The local panel has no release public key, so the ch
 
 ![14-updates](14-updates.png)
 
-## 15-sign-in-one-error
+## 15-sign-in-code
 
-R-08: a wrong password and a wrong code give the same error, so the answer does not show that
-a password is correct.
+The code step. The panel shows it only after a correct password, and only when TOTP is on for
+the account. Refer to "Users and API tokens" in [security.md](../../security.md).
 
-![15-sign-in-one-error](15-sign-in-one-error.png)
+![15-sign-in-code](15-sign-in-code.png)
 
 ## 16-sign-in-settings
 
@@ -225,3 +228,32 @@ An owner sees its users, with no actions.
 The password form in Settings. A password change signs out the other sessions and deletes the API tokens of the user (audit finding S8).
 
 ![36-password-settings](36-password-settings.png)
+
+## 37-sign-in-wrong-code
+
+A wrong code. The error is below the code field.
+
+![37-sign-in-wrong-code](37-sign-in-wrong-code.png)
+
+## 38-failed-website
+
+The screenshots 38 to 40 show the panel on a server with Ubuntu 26.04 and an agent.
+
+A website that the panel could not make. The page shows the cause from the agent. "Try again"
+makes the website again.
+
+![38-failed-website](38-failed-website.png)
+
+## 39-rollout-ended
+
+Updates, after a rollout from 0.1.7 to 0.1.9. "Dismiss" removes the card. The panel also
+removes the card one day after the rollout ended.
+
+![39-rollout-ended](39-rollout-ended.png)
+
+## 40-backup-storage-type
+
+The backup policy with the storage type. The fields for the credentials of the storage type
+always show.
+
+![40-backup-storage-type](40-backup-storage-type.png)

@@ -407,7 +407,11 @@ check_ports() {
 			continue
 		fi
 		if ss -Hltn "sport = :$port" 2>/dev/null | grep -q .; then
-			problem "port $port is in use. Stop the service that uses it, or give a different port with --sftp-port."
+			if [ "$port" = "$SFTP_PORT" ]; then
+				problem "port $port is in use. Stop the service that uses it, or give a different port with --sftp-port."
+			else
+				problem "port $port is in use. The edge proxy needs ports 80 and 443. Stop the service that uses the port, for example a web server."
+			fi
 		fi
 	done
 }
@@ -794,7 +798,9 @@ ENV
 
 	step "Make the first administrator"
 	i=0
-	until curl -fsS -o /dev/null "http://$SERVICE_ADDRESS:19080/up"; do
+	# The API needs some time to start. An attempt that fails is not a fault, so curl does not
+	# print it.
+	until curl -fsS -o /dev/null "http://$SERVICE_ADDRESS:19080/up" 2>/dev/null; do
 		i=$((i + 1))
 		[ $i -lt 60 ] || fail "the panel API did not start."
 		sleep 2

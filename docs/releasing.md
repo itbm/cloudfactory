@@ -120,6 +120,11 @@ Each image job of the release workflow checks its package and the package `build
 If a package is not public, the job gives a warning with the link to its settings. The job does
 not stop.
 
+The publish job does the check again after it adds the tags. If an image package is not public,
+the job stops with an error before it publishes the release, because a server cannot pull the
+image: a website with that image fails with `unauthorized`. Make the package public, then run
+the publish job again from the **Actions** tab.
+
 ## Build cache
 
 The image builds keep their layers in the package `ghcr.io/<owner>/build-cache`, with one tag
