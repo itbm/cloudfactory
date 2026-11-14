@@ -39,10 +39,12 @@ const limits = (vcpus: number, memGb: number, diskGb: number, ioMb: number, proc
   processes,
 });
 
+// A plan gives the number of database servers of a customer, and the limits and the number of
+// databases of each database server.
 export const plans: Plan[] = [
-  { id: "plan_starter", name: "Starter", limits: limits(1, 0.5, 5, 20, 50), websites: 1, mailboxes: 5, databases: 2, phpExtensions: ["opcache", "intl", "gd", "zip"] },
-  { id: "plan_standard", name: "Standard", limits: limits(1, 1, 10, 30, 75), websites: 5, mailboxes: 25, databases: 10, phpExtensions: ["opcache", "intl", "gd", "imagick", "zip", "sodium"] },
-  { id: "plan_business", name: "Business", limits: limits(2, 2, 20, 50, 100), websites: 25, mailboxes: 100, databases: 50, phpExtensions: ["opcache", "intl", "gd", "imagick", "redis", "sodium", "zip", "bcmath", "soap", "xdebug"] },
+  { id: "plan_starter", name: "Starter", limits: limits(1, 0.5, 5, 20, 50), websites: 1, mailboxes: 5, databases: 2, phpExtensions: ["opcache", "intl", "gd", "zip"], databaseServers: 2, databaseLimits: { vcpus: 1, memoryBytes: 512 * MB, diskBytes: 2 * GB } },
+  { id: "plan_standard", name: "Standard", limits: limits(1, 1, 10, 30, 75), websites: 5, mailboxes: 25, databases: 10, phpExtensions: ["opcache", "intl", "gd", "imagick", "zip", "sodium"], databaseServers: 3, databaseLimits: { vcpus: 1, memoryBytes: 512 * MB, diskBytes: 5 * GB } },
+  { id: "plan_business", name: "Business", limits: limits(2, 2, 20, 50, 100), websites: 25, mailboxes: 100, databases: 50, phpExtensions: ["opcache", "intl", "gd", "imagick", "redis", "sodium", "zip", "bcmath", "soap", "xdebug"], databaseServers: 6, databaseLimits: { vcpus: 2, memoryBytes: 1 * GB, diskBytes: 10 * GB } },
 ];
 
 const PHP_INI = { memory_limit: "256M", upload_max_filesize: "64M", max_execution_time: "60" };
@@ -226,6 +228,8 @@ export const websites: Website[] = [
       name: `${sub}.example.com`,
       application: "WordPress",
       serverId: i % 2 ? "srv_web02" : "srv_web01",
+      // The websites of web-02 are from an earlier release: they use its shared database containers.
+      sharedDatabases: i % 2 === 1,
       use: { cpuPercent: 1 + i, memoryBytes: (120 + i * 30) * MB, diskBytes: (1 + i) * GB, processes: 10 + i, diskIoBytesPerSecond: 0.3 * MB },
       domains: [{ name: `${sub}.example.com`, kind: "primary", certificate: { state: "valid", expiresAt: ahead((30 + i * 9) * DAY) }, dnsPointsHere: true }],
       lastChange: { at: ago((6 + i) * DAY), summary: "Plugin updates" },
@@ -255,6 +259,7 @@ const server = (s: Partial<Server> & Pick<Server, "id" | "name" | "location" | "
   rebootRequired: false,
   services: services(["cloudfactory-agent", "podman", "edge-proxy (Caddy)", "SFTP (cf-sftp)", "nftables"]),
   sftpPort: 2200,
+  databaseInstances: true,
   ...s,
 });
 
@@ -262,7 +267,7 @@ export const servers: Server[] = [
   server({
     id: "srv_web01", name: "web-01", location: "London", roles: ["web", "database"], cpuPercent: 23, memoryPercent: 58, diskPercent: 41,
     bareMetal: true, gvisorPlatform: "kvm",
-    services: services(["cloudfactory-agent", "podman", "edge-proxy (Caddy)", "MariaDB 12.3", "PostgreSQL 18", "SFTP (cf-sftp)", "nftables"]),
+    services: services(["cloudfactory-agent", "podman", "edge-proxy (Caddy)", "MariaDB 12.3", "PostgreSQL 18", "Valkey 9.1", "SFTP (cf-sftp)", "nftables"]),
     pendingUpdates: [{ name: "openssl", from: "3.5.1-1", to: "3.5.1-1+deb13u1", security: true }],
   }),
   server({
@@ -482,20 +487,29 @@ export function seed(): State {
       { id: "als_1", kind: "alias", source: "info@example.com", destinations: ["hello@example.com"] },
       { id: "als_2", kind: "forwarder", source: "billing@shop.example.net", destinations: ["accounts@acme.example", "orders@shop.example.net"] },
     ],
+    // The database servers of Acme Agency on web-01. The second MariaDB server has the next port.
+    databaseServers: [
+      { id: "dbs_1", name: "mariadb-1", engine: "mariadb", customerId: "cus_acme", serverId: "srv_web01", planId: "plan_business", status: "running", host: "mariadb.internal", port: 3306, limits: plans[2].databaseLimits, usage: { memoryBytes: 612 * MB, diskBytes: 2.4 * GB, diskSizeBytes: 10 * GB }, databases: 3, maxDatabases: 50, createdAt: ago(200 * DAY) },
+      { id: "dbs_4", name: "mariadb-reports", engine: "mariadb", customerId: "cus_acme", serverId: "srv_web01", planId: "plan_standard", status: "running", host: "mariadb.internal", port: 3307, limits: plans[1].databaseLimits, usage: { memoryBytes: 148 * MB, diskBytes: 0.2 * GB, diskSizeBytes: 5 * GB }, databases: 0, maxDatabases: 10, createdAt: ago(3 * DAY) },
+      { id: "dbs_2", name: "postgresql-1", engine: "postgresql", customerId: "cus_acme", serverId: "srv_web01", planId: "plan_business", status: "running", host: "postgres.internal", port: 5432, limits: plans[2].databaseLimits, usage: { memoryBytes: 410 * MB, diskBytes: 1.6 * GB, diskSizeBytes: 10 * GB }, databases: 2, maxDatabases: 50, createdAt: ago(180 * DAY) },
+      { id: "dbs_3", name: "valkey-1", engine: "valkey", customerId: "cus_acme", serverId: "srv_web01", planId: "plan_standard", status: "running", host: "valkey.internal", port: 6379, limits: plans[1].databaseLimits, usage: { memoryBytes: 96 * MB, diskBytes: 0.1 * GB, diskSizeBytes: 5 * GB }, databases: 1, maxDatabases: 10, createdAt: ago(20 * DAY) },
+    ],
     databases: [
-      { id: "db_1", name: "shop_7f2a_wp", engine: "mariadb", websiteId: "web_shop", sizeBytes: 820 * MB, serverId: "srv_web01" },
-      { id: "db_5", name: "shop_7f2a_staging", engine: "mariadb", websiteId: "web_shop", sizeBytes: 790 * MB, serverId: "srv_web01" },
-      { id: "db_2", name: "shop_7f2a_reports", engine: "postgresql", websiteId: "web_shop", sizeBytes: 140 * MB, serverId: "srv_web01" },
-      { id: "db_3", name: "example_9c1d_wp", engine: "mariadb", websiteId: "web_example", sizeBytes: 310 * MB, serverId: "srv_web01" },
-      { id: "db_4", name: "app_4e8b_main", engine: "postgresql", websiteId: "web_app", sizeBytes: 1.1 * GB, serverId: "srv_web01" },
+      { id: "db_1", name: "shop_7f2a_wp", engine: "mariadb", websiteId: "web_shop", sizeBytes: 820 * MB, serverId: "srv_web01", databaseServerId: "dbs_1", host: "mariadb.internal", port: 3306 },
+      { id: "db_5", name: "shop_7f2a_staging", engine: "mariadb", websiteId: "web_shop", sizeBytes: 790 * MB, serverId: "srv_web01", databaseServerId: "dbs_1", host: "mariadb.internal", port: 3306 },
+      { id: "db_2", name: "shop_7f2a_reports", engine: "postgresql", websiteId: "web_shop", sizeBytes: 140 * MB, serverId: "srv_web01", databaseServerId: "dbs_2", host: "postgres.internal", port: 5432 },
+      { id: "db_3", name: "example_9c1d_wp", engine: "mariadb", websiteId: "web_example", sizeBytes: 310 * MB, serverId: "srv_web01", databaseServerId: "dbs_1", host: "mariadb.internal", port: 3306 },
+      { id: "db_4", name: "app_4e8b_main", engine: "postgresql", websiteId: "web_app", sizeBytes: 1.1 * GB, serverId: "srv_web01", databaseServerId: "dbs_2", host: "postgres.internal", port: 5432 },
+      { id: "db_6", name: "shop_7f2a_cache", engine: "valkey", websiteId: "web_shop", sizeBytes: 0, serverId: "srv_web01", databaseServerId: "dbs_3", host: "valkey.internal", port: 6379, number: 1, keys: 18412 },
     ],
     databaseUsers: [
-      { id: "dbu_1", name: "shop_7f2a_wp", engine: "mariadb", websiteId: "web_shop", grants: [{ databaseId: "db_1", database: "shop_7f2a_wp", privileges: "readwrite" }], access: "website" },
+      { id: "dbu_1", name: "shop_7f2a_wp", engine: "mariadb", websiteId: "web_shop", databaseServerId: "dbs_1", grants: [{ databaseId: "db_1", database: "shop_7f2a_wp", privileges: "readwrite" }], access: "website" },
       // CF-01: one user with a different permission on each database.
-      { id: "dbu_5", name: "shop_7f2a_sync", engine: "mariadb", websiteId: "web_shop", grants: [{ databaseId: "db_1", database: "shop_7f2a_wp", privileges: "readonly" }, { databaseId: "db_5", database: "shop_7f2a_staging", privileges: "readwrite" }], access: "website" },
-      { id: "dbu_2", name: "shop_7f2a_reports", engine: "postgresql", websiteId: "web_shop", grants: [{ databaseId: "db_2", database: "shop_7f2a_reports", privileges: "readwrite" }], access: "website" },
-      { id: "dbu_3", name: "example_9c1d_wp", engine: "mariadb", websiteId: "web_example", grants: [{ databaseId: "db_3", database: "example_9c1d_wp", privileges: "readwrite" }], access: "website" },
-      { id: "dbu_4", name: "app_4e8b_app", engine: "postgresql", websiteId: "web_app", grants: [{ databaseId: "db_4", database: "app_4e8b_main", privileges: "readwrite" }], access: "website" },
+      { id: "dbu_5", name: "shop_7f2a_sync", engine: "mariadb", websiteId: "web_shop", databaseServerId: "dbs_1", grants: [{ databaseId: "db_1", database: "shop_7f2a_wp", privileges: "readonly" }, { databaseId: "db_5", database: "shop_7f2a_staging", privileges: "readwrite" }], access: "website" },
+      { id: "dbu_2", name: "shop_7f2a_reports", engine: "postgresql", websiteId: "web_shop", databaseServerId: "dbs_2", grants: [{ databaseId: "db_2", database: "shop_7f2a_reports", privileges: "readwrite" }], access: "website" },
+      { id: "dbu_3", name: "example_9c1d_wp", engine: "mariadb", websiteId: "web_example", databaseServerId: "dbs_1", grants: [{ databaseId: "db_3", database: "example_9c1d_wp", privileges: "readwrite" }], access: "website" },
+      { id: "dbu_4", name: "app_4e8b_app", engine: "postgresql", websiteId: "web_app", databaseServerId: "dbs_2", grants: [{ databaseId: "db_4", database: "app_4e8b_main", privileges: "readwrite" }], access: "website" },
+      { id: "dbu_6", name: "shop_7f2a_cache", engine: "valkey", websiteId: "web_shop", databaseServerId: "dbs_3", grants: [{ databaseId: "db_6", database: "shop_7f2a_cache", privileges: "readwrite" }], access: "website" },
     ],
     files,
     snapshots,

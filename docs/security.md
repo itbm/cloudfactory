@@ -57,6 +57,30 @@ The product specification, section 6.4, gives the requirements.
 
 ## Databases
 
+- Each customer has its own database servers on a server. A database server is one
+  container with one engine: MariaDB, PostgreSQL or Valkey. Each container is its own gVisor
+  sandbox with its own data, superuser password and limits for the CPU, the memory and the
+  disk space. A customer thus cannot read the data of a different customer through a fault
+  of a database engine, and cannot use the CPU time, the memory, the disk space or the
+  connections of the database server of a different customer.
+- The disk limit of a database server is a file system with the size of the limit (a disk
+  image on a loop device). A database server that fills its disk cannot fill the disk of the
+  server. Refer to [architecture.md](architecture.md#disk-limit).
+- The firewall lets a website connect only to the database address of its customer, on the
+  ports of the database servers of its customer (refer to [Firewall](#firewall)). A website
+  cannot open a connection to the database servers of a different customer, also when it
+  knows a user name and a password.
+- The websites of one customer on a server can connect to all database servers of the
+  customer there. The database users and their permissions keep these websites apart. A
+  customer that needs more separation for one website makes a second database server for
+  it: the websites then do not use the same memory, disk space or connections.
+- Each database user has a limit for its connections at the same time: 100 for MariaDB and
+  80 for PostgreSQL. The application of one website thus cannot use all connections of a
+  database server.
+- A PostgreSQL user cannot connect to the databases `postgres` and `template1`.
+- The plan of a customer limits the number of its database servers. The plan of a database
+  server limits the number of its databases. Only an administrator sets limits that are
+  different from the plan.
 - The name of each database and each database user starts with the Unix user of the website,
   for example `u1a2b3c_shop`. Two accounts cannot use the same name. The agent refuses a name
   without this prefix and the system names, for example `mysql` and `postgres`.
@@ -66,11 +90,36 @@ The product specification, section 6.4, gives the requirements.
   database.
 - The agent refuses to make a database that exists. It does not give access to a database of a
   different website.
-- MariaDB users connect only from the configured host (`databaseClientHost`, default
-  `169.254.77.1`, the address that MariaDB sees for a website container). A user with access from all hosts must use TLS.
+- A MariaDB user with the access "website" connects only from `169.254.80.1`, the address
+  that a database server of a customer sees for a website container. In the shared
+  container of an earlier release, the host is `databaseClientHost` (default `169.254.77.1`).
+  A user with access from all hosts must use TLS.
 - A backup keeps the SHA-256 sum of each database dump. Before a restore, the agent compares the
   dump with this sum. If they are different, the agent stops. The restore uses a temporary
   database user with the permissions of the website only.
+- A Valkey database is a database number and a user with the name of the database. The access
+  rules of Valkey keep the user in its database number: the user cannot select, move, copy to,
+  swap or empty a different database. The user gets no command of an administrator (for
+  example `CONFIG`, `ACL`, `MONITOR`, `CLIENT LIST` and `CLIENT KILL`), no function, and no
+  list of the channels. It can use only the channels with a name that starts with the prefix
+  of the website. Each connection needs a user and a password: Valkey has no user with no
+  password.
+- The Valkey users are not limited to a client address in Valkey, because each connection of
+  a website comes from the same address. The firewall lets only the websites of the customer
+  connect to a Valkey database server, and each connection needs the password. A Valkey user
+  cannot have the access "anywhere".
+- `INFO` shows numbers of the Valkey server to each Valkey user, for example the number of
+  keys of each database number and the memory in use. It shows no keys and no values.
+- All the Valkey databases of one database server use the memory of that database server. A
+  website that fills the memory makes Valkey remove keys of the other websites that use the
+  same database server. It cannot remove keys of a different database server or of a
+  different customer. Thus Valkey is for data that an application can make again.
+- A website from release 0.1.9 or an earlier release uses the shared MariaDB and PostgreSQL
+  containers of its server until an administrator moves the databases of the server. All
+  websites of a server can connect to the shared containers, and only the database users and
+  their passwords keep the websites apart there. Move the databases after the update (refer
+  to
+  [installation.md](installation.md#move-the-databases-of-a-server-from-an-earlier-release)).
 
 ## Domains
 
@@ -312,8 +361,15 @@ The table also limits the outgoing connections:
 
 - Only root and the edge proxy can connect to a website port or a panel port on the private
   service address. Only root and the user `cf-panel` can connect to the database of the panel.
+- Each customer has one address of the database network `169.254.80.0/20` on a server for
+  its database servers. Only root and the website users can connect to this network. The
+  set `database_access` has one element for each website and each database server of its
+  customer: the UID of the website, the address of its customer and the port of the database
+  server. The agent writes the elements, and nftables loads them from
+  `/etc/cloudfactory/firewall/database-access.nft`.
 - The chain `websites` gets each new connection of a user with a UID from 20000 to 59999,
-  thus each connection that a website opens. It permits the shared databases, DNS, and the
+  thus each connection that a website opens. It permits the database ports on the address of
+  the customer of the website, the shared databases of an earlier release, DNS, and the
   HTTP and HTTPS ports of the server. It refuses all other addresses of the server, the
   private networks (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `100.64.0.0/10`), the
   link-local addresses (`169.254.0.0/16`, `fe80::/10`), the unique local addresses
@@ -341,4 +397,18 @@ These items stay open in release 0.1:
   then sends requests to that address.
 - **Join token.** The person who has a join token gives the agent address that the panel
   calls. Give a join token only to a person whom you trust with a server.
+- **Unix user of the database containers.** All database containers of a server run as the
+  Unix user `cf-db`, each in its own gVisor sandbox. A person who breaks out of the gVisor
+  sandbox of one database container has the rights of `cf-db`, and can then read the database
+  files of all customers on the server. The website containers do not have this limit: each
+  website has its own Unix user.
+- **Disk space of the databases.** A server with no loop devices (for example a container of
+  an LXC host) cannot apply the disk limit of a database server. On such a server, a customer
+  that fills the disk of the server with database data stops the database servers of all
+  customers. The panel shows `database-disk-limits` as a part of the server that is off.
+- **Sum of the disk limits.** A disk image uses only the disk space that its database server
+  uses, and the sum of the disk limits can be more than the disk of the server. Monitor the
+  free disk space of the server.
+- **Shared database containers.** The websites of a server from release 0.1.9 or an earlier
+  release use shared database containers until an administrator moves their databases.
 - **Base images.** The Containerfiles name the base images by tag, not by digest.

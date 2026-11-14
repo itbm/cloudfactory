@@ -6,6 +6,7 @@ use App\Enums\AgentAction;
 use App\Enums\JobState;
 use App\Jobs\SendJobToAgent;
 use App\Models\AgentJob;
+use App\Models\DatabaseServer;
 use App\Models\Server;
 use App\Models\Website;
 
@@ -20,10 +21,14 @@ class JobDispatcher
         ?Website $website = null,
         ?string $ref = null,
         ?string $rolloutId = null,
+        ?DatabaseServer $databaseServer = null,
     ): AgentJob {
         $job = AgentJob::create([
             'server_id' => $server->id,
             'website_id' => $website?->id,
+            // The job of a database server has no website. The owner of the database server
+            // can see the job.
+            'database_server_id' => $databaseServer?->id,
             'rollout_id' => $rolloutId,
             'action' => $action,
             'title' => $title,
@@ -63,6 +68,9 @@ class JobDispatcher
                 'command' => $website->image->custom ? ($website->image->command ?? []) : [],
                 // CF-03: the edge proxy serves only the domains that the customer verified.
                 'domains' => $website->domains->filter(fn ($d) => $d->verified())->map(fn ($d) => ['name' => $d->name, 'kind' => $d->kind->value])->values()->all(),
+                // The customer whose database servers the website can use on its server. An empty
+                // value is a website with the shared database containers of an earlier release.
+                'databaseInstance' => $website->database_instance ?? '',
             ],
         ];
     }

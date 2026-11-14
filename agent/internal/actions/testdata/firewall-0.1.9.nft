@@ -1,0 +1,83 @@
+table inet cloudfactory
+delete table inet cloudfactory
+table inet cloudfactory {
+  chain input {
+    type filter hook input priority filter; policy drop;
+    ct state established,related accept
+    iif lo accept
+    meta l4proto { icmp, ipv6-icmp } accept
+    tcp dport 22 accept
+    tcp dport 2200 accept # cloudfactory-sftp
+    tcp dport { 80, 443, 8080, 8443 } accept
+    udp dport { 443, 8443 } accept
+    tcp dport 7443 accept
+  }
+  chain output {
+    type filter hook output priority filter; policy accept;
+    # FR-1703: only root (the agent) and the edge proxy can connect to the website and panel
+    # ports on the private service address. pasta opens each connection of a container as the
+    # Unix user of the container, so a website cannot reach a different website. All websites
+    # can reach the shared database ports. The rule checks only new connections, because the
+    # answers of the containers go to the address too.
+    #
+    # Port 19432 is the database of the panel. Only root and the containers of the panel
+    # (cf-panel) can connect to it. Each connection also needs the password.
+    ct state new ip daddr 169.254.77.1 tcp dport 19432 meta skuid != { 0, 992 } reject with tcp reset
+    ct state new ip daddr 169.254.77.1 tcp dport != { 3306, 5432, 19432 } meta skuid != { 0, 991 } reject with tcp reset
+    # Audit finding S1: the limits for the connections that a website container opens. The
+    # agent makes each website user with a UID from 20000 to 59999. The
+    # rule checks only new connections, so it does not change the answers to the visitors.
+    ct state new meta skuid 20000-59999 jump websites
+  }
+  chain websites {
+    # The shared databases on the private service address.
+    ip daddr 169.254.77.1 tcp dport { 3306, 5432 } accept
+    # DNS. The resolver of the host can have a private or a link-local address.
+    meta l4proto { tcp, udp } th dport 53 accept
+    # The networks of the option --allow-website-network.
+    # The edge proxy on the addresses of this server, so that a website can call its own
+    # public address. All other services of this server are closed for the websites.
+    fib daddr type local tcp dport { 80, 443, 8080, 8443 } accept
+    fib daddr type local udp dport { 443, 8443 } accept
+    fib daddr type { local, broadcast, multicast } jump refuse
+    # Link-local addresses (the metadata service of a cloud provider), private networks and
+    # the service address of Azure.
+    ip daddr { 0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 168.63.129.16, 169.254.0.0/16, 172.16.0.0/12, 192.168.0.0/16, 224.0.0.0/3 } jump refuse
+    ip6 daddr { ::1, fc00::/7, fe80::/10, ff00::/8 } jump refuse
+    # SMTP: a website must not send email directly from the address of this server.
+    tcp dport 25 jump refuse
+  }
+  chain refuse {
+    meta l4proto tcp reject with tcp reset
+    reject
+  }
+  chain prerouting {
+    type nat hook prerouting priority dstnat;
+    tcp dport 80 redirect to :8080
+    tcp dport 443 redirect to :8443
+    udp dport 443 redirect to :8443
+  }
+  chain output_nat {
+    # A connection that a program on this server opens does not go through the prerouting
+    # chain. Thus a browser on this server (for example https://panel.localhost), or a website
+    # that calls the public address of this server, needs the same redirects here. The
+    # output chain then sees port 8080 or 8443.
+    type nat hook output priority -100;
+    # pasta cannot send a connection from ::1 into gVisor (refer to postrouting_nat), and IPv6
+    # has no private service address. Thus a connection from ::1 to port 80 or 443 is refused,
+    # and the browser then uses 127.0.0.1.
+    ip6 saddr ::1 return
+    fib daddr type local tcp dport 80 redirect to :8080
+    fib daddr type local tcp dport 443 redirect to :8443
+    fib daddr type local udp dport 443 redirect to :8443
+  }
+  chain postrouting_nat {
+    # pasta sends a connection from a loopback address to the loopback interface in the network
+    # namespace of the edge container. gVisor does not listen there, so pasta closes the
+    # connection. This occurs for https://panel.localhost, and for the full host name, which
+    # /etc/hosts gives as 127.0.1.1. Thus a redirected connection from a loopback address gets
+    # the private service address as its source address. pasta then sends it to gVisor.
+    type nat hook postrouting priority 100;
+    ip saddr 127.0.0.0/8 ct status dnat meta l4proto { tcp, udp } th dport { 8080, 8443 } snat ip to 169.254.77.1
+  }
+}

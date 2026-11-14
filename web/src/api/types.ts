@@ -180,6 +180,11 @@ export interface Website {
   lastChange: LastChange;
   /** A staging copy points to its source website (FR-205). */
   stagingOf?: string;
+  /**
+   * True when the website uses the shared database containers of an earlier release. The other
+   * websites use the database servers of their customer.
+   */
+  sharedDatabases?: boolean;
   managedByTerraform: boolean;
   /** The image tag that the website uses. When it is not set, the website uses the running tag of its image. */
   imageTag?: string;
@@ -203,6 +208,8 @@ export interface Job {
   finishedAt?: string;
   websiteId?: string;
   serverId?: string;
+  /** The database server that the job makes, changes or removes. */
+  databaseServerId?: string;
 }
 
 export interface ActivityItem {
@@ -344,6 +351,12 @@ export interface Server {
   connectionError?: string;
   /** This server has the panel. It cannot be removed. */
   panel?: boolean;
+  /** The database engines that the agent of the server can operate. An agent of an earlier release has no Valkey. */
+  databaseEngines?: DatabaseEngine[];
+  /** True when the agent of the server can operate the database servers of customers. */
+  databaseInstances?: boolean;
+  /** The number of websites that use the shared database containers of an earlier release (live mode). */
+  sharedDatabaseWebsites?: number;
   services: ServerService[];
   /** The port of the SFTP container of the websites (spec section 10). 22 for an agent of release 0.1. */
   sftpPort: number;
@@ -384,7 +397,46 @@ export interface MailAlias {
   destinations: string[];
 }
 
-export type DatabaseEngine = "mariadb" | "postgresql";
+export type DatabaseEngine = "mariadb" | "postgresql" | "valkey";
+
+/** The limits of the container of a database server. */
+export interface DatabaseLimits {
+  vcpus: number;
+  memoryBytes: number;
+  diskBytes: number;
+}
+
+/**
+ * starting: the panel makes the database server. failed: the panel could not make it.
+ * removing: the panel removes it, and it gets no new database.
+ */
+export type DatabaseServerStatus = "starting" | "running" | "stopped" | "failed" | "removing";
+
+/**
+ * A database server of a customer: one container with one engine and its own limits. All the
+ * websites of the customer on the same server can connect to it.
+ */
+export interface DatabaseServer {
+  id: string;
+  name: string;
+  engine: DatabaseEngine;
+  customerId: string;
+  /** The server that has the container. */
+  serverId: string;
+  /** The plan gives the limits and the number of databases. */
+  planId: string;
+  status: DatabaseServerStatus;
+  /** The host name and the port that a website container connects to. */
+  host: string;
+  port: number;
+  limits: DatabaseLimits;
+  /** The last report of the server. diskSizeBytes is the size of the file system of the data. */
+  usage?: { memoryBytes?: number; diskBytes?: number; diskSizeBytes?: number };
+  databases: number;
+  /** The number of databases that the plan of the database server allows. */
+  maxDatabases: number;
+  createdAt: string;
+}
 
 export interface Database {
   id: string;
@@ -393,6 +445,15 @@ export interface Database {
   websiteId: string;
   sizeBytes: number;
   serverId: string;
+  /** Not set for a database in the shared database containers of an earlier release. */
+  databaseServerId?: string;
+  /** The host name and the port that the app of the website connects to. */
+  host?: string;
+  port?: number;
+  /** Valkey only: the database number that the app selects. It is not known until the job that makes the database is complete. */
+  number?: number;
+  /** Valkey only: the number of keys, from the last report of the server. */
+  keys?: number;
 }
 
 export type DatabasePrivileges = "readonly" | "readwrite";
@@ -409,6 +470,8 @@ export interface DatabaseUser {
   name: string;
   engine: DatabaseEngine;
   websiteId: string;
+  /** A user is in one database server. It can have access only to the databases in it. */
+  databaseServerId?: string;
   grants: DatabaseGrant[];
   /** FR-502: by default only the website container can connect. */
   access: "website" | "anywhere";
@@ -480,8 +543,13 @@ export interface Plan {
   limits: Limits;
   websites: number;
   mailboxes: number;
+  /** The number of databases of each database server with the plan. */
   databases: number;
   phpExtensions: string[];
+  /** The number of database servers of a customer with the plan. */
+  databaseServers: number;
+  /** The limits of each database server with the plan. */
+  databaseLimits: DatabaseLimits;
 }
 
 export interface Customer {
@@ -584,6 +652,7 @@ export interface State {
   zones: DnsZone[];
   mailboxes: Mailbox[];
   aliases: MailAlias[];
+  databaseServers: DatabaseServer[];
   databases: Database[];
   databaseUsers: DatabaseUser[];
   files: Record<string, FileNode[]>;

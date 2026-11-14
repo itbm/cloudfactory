@@ -61,10 +61,15 @@ class InstallPanel extends Command
 
         $gb = 1024 ** 3;
         $extensions = ['opcache', 'intl', 'gd', 'zip', 'exif', 'bcmath', 'mysqli', 'pdo_mysql', 'pdo_pgsql', 'redis', 'imagick', 'soap'];
-        foreach ([['Starter', 1, 1, 10, 3], ['Business', 2, 2, 40, 10], ['Agency', 4, 4, 100, 50]] as [$name, $cpu, $mem, $disk, $sites]) {
+        // A plan gives the limits of a website and of a database server. A database server has
+        // the vCPUs of a website, the half of its memory and the half of its disk space. The
+        // last number is the number of database servers of a customer.
+        foreach ([['Starter', 1, 1, 10, 3, 3], ['Business', 2, 2, 40, 10, 6], ['Agency', 4, 4, 100, 50, 12]] as [$name, $cpu, $mem, $disk, $sites, $databaseServers]) {
             Plan::firstOrCreate(['name' => $name], [
                 'websites' => $sites, 'mailboxes' => $sites * 10, 'databases' => $sites, 'php_extensions' => $extensions,
                 'limits' => ['vcpus' => $cpu, 'memoryBytes' => $mem * $gb, 'diskBytes' => $disk * $gb, 'diskIoBytesPerSecond' => 50 * 1024 ** 2, 'processes' => 100 * $cpu],
+                'database_servers' => $databaseServers,
+                'database_limits' => ['vcpus' => $cpu, 'memoryBytes' => intdiv($mem * $gb, 2), 'diskBytes' => intdiv($disk * $gb, 2)],
             ]);
         }
 

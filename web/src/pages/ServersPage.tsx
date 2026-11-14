@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom"
 import { useAction, useStore } from "../api/hooks";
 import { LIVE } from "../api/mode";
 import { failedServices } from "../api/selectors";
-import { addServer, checkConnection, installUpdates, loopbackName, newJoinToken, rebootServer, removeServer, setServer, updateAgent } from "../api/store";
+import { addServer, checkConnection, installUpdates, loopbackName, moveDatabases, newJoinToken, rebootServer, removeServer, setServer, sharedDatabaseWebsites, updateAgent } from "../api/store";
 import type { HostUpdatePolicy, Server, ServerRole } from "../api/types";
 import { Topbar } from "../components/Layout";
 import { CopyField } from "./website/AccessTab";
@@ -166,6 +166,7 @@ function ServerDetail({ id }: { id: string }) {
   const agent = useAction(updateAgent);
   const connection = useAction(checkConnection);
   const remove = useAction(removeServer);
+  const move = useAction(moveDatabases);
   const navigate = useNavigate();
   const [windowText, setWindowText] = useState(server?.maintenanceWindow ?? "");
   const [allPackages, setAllPackages] = useState(false);
@@ -184,6 +185,10 @@ function ServerDetail({ id }: { id: string }) {
   const otherCount = osUpdates.length - securityCount;
   const allPolicy = server.updatePolicy === "all";
   const failed = failedServices(server.services);
+  // The websites that use the shared database containers of an earlier release. The panel API
+  // counts all websites of the server. The list of the panel can have a part of them only.
+  const shared = server.databaseInstances ? Math.max(server.sharedDatabaseWebsites ?? 0, sharedDatabaseWebsites(state, server.id).length) : 0;
+  const moving = state.jobs.filter((j) => j.serverId === server.id && jobActive(j) && j.title.startsWith("Move the databases of ")).length;
   return (
     <>
       <Topbar placeholder="Search servers, images, customers and jobs" />
@@ -201,7 +206,7 @@ function ServerDetail({ id }: { id: string }) {
             </ConfirmButton>
           </div>
         </div>
-        <FormError error={reboot.error ?? install.error ?? settings.error ?? agent.error ?? connection.error ?? remove.error} />
+        <FormError error={reboot.error ?? install.error ?? settings.error ?? agent.error ?? connection.error ?? remove.error ?? move.error} />
         {server.connectionError && (
           <div className="alert alert-danger alert-stack mt" role="alert">
             <p><strong>The panel cannot connect to this server.</strong> The agent of the server sends its reports, but the panel cannot connect to the agent at <code>{server.agentAddress ?? server.name}</code>: {server.connectionError}. Each job for this server fails until the connection works.</p>
@@ -224,6 +229,29 @@ function ServerDetail({ id }: { id: string }) {
                 {failed.map((s) => <li key={s.name}><code>{s.name}</code> is {s.state}.{s.detail ? ` ${s.detail}` : ` To see the cause, run on the server: ${serviceCommand(s.name)}`}</li>)}
               </ul>
             )}
+          </div>
+        )}
+        {shared > 0 && (
+          <div className="alert alert-warning alert-stack mt" role="status">
+            <p><strong>{shared === 1 ? "1 website on this server uses" : `${shared} websites on this server use`} the shared database containers of an earlier release.</strong> Each customer can have its own database servers: containers with MariaDB, PostgreSQL or Valkey, each with its own limits. Then a customer cannot change the service of a different customer.</p>
+            <ul style={{ paddingLeft: 20 }}>
+              <li>The panel copies the databases and the database users of each website to a database server of its customer. The panel makes this database server with the plan of the customer when the customer has none. The passwords, the host names and the ports stay the same.</li>
+              <li>Each website stops during the copy of its databases. A large database needs more time.</li>
+              <li>A website with the shared containers cannot have a Valkey database.</li>
+            </ul>
+            <div>
+              <ConfirmButton
+                className="btn"
+                danger={false}
+                disabled={busy || move.busy || moving > 0}
+                title={`Move the databases on ${server.name}?`}
+                confirm="Move the databases"
+                message={<p>The panel starts one job for each website that uses the shared database containers. Each website stops during the copy of its databases. If a job fails, the website starts again with the shared containers, and you can move its databases again.</p>}
+                onConfirm={() => void move.run(server.id)}
+              >
+                {moving > 0 ? "The databases move…" : "Move the databases"}
+              </ConfirmButton>
+            </div>
           </div>
         )}
         {server.state === "offline" && (

@@ -44,11 +44,24 @@ Usage:
   cf sftp get WEBSITE
   cf sftp set WEBSITE [--on|--off] [--key-file FILE]... [--no-keys]
   cf runtime revert WEBSITE
+  cf database-servers list [--customer ID] [--server SERVER] [--engine mariadb|postgresql|valkey]
+  cf database-servers get DATABASE_SERVER
+  cf database-servers create --engine mariadb|postgresql|valkey [--name NAME] [--customer ID] [--plan ID] [--server SERVER]
+                             [--vcpus N --memory-mb N --disk-gb N]
+                                                       A database server is one container with its own limits. The plan gives the
+                                                       limits and the number of databases. Only an administrator sets limits.
+  cf database-servers set DATABASE_SERVER [--name NAME] [--plan ID] [--vcpus N] [--memory-mb N] [--disk-gb N]
+                                                       New limits restart the database server.
+  cf database-servers retry DATABASE_SERVER            Make a database server again after the first job failed.
+  cf database-servers delete DATABASE_SERVER           Remove a database server that has no databases.
   cf databases list WEBSITE
-  cf databases create WEBSITE --engine mariadb|postgresql --name NAME [--no-user]
+  cf databases create WEBSITE --engine mariadb|postgresql|valkey --name NAME [--no-user] [--database-server DATABASE_SERVER]
+                                                       A Valkey database has a database number, and always a user with the same name.
+                                                       With no database server, the panel uses the first one of the engine with space.
   cf databases delete WEBSITE DATABASE
   cf database-users list WEBSITE
   cf database-users create WEBSITE --engine mariadb|postgresql --name NAME [--grant DATABASE=readonly|readwrite]...
+                           [--database-server DATABASE_SERVER]
   cf database-users set WEBSITE USER [--grant DATABASE=readonly|readwrite]... [--no-grants]
                         [--access website|anywhere] [--reset-password]
   cf database-users delete WEBSITE USER
@@ -70,6 +83,8 @@ Usage:
   cf servers update-agent SERVER [--version VERSION] [--allow-downgrade]
   cf servers join-token
   cf servers check SERVER                  Tests the connection from the panel to the server.
+  cf servers move-databases SERVER         Moves the databases of the websites of an earlier release to the
+                                           database servers of each customer. Each website stops during the copy.
   cf servers remove SERVER                 Removes a server that has no websites from the panel.
   cf panel-certificate show
   cf panel-certificate set internal|letsencrypt
@@ -103,7 +118,7 @@ Usage:
   cf version
 
 A WEBSITE is a name (for example acme.example) or an ID. A SERVER is a name (for example web-1) or an ID. A DATABASE or USER is a name, with or without
-the prefix of the website (for example shop or u1a2b3c_shop), or an ID.
+the prefix of the website (for example shop or u1a2b3c_shop), or an ID. A DATABASE_SERVER is a name (for example mariadb-1) or an ID.
 Add --json to see the answer of the API. A change waits for its job; add --no-wait to return at once.
 The settings CF_PANEL and CF_TOKEN replace the saved panel and token.
 The panel address must start with https://. An address with http:// is accepted only for this computer (localhost).
@@ -239,6 +254,8 @@ func (a *app) dispatch(ctx context.Context, args []string) error {
 		return a.domains(ctx, sub, rest)
 	case "runtime":
 		return a.runtime(ctx, sub, rest)
+	case "database-servers", "database-server", "db-servers":
+		return a.databaseServers(ctx, sub, rest)
 	case "databases", "database":
 		return a.databases(ctx, sub, rest)
 	case "database-users", "database-user", "db-users":
@@ -425,14 +442,28 @@ func (a *app) change(ctx context.Context, method, path string, body any) error {
 		json.Unmarshal(raw, &pw)
 		fmt.Fprintf(a.out, "Password: %s\nCopy it now. The panel does not show it again.\n", pw)
 	}
+	if raw, ok := out["databaseServer"]; ok && string(raw) != "null" {
+		var s struct {
+			Name, Host string
+			Port       int
+		}
+		json.Unmarshal(raw, &s)
+		fmt.Fprintf(a.out, "Database server %s: the websites of the customer on the same server connect to %s:%d\n", s.Name, s.Host, s.Port)
+	}
 	if raw, ok := out["databaseCredentials"]; ok {
 		var creds []struct {
-			Engine, User, Password string
-			Databases              []string
+			Engine, User, Password, Host string
+			Port                         int
+			Databases                    []string
 		}
 		json.Unmarshal(raw, &creds)
 		for _, c := range creds {
-			fmt.Fprintf(a.out, "Database user %s (%s) for %s: %s\n", c.User, c.Engine, strings.Join(c.Databases, ", "), c.Password)
+			// The host name and the port of the database server of the user.
+			at := ""
+			if c.Host != "" && c.Port != 0 {
+				at = fmt.Sprintf(" on %s:%d", c.Host, c.Port)
+			}
+			fmt.Fprintf(a.out, "Database user %s (%s%s) for %s: %s\n", c.User, c.Engine, at, strings.Join(c.Databases, ", "), c.Password)
 		}
 		if len(creds) > 0 {
 			fmt.Fprintln(a.out, "Copy the passwords now. The panel does not show them again.")
@@ -740,6 +771,29 @@ type dbList struct {
 	Prefix    string           `json:"prefix"`
 	Databases []map[string]any `json:"databases"`
 	Users     []map[string]any `json:"users"`
+	// The database servers that the website can use: those of its customer on its server.
+	Servers []map[string]any `json:"servers"`
+}
+
+// server gives a database server that the website can use, from a name or an ID.
+func (l dbList) server(ref string) (map[string]any, error) {
+	for _, s := range l.Servers {
+		if s["id"] == ref || s["name"] == ref {
+			return s, nil
+		}
+	}
+	return nil, fmt.Errorf("the website cannot use a database server %q. It can use the database servers of its customer on its server: cf database-servers list", ref)
+}
+
+// serverName gives the name of the database server of a database or a user, or "-" for the
+// shared database containers of an earlier release.
+func (l dbList) serverName(row map[string]any) any {
+	for _, s := range l.Servers {
+		if s["id"] == row["databaseServerId"] {
+			return s["name"]
+		}
+	}
+	return row["databaseServerId"]
 }
 
 func (a *app) dbList(ctx context.Context, websiteID string) (dbList, error) {
@@ -793,17 +847,49 @@ func (a *app) databases(ctx context.Context, sub string, args []string) error {
 			return a.printJSON(out)
 		}
 		fmt.Fprintf(a.out, "Each name starts with %s\n", out.Prefix)
-		a.table(out.Databases, []string{"name", "engine", "sizeBytes", "id"})
+		// An application of the website connects to the host name and the port.
+		cols := []string{"name", "engine", "databaseServer", "host", "port", "sizeBytes", "id"}
+		for _, d := range out.Databases {
+			d["databaseServer"] = out.serverName(d)
+			if d["engine"] == "valkey" {
+				// Valkey has no size for one database. It has a database number and a number of keys.
+				cols = []string{"name", "engine", "databaseServer", "host", "port", "sizeBytes", "number", "keys", "id"}
+				d["sizeBytes"] = nil
+			}
+		}
+		a.table(out.Databases, cols)
 		return nil
 	case "create":
 		fs := flag.NewFlagSet("create", flag.ContinueOnError)
-		engine := fs.String("engine", "mariadb", "mariadb or postgresql")
+		engine := fs.String("engine", "mariadb", "mariadb, postgresql or valkey")
 		name := fs.String("name", "", "the database name, with or without the prefix of the website")
 		noUser := fs.Bool("no-user", false, "do not make a user with the same name")
+		server := fs.String("database-server", "", "the database server for the database. With none, the panel uses the first one of the engine with space, or makes the first one.")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
-		return a.change(ctx, http.MethodPost, "/websites/"+w.ID+"/databases", map[string]any{"engine": *engine, "name": *name, "createUser": !*noUser})
+		if *engine == "valkey" && *noUser {
+			return errors.New("a Valkey database always has a user with the same name: do not use --no-user")
+		}
+		body := map[string]any{"engine": *engine, "name": *name, "createUser": !*noUser}
+		if *server != "" {
+			l, err := a.dbList(ctx, w.ID)
+			if err != nil {
+				return err
+			}
+			s, err := l.server(*server)
+			if err != nil {
+				return err
+			}
+			body["databaseServerId"] = s["id"]
+		}
+		if err := a.change(ctx, http.MethodPost, "/websites/"+w.ID+"/databases", body); err != nil {
+			return err
+		}
+		if *engine == "valkey" && !a.json {
+			return a.valkeyConnection(ctx, w.ID, *name)
+		}
+		return nil
 	case "delete", "rm":
 		if err := need(args, 2, "a website and a database"); err != nil {
 			return err
@@ -819,6 +905,33 @@ func (a *app) databases(ctx context.Context, sub string, args []string) error {
 		return a.change(ctx, http.MethodDelete, fmt.Sprintf("/websites/%s/databases/%v", w.ID, db["id"]), nil)
 	}
 	return fmt.Errorf("unknown command databases %s", sub)
+}
+
+// valkeyConnection tells how an application connects to a new Valkey database. The agent gives
+// the database number, so the number is known only when the job is complete.
+func (a *app) valkeyConnection(ctx context.Context, websiteID, name string) error {
+	l, err := a.dbList(ctx, websiteID)
+	if err != nil {
+		return err
+	}
+	for _, d := range l.Databases {
+		if d["engine"] != "valkey" || (d["name"] != name && d["name"] != l.Prefix+name) {
+			continue
+		}
+		// A panel of an earlier release does not send the host name and the port.
+		host, port := "valkey.internal", "6379"
+		if d["host"] != nil && d["port"] != nil {
+			host, port = cell(d["host"]), cell(d["port"])
+		}
+		fmt.Fprintf(a.out, "Host: %s\nPort: %s\nUser: %v\n", host, port, d["name"])
+		if d["number"] == nil {
+			fmt.Fprintln(a.out, "The database number comes when the job is complete. Then run: cf databases list WEBSITE")
+		} else {
+			fmt.Fprintf(a.out, "Database number: %s\n", cell(d["number"]))
+		}
+		return nil
+	}
+	return nil
 }
 
 // databaseUsers manages database users. CF-01: a user can have a different permission on
@@ -851,15 +964,16 @@ func (a *app) databaseUsers(ctx context.Context, sub string, args []string) erro
 					}
 				}
 			}
-			rows = append(rows, map[string]any{"name": u["name"], "engine": u["engine"], "access": u["access"], "grants": strings.Join(grants, " "), "id": u["id"]})
+			rows = append(rows, map[string]any{"name": u["name"], "engine": u["engine"], "databaseServer": l.serverName(u), "access": u["access"], "grants": strings.Join(grants, " "), "id": u["id"]})
 		}
-		a.table(rows, []string{"name", "engine", "grants", "access", "id"})
+		a.table(rows, []string{"name", "engine", "databaseServer", "grants", "access", "id"})
 		return nil
 	case "create":
 		fs := flag.NewFlagSet("create", flag.ContinueOnError)
-		engine := fs.String("engine", "mariadb", "mariadb or postgresql")
+		engine := fs.String("engine", "mariadb", "mariadb or postgresql. A Valkey database comes with its user.")
 		name := fs.String("name", "", "the user name, with or without the prefix of the website")
 		access := fs.String("access", "website", "website or anywhere")
+		server := fs.String("database-server", "", "the database server of the user. It is necessary only for a user with no database, when the customer has more than one database server of the engine.")
 		var grant multi
 		fs.Var(&grant, "grant", "DATABASE=readonly or DATABASE=readwrite. You can give it more than one time.")
 		if err := fs.Parse(args[1:]); err != nil {
@@ -869,7 +983,15 @@ func (a *app) databaseUsers(ctx context.Context, sub string, args []string) erro
 		if err != nil {
 			return err
 		}
-		return a.change(ctx, http.MethodPost, base, map[string]any{"engine": *engine, "name": *name, "access": *access, "grants": grants})
+		body := map[string]any{"engine": *engine, "name": *name, "access": *access, "grants": grants}
+		if *server != "" {
+			s, err := l.server(*server)
+			if err != nil {
+				return err
+			}
+			body["databaseServerId"] = s["id"]
+		}
+		return a.change(ctx, http.MethodPost, base, body)
 	case "set":
 		if err := need(args, 2, "a website and a user"); err != nil {
 			return err
@@ -1019,7 +1141,7 @@ func (a *app) servers(ctx context.Context, sub string, args []string) error {
 	switch sub {
 	case "list", "ls":
 		return a.simpleList(ctx, "/servers", []string{"name", "state", "roles", "agentVersion", "rebootRequired", "id"})
-	case "get", "set", "update", "reboot", "update-agent", "check", "remove", "rm":
+	case "get", "set", "update", "reboot", "update-agent", "check", "move-databases", "remove", "rm":
 		return a.server(ctx, sub, args)
 	case "join-token":
 		var out struct {

@@ -14,7 +14,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'name', 'application', 'customer_id', 'server_id', 'plan_id', 'image_id', 'image_tag', 'previous_image_id',
     'previous_image_tag', 'unix_user', 'status', 'worker_mode', 'extensions', 'php_ini', 'limits', 'usage',
     'staging_of', 'managed_by_terraform', 'document_root', 'sftp_enabled', 'sftp_keys',
-    'stopped_by_suspension',
+    'stopped_by_suspension', 'database_instance',
 ])]
 class Website extends Model
 {
@@ -69,6 +69,12 @@ class Website extends Model
     public function databases(): HasMany
     {
         return $this->hasMany(Database::class);
+    }
+
+    /** The databases that a backup and a staging copy include: not the Valkey databases. */
+    public function sqlDatabases(): HasMany
+    {
+        return $this->databases()->whereIn('engine', Database::SQL_ENGINES);
     }
 
     public function databaseUsers(): HasMany

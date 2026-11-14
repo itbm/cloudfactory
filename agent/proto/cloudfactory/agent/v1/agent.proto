@@ -34,6 +34,9 @@ service AgentService {
   rpc SetSftp(SetSftpRequest) returns (JobAccepted);
   rpc ConfigureHost(ConfigureHostRequest) returns (JobAccepted);
   rpc SetPanelCertificate(SetPanelCertificateRequest) returns (JobAccepted);
+  rpc MoveDatabases(MoveDatabasesRequest) returns (JobAccepted);
+  rpc SetDatabaseServer(DatabaseServerRequest) returns (JobAccepted);
+  rpc DeleteDatabaseServer(DeleteDatabaseServerRequest) returns (JobAccepted);
 
   // Returns the actual state of the server at once. This method does not make a job.
   rpc GetStatus(GetStatusRequest) returns (HostStatus);
@@ -81,6 +84,46 @@ message Website {
   // The directory in /app that the web server serves, for example "web". Empty means "public",
   // and "." means /app itself.
   string document_root = 14;
+  // The ID of the customer of the website. The website can connect to the database servers of
+  // its customer on this server (DatabaseServer). Empty means the shared database containers
+  // of an earlier release.
+  //
+  // The agent uses this value only in CreateWebsite. After that, it keeps the value of the
+  // website, and only MoveDatabases changes it.
+  string database_instance = 15;
+}
+
+// A database server of a customer: one database container with one engine, in its own gVisor
+// sandbox, with its own data and its own limits. A customer can have more than one database
+// server on a server. Each database is in one database server.
+//
+// All database servers of a customer on a server publish their ports on the address of the
+// customer. The websites of the customer on the server can connect to them.
+message DatabaseServer {
+  string id = 1;
+  // The ID of the customer.
+  string customer = 2;
+  // "mariadb", "postgresql" or "valkey".
+  string engine = 3;
+  // The port on the address of the customer. The first database server of an engine has the
+  // usual port of the engine (3306, 5432 or 6379). A second one has the next port.
+  int32 port = 4;
+  // The limits of the container: vcpus, memory_bytes and disk_bytes. 0 means no limit.
+  Limits limits = 5;
+}
+
+// SetDatabaseServer makes a database server, or changes the limits of a database server.
+// A change of the limits restarts the database server.
+message DatabaseServerRequest {
+  string job_id = 1;
+  DatabaseServer database_server = 2;
+}
+
+// Stops a database server and removes its data. The panel sends it only for a database
+// server with no databases.
+message DeleteDatabaseServerRequest {
+  string job_id = 1;
+  string database_server = 2;
 }
 
 message HealthCheck {
@@ -104,6 +147,9 @@ message WebsiteRequest {
   // CreateWebsite with copy_from: the databases to copy, and a new user for the copies.
   repeated DatabaseCopy copy_databases = 8;
   repeated DatabaseUserCopy copy_users = 9;
+  // CreateWebsite with copy_from: the database servers of the copies. The agent makes a
+  // database server that it does not have.
+  repeated DatabaseServer database_servers = 10;
 }
 
 // A staging copy copies the database "from" of the source website into the new database "to".
@@ -111,13 +157,20 @@ message DatabaseCopy {
   string engine = 1;
   string from = 2;
   string to = 3;
+  // The IDs of the database servers of the two databases. Empty means the shared database
+  // container of an earlier release.
+  string from_server = 4;
+  string to_server = 5;
 }
 
-// A new database user of the staging copy, with read-write access to all copies of its engine.
+// A new database user of the staging copy, with read-write access to all copies in its
+// database server.
 message DatabaseUserCopy {
   string engine = 1;
   string name = 2;
   string password = 3;
+  // The ID of the database server of the user.
+  string database_server = 4;
 }
 
 message DeleteWebsiteRequest {
@@ -153,7 +206,10 @@ message DomainRequest {
   string primary = 6;
 }
 
-// Each database and user name starts with the Unix user of the website and "_".
+// Each database and user name starts with the Unix user of the website and "_". The database
+// is in a database server of the customer of the website. The agent makes a database server
+// that it does not have. With no database server, the database is in the shared database
+// container of an earlier release.
 message CreateDatabaseRequest {
   string job_id = 1;
   string website_id = 2;
@@ -166,6 +222,7 @@ message CreateDatabaseRequest {
   string password = 7;
   // "website": only the website container can connect. "anywhere": any address, with TLS.
   string access = 8;
+  DatabaseServer database_server = 9;
 }
 
 message DeleteDatabaseRequest {
@@ -176,6 +233,8 @@ message DeleteDatabaseRequest {
   string unix_user = 5;
   // The users with access to the database. The agent removes their access first.
   repeated string users = 6;
+  // The ID of the database server of the database.
+  string database_server = 7;
 }
 
 message DatabaseGrant {
@@ -185,7 +244,7 @@ message DatabaseGrant {
 }
 
 // Sets the full state of a database user: its password, where it can connect from, and its
-// access to each database of the website.
+// access to each database of the website in the database server of the user.
 message SetDatabaseUserRequest {
   string job_id = 1;
   string website_id = 2;
@@ -198,8 +257,10 @@ message SetDatabaseUserRequest {
   // True: make a new user. The job fails when the user exists.
   bool create = 8;
   repeated DatabaseGrant grants = 9;
-  // All databases of the website with this engine. The user has no access to the others.
+  // All databases of the website in the database server of the user. The user has no access
+  // to the others.
   repeated string website_databases = 10;
+  DatabaseServer database_server = 11;
 }
 
 message DeleteDatabaseUserRequest {
@@ -209,11 +270,46 @@ message DeleteDatabaseUserRequest {
   string engine = 4;
   string name = 5;
   repeated string website_databases = 6;
+  // The ID of the database server of the user.
+  string database_server = 7;
 }
 
+// A database or a database user of a website.
 message DatabaseRef {
   string engine = 1;
   string name = 2;
+  // The ID of its database server. Empty means the shared database container of an earlier
+  // release.
+  string database_server = 3;
+}
+
+// A database user that MoveDatabases copies. The agent copies the password hash of the user,
+// so the password stays the same.
+message MoveDatabaseUser {
+  string engine = 1;
+  string name = 2;
+  // "website" or "anywhere".
+  string access = 3;
+  repeated DatabaseGrant grants = 4;
+  // The ID of the database server that gets the user.
+  string database_server = 5;
+}
+
+// Moves the databases and the database users of a website from the shared database containers
+// of an earlier release to database servers of its customer. The website does not operate
+// during the copy.
+message MoveDatabasesRequest {
+  string job_id = 1;
+  string website_id = 2;
+  string unix_user = 3;
+  // The ID of the customer of the website.
+  string database_instance = 4;
+  // DatabaseRef.database_server is the ID of the database server that gets the database.
+  repeated DatabaseRef databases = 5;
+  repeated MoveDatabaseUser users = 6;
+  // The database servers that get the databases and the users. The agent makes a database
+  // server that it does not have.
+  repeated DatabaseServer database_servers = 7;
 }
 
 message BackupRequest {
@@ -265,6 +361,8 @@ message RestoreRequest {
   map<string, string> credentials = 9;
   // Scope "website": the agent removes the files of the website that are not in the snapshot.
   bool delete_extra = 10;
+  // Scope "database": the ID of the database server of the database.
+  string database_server = 11;
 }
 
 // Sets the SFTP access of a website. The owner signs in as the Unix user of the website and sees

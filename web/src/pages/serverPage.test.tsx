@@ -7,8 +7,8 @@ import { ServersPage } from "./ServersPage";
 
 afterEach(cleanup);
 
-const page = () => render(
-  <MemoryRouter initialEntries={["/servers/srv_web01"]}>
+const page = (id = "srv_web01") => render(
+  <MemoryRouter initialEntries={[`/servers/${id}`]}>
     <Routes><Route path="/servers/:id" element={<ServersPage />} /></Routes>
   </MemoryRouter>,
 );
@@ -121,5 +121,47 @@ describe("the server page", () => {
     getState().servers.find((s) => s.id === "srv_web01")!.panel = true;
     page();
     expect(screen.queryByRole("button", { name: "Remove server" })).toBeNull();
+  });
+});
+
+describe("the database servers of each customer", () => {
+  it("moves the databases of the websites of an earlier release", async () => {
+    resetState();
+    timing.stepMs = 0;
+    // The demo data has two websites of an earlier release on web-02.
+    getState().servers.find((s) => s.id === "srv_web02")!.state = "healthy";
+    const shared = () => getState().websites.filter((w) => w.sharedDatabases);
+    page("srv_web02");
+    expect(screen.getByText("2 websites on this server use the shared database containers of an earlier release.")).toBeTruthy();
+    expect(screen.getByText(/Each website stops during the copy of its databases/)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Move the databases" }));
+    const dialog = screen.getByRole("dialog");
+    expect(dialog.textContent).toContain("Move the databases on web-02?");
+    expect(dialog.textContent).toContain("If a job fails, the website starts again with the shared containers");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Move the databases" }));
+
+    await waitFor(() => expect(shared()).toEqual([]));
+    await waitFor(() => expect(screen.queryByText(/shared database containers of an earlier release/)).toBeNull());
+    expect(getState().jobs.filter((j) => j.serverId === "srv_web02" && j.title.startsWith("Move the databases of ")).map((j) => j.state)).toEqual(["succeeded", "succeeded"]);
+  });
+
+  it("shows nothing for a server with no website of an earlier release, and for an agent of an earlier release", () => {
+    resetState();
+    page();
+    expect(screen.queryByRole("button", { name: "Move the databases" })).toBeNull();
+    cleanup();
+    // The agent of an earlier release cannot move the databases. The page offers the update of the agent.
+    getState().servers.find((s) => s.id === "srv_web02")!.databaseInstances = false;
+    page("srv_web02");
+    expect(screen.queryByRole("button", { name: "Move the databases" })).toBeNull();
+  });
+
+  it("counts the websites that the panel API reports", () => {
+    resetState();
+    // In live mode, the list of the panel can have a part of the websites only.
+    Object.assign(getState().servers.find((s) => s.id === "srv_web01")!, { sharedDatabaseWebsites: 1 });
+    page();
+    expect(screen.getByText("1 website on this server uses the shared database containers of an earlier release.")).toBeTruthy();
   });
 });

@@ -154,6 +154,8 @@ type Fake struct {
 // Rule gives the result of each command that starts with Prefix.
 type Rule struct {
 	Prefix string
+	// Input, when it is set, limits the rule to the commands with this text in their stdin.
+	Input  string
 	Output string
 	Err    error
 	// Do runs when the rule agrees, for example to make the files that a command makes.
@@ -177,7 +179,7 @@ func (f *Fake) RunEnv(_ context.Context, env []string, stdin, name string, args 
 	f.Inputs = append(f.Inputs, stdin)
 	f.Envs = append(f.Envs, env)
 	for _, r := range f.Rules {
-		if strings.HasPrefix(line, r.Prefix) {
+		if strings.HasPrefix(line, r.Prefix) && strings.Contains(stdin, r.Input) {
 			if r.Do != nil {
 				return r.Output, r.Do()
 			}

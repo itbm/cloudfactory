@@ -74,6 +74,26 @@ podman run -d -p 127.0.0.1:12019:2019 -p 127.0.0.1:18080:8080 ghcr.io/itbm/edge:
 go test -tags integration ./internal/caddy/
 ```
 
+The test `internal/actions/valkey_server_test.go` uses a real Valkey server. It makes Valkey
+databases with the code of the agent, and checks that the user of a database cannot use a
+different database or the commands of an administrator. The image workflow runs it for the
+Valkey image. To run it, start Valkey 9.1.2 or later with the user file and the options of
+the workflow (`.github/workflows/images.yml`), then give the address and the password of the
+user `default`:
+
+```sh
+CF_TEST_VALKEY=127.0.0.1:16379 CF_TEST_VALKEY_PASSWORD=smoke-password \
+  go test ./internal/actions -run '^TestValkeyServer$' -count=1 -v
+```
+
+Without `CF_TEST_VALKEY`, the test does not run. The other Valkey tests use a small Valkey
+server in the test code.
+
+The test `TestAddDatabaseRules` adds the firewall rules of the database servers to the
+firewall file of release 0.1.9 (`internal/actions/testdata/firewall-0.1.9.nft`). When the
+test runs as root on a computer with `nft`, nftables also checks the result. It does not
+change the firewall of the computer.
+
 ## CLI
 
 ```sh

@@ -201,8 +201,10 @@ Then the script does these steps:
    the update policy of the server and in its maintenance window. After an update, the agent
    runs `needrestart`, which restarts the services that use changed files. The script tells
    `needrestart` not to restart the agent, because a restart stops the update job.
-3. Add the private service address `169.254.77.1/32` to the loopback interface
-   (`cloudfactory-address.service`). The containers publish their ports only on this address.
+3. Add the private service address `169.254.77.1/32` and the database network
+   `169.254.80.1/20` to the loopback interface (`cloudfactory-address.service`). The
+   containers publish their ports only on these addresses. Each customer gets one address of
+   the database network for its database servers.
 4. Let systemd give the CPU, I/O, memory and process controllers to the user services
    (`Delegate=`). Rootless Podman needs them for the limits of each website.
 5. Hold the container packages, so that a host update cannot change them.
@@ -347,6 +349,10 @@ cf-agent panel unlock you@example.com
 If you updated the agent on the panel server in a different way, run `cf-agent panel update`
 as root there. This command changes the panel to the version of the agent.
 
+After the update from release 0.1.9 or an earlier release, move the databases of each server
+to the database servers of each customer. Refer to
+[Move the databases of a server from an earlier release](#move-the-databases-of-a-server-from-an-earlier-release).
+
 The update also changes the official runtime images to the tag of the new release. An image
 that no website uses changes immediately. An image that websites use shows the new tag on the
 **Updates** page, and you start the rollout there. An image with the update policy `manual`
@@ -406,6 +412,290 @@ port there.
 Optional: the website users cannot sign in to the SSH service of the host, because they have
 no key there and a locked password. To refuse them on the host in all cases, add
 `DenyGroups cf-sites` to the SSH configuration of the host.
+
+### Database servers
+
+A customer makes database servers as it makes websites. A database server is one container
+with one engine (MariaDB, PostgreSQL or Valkey), its own data and its own limits. Each
+database of a website is in one database server of its customer.
+
+- All websites of a customer on a server can use the database servers of the customer on
+  that server. A website cannot connect to the database servers of a different customer.
+- A customer can have more than one database server of an engine, if its plan permits.
+- A database server that uses all its memory, all its CPU time or all its disk space does
+  not stop the database servers of other customers.
+
+#### Plans for database servers
+
+A plan has four values for database servers. To see or change them, go to **Customers**,
+select the **Plans** tab and select a plan.
+
+| Value | Function |
+| ----- | -------- |
+| **Database servers** | The number of database servers of a customer with this plan. The database servers of the customers of a reseller also count against the plan of the reseller. |
+| **Databases in each one** | The number of databases in a database server with this plan |
+| **CPU (vCPU)**, **Memory (MB)** and **Disk (GB)** | The limits of a database server with this plan. The minimum is 512 MB of memory and 1 GB of disk space. |
+
+A new installation has these plans:
+
+| Plan | Database servers | Databases in each one | Limits of a database server |
+| ---- | ---------------- | --------------------- | --------------------------- |
+| Starter | 3 | 3 | 1 vCPU, 512 MB of memory, 5 GB of disk space |
+| Business | 6 | 10 | 2 vCPU, 1 GB of memory, 20 GB of disk space |
+| Agency | 12 | 50 | 4 vCPU, 2 GB of memory, 50 GB of disk space |
+
+After an update from an earlier release, each plan permits 3 database servers. A database
+server gets the vCPUs of a website of the plan, half of its memory and half of its disk
+space, but not less than 512 MB of memory and 1 GB of disk space. The value **Databases** of
+the plan was the number of databases of a website. It is now the number of databases in each
+database server. Examine your plans after the update.
+
+When you change the limits of a plan, each database server with the limits of the plan gets
+the new limits. New limits for the CPU or the memory restart these database servers. A
+database server with limits that an administrator set for it keeps them.
+
+#### Make a database server
+
+1. Go to **Databases** and select **New database server**.
+2. Select the customer and the engine.
+3. Optional: type a name. With no name, the panel gives one, for example `mariadb-2`.
+4. If the customer has websites on more than one server, select the server. The websites on
+   that server can connect to the database server.
+5. An administrator, or the reseller of the customer, can select a plan. The plan gives the
+   limits and the number of databases. For other users, the database server gets the plan of
+   the customer.
+6. Select **Create database server**.
+
+With the CLI: `cf database-servers create --engine mariadb --customer ID`.
+
+The agent starts the container. The first start of a database server needs some minutes on
+a slow server. The list shows the host name and the port for the applications, for example
+`mariadb.internal:3306`. The first database server of an engine of a customer on a server
+has the usual port of the engine (3306, 5432 or 6379). The next one has the next port, for
+example 3307. A database server keeps its port.
+
+You do not have to make the first database server. When you make a database for a website
+and its customer has no database server of that engine on the server, the panel makes one
+with the plan of the customer.
+
+When you make a database, you can select the database server. With no selection, the panel
+uses the first database server of the engine that has space for one more database.
+
+#### Change or remove a database server
+
+To change a database server, select **Change** in the list of the database servers. With the
+CLI: `cf database-servers set DATABASE_SERVER`.
+
+- You can change the name. The host name and the port do not change.
+- An administrator, or the reseller of the customer, can select a different plan. The
+  database server gets the limits of the new plan.
+- An administrator can set limits that are different from the plan: **Set limits that are
+  different from the plan**. With the CLI: `--vcpus`, `--memory-mb` and `--disk-gb`.
+- New limits for the CPU or the memory restart the database server. The open connections
+  stop, and the data stays.
+- More disk space needs no restart. Less disk space stops the database server for a short
+  time. If the data needs more space than the new limit, the job fails and nothing changes.
+
+To remove a database server, first remove its databases and its database users. Then select
+**Remove**. With the CLI: `cf database-servers delete DATABASE_SERVER`. The agent removes the
+container and its data.
+
+If the first job of a database server fails, for example because the server could not pull
+the image, correct the cause and select **Try again**. With the CLI:
+`cf database-servers retry DATABASE_SERVER`.
+
+#### Limits of a database server
+
+- **Memory.** When MariaDB or PostgreSQL uses more memory than its limit, the kernel stops
+  that database server, and systemd starts it again. For Valkey, refer to [Valkey](#valkey).
+- **Disk space.** Each database server has a disk image file with the size of its disk
+  limit, in `/var/lib/cf-db/servers`. The file uses only the disk space that the database
+  server uses. A database server that fills its disk gets the error "no space left on
+  device" and cannot write. Remove data, or give it more disk space. The sum of the disk
+  limits can be more than the disk of the server, so monitor the free disk space of the
+  server.
+- **Servers with no loop devices.** The disk image needs the device `/dev/loop-control`. A
+  virtual machine and a physical server have it. A container of an LXC host usually does
+  not. On such a server, the database servers have no disk limit, and the panel shows
+  `database-disk-limits` as an optional part that is off. This does not make the server
+  degraded.
+- **Connections.** Each MariaDB user can have 100 connections at the same time, and each
+  PostgreSQL user 80.
+- **Memory of the server.** Each container uses memory, also when its databases have no
+  work. The limits do not reserve memory: the sum of the limits can be more than the memory
+  of the server. Give a server with many database servers sufficient memory.
+- **Restart of the server.** When the server stops, each database server has 60 seconds to
+  write its data to the disk. The installer gives the containers of the server this time on
+  Ubuntu, where the default is 5 seconds. A server of an earlier release gets the setting
+  from the agent of this release, when the agent adds the database network.
+- **Unix user.** All database containers of a server run as the Unix user `cf-db`, each in
+  its own gVisor sandbox. The database files of all customers have this owner on the host.
+- **Disk quota of a website.** The disk quota of a website applies to the files of the
+  website only, not to its databases.
+
+#### Move the databases of a server from an earlier release
+
+In release 0.1.9 and earlier, all websites of a server used one shared MariaDB container and
+one shared PostgreSQL container. After you update the agent of such a server, its websites
+continue to use the shared containers. The page of the server shows the number of these
+websites. A website with the shared containers cannot have a Valkey database.
+
+To move the databases to database servers of each customer:
+
+1. Make sure that the last backup of each website is complete (refer to [Backups](#backups)).
+2. In the panel, go to **Servers** and open the server.
+3. Select **Move the databases**. With the CLI: `cf servers move-databases SERVER`.
+
+The panel starts one job for each website. The databases of the website go to the database
+server of its customer that has the usual port of the engine (3306 or 5432), because the
+applications connect to that port. If the customer does not have that database server, the
+panel makes it with the plan of the customer, also when the plan permits no more database
+servers or databases. The job does these steps:
+
+1. Start the database servers.
+2. Stop the website.
+3. Copy the databases of the website to the database servers.
+4. Make the database users there, with the same passwords.
+5. Start the website.
+6. Remove the old copies from the shared containers.
+
+The website does not operate from step 2 to step 5. The time depends on the size of the
+databases. The applications need no change: the host names, the ports, the user names and
+the passwords stay the same. An application must connect to the host name `mariadb.internal`
+or `postgres.internal`. If an application connects to the address `169.254.77.1`, change it
+to the host name before the move.
+
+Before the move, make sure that the disk limit of the plan of each customer is sufficient
+for the databases of the customer. If a database server has no space for a copy, the job
+fails. Then give the database server more disk space and start the move again.
+
+In step 5, the agent makes sure that a website that answered before the move answers with
+the database servers too. A website that did not answer before the move, for example a
+website that gives the status 503 during maintenance, moves without this check.
+
+If a job fails before the end of step 5, the agent removes the new copies, and the website
+starts again with the shared containers. Find the cause in the job, then select **Move the
+databases** again. When the last website of the server has moved, the agent stops the shared
+containers. Their data directories, `/var/lib/cf-db/mariadb` and
+`/var/lib/cf-db/postgresql`, stay on the disk. Remove them when you are sure that all
+websites operate correctly.
+
+A new website on the server uses the database servers of its customer immediately. A staging
+copy does too, also when its source website uses the shared containers.
+
+If you changed the firewall rules in `/etc/nftables.d-cloudfactory.nft`, the first job stops
+and tells you to run the installation script again on the server. The script writes the
+rules of this release.
+
+### Valkey
+
+Valkey is a key-value store that keeps its data in memory. Use it for a cache, for sessions
+and for queues. An application that can use Redis can use Valkey with the same client library.
+
+A Valkey database is in a Valkey database server of the customer (refer to
+[Database servers](#database-servers)). When you make the first Valkey database of a customer
+on a server, the panel makes a Valkey database server with the plan of the customer. The
+agent of the server must be from a release that has Valkey. If it is not, the panel does not
+let you select Valkey. Update the agent (refer to
+[Update to a new release](#update-to-a-new-release)). A website that uses the shared database
+containers of an earlier release cannot have a Valkey database until its databases move
+(refer to
+[Move the databases of a server from an earlier release](#move-the-databases-of-a-server-from-an-earlier-release)).
+
+A Valkey database has three parts:
+
+- A database number from 1 to 1023. The agent gives the smallest number that is free in the
+  database server.
+- A user with the name of the database. The user has access to this database number only.
+- A password. The panel shows it one time only.
+
+To make a Valkey database:
+
+1. On the page of the website, go to **Databases** and select **New database**.
+2. Select **Valkey** and type a name. If the customer has more than one Valkey database
+   server, you can select one.
+3. Select **Create database**.
+4. Copy the password.
+5. When the job is complete, read the port and the database number in the list of the
+   databases.
+
+With the CLI: `cf databases create WEBSITE --engine valkey --name cache`. The command shows
+the password, and then the host, the port, the user and the database number.
+
+Give these values to the application:
+
+| Setting | Value |
+| ------- | ----- |
+| Host | `valkey.internal` |
+| Port | The port from the list of the databases. The first Valkey database server of a customer on a server has port `6379`. |
+| User | The name of the database, for example `acme_x7k2_cache` |
+| Password | The password from the panel |
+| Database number | The number from the list of the databases, for example `3` |
+| TLS | Off. The connection does not leave the server. |
+
+As an address: `redis://acme_x7k2_cache:PASSWORD@valkey.internal:6379/3`.
+
+The application must select its database number. A new connection starts in database 0, and
+the user has no access to database 0. If the application does not select its number, Valkey
+answers each command with `NOPERM`.
+
+For a PHP website, turn on the extension `redis` on the **Runtime** tab. The plan of the
+website must permit this extension.
+
+Example for Laravel (`.env`). Laravel uses one database for the cache and one for all other
+data. Give the two settings the same number:
+
+```sh
+REDIS_HOST=valkey.internal
+REDIS_PORT=6379
+REDIS_USERNAME=acme_x7k2_cache
+REDIS_PASSWORD=PASSWORD
+REDIS_DB=3
+REDIS_CACHE_DB=3
+```
+
+Example for WordPress with the plugin Redis Object Cache (`wp-config.php`):
+
+```php
+define( 'WP_REDIS_HOST', 'valkey.internal' );
+define( 'WP_REDIS_PORT', 6379 );
+define( 'WP_REDIS_PASSWORD', [ 'acme_x7k2_cache', 'PASSWORD' ] );
+define( 'WP_REDIS_DATABASE', 3 );
+```
+
+To make a new password, select **New password** for the user of the database, or use
+`cf database-users set WEBSITE USER --reset-password`. Valkey closes the connections that use
+the old password.
+
+These limits apply:
+
+- **Memory.** All the Valkey databases of one database server use the memory of that
+  database server. Valkey can use a part of the memory limit for its data: half of the limit
+  after 128 MB. For example, a database server with 512 MB of memory keeps 192 MB of data,
+  and one with 1 GB keeps 448 MB. When the data memory is full, Valkey removes the keys that
+  were not used for the longest time, from all databases of that database server. The
+  database servers of other customers are not affected. Do not keep data in Valkey that the
+  application cannot make again. To give one website its own memory, make a second Valkey
+  database server for it.
+- **Backups.** A backup has no Valkey data, and a restore does not change it. Valkey keeps
+  its data on the disk of the server (an append-only file), so the data stays after a restart.
+- **Staging copy.** The data of a Valkey database is not copied. The copy gets a new, empty
+  Valkey database with its own number, user and password for each Valkey database of the
+  website.
+- **Users.** A Valkey database always has one user. The user can connect only from the
+  container of the website. You cannot give it more databases or remove it. To remove the
+  user, remove the database.
+- **Channels.** All databases of a database server use the same channels for publish and
+  subscribe.
+  A website can use only the channels with a name that starts with its prefix, for example
+  `acme_x7k2_events`.
+- **Commands.** Valkey refuses the commands of an administrator (for example `CONFIG`, `ACL`,
+  `MONITOR` and `CLIENT LIST`) and the commands that change or show other databases (for
+  example `FLUSHALL`, `SWAPDB`, `MOVE`, `FUNCTION`, `SCRIPT FLUSH` and `PUBSUB`). To remove
+  all the keys of the database, use `FLUSHDB`. Scripts with `EVAL` are permitted.
+
+To change the memory limit, change the database server (refer to
+[Change or remove a database server](#change-or-remove-a-database-server)).
 
 ### Servers that you installed with release 0.1
 
@@ -468,14 +758,30 @@ The `firewall` check looks for the table `inet cloudfactory`. If the table is no
 
 ### Ports
 
-The firewall accepts only SSH, SFTP, HTTP, HTTPS and the agent port. It does not accept the
-database ports 3306 (MariaDB) and 5432 (PostgreSQL), so the databases are not open to the
-internet. A database user with the access "anywhere" can connect only after you add a rule
-for its port to `/etc/nftables.d-cloudfactory.nft`. Give only the addresses that need it.
+The firewall accepts only SSH, SFTP, HTTP, HTTPS and the agent port. The database servers
+publish their ports only on the database network `169.254.80.0/20` of the loopback interface,
+so the databases are not open to the internet.
 
-The firewall also has an output rule for the private service address `169.254.77.1`. Only
-root and the edge proxy (`cf-edge`) can open a new connection to a port there, except the
-database ports. So a website cannot connect to a different website on the server.
+A database user with the access "anywhere" is not limited to the address of the website
+containers, and its connections must use TLS. A different computer can connect only after you
+send a port of the server to the database address of the customer with your own firewall
+rules. Cloudfactory does not make such rules. Give only the addresses that need it. A Valkey
+user cannot have the access "anywhere".
+
+The firewall has an output rule for the private service address `169.254.77.1`. Only root and
+the edge proxy (`cf-edge`) can open a new connection to a port there, except the ports of
+the shared database containers of an earlier release. So a website cannot connect to a
+different website on the server.
+
+The firewall also has rules for the database network:
+
+- Only root and the website users can open a new connection to an address of the network.
+- A website user can connect only to the address of its customer, on the ports of the
+  database servers of its customer. The ports are from 3306 (MariaDB), from 5432
+  (PostgreSQL) and from 6379 (Valkey). The set `database_access` has one element for each
+  website and each database server of its customer: the UID of the website, the address of
+  the customer and the port of the database server. The agent writes the elements of the set
+  in `/etc/cloudfactory/firewall/database-access.nft`. Do not change this file.
 
 ### Connections from the websites
 
@@ -484,7 +790,9 @@ connection of these users, thus to each connection that a website opens:
 
 | Destination | Result |
 | ----------- | ------ |
-| MariaDB and PostgreSQL on the private service address | Permitted |
+| The database servers of the customer of the website | Permitted |
+| The database servers of other customers | Refused |
+| The shared MariaDB and PostgreSQL containers of an earlier release | Permitted |
 | DNS (port 53) | Permitted |
 | The addresses of this server, on the HTTP and HTTPS ports | Permitted |
 | All other services of this server, for example SSH and the agent port | Refused |
@@ -516,10 +824,62 @@ Ubuntu 26.04. On both, the installation completed, the administrator signed in, 
 started and answered through the edge proxy on the private service address `169.254.77.1`.
 The virtual machines had no hardware virtualisation, so gVisor used the `systrap` platform.
 
+The database servers were checked in the virtual machine with Ubuntu 26.04, with release
+0.1.9 and the agent of this release. The check sent each request directly to the agent, not
+through the panel:
+
+- The agent added the database network, the firewall rules and the stop time of the user
+  services to the server of release 0.1.9.
+- A MariaDB database server with 1 vCPU, 512 MB of memory and 1 GB of disk space started in
+  gVisor on port 3307. Its service had the CPU limit and the memory limit, with no swap. Its
+  disk image file was mounted as a loop device, and its file system had the size of the limit.
+- The move of a website with a MariaDB database and a PostgreSQL database. The agent made
+  the two database servers with the usual ports. After the move, the website container
+  connected to MariaDB and to PostgreSQL with the same host names, user names and passwords,
+  and the data was the same.
+- A new database in the second MariaDB database server of the customer. The website
+  container connected to it on port 3307.
+- A website of a different customer, a website with the shared containers, and other Unix
+  users of the server (not `root`) could not connect to the database servers of a customer.
+- A PostgreSQL user of a website could not connect to the database `postgres`.
+- A larger disk limit made the file system larger, with no restart of the database server.
+- A disk limit that was smaller than the data failed with a clear message. The database
+  server continued to operate, with its disk and its data.
+- A smaller disk limit with sufficient space made the file system smaller. The database
+  server started again, and the data stayed.
+- A database server that filled its disk got the error "No space left on device". The disk
+  of the server did not fill, and the other database servers answered.
+- After a restart of the server, the disk images were mounted before the user manager of
+  `cf-db` started. The database network and the firewall rules were there, the database
+  servers started, and the website connected to its databases with the same data.
+- A second restart of the server, with the stop time of this release. MariaDB and PostgreSQL
+  of the customer wrote their data and stopped with no error, and they started with no
+  repair of the data. In the slow virtual machine, the containers of `cf-db` needed 88
+  seconds to stop. Before, with the 5 seconds of Ubuntu, systemd stopped them with `SIGKILL`,
+  and each database server repaired its data at the next start.
+- The removal of a database server removed its container, its mount, its disk image file and
+  its firewall element. The other database servers continued to operate.
+
+These items were checked with an earlier version of the agent of this release, before each
+database server had its own limits. They were not checked again:
+
+- A move that failed, and a website that did not answer after the move. The website started
+  again with the shared containers.
+- The shared containers stopped when the last website of the server had moved.
+
+The virtual machine is slow, because it has no hardware virtualisation. A new MariaDB
+database server needed 8 minutes to start there, which is more than the 3 minutes that the
+agent waits. Thus the check used an agent with a longer time. The start time of a new
+database server on a server with hardware virtualisation was not measured.
+
 These items were not checked on a real server. After you install the release, check them, and
 report a problem in the issues of the repository:
 
-- A website container can connect to MariaDB and PostgreSQL.
+- Valkey in gVisor, and a website container that connects to it. The access rules of the
+  Valkey users are checked with a real Valkey server when the Valkey image is built, but not
+  in gVisor.
+- A database server that you make in the panel, and the move with **Move the databases**. The
+  panel of this release was checked with its tests, not with a real agent.
 - Files that you upload with SFTP have the correct owner in the website container
   (`--userns=keep-id` in gVisor). The SFTP image was checked with Docker and the same
   capabilities, not in gVisor.

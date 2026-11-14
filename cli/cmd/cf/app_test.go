@@ -231,6 +231,73 @@ func TestDatabaseUserGrantsUseTheDatabaseIDs(t *testing.T) {
 	}
 }
 
+// A Valkey database has a database number. The tool shows how an application connects: the
+// host name and the port are those of the database server of the database.
+func TestValkeyDatabaseShowsTheConnection(t *testing.T) {
+	number := "null"
+	var wantServer any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.URL.Path == "/api/v1/websites":
+			w.Write([]byte(`{"data":[{"id":"W1","name":"shop.example","status":"running"}]}`))
+		case r.URL.Path == "/api/v1/websites/W1/databases" && r.Method == http.MethodGet:
+			w.Write([]byte(`{"prefix":"u1a2_","databases":[{"id":"D1","engine":"mariadb","name":"u1a2_prod","databaseServerId":"DS1","host":"mariadb.internal","port":3306,"sizeBytes":4096,"number":null,"keys":null},` +
+				`{"id":"D2","engine":"valkey","name":"u1a2_cache","databaseServerId":"DS2","host":"valkey.internal","port":6380,"sizeBytes":0,"number":` + number + `,"keys":` + number + `}],"users":[],` +
+				`"servers":[{"id":"DS1","name":"mariadb-1","engine":"mariadb"},{"id":"DS2","name":"valkey-sessions","engine":"valkey"}]}`))
+		case r.URL.Path == "/api/v1/websites/W1/databases":
+			var body map[string]any
+			json.NewDecoder(r.Body).Decode(&body)
+			if body["engine"] != "valkey" || body["name"] != "cache" || body["createUser"] != true || body["databaseServerId"] != wantServer {
+				t.Errorf("request = %v", body)
+			}
+			w.WriteHeader(http.StatusAccepted)
+			w.Write([]byte(`{"id":"D2","name":"u1a2_cache","user":"u1a2_cache","password":"pw-1","job":null}`))
+		default:
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+	a, out := testApp(srv)
+
+	if err := a.dispatch(context.Background(), []string{"databases", "create", "shop.example", "--engine", "valkey", "--name", "cache", "--no-user"}); err == nil || !strings.Contains(err.Error(), "always has a user") {
+		t.Errorf("err = %v", err)
+	}
+	// The job is not complete: the panel does not have the number.
+	if err := a.dispatch(context.Background(), []string{"databases", "create", "shop.example", "--engine", "valkey", "--name", "cache"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"Password: pw-1", "Host: valkey.internal", "Port: 6380", "User: u1a2_cache", "The database number comes when the job is complete."} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("output has no %q: %s", want, out)
+		}
+	}
+
+	// The name of a database server becomes its ID in the request.
+	number, wantServer = "7", "DS2"
+	out.Reset()
+	if err := a.dispatch(context.Background(), []string{"databases", "create", "shop.example", "--engine", "valkey", "--name", "cache", "--database-server", "valkey-sessions"}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "Database number: 7") {
+		t.Errorf("output: %s", out)
+	}
+	if err := a.dispatch(context.Background(), []string{"databases", "create", "shop.example", "--engine", "valkey", "--name", "cache", "--database-server", "valkey-9"}); err == nil || !strings.Contains(err.Error(), `cannot use a database server "valkey-9"`) {
+		t.Errorf("err = %v", err)
+	}
+
+	out.Reset()
+	if err := a.dispatch(context.Background(), []string{"databases", "list", "shop.example"}); err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
+	if len(lines) != 4 || strings.Join(strings.Fields(lines[1]), " ") != "NAME ENGINE DATABASESERVER HOST PORT SIZEBYTES NUMBER KEYS ID" ||
+		strings.Join(strings.Fields(lines[2]), " ") != "u1a2_prod mariadb mariadb-1 mariadb.internal 3306 4096 - - D1" ||
+		strings.Join(strings.Fields(lines[3]), " ") != "u1a2_cache valkey valkey-sessions valkey.internal 6380 - 7 7 D2" {
+		t.Errorf("output: %s", out)
+	}
+}
+
 // CF-03: a new domain shows the TXT record to add.
 func TestANewDomainShowsTheTXTRecord(t *testing.T) {
 	srv, bodies := securityPanel(t)
@@ -321,7 +388,14 @@ func pagedPanel(t *testing.T) (*httptest.Server, *[]string) {
 			calls = append(calls, string(b))
 			w.Write(b)
 		case r.URL.Path == "/api/v1/servers":
-			w.Write([]byte(`{"data":[{"id":"S1","name":"web-1","agentAddress":"203.0.113.10:7443","connectionError":null,"pendingUpdates":[{"name":"podman","from":"5.6.0","to":"5.6.1","containerTool":true}]},{"id":"S2","name":"web-2","state":"degraded","agentAddress":"web-2:7443","connectionError":"Could not resolve host: web-2"}]}`))
+			w.Write([]byte(`{"data":[{"id":"S1","name":"web-1","agentAddress":"203.0.113.10:7443","connectionError":null,"databaseInstances":true,"sharedDatabaseWebsites":2,"pendingUpdates":[{"name":"podman","from":"5.6.0","to":"5.6.1","containerTool":true}]},{"id":"S2","name":"web-2","state":"degraded","agentAddress":"web-2:7443","connectionError":"Could not resolve host: web-2"}]}`))
+		case r.URL.Path == "/api/v1/servers/S1/move-databases":
+			calls = append(calls, r.Method+" "+r.URL.Path)
+			w.WriteHeader(http.StatusAccepted)
+			w.Write([]byte(`{"jobs":[{"id":"J1","title":"Move the databases of acme.example","state":"queued"},{"id":"J2","title":"Move the databases of bolt.example","state":"queued"}]}`))
+		case r.URL.Path == "/api/v1/servers/S2/move-databases":
+			w.WriteHeader(http.StatusAccepted)
+			w.Write([]byte(`{"jobs":[]}`))
 		case r.URL.Path == "/api/v1/servers/S2/check-connection":
 			calls = append(calls, r.Method+" "+r.URL.Path)
 			w.Write([]byte(`{"id":"S2","name":"web-2","agentAddress":"web-2:7443","connectionError":"Could not resolve host: web-2"}`))
@@ -458,6 +532,48 @@ func TestServerUpdateWithTheToolsPolicy(t *testing.T) {
 	}
 	if body := (*calls)[len(*calls)-1]; body != `{"policy":"tools"}` {
 		t.Errorf("body = %s", body)
+	}
+}
+
+// A server of an earlier release has shared database containers. The command starts one job
+// for each website that moves to the database servers of its customer.
+func TestServerMoveDatabases(t *testing.T) {
+	srv, calls := pagedPanel(t)
+	defer srv.Close()
+	a, out := testApp(srv)
+	if err := a.dispatch(context.Background(), []string{"servers", "get", "web-1"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"Websites with the shared database containers of an earlier release: 2", "cf servers move-databases SERVER"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("output does not have %q:\n%s", want, out)
+		}
+	}
+	out.Reset()
+	if err := a.dispatch(context.Background(), []string{"servers", "move-databases", "web-1"}); err != nil {
+		t.Fatal(err)
+	}
+	if last := (*calls)[len(*calls)-1]; last != "POST /api/v1/servers/S1/move-databases" {
+		t.Errorf("last call = %s", last)
+	}
+	for _, want := range []string{"Job J1: Move the databases of acme.example", "Job J2: Move the databases of bolt.example", "Each website stops during the copy of its databases."} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("output does not have %q:\n%s", want, out)
+		}
+	}
+	out.Reset()
+	if err := a.dispatch(context.Background(), []string{"servers", "get", "web-2"}); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out.String(), "move-databases") {
+		t.Errorf("a server with no shared databases shows the command:\n%s", out)
+	}
+	out.Reset()
+	if err := a.dispatch(context.Background(), []string{"servers", "move-databases", "web-2"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.TrimSpace(out.String()); got != "No website on web-2 has databases to move." {
+		t.Errorf("output = %q", got)
 	}
 }
 

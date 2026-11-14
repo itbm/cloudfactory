@@ -1,12 +1,15 @@
 package actions
 
 import (
+	"cmp"
 	"context"
 	"crypto/tls"
 	"errors"
+	"maps"
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -34,6 +37,10 @@ type observer struct {
 	domainRun chan struct{}
 	dbSizes   []panel.DatabaseSize
 	dbAt      time.Time
+	// dbCgroups is the cgroup directory of the service of each database server, and dbDisk is
+	// the disk space that each database server with no disk image uses.
+	dbCgroups map[string]string
+	dbDisk    map[string]int64
 }
 
 type cpuSample struct {
@@ -81,7 +88,9 @@ func (d *Deps) FillReport(ctx context.Context, r *panel.Report) {
 		o.cpu, o.cgroups, o.disk = map[string]cpuSample{}, map[string]string{}, map[string]int64{}
 	}
 	now := time.Now()
-	if now.Sub(o.diskAt) > diskEvery {
+	// walk is true when this report measures the directories again.
+	walk := now.Sub(o.diskAt) > diskEvery
+	if walk {
 		for _, s := range sites {
 			o.disk[s.ID] = dirSize(d.Host.AppDir(s.UnixUser))
 		}
@@ -119,7 +128,57 @@ func (d *Deps) FillReport(ctx context.Context, r *panel.Report) {
 		o.dbAt = now
 	}
 	r.Databases = o.dbSizes
-	r.Services = append(r.Services, d.firewallService(ctx), d.quotaService())
+	r.DatabaseServers = d.databaseServerUse(ctx, walk)
+	r.DatabaseEngines = Engines
+	r.DatabaseInstances = true
+	r.Services = append(r.Services, d.firewallService(ctx), d.quotaService(), d.diskService())
+}
+
+// databaseServerUse gives the state, the memory and the disk space of each database server of
+// a customer. The caller holds the lock of the observer. With walk set, the function also
+// measures the directory of each database server that has no disk image.
+func (d *Deps) databaseServerUse(ctx context.Context, walk bool) []panel.DatabaseServerUse {
+	out := []panel.DatabaseServerUse{}
+	instances, err := d.State.DatabaseInstances()
+	if err != nil {
+		return out
+	}
+	o := &d.obs
+	if o.dbCgroups == nil {
+		o.dbCgroups, o.dbDisk = map[string]string{}, map[string]int64{}
+	}
+	for _, customer := range slices.Sorted(maps.Keys(instances)) {
+		servers := instances[customer].Servers
+		for _, id := range slices.Sorted(maps.Keys(servers)) {
+			s := dbServer{ID: id, Engine: servers[id].Engine}
+			u := panel.DatabaseServerUse{ID: id, State: "stopped"}
+			if isMountPoint(d.diskDir(s)) {
+				u.DiskBytes, u.DiskSizeBytes = d.diskUse(s)
+			} else {
+				if _, ok := o.dbDisk[id]; walk || !ok {
+					o.dbDisk[id] = dirSize(d.diskDir(s))
+				}
+				u.DiskBytes = o.dbDisk[id]
+			}
+			dir := o.dbCgroups[id]
+			if dir == "" {
+				out, err := d.Host.Systemctl(ctx, DBUser, "show", "--property=ControlGroup", "--value", s.container()+".service")
+				if cg := strings.TrimSpace(out); err == nil && cg != "" && !strings.Contains(cg, "..") {
+					dir = filepath.Join(d.cgroupRoot(), cg)
+					o.dbCgroups[id] = dir
+				}
+			}
+			// A service that does not operate has no cgroup.
+			if b, err := os.ReadFile(filepath.Join(dir, "memory.current")); dir != "" && err == nil {
+				u.State = "running"
+				u.MemoryBytes, _ = strconv.ParseInt(strings.TrimSpace(string(b)), 10, 64)
+			} else {
+				delete(o.dbCgroups, id)
+			}
+			out = append(out, u)
+		}
+	}
+	return out
 }
 
 // firewallService reports the firewall of Cloudfactory. The agent checks the table in the
@@ -377,24 +436,29 @@ func (d *Deps) RestoreLocalNames(ctx context.Context) error {
 	return errors.Join(errs...)
 }
 
-// databaseSizes gives the size of each database in the shared database containers that operate.
+// databaseSizes gives the size of each database in the database containers that operate: the
+// database servers of each customer, and the shared containers of an earlier release. The
+// name of a database is for one website, so it is in one container only.
 func (d *Deps) databaseSizes(ctx context.Context) []panel.DatabaseSize {
 	out := []panel.DatabaseSize{}
 	d.dbMu.Lock()
-	ready := map[string]bool{}
-	for k, v := range d.dbReady {
-		ready[k] = v
-	}
+	servers := slices.Collect(maps.Keys(d.dbReady))
 	d.dbMu.Unlock()
+	slices.SortFunc(servers, func(a, b dbServer) int {
+		return cmp.Or(cmp.Compare(a.ID, b.ID), cmp.Compare(a.Engine, b.Engine))
+	})
 	queries := map[string]string{
 		"mariadb":    "SELECT table_schema, COALESCE(SUM(data_length + index_length), 0) FROM information_schema.tables GROUP BY table_schema;\n",
 		"postgresql": "SELECT datname || '|' || pg_database_size(datname) FROM pg_database WHERE NOT datistemplate;\n",
 	}
-	for _, engine := range Engines {
-		if !ready[engine] {
+	for _, s := range servers {
+		if s.Engine == "valkey" {
+			if sizes, err := d.valkeySizes(ctx, s); err == nil {
+				out = append(out, sizes...)
+			}
 			continue
 		}
-		res, err := d.sqlNow(ctx, engine, queries[engine])
+		res, err := d.sqlNow(ctx, s, queries[s.Engine])
 		if err != nil {
 			continue
 		}
@@ -404,7 +468,7 @@ func (d *Deps) databaseSizes(ctx context.Context) []panel.DatabaseSize {
 				continue
 			}
 			if n, err := strconv.ParseInt(strings.TrimSpace(f[1]), 10, 64); err == nil {
-				out = append(out, panel.DatabaseSize{Engine: engine, Name: strings.TrimSpace(f[0]), SizeBytes: n})
+				out = append(out, panel.DatabaseSize{Engine: s.Engine, Name: strings.TrimSpace(f[0]), SizeBytes: n})
 			}
 		}
 	}
