@@ -44,13 +44,19 @@ class SftpController extends Controller
         if ($data['enabled'] && $keys === []) {
             throw ValidationException::withMessages(['authorizedKeys' => 'Add an SSH public key to turn on SFTP.']);
         }
+        // SFTP that is off and stays off: the request changes only the keys. The titles say so.
+        [$title, $event] = match (true) {
+            (bool) $data['enabled'] => ['Set SFTP access', 'Changed SFTP access'],
+            ! $website->sftp_enabled => ['Save the keys for SFTP access', 'Changed the keys for SFTP access'],
+            default => ['Turn off SFTP access', 'Turned off SFTP access'],
+        };
         $job = $this->jobs->dispatch($website->server, AgentAction::SetSftp, [
             'websiteId' => $website->id,
             'unixUser' => $website->unix_user,
             'enabled' => $data['enabled'],
             'authorizedKeys' => $keys,
-        ], $data['enabled'] ? 'Set SFTP access' : 'Turn off SFTP access', $website);
-        Audit::record($request, $data['enabled'] ? 'Changed SFTP access' : 'Turned off SFTP access', $website->name, $website->customer_id);
+        ], $title, $website);
+        Audit::record($request, $event, $website->name, $website->customer_id);
 
         return response()->json(['sftp' => (new WebsiteResource($website))->toArray($request)['sftp'], 'job' => new JobResource($job)], 202);
     }

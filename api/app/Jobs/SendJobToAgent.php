@@ -8,6 +8,7 @@ use App\Services\AgentClient;
 use App\Services\JobOutcome;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -39,7 +40,17 @@ class SendJobToAgent implements ShouldQueue
         if ($job->server->state === 'offline') {
             return;
         }
-        $client->send($job);
+        try {
+            $client->send($job);
+        } catch (ConnectionException $e) {
+            // The server page shows the reason to the administrator at the first failure. The
+            // queue tries again, and the job fails only after the last attempt.
+            AgentClient::record($job->server, AgentClient::reason($e));
+            throw $e;
+        }
+        if ($job->server->connection_error !== null || $job->server->connection_checked_at === null) {
+            AgentClient::record($job->server, null);
+        }
         // Audit finding R1: a fast job can be complete before this line runs. Only a job that
         // is still queued becomes "running".
         app(JobOutcome::class)->started($job);
@@ -59,7 +70,7 @@ class SendJobToAgent implements ShouldQueue
             // Audit finding S9: the full error has the address of the agent. It goes to the log
             // of the panel, and the job gets a short text that a customer can read.
             Log::warning('The agent is not available.', ['job' => $job->id, 'server' => $job->server_id, 'error' => $e->getMessage()]);
-            app(JobOutcome::class)->finish($job, JobState::Failed, 'The agent of the server did not answer. The administrator can find the cause in the log of the panel.');
+            app(JobOutcome::class)->finish($job, JobState::Failed, 'The agent of the server did not answer. The administrator can find the cause on the page of the server and in the log of the panel.');
         }
     }
 }

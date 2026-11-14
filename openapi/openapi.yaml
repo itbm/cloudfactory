@@ -924,6 +924,7 @@ paths:
                   token: { type: string }
                   expiresAt: { type: string, format: date-time }
                   command: { type: string, description: The install command. When the panel has a CA, the command has its fingerprint (--panel-ca-sha256). }
+                  installUrl: { type: string, description: 'The address of the installation script in the command: the script of the release of this panel, or the value of CF_INSTALL_URL.' }
                   panelCaSha256: { type: [string, 'null'], description: The SHA-256 fingerprint of the root certificate of the panel CA. }
 
   /v1/servers/{id}:
@@ -968,6 +969,17 @@ paths:
                   - type: object
                     properties:
                       job: { oneOf: [{ $ref: '#/components/schemas/Job' }, { type: 'null' }] }
+        '422': { $ref: '#/components/responses/Invalid' }
+    delete:
+      tags: [Servers]
+      summary: Remove a server
+      description: >-
+        Removes a server from the panel, for example a server that joined with a wrong address.
+        The panel also removes the jobs of the server. It does not change the server itself. The
+        answer is status 422 for a server with websites and for the server of the panel.
+      responses:
+        '204': { description: Removed. }
+        '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/Invalid' }
 
   /v1/servers/{id}/install-updates:
@@ -1022,6 +1034,23 @@ paths:
                 allowDowngrade: { type: boolean, default: false }
       responses:
         '202': { $ref: '#/components/responses/JobOnly' }
+
+  /v1/servers/{id}/check-connection:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [Servers]
+      summary: Test the connection to the agent
+      description: >-
+        The panel connects to the agent of the server and records the result. `connectionError`
+        of the server is null when the connection works.
+      responses:
+        '200':
+          description: The server, with the result of the test.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Server' }
+        '404': { $ref: '#/components/responses/NotFound' }
 
   /v1/panel-certificate:
     get:
@@ -1826,9 +1855,26 @@ components:
           type: string
           enum: [joining, healthy, agent_update, degraded, offline, rebooting]
           description: >-
-            `degraded`: the agent answers, but a necessary service does not run. `services` gives
-            the service and the reason. A degraded server continues to do work.
+            `degraded`: the agent answers, but a necessary service does not run, or the panel
+            cannot connect to the agent. `services` gives the service and the reason, and
+            `connectionError` gives the reason of a failed connection. A degraded server with
+            a service that does not run continues to do work.
         agentVersion: { type: [string, 'null'] }
+        agentUpdateAvailable:
+          type: boolean
+          description: The panel has a newer agent than the agent of this server. The value is correct also when the state is `degraded` or `offline`.
+        agentAddress:
+          type: [string, 'null']
+          description: The host and the port that the panel uses to connect to the agent, for example `web2.example.com:7443`.
+        connectionError:
+          type: [string, 'null']
+          description: >-
+            The reason when the panel could not connect to the agent, for example
+            `Could not resolve host: web2`. The state is then `degraded`, and the jobs of the
+            server fail. Null when there is no known problem.
+        panel:
+          type: boolean
+          description: This server has the panel. It cannot be removed.
         os: { type: [string, 'null'] }
         kernel: { type: [string, 'null'] }
         arch: { type: [string, 'null'] }

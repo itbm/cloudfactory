@@ -253,4 +253,68 @@ class FirstUseTest extends TestCase
         $this->assertSame('done', Rollout::findOrFail($id)->state);
         $this->assertNotNull($this->getJson("/api/v1/rollouts/{$id}")->assertOk()->json('finishedAt'));
     }
+
+    public function test_a_key_for_sftp_that_is_off_gets_a_job_with_a_correct_title(): void
+    {
+        $website = $this->website($this->customer(), $this->server(), $this->image());
+        $this->actingWith($this->user());
+        $key = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJ7m0Yv0Hj8d1bqQn5x9sP1rZ2y3w4v5u6t7s8r9q0p me@laptop';
+        $url = "/api/v1/websites/{$website->id}/sftp";
+
+        // Before, the title was "Turn off SFTP access" for a request that added a key.
+        $first = $this->putJson($url, ['enabled' => false, 'authorizedKeys' => [$key]])->assertAccepted()->assertJsonPath('job.title', 'Save the keys for SFTP access');
+        app(JobOutcome::class)->finish(AgentJob::findOrFail($first->json('job.id')), JobState::Succeeded, null);
+        $second = $this->putJson($url, ['enabled' => true])->assertAccepted()->assertJsonPath('job.title', 'Set SFTP access');
+        app(JobOutcome::class)->finish(AgentJob::findOrFail($second->json('job.id')), JobState::Succeeded, null);
+        $this->putJson($url, ['enabled' => false])->assertAccepted()->assertJsonPath('job.title', 'Turn off SFTP access');
+    }
+
+    public function test_a_server_tells_that_its_agent_is_old_also_when_it_is_degraded(): void
+    {
+        config(['cloudfactory.agent.latest_version' => '0.2.0']);
+        $old = $this->server(['name' => 'old', 'agent_version' => '0.1.9', 'state' => 'degraded']);
+        $new = $this->server(['name' => 'new', 'agent_version' => '0.2.0', 'state' => 'healthy']);
+        $this->actingWith($this->user());
+
+        $this->getJson("/api/v1/servers/{$old->id}")->assertOk()->assertJsonPath('state', 'degraded')->assertJsonPath('agentUpdateAvailable', true);
+        $this->getJson("/api/v1/servers/{$new->id}")->assertOk()->assertJsonPath('state', 'healthy')->assertJsonPath('agentUpdateAvailable', false);
+    }
+
+    public function test_a_new_website_gets_the_dns_state_of_its_domain_from_the_job(): void
+    {
+        $customer = $this->customer();
+        $website = $this->website($customer, $this->server(), $this->image(), 'shop.localhost', ['status' => 'failed']);
+        $this->actingWith($this->user());
+        $this->assertFalse((bool) $website->domains()->first()->dns_points_here);
+        $job = AgentJob::findOrFail($this->postJson("/api/v1/websites/{$website->id}/retry")->assertAccepted()->json('job.id'));
+
+        // Before, the page showed "Waiting for DNS" until the next report of the agent.
+        app(JobOutcome::class)->finish($job, JobState::Succeeded, null, ['port' => 20000, 'dnsPointsHere' => true]);
+
+        $this->assertSame('running', $website->fresh()->status->value);
+        $this->assertTrue((bool) $website->domains()->first()->dns_points_here);
+    }
+
+    public function test_an_update_job_removes_only_the_packages_that_the_server_installed(): void
+    {
+        $packages = [
+            ['name' => 'openssl', 'from' => '1', 'to' => '2', 'security' => true],
+            ['name' => 'vim', 'from' => '1', 'to' => '2', 'security' => false],
+            ['name' => 'podman', 'from' => '1', 'to' => '2', 'security' => true, 'containerTool' => true],
+        ];
+        $this->actingWith($this->user());
+        $left = function (?string $policy) use ($packages): array {
+            $server = $this->server(['name' => 'srv-'.($policy ?? 'default'), 'pending_updates' => $packages, 'update_policy' => 'security']);
+            $id = $this->postJson("/api/v1/servers/{$server->id}/install-updates", $policy ? ['policy' => $policy] : [])->assertAccepted()->json('job.id');
+            app(JobOutcome::class)->finish(AgentJob::findOrFail($id), JobState::Succeeded, null);
+
+            return array_column($server->fresh()->pending_updates, 'name');
+        };
+
+        // Before, the panel showed no pending package after each update job.
+        $this->assertSame(['vim', 'podman'], $left(null));
+        $this->assertSame(['vim', 'podman'], $left('security'));
+        $this->assertSame(['podman'], $left('all'));
+        $this->assertSame(['openssl', 'vim'], $left('tools'));
+    }
 }

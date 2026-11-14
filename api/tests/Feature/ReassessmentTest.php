@@ -185,8 +185,16 @@ class ReassessmentTest extends TestCase
     {
         $this->actingWith($this->user());
 
+        // The script of the release of the panel, not "releases/latest": GitHub gives 404 for
+        // that address while each release is a pre-release.
+        config(['cloudfactory.agent.latest_version' => '0.1.9']);
         $this->postJson('/api/v1/servers/join-tokens')->assertCreated()
-            ->assertJsonPath('command', fn ($c) => str_starts_with($c, 'curl -fsSL https://github.com/itbm/cloudfactory/releases/latest/download/install.sh | sh -s -- --join cfj_'));
+            ->assertJsonPath('installUrl', 'https://github.com/itbm/cloudfactory/releases/download/v0.1.9/install.sh')
+            ->assertJsonPath('command', fn ($c) => str_starts_with($c, 'curl -fsSL https://github.com/itbm/cloudfactory/releases/download/v0.1.9/install.sh | sh -s -- --join cfj_'));
+
+        // A mirror of the release files.
+        config(['cloudfactory.install_url' => 'https://mirror.example.com/install.sh']);
+        $this->postJson('/api/v1/servers/join-tokens')->assertCreated()->assertJsonPath('installUrl', 'https://mirror.example.com/install.sh');
     }
 
     private function signIn(User $user): string

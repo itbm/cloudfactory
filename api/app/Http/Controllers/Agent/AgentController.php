@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Agent;
 
 use App\Enums\JobState;
 use App\Http\Controllers\Controller;
+use App\Jobs\CheckAgentConnection;
 use App\Jobs\SendJobToAgent;
 use App\Models\AgentJob;
 use App\Models\Database;
@@ -127,6 +128,12 @@ class AgentController extends Controller
             // A server that was offline is back with this report.
             'state' => in_array($server->state, ['rebooting', 'joining'], true) ? $server->state : ($failed ? 'degraded' : 'healthy'),
         ]);
+        // The first report of a new server: its agent listens now, so the panel tests that it can
+        // connect to the address that the server gave when it joined.
+        if ($server->connection_checked_at === null) {
+            $server->update(['connection_checked_at' => now()]);
+            CheckAgentConnection::dispatch($server->id);
+        }
         // Audit finding R11: the panel kept the jobs of this server while it was offline.
         if ($wasOffline) {
             foreach (AgentJob::where('server_id', $server->id)->where('state', JobState::Queued->value)->orderBy('created_at')->pluck('id') as $jobId) {

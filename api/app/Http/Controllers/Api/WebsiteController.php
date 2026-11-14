@@ -98,7 +98,9 @@ class WebsiteController extends Controller
         $server = isset($data['serverId'])
             ? Server::findOrFail($data['serverId'])
             // A healthy server first. A degraded server can also get a website: its agent answers.
+            // A server that the panel cannot connect to comes last: its jobs fail.
             : Server::whereJsonContains('roles', 'web')->whereIn('state', Server::WORKING)->withCount('websites')
+                ->orderByRaw('case when connection_error is null then 0 else 1 end')
                 ->orderByRaw("case when state = 'healthy' then 0 else 1 end")->orderBy('websites_count')->first();
         if (! $server || ! in_array('web', $server->roles, true)) {
             throw ValidationException::withMessages(['serverId' => 'Select a server with the web role.']);
