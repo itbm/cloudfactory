@@ -53,43 +53,49 @@ func (d *Deps) makeDataDir(ctx context.Context, dir, user string) error {
 	return err
 }
 
-// dbUnit gives the input for the unit of a database container. A container of a customer gets
-// the address of the customer and its limits.
-func (d *Deps) dbUnit(s dbServer) (quadlet.Database, error) {
+// dbUnit gives the input for the unit of a database container, and the record of a database
+// server. A database server gets the address of its customer, its port and its limits.
+func (d *Deps) dbUnit(s dbServer) (quadlet.Database, DatabaseServer, error) {
 	dir := d.dbDir(s)
 	u := quadlet.Database{
-		Engine:   s.Engine,
-		Instance: s.Instance,
-		Image:    d.serviceImage(s.Engine),
-		DataDir:  filepath.Join(dir, s.Engine),
-		EnvFile:  filepath.Join(dir, s.Engine+".env"),
-		Gvisor:   d.runtime(),
+		Engine:  s.Engine,
+		ID:      s.ID,
+		Image:   d.serviceImage(s.Engine),
+		DataDir: filepath.Join(dir, s.Engine),
+		EnvFile: filepath.Join(dir, s.Engine+".env"),
+		Gvisor:  d.runtime(),
 	}
+	if s.ID == "" {
+		return u, DatabaseServer{}, nil
+	}
+	customer, record, address, err := d.State.DatabaseServer(s.ID)
+	if err != nil {
+		return u, record, err
+	}
+	if customer == "" || record.Engine != s.Engine {
+		return u, record, fmt.Errorf("this server does not have %s", s)
+	}
+	u.Customer, u.Address, u.Port = customer, address, record.Port
+	u.DataDir = d.dataDir(s)
+	u.Limits = quadlet.Limits{VCPUs: record.VCPUs, MemoryBytes: record.MemoryBytes}
+	u.DiskBytes = record.DiskBytes
 	if s.Engine == "valkey" {
-		u.MemoryMB = d.valkeyMemoryMB()
+		u.MemoryMB = valkeyDataMB(record.MemoryBytes)
 	}
-	if s.Instance != "" {
-		// The website of the job has the record of the customer already (useDatabases).
-		address, err := d.useDatabases(s.Instance, "", false)
-		if err != nil {
-			return u, err
-		}
-		u.Address, u.Limits = address, d.databaseLimits(s.Engine)
-	}
-	return u, nil
+	return u, record, nil
 }
 
 // EnsureDatabaseService starts a database container, if it does not operate, and waits until
-// it accepts connections. The agent starts a container when a website needs the engine for
-// the first time. systemd starts it again at boot.
+// it accepts connections. systemd starts it again at boot. The state has the record of a
+// database server before this function starts it (ensureServer).
 //
-// The start of a container can take minutes. Only the containers of the same customer wait
-// for it: each customer has its own lock.
+// The start of a container can take minutes. Only the jobs of the same database server wait
+// for it: each database server has its own lock.
 func (d *Deps) EnsureDatabaseService(ctx context.Context, s dbServer) error {
 	if _, err := dbContainer(s.Engine); err != nil {
 		return err
 	}
-	if s.Engine == "valkey" && s.Instance == "" {
+	if s.Engine == "valkey" && s.ID == "" {
 		return errNoSharedValkey
 	}
 	ready := func() bool {
@@ -100,21 +106,22 @@ func (d *Deps) EnsureDatabaseService(ctx context.Context, s dbServer) error {
 	if ready() {
 		return nil
 	}
-	lock := d.instanceLock(s.Instance)
+	lock := d.instanceLock(s.ID)
 	lock.Lock()
 	defer lock.Unlock()
 	if ready() {
 		return nil
 	}
-	if s.Instance != "" {
-		// The address of the container must be on "lo" before Podman publishes the port.
+	u, record, err := d.dbUnit(s)
+	if err != nil {
+		return err
+	}
+	if s.ID != "" {
+		// The address of the container must be on "lo" before Podman publishes the port. The
+		// firewall lets the websites of the customer connect to the port.
 		if err := d.syncDatabaseAccess(ctx); err != nil {
 			return err
 		}
-	}
-	u, err := d.dbUnit(s)
-	if err != nil {
-		return err
 	}
 	if _, err := d.Host.Podman(ctx, DBUser, "image", "exists", u.Image); err != nil {
 		// The signature policy of Podman refuses an image with no valid signature (FR-1101).
@@ -124,11 +131,20 @@ func (d *Deps) EnsureDatabaseService(ctx context.Context, s dbServer) error {
 	}
 	// Only cf-db can open the data. The entry point of the image sets the owner in the container.
 	dirs := []string{u.DataDir}
-	if s.Instance != "" {
-		dirs = []string{filepath.Dir(d.dbDir(s)), d.dbDir(s), u.DataDir}
+	if s.ID != "" {
+		dirs = []string{filepath.Dir(d.dbDir(s)), d.dbDir(s)}
 	}
 	for _, dir := range dirs {
 		if err := d.makeDataDir(ctx, dir, DBUser); err != nil {
+			return err
+		}
+	}
+	if s.ID != "" {
+		// The disk of the database server has the data directory.
+		if err := d.ensureDisk(ctx, s, record.DiskBytes); err != nil {
+			return err
+		}
+		if err := d.makeDataDir(ctx, u.DataDir, DBUser); err != nil {
 			return err
 		}
 	}
@@ -168,9 +184,9 @@ func (d *Deps) EnsureDatabaseService(ctx context.Context, s dbServer) error {
 	return nil
 }
 
-// databaseServers gives the database containers that this server has: the containers of each
-// customer, and the shared containers of an earlier release. A container is there when cf-db
-// has its unit.
+// databaseServers gives the database containers that this server has: the database servers
+// of each customer, and the shared containers of an earlier release. A shared container is
+// there when cf-db has its unit.
 func (d *Deps) databaseServers() ([]dbServer, error) {
 	dir, err := d.Host.UnitDir(DBUser)
 	if err != nil {
@@ -180,24 +196,27 @@ func (d *Deps) databaseServers() ([]dbServer, error) {
 	if err != nil {
 		return nil, err
 	}
-	keys := append([]string{""}, slices.Sorted(maps.Keys(instances))...)
 	var out []dbServer
-	for _, key := range keys {
-		for _, engine := range Engines {
-			s := dbServer{Instance: key, Engine: engine}
-			if _, err := os.Stat(filepath.Join(dir, s.container()+".container")); err == nil {
-				out = append(out, s)
-			}
+	for _, engine := range Engines {
+		s := dbServer{Engine: engine}
+		if _, err := os.Stat(filepath.Join(dir, s.container()+".container")); err == nil {
+			out = append(out, s)
+		}
+	}
+	for _, customer := range slices.Sorted(maps.Keys(instances)) {
+		servers := instances[customer].Servers
+		for _, id := range slices.Sorted(maps.Keys(servers)) {
+			out = append(out, dbServer{ID: id, Engine: servers[id].Engine})
 		}
 	}
 	return out, nil
 }
 
 // RefreshDatabaseServices writes the units of the database containers that the server already
-// has again, for example with the image of a new agent version. It also loads the database
-// access of the websites into the firewall.
+// has again, for example with the image of a new agent version. It also mounts the disk of
+// each database server, and loads the database access of the websites into the firewall.
 func (d *Deps) RefreshDatabaseServices(ctx context.Context) error {
-	d.removeOldInstanceData()
+	d.removeOldServerData()
 	servers, err := d.databaseServers()
 	if err != nil {
 		return err

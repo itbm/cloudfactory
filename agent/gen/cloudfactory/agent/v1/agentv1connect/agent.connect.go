@@ -98,6 +98,12 @@ const (
 	// AgentServiceMoveDatabasesProcedure is the fully-qualified name of the AgentService's
 	// MoveDatabases RPC.
 	AgentServiceMoveDatabasesProcedure = "/cloudfactory.agent.v1.AgentService/MoveDatabases"
+	// AgentServiceSetDatabaseServerProcedure is the fully-qualified name of the AgentService's
+	// SetDatabaseServer RPC.
+	AgentServiceSetDatabaseServerProcedure = "/cloudfactory.agent.v1.AgentService/SetDatabaseServer"
+	// AgentServiceDeleteDatabaseServerProcedure is the fully-qualified name of the AgentService's
+	// DeleteDatabaseServer RPC.
+	AgentServiceDeleteDatabaseServerProcedure = "/cloudfactory.agent.v1.AgentService/DeleteDatabaseServer"
 	// AgentServiceGetStatusProcedure is the fully-qualified name of the AgentService's GetStatus RPC.
 	AgentServiceGetStatusProcedure = "/cloudfactory.agent.v1.AgentService/GetStatus"
 )
@@ -125,6 +131,8 @@ type AgentServiceClient interface {
 	ConfigureHost(context.Context, *connect.Request[v1.ConfigureHostRequest]) (*connect.Response[v1.JobAccepted], error)
 	SetPanelCertificate(context.Context, *connect.Request[v1.SetPanelCertificateRequest]) (*connect.Response[v1.JobAccepted], error)
 	MoveDatabases(context.Context, *connect.Request[v1.MoveDatabasesRequest]) (*connect.Response[v1.JobAccepted], error)
+	SetDatabaseServer(context.Context, *connect.Request[v1.DatabaseServerRequest]) (*connect.Response[v1.JobAccepted], error)
+	DeleteDatabaseServer(context.Context, *connect.Request[v1.DeleteDatabaseServerRequest]) (*connect.Response[v1.JobAccepted], error)
 	// Returns the actual state of the server at once. This method does not make a job.
 	GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.HostStatus], error)
 }
@@ -266,6 +274,18 @@ func NewAgentServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(agentServiceMethods.ByName("MoveDatabases")),
 			connect.WithClientOptions(opts...),
 		),
+		setDatabaseServer: connect.NewClient[v1.DatabaseServerRequest, v1.JobAccepted](
+			httpClient,
+			baseURL+AgentServiceSetDatabaseServerProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("SetDatabaseServer")),
+			connect.WithClientOptions(opts...),
+		),
+		deleteDatabaseServer: connect.NewClient[v1.DeleteDatabaseServerRequest, v1.JobAccepted](
+			httpClient,
+			baseURL+AgentServiceDeleteDatabaseServerProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("DeleteDatabaseServer")),
+			connect.WithClientOptions(opts...),
+		),
 		getStatus: connect.NewClient[v1.GetStatusRequest, v1.HostStatus](
 			httpClient,
 			baseURL+AgentServiceGetStatusProcedure,
@@ -277,28 +297,30 @@ func NewAgentServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 
 // agentServiceClient implements AgentServiceClient.
 type agentServiceClient struct {
-	createWebsite       *connect.Client[v1.WebsiteRequest, v1.JobAccepted]
-	deleteWebsite       *connect.Client[v1.DeleteWebsiteRequest, v1.JobAccepted]
-	setWebsitePower     *connect.Client[v1.SetWebsitePowerRequest, v1.JobAccepted]
-	setLimits           *connect.Client[v1.SetLimitsRequest, v1.JobAccepted]
-	setRuntime          *connect.Client[v1.WebsiteRequest, v1.JobAccepted]
-	addDomain           *connect.Client[v1.DomainRequest, v1.JobAccepted]
-	removeDomain        *connect.Client[v1.DomainRequest, v1.JobAccepted]
-	createDatabase      *connect.Client[v1.CreateDatabaseRequest, v1.JobAccepted]
-	deleteDatabase      *connect.Client[v1.DeleteDatabaseRequest, v1.JobAccepted]
-	setDatabaseUser     *connect.Client[v1.SetDatabaseUserRequest, v1.JobAccepted]
-	deleteDatabaseUser  *connect.Client[v1.DeleteDatabaseUserRequest, v1.JobAccepted]
-	backup              *connect.Client[v1.BackupRequest, v1.JobAccepted]
-	restore             *connect.Client[v1.RestoreRequest, v1.JobAccepted]
-	installHostUpdates  *connect.Client[v1.HostRequest, v1.JobAccepted]
-	reboot              *connect.Client[v1.HostRequest, v1.JobAccepted]
-	updateAgent         *connect.Client[v1.UpdateAgentRequest, v1.JobAccepted]
-	pruneBackups        *connect.Client[v1.PruneBackupsRequest, v1.JobAccepted]
-	setSftp             *connect.Client[v1.SetSftpRequest, v1.JobAccepted]
-	configureHost       *connect.Client[v1.ConfigureHostRequest, v1.JobAccepted]
-	setPanelCertificate *connect.Client[v1.SetPanelCertificateRequest, v1.JobAccepted]
-	moveDatabases       *connect.Client[v1.MoveDatabasesRequest, v1.JobAccepted]
-	getStatus           *connect.Client[v1.GetStatusRequest, v1.HostStatus]
+	createWebsite        *connect.Client[v1.WebsiteRequest, v1.JobAccepted]
+	deleteWebsite        *connect.Client[v1.DeleteWebsiteRequest, v1.JobAccepted]
+	setWebsitePower      *connect.Client[v1.SetWebsitePowerRequest, v1.JobAccepted]
+	setLimits            *connect.Client[v1.SetLimitsRequest, v1.JobAccepted]
+	setRuntime           *connect.Client[v1.WebsiteRequest, v1.JobAccepted]
+	addDomain            *connect.Client[v1.DomainRequest, v1.JobAccepted]
+	removeDomain         *connect.Client[v1.DomainRequest, v1.JobAccepted]
+	createDatabase       *connect.Client[v1.CreateDatabaseRequest, v1.JobAccepted]
+	deleteDatabase       *connect.Client[v1.DeleteDatabaseRequest, v1.JobAccepted]
+	setDatabaseUser      *connect.Client[v1.SetDatabaseUserRequest, v1.JobAccepted]
+	deleteDatabaseUser   *connect.Client[v1.DeleteDatabaseUserRequest, v1.JobAccepted]
+	backup               *connect.Client[v1.BackupRequest, v1.JobAccepted]
+	restore              *connect.Client[v1.RestoreRequest, v1.JobAccepted]
+	installHostUpdates   *connect.Client[v1.HostRequest, v1.JobAccepted]
+	reboot               *connect.Client[v1.HostRequest, v1.JobAccepted]
+	updateAgent          *connect.Client[v1.UpdateAgentRequest, v1.JobAccepted]
+	pruneBackups         *connect.Client[v1.PruneBackupsRequest, v1.JobAccepted]
+	setSftp              *connect.Client[v1.SetSftpRequest, v1.JobAccepted]
+	configureHost        *connect.Client[v1.ConfigureHostRequest, v1.JobAccepted]
+	setPanelCertificate  *connect.Client[v1.SetPanelCertificateRequest, v1.JobAccepted]
+	moveDatabases        *connect.Client[v1.MoveDatabasesRequest, v1.JobAccepted]
+	setDatabaseServer    *connect.Client[v1.DatabaseServerRequest, v1.JobAccepted]
+	deleteDatabaseServer *connect.Client[v1.DeleteDatabaseServerRequest, v1.JobAccepted]
+	getStatus            *connect.Client[v1.GetStatusRequest, v1.HostStatus]
 }
 
 // CreateWebsite calls cloudfactory.agent.v1.AgentService.CreateWebsite.
@@ -406,6 +428,16 @@ func (c *agentServiceClient) MoveDatabases(ctx context.Context, req *connect.Req
 	return c.moveDatabases.CallUnary(ctx, req)
 }
 
+// SetDatabaseServer calls cloudfactory.agent.v1.AgentService.SetDatabaseServer.
+func (c *agentServiceClient) SetDatabaseServer(ctx context.Context, req *connect.Request[v1.DatabaseServerRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return c.setDatabaseServer.CallUnary(ctx, req)
+}
+
+// DeleteDatabaseServer calls cloudfactory.agent.v1.AgentService.DeleteDatabaseServer.
+func (c *agentServiceClient) DeleteDatabaseServer(ctx context.Context, req *connect.Request[v1.DeleteDatabaseServerRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return c.deleteDatabaseServer.CallUnary(ctx, req)
+}
+
 // GetStatus calls cloudfactory.agent.v1.AgentService.GetStatus.
 func (c *agentServiceClient) GetStatus(ctx context.Context, req *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.HostStatus], error) {
 	return c.getStatus.CallUnary(ctx, req)
@@ -434,6 +466,8 @@ type AgentServiceHandler interface {
 	ConfigureHost(context.Context, *connect.Request[v1.ConfigureHostRequest]) (*connect.Response[v1.JobAccepted], error)
 	SetPanelCertificate(context.Context, *connect.Request[v1.SetPanelCertificateRequest]) (*connect.Response[v1.JobAccepted], error)
 	MoveDatabases(context.Context, *connect.Request[v1.MoveDatabasesRequest]) (*connect.Response[v1.JobAccepted], error)
+	SetDatabaseServer(context.Context, *connect.Request[v1.DatabaseServerRequest]) (*connect.Response[v1.JobAccepted], error)
+	DeleteDatabaseServer(context.Context, *connect.Request[v1.DeleteDatabaseServerRequest]) (*connect.Response[v1.JobAccepted], error)
 	// Returns the actual state of the server at once. This method does not make a job.
 	GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.HostStatus], error)
 }
@@ -571,6 +605,18 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(agentServiceMethods.ByName("MoveDatabases")),
 		connect.WithHandlerOptions(opts...),
 	)
+	agentServiceSetDatabaseServerHandler := connect.NewUnaryHandler(
+		AgentServiceSetDatabaseServerProcedure,
+		svc.SetDatabaseServer,
+		connect.WithSchema(agentServiceMethods.ByName("SetDatabaseServer")),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentServiceDeleteDatabaseServerHandler := connect.NewUnaryHandler(
+		AgentServiceDeleteDatabaseServerProcedure,
+		svc.DeleteDatabaseServer,
+		connect.WithSchema(agentServiceMethods.ByName("DeleteDatabaseServer")),
+		connect.WithHandlerOptions(opts...),
+	)
 	agentServiceGetStatusHandler := connect.NewUnaryHandler(
 		AgentServiceGetStatusProcedure,
 		svc.GetStatus,
@@ -621,6 +667,10 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 			agentServiceSetPanelCertificateHandler.ServeHTTP(w, r)
 		case AgentServiceMoveDatabasesProcedure:
 			agentServiceMoveDatabasesHandler.ServeHTTP(w, r)
+		case AgentServiceSetDatabaseServerProcedure:
+			agentServiceSetDatabaseServerHandler.ServeHTTP(w, r)
+		case AgentServiceDeleteDatabaseServerProcedure:
+			agentServiceDeleteDatabaseServerHandler.ServeHTTP(w, r)
 		case AgentServiceGetStatusProcedure:
 			agentServiceGetStatusHandler.ServeHTTP(w, r)
 		default:
@@ -714,6 +764,14 @@ func (UnimplementedAgentServiceHandler) SetPanelCertificate(context.Context, *co
 
 func (UnimplementedAgentServiceHandler) MoveDatabases(context.Context, *connect.Request[v1.MoveDatabasesRequest]) (*connect.Response[v1.JobAccepted], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.MoveDatabases is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) SetDatabaseServer(context.Context, *connect.Request[v1.DatabaseServerRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.SetDatabaseServer is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) DeleteDatabaseServer(context.Context, *connect.Request[v1.DeleteDatabaseServerRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.DeleteDatabaseServer is not implemented"))
 }
 
 func (UnimplementedAgentServiceHandler) GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.HostStatus], error) {

@@ -132,26 +132,26 @@ func (v *valkeyConn) read(depth int) (any, error) {
 	return nil, fmt.Errorf("valkey: unexpected answer %q", line)
 }
 
-// valkeyConnect opens a connection to the Valkey container of a customer and logs in.
+// valkeyConnect opens a connection to a Valkey database server and logs in.
 func (d *Deps) valkeyConnect(ctx context.Context, s dbServer, user, password string) (*valkeyConn, error) {
-	if s.Instance == "" {
+	if s.ID == "" {
 		return nil, errNoSharedValkey
 	}
-	address, err := d.State.DatabaseAddress(s.Instance)
+	customer, record, address, err := d.State.DatabaseServer(s.ID)
 	if err != nil {
 		return nil, err
 	}
-	if address == "" {
-		return nil, fmt.Errorf("the customer %s has no database containers on this server", s.Instance)
+	if customer == "" {
+		return nil, fmt.Errorf("this server does not have %s", s)
 	}
 	dial := d.ValkeyDial
 	if dial == nil {
 		dial = func(ctx context.Context, address string) (net.Conn, error) {
 			dialer := net.Dialer{Timeout: 5 * time.Second}
-			return dialer.DialContext(ctx, "tcp", net.JoinHostPort(address, strconv.Itoa(quadlet.DatabasePort("valkey"))))
+			return dialer.DialContext(ctx, "tcp", address)
 		}
 	}
-	c, err := dial(ctx, address)
+	c, err := dial(ctx, net.JoinHostPort(address, strconv.Itoa(record.Port)))
 	if err != nil {
 		return nil, err
 	}
@@ -164,8 +164,8 @@ func (d *Deps) valkeyConnect(ctx context.Context, s dbServer, user, password str
 	return v, nil
 }
 
-// valkeySecretFile holds the password of the administrator of the Valkey container of a
-// customer. Only root can read it.
+// valkeySecretFile holds the password of the administrator of a Valkey database server. Only
+// root can read it.
 func (d *Deps) valkeySecretFile(s dbServer) string { return filepath.Join(d.dbDir(s), "valkey.secret") }
 
 // valkeyAdminConn opens a connection as the administrator. It does not start the container.
@@ -434,8 +434,8 @@ func (d *Deps) valkeySetPassword(ctx context.Context, s dbServer, name, password
 
 var valkeyKeysRE = regexp.MustCompile(`(?m)^db(\d+):keys=(\d+)`)
 
-// valkeySizes gives the number and the count of keys of each Valkey database of a customer.
-// Valkey does not know the size of one database in bytes.
+// valkeySizes gives the number and the count of keys of each database of a Valkey database
+// server. Valkey does not know the size of one database in bytes.
 func (d *Deps) valkeySizes(ctx context.Context, s dbServer) ([]panel.DatabaseSize, error) {
 	v, err := d.valkeyAdminConn(ctx, s)
 	if err != nil {
@@ -466,37 +466,6 @@ func (d *Deps) valkeySizes(ctx context.Context, s dbServer) ([]panel.DatabaseSiz
 		out = append(out, panel.DatabaseSize{Engine: "valkey", Name: name, Number: number, Keys: &count})
 	}
 	return out, nil
-}
-
-// valkeyMemoryMB gives the memory limit of the Valkey container of each customer for its
-// data: the setting of the agent, or 1/32 of the memory of the server.
-func (d *Deps) valkeyMemoryMB() int {
-	if d.ValkeyMemoryMB > 0 {
-		return d.ValkeyMemoryMB
-	}
-	return defaultValkeyMemoryMB(hostMemoryMB("/proc/meminfo"))
-}
-
-// defaultValkeyMemoryMB is 1/32 of the memory of the server, from 32 MB to 256 MB. Each
-// customer has its own Valkey container, so the limit is for one customer.
-func defaultValkeyMemoryMB(totalMB int) int {
-	return min(max(totalMB/32, 32), 256)
-}
-
-// hostMemoryMB reads the memory of the server from /proc/meminfo. It gives 0 when it cannot.
-func hostMemoryMB(path string) int {
-	b, err := os.ReadFile(path)
-	if err != nil {
-		return 0
-	}
-	for _, line := range strings.Split(string(b), "\n") {
-		f := strings.Fields(line)
-		if len(f) >= 2 && f[0] == "MemTotal:" {
-			kb, _ := strconv.Atoi(f[1])
-			return kb / 1024
-		}
-	}
-	return 0
 }
 
 // errValkeyNoCopy is the answer to a backup, a restore or a staging copy of a Valkey database.

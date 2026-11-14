@@ -34,13 +34,16 @@ func valkeyServer(t *testing.T) *Deps {
 		t.Skip("CF_TEST_VALKEY is not set: no real Valkey server")
 	}
 	d, _, _ := deps(t)
-	// The server of the tests is the Valkey container of one customer. The agent connects to
-	// the address of the test, not to the address of the customer.
+	// The server of the tests is the Valkey database server of one customer. The agent
+	// connects to the address of the test, not to the address of the customer.
 	d.ValkeyDial = func(ctx context.Context, _ string) (net.Conn, error) {
 		var dialer net.Dialer
 		return dialer.DialContext(ctx, "tcp", address)
 	}
-	if _, err := d.useDatabases(customerKey, websiteID, false); err != nil {
+	if _, err := d.useDatabases(customerKey, websiteID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.putServer(customerKey, valkeyServerKey, recordOf(databaseServer("valkey")), false); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(d.dbDir(customerValkey), 0o700); err != nil {

@@ -94,13 +94,21 @@ func TestTheDatabaseServiceKeepsTheOwnerOfItsDataDirectory(t *testing.T) {
 	d, f, _ := deps(t)
 	d.ServiceImage = func(name string) string { return "ghcr.io/cloudfactory/" + name + ":0.1.0" }
 	newFakeValkey(d)
-	// The shared containers of an earlier release, and the containers of a customer.
-	servers := []dbServer{{Engine: "mariadb"}, {Engine: "postgresql"}}
-	for _, engine := range Engines {
-		servers = append(servers, dbServer{Instance: customerKey, Engine: engine})
+	// The shared containers of an earlier release, and the database servers of a customer.
+	servers := []dbServer{{Engine: "mariadb"}, {Engine: "postgresql"}, customerValkey}
+	for _, engine := range []string{"mariadb", "postgresql"} {
+		spec := databaseServer(engine)
+		key, _ := serverKey(spec.GetId())
+		if _, err := d.putServer(customerKey, key, recordOf(spec), false); err != nil {
+			t.Fatal(err)
+		}
+		servers = append(servers, dbServer{ID: key, Engine: engine})
 	}
 	for _, s := range servers {
 		dir := filepath.Join(d.dbDir(s), s.Engine)
+		if s.ID != "" {
+			dir = d.dataDir(s)
+		}
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			t.Fatal(err)
 		}
@@ -370,12 +378,16 @@ func TestTheReportHasWebsiteUseAndCertificates(t *testing.T) {
 	if len(r.Domains) != 1 || r.Domains[0].Certificate != "valid" || !r.Domains[0].DNSPointsHere || r.Domains[0].ExpiresAt == "" {
 		t.Errorf("domains = %+v", r.Domains)
 	}
-	// A server can operate with no disk quotas, so the part is optional and tells the reason.
-	if q := r.Services[len(r.Services)-1]; q.Name != "disk-quotas" || q.State != "stopped" || !q.Optional || q.Detail == "" {
+	// A server can operate with no loop devices and with no disk quotas, so each part is
+	// optional and tells the reason.
+	if l := r.Services[len(r.Services)-1]; l.Name != "database-disk-limits" || l.State != "stopped" || !l.Optional || l.Detail == "" {
+		t.Errorf("services = %+v", r.Services)
+	}
+	if q := r.Services[len(r.Services)-2]; q.Name != "disk-quotas" || q.State != "stopped" || !q.Optional || q.Detail == "" {
 		t.Errorf("services = %+v", r.Services)
 	}
 	// The firewall is the table in the kernel, not the nftables service.
-	if f := r.Services[len(r.Services)-2]; f != (panel.Service{Name: "firewall", State: "running"}) {
+	if f := r.Services[len(r.Services)-3]; f != (panel.Service{Name: "firewall", State: "running"}) {
 		t.Errorf("services = %+v", r.Services)
 	}
 	if !f.Called("nft list table inet cloudfactory") {

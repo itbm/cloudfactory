@@ -28,7 +28,7 @@ const DBUser = "cf-db"
 var passwordRE = regexp.MustCompile(`^[A-Za-z0-9]{16,64}$`)
 
 // dbContainer checks an engine, and gives the name of its shared container of an earlier
-// release. dbServer.container gives the name of the container of a customer.
+// release. dbServer.container gives the name of the container of a database server.
 func dbContainer(engine string) (string, error) {
 	switch engine {
 	case "mariadb", "postgresql", "valkey":
@@ -81,13 +81,13 @@ func (d *Deps) sqlNow(ctx context.Context, s dbServer, statements string) (strin
 // the address that the database server sees for the website containers. "anywhere" users can
 // connect from any address, with TLS.
 //
-// A container of a customer sees quadlet.DatabaseClientAddress for each website container.
-// The shared container of an earlier release sees quadlet.ServiceAddress.
+// A database server of a customer sees quadlet.DatabaseClientAddress for each website
+// container. The shared container of an earlier release sees quadlet.ServiceAddress.
 func (d *Deps) mariaHost(s dbServer, access string) (string, error) {
 	switch access {
 	case "", "website":
 		host := quadlet.DatabaseClientAddress
-		if s.Instance == "" {
+		if s.ID == "" {
 			host = d.DatabaseClientHost
 			if host == "" {
 				host = quadlet.ServiceAddress
@@ -166,13 +166,16 @@ func (d *Deps) CreateDatabase(req *agentv1.CreateDatabaseRequest) (jobs.Job, err
 	if _, err := d.mariaHost(dbServer{}, req.GetAccess()); err != nil {
 		return jobs.Job{}, err
 	}
+	if err := checkWebsiteServer(req.GetDatabaseServer(), engine); err != nil {
+		return jobs.Job{}, err
+	}
 	if engine == "valkey" {
 		return d.createValkeyDatabase(req)
 	}
 	maria := engine == "mariadb"
 	steps := []jobs.Step{
 		{Name: "Create database", Do: func(ctx context.Context) error {
-			srv, err := d.server(req.GetWebsiteId(), engine)
+			srv, err := d.websiteServer(ctx, req.GetWebsiteId(), req.GetDatabaseServer(), engine)
 			if err != nil {
 				return err
 			}
@@ -195,7 +198,7 @@ func (d *Deps) CreateDatabase(req *agentv1.CreateDatabaseRequest) (jobs.Job, err
 	if user != "" {
 		steps = append(steps,
 			jobs.Step{Name: "Create user", Do: func(ctx context.Context) error {
-				srv, err := d.server(req.GetWebsiteId(), engine)
+				srv, err := d.server(req.GetWebsiteId(), req.GetDatabaseServer().GetId(), engine)
 				if err != nil {
 					return err
 				}
@@ -206,7 +209,7 @@ func (d *Deps) CreateDatabase(req *agentv1.CreateDatabaseRequest) (jobs.Job, err
 				return d.createUser(ctx, srv, user, pass, host, req.GetAccess())
 			}},
 			jobs.Step{Name: "Allow the website container only", Do: func(ctx context.Context) error {
-				srv, err := d.server(req.GetWebsiteId(), engine)
+				srv, err := d.server(req.GetWebsiteId(), req.GetDatabaseServer().GetId(), engine)
 				if err != nil {
 					return err
 				}
@@ -222,9 +225,10 @@ func (d *Deps) CreateDatabase(req *agentv1.CreateDatabaseRequest) (jobs.Job, err
 	return jobs.Job{ID: req.GetJobId(), Key: req.GetWebsiteId(), Steps: steps}, nil
 }
 
-// createValkeyDatabase makes a Valkey database in the Valkey container of the customer of the
-// website. It always has one user with the same name: the user is the record of the database
-// number. Only the website containers can connect. The result of the job has the number.
+// createValkeyDatabase makes a Valkey database in a Valkey database server of the customer of
+// the website. It always has one user with the same name: the user is the record of the
+// database number. Only the website containers can connect. The result of the job has the
+// number.
 func (d *Deps) createValkeyDatabase(req *agentv1.CreateDatabaseRequest) (jobs.Job, error) {
 	name := req.GetName()
 	if req.GetUser() != name {
@@ -236,7 +240,7 @@ func (d *Deps) createValkeyDatabase(req *agentv1.CreateDatabaseRequest) (jobs.Jo
 	var number int
 	return jobs.Job{ID: req.GetJobId(), Key: req.GetWebsiteId(), Steps: []jobs.Step{
 		{Name: "Create database and user", Do: func(ctx context.Context) error {
-			srv, err := d.server(req.GetWebsiteId(), "valkey")
+			srv, err := d.websiteServer(ctx, req.GetWebsiteId(), req.GetDatabaseServer(), "valkey")
 			if err != nil {
 				return err
 			}
@@ -317,8 +321,8 @@ func (d *Deps) mariaCurrentHost(ctx context.Context, s dbServer, user string) (s
 }
 
 // SetDatabaseUser sets the full state of a database user: its password, where it can connect
-// from, and its access to each database of the website (FR-502). A user can read one database
-// and change a different database, for example.
+// from, and its access to each database of the website in its database server (FR-502). A
+// user can read one database and change a different database, for example.
 func (d *Deps) SetDatabaseUser(req *agentv1.SetDatabaseUserRequest) (jobs.Job, error) {
 	unixUser, user, engine := req.GetUnixUser(), req.GetName(), req.GetEngine()
 	errs := []error{validate.ID(req.GetWebsiteId()), validate.TenantDatabaseName(unixUser, user)}
@@ -344,13 +348,13 @@ func (d *Deps) SetDatabaseUser(req *agentv1.SetDatabaseUserRequest) (jobs.Job, e
 		errs = append(errs, errors.New("the database password must have 16 to 64 letters and digits"))
 	}
 	_, err := d.mariaHost(dbServer{}, req.GetAccess())
-	errs = append(errs, err)
+	errs = append(errs, err, checkWebsiteServer(req.GetDatabaseServer(), engine))
 	if err := errors.Join(errs...); err != nil {
 		return jobs.Job{}, err
 	}
-	// server gives the container of the engine for the website, and the host part of the user.
-	server := func() (dbServer, string, error) {
-		srv, err := d.server(req.GetWebsiteId(), engine)
+	// server gives the container of the user, and the host part of the user.
+	server := func(ctx context.Context) (dbServer, string, error) {
+		srv, err := d.websiteServer(ctx, req.GetWebsiteId(), req.GetDatabaseServer(), engine)
 		if err != nil {
 			return srv, "", err
 		}
@@ -368,7 +372,7 @@ func (d *Deps) SetDatabaseUser(req *agentv1.SetDatabaseUserRequest) (jobs.Job, e
 				if pass == "" {
 					return nil
 				}
-				srv, _, err := server()
+				srv, _, err := server(ctx)
 				if err != nil {
 					return err
 				}
@@ -379,7 +383,7 @@ func (d *Deps) SetDatabaseUser(req *agentv1.SetDatabaseUserRequest) (jobs.Job, e
 	maria := engine == "mariadb"
 	return jobs.Job{ID: req.GetJobId(), Key: req.GetWebsiteId(), Steps: []jobs.Step{
 		{Name: "Set user and password", Do: func(ctx context.Context) error {
-			srv, host, err := server()
+			srv, host, err := server(ctx)
 			if err != nil {
 				return err
 			}
@@ -409,7 +413,7 @@ func (d *Deps) SetDatabaseUser(req *agentv1.SetDatabaseUserRequest) (jobs.Job, e
 			return err
 		}},
 		{Name: "Set access to databases", Do: func(ctx context.Context) error {
-			srv, host, err := server()
+			srv, host, err := server(ctx)
 			if err != nil {
 				return err
 			}
@@ -434,7 +438,8 @@ func (d *Deps) SetDatabaseUser(req *agentv1.SetDatabaseUserRequest) (jobs.Job, e
 // DeleteDatabaseUser removes a database user.
 func (d *Deps) DeleteDatabaseUser(req *agentv1.DeleteDatabaseUserRequest) (jobs.Job, error) {
 	unixUser, user, engine := req.GetUnixUser(), req.GetName(), req.GetEngine()
-	if err := errors.Join(validate.ID(req.GetWebsiteId()), validate.TenantDatabaseName(unixUser, user)); err != nil {
+	_, serverErr := serverKey(req.GetDatabaseServer())
+	if err := errors.Join(validate.ID(req.GetWebsiteId()), validate.TenantDatabaseName(unixUser, user), serverErr); err != nil {
 		return jobs.Job{}, err
 	}
 	if _, err := dbContainer(engine); err != nil {
@@ -445,7 +450,7 @@ func (d *Deps) DeleteDatabaseUser(req *agentv1.DeleteDatabaseUserRequest) (jobs.
 	}
 	return jobs.Job{ID: req.GetJobId(), Key: req.GetWebsiteId(), Steps: []jobs.Step{
 		{Name: "Remove user", Do: func(ctx context.Context) error {
-			srv, err := d.server(req.GetWebsiteId(), engine)
+			srv, err := d.server(req.GetWebsiteId(), req.GetDatabaseServer(), engine)
 			if err != nil {
 				return err
 			}
@@ -486,7 +491,8 @@ func (d *Deps) dropUser(ctx context.Context, s dbServer, user string) error {
 // DeleteDatabase removes the access of all users to a database, then the database.
 func (d *Deps) DeleteDatabase(req *agentv1.DeleteDatabaseRequest) (jobs.Job, error) {
 	unixUser, name, engine := req.GetUnixUser(), req.GetName(), req.GetEngine()
-	errs := []error{validate.ID(req.GetWebsiteId()), validate.TenantDatabaseName(unixUser, name)}
+	_, serverErr := serverKey(req.GetDatabaseServer())
+	errs := []error{validate.ID(req.GetWebsiteId()), validate.TenantDatabaseName(unixUser, name), serverErr}
 	for _, u := range req.GetUsers() {
 		errs = append(errs, validate.TenantDatabaseName(unixUser, u))
 	}
@@ -499,7 +505,7 @@ func (d *Deps) DeleteDatabase(req *agentv1.DeleteDatabaseRequest) (jobs.Job, err
 	if engine == "valkey" {
 		return jobs.Job{ID: req.GetJobId(), Key: req.GetWebsiteId(), Steps: []jobs.Step{
 			{Name: "Remove database and user", Do: func(ctx context.Context) error {
-				srv, err := d.server(req.GetWebsiteId(), engine)
+				srv, err := d.server(req.GetWebsiteId(), req.GetDatabaseServer(), engine)
 				if err != nil {
 					return err
 				}
@@ -509,7 +515,7 @@ func (d *Deps) DeleteDatabase(req *agentv1.DeleteDatabaseRequest) (jobs.Job, err
 	}
 	return jobs.Job{ID: req.GetJobId(), Key: req.GetWebsiteId(), Steps: []jobs.Step{
 		{Name: "Remove access of users", Do: func(ctx context.Context) error {
-			srv, err := d.server(req.GetWebsiteId(), engine)
+			srv, err := d.server(req.GetWebsiteId(), req.GetDatabaseServer(), engine)
 			if err != nil {
 				return err
 			}
@@ -528,7 +534,7 @@ func (d *Deps) DeleteDatabase(req *agentv1.DeleteDatabaseRequest) (jobs.Job, err
 			return err
 		}},
 		{Name: "Remove database", Do: func(ctx context.Context) error {
-			srv, err := d.server(req.GetWebsiteId(), engine)
+			srv, err := d.server(req.GetWebsiteId(), req.GetDatabaseServer(), engine)
 			if err != nil {
 				return err
 			}
@@ -794,6 +800,9 @@ func (d *Deps) Backup(req *agentv1.BackupRequest) (jobs.Job, error) {
 		if err := validate.TenantDatabaseName(req.GetUnixUser(), db.GetName()); err != nil {
 			return jobs.Job{}, err
 		}
+		if _, err := serverKey(db.GetDatabaseServer()); err != nil {
+			return jobs.Job{}, err
+		}
 	}
 	// The kind is a tag of the snapshot, and the retention policy uses it.
 	if k := req.GetKind(); k != "manual" && k != "scheduled" {
@@ -827,7 +836,7 @@ func (d *Deps) Backup(req *agentv1.BackupRequest) (jobs.Job, error) {
 				return err
 			}
 			for _, db := range req.GetDatabases() {
-				srv, err := d.server(req.GetWebsiteId(), db.GetEngine())
+				srv, err := d.server(req.GetWebsiteId(), db.GetDatabaseServer(), db.GetEngine())
 				if err != nil {
 					return err
 				}
@@ -985,7 +994,8 @@ func (d *Deps) Restore(req *agentv1.RestoreRequest) (jobs.Job, error) {
 		if err := sqlEngine(engine); err != nil {
 			return jobs.Job{}, err
 		}
-		if err := errors.Join(validate.TenantDatabaseName(unixUser, name), validate.SHA256(req.GetDumpSha256())); err != nil {
+		_, serverErr := serverKey(req.GetDatabaseServer())
+		if err := errors.Join(validate.TenantDatabaseName(unixUser, name), validate.SHA256(req.GetDumpSha256()), serverErr); err != nil {
 			return jobs.Job{}, err
 		}
 		dbEngine, dbName = engine, name
@@ -1031,7 +1041,7 @@ func (d *Deps) Restore(req *agentv1.RestoreRequest) (jobs.Job, error) {
 			if sum != req.GetDumpSha256() {
 				return errors.New("the dump does not agree with the hash from the backup")
 			}
-			srv, err := d.server(req.GetWebsiteId(), dbEngine)
+			srv, err := d.server(req.GetWebsiteId(), req.GetDatabaseServer(), dbEngine)
 			if err != nil {
 				return err
 			}

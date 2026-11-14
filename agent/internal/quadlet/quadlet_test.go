@@ -2,6 +2,7 @@ package quadlet
 
 import (
 	"net"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -277,27 +278,36 @@ func TestEachGvisorUnitIgnoresCgroups(t *testing.T) {
 	}
 }
 
-// The database containers of a customer have their own name, address, label and limits. The
-// shared container of an earlier release keeps its name and the service address.
-func TestDatabaseUnitOfACustomer(t *testing.T) {
+// A database server of a customer has its own name, port, labels and limits, on the address of
+// its customer. The shared container of an earlier release keeps its name and the service
+// address.
+func TestDatabaseUnitOfADatabaseServer(t *testing.T) {
 	gv := Runtime{RunscPath: "/usr/local/bin/runsc", Platform: "systrap"}
-	key := "01jbq3z5k8n6t4w2x9y7r5p3c1"
+	id, customer := "01jbq3z5k8n6t4w2x9y7r5p3d1", "01jbq3z5k8n6t4w2x9y7r5p3c1"
 	ports := map[string]string{"mariadb": "3306", "postgresql": "5432", "valkey": "6379"}
 	for engine, port := range ports {
-		u := DatabaseUnit(Database{Engine: engine, Instance: key, Address: "169.254.80.2", Gvisor: gv, Image: "image", DataDir: "/data", EnvFile: "/env",
+		u := DatabaseUnit(Database{Engine: engine, ID: id, Customer: customer, Address: "169.254.80.2", Gvisor: gv, Image: "image", DataDir: "/data", EnvFile: "/env",
 			Limits: Limits{MemoryBytes: 1 << 30, VCPUs: 1.5}})
 		for _, want := range []string{
-			"ContainerName=cf-" + engine + "-" + key + "\n",
+			"ContainerName=cf-" + engine + "-" + id + "\n",
 			"PublishPort=169.254.80.2:" + port + ":" + port + "\n",
-			"Label=io.cloudfactory.customer=" + key + "\n",
+			"Label=io.cloudfactory.database-server=" + id + "\n",
+			"Label=io.cloudfactory.customer=" + customer + "\n",
 			"[Service]\nRestart=always\nTimeoutStartSec=900\nCPUQuota=150%\nMemoryMax=1073741824\nMemorySwapMax=0\n",
 		} {
 			if !strings.Contains(u, want) {
-				t.Errorf("%s of a customer has no %q:\n%s", engine, want, u)
+				t.Errorf("the %s database server has no %q:\n%s", engine, want, u)
 			}
 		}
 		if strings.Contains(u, ServiceAddress) {
-			t.Errorf("%s of a customer uses the service address:\n%s", engine, u)
+			t.Errorf("the %s database server uses the service address:\n%s", engine, u)
+		}
+		// A second database server of the engine has the next port on the address. The port
+		// in the container does not change.
+		first, _ := strconv.Atoi(port)
+		second := DatabaseUnit(Database{Engine: engine, ID: id, Customer: customer, Address: "169.254.80.2", Port: first + 1, Gvisor: gv, Image: "image", DataDir: "/data", EnvFile: "/env"})
+		if want := "PublishPort=169.254.80.2:" + strconv.Itoa(first+1) + ":" + port + "\n"; !strings.Contains(second, want) {
+			t.Errorf("the second %s database server has no %q:\n%s", engine, want, second)
 		}
 		shared := DatabaseUnit(Database{Engine: engine, Gvisor: gv, Image: "image", DataDir: "/data", EnvFile: "/env"})
 		for _, want := range []string{"ContainerName=cf-" + engine + "\n", "PublishPort=" + ServiceAddress + ":" + port + ":" + port + "\n"} {
@@ -305,7 +315,7 @@ func TestDatabaseUnitOfACustomer(t *testing.T) {
 				t.Errorf("the shared %s has no %q:\n%s", engine, want, shared)
 			}
 		}
-		for _, not := range []string{"io.cloudfactory.customer", "MemoryMax", "CPUQuota"} {
+		for _, not := range []string{"io.cloudfactory.customer", "io.cloudfactory.database-server", "MemoryMax", "CPUQuota"} {
 			if strings.Contains(shared, not) {
 				t.Errorf("the shared %s has %q:\n%s", engine, not, shared)
 			}
@@ -313,7 +323,50 @@ func TestDatabaseUnitOfACustomer(t *testing.T) {
 	}
 }
 
-// The database host names of a website go to the address of the containers of its customer.
+// Each engine has its own range of ports on the address of a customer.
+func TestDatabasePorts(t *testing.T) {
+	used := map[int]string{}
+	for _, engine := range []string{"mariadb", "postgresql", "valkey"} {
+		first := DatabasePort(engine)
+		for port := first; port < first+DatabasePorts; port++ {
+			if err := CheckDatabasePort(engine, port); err != nil {
+				t.Errorf("%s port %d: %v", engine, port, err)
+			}
+			if other, ok := used[port]; ok {
+				t.Errorf("port %d is a port of %s and of %s", port, other, engine)
+			}
+			used[port] = engine
+		}
+		for _, port := range []int{0, first - 1, first + DatabasePorts} {
+			if err := CheckDatabasePort(engine, port); err == nil {
+				t.Errorf("%s port %d: no error", engine, port)
+			}
+		}
+	}
+}
+
+// PostgreSQL does not fill a small disk with its write-ahead log.
+func TestPostgresWriteAheadLogLimit(t *testing.T) {
+	for diskMB, want := range map[int64]int{0: 0, 256: 64, 1024: 128, 5120: 640, 8192: 1024, 102400: 1024} {
+		if got := PostgresWALMB(diskMB << 20); got != want {
+			t.Errorf("%d MB: %d, want %d", diskMB, got, want)
+		}
+	}
+	d := Database{Engine: "postgresql", ID: "01jbq3z5k8n6t4w2x9y7r5p3d2", DiskBytes: 5 << 30}
+	if u := DatabaseUnit(d); !strings.Contains(u, "Exec=postgres -c max_wal_size=640MB -c min_wal_size=32MB\n") {
+		t.Errorf("no limit of the write-ahead log:\n%s", u)
+	}
+	// MariaDB has no such option, and a database server with no disk limit keeps the usual limit.
+	d.Engine = "mariadb"
+	if u := DatabaseUnit(d); strings.Contains(u, "Exec=") {
+		t.Errorf("the MariaDB unit has a command:\n%s", u)
+	}
+	if u := DatabaseUnit(Database{Engine: "postgresql"}); strings.Contains(u, "Exec=") {
+		t.Errorf("the unit with no disk limit has a command:\n%s", u)
+	}
+}
+
+// The database host names of a website go to the address of its customer.
 // A website of an earlier release keeps the service address.
 func TestWebsiteDatabaseAddress(t *testing.T) {
 	w := website()

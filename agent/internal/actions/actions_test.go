@@ -26,9 +26,9 @@ const (
 	websiteID = "01JBQ3Z5K8N6T4W2X9Y7R5P3M1"
 	jobID     = "01JBQ3Z5K8N6T4W2X9Y7R5P3M2"
 	jobID2    = "01JBQ3Z5K8N6T4W2X9Y7R5P3M3"
-	// customerID is the ID of the customer of a website that uses the database containers of
-	// its customer. customerKey is the key of those containers, and customerAddress is the
-	// address of the first customer of a server.
+	// customerID is the ID of the customer of a website that uses the database servers of its
+	// customer. customerKey is the key of the record of the customer, and customerAddress is
+	// the address of the first customer of a server.
 	customerID      = "01JBQ3Z5K8N6T4W2X9Y7R5P3C1"
 	customerKey     = "01jbq3z5k8n6t4w2x9y7r5p3c1"
 	customerAddress = "169.254.80.2"
@@ -97,6 +97,9 @@ func deps(t *testing.T) (*Deps, *execx.Fake, *fakeEdge) {
 		FirewallFile: filepath.Join(dir, "cloudfactory.nft"),
 		FirewallDir:  filepath.Join(dir, "firewall"),
 		AddressUnit:  filepath.Join(dir, "cloudfactory-address.service"),
+		// A server with no loop devices: the disk of a database server is a directory, and
+		// the tests mount nothing.
+		LoopControl: filepath.Join(dir, "no-loop-control"),
 	}
 	return d, run, edge
 }
