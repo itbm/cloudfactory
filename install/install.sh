@@ -263,7 +263,7 @@ check_arguments() {
 	# The same check as validate.SftpPort in the agent.
 	case "$SFTP_PORT" in
 	*[!0-9]* | 0*) problem "--sftp-port $SFTP_PORT is not a port number." ;;
-	22 | 80 | 443 | 3306 | 5432 | 7443 | 8080 | 8443 | 19080 | 19081 | 19432 | 19443) problem "--sftp-port $SFTP_PORT is in use by a different Cloudfactory service." ;;
+	22 | 80 | 443 | 3306 | 5432 | 6379 | 7443 | 8080 | 8443 | 19080 | 19081 | 19432 | 19443) problem "--sftp-port $SFTP_PORT is in use by a different Cloudfactory service." ;;
 	*)
 		if [ "$SFTP_PORT" -gt 65535 ]; then
 			problem "--sftp-port $SFTP_PORT is not a port number."
@@ -336,7 +336,7 @@ table inet cloudfactory {
     # Port 19432 is the database of the panel. Only root and the containers of the panel
     # (cf-panel) can connect to it. Each connection also needs the password.
     ct state new ip daddr $SERVICE_ADDRESS tcp dport 19432 meta skuid != { 0, $panel_uid } reject with tcp reset
-    ct state new ip daddr $SERVICE_ADDRESS tcp dport != { 3306, 5432, 19432 } meta skuid != { 0, $edge_uid } reject with tcp reset
+    ct state new ip daddr $SERVICE_ADDRESS tcp dport != { 3306, 5432, 6379, 19432 } meta skuid != { 0, $edge_uid } reject with tcp reset
     # Audit finding S1: the limits for the connections that a website container opens. The
     # agent makes each website user with a UID from $WEBSITE_UID_MIN to $WEBSITE_UID_MAX. The
     # rule checks only new connections, so it does not change the answers to the visitors.
@@ -344,7 +344,7 @@ table inet cloudfactory {
   }
   chain websites {
     # The shared databases on the private service address.
-    ip daddr $SERVICE_ADDRESS tcp dport { 3306, 5432 } accept
+    ip daddr $SERVICE_ADDRESS tcp dport { 3306, 5432, 6379 } accept
     # DNS. The resolver of the host can have a private or a link-local address.
     meta l4proto { tcp, udp } th dport 53 accept
     # The networks of the option --allow-website-network.

@@ -427,15 +427,11 @@ func checkCopies(req *agentv1.WebsiteRequest) error {
 	var errs []error
 	user := req.GetWebsite().GetUnixUser()
 	for _, c := range req.GetCopyDatabases() {
-		if _, err := dbContainer(c.GetEngine()); err != nil {
-			errs = append(errs, err)
-		}
+		errs = append(errs, sqlEngine(c.GetEngine()))
 		errs = append(errs, validate.TenantDatabaseName(req.GetCopyFromUnixUser(), c.GetFrom()), validate.TenantDatabaseName(user, c.GetTo()))
 	}
 	for _, u := range req.GetCopyUsers() {
-		if _, err := dbContainer(u.GetEngine()); err != nil {
-			errs = append(errs, err)
-		}
+		errs = append(errs, sqlEngine(u.GetEngine()))
 		errs = append(errs, validate.TenantDatabaseName(user, u.GetName()))
 		if !passwordRE.MatchString(u.GetPassword()) {
 			errs = append(errs, errors.New("the database password must have 16 to 64 letters and digits"))

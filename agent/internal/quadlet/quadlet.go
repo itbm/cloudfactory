@@ -104,6 +104,7 @@ type Website struct {
 const (
 	MariaDBHost    = "mariadb.internal"
 	PostgreSQLHost = "postgres.internal"
+	ValkeyHost     = "valkey.internal"
 )
 
 // ContainerName is the name of the Podman container.
@@ -162,6 +163,7 @@ func ContainerUnit(w Website) string {
 	// The database containers publish their ports on ServiceAddress.
 	line("AddHost", MariaDBHost+":"+ServiceAddress)
 	line("AddHost", PostgreSQLHost+":"+ServiceAddress)
+	line("AddHost", ValkeyHost+":"+ServiceAddress)
 	line("Volume", w.SiteDir+":/app:Z")
 	if w.IniFile != "" && w.Runtime != "custom" {
 		line("Volume", w.IniFile+":/usr/local/etc/php/conf.d/zz-cloudfactory.ini:ro,Z")
@@ -292,39 +294,77 @@ func EdgeUnit(e Edge) string {
 // Database is the input for the unit of a shared database container (FR-501). The user
 // cf-db runs the containers. Each website connects with its own database user.
 type Database struct {
-	// Engine is "mariadb" or "postgresql".
+	// Engine is "mariadb", "postgresql" or "valkey".
 	Engine string
 	Image  string
 	// DataDir holds the data files on the host.
 	DataDir string
-	// EnvFile holds the password of the superuser. Only cf-db can read it.
+	// EnvFile holds the password of the superuser. Only cf-db can read it. Valkey does not
+	// use it: its user file in DataDir has the hash of the password of the administrator.
 	EnvFile string
 	Gvisor  Runtime
+	// MemoryMB is the memory limit of Valkey for its data, in MB.
+	MemoryMB int
 }
 
 // DatabaseContainer is the name of the shared container of an engine.
 func DatabaseContainer(engine string) string { return "cf-" + engine }
 
 // DatabasePort is the port of an engine on ServiceAddress. The website containers connect to
-// it through the host names MariaDBHost and PostgreSQLHost.
+// it through the host names MariaDBHost, PostgreSQLHost and ValkeyHost.
 func DatabasePort(engine string) int {
-	if engine == "postgresql" {
+	switch engine {
+	case "postgresql":
 		return 5432
+	case "valkey":
+		return 6379
 	}
 	return 3306
+}
+
+// ValkeyDatabases is the number of databases of the shared Valkey container. Database 0 is
+// for no website: a new connection starts there, and a website user has no access to it.
+// Thus one server can have 1023 Valkey databases.
+const ValkeyDatabases = 1024
+
+// ValkeyUsersFile is the name of the user file of Valkey in its data directory.
+const ValkeyUsersFile = "users.acl"
+
+// ValkeyArgs gives the options of the Valkey server.
+func ValkeyArgs(d Database) []string {
+	memory := d.MemoryMB
+	if memory <= 0 {
+		memory = 256
+	}
+	return []string{
+		"--bind", "0.0.0.0",
+		"--port", strconv.Itoa(DatabasePort("valkey")),
+		"--databases", strconv.Itoa(ValkeyDatabases),
+		// The users and the database number of each user. Each connection needs a user and a
+		// password: the user "default" has the password of the administrator.
+		"--aclfile", "/data/" + ValkeyUsersFile,
+		// The append-only file keeps the data after a restart. Valkey writes it each second.
+		"--appendonly", "yes",
+		"--save", `""`,
+		// When the memory is full, Valkey removes the keys that were not used for the longest time.
+		"--maxmemory", strconv.Itoa(memory) + "mb",
+		"--maxmemory-policy", "allkeys-lru",
+	}
 }
 
 // DatabaseUnit gives the container unit of a shared database.
 //
 // The superuser can connect only through the socket in the container, with "podman exec".
 // The agent uses it. Each connection on the published port needs a password: MariaDB has no
-// root user for TCP, and PostgreSQL uses scram-sha-256 for all TCP connections.
+// root user for TCP, and PostgreSQL uses scram-sha-256 for all TCP connections. Valkey has no
+// socket for the agent: the agent connects to the published port as the administrator, with a
+// password that only root can read.
 func DatabaseUnit(d Database) string {
 	name := DatabaseContainer(d.Engine)
 	port := strconv.Itoa(DatabasePort(d.Engine))
 	lines := []string{
 		"[Unit]",
-		"Description=Cloudfactory " + map[string]string{"mariadb": "MariaDB", "postgresql": "PostgreSQL"}[d.Engine] + " service",
+		"Description=Cloudfactory " + map[string]string{"mariadb": "MariaDB", "postgresql": "PostgreSQL", "valkey": "Valkey"}[d.Engine] + " service",
 		"",
 		"[Container]",
 		"ContainerName=" + name,
@@ -342,7 +382,15 @@ func DatabaseUnit(d Database) string {
 		"ReadOnly=true",
 		"Tmpfs=/tmp",
 	}
-	if d.Engine == "mariadb" {
+	switch d.Engine {
+	case "valkey":
+		lines = append(lines,
+			// The data and the user file. The entry point of the image gives the files to the
+			// user valkey of the container.
+			"Volume="+d.DataDir+":/data:Z",
+			"Exec=valkey-server "+strings.Join(ValkeyArgs(d), " "),
+		)
+	case "mariadb":
 		lines = append(lines,
 			"Volume="+d.DataDir+":/var/lib/mysql:Z",
 			"Tmpfs=/run/mysqld",
@@ -353,7 +401,7 @@ func DatabaseUnit(d Database) string {
 			"Environment=MARIADB_ROOT_HOST=localhost",
 			"Environment=MARIADB_AUTO_UPGRADE=1",
 		)
-	} else {
+	default:
 		lines = append(lines,
 			// PGDATA is the mount itself. The entry point changes to the user postgres, which
 			// cannot go through the mount directory (mode 0700) to a directory below it.

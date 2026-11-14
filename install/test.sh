@@ -140,7 +140,7 @@ fi
 # does not open the port for the edge proxy.
 # shellcheck disable=SC2016 # The patterns are text of the script, not variables of this test.
 if grep -q 'ip daddr $SERVICE_ADDRESS tcp dport 19432 meta skuid != { 0, $panel_uid } reject with tcp reset' "$HERE/install.sh" &&
-	grep -q 'tcp dport != { 3306, 5432, 19432 } meta skuid != { 0, $edge_uid } reject with tcp reset' "$HERE/install.sh" &&
+	grep -q 'tcp dport != { 3306, 5432, 6379, 19432 } meta skuid != { 0, $edge_uid } reject with tcp reset' "$HERE/install.sh" &&
 	grep -q 'PanelDatabasePort = 19432' "$HERE/../agent/internal/quadlet/quadlet.go"; then
 	PASS=$((PASS + 1))
 else
@@ -172,7 +172,7 @@ line() { grep -nxF -- "    $1" "$2" | head -n 1 | cut -d: -f1 | grep . || echo 0
 
 firewall >"$WORK/default.nft"
 rule "the website users go to the website chain" yes 'ct state new meta skuid 20000-59999 jump websites' "$WORK/default.nft"
-rule "a website reaches the shared databases" yes 'ip daddr 169.254.77.1 tcp dport { 3306, 5432 } accept' "$WORK/default.nft"
+rule "a website reaches the shared databases" yes 'ip daddr 169.254.77.1 tcp dport { 3306, 5432, 6379 } accept' "$WORK/default.nft"
 rule "a website reaches the DNS resolver" yes 'meta l4proto { tcp, udp } th dport 53 accept' "$WORK/default.nft"
 rule "a website does not reach the services of the server" yes 'fib daddr type { local, broadcast, multicast } jump refuse' "$WORK/default.nft"
 rule "a website does not reach link-local and private networks" yes 'ip daddr { 0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 168.63.129.16, 169.254.0.0/16, 172.16.0.0/12, 192.168.0.0/16, 224.0.0.0/3 } jump refuse' "$WORK/default.nft"
@@ -194,9 +194,9 @@ if [ "$(line 'ip6 saddr ::1 return' "$WORK/default.nft")" -lt "$(line 'fib daddr
 rule "the panel database rule has the user of the panel" yes 'ct state new ip daddr 169.254.77.1 tcp dport 19432 meta skuid != { 0, 992 } reject with tcp reset' "$WORK/default.nft"
 # The rule for the ports of the other websites comes before the website chain, and the
 # databases come before the rule that closes the addresses of the server.
-other=$(line 'ct state new ip daddr 169.254.77.1 tcp dport != { 3306, 5432, 19432 } meta skuid != { 0, 991 } reject with tcp reset' "$WORK/default.nft")
+other=$(line 'ct state new ip daddr 169.254.77.1 tcp dport != { 3306, 5432, 6379, 19432 } meta skuid != { 0, 991 } reject with tcp reset' "$WORK/default.nft")
 jump=$(line 'ct state new meta skuid 20000-59999 jump websites' "$WORK/default.nft")
-databases=$(line 'ip daddr 169.254.77.1 tcp dport { 3306, 5432 } accept' "$WORK/default.nft")
+databases=$(line 'ip daddr 169.254.77.1 tcp dport { 3306, 5432, 6379 } accept' "$WORK/default.nft")
 local_rule=$(line 'fib daddr type { local, broadcast, multicast } jump refuse' "$WORK/default.nft")
 if [ "$other" -gt 0 ] && [ "$other" -lt "$jump" ] && [ "$databases" -gt 0 ] && [ "$databases" -lt "$local_rule" ]; then PASS=$((PASS + 1)); else FAIL=$((FAIL + 1)); echo 'FAIL: the order of the website firewall rules'; fi
 

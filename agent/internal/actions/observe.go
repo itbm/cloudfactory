@@ -119,6 +119,7 @@ func (d *Deps) FillReport(ctx context.Context, r *panel.Report) {
 		o.dbAt = now
 	}
 	r.Databases = o.dbSizes
+	r.DatabaseEngines = Engines
 	r.Services = append(r.Services, d.firewallService(ctx), d.quotaService())
 }
 
@@ -392,6 +393,12 @@ func (d *Deps) databaseSizes(ctx context.Context) []panel.DatabaseSize {
 	}
 	for _, engine := range Engines {
 		if !ready[engine] {
+			continue
+		}
+		if engine == "valkey" {
+			if sizes, err := d.valkeySizes(ctx); err == nil {
+				out = append(out, sizes...)
+			}
 			continue
 		}
 		res, err := d.sqlNow(ctx, engine, queries[engine])

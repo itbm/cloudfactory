@@ -12,7 +12,7 @@ import (
 )
 
 // Engines are the database engines of the shared database containers.
-var Engines = []string{"mariadb", "postgresql"}
+var Engines = []string{"mariadb", "postgresql", "valkey"}
 
 // dbHome is the home directory of the user cf-db. The data of the database containers is there.
 func (d *Deps) dbHome() string {
@@ -52,13 +52,17 @@ func (d *Deps) makeDataDir(ctx context.Context, dir, user string) error {
 
 func (d *Deps) dbUnit(engine string) quadlet.Database {
 	home := d.dbHome()
-	return quadlet.Database{
+	u := quadlet.Database{
 		Engine:  engine,
 		Image:   d.serviceImage(engine),
 		DataDir: filepath.Join(home, engine),
 		EnvFile: filepath.Join(home, engine+".env"),
 		Gvisor:  d.runtime(),
 	}
+	if engine == "valkey" {
+		u.MemoryMB = d.valkeyMemoryMB()
+	}
+	return u
 }
 
 // EnsureDatabaseService starts the shared container of an engine, if it does not operate, and
@@ -87,7 +91,16 @@ func (d *Deps) EnsureDatabaseService(ctx context.Context, engine string) error {
 	if err := d.makeDataDir(ctx, u.DataDir, DBUser); err != nil {
 		return err
 	}
-	if err := d.writeSuperuserSecret(ctx, engine, u.EnvFile); err != nil {
+	if engine == "valkey" {
+		// Valkey has a user file, not an environment file. The websites of a server from an
+		// earlier release also need the port of Valkey in the firewall.
+		if err := d.writeValkeyUsers(ctx, u.DataDir); err != nil {
+			return err
+		}
+		if err := d.openValkeyPort(ctx); err != nil {
+			return err
+		}
+	} else if err := d.writeSuperuserSecret(ctx, engine, u.EnvFile); err != nil {
 		return err
 	}
 	changed, err := d.Host.WriteUnit(DBUser, quadlet.DatabaseContainer(engine)+".container", quadlet.DatabaseUnit(u))
@@ -160,7 +173,12 @@ func (d *Deps) waitDatabase(ctx context.Context, engine string) error {
 	}
 	deadline := time.Now().Add(timeout)
 	for {
-		_, err := d.sqlNow(ctx, engine, "SELECT 1;\n")
+		var err error
+		if engine == "valkey" {
+			err = d.valkeyReady(ctx)
+		} else {
+			_, err = d.sqlNow(ctx, engine, "SELECT 1;\n")
+		}
 		if err == nil {
 			return nil
 		}

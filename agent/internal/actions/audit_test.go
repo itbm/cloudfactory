@@ -79,7 +79,7 @@ func TestWebsitesHaveDatabaseHostNames(t *testing.T) {
 	d, _, _ := deps(t)
 	run(t)(d.CreateWebsite(&agentv1.WebsiteRequest{JobId: jobID, Website: website("ghcr.io/cloudfactory/frankenphp-php8.4:8.4.0-1")}))
 	u := unitFile(t, d, "acme_x7k2", "cf-acme_x7k2.container")
-	for _, want := range []string{"AddHost=mariadb.internal:169.254.77.1\n", "AddHost=postgres.internal:169.254.77.1\n", "Environment=CF_DOCUMENT_ROOT=/app/public\n"} {
+	for _, want := range []string{"AddHost=mariadb.internal:169.254.77.1\n", "AddHost=postgres.internal:169.254.77.1\n", "AddHost=valkey.internal:169.254.77.1\n", "Environment=CF_DOCUMENT_ROOT=/app/public\n"} {
 		if !strings.Contains(u, want) {
 			t.Errorf("unit has no %q:\n%s", want, u)
 		}
@@ -93,6 +93,7 @@ func TestWebsitesHaveDatabaseHostNames(t *testing.T) {
 func TestTheDatabaseServiceKeepsTheOwnerOfItsDataDirectory(t *testing.T) {
 	d, f, _ := deps(t)
 	d.ServiceImage = func(name string) string { return "ghcr.io/cloudfactory/" + name + ":0.1.0" }
+	newFakeValkey(d)
 	for _, engine := range Engines {
 		dir := filepath.Join(d.DBHome, engine)
 		if err := os.MkdirAll(dir, 0o700); err != nil {

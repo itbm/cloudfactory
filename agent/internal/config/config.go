@@ -61,6 +61,11 @@ type Config struct {
 	// SftpPort is the public port of the SFTP container of the websites. The default is 2200.
 	// Port 22 stays for the SSH service of the host. After a change, restart cf-agent.
 	SftpPort int `json:"sftpPort,omitempty"`
+	// ValkeyMemoryMB is the memory limit of the shared Valkey container for its data, in MB.
+	// The default is one eighth of the memory of the server, from 64 MB to 1024 MB. When the
+	// memory is full, Valkey removes the keys that were not used for the longest time. After
+	// a change, restart cf-agent.
+	ValkeyMemoryMB int `json:"valkeyMemoryMb,omitempty"`
 	// PublicAddresses are the public IP addresses of a server behind NAT, for example on a
 	// cloud provider. The DNS check accepts them as addresses of this server.
 	PublicAddresses []string `json:"publicAddresses,omitempty"`
@@ -127,6 +132,9 @@ func (c Config) Check() error {
 	}
 	if err := validate.SftpPort(c.SftpPort); err != nil {
 		errs = append(errs, fmt.Errorf("sftpPort: %w", err))
+	}
+	if c.ValkeyMemoryMB != 0 && c.ValkeyMemoryMB < 16 {
+		errs = append(errs, errors.New("valkeyMemoryMb must be 16 or more"))
 	}
 	if c.JobTimeoutMinutes < 0 || c.LongJobTimeoutMinutes < 0 {
 		errs = append(errs, errors.New("jobTimeoutMinutes and longJobTimeoutMinutes must not be negative"))

@@ -7,6 +7,7 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"sync"
@@ -88,6 +89,12 @@ type Deps struct {
 	ServiceImage func(name string) string
 	// DBHome is the home directory of cf-db. The default is "/var/lib/cf-db".
 	DBHome string
+	// ValkeyMemoryMB is the memory limit of the shared Valkey container for its data, in MB.
+	// 0 means one eighth of the memory of the server, from 64 MB to 1024 MB.
+	ValkeyMemoryMB int
+	// ValkeyDial opens a connection to the shared Valkey container. Nil means a connection to
+	// its port on quadlet.ServiceAddress. Tests replace it.
+	ValkeyDial func(ctx context.Context) (net.Conn, error)
 	// SftpKeysDir holds the SSH keys of each website user. The default is "/etc/cloudfactory/sftp".
 	SftpKeysDir string
 	// SftpUsersDir holds the user list of the SFTP container. The default is
@@ -130,9 +137,11 @@ type Deps struct {
 	PanelCertificateWait time.Duration
 	PanelCertificatePoll time.Duration
 
-	dbMu    sync.Mutex
-	sftpMu  sync.Mutex
-	dbReady map[string]bool
+	dbMu sync.Mutex
+	// valkeyMu makes the search for a free Valkey database number and its user one step.
+	valkeyMu sync.Mutex
+	sftpMu   sync.Mutex
+	dbReady  map[string]bool
 	// backupSlots limits the backups that operate at the same time (BackupSlots).
 	backupSlots chan struct{}
 	rtMu        sync.RWMutex

@@ -261,6 +261,7 @@ func TestEachGvisorUnitIgnoresCgroups(t *testing.T) {
 		"edge":    EdgeUnit(Edge{Gvisor: gv}),
 		"mariadb": DatabaseUnit(Database{Engine: "mariadb", Gvisor: gv}),
 		"pgsql":   DatabaseUnit(Database{Engine: "postgresql", Gvisor: gv}),
+		"valkey":  DatabaseUnit(Database{Engine: "valkey", Gvisor: gv}),
 	}
 	for name, u := range PanelUnits(Panel{Registry: "ghcr.io/itbm", Version: "0.1.7", DataDir: "/var/lib/cloudfactory/panel", Gvisor: gv}) {
 		units[name] = u

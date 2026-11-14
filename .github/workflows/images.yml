@@ -29,6 +29,7 @@ jobs:
           - { image: panel-web, context: ., file: images/panel-web/Containerfile, args: '' }
           - { image: mariadb, context: images/mariadb, file: images/mariadb/Containerfile, args: '' }
           - { image: postgresql, context: images/postgresql, file: images/postgresql/Containerfile, args: '' }
+          - { image: valkey, context: images/valkey, file: images/valkey/Containerfile, args: '' }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -41,6 +42,13 @@ jobs:
           build-args: ${{ matrix.args }}
           load: true
           tags: ${{ matrix.image }}:test
+      # The Valkey image has a test with the agent code: the rules that keep a website in its
+      # own Valkey database (agent/internal/actions/valkey_server_test.go).
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        if: matrix.image == 'valkey'
+        with:
+          go-version: '1.27.4'
+          cache-dependency-path: agent/go.sum
       # Audit batch 2, findings 1 and 2: start the image with the limits of its unit, and send a
       # request. A file capability or a missing configuration file stops the container.
       - name: Start the image with no capabilities
@@ -81,6 +89,41 @@ jobs:
             [ -n "$version" ]
             # The data files are in the mount, not in a directory of the container.
             sudo test -e "$data/$marker"
+            exit 0
+          fi
+          if [ "$IMAGE" = valkey ]; then
+            # The settings of quadlet.DatabaseUnit and the user file of the agent: the
+            # administrator with the hash of its password. Then the tests of the agent make
+            # Valkey databases on this server, and check that a user stays in its database.
+            data="$RUNNER_TEMP/valkey"
+            sudo install -d -o root -g root -m 0700 "$data"
+            printf 'user default on #%s ~* &* +@all\n' "$(printf %s smoke-password | sha256sum | cut -d' ' -f1)" | sudo tee "$data/users.acl" >/dev/null
+            sudo chmod 0600 "$data/users.acl"
+            docker run -d --name smoke --cap-drop=all --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER --cap-add SETUID --cap-add SETGID \
+              --security-opt no-new-privileges --read-only --tmpfs /tmp -p 127.0.0.1:16379:6379 -v "$data:/data" valkey:test \
+              valkey-server --bind 0.0.0.0 --port 6379 --databases 1024 --aclfile /data/users.acl --appendonly yes --save "" --maxmemory 64mb --maxmemory-policy allkeys-lru
+            ready() { timeout 5 bash -c 'exec 3<>/dev/tcp/127.0.0.1/16379 && printf "PING\r\n" >&3 && head -c 7 <&3' 2>/dev/null | grep -q NOAUTH; }
+            wait_ready() {
+              for _ in $(seq 1 30); do
+                if ready; then return 0; fi
+                sleep 2
+              done
+              docker logs smoke
+              return 1
+            }
+            wait_ready
+            export CF_TEST_VALKEY=127.0.0.1:16379 CF_TEST_VALKEY_PASSWORD=smoke-password
+            (cd agent && go test ./internal/actions -run '^TestValkeyServer$' -count=1 -v)
+            # Valkey writes the append-only file each second. After a restart, it has the users
+            # and the data.
+            sleep 3
+            docker restart smoke
+            wait_ready
+            (cd agent && CF_TEST_VALKEY_RESTARTED=1 go test ./internal/actions -run '^TestValkeyServerAfterRestart$' -count=1 -v)
+            docker logs smoke
+            docker inspect -f '{{.State.Running}}' smoke | grep -q true
+            # The data files are in the mount, not in a directory of the container.
+            sudo test -d "$data/appendonlydir"
             exit 0
           fi
           if [ "$IMAGE" = sftp ]; then

@@ -113,6 +113,9 @@ type Report struct {
 	Domains []DomainState `json:"domains"`
 	// Databases are the sizes of the databases in the shared database containers.
 	Databases []DatabaseSize `json:"databases"`
+	// DatabaseEngines are the database engines that this agent can operate. An agent of an
+	// earlier release does not send them: it has MariaDB and PostgreSQL only.
+	DatabaseEngines []string `json:"databaseEngines,omitempty"`
 	// SftpPort is the port that the website owners use for SFTP on this server.
 	SftpPort int `json:"sftpPort,omitempty"`
 	// PanelCertificate is the certificate of the panel domain. Only the panel server sends it.
@@ -146,11 +149,14 @@ type DomainState struct {
 	ExpiresAt   string `json:"expiresAt,omitempty"`
 }
 
-// DatabaseSize is the size of one database.
+// DatabaseSize is the size of one database. A Valkey database has no size in bytes: it has its
+// database number and its number of keys.
 type DatabaseSize struct {
 	Engine    string `json:"engine"`
 	Name      string `json:"name"`
 	SizeBytes int64  `json:"sizeBytes"`
+	Number    int    `json:"number,omitempty"`
+	Keys      *int64 `json:"keys,omitempty"`
 }
 
 // HostUse is the resource use of the host, in percent (FR-1301).

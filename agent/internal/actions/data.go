@@ -33,8 +33,19 @@ func dbContainer(engine string) (string, error) {
 		return "cf-mariadb", nil
 	case "postgresql":
 		return "cf-postgresql", nil
+	case "valkey":
+		return "cf-valkey", nil
 	}
 	return "", fmt.Errorf("the database engine %q is not valid", engine)
+}
+
+// sqlEngine is dbContainer for the actions that use SQL or a dump. Valkey has neither.
+func sqlEngine(engine string) error {
+	if engine == "valkey" {
+		return errValkeyNoCopy
+	}
+	_, err := dbContainer(engine)
+	return err
 }
 
 // sql sends statements on stdin to the database client in the shared container. It starts the
@@ -48,6 +59,9 @@ func (d *Deps) sql(ctx context.Context, engine, statements string) (string, erro
 
 // sqlNow is sql with no start of the container.
 func (d *Deps) sqlNow(ctx context.Context, engine, statements string) (string, error) {
+	if engine == "valkey" {
+		return "", errors.New("Valkey has no SQL")
+	}
 	c, err := dbContainer(engine)
 	if err != nil {
 		return "", err
@@ -149,6 +163,9 @@ func (d *Deps) CreateDatabase(req *agentv1.CreateDatabaseRequest) (jobs.Job, err
 	if err != nil {
 		return jobs.Job{}, err
 	}
+	if engine == "valkey" {
+		return d.createValkeyDatabase(req)
+	}
 	maria := engine == "mariadb"
 	steps := []jobs.Step{
 		{Name: "Create database", Do: func(ctx context.Context) error {
@@ -180,6 +197,30 @@ func (d *Deps) CreateDatabase(req *agentv1.CreateDatabaseRequest) (jobs.Job, err
 		)
 	}
 	return jobs.Job{ID: req.GetJobId(), Key: req.GetWebsiteId(), Steps: steps}, nil
+}
+
+// createValkeyDatabase makes a Valkey database. It always has one user with the same name:
+// the user is the record of the database number. Only the website containers can connect.
+// The result of the job has the number.
+func (d *Deps) createValkeyDatabase(req *agentv1.CreateDatabaseRequest) (jobs.Job, error) {
+	name := req.GetName()
+	if req.GetUser() != name {
+		return jobs.Job{}, errors.New("a Valkey database must have a user with the same name")
+	}
+	if a := req.GetAccess(); a != "" && a != "website" {
+		return jobs.Job{}, errors.New("only the website containers can connect to Valkey")
+	}
+	var number int
+	return jobs.Job{ID: req.GetJobId(), Key: req.GetWebsiteId(), Steps: []jobs.Step{
+		{Name: "Create database and user", Do: func(ctx context.Context) error {
+			n, err := d.valkeyCreate(ctx, name, req.GetUnixUser()+"_", req.GetPassword())
+			number = n
+			return err
+		}},
+		{Name: "Give the host name to the website container", Do: func(ctx context.Context) error {
+			return d.addValkeyHost(ctx, req.GetWebsiteId())
+		}},
+	}, Result: func() map[string]any { return map[string]any{"number": number} }}, nil
 }
 
 // pgCreateDatabase makes the database and its two group roles. Only the roles can connect.
@@ -283,6 +324,21 @@ func (d *Deps) SetDatabaseUser(req *agentv1.SetDatabaseUserRequest) (jobs.Job, e
 	if err := errors.Join(errs...); err != nil {
 		return jobs.Job{}, err
 	}
+	if engine == "valkey" {
+		// The user of a Valkey database comes and goes with its database, and has access to
+		// that database only. Thus only its password can change.
+		if req.GetCreate() || (req.GetAccess() != "" && req.GetAccess() != "website") {
+			return jobs.Job{}, errors.New("a Valkey database has one user, and only the website containers can connect")
+		}
+		return jobs.Job{ID: req.GetJobId(), Key: req.GetWebsiteId(), Steps: []jobs.Step{
+			{Name: "Set password", Do: func(ctx context.Context) error {
+				if pass == "" {
+					return nil
+				}
+				return d.valkeySetPassword(ctx, user, pass)
+			}},
+		}}, nil
+	}
 	maria := engine == "mariadb"
 	return jobs.Job{ID: req.GetJobId(), Key: req.GetWebsiteId(), Steps: []jobs.Step{
 		{Name: "Set user and password", Do: func(ctx context.Context) error {
@@ -339,12 +395,19 @@ func (d *Deps) DeleteDatabaseUser(req *agentv1.DeleteDatabaseUserRequest) (jobs.
 	if _, err := dbContainer(engine); err != nil {
 		return jobs.Job{}, err
 	}
+	if engine == "valkey" {
+		return jobs.Job{}, errors.New("the user of a Valkey database goes with its database; remove the database")
+	}
 	return jobs.Job{ID: req.GetJobId(), Key: req.GetWebsiteId(), Steps: []jobs.Step{
 		{Name: "Remove user", Do: func(ctx context.Context) error { return d.dropUser(ctx, engine, user) }},
 	}}, nil
 }
 
 func (d *Deps) dropUser(ctx context.Context, engine, user string) error {
+	if engine == "valkey" {
+		// dropDatabase removes the user of a Valkey database.
+		return nil
+	}
 	if engine == "mariadb" {
 		out, err := d.sql(ctx, engine, fmt.Sprintf("SELECT Host FROM mysql.user WHERE User = '%s';\n", user))
 		if err != nil {
@@ -381,6 +444,13 @@ func (d *Deps) DeleteDatabase(req *agentv1.DeleteDatabaseRequest) (jobs.Job, err
 	if err := errors.Join(errs...); err != nil {
 		return jobs.Job{}, err
 	}
+	if engine == "valkey" {
+		return jobs.Job{ID: req.GetJobId(), Key: req.GetWebsiteId(), Steps: []jobs.Step{
+			{Name: "Remove database and user", Do: func(ctx context.Context) error {
+				return d.dropDatabase(ctx, engine, name)
+			}},
+		}}, nil
+	}
 	return jobs.Job{ID: req.GetJobId(), Key: req.GetWebsiteId(), Steps: []jobs.Step{
 		{Name: "Remove access of users", Do: func(ctx context.Context) error {
 			if engine == "mariadb" {
@@ -416,6 +486,9 @@ func mariaRevokeDatabase(name string) string {
 }
 
 func (d *Deps) dropDatabase(ctx context.Context, engine, name string) error {
+	if engine == "valkey" {
+		return d.valkeyDelete(ctx, name)
+	}
 	if engine == "mariadb" {
 		_, err := d.sql(ctx, engine, fmt.Sprintf("DROP DATABASE IF EXISTS `%s`;\n", name))
 		return err
@@ -651,7 +724,7 @@ func (d *Deps) Backup(req *agentv1.BackupRequest) (jobs.Job, error) {
 		return jobs.Job{}, err
 	}
 	for _, db := range req.GetDatabases() {
-		if _, err := dbContainer(db.GetEngine()); err != nil {
+		if err := sqlEngine(db.GetEngine()); err != nil {
 			return jobs.Job{}, err
 		}
 		if err := validate.TenantDatabaseName(req.GetUnixUser(), db.GetName()); err != nil {
@@ -842,7 +915,7 @@ func (d *Deps) Restore(req *agentv1.RestoreRequest) (jobs.Job, error) {
 		if !ok {
 			return jobs.Job{}, errors.New(`the database must be "engine:name"`)
 		}
-		if _, err := dbContainer(engine); err != nil {
+		if err := sqlEngine(engine); err != nil {
 			return jobs.Job{}, err
 		}
 		if err := errors.Join(validate.TenantDatabaseName(unixUser, name), validate.SHA256(req.GetDumpSha256())); err != nil {
