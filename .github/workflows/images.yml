@@ -7,6 +7,9 @@ on:
       - images/**
       - api/**
       - web/**
+      # The test of the Valkey image uses the access rules and the server options of the agent.
+      - agent/internal/actions/valkey*.go
+      - agent/internal/quadlet/quadlet.go
       - .github/workflows/images.yml
 
 permissions:
