@@ -276,3 +276,58 @@ func TestPruneListsAnImageInUseAgain(t *testing.T) {
 		t.Errorf("config = %s", conf)
 	}
 }
+
+// The image of a service of the agent, for example the image of a database server, has the
+// version of the agent as its tag, and no digest. The shared store keeps it while the agent
+// tells Prune that the image is in use.
+func TestEnsureServiceSharesAnImageWithATag(t *testing.T) {
+	const service = "ghcr.io/itbm/cloudfactory/mariadb:0.1.9"
+	s, f := store(t)
+	now := time.Date(2026, 11, 6, 12, 0, 0, 0, time.UTC)
+	s.Now = func() time.Time { return now }
+	f.Rules = []execx.Rule{pullRule(t, s, service), pullRule(t, s, ref)}
+	for i := 0; i < 2; i++ {
+		if err := s.EnsureService(context.Background(), service); err != nil {
+			t.Fatal(err)
+		}
+	}
+	pulls := 0
+	for _, c := range f.Calls {
+		if c == "podman pull --quiet "+service {
+			pulls++
+		}
+	}
+	if pulls != 1 {
+		t.Errorf("the image was pulled %d times", pulls)
+	}
+	dir := s.path(StoreName(service))
+	if conf, _ := os.ReadFile(s.Config); !strings.Contains(string(conf), dir) {
+		t.Errorf("config = %s", conf)
+	}
+	if err := s.Ensure(context.Background(), ref); err != nil {
+		t.Fatal(err)
+	}
+	// Two prunes after the time of the last job: the image of the service stays, and the
+	// image that nothing uses goes.
+	now = now.Add(2 * time.Hour)
+	for i := 0; i < 2; i++ {
+		if err := s.Prune([]string{service}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if conf, _ := os.ReadFile(s.Config); !strings.Contains(string(conf), dir) {
+		t.Errorf("the image of the service is not shared after the prune: %s", conf)
+	}
+	if _, err := os.Stat(dir); err != nil {
+		t.Errorf("the image of the service went: %v", err)
+	}
+	if _, err := os.Stat(s.path(StoreName(ref))); !os.IsNotExist(err) {
+		t.Errorf("the unused image is still there: %v", err)
+	}
+	// A reference that Podman can read as an option is an error.
+	for _, bad := range []string{"", "--root=/tmp/x"} {
+		if err := s.EnsureService(context.Background(), bad); err == nil {
+			t.Errorf("the reference %q was accepted", bad)
+		}
+	}
+}

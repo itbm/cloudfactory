@@ -74,6 +74,11 @@ CF_ETC=/etc/cloudfactory
 # of the website containers by this range.
 WEBSITE_UID_MIN=20000
 WEBSITE_UID_MAX=59999
+# The agent makes the Unix user of each database server with a UID and a GID in this range
+# (host.DatabaseIDMin and host.DatabaseIDMax in the agent). The firewall finds the connections
+# of the database containers by this range.
+DATABASE_UID_MIN=10000
+DATABASE_UID_MAX=19999
 # The websites cannot connect to port 25 and to private networks, unless the operator
 # permits it.
 WEBSITE_SMTP=0
@@ -364,6 +369,12 @@ table inet cloudfactory {
     # connect to them. The chain "websites" lets a website connect only to the database
     # servers of its own customer.
     ct state new ip daddr $DATABASE_NETWORK meta skuid != 0 meta skuid != $WEBSITE_UID_MIN-$WEBSITE_UID_MAX jump refuse
+    # Each database server has its own Unix user, with a UID from $DATABASE_UID_MIN to
+    # $DATABASE_UID_MAX. A database server answers its clients, and opens no connection
+    # itself. Thus a person who controls a database server cannot connect to the internet,
+    # to a private network or to a service of this server from it. The rule checks only new
+    # connections, so it does not change the answers to the websites.
+    ct state new meta skuid $DATABASE_UID_MIN-$DATABASE_UID_MAX jump refuse
     # Audit finding S1: the limits for the connections that a website container opens. The
     # agent makes each website user with a UID from $WEBSITE_UID_MIN to $WEBSITE_UID_MAX. The
     # rule checks only new connections, so it does not change the answers to the visitors.

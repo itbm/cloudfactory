@@ -195,6 +195,8 @@ image, not 100.
 - The agent pulls each runtime image one time, as root, into its own Podman store in
   `/var/lib/cloudfactory-images/<sha256 of the image reference>`. The signature policy checks
   the image when the agent pulls it. Only a reference with a digest goes in the shared store.
+  The image of a database server is the exception: its reference has the version of the
+  agent as its tag, and a release does not change the content of its tags.
 - The agent pulls into a temporary store. Then it lets the website users read the metadata
   of the store and gives the store its final name in one step. After that, nothing writes the
   store again. Podman writes its metadata with mode `0600` each time that it changes a store,
@@ -214,7 +216,8 @@ image, not 100.
   user, if it is there: a custom image, or a copy from before the shared store. Then it removes
   the shared images that no website uses, in two steps: first from `website-storage.conf`, then,
   at the next prune, the files. The agent also prunes after it deletes a website and once a
-  day. It keeps an image that a job asked for in the last hour.
+  day. It keeps an image that a job asked for in the last hour, and each image that a
+  container unit of a website or of a database server names.
 
 The container unit of a website sets these limits:
 
@@ -303,8 +306,9 @@ superuser, its own port and its own limits. Each database of a website is in one
 server of the customer of the website, on the server of the website.
 
 - A customer cannot change the service of a different customer, because the customers do
-  not use the same containers. The Unix user `cf-db` runs each container in its own gVisor
-  sandbox.
+  not use the same containers. Each database server has its own Unix user and its own gVisor
+  sandbox, as each website has. Refer to
+  [The Unix user of a database server](#the-unix-user-of-a-database-server).
 - A customer can have more than one database server of an engine, for example one MariaDB
   database server for its shop and one for its reports.
 - All websites of the customer on the server can connect to each database server of the
@@ -341,11 +345,48 @@ The files of a database server are in `/var/lib/cf-db/servers/<id>`:
 
 | Path | Content |
 | ---- | ------- |
-| `disk.img` | The disk image of the database server. Refer to [Disk limit](#disk-limit). |
-| `disk` | The mount point of the disk image |
-| `disk/data` | The data directory |
-| `mariadb.env`, `postgresql.env` | The superuser password. Only `cf-db` can read it. |
+| `disk` | The disk of the database server: a directory, or the mount point of the disk image. Refer to [Disk limit](#disk-limit). |
+| `disk/data` | The data directory. The Unix user of the database server owns it. |
+| `disk.img` | The disk image of the database server, only on a file system with no user quotas |
+| `mariadb.env`, `postgresql.env` | The superuser password. Root owns the file. Only root and the Unix user of the database server can read it. |
 | `valkey.secret` | The password of the Valkey administrator. Only root can read it. |
+
+Root owns the directory `/var/lib/cf-db/servers/<id>`. Only root and the Unix user of the
+database server can open it, and that user cannot change it.
+
+### The Unix user of a database server
+
+The agent makes one Unix user for each database server, as it makes one for each website.
+The user owns the data of the database server and starts its container.
+
+| Item | Value |
+| ---- | ----- |
+| Name | `db-<id>` |
+| UID and GID | From 10000 to 19999. The website users have the range from 20000 to 59999. |
+| Home directory | `/var/lib/cf-db/homes/db-<id>` |
+| Sign-in | No password and no login shell |
+| Group | `cf-sites`, which can read the shared image store |
+| Container unit | `/etc/containers/systemd/users/<uid>/`. Root owns the file. |
+
+- The database process in the container is the user 999, which is the database user of each
+  database image: `mysql`, `postgres` and `valkey`. Podman gives that user the UID of the
+  Unix user of the database server on the host (`UserNS=keep-id:uid=999,gid=999`). Thus the
+  Unix user of the database server is the owner of each file that the database server writes.
+- The container has no capability (`DropCapability=all`). The entry point of the image does
+  not change the owner of a file, and does not change its user.
+- The image is in the shared image store of root, as the runtime images of the websites are
+  (refer to [Shared runtime images](#shared-runtime-images)). The user keeps only its small
+  writable container layer in its home directory. Thus the image does not use the disk limit
+  of the database server.
+- The firewall refuses each new connection of the users in this range. A database server
+  answers its clients, and opens no connection itself. Refer to
+  [security.md](security.md#firewall).
+- A person who breaks out of the gVisor sandbox of a database server has only the rights of
+  the Unix user of that database server. That user cannot read the files of a different
+  database server or of a website.
+- The removal of a database server removes its Unix user, its home directory and its user
+  quota.
+- The shared containers of an earlier release have the Unix user `cf-db`.
 
 ### The database network
 
@@ -408,20 +449,48 @@ uses. The panel shows them next to the limits.
 
 ### Disk limit
 
-All database containers have the Unix user `cf-db`, so a user quota cannot limit one
-database server. Thus each database server has its own file system:
+The Unix user of a database server owns all files of the database server. Thus the disk
+limit of a database server is as the disk limit of a website. The type of the limit comes
+from the file system of `/var/lib/cf-db`:
+
+| File system | Disk limit |
+| ----------- | ---------- |
+| User quotas are on | The user quota of the Unix user of the database server |
+| No user quotas, and the server has loop devices | A disk image with the size of the limit |
+| No user quotas and no loop devices | No limit |
+
+The installer turns on the user quotas of an ext4 or XFS file system. Refer to
+[installation.md](installation.md#disk-quotas).
+
+**User quota.** The hard limit of the quota is the disk limit, and the soft limit is 95% of
+it. The disk of the database server is the directory `disk`.
+
+- A database server that is at its limit gets the error "disk quota exceeded" when it
+  writes. It cannot fill the disk of the server, and the other database servers and the
+  websites continue to operate.
+- A change of the limit applies immediately. The database server does not stop.
+- A smaller limit must be more than the disk space that the database server uses. If it is
+  not, the job fails and the limit stays as it is, because a database server that is above
+  its limit cannot write. A database server with no limit always gets its first limit.
+- The kernel counts the disk space of the user. The status report of the agent gets the use
+  and the limit from the kernel (`quotactl`), and does not read the files of the database
+  server.
+- The limit includes the files of Podman in the home directory of the user, which are small.
+  It does not include the image.
+
+**Disk image.** Each database server has its own file system:
 
 1. The agent makes the file `disk.img` with the size of the disk limit, and makes an ext4
    file system in it. The file is sparse: it uses only the disk space that the database
    server uses.
 2. A systemd mount unit mounts the file as a loop device on `disk`, now and at each start of
    the server. The mount is a part of `local-fs.target`, so it is there before the user
-   manager of `cf-db` starts the container.
+   manager of the database server starts the container.
 3. The data directory `disk/data` is in that file system.
 
-A database server that fills its disk gets the error "no space left on device". It cannot
-fill the disk of the server, and the database servers of other customers continue to operate.
-
+- A database server that fills its disk gets the error "no space left on device". It cannot
+  fill the disk of the server, and the database servers of other customers continue to
+  operate.
 - When the mount is not there, the data directory is not there, and Podman does not start
   the container. Thus a database server never starts with an empty directory in place of its
   data.
@@ -429,11 +498,28 @@ fill the disk of the server, and the database servers of other customers continu
 - A smaller limit stops the database server, makes the file system smaller and starts the
   database server again. If the data needs more space than the new limit, the job fails and
   the disk keeps its size.
-- A server with no loop devices (no `/dev/loop-control`, for example a container of an LXC
-  host) cannot mount a disk image. The data directory is then a directory on the disk of the
-  server, with no limit. The panel then shows `database-disk-limits` as an optional part of
-  the server that is off. This does not make the server degraded.
-- The disk quota of a website does not include its databases.
+
+**No limit.** A server with no user quotas and no loop devices (no `/dev/loop-control`, for
+example a container of an LXC host with a file system that is not ext4 or XFS) cannot limit
+the disk space of a database server. The data directory is then a directory on the disk of
+the server. The panel then shows `database-disk-limits` as an optional part of the server
+that is off. This does not make the server degraded.
+
+A database server keeps the type of disk that it started with. A database server with a disk
+image keeps the image when the file system gets user quotas later.
+
+A database engine that cannot write does not lose data that it saved before, but it can stop:
+
+| Engine | At the disk limit |
+| ------ | ----------------- |
+| MariaDB | A statement that needs more disk space fails. MariaDB can stop with the error "Out of disk space". systemd starts it again, and it operates when it has free disk space. |
+| PostgreSQL | A statement that needs more disk space fails. PostgreSQL can refuse connections until it has free disk space. |
+| Valkey | Valkey refuses the commands that write. |
+
+To correct this, make the disk limit of the database server larger. Then remove the data that
+is not necessary.
+
+The disk quota of a website does not include its databases.
 
 ### Stop of a database server
 

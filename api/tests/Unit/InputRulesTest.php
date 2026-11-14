@@ -32,6 +32,14 @@ class InputRulesTest extends TestCase
         }
     }
 
+    public function test_a_database_password_of_the_panel_agrees_with_the_rule_of_the_agent(): void
+    {
+        for ($i = 0; $i < 200; $i++) {
+            $password = Input::databasePassword();
+            $this->assertTrue(Input::valid('databasePassword', $password), "The agent refuses the password {$password}.");
+        }
+    }
+
     public function test_each_pattern_is_correct_for_pcre(): void
     {
         foreach (InputRules::PATTERNS as $rule => $pattern) {

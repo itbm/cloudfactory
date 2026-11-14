@@ -12,11 +12,17 @@ final class InputRules
     /** One argument of the start command of a custom image. It has no control characters. */
     public const COMMAND_ARGUMENT = '/^(?=[\\s\\S]{0,1024}\\z)(?:^[^\\x00-\\x1f\\x7f]+$)/D';
 
+    /** The host part of a MariaDB user: an address, a network, a host name or a pattern with a percent sign. */
+    public const DATABASE_CLIENT_HOST = '/^(?:^[A-Za-z0-9.:%\\/_-]{1,255}$)/D';
+
     /** The full name of a database or a database user. */
     public const DATABASE_NAME = '/^(?:^[a-z][a-z0-9_]{1,62}$)/D';
 
     /** The part of a database name that the user types. The panel puts the Unix user of the website and an underscore before it (CF-01). */
     public const DATABASE_NAME_SUFFIX = '/^(?:^[a-z0-9][a-z0-9_]{0,31}$)/D';
+
+    /** The password of a database user. The panel makes it. It has only letters and digits, so that it needs no quotation marks in a command, in SQL or in a connection address. */
+    public const DATABASE_PASSWORD = '/^(?:^[A-Za-z0-9]{16,64}$)/D';
 
     /** The digest of an image. An empty digest is permitted. */
     public const DIGEST = '/^(?:\\z|(?:^sha256:[0-9a-f]{64}$))/D';
@@ -66,8 +72,10 @@ final class InputRules
     /** Each pattern by the name of its rule in schema/input-rules.json. */
     public const PATTERNS = [
         'commandArgument' => self::COMMAND_ARGUMENT,
+        'databaseClientHost' => self::DATABASE_CLIENT_HOST,
         'databaseName' => self::DATABASE_NAME,
         'databaseNameSuffix' => self::DATABASE_NAME_SUFFIX,
+        'databasePassword' => self::DATABASE_PASSWORD,
         'digest' => self::DIGEST,
         'documentRoot' => self::DOCUMENT_ROOT,
         'domain' => self::DOMAIN,
@@ -88,8 +96,10 @@ final class InputRules
     /** The text that tells a person how to correct a value. */
     public const MESSAGES = [
         'commandArgument' => 'Each argument must have 1 to 1024 characters and no control characters.',
+        'databaseClientHost' => 'Use an address, a network or a host name. Use only letters, digits and the characters . : % / _ -',
         'databaseName' => 'Use 2 to 63 lower-case letters, digits and underscores. Start with a letter.',
         'databaseNameSuffix' => 'Use 1 to 32 lower-case letters, digits and underscores. Start with a letter or a digit.',
+        'databasePassword' => 'Use 16 to 64 letters and digits.',
         'digest' => 'Enter a digest: sha256: and 64 hexadecimal digits in lower case.',
         'documentRoot' => 'Enter a directory in /app, for example public or web/htdocs. Use letters, digits, dots, underscores and hyphens, and at most 8 parts.',
         'domain' => 'Enter a domain name in lower-case letters, for example shop.example.com.',

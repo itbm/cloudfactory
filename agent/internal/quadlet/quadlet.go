@@ -390,8 +390,9 @@ type Database struct {
 	Image  string
 	// DataDir holds the data files on the host.
 	DataDir string
-	// EnvFile holds the password of the superuser. Only cf-db can read it. Valkey does not
-	// use it: its user file in DataDir has the hash of the password of the administrator.
+	// EnvFile holds the password of the superuser. Only root and the Unix user of the database
+	// server can read it. Valkey does not use it: its user file in DataDir has the hash of the
+	// password of the administrator.
 	EnvFile string
 	Gvisor  Runtime
 	// MemoryMB is the memory limit of Valkey for its data, in MB.
@@ -410,6 +411,11 @@ func PostgresWALMB(diskBytes int64) int {
 	}
 	return int(min(max(diskBytes>>20/8, 64), 1024))
 }
+
+// DatabaseImageUser is the UID and the GID of the database user in each database image:
+// "mysql" in the MariaDB image, "postgres" in the PostgreSQL image and "valkey" in the Valkey
+// image.
+const DatabaseImageUser = 999
 
 // DatabaseContainer is the name of the container of a database server, for example
 // "cf-mariadb-01jbq3z5k8n6t4w2x9y7r5p3m1". With no ID, it is the shared container of an
@@ -518,17 +524,26 @@ func DatabaseUnit(d Database) string {
 		"Label=io.cloudfactory.service=" + d.Engine,
 		"NoNewPrivileges=true",
 		"DropCapability=all",
-		// The entry point of the image sets the owner of the data files, and then changes to
-		// the database user.
-		"AddCapability=CHOWN DAC_OVERRIDE FOWNER SETUID SETGID",
-		"ReadOnly=true",
-		"Tmpfs=/tmp",
 	}
+	if d.ID != "" {
+		// A database server has its own Unix user on the host, and that user owns the data
+		// files. In the container, that user is the database user of the image. Thus the
+		// database server starts as the database user, with no capability, and each file that
+		// it writes has the Unix user of the database server as its owner on the host. The
+		// disk limit is the user quota of that user.
+		user := strconv.Itoa(DatabaseImageUser)
+		lines = append(lines, "UserNS=keep-id:uid="+user+",gid="+user, "User="+user, "Group="+user)
+	} else {
+		// The shared container of an earlier release: the entry point of the image sets the
+		// owner of the data files, and then changes to the database user.
+		lines = append(lines, "AddCapability=CHOWN DAC_OVERRIDE FOWNER SETUID SETGID")
+	}
+	lines = append(lines, "ReadOnly=true", "Tmpfs=/tmp")
 	switch d.Engine {
 	case "valkey":
 		lines = append(lines,
-			// The data and the user file. The entry point of the image gives the files to the
-			// user valkey of the container.
+			// The data and the user file. The files belong to the Unix user of the database
+			// server, which is the user valkey of the container.
 			"Volume="+d.DataDir+":/data:Z",
 			"Exec=valkey-server "+strings.Join(ValkeyArgs(d), " "),
 		)
@@ -545,8 +560,7 @@ func DatabaseUnit(d Database) string {
 		)
 	default:
 		lines = append(lines,
-			// PGDATA is the mount itself. The entry point changes to the user postgres, which
-			// cannot go through the mount directory (mode 0700) to a directory below it.
+			// PGDATA is the mount itself (images/postgresql/Containerfile).
 			"Volume="+d.DataDir+":/var/lib/postgresql/data:Z",
 			"Tmpfs=/var/run/postgresql",
 			"ShmSize=256m",

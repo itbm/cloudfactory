@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -149,6 +150,10 @@ type Fake struct {
 	// Envs has the extra environment of each command.
 	Envs  [][]string
 	Rules []Rule
+	// MakeDirs makes the fake do the command "install -d": it makes each directory, with no
+	// change of the owner. A test sets it when the code that it examines writes a file in a
+	// directory that "install -d" makes on a server.
+	MakeDirs bool
 }
 
 // Rule gives the result of each command that starts with Prefix.
@@ -186,7 +191,25 @@ func (f *Fake) RunEnv(_ context.Context, env []string, stdin, name string, args 
 			return r.Output, r.Err
 		}
 	}
+	if f.MakeDirs && name == "install" && len(args) > 0 && args[0] == "-d" {
+		return "", makeDirs(args[1:])
+	}
 	return "", nil
+}
+
+// makeDirs makes the directories of the arguments of "install -d". The options "-o", "-g"
+// and "-m" have a value, which is not a directory.
+func makeDirs(args []string) error {
+	for i := 0; i < len(args); i++ {
+		if args[i] == "-o" || args[i] == "-g" || args[i] == "-m" {
+			i++
+			continue
+		}
+		if err := os.MkdirAll(args[i], 0o700); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Stream records the command and its stdin, and writes the output of the rule to stdout.

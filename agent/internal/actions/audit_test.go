@@ -371,6 +371,33 @@ func TestLimitsSetTheQuotaAndTheIOLimit(t *testing.T) {
 	}
 }
 
+// A website with no disk limit has no user quota. The agent removes the limit of an earlier
+// plan, and the limit of an earlier user with the same UID.
+func TestAWebsiteWithNoDiskLimitHasNoQuota(t *testing.T) {
+	d, f, _ := deps(t)
+	both(d, func(d *Deps) { d.QuotaMount = "/srv" })
+	w := website("ghcr.io/cloudfactory/frankenphp-php8.4:8.4.0-1")
+	w.Limits.DiskBytes = 0
+	if err := run(t)(d.CreateWebsite(&agentv1.WebsiteRequest{JobId: jobID, Website: w})); err != nil {
+		t.Fatal(err)
+	}
+	if !f.Called("setquota --user acme_x7k2 0 0 0 0 /srv") {
+		t.Fatalf("a new website with no disk limit kept the quota of its UID: %v", f.Calls)
+	}
+	l := &agentv1.Limits{Vcpus: 1, MemoryBytes: 1 << 30, Processes: 50, DiskBytes: 10 << 30}
+	if err := run(t)(d.SetLimits(&agentv1.SetLimitsRequest{JobId: jobID2, WebsiteId: websiteID, Limits: l})); err != nil {
+		t.Fatal(err)
+	}
+	f.Calls = nil
+	l.DiskBytes = 0
+	if err := run(t)(d.SetLimits(&agentv1.SetLimitsRequest{JobId: "01JBQ3Z5K8N6T4W2X9Y7R5P3M4", WebsiteId: websiteID, Limits: l})); err != nil {
+		t.Fatal(err)
+	}
+	if !f.Called("setquota --user acme_x7k2 0 0 0 0 /srv") {
+		t.Errorf("the website kept the limit of its earlier plan: %v", f.Calls)
+	}
+}
+
 // A website that was there before the quotas were on gets its limit at the start of the agent.
 func TestTheAgentSetsTheQuotaOfEachWebsiteAtItsStart(t *testing.T) {
 	d, f, _ := deps(t)

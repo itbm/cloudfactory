@@ -13,10 +13,10 @@ use App\Services\Audit;
 use App\Services\DatabaseNames;
 use App\Services\DatabaseServers;
 use App\Services\JobDispatcher;
+use App\Validation\Input;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
@@ -136,7 +136,7 @@ class DatabaseController extends Controller
 
             return [$database, $server];
         });
-        $password = $withUser ? Str::password(24, symbols: false) : null;
+        $password = $withUser ? Input::databasePassword() : null;
         $job = $this->jobs->dispatch($website->server, AgentAction::CreateDatabase, array_filter([
             'websiteId' => $website->id,
             'unixUser' => $website->unix_user,

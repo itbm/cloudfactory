@@ -13,6 +13,7 @@ import (
 
 	"github.com/itbm/cloudfactory/agent/internal/execx"
 	"github.com/itbm/cloudfactory/agent/internal/gate"
+	"github.com/itbm/cloudfactory/agent/internal/host"
 	"github.com/itbm/cloudfactory/agent/internal/hostupdate"
 	"github.com/itbm/cloudfactory/agent/internal/quadlet"
 	"github.com/itbm/cloudfactory/agent/internal/selfupdate"
@@ -29,14 +30,18 @@ func boundary(t *testing.T) (*Deps, *execx.Fake) {
 	d, f, _ := deps(t)
 	ids := map[string]int{
 		"acme_x7k2": 20001, "bolt_k3m9": 20002, DBUser: 990, "cf-edge": 991,
-		// A user of an administrator whose name has the form of a website user.
-		"admin_ab12": 1000,
-		"root":       0, "cf-agent": 989, "cf-panel": 988,
+		// Two users of an administrator. The name of the first has the form of a website
+		// user, and the name of the second has the form of the user of a database server.
+		"admin_ab12": 1000, adminDBUser: 1001,
+		"root": 0, "cf-agent": 989, "cf-panel": 988,
 	}
 	both(d, func(d *Deps) {
 		d.Host.LookupUID = func(name string) (int, error) {
 			if id, ok := ids[name]; ok {
 				return id, nil
+			}
+			if strings.HasPrefix(name, host.DatabaseUserPrefix) {
+				return testUID(name)
 			}
 			return 0, user.UnknownUserError(name)
 		}
@@ -50,30 +55,41 @@ const (
 	dbPodman   = "runuser -u cf-db -- env XDG_RUNTIME_DIR=/run/user/990 podman "
 	edgePodman = "runuser -u cf-edge -- env XDG_RUNTIME_DIR=/run/user/991 podman "
 	mariaName  = "cf-mariadb-" + mariaServerKey
-	resticHead = "restic --repo s3:b/c --password-file /etc/cloudfactory/restic.key --json --retry-lock 30m "
-	tagOne     = "website=" + websiteID
+	// adminKey is the last part of the name of adminDBUser.
+	adminKey    = "01jbq3z5k8n6t4w2x9y7r5p3zz"
+	adminDBUser = "db-" + adminKey
+	adminPodman = "runuser -u " + adminDBUser + " -- env XDG_RUNTIME_DIR=/run/user/1001 podman "
+	resticHead  = "restic --repo s3:b/c --password-file /etc/cloudfactory/restic.key --json --retry-lock 30m "
+	tagOne      = "website=" + websiteID
 )
 
 func TestTheRootHelperRunsTheCommandsOfThePolicy(t *testing.T) {
 	d, f := boundary(t)
 	root := rootOf(d)
 	app, dumps, stage := root.Host.AppDir("acme_x7k2"), root.dumpDir("acme_x7k2"), root.stageDir(jobID)
+	serverPodman := podmanOf(mariaServerKey)
 	for _, command := range []string{
 		// A website user can run each program.
 		"runuser -u acme_x7k2 -- sh -c id",
 		"runuser -u acme_x7k2 -- env XDG_RUNTIME_DIR=/run/user/20001 podman run --rm registry.example/acme/app:1",
-		// The service users: a database client in a database container, and the images of this
-		// agent version.
-		dbPodman + "exec -i " + mariaName + " mariadb --batch",
+		// The user of a database server: a database client in the container of that server,
+		// and the images of this agent version.
+		serverPodman + "exec -i " + mariaName + " mariadb --batch",
+		serverPodman + "exec --env-file " + filepath.Join(root.secretsDir(), "env-12") + " " + mariaName + " mariadb --sandbox",
+		serverPodman + "image exists " + root.serviceImage("mariadb"),
+		serverPodman + "pull --quiet " + root.serviceImage("mariadb"),
+		// The service users: a database client in a shared database container, and the images
+		// of this agent version.
 		dbPodman + "exec cf-postgresql pg_isready",
-		dbPodman + "exec --env-file " + filepath.Join(root.secretsDir(), "env-12") + " " + mariaName + " mariadb --sandbox",
 		dbPodman + "pull --quiet " + root.serviceImage("mariadb"),
 		edgePodman + "image exists ghcr.io/itbm/edge:0.2.0",
 		// The user managers.
 		"systemctl --user --machine=acme_x7k2@ daemon-reload",
 		"systemctl --user --machine=acme_x7k2@ restart cf-acme_x7k2.service",
 		"systemctl --user --machine=acme_x7k2@ set-property --runtime cf-acme_x7k2.service CPUQuota=100% MemoryMax=1073741824 TasksMax=100",
-		"systemctl --user --machine=cf-db@ stop " + mariaName + ".service",
+		systemctlOf(mariaServerKey) + "stop " + mariaName + ".service",
+		systemctlOf(mariaServerKey) + "show --property=ControlGroup --value " + mariaName + ".service",
+		"systemctl --user --machine=cf-db@ stop cf-mariadb.service",
 		"systemctl --user --machine=cf-edge@ is-active cf-edge.service",
 		// Root.
 		"systemctl is-active ssh",
@@ -103,6 +119,7 @@ func TestTheRootHelperRefusesCommandsOutsideThePolicy(t *testing.T) {
 	root := rootOf(d)
 	app, dumps, stage := root.Host.AppDir("acme_x7k2"), root.dumpDir("acme_x7k2"), root.stageDir(jobID)
 	secret := filepath.Join(root.secretsDir(), "env-12")
+	serverUser, serverPodman := host.DatabaseUser(mariaServerKey), podmanOf(mariaServerKey)
 	for _, command := range []string{
 		// Root runs no program that the worker selects.
 		"sh -c id",
@@ -142,23 +159,52 @@ func TestTheRootHelperRefusesCommandsOutsideThePolicy(t *testing.T) {
 		"runuser -u acme_x7k2 --",
 		"runuser - root",
 
+		// The worker cannot run a program of its choice as the user of a database server.
+		"runuser -u " + serverUser + " -- sh -c id",
+		"runuser -u " + serverUser + " -- podman ps",
+		"runuser -u " + serverUser + " -- env LD_PRELOAD=/tmp/x.so podman ps",
+		"runuser -u " + serverUser + " -- env XDG_RUNTIME_DIR=/run/user/20001 podman exec " + mariaName + " mariadb",
+		"runuser -u " + serverUser + " -- env XDG_RUNTIME_DIR=/run/user/990 podman exec " + mariaName + " mariadb",
+		serverPodman + "run --rm --privileged -v /:/host docker.io/library/alpine",
+		serverPodman + "exec " + mariaName + " sh -c id",
+		serverPodman + "exec " + mariaName + " bash",
+		serverPodman + "exec --privileged " + mariaName + " mariadb",
+		serverPodman + "exec --user root " + mariaName + " mariadb",
+		serverPodman + "exec -i -i " + mariaName + " mariadb",
+		serverPodman + "exec --env-file /etc/shadow " + mariaName + " mariadb",
+		serverPodman + "exec --env-file " + secret + "/../../x " + mariaName + " mariadb",
+		serverPodman + "exec cf-edge mariadb",
+		serverPodman + "exec cf-mariadb-../x mariadb",
+		serverPodman + "exec " + mariaName,
+		serverPodman + "cp " + mariaName + ":/etc/passwd /tmp/x",
+		serverPodman + "pull --quiet docker.io/library/alpine",
+		serverPodman + "pull --quiet --root=/tmp/x " + root.serviceImage("mariadb"),
+		serverPodman + "image exists ",
+		// The user of a database server can use only the container of that server.
+		serverPodman + "exec cf-mariadb mariadb",
+		serverPodman + "exec cf-mariadb-" + pgServerKey + " mariadb",
+		serverPodman + "exec cf-postgresql-" + pgServerKey + " psql",
+		dbPodman + "exec " + mariaName + " mariadb",
+		// The name of a user must be the name of a database server, and its UID must be in the
+		// range of the users of the database servers.
+		"runuser -u db-x -- env XDG_RUNTIME_DIR=/run/user/10001 podman exec cf-mariadb-x mariadb",
+		"runuser -u db-" + mariaServerID + " -- env XDG_RUNTIME_DIR=/run/user/10001 podman exec cf-mariadb-" + mariaServerID + " mariadb",
+		"runuser -u db-../" + mariaServerKey + " -- env XDG_RUNTIME_DIR=/run/user/10001 podman exec " + mariaName + " mariadb",
+		adminPodman + "exec cf-mariadb-" + adminKey + " mariadb",
+		adminPodman + "pull --quiet " + root.serviceImage("mariadb"),
+		"runuser -u " + adminDBUser + " -- id",
 		// The worker cannot run a program of its choice as a service user.
 		"runuser -u cf-db -- sh -c id",
 		"runuser -u cf-db -- podman ps",
 		"runuser -u cf-db -- env LD_PRELOAD=/tmp/x.so podman ps",
-		"runuser -u cf-db -- env XDG_RUNTIME_DIR=/run/user/20001 podman exec " + mariaName + " mariadb",
+		"runuser -u cf-db -- env XDG_RUNTIME_DIR=/run/user/20001 podman exec cf-mariadb mariadb",
 		dbPodman + "run --rm --privileged -v /:/host docker.io/library/alpine",
-		dbPodman + "exec " + mariaName + " sh -c id",
-		dbPodman + "exec " + mariaName + " bash",
-		dbPodman + "exec --privileged " + mariaName + " mariadb",
-		dbPodman + "exec --user root " + mariaName + " mariadb",
-		dbPodman + "exec -i -i " + mariaName + " mariadb",
-		dbPodman + "exec --env-file /etc/shadow " + mariaName + " mariadb",
-		dbPodman + "exec --env-file " + secret + "/../../x " + mariaName + " mariadb",
+		dbPodman + "exec cf-mariadb sh -c id",
+		dbPodman + "exec --user root cf-mariadb mariadb",
+		dbPodman + "exec --env-file /etc/shadow cf-mariadb mariadb",
 		dbPodman + "exec cf-edge mariadb",
-		dbPodman + "exec cf-mariadb-../x mariadb",
-		dbPodman + "exec " + mariaName,
-		dbPodman + "cp " + mariaName + ":/etc/passwd /tmp/x",
+		dbPodman + "exec cf-mariadb",
+		dbPodman + "cp cf-mariadb:/etc/passwd /tmp/x",
 		dbPodman + "pull --quiet docker.io/library/alpine",
 		dbPodman + "pull --quiet --root=/tmp/x " + root.serviceImage("mariadb"),
 		dbPodman + "image exists ",
@@ -180,7 +226,11 @@ func TestTheRootHelperRefusesCommandsOutsideThePolicy(t *testing.T) {
 		"systemctl --user --machine=acme_x7k2@ set-environment A=b",
 		"systemctl --user --machine=acme_x7k2@ set-property --runtime x.service ExecStart=/bin/sh",
 		"systemctl --user --machine=acme_x7k2@ set-property x.service MemoryMax=1",
-		"systemctl --user --machine=cf-db@ set-property --runtime " + mariaName + ".service MemoryMax=1",
+		"systemctl --user --machine=cf-db@ set-property --runtime cf-mariadb.service MemoryMax=1",
+		systemctlOf(mariaServerKey) + "set-property --runtime " + mariaName + ".service MemoryMax=1",
+		systemctlOf(mariaServerKey) + "enable " + mariaName + ".service",
+		"systemctl --user --machine=" + adminDBUser + "@ stop cf-mariadb-" + adminKey + ".service",
+		"systemctl --user --machine=db-x@ stop x.service",
 		"systemctl --user start x.service",
 		"systemctl --user",
 
@@ -291,7 +341,8 @@ func TestTheRootHelperRefusesValuesOutsideTheLimits(t *testing.T) {
 		change(&in)
 		return in
 	}
-	dump := []string{"runuser", "-u", "cf-db", "--", "env", "XDG_RUNTIME_DIR=/run/user/990", "podman", "exec", mariaName, "mariadb-dump", "acme_x7k2_shop"}
+	dump := words(podmanOf(mariaServerKey) + "exec " + mariaName + " mariadb-dump acme_x7k2_shop")
+	serverUser := host.DatabaseUser(mariaServerKey)
 	for name, tc := range map[string]struct {
 		op string
 		in any
@@ -317,10 +368,21 @@ func TestTheRootHelperRefusesValuesOutsideTheLimits(t *testing.T) {
 		"a unit name with a directory":  {opUnitWrite, unitIn{User: "acme_x7k2", Name: "a/x.container", Content: "[Container]\n"}},
 		"a service unit":                {opUnitWrite, unitIn{User: "acme_x7k2", Name: "x.service", Content: "[Service]\n"}},
 		"a timer unit":                  {opUnitWrite, unitIn{User: "acme_x7k2", Name: "x.timer", Content: "[Timer]\n"}},
+		"a unit of a database server":   {opUnitWrite, unitIn{User: serverUser, Name: mariaName + ".container", Content: "[Container]\n"}},
 		"remove the unit of the edge":   {opUnitRemove, unitIn{User: "cf-edge", Name: "cf-edge.container"}},
 		"remove a different cf-db unit": {opUnitRemove, unitIn{User: DBUser, Name: "cf-edge.container"}},
-		"remove a cf-db unit by path":   {opUnitRemove, unitIn{User: DBUser, Name: "../" + mariaName + ".container"}},
+		"remove a cf-db unit by path":   {opUnitRemove, unitIn{User: DBUser, Name: "../cf-mariadb.container"}},
 		"remove a unit of root":         {opUnitRemove, unitIn{User: "root", Name: "x.container"}},
+
+		"remove the unit of a server as cf-db":         {opUnitRemove, unitIn{User: DBUser, Name: mariaName + ".container"}},
+		"remove a shared unit as a server":             {opUnitRemove, unitIn{User: serverUser, Name: "cf-mariadb.container"}},
+		"remove the unit of a different server":        {opUnitRemove, unitIn{User: serverUser, Name: "cf-mariadb-" + pgServerKey + ".container"}},
+		"remove the unit of a server by path":          {opUnitRemove, unitIn{User: serverUser, Name: "../" + mariaName + ".container"}},
+		"remove a unit of an administrator":            {opUnitRemove, unitIn{User: adminDBUser, Name: "cf-mariadb-" + adminKey + ".container"}},
+		"make the user of a database server":           {opUserEnsure, userIn{User: serverUser}},
+		"remove the user of a database server":         {opUserRemove, userIn{User: serverUser}},
+		"a website quota for the user of a server":     {opUserQuota, quotaIn{User: serverUser, Bytes: 1}},
+		"the storage of the user of a database server": {opUserStorage, userIn{User: serverUser}},
 
 		"an image with no digest":    {opImagesEnsure, imageIn{Ref: "ghcr.io/cloudfactory/frankenphp-php8.4:8.4.0-1"}},
 		"an image that is an option": {opImagesEnsure, imageIn{Ref: "--root=/tmp/x@" + sharedDigest}},
@@ -377,8 +439,10 @@ func TestTheRootHelperRefusesValuesOutsideTheLimits(t *testing.T) {
 		"the hash of a different website":  {opRestoreHash, restoreIn{Job: jobID, User: "acme_x7k2", Engine: "mariadb", Name: "bolt_k3m9_shop"}},
 		"load a dump with a shell":         {opRestoreLoad, restoreIn{Job: jobID, User: "acme_x7k2", Engine: "mariadb", Name: "acme_x7k2_shop", Argv: []string{"sh"}}},
 
-		"a secret file with a different variable": {opSecretMake, secretIn{Content: "LD_PRELOAD=/tmp/x.so\n"}},
-		"a secret file with two lines":            {opSecretMake, secretIn{Content: "MYSQL_PWD=00112233\nLD_PRELOAD=/tmp/x.so\n"}},
+		"a secret file with a different variable": {opSecretMake, secretIn{Server: maria, Content: "LD_PRELOAD=/tmp/x.so\n"}},
+		"a secret file with two lines":            {opSecretMake, secretIn{Server: maria, Content: "MYSQL_PWD=00112233\nLD_PRELOAD=/tmp/x.so\n"}},
+		"a secret file for a server with a path":  {opSecretMake, secretIn{Server: dbServer{ID: "../..", Engine: "mariadb"}, Content: "MYSQL_PWD=00112233\n"}},
+		"a secret file for an engine not there":   {opSecretMake, secretIn{Server: dbServer{ID: mariaServerKey, Engine: "mongodb"}, Content: "MYSQL_PWD=00112233\n"}},
 		"remove a file that is not a secret":      {opSecretRemove, pathIn{Path: "/etc/passwd"}},
 		"remove a secret by a path":               {opSecretRemove, pathIn{Path: root.secretsDir() + "/../secrets/env-1"}},
 		"remove a different file of the secrets":  {opSecretRemove, pathIn{Path: filepath.Join(root.secretsDir(), "valkey.acl")}},

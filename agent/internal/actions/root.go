@@ -73,6 +73,7 @@ const (
 	opDBRemoveData   = "db.removeData"
 	opDBRemoveOld    = "db.removeOld"
 	opDBDisk         = "db.disk"
+	opDBQuotaMount   = "db.quotaMount"
 	opDBNetwork      = "db.network"
 	opDBAccess       = "db.access"
 	opDBValkeySecret = "db.valkeySecret"
@@ -146,10 +147,12 @@ type (
 		Measure bool
 	}
 	diskOut struct {
-		// Used and Size are bytes. Size is 0 with no disk image. Used is -1 when the helper
-		// did not measure a directory.
+		// Used and Size are bytes. Size is the disk limit that the server applies: the user
+		// quota or the size of the disk image. It is 0 with no limit. Used is -1 when the
+		// helper did not measure a directory.
 		Used, Size int64
-		Mounted    bool
+		// Known is true when the kernel gave Used: the helper did not read the directory.
+		Known bool
 	}
 	accessIn struct {
 		Elements []accessElement
@@ -173,6 +176,8 @@ type (
 		Rel string
 	}
 	secretIn struct {
+		// Server is the database container whose user reads the file.
+		Server  dbServer
 		Content string
 	}
 	pathIn struct {
@@ -203,9 +208,10 @@ type accessElement struct {
 // serviceUsers are the Unix users of the services whose containers the worker starts and
 // stops. The installer makes them. They are not root.
 //
-// The worker cannot run a program of its choice as one of these users, and it cannot give the
-// text of one of their units: cf-db owns the data of all customers, and root does file work in
-// its home directory. The root helper makes their units from its own settings.
+// The worker cannot run a program of its choice as one of these users, or as the user of a
+// database server, and it cannot give the text of one of their units: the user of a database
+// server owns the data of a customer, and root does file work in the directory of the
+// database servers. The root helper makes their units from its own settings.
 var serviceUsers = []string{host.EdgeUser, DBUser}
 
 // websiteUser checks that name is the Unix user of a website: the name has the form of a
@@ -229,10 +235,36 @@ func (d *Deps) websiteUser(name string) error {
 	return nil
 }
 
-// managedUser checks that name is the Unix user of a website or of a service.
+// databaseUser checks that name is the Unix user of a database server: the name has the form
+// of such a user, and a user that exists has a UID in the range of these users. The root
+// helper makes the user itself (db.prepare), so the worker cannot make root or the user of a
+// website a database user.
+func (d *Deps) databaseUser(name string) error {
+	if err := host.CheckDatabaseUser(name); err != nil {
+		return err
+	}
+	uid, err := d.Host.LookupUID(name)
+	if err != nil {
+		var unknown user.UnknownUserError
+		if errors.As(err, &unknown) {
+			return nil
+		}
+		return err
+	}
+	if uid < host.DatabaseIDMin || uid > host.DatabaseIDMax {
+		return fmt.Errorf("the user %s has the UID %d, which is not in the range of the users of the database servers", name, uid)
+	}
+	return nil
+}
+
+// managedUser checks that name is the Unix user of a website, of a database server or of a
+// service.
 func (d *Deps) managedUser(name string) error {
 	if slices.Contains(serviceUsers, name) {
 		return nil
+	}
+	if strings.HasPrefix(name, host.DatabaseUserPrefix) {
+		return d.databaseUser(name)
 	}
 	return d.websiteUser(name)
 }
@@ -299,25 +331,30 @@ func checkPrepare(in serverIn) error {
 	return nil
 }
 
-// databaseUnitName reports whether name is the unit of a database container.
-func databaseUnitName(name string) bool {
-	container, ok := strings.CutSuffix(name, ".container")
-	return ok && isDatabaseContainer(container)
-}
-
-// isDatabaseContainer reports whether name is the name of a database container: the shared
-// container of an engine, or the container of a database server.
-func isDatabaseContainer(name string) bool {
-	for _, engine := range Engines {
-		shared := quadlet.DatabaseContainer(engine, "")
-		if name == shared {
-			return true
+// containerOf reports whether name is the name of a database container of a Unix user: for
+// cf-db, the shared container of an engine, and for the user of a database server, the
+// container of that database server. Thus a command as the user of a database server
+// cannot name the container of a different database server.
+func containerOf(unixUser, name string) bool {
+	id := ""
+	if unixUser != DBUser {
+		var ok bool
+		if id, ok = strings.CutPrefix(unixUser, host.DatabaseUserPrefix); !ok || host.CheckDatabaseUser(unixUser) != nil {
+			return false
 		}
-		if id, ok := strings.CutPrefix(name, shared+"-"); ok && checkServer(dbServer{ID: id, Engine: engine}) == nil && id != "" {
+	}
+	for _, engine := range Engines {
+		if name == quadlet.DatabaseContainer(engine, id) {
 			return true
 		}
 	}
 	return false
+}
+
+// unitOf reports whether name is the unit of a database container of a Unix user (containerOf).
+func unitOf(unixUser, name string) bool {
+	container, ok := strings.CutSuffix(name, ".container")
+	return ok && containerOf(unixUser, container)
 }
 
 var (
@@ -393,10 +430,15 @@ func (d *Deps) RootOps() map[string]gate.Handler {
 			return h.WriteUnit(in.User, in.Name, in.Content)
 		}),
 		opUnitRemove: none(func(_ context.Context, in unitIn) error {
-			if in.User == DBUser {
+			if in.User == DBUser || strings.HasPrefix(in.User, host.DatabaseUserPrefix) {
 				// The worker stops a database container and removes its unit.
-				if !databaseUnitName(in.Name) {
-					return fmt.Errorf("%q is not the unit of a database container", in.Name)
+				if in.User != DBUser {
+					if err := d.databaseUser(in.User); err != nil {
+						return err
+					}
+				}
+				if !unitOf(in.User, in.Name) {
+					return fmt.Errorf("%q is not the unit of a database container of %s", in.Name, in.User)
 				}
 				return h.RemoveUnit(in.User, in.Name)
 			}
@@ -435,7 +477,9 @@ func (d *Deps) RootOps() map[string]gate.Handler {
 			if d.Images == nil {
 				return errors.New("this server has no shared image store")
 			}
-			return d.Images.Prune(in.InUse)
+			// The helper adds the images of the units itself, so a worker that does not name
+			// the image of a database server cannot remove it.
+			return d.Images.Prune(append(in.InUse, d.unitImages()...))
 		}),
 
 		// A new agent binary. The helper checks the signature and the version again: it does
@@ -507,7 +551,8 @@ func (d *Deps) RootOps() map[string]gate.Handler {
 			}
 			return d.diskState(ctx, in.Server, in.Measure), nil
 		}),
-		opDBNetwork: none(func(ctx context.Context, _ gate.None) error { return d.ensureDatabaseNetwork(ctx) }),
+		opDBQuotaMount: gate.Op(func(context.Context, gate.None) (string, error) { return d.DBQuotaMount, nil }),
+		opDBNetwork:    none(func(ctx context.Context, _ gate.None) error { return d.ensureDatabaseNetwork(ctx) }),
 		opDBAccess: none(func(ctx context.Context, in accessIn) error {
 			return d.loadDatabaseAccess(ctx, in.Elements)
 		}),
@@ -597,10 +642,13 @@ func (d *Deps) RootOps() map[string]gate.Handler {
 			return d.loadStagedDump(ctx, in.Job, in.User, in.Engine, in.Name, in.Argv)
 		}),
 		opSecretMake: gate.Op(func(ctx context.Context, in secretIn) (string, error) {
+			if err := checkServer(in.Server); err != nil {
+				return "", err
+			}
 			if !secretRE.MatchString(in.Content) {
 				return "", errors.New("the content of the secret file is not valid")
 			}
-			return d.secretFile(ctx, in.Content)
+			return d.secretFile(ctx, in.Server, in.Content)
 		}),
 		// removeSecret removes only a file that secretFile made.
 		opSecretRemove: none(func(ctx context.Context, in pathIn) error { return d.removeSecret(ctx, in.Path) }),
@@ -691,6 +739,12 @@ func (r imagesRoot) Ensure(ctx context.Context, ref string) error {
 	return r.g.Call(ctx, opImagesEnsure, imageIn{Ref: ref}, nil)
 }
 
+// EnsureService is not for the worker: the root helper puts the image of a database engine
+// in the shared store when it prepares a database server (db.prepare).
+func (r imagesRoot) EnsureService(context.Context, string) error {
+	return errors.New("only the root helper puts the image of a database engine in the shared store")
+}
+
 func (r imagesRoot) Prune(inUse []string) error {
 	return r.g.Call(context.Background(), opImagesPrune, pruneIn{InUse: inUse}, nil)
 }
@@ -728,6 +782,18 @@ func (d *Deps) UseGate(g gate.Gate) {
 
 // The functions below are small parts of the actions that need root. Each one has the two
 // sides of the boundary.
+
+// DatabaseQuotaMount gives the mount point of the directory of the database servers when user
+// quotas are on there, or "". The root helper finds it at its start, and the worker asks the
+// helper: the status report tells the panel when the server does not apply the disk limit
+// of a database server.
+func (d *Deps) DatabaseQuotaMount(ctx context.Context) (mount string) {
+	if d.Gate != nil {
+		_ = d.Gate.Call(ctx, opDBQuotaMount, nil, &mount)
+		return mount
+	}
+	return d.DBQuotaMount
+}
 
 // keepAgent copies the agent binary for a rollback.
 func (d *Deps) keepAgent() error {

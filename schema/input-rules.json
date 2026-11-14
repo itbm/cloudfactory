@@ -135,6 +135,19 @@
       "maxLength": 8192,
       "echo": false,
       "message": "Enter one public SSH key on one line, for example: ssh-ed25519 AAAA... name. Do not put options before the key."
+    },
+    "databasePassword": {
+      "what": "database password",
+      "doc": "The password of a database user. The panel makes it. It has only letters and digits, so that it needs no quotation marks in a command, in SQL or in a connection address.",
+      "pattern": "^[A-Za-z0-9]{16,64}$",
+      "echo": false,
+      "message": "Use 16 to 64 letters and digits."
+    },
+    "databaseClientHost": {
+      "what": "database client host",
+      "doc": "The host part of a MariaDB user: an address, a network, a host name or a pattern with a percent sign.",
+      "pattern": "^[A-Za-z0-9.:%/_-]{1,255}$",
+      "message": "Use an address, a network or a host name. Use only letters, digits and the characters . : % / _ -"
     }
   },
   "sets": {

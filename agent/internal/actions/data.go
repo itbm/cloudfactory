@@ -17,16 +17,41 @@ import (
 	"strings"
 
 	agentv1 "github.com/itbm/cloudfactory/agent/gen/cloudfactory/agent/v1"
+	"github.com/itbm/cloudfactory/agent/internal/host"
 	"github.com/itbm/cloudfactory/agent/internal/jobs"
 	"github.com/itbm/cloudfactory/agent/internal/quadlet"
 	"github.com/itbm/cloudfactory/agent/internal/safefs"
 	"github.com/itbm/cloudfactory/agent/internal/validate"
 )
 
-// DBUser is the Unix user of the database containers.
+// DBUser is the Unix user of the shared database containers of an earlier release. A database
+// server of a customer has its own Unix user (dbUser).
 const DBUser = "cf-db"
 
-var passwordRE = regexp.MustCompile(`^[A-Za-z0-9]{16,64}$`)
+// dbUser gives the Unix user of a database container. Each database server of a customer has
+// its own user, as each website has: the user owns the data files, and the disk limit of the
+// database server is the user quota of that user. The user has the name "db-" and the ID of
+// the database server, so the root helper finds it from the ID.
+func dbUser(s dbServer) string {
+	if s.ID == "" {
+		return DBUser
+	}
+	return host.DatabaseUser(s.ID)
+}
+
+// dbExec gives the start of a command that runs a program in a database container, as the
+// Unix user of the container:
+//
+//	runuser -u <user> -- env XDG_RUNTIME_DIR=/run/user/<UID> podman exec <options> <container>
+func (d *Deps) dbExec(s dbServer, options ...string) ([]string, error) {
+	user := dbUser(s)
+	uid, err := d.Host.LookupUID(user)
+	if err != nil {
+		return nil, err
+	}
+	args := []string{"runuser", "-u", user, "--", "env", fmt.Sprintf("XDG_RUNTIME_DIR=/run/user/%d", uid), "podman", "exec"}
+	return append(append(args, options...), s.container()), nil
+}
 
 // dbContainer checks an engine, and gives the name of its shared container of an earlier
 // release. dbServer.container gives the name of the container of a database server.
@@ -77,17 +102,16 @@ func (d *Deps) sqlNow(ctx context.Context, s dbServer, statements string) (strin
 	if _, err := dbContainer(engine); err != nil {
 		return "", err
 	}
-	uid, err := d.Host.LookupUID(DBUser)
+	args, err := d.dbExec(s, "-i")
 	if err != nil {
 		return "", err
 	}
-	args := []string{"-u", DBUser, "--", "env", fmt.Sprintf("XDG_RUNTIME_DIR=/run/user/%d", uid), "podman", "exec", "-i", s.container()}
 	if engine == "mariadb" {
 		args = append(args, "mariadb", "--user=root", "--batch", "--skip-column-names")
 	} else {
 		args = append(args, "psql", "--username=postgres", "--set=ON_ERROR_STOP=1", "--tuples-only", "--no-align")
 	}
-	return d.Run.RunInput(ctx, statements, "runuser", args...)
+	return d.Run.RunInput(ctx, statements, args[0], args[1:]...)
 }
 
 // mariaHost is the host part of a MariaDB user (CF-19). "website" users can connect only from
@@ -106,8 +130,8 @@ func (d *Deps) mariaHost(s dbServer, access string) (string, error) {
 				host = quadlet.ServiceAddress
 			}
 		}
-		if !clientHostRE.MatchString(host) {
-			return "", fmt.Errorf("the database client host %q is not valid", host)
+		if err := validate.DatabaseClientHost(host); err != nil {
+			return "", err
 		}
 		return host, nil
 	case "anywhere":
@@ -115,8 +139,6 @@ func (d *Deps) mariaHost(s dbServer, access string) (string, error) {
 	}
 	return "", fmt.Errorf("the database access %q is not valid", access)
 }
-
-var clientHostRE = regexp.MustCompile(`^[A-Za-z0-9.:%/_-]{1,255}$`)
 
 // mariaDB gives a database name for GRANT. In GRANT, "_" and "%" are patterns, so the agent
 // escapes "_". Then a grant on "acme_x7k2_shop" never matches a different database.
@@ -192,7 +214,7 @@ func (d *Deps) CreateDatabase(req *agentv1.CreateDatabaseRequest) (jobs.Job, err
 		if err := validate.TenantDatabaseName(unixUser, user); err != nil {
 			return jobs.Job{}, err
 		}
-		if !passwordRE.MatchString(pass) {
+		if validate.DatabasePassword(pass) != nil {
 			return jobs.Job{}, errors.New("the database password must have 16 to 64 letters and digits")
 		}
 	}
@@ -347,7 +369,7 @@ func (d *Deps) mariaCurrentHost(ctx context.Context, s dbServer, user string) (s
 		return "", err
 	}
 	hosts := strings.Fields(out)
-	if len(hosts) != 1 || !clientHostRE.MatchString(hosts[0]) {
+	if len(hosts) != 1 || validate.DatabaseClientHost(hosts[0]) != nil {
 		return "", fmt.Errorf("the database user %s has %d hosts, not 1", user, len(hosts))
 	}
 	return hosts[0], nil
@@ -377,7 +399,7 @@ func (d *Deps) SetDatabaseUser(req *agentv1.SetDatabaseUserRequest) (jobs.Job, e
 		}
 	}
 	pass := req.GetPassword()
-	if (pass != "" || req.GetCreate()) && !passwordRE.MatchString(pass) {
+	if (pass != "" || req.GetCreate()) && validate.DatabasePassword(pass) != nil {
 		errs = append(errs, errors.New("the database password must have 16 to 64 letters and digits"))
 	}
 	_, err := d.mariaHost(dbServer{}, req.GetAccess())
@@ -507,7 +529,7 @@ func (d *Deps) dropUser(ctx context.Context, s dbServer, user string) error {
 		}
 		var b strings.Builder
 		for _, h := range strings.Fields(out) {
-			if clientHostRE.MatchString(h) {
+			if validate.DatabaseClientHost(h) == nil {
 				fmt.Fprintf(&b, "DROP USER IF EXISTS '%s'@'%s';\n", user, h)
 			}
 		}
@@ -921,11 +943,10 @@ func (d *Deps) dumpCommand(ctx context.Context, s dbServer, name string) ([]stri
 	if err := d.EnsureDatabaseService(ctx, s); err != nil {
 		return nil, err
 	}
-	uid, err := d.Host.LookupUID(DBUser)
+	args, err := d.dbExec(s)
 	if err != nil {
 		return nil, err
 	}
-	args := []string{"runuser", "-u", DBUser, "--", "env", fmt.Sprintf("XDG_RUNTIME_DIR=/run/user/%d", uid), "podman", "exec", s.container()}
 	if s.Engine == "mariadb" {
 		args = append(args, "mariadb-dump", "--user=root", "--single-transaction", "--routines", name)
 	} else {
@@ -1251,7 +1272,7 @@ func (d *Deps) emptyAsUser(ctx context.Context, unixUser, dir string) error {
 // Audit batch 2, finding 5: the database is empty before the restore, so that the result is
 // the database of the backup, with no tables that the website made later.
 func (d *Deps) restoreDump(ctx context.Context, s dbServer, name string, feed func(ctx context.Context, client []string) error) error {
-	engine, c := s.Engine, s.container()
+	engine := s.Engine
 	tmpUser := "cfrestore_" + randomHex(8)
 	pass := randomHex(24)
 	maria := engine == "mariadb"
@@ -1268,16 +1289,15 @@ func (d *Deps) restoreDump(ctx context.Context, s dbServer, name string, feed fu
 	}
 	defer d.sql(context.WithoutCancel(ctx), s, drop)
 
-	envFile, err := d.secretFile(ctx, map[bool]string{true: "MYSQL_PWD", false: "PGPASSWORD"}[maria]+"="+pass+"\n")
+	envFile, err := d.secretFile(ctx, s, map[bool]string{true: "MYSQL_PWD", false: "PGPASSWORD"}[maria]+"="+pass+"\n")
 	if err != nil {
 		return err
 	}
 	defer d.removeSecret(context.WithoutCancel(ctx), envFile)
-	uid, err := d.Host.LookupUID(DBUser)
+	base, err := d.dbExec(s, "-i", "--env-file", envFile)
 	if err != nil {
 		return err
 	}
-	base := []string{"runuser", "-u", DBUser, "--", "env", fmt.Sprintf("XDG_RUNTIME_DIR=/run/user/%d", uid), "podman", "exec", "-i", "--env-file", envFile, c}
 	// --sandbox refuses client commands such as "system" and "source".
 	client := []string{"mariadb", "--sandbox", "--user=" + tmpUser, "--batch", name}
 	check := client
@@ -1328,14 +1348,16 @@ func (d *Deps) secretsDir() string {
 	return "/run/cloudfactory/secrets"
 }
 
-// SecretFilesDir gives the directory of the secret files. The user cf-db must go through each
-// directory of this path, so the root helper does not close one of them.
+// SecretFilesDir gives the directory of the secret files. The Unix user of a database
+// container must go through each directory of this path, so the root helper does not close
+// one of them.
 func (d *Deps) SecretFilesDir() string { return d.secretsDir() }
 
-// secretFile writes a file that only the database service user can read, and gives its path.
-func (d *Deps) secretFile(ctx context.Context, content string) (path string, err error) {
+// secretFile writes a file that only the Unix user of a database container can read, and
+// gives its path.
+func (d *Deps) secretFile(ctx context.Context, s dbServer, content string) (path string, err error) {
 	if d.Gate != nil {
-		err = d.Gate.Call(ctx, opSecretMake, secretIn{Content: content}, &path)
+		err = d.Gate.Call(ctx, opSecretMake, secretIn{Server: s, Content: content}, &path)
 		return path, err
 	}
 	dir := d.secretsDir()
@@ -1356,7 +1378,7 @@ func (d *Deps) secretFile(ctx context.Context, content string) (path string, err
 		os.Remove(f.Name())
 		return "", err
 	}
-	if _, err := d.Run.Run(ctx, "chown", DBUser, f.Name()); err != nil {
+	if _, err := d.Run.Run(ctx, "chown", dbUser(s), f.Name()); err != nil {
 		os.Remove(f.Name())
 		return "", err
 	}

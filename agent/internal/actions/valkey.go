@@ -22,6 +22,7 @@ import (
 	"github.com/itbm/cloudfactory/agent/internal/host"
 	"github.com/itbm/cloudfactory/agent/internal/panel"
 	"github.com/itbm/cloudfactory/agent/internal/quadlet"
+	"github.com/itbm/cloudfactory/agent/internal/safefs"
 )
 
 // Valkey is the third engine of the database containers. Each customer has its own Valkey
@@ -188,13 +189,24 @@ func (d *Deps) valkeySecret(ctx context.Context, s dbServer) (password string, e
 // administrator. The file has only the SHA-256 hash of the password. The password itself
 // stays in a file that only root can read, because the container does not need it.
 //
-// The file belongs to cf-db, which is root in the container. The entry point of the image
-// then gives it to the user valkey of the container, with the data directory.
-func (d *Deps) writeValkeyUsers(ctx context.Context, s dbServer, dataDir string) error {
-	users := filepath.Join(dataDir, quadlet.ValkeyUsersFile)
-	if _, err := os.Lstat(users); err == nil {
-		return nil
-	} else if !os.IsNotExist(err) {
+// The file belongs to the Unix user of the database server, which is the user valkey of the
+// container: Valkey writes the file again when the agent changes a user.
+//
+// The user of the database server owns the data directory, and can put a symbolic link in
+// it. Thus root opens the file from the directory of the disk, which root owns, with no
+// symbolic links (package safefs).
+func (d *Deps) writeValkeyUsers(s dbServer, dataDir string) error {
+	disk, err := safefs.Open(filepath.Dir(dataDir))
+	if err != nil {
+		return err
+	}
+	defer disk.Close()
+	users := filepath.Join(filepath.Base(dataDir), quadlet.ValkeyUsersFile)
+	if exists, err := disk.Exists(users); err != nil || exists {
+		return err
+	}
+	uid, gid, err := d.Host.FileOwner(dbUser(s))
+	if err != nil {
 		return err
 	}
 	password := randomHex(48)
@@ -202,10 +214,7 @@ func (d *Deps) writeValkeyUsers(ctx context.Context, s dbServer, dataDir string)
 		return err
 	}
 	sum := sha256.Sum256([]byte(password))
-	if _, err := host.WriteFile(users, "user "+valkeyAdmin+" on #"+hex.EncodeToString(sum[:])+" ~* &* +@all\n", 0o600); err != nil {
-		return err
-	}
-	_, err := d.Run.Run(ctx, "chown", DBUser+":"+DBUser, users)
+	_, err = disk.WriteFile(users, []byte("user "+valkeyAdmin+" on #"+hex.EncodeToString(sum[:])+" ~* &* +@all\n"), 0o600, uid, gid)
 	return err
 }
 

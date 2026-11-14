@@ -136,7 +136,7 @@ func (d *Deps) FillReport(ctx context.Context, r *panel.Report) {
 
 // databaseServerUse gives the state, the memory and the disk space of each database server of
 // a customer. The caller holds the lock of the observer. With walk set, the function also
-// measures the directory of each database server that has no disk image.
+// measures the directory of each database server that has no user quota and no disk image.
 func (d *Deps) databaseServerUse(ctx context.Context, walk bool) []panel.DatabaseServerUse {
 	out := []panel.DatabaseServerUse{}
 	instances, err := d.State.DatabaseInstances()
@@ -153,7 +153,7 @@ func (d *Deps) databaseServerUse(ctx context.Context, walk bool) []panel.Databas
 			s := dbServer{ID: id, Engine: servers[id].Engine}
 			u := panel.DatabaseServerUse{ID: id, State: "stopped"}
 			_, measured := o.dbDisk[id]
-			if st := d.diskState(ctx, s, walk || !measured); st.Mounted {
+			if st := d.diskState(ctx, s, walk || !measured); st.Known {
 				u.DiskBytes, u.DiskSizeBytes = st.Used, st.Size
 			} else {
 				if st.Used >= 0 {
@@ -163,7 +163,7 @@ func (d *Deps) databaseServerUse(ctx context.Context, walk bool) []panel.Databas
 			}
 			dir := o.dbCgroups[id]
 			if dir == "" {
-				out, err := d.Host.Systemctl(ctx, DBUser, "show", "--property=ControlGroup", "--value", s.container()+".service")
+				out, err := d.Host.Systemctl(ctx, dbUser(s), "show", "--property=ControlGroup", "--value", s.container()+".service")
 				if cg := strings.TrimSpace(out); err == nil && cg != "" && !strings.Contains(cg, "..") {
 					dir = filepath.Join(d.cgroupRoot(), cg)
 					o.dbCgroups[id] = dir
