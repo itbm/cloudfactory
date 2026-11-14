@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use App\Demo\DemoMailDns;
 use App\Enums\AgentAction;
 use App\Enums\DomainKind;
 use App\Enums\JobState;
@@ -11,6 +12,9 @@ use App\Models\AuditEntry;
 use App\Models\Customer;
 use App\Models\DatabaseServer;
 use App\Models\Image;
+use App\Models\MailAlias;
+use App\Models\Mailbox;
+use App\Models\MailDomain;
 use App\Models\Plan;
 use App\Models\Rollout;
 use App\Models\Server;
@@ -67,6 +71,7 @@ class DemoSeeder extends Seeder
         $this->websites();
         $this->databases();
         $this->backups();
+        $this->mail();
         $this->jobsAndRollout();
         $this->settingsAndAudit();
     }
@@ -74,10 +79,10 @@ class DemoSeeder extends Seeder
     private function plans(): void
     {
         $extensions = ['opcache', 'intl', 'gd', 'zip', 'exif', 'bcmath', 'mysqli', 'pdo_mysql', 'pdo_pgsql', 'redis', 'imagick', 'soap'];
-        // name, vCPUs, memory (GB), disk (GB), websites, then for the database servers: number, databases in each one, memory (MB), disk (GB)
-        foreach ([['Starter', 1, 1, 10, 3, 2, 5, 512, 2], ['Business', 2, 2, 40, 10, 6, 20, 1024, 10], ['Agency', 4, 4, 100, 50, 20, 50, 2048, 20]] as [$name, $cpu, $memory, $disk, $sites, $databaseServers, $databases, $databaseMemory, $databaseDisk]) {
+        // name, vCPUs, memory (GB), disk (GB), websites, then for the database servers: number, databases in each one, memory (MB), disk (GB), then the mail storage (GB)
+        foreach ([['Starter', 1, 1, 10, 3, 2, 5, 512, 2, 5], ['Business', 2, 2, 40, 10, 6, 20, 1024, 10, 25], ['Agency', 4, 4, 100, 50, 20, 50, 2048, 20, 100]] as [$name, $cpu, $memory, $disk, $sites, $databaseServers, $databases, $databaseMemory, $databaseDisk, $mail]) {
             $this->plans[$name] = Plan::create([
-                'name' => $name, 'websites' => $sites, 'mailboxes' => $sites * 10, 'databases' => $databases,
+                'name' => $name, 'websites' => $sites, 'mailboxes' => $sites * 10, 'mail_storage_bytes' => $mail * self::GB, 'databases' => $databases,
                 'database_servers' => $databaseServers,
                 'database_limits' => ['vcpus' => min($cpu, 2), 'memoryBytes' => $databaseMemory * self::MB, 'diskBytes' => $databaseDisk * self::GB],
                 'php_extensions' => $name === 'Starter' ? array_slice($extensions, 0, 8) : $extensions,
@@ -173,6 +178,46 @@ class DemoSeeder extends Seeder
             ],
             'usage' => ['cpuPercent' => 4, 'memoryPercent' => 19, 'diskPercent' => 12],
         ]);
+    }
+
+    /**
+     * A server with the email role, and the email of three customers: all DNS records found,
+     * a DKIM record missing, and a domain with no DNS check yet.
+     */
+    private function mail(): void
+    {
+        $host = 'mail-1.panel.example';
+        $server = Server::create([
+            'agent_version' => self::AGENT, 'os' => 'Debian 13', 'kernel' => '6.12.48', 'arch' => 'x86-64', 'podman_version' => '5.4.2', 'gvisor_version' => 'release-20261019.0',
+            'pending_updates' => [], 'last_seen_at' => now(), 'connection_checked_at' => now(), 'sftp_port' => 2222, 'database_engines' => [], 'database_instances' => true,
+            'name' => 'mail-1', 'location' => 'London', 'roles' => ['email'], 'state' => 'healthy', 'agent_url' => 'https://mail-1.panel.example:7443',
+            'services' => array_map(fn (string $n) => ['name' => $n, 'state' => 'running'], ['edge', 'cf-mail', 'firewall', 'podman']),
+            'usage' => ['cpuPercent' => 6, 'memoryPercent' => 31, 'diskPercent' => 18], 'last_update_at' => now()->subDays(5),
+            'mail_hostname' => $host, 'mail_status' => 'running',
+        ]);
+        $this->servers['mail-1'] = $server;
+
+        // customer, domain, which records the last check found (null: no check), mailboxes (name, size in MB, use in MB), then aliases and forwarders
+        $rows = [
+            ['acme', 'acme.example.com', fn () => true, [['info', 5120, 1260], ['sales', 2048, 1946], ['olu', 10240, 3411], ['finance', 2048, 212]],
+                [['hello', 'alias', ['info@acme.example.com']], ['team', 'forwarder', ['olu@acme.example.com', 'finance@acme.example.com', 'morgan@partner.example.net']]]],
+            ['bakery', 'cornerbakery.example.org', fn (array $r) => $r['purpose'] !== 'dkim', [['hello', 1024, 388], ['orders', 1024, 64]], [['bea', 'forwarder', ['bea.baker@mailbox.example.net']]]],
+            ['books', 'harbourbooks.example.net', null, [['shop', 2048, 0]], []],
+        ];
+        foreach ($rows as [$customer, $name, $found, $mailboxes, $aliases]) {
+            $owner = $this->customers[$customer];
+            $domain = MailDomain::create([
+                'customer_id' => $owner->id, 'server_id' => $server->id, 'name' => $name, 'status' => MailDomain::ACTIVE,
+                'records' => array_map(fn (array $r) => $r + ['found' => $found ? $found($r) : null], DemoMailDns::records($name, $host)),
+                'dns_checked_at' => $found ? now()->subHours(2) : null,
+            ]);
+            foreach ($mailboxes as [$local, $size, $used]) {
+                Mailbox::create(['customer_id' => $owner->id, 'mail_domain_id' => $domain->id, 'local_part' => $local, 'quota_bytes' => $size * self::MB, 'used_bytes' => $used * self::MB, 'status' => MailDomain::ACTIVE]);
+            }
+            foreach ($aliases as [$local, $kind, $destinations]) {
+                MailAlias::create(['customer_id' => $owner->id, 'mail_domain_id' => $domain->id, 'local_part' => $local, 'kind' => $kind, 'destinations' => $destinations, 'status' => MailDomain::ACTIVE]);
+            }
+        }
     }
 
     private function websites(): void

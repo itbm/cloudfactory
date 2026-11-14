@@ -10,6 +10,9 @@ use App\Models\BackupRemoval;
 use App\Models\Database;
 use App\Models\DatabaseServer;
 use App\Models\Domain;
+use App\Models\MailAlias;
+use App\Models\Mailbox;
+use App\Models\MailDomain;
 use App\Models\Rollout;
 use App\Models\Snapshot;
 use App\Models\Website;
@@ -175,6 +178,15 @@ class JobOutcome
                 'agent_version' => $result['version'] ?? config('cloudfactory.agent.latest_version'),
                 'state' => 'healthy',
             ]),
+            AgentAction::SetMailServer => $job->server->update(['mail_status' => 'running']),
+            // The mail server made the DKIM keys of the domain. The result has the DNS records.
+            AgentAction::SetMailDomain => MailDomain::whereKey($p['mailDomainId'] ?? '')->where('status', MailDomain::PENDING)->first()
+                ?->update(['status' => MailDomain::ACTIVE, 'records' => Mail::records($result['records'] ?? null)]),
+            AgentAction::SetMailbox => Mailbox::whereKey($p['mailboxId'] ?? '')->where('status', MailDomain::PENDING)->update(['status' => MailDomain::ACTIVE]),
+            AgentAction::SetMailAlias => MailAlias::whereKey($p['mailAliasId'] ?? '')->where('status', MailDomain::PENDING)->update(['status' => MailDomain::ACTIVE]),
+            AgentAction::DeleteMailDomain => MailDomain::whereKey($p['mailDomainId'] ?? '')->where('status', MailDomain::REMOVING)->delete(),
+            AgentAction::DeleteMailbox => Mailbox::whereKey($p['mailboxId'] ?? '')->where('status', MailDomain::REMOVING)->delete(),
+            AgentAction::DeleteMailAlias => MailAlias::whereKey($p['mailAliasId'] ?? '')->where('status', MailDomain::REMOVING)->delete(),
             default => null,
         };
     }
@@ -202,6 +214,19 @@ class JobOutcome
             // The database server is on the server still.
             AgentAction::DeleteDatabaseServer => DatabaseServer::whereKey($job->database_server_id)->where('status', DatabaseServer::REMOVING)
                 ->update(['status' => in_array($p['previousStatus'] ?? '', [DatabaseServer::RUNNING, DatabaseServer::STOPPED, DatabaseServer::FAILED], true) ? $p['previousStatus'] : DatabaseServer::RUNNING]),
+            // A mail server that operated before the change operates with its old host name.
+            AgentAction::SetMailServer => $job->server->update(($p['previous']['status'] ?? null) === 'running' && ! $job->server->mailDomains()->exists()
+                ? ['mail_hostname' => $p['previous']['hostname'] ?? $job->server->mail_hostname, 'mail_status' => 'running']
+                : ['mail_status' => 'failed']),
+            AgentAction::SetMailDomain => MailDomain::whereKey($p['mailDomainId'] ?? '')->where('status', MailDomain::PENDING)->update(['status' => MailDomain::FAILED]),
+            // A new mailbox is possibly not on the mail server. A change that failed keeps the old size.
+            AgentAction::SetMailbox => ($p['create'] ?? false)
+                ? Mailbox::whereKey($p['mailboxId'] ?? '')->where('status', MailDomain::PENDING)->update(['status' => MailDomain::FAILED])
+                : (is_int($p['previousQuotaBytes'] ?? null) ? Mailbox::whereKey($p['mailboxId'] ?? '')->update(['quota_bytes' => $p['previousQuotaBytes']]) : null),
+            AgentAction::SetMailAlias => MailAlias::whereKey($p['mailAliasId'] ?? '')->where('status', MailDomain::PENDING)->update(['status' => MailDomain::FAILED]),
+            AgentAction::DeleteMailDomain => MailDomain::whereKey($p['mailDomainId'] ?? '')->where('status', MailDomain::REMOVING)->update(['status' => self::mailStatus($p)]),
+            AgentAction::DeleteMailbox => Mailbox::whereKey($p['mailboxId'] ?? '')->where('status', MailDomain::REMOVING)->update(['status' => self::mailStatus($p)]),
+            AgentAction::DeleteMailAlias => MailAlias::whereKey($p['mailAliasId'] ?? '')->where('status', MailDomain::REMOVING)->update(['status' => self::mailStatus($p)]),
             default => null,
         };
     }
@@ -320,9 +345,15 @@ class JobOutcome
         return true;
     }
 
+    /** The state of a mail record from before a removal that failed. */
+    private static function mailStatus(array $p): string
+    {
+        return in_array($p['previousStatus'] ?? '', [MailDomain::ACTIVE, MailDomain::FAILED], true) ? $p['previousStatus'] : MailDomain::ACTIVE;
+    }
+
     private static function withoutPasswords(array $payload): array
     {
-        unset($payload['password']);
+        unset($payload['password'], $payload['passwordHash']);
         if (isset($payload['copyUsers'])) {
             $payload['copyUsers'] = array_map(fn ($u) => array_diff_key($u, ['password' => true]), $payload['copyUsers']);
         }

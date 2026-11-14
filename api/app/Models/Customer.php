@@ -39,6 +39,16 @@ class Customer extends Model
         return $this->hasMany(DatabaseServer::class);
     }
 
+    public function mailDomains(): HasMany
+    {
+        return $this->hasMany(MailDomain::class);
+    }
+
+    public function mailboxes(): HasMany
+    {
+        return $this->hasMany(Mailbox::class);
+    }
+
     public function reseller(): BelongsTo
     {
         return $this->belongsTo(Customer::class, 'reseller_id');

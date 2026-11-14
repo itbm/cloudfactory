@@ -19,7 +19,8 @@ use Illuminate\Foundation\Queue\Queueable;
  * To show a failure, the demo agent fails these jobs:
  * - a new website or a new domain with a name that starts with "fail.", for example
  *   "fail.example.com";
- * - a new database with a name that ends with "_fail".
+ * - a new database with a name that ends with "_fail";
+ * - a new mailbox, alias or forwarder with the name "fail", for example "fail@example.com".
  */
 class RunDemoJob implements ShouldQueue
 {
@@ -80,6 +81,10 @@ class RunDemoJob implements ShouldQueue
                 'step' => 0,
                 'error' => 'runuser -u cf-db -- podman exec cf-mariadb mariadb --execute "CREATE DATABASE": exit status 1: ERROR 2002 (HY000): Can\'t connect to local server through socket \'/run/mysqld/mysqld.sock\' (2)',
             ],
+            in_array($job->action, [AgentAction::SetMailbox, AgentAction::SetMailAlias], true) && ($p['create'] ?? false) && ($p['localPart'] ?? '') === 'fail' => [
+                'step' => 0,
+                'error' => 'The mail server refused the address fail@'.($p['domain'] ?? 'the domain').': it did not answer on 169.254.77.1:19025 in 30 seconds.',
+            ],
             default => null,
         };
     }
@@ -98,6 +103,7 @@ class RunDemoJob implements ShouldQueue
             AgentAction::CreateDatabase => ($p['engine'] ?? '') === Database::VALKEY ? ['number' => self::freeValkeyNumber($job)] : [],
             AgentAction::Backup => ['snapshotId' => bin2hex(random_bytes(32)), 'sizeBytes' => random_int(40, 900) * 1024 ** 2, 'dumps' => [], 'forgotten' => []],
             AgentAction::InstallHostUpdates => ['rebootRequired' => false],
+            AgentAction::SetMailDomain => ['records' => DemoMailDns::records((string) ($p['domain'] ?? ''), (string) $job->server->mail_hostname)],
             AgentAction::UpdateAgent => ['version' => config('cloudfactory.agent.latest_version')],
             AgentAction::SetPanelCertificate => ['panelCertificate' => [
                 ...array_intersect_key(PanelCertificate::current(), array_flip(['domain', 'caCertificate'])),

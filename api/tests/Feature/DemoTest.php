@@ -85,7 +85,8 @@ class DemoTest extends TestCase
 
         $this->signInAs('admin@example.com');
         $this->getJson('/api/v1/websites?perPage=100')->assertOk()->assertJsonCount(10, 'data');
-        $this->getJson('/api/v1/servers')->assertOk()->assertJsonCount(3, 'data');
+        $this->getJson('/api/v1/servers')->assertOk()->assertJsonCount(4, 'data');
+        $this->getJson('/api/v1/mail/domains')->assertOk()->assertJsonCount(3, 'data');
 
         // The reseller: its own website and the websites of its two customers.
         $this->signInAs('reseller@example.com');
@@ -94,11 +95,37 @@ class DemoTest extends TestCase
             $this->getJson('/api/v1/websites?perPage=100')->assertOk()->json('data.*.name'),
         );
         $this->getJson('/api/v1/servers')->assertForbidden();
+        $this->assertSame(['cornerbakery.example.org', 'harbourbooks.example.net'], $this->getJson('/api/v1/mail/domains')->assertOk()->json('data.*.name'));
 
         $this->signInAs('owner@example.com');
+        $this->assertSame(['acme.example.com'], $this->getJson('/api/v1/mail/domains')->assertOk()->json('data.*.name'));
+        $this->getJson('/api/v1/mail/mailboxes')->assertOk()->assertJsonCount(4, 'data');
+        $this->getJson('/api/v1/mail/aliases')->assertOk()->assertJsonCount(2, 'data');
         $names = $this->getJson('/api/v1/websites?perPage=100')->assertOk()->json('data.*.name');
         $this->assertCount(5, $names);
         $this->assertSame([], array_filter($names, fn ($n) => ! str_ends_with($n, 'acme.example.com')));
+    }
+
+    public function test_the_demo_agent_completes_the_email_of_a_new_domain(): void
+    {
+        $this->seed(DemoSeeder::class);
+        $this->signInAs('owner@example.com');
+
+        $response = $this->postJson('/api/v1/mail/domains', ['name' => 'shop.acme.example.com'])->assertStatus(202);
+        $domain = $response->json('mailDomain.id');
+        $this->runJob($response->json('job.id'));
+        $shown = $this->getJson("/api/v1/mail/domains/{$domain}")->assertOk()->assertJsonPath('status', 'active')->assertJsonPath('dnsReady', false)->json();
+        $this->assertSame(['mx', 'spf', 'dkim', 'dkim', 'dmarc'], array_column($shown['records'], 'purpose'));
+        $this->postJson("/api/v1/mail/domains/{$domain}/check")->assertOk()->assertJsonPath('dnsReady', true);
+
+        $mailbox = $this->postJson('/api/v1/mail/mailboxes', ['domainId' => $domain, 'localPart' => 'orders', 'quotaBytes' => 1024 ** 3])->assertStatus(202);
+        $this->assertNotEmpty($mailbox->json('password'));
+        $this->runJob($mailbox->json('job.id'));
+        $this->getJson('/api/v1/mail/mailboxes?domainId='.$domain)->assertJsonPath('data.0.status', 'active');
+        // The demo agent fails the address "fail", to show a failure.
+        $failed = $this->postJson('/api/v1/mail/mailboxes', ['domainId' => $domain, 'localPart' => 'fail', 'quotaBytes' => 1024 ** 3])->assertStatus(202);
+        $this->assertSame(JobState::Failed, $this->runJob($failed->json('job.id'))->state);
+        $this->getJson('/api/v1/mail/mailboxes?domainId='.$domain)->assertJsonPath('data.0.status', 'failed')->assertJsonPath('data.1.status', 'active');
     }
 
     public function test_the_demo_agent_completes_a_new_website_with_no_server(): void

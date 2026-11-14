@@ -51,6 +51,15 @@ final class InputRules
     /** A php.ini value. It is on one line and has no double quotes. */
     public const INI_VALUE = '/^(?=[\\s\\S]{0,200}\\z)(?:^[^"\\n\\r\\x00]*$)/D';
 
+    /** A mail address in lower case, for example the destination of a forwarder. */
+    public const MAIL_ADDRESS = '/^(?=[\\s\\S]{0,254}\\z)(?![\\s\\S]*?(?:\\.\\.))(?![\\s\\S]*?(?:\\.[0-9]+$))(?:^[a-z0-9]([a-z0-9._+-]{0,62}[a-z0-9])?@([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$)/D';
+
+    /** The part of a mail address before the @ sign, in lower case. It has no plus sign: the mail server uses the text after a plus sign as a tag of the same mailbox. */
+    public const MAIL_LOCAL_PART = '/^(?![\\s\\S]*?(?:\\.\\.))(?:^[a-z0-9]([a-z0-9._-]{0,62}[a-z0-9])?$)/D';
+
+    /** The bcrypt hash of a mailbox password. The panel makes it, and the agent gives it to the mail server. The agent never gets the password. */
+    public const MAIL_PASSWORD_HASH = '/^(?:^\\$2y\\$1[0-9]\\$[.\\/A-Za-z0-9]{53}$)/D';
+
     /** The name of a PHP extension. */
     public const PHP_EXTENSION = '/^(?:^[a-z0-9_]{1,40}$)/D';
 
@@ -85,6 +94,9 @@ final class InputRules
         'imageTag' => self::IMAGE_TAG,
         'iniKey' => self::INI_KEY,
         'iniValue' => self::INI_VALUE,
+        'mailAddress' => self::MAIL_ADDRESS,
+        'mailLocalPart' => self::MAIL_LOCAL_PART,
+        'mailPasswordHash' => self::MAIL_PASSWORD_HASH,
         'phpExtension' => self::PHP_EXTENSION,
         'restorePath' => self::RESTORE_PATH,
         'sha256' => self::SHA256,
@@ -109,6 +121,9 @@ final class InputRules
         'imageTag' => 'Use 1 to 128 letters, digits, underscores, dots and hyphens. Do not start with a dot or a hyphen.',
         'iniKey' => 'Use 1 to 64 lower-case letters, underscores and dots.',
         'iniValue' => 'Use at most 200 characters on one line, with no double quotes.',
+        'mailAddress' => 'Enter a mail address in lower-case letters, for example sales@example.com.',
+        'mailLocalPart' => 'Use 1 to 64 lower-case letters, digits, dots, hyphens and underscores. Start and end with a letter or a digit.',
+        'mailPasswordHash' => 'Enter a bcrypt hash.',
         'phpExtension' => 'Use 1 to 40 lower-case letters, digits and underscores.',
         'restorePath' => 'Enter a path that starts with /, for example /public/index.php. Do not use "//", "." or ".." parts, or a / at the end.',
         'sha256' => 'Enter 64 hexadecimal digits in lower case.',

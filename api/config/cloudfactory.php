@@ -66,6 +66,7 @@ return [
         'websites:read', 'websites:write',
         'databases:read', 'databases:write',
         'backups:read', 'backups:write',
+        'mail:read', 'mail:write',
         'servers:read', 'servers:write',
         'images:read', 'images:write',
         'customers:read', 'customers:write',

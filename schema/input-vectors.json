@@ -668,6 +668,74 @@
           ]
         }
       ]
+    },
+    "mailLocalPart": {
+      "valid": [
+        "info",
+        "a",
+        "first.last",
+        "no-reply",
+        "a_b",
+        "x1",
+        {
+          "repeat": [
+            [
+              "a",
+              64
+            ]
+          ]
+        }
+      ],
+      "invalid": [
+        "",
+        "Info",
+        ".info",
+        "info.",
+        "a..b",
+        "a+b",
+        "a@b",
+        "a b",
+        "info\n",
+        {
+          "repeat": [
+            [
+              "a",
+              65
+            ]
+          ]
+        }
+      ]
+    },
+    "mailAddress": {
+      "valid": [
+        "info@example.com",
+        "first.last+tag@mail.example.co.uk",
+        "a@b.example"
+      ],
+      "invalid": [
+        "",
+        "info",
+        "@example.com",
+        "info@example",
+        "Info@example.com",
+        "a..b@example.com",
+        "info@example.com\n",
+        "info@127.0.0.1",
+        "a b@example.com",
+        "info@@example.com"
+      ]
+    },
+    "mailPasswordHash": {
+      "valid": [
+        "$2y$12$abcdefghijklmnopqrstuuABCDEFGHIJKLMNOPQRSTUVWXYZ01234"
+      ],
+      "invalid": [
+        "",
+        "secret",
+        "$2y$12$short",
+        "$1$abcdefgh$abcdefghijklmnopqrstuv",
+        "$2y$12$abcdefghijklmnopqrstuuABCDEFGHIJKLMNOPQRSTUVWXYZ01234\n"
+      ]
     }
   }
 }

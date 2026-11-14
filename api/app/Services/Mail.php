@@ -1,0 +1,165 @@
+<?php
+
+namespace App\Services;
+
+use App\Enums\AgentAction;
+use App\Enums\JobState;
+use App\Models\AgentJob;
+use App\Models\Customer;
+use App\Models\MailAlias;
+use App\Models\Mailbox;
+use App\Models\MailDomain;
+use App\Models\Server;
+use App\Models\User;
+use App\Validation\Input;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
+
+/**
+ * The rules of email hosting that the mail controllers share.
+ *
+ * All customers of a server use one mail server. The mail server does not keep customers apart:
+ * the panel does. Thus each check of who owns a domain, a mailbox or an address is in the
+ * panel, and the agent accepts only the typed mail actions.
+ */
+class Mail
+{
+    /** The purposes of the DNS records that the panel shows and checks. */
+    public const PURPOSES = ['mx', 'spf', 'dkim', 'dmarc'];
+
+    /**
+     * The server that gets a new mail domain. A customer has all its mail domains on one
+     * server. An administrator can select the server of the first mail domain.
+     *
+     * @throws ValidationException
+     */
+    public static function host(User $user, Customer $customer, ?string $serverId): Server
+    {
+        $current = $customer->mailDomains()->value('server_id');
+        if ($serverId !== null && $serverId !== $current) {
+            if (! $user->isAdministrator()) {
+                throw ValidationException::withMessages(['serverId' => 'Only an administrator can select the server.']);
+            }
+            if ($current !== null) {
+                throw ValidationException::withMessages(['serverId' => 'This customer has mail domains on a different server. A customer has all its mail domains on one server.']);
+            }
+        }
+        $server = Server::find($serverId ?? $current)
+            ?? Server::whereNotNull('mail_hostname')->whereNotNull('mail_status')->orderBy('name')->get()->first(fn (Server $s) => $s->hasMail());
+        if (! $server || ! $server->hasMail()) {
+            throw ValidationException::withMessages(['serverId' => $serverId !== null
+                ? 'Email is not turned on for this server.'
+                : 'No server has email turned on. An administrator turns on email on the page of a server.']);
+        }
+
+        return $server;
+    }
+
+    /**
+     * Refuses a mailbox that is not in the limits of the plan of the customer: the number of
+     * mailboxes, and the total size of all mailboxes.
+     *
+     * @throws ValidationException
+     */
+    public static function checkPlan(Customer $customer, int $quotaBytes, ?Mailbox $except = null): void
+    {
+        $plan = $customer->plan;
+        $others = $customer->mailboxes()->when($except, fn ($q) => $q->where('id', '!=', $except->id));
+        if (! $except && $others->count() >= $plan->mailboxes) {
+            throw ValidationException::withMessages(['localPart' => "The {$plan->name} plan allows {$plan->mailboxes} ".($plan->mailboxes === 1 ? 'mailbox' : 'mailboxes').'. Remove a mailbox, or ask for a larger plan.']);
+        }
+        $free = $plan->mail_storage_bytes - (int) $others->sum('quota_bytes');
+        if ($quotaBytes > $free) {
+            throw ValidationException::withMessages(['quotaBytes' => 'The '.$plan->name.' plan allows '.self::size($plan->mail_storage_bytes).' for all mailboxes. '.self::size(max(0, $free)).' is free.']);
+        }
+    }
+
+    /** A new mailbox password with letters and digits. */
+    public static function password(): string
+    {
+        return Str::password(20, symbols: false);
+    }
+
+    /** The hash that the mail server keeps. The panel does not keep the password or the hash. */
+    public static function hash(string $password): string
+    {
+        return password_hash($password, PASSWORD_BCRYPT, ['cost' => 12]);
+    }
+
+    /**
+     * True when the address is free in the domain. A mailbox, an alias and a forwarder cannot
+     * have the same address.
+     */
+    public static function addressFree(MailDomain $domain, string $localPart): bool
+    {
+        return ! $domain->mailboxes()->where('local_part', $localPart)->exists()
+            && ! $domain->aliases()->where('local_part', $localPart)->exists();
+    }
+
+    /**
+     * The DNS records that the mail server gives for a domain, from the result of a job. The
+     * panel keeps only the records that it can show and check.
+     *
+     * @return list<array{type: string, name: string, value: string, purpose: string, found: null}>
+     */
+    public static function records(mixed $records): array
+    {
+        $kept = [];
+        foreach (is_array($records) ? array_slice($records, 0, 20) : [] as $r) {
+            if (! is_array($r) || ! in_array($r['purpose'] ?? null, self::PURPOSES, true) || ! in_array($r['type'] ?? null, ['MX', 'TXT'], true)) {
+                continue;
+            }
+            $name = strtolower(rtrim((string) ($r['name'] ?? ''), '.'));
+            $value = (string) ($r['value'] ?? '');
+            if (! preg_match('/^[a-z0-9._-]{1,253}$/', $name) || $value === '' || strlen($value) > 4000 || preg_match('/[\x00-\x1f\x7f]/', $value)) {
+                continue;
+            }
+            $kept[] = ['type' => $r['type'], 'name' => $name, 'value' => $value, 'purpose' => $r['purpose'], 'found' => null];
+        }
+
+        return $kept;
+    }
+
+    /**
+     * Refuses a change while a change of the same record is with the agent. One change at a
+     * time: the panel goes back to the state from before a change that failed.
+     *
+     * @throws ValidationException
+     */
+    public static function refuseOpenChange(Model $record, string $key, string $what): void
+    {
+        $open = AgentJob::whereIn('state', [JobState::Queued->value, JobState::Running->value])
+            ->whereIn('action', array_map(fn (AgentAction $a) => $a->value, self::ACTIONS))
+            ->get(['payload'])->contains(fn (AgentJob $job) => ($job->payload[$key] ?? null) === $record->getKey());
+        if ($open) {
+            throw ValidationException::withMessages([$key => "A change of this {$what} is in progress. Wait until it is complete."]);
+        }
+    }
+
+    public const ACTIONS = [
+        AgentAction::SetMailDomain, AgentAction::DeleteMailDomain, AgentAction::SetMailbox,
+        AgentAction::DeleteMailbox, AgentAction::SetMailAlias, AgentAction::DeleteMailAlias,
+    ];
+
+    /** @throws ValidationException */
+    public static function refuseRemoved(MailDomain|Mailbox|MailAlias $record, string $key, string $what): void
+    {
+        if ($record->status === MailDomain::REMOVING) {
+            throw ValidationException::withMessages([$key => "The panel removes this {$what}."]);
+        }
+    }
+
+    public static function validLocalPart(mixed $value): bool
+    {
+        return Input::valid('mailLocalPart', $value);
+    }
+
+    /** For example "10 GB" or "500 MB". */
+    public static function size(int $bytes): string
+    {
+        return $bytes >= 1024 ** 3
+            ? rtrim(rtrim(number_format($bytes / 1024 ** 3, 1), '0'), '.').' GB'
+            : (int) round($bytes / 1024 ** 2).' MB';
+    }
+}

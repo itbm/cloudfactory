@@ -10,11 +10,13 @@ use App\Http\Resources\JobResource;
 use App\Models\AgentJob;
 use App\Models\Database;
 use App\Models\JoinToken;
+use App\Models\MailDomain;
 use App\Models\Server;
 use App\Services\AgentClient;
 use App\Services\Audit;
 use App\Services\JobDispatcher;
 use App\Services\PanelCertificate;
+use App\Validation\Input;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -51,6 +53,9 @@ class ServerController extends Controller
             // FR-310: systrap by default. KVM only on bare metal.
             'gvisorPlatform' => ['sometimes', Rule::in(['systrap', 'kvm'])],
         ]);
+        if (isset($data['roles']) && ! in_array('email', $data['roles'], true) && $server->mailDomains()->exists()) {
+            throw ValidationException::withMessages(['roles' => 'This server has mail domains. Remove the mail domains before you remove the email role.']);
+        }
         if (($data['gvisorPlatform'] ?? null) === 'kvm' && ! $server->bare_metal) {
             throw ValidationException::withMessages(['gvisorPlatform' => 'The KVM platform needs a bare-metal server.']);
         }
@@ -66,6 +71,40 @@ class ServerController extends Controller
         Audit::record($request, 'Changed server settings', $server->name);
 
         return response()->json(self::present($server->fresh()) + ['job' => $job ? new JobResource($job) : null]);
+    }
+
+    /**
+     * Turns on email for a server with the role "email", or changes the host name of its mail
+     * server. The agent starts the mail server, opens the mail ports and gets a TLS
+     * certificate for the host name.
+     *
+     * The host name is in the MX record and in the DKIM settings of each mail domain. Thus it
+     * does not change while the server has mail domains.
+     */
+    public function setMail(Request $request, string $id): JsonResponse
+    {
+        $server = Server::withCount(['websites', 'databaseServers'])->findOrFail($id);
+        $data = $request->validate(['hostname' => ['required', 'string', Input::rule('domain')]]);
+        if (! in_array(ServerRole::Email->value, $server->roles ?? [], true)) {
+            throw ValidationException::withMessages(['hostname' => 'Give the server the email role first.']);
+        }
+        if ($data['hostname'] !== $server->mail_hostname && $server->mailDomains()->exists()) {
+            throw ValidationException::withMessages(['hostname' => 'This server has mail domains. Their DNS records use the host name, thus it cannot change.']);
+        }
+        if (Server::where('mail_hostname', $data['hostname'])->where('id', '!=', $server->id)->exists() || MailDomain::where('name', $data['hostname'])->exists()) {
+            throw ValidationException::withMessages(['hostname' => 'This name is in use.']);
+        }
+        $open = AgentJob::where('server_id', $server->id)->where('action', AgentAction::SetMailServer->value)
+            ->whereIn('state', [JobState::Queued->value, JobState::Running->value])->exists();
+        if ($open) {
+            throw ValidationException::withMessages(['hostname' => 'The panel changes the mail server. Wait until it is complete.']);
+        }
+        $previous = ['hostname' => $server->mail_hostname, 'status' => $server->mail_status];
+        $server->update(['mail_hostname' => $data['hostname'], 'mail_status' => 'starting']);
+        $job = $this->jobs->dispatch($server, AgentAction::SetMailServer, ['hostname' => $data['hostname'], 'previous' => $previous], "Set up email on {$server->name}");
+        Audit::record($request, 'Set up email', "{$server->name} {$data['hostname']}");
+
+        return response()->json(['server' => self::present($server), 'job' => new JobResource($job)], 202);
     }
 
     /** FR-1201: a token for "install.sh --join". It works for one server, for 24 hours. */
@@ -181,6 +220,9 @@ class ServerController extends Controller
         if ($server->database_servers_count > 0) {
             throw ValidationException::withMessages(['server' => "This server has {$server->database_servers_count} ".($server->database_servers_count === 1 ? 'database server' : 'database servers').'. Remove the database servers first.']);
         }
+        if ($server->mailDomains()->exists()) {
+            throw ValidationException::withMessages(['server' => 'This server has mail domains. Remove the mail domains first.']);
+        }
         DB::transaction(function () use ($server) {
             // The jobs of the server go with it. The audit log keeps the record of the actions.
             AgentJob::where('server_id', $server->id)->delete();
@@ -253,6 +295,13 @@ class ServerController extends Controller
             // Spec section 10: the port of the SFTP container. 22 means an agent of release 0.1.
             'sftpPort' => $s->sftp_port ?? 22,
             'usage' => $s->usage,
+            // Email: null until an administrator turns it on. "status" is "starting",
+            // "running" or "failed".
+            'mail' => $s->mail_hostname === null ? null : [
+                'hostname' => $s->mail_hostname,
+                'status' => $s->mail_status,
+                'domains' => $s->mailDomains()->count(),
+            ],
             'websites' => $s->websites_count ?? null,
             'lastSeenAt' => $s->last_seen_at?->toIso8601String(),
         ];

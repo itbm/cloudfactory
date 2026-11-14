@@ -45,6 +45,9 @@ class AccountController extends Controller
                 'websites' => $websites->count(),
                 'databases' => Database::whereIn('website_id', $websites->pluck('id'))->count(),
                 'diskBytes' => (int) $websites->sum(fn (Website $w) => $w->usage['diskBytes'] ?? 0),
+                // The mailboxes of the customer, and the total of their sizes.
+                'mailboxes' => $customer->mailboxes()->count(),
+                'mailStorageBytes' => (int) $customer->mailboxes()->sum('quota_bytes'),
                 // Only for a reseller: the number of its customers.
                 'customers' => $user->role === Role::Reseller ? Customer::where('reseller_id', $customer->id)->count() : null,
             ],

@@ -231,6 +231,14 @@ class CustomerController extends Controller
         if ($databaseServers > $plan->database_servers) {
             throw ValidationException::withMessages(['planId' => "The {$plan->name} plan allows {$plan->database_servers} database servers. {$customer->name} has {$databaseServers}."]);
         }
+        // The mailboxes of the customer itself: each customer of a reseller has its own plan.
+        $mailboxes = $customer->mailboxes()->count();
+        if ($mailboxes > $plan->mailboxes) {
+            throw ValidationException::withMessages(['planId' => "The {$plan->name} plan allows {$plan->mailboxes} mailboxes. {$customer->name} has {$mailboxes}."]);
+        }
+        if ((int) $customer->mailboxes()->sum('quota_bytes') > $plan->mail_storage_bytes) {
+            throw ValidationException::withMessages(['planId' => "The mailboxes of {$customer->name} are larger than the mail storage of the {$plan->name} plan."]);
+        }
     }
 
     private function find(Request $request, string $id): Customer

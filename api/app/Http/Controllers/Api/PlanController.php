@@ -110,6 +110,9 @@ class PlanController extends Controller
             // plan. A new plan gets 3 database servers, each with the vCPUs of a website, the
             // half of its memory and the half of its disk space.
             'databaseServers' => ['sometimes', 'integer', 'min:0', 'max:1000000'],
+            // The total size of the mailboxes of a customer with the plan. A request with
+            // none keeps the value of the plan. A new plan gets 10 GB.
+            'mailStorageBytes' => ['sometimes', 'integer', 'min:0', 'max:'.(1024 ** 5)],
             'databaseLimits' => ['sometimes', 'array'],
             'databaseLimits.vcpus' => ['required_with:databaseLimits', 'numeric', 'gt:0', 'max:1024'],
             'databaseLimits.memoryBytes' => ['required_with:databaseLimits', 'integer', 'min:'.DatabaseServer::MIN_MEMORY],
@@ -127,6 +130,7 @@ class PlanController extends Controller
             'php_extensions' => $d['phpExtensions'],
             'limits' => $d['limits'],
             ...(isset($d['databaseServers']) ? ['database_servers' => $d['databaseServers']] : []),
+            ...(isset($d['mailStorageBytes']) ? ['mail_storage_bytes' => $d['mailStorageBytes']] : []),
             ...(isset($d['databaseLimits']) ? ['database_limits' => [
                 'vcpus' => (float) $d['databaseLimits']['vcpus'],
                 'memoryBytes' => (int) $d['databaseLimits']['memoryBytes'],
@@ -179,6 +183,8 @@ class PlanController extends Controller
             'limits' => $p->limits,
             'websites' => $p->websites,
             'mailboxes' => $p->mailboxes,
+            // The total size of the mailboxes of a customer with the plan.
+            'mailStorageBytes' => $p->mail_storage_bytes,
             // The number of databases of each database server with the plan.
             'databases' => $p->databases,
             'phpExtensions' => $p->php_extensions,

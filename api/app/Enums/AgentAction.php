@@ -30,6 +30,13 @@ enum AgentAction: string
     case SetPanelCertificate = 'SetPanelCertificate';
     case SetDatabaseServer = 'SetDatabaseServer';
     case DeleteDatabaseServer = 'DeleteDatabaseServer';
+    case SetMailServer = 'SetMailServer';
+    case SetMailDomain = 'SetMailDomain';
+    case DeleteMailDomain = 'DeleteMailDomain';
+    case SetMailbox = 'SetMailbox';
+    case DeleteMailbox = 'DeleteMailbox';
+    case SetMailAlias = 'SetMailAlias';
+    case DeleteMailAlias = 'DeleteMailAlias';
 
     /** The steps that the agent reports for this action. */
     public function steps(): array
@@ -57,6 +64,13 @@ enum AgentAction: string
             self::SetSftp => ['Set SFTP access'],
             self::ConfigureHost => ['Save settings', 'Restart websites', 'Restart services'],
             self::SetPanelCertificate => ['Change certificate method', 'Get TLS certificate'],
+            self::SetMailServer => ['Start mail server', 'Open mail ports', 'Get TLS certificate'],
+            self::SetMailDomain => ['Add domain', 'Make DKIM keys'],
+            self::DeleteMailDomain => ['Remove domain'],
+            self::SetMailbox => ['Set mailbox'],
+            self::DeleteMailbox => ['Remove mailbox and its messages'],
+            self::SetMailAlias => ['Set address'],
+            self::DeleteMailAlias => ['Remove address'],
         };
     }
 

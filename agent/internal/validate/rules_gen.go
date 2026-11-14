@@ -167,6 +167,41 @@ var ruleIniValue = rule{
 // A php.ini value. It is on one line and has no double quotes.
 func IniValue(s string) error { return ruleIniValue.check(s) }
 
+var ruleMailAddress = rule{
+	what:      "mail address",
+	pattern:   regexp.MustCompile(`^[a-z0-9]([a-z0-9._+-]{0,62}[a-z0-9])?@([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`),
+	not:       []*regexp.Regexp{regexp.MustCompile(`\.\.`), regexp.MustCompile(`\.[0-9]+$`)},
+	maxLength: 254,
+	echo:      true,
+}
+
+// MailAddress checks a value with the rule "mailAddress" of schema/input-rules.json.
+//
+// A mail address in lower case, for example the destination of a forwarder.
+func MailAddress(s string) error { return ruleMailAddress.check(s) }
+
+var ruleMailLocalPart = rule{
+	what:    "mail address name",
+	pattern: regexp.MustCompile(`^[a-z0-9]([a-z0-9._-]{0,62}[a-z0-9])?$`),
+	not:     []*regexp.Regexp{regexp.MustCompile(`\.\.`)},
+	echo:    true,
+}
+
+// MailLocalPart checks a value with the rule "mailLocalPart" of schema/input-rules.json.
+//
+// The part of a mail address before the @ sign, in lower case. It has no plus sign: the mail server uses the text after a plus sign as a tag of the same mailbox.
+func MailLocalPart(s string) error { return ruleMailLocalPart.check(s) }
+
+var ruleMailPasswordHash = rule{
+	what:    "password hash",
+	pattern: regexp.MustCompile(`^\$2y\$1[0-9]\$[./A-Za-z0-9]{53}$`),
+}
+
+// MailPasswordHash checks a value with the rule "mailPasswordHash" of schema/input-rules.json.
+//
+// The bcrypt hash of a mailbox password. The panel makes it, and the agent gives it to the mail server. The agent never gets the password.
+func MailPasswordHash(s string) error { return ruleMailPasswordHash.check(s) }
+
 var ruleExtension = rule{
 	what:    "PHP extension",
 	pattern: regexp.MustCompile(`^[a-z0-9_]{1,40}$`),
@@ -252,6 +287,9 @@ var rules = map[string]*rule{
 	"imageTag":           &ruleImageTag,
 	"iniKey":             &ruleIniKey,
 	"iniValue":           &ruleIniValue,
+	"mailAddress":        &ruleMailAddress,
+	"mailLocalPart":      &ruleMailLocalPart,
+	"mailPasswordHash":   &ruleMailPasswordHash,
 	"phpExtension":       &ruleExtension,
 	"restorePath":        &ruleRestorePath,
 	"sha256":             &ruleSHA256,

@@ -22,6 +22,7 @@ class JobDispatcher
         ?string $ref = null,
         ?string $rolloutId = null,
         ?DatabaseServer $databaseServer = null,
+        ?string $customerId = null,
     ): AgentJob {
         $job = AgentJob::create([
             'server_id' => $server->id,
@@ -29,6 +30,8 @@ class JobDispatcher
             // The job of a database server has no website. The owner of the database server
             // can see the job.
             'database_server_id' => $databaseServer?->id,
+            // A mail job: the users of this customer can see it.
+            'customer_id' => $customerId,
             'rollout_id' => $rolloutId,
             'action' => $action,
             'title' => $title,

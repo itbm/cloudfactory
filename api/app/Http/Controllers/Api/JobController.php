@@ -18,10 +18,12 @@ class JobController extends Controller
     {
         $user = $request->user();
 
-        // A user sees the jobs of the websites and of the database servers of its customers.
+        // A user sees the jobs of the websites, of the database servers and of the email of
+        // its customers.
         return AgentJob::query()->when(! $user->isAdministrator(), fn ($q) => $q->where(fn ($q) => $q
             ->whereIn('website_id', $this->visibleWebsites($request)->select('id'))
-            ->orWhereIn('database_server_id', DatabaseServer::whereIn('customer_id', $user->visibleCustomerIds())->select('id'))));
+            ->orWhereIn('database_server_id', DatabaseServer::whereIn('customer_id', $user->visibleCustomerIds())->select('id'))
+            ->orWhereIn('customer_id', $user->visibleCustomerIds())));
     }
 
     public function index(Request $request): AnonymousResourceCollection

@@ -3,8 +3,10 @@
 namespace App\Providers;
 
 use App\Demo\DemoAgentClient;
+use App\Demo\DemoMailDns;
 use App\Models\Server;
 use App\Services\AgentClient;
+use App\Services\MailDns;
 use Database\Seeders\DemoSeeder;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\ServiceProvider;
@@ -24,6 +26,7 @@ class DemoServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->bind(AgentClient::class, fn () => self::enabled() ? new DemoAgentClient : new AgentClient);
+        $this->app->bind(MailDns::class, fn () => self::enabled() ? new DemoMailDns : new MailDns);
     }
 
     public function boot(): void

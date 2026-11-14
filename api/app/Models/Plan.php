@@ -18,7 +18,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * - "websites" and "database_servers" are the numbers of websites and of database servers of a
  *   customer with the plan.
  */
-#[Fillable(['name', 'limits', 'websites', 'mailboxes', 'databases', 'php_extensions', 'database_servers', 'database_limits'])]
+#[Fillable(['name', 'limits', 'websites', 'mailboxes', 'databases', 'php_extensions', 'database_servers', 'database_limits', 'mail_storage_bytes'])]
 class Plan extends Model
 {
     use HasFactory, HasUlids;
@@ -26,9 +26,12 @@ class Plan extends Model
     /** The number of database servers of a customer, when a request for a new plan gives none. */
     public const DEFAULT_DATABASE_SERVERS = 3;
 
+    /** The total size of the mailboxes of a customer with a new plan: 10 GB. */
+    public const DEFAULT_MAIL_STORAGE = 10 * 1024 ** 3;
+
     protected function casts(): array
     {
-        return ['limits' => 'array', 'php_extensions' => 'array', 'database_limits' => 'array', 'database_servers' => 'integer'];
+        return ['limits' => 'array', 'php_extensions' => 'array', 'database_limits' => 'array', 'database_servers' => 'integer', 'mail_storage_bytes' => 'integer'];
     }
 
     /** Each plan has limits for its database servers, also a plan from a request with none. */
@@ -36,6 +39,7 @@ class Plan extends Model
     {
         static::saving(function (Plan $plan) {
             $plan->database_servers ??= self::DEFAULT_DATABASE_SERVERS;
+            $plan->mail_storage_bytes ??= self::DEFAULT_MAIL_STORAGE;
             $plan->database_limits ??= self::defaultDatabaseLimits($plan->limits ?? []);
         });
     }
