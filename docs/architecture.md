@@ -515,6 +515,81 @@ When the memory is full, Valkey removes the keys of that database server that we
 for the longest time. A customer that needs a separate limit for one website makes a second
 Valkey database server. Refer to [installation.md](installation.md#valkey).
 
+## The mesh between servers
+
+The mesh is the set of encrypted tunnels between the servers of one panel. A tunnel lets two
+servers send private traffic to each other through the internet. In this release, only root
+on a server can use a tunnel, and the only traffic is the test of the tunnel. A later release
+uses the tunnels for the private networks of the customers.
+
+Each server has one WireGuard interface with the name `cf-mesh`. The values of the mesh are
+in the panel (**Network**):
+
+| Value | Default | Function |
+| ----- | ------- | -------- |
+| Address range | `10.207.0.0/16` | Each server gets one address from the first 254 addresses of the range, with its first tunnel. |
+| UDP port | 51820 | The port of the tunnels on each server. |
+| Tunnel address | Automatic | The public IP address that the other servers send the tunnel traffic of a server to. The default is the address that the panel connects to the agent with. |
+
+You can change the address range and the port only while the mesh has no tunnel.
+
+### Keys
+
+- The root helper of the agent makes the key pair of its server. The private key is in
+  `/etc/cloudfactory/mesh/private.key`. Only root can read it, and it never leaves the
+  server. The agent sends the public key to the panel in each report.
+- The panel is the directory of the public keys. It gives a server the public keys of only
+  the servers that it has a tunnel to.
+- The panel makes one pre-shared key for each tunnel. It keeps the key encrypted in its
+  database, and it sends the key to the two servers of the tunnel through the agent
+  connection (mutual TLS).
+- **Make new key** (`cf mesh rotate-key SERVER`) makes a new key pair on a server. The tunnels
+  of the server do not operate until the panel sends the new public key to the other servers.
+  That occurs automatically when the job is complete.
+
+### The state of a server
+
+The panel sends a server the full state of its tunnels with the action `SetMesh`: the address
+range, the address of the server, the port, and each other server with its public key, its
+pre-shared key, its tunnel address and its mesh address. The state has a version number.
+
+1. The worker of the agent examines the state and sends it to the root helper.
+2. The root helper examines the state again. It refuses a state with an older version than
+   the one that it has.
+3. The root helper writes the state to `/etc/cloudfactory/mesh/mesh.json`, writes the
+   elements of the firewall sets, and applies the WireGuard configuration with
+   `wg syncconf`. A tunnel that did not change continues to operate.
+4. The agent sends one ICMP echo request to each other server through its tunnel. The result
+   of the job has the answer, the round-trip time and the time of the last handshake.
+
+When the root helper starts, for example after a reboot, it applies the state of the file
+again. A state with no address and no tunnels removes the interface.
+
+If the server has no `wg` command, the root helper installs the package `wireguard-tools`.
+The installer of this release installs it.
+
+### How the panel monitors the tunnels
+
+Each agent report has the public key of the server, the version of its state and the state
+of each tunnel. The agent sends a report each minute.
+
+- A tunnel is **up** when the two servers got an answer through it in the last three minutes.
+  It is **down** when one server got no answer. Before the first reports, the panel shows that
+  it waits for the servers.
+- When a server reports a different version than the panel wants, the panel sends the state
+  again. It does this one time in two minutes for a server at most.
+- When a server reports a new public key, the panel sends the key to the other servers of its
+  tunnels.
+- **Repair** (`cf mesh repair SERVER SERVER`) sends the state to the two servers of a tunnel
+  again and tests the tunnel. Use it after you correct a problem, for example a firewall of
+  your provider that does not let the UDP port through.
+- When you remove a server from the panel, the panel removes its tunnels from the other
+  servers.
+
+In this release, an administrator makes each tunnel (**Network > Make tunnel**, or
+`cf mesh connect SERVER SERVER`). A server with an agent from an earlier release cannot have
+tunnels until you update its agent.
+
 ## Change of runtime without downtime
 
 The agent uses a blue and green method:

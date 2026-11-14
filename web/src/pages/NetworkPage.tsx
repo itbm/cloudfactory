@@ -173,7 +173,7 @@ export function NetworkPage() {
       <main id="main" className="content content-wide">
         <PageHeader
           title="Network"
-          description="Encrypted tunnels between your servers. A tunnel lets two servers send private traffic to each other through the internet. The panel gives each server the keys of the other servers, monitors each tunnel, and repairs a tunnel that stops."
+          description="Encrypted tunnels between your servers. A tunnel lets two servers send private traffic to each other through the internet. The panel gives each server the public keys of the other servers, monitors each tunnel, and sends the tunnels again to a server that does not have them."
           actions={<button type="button" className="btn btn-primary" disabled={able < 2} onClick={() => setDialog({ kind: "make" })}>Make tunnel</button>}
         />
         <div className="stats">
