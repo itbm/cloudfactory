@@ -84,7 +84,7 @@ describe("a website that the panel could not make", () => {
   it("shows as the first item that needs attention, with no DNS or update item", async () => {
     await signedIn("administrator");
     const state = structuredClone(getState());
-    const website = state.websites.find((w) => w.id === site("shop.acme.example").id)!;
+    const website = state.websites.find((w) => w.id === site("shop.acme.example.com").id)!;
     website.domains[0].dnsPointsHere = false;
     const image = state.images.find((i) => i.id === website.runtime.imageId)!;
     image.available = "9.9.9";

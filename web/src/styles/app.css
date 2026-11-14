@@ -734,3 +734,90 @@ h1.mono { font-size: 26px; }
 .verify-record dt { color: var(--text-muted); }
 .verify-record dd { margin: 0; overflow-wrap: anywhere; }
 @media (max-width: 560px) { .grant-row { grid-template-columns: 1fr; } }
+
+/* The consoles for each role: the overview, the setup checklist and the account. */
+
+a.stat-link { display: block; color: inherit; text-decoration: none; }
+a.stat-link:hover { border-color: var(--primary-border); }
+a.stat-link .stat-value { margin-bottom: 8px; }
+.stats + .card { margin-top: 0; }
+
+.setup-progress { padding: 18px 20px; margin-bottom: 16px; }
+.setup-progress p { margin-bottom: 12px; }
+.setup-list { margin: 0; padding: 0; list-style: none; }
+.setup-item { display: flex; align-items: flex-start; gap: 16px; padding: 18px 20px; }
+.setup-item + .setup-item { margin-top: 12px; }
+.setup-item h2 { font-size: 16.5px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.setup-text { flex: 1; min-width: 0; }
+.setup-text p { margin-top: 6px; }
+.setup-item > .btn { flex: none; }
+.setup-mark {
+  flex: none; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%;
+  background: var(--warning-soft); color: var(--warning); border: 1px solid var(--warning-border);
+}
+.setup-done .setup-mark { background: var(--success-soft); color: var(--success); border-color: var(--success-border); }
+.setup-not_applicable .setup-mark { background: var(--surface-muted); color: var(--text-muted); border-color: var(--border); }
+.setup-open { border-left: 4px solid var(--warning-dot); }
+
+/* Audit item U2: the cause of a failed job. The error of the server is for administrators. */
+.job-text { min-width: 0; }
+.job-details { margin-top: 6px; font-size: 13px; }
+.job-details summary { cursor: pointer; color: var(--text-muted); }
+.job-details pre {
+  margin: 6px 0 0; padding: 8px 10px; border-radius: var(--radius-sm);
+  background: var(--surface-muted); color: var(--text);
+  font-family: var(--font-mono); font-size: 12.5px; white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.alert-stack .cause .cell-sub { font-family: var(--font-sans); font-size: 14px; }
+.alert-stack .cause .text-danger { color: var(--text); }
+
+/* Audit item U8: a digest is long. It breaks in the cell and does not make the card wider. */
+.digest { overflow-wrap: anywhere; font-size: 12.5px; }
+.kv td { overflow-wrap: anywhere; }
+.kv td code { overflow-wrap: anywhere; }
+
+/* Audit item U6: the tab bar scrolls. A shadow at an edge shows that more tabs are there. */
+.tabs-wrap { position: relative; margin: 24px 0; }
+.tabs-wrap .tabs { margin: 0; scrollbar-width: none; }
+.tabs-wrap .tabs::-webkit-scrollbar { display: none; }
+.tabs-wrap::before, .tabs-wrap::after {
+  content: ""; position: absolute; top: 0; bottom: 1px; width: 28px; pointer-events: none; opacity: 0; transition: opacity 0.15s;
+}
+.tabs-wrap::before { left: 0; background: linear-gradient(to right, var(--bg) 20%, transparent); box-shadow: inset 8px 0 8px -8px rgb(15 27 51 / 45%); }
+.tabs-wrap::after { right: 0; background: linear-gradient(to left, var(--bg) 20%, transparent); box-shadow: inset -8px 0 8px -8px rgb(15 27 51 / 45%); }
+.tabs-wrap.more-left::before, .tabs-wrap.more-right::after { opacity: 1; }
+.tab { flex: none; }
+
+/* Audit item U6: on a phone, each row of a table is a card. Each cell is on its own line, with
+   the heading of its column before it (TableWrap in components/ui.tsx). */
+@media (max-width: 640px) {
+  .table-cards { overflow-x: visible; }
+  .table-cards table, .table-cards tbody, .table-cards tr, .table-cards td { display: block; width: auto !important; min-width: 0 !important; max-width: none !important; }
+  .table-cards thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .table-cards tr { padding: 12px 16px; border-top: 1px solid var(--border); }
+  .table-cards tbody tr:first-child { border-top: 1px solid var(--border); }
+  .table-cards td { padding: 3px 0; border: 0; text-align: left !important; overflow-wrap: anywhere; }
+  .table-cards tr { position: relative; }
+  .table-cards td[data-label] { position: relative; padding-left: 132px; min-height: 26px; }
+  .table-cards td[data-label]::before { content: attr(data-label); position: absolute; left: 0; top: 4px; width: 124px; color: var(--text-muted); font-size: 13px; }
+  /* The first cell is the title of the card. */
+  .table-cards td[data-label]:first-child { padding-left: 0; padding-bottom: 6px; padding-right: 44px; }
+  .table-cards td[data-label]:first-child::before { content: none; }
+  .table-cards td.cell-actions { padding-top: 8px; }
+  /* The menu of a row is at the top right of its card. */
+  .table-cards td.cell-actions:has(> .menu) { position: absolute; top: 4px; right: 6px; padding: 0; }
+  .table-cards .grant { flex-wrap: wrap; white-space: normal; }
+  .table-cards .select { max-width: 100%; }
+  .table-cards td .btn-group { justify-content: flex-start !important; flex-wrap: wrap !important; }
+  .table-cards td > .nowrap, .table-cards td.nowrap { white-space: normal; }
+  .setup-item { flex-wrap: wrap; }
+  .setup-item > .btn { margin-left: 48px; }
+  .kv th { width: 112px; padding-right: 10px; }
+  .job-done { flex-direction: column; gap: 4px; }
+}
+
+/* The administrator console has 12 links. The menu stays on one screen of 900 px, and it
+   scrolls on a lower screen. */
+.sidebar .nav-link { min-height: 40px; }
+.sidebar .nav-section { margin: 10px 12px 6px; }
+.sidebar-user, .brand, .context-switcher { flex: none; }

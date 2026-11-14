@@ -2,12 +2,12 @@ import { ArrowUpRight, ShieldCheck } from "lucide-react";
 import { useEffect } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useAction, useStore } from "../api/hooks";
-import { imageOf, runtimeLabel, supportEnds, tagOf, updateReady } from "../api/selectors";
+import { backupsReady, imageOf, runtimeLabel, supportEnds, tagOf, updateReady } from "../api/selectors";
 import { retryWebsite, setPower, backupNow, showWebsite } from "../api/store";
 import type { Website } from "../api/types";
 import { Topbar } from "../components/Layout";
 import { WebsiteMenu } from "../components/WebsiteMenu";
-import { Card, Empty, FormError, JobRow, Live, Meter, Status, Tabs, TerraformBadge, TerraformNotice } from "../components/ui";
+import { Card, Empty, FormError, JobError, JobRow, Live, Meter, Status, Tabs, TerraformBadge, TerraformNotice } from "../components/ui";
 import { bytes, longDate, percent, ratio, relativeTime } from "../lib/format";
 import { certificateUntil, jobActive, WEBSITE_STATUS } from "../lib/labels";
 import { AccessTab, SshCard } from "./website/AccessTab";
@@ -44,7 +44,7 @@ function UpdateBanner({ website }: { website: Website }) {
           If the check fails, the website goes back to {tagOf(state, website)}. {admin ? "" : "Your provider starts the rollout. You do not need to do anything."}
         </p>
       </div>
-      {admin && <div className="btn-group"><Link className="btn btn-primary" to="/updates">Go to Updates</Link></div>}
+      {admin && <div className="btn-group"><Link className="btn btn-primary" to="/updates">Open Images and updates</Link></div>}
     </section>
   );
 }
@@ -53,6 +53,8 @@ function RuntimeCard({ website }: { website: Website }) {
   const state = useStore();
   const image = imageOf(state, website);
   const isPhp = website.runtime.kind === "frankenphp" || website.runtime.kind === "apache-php-fpm";
+  // The website gives the digest to all roles. Only an administrator has the list of images.
+  const digest = website.runtime.digest || image?.digest;
   return (
     <Card title="Runtime" actions={isPhp && <Link to={`/websites/${website.id}/runtime`}>Change PHP version</Link>}>
       <div className="card-body">
@@ -64,12 +66,13 @@ function RuntimeCard({ website }: { website: Website }) {
             <tr>
               <th scope="row">Digest</th>
               <td>
-                <code>{image?.digest}</code>{" "}
-                {image?.signatureVerified ? <span className="badge badge-success">Signature verified</span> : <span className="badge badge-warning">No signature</span>}
+                {/* Audit item U8: an image that the panel knows by tag only has no digest. */}
+                {digest ? <code className="digest">{digest}</code> : <span className="muted">No digest (tag only)</span>}{" "}
+                {(website.runtime.signatureVerified ?? image?.signatureVerified) ? <span className="badge badge-success">Signature verified</span> : <span className="badge badge-warning">No signature</span>}
               </td>
             </tr>
             {website.runtime.kind === "frankenphp" && (
-              <tr><th scope="row">Worker mode</th><td className="muted">{website.runtime.workerMode ? "On." : "Off."} Use only for apps built for it, such as Laravel Octane.</td></tr>
+              <tr><th scope="row">Worker mode</th><td>{website.runtime.workerMode ? "On" : "Off"}<span className="cell-sub">Use it only for apps that are built for it, such as Laravel Octane.</span></td></tr>
             )}
             {isPhp && (
               <tr>
@@ -105,7 +108,7 @@ export function ResourcesCard({ website }: { website: Website }) {
           </div>
         ))}
         <p className="muted small" style={{ marginTop: 16 }}>
-          Limits come from the {plan?.name} plan. <Link to={`/websites/${website.id}/settings`}>Change plan</Link>
+          Limits come from the {plan?.name} plan. {state.session.user.role === "owner" ? "Only your provider can change the plan." : <Link to={`/websites/${website.id}/settings`}>Change plan</Link>}
         </p>
       </div>
     </Card>
@@ -152,12 +155,29 @@ function BackupsCard({ website }: { website: Website }) {
   const last = state.snapshots.find((s) => s.websiteId === website.id);
   const p = state.backupPolicy;
   const backup = useAction(backupNow);
+  // Audit item U5: with no object storage, a backup can only fail. The card says so, and has no buttons.
+  if (!backupsReady(state)) {
+    const admin = state.session.user.role === "administrator";
+    return (
+      <Card title="Backups">
+        <div className="card-body">
+          <p><Status tone="warning">Backups are not set up</Status></p>
+          <p className="muted" style={{ marginTop: 8 }}>
+            {admin
+              ? "The panel has no object storage for backups, so it makes no backup of this website."
+              : "Your provider has not set up backups on this panel, so the panel makes no backup of this website. Keep your own copy of the files and the databases."}
+          </p>
+          {admin && <div className="btn-group" style={{ marginTop: 14 }}><Link className="btn btn-primary" to="/backups">Set the object storage</Link></div>}
+        </div>
+      </Card>
+    );
+  }
   return (
     <Card title="Backups">
       <div className="card-body">
         <p className="muted">
           {last ? <>Last snapshot {relativeTime(last.at)} ({bytes(last.sizeBytes)}). </> : "No snapshot yet. "}
-          Kept: {p.daily} daily, {p.weekly} weekly, {p.monthly} monthly. Stored off-server in object storage.
+          Kept: {p.daily} daily, {p.weekly} weekly, {p.monthly} monthly. Stored in object storage, not on the server of the website.
         </p>
         <div className="btn-group" style={{ marginTop: 14 }}>
           <Link className="btn" to={`/websites/${website.id}/backups`}>Restore…</Link>
@@ -201,7 +221,7 @@ function FailedNotice({ website }: { website: Website }) {
   return (
     <div className="alert alert-danger alert-stack mt" role="alert">
       <p><strong>The panel could not make this website.</strong> The website has no container on the server.</p>
-      {job?.error && <p className="cause"><span className="visually-hidden">Cause: </span>{job.error}</p>}
+      {job && <p className="cause"><span className="visually-hidden">Cause: </span><JobError job={job} /></p>}
       <p>
         {staging
           ? "Delete this staging copy, and make the staging copy again."

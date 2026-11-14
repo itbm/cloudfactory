@@ -7,7 +7,7 @@ import { apiJob, reset, signedIn, website, type PanelApi } from "../test/panelAp
 import { DatabasesPanel } from "./DatabasesPanel";
 
 let api: PanelApi;
-// The Unix user of shop.acme.example in the sample data starts each name.
+// The Unix user of shop.acme.example.com in the sample data starts each name.
 let prefix: string;
 beforeEach(async () => {
   api = await signedIn("administrator");
@@ -18,7 +18,7 @@ afterEach(() => {
   reset();
 });
 
-const shop = () => website("shop.acme.example");
+const shop = () => website("shop.acme.example.com");
 const panel = () => render(<MemoryRouter><DatabasesPanel websiteId={shop().id} /></MemoryRouter>);
 const database = (suffix: string) => getState().databases.find((d) => d.name === prefix + suffix)!;
 const row = (name: string, table: number) => within(screen.getAllByRole("table")[table]).getAllByRole("row").find((r) => r.textContent?.startsWith(name))!;
@@ -46,11 +46,18 @@ describe("Valkey in the databases panel", () => {
   it("lets the user of a Valkey database only get a new password", () => {
     panel();
     const valkey = row(`${prefix}cache`, 1);
-    expect(within(valkey).getAllByRole("button").map((b) => b.textContent)).toEqual(["New password"]);
+    // The actions of a row are in one menu (audit item U7).
+    const actions = (r: HTMLElement) => {
+      fireEvent.click(within(r).getByRole("button", { name: /^Actions for/ }));
+      const items = within(r).getAllByRole("menuitem").map((b) => b.textContent);
+      fireEvent.keyDown(document, { key: "Escape" });
+      return items;
+    };
+    expect(actions(valkey)).toEqual(["Make a new password…"]);
     expect(within(valkey).queryByRole("combobox")).toBeNull();
     expect(valkey.textContent).toContain("Website container only");
     const maria = row(`${prefix}shop`, 1);
-    expect(within(maria).getAllByRole("button").map((b) => b.textContent)).toEqual(["Permissions", "New password", "Remove"]);
+    expect(actions(maria)).toEqual(["Change permissions…", "Make a new password…", "Remove user…"]);
     expect(within(maria).getByRole("combobox")).toBeTruthy();
   });
 

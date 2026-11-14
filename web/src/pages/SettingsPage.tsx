@@ -1,9 +1,10 @@
 import { useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import { useAction, useStore } from "../api/hooks";
 import { changePassword, createToken, revokeToken, setPanelCertificate, setTotp, startTotpSetup } from "../api/store";
 import type { PanelCertificateMethod, TokenScope } from "../api/types";
 import { Topbar } from "../components/Layout";
-import { Card, ConfirmButton, Field, FormError, JobRow, Modal, PageHeader, Status, Tabs } from "../components/ui";
+import { Card, ConfirmButton, Field, FormError, JobRow, Modal, PageHeader, Status, TableWrap, Tabs } from "../components/ui";
 import { auditCsv } from "../lib/csv";
 import { daysUntil, longDate, relativeTime, shortDate } from "../lib/format";
 import { CopyField } from "./website/AccessTab";
@@ -13,14 +14,18 @@ const SCOPES: TokenScope[] = ["websites:read", "websites:write", "databases:read
 
 export function SettingsPage() {
   const state = useStore();
-  const [tab, setTab] = useState("security");
+  const { tab: asked } = useParams();
+  const navigate = useNavigate();
   const isAdmin = state.session.user.role === "administrator";
+  // Each section has its own address, so that the setup checklist can link to it.
   const tabs = [
     { id: "security", label: "Sign-in and security" },
     { id: "tokens", label: "API tokens" },
     { id: "audit", label: "Audit log" },
-    ...(isAdmin ? [{ id: "certificate", label: "Panel certificate" }] : []),
+    ...(isAdmin ? [{ id: "panel", label: "Panel certificate" }] : []),
   ];
+  const tab = tabs.some((t) => t.id === asked) ? asked! : "security";
+  const setTab = (id: string) => navigate(id === "security" ? "/settings" : `/settings/${id}`);
   return (
     <>
       <Topbar />
@@ -30,7 +35,7 @@ export function SettingsPage() {
         {tab === "security" && <Security />}
         {tab === "tokens" && <Tokens />}
         {tab === "audit" && <Audit />}
-        {tab === "certificate" && <PanelCertificateSettings />}
+        {tab === "panel" && <PanelCertificateSettings />}
       </main>
     </>
   );
@@ -58,7 +63,7 @@ function Security() {
           <FormError error={start.error ?? (totpMode ? null : totp.error)} />
           <p>{state.totpEnabled ? <Status tone="success">On</Status> : <Status tone="warning">Off</Status>}</p>
           <p className="muted" style={{ marginTop: 8 }}>
-            "Ask for a code from an app on your phone each time you sign in. Then a stolen password alone does not give access to your account."
+            Ask for a code from an app on your phone each time you sign in. Then a stolen password alone does not give access to your account.
           </p>
           <div className="btn-group" style={{ marginTop: 14 }}>
             {state.totpEnabled
@@ -133,7 +138,7 @@ function Tokens() {
   return (
     <Card title="API tokens" actions={<button type="button" className="btn btn-primary" onClick={() => setOpen(true)}>New token</button>}>
       <div className="card-body" style={{ paddingBottom: 12 }}><p className="muted">The web UI, the CLI, the Terraform provider and your scripts use the same public API. Give each token only the scopes that it needs.</p></div>
-      <div className="table-wrap">
+      <TableWrap>
         <table>
           <thead><tr><th scope="col">Name</th><th scope="col">Scopes</th><th scope="col">Expires</th><th scope="col">Last used</th><th scope="col"><span className="visually-hidden">Actions</span></th></tr></thead>
           <tbody>
@@ -153,7 +158,7 @@ function Tokens() {
             })}
           </tbody>
         </table>
-      </div>
+      </TableWrap>
       {open && (
         <Modal title="New API token" onClose={() => { setOpen(false); setPassword(""); setTotpCode(""); create.clear(); }} footer={<><button type="button" className="btn" onClick={() => { setOpen(false); setPassword(""); setTotpCode(""); }}>Cancel</button><button type="submit" form="tok" className="btn btn-primary">Create token</button></>}>
           <form id="tok" noValidate onSubmit={async (e) => {
@@ -204,7 +209,7 @@ function Audit() {
         <a className="btn" download="audit-log.csv" href={`data:text/csv;charset=utf-8,${encodeURIComponent(auditCsv(state.audit))}`}>Export CSV</a>
       </div>
     }>
-      <div className="table-wrap">
+      <TableWrap>
         <table>
           <thead><tr><th scope="col">Time</th><th scope="col">Person or token</th><th scope="col">IP address</th><th scope="col">Change</th><th scope="col">Target</th></tr></thead>
           <tbody>
@@ -220,7 +225,7 @@ function Audit() {
             {rows.length === 0 && <tr><td colSpan={5} className="muted">No changes match the filter.</td></tr>}
           </tbody>
         </table>
-      </div>
+      </TableWrap>
     </Card>
   );
 }

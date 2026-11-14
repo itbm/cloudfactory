@@ -16,7 +16,8 @@ export function LoginPage() {
   const [code, setCode] = useState("");
   const [step, setStep] = useState<"start" | "totp">("start");
   const pw = useAction(async (totp: string) => signIn(email, password, totp));
-  const go = () => navigate("/websites");
+  // Each role has its own first page (lib/roles.ts).
+  const go = () => navigate("/");
   const busy = pw.busy;
 
   return (

@@ -1,191 +1,257 @@
 # Screenshots
 
-These screenshots show the web panel of release 0.1 with the mock API. For the panel on the
-real API, refer to [live/README.md](live/README.md).
+These screenshots show the web panel on the panel API in demonstration mode (`CF_DEMO=true`),
+with the sample data of `api/database/seeders/DemoSeeder.php`. The panel has one console for
+each role: an administrator console, a reseller console and an owner console. To see the same
+pages on your computer, refer to [development.md](../development.md).
 
-The mock API shows areas that the API of release 0.1 does not have, for example DNS, email and
-files. Refer to [status.md](../status.md).
+The [main README](../../README.md) uses the screenshots in [readme/](readme), from the same
+data. The screenshots in [live/](live/README.md) show earlier releases on a real server. Their
+menu is the menu before the consoles.
 
-The [main README](../../README.md) uses the screenshots in [readme/](readme). They show the
-production build of the web panel on the panel API, with the sample data of `php artisan db:seed`
-and sample reports for resource use, jobs and backups.
+To sign in to the demonstration mode, use `admin@example.com`, `reseller@example.com` or
+`owner@example.com` with the password `password`.
 
-## 01-websites
+## Administrator console
 
-![01-websites](01-websites.png)
+An administrator signs in to the Overview page. The menu has the platform, the customers, the hosting pages and the settings.
 
-## 02-new-website
+### admin-01-overview
 
-![02-new-website](02-new-website.png)
+The first page of an administrator: the health of the servers, what needs attention, and the failed jobs that no later job resolved.
 
-## 03-website-overview
+![admin-01-overview](admin-01-overview.png)
 
-![03-website-overview](03-website-overview.png)
+### admin-02-finish-setup
 
-## 04-website-runtime
+The setup checklist. Each open item shows what can go wrong until it is complete, and a link to the page that completes it. The data comes from `GET /api/v1/setup`.
 
-![04-website-runtime](04-website-runtime.png)
+![admin-02-finish-setup](admin-02-finish-setup.png)
 
-## 05-website-domains
+### admin-03-servers
 
-![05-website-domains](05-website-domains.png)
+The servers.
 
-## 06-website-databases
+![admin-03-servers](admin-03-servers.png)
 
-![06-website-databases](06-website-databases.png)
+### admin-04-server
 
-## 07-website-backups
+The page of a server, with its operating system updates.
 
-![07-website-backups](07-website-backups.png)
+![admin-04-server](admin-04-server.png)
 
-## 08-website-access
+### admin-05-images-and-updates
 
-![08-website-access](08-website-access.png)
+The runtime images. An image whose last check failed shows "Unknown: the last check failed", not "Up to date".
 
-## 09-website-logs
+![admin-05-images-and-updates](admin-05-images-and-updates.png)
 
-![09-website-logs](09-website-logs.png)
+### admin-06-customers
 
-## 10-website-settings
+The customers. The actions of a row are in one menu.
 
-![10-website-settings](10-website-settings.png)
+![admin-06-customers](admin-06-customers.png)
 
-## 11-updates
+### admin-07-change-plan
 
-![11-updates](11-updates.png)
+A change of the plan of a customer. The dialog shows the new limits and the effect before the administrator confirms.
 
-## 12-servers
+![admin-07-change-plan](admin-07-change-plan.png)
 
-![12-servers](12-servers.png)
+### admin-08-users
 
-## 13-server-detail
+The users who can sign in.
 
-![13-server-detail](13-server-detail.png)
+![admin-08-users](admin-08-users.png)
 
-## 14-jobs
+### admin-09-plans
 
-![14-jobs](14-jobs.png)
+The plans.
 
-## 15-databases
+![admin-09-plans](admin-09-plans.png)
 
-![15-databases](15-databases.png)
+### admin-10-websites
 
-## 16-backups
+All websites of the panel.
 
-![16-backups](16-backups.png)
+![admin-10-websites](admin-10-websites.png)
 
-## 17-files
+### admin-11-website
 
-![17-files](17-files.png)
+The overview of a website. A failed job that a later job resolved shows as "Failed, then done". Only an administrator gets the error of the server, in "Details for administrators".
 
-## 18-dns
+![admin-11-website](admin-11-website.png)
 
-![18-dns](18-dns.png)
+### admin-12-website-databases
 
-## 19-email
+The databases of a website, with a Valkey database. The actions of a database user are in one menu.
 
-![19-email](19-email.png)
+![admin-12-website-databases](admin-12-website-databases.png)
 
-## 20-apps
+### admin-13-website-settings
 
-![20-apps](20-apps.png)
+The limits and the isolation of a website.
 
-## 21-customers
+![admin-13-website-settings](admin-13-website-settings.png)
 
-![21-customers](21-customers.png)
+### admin-14-jobs
 
-## 22-settings
+All jobs. Each failed job has a reference.
 
-![22-settings](22-settings.png)
+![admin-14-jobs](admin-14-jobs.png)
 
-## 23-login
+### admin-15-backups
 
-![23-login](23-login.png)
+The backup policy and the snapshots.
 
-## 24-websites-phone
+![admin-15-backups](admin-15-backups.png)
 
-![24-websites-phone](24-websites-phone.png)
+### admin-16-panel-certificate
 
-## 25-database-user-permissions
+The certificate of the panel domain.
 
-The permissions of one database user on each database of the website (CF-01).
+![admin-16-panel-certificate](admin-16-panel-certificate.png)
 
-![25-database-user-permissions](25-database-user-permissions.png)
+## Reseller console
 
-## 26-new-database-user
+A reseller signs in to the Customers page. The menu has no page of the platform.
 
-A new database user: the name starts with the Unix user of the website, and each database has its own permission.
+### reseller-01-customers
 
-![26-new-database-user](26-new-database-user.png)
+The customers of the reseller.
 
-## 27-database-user-password
+![reseller-01-customers](reseller-01-customers.png)
 
-The panel shows the password of a new database user one time only.
+### reseller-02-plans
 
-![27-database-user-password](27-database-user-password.png)
+The plans that the reseller can give. Only an administrator changes a plan.
 
-## 28-new-database
+![reseller-02-plans](reseller-02-plans.png)
 
-A new database, with the prefix of the website.
+### reseller-03-websites
 
-![28-new-database](28-new-database.png)
+The websites of the reseller and of its customers.
 
-## 29-domain-not-verified
+![reseller-03-websites](reseller-03-websites.png)
 
-A domain that is not verified. The edge proxy serves it only after the TXT record is correct (CF-03).
+### reseller-04-account
 
-![29-domain-not-verified](29-domain-not-verified.png)
+The account of the reseller.
 
-## 30-new-token
+![reseller-04-account](reseller-04-account.png)
 
-A new API token needs the password and the TOTP code of the user (CF-02).
+## Owner console
 
-![30-new-token](30-new-token.png)
+A website owner signs in to the My websites page. The menu has no page of an administrator or a reseller, and the pages have no administrator text.
 
-## 31-panel-certificate
+### owner-01-websites
 
-The certificate of the panel domain from the panel CA, and the root certificate to download.
+The websites of the owner.
 
-![31-panel-certificate](31-panel-certificate.png)
+![owner-01-websites](owner-01-websites.png)
 
-## 32-panel-certificate-localhost
+### owner-02-website
 
-A panel on `panel.localhost`. Let's Encrypt is not available for this domain. This screenshot
-shows live mode with the answers of the API from a test.
+The overview of a website. A failed job shows a short text and a reference, not the command of the server.
 
-![32-panel-certificate-localhost](32-panel-certificate-localhost.png)
+![owner-02-website](owner-02-website.png)
 
-## 33-change-to-lets-encrypt
+### owner-03-website-domains
 
-The change to Let's Encrypt. If the certificate does not come, the panel keeps the current
-certificate.
+The domains of a website. A certificate that the panel CA signed says that browsers do not trust it.
 
-![33-change-to-lets-encrypt](33-change-to-lets-encrypt.png)
+![owner-03-website-domains](owner-03-website-domains.png)
 
-## 34-change-back-to-panel-ca
+### owner-04-databases
 
-The change back to the panel CA. Add the root certificate to the browser first (HSTS).
+The databases of all websites of the owner.
 
-![34-change-back-to-panel-ca](34-change-back-to-panel-ca.png)
+![owner-04-databases](owner-04-databases.png)
 
-## 35-new-valkey-database
+### owner-05-backups
 
-A new Valkey database. It always gets a user with the same name, so the form has no option
-for the user.
+The snapshots.
 
-![35-new-valkey-database](35-new-valkey-database.png)
+![owner-05-backups](owner-05-backups.png)
 
-## 36-valkey-database
+### owner-06-activity
 
-The databases of a website with a Valkey database: the host, the database number and the
-number of keys. The user of a Valkey database can only get a new password.
+The jobs of the owner.
 
-![36-valkey-database](36-valkey-database.png)
+![owner-06-activity](owner-06-activity.png)
 
-## 37-move-databases
+### owner-07-account
 
-The page of a server with websites from an earlier release. These websites use shared
-database containers. The administrator moves their databases to the database containers of
-each customer.
+The account: the plan, how much of it is in use, the provider and the users. The data comes from `GET /api/v1/account`.
 
-![37-move-databases](37-move-databases.png)
+![owner-07-account](owner-07-account.png)
+
+### owner-08-settings
+
+The password, TOTP, the API tokens and the audit log.
+
+![owner-08-settings](owner-08-settings.png)
+
+### owner-09-new-website
+
+The form for a new website.
+
+![owner-09-new-website](owner-09-new-website.png)
+
+### owner-10-apps
+
+The start points for common applications.
+
+![owner-10-apps](owner-10-apps.png)
+
+## Phone width (390 px)
+
+Under 640 px, each row of a table shows as a card, and the tab bar scrolls with a shadow at the edge that has more tabs.
+
+### phone-01-owner-websites
+
+The websites.
+
+![phone-01-owner-websites](phone-01-owner-websites.png)
+
+### phone-02-owner-website
+
+The overview of a website.
+
+![phone-02-owner-website](phone-02-owner-website.png)
+
+### phone-03-owner-website-databases
+
+The databases of a website as cards.
+
+![phone-03-owner-website-databases](phone-03-owner-website-databases.png)
+
+### phone-04-owner-account
+
+The account.
+
+![phone-04-owner-account](phone-04-owner-account.png)
+
+### phone-05-owner-activity
+
+The jobs.
+
+![phone-05-owner-activity](phone-05-owner-activity.png)
+
+### phone-06-admin-overview
+
+The overview of the administrator.
+
+![phone-06-admin-overview](phone-06-admin-overview.png)
+
+### phone-07-admin-finish-setup
+
+The setup checklist.
+
+![phone-07-admin-finish-setup](phone-07-admin-finish-setup.png)
+
+### phone-08-admin-customers
+
+The customers as cards.
+
+![phone-08-admin-customers](phone-08-admin-customers.png)

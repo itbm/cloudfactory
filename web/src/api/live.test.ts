@@ -63,10 +63,10 @@ describe("mappers", () => {
 
   it("maps a website, its runtime and its domains", () => {
     const w = toWebsite({
-      id: "w1", name: "acme.example", application: "", customerId: "c1", serverId: "s1", planId: "p1", unixUser: "acmeexam_1a2b", status: "running",
+      id: "w1", name: "acme.example.com", application: "", customerId: "c1", serverId: "s1", planId: "p1", unixUser: "acmeexam_1a2b", status: "running",
       runtime: { imageId: "i1", family: "frankenphp", image: "ghcr.io/itbm/frankenphp-php8.4:0.1.0", phpVersion: "8.4", workerMode: false, extensions: ["opcache"], phpIni: {}, previousImageId: null },
       limits: { vcpus: 1, memoryBytes: 1, diskBytes: 1, diskIoBytesPerSecond: 1, processes: 100 }, usage: { cpuPercent: 12 },
-      domains: [{ name: "acme.example", kind: "primary", dnsPointsHere: true, certificate: { state: "valid", expiresAt: null } }],
+      domains: [{ name: "acme.example.com", kind: "primary", dnsPointsHere: true, certificate: { state: "valid", expiresAt: null } }],
       stagingOf: null, managedByTerraform: false, createdAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-02T00:00:00Z",
     });
     expect(w.application).toBe("Website");
@@ -74,13 +74,13 @@ describe("mappers", () => {
     expect(w.use.cpuPercent).toBe(12);
     expect(w.use.memoryBytes).toBe(0);
     expect(w.imageTag).toBe("0.1.0");
-    expect(w.domains[0]).toEqual({ name: "acme.example", kind: "primary", dnsPointsHere: true, certificate: { state: "valid", expiresAt: undefined } });
+    expect(w.domains[0]).toEqual({ name: "acme.example.com", kind: "primary", dnsPointsHere: true, certificate: { state: "valid", expiresAt: undefined } });
     // A panel of an earlier release does not send the field.
     expect(w.sharedDatabases).toBe(false);
   });
 
   it("maps the database containers of a website and of a server", () => {
-    const website = { id: "w1", name: "acme.example", application: "", customerId: "c1", serverId: "s1", planId: "p1", unixUser: "acmeexam_1a2b", status: "running" as const,
+    const website = { id: "w1", name: "acme.example.com", application: "", customerId: "c1", serverId: "s1", planId: "p1", unixUser: "acmeexam_1a2b", status: "running" as const,
       runtime: { imageId: "i1", family: "frankenphp", image: "ghcr.io/itbm/frankenphp-php8.4:0.1.0", phpVersion: "8.4", workerMode: false, extensions: [], phpIni: {}, previousImageId: null },
       limits: { vcpus: 1, memoryBytes: 1, diskBytes: 1, diskIoBytesPerSecond: 1, processes: 100 }, usage: {},
       stagingOf: null, managedByTerraform: false, createdAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-02T00:00:00Z" };
@@ -99,11 +99,11 @@ describe("mappers", () => {
   it("keeps the TXT record of a domain that is not verified (CF-03)", () => {
     const verification = { type: "TXT" as const, name: "_cloudfactory-challenge.new.example", value: "cf-abc" };
     const w = toWebsite({
-      id: "w1", name: "acme.example", application: "", customerId: "c1", serverId: "s1", planId: "p1", unixUser: "acmeexam_1a2b", status: "running",
+      id: "w1", name: "acme.example.com", application: "", customerId: "c1", serverId: "s1", planId: "p1", unixUser: "acmeexam_1a2b", status: "running",
       runtime: { imageId: "i1", family: "frankenphp", image: "ghcr.io/itbm/frankenphp-php8.4:0.1.0", phpVersion: "8.4", workerMode: false, extensions: [], phpIni: {}, previousImageId: null },
       limits: { vcpus: 1, memoryBytes: 1, diskBytes: 1, diskIoBytesPerSecond: 1, processes: 100 }, usage: {},
       domains: [
-        { name: "acme.example", kind: "primary", dnsPointsHere: true, certificate: { state: "valid", expiresAt: null }, verified: true, verification: null },
+        { name: "acme.example.com", kind: "primary", dnsPointsHere: true, certificate: { state: "valid", expiresAt: null }, verified: true, verification: null },
         { name: "new.example", kind: "alias", dnsPointsHere: false, certificate: { state: "pending", expiresAt: null }, verified: false, verification },
       ],
       stagingOf: null, managedByTerraform: false, createdAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-02T00:00:00Z",

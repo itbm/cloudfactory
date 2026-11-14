@@ -121,7 +121,7 @@ export function WebsiteMenu({ website, bordered = false }: { website: Website; b
             </>
           }
         >
-          <p>Visitors see an error page until you start the website again. The files, databases and email stay.</p>
+          <p>Visitors see an error page until you start the website again. The files and the databases stay.</p>
         </Modal>
       )}
       {confirm === "delete" && (

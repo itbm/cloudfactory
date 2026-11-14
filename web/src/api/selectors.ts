@@ -98,13 +98,15 @@ export function accountUsage(s: State) {
 export function search(s: State, query: string): SearchResult[] {
   const q = query.trim().toLowerCase();
   if (!q) return [];
+  const role = s.session.user.role;
   const results: SearchResult[] = [
     ...s.websites.map<SearchResult>((w) => ({ kind: "website", label: w.name, detail: w.application, href: `/websites/${w.id}` })),
     ...s.websites.flatMap((w) => w.domains.filter((d) => d.name !== w.name).map<SearchResult>((d) => ({ kind: "domain", label: d.name, detail: `Domain of ${w.name}`, href: `/websites/${w.id}/domains` }))),
     ...s.jobs.map<SearchResult>((j) => ({ kind: "job", label: j.ref ? `${j.title} ${j.ref}` : j.title, detail: `Job · ${j.state}`, href: j.websiteId ? `/websites/${j.websiteId}` : j.serverId ? `/servers/${j.serverId}` : "/jobs" })),
-    ...s.servers.map<SearchResult>((sv) => ({ kind: "server", label: sv.name, detail: `Server · ${sv.location}`, href: `/servers/${sv.id}` })),
-    ...s.images.map<SearchResult>((i) => ({ kind: "image", label: i.name, detail: `Runtime image · ${i.running}`, href: "/updates" })),
-    ...s.customers.map<SearchResult>((c) => ({ kind: "customer", label: c.name, detail: `Customer · ${c.email}`, href: "/customers" })),
+    // Each console finds only what its pages show (lib/roles.ts).
+    ...(role === "administrator" ? s.servers.map<SearchResult>((sv) => ({ kind: "server", label: sv.name, detail: `Server · ${sv.location}`, href: `/servers/${sv.id}` })) : []),
+    ...(role === "administrator" ? s.images.map<SearchResult>((i) => ({ kind: "image", label: i.name, detail: `Runtime image · ${i.running}`, href: "/updates" })) : []),
+    ...(role !== "owner" ? s.customers.map<SearchResult>((c) => ({ kind: "customer", label: c.name, detail: `Customer · ${c.email}`, href: "/customers" })) : []),
   ];
   return results.filter((r) => r.label.toLowerCase().includes(q) || r.detail.toLowerCase().includes(q)).slice(0, 14);
 }
@@ -119,4 +121,45 @@ export function degradedReason(services: Server["services"]): string | undefined
   const failed = failedServices(services);
   if (!failed.length) return undefined;
   return `Degraded: ${failed.map((x) => `${x.name} ${x.state}`).join(", ")}`;
+}
+
+/**
+ * What an administrator must look at on the platform: servers, updates, images and jobs. The
+ * most important items come first.
+ */
+export function platformAttention(s: State): AttentionItem[] {
+  const items: AttentionItem[] = [];
+  for (const sv of s.servers) {
+    const href = `/servers/${sv.id}`;
+    const failed = failedServices(sv.services);
+    if (sv.state === "offline") items.push({ id: `off-${sv.id}`, tone: "warning", subject: sv.name, text: "is offline. Its websites can be down, and its jobs fail.", action: "Open server", href });
+    else if (sv.connectionError) items.push({ id: `con-${sv.id}`, tone: "warning", subject: sv.name, text: "sends reports, but the panel cannot connect to its agent. Each job for this server fails.", action: "Open server", href });
+    else if (failed.length) items.push({ id: `svc-${sv.id}`, tone: "warning", subject: sv.name, text: `is degraded: ${failed.map((x) => `${x.name} ${x.state}`).join(", ")}.`, action: "Open server", href });
+  }
+  for (const w of s.websites) {
+    if (w.status === "failed") items.push({ id: `failed-${w.id}`, tone: "warning", subject: w.name, text: "was not made. Look at the cause, and try again.", action: "Open website", href: `/websites/${w.id}` });
+  }
+  for (const sv of s.servers) {
+    const href = `/servers/${sv.id}`;
+    const security = sv.pendingUpdates.filter((u) => u.security).length;
+    if (sv.rebootRequired) items.push({ id: `boot-${sv.id}`, tone: "warning", subject: sv.name, text: "must restart to complete its updates.", action: "Open server", href });
+    if (security) items.push({ id: `sec-${sv.id}`, tone: "warning", subject: sv.name, text: `has ${security} security ${security === 1 ? "update" : "updates"} to install.`, action: "Review updates", href });
+    else if (sv.pendingUpdates.length) items.push({ id: `upd-${sv.id}`, tone: "info", subject: sv.name, text: `has ${sv.pendingUpdates.length} ${sv.pendingUpdates.length === 1 ? "update" : "updates"} to install.`, action: "Review updates", href });
+    if (sv.agentUpdateAvailable) items.push({ id: `agent-${sv.id}`, tone: "info", subject: sv.name, text: `has agent ${sv.agentVersion}. A newer agent is ready.`, action: "Open server", href });
+  }
+  for (const i of s.images) {
+    if (i.checkError) items.push({ id: `chk-${i.id}`, tone: "warning", subject: i.name, text: "could not be checked for updates. The panel does not know if a newer image exists.", action: "Open images", href: "/updates" });
+    else if (i.available && i.availableNote !== "rolling_out") items.push({ id: `img-${i.id}`, tone: "info", subject: i.name, text: `has the update ${i.available} ready to roll out.`, action: "Review update", href: "/updates" });
+    if (i.supportEndsAt && daysUntil(i.supportEndsAt) <= 90) items.push({ id: `eol-${i.id}`, tone: "warning", subject: i.name, text: `loses security support on ${longDate(i.supportEndsAt)}. Move its websites to a newer PHP version.`, action: "Open images", href: "/updates" });
+  }
+  return items;
+}
+
+/**
+ * True when the panel can make backups. An administrator sees the object storage. A customer
+ * sees only whether the panel has one (GET /account).
+ */
+export function backupsReady(s: State): boolean {
+  if (s.session.user.role === "administrator") return !!s.backupPolicy.target;
+  return s.account?.backupsAvailable ?? true;
 }

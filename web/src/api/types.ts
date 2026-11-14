@@ -52,6 +52,9 @@ export interface Runtime {
   previous?: { imageId: string; phpVersion?: PhpVersion; tag: string };
   /** The directory in /app that the web server serves. "." is /app. The default is "public". */
   documentRoot?: string;
+  /** The digest of the image that the website runs. Empty when the panel knows the image by tag only. */
+  digest?: string;
+  signatureVerified?: boolean;
 }
 
 export type CertificateState = "valid" | "renewed" | "pending" | "failed" | "not_needed";
@@ -150,6 +153,8 @@ export interface Job {
   title: string;
   /** Inline code, for example a commit hash. */
   ref?: string;
+  /** The action of the agent, for example CreateDatabase. */
+  action?: string;
   state: JobState;
   steps: string[];
   step: number;
@@ -454,6 +459,37 @@ export interface SearchResult {
   href: string;
 }
 
+/** One item of the setup checklist of the panel (GET /setup). */
+export interface SetupItem {
+  id: "backups" | "totp" | "disk-limits" | "panel-certificate";
+  title: string;
+  /** not_applicable: the item does not apply to this panel. */
+  state: "done" | "open" | "not_applicable";
+  /** What occurs while the item is open. */
+  effect: string;
+  /** The current state, in words. */
+  detail: string;
+  action: { label: string; target: string };
+}
+
+export interface SetupChecklist {
+  complete: boolean;
+  open: number;
+  items: SetupItem[];
+}
+
+/** The account of the signed-in user (GET /account). An administrator has no account. */
+export interface Account {
+  customer: { id: string; name: string; email: string; role: "reseller" | "owner"; suspended: boolean; createdAt: string };
+  /** The reseller that gives the service. Undefined: the operator of the panel gives it. */
+  provider?: { name: string; email: string };
+  plan?: Plan;
+  usage: { websites: number; databases: number; diskBytes: number; customers?: number };
+  /** False when the panel has no object storage for backups. A backup then fails. */
+  backupsAvailable: boolean;
+  users: ManagedUser[];
+}
+
 export interface State {
   /**
    * loading: the panel has a session but has not loaded the data yet.
@@ -487,6 +523,10 @@ export interface State {
   /** The host name of the panel, for the join command and the DNS hints. */
   panelDomain: string;
   panelCertificate: PanelCertificate;
+  /** The setup checklist. Only an administrator has it. */
+  setup?: SetupChecklist;
+  /** The account of the user. An administrator has none. */
+  account?: Account;
   joinToken: string;
   /** The fingerprint of the panel CA for the join command. */
   joinCaSha256?: string;

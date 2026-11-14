@@ -1,9 +1,11 @@
-import { AlertTriangle, X } from "lucide-react";
+import { AlertTriangle, MoreHorizontal, X } from "lucide-react";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
+import { useStore } from "../api/hooks";
 import type { ApiError } from "../api/store";
 import type { Job, Tone } from "../api/types";
 import { shortAgo } from "../lib/format";
+import { jobFailure, resolvedFailures } from "../lib/jobFailure";
 
 export type { Tone };
 
@@ -182,16 +184,36 @@ export interface TabItem {
 
 /** Tabs that are links (for pages) or buttons (inside a page). */
 export function Tabs({ items, current, onSelect, label }: { items: TabItem[]; current: string; onSelect?: (id: string) => void; label: string }) {
+  // Audit item U6: on a narrow screen the tab bar scrolls. A shadow at an edge shows that
+  // more tabs are there, and the selected tab is always in view.
+  const ref = useRef<HTMLElement>(null);
+  const [more, setMore] = useState({ left: false, right: false });
+  useEffect(() => {
+    const nav = ref.current;
+    if (!nav) return;
+    const measure = () => setMore({ left: nav.scrollLeft > 2, right: nav.scrollLeft + nav.clientWidth < nav.scrollWidth - 2 });
+    const selected = nav.querySelector<HTMLElement>('[aria-current="page"]');
+    if (selected && nav.scrollWidth > nav.clientWidth) nav.scrollLeft = Math.max(0, selected.offsetLeft - (nav.clientWidth - selected.offsetWidth) / 2);
+    measure();
+    nav.addEventListener("scroll", measure, { passive: true });
+    window.addEventListener("resize", measure);
+    return () => {
+      nav.removeEventListener("scroll", measure);
+      window.removeEventListener("resize", measure);
+    };
+  }, [current, items.length]);
   return (
-    <nav className="tabs" aria-label={label}>
-      {items.map((t) =>
-        t.href ? (
-          <Link key={t.id} to={t.href} className="tab" aria-current={t.id === current ? "page" : undefined}>{t.label}</Link>
-        ) : (
-          <button key={t.id} type="button" className="tab" aria-current={t.id === current ? "page" : undefined} onClick={() => onSelect?.(t.id)}>{t.label}</button>
-        ),
-      )}
-    </nav>
+    <div className={`tabs-wrap${more.left ? " more-left" : ""}${more.right ? " more-right" : ""}`}>
+      <nav className="tabs" aria-label={label} ref={ref}>
+        {items.map((t) =>
+          t.href ? (
+            <Link key={t.id} to={t.href} className="tab" aria-current={t.id === current ? "page" : undefined}>{t.label}</Link>
+          ) : (
+            <button key={t.id} type="button" className="tab" aria-current={t.id === current ? "page" : undefined} onClick={() => onSelect?.(t.id)}>{t.label}</button>
+          ),
+        )}
+      </nav>
+    </div>
   );
 }
 
@@ -254,8 +276,33 @@ export function TerraformNotice({ resource }: { resource: string }) {
   );
 }
 
+/**
+ * Audit item U2: the cause of a failed job. A customer gets a short text and a reference. An
+ * administrator also gets the error of the server.
+ */
+export function JobError({ job, resolved = false }: { job: Job; resolved?: boolean }) {
+  const role = useStore().session.user.role;
+  if (job.state !== "failed") return null;
+  const failure = jobFailure(job, role);
+  return (
+    <>
+      {resolved
+        ? <span className="cell-sub">A later try was successful. No action is necessary.</span>
+        : <span className="cell-sub text-danger">{failure.text}</span>}
+      <span className="cell-sub">Reference <code>{failure.reference}</code></span>
+      {failure.details && (
+        <details className="job-details">
+          <summary>Details for administrators</summary>
+          <pre>{failure.details}</pre>
+        </details>
+      )}
+    </>
+  );
+}
+
 /** Shows the progress of a job. The store changes the job live. */
 export function JobRow({ job }: { job: Job }) {
+  const jobs = useStore().jobs;
   if (job.state === "running" || job.state === "queued") {
     return (
       <li className="job-row">
@@ -268,18 +315,117 @@ export function JobRow({ job }: { job: Job }) {
       </li>
     );
   }
+  const resolved = job.state === "failed" && resolvedFailures(jobs).has(job.id);
   return (
     <li className="job-row job-done">
-      <span>{job.title}{job.ref && <> <code>{job.ref}</code></>}{job.error && <span className="cell-sub text-danger">{job.error}</span>}</span>
-      <JobState job={job} />
+      <span className="job-text">{job.title}{job.ref && <> <code>{job.ref}</code></>}<JobError job={job} resolved={resolved} /></span>
+      <JobState job={job} resolved={resolved} />
     </li>
   );
 }
 
 
-export function JobState({ job }: { job: Job }) {
+export function JobState({ job, resolved = false }: { job: Job; resolved?: boolean }) {
   const when = job.finishedAt ? ` · ${shortAgo(job.finishedAt)}` : "";
   if (job.state === "succeeded") return <span className="text-success nowrap">Done{when}</span>;
-  if (job.state === "failed") return <span className="text-danger nowrap">Failed{when}</span>;
+  if (job.state === "failed") return resolved ? <span className="muted nowrap">Failed, then done{when}</span> : <span className="text-danger nowrap">Failed{when}</span>;
   return <span className="muted nowrap">Queued</span>;
+}
+
+export interface RowAction {
+  label: string;
+  onSelect: () => void;
+  danger?: boolean;
+  disabled?: boolean;
+}
+
+/**
+ * Audit item U7: the actions of a table row in one menu. A row with many buttons was wider
+ * than the table, and the last button was cut.
+ */
+export function RowMenu({ label, actions }: { label: string; actions: RowAction[] }) {
+  const [open, setOpen] = useState(false);
+  // A table scrolls its content, so a menu in the table would be cut. The menu has a fixed
+  // position next to its button instead.
+  const [place, setPlace] = useState<React.CSSProperties>({});
+  const ref = useRef<HTMLDivElement>(null);
+  const button = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent) => !ref.current?.contains(e.target as Node) && setOpen(false);
+    const esc = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      setOpen(false);
+      button.current?.focus();
+    };
+    const away = () => setOpen(false);
+    document.addEventListener("mousedown", close);
+    document.addEventListener("keydown", esc);
+    window.addEventListener("resize", away);
+    window.addEventListener("scroll", away, true);
+    // The first action gets the focus, so that the arrow keys and Tab work in the menu.
+    ref.current?.querySelector<HTMLButtonElement>('[role="menuitem"]:not(:disabled)')?.focus();
+    return () => {
+      document.removeEventListener("mousedown", close);
+      document.removeEventListener("keydown", esc);
+      window.removeEventListener("resize", away);
+      window.removeEventListener("scroll", away, true);
+    };
+  }, [open]);
+  if (actions.length === 0) return null;
+  const toggle = () => {
+    const r = button.current?.getBoundingClientRect();
+    if (r) {
+      const height = actions.length * 44 + 10;
+      const below = r.bottom + 4 + height <= window.innerHeight;
+      setPlace({ position: "fixed", left: "auto", right: Math.max(8, window.innerWidth - r.right), top: below ? r.bottom + 4 : "auto", bottom: below ? "auto" : window.innerHeight - r.top + 4 });
+    }
+    setOpen((o) => !o);
+  };
+  const move = (e: React.KeyboardEvent) => {
+    if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+    e.preventDefault();
+    const items = [...(ref.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)') ?? [])];
+    const at = items.indexOf(document.activeElement as HTMLButtonElement);
+    items[(at + (e.key === "ArrowDown" ? 1 : items.length - 1)) % items.length]?.focus();
+  };
+  return (
+    <div className="menu" ref={ref}>
+      <button ref={button} type="button" className="btn btn-icon btn-ghost" aria-label={label} aria-haspopup="menu" aria-expanded={open} onClick={toggle}>
+        <MoreHorizontal size={18} aria-hidden="true" />
+      </button>
+      {open && (
+        <ul className="context-menu menu-list" role="menu" aria-label={label} onKeyDown={move} style={place}>
+          {actions.map((a) => (
+            <li key={a.label} role="none">
+              <button type="button" role="menuitem" disabled={a.disabled} className={a.danger ? "text-danger" : ""} onClick={() => { setOpen(false); a.onSelect(); }}>{a.label}</button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Audit item U6: the frame of a table. On a wide screen, the table scrolls in the frame when
+ * it does not fit. On a phone, each row shows as a card: each cell is on its own line, with
+ * the heading of its column before it.
+ */
+export function TableWrap({ children, className = "" }: { children: ReactNode; className?: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  // The headings come from the table itself, so each table needs no second list of them.
+  useEffect(() => {
+    const table = ref.current?.querySelector("table");
+    if (!table) return;
+    const headings = [...table.querySelectorAll("thead th")].map((th) => (th.querySelector(".visually-hidden") ? "" : th.textContent?.trim() ?? ""));
+    for (const row of table.querySelectorAll("tbody tr")) {
+      [...row.children].forEach((cell, i) => {
+        const label = (cell as HTMLTableCellElement).colSpan > 1 ? "" : headings[i] ?? "";
+        if (label) cell.setAttribute("data-label", label);
+        else cell.removeAttribute("data-label");
+      });
+    }
+  });
+  return <div ref={ref} className={`table-wrap table-cards${className ? ` ${className}` : ""}`}>{children}</div>;
 }

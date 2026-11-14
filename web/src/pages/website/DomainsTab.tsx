@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useAction, useStore } from "../../api/hooks";
 import { addDomain, checkDns, makePrimary, removeDomain, verifyDomain } from "../../api/store";
 import type { DomainKind, Website } from "../../api/types";
-import { Card, ConfirmButton, Field, FormError, Status } from "../../components/ui";
+import { Card, ConfirmButton, Field, FormError, Status, TableWrap } from "../../components/ui";
 import { certificateUntil, jobActive } from "../../lib/labels";
 
 const KIND_LABEL: Record<DomainKind, string> = { primary: "Primary", redirect: "Redirect", alias: "Alias" };
@@ -33,7 +33,7 @@ export function DomainsTab({ website }: { website: Website }) {
         <div className="card-body" style={{ paddingBottom: 0 }}>
           <FormError error={remove.error ?? verify.error ?? check.error ?? primary.error} />
         </div>
-        <div className="table-wrap">
+        <TableWrap>
           <table>
             <thead>
               <tr><th scope="col">Domain</th><th scope="col">Type</th><th scope="col">DNS</th><th scope="col">Certificate</th><th scope="col"><span className="visually-hidden">Actions</span></th></tr>
@@ -96,7 +96,7 @@ export function DomainsTab({ website }: { website: Website }) {
               })}
             </tbody>
           </table>
-        </div>
+        </TableWrap>
       </Card>
       <Card title="Add domain">
         <form

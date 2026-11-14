@@ -8,7 +8,7 @@ describe("the CSV export of the audit log (audit finding S11)", () => {
   });
 
   it("does not change other cells", () => {
-    expect(csvCell("acme.example")).toBe(`"acme.example"`);
+    expect(csvCell("acme.example.com")).toBe(`"acme.example.com"`);
     expect(csvCell("a \"b\", c")).toBe(`"a ""b"", c"`);
     // The sign is not at the start of the cell.
     expect(csvCell("shop.example.net -cmd")).toBe(`"shop.example.net -cmd"`);

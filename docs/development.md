@@ -58,6 +58,35 @@ The demo agent (`api/app/Demo`) fails these jobs, so that you can see a failure:
 
 The panel ignores `CF_DEMO` when `APP_ENV` is `production`. Do not set it on a server.
 
+### Consoles for each role
+
+The web panel has one console for each role. `web/src/lib/roles.ts` has the menu, the first
+page and the permitted pages of each role.
+
+| Role | First page | Pages of the role only |
+| --- | --- | --- |
+| Administrator | Overview (`/overview`) | Overview, Finish setup, Servers, Images and updates, Customers, Plans |
+| Reseller | Customers (`/customers`) | Customers, Plans, My account |
+| Website owner | My websites (`/websites`) | My account |
+
+All roles have Websites, Databases, Backups, Apps, Jobs and Settings. When a user opens a page
+of a different role, the panel shows the first page of the console of the user. This is not
+the security boundary: the API refuses the requests that a role must not make.
+
+When you add a page:
+
+1. Add its route in `web/src/App.tsx`.
+2. If only some roles can open it, add it to `ONLY` in `web/src/lib/roles.ts`.
+3. Add it to the menu of each role that can open it, in `NAVIGATION`.
+4. Do not show a text for administrators to an owner. The test `consoles.test.tsx` examines
+   the pages of an owner for such words.
+
+### Errors of jobs
+
+A failed job shows a short text and a reference to a customer. Only an administrator gets the
+error of the server (`web/src/lib/jobFailure.ts`). The API still sends the full error to all
+roles, so the web panel hides it. Do not rely on this to keep a secret.
+
 ### Tests of the web panel
 
 The tests use the answers of the real API for the sample data. The files are in

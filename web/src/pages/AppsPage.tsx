@@ -4,7 +4,7 @@ import { useAction, useStore } from "../api/hooks";
 import { addImage } from "../api/store";
 import type { UpdatePolicy } from "../api/types";
 import { Topbar } from "../components/Layout";
-import { Card, Field, FormError, Modal, PageHeader, Status } from "../components/ui";
+import { Card, Field, FormError, Modal, PageHeader, Status, TableWrap } from "../components/ui";
 import { jobActive, POLICY_LABEL } from "../lib/labels";
 
 // The API of this release has no Git deploys or build containers.
@@ -30,20 +30,20 @@ export function AppsPage() {
     <>
       <Topbar />
       <main id="main" className="content">
-        <PageHeader title="Apps" description="Start points for common applications, and the OCI images that administrators added." actions={isAdmin && <button type="button" className="btn btn-primary" onClick={() => setOpen(true)}>Add your own image</button>} />
+        <PageHeader title="Apps" description={isAdmin ? "Start points for common applications, and the OCI images that administrators added." : "Start points for common applications, and the OCI images that your provider added."} actions={isAdmin && <button type="button" className="btn btn-primary" onClick={() => setOpen(true)}>Add your own image</button>} />
         <div className="grid-3">
           {/* Show only the apps that have an image on this panel. */}
           {CATALOGUE.filter((a) => state.images.some((i) => i.family === a.family)).map((a) => (
             <section key={a.name} className="card app-tile" aria-labelledby={`app-${a.name}`}>
               <h2 id={`app-${a.name}`}>{a.name}</h2>
               <span className="tag" style={{ alignSelf: "flex-start" }}>{a.runtime}</span>
-              <p>{a.text}</p>
+              <p>{isAdmin ? a.text : a.text.replace("An administrator sets", "Your provider sets")}</p>
               <Link className="btn" to="/websites/new">New {a.name} website</Link>
             </section>
           ))}
         </div>
         <Card title="Own images" className="mt">
-          <div className="table-wrap">
+          <TableWrap>
             <table>
               <thead><tr><th scope="col">Image</th><th scope="col">Reference</th><th scope="col">Tag</th><th scope="col">Port and command</th><th scope="col">Signature</th><th scope="col">Updates</th></tr></thead>
               <tbody>
@@ -60,7 +60,7 @@ export function AppsPage() {
                 {pending.map((j) => <tr key={j.id}><td colSpan={6} className="muted">{j.title}: {j.steps[Math.min(j.step, j.steps.length - 1)]}…</td></tr>)}
               </tbody>
             </table>
-          </div>
+          </TableWrap>
         </Card>
       </main>
       {open && (

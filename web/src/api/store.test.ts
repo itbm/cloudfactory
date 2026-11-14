@@ -23,7 +23,7 @@ describe("the state from the panel API", () => {
     expect(s.rollout).toMatchObject({ state: "done", rolledBack: 1 });
     expect(s.customers.map((c) => c.name).sort()).toEqual(["Acme Ltd", "Corner Bakery", "Harbour Books", "Lawson & Co", "Northwind Agency"]);
     // The databases and the snapshots of each website.
-    const shop = website("shop.acme.example");
+    const shop = website("shop.acme.example.com");
     expect(s.databases.filter((d) => d.websiteId === shop.id).map((d) => d.engine).sort()).toEqual(["mariadb", "valkey"]);
     expect(s.snapshots.some((x) => x.websiteId === shop.id && x.kind === "manual")).toBe(true);
   });
@@ -32,7 +32,7 @@ describe("the state from the panel API", () => {
     await signedIn("reseller");
     const s = getState();
     expect(s.session.user.role).toBe("reseller");
-    expect(visibleWebsites(s).map((w) => w.name).sort()).toEqual(["cornerbakery.example", "events.harbourbooks.example", "harbourbooks.example", "northwind.example"]);
+    expect(visibleWebsites(s).map((w) => w.name).sort()).toEqual(["cornerbakery.example.org", "events.harbourbooks.example.net", "harbourbooks.example.net", "northwind.example.com"]);
     expect(contextCustomers(s).map((c) => c.name).sort()).toEqual(["Corner Bakery", "Harbour Books", "Northwind Agency"]);
     expect(s.servers).toEqual([]);
     // A reseller cannot list all images. It gets the images for a new website.
@@ -44,7 +44,7 @@ describe("the state from the panel API", () => {
     await signedIn("owner");
     const s = getState();
     expect(visibleWebsites(s)).toHaveLength(5);
-    expect(visibleWebsites(s).every((w) => w.name.endsWith("acme.example"))).toBe(true);
+    expect(visibleWebsites(s).every((w) => w.name.endsWith("acme.example.com"))).toBe(true);
     expect(s.customers.map((c) => c.name)).toEqual(["Acme Ltd"]);
     expect(s.servers).toEqual([]);
     expect(s.rollout).toBeUndefined();
@@ -59,7 +59,7 @@ describe("the state from the panel API", () => {
 
   it("lists the website that the panel could not make first", async () => {
     await signedIn("reseller");
-    expect(attention(getState())[0]).toMatchObject({ subject: "events.harbourbooks.example", href: `/websites/${website("events.harbourbooks.example").id}` });
+    expect(attention(getState())[0]).toMatchObject({ subject: "events.harbourbooks.example.net", href: `/websites/${website("events.harbourbooks.example.net").id}` });
   });
 
   it("uses the session of an earlier page load", async () => {
@@ -77,12 +77,12 @@ describe("changes", () => {
   it("sends a new website to the API and follows its job", async () => {
     const api = await signedIn("owner");
     const image = getState().images[0];
-    const made = { ...structuredClone(apiWebsite(api, "acme.example")), id: "new-website", name: "blog.acme.example", status: "starting" };
-    api.on("POST /websites", () => [202, { website: made, job: apiJob({ id: "job-new", title: "Create website blog.acme.example", action: "CreateWebsite", websiteId: "new-website" }) }]);
+    const made = { ...structuredClone(apiWebsite(api, "acme.example.com")), id: "new-website", name: "blog.acme.example.com", status: "starting" };
+    api.on("POST /websites", () => [202, { website: made, job: apiJob({ id: "job-new", title: "Create website blog.acme.example.com", action: "CreateWebsite", websiteId: "new-website" }) }]);
 
-    const r = await createWebsite({ name: " Blog.Acme.example ", application: "WordPress", imageId: image.id, planId: "plan-of-a-different-customer", serverId: "", customerId: "" });
+    const r = await createWebsite({ name: " Blog.Acme.example.com ", application: "WordPress", imageId: image.id, planId: "plan-of-a-different-customer", serverId: "", customerId: "" });
     // CF-07: only an administrator selects the plan. The name is in lower case.
-    expect(api.changes[1]).toEqual({ method: "POST", path: "/websites", body: { name: "blog.acme.example", application: "WordPress", imageId: image.id } });
+    expect(api.changes[1]).toEqual({ method: "POST", path: "/websites", body: { name: "blog.acme.example.com", application: "WordPress", imageId: image.id } });
     expect(r.websiteId).toBe("new-website");
     expect(getState().websites[0]).toMatchObject({ id: "new-website", status: "starting" });
     expect(await r.job).toMatchObject({ id: "job-new", state: "succeeded" });
@@ -91,19 +91,19 @@ describe("changes", () => {
   it("shows the message of the API when a change is refused", async () => {
     const api = await signedIn("owner");
     api.on("POST /websites/*/snapshots", () => [409, { message: "The backups are not set up. Ask your provider." }]);
-    await expect(backupNow(website("acme.example").id)).rejects.toMatchObject({ name: "ApiError", message: "The backups are not set up. Ask your provider." });
+    await expect(backupNow(website("acme.example.com").id)).rejects.toMatchObject({ name: "ApiError", message: "The backups are not set up. Ask your provider." });
   });
 
   it("shows the error of each field", async () => {
     const api = await signedIn("owner");
     api.on("POST /websites/*/databases", () => [422, { message: "x", errors: { name: ["Use 1 to 32 lower-case letters, digits and underscores."] } }]);
-    await expect(createDatabase(website("acme.example").id, "mariadb", "Bad Name")).rejects.toMatchObject({ fields: { name: "Use 1 to 32 lower-case letters, digits and underscores." } });
+    await expect(createDatabase(website("acme.example.com").id, "mariadb", "Bad Name")).rejects.toMatchObject({ fields: { name: "Use 1 to 32 lower-case letters, digits and underscores." } });
   });
 
   it("always makes a Valkey database with its user", async () => {
     const api = await signedIn("owner");
     api.on("POST /websites/*/databases", () => [202, { password: "secret-password", job: apiJob({ action: "CreateDatabase" }) }]);
-    await expect(createDatabase(website("acme.example").id, "valkey", "sessions", false)).resolves.toBe("secret-password");
+    await expect(createDatabase(website("acme.example.com").id, "valkey", "sessions", false)).resolves.toBe("secret-password");
     expect(api.changes[1].body).toEqual({ engine: "valkey", name: "sessions", createUser: true });
   });
 
@@ -121,7 +121,7 @@ describe("changes", () => {
   it("signs out when the API does not accept the session", async () => {
     const api = await signedIn("owner");
     api.on("POST /websites/*/snapshots", () => [401, { message: "Unauthenticated." }]);
-    await expect(backupNow(website("acme.example").id)).rejects.toBeInstanceOf(ApiError);
+    await expect(backupNow(website("acme.example.com").id)).rejects.toBeInstanceOf(ApiError);
     expect(getState().session.signedIn).toBe(false);
     expect(getState().websites).toEqual([]);
   });
@@ -154,7 +154,7 @@ describe("checks before a request", () => {
 
   it("refuses a document root outside the website (batch 1, finding 11)", async () => {
     const api = await signedIn("owner");
-    const id = website("acme.example").id;
+    const id = website("acme.example.com").id;
     expect(() => setDocumentRoot(id, "../etc")).toThrow(ApiError);
     expect(() => setDocumentRoot(id, "public/../..")).toThrow(ApiError);
     api.on("PUT /websites/*/runtime", () => [202, { job: apiJob({ action: "SetRuntime" }) }]);
@@ -164,7 +164,7 @@ describe("checks before a request", () => {
 
   it("accepts only OpenSSH public keys for SFTP", async () => {
     const api = await signedIn("owner");
-    const id = website("acme.example").id;
+    const id = website("acme.example.com").id;
     await expect(setSftp(id, { enabled: true, authorizedKeys: ["not a key"] })).rejects.toMatchObject({ fields: { key: expect.any(String) } });
     const key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHk2b3hZQ2dQa1dGa1lQa1dGa1lQa1dGa1lQa1dGa1lQ me@laptop";
     await expect(setSftp(id, { enabled: true, authorizedKeys: [key, key] })).rejects.toBeInstanceOf(ApiError);
@@ -177,7 +177,7 @@ describe("checks before a request", () => {
     await setSftp(id, { enabled: true, authorizedKeys: [`  ${key}  `] });
     expect(api.changes[1].body).toEqual({ enabled: true, authorizedKeys: [key] });
     // The API gives no host name: the panel keeps the host that it has.
-    expect(website("acme.example").sftp).toMatchObject({ enabled: true, host: "web-1.panel.example", authorizedKeys: [key] });
+    expect(website("acme.example.com").sftp).toMatchObject({ enabled: true, host: "web-1.panel.example", authorizedKeys: [key] });
   });
 
   it("knows the public names, as the agent does", () => {

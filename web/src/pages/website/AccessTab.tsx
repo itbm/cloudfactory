@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { useAction, useStore } from "../../api/hooks";
 import { setSftp } from "../../api/store";
 import type { SftpAccess, Website } from "../../api/types";
-import { Card, ConfirmButton, Field, FormError, Toggle } from "../../components/ui";
+import { Card, ConfirmButton, Field, FormError, TableWrap, Toggle } from "../../components/ui";
 import { jobActive } from "../../lib/labels";
 
 function sftpUrl(sftp: SftpAccess) {
@@ -122,7 +122,7 @@ function SftpTab({ website, sftp }: { website: Website; sftp: SftpAccess }) {
       </div>
       <div className="stack">
         <Card title="SSH keys">
-          <div className="table-wrap">
+          <TableWrap>
             <table>
               <thead><tr><th scope="col">Key</th><th scope="col">Fingerprint</th><th scope="col"><span className="visually-hidden">Actions</span></th></tr></thead>
               <tbody>
@@ -130,7 +130,7 @@ function SftpTab({ website, sftp }: { website: Website; sftp: SftpAccess }) {
                 {sftp.authorizedKeys.length === 0 && <tr><td colSpan={3} className="muted">No SSH keys.</td></tr>}
               </tbody>
             </table>
-          </div>
+          </TableWrap>
           <form className="card-body" style={{ paddingTop: 16 }} noValidate onSubmit={addKey}>
             {lastKey && <p className="muted small" style={{ marginBottom: 12 }}>To remove the last key, turn off SFTP first.</p>}
             <Field label="Public key" hint="Up to 20 keys. The comment at the end of the key names it in this list." error={change.error?.fields.key ?? change.error?.fields["authorizedKeys.0"]}>

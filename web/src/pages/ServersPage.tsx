@@ -6,7 +6,7 @@ import { checkConnection, installUpdates, loopbackName, moveDatabases, newJoinTo
 import type { HostUpdatePolicy, Server, ServerRole } from "../api/types";
 import { Topbar } from "../components/Layout";
 import { CopyField } from "./website/AccessTab";
-import { Card, ConfirmButton, Empty, Field, FormError, JobRow, Meter, Modal, PageHeader, Status } from "../components/ui";
+import { Card, ConfirmButton, Empty, Field, FormError, JobRow, Meter, Modal, PageHeader, Status, TableWrap } from "../components/ui";
 import { relativeTime } from "../lib/format";
 import { HOST_POLICY_LABEL, jobActive, roleList, SERVER_ROLE, SERVER_STATE } from "../lib/labels";
 
@@ -23,7 +23,7 @@ function serverStatus(s: Server) {
 export function ServersTable() {
   const state = useStore();
   return (
-    <div className="table-wrap">
+    <TableWrap>
       <table>
         <thead><tr><th scope="col">Server</th><th scope="col">Location</th><th scope="col">Roles</th><th scope="col">Agent</th><th scope="col">CPU</th><th scope="col">OS updates</th><th scope="col">Status</th><th scope="col"><span className="visually-hidden">Actions</span></th></tr></thead>
         <tbody>
@@ -42,7 +42,7 @@ export function ServersTable() {
           ))}
         </tbody>
       </table>
-    </div>
+    </TableWrap>
   );
 }
 
@@ -276,7 +276,7 @@ function ServerDetail({ id }: { id: string }) {
                 </table>
               </div>
               {osUpdates.length > 0 && (
-                <div className="table-wrap">
+                <TableWrap>
                   <table>
                     <thead><tr><th scope="col">Package</th><th scope="col">New version</th><th scope="col">Type</th></tr></thead>
                     <tbody>
@@ -289,7 +289,7 @@ function ServerDetail({ id }: { id: string }) {
                       ))}
                     </tbody>
                   </table>
-                </div>
+                </TableWrap>
               )}
               {packages.length > PACKAGE_ROWS && (
                 <div className="card-body">
