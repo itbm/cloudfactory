@@ -1052,6 +1052,55 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '422': { $ref: '#/components/responses/Invalid' }
 
+  /v1/backup-policy/servers/{serverId}/credentials:
+    parameters:
+      - { name: serverId, in: path, required: true, schema: { type: string }, description: The ID of a server with the role "web". }
+    put:
+      tags: [Backups]
+      summary: Set the object storage key of one server
+      description: >-
+        Administrators only. Make a key at the storage provider that has access to the
+        repository of this server only (the field "repository" of the server in the backup
+        policy). The panel keeps the key encrypted, never shows it, and sends it to this
+        server only. A server with no key of its own gets the shared credentials of the
+        backup policy. A restore from the repository that all servers used in an earlier
+        version always uses the shared credentials.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [credentials]
+              properties:
+                credentials:
+                  type: object
+                  writeOnly: true
+                  minProperties: 1
+                  description: The restic environment variables of the key, for example AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY. They replace the key that the server has.
+                  additionalProperties: { type: string }
+      responses:
+        '200':
+          description: Changed. The backup policy.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BackupPolicy' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+    delete:
+      tags: [Backups]
+      summary: Remove the object storage key of one server
+      description: Administrators only. The server then gets the shared credentials of the backup policy.
+      responses:
+        '200':
+          description: Removed. The backup policy.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BackupPolicy' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   /v1/backup-policy/repository-password:
     get:
       tags: [Backups]
@@ -2245,7 +2294,22 @@ components:
             and AWS_SECRET_ACCESS_KEY. The panel keeps them encrypted and never shows them. Leave
             out to keep them. An empty object removes them.
           additionalProperties: { type: string }
-        credentialNames: { type: array, readOnly: true, items: { type: string }, description: The names of the credentials that are set. }
+        credentialNames: { type: array, readOnly: true, items: { type: string }, description: The names of the shared credentials that are set. Each server with no key of its own gets these credentials. }
+        servers:
+          type: array
+          readOnly: true
+          description: >-
+            Administrators only. Each server that has a backup repository, with the names of
+            the credentials of its own object storage key. A server with no names uses the
+            shared credentials.
+          items:
+            type: object
+            required: [serverId, server, repository, credentialNames]
+            properties:
+              serverId: { type: string }
+              server: { type: string, description: The name of the server. }
+              repository: { type: [string, 'null'], description: 'The restic repository of the server, for example s3:s3.amazonaws.com/bucket/servers/SERVER_ID. Limit the key of the server to this path. Null when no backup target is set.' }
+              credentialNames: { type: array, items: { type: string }, description: The names of the credentials of the key of this server. Empty when the server uses the shared credentials. }
     ServerRole:
       type: string
       enum: [web, database, email, dns, backup]

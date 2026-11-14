@@ -270,9 +270,100 @@ restore after you lose the panel. To show them, run `cf backups policy password`
 view in the audit log. Do this again after you add a server, because a new server gets a new
 password.
 
-All servers use the same credentials of the object storage. A person who has root access to
-one server can thus delete the data of all repositories, but cannot read it. To prevent a
-loss of data, turn on versioning or an object lock in the bucket.
+#### One storage key for each server
+
+The credentials in the backup policy are the shared key. Each server that has no key of its
+own gets the shared key. The shared key has access to the repositories of all servers. A
+person who has root access to one of these servers can thus delete or change the data of all
+repositories, but cannot read it.
+
+To prevent this, give each server with the role `web` its own key:
+
+1. Open **Backups**. The card **Storage key of each server** shows each server, the path of
+   its repository in the bucket, and the key that it uses.
+2. At the storage provider, make a key that has access to the path of that server only.
+   Refer to the examples below.
+3. Select **Set key** for the server, type the credentials of the key, and select
+   **Save key**. The panel keeps the key encrypted and does not show it again. The panel
+   sends the key to that server only.
+4. Do steps 2 and 3 again for each server. Do them also after you add a server.
+5. When each server has its own key, you can remove the shared key: select
+   **Remove credentials** in the backup policy, and delete the key at the storage provider.
+   Do this only if you have no backups from an earlier version (refer to
+   [Backups from an earlier version](#backups-from-an-earlier-version)): the panel restores
+   those backups with the shared key. With no shared key, a new server makes no backups
+   until you set its key.
+
+With the API, send `PUT /api/v1/backup-policy/servers/SERVER-ID/credentials` with the
+credentials. `DELETE` on the same address removes the key, and the server uses the shared key
+again. `GET /api/v1/backup-policy` gives the servers and the names of their credentials.
+
+The key of a server must have these permissions below the path of the server, and no
+permissions for other paths: list, read, write and delete. restic deletes old data when the
+panel applies the retention policy.
+
+**Amazon S3 and S3-compatible storage.** Make one IAM user for each server, with an access
+key and this policy. Replace `my-bucket` and `cloudfactory/servers/SERVER-ID` with the bucket
+and the path that the **Backups** page shows for the server:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": "s3:GetBucketLocation",
+      "Resource": "arn:aws:s3:::my-bucket"
+    },
+    {
+      "Effect": "Allow",
+      "Action": "s3:ListBucket",
+      "Resource": "arn:aws:s3:::my-bucket",
+      "Condition": {
+        "StringLike": {
+          "s3:prefix": ["cloudfactory/servers/SERVER-ID", "cloudfactory/servers/SERVER-ID/*"]
+        }
+      }
+    },
+    {
+      "Effect": "Allow",
+      "Action": ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"],
+      "Resource": "arn:aws:s3:::my-bucket/cloudfactory/servers/SERVER-ID/*"
+    }
+  ]
+}
+```
+
+Do not add `s3:DeleteObjectVersion`, `s3:PutBucketVersioning`, `s3:PutLifecycleConfiguration`
+or `s3:PutBucketPolicy`. A storage service that is compatible with S3 can have a different
+method for a key with access to one path. Refer to the documentation of the service.
+
+**Backblaze B2.** Add one application key for each server. Permit access to the backup bucket
+only, set **File name prefix** to the path of the server, and select **Read and Write**.
+
+**Azure Blob Storage and Google Cloud Storage.** Refer to the documentation of the provider
+for a key that has access to one path only. If the provider cannot limit a key to a path, the
+servers must use the shared key. Then versioning or an object lock is the only protection.
+
+After you set a key, start a manual backup of one website on that server. If the backup
+fails with an "access denied" error, compare the path in the policy of the key with the path
+on the **Backups** page.
+
+#### Versioning or object lock
+
+A server must delete old data from its own repository. Thus a person who has root access to
+a server can delete the backups of that server, also with a key for each server. To keep
+deleted data for a set time, do one of these steps at the storage provider:
+
+- **Versioning.** Turn on versioning for the bucket. A delete then hides an object but does
+  not remove it. Add a lifecycle rule that removes the old versions after a time that is
+  longer than the longest backup retention. Give no key of a server the permission to
+  delete object versions.
+- **Object lock.** Turn on the object lock for the bucket, with a default retention time
+  that is longer than the longest backup retention. The storage refuses each delete of an
+  object version until that time ends.
+
+Give no key the permission to change the settings of the bucket.
 
 #### What the panel keeps
 

@@ -11,6 +11,7 @@ use App\Models\Website;
 use App\Services\Audit;
 use App\Services\JobDispatcher;
 use App\Validation\Input;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Crypt;
@@ -154,6 +155,10 @@ class BackupController extends Controller
             $request->validate(['item' => [Input::rule('restorePath')]]);
         }
         self::requireTarget();
+        // The key of a server has no access to the repository that all servers used.
+        if ($snapshot->shared_repository && self::credentials() === [] && $website->server->backupCredentials() !== []) {
+            throw ValidationException::withMessages(['snapshot' => 'This backup is in the repository that all servers used in an earlier version. An administrator must set the shared credentials of the object storage in Backups to restore it.']);
+        }
         $what = $data['scope'] === 'website' ? 'full website' : $data['item'];
         $job = $this->jobs->dispatch($website->server, AgentAction::Restore, [
             'websiteId' => $website->id,
@@ -188,7 +193,73 @@ class BackupController extends Controller
 
     private static function presentPolicy(): array
     {
-        return self::policy() + ['manual' => self::manualBackups(), 'credentialNames' => array_keys(self::credentials())];
+        return self::policy() + ['manual' => self::manualBackups(), 'credentialNames' => array_keys(self::credentials()), 'servers' => self::serverKeys()];
+    }
+
+    /**
+     * Second audit, finding F08: each server that has a repository, with the names of the
+     * credentials of its own key. A server with no names uses the shared key in the policy.
+     *
+     * @return list<array{serverId: string, server: string, repository: ?string, credentialNames: list<string>}>
+     */
+    private static function serverKeys(): array
+    {
+        $hasTarget = (bool) preg_match(self::TARGET, (string) (self::policy()['target'] ?? ''));
+
+        return self::repositoryServers()->orderBy('name')->get()->map(fn (Server $s) => [
+            'serverId' => $s->id,
+            'server' => $s->name,
+            'repository' => $hasTarget ? self::repository($s) : null,
+            'credentialNames' => array_keys($s->backupCredentials()),
+        ])->all();
+    }
+
+    /** The servers that have a restic repository: the servers with the role "web". */
+    private static function repositoryServers(): Builder
+    {
+        return Server::whereJsonContains('roles', 'web');
+    }
+
+    /**
+     * Sets the key of one server for the object storage. The storage provider must limit the
+     * key to the repository of the server. The panel sends the key to that server only.
+     */
+    public function updateServerCredentials(Request $request, string $serverId): JsonResponse
+    {
+        $server = self::repositoryServers()->findOrFail($serverId);
+        $data = $request->validate([
+            'credentials' => ['required', 'array', 'min:1'],
+            'credentials.*' => ['string', 'max:4096', 'not_regex:/[\r\n\0]/'],
+        ]);
+        self::checkCredentialNames($data['credentials']);
+        $server->setBackupCredentials($data['credentials']);
+        Audit::record($request, 'Set storage key of server', $server->name);
+
+        return response()->json(self::presentPolicy());
+    }
+
+    /** Removes the key of one server. The server then uses the shared key in the policy. */
+    public function destroyServerCredentials(Request $request, string $serverId): JsonResponse
+    {
+        $server = self::repositoryServers()->findOrFail($serverId);
+        $server->setBackupCredentials([]);
+        Audit::record($request, 'Removed storage key of server', $server->name);
+
+        return response()->json(self::presentPolicy());
+    }
+
+    /**
+     * @param  array<string, string>  $credentials
+     *
+     * @throws ValidationException
+     */
+    private static function checkCredentialNames(array $credentials): void
+    {
+        foreach (array_keys($credentials) as $key) {
+            if (! in_array($key, self::CREDENTIAL_NAMES, true)) {
+                throw ValidationException::withMessages(["credentials.{$key}" => 'Use one of: '.implode(', ', self::CREDENTIAL_NAMES).'.']);
+            }
+        }
     }
 
     /**
@@ -206,7 +277,7 @@ class BackupController extends Controller
         $shared = self::sharedRepositoryPassword();
 
         return response()->json([
-            'repositories' => Server::whereJsonContains('roles', 'web')->orderBy('name')->get()->map(fn (Server $s) => [
+            'repositories' => self::repositoryServers()->orderBy('name')->get()->map(fn (Server $s) => [
                 'serverId' => $s->id,
                 'server' => $s->name,
                 'repository' => $hasTarget ? self::repository($s) : null,
@@ -242,11 +313,7 @@ class BackupController extends Controller
             'credentials' => ['sometimes', 'nullable', 'array'],
             'credentials.*' => ['string', 'max:4096', 'not_regex:/[\r\n\0]/'],
         ]);
-        foreach (array_keys($data['credentials'] ?? []) as $key) {
-            if (! in_array($key, self::CREDENTIAL_NAMES, true)) {
-                throw ValidationException::withMessages(["credentials.{$key}" => 'Use one of: '.implode(', ', self::CREDENTIAL_NAMES).'.']);
-            }
-        }
+        self::checkCredentialNames($data['credentials'] ?? []);
         if (array_key_exists('credentials', $data) && $data['credentials'] !== null) {
             // The credentials are encrypted at rest with the application key.
             Setting::put('backup_credentials', Crypt::encryptString(json_encode((object) $data['credentials'])));
@@ -282,5 +349,33 @@ class BackupController extends Controller
         }
 
         return (array) json_decode(Crypt::decryptString($value), true);
+    }
+
+    /**
+     * Second audit, finding F08: the credentials of the object storage that a server gets
+     * with a backup job. A server with its own key gets only that key. The key has access to
+     * the repository of the server only, so a restore from the repository that all servers
+     * used in an earlier version gets the shared key.
+     *
+     * @return array<string, string>
+     */
+    public static function credentialsFor(Server $server, bool $sharedRepository = false): array
+    {
+        $own = $sharedRepository ? [] : $server->backupCredentials();
+
+        return $own !== [] ? $own : self::credentials();
+    }
+
+    /**
+     * True when each server that has a repository can get credentials: the shared key is
+     * set, or each of these servers has its own key.
+     */
+    public static function hasCredentials(): bool
+    {
+        if (self::credentials() !== []) {
+            return true;
+        }
+
+        return self::repositoryServers()->exists() && ! self::repositoryServers()->whereNull('backup_credentials')->exists();
     }
 }

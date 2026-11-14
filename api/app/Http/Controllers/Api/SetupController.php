@@ -37,7 +37,7 @@ class SetupController extends Controller
     {
         $target = (string) (BackupController::policy()['target'] ?? '');
         $hasTarget = preg_match(BackupController::TARGET, $target) === 1;
-        $hasCredentials = BackupController::credentials() !== [];
+        $hasCredentials = BackupController::hasCredentials();
         $detail = match (true) {
             ! $hasTarget => 'No object storage is set.',
             ! $hasCredentials => "The object storage is {$target}, but it has no credentials.",

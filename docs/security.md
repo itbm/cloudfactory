@@ -220,7 +220,7 @@ each row of each table.
 
 | Secret | How the panel keeps it |
 | --- | --- |
-| Credentials of the backup storage, for example the S3 keys | Encrypted with `APP_KEY`. The API does not show them again. |
+| Credentials of the backup storage, for example the S3 keys: the shared key, and the key of each server | Encrypted with `APP_KEY`. The API does not show them again. The panel sends the key of a server only to that server. |
 | restic repository passwords, one for each server | Encrypted with `APP_KEY`. The panel sends a password only to its server. Only an administrator can show the passwords, and the audit log records each view. |
 | TOTP secret of a user | Encrypted with `APP_KEY`. A secret that is not set up yet is encrypted in the cache. |
 | Job data, which can hold database passwords for the agent | Encrypted with `APP_KEY`. The panel removes the passwords when the job is complete. |
@@ -375,8 +375,17 @@ directory with mode 0700:
 - The agent does not keep the repository password or the credentials of the object storage
   in a file. It gets them with each job and gives them to restic in the environment, not in
   the command line.
-- All servers use the same credentials of the object storage. Refer to
-  [Known limits](#known-limits).
+- Each server with the role `web` can have its own key for the object storage. The storage
+  provider limits the key to the repository of that server. The panel sends the key only to
+  that server, with each backup job. A person who has root access to one server can then not
+  read, delete or change the backups of the other servers. Refer to
+  [installation.md](installation.md#one-storage-key-for-each-server).
+- A server that has no key of its own gets the shared key of the backup policy. The shared
+  key has access to the repositories of all servers. The **Backups** page shows the servers
+  that use the shared key. Refer to [Known limits](#known-limits).
+- A server must delete old data from its own repository. Thus a person who has root access
+  to a server can delete the backups of that server. Versioning or an object lock in the
+  bucket keeps deleted data for a set time.
 - A backup keeps the SHA-256 sum of each database dump (refer to [Databases](#databases)).
 
 ## Firewall
@@ -418,13 +427,18 @@ These items stay open in release 0.1:
   fixes only with a new release. The daily rebuild of the images is off (refer to
   [releasing.md](releasing.md#daily-image-rebuild)), and the rebuild tags are only for the
   runtime images of the websites.
-- **Credentials of the object storage.** All servers use the same credentials. A person who
-  has root access to one server can delete the backup data of all servers, but cannot read
-  it. Until each server has its own key, do these steps at the storage provider:
+- **Credentials of the object storage.** The panel does not make the keys of the servers,
+  and it does not examine their permissions. An administrator makes each key at the storage
+  provider and sets it on the **Backups** page. Until each server has its own key, a person
+  who has root access to a server with the shared key can delete the backup data of all
+  servers, but cannot read it. A restore from the repository of an earlier version sends
+  the shared key to the server of the website. Do these steps at the storage provider:
   - Use a bucket that has only the Cloudfactory backups.
+  - Give each server its own key, with access to its own path only.
   - Turn on versioning or an object lock for the bucket, with a retention time that is longer
     than the longest backup retention. Deleted data then stays until that time ends.
-  - Give the key no permission to change the bucket settings (versioning, lifecycle, policy).
+  - Give no key the permission to change the bucket settings (versioning, lifecycle, policy)
+    or to delete object versions.
 - **Custom registry.** An administrator can set a custom registry address. The panel server
   then sends requests to that address.
 - **Join token.** The person who has a join token gives the agent address that the panel
