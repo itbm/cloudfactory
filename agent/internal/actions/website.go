@@ -471,7 +471,7 @@ func checkCopies(req *agentv1.WebsiteRequest) error {
 		}
 		_, err := serverKey(u.GetDatabaseServer())
 		errs = append(errs, err, validate.TenantDatabaseName(user, u.GetName()))
-		if !passwordRE.MatchString(u.GetPassword()) {
+		if validate.DatabasePassword(u.GetPassword()) != nil {
 			errs = append(errs, errors.New("the database password must have 16 to 64 letters and digits"))
 		}
 	}

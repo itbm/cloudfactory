@@ -13,10 +13,10 @@ use App\Services\Audit;
 use App\Services\DatabaseNames;
 use App\Services\DatabaseServers;
 use App\Services\JobDispatcher;
+use App\Validation\Input;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
@@ -64,7 +64,7 @@ class DatabaseUserController extends Controller
 
             return $user;
         });
-        $password = Str::password(24, symbols: false);
+        $password = Input::databasePassword();
         $job = $this->dispatch($website, $user, 'Create database user', $password, create: true);
         Audit::record($request, 'Created database user', "{$website->name} {$name}", $website->customer_id);
 
@@ -101,7 +101,7 @@ class DatabaseUserController extends Controller
                 $user->databases()->sync($grants);
             }
         });
-        $password = ($data['resetPassword'] ?? false) ? Str::password(24, symbols: false) : null;
+        $password = ($data['resetPassword'] ?? false) ? Input::databasePassword() : null;
         $job = $this->dispatch($website, $user, 'Change database user', $password, create: false);
         Audit::record($request, 'Changed database user', "{$website->name} {$user->name}", $website->customer_id);
 

@@ -15,6 +15,17 @@ var ruleCommandArgument = rule{
 // One argument of the start command of a custom image. It has no control characters.
 func CommandArgument(s string) error { return ruleCommandArgument.check(s) }
 
+var ruleDatabaseClientHost = rule{
+	what:    "database client host",
+	pattern: regexp.MustCompile(`^[A-Za-z0-9.:%/_-]{1,255}$`),
+	echo:    true,
+}
+
+// DatabaseClientHost checks a value with the rule "databaseClientHost" of schema/input-rules.json.
+//
+// The host part of a MariaDB user: an address, a network, a host name or a pattern with a percent sign.
+func DatabaseClientHost(s string) error { return ruleDatabaseClientHost.check(s) }
+
 var ruleDatabaseName = rule{
 	what:    "database name",
 	pattern: regexp.MustCompile(`^[a-z][a-z0-9_]{1,62}$`),
@@ -36,6 +47,16 @@ var ruleDatabaseNameSuffix = rule{
 //
 // The part of a database name that the user types. The panel puts the Unix user of the website and an underscore before it (CF-01).
 func DatabaseNameSuffix(s string) error { return ruleDatabaseNameSuffix.check(s) }
+
+var ruleDatabasePassword = rule{
+	what:    "database password",
+	pattern: regexp.MustCompile(`^[A-Za-z0-9]{16,64}$`),
+}
+
+// DatabasePassword checks a value with the rule "databasePassword" of schema/input-rules.json.
+//
+// The password of a database user. The panel makes it. It has only letters and digits, so that it needs no quotation marks in a command, in SQL or in a connection address.
+func DatabasePassword(s string) error { return ruleDatabasePassword.check(s) }
 
 var ruleDigest = rule{
 	what:    "digest",
@@ -218,8 +239,10 @@ func Version(s string) error { return ruleVersion.check(s) }
 // rules has each rule by its name in schema/input-rules.json.
 var rules = map[string]*rule{
 	"commandArgument":    &ruleCommandArgument,
+	"databaseClientHost": &ruleDatabaseClientHost,
 	"databaseName":       &ruleDatabaseName,
 	"databaseNameSuffix": &ruleDatabaseNameSuffix,
+	"databasePassword":   &ruleDatabasePassword,
 	"digest":             &ruleDigest,
 	"documentRoot":       &ruleDocumentRoot,
 	"domain":             &ruleDomain,

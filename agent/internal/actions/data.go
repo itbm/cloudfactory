@@ -26,8 +26,6 @@ import (
 // DBUser is the Unix user of the database containers.
 const DBUser = "cf-db"
 
-var passwordRE = regexp.MustCompile(`^[A-Za-z0-9]{16,64}$`)
-
 // dbContainer checks an engine, and gives the name of its shared container of an earlier
 // release. dbServer.container gives the name of the container of a database server.
 func dbContainer(engine string) (string, error) {
@@ -106,8 +104,8 @@ func (d *Deps) mariaHost(s dbServer, access string) (string, error) {
 				host = quadlet.ServiceAddress
 			}
 		}
-		if !clientHostRE.MatchString(host) {
-			return "", fmt.Errorf("the database client host %q is not valid", host)
+		if err := validate.DatabaseClientHost(host); err != nil {
+			return "", err
 		}
 		return host, nil
 	case "anywhere":
@@ -115,8 +113,6 @@ func (d *Deps) mariaHost(s dbServer, access string) (string, error) {
 	}
 	return "", fmt.Errorf("the database access %q is not valid", access)
 }
-
-var clientHostRE = regexp.MustCompile(`^[A-Za-z0-9.:%/_-]{1,255}$`)
 
 // mariaDB gives a database name for GRANT. In GRANT, "_" and "%" are patterns, so the agent
 // escapes "_". Then a grant on "acme_x7k2_shop" never matches a different database.
@@ -192,7 +188,7 @@ func (d *Deps) CreateDatabase(req *agentv1.CreateDatabaseRequest) (jobs.Job, err
 		if err := validate.TenantDatabaseName(unixUser, user); err != nil {
 			return jobs.Job{}, err
 		}
-		if !passwordRE.MatchString(pass) {
+		if validate.DatabasePassword(pass) != nil {
 			return jobs.Job{}, errors.New("the database password must have 16 to 64 letters and digits")
 		}
 	}
@@ -347,7 +343,7 @@ func (d *Deps) mariaCurrentHost(ctx context.Context, s dbServer, user string) (s
 		return "", err
 	}
 	hosts := strings.Fields(out)
-	if len(hosts) != 1 || !clientHostRE.MatchString(hosts[0]) {
+	if len(hosts) != 1 || validate.DatabaseClientHost(hosts[0]) != nil {
 		return "", fmt.Errorf("the database user %s has %d hosts, not 1", user, len(hosts))
 	}
 	return hosts[0], nil
@@ -377,7 +373,7 @@ func (d *Deps) SetDatabaseUser(req *agentv1.SetDatabaseUserRequest) (jobs.Job, e
 		}
 	}
 	pass := req.GetPassword()
-	if (pass != "" || req.GetCreate()) && !passwordRE.MatchString(pass) {
+	if (pass != "" || req.GetCreate()) && validate.DatabasePassword(pass) != nil {
 		errs = append(errs, errors.New("the database password must have 16 to 64 letters and digits"))
 	}
 	_, err := d.mariaHost(dbServer{}, req.GetAccess())
@@ -507,7 +503,7 @@ func (d *Deps) dropUser(ctx context.Context, s dbServer, user string) error {
 		}
 		var b strings.Builder
 		for _, h := range strings.Fields(out) {
-			if clientHostRE.MatchString(h) {
+			if validate.DatabaseClientHost(h) == nil {
 				fmt.Fprintf(&b, "DROP USER IF EXISTS '%s'@'%s';\n", user, h)
 			}
 		}
