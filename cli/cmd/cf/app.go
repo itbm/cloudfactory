@@ -45,7 +45,8 @@ Usage:
   cf sftp set WEBSITE [--on|--off] [--key-file FILE]... [--no-keys]
   cf runtime revert WEBSITE
   cf databases list WEBSITE
-  cf databases create WEBSITE --engine mariadb|postgresql --name NAME [--no-user]
+  cf databases create WEBSITE --engine mariadb|postgresql|valkey --name NAME [--no-user]
+                                                       A Valkey database has a database number, and always a user with the same name.
   cf databases delete WEBSITE DATABASE
   cf database-users list WEBSITE
   cf database-users create WEBSITE --engine mariadb|postgresql --name NAME [--grant DATABASE=readonly|readwrite]...
@@ -793,17 +794,34 @@ func (a *app) databases(ctx context.Context, sub string, args []string) error {
 			return a.printJSON(out)
 		}
 		fmt.Fprintf(a.out, "Each name starts with %s\n", out.Prefix)
-		a.table(out.Databases, []string{"name", "engine", "sizeBytes", "id"})
+		cols := []string{"name", "engine", "sizeBytes", "id"}
+		for _, d := range out.Databases {
+			if d["engine"] == "valkey" {
+				// Valkey has no size for one database. It has a database number and a number of keys.
+				cols = []string{"name", "engine", "sizeBytes", "number", "keys", "id"}
+				d["sizeBytes"] = nil
+			}
+		}
+		a.table(out.Databases, cols)
 		return nil
 	case "create":
 		fs := flag.NewFlagSet("create", flag.ContinueOnError)
-		engine := fs.String("engine", "mariadb", "mariadb or postgresql")
+		engine := fs.String("engine", "mariadb", "mariadb, postgresql or valkey")
 		name := fs.String("name", "", "the database name, with or without the prefix of the website")
 		noUser := fs.Bool("no-user", false, "do not make a user with the same name")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
-		return a.change(ctx, http.MethodPost, "/websites/"+w.ID+"/databases", map[string]any{"engine": *engine, "name": *name, "createUser": !*noUser})
+		if *engine == "valkey" && *noUser {
+			return errors.New("a Valkey database always has a user with the same name: do not use --no-user")
+		}
+		if err := a.change(ctx, http.MethodPost, "/websites/"+w.ID+"/databases", map[string]any{"engine": *engine, "name": *name, "createUser": !*noUser}); err != nil {
+			return err
+		}
+		if *engine == "valkey" && !a.json {
+			return a.valkeyConnection(ctx, w.ID, *name)
+		}
+		return nil
 	case "delete", "rm":
 		if err := need(args, 2, "a website and a database"); err != nil {
 			return err
@@ -819,6 +837,28 @@ func (a *app) databases(ctx context.Context, sub string, args []string) error {
 		return a.change(ctx, http.MethodDelete, fmt.Sprintf("/websites/%s/databases/%v", w.ID, db["id"]), nil)
 	}
 	return fmt.Errorf("unknown command databases %s", sub)
+}
+
+// valkeyConnection tells how an application connects to a new Valkey database. The agent gives
+// the database number, so the number is known only when the job is complete.
+func (a *app) valkeyConnection(ctx context.Context, websiteID, name string) error {
+	l, err := a.dbList(ctx, websiteID)
+	if err != nil {
+		return err
+	}
+	for _, d := range l.Databases {
+		if d["engine"] != "valkey" || (d["name"] != name && d["name"] != l.Prefix+name) {
+			continue
+		}
+		fmt.Fprintf(a.out, "Host: valkey.internal\nPort: 6379\nUser: %v\n", d["name"])
+		if d["number"] == nil {
+			fmt.Fprintln(a.out, "The database number comes when the job is complete. Then run: cf databases list WEBSITE")
+		} else {
+			fmt.Fprintf(a.out, "Database number: %s\n", cell(d["number"]))
+		}
+		return nil
+	}
+	return nil
 }
 
 // databaseUsers manages database users. CF-01: a user can have a different permission on
@@ -857,7 +897,7 @@ func (a *app) databaseUsers(ctx context.Context, sub string, args []string) erro
 		return nil
 	case "create":
 		fs := flag.NewFlagSet("create", flag.ContinueOnError)
-		engine := fs.String("engine", "mariadb", "mariadb or postgresql")
+		engine := fs.String("engine", "mariadb", "mariadb or postgresql. A Valkey database comes with its user.")
 		name := fs.String("name", "", "the user name, with or without the prefix of the website")
 		access := fs.String("access", "website", "website or anywhere")
 		var grant multi

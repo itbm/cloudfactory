@@ -231,6 +231,65 @@ func TestDatabaseUserGrantsUseTheDatabaseIDs(t *testing.T) {
 	}
 }
 
+// A Valkey database has a database number. The tool shows how an application connects.
+func TestValkeyDatabaseShowsTheConnection(t *testing.T) {
+	number := "null"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.URL.Path == "/api/v1/websites":
+			w.Write([]byte(`{"data":[{"id":"W1","name":"shop.example","status":"running"}]}`))
+		case r.URL.Path == "/api/v1/websites/W1/databases" && r.Method == http.MethodGet:
+			w.Write([]byte(`{"prefix":"u1a2_","databases":[{"id":"D1","engine":"mariadb","name":"u1a2_prod","sizeBytes":4096,"number":null,"keys":null},` +
+				`{"id":"D2","engine":"valkey","name":"u1a2_cache","sizeBytes":0,"number":` + number + `,"keys":` + number + `}],"users":[]}`))
+		case r.URL.Path == "/api/v1/websites/W1/databases":
+			var body map[string]any
+			json.NewDecoder(r.Body).Decode(&body)
+			if body["engine"] != "valkey" || body["name"] != "cache" || body["createUser"] != true {
+				t.Errorf("request = %v", body)
+			}
+			w.WriteHeader(http.StatusAccepted)
+			w.Write([]byte(`{"id":"D2","name":"u1a2_cache","user":"u1a2_cache","password":"pw-1","job":null}`))
+		default:
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+	a, out := testApp(srv)
+
+	if err := a.dispatch(context.Background(), []string{"databases", "create", "shop.example", "--engine", "valkey", "--name", "cache", "--no-user"}); err == nil || !strings.Contains(err.Error(), "always has a user") {
+		t.Errorf("err = %v", err)
+	}
+	// The job is not complete: the panel does not have the number.
+	if err := a.dispatch(context.Background(), []string{"databases", "create", "shop.example", "--engine", "valkey", "--name", "cache"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"Password: pw-1", "Host: valkey.internal", "Port: 6379", "User: u1a2_cache", "The database number comes when the job is complete."} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("output has no %q: %s", want, out)
+		}
+	}
+
+	number = "7"
+	out.Reset()
+	if err := a.dispatch(context.Background(), []string{"databases", "create", "shop.example", "--engine", "valkey", "--name", "cache"}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "Database number: 7") {
+		t.Errorf("output: %s", out)
+	}
+
+	out.Reset()
+	if err := a.dispatch(context.Background(), []string{"databases", "list", "shop.example"}); err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
+	if len(lines) != 4 || strings.Join(strings.Fields(lines[1]), " ") != "NAME ENGINE SIZEBYTES NUMBER KEYS ID" ||
+		strings.Join(strings.Fields(lines[2]), " ") != "u1a2_prod mariadb 4096 - - D1" || strings.Join(strings.Fields(lines[3]), " ") != "u1a2_cache valkey - 7 7 D2" {
+		t.Errorf("output: %s", out)
+	}
+}
+
 // CF-03: a new domain shows the TXT record to add.
 func TestANewDomainShowsTheTXTRecord(t *testing.T) {
 	srv, bodies := securityPanel(t)
