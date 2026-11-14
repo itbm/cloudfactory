@@ -46,7 +46,7 @@ export function SecurityNotices() {
     }
   };
   return (
-    <div className="alert alert-warning alert-stack load-error" role="status">
+    <div className="alert alert-warning alert-stack load-error security-notices" role="status">
       <p><strong>Changes to the administrator accounts.</strong> A different person made {notices.length === 1 ? "this change" : "these changes"} in the last 7 days:</p>
       <ul className="notice-list">
         {notices.map((n) => <li key={`${n.at} ${n.action} ${n.target}`}>{sentence(n)}, {relativeTime(n.at)}.</li>)}
