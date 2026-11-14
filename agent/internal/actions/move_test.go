@@ -1,11 +1,13 @@
 package actions
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	agentv1 "github.com/itbm/cloudfactory/agent/gen/cloudfactory/agent/v1"
 	"github.com/itbm/cloudfactory/agent/internal/execx"
@@ -217,6 +219,93 @@ func TestMoveDatabasesFailure(t *testing.T) {
 
 // When a different website of the customer uses the containers, a move that fails removes
 // only its copies from them.
+// A website that answered with the shared containers, and that does not answer with the
+// containers of its customer, gets the shared containers again.
+func TestMoveDatabasesGoesBackWhenTheWebsiteDoesNotAnswer(t *testing.T) {
+	d, f, _ := deps(t)
+	oldWebsite(t, d, f)
+	d.ReadyTimeout = time.Nanosecond
+	// The website answers only while its unit has the shared containers.
+	d.Health = func(context.Context, int, string) (int, error) {
+		if strings.Contains(unitFile(t, d, "acme_x7k2", "cf-acme_x7k2.container"), "AddHost=mariadb.internal:"+customerAddress+"\n") {
+			return 503, nil
+		}
+		return 200, nil
+	}
+	f.Calls, f.Inputs = nil, nil
+	err := run(t)(d.MoveDatabases(moveRequest()))
+	if err == nil || !strings.Contains(err.Error(), "it gets the shared containers again") || !strings.Contains(err.Error(), "status 503") {
+		t.Fatalf("error: %v", err)
+	}
+	if key, _, _ := d.State.WebsiteDatabases(websiteID); key != "" {
+		t.Errorf("the website uses the containers of %q", key)
+	}
+	if site, _ := d.State.Get(websiteID); site.Website.GetDatabaseInstance() != "" {
+		t.Errorf("the record of the website has the customer %q", site.Website.GetDatabaseInstance())
+	}
+	if instances, _ := d.State.DatabaseInstances(); len(instances) != 0 {
+		t.Errorf("the containers of the customer stay in the record: %+v", instances)
+	}
+	for _, engine := range []string{"mariadb", "postgresql"} {
+		if d.serverExists(dbServer{Instance: customerKey, Engine: engine}) {
+			t.Errorf("the %s container of the customer stays", engine)
+		}
+		if !d.serverExists(dbServer{Engine: engine}) {
+			t.Errorf("the shared %s container is gone", engine)
+		}
+	}
+	if u := unitFile(t, d, "acme_x7k2", "cf-acme_x7k2.container"); !strings.Contains(u, "AddHost=mariadb.internal:169.254.77.1\n") {
+		t.Errorf("the website does not use the shared containers:\n%s", u)
+	}
+	// The website started two times: with the new containers, and then with the shared containers.
+	restarts := 0
+	for _, c := range f.Calls {
+		if c == "systemctl --user --machine=acme_x7k2@ restart cf-acme_x7k2.service" {
+			restarts++
+		}
+	}
+	if restarts != 2 {
+		t.Errorf("%d restarts of the website: %q", restarts, f.Calls)
+	}
+	old := inputsOf(f, podmanDB+"exec -i cf-mariadb ") + inputsOf(f, podmanDB+"exec -i cf-postgresql ")
+	if strings.Contains(old, "DROP ") {
+		t.Errorf("the shared containers lost data:\n%s", old)
+	}
+	if got := accessFile(t, d); strings.Contains(got, customerAddress) {
+		t.Errorf("the website has access to the address of the customer:\n%s", got)
+	}
+	if entries, _ := os.ReadDir(filepath.Join(d.DBHome, "customers")); len(entries) != 0 {
+		t.Errorf("files of the customer stay: %v", entries)
+	}
+}
+
+// When the website did not answer before the move, the move is not the cause. The move
+// completes, so that such a website does not keep the shared containers on the server.
+func TestMoveDatabasesOfAWebsiteThatDoesNotAnswer(t *testing.T) {
+	d, f, _ := deps(t)
+	oldWebsite(t, d, f)
+	d.ReadyTimeout = time.Nanosecond
+	d.Health = func(context.Context, int, string) (int, error) { return 503, nil }
+	if err := run(t)(d.MoveDatabases(moveRequest())); err != nil {
+		t.Fatal(err)
+	}
+	if key, _, _ := d.State.WebsiteDatabases(websiteID); key != customerKey {
+		t.Errorf("the website uses the containers of %q", key)
+	}
+	if u := unitFile(t, d, "acme_x7k2", "cf-acme_x7k2.container"); !strings.Contains(u, "AddHost=mariadb.internal:"+customerAddress+"\n") {
+		t.Errorf("the website does not use the containers of its customer:\n%s", u)
+	}
+	// The old copies are gone, and the shared containers too: no website uses them.
+	if old := inputsOf(f, podmanDB+"exec -i cf-mariadb "); !strings.Contains(old, "DROP DATABASE") {
+		t.Errorf("the old copies stay:\n%s", old)
+	}
+	for _, engine := range []string{"mariadb", "postgresql"} {
+		if d.serverExists(dbServer{Engine: engine}) {
+			t.Errorf("the shared %s container stays", engine)
+		}
+	}
+}
+
 func TestMoveDatabasesFailureKeepsTheContainersOfTheCustomer(t *testing.T) {
 	d, f, _ := deps(t)
 	oldWebsite(t, d, f)

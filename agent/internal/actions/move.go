@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
 	agentv1 "github.com/itbm/cloudfactory/agent/gen/cloudfactory/agent/v1"
@@ -44,9 +45,11 @@ func (d *Deps) serverExists(s dbServer) bool {
 // password of each user stays the same: the agent copies its hash. The host names and the
 // ports in the website container stay the same too, so the website needs no new settings.
 //
-// The website uses the new containers from the step "Start website". Before that step, a
-// failure starts the website again with the shared containers. After it, the job only
-// removes the old copies, and a job that runs again does only that.
+// The website uses the new containers from the step "Start website". A failure before the end
+// of that step starts the website again with the shared containers, and removes the new
+// copies. That includes a website that answered before the move and does not answer with the
+// new containers: the agent does the same for a new runtime that does not answer. After that
+// step, the job only removes the old copies, and a job that runs again does only that.
 func (d *Deps) MoveDatabases(req *agentv1.MoveDatabasesRequest) (jobs.Job, error) {
 	id, unixUser := req.GetWebsiteId(), req.GetUnixUser()
 	key, err := instanceKey(req.GetDatabaseInstance())
@@ -99,6 +102,11 @@ func (d *Deps) MoveDatabases(req *agentv1.MoveDatabasesRequest) (jobs.Job, error
 	var moved bool
 	// stopped is true while this job keeps the website stopped.
 	var stopped bool
+	// answered is true when the website answered before the job changed it. Then the website
+	// must answer with the new containers too.
+	var answered bool
+	// switched is true when the record and the unit of the website can have the new containers.
+	var switched bool
 	return jobs.Job{ID: req.GetJobId(), Key: id, Long: true, Steps: []jobs.Step{
 		{Name: "Start database containers", Do: func(ctx context.Context) error {
 			var err error
@@ -133,7 +141,11 @@ func (d *Deps) MoveDatabases(req *agentv1.MoveDatabasesRequest) (jobs.Job, error
 			return nil
 		}},
 		{Name: "Stop website", Do: func(ctx context.Context) error {
-			if moved || site.Stopped || len(req.GetDatabases()) == 0 {
+			if moved || site.Stopped {
+				return nil
+			}
+			answered = d.ready(ctx, site.Port, primaryDomain(site.Website)) == nil
+			if len(req.GetDatabases()) == 0 {
 				return nil
 			}
 			u := quadlet.Website{UnixUser: site.UnixUser, Suffix: site.Suffix}
@@ -165,10 +177,10 @@ func (d *Deps) MoveDatabases(req *agentv1.MoveDatabasesRequest) (jobs.Job, error
 		}},
 		{Name: "Start website", Do: func(ctx context.Context) error {
 			// From this record, each action of the website uses the containers of its customer.
+			switched = true
 			if _, err := d.useDatabases(key, id, false); err != nil {
 				return err
 			}
-			moved, stopped = true, false
 			if err := d.syncDatabaseAccess(ctx); err != nil {
 				return err
 			}
@@ -177,7 +189,15 @@ func (d *Deps) MoveDatabases(req *agentv1.MoveDatabasesRequest) (jobs.Job, error
 				return err
 			}
 			// The new unit gives the database host names the address of the new containers.
-			return d.restartWithUnit(ctx, site)
+			if err := d.restartWithUnit(ctx, site); err != nil {
+				if answered {
+					return fmt.Errorf("the website answered with the shared database containers, and it does not answer with the database containers of its customer, so it gets the shared containers again: %w", err)
+				}
+				// The move is not the cause: the website did not answer before the move.
+				slog.Warn("the website does not answer after the move of its databases, as before the move", "website", id, "err", err)
+			}
+			moved, stopped = true, false
+			return nil
 		}},
 		{Name: "Remove old copies", Do: func(ctx context.Context) error {
 			if err := d.removeMoved(ctx, req, old); err != nil {
@@ -191,7 +211,7 @@ func (d *Deps) MoveDatabases(req *agentv1.MoveDatabasesRequest) (jobs.Job, error
 			return
 		}
 		// The job has failed already. The agent logs an error of the way back.
-		if stopped {
+		if stopped && !switched {
 			u := quadlet.Website{UnixUser: site.UnixUser, Suffix: site.Suffix}
 			if _, err := d.Host.Systemctl(ctx, site.UnixUser, "start", u.ServiceName()); err != nil {
 				slog.Error("start the website again with the shared database containers", "website", id, "err", err)
@@ -199,13 +219,26 @@ func (d *Deps) MoveDatabases(req *agentv1.MoveDatabasesRequest) (jobs.Job, error
 		}
 		// The website does not use the new containers. When a different website of the customer
 		// uses them, the copies of this job go. If not, the containers go, with the copies.
-		if instances, err := d.State.DatabaseInstances(); err == nil && len(instances[key].Websites) > 0 {
+		other := func(website string) bool { return website != id }
+		if instances, err := d.State.DatabaseInstances(); err == nil && slices.ContainsFunc(instances[key].Websites, other) {
 			if err := d.removeMoved(ctx, req, next); err != nil {
 				slog.Error("remove the copies of a move that failed", "website", id, "err", err)
 			}
 		}
 		if err := d.releaseDatabases(ctx, key, id); err != nil {
 			slog.Error("remove the database containers of a move that failed", "website", id, "err", err)
+		}
+		if !switched {
+			return
+		}
+		// The step "Start website" gave the website the new containers. The record of the
+		// containers does not have the website now, so the unit gets the shared containers again.
+		site.Website.DatabaseInstance = ""
+		if err := errors.Join(d.State.Put(site), d.syncDatabaseAccess(ctx)); err != nil {
+			slog.Error("give the website the shared database containers again", "website", id, "err", err)
+		}
+		if err := d.restartWithUnit(ctx, site); err != nil {
+			slog.Error("start the website again with the shared database containers", "website", id, "err", err)
 		}
 	}}, nil
 }
