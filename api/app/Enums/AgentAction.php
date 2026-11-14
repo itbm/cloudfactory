@@ -28,6 +28,9 @@ enum AgentAction: string
     case SetSftp = 'SetSftp';
     case ConfigureHost = 'ConfigureHost';
     case SetPanelCertificate = 'SetPanelCertificate';
+    case MoveDatabases = 'MoveDatabases';
+    case SetDatabaseServer = 'SetDatabaseServer';
+    case DeleteDatabaseServer = 'DeleteDatabaseServer';
 
     /** The steps that the agent reports for this action. */
     public function steps(): array
@@ -41,7 +44,10 @@ enum AgentAction: string
             self::AddDomain => ['Add edge proxy route', 'Check DNS', 'Get TLS certificate'],
             self::RemoveDomain => ['Remove edge proxy route'],
             self::CreateDatabase => ['Create database', 'Create user', 'Allow the website container only'],
+            self::MoveDatabases => ['Start database servers', 'Stop website', 'Copy databases', 'Copy users', 'Start website', 'Remove old copies'],
             self::DeleteDatabase => ['Remove access of users', 'Remove database'],
+            self::SetDatabaseServer => ['Start database server'],
+            self::DeleteDatabaseServer => ['Stop database server', 'Remove data'],
             self::SetDatabaseUser => ['Set user and password', 'Set access to databases'],
             self::DeleteDatabaseUser => ['Remove user'],
             self::Backup => ['Snapshot files', 'Dump databases', 'Upload to object storage', 'Apply retention'],

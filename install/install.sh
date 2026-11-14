@@ -62,6 +62,13 @@ UNSIGNED_REGISTRIES=""
 SFTP_PORT=2200
 # The private address of the container ports on "lo" (quadlet.ServiceAddress in the agent).
 SERVICE_ADDRESS=169.254.77.1
+# The private network of the database servers on "lo". Each customer has its own database
+# servers on a server, on one address of this network. The agent has the same values
+# (quadlet.DatabaseNetwork and quadlet.DatabaseClientAddress).
+DATABASE_NETWORK=169.254.80.0/20
+DATABASE_CLIENT_ADDRESS=169.254.80.1
+# The files of Cloudfactory in /etc. The agent writes its firewall files in "firewall".
+CF_ETC=/etc/cloudfactory
 # Audit finding S1: the agent makes each website user with a UID and a GID in this range
 # (host.WebsiteIDMin and host.WebsiteIDMax in the agent). The firewall finds the connections
 # of the website containers by this range.
@@ -263,7 +270,7 @@ check_arguments() {
 	# The same check as validate.SftpPort in the agent.
 	case "$SFTP_PORT" in
 	*[!0-9]* | 0*) problem "--sftp-port $SFTP_PORT is not a port number." ;;
-	22 | 80 | 443 | 3306 | 5432 | 7443 | 8080 | 8443 | 19080 | 19081 | 19432 | 19443) problem "--sftp-port $SFTP_PORT is in use by a different Cloudfactory service." ;;
+	22 | 80 | 443 | 3306 | 5432 | 6379 | 7443 | 8080 | 8443 | 19080 | 19081 | 19432 | 19443) problem "--sftp-port $SFTP_PORT is in use by a different Cloudfactory service." ;;
 	*)
 		if [ "$SFTP_PORT" -gt 65535 ]; then
 			problem "--sftp-port $SFTP_PORT is not a port number."
@@ -314,6 +321,14 @@ firewall_rules() {
 table inet cloudfactory
 delete table inet cloudfactory
 table inet cloudfactory {
+  # Each customer has its own database servers on a server, on one address of the network
+  # $DATABASE_NETWORK. Each database server has its own port on that address. Each element is
+  # the UID of a website, the address of its customer, and the port of a database server of
+  # its customer. The agent writes the elements in the file
+  # $CF_ETC/firewall/database-access.nft, which the last line of this file includes.
+  set database_access {
+    typeof meta skuid . ip daddr . tcp dport
+  }
   chain input {
     type filter hook input priority filter; policy drop;
     ct state established,related accept
@@ -329,21 +344,30 @@ table inet cloudfactory {
     type filter hook output priority filter; policy accept;
     # FR-1703: only root (the agent) and the edge proxy can connect to the website and panel
     # ports on the private service address. pasta opens each connection of a container as the
-    # Unix user of the container, so a website cannot reach a different website. All websites
-    # can reach the shared database ports. The rule checks only new connections, because the
-    # answers of the containers go to the address too.
+    # Unix user of the container, so a website cannot reach a different website. The rule
+    # checks only new connections, because the answers of the containers go to the address too.
+    #
+    # Ports 3306 and 5432 are the shared database containers of an earlier release. A server
+    # has them only until the databases of its websites move to database servers of each customer.
     #
     # Port 19432 is the database of the panel. Only root and the containers of the panel
     # (cf-panel) can connect to it. Each connection also needs the password.
     ct state new ip daddr $SERVICE_ADDRESS tcp dport 19432 meta skuid != { 0, $panel_uid } reject with tcp reset
     ct state new ip daddr $SERVICE_ADDRESS tcp dport != { 3306, 5432, 19432 } meta skuid != { 0, $edge_uid } reject with tcp reset
+    # The database servers of the customers. Only root (the agent) and the websites can
+    # connect to them. The chain "websites" lets a website connect only to the database
+    # servers of its own customer.
+    ct state new ip daddr $DATABASE_NETWORK meta skuid != 0 meta skuid != $WEBSITE_UID_MIN-$WEBSITE_UID_MAX jump refuse
     # Audit finding S1: the limits for the connections that a website container opens. The
     # agent makes each website user with a UID from $WEBSITE_UID_MIN to $WEBSITE_UID_MAX. The
     # rule checks only new connections, so it does not change the answers to the visitors.
     ct state new meta skuid $WEBSITE_UID_MIN-$WEBSITE_UID_MAX jump websites
   }
   chain websites {
-    # The shared databases on the private service address.
+    # The database servers of the customer of the website: MariaDB, PostgreSQL and Valkey.
+    # A website cannot connect to a database server of a different customer.
+    meta skuid . ip daddr . tcp dport @database_access accept
+    # The shared database containers of an earlier release.
     ip daddr $SERVICE_ADDRESS tcp dport { 3306, 5432 } accept
     # DNS. The resolver of the host can have a private or a link-local address.
     meta l4proto { tcp, udp } th dport 53 accept
@@ -394,6 +418,8 @@ ${website_networks}    # The edge proxy on the addresses of this server, so that
     ip saddr 127.0.0.0/8 ct status dnat meta l4proto { tcp, udp } th dport { 8080, 8443 } snat ip to $SERVICE_ADDRESS
   }
 }
+# The elements of the set database_access. The agent writes them.
+include "$CF_ETC/firewall/*.nft"
 NFT
 }
 
@@ -514,7 +540,6 @@ download() {
 }
 
 export DEBIAN_FRONTEND=noninteractive
-CF_ETC=/etc/cloudfactory
 CF_DATA=/var/lib/cloudfactory
 GVISOR_ROOT=/usr/local/lib/cloudfactory/gvisor
 
@@ -552,6 +577,10 @@ step "Add the private service address"
 # on 127.0.0.1: rootless Podman cannot send a connection from 127.0.0.1 into gVisor. The
 # address is link-local, so it is never on a real network. The agent has the same value
 # (quadlet.ServiceAddress).
+#
+# The second address makes all addresses of the database network local addresses of this
+# server. Each customer has its own database servers on one address of the network. The
+# database servers see $DATABASE_CLIENT_ADDRESS as the address of each website container.
 cat >/etc/systemd/system/cloudfactory-address.service <<UNIT
 [Unit]
 Description=Cloudfactory private service address
@@ -563,12 +592,17 @@ Before=network.target user@.service cf-agent.service
 Type=oneshot
 RemainAfterExit=yes
 ExecStart=/usr/sbin/ip address replace $SERVICE_ADDRESS/32 dev lo
+ExecStart=/usr/sbin/ip address replace $DATABASE_CLIENT_ADDRESS/${DATABASE_NETWORK#*/} dev lo
 
 [Install]
 WantedBy=multi-user.target
 UNIT
 systemctl daemon-reload
-systemctl enable --now --quiet cloudfactory-address.service
+systemctl enable --quiet cloudfactory-address.service
+# A restart adds the addresses again. It is necessary when an earlier release of this script
+# started the service with only the first address. The service has no stop command, so the
+# addresses stay on "lo" during the restart.
+systemctl restart cloudfactory-address.service
 
 step "Let rootless containers use CPU, memory, I/O and process limits"
 # FR-202: by default, systemd gives the user services only the memory and pids controllers.
@@ -582,6 +616,16 @@ After=cloudfactory-address.service
 
 [Service]
 Delegate=cpu cpuset io memory pids
+UNIT
+# The systemd package of Ubuntu has the file "timeout.conf" with "TimeoutStopSec=5" for the
+# user services. When the server stops, systemd then stops the containers of each user with
+# SIGKILL after 5 seconds, before a database server writes its data to the disk. systemd reads
+# the drop-in files in the sequence of their names and the last value applies, so the name of
+# this file must come after "timeout.conf". The agent writes the same file on a server of an
+# earlier release (quadlet.UserStopFile).
+cat >/etc/systemd/system/user@.service.d/zz-cloudfactory-stop.conf <<'UNIT'
+[Service]
+TimeoutStopSec=120
 UNIT
 systemctl daemon-reload
 
@@ -724,6 +768,8 @@ install -d -o root -g cf-sites -m 0750 /var/lib/cloudfactory-images
 install -d -m 0755 "$CF_ETC/sftp" "$CF_ETC/sftp-users"
 
 step "Set the firewall"
+# The agent writes the database access of each website in this directory (firewall_rules).
+install -d -m 0755 "$CF_ETC/firewall"
 firewall_rules >/etc/nftables.d-cloudfactory.nft
 grep -q 'nftables.d-cloudfactory.nft' /etc/nftables.conf 2>/dev/null || printf 'include "/etc/nftables.d-cloudfactory.nft"\n' >>/etc/nftables.conf
 nft -f /etc/nftables.d-cloudfactory.nft

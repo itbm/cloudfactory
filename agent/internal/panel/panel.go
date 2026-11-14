@@ -111,8 +111,18 @@ type Report struct {
 	Websites       []Usage   `json:"websites"`
 	// Domains are the DNS and certificate state of each domain on this server.
 	Domains []DomainState `json:"domains"`
-	// Databases are the sizes of the databases in the shared database containers.
+	// Databases are the sizes of the databases in the database containers of this server.
 	Databases []DatabaseSize `json:"databases"`
+	// DatabaseServers are the state and the resource use of each database server of a customer
+	// on this server.
+	DatabaseServers []DatabaseServerUse `json:"databaseServers"`
+	// DatabaseEngines are the database engines that this agent can operate. An agent of an
+	// earlier release does not send them: it has MariaDB and PostgreSQL only.
+	DatabaseEngines []string `json:"databaseEngines,omitempty"`
+	// DatabaseInstances is true when this agent gives each customer its own database servers
+	// (DatabaseServer, Website.database_instance) and can move the databases of a website to
+	// them (MoveDatabases). An agent of an earlier release does not send it.
+	DatabaseInstances bool `json:"databaseInstances,omitempty"`
 	// SftpPort is the port that the website owners use for SFTP on this server.
 	SftpPort int `json:"sftpPort,omitempty"`
 	// PanelCertificate is the certificate of the panel domain. Only the panel server sends it.
@@ -146,11 +156,27 @@ type DomainState struct {
 	ExpiresAt   string `json:"expiresAt,omitempty"`
 }
 
-// DatabaseSize is the size of one database.
+// DatabaseSize is the size of one database. A Valkey database has no size in bytes: it has its
+// database number and its number of keys.
 type DatabaseSize struct {
 	Engine    string `json:"engine"`
 	Name      string `json:"name"`
 	SizeBytes int64  `json:"sizeBytes"`
+	Number    int    `json:"number,omitempty"`
+	Keys      *int64 `json:"keys,omitempty"`
+}
+
+// DatabaseServerUse is the state and the resource use of one database server of a customer.
+type DatabaseServerUse struct {
+	// ID is the ID of the database server in lower case.
+	ID string `json:"id"`
+	// State is "running" or "stopped".
+	State       string `json:"state"`
+	MemoryBytes int64  `json:"memoryBytes"`
+	// DiskBytes is the disk space that the database server uses. DiskSizeBytes is the size of
+	// its disk, or 0 when the server does not apply a disk limit to it.
+	DiskBytes     int64 `json:"diskBytes"`
+	DiskSizeBytes int64 `json:"diskSizeBytes"`
 }
 
 // HostUse is the resource use of the host, in percent (FR-1301).

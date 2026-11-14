@@ -8,6 +8,7 @@ use App\Jobs\CheckAgentConnection;
 use App\Jobs\SendJobToAgent;
 use App\Models\AgentJob;
 use App\Models\Database;
+use App\Models\DatabaseServer;
 use App\Models\Domain;
 use App\Models\Server;
 use App\Services\JobOutcome;
@@ -93,9 +94,24 @@ class AgentController extends Controller
             'domains.*.expiresAt' => ['nullable', 'date'],
             // Batch 1, finding 12: the size of each database.
             'databases' => ['nullable', 'array'],
-            'databases.*.engine' => ['required', Rule::in(['mariadb', 'postgresql'])],
+            'databases.*.engine' => ['required', Rule::in(Database::ENGINES)],
             'databases.*.name' => ['required', 'string', 'max:64'],
             'databases.*.sizeBytes' => ['integer', 'min:0'],
+            // Valkey: the database number and the number of keys.
+            'databases.*.number' => ['nullable', 'integer', 'between:1,65535'],
+            'databases.*.keys' => ['nullable', 'integer', 'min:0'],
+            // The engines that the agent can operate. An agent of an earlier release does not send them.
+            'databaseEngines' => ['nullable', 'array', 'max:20'],
+            'databaseEngines.*' => ['string', 'max:32'],
+            // True when the agent can operate the database servers of customers.
+            'databaseInstances' => ['boolean'],
+            // The state and the resource use of each database server on the server.
+            'databaseServers' => ['nullable', 'array', 'max:100000'],
+            'databaseServers.*.id' => ['required', 'string', 'max:64'],
+            'databaseServers.*.state' => ['required', Rule::in(['running', 'stopped'])],
+            'databaseServers.*.memoryBytes' => ['integer', 'min:0'],
+            'databaseServers.*.diskBytes' => ['integer', 'min:0'],
+            'databaseServers.*.diskSizeBytes' => ['integer', 'min:0'],
             // Spec section 10: the port of the SFTP container. An agent of release 0.1 does not send it.
             'sftpPort' => ['nullable', 'integer', 'between:1,65535'],
             // The certificate of the panel domain. Only the agent on the panel server sends it.
@@ -125,6 +141,8 @@ class AgentController extends Controller
             'usage' => $data['usage'] ?? null,
             'sftp_port' => $data['sftpPort'] ?? $server->sftp_port,
             'panel_ca_sha256' => $data['panelCaSha256'] ?? null,
+            'database_engines' => $data['databaseEngines'] ?? null,
+            'database_instances' => $data['databaseInstances'] ?? false,
             // A server that was offline is back with this report.
             'state' => in_array($server->state, ['rebooting', 'joining'], true) ? $server->state : ($failed ? 'degraded' : 'healthy'),
         ]);
@@ -154,7 +172,34 @@ class AgentController extends Controller
             ]);
         }
         foreach ($data['databases'] ?? [] as $d) {
-            Database::whereIn('website_id', $websiteIds)->where(['engine' => $d['engine'], 'name' => $d['name']])->update(['size_bytes' => $d['sizeBytes'] ?? 0]);
+            // Valkey has no size in bytes. Its report has the database number and the number of keys.
+            $values = $d['engine'] === Database::VALKEY
+                ? array_filter(['number' => $d['number'] ?? null, 'key_count' => $d['keys'] ?? null], fn ($v) => $v !== null)
+                : ['size_bytes' => $d['sizeBytes'] ?? 0];
+            if ($values) {
+                Database::whereIn('website_id', $websiteIds)->where(['engine' => $d['engine'], 'name' => $d['name']])->update($values);
+            }
+        }
+        // The agent reports the ID of a database server in lower case, as the panel has it.
+        foreach ($data['databaseServers'] ?? [] as $use) {
+            $databaseServer = $server->databaseServers()->whereKey(strtolower($use['id']))->first();
+            if (! $databaseServer) {
+                continue;
+            }
+            // A container that operates shows that the agent made the database server. A
+            // container that stopped changes only a database server that operated: the job
+            // that makes or changes a database server gives its own result (JobOutcome).
+            $status = match (true) {
+                $databaseServer->status === DatabaseServer::REMOVING => DatabaseServer::REMOVING,
+                $use['state'] === 'running' => DatabaseServer::RUNNING,
+                $databaseServer->status === DatabaseServer::RUNNING => DatabaseServer::STOPPED,
+                default => $databaseServer->status,
+            };
+            $databaseServer->update(['status' => $status, 'usage' => [
+                'memoryBytes' => (int) ($use['memoryBytes'] ?? 0),
+                'diskBytes' => (int) ($use['diskBytes'] ?? 0),
+                'diskSizeBytes' => (int) ($use['diskSizeBytes'] ?? 0),
+            ]]);
         }
         // CF-10: only the panel server has the panel and its edge proxy.
         if ($server->local && isset($data['panelCertificate'])) {

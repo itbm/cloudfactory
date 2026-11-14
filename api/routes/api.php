@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BackupController;
 use App\Http\Controllers\Api\CustomerController;
 use App\Http\Controllers\Api\DatabaseController;
+use App\Http\Controllers\Api\DatabaseServerController;
 use App\Http\Controllers\Api\DatabaseUserController;
 use App\Http\Controllers\Api\DomainController;
 use App\Http\Controllers\Api\ImageController;
@@ -75,6 +76,13 @@ Route::prefix('v1')->group(function () {
             Route::post('websites/{websiteId}/database-users', [DatabaseUserController::class, 'store']);
             Route::patch('websites/{websiteId}/database-users/{userId}', [DatabaseUserController::class, 'update']);
             Route::delete('websites/{websiteId}/database-users/{userId}', [DatabaseUserController::class, 'destroy']);
+            // The database servers of a customer: containers with their own limits, as websites.
+            Route::get('database-servers', [DatabaseServerController::class, 'index']);
+            Route::post('database-servers', [DatabaseServerController::class, 'store']);
+            Route::get('database-servers/{id}', [DatabaseServerController::class, 'show']);
+            Route::patch('database-servers/{id}', [DatabaseServerController::class, 'update']);
+            Route::delete('database-servers/{id}', [DatabaseServerController::class, 'destroy']);
+            Route::post('database-servers/{id}/retry', [DatabaseServerController::class, 'retry']);
         });
 
         Route::middleware('scope:backups')->group(function () {
@@ -95,6 +103,7 @@ Route::prefix('v1')->group(function () {
             Route::post('servers/{id}/reboot', [ServerController::class, 'reboot']);
             Route::post('servers/{id}/update-agent', [ServerController::class, 'updateAgent']);
             Route::post('servers/{id}/check-connection', [ServerController::class, 'checkConnection']);
+            Route::post('servers/{id}/move-databases', [ServerController::class, 'moveDatabases']);
             Route::delete('servers/{id}', [ServerController::class, 'destroy']);
             // The TLS certificate of the panel domain: the CA of the panel or Let's Encrypt.
             Route::get('panel-certificate', [PanelCertificateController::class, 'show']);

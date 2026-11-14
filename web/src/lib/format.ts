@@ -67,6 +67,11 @@ export function bytes(value: number): string {
   return `${v.toFixed(digits)} ${units[i]}`;
 }
 
+/** A whole number with separators: "18,412". */
+export function count(value: number): string {
+  return value.toLocaleString(LOCALE);
+}
+
 export function percent(value: number): string {
   if (value > 0 && value < 1) return "<1%";
   return `${Math.round(value)}%`;

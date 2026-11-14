@@ -79,7 +79,7 @@ func TestWebsitesHaveDatabaseHostNames(t *testing.T) {
 	d, _, _ := deps(t)
 	run(t)(d.CreateWebsite(&agentv1.WebsiteRequest{JobId: jobID, Website: website("ghcr.io/cloudfactory/frankenphp-php8.4:8.4.0-1")}))
 	u := unitFile(t, d, "acme_x7k2", "cf-acme_x7k2.container")
-	for _, want := range []string{"AddHost=mariadb.internal:169.254.77.1\n", "AddHost=postgres.internal:169.254.77.1\n", "Environment=CF_DOCUMENT_ROOT=/app/public\n"} {
+	for _, want := range []string{"AddHost=mariadb.internal:169.254.77.1\n", "AddHost=postgres.internal:169.254.77.1\n", "AddHost=valkey.internal:169.254.77.1\n", "Environment=CF_DOCUMENT_ROOT=/app/public\n"} {
 		if !strings.Contains(u, want) {
 			t.Errorf("unit has no %q:\n%s", want, u)
 		}
@@ -93,17 +93,31 @@ func TestWebsitesHaveDatabaseHostNames(t *testing.T) {
 func TestTheDatabaseServiceKeepsTheOwnerOfItsDataDirectory(t *testing.T) {
 	d, f, _ := deps(t)
 	d.ServiceImage = func(name string) string { return "ghcr.io/cloudfactory/" + name + ":0.1.0" }
-	for _, engine := range Engines {
-		dir := filepath.Join(d.DBHome, engine)
+	newFakeValkey(d)
+	// The shared containers of an earlier release, and the database servers of a customer.
+	servers := []dbServer{{Engine: "mariadb"}, {Engine: "postgresql"}, customerValkey}
+	for _, engine := range []string{"mariadb", "postgresql"} {
+		spec := databaseServer(engine)
+		key, _ := serverKey(spec.GetId())
+		if _, err := d.putServer(customerKey, key, recordOf(spec), false); err != nil {
+			t.Fatal(err)
+		}
+		servers = append(servers, dbServer{ID: key, Engine: engine})
+	}
+	for _, s := range servers {
+		dir := filepath.Join(d.dbDir(s), s.Engine)
+		if s.ID != "" {
+			dir = d.dataDir(s)
+		}
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			t.Fatal(err)
 		}
-		if err := d.EnsureDatabaseService(context.Background(), engine); err != nil {
+		if err := d.EnsureDatabaseService(context.Background(), s); err != nil {
 			t.Fatal(err)
 		}
 		for _, c := range f.Calls {
 			if strings.HasSuffix(c, " "+dir) && (strings.HasPrefix(c, "install ") || strings.HasPrefix(c, "chown ") || strings.HasPrefix(c, "chmod ")) {
-				t.Errorf("%s: the agent changed the data directory that exists: %s", engine, c)
+				t.Errorf("%s: the agent changed the data directory that exists: %s", s, c)
 			}
 		}
 	}
@@ -376,12 +390,16 @@ func TestTheReportHasWebsiteUseAndCertificates(t *testing.T) {
 	if len(r.Domains) != 1 || r.Domains[0].Certificate != "valid" || !r.Domains[0].DNSPointsHere || r.Domains[0].ExpiresAt == "" {
 		t.Errorf("domains = %+v", r.Domains)
 	}
-	// A server can operate with no disk quotas, so the part is optional and tells the reason.
-	if q := r.Services[len(r.Services)-1]; q.Name != "disk-quotas" || q.State != "stopped" || !q.Optional || q.Detail == "" {
+	// A server can operate with no loop devices and with no disk quotas, so each part is
+	// optional and tells the reason.
+	if l := r.Services[len(r.Services)-1]; l.Name != "database-disk-limits" || l.State != "stopped" || !l.Optional || l.Detail == "" {
+		t.Errorf("services = %+v", r.Services)
+	}
+	if q := r.Services[len(r.Services)-2]; q.Name != "disk-quotas" || q.State != "stopped" || !q.Optional || q.Detail == "" {
 		t.Errorf("services = %+v", r.Services)
 	}
 	// The firewall is the table in the kernel, not the nftables service.
-	if f := r.Services[len(r.Services)-2]; f != (panel.Service{Name: "firewall", State: "running"}) {
+	if f := r.Services[len(r.Services)-3]; f != (panel.Service{Name: "firewall", State: "running"}) {
 		t.Errorf("services = %+v", r.Services)
 	}
 	if !f.Called("nft list table inet cloudfactory") {
@@ -389,7 +407,7 @@ func TestTheReportHasWebsiteUseAndCertificates(t *testing.T) {
 	}
 	// With no table, the report tells the administrator what to do.
 	f.Rules = append(f.Rules, execx.Rule{Prefix: "nft list table inet cloudfactory", Err: errors.New("Error: No such file or directory")})
-	if fw := d.firewallService(context.Background()); fw.State != "stopped" || fw.Optional || !strings.Contains(fw.Detail, "nft -f /etc/nftables.d-cloudfactory.nft") {
+	if fw := d.firewallService(context.Background()); fw.State != "stopped" || fw.Optional || !strings.Contains(fw.Detail, "nft -f "+d.firewallFile()) {
 		t.Errorf("firewall = %+v", fw)
 	}
 }
@@ -482,7 +500,7 @@ func TestRestoreEmptiesTheDatabaseFirst(t *testing.T) {
 		d, f, _ := deps(t)
 		dump := filepath.Join(t.TempDir(), "dump.sql")
 		os.WriteFile(dump, []byte("CREATE TABLE t (id int);\n"), 0o600)
-		err := d.restoreDump(context.Background(), engine, "acme_x7k2_shop", func(ctx context.Context, client []string) error {
+		err := d.restoreDump(context.Background(), dbServer{Engine: engine}, "acme_x7k2_shop", func(ctx context.Context, client []string) error {
 			r, _ := os.Open(dump)
 			defer r.Close()
 			return d.Run.Stream(ctx, r, nil, client[0], client[1:]...)
@@ -601,5 +619,115 @@ func TestTheEdgeProxyRestartsWhenItsUnitChanged(t *testing.T) {
 	}
 	if !f.Called("systemctl --user --machine=cf-edge@ daemon-reload") || !f.Called("systemctl --user --machine=cf-edge@ restart cf-edge.service") {
 		t.Errorf("with a new image: %v", f.Calls)
+	}
+}
+
+// The users of the websites cannot connect to the databases "postgres" and "template1" of a
+// PostgreSQL server, where each user can read the names of all databases and all users.
+func TestPostgreSQLRefusesWebsiteUsersInItsOwnDatabases(t *testing.T) {
+	d, f, _ := deps(t)
+	req := &agentv1.CreateDatabaseRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Engine: "postgresql", Name: "acme_x7k2_shop"}
+	if err := run(t)(d.CreateDatabase(req)); err != nil {
+		t.Fatal(err)
+	}
+	const revoke = "REVOKE CONNECT ON DATABASE postgres, template1 FROM PUBLIC;\n"
+	first, create := index(f.Inputs, revoke), -1
+	for i, in := range f.Inputs {
+		if strings.Contains(in, `CREATE DATABASE "acme_x7k2_shop"`) {
+			create = i
+		}
+	}
+	if first < 0 || create < first {
+		t.Fatalf("the agent sends %q before the first database: revoke at %d, database at %d", revoke, first, create)
+	}
+	// One time for each start of the server by the agent, not with each job.
+	req.Name = "acme_x7k2_blog"
+	if err := run(t)(d.CreateDatabase(req)); err != nil {
+		t.Fatal(err)
+	}
+	if n := strings.Count(strings.Join(f.Inputs, ""), revoke); n != 1 {
+		t.Errorf("the agent sent the statement %d times, want 1", n)
+	}
+	// MariaDB has no such databases for its users.
+	d, f, _ = deps(t)
+	req.Engine = "mariadb"
+	if err := run(t)(d.CreateDatabase(req)); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(strings.Join(f.Inputs, ""), "REVOKE CONNECT") {
+		t.Error("the agent sent the PostgreSQL statement to MariaDB")
+	}
+}
+
+// A database container that stopped after the agent started it: the statements fail, and the
+// next job starts the container again. Before, each job failed until the agent started again.
+func TestTheAgentStartsADatabaseContainerAgainAfterItStopped(t *testing.T) {
+	d, f, _ := deps(t)
+	req := &agentv1.CreateDatabaseRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Engine: "postgresql", Name: "acme_x7k2_shop"}
+	if err := run(t)(d.CreateDatabase(req)); err != nil {
+		t.Fatal(err)
+	}
+	const start = "systemctl --user --machine=cf-db@ start cf-postgresql.service"
+	starts := func() (n int) {
+		for _, c := range f.Calls {
+			if c == start || c == strings.Replace(start, " start ", " restart ", 1) {
+				n++
+			}
+		}
+		return n
+	}
+	if starts() != 1 {
+		t.Fatalf("the agent started the container %d times, want 1:\n%s", starts(), strings.Join(f.Calls, "\n"))
+	}
+
+	// The statement fails, but the server accepts connections: the container operates.
+	exec := "runuser -u cf-db -- env XDG_RUNTIME_DIR=/run/user/20001 podman exec -i cf-postgresql "
+	f.Rules = []execx.Rule{{Prefix: exec + "psql", Input: "acme_x7k2_blog", Err: errors.New("exit status 3")}}
+	req.Name = "acme_x7k2_blog"
+	if err := run(t)(d.CreateDatabase(req)); err == nil {
+		t.Fatal("the job has no error")
+	}
+	f.Rules = nil
+	if err := run(t)(d.CreateDatabase(req)); err != nil {
+		t.Fatal(err)
+	}
+	if starts() != 1 {
+		t.Errorf("the agent started a container that operates: %d starts", starts())
+	}
+
+	// The statement fails, and the server accepts no connections: the container stopped.
+	f.Rules = []execx.Rule{
+		{Prefix: exec + "psql", Input: "acme_x7k2_data", Err: errors.New("exit status 2")},
+		{Prefix: exec + "pg_isready", Err: errors.New("exit status 2")},
+	}
+	req.Name = "acme_x7k2_data"
+	if err := run(t)(d.CreateDatabase(req)); err == nil {
+		t.Fatal("the job has no error")
+	}
+	f.Rules = nil
+	if err := run(t)(d.CreateDatabase(req)); err != nil {
+		t.Fatal(err)
+	}
+	if starts() != 2 {
+		t.Errorf("the agent started the container %d times, want 2", starts())
+	}
+}
+
+// A database user has a connection limit, so that one application cannot use all connections
+// of its database server. A user from before the limit gets it with the next change.
+func TestADatabaseUserHasAConnectionLimit(t *testing.T) {
+	for engine, want := range map[string]string{
+		"mariadb":    "ALTER USER 'acme_x7k2_sync'@'169.254.77.1' REQUIRE NONE WITH MAX_USER_CONNECTIONS 100;\n",
+		"postgresql": "ALTER ROLE \"acme_x7k2_sync\" WITH LOGIN CONNECTION LIMIT 80;\n",
+	} {
+		d, f, _ := deps(t)
+		f.Rules = []execx.Rule{{Prefix: "runuser -u cf-db", Input: "SELECT Host FROM mysql.user", Output: "169.254.77.1\n"}}
+		req := &agentv1.SetDatabaseUserRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Engine: engine, Name: "acme_x7k2_sync", Access: "website"}
+		if err := run(t)(d.SetDatabaseUser(req)); err != nil {
+			t.Fatalf("%s: %v", engine, err)
+		}
+		if in := strings.Join(f.Inputs, ""); !strings.Contains(in, want) {
+			t.Errorf("%s: inputs do not contain %q:\n%s", engine, want, in)
+		}
 	}
 }

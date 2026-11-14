@@ -196,6 +196,10 @@ func (a *app) server(ctx context.Context, sub string, args []string) error {
 			fmt.Fprintf(a.out, "%-18s %s\n", k+":", cell(s[k]))
 		}
 		a.connection(s)
+		if n, _ := s["sharedDatabaseWebsites"].(float64); n > 0 {
+			fmt.Fprintf(a.out, "Websites with the shared database containers of an earlier release: %d\n", int(n))
+			fmt.Fprintln(a.out, "To move their databases to the database servers of each customer: cf servers move-databases SERVER")
+		}
 		if updates, ok := s["pendingUpdates"].([]any); ok && len(updates) > 0 {
 			fmt.Fprintln(a.out, "Pending updates:")
 			for _, u := range updates {
@@ -268,6 +272,27 @@ func (a *app) server(ctx context.Context, sub string, args []string) error {
 			return fmt.Errorf("the panel cannot connect to %s", cell(out["name"]))
 		}
 		fmt.Fprintf(a.out, "The panel can connect to %s at %s.\n", cell(out["name"]), cell(out["agentAddress"]))
+		return nil
+	case "move-databases":
+		// One job for each website that uses the shared database containers of an earlier
+		// release. The job moves its databases to the database servers of its customer.
+		var out struct {
+			Jobs []client.Job `json:"jobs"`
+		}
+		if err := a.api.Do(ctx, http.MethodPost, path+"/move-databases", nil, nil, &out); err != nil {
+			return err
+		}
+		if a.json {
+			return a.printJSON(out)
+		}
+		if len(out.Jobs) == 0 {
+			fmt.Fprintf(a.out, "No website on %s has databases to move.\n", cell(s["name"]))
+			return nil
+		}
+		for _, job := range out.Jobs {
+			fmt.Fprintf(a.out, "Job %s: %s\n", job.ID, job.Title)
+		}
+		fmt.Fprintln(a.out, "Each website stops during the copy of its databases. To see the result of a job: cf jobs get JOB")
 		return nil
 	case "remove", "rm":
 		// The panel refuses a server that has websites, and the server of the panel.
@@ -647,7 +672,8 @@ func (a *app) plans(ctx context.Context, sub string) error {
 	if sub != "list" && sub != "ls" {
 		return fmt.Errorf("unknown command plans %s", sub)
 	}
-	return a.list(ctx, "/plans", nil, []string{"name", "websites", "databases", "mailboxes", "id"})
+	// "databases" is the number of databases of each database server with the plan.
+	return a.list(ctx, "/plans", nil, []string{"name", "websites", "mailboxes", "databaseServers", "databases", "id"})
 }
 
 func (a *app) audit(ctx context.Context, sub string, args []string) error {

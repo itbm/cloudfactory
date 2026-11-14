@@ -52,6 +52,9 @@ class WebsiteResource extends JsonResource
                 'authorizedKeys' => $this->sftp_keys ?? [],
             ],
             'stagingOf' => $this->staging_of,
+            // True for a website that uses the shared database containers of an earlier release.
+            // The other websites use the database containers of their customer.
+            'sharedDatabases' => $this->database_instance === null,
             'managedByTerraform' => $this->managed_by_terraform,
             'createdAt' => $this->created_at?->toIso8601String(),
             'updatedAt' => $this->updated_at?->toIso8601String(),

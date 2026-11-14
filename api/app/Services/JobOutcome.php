@@ -7,6 +7,9 @@ use App\Enums\JobState;
 use App\Enums\WebsiteStatus;
 use App\Models\AgentJob;
 use App\Models\BackupRemoval;
+use App\Models\Database;
+use App\Models\DatabaseServer;
+use App\Models\DatabaseUser;
 use App\Models\Domain;
 use App\Models\Rollout;
 use App\Models\Snapshot;
@@ -82,6 +85,7 @@ class JobOutcome
         $state === JobState::Succeeded
             ? $this->applySuccess($job, $website, $result)
             : $this->applyFailure($job, $website);
+        $this->databaseServersOf($job, $state === JobState::Succeeded);
 
         if ($job->rollout_id && ($rollout = Rollout::find($job->rollout_id))) {
             $this->rollouts->jobFinished($rollout, $job);
@@ -98,6 +102,12 @@ class JobOutcome
     private function websiteMade(Website $website, array $result): bool
     {
         $website->update(['status' => WebsiteStatus::Running]);
+        // A staging copy: the database number of each new Valkey database.
+        foreach (is_array($result['valkey'] ?? null) ? $result['valkey'] : [] as $name => $number) {
+            if (is_string($name) && is_int($number) && $number > 0) {
+                $website->databases()->where(['engine' => Database::VALKEY, 'name' => $name])->update(['number' => $number]);
+            }
+        }
         if (array_key_exists('dnsPointsHere', $result)) {
             $website->domains()->where('name', $website->name)->update(['dns_points_here' => (bool) $result['dnsPointsHere']]);
         }
@@ -153,7 +163,11 @@ class JobOutcome
             ]),
             AgentAction::Backup => $website && $this->recordSnapshot($website, $p, $result),
             // Batch 1, finding 4: the panel removes the row when the item is gone from the server.
-            AgentAction::DeleteDatabase => $website?->databases()->where(['engine' => $p['engine'] ?? '', 'name' => $p['name'] ?? ''])->delete(),
+            AgentAction::CreateDatabase => $website && $this->databaseMade($website, $p, $result),
+            AgentAction::DeleteDatabase => $website && $this->databaseRemoved($website, $p),
+            AgentAction::MoveDatabases => $website && $this->databasesMoved($website, $p),
+            // The panel removes the record when the database server is gone from the server.
+            AgentAction::DeleteDatabaseServer => DatabaseServer::whereKey($job->database_server_id)->where('status', DatabaseServer::REMOVING)->delete(),
             AgentAction::DeleteDatabaseUser => $website?->databaseUsers()->where(['engine' => $p['engine'] ?? '', 'name' => $p['name'] ?? ''])->delete(),
             AgentAction::InstallHostUpdates => $job->server->update([
                 'pending_updates' => self::updatesLeft($job->server->pending_updates ?? [], (string) ($p['policy'] ?? 'security')),
@@ -188,8 +202,99 @@ class JobOutcome
             // The power change did not complete. The website has its old state.
             AgentAction::SetWebsitePower => $website?->update(['status' => ($p['power'] ?? '') === 'start' ? WebsiteStatus::Stopped : WebsiteStatus::Running]),
             AgentAction::Reboot => $job->server->update(['state' => 'degraded']),
+            AgentAction::SetDatabaseServer => $this->databaseServerKept($job, $p),
+            // The database server is on the server still.
+            AgentAction::DeleteDatabaseServer => DatabaseServer::whereKey($job->database_server_id)->where('status', DatabaseServer::REMOVING)
+                ->update(['status' => in_array($p['previousStatus'] ?? '', [DatabaseServer::RUNNING, DatabaseServer::STOPPED, DatabaseServer::FAILED], true) ? $p['previousStatus'] : DatabaseServer::RUNNING]),
             default => null,
         };
+    }
+
+    /**
+     * The database servers in the payload of a job that makes one when the agent does not have
+     * it: SetDatabaseServer, CreateDatabase, SetDatabaseUser, MoveDatabases and a staging copy.
+     *
+     * After the job, the agent has each database server and it operates. When the job failed,
+     * a database server that the panel made for the job is possibly not on the server: its
+     * state is "failed" until a job, or a report of the agent, shows that it operates.
+     */
+    private function databaseServersOf(AgentJob $job, bool $succeeded): void
+    {
+        $p = $job->payload;
+        $ids = [];
+        foreach ([$p['databaseServer'] ?? null, ...(is_array($p['databaseServers'] ?? null) ? $p['databaseServers'] : [])] as $server) {
+            if (is_array($server) && is_string($server['id'] ?? null)) {
+                $ids[] = $server['id'];
+            }
+        }
+        if (! $ids) {
+            return;
+        }
+        DatabaseServer::whereIn('id', $ids)->where('server_id', $job->server_id)
+            ->whereIn('status', $succeeded ? [DatabaseServer::STARTING, DatabaseServer::FAILED, DatabaseServer::STOPPED] : [DatabaseServer::STARTING])
+            ->update(['status' => $succeeded ? DatabaseServer::RUNNING : DatabaseServer::FAILED]);
+    }
+
+    /**
+     * SetDatabaseServer failed. A change of the limits has the plan and the limits from before
+     * the change in "previous": the agent kept them, for example because the data does not
+     * fit on a smaller disk. The panel records the same.
+     *
+     * @param  array<string, mixed>  $p
+     */
+    private function databaseServerKept(AgentJob $job, array $p): void
+    {
+        $previous = $p['previous'] ?? null;
+        if (! is_array($previous) || ! is_array($previous['limits'] ?? null)) {
+            return;
+        }
+        DatabaseServer::find($job->database_server_id)?->update(array_filter([
+            'limits' => $previous['limits'],
+            'plan_id' => is_string($previous['planId'] ?? null) ? $previous['planId'] : null,
+        ], fn ($v) => $v !== null));
+    }
+
+    /**
+     * MoveDatabases: the website uses the database servers of its customer now, and each of
+     * its databases and database users is in the database server of the payload.
+     *
+     * @param  array<string, mixed>  $p
+     */
+    private function databasesMoved(Website $website, array $p): bool
+    {
+        $website->update(['database_instance' => $website->customer_id]);
+        $servers = DatabaseServer::where(['customer_id' => $website->customer_id, 'server_id' => $website->server_id])->pluck('id')->all();
+        foreach ([[Database::class, $p['databases'] ?? []], [DatabaseUser::class, $p['users'] ?? []]] as [$model, $items]) {
+            foreach (is_array($items) ? $items : [] as $item) {
+                if (is_array($item) && in_array($item['databaseServer'] ?? null, $servers, true)) {
+                    $model::where(['website_id' => $website->id, 'engine' => $item['engine'] ?? '', 'name' => $item['name'] ?? ''])->update(['database_server_id' => $item['databaseServer']]);
+                }
+            }
+        }
+
+        return true;
+    }
+
+    /** Valkey: the agent gives the database number, which the application needs to connect. */
+    private function databaseMade(Website $website, array $p, array $result): bool
+    {
+        if (($p['engine'] ?? '') === Database::VALKEY && is_int($result['number'] ?? null) && $result['number'] > 0) {
+            $website->databases()->where(['engine' => Database::VALKEY, 'name' => $p['name'] ?? ''])->update(['number' => $result['number']]);
+        }
+
+        return true;
+    }
+
+    /** The user of a Valkey database goes with its database. The users of the other engines stay. */
+    private function databaseRemoved(Website $website, array $p): bool
+    {
+        $engine = $p['engine'] ?? '';
+        $website->databases()->where(['engine' => $engine, 'name' => $p['name'] ?? ''])->delete();
+        if ($engine === Database::VALKEY) {
+            $website->databaseUsers()->where(['engine' => $engine, 'name' => $p['name'] ?? ''])->delete();
+        }
+
+        return true;
     }
 
     private function removeNewDatabase(?Website $website, array $p): void
@@ -226,7 +331,7 @@ class JobOutcome
             'restic_id' => $result['snapshotId'] ?? null,
             'size_bytes' => (int) ($result['sizeBytes'] ?? 0),
             // The agent restores a database by "engine:name".
-            'databases' => $website->databases()->get()->map(fn ($d) => "{$d->engine}:{$d->name}")->all(),
+            'databases' => $website->sqlDatabases()->get()->map(fn ($d) => "{$d->engine}:{$d->name}")->all(),
             'mailboxes' => [],
             // CF-06: the restore checks each dump against the hash from the backup.
             'dump_hashes' => self::dumpHashes($result['dumps'] ?? []),
