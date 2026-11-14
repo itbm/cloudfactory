@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { ApiError, addCustomer, addDomain, addUser, changePassword, createDatabase, createDatabaseUser, createToken, deleteDatabase, deleteDatabaseUser, deleteUser, getState, publicName, resetState, resetUserPassword, setContext, setDatabaseUser, setDocumentRoot, setPanelCertificate, setSftp, setTotp, splitCommand, timing, verifyDomain } from "./store";
+import { ApiError, addCustomer, addDomain, addUser, changePassword, createDatabase, createDatabaseUser, createToken, deleteDatabase, deleteDatabaseUser, deleteUser, getState, moveDatabases, publicName, resetState, resetUserPassword, setContext, setDatabaseUser, setDocumentRoot, setPanelCertificate, setSftp, setTotp, splitCommand, timing, verifyDomain } from "./store";
 import { contextCustomers, visibleWebsites } from "./selectors";
 
 beforeEach(() => {
@@ -60,6 +60,40 @@ describe("databases (CF-01)", () => {
   it("refuses a Valkey database on a server with an agent that cannot operate Valkey", () => {
     getState().servers.find((s) => s.id === shop().serverId)!.databaseEngines = ["mariadb", "postgresql"];
     expect(() => createDatabase("web_shop", "valkey", "cache2")).toThrow(/Correct the engine/);
+  });
+});
+
+describe("database containers of each customer", () => {
+  const site = (id: string) => getState().websites.find((w) => w.id === id)!;
+
+  it("gives the Valkey numbers of each customer on a server", async () => {
+    // The shop has the Valkey database number 1 on its server. A website of a different
+    // customer on the same server has its own Valkey container, so its first number is 1 too.
+    const other = getState().websites.find((w) => w.serverId === shop().serverId && w.customerId !== shop().customerId && !w.sharedDatabases)!;
+    await createDatabase(other.id, "valkey", "cache");
+    await createDatabase("web_shop", "valkey", "sessions");
+    await new Promise((r) => setTimeout(r, 10));
+    expect(getState().databases.find((d) => d.name === `${other.unixUser}_cache`)).toMatchObject({ number: 1 });
+    expect(getState().databases.find((d) => d.name === `${shop().unixUser}_sessions`)).toMatchObject({ number: 2 });
+  });
+
+  it("moves the databases of the websites of an earlier release to the containers of each customer", async () => {
+    // The demo data has two websites of an earlier release on web-02.
+    const shared = () => getState().websites.filter((w) => w.sharedDatabases);
+    expect(shared().map((w) => w.serverId)).toEqual(["srv_web02", "srv_web02"]);
+    const first = shared()[0].id;
+    expect(() => createDatabase(first, "valkey", "cache")).toThrow(/Correct the engine/);
+    site(shared()[1].id).status = "starting";
+
+    await moveDatabases("srv_web02");
+
+    // A website that the panel makes now is not on the server yet, so it does not move.
+    expect(shared().map((w) => w.status)).toEqual(["starting"]);
+    const job = getState().jobs.find((j) => j.title === `Move the databases of ${site(first).name}`)!;
+    expect(job).toMatchObject({ state: "succeeded", serverId: "srv_web02", steps: ["Start database containers", "Stop website", "Copy databases", "Copy users", "Start website", "Remove old copies"] });
+    expect(getState().jobs.filter((j) => j.title.startsWith("Move the databases of "))).toHaveLength(1);
+    // The website has the Valkey container of its customer now.
+    await createDatabase(first, "valkey", "cache");
   });
 });
 

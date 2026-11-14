@@ -226,6 +226,8 @@ export const websites: Website[] = [
       name: `${sub}.example.com`,
       application: "WordPress",
       serverId: i % 2 ? "srv_web02" : "srv_web01",
+      // The websites of web-02 are from an earlier release: they use its shared database containers.
+      sharedDatabases: i % 2 === 1,
       use: { cpuPercent: 1 + i, memoryBytes: (120 + i * 30) * MB, diskBytes: (1 + i) * GB, processes: 10 + i, diskIoBytesPerSecond: 0.3 * MB },
       domains: [{ name: `${sub}.example.com`, kind: "primary", certificate: { state: "valid", expiresAt: ahead((30 + i * 9) * DAY) }, dnsPointsHere: true }],
       lastChange: { at: ago((6 + i) * DAY), summary: "Plugin updates" },
@@ -255,6 +257,7 @@ const server = (s: Partial<Server> & Pick<Server, "id" | "name" | "location" | "
   rebootRequired: false,
   services: services(["cloudfactory-agent", "podman", "edge-proxy (Caddy)", "SFTP (cf-sftp)", "nftables"]),
   sftpPort: 2200,
+  databaseInstances: true,
   ...s,
 });
 

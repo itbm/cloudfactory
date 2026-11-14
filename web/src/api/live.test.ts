@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DETAIL_LIMIT, LiveError, load, request, setUnauthorisedHandler, toJob, toPanelCertificate, toRuntimeImage, toWebsite } from "./live";
+import { DETAIL_LIMIT, LiveError, load, request, setUnauthorisedHandler, toJob, toPanelCertificate, toRuntimeImage, toServer, toWebsite } from "./live";
 import { seed } from "./seed";
 import { defaultImage } from "../pages/NewWebsitePage";
 
@@ -75,6 +75,25 @@ describe("mappers", () => {
     expect(w.use.memoryBytes).toBe(0);
     expect(w.imageTag).toBe("0.1.0");
     expect(w.domains[0]).toEqual({ name: "acme.example", kind: "primary", dnsPointsHere: true, certificate: { state: "valid", expiresAt: undefined } });
+    // A panel of an earlier release does not send the field.
+    expect(w.sharedDatabases).toBe(false);
+  });
+
+  it("maps the database containers of a website and of a server", () => {
+    const website = { id: "w1", name: "acme.example", application: "", customerId: "c1", serverId: "s1", planId: "p1", unixUser: "acmeexam_1a2b", status: "running" as const,
+      runtime: { imageId: "i1", family: "frankenphp", image: "ghcr.io/itbm/frankenphp-php8.4:0.1.0", phpVersion: "8.4", workerMode: false, extensions: [], phpIni: {}, previousImageId: null },
+      limits: { vcpus: 1, memoryBytes: 1, diskBytes: 1, diskIoBytesPerSecond: 1, processes: 100 }, usage: {},
+      stagingOf: null, managedByTerraform: false, createdAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-02T00:00:00Z" };
+    expect(toWebsite({ ...website, sharedDatabases: true }).sharedDatabases).toBe(true);
+    expect(toWebsite({ ...website, sharedDatabases: false }).sharedDatabases).toBe(false);
+
+    const server = { id: "s1", name: "web-1", location: "", roles: ["web" as const], state: "healthy" as const, agentVersion: "0.2.0", os: null, kernel: null, arch: null,
+      podmanVersion: null, gvisorVersion: null, gvisorPlatform: "systrap" as const, bareMetal: false, updatePolicy: "security" as const, maintenanceWindow: "02:00-05:00",
+      pendingUpdates: [], lastUpdateAt: null, rebootRequired: false, services: [], usage: null };
+    expect(toServer({ ...server, databaseInstances: true, sharedDatabaseWebsites: 3 })).toMatchObject({ databaseInstances: true, sharedDatabaseWebsites: 3 });
+    // An agent of an earlier release: the panel gives no number of websites.
+    expect(toServer({ ...server, databaseInstances: false, sharedDatabaseWebsites: null })).toMatchObject({ databaseInstances: false, sharedDatabaseWebsites: undefined });
+    expect(toServer(server).databaseInstances).toBe(false);
   });
 
   it("keeps the TXT record of a domain that is not verified (CF-03)", () => {

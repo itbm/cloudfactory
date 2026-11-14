@@ -180,6 +180,11 @@ export interface Website {
   lastChange: LastChange;
   /** A staging copy points to its source website (FR-205). */
   stagingOf?: string;
+  /**
+   * True when the website uses the shared database containers of an earlier release. The other
+   * websites use the database containers of their customer.
+   */
+  sharedDatabases?: boolean;
   managedByTerraform: boolean;
   /** The image tag that the website uses. When it is not set, the website uses the running tag of its image. */
   imageTag?: string;
@@ -346,6 +351,10 @@ export interface Server {
   panel?: boolean;
   /** The database engines that the agent of the server can operate. An agent of an earlier release has no Valkey. */
   databaseEngines?: DatabaseEngine[];
+  /** True when the agent of the server gives each customer its own database containers. */
+  databaseInstances?: boolean;
+  /** The number of websites that use the shared database containers of an earlier release (live mode). */
+  sharedDatabaseWebsites?: number;
   services: ServerService[];
   /** The port of the SFTP container of the websites (spec section 10). 22 for an agent of release 0.1. */
   sftpPort: number;

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useAction, useStore } from "../api/hooks";
-import { createDatabase, createDatabaseUser, deleteDatabase, deleteDatabaseUser, partialDetails, setDatabaseUser, type GrantInput } from "../api/store";
+import { createDatabase, createDatabaseUser, deleteDatabase, deleteDatabaseUser, partialDetails, setDatabaseUser, sharedDatabasesMessage, type GrantInput } from "../api/store";
 import type { DatabaseEngine, DatabasePrivileges, DatabaseUser } from "../api/types";
 import { Card, ConfirmButton, Field, FormError, Modal } from "../components/ui";
 import { bytes, count } from "../lib/format";
@@ -35,10 +35,14 @@ export function DatabasesPanel({ websiteId }: { websiteId?: string }) {
   const changeUser = useAction(setDatabaseUser);
   const siteName = (id: string) => sites.find((w) => w.id === id)?.name ?? "Removed website";
   const prefix = (id: string) => `${sites.find((w) => w.id === id)?.unixUser ?? ""}_`;
-  // An agent of an earlier release cannot operate Valkey. When the panel does not know the server, the API makes the check.
+  // The reason when a website cannot have a Valkey database: an agent of an earlier release
+  // cannot operate Valkey, and the shared database containers of an earlier release have none.
+  // When the panel does not know the server, the API makes the check.
   const noValkey = (id: string) => {
-    const server = state.servers.find((s) => s.id === sites.find((w) => w.id === id)?.serverId);
-    return server?.databaseEngines && !server.databaseEngines.includes("valkey") ? server.name : undefined;
+    const website = sites.find((w) => w.id === id);
+    const server = state.servers.find((s) => s.id === website?.serverId);
+    if (server?.databaseEngines && !server.databaseEngines.includes("valkey")) return `The agent on the server ${server.name} cannot operate Valkey. Update the agent of the server.`;
+    return website?.sharedDatabases ? sharedDatabasesMessage(server?.name ?? "of the website") : undefined;
   };
   const pending = state.jobs.filter((j) => jobActive(j) && j.title.startsWith("Create ") && j.title.includes("database") && (!websiteId || j.websiteId === websiteId));
 
@@ -102,7 +106,7 @@ export function DatabasesPanel({ websiteId }: { websiteId?: string }) {
         {!websiteId && partialDetails() && <p className="card-body muted small">There are many websites, so this list shows only the websites that you opened. Open a website to see its databases.</p>}
         {dbs.some((d) => d.engine === "valkey") && (
           <p className="card-body muted small" style={{ paddingTop: 12 }}>
-            To connect to a Valkey database, an app uses the host <code>valkey.internal</code>, the port <code>6379</code>, the user name, the password and the database number. Valkey is compatible with Redis: for PHP, turn on the extension <code>redis</code> on the Runtime tab. All the Valkey databases of a server share its Valkey memory: when the memory is full, Valkey removes the keys that were not used for the longest time. A backup has no Valkey data.
+            To connect to a Valkey database, an app uses the host <code>valkey.internal</code>, the port <code>6379</code>, the user name, the password and the database number. Valkey is compatible with Redis: for PHP, turn on the extension <code>redis</code> on the Runtime tab. Each customer has its own Valkey container on a server. All the Valkey databases of the customer there share its memory: when the memory is full, Valkey removes the keys that were not used for the longest time. A backup has no Valkey data.
           </p>
         )}
       </Card>
@@ -152,7 +156,7 @@ export function DatabasesPanel({ websiteId }: { websiteId?: string }) {
             </tbody>
           </table>
         </div>
-        <p className="card-body muted small" style={{ paddingTop: 12 }}>By default, only the container of the website can connect to its databases. A user can have access only to the databases of its website.{users.some((u) => u.engine === "valkey") && " The user of a Valkey database has access to that database only. To remove the user, remove the database."}</p>
+        <p className="card-body muted small" style={{ paddingTop: 12 }}>Each customer has its own database containers on a server. By default, only the websites of the customer can connect to them, and each connection needs a user name and a password. A user can have access only to the databases of its website.{users.some((u) => u.engine === "valkey") && " The user of a Valkey database has access to that database only. To remove the user, remove the database."}</p>
       </Card>
 
       {dialog === "db" && (
@@ -282,7 +286,7 @@ function DbFields(props: { engines: DatabaseEngine[]; noValkey?: string; engine:
           );
         })}
       </fieldset>
-      {props.engines.includes("valkey") && props.noValkey && <p className="muted small" style={{ marginTop: 6 }}>The agent on the server {props.noValkey} cannot operate Valkey. Update the agent of the server.</p>}
+      {props.engines.includes("valkey") && props.noValkey && <p className="muted small" style={{ marginTop: 6 }}>{props.noValkey}</p>}
       {props.engineError && <p className="text-danger small" role="alert" style={{ marginTop: 6 }}>{props.engineError}</p>}
       <div style={{ marginTop: 14 }}>
         <Field label="Name" hint={<>Each name starts with <code>{props.prefix}</code>, the Unix user of the website. Use lower-case letters, digits and underscores.</>} error={props.error}>

@@ -6,7 +6,7 @@
 // desired state, and puts a job in the queue. A simulated agent then runs the job step by step.
 
 import { validateRecord, type RecordInput } from "../lib/dns";
-import { ENGINE_NAME } from "../lib/labels";
+import { ENGINE_NAME, jobActive } from "../lib/labels";
 import * as live from "./live";
 import { LIVE } from "./mode";
 import { DAY, GB, MB, seed } from "./seed";
@@ -489,6 +489,8 @@ export function createStagingCopy(websiteId: string): Promise<{ websiteId: strin
       copy.name = name;
       copy.application = `Staging copy of ${src.name}`;
       copy.stagingOf = websiteId;
+      // The copy is a new website, so it uses the database containers of its customer.
+      copy.sharedDatabases = false;
       copy.status = "starting";
       copy.createdAt = now();
       copy.unixUser = `${copy.unixUser.split("_")[0].slice(0, 5)}stg_${hex().slice(0, 4)}`;
@@ -1196,8 +1198,12 @@ const newPassword = () => Array.from(crypto.getRandomValues(new Uint8Array(24)),
 
 export type GrantInput = { databaseId: string; privileges: DatabasePrivileges };
 
-/** The number of Valkey databases of one server. Database 0 is for no website. */
+/** The number of Valkey databases of one customer on a server. Database 0 is for no website. */
 const VALKEY_DATABASES = 1024;
+
+/** The message for a Valkey database of a website with the shared database containers of an earlier release. */
+export const sharedDatabasesMessage = (server: string) =>
+  `This website uses the shared database containers of an earlier release, which have no Valkey. An administrator must move the databases of the server ${server} to the containers of each customer first.`;
 
 /**
  * Makes a database. With createUser, it also makes a user with readwrite access, and gives its password.
@@ -1221,18 +1227,23 @@ export function createDatabase(websiteId: string, engine: DatabaseEngine, name: 
   if (engine === "valkey" && server?.databaseEngines && !server.databaseEngines.includes("valkey")) {
     throw new ApiError("Correct the engine.", { engine: `The agent on the server ${server.name} did not report that it can operate Valkey. Update the agent of the server, then try again.` });
   }
+  if (engine === "valkey" && w.sharedDatabases) {
+    throw new ApiError("Correct the engine.", { engine: sharedDatabasesMessage(server?.name ?? "of the website") });
+  }
   const dbId = id("db");
   void runJob({
     title: `Create ${ENGINE_NAME[engine]} database ${n}`,
     websiteId,
-    steps: engine === "valkey" ? ["Create database and user", "Give the host name to the website container"] : createUser ? ["Create database", "Create user", "Allow the website container only"] : ["Create database"],
+    steps: engine === "valkey" ? ["Create database and user"] : createUser ? ["Create database", "Create user", "Allow the website container only"] : ["Create database"],
     activity: `Created database ${n} for ${w.name}`,
     begin: (d) => audit(d, "Created database", `${w.name} ${n}`),
     apply: (d) => {
       const database: Database = { id: dbId, name: n, engine, websiteId, sizeBytes: 0, serverId: w.serverId };
       if (engine === "valkey") {
-        // The server gives the smallest number that no database of the server has.
-        const used = new Set(d.databases.filter((x) => x.engine === "valkey" && x.serverId === w.serverId).map((x) => x.number));
+        // Each customer has its own Valkey container on a server. The server gives the smallest
+        // number that no database of the customer has there.
+        const sites = new Set(d.websites.filter((x) => x.customerId === w.customerId && x.serverId === w.serverId).map((x) => x.id));
+        const used = new Set(d.databases.filter((x) => x.engine === "valkey" && sites.has(x.websiteId)).map((x) => x.number));
         database.number = Array.from({ length: VALKEY_DATABASES - 1 }, (_, i) => i + 1).find((i) => !used.has(i));
         database.keys = 0;
       }
@@ -1676,6 +1687,36 @@ export function rebootServer(serverId: string) {
       if (s.os.startsWith("Ubuntu")) s.kernel = "6.17.0-15-generic";
     },
   });
+}
+
+/** The websites of a server that use the shared database containers of an earlier release. */
+export const sharedDatabaseWebsites = (d: State, serverId: string) => d.websites.filter((w) => w.serverId === serverId && w.sharedDatabases && w.status !== "failed");
+
+/**
+ * Gives each customer its own database containers on a server from an earlier release. The
+ * panel starts one job for each website that uses the shared containers. The job copies the
+ * databases and the database users of the website to the containers of its customer.
+ */
+export function moveDatabases(serverId: string) {
+  if (LIVE) {
+    return call(() => live.request<{ jobs: live.ApiJob[] }>("POST", `/servers/${serverId}/move-databases`))
+      .then((r) => Promise.all(r.jobs.map((job) => track(job))))
+      .then(() => refresh());
+  }
+  const server = state.servers.find((s) => s.id === serverId)!;
+  const moving = new Set(state.jobs.filter((j) => jobActive(j) && j.title.startsWith("Move the databases of ")).map((j) => j.websiteId));
+  const sites = sharedDatabaseWebsites(state, serverId).filter((w) => w.status !== "starting" && !moving.has(w.id));
+  if (sites.length) update((d) => audit(d, "Moved databases to the containers of each customer", server.name));
+  return Promise.all(sites.map((w) => runJob({
+    title: `Move the databases of ${w.name}`,
+    websiteId: w.id,
+    serverId,
+    steps: ["Start database containers", "Stop website", "Copy databases", "Copy users", "Start website", "Remove old copies"],
+    activity: `Moved the databases of ${w.name} to the containers of its customer`,
+    apply: (d) => {
+      site(d, w.id).sharedDatabases = false;
+    },
+  }))).then(() => undefined);
 }
 
 /** The panel connects to the agent of the server again and records the result. */
