@@ -89,7 +89,7 @@ CF_TEST_VALKEY=127.0.0.1:16379 CF_TEST_VALKEY_PASSWORD=smoke-password \
 Without `CF_TEST_VALKEY`, the test does not run. The other Valkey tests use a small Valkey
 server in the test code.
 
-The test `TestAddDatabaseRules` adds the firewall rules of the database containers to the
+The test `TestAddDatabaseRules` adds the firewall rules of the database servers to the
 firewall file of release 0.1.9 (`internal/actions/testdata/firewall-0.1.9.nft`). When the
 test runs as root on a computer with `nft`, nftables also checks the result. It does not
 change the firewall of the computer.

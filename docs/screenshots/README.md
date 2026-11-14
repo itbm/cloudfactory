@@ -68,6 +68,9 @@ and sample reports for resource use, jobs and backups.
 
 ## 15-databases
 
+The database servers of each customer, with their plans, their use and their host names.
+Below them, the page shows the databases and the database users of all websites.
+
 ![15-databases](15-databases.png)
 
 ## 16-backups
@@ -185,7 +188,33 @@ number of keys. The user of a Valkey database can only get a new password.
 ## 37-move-databases
 
 The page of a server with websites from an earlier release. These websites use shared
-database containers. The administrator moves their databases to the database containers of
-each customer.
+database containers. The administrator moves their databases to the database servers of each
+customer.
 
 ![37-move-databases](37-move-databases.png)
+
+## 38-new-database-server
+
+A new database server for a customer. The plan gives its limits and the number of its
+databases. Only an administrator can set limits that are different from the plan.
+
+![38-new-database-server](38-new-database-server.png)
+
+## 39-change-database-server
+
+A change of a database server: the name, the plan and, for an administrator, the limits.
+
+![39-change-database-server](39-change-database-server.png)
+
+## 40-plans
+
+The plans. Each plan gives the number of database servers of a customer, the limits of each
+database server and the number of databases in each one.
+
+![40-plans](40-plans.png)
+
+## 41-plan-database-servers
+
+The values of a plan for websites and for database servers.
+
+![41-plan-database-servers](41-plan-database-servers.png)
