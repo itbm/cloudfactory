@@ -173,7 +173,7 @@ agent into a worker with the user `cf-agent` and a root helper (refer to
 | Interface | Three lists: commands, operations and connections. No request has a path of root. | A list of fixed forms is small and a person can examine it. A general "run as root" request gives no protection. |
 | Local connections | The root helper opens them for the worker. | The firewall of a server from an earlier release does not change, and the worker cannot connect to the database of the panel. |
 | Failure of the worker start | The agent operates as one root process and tells the panel. | The websites of the server are more important than the boundary. The administrator sees the state and can correct it. |
-| Earlier releases | The root helper does not install a release that has no root helper. | A worker that an attacker controls cannot go back to an agent with one root process. |
+| Earlier releases | The root helper does not install a release that has no root helper. It removes the previous binary of such a release 10 minutes after the worker starts. | A worker that an attacker controls cannot go back to an agent with one root process. The automatic rollback still protects the first minutes after the update. |
 
 The boundary has limits: the worker can still act as each website user, and it manages the
 database servers. [security.md](security.md#the-root-helper-of-the-agent) gives the full list.

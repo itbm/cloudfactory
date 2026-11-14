@@ -134,6 +134,42 @@ func TestTheSocketHasItsOwnDirectory(t *testing.T) {
 	}
 }
 
+// The rollback of the service must not put back the binary of a release with no root helper,
+// after the new agent operated for some time. It keeps the binary of a release with one.
+func TestTheRootHelperRemovesThePreviousBinaryOfAnEarlierRelease(t *testing.T) {
+	dir := t.TempDir()
+	old := filepath.Join(dir, "cf-agent.previous")
+	if err := os.WriteFile(old, []byte("\x7fELF the agent of release 0.1.9"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if removed, err := dropOldPrevious(old); err != nil || !removed {
+		t.Fatalf("removed = %v, err = %v", removed, err)
+	}
+	if _, err := os.Stat(old); !os.IsNotExist(err) {
+		t.Errorf("the binary of the earlier release stays: %v", err)
+	}
+	// No previous binary is not an error.
+	if removed, err := dropOldPrevious(old); err != nil || removed {
+		t.Errorf("no binary: removed = %v, err = %v", removed, err)
+	}
+	// The binary of this test has the mark, as each agent with a root helper has it.
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(self)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current := filepath.Join(dir, "cf-agent.current")
+	if err := os.WriteFile(current, b, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if removed, err := dropOldPrevious(current); err != nil || removed {
+		t.Errorf("a binary with a root helper: removed = %v, err = %v", removed, err)
+	}
+}
+
 // Only root and the group of the worker can connect to the root helper.
 func TestTheSocketOfTheRootHelperIsForTheWorkerOnly(t *testing.T) {
 	_, gid := workerID()

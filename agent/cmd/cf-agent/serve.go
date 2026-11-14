@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"errors"
@@ -109,7 +110,50 @@ func serve(ctx context.Context) error {
 			slog.Error("the root helper stopped", "err", err)
 		}
 	}()
+	go func() {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(rollbackWindow):
+		}
+		if removed, err := dropOldPrevious(root.Updater.Previous()); err != nil {
+			slog.Warn("examine the previous agent binary", "err", err)
+		} else if removed {
+			slog.Info("removed the previous agent binary: its release has no root helper, so \"cf-agent rollback\" must not put it back")
+		}
+	}()
 	return superviseWorker(ctx, uid, gid)
+}
+
+// helperMark is a text in the binary of each agent release that has a root helper.
+const helperMark = "cloudfactory-agent:has-root-helper"
+
+// rollbackWindow is the time in which a new agent can go back to the binary of a release
+// with no root helper.
+const rollbackWindow = 10 * time.Minute
+
+// dropOldPrevious removes the binary that "cf-agent rollback" puts back, when that binary
+// is from a release with no root helper.
+//
+// The service goes back to the previous binary when the agent stops five times in five
+// minutes (cf-agent-rollback.service). That protects the update from an earlier release: a
+// new agent that does not start does not stay. But a person who can stop the worker again
+// and again can also start the rollback, and the binary of an earlier release is one root
+// process. Thus the root helper removes that binary when the worker has operated for
+// rollbackWindow. After that, the rollback has no binary, and the service stays stopped until
+// an administrator repairs it.
+func dropOldPrevious(path string) (removed bool, err error) {
+	b, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if bytes.Contains(b, []byte(helperMark)) {
+		return false, nil
+	}
+	return true, os.Remove(path)
 }
 
 // changeConfig changes the settings file of the agent.

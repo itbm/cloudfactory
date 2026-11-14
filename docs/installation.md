@@ -783,9 +783,15 @@ when you have the correction.
 
 The agent does not update itself to a release that has no root helper, also when you permit
 an older version. `cf-agent rollback` and the automatic rollback after a failed update
-continue to operate, because all releases use the same service unit and the same files. To
-go back to release 0.1.9 or an earlier release for a longer time, run the `install.sh` of
-that release as root.
+continue to operate, because all releases use the same service unit and the same files.
+
+After the update from release 0.1.9 or an earlier release, the previous binary is one root
+process. If the new agent does not start, the service goes back to that binary, as before.
+When the worker has operated for 10 minutes, the root helper removes that binary. After that
+time, `cf-agent rollback` has no binary until the next update of the agent. Thus a person
+who can stop the worker again and again cannot make the service go back to an agent with no
+root helper. To go back to release 0.1.9 or an earlier release after that time, run the
+`install.sh` of that release as root.
 
 ### Disk quotas
 

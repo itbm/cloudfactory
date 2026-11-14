@@ -224,6 +224,11 @@ These rules apply to the three lists:
 - The root helper examines the signature and the version of a new agent release again. It
   installs a release only when the signed manifest has the line `rootHelper=1`. Thus the
   worker cannot install a release that has no root helper.
+- The service goes back to the previous agent binary when the agent stops five times in
+  five minutes. After the update from a release with no root helper, the root helper
+  removes that previous binary when the worker has operated for 10 minutes. Thus a person
+  who can stop the worker again and again cannot make the service go back to an agent that
+  is one root process.
 - The root helper connects the worker to the port of a website, to the HTTPS port of the edge
   proxy, to the SFTP port and to the agent port of the panel on the private service address.
   It also connects the worker to a Valkey database server. It refuses the database of the
