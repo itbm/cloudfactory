@@ -101,6 +101,16 @@ const (
 	// AgentServiceDeleteDatabaseServerProcedure is the fully-qualified name of the AgentService's
 	// DeleteDatabaseServer RPC.
 	AgentServiceDeleteDatabaseServerProcedure = "/cloudfactory.agent.v1.AgentService/DeleteDatabaseServer"
+	// AgentServiceSetCronJobsProcedure is the fully-qualified name of the AgentService's SetCronJobs
+	// RPC.
+	AgentServiceSetCronJobsProcedure = "/cloudfactory.agent.v1.AgentService/SetCronJobs"
+	// AgentServiceRunCronJobProcedure is the fully-qualified name of the AgentService's RunCronJob RPC.
+	AgentServiceRunCronJobProcedure = "/cloudfactory.agent.v1.AgentService/RunCronJob"
+	// AgentServiceDeployProcedure is the fully-qualified name of the AgentService's Deploy RPC.
+	AgentServiceDeployProcedure = "/cloudfactory.agent.v1.AgentService/Deploy"
+	// AgentServiceActivateReleaseProcedure is the fully-qualified name of the AgentService's
+	// ActivateRelease RPC.
+	AgentServiceActivateReleaseProcedure = "/cloudfactory.agent.v1.AgentService/ActivateRelease"
 	// AgentServiceSetMeshProcedure is the fully-qualified name of the AgentService's SetMesh RPC.
 	AgentServiceSetMeshProcedure = "/cloudfactory.agent.v1.AgentService/SetMesh"
 	// AgentServiceRotateMeshKeyProcedure is the fully-qualified name of the AgentService's
@@ -108,6 +118,21 @@ const (
 	AgentServiceRotateMeshKeyProcedure = "/cloudfactory.agent.v1.AgentService/RotateMeshKey"
 	// AgentServiceGetStatusProcedure is the fully-qualified name of the AgentService's GetStatus RPC.
 	AgentServiceGetStatusProcedure = "/cloudfactory.agent.v1.AgentService/GetStatus"
+	// AgentServiceListFilesProcedure is the fully-qualified name of the AgentService's ListFiles RPC.
+	AgentServiceListFilesProcedure = "/cloudfactory.agent.v1.AgentService/ListFiles"
+	// AgentServiceReadFileProcedure is the fully-qualified name of the AgentService's ReadFile RPC.
+	AgentServiceReadFileProcedure = "/cloudfactory.agent.v1.AgentService/ReadFile"
+	// AgentServiceWriteFileProcedure is the fully-qualified name of the AgentService's WriteFile RPC.
+	AgentServiceWriteFileProcedure = "/cloudfactory.agent.v1.AgentService/WriteFile"
+	// AgentServiceMakeDirectoryProcedure is the fully-qualified name of the AgentService's
+	// MakeDirectory RPC.
+	AgentServiceMakeDirectoryProcedure = "/cloudfactory.agent.v1.AgentService/MakeDirectory"
+	// AgentServiceMoveFileProcedure is the fully-qualified name of the AgentService's MoveFile RPC.
+	AgentServiceMoveFileProcedure = "/cloudfactory.agent.v1.AgentService/MoveFile"
+	// AgentServiceDeleteFileProcedure is the fully-qualified name of the AgentService's DeleteFile RPC.
+	AgentServiceDeleteFileProcedure = "/cloudfactory.agent.v1.AgentService/DeleteFile"
+	// AgentServiceGetLogsProcedure is the fully-qualified name of the AgentService's GetLogs RPC.
+	AgentServiceGetLogsProcedure = "/cloudfactory.agent.v1.AgentService/GetLogs"
 )
 
 // AgentServiceClient is a client for the cloudfactory.agent.v1.AgentService service.
@@ -134,10 +159,24 @@ type AgentServiceClient interface {
 	SetPanelCertificate(context.Context, *connect.Request[v1.SetPanelCertificateRequest]) (*connect.Response[v1.JobAccepted], error)
 	SetDatabaseServer(context.Context, *connect.Request[v1.DatabaseServerRequest]) (*connect.Response[v1.JobAccepted], error)
 	DeleteDatabaseServer(context.Context, *connect.Request[v1.DeleteDatabaseServerRequest]) (*connect.Response[v1.JobAccepted], error)
+	SetCronJobs(context.Context, *connect.Request[v1.SetCronJobsRequest]) (*connect.Response[v1.JobAccepted], error)
+	RunCronJob(context.Context, *connect.Request[v1.RunCronJobRequest]) (*connect.Response[v1.JobAccepted], error)
+	Deploy(context.Context, *connect.Request[v1.DeployRequest]) (*connect.Response[v1.JobAccepted], error)
+	ActivateRelease(context.Context, *connect.Request[v1.ActivateReleaseRequest]) (*connect.Response[v1.JobAccepted], error)
 	SetMesh(context.Context, *connect.Request[v1.SetMeshRequest]) (*connect.Response[v1.JobAccepted], error)
 	RotateMeshKey(context.Context, *connect.Request[v1.RotateMeshKeyRequest]) (*connect.Response[v1.JobAccepted], error)
 	// Returns the actual state of the server at once. This method does not make a job.
 	GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.HostStatus], error)
+	// The file manager and the logs of a website. These methods do not make a job: they give
+	// the result at once. The agent does each of them as the Unix user of the website, in the
+	// directory of the website.
+	ListFiles(context.Context, *connect.Request[v1.FileRequest]) (*connect.Response[v1.FileList], error)
+	ReadFile(context.Context, *connect.Request[v1.FileRequest]) (*connect.Response[v1.FileContent], error)
+	WriteFile(context.Context, *connect.Request[v1.WriteFileRequest]) (*connect.Response[v1.FileEntry], error)
+	MakeDirectory(context.Context, *connect.Request[v1.FileRequest]) (*connect.Response[v1.FileEntry], error)
+	MoveFile(context.Context, *connect.Request[v1.MoveFileRequest]) (*connect.Response[v1.FileEntry], error)
+	DeleteFile(context.Context, *connect.Request[v1.FileRequest]) (*connect.Response[v1.FileDeleted], error)
+	GetLogs(context.Context, *connect.Request[v1.GetLogsRequest]) (*connect.Response[v1.Logs], error)
 }
 
 // NewAgentServiceClient constructs a client for the cloudfactory.agent.v1.AgentService service. By
@@ -283,6 +322,30 @@ func NewAgentServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(agentServiceMethods.ByName("DeleteDatabaseServer")),
 			connect.WithClientOptions(opts...),
 		),
+		setCronJobs: connect.NewClient[v1.SetCronJobsRequest, v1.JobAccepted](
+			httpClient,
+			baseURL+AgentServiceSetCronJobsProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("SetCronJobs")),
+			connect.WithClientOptions(opts...),
+		),
+		runCronJob: connect.NewClient[v1.RunCronJobRequest, v1.JobAccepted](
+			httpClient,
+			baseURL+AgentServiceRunCronJobProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("RunCronJob")),
+			connect.WithClientOptions(opts...),
+		),
+		deploy: connect.NewClient[v1.DeployRequest, v1.JobAccepted](
+			httpClient,
+			baseURL+AgentServiceDeployProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("Deploy")),
+			connect.WithClientOptions(opts...),
+		),
+		activateRelease: connect.NewClient[v1.ActivateReleaseRequest, v1.JobAccepted](
+			httpClient,
+			baseURL+AgentServiceActivateReleaseProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("ActivateRelease")),
+			connect.WithClientOptions(opts...),
+		),
 		setMesh: connect.NewClient[v1.SetMeshRequest, v1.JobAccepted](
 			httpClient,
 			baseURL+AgentServiceSetMeshProcedure,
@@ -299,6 +362,48 @@ func NewAgentServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			httpClient,
 			baseURL+AgentServiceGetStatusProcedure,
 			connect.WithSchema(agentServiceMethods.ByName("GetStatus")),
+			connect.WithClientOptions(opts...),
+		),
+		listFiles: connect.NewClient[v1.FileRequest, v1.FileList](
+			httpClient,
+			baseURL+AgentServiceListFilesProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("ListFiles")),
+			connect.WithClientOptions(opts...),
+		),
+		readFile: connect.NewClient[v1.FileRequest, v1.FileContent](
+			httpClient,
+			baseURL+AgentServiceReadFileProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("ReadFile")),
+			connect.WithClientOptions(opts...),
+		),
+		writeFile: connect.NewClient[v1.WriteFileRequest, v1.FileEntry](
+			httpClient,
+			baseURL+AgentServiceWriteFileProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("WriteFile")),
+			connect.WithClientOptions(opts...),
+		),
+		makeDirectory: connect.NewClient[v1.FileRequest, v1.FileEntry](
+			httpClient,
+			baseURL+AgentServiceMakeDirectoryProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("MakeDirectory")),
+			connect.WithClientOptions(opts...),
+		),
+		moveFile: connect.NewClient[v1.MoveFileRequest, v1.FileEntry](
+			httpClient,
+			baseURL+AgentServiceMoveFileProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("MoveFile")),
+			connect.WithClientOptions(opts...),
+		),
+		deleteFile: connect.NewClient[v1.FileRequest, v1.FileDeleted](
+			httpClient,
+			baseURL+AgentServiceDeleteFileProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("DeleteFile")),
+			connect.WithClientOptions(opts...),
+		),
+		getLogs: connect.NewClient[v1.GetLogsRequest, v1.Logs](
+			httpClient,
+			baseURL+AgentServiceGetLogsProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("GetLogs")),
 			connect.WithClientOptions(opts...),
 		),
 	}
@@ -328,9 +433,20 @@ type agentServiceClient struct {
 	setPanelCertificate  *connect.Client[v1.SetPanelCertificateRequest, v1.JobAccepted]
 	setDatabaseServer    *connect.Client[v1.DatabaseServerRequest, v1.JobAccepted]
 	deleteDatabaseServer *connect.Client[v1.DeleteDatabaseServerRequest, v1.JobAccepted]
+	setCronJobs          *connect.Client[v1.SetCronJobsRequest, v1.JobAccepted]
+	runCronJob           *connect.Client[v1.RunCronJobRequest, v1.JobAccepted]
+	deploy               *connect.Client[v1.DeployRequest, v1.JobAccepted]
+	activateRelease      *connect.Client[v1.ActivateReleaseRequest, v1.JobAccepted]
 	setMesh              *connect.Client[v1.SetMeshRequest, v1.JobAccepted]
 	rotateMeshKey        *connect.Client[v1.RotateMeshKeyRequest, v1.JobAccepted]
 	getStatus            *connect.Client[v1.GetStatusRequest, v1.HostStatus]
+	listFiles            *connect.Client[v1.FileRequest, v1.FileList]
+	readFile             *connect.Client[v1.FileRequest, v1.FileContent]
+	writeFile            *connect.Client[v1.WriteFileRequest, v1.FileEntry]
+	makeDirectory        *connect.Client[v1.FileRequest, v1.FileEntry]
+	moveFile             *connect.Client[v1.MoveFileRequest, v1.FileEntry]
+	deleteFile           *connect.Client[v1.FileRequest, v1.FileDeleted]
+	getLogs              *connect.Client[v1.GetLogsRequest, v1.Logs]
 }
 
 // CreateWebsite calls cloudfactory.agent.v1.AgentService.CreateWebsite.
@@ -443,6 +559,26 @@ func (c *agentServiceClient) DeleteDatabaseServer(ctx context.Context, req *conn
 	return c.deleteDatabaseServer.CallUnary(ctx, req)
 }
 
+// SetCronJobs calls cloudfactory.agent.v1.AgentService.SetCronJobs.
+func (c *agentServiceClient) SetCronJobs(ctx context.Context, req *connect.Request[v1.SetCronJobsRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return c.setCronJobs.CallUnary(ctx, req)
+}
+
+// RunCronJob calls cloudfactory.agent.v1.AgentService.RunCronJob.
+func (c *agentServiceClient) RunCronJob(ctx context.Context, req *connect.Request[v1.RunCronJobRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return c.runCronJob.CallUnary(ctx, req)
+}
+
+// Deploy calls cloudfactory.agent.v1.AgentService.Deploy.
+func (c *agentServiceClient) Deploy(ctx context.Context, req *connect.Request[v1.DeployRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return c.deploy.CallUnary(ctx, req)
+}
+
+// ActivateRelease calls cloudfactory.agent.v1.AgentService.ActivateRelease.
+func (c *agentServiceClient) ActivateRelease(ctx context.Context, req *connect.Request[v1.ActivateReleaseRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return c.activateRelease.CallUnary(ctx, req)
+}
+
 // SetMesh calls cloudfactory.agent.v1.AgentService.SetMesh.
 func (c *agentServiceClient) SetMesh(ctx context.Context, req *connect.Request[v1.SetMeshRequest]) (*connect.Response[v1.JobAccepted], error) {
 	return c.setMesh.CallUnary(ctx, req)
@@ -456,6 +592,41 @@ func (c *agentServiceClient) RotateMeshKey(ctx context.Context, req *connect.Req
 // GetStatus calls cloudfactory.agent.v1.AgentService.GetStatus.
 func (c *agentServiceClient) GetStatus(ctx context.Context, req *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.HostStatus], error) {
 	return c.getStatus.CallUnary(ctx, req)
+}
+
+// ListFiles calls cloudfactory.agent.v1.AgentService.ListFiles.
+func (c *agentServiceClient) ListFiles(ctx context.Context, req *connect.Request[v1.FileRequest]) (*connect.Response[v1.FileList], error) {
+	return c.listFiles.CallUnary(ctx, req)
+}
+
+// ReadFile calls cloudfactory.agent.v1.AgentService.ReadFile.
+func (c *agentServiceClient) ReadFile(ctx context.Context, req *connect.Request[v1.FileRequest]) (*connect.Response[v1.FileContent], error) {
+	return c.readFile.CallUnary(ctx, req)
+}
+
+// WriteFile calls cloudfactory.agent.v1.AgentService.WriteFile.
+func (c *agentServiceClient) WriteFile(ctx context.Context, req *connect.Request[v1.WriteFileRequest]) (*connect.Response[v1.FileEntry], error) {
+	return c.writeFile.CallUnary(ctx, req)
+}
+
+// MakeDirectory calls cloudfactory.agent.v1.AgentService.MakeDirectory.
+func (c *agentServiceClient) MakeDirectory(ctx context.Context, req *connect.Request[v1.FileRequest]) (*connect.Response[v1.FileEntry], error) {
+	return c.makeDirectory.CallUnary(ctx, req)
+}
+
+// MoveFile calls cloudfactory.agent.v1.AgentService.MoveFile.
+func (c *agentServiceClient) MoveFile(ctx context.Context, req *connect.Request[v1.MoveFileRequest]) (*connect.Response[v1.FileEntry], error) {
+	return c.moveFile.CallUnary(ctx, req)
+}
+
+// DeleteFile calls cloudfactory.agent.v1.AgentService.DeleteFile.
+func (c *agentServiceClient) DeleteFile(ctx context.Context, req *connect.Request[v1.FileRequest]) (*connect.Response[v1.FileDeleted], error) {
+	return c.deleteFile.CallUnary(ctx, req)
+}
+
+// GetLogs calls cloudfactory.agent.v1.AgentService.GetLogs.
+func (c *agentServiceClient) GetLogs(ctx context.Context, req *connect.Request[v1.GetLogsRequest]) (*connect.Response[v1.Logs], error) {
+	return c.getLogs.CallUnary(ctx, req)
 }
 
 // AgentServiceHandler is an implementation of the cloudfactory.agent.v1.AgentService service.
@@ -482,10 +653,24 @@ type AgentServiceHandler interface {
 	SetPanelCertificate(context.Context, *connect.Request[v1.SetPanelCertificateRequest]) (*connect.Response[v1.JobAccepted], error)
 	SetDatabaseServer(context.Context, *connect.Request[v1.DatabaseServerRequest]) (*connect.Response[v1.JobAccepted], error)
 	DeleteDatabaseServer(context.Context, *connect.Request[v1.DeleteDatabaseServerRequest]) (*connect.Response[v1.JobAccepted], error)
+	SetCronJobs(context.Context, *connect.Request[v1.SetCronJobsRequest]) (*connect.Response[v1.JobAccepted], error)
+	RunCronJob(context.Context, *connect.Request[v1.RunCronJobRequest]) (*connect.Response[v1.JobAccepted], error)
+	Deploy(context.Context, *connect.Request[v1.DeployRequest]) (*connect.Response[v1.JobAccepted], error)
+	ActivateRelease(context.Context, *connect.Request[v1.ActivateReleaseRequest]) (*connect.Response[v1.JobAccepted], error)
 	SetMesh(context.Context, *connect.Request[v1.SetMeshRequest]) (*connect.Response[v1.JobAccepted], error)
 	RotateMeshKey(context.Context, *connect.Request[v1.RotateMeshKeyRequest]) (*connect.Response[v1.JobAccepted], error)
 	// Returns the actual state of the server at once. This method does not make a job.
 	GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.HostStatus], error)
+	// The file manager and the logs of a website. These methods do not make a job: they give
+	// the result at once. The agent does each of them as the Unix user of the website, in the
+	// directory of the website.
+	ListFiles(context.Context, *connect.Request[v1.FileRequest]) (*connect.Response[v1.FileList], error)
+	ReadFile(context.Context, *connect.Request[v1.FileRequest]) (*connect.Response[v1.FileContent], error)
+	WriteFile(context.Context, *connect.Request[v1.WriteFileRequest]) (*connect.Response[v1.FileEntry], error)
+	MakeDirectory(context.Context, *connect.Request[v1.FileRequest]) (*connect.Response[v1.FileEntry], error)
+	MoveFile(context.Context, *connect.Request[v1.MoveFileRequest]) (*connect.Response[v1.FileEntry], error)
+	DeleteFile(context.Context, *connect.Request[v1.FileRequest]) (*connect.Response[v1.FileDeleted], error)
+	GetLogs(context.Context, *connect.Request[v1.GetLogsRequest]) (*connect.Response[v1.Logs], error)
 }
 
 // NewAgentServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -627,6 +812,30 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(agentServiceMethods.ByName("DeleteDatabaseServer")),
 		connect.WithHandlerOptions(opts...),
 	)
+	agentServiceSetCronJobsHandler := connect.NewUnaryHandler(
+		AgentServiceSetCronJobsProcedure,
+		svc.SetCronJobs,
+		connect.WithSchema(agentServiceMethods.ByName("SetCronJobs")),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentServiceRunCronJobHandler := connect.NewUnaryHandler(
+		AgentServiceRunCronJobProcedure,
+		svc.RunCronJob,
+		connect.WithSchema(agentServiceMethods.ByName("RunCronJob")),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentServiceDeployHandler := connect.NewUnaryHandler(
+		AgentServiceDeployProcedure,
+		svc.Deploy,
+		connect.WithSchema(agentServiceMethods.ByName("Deploy")),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentServiceActivateReleaseHandler := connect.NewUnaryHandler(
+		AgentServiceActivateReleaseProcedure,
+		svc.ActivateRelease,
+		connect.WithSchema(agentServiceMethods.ByName("ActivateRelease")),
+		connect.WithHandlerOptions(opts...),
+	)
 	agentServiceSetMeshHandler := connect.NewUnaryHandler(
 		AgentServiceSetMeshProcedure,
 		svc.SetMesh,
@@ -643,6 +852,48 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 		AgentServiceGetStatusProcedure,
 		svc.GetStatus,
 		connect.WithSchema(agentServiceMethods.ByName("GetStatus")),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentServiceListFilesHandler := connect.NewUnaryHandler(
+		AgentServiceListFilesProcedure,
+		svc.ListFiles,
+		connect.WithSchema(agentServiceMethods.ByName("ListFiles")),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentServiceReadFileHandler := connect.NewUnaryHandler(
+		AgentServiceReadFileProcedure,
+		svc.ReadFile,
+		connect.WithSchema(agentServiceMethods.ByName("ReadFile")),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentServiceWriteFileHandler := connect.NewUnaryHandler(
+		AgentServiceWriteFileProcedure,
+		svc.WriteFile,
+		connect.WithSchema(agentServiceMethods.ByName("WriteFile")),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentServiceMakeDirectoryHandler := connect.NewUnaryHandler(
+		AgentServiceMakeDirectoryProcedure,
+		svc.MakeDirectory,
+		connect.WithSchema(agentServiceMethods.ByName("MakeDirectory")),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentServiceMoveFileHandler := connect.NewUnaryHandler(
+		AgentServiceMoveFileProcedure,
+		svc.MoveFile,
+		connect.WithSchema(agentServiceMethods.ByName("MoveFile")),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentServiceDeleteFileHandler := connect.NewUnaryHandler(
+		AgentServiceDeleteFileProcedure,
+		svc.DeleteFile,
+		connect.WithSchema(agentServiceMethods.ByName("DeleteFile")),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentServiceGetLogsHandler := connect.NewUnaryHandler(
+		AgentServiceGetLogsProcedure,
+		svc.GetLogs,
+		connect.WithSchema(agentServiceMethods.ByName("GetLogs")),
 		connect.WithHandlerOptions(opts...),
 	)
 	return "/cloudfactory.agent.v1.AgentService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -691,12 +942,34 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 			agentServiceSetDatabaseServerHandler.ServeHTTP(w, r)
 		case AgentServiceDeleteDatabaseServerProcedure:
 			agentServiceDeleteDatabaseServerHandler.ServeHTTP(w, r)
+		case AgentServiceSetCronJobsProcedure:
+			agentServiceSetCronJobsHandler.ServeHTTP(w, r)
+		case AgentServiceRunCronJobProcedure:
+			agentServiceRunCronJobHandler.ServeHTTP(w, r)
+		case AgentServiceDeployProcedure:
+			agentServiceDeployHandler.ServeHTTP(w, r)
+		case AgentServiceActivateReleaseProcedure:
+			agentServiceActivateReleaseHandler.ServeHTTP(w, r)
 		case AgentServiceSetMeshProcedure:
 			agentServiceSetMeshHandler.ServeHTTP(w, r)
 		case AgentServiceRotateMeshKeyProcedure:
 			agentServiceRotateMeshKeyHandler.ServeHTTP(w, r)
 		case AgentServiceGetStatusProcedure:
 			agentServiceGetStatusHandler.ServeHTTP(w, r)
+		case AgentServiceListFilesProcedure:
+			agentServiceListFilesHandler.ServeHTTP(w, r)
+		case AgentServiceReadFileProcedure:
+			agentServiceReadFileHandler.ServeHTTP(w, r)
+		case AgentServiceWriteFileProcedure:
+			agentServiceWriteFileHandler.ServeHTTP(w, r)
+		case AgentServiceMakeDirectoryProcedure:
+			agentServiceMakeDirectoryHandler.ServeHTTP(w, r)
+		case AgentServiceMoveFileProcedure:
+			agentServiceMoveFileHandler.ServeHTTP(w, r)
+		case AgentServiceDeleteFileProcedure:
+			agentServiceDeleteFileHandler.ServeHTTP(w, r)
+		case AgentServiceGetLogsProcedure:
+			agentServiceGetLogsHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -794,6 +1067,22 @@ func (UnimplementedAgentServiceHandler) DeleteDatabaseServer(context.Context, *c
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.DeleteDatabaseServer is not implemented"))
 }
 
+func (UnimplementedAgentServiceHandler) SetCronJobs(context.Context, *connect.Request[v1.SetCronJobsRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.SetCronJobs is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) RunCronJob(context.Context, *connect.Request[v1.RunCronJobRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.RunCronJob is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) Deploy(context.Context, *connect.Request[v1.DeployRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.Deploy is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) ActivateRelease(context.Context, *connect.Request[v1.ActivateReleaseRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.ActivateRelease is not implemented"))
+}
+
 func (UnimplementedAgentServiceHandler) SetMesh(context.Context, *connect.Request[v1.SetMeshRequest]) (*connect.Response[v1.JobAccepted], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.SetMesh is not implemented"))
 }
@@ -804,4 +1093,32 @@ func (UnimplementedAgentServiceHandler) RotateMeshKey(context.Context, *connect.
 
 func (UnimplementedAgentServiceHandler) GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.HostStatus], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.GetStatus is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) ListFiles(context.Context, *connect.Request[v1.FileRequest]) (*connect.Response[v1.FileList], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.ListFiles is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) ReadFile(context.Context, *connect.Request[v1.FileRequest]) (*connect.Response[v1.FileContent], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.ReadFile is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) WriteFile(context.Context, *connect.Request[v1.WriteFileRequest]) (*connect.Response[v1.FileEntry], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.WriteFile is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) MakeDirectory(context.Context, *connect.Request[v1.FileRequest]) (*connect.Response[v1.FileEntry], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.MakeDirectory is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) MoveFile(context.Context, *connect.Request[v1.MoveFileRequest]) (*connect.Response[v1.FileEntry], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.MoveFile is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) DeleteFile(context.Context, *connect.Request[v1.FileRequest]) (*connect.Response[v1.FileDeleted], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.DeleteFile is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) GetLogs(context.Context, *connect.Request[v1.GetLogsRequest]) (*connect.Response[v1.Logs], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.GetLogs is not implemented"))
 }

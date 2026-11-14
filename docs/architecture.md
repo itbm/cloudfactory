@@ -298,6 +298,84 @@ the administrators. The image `sftp` has OpenSSH and `libnss-extrausers`.
   service of the host. Until this step is complete, the agent reports port 22 to the panel.
   Refer to [installation.md](installation.md#servers-that-you-installed-with-release-01).
 
+## Files, logs, cron jobs and deploys of a website
+
+The agent does all of this work as the Unix user of the website (`runuser -u <user>`). The
+root helper permits each program as a website user, so this work adds no operation to its
+lists.
+
+### File manager and logs
+
+The panel does not make a job for a file operation or for the logs. The API calls the agent
+and gives the answer in the same request.
+
+```text
+ web panel or cf ──► API ──► worker ──► runuser -u <user> -- cf-agent site-files <directory>
+```
+
+- The worker starts `cf-agent site-files` as the website user and sends one request as JSON
+  on standard input. The program opens the directory of the website as a root directory
+  (`os.Root`), so a path or a symbolic link cannot go out of that directory.
+- A path starts with `/`. `/` is the directory of the website, which is `/app` in the
+  container.
+- The limits are 2 MiB for a read, 5 MiB for a write and 2000 entries for a list.
+- The unit of a website container has the log driver `k8s-file`. The container writes its
+  standard output and its standard error to `website.log` in the home directory of the
+  website user. Podman starts a new file at 10 MB. For the logs, the agent reads the last
+  lines of this file as the website user. A line from standard output has the stream
+  `access`, and a line from standard error has the stream `error`.
+
+### Cron jobs
+
+- The panel keeps the cron jobs of a website and sends the full list to the agent with the
+  job `SetCronJobs`. The agent keeps the list in its state file.
+- Each minute, the worker starts the commands whose schedule agrees with the time in UTC. A
+  schedule has the 5 fields of cron. The agent does not start a command while the previous
+  run of that cron job continues.
+- The agent runs a command with `podman exec --workdir /app <container> sh -c <command>` as
+  the website user. Thus the command runs in the gVisor container of the website, with the
+  limits of the website. The agent stops a command after 1 hour.
+- The agent sends the exit code and the end of the output of each run in its status report.
+  The panel shows them for the last run.
+- **Run now** makes the job `RunCronJob`. The job fails when the exit code is not 0.
+
+### Deploys from Git
+
+A website can have one Git source: a repository, a branch, a web directory, build commands
+and secrets. The panel makes an Ed25519 deploy key for the source and shows the public key.
+
+The job `Deploy` has these steps:
+
+1. **Get the code.** The agent clones the branch into `releases/<release ID>` in the
+   directory of the website.
+2. **Build.** The agent runs the build commands in that directory.
+3. The steps of a runtime change (refer to
+   [Change of runtime without downtime](#change-of-runtime-without-downtime)): the agent
+   starts a second container with the document root `releases/<release ID>/<web directory>`,
+   does a health check, changes the route, and stops the old container.
+4. **Remove old releases.** The agent removes the release directories that the panel does
+   not keep. The panel keeps the live release and the last 4 releases before it.
+
+- Steps 1 and 2 run in a build container, not in the live container. The build container
+  uses the runtime image of the website and gVisor, has the same limits as a website, and
+  runs as the website user. It sees the directory of the website as `/app`.
+- The agent writes the deploy key and the secrets to files that only the website user can
+  read, for the time of the build, and then removes them. The secrets are environment
+  variables of the build commands. The panel adds the key and the secrets to the job when
+  it sends the job, so they are not in the `agent_jobs` table.
+- The link `current` in the directory of the website points to the live release. The
+  directory `shared` is for files that all releases use, for example `.env` and uploads.
+  A build command can make a link to it.
+- When a step fails, the old container continues, and the agent removes the new release
+  directory. The release has the state `failed` and shows the cause.
+- **Go back** makes the job `ActivateRelease`. It does step 3 with a release that the server
+  keeps.
+- A Git host starts a deploy with `POST /api/v1/hooks/deploy/<token>`. The request needs no
+  sign-in: the token in the address is the secret. The panel ignores a push to a different
+  branch.
+- While a website deploys from Git, the panel refuses a change of the document root on the
+  Runtime tab. Change the web directory of the Git source.
+
 ## Databases
 
 A customer makes database servers as it makes websites. A database server is one container

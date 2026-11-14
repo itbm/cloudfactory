@@ -221,6 +221,7 @@ func newDeps(cfg config.Config, run execx.Runner) (*actions.Deps, error) {
 		// The images of the services have the version of the agent. The release signs them.
 		ServiceImage: func(name string) string { return cfg.Registry + "/" + name + ":" + version },
 		EdgeImage:    cfg.Registry + "/edge:" + version,
+		AgentBinary:  binaryPath,
 		SftpImage:    cfg.Registry + "/sftp:" + version,
 		SftpPort:     cfg.SftpPort,
 	}
@@ -536,6 +537,8 @@ func work(ctx context.Context, cfg config.Config, g gate.Gate) error {
 	collector := status.Collector{Run: g, Apt: apt, AgentVersion: version, GVisorVersion: gv.Current, Services: []string{"cf-agent", "ssh", "cf-sftp"}, UserServices: []string{host.EdgeUser + ":cf-edge.service"}, DiskPath: cfg.SitesDir, Extra: deps.FillReport}
 
 	go reportLoop(ctx, reporter, collector, time.Duration(cfg.ReportSeconds)*time.Second, cfg.PanelServerCertificateSHA256 == "", deps.SavePanelCAPin)
+	// The cron jobs of the websites.
+	go deps.RunCron(ctx)
 	go func() {
 		for range time.Tick(24 * time.Hour) {
 			runner.Prune(time.Now().Add(-30 * 24 * time.Hour))

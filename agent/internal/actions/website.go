@@ -220,6 +220,7 @@ func (d *Deps) unit(w *agentv1.Website, port int, suffix string) quadlet.Website
 		// customer of the website.
 		DatabaseAddress: d.databaseAddress(w.GetId()),
 		HostsFile:       d.hostsFileOf(w.GetUnixUser()),
+		LogFile:         d.logFile(w.GetUnixUser()),
 		Limits:          quadlet.Limits{VCPUs: l.GetVcpus(), MemoryBytes: l.GetMemoryBytes(), Processes: l.GetProcesses(), DiskIOBytesPerSecond: l.GetDiskIoBytesPerSecond(), BlockDevice: d.BlockDevice},
 	}
 }

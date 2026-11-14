@@ -66,6 +66,31 @@ The product specification, section 6.4, gives the requirements.
   The panel refuses to turn on SFTP for a suspended customer and for a website in the state
   `failed`.
 
+## Files, logs, cron jobs and deploys
+
+- The agent does each file operation, each read of the logs, each cron command and each
+  build as the Unix user of the website. The root helper has no new command and no new
+  operation for these functions.
+- The file manager opens the directory of the website as a root directory (`os.Root` in
+  Go). The kernel refuses a path that goes out of it, also through a symbolic link. The API
+  and the agent check each path with the same rule (`filePath` in `schema/input-rules.json`).
+- A cron command runs in the gVisor container of the website. A build runs in a second
+  gVisor container with all capabilities dropped, a read-only root file system and the
+  limits of a website. The firewall rules for the website user apply to both.
+- A customer controls the commands of its cron jobs and its builds. This gives the customer
+  no new rights: the customer can run the same code in its website.
+- The panel encrypts the private deploy key, the webhook token and the build secrets in its
+  database. The API gives the names of the secrets, not their values. The private key and
+  the secrets are in a job only when the panel sends it to the agent.
+- The address of a webhook has a random token. Each person who has the address can start a
+  deploy of the branch, but cannot change what the deploy does. The route accepts 30
+  requests each minute. The panel does not start a second deploy while one is in progress.
+- A user needs the token scope for websites to use these routes. An owner sees only its own
+  websites. For a suspended customer, the panel refuses each change of a file, a cron job and
+  a Git source, and each deploy.
+- The panel records each change of a file, a cron job and a Git source in the audit log.
+  It does not record the content of a file.
+
 ## Databases
 
 - Each customer has its own database servers on a server. A database server is one

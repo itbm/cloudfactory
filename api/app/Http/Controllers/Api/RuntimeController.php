@@ -73,6 +73,10 @@ class RuntimeController extends Controller
             $changes['worker_mode'] = false;
         }
         if (isset($data['documentRoot']) && $data['documentRoot'] !== $website->document_root) {
+            // A website that deploys from Git serves the directory of its current release.
+            if ($website->gitSource()->exists() && str_starts_with((string) $website->document_root, 'releases/')) {
+                throw ValidationException::withMessages(['documentRoot' => 'This website deploys from Git. Change the web directory in the deploy settings, and deploy again.']);
+            }
             $changes['document_root'] = $data['documentRoot'];
         }
         if (isset($data['extensions'])) {

@@ -14,7 +14,7 @@ class JobResource extends JsonResource
      * The marks of an error text that shows the server from the inside: a host command, a
      * path on the host, a socket or a network address (second audit, finding U2).
      */
-    private const INTERNAL = '/: exit status \d+|: signal: |executable file not found'
+    public const INTERNAL = '/: exit status \d+|: signal: |executable file not found'
         .'|\/(var|srv|run|etc|usr|home|root|tmp|opt|proc|sys|dev)\/'
         .'|\bdial (tcp|unix)\b|\bunix:|https?:\/\/|\b\d{1,3}(\.\d{1,3}){3}\b'
         .'|permission denied|no such file or directory|connection refused/i';

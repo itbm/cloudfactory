@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Enums\AgentAction;
 use App\Http\Controllers\Api\BackupController;
 use App\Models\AgentJob;
+use App\Models\GitSource;
 use App\Models\Server;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
@@ -50,8 +51,59 @@ class AgentClient
                     ...BackupController::credentialsFor($server, $shared),
                     'RESTIC_PASSWORD' => $shared ? (string) BackupController::sharedRepositoryPassword() : $server->backupPassword(),
                 ]] : []),
+                ...($job->action === AgentAction::Deploy ? self::deploySecrets($job) : []),
             ])
             ->throw();
+    }
+
+    /**
+     * The private SSH key and the secrets of a deploy. They are not in the job: the panel adds
+     * the current values each time that it sends the job, as for the backup credentials.
+     *
+     * @return array<string, mixed>
+     */
+    private static function deploySecrets(AgentJob $job): array
+    {
+        $source = GitSource::where('website_id', $job->website_id)->first();
+        if (! $source) {
+            return [];
+        }
+
+        return [
+            // An "https://" repository is public, so the agent gets no key for it.
+            'deployKey' => str_starts_with($source->repository, 'https://') ? '' : (string) $source->private_key,
+            'secrets' => (object) ($source->secrets ?? []),
+        ];
+    }
+
+    /**
+     * Calls a method of the agent that gives its answer at once and makes no job: the file
+     * manager and the logs. Gives the answer as an array. The JSON of the agent has no field
+     * with an empty value, and it has each 64-bit number as text.
+     *
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     *
+     * @throws AgentCallException
+     */
+    public function call(Server $server, string $method, array $payload): array
+    {
+        try {
+            $response = self::connection($server)
+                ->timeout(75)
+                ->acceptJson()
+                ->withHeaders(['Connect-Protocol-Version' => '1'])
+                ->post('/'.self::SERVICE.'/'.$method, $payload);
+        } catch (ConnectionException|\RuntimeException $e) {
+            throw new AgentCallException('unavailable', 'The panel cannot connect to the server of this website. Try again later.');
+        }
+        if ($response->successful()) {
+            return (array) $response->json();
+        }
+        // A method that the agent does not have gives status 404 with no Connect error.
+        $code = $response->json('code');
+
+        throw new AgentCallException(is_string($code) ? $code : ($response->status() === 404 ? 'unimplemented' : 'unknown'), (string) $response->json('message'));
     }
 
     /** A request to the agent of a server, with the certificate of the panel (mutual TLS). */

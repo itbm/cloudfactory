@@ -7,13 +7,16 @@ use App\Enums\JobState;
 use App\Enums\WebsiteStatus;
 use App\Models\AgentJob;
 use App\Models\BackupRemoval;
+use App\Models\CronJob;
 use App\Models\Database;
 use App\Models\DatabaseServer;
 use App\Models\Domain;
+use App\Models\Release;
 use App\Models\Rollout;
 use App\Models\Snapshot;
 use App\Models\Website;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 /**
  * Spec section 6.3, step 7: the agent reports the result and the actual state.
@@ -170,6 +173,9 @@ class JobOutcome
                 'last_update_at' => now(),
                 'reboot_required' => (bool) ($result['rebootRequired'] ?? $job->server->reboot_required),
             ]),
+            AgentAction::RunCronJob => self::cronRan($job, (int) ($result['exitCode'] ?? 0), (string) ($result['output'] ?? '')),
+            AgentAction::Deploy => $website && self::deployed($job, $website, $result),
+            AgentAction::ActivateRelease => $website && self::releaseLive($website, (string) ($p['releaseId'] ?? '')),
             AgentAction::Reboot => $job->server->update(['state' => 'healthy', 'reboot_required' => false]),
             // The result has the state of each tunnel. The panel does not wait for the next report.
             AgentAction::SetMesh => is_array($result['mesh'] ?? null) && app(Mesh::class)->reported($job->server, $result['mesh']),
@@ -203,6 +209,11 @@ class JobOutcome
             // The power change did not complete. The website has its old state.
             AgentAction::SetWebsitePower => $website?->moveTo(($p['power'] ?? '') === 'start' ? WebsiteStatus::Stopped : WebsiteStatus::Running),
             AgentAction::Reboot => $job->server->update(['state' => 'degraded']),
+            // The command failed, or it did not start. The error has the end of its output.
+            AgentAction::RunCronJob => self::cronRan($job, preg_match('/exit code (-?\d+)/', (string) $job->error, $m) ? (int) $m[1] : -1, (string) preg_replace('/^the command ended with exit code -?\d+: /', '', (string) $job->error)),
+            // The website continues from the release that it had.
+            AgentAction::Deploy => Release::whereKey($p['releaseId'] ?? '')->where('website_id', $job->website_id)->where('state', Release::BUILDING)
+                ->update(['state' => Release::FAILED, 'error' => $job->error, 'duration_seconds' => self::seconds($job)]),
             AgentAction::SetDatabaseServer => $this->databaseServerKept($job, $p),
             // The database server is on the server still.
             AgentAction::DeleteDatabaseServer => $this->databaseServerStays($job, $p),
@@ -267,6 +278,57 @@ class JobOutcome
             'limits' => $previous['limits'],
             'plan_id' => is_string($previous['planId'] ?? null) ? $previous['planId'] : null,
         ], fn ($v) => $v !== null));
+    }
+
+    /** Records the result of a cron job that a user ran with "Run now". */
+    private static function cronRan(AgentJob $job, int $exitCode, string $output): bool
+    {
+        CronJob::whereKey($job->payload['cronJob']['id'] ?? '')->where('website_id', $job->website_id)
+            ->update(['last_run_at' => $job->started_at ?? now(), 'last_exit_code' => $exitCode, 'last_output' => Str::limit($output, 4000)]);
+
+        return true;
+    }
+
+    private static function seconds(AgentJob $job): int
+    {
+        return (int) max(0, ($job->started_at ?? $job->created_at)->diffInSeconds(now()));
+    }
+
+    /**
+     * The website serves the new release. The agent gives the commit of the release and the
+     * releases that it removed from the server.
+     *
+     * @param  array<string, mixed>  $result
+     */
+    private static function deployed(AgentJob $job, Website $website, array $result): bool
+    {
+        $id = (string) ($job->payload['releaseId'] ?? '');
+        Release::whereKey($id)->where('website_id', $website->id)->update([
+            'state' => Release::READY,
+            'commit' => is_string($result['commit'] ?? null) ? substr($result['commit'], 0, 64) : null,
+            'message' => is_string($result['message'] ?? null) ? Str::limit($result['message'], 200) : '',
+            'duration_seconds' => self::seconds($job),
+        ]);
+        $removed = array_filter((array) ($result['removed'] ?? []), 'is_string');
+        if ($removed) {
+            $website->releases()->whereIn('id', $removed)->update(['state' => Release::REMOVED]);
+        }
+
+        return self::releaseLive($website, $id);
+    }
+
+    /** Records the release that the website serves, and the document root of that release. */
+    private static function releaseLive(Website $website, string $releaseId): bool
+    {
+        $release = $website->releases()->whereKey($releaseId)->first();
+        if (! $release) {
+            return false;
+        }
+        $website->releases()->where('live', true)->update(['live' => false]);
+        $release->update(['live' => true]);
+        $website->update(['document_root' => $release->document_root]);
+
+        return true;
     }
 
     /** Valkey: the agent gives the database number, which the application needs to connect. */

@@ -105,7 +105,14 @@ type Website struct {
 	// path, the container has this file as its /etc/hosts, and the file has the database
 	// host names.
 	HostsFile string
+	// LogFile is the file on the host that gets the output of the container, for the logs in
+	// the panel. Empty means that the output goes only to the journal.
+	LogFile string
 }
+
+// LogFileMax is the largest size of the log file of a website. Podman starts the file again
+// at this size.
+const LogFileMax = "10mb"
 
 // Database host names in each website container. They point to the address of the database
 // servers of the customer of the website. The first database server of an engine has the usual
@@ -273,6 +280,12 @@ func ContainerUnit(w Website) string {
 	line("ReadOnly", "true")
 	line("Tmpfs", "/tmp")
 	line("UserNS", "keep-id")
+	if w.LogFile != "" {
+		// Podman records the stream of each line (standard output or standard error) and its
+		// time in this format. Both containers of a runtime change write the same file.
+		line("LogDriver", "k8s-file")
+		line("PodmanArgs", "--log-opt=path="+w.LogFile+" --log-opt=max-size="+LogFileMax)
+	}
 
 	if w.Runtime == "custom" && len(w.Command) > 0 {
 		line("Exec", execLine(w.Command))

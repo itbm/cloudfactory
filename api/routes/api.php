@@ -6,13 +6,17 @@ use App\Http\Controllers\Api\AccountController;
 use App\Http\Controllers\Api\AuditController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BackupController;
+use App\Http\Controllers\Api\CronJobController;
 use App\Http\Controllers\Api\CustomerController;
 use App\Http\Controllers\Api\DatabaseController;
 use App\Http\Controllers\Api\DatabaseServerController;
 use App\Http\Controllers\Api\DatabaseUserController;
+use App\Http\Controllers\Api\DeployController;
 use App\Http\Controllers\Api\DomainController;
+use App\Http\Controllers\Api\FileController;
 use App\Http\Controllers\Api\ImageController;
 use App\Http\Controllers\Api\JobController;
+use App\Http\Controllers\Api\LogController;
 use App\Http\Controllers\Api\MeshController;
 use App\Http\Controllers\Api\PanelCertificateController;
 use App\Http\Controllers\Api\PlanController;
@@ -32,6 +36,9 @@ use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->group(function () {
     Route::post('auth/login', [AuthController::class, 'login'])->middleware('throttle:10,1');
+    // The webhook of a website: a Git host calls it after a push. The token in the address is
+    // the only credential.
+    Route::post('hooks/deploy/{token}', [DeployController::class, 'hook'])->middleware('throttle:30,1');
 
     Route::middleware(['auth:sanctum', 'active'])->group(function () {
         Route::post('auth/logout', [AuthController::class, 'logout']);
@@ -67,6 +74,31 @@ Route::prefix('v1')->group(function () {
             Route::put('websites/{websiteId}/sftp', [SftpController::class, 'update']);
             Route::put('websites/{websiteId}/runtime', [RuntimeController::class, 'update']);
             Route::post('websites/{websiteId}/runtime/revert', [RuntimeController::class, 'revert']);
+
+            // The file manager and the logs. The agent does each request as the Unix user of
+            // the website, and gives the answer at once.
+            Route::get('websites/{websiteId}/files', [FileController::class, 'index'])->middleware('throttle:site-tools');
+            Route::delete('websites/{websiteId}/files', [FileController::class, 'destroy'])->middleware('throttle:site-tools');
+            Route::get('websites/{websiteId}/files/content', [FileController::class, 'show'])->middleware('throttle:site-tools');
+            Route::put('websites/{websiteId}/files/content', [FileController::class, 'store'])->middleware('throttle:site-tools');
+            Route::post('websites/{websiteId}/files/directories', [FileController::class, 'makeDirectory'])->middleware('throttle:site-tools');
+            Route::post('websites/{websiteId}/files/move', [FileController::class, 'move'])->middleware('throttle:site-tools');
+            Route::get('websites/{websiteId}/logs', [LogController::class, 'index'])->middleware('throttle:site-tools');
+
+            Route::get('websites/{websiteId}/cron-jobs', [CronJobController::class, 'index']);
+            Route::post('websites/{websiteId}/cron-jobs', [CronJobController::class, 'store']);
+            Route::patch('websites/{websiteId}/cron-jobs/{cronJobId}', [CronJobController::class, 'update']);
+            Route::delete('websites/{websiteId}/cron-jobs/{cronJobId}', [CronJobController::class, 'destroy']);
+            Route::post('websites/{websiteId}/cron-jobs/{cronJobId}/run', [CronJobController::class, 'run'])->middleware('throttle:30,1');
+
+            // Deploys from a Git repository.
+            Route::get('websites/{websiteId}/deploy', [DeployController::class, 'show']);
+            Route::put('websites/{websiteId}/deploy', [DeployController::class, 'update']);
+            Route::delete('websites/{websiteId}/deploy', [DeployController::class, 'destroy']);
+            Route::put('websites/{websiteId}/deploy/secrets/{name}', [DeployController::class, 'setSecret']);
+            Route::delete('websites/{websiteId}/deploy/secrets/{name}', [DeployController::class, 'removeSecret']);
+            Route::post('websites/{websiteId}/deploy/releases', [DeployController::class, 'start'])->middleware('throttle:30,1');
+            Route::post('websites/{websiteId}/deploy/releases/{releaseId}/activate', [DeployController::class, 'activate'])->middleware('throttle:30,1');
             Route::get('runtime-images', [ImageController::class, 'runtimes']);
             Route::get('jobs', [JobController::class, 'index']);
             Route::get('jobs/{id}', [JobController::class, 'show']);

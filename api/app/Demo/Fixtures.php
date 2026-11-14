@@ -32,8 +32,11 @@ class Fixtures
         $token = $user->createToken('Fixtures')->plainTextToken;
         $paths = self::PATHS;
         // The web panel reads the databases and the snapshots of each website that the user can see.
+        // It reads the cron jobs, the deploys, the files and the logs of a website when the
+        // user opens that part of the website.
         foreach (self::websites($user) as $id) {
-            array_push($paths, "/websites/{$id}/databases", "/websites/{$id}/snapshots");
+            array_push($paths, "/websites/{$id}/databases", "/websites/{$id}/snapshots", "/websites/{$id}/cron-jobs", "/websites/{$id}/deploy",
+                "/websites/{$id}/files?path=%2F", "/websites/{$id}/files?path=%2Fpublic", "/websites/{$id}/files/content?path=%2Fpublic%2Findex.php", "/websites/{$id}/logs?lines=200");
         }
         $answers = [];
         foreach ($paths as $path) {

@@ -228,6 +228,30 @@ The start points for common applications.
 
 ![owner-10-apps](owner-10-apps.png)
 
+### owner-11-website-files
+
+The file manager of a website. The server does each operation as the Unix user of the website.
+
+![owner-11-website-files](owner-11-website-files.png)
+
+### owner-12-website-deploys
+
+The deploys of a website from a Git repository: the repository, the deploy key, the build secrets and the releases.
+
+![owner-12-website-deploys](owner-12-website-deploys.png)
+
+### owner-13-website-cron
+
+The cron jobs of a website, with the result of the last run of each one.
+
+![owner-13-website-cron](owner-13-website-cron.png)
+
+### owner-14-website-logs
+
+The last log lines of a website.
+
+![owner-14-website-logs](owner-14-website-logs.png)
+
 ## Phone width (390 px)
 
 Under 640 px, each row of a table shows as a card, and the tab bar scrolls with a shadow at the edge that has more tabs.

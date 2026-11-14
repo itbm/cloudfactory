@@ -10,9 +10,11 @@ use App\Models\AgentJob;
 use App\Models\AuditEntry;
 use App\Models\Customer;
 use App\Models\DatabaseServer;
+use App\Models\GitSource;
 use App\Models\Image;
 use App\Models\MeshTunnel;
 use App\Models\Plan;
+use App\Models\Release;
 use App\Models\Rollout;
 use App\Models\Server;
 use App\Models\Setting;
@@ -20,9 +22,11 @@ use App\Models\Snapshot;
 use App\Models\User;
 use App\Models\Website;
 use App\Services\PanelCertificate;
+use App\Services\SshKey;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
 
 /**
  * The sample data of the demonstration mode (config/demo.php). The web panel uses this data
@@ -69,6 +73,7 @@ class DemoSeeder extends Seeder
         $this->databases();
         $this->settleMesh();
         $this->backups();
+        $this->cronJobsAndDeploys();
         $this->jobsAndRollout();
         $this->settingsAndAudit();
     }
@@ -333,6 +338,57 @@ class DemoSeeder extends Seeder
         ]);
         $snapshot->created_at = $at > now() ? now()->subHours(20) : $at;
         $snapshot->save();
+    }
+
+    /** The cron jobs of some websites, and one website that deploys from Git. */
+    private function cronJobsAndDeploys(): void
+    {
+        // website, schedule, command, on, minutes since the last run, exit code, output
+        $rows = [
+            ['acme.example.com', '*/5 * * * *', 'wp cron event run --due-now', true, 3, 0, "Executed the cron event 'wp_scheduled_delete' in 0.012s.\nSuccess: Executed a total of 1 cron event."],
+            ['shop.acme.example.com', '*/5 * * * *', 'wp cron event run --due-now', true, 4, 0, 'Success: Executed a total of 3 cron events.'],
+            ['shop.acme.example.com', '15 2 * * *', 'php bin/export-orders.php --yesterday', true, 600, 1, "PHP Fatal error:  Uncaught RuntimeException: The export directory is not writable in /app/bin/export-orders.php:18\nStack trace:\n#0 {main}\n  thrown in /app/bin/export-orders.php on line 18"],
+            ['shop.acme.example.com', '0 4 * * 0', 'wp transient delete --expired', false, null, null, null],
+            ['api.acme.example.com', '* * * * *', 'cd current && php artisan schedule:run', true, 1, 0, 'No scheduled commands are ready to run.'],
+            ['northwind.example.com', '30 1 * * *', 'wp db optimize', true, 1300, 0, 'Success: Database optimized.'],
+        ];
+        foreach ($rows as [$name, $schedule, $command, $enabled, $minutes, $exit, $output]) {
+            $this->websites[$name]->cronJobs()->create([
+                'schedule' => $schedule, 'command' => $command, 'enabled' => $enabled,
+                'last_run_at' => $minutes === null ? null : now()->subMinutes($minutes), 'last_exit_code' => $exit, 'last_output' => $output,
+            ]);
+        }
+
+        $api = $this->websites['api.acme.example.com'];
+        $key = SshKey::generate('cloudfactory-'.$api->unix_user);
+        $api->gitSource()->create([
+            'repository' => 'git@github.com:acme-example/api.git', 'branch' => 'main', 'web_directory' => 'public', 'trigger' => GitSource::WEBHOOK,
+            'build_commands' => ['composer install --no-dev --optimize-autoloader', 'ln -s /app/shared/.env .env', 'php artisan migrate --force'],
+            'public_key' => $key['public'], 'private_key' => $key['private'],
+            'webhook_token' => $token = Str::random(48), 'webhook_token_hash' => hash('sha256', $token),
+            'secrets' => ['COMPOSER_AUTH' => '{"github-oauth":{"github.com":"demo"}}', 'SENTRY_AUTH_TOKEN' => 'demo'],
+        ]);
+        // hours ago, commit subject, state, live, seconds, trigger, error
+        $releases = [
+            [400, 'Add the invoice endpoints', Release::REMOVED, false, 71, GitSource::MANUAL, null],
+            [170, 'Cache the product list', Release::READY, false, 64, GitSource::WEBHOOK, null],
+            [72, 'Use the new stock service', Release::READY, false, 69, GitSource::WEBHOOK, null],
+            [26, 'Update the dependencies', Release::FAILED, false, 22, GitSource::WEBHOOK, "a build command failed: exit status 2: Installing dependencies from lock file\nYour lock file does not contain a compatible set of packages. Please run composer update.\n\n  Problem 1\n    - laravel/framework is locked to version v13.2.0 and an update of this package was not requested."],
+            [25, 'Update the dependencies and the lock file', Release::READY, true, 75, GitSource::WEBHOOK, null],
+        ];
+        foreach ($releases as [$hours, $message, $state, $live, $seconds, $trigger, $error]) {
+            $release = new Release([
+                'website_id' => $api->id, 'ref' => 'main', 'commit' => sha1($message), 'message' => $message, 'state' => $state, 'live' => $live,
+                'duration_seconds' => $seconds, 'trigger' => $trigger, 'error' => $error,
+            ]);
+            $release->id = $release->newUniqueId();
+            $release->document_root = 'releases/'.$release->id.'/public';
+            $release->created_at = $release->updated_at = now()->subHours($hours);
+            $release->save();
+            if ($live) {
+                $api->update(['document_root' => $release->document_root]);
+            }
+        }
     }
 
     private function jobsAndRollout(): void

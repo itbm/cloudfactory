@@ -36,11 +36,26 @@ service AgentService {
   rpc SetPanelCertificate(SetPanelCertificateRequest) returns (JobAccepted);
   rpc SetDatabaseServer(DatabaseServerRequest) returns (JobAccepted);
   rpc DeleteDatabaseServer(DeleteDatabaseServerRequest) returns (JobAccepted);
+  rpc SetCronJobs(SetCronJobsRequest) returns (JobAccepted);
+  rpc RunCronJob(RunCronJobRequest) returns (JobAccepted);
+  rpc Deploy(DeployRequest) returns (JobAccepted);
+  rpc ActivateRelease(ActivateReleaseRequest) returns (JobAccepted);
   rpc SetMesh(SetMeshRequest) returns (JobAccepted);
   rpc RotateMeshKey(RotateMeshKeyRequest) returns (JobAccepted);
 
   // Returns the actual state of the server at once. This method does not make a job.
   rpc GetStatus(GetStatusRequest) returns (HostStatus);
+
+  // The file manager and the logs of a website. These methods do not make a job: they give
+  // the result at once. The agent does each of them as the Unix user of the website, in the
+  // directory of the website.
+  rpc ListFiles(FileRequest) returns (FileList);
+  rpc ReadFile(FileRequest) returns (FileContent);
+  rpc WriteFile(WriteFileRequest) returns (FileEntry);
+  rpc MakeDirectory(FileRequest) returns (FileEntry);
+  rpc MoveFile(MoveFileRequest) returns (FileEntry);
+  rpc DeleteFile(FileRequest) returns (FileDeleted);
+  rpc GetLogs(GetLogsRequest) returns (Logs);
 }
 
 message JobAccepted {
@@ -485,4 +500,125 @@ message HostStatus {
   repeated PendingUpdate pending_updates = 5;
   bool reboot_required = 6;
   repeated Service services = 7;
+}
+
+// A cron job of a website: a command that the agent runs in the container of the website at
+// the times of the schedule.
+message CronJob {
+  string id = 1;
+  // Five fields: minute, hour, day of the month, month, day of the week. The time is UTC.
+  string schedule = 2;
+  // One line. The agent runs it with "sh -c" in the directory /app of the container.
+  string command = 3;
+  bool enabled = 4;
+}
+
+// SetCronJobs replaces all cron jobs of a website.
+message SetCronJobsRequest {
+  string job_id = 1;
+  string website_id = 2;
+  repeated CronJob cron_jobs = 3;
+}
+
+// RunCronJob runs the command of one cron job now.
+message RunCronJobRequest {
+  string job_id = 1;
+  string website_id = 2;
+  CronJob cron_job = 3;
+}
+
+// Deploy gets the code of a Git repository into a new release directory, runs the build
+// commands, and starts the website from the new release with no stop. If a step fails, the
+// website continues from the release that it had.
+message DeployRequest {
+  string job_id = 1;
+  // The website with the document root of the new release, for example
+  // "releases/<release_id>/public".
+  Website website = 2;
+  string release_id = 3;
+  string repository = 4;
+  string branch = 5;
+  repeated string build_commands = 6;
+  // The environment variables of the build commands. The agent does not keep them.
+  map<string, string> secrets = 7;
+  // The private SSH key for the repository, or empty. The agent does not keep it.
+  string deploy_key = 8;
+  HealthCheck health_check = 9;
+  // The IDs of the earlier releases that stay on the server. The agent removes all other
+  // release directories, but not the new release and not the release that the website had.
+  repeated string keep_releases = 10;
+}
+
+// ActivateRelease starts the website from a release that is on the server.
+message ActivateReleaseRequest {
+  string job_id = 1;
+  // The website with the document root of the release.
+  Website website = 2;
+  string release_id = 3;
+  HealthCheck health_check = 4;
+}
+
+// For ListFiles, ReadFile, MakeDirectory and DeleteFile. The path starts with "/", which is
+// the directory of the website, for example "/public/index.php".
+message FileRequest {
+  string website_id = 1;
+  string path = 2;
+}
+
+message FileEntry {
+  string name = 1;
+  // "file", "directory", "link" or "other".
+  string type = 2;
+  int64 size_bytes = 3;
+  // RFC 3339.
+  string modified = 4;
+  // The permission bits, for example "0640".
+  string mode = 5;
+  // The target of a link.
+  string target = 6;
+}
+
+message FileList {
+  repeated FileEntry entries = 1;
+  // True when the directory has more entries than the agent gives.
+  bool truncated = 2;
+}
+
+message FileContent {
+  FileEntry file = 1;
+  bytes content = 2;
+}
+
+message WriteFileRequest {
+  string website_id = 1;
+  string path = 2;
+  bytes content = 3;
+  // True refuses to replace a file.
+  bool create_only = 4;
+}
+
+message MoveFileRequest {
+  string website_id = 1;
+  string from = 2;
+  string to = 3;
+}
+
+message FileDeleted {}
+
+message GetLogsRequest {
+  string website_id = 1;
+  // The maximum number of lines of each stream. 0 means 200.
+  int32 lines = 2;
+}
+
+message LogLine {
+  // RFC 3339.
+  string at = 1;
+  // "access" (standard output of the container) or "error" (standard error).
+  string stream = 2;
+  string text = 3;
+}
+
+message Logs {
+  repeated LogLine lines = 1;
 }

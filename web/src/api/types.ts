@@ -680,3 +680,81 @@ export interface State {
   /** The installation script of the release of the panel, for the join command. */
   joinInstallUrl?: string;
 }
+
+// Files, logs, cron jobs and deploys of a website. The panel reads them when the user opens
+// their page. They are not in the state of the store.
+
+/** A file or a directory in the files of a website. A path starts with "/", the website directory. */
+export interface FileEntry {
+  name: string;
+  path: string;
+  type: "file" | "directory" | "link" | "other";
+  sizeBytes: number;
+  modifiedAt: string;
+  mode: string;
+  /** The target of a link. */
+  target?: string | null;
+}
+
+export interface FileList {
+  path: string;
+  entries: FileEntry[];
+  /** True when the directory has more entries than the panel shows. */
+  truncated: boolean;
+}
+
+export interface FileContent {
+  file: FileEntry;
+  encoding: "utf8" | "base64";
+  content: string;
+}
+
+export interface LogLine {
+  at: string;
+  stream: "access" | "error";
+  text: string;
+}
+
+export interface CronJob {
+  id: string;
+  schedule: string;
+  command: string;
+  enabled: boolean;
+  lastRunAt: string | null;
+  lastResult: "ok" | "failed" | null;
+  lastExitCode: number | null;
+  lastOutput: string | null;
+}
+
+export interface GitSource {
+  repository: string;
+  branch: string;
+  /** The directory in the repository that the web server serves. */
+  webDirectory: string;
+  trigger: "manual" | "webhook";
+  buildCommands: string[];
+  /** The public key that gives read access to the repository. */
+  deployKey: string;
+  webhookUrl: string;
+  /** The names of the secrets. The API does not give the values. */
+  secrets: string[];
+}
+
+export interface Release {
+  id: string;
+  branch: string;
+  commit: string | null;
+  message: string | null;
+  state: "building" | "ready" | "failed" | "removed";
+  live: boolean;
+  trigger: "manual" | "webhook";
+  durationSeconds: number | null;
+  error: string | null;
+  jobId: string | null;
+  createdAt: string;
+}
+
+export interface Deploy {
+  source: GitSource | null;
+  releases: Release[];
+}

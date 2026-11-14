@@ -12,8 +12,12 @@ import { bytes, longDate, percent, ratio, relativeTime } from "../lib/format";
 import { certificateUntil, DISK_LIMIT_NOT_APPLIED, jobActive, WEBSITE_STATUS } from "../lib/labels";
 import { AccessTab, SshCard } from "./website/AccessTab";
 import { BackupsTab } from "./website/BackupsTab";
+import { CronTab } from "./website/CronTab";
 import { DatabasesTab } from "./website/DatabasesTab";
+import { DeploysTab } from "./website/DeploysTab";
 import { DomainsTab } from "./website/DomainsTab";
+import { FilesTab } from "./website/FilesTab";
+import { LogsTab } from "./website/LogsTab";
 import { RuntimeTab } from "./website/RuntimeTab";
 import { SettingsTab } from "./website/SettingsTab";
 
@@ -21,7 +25,11 @@ const TABS = [
   ["overview", "Overview"],
   ["domains", "Domains"],
   ["runtime", "Runtime"],
+  ["files", "Files"],
   ["databases", "Databases"],
+  ["deploys", "Deploys"],
+  ["cron", "Cron"],
+  ["logs", "Logs"],
   ["backups", "Backups"],
   ["access", "SFTP"],
   ["settings", "Settings"],
@@ -304,6 +312,10 @@ export function WebsiteDetailPage() {
         {tab === "domains" && <DomainsTab website={website} />}
         {tab === "runtime" && <RuntimeTab website={website} />}
         {tab === "databases" && <DatabasesTab website={website} />}
+        {tab === "files" && <FilesTab website={website} />}
+        {tab === "deploys" && <DeploysTab key={website.id} website={website} />}
+        {tab === "cron" && <CronTab key={website.id} website={website} />}
+        {tab === "logs" && <LogsTab key={website.id} website={website} />}
         {tab === "backups" && <BackupsTab website={website} />}
         {tab === "access" && <AccessTab website={website} />}
         {tab === "settings" && <SettingsTab website={website} />}
