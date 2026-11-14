@@ -17,12 +17,36 @@ import (
 // Engines are the database engines of the database containers.
 var Engines = []string{"mariadb", "postgresql", "valkey"}
 
-// dbHome is the home directory of the user cf-db. The data of the database containers is there.
+// dbHome holds the data of the database containers. It is also the home directory of the user
+// cf-db of the shared containers of an earlier release.
+//
+//	servers/<id>   the files of one database server (dbDir). Root owns the directory, and
+//	               only root and the Unix user of the database server can open it.
+//	homes/<user>   the home directory of the Unix user of a database server, with its Podman
+//	               storage (dbUserHome)
 func (d *Deps) dbHome() string {
 	if d.DBHome != "" {
 		return d.DBHome
 	}
 	return "/var/lib/" + DBUser
+}
+
+// DatabaseDir gives the directory of the data of the database containers. The agent reads the
+// user quotas of its file system at its start.
+func (d *Deps) DatabaseDir() string { return d.dbHome() }
+
+// dbUserHome is the home directory of the Unix user of a database server.
+func (d *Deps) dbUserHome(s dbServer) string {
+	return filepath.Join(d.dbHome(), "homes", dbUser(s))
+}
+
+// serviceImages gives the images of the database engines of this agent version.
+func (d *Deps) serviceImages() []string {
+	out := make([]string, 0, len(Engines))
+	for _, engine := range Engines {
+		out = append(out, d.serviceImage(engine))
+	}
+	return out
 }
 
 // serviceImage gives the signed image of a service of this agent version, for example
@@ -37,12 +61,13 @@ func (d *Deps) serviceImage(name string) string {
 // makeDataDir makes the data directory of a database container, with the owner user and mode
 // 0700. It does not change a directory that exists.
 //
-// The entry point of the database image gives the directory to the database user of the
-// container (for example postgres, UID 999), which is a different UID on the host. The database
-// server then opens each file through this directory. "install -d" on a directory that exists
-// sets the owner and the mode again. A database server that operates then cannot open its files
-// ("could not open file global/pg_filenode.map: Permission denied"), until the container starts
-// again. This occurred when the install script ran again while the panel database operated.
+// The entry point of the image of a shared container gives the directory to the database user
+// of the container (for example postgres, UID 999), which is a different UID on the host. The
+// database server then opens each file through this directory. "install -d" on a directory
+// that exists sets the owner and the mode again. A database server that operates then cannot
+// open its files ("could not open file global/pg_filenode.map: Permission denied"), until the
+// container starts again. This occurred when the install script ran again while the panel
+// database operated.
 func (d *Deps) makeDataDir(ctx context.Context, dir, user string) error {
 	if _, err := os.Lstat(dir); err == nil {
 		return nil
@@ -95,46 +120,90 @@ func (d *Deps) dbUnit(s dbServer) (quadlet.Database, DatabaseServer, error) {
 	return d.databaseUnit(s, customer, address, record), record, nil
 }
 
-// prepareServer makes the directories, the disk, the secret and the unit of a database
-// container. It reports true when the unit changed.
+// prepareServer makes the Unix user, the directories, the disk, the secret and the unit of a
+// database container. It reports true when the unit changed.
 //
 // The root helper makes the unit from the values of the database server and from its own
-// settings. The worker cannot give the text of a unit of cf-db: a unit can run a program
-// with the rights of cf-db on the host, and cf-db owns the data of all customers.
+// settings. The worker cannot give the text of the unit of a database container: a unit can
+// run a program with the rights of its user on the host, and that user owns the data of a
+// customer.
 func (d *Deps) prepareServer(ctx context.Context, s dbServer, customer, address string, record DatabaseServer) (changed bool, err error) {
 	if d.Gate != nil {
 		err = d.Gate.Call(ctx, opDBPrepare, serverIn{Server: s, Customer: customer, Address: address, Record: record}, &changed)
 		return changed, err
 	}
 	u := d.databaseUnit(s, customer, address, record)
-	// Only cf-db can open the data. The entry point of the image sets the owner in the container.
-	dirs := []string{u.DataDir}
-	if s.ID != "" {
-		dirs = []string{filepath.Dir(d.dbDir(s)), d.dbDir(s)}
-	}
-	for _, dir := range dirs {
-		if err := d.makeDataDir(ctx, dir, DBUser); err != nil {
+	user := dbUser(s)
+	if s.ID == "" {
+		// A shared container of an earlier release. Only cf-db can open the data. The entry
+		// point of the image sets the owner in the container.
+		if err := d.makeDataDir(ctx, u.DataDir, user); err != nil {
 			return false, err
 		}
-	}
-	if s.ID != "" {
-		// The disk of the database server has the data directory.
+	} else {
+		if err := d.prepareAccount(ctx, s); err != nil {
+			return false, err
+		}
+		// The disk of the database server has the data directory. Root owns the directory
+		// of the disk, so the user cannot put a link in the place of the data directory.
 		if err := d.ensureDisk(ctx, s, record.DiskBytes); err != nil {
 			return false, err
 		}
-		if err := d.makeDataDir(ctx, u.DataDir, DBUser); err != nil {
+		if err := d.makeDataDir(ctx, u.DataDir, user); err != nil {
 			return false, err
 		}
 	}
 	if s.Engine == "valkey" {
 		// Valkey has a user file, not an environment file.
-		if err := d.writeValkeyUsers(ctx, s, u.DataDir); err != nil {
+		if err := d.writeValkeyUsers(s, u.DataDir); err != nil {
 			return false, err
 		}
-	} else if err := d.writeSuperuserSecret(ctx, s.Engine, u.EnvFile); err != nil {
+	} else if err := d.writeSuperuserSecret(ctx, s, u.EnvFile); err != nil {
 		return false, err
 	}
-	return d.Host.WriteUnit(DBUser, s.container()+".container", quadlet.DatabaseUnit(u))
+	if s.ID != "" && d.Images != nil {
+		// The image is in the shared store of root, so it does not use the disk limit of the
+		// database server. With no shared store, the user of the database server pulls it
+		// (EnsureDatabaseService).
+		if err := d.Images.EnsureService(ctx, u.Image); err != nil {
+			return false, err
+		}
+	}
+	return d.Host.WriteUnit(user, s.container()+".container", quadlet.DatabaseUnit(u))
+}
+
+// prepareAccount makes the Unix user of a database server, and the directories that lead to
+// its files. Only the root helper calls it.
+//
+//   - The users of the database servers go through dbHome, "servers" and "homes". They cannot
+//     list them (mode 0711).
+//   - Root owns the directory of the database server. Only root and the user of the database
+//     server can open it (mode 0750), and the user cannot change it.
+func (d *Deps) prepareAccount(ctx context.Context, s dbServer) error {
+	home := d.dbHome()
+	if fi, err := os.Stat(home); os.IsNotExist(err) {
+		if _, err := d.Run.Run(ctx, "install", "-d", "-m", "0711", home); err != nil {
+			return err
+		}
+	} else if err != nil {
+		return err
+	} else if fi.Mode().Perm()&0o011 != 0o011 {
+		// The home directory of cf-db from an earlier release has mode 0700.
+		if err := os.Chmod(home, fi.Mode().Perm()|0o011); err != nil {
+			return err
+		}
+	}
+	// On a server from an earlier release, cf-db owns "servers". The directory gets root as
+	// its owner, and the directories of the other database servers stay closed (mode 0700).
+	if _, err := d.Run.Run(ctx, "install", "-d", "-o", "root", "-g", "root", "-m", "0711", filepath.Dir(d.dbDir(s)), filepath.Dir(d.dbUserHome(s))); err != nil {
+		return err
+	}
+	user := dbUser(s)
+	if err := d.Host.EnsureDatabaseUser(ctx, user, d.dbUserHome(s)); err != nil {
+		return err
+	}
+	_, err := d.Run.Run(ctx, "install", "-d", "-o", "root", "-g", user, "-m", "0750", d.dbDir(s))
+	return err
 }
 
 // EnsureDatabaseService starts a database container, if it does not operate, and waits until
@@ -175,26 +244,36 @@ func (d *Deps) EnsureDatabaseService(ctx context.Context, s dbServer) error {
 			return err
 		}
 	}
-	if _, err := d.Host.Podman(ctx, DBUser, "image", "exists", u.Image); err != nil {
-		// The signature policy of Podman refuses an image with no valid signature (FR-1101).
-		if _, err := d.Host.Podman(ctx, DBUser, "pull", "--quiet", u.Image); err != nil {
-			return err
-		}
-	}
+	// The root helper makes the Unix user of the database server first: the commands below
+	// run as that user.
 	changed, err := d.prepareServer(ctx, s, u.Customer, u.Address, record)
 	if err != nil {
 		return err
 	}
+	user := dbUser(s)
+	// A database server finds its image in the shared store of root. With no shared store,
+	// and for a shared container of an earlier release, the user pulls the image.
+	if _, err := d.Host.Podman(ctx, user, "image", "exists", u.Image); err != nil {
+		if s.ID != "" && d.Images != nil {
+			// The user does not pull a copy: a copy would use the disk limit of the database
+			// server, and the firewall refuses the connections of the user.
+			return fmt.Errorf("the user %s cannot read the image %s in the shared image store: %w", user, u.Image, err)
+		}
+		// The signature policy of Podman refuses an image with no valid signature (FR-1101).
+		if _, err := d.Host.Podman(ctx, user, "pull", "--quiet", u.Image); err != nil {
+			return err
+		}
+	}
 	service := s.container() + ".service"
 	if changed {
-		if _, err := d.Host.Systemctl(ctx, DBUser, "daemon-reload"); err != nil {
+		if _, err := d.Host.Systemctl(ctx, user, "daemon-reload"); err != nil {
 			return err
 		}
 		// A new image or new settings take effect with a restart.
-		if _, err := d.Host.Systemctl(ctx, DBUser, "restart", service); err != nil {
+		if _, err := d.Host.Systemctl(ctx, user, "restart", service); err != nil {
 			return err
 		}
-	} else if _, err := d.Host.Systemctl(ctx, DBUser, "start", service); err != nil {
+	} else if _, err := d.Host.Systemctl(ctx, user, "start", service); err != nil {
 		return err
 	}
 	if err := d.waitDatabase(ctx, s); err != nil {
@@ -219,19 +298,18 @@ func (d *Deps) EnsureDatabaseService(ctx context.Context, s dbServer) error {
 // of each customer, and the shared containers of an earlier release. A shared container is
 // there when cf-db has its unit.
 func (d *Deps) databaseServers() ([]dbServer, error) {
-	dir, err := d.Host.UnitDir(DBUser)
-	if err != nil {
-		return nil, err
-	}
 	instances, err := d.State.DatabaseInstances()
 	if err != nil {
 		return nil, err
 	}
 	var out []dbServer
-	for _, engine := range Engines {
-		s := dbServer{Engine: engine}
-		if _, err := os.Stat(filepath.Join(dir, s.container()+".container")); err == nil {
-			out = append(out, s)
+	// A server with no user cf-db has no shared container.
+	if dir, err := d.Host.UnitDir(DBUser); err == nil {
+		for _, engine := range Engines {
+			s := dbServer{Engine: engine}
+			if _, err := os.Stat(filepath.Join(dir, s.container()+".container")); err == nil {
+				out = append(out, s)
+			}
 		}
 	}
 	for _, customer := range slices.Sorted(maps.Keys(instances)) {
@@ -270,29 +348,47 @@ func (d *Deps) RefreshDatabaseServices(ctx context.Context) error {
 // sets it at the first start. The agent connects to PostgreSQL through the socket with no
 // password. MariaDB needs the password, so the client gets it in MYSQL_PWD from the
 // environment of the container.
-func (d *Deps) writeSuperuserSecret(ctx context.Context, engine, path string) error {
+//
+// Podman reads the file as the Unix user of the container. For a database server, root owns
+// the file and the group of the user can read it, so the user cannot change it.
+func (d *Deps) writeSuperuserSecret(ctx context.Context, s dbServer, path string) error {
+	user, owner, mode := dbUser(s), "root:"+dbUser(s), os.FileMode(0o640)
+	if s.ID == "" {
+		owner, mode = user+":"+user, 0o600
+	}
 	if _, err := os.Stat(path); err == nil {
-		return nil
+		if s.ID == "" {
+			return nil
+		}
+		// A job that stopped after it wrote the file can leave the file with no owner and
+		// mode for the user. Thus each job sets them again.
+		if err := os.Chmod(path, mode); err != nil {
+			return err
+		}
+		_, err := d.Run.Run(ctx, "chown", owner, path)
+		return err
 	}
 	pass := randomHex(48)
 	content := "POSTGRES_PASSWORD=" + pass + "\n"
-	if engine == "mariadb" {
+	if s.Engine == "mariadb" {
 		content = "MARIADB_ROOT_PASSWORD=" + pass + "\nMYSQL_PWD=" + pass + "\n"
 	}
+	// The file has its final mode only after it has its owner.
 	if _, err := host.WriteFile(path, content, 0o600); err != nil {
 		return err
 	}
-	_, err := d.Run.Run(ctx, "chown", DBUser+":"+DBUser, path)
-	return err
+	if _, err := d.Run.Run(ctx, "chown", owner, path); err != nil {
+		return err
+	}
+	return os.Chmod(path, mode)
 }
 
 // databaseListens checks that the SQL server of a container accepts TCP connections.
 func (d *Deps) databaseListens(ctx context.Context, s dbServer) error {
-	uid, err := d.Host.LookupUID(DBUser)
+	args, err := d.dbExec(s, "-i")
 	if err != nil {
 		return err
 	}
-	args := []string{"-u", DBUser, "--", "env", fmt.Sprintf("XDG_RUNTIME_DIR=/run/user/%d", uid), "podman", "exec", "-i", s.container()}
 	if s.Engine == "mariadb" {
 		// "ping" is successful when the server answers, also when the server refuses the user.
 		// The server refuses the user here, and writes one warning for that in its log.
@@ -300,7 +396,7 @@ func (d *Deps) databaseListens(ctx context.Context, s dbServer) error {
 	} else {
 		args = append(args, "pg_isready", "--quiet", "--host=127.0.0.1", "--port=5432", "--timeout=5")
 	}
-	_, err = d.Run.Run(ctx, "runuser", args...)
+	_, err = d.Run.Run(ctx, args[0], args[1:]...)
 	return err
 }
 

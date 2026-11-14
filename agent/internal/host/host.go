@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -39,9 +40,37 @@ const (
 	WebsiteIDMax = 59999
 )
 
-// SitesGroup is the group of all website users. Only this group can read the shared runtime
-// images (package images).
+// DatabaseIDMin and DatabaseIDMax are the limits of the UID and the GID of the Unix user of a
+// database server. The installer has the same values (DATABASE_UID_MIN and DATABASE_UID_MAX in
+// install.sh). The range is not the range of the website users: the firewall gives the two
+// ranges different rights. A database server opens no connection.
+const (
+	DatabaseIDMin = 10000
+	DatabaseIDMax = 19999
+)
+
+// DatabaseUserPrefix starts the name of the Unix user of a database server. The name of a
+// website user has no "-", so the two types of user never have the same name.
+const DatabaseUserPrefix = "db-"
+
+// SitesGroup is the group of all website users and of the users of the database servers. Only
+// this group can read the shared images (package images).
 const SitesGroup = "cf-sites"
+
+var databaseUserRE = regexp.MustCompile(`^db-[0-9a-z]{26}$`)
+
+// DatabaseUser gives the Unix user of a database server. id is the ID of the database server
+// in lower case.
+func DatabaseUser(id string) string { return DatabaseUserPrefix + id }
+
+// CheckDatabaseUser checks the name of the Unix user of a database server: "db-" and the ID
+// of the database server in lower case.
+func CheckDatabaseUser(name string) error {
+	if !databaseUserRE.MatchString(name) {
+		return fmt.Errorf("host: %q is not the Unix user of a database server", name)
+	}
+	return nil
+}
 
 // Host changes the host.
 type Host struct {
@@ -69,6 +98,9 @@ type Host struct {
 	// between them. Zero means 20 attempts with 500 ms. Tests use a short time.
 	RemoveTries int
 	RemoveDelay time.Duration
+	// ReadQuota gives the disk space that a UID uses on the file system at mount, and its hard
+	// limit, in bytes. Nil means quotactl(2). Tests replace it.
+	ReadQuota func(mount string, uid int) (used, limit int64, err error)
 	// Root is set in the worker of the agent, which is not root. The methods that change a
 	// user, a unit or a quota then ask the root helper. Run is then the connection to the
 	// root helper too, and the helper checks each command of Systemctl and Podman.
@@ -146,23 +178,10 @@ func (h *Host) EnsureUser(ctx context.Context, unixUser string) error {
 	if _, err := h.Run.Run(ctx, "install", "-d", "-m", "0711", filepath.Dir(h.Home(unixUser)), h.SitesDir); err != nil {
 		return err
 	}
-	if _, err := h.LookupUID(unixUser); err != nil {
-		var unknown user.UnknownUserError
-		if !errors.As(err, &unknown) {
-			return err
-		}
-		min, max := strconv.Itoa(WebsiteIDMin), strconv.Itoa(WebsiteIDMax)
-		if _, err := h.Run.Run(ctx, "useradd", "-K", "UID_MIN="+min, "-K", "UID_MAX="+max, "-K", "GID_MIN="+min, "-K", "GID_MAX="+max,
-			"--create-home", "--home-dir", h.Home(unixUser), "--shell", "/usr/sbin/nologin", "--user-group", "--groups", SitesGroup, unixUser); err != nil {
-			return err
-		}
-	}
 	// The firewall limits only the users in the range. The agent does not start a website as a
 	// user that the firewall does not find, for example a user that an administrator made.
-	if uid, err := h.LookupUID(unixUser); err != nil {
+	if _, err := h.addUser(ctx, unixUser, h.Home(unixUser), WebsiteIDMin, WebsiteIDMax, "website users"); err != nil {
 		return err
-	} else if uid < WebsiteIDMin || uid > WebsiteIDMax {
-		return fmt.Errorf("the user %s has the UID %d, which is not in the range of the website users (%d to %d)", unixUser, uid, WebsiteIDMin, WebsiteIDMax)
 	}
 	// Audit finding F01: "install -d" follows a symbolic link, and changes the owner and the
 	// mode of the directory that the link points to. Thus root changes only the two directories
@@ -198,14 +217,81 @@ func (h *Host) EnsureUser(ctx context.Context, unixUser string) error {
 	if err := h.LinkStorageConfig(ctx, unixUser); err != nil {
 		return err
 	}
-	// Audit batch 2, finding 12: enable-linger starts the user manager, but does not wait. The
-	// start of user@<uid>.service waits until the manager and /run/user/<uid> are ready.
+	return h.startUserManager(ctx, unixUser)
+}
+
+// addUser makes a Unix user with a UID and a GID in a range, if the user does not exist. The
+// user has no password and no login shell. It gives the UID. A user that exists with a UID
+// outside the range is an error: the agent did not make that user. what names the range in
+// the error.
+func (h *Host) addUser(ctx context.Context, unixUser, home string, min, max int, what string) (int, error) {
+	if _, err := h.LookupUID(unixUser); err != nil {
+		var unknown user.UnknownUserError
+		if !errors.As(err, &unknown) {
+			return 0, err
+		}
+		lo, hi := strconv.Itoa(min), strconv.Itoa(max)
+		if _, err := h.Run.Run(ctx, "useradd", "-K", "UID_MIN="+lo, "-K", "UID_MAX="+hi, "-K", "GID_MIN="+lo, "-K", "GID_MAX="+hi,
+			"--create-home", "--home-dir", home, "--shell", "/usr/sbin/nologin", "--user-group", "--groups", SitesGroup, unixUser); err != nil {
+			return 0, err
+		}
+	}
+	uid, err := h.LookupUID(unixUser)
+	if err != nil {
+		return 0, err
+	}
+	if uid < min || uid > max {
+		return 0, fmt.Errorf("the user %s has the UID %d, which is not in the range of the %s (%d to %d)", unixUser, uid, what, min, max)
+	}
+	return uid, nil
+}
+
+// startUserManager waits until the user manager of a user is ready.
+//
+// Audit batch 2, finding 12: enable-linger starts the user manager, but does not wait. The
+// start of user@<uid>.service waits until the manager and /run/user/<uid> are ready.
+func (h *Host) startUserManager(ctx context.Context, unixUser string) error {
 	uid, err := h.LookupUID(unixUser)
 	if err != nil {
 		return err
 	}
 	_, err = h.Run.Run(ctx, "systemctl", "start", fmt.Sprintf("user@%d.service", uid))
 	return err
+}
+
+// EnsureDatabaseUser makes the Unix user of a database server if it does not exist, with its
+// home directory. The user is as a website user: it has no password and no login shell, its
+// user services start at boot, and its Podman uses the shared image store. Only root calls
+// this function (the root helper of the agent).
+func (h *Host) EnsureDatabaseUser(ctx context.Context, unixUser, home string) error {
+	if err := CheckDatabaseUser(unixUser); err != nil {
+		return err
+	}
+	if _, err := h.addUser(ctx, unixUser, home, DatabaseIDMin, DatabaseIDMax, "users of the database servers"); err != nil {
+		return err
+	}
+	for _, args := range [][]string{
+		{"chmod", "0700", home},
+		{"loginctl", "enable-linger", unixUser},
+	} {
+		if _, err := h.Run.Run(ctx, args[0], args[1:]...); err != nil {
+			return err
+		}
+	}
+	if err := h.linkStorageConfig(unixUser, home); err != nil {
+		return err
+	}
+	return h.startUserManager(ctx, unixUser)
+}
+
+// RemoveDatabaseUser stops the user services of the user of a database server, and removes
+// the user and its home directory. It is safe to run it again after a failure. Only root
+// calls this function.
+func (h *Host) RemoveDatabaseUser(ctx context.Context, unixUser string) error {
+	if err := CheckDatabaseUser(unixUser); err != nil {
+		return err
+	}
+	return h.removeAccount(ctx, unixUser)
 }
 
 // LinkStorageConfig makes ~/.config/containers/storage.conf of a website user a link to
@@ -220,13 +306,18 @@ func (h *Host) LinkStorageConfig(ctx context.Context, unixUser string) error {
 	if h.Root != nil {
 		return h.Root.LinkStorageConfig(ctx, unixUser)
 	}
-	if h.StorageConfig == "" {
-		return nil
-	}
 	if err := validate.UnixUser(unixUser); err != nil {
 		return err
 	}
-	uid, gid, err := h.fileOwner(unixUser)
+	return h.linkStorageConfig(unixUser, h.Home(unixUser))
+}
+
+// linkStorageConfig is LinkStorageConfig for a user with the home directory home.
+func (h *Host) linkStorageConfig(unixUser, home string) error {
+	if h.StorageConfig == "" {
+		return nil
+	}
+	uid, gid, err := h.FileOwner(unixUser)
 	if err != nil {
 		return err
 	}
@@ -234,31 +325,31 @@ func (h *Host) LinkStorageConfig(ctx context.Context, unixUser string) error {
 	if os.Geteuid() != 0 {
 		rootUID, rootGID = safefs.Keep, safefs.Keep
 	}
-	home, err := safefs.Open(h.Home(unixUser))
+	dir, err := safefs.Open(home)
 	if err != nil {
 		return err
 	}
-	defer home.Close()
+	defer dir.Close()
 	const config, containers = ".config", ".config/containers"
-	for _, dir := range []struct {
+	for _, d := range []struct {
 		rel      string
 		mode     os.FileMode
 		uid, gid int
 	}{{config, 0o700, uid, gid}, {containers, 0o755, rootUID, rootGID}} {
-		if err := home.MkdirAll(dir.rel, dir.mode, dir.uid, dir.gid); err != nil {
+		if err := dir.MkdirAll(d.rel, d.mode, d.uid, d.gid); err != nil {
 			return err
 		}
 		// A directory from an earlier release gets the owner and the mode again.
-		if err := home.SetDir(dir.rel, dir.mode, dir.uid, dir.gid); err != nil {
+		if err := dir.SetDir(d.rel, d.mode, d.uid, d.gid); err != nil {
 			return err
 		}
 	}
-	return home.Symlink(h.StorageConfig, containers+"/storage.conf")
+	return dir.Symlink(h.StorageConfig, containers+"/storage.conf")
 }
 
-// fileOwner gives the UID and the GID for the files of a user. Only root can give a file
+// FileOwner gives the UID and the GID for the files of a user. Only root can give a file
 // to a different user: a process that is not root, for example a test, keeps the owner.
-func (h *Host) fileOwner(unixUser string) (uid, gid int, err error) {
+func (h *Host) FileOwner(unixUser string) (uid, gid int, err error) {
 	if os.Geteuid() != 0 {
 		return safefs.Keep, safefs.Keep, nil
 	}
@@ -283,44 +374,8 @@ func (h *Host) RemoveUser(ctx context.Context, unixUser string) error {
 	if h.Root != nil {
 		return h.Root.RemoveUser(ctx, unixUser)
 	}
-	uid, err := h.LookupUID(unixUser)
-	if err == nil {
-		if _, err := h.Run.Run(ctx, "loginctl", "disable-linger", unixUser); err != nil {
-			return err
-		}
-		// "systemctl stop" waits until the unit has stopped. The user manager has all
-		// containers of the user, and the slice has also the sessions and the runtime
-		// directory. A unit that is not loaded is not an error here: userdel is the check.
-		for _, unit := range []string{fmt.Sprintf("user@%d.service", uid), fmt.Sprintf("user-%d.slice", uid)} {
-			if _, err := h.Run.Run(ctx, "systemctl", "stop", unit); err != nil {
-				slog.Warn("stop the services of a website user", "user", unixUser, "unit", unit, "err", err)
-			}
-		}
-		tries, delay := h.RemoveTries, h.RemoveDelay
-		if tries == 0 {
-			tries, delay = 20, 500*time.Millisecond
-		}
-		for attempt := 1; ; attempt++ {
-			// pkill gives status 1 when the user has no process. That is the usual result.
-			h.Run.Run(ctx, "pkill", "--signal", "KILL", "--uid", strconv.Itoa(uid))
-			if _, err = h.Run.Run(ctx, "userdel", "--remove", unixUser); err == nil {
-				break
-			}
-			if attempt >= tries {
-				return fmt.Errorf("remove the user %s: %w", unixUser, err)
-			}
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case <-time.After(delay):
-			}
-		}
-		// A later user can get the same UID. It must not get the units of this user.
-		if dir, err := h.UnitDir(unixUser); err == nil {
-			if err := os.RemoveAll(dir); err != nil {
-				return err
-			}
-		}
+	if err := h.removeAccount(ctx, unixUser); err != nil {
+		return err
 	}
 	// With no user, a first attempt removed the user and then failed. Remove the files that
 	// have the name of the user. os.RemoveAll removes a link, not the file that the link
@@ -329,6 +384,52 @@ func (h *Host) RemoveUser(ctx context.Context, unixUser string) error {
 		return err
 	}
 	return os.RemoveAll(h.ConfigDir(unixUser))
+}
+
+// removeAccount stops the user services of a user and removes the user, its home directory and
+// its units. A user that does not exist is not an error.
+func (h *Host) removeAccount(ctx context.Context, unixUser string) error {
+	uid, err := h.LookupUID(unixUser)
+	if err != nil {
+		var unknown user.UnknownUserError
+		if errors.As(err, &unknown) {
+			return nil
+		}
+		return err
+	}
+	if _, err := h.Run.Run(ctx, "loginctl", "disable-linger", unixUser); err != nil {
+		return err
+	}
+	// "systemctl stop" waits until the unit has stopped. The user manager has all
+	// containers of the user, and the slice has also the sessions and the runtime
+	// directory. A unit that is not loaded is not an error here: userdel is the check.
+	for _, unit := range []string{fmt.Sprintf("user@%d.service", uid), fmt.Sprintf("user-%d.slice", uid)} {
+		if _, err := h.Run.Run(ctx, "systemctl", "stop", unit); err != nil {
+			slog.Warn("stop the services of a user", "user", unixUser, "unit", unit, "err", err)
+		}
+	}
+	tries, delay := h.RemoveTries, h.RemoveDelay
+	if tries == 0 {
+		tries, delay = 20, 500*time.Millisecond
+	}
+	for attempt := 1; ; attempt++ {
+		// pkill gives status 1 when the user has no process. That is the usual result.
+		h.Run.Run(ctx, "pkill", "--signal", "KILL", "--uid", strconv.Itoa(uid))
+		if _, err = h.Run.Run(ctx, "userdel", "--remove", unixUser); err == nil {
+			break
+		}
+		if attempt >= tries {
+			return fmt.Errorf("remove the user %s: %w", unixUser, err)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(delay):
+		}
+	}
+	// A later user can get the same UID. It must not get the units of this user. The user is
+	// not there now, so the directory comes from the UID that the user had.
+	return os.RemoveAll(filepath.Join(h.UnitRoot, strconv.Itoa(uid)))
 }
 
 // UnitDir is the directory of the Quadlet units of a user.
@@ -475,8 +576,5 @@ func (h *Host) SetDiskQuota(ctx context.Context, unixUser, mount string, bytes i
 	if h.Root != nil {
 		return h.Root.SetDiskQuota(ctx, unixUser, mount, bytes)
 	}
-	hard := bytes / 1024
-	soft := hard * 95 / 100
-	_, err := h.Run.Run(ctx, "setquota", "--user", unixUser, strconv.FormatInt(soft, 10), strconv.FormatInt(hard, 10), "0", "0", mount)
-	return err
+	return h.setQuota(ctx, unixUser, mount, bytes)
 }

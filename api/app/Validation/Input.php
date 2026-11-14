@@ -3,6 +3,7 @@
 namespace App\Validation;
 
 use Closure;
+use Illuminate\Support\Str;
 
 /**
  * Applies the input rules that the panel and the agent share. The rules are in the file
@@ -18,6 +19,15 @@ final class Input
     public static function valid(string $rule, mixed $value): bool
     {
         return is_string($value) && preg_match(InputRules::PATTERNS[$rule], $value) === 1;
+    }
+
+    /**
+     * A new password for a database user. It agrees with the rule "databasePassword": it has
+     * only letters and digits, so that the agent accepts it.
+     */
+    public static function databasePassword(): string
+    {
+        return Str::password(24, symbols: false);
     }
 
     /**

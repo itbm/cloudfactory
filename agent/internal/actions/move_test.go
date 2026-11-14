@@ -9,6 +9,7 @@ import (
 
 	agentv1 "github.com/itbm/cloudfactory/agent/gen/cloudfactory/agent/v1"
 	"github.com/itbm/cloudfactory/agent/internal/execx"
+	"github.com/itbm/cloudfactory/agent/internal/host"
 )
 
 const (
@@ -94,12 +95,12 @@ func TestMoveDatabases(t *testing.T) {
 	if err := run(t)(d.MoveDatabases(moveRequest())); err != nil {
 		t.Fatal(err)
 	}
-	mariaNew, pgNew := podmanDB+"exec -i cf-mariadb-"+mariaServerKey+" ", podmanDB+"exec -i cf-postgresql-"+pgServerKey+" "
+	mariaNew, pgNew := podmanOf(mariaServerKey)+"exec -i cf-mariadb-"+mariaServerKey+" ", podmanOf(pgServerKey)+"exec -i cf-postgresql-"+pgServerKey+" "
 	mariaOld, pgOld := podmanDB+"exec -i cf-mariadb ", podmanDB+"exec -i cf-postgresql "
 
 	// The database servers have the limits of the request.
 	for engine, key := range map[string]string{"mariadb": mariaServerKey, "postgresql": pgServerKey} {
-		if u := unitFile(t, d, DBUser, "cf-"+engine+"-"+key+".container"); !strings.Contains(u, "MemoryMax=1073741824\n") || !strings.Contains(u, "PublishPort="+customerAddress+":") {
+		if u := unitFile(t, d, host.DatabaseUser(key), "cf-"+engine+"-"+key+".container"); !strings.Contains(u, "MemoryMax=1073741824\n") || !strings.Contains(u, "PublishPort="+customerAddress+":") {
 			t.Errorf("the unit of the %s database server:\n%s", engine, u)
 		}
 	}
@@ -203,7 +204,7 @@ func TestMoveDatabases(t *testing.T) {
 func TestMoveDatabasesFailure(t *testing.T) {
 	d, f, _ := deps(t)
 	oldWebsite(t, d, f)
-	mariaNew := podmanDB + "exec -i cf-mariadb-" + mariaServerKey + " "
+	mariaNew := podmanOf(mariaServerKey) + "exec -i cf-mariadb-" + mariaServerKey + " "
 	f.Rules = append([]execx.Rule{
 		{Prefix: podmanDB + "exec cf-postgresql pg_dump", Err: errors.New("no space left on device")},
 		{Prefix: mariaNew, Input: "SELECT Host FROM mysql.user WHERE User = 'acme_x7k2_shop'", Output: "169.254.80.1\n"},
@@ -295,7 +296,7 @@ func TestMoveDatabasesGoesBackWhenTheWebsiteDoesNotAnswer(t *testing.T) {
 		t.Errorf("the website has access to the address of the customer:\n%s", got)
 	}
 	// The copies in the database servers go.
-	if in := inputsOf(f, podmanDB+"exec -i cf-postgresql-"+pgServerKey+" "); !strings.Contains(in, "DROP ROLE IF EXISTS \"acme_x7k2_reader\";\n") || !strings.Contains(in, "DROP DATABASE") {
+	if in := inputsOf(f, podmanOf(pgServerKey)+"exec -i cf-postgresql-"+pgServerKey+" "); !strings.Contains(in, "DROP ROLE IF EXISTS \"acme_x7k2_reader\";\n") || !strings.Contains(in, "DROP DATABASE") {
 		t.Errorf("the PostgreSQL database server of the customer keeps the copies:\n%s", in)
 	}
 }
@@ -341,7 +342,7 @@ func TestMoveDatabasesFailureKeepsTheOtherDatabases(t *testing.T) {
 	if err := run(t)(d.CreateDatabase(mariaRequest(otherWebsiteID, "acme_s1t2", "acme_s1t2_blog", databaseServer("mariadb")))); err != nil {
 		t.Fatal(err)
 	}
-	mariaNew := podmanDB + "exec -i cf-mariadb-" + mariaServerKey + " "
+	mariaNew := podmanOf(mariaServerKey) + "exec -i cf-mariadb-" + mariaServerKey + " "
 	f.Rules = append([]execx.Rule{
 		{Prefix: podmanDB + "exec cf-postgresql pg_dump", Err: errors.New("no space left on device")},
 		{Prefix: mariaNew, Input: "SELECT Host FROM mysql.user WHERE User = 'acme_x7k2_shop'", Output: "169.254.80.1\n"},
@@ -353,7 +354,7 @@ func TestMoveDatabasesFailureKeepsTheOtherDatabases(t *testing.T) {
 	if !d.serverExists(dbServer{ID: mariaServerKey, Engine: "mariadb"}) {
 		t.Error("the MariaDB database server of the customer is gone")
 	}
-	if f.Called("systemctl --user --machine=cf-db@ stop cf-mariadb-" + mariaServerKey + ".service") {
+	if f.Called(systemctlOf(mariaServerKey) + "stop cf-mariadb-" + mariaServerKey + ".service") {
 		t.Error("the MariaDB database server of the customer stopped")
 	}
 	in := inputsOf(f, mariaNew)

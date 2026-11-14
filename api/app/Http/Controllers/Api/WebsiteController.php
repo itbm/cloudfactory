@@ -23,6 +23,7 @@ use App\Services\DatabaseNames;
 use App\Services\DatabaseServers;
 use App\Services\DomainPolicy;
 use App\Services\JobDispatcher;
+use App\Validation\Input;
 use App\Validation\InputRules;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -408,7 +409,7 @@ class WebsiteController extends Controller
                 $server = $target($databases[0]);
                 $number++;
                 $user = $copy->databaseUsers()->create(['engine' => $engine, 'name' => $to.'app'.($number > 1 ? $number : ''), 'access' => 'website', 'database_server_id' => $server?->id]);
-                $password = Str::password(24, symbols: false);
+                $password = Input::databasePassword();
                 $names = [];
                 foreach ($databases as $database) {
                     $name = $to.substr($database->name, strlen($from));
@@ -431,7 +432,7 @@ class WebsiteController extends Controller
             $new = $copy->databases()->create(['engine' => Database::VALKEY, 'name' => $name, 'database_server_id' => $server?->id]);
             $user = $copy->databaseUsers()->create(['engine' => Database::VALKEY, 'name' => $name, 'access' => 'website', 'database_server_id' => $server?->id]);
             $user->databases()->attach($new->id, ['privileges' => 'readwrite']);
-            $password = Str::password(24, symbols: false);
+            $password = Input::databasePassword();
             $users[] = array_filter(['engine' => Database::VALKEY, 'name' => $name, 'password' => $password, 'databaseServer' => $server?->id]);
             $credentials[] = ['engine' => Database::VALKEY, 'user' => $name, 'password' => $password, 'databases' => [$name]] + $connection(Database::VALKEY, $server);
         }

@@ -76,6 +76,11 @@ type Deps struct {
 	// QuotaMount is the mount point of SitesDir when user quotas are on there. Empty means that
 	// the agent cannot apply the disk limit of a website.
 	QuotaMount string
+	// DBQuotaMount is the mount point of the directory of the database servers (DatabaseDir)
+	// when user quotas are on there. The disk limit of a database server is then the user
+	// quota of its Unix user. Empty means that a new database server with a disk limit gets a
+	// disk image.
+	DBQuotaMount string
 	// ReadyTimeout is the maximum time for a new container to answer.
 	ReadyTimeout time.Duration
 	// MaxWatch is the maximum time that the agent watches a website after a runtime change.
@@ -95,11 +100,11 @@ type Deps struct {
 	DatabaseClientHost string
 	// ServiceImage gives the image of a service, for example ServiceImage("mariadb").
 	ServiceImage func(name string) string
-	// DBHome is the home directory of cf-db. The default is "/var/lib/cf-db".
+	// DBHome holds the data of the database containers. The default is "/var/lib/cf-db".
 	DBHome string
-	// LoopControl is the device that makes loop devices. A server that has it gives each
-	// database server a disk image with the size of its disk limit. The default is
-	// "/dev/loop-control". Tests replace it.
+	// LoopControl is the device that makes loop devices. On a file system with no user quotas,
+	// a server that has it gives each database server a disk image with the size of its disk
+	// limit. The default is "/dev/loop-control". Tests replace it.
 	LoopControl string
 	// EdgeSocket is the path of the admin socket of the edge proxy. The root helper connects
 	// the worker to it (DialEdge).
@@ -202,6 +207,9 @@ type Deps struct {
 type Images interface {
 	Init(ctx context.Context) error
 	Ensure(ctx context.Context, ref string) error
+	// EnsureService is Ensure for the image of a database engine of this agent version. Only
+	// the root helper calls it.
+	EnsureService(ctx context.Context, ref string) error
 	Prune(inUse []string) error
 }
 

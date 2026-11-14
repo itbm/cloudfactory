@@ -205,7 +205,7 @@ helper does only the work of three lists:
 
 | List | What the worker can ask for |
 | --- | --- |
-| Commands | A program as the Unix user of a website (`runuser -u <user>`). A command of a fixed form as `cf-db` or `cf-edge`, for example a database client in a database container. Some root commands with fixed arguments: the commands of the status report, the updates of the operating system, the reboot, and restic with paths that the root helper examines. |
+| Commands | A program as the Unix user of a website (`runuser -u <user>`). A command of a fixed form as the Unix user of a database server, as `cf-db` or as `cf-edge`, for example a database client in the container of that database server. Some root commands with fixed arguments: the commands of the status report, the updates of the operating system, the reboot, and restic with paths that the root helper examines. |
 | Operations | Root work that has a name, for example `user.ensure`, `unit.write`, `user.quota` and `db.prepare`. Each operation has typed values, and the root helper examines each value. |
 | Connections | The admin socket of the edge proxy, and some ports on the private service address and on the database network. |
 
@@ -218,9 +218,16 @@ These rules apply to the three lists:
   website user, the files of a restore and the records of the jobs. There, the root helper
   uses `openat2` with the flags `RESOLVE_BENEATH` and `RESOLVE_NO_SYMLINKS`. Thus a symbolic
   link cannot send root to a different file.
-- The worker cannot give the text of a unit of `cf-db` or `cf-edge`, and it cannot run a
-  program of its choice as these users. The root helper makes these units from its own
-  settings.
+- The worker cannot give the text of a unit of a database server, of `cf-db` or of
+  `cf-edge`, and it cannot run a program of its choice as these users. The root helper makes
+  these units from its own settings.
+- The root helper makes the Unix user of a database server (`db-<id>`) from the ID of the
+  database server. It uses such a user only when the UID of the user is in the range from
+  10000 to 19999. As that user, the worker can run only a database client in the container
+  of that database server. It cannot use the container of a different database server.
+- Root owns the directories that lead to the data directory of a database server. In the
+  data directory, which the Unix user of the database server owns, the root helper writes
+  only the user file of Valkey, with `openat2` and no symbolic links.
 - The root helper examines the signature and the version of a new agent release again. It
   installs a release only when the signed manifest has the line `rootHelper=1`. Thus the
   worker cannot install a release that has no root helper.
@@ -246,7 +253,8 @@ The worker can read these files of the agent:
 
 A person who controls the worker cannot do these things:
 
-- Run a program of their choice as root, `cf-db`, `cf-edge` or `cf-panel`.
+- Run a program of their choice as root, as the Unix user of a database server, or as
+  `cf-db`, `cf-edge` or `cf-panel`.
 - Read or change a file of root, for example `/etc/shadow`, an SSH key or a unit of the
   system.
 - On the panel server: read the files of the panel, for example `APP_KEY` and the private
@@ -543,6 +551,10 @@ The table also limits the outgoing connections:
   customer: the UID of the website, the address of its customer and the port of the database
   server. The agent writes the elements, and nftables loads them from
   `/etc/cloudfactory/firewall/database-access.nft`.
+- Each database server has its own Unix user, with a UID from 10000 to 19999. The table
+  refuses each new connection of these users. A database server answers its clients, and
+  opens no connection itself. Thus a person who controls a database server cannot connect
+  from it to the internet, to a private network or to a service of the server.
 - The chain `websites` gets each new connection of a user with a UID from 20000 to 59999,
   thus each connection that a website opens. It permits the database ports on the address of
   the customer of the website, the shared databases of an earlier release, DNS, and the
@@ -591,28 +603,31 @@ These items stay open in release 0.1:
   then sends requests to that address.
 - **Join token.** The person who has a join token gives the agent address that the panel
   calls. Give a join token only to a person whom you trust with a server.
-- **Unix user of the database containers.** All database containers of a server run as the
-  Unix user `cf-db`, each in its own gVisor sandbox. A person who breaks out of the gVisor
-  sandbox of one database container has the rights of `cf-db`, and can then read the database
-  files of all customers on the server. The website containers do not have this limit: each
-  website has its own Unix user.
-- **Root file work for the database servers.** The root helper makes and removes the data
-  directories and the disk images of the database servers in the home directory of `cf-db`
-  with paths. It does not use `openat2` there, as it does for the home directory of a
-  website user. A person who breaks out of the gVisor sandbox of a database container has the rights of
-  `cf-db`, and can put a symbolic link in that directory.
+- **Unix user of the shared database containers.** The shared database containers of a
+  server from release 0.1.9 or an earlier release run as the Unix user `cf-db`. A person who
+  breaks out of the gVisor sandbox of one shared container has the rights of `cf-db`, and can
+  then read the files of the other shared container. The root helper makes the data
+  directories of the shared containers in the home directory of `cf-db` with paths, and
+  does not use `openat2` there. The database servers of the customers do not have these
+  limits: each database server has its own Unix user, and root owns the directories that
+  lead to its data.
+- **Firewall rule of the database servers on a server from an earlier release.** The
+  installer writes the rule that refuses the connections of the Unix users of the database
+  servers. A server that you installed with an earlier release gets the rule when you run
+  the installer again.
 - **Rights of the worker of the agent.** The worker is not root, but it can act as each
   website user, it manages each database server, and it has the full admin API of the edge
   proxy. Refer to [The root helper of the agent](#the-root-helper-of-the-agent). A possible
   correction for the edge proxy is a root helper that accepts only the route changes of a
   fixed form.
-- **Disk space of the databases.** A server with no loop devices (for example a container of
-  an LXC host) cannot apply the disk limit of a database server. On such a server, a customer
-  that fills the disk of the server with database data stops the database servers of all
-  customers. The panel shows `database-disk-limits` as a part of the server that is off.
-- **Sum of the disk limits.** A disk image uses only the disk space that its database server
-  uses, and the sum of the disk limits can be more than the disk of the server. Monitor the
-  free disk space of the server.
+- **Disk space of the databases.** A server with no user quotas and no loop devices (for
+  example a container of an LXC host with a file system that is not ext4 or XFS) cannot apply
+  the disk limit of a database server. On such a server, a customer that fills the disk of
+  the server with database data stops the database servers of all customers. The panel shows
+  `database-disk-limits` as a part of the server that is off.
+- **Sum of the disk limits.** A user quota and a disk image use only the disk space that
+  the database server uses, and the sum of the disk limits can be more than the disk of the
+  server. Monitor the free disk space of the server.
 - **Shared database containers.** The websites of a server from release 0.1.9 or an earlier
   release use shared database containers until an administrator moves their databases.
 - **Base images.** The Containerfiles name the base images by tag, not by digest.

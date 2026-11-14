@@ -602,6 +602,72 @@
           ]
         }
       ]
+    },
+    "databasePassword": {
+      "valid": [
+        "abcdefghijklmnop",
+        "ABCDEFGHIJKLMNOP0123456789",
+        "x7Kq2mPz9Rt4Lw8Nc3Vb6Hy1",
+        {
+          "repeat": [
+            [
+              "a",
+              64
+            ]
+          ]
+        }
+      ],
+      "invalid": [
+        "",
+        "abcdefghijklmno",
+        {
+          "repeat": [
+            [
+              "a",
+              65
+            ]
+          ]
+        },
+        "abcdefghijklmnop'",
+        "abcdefghijklmnop\"",
+        "abcdefghijklmnop;",
+        "abcdefghijklmnop ",
+        "abcdefghijklmnop\n",
+        "abcdefghijklmnop$x",
+        "abcdefghijklmn\u00e9p",
+        "abcdefghijklmnop\\"
+      ]
+    },
+    "databaseClientHost": {
+      "valid": [
+        "169.254.77.1",
+        "169.254.80.0/20",
+        "%",
+        "10.0.5.%",
+        "fd00::1",
+        "web-1.example.com",
+        "localhost",
+        "my_host"
+      ],
+      "invalid": [
+        "",
+        "host name",
+        "host'",
+        "host\"",
+        "host;",
+        "host\n",
+        "host@x",
+        "host`",
+        "host\\",
+        {
+          "repeat": [
+            [
+              "a",
+              256
+            ]
+          ]
+        }
+      ]
     }
   }
 }

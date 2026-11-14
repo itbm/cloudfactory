@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -100,7 +101,7 @@ func deps(t *testing.T) (*Deps, *execx.Fake, *fakeEdge) {
 // settings gives a Deps with the settings of the tests. It has no gate.
 func settings(dir string, run *execx.Fake, edge *fakeEdge) *Deps {
 	h := &host.Host{Run: run, SitesDir: filepath.Join(dir, "sites"), UnitRoot: filepath.Join(dir, "units"), ConfigRoot: filepath.Join(dir, "config"),
-		LookupUID: func(string) (int, error) { return 20001, nil }, LookupGID: func(string) (int, error) { return 20001, nil }}
+		LookupUID: testUID, LookupGID: testUID}
 	return &Deps{
 		Host: h, Run: run, Edge: edge, State: NewState(dir),
 		Gvisor:        quadlet.Runtime{RunscPath: "/usr/local/bin/runsc", Platform: "systrap"},
@@ -124,6 +125,28 @@ func settings(dir string, run *execx.Fake, edge *fakeEdge) *Deps {
 		MeshDir:  filepath.Join(dir, "mesh"),
 		MeshWait: time.Millisecond,
 	}
+}
+
+// testUID gives the UID and the GID of each user in the tests. The user of a database server
+// has an ID in the range of these users: 10000 and the last digit of the ID of the database
+// server. Each other user has the ID of a website user.
+func testUID(name string) (int, error) {
+	if id, ok := strings.CutPrefix(name, host.DatabaseUserPrefix); ok && id != "" {
+		return host.DatabaseIDMin + int(id[len(id)-1]-'0'), nil
+	}
+	return 20001, nil
+}
+
+// podmanOf is the start of each Podman command of the user of a database server in the tests.
+func podmanOf(key string) string {
+	uid, _ := testUID(host.DatabaseUser(key))
+	return fmt.Sprintf("runuser -u %s -- env XDG_RUNTIME_DIR=/run/user/%d podman ", host.DatabaseUser(key), uid)
+}
+
+// systemctlOf is the start of each systemctl command for the user of a database server in
+// the tests.
+func systemctlOf(key string) string {
+	return "systemctl --user --machine=" + host.DatabaseUser(key) + "@ "
 }
 
 // testGate is the gate of the worker of a test. It keeps the Deps of the root helper.

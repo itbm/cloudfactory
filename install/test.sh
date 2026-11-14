@@ -189,6 +189,9 @@ rule "a website of an earlier release reaches the shared databases" yes 'ip dadd
 rule "the shared database address has no Valkey port" no 'ip daddr 169.254.77.1 tcp dport { 3306, 5432, 6379 } accept' "$WORK/default.nft"
 rule "only root and the websites reach the database network" yes 'ct state new ip daddr 169.254.80.0/20 meta skuid != 0 meta skuid != 20000-59999 jump refuse' "$WORK/default.nft"
 rule "the set of the database access has the UID, the address and the port" yes 'typeof meta skuid . ip daddr . tcp dport' "$WORK/default.nft"
+# Each database server has its own Unix user. A database server opens no connection.
+rule "the users of the database servers open no connection" yes 'ct state new meta skuid 10000-19999 jump refuse' "$WORK/default.nft"
+rule "the rule of the database users is only for new connections" no 'meta skuid 10000-19999 jump refuse' "$WORK/default.nft"
 rule "a website reaches the DNS resolver" yes 'meta l4proto { tcp, udp } th dport 53 accept' "$WORK/default.nft"
 rule "a website does not reach the services of the server" yes 'fib daddr type { local, broadcast, multicast } jump refuse' "$WORK/default.nft"
 rule "a website does not reach link-local and private networks" yes 'ip daddr { 0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 168.63.129.16, 169.254.0.0/16, 172.16.0.0/12, 192.168.0.0/16, 224.0.0.0/3 } jump refuse' "$WORK/default.nft"
@@ -295,12 +298,28 @@ fi
 # website as a user that is not in the range.
 if grep -q '^WEBSITE_UID_MIN=20000$' "$HERE/install.sh" && grep -q '^WEBSITE_UID_MAX=59999$' "$HERE/install.sh" &&
 	grep -q 'WebsiteIDMin = 20000$' "$HERE/../agent/internal/host/host.go" && grep -q 'WebsiteIDMax = 59999$' "$HERE/../agent/internal/host/host.go" &&
-	grep -q '"UID_MIN="+min, "-K", "UID_MAX="+max' "$HERE/../agent/internal/host/host.go"; then
+	grep -q 'addUser(ctx, unixUser, h.Home(unixUser), WebsiteIDMin, WebsiteIDMax, ' "$HERE/../agent/internal/host/host.go" &&
+	grep -q '"UID_MIN="+lo, "-K", "UID_MAX="+hi' "$HERE/../agent/internal/host/host.go"; then
 	PASS=$((PASS + 1))
 else
 	FAIL=$((FAIL + 1))
 	echo 'FAIL: the agent and the firewall use different UID ranges for the website users'
 fi
+# The agent makes the user of each database server in the UID range of the firewall. The
+# range is below the range of the website users, and above the IDs of the users that the
+# operating system and an administrator make.
+if grep -q '^DATABASE_UID_MIN=10000$' "$HERE/install.sh" && grep -q '^DATABASE_UID_MAX=19999$' "$HERE/install.sh" &&
+	grep -q 'DatabaseIDMin = 10000$' "$HERE/../agent/internal/host/host.go" && grep -q 'DatabaseIDMax = 19999$' "$HERE/../agent/internal/host/host.go" &&
+	grep -q 'addUser(ctx, unixUser, home, DatabaseIDMin, DatabaseIDMax, ' "$HERE/../agent/internal/host/host.go"; then
+	PASS=$((PASS + 1))
+else
+	FAIL=$((FAIL + 1))
+	echo 'FAIL: the agent and the firewall use different UID ranges for the users of the database servers'
+fi
+# The rule of the database users comes before the website chain, and after the rule that
+# closes the database network.
+users_rule=$(line 'ct state new meta skuid 10000-19999 jump refuse' "$WORK/default.nft")
+if [ "$users_rule" -gt "$network" ] && [ "$users_rule" -lt "$jump" ]; then PASS=$((PASS + 1)); else FAIL=$((FAIL + 1)); echo 'FAIL: the order of the rule of the database users'; fi
 # Audit finding R9: needrestart restarts the services after an update, but not the agent.
 # shellcheck disable=SC2016 # The pattern is text of the script, not a variable of this test.
 if grep -q '^cat >/etc/needrestart/conf.d/50-cloudfactory.conf' "$HERE/install.sh" && grep -qF '$nrconf{override_rc}{qr(^cf-agent\.service$)} = 0;' "$HERE/install.sh" &&
