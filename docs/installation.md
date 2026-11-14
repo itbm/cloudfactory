@@ -913,7 +913,9 @@ The script shows the result for each file system:
 
 The script does not change `/etc/fstab`. It writes the mount points where it turned on the
 quotas to `/etc/cloudfactory/quota-mounts`. The service `cloudfactory-quota.service` turns on
-the quotas of these mount points at each start of the server, before a website starts.
+the quotas of these mount points at each start of the server, before a website starts. If the
+service cannot turn on the quotas, `systemctl status cloudfactory-quota.service` shows the
+service as failed with the cause, and the panel shows `disk-quotas` as off.
 
 After the script turns on the quotas, it restarts the agent. At its start, the agent sets the
 disk limit of each website that the server has.
@@ -937,6 +939,23 @@ show "Not applied on this server" next to the disk limit.
 The shared runtime images in `/var/lib/cloudfactory-images` belong to root, so they do not
 count toward the disk limit of a website. Each runtime image uses about 0.6 to 0.8 GB one time
 for each server, not one time for each website.
+
+#### A server that already has websites
+
+Before the quotas are on, a website has no disk limit on the server. When the script turns on
+the quotas, each website gets its limit immediately. Read these notes before you run the
+script on a server with websites:
+
+- A website that uses more disk space than its limit cannot write files after the quotas are
+  on. Compare the disk use of each website with its limit in the panel first. Then increase
+  the limit, or remove files.
+- The limit counts all files of the Unix user of the website on that file system. A website
+  that release 0.1.9 or an earlier release made has its own copy of its runtime image in its
+  home directory, until the next change of its runtime. The copy uses about 0.7 to 0.9 GB of
+  the limit. To remove the copy, change the runtime or the runtime version of the website in the
+  panel. The website then uses the shared runtime images.
+- To install the release with no quotas, use the option `--no-disk-quotas`. You can run the
+  script again without this option later.
 
 ### The state of a server
 
