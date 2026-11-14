@@ -3,6 +3,8 @@
 namespace App\Services;
 
 use App\Models\Website;
+use App\Validation\Input;
+use App\Validation\InputRules;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -12,11 +14,8 @@ use Illuminate\Validation\ValidationException;
  */
 class DatabaseNames
 {
-    /** The part of the name that the user types. */
-    public const SUFFIX = '/^[a-z0-9][a-z0-9_]{0,31}$/';
-
     /** Names that the database servers use. The agent refuses them too. */
-    public const RESERVED = ['mysql', 'sys', 'information_schema', 'performance_schema', 'postgres', 'template0', 'template1', 'root', 'mariadb.sys', 'healthcheck'];
+    public const RESERVED = InputRules::RESERVED_DATABASE_NAMES;
 
     public static function prefix(Website $website): string
     {
@@ -32,8 +31,9 @@ class DatabaseNames
     {
         $prefix = self::prefix($website);
         $suffix = str_starts_with($typed, $prefix) ? substr($typed, strlen($prefix)) : $typed;
-        if (! preg_match(self::SUFFIX, $suffix)) {
-            throw ValidationException::withMessages([$field => 'Use 1 to 32 lower-case letters, digits and underscores. Start with a letter or a digit.']);
+        // The part that the user types has its rule in schema/input-rules.json, as the full name.
+        if (! Input::valid('databaseNameSuffix', $suffix) || ! Input::valid('databaseName', $prefix.$suffix)) {
+            throw ValidationException::withMessages([$field => InputRules::MESSAGES['databaseNameSuffix']]);
         }
         $name = $prefix.$suffix;
         if (self::reserved($name)) {
@@ -45,6 +45,7 @@ class DatabaseNames
 
     public static function reserved(string $name): bool
     {
-        return in_array($name, self::RESERVED, true) || str_starts_with($name, 'pg_');
+        return in_array($name, self::RESERVED, true)
+            || array_any(InputRules::RESERVED_DATABASE_PREFIXES, fn (string $prefix) => str_starts_with($name, $prefix));
     }
 }

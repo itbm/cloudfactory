@@ -4,7 +4,9 @@ namespace App\Services;
 
 use App\Enums\AgentAction;
 use App\Enums\JobState;
+use App\Enums\RolloutState;
 use App\Enums\WebsiteStatus;
+use App\Exceptions\StateChangeNotAllowed;
 use App\Models\AgentJob;
 use App\Models\Image;
 use App\Models\Rollout;
@@ -35,7 +37,7 @@ class RolloutEngine
             'image_id' => $image->id,
             'from_tag' => $image->tag,
             'to_tag' => $image->available_tag,
-            'state' => 'running',
+            'state' => RolloutState::Running,
             'stage' => 0,
             'website_ids' => $ids,
             'updated_ids' => [],
@@ -46,34 +48,60 @@ class RolloutEngine
         return $rollout;
     }
 
+    /**
+     * Audit finding F06: each action of an administrator reads the rollout with a row lock and
+     * checks its state (App\Enums\RolloutState). Thus a second click, a second try of the CLI or
+     * a second administrator cannot do an action two times, and an action cannot run between
+     * the steps of a job result (jobFinished).
+     *
+     * @param  callable(Rollout): void  $change
+     *
+     * @throws StateChangeNotAllowed
+     */
+    private function locked(Rollout $rollout, callable $change): void
+    {
+        DB::transaction(fn () => $change(Rollout::lockForUpdate()->findOrFail($rollout->id)));
+        $rollout->refresh();
+    }
+
+    /** @throws StateChangeNotAllowed when the rollout does not run */
     public function pause(Rollout $rollout): void
     {
-        $rollout->update(['state' => 'paused']);
+        $this->locked($rollout, fn (Rollout $locked) => $locked->changeTo(RolloutState::Paused));
     }
 
+    /** @throws StateChangeNotAllowed when the rollout is not paused */
     public function resume(Rollout $rollout): void
     {
-        $rollout->update(['state' => 'running']);
-        if (! $this->stageBusy($rollout)) {
-            $this->advance($rollout);
-        }
+        $this->locked($rollout, function (Rollout $locked) {
+            $locked->changeTo(RolloutState::Running);
+            if (! $this->stageBusy($locked)) {
+                $this->advance($locked);
+            }
+        });
     }
 
-    /** FR-1107: put all updated websites back on the previous image. */
+    /**
+     * FR-1107: put all updated websites back on the previous image.
+     *
+     * @throws StateChangeNotAllowed when the rollout is complete or rolled back
+     */
     public function rollBack(Rollout $rollout): void
     {
-        $rollout->update(['state' => 'rolled_back']);
+        $this->locked($rollout, function (Rollout $locked) {
+            $locked->changeTo(RolloutState::RolledBack);
 
-        // Jobs that the agent has not started do not run. The website stays on the previous tag.
-        $queued = AgentJob::where('rollout_id', $rollout->id)->where('state', JobState::Queued->value)->get();
-        foreach ($queued as $job) {
-            $job->update(['state' => JobState::Failed, 'error' => 'Stopped by the roll back.', 'finished_at' => now()]);
-        }
-        Website::whereIn('id', $queued->pluck('website_id'))->update(['image_tag' => $rollout->from_tag]);
+            // Jobs that the agent has not started do not run. The website stays on the previous
+            // tag. A job that ended at this moment keeps its result: jobFinished then puts its
+            // website back.
+            $stopped = AgentJob::where('rollout_id', $locked->id)->where('state', JobState::Queued->value)->get()
+                ->filter(fn (AgentJob $job) => $job->moveTo(JobState::Failed, ['error' => 'Stopped by the roll back.', 'finished_at' => now()]));
+            Website::whereIn('id', $stopped->pluck('website_id'))->update(['image_tag' => $locked->from_tag]);
 
-        foreach (Website::whereIn('id', $rollout->updated_ids)->get() as $website) {
-            $this->revertWebsite($rollout, $website);
-        }
+            foreach (Website::whereIn('id', $locked->updated_ids)->get() as $website) {
+                $this->revertWebsite($locked, $website);
+            }
+        });
     }
 
     private function revertWebsite(Rollout $rollout, Website $website): void
@@ -106,7 +134,7 @@ class RolloutEngine
     private function recordResult(Rollout $rollout, AgentJob $job): void
     {
         // A job that was running during a roll back can still succeed. Put that website back too.
-        if ($rollout->state === 'rolled_back') {
+        if ($rollout->state === RolloutState::RolledBack) {
             if ($job->state === JobState::Succeeded && ($website = Website::find($job->website_id))) {
                 $this->revertWebsite($rollout, $website);
             }
@@ -120,7 +148,7 @@ class RolloutEngine
         }
         $rollout->save();
 
-        if ($rollout->state === 'running' && ! $this->stageBusy($rollout)) {
+        if ($rollout->state === RolloutState::Running && ! $this->stageBusy($rollout)) {
             $this->advance($rollout);
         }
     }
@@ -136,12 +164,12 @@ class RolloutEngine
     {
         // A canary that fails stops the rollout. An administrator then decides.
         if ($rollout->stage === 0 && count($rollout->rolled_back) > 0) {
-            $rollout->update(['state' => 'paused']);
+            $rollout->update(['state' => RolloutState::Paused]);
 
             return;
         }
         if ($rollout->stage >= count(Rollout::STAGES) - 1) {
-            $rollout->update(['state' => 'done']);
+            $rollout->update(['state' => RolloutState::Done]);
             $rollout->image->update([
                 'tag' => $rollout->to_tag,
                 // A new tag with no known digest does not keep the digest of the old tag.

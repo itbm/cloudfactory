@@ -5,9 +5,8 @@ namespace Tests\Feature;
 use App\Enums\AgentAction;
 use App\Enums\JobState;
 use App\Enums\Role;
+use App\Enums\RolloutState;
 use App\Http\Controllers\Api\BackupController;
-use App\Http\Controllers\Api\ImageController;
-use App\Http\Controllers\Api\WebsiteController;
 use App\Jobs\SendJobToAgent;
 use App\Models\AgentJob;
 use App\Models\AuditEntry;
@@ -50,6 +49,7 @@ class AuditFixesTest extends TestCase
         $this->assertSame('stopped', $website->fresh()->status->value);
 
         // A stop is still possible, and the reseller cannot lift the suspension of the administrator.
+        $website->update(['status' => 'running']);
         $this->postJson("/api/v1/websites/{$website->id}/power", ['action' => 'stop'])->assertAccepted();
         $this->patchJson("/api/v1/customers/{$customer->id}", ['suspended' => false])->assertForbidden();
     }
@@ -251,36 +251,20 @@ class AuditFixesTest extends TestCase
         $outcome = app(JobOutcome::class);
 
         // Each caller has its own old copy of the rollout, as two queue workers have.
-        for ($stage = 0; $stage < 10 && $rollout->fresh()->state === 'running'; $stage++) {
+        for ($stage = 0; $stage < 10 && $rollout->fresh()->state === RolloutState::Running; $stage++) {
             foreach (AgentJob::where('rollout_id', $rollout->id)->where('state', JobState::Queued->value)->get() as $job) {
                 $outcome->finish($job, JobState::Succeeded);
             }
         }
         $done = Rollout::findOrFail($rollout->id);
-        $this->assertSame('done', $done->state);
+        $this->assertSame(RolloutState::Done, $done->state);
         $this->assertCount(4, $done->updated_ids);
         $this->assertSame(4, AgentJob::where('rollout_id', $rollout->id)->count(), 'a stage started two times');
     }
 
     // R5
 
-    public function test_the_panel_and_the_agent_use_the_same_examples_for_names(): void
-    {
-        $names = json_decode((string) file_get_contents(base_path('../testdata/names.json')), true);
-
-        foreach ($names['domains']['valid'] as $name) {
-            $this->assertSame(1, preg_match(WebsiteController::DOMAIN, $name), "The panel refuses the domain {$name}.");
-        }
-        foreach ($names['domains']['invalid'] as $name) {
-            $this->assertSame(0, preg_match(WebsiteController::DOMAIN, $name), "The panel accepts the domain {$name}.");
-        }
-        foreach ($names['images']['valid'] as $name) {
-            $this->assertSame(1, preg_match(ImageController::REFERENCE, $name), "The panel refuses the image {$name}.");
-        }
-        foreach ($names['images']['invalid'] as $name) {
-            $this->assertSame(0, preg_match(ImageController::REFERENCE, $name), "The panel accepts the image {$name}.");
-        }
-    }
+    // The examples that the panel and the agent share are in tests/Unit/InputRulesTest.php.
 
     public function test_the_panel_refuses_names_that_the_agent_refuses(): void
     {

@@ -1,0 +1,156 @@
+{
+  "comment": "The input rules of the panel API and the agent. The generator agent/cmd/cf-rules writes the Go checks (agent/internal/validate/rules_gen.go) and the PHP rules (api/app/Validation/InputRules.php) from this file. Refer to schema/README.md.",
+  "fragments": {
+    "label": "[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?",
+    "imageName": "[a-z0-9]([a-z0-9.-]*[a-z0-9])?(:[0-9]+)?(/[a-z0-9._-]+)+",
+    "imageTag": "[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}",
+    "directory": "[A-Za-z0-9_-][A-Za-z0-9._-]{0,99}"
+  },
+  "rules": {
+    "unixUser": {
+      "what": "Unix user",
+      "doc": "The Unix user of a website, for example \"acme_x7k2\".",
+      "pattern": "^[a-z][a-z0-9]{0,15}_[a-z0-9]{4}$",
+      "message": "Use a name such as acme_x7k2: a letter, at most 15 letters or digits, an underscore, and 4 letters or digits."
+    },
+    "domain": {
+      "what": "domain",
+      "doc": "A domain name in lower case. Each label has 1 to 63 characters. The last label is not a number, so that the name is not an IP address (audit finding R5).",
+      "pattern": "^({label}\\.)+{label}$",
+      "not": ["\\.[0-9]+$"],
+      "maxLength": 253,
+      "message": "Enter a domain name in lower-case letters, for example shop.example.com."
+    },
+    "id": {
+      "what": "ID",
+      "go": "ID",
+      "doc": "A ULID from the panel.",
+      "pattern": "^[0-9A-Za-z]{26}$",
+      "message": "Enter an ID of 26 letters and digits."
+    },
+    "databaseName": {
+      "what": "database name",
+      "doc": "The full name of a database or a database user.",
+      "pattern": "^[a-z][a-z0-9_]{1,62}$",
+      "message": "Use 2 to 63 lower-case letters, digits and underscores. Start with a letter."
+    },
+    "databaseNameSuffix": {
+      "what": "database name suffix",
+      "doc": "The part of a database name that the user types. The panel puts the Unix user of the website and an underscore before it (CF-01).",
+      "pattern": "^[a-z0-9][a-z0-9_]{0,31}$",
+      "message": "Use 1 to 32 lower-case letters, digits and underscores. Start with a letter or a digit."
+    },
+    "imageReference": {
+      "what": "image reference",
+      "doc": "An image reference with no tag. It starts with the host name of a registry: a name with a dot or a port, or \"localhost\". Podman would search a short name such as \"nginx\" in its default registries (audit finding R5).",
+      "pattern": "^{imageName}$",
+      "also": ["^([^/]*[.:]|localhost/)"],
+      "maxLength": 200,
+      "message": "Enter an image reference with its registry and no tag, for example ghcr.io/team/app."
+    },
+    "imageTag": {
+      "what": "image tag",
+      "doc": "The tag of an image.",
+      "pattern": "^{imageTag}$",
+      "message": "Use 1 to 128 letters, digits, underscores, dots and hyphens. Do not start with a dot or a hyphen."
+    },
+    "image": {
+      "what": "image",
+      "doc": "An image reference with a tag: the rules imageReference and imageTag with \":\" between them.",
+      "pattern": "^{imageName}:{imageTag}$",
+      "also": ["^([^/]*[.:]|localhost/)"],
+      "maxLength": 329,
+      "message": "Enter an image reference with its registry and a tag, for example ghcr.io/team/app:1.2."
+    },
+    "digest": {
+      "what": "digest",
+      "doc": "The digest of an image. An empty digest is permitted.",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "empty": true,
+      "message": "Enter a digest: sha256: and 64 hexadecimal digits in lower case."
+    },
+    "phpExtension": {
+      "what": "PHP extension",
+      "go": "Extension",
+      "doc": "The name of a PHP extension.",
+      "pattern": "^[a-z0-9_]{1,40}$",
+      "message": "Use 1 to 40 lower-case letters, digits and underscores."
+    },
+    "iniKey": {
+      "what": "php.ini key",
+      "doc": "The name of a php.ini setting.",
+      "pattern": "^[a-z_.]{1,64}$",
+      "message": "Use 1 to 64 lower-case letters, underscores and dots."
+    },
+    "iniValue": {
+      "what": "php.ini value",
+      "doc": "A php.ini value. It is on one line and has no double quotes.",
+      "pattern": "^[^\"\\n\\r\\x00]*$",
+      "maxLength": 200,
+      "message": "Use at most 200 characters on one line, with no double quotes."
+    },
+    "sha256": {
+      "what": "SHA-256 hash",
+      "go": "SHA256",
+      "doc": "A SHA-256 hash in lower-case hexadecimal.",
+      "pattern": "^[0-9a-f]{64}$",
+      "message": "Enter 64 hexadecimal digits in lower case."
+    },
+    "version": {
+      "what": "version",
+      "doc": "An agent version, for example \"0.1.0\".",
+      "pattern": "^v?[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.]+)?$",
+      "maxLength": 32,
+      "message": "Enter a version, for example 0.1.0."
+    },
+    "restorePath": {
+      "what": "path",
+      "doc": "The path of a file or a directory in a website. It starts with \"/\". It has no empty part, no \".\" part, no \"..\" part and no \"/\" at the end.",
+      "pattern": "^(/|(/[^/\\x00]+)+)$",
+      "not": ["/\\.\\.?(/|$)"],
+      "maxLength": 4096,
+      "message": "Enter a path that starts with /, for example /public/index.php. Do not use \"//\", \".\" or \"..\" parts, or a / at the end."
+    },
+    "documentRoot": {
+      "what": "document root",
+      "doc": "A directory in /app, for example \"public\" or \"web/htdocs\". \".\" is /app. It has at most 8 parts. A part does not start with a dot. An empty value is permitted: the agent then uses the default of the image.",
+      "pattern": "^(\\.|{directory}(/{directory}){0,7})$",
+      "maxLength": 200,
+      "empty": true,
+      "message": "Enter a directory in /app, for example public or web/htdocs. Use letters, digits, dots, underscores and hyphens, and at most 8 parts."
+    },
+    "commandArgument": {
+      "what": "argument of the start command",
+      "doc": "One argument of the start command of a custom image. It has no control characters.",
+      "pattern": "^[^\\x00-\\x1f\\x7f]+$",
+      "maxLength": 1024,
+      "echo": false,
+      "message": "Each argument must have 1 to 1024 characters and no control characters."
+    },
+    "sshKey": {
+      "what": "SSH key",
+      "go": "SSHKey",
+      "doc": "One public key in the format of authorized_keys, with no options.",
+      "pattern": "^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp256|ecdsa-sha2-nistp384|ecdsa-sha2-nistp521|sk-ssh-ed25519@openssh\\.com|sk-ecdsa-sha2-nistp256@openssh\\.com) [A-Za-z0-9+/]+={0,3}( [ -~]{0,200})?$",
+      "maxLength": 8192,
+      "echo": false,
+      "message": "Enter one public SSH key on one line, for example: ssh-ed25519 AAAA... name. Do not put options before the key."
+    }
+  },
+  "sets": {
+    "reservedDatabaseNames": {
+      "doc": "Names that the shared database servers use (CF-01).",
+      "values": ["mysql", "sys", "information_schema", "performance_schema", "postgres", "template0", "template1", "root", "mariadb.sys", "healthcheck"]
+    },
+    "reservedDatabasePrefixes": {
+      "doc": "A database name does not start with one of these (CF-01).",
+      "values": ["pg_"]
+    }
+  },
+  "limits": {
+    "commandArguments": {
+      "doc": "The largest number of arguments of a start command.",
+      "value": 32
+    }
+  }
+}

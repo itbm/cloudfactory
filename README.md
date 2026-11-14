@@ -47,6 +47,7 @@ Refer to [docs/screenshots](docs/screenshots/README.md) for screenshots of all p
 | [`api/`](api)          | The panel API. Laravel 13 and PHP 8.4 or later.                           |
 | [`openapi/`](openapi)  | The OpenAPI 3.1 document of the panel API.                                |
 | [`agent/`](agent)      | The agent `cf-agent`. Go. It runs as root on each server.                 |
+| [`schema/`](schema)    | The input rules that the panel API and the agent share, and their examples. |
 | [`cli/`](cli)          | The command line tool `cf`. Go. It uses only the public API.              |
 | [`install/`](install)  | The installation script and its tests.                                    |
 | [`images/`](images)    | The Containerfiles of the runtime, edge, panel and database images.       |

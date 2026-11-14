@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\WebsiteStatus;
+use App\Models\Concerns\GuardsState;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -18,7 +19,13 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 ])]
 class Website extends Model
 {
-    use HasFactory, HasUlids;
+    use GuardsState, HasFactory, HasUlids;
+
+    /** The table of the permitted changes is in App\Enums\WebsiteStatus. */
+    public static function stateAttribute(): string
+    {
+        return 'status';
+    }
 
     protected function casts(): array
     {

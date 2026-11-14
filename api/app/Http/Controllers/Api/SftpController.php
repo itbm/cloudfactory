@@ -8,6 +8,7 @@ use App\Http\Resources\JobResource;
 use App\Http\Resources\WebsiteResource;
 use App\Services\Audit;
 use App\Services\JobDispatcher;
+use App\Validation\InputRules;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
@@ -22,7 +23,7 @@ class SftpController extends Controller
     use Concerns;
 
     /** The same format as validate.SSHKey in the agent: one public key with no options. */
-    public const SSH_KEY = '#^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp256|ecdsa-sha2-nistp384|ecdsa-sha2-nistp521|sk-ssh-ed25519@openssh\.com|sk-ecdsa-sha2-nistp256@openssh\.com) [A-Za-z0-9+/]+={0,3}( [ -~]{0,200})?$#';
+    public const SSH_KEY = InputRules::SSH_KEY;
 
     public function __construct(private JobDispatcher $jobs) {}
 

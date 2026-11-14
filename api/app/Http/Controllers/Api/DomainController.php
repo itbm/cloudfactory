@@ -12,6 +12,7 @@ use App\Models\Website;
 use App\Services\Audit;
 use App\Services\DomainPolicy;
 use App\Services\JobDispatcher;
+use App\Validation\Input;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -35,7 +36,7 @@ class DomainController extends Controller
     {
         $website = $this->findWebsite($request, $websiteId);
         $data = $request->validate([
-            'name' => ['required', 'string', 'lowercase', 'regex:'.WebsiteController::DOMAIN],
+            'name' => ['required', 'string', Input::rule('domain')],
             'kind' => ['required', Rule::in([DomainKind::Redirect->value, DomainKind::Alias->value])],
         ]);
         // Audit finding S5: each name starts a certificate order, and a server has a limit of

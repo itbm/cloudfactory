@@ -3,45 +3,47 @@
 package validate
 
 import (
-	"errors"
 	"fmt"
 	"net"
 	"net/url"
-	"path"
 	"regexp"
+	"slices"
 	"strings"
 )
 
-var (
-	unixUser  = regexp.MustCompile(`^[a-z][a-z0-9]{0,15}_[a-z0-9]{4}$`)
-	domain    = regexp.MustCompile(`^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
-	id        = regexp.MustCompile(`^[0-9A-Za-z]{26}$`)
-	dbName    = regexp.MustCompile(`^[a-z][a-z0-9_]{1,62}$`)
-	image     = regexp.MustCompile(`^([a-z0-9]([a-z0-9.-]*[a-z0-9])?)(:[0-9]+)?(/[a-z0-9._-]+)+:[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$`)
-	digest    = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
-	extension = regexp.MustCompile(`^[a-z0-9_]{1,40}$`)
-	iniKey    = regexp.MustCompile(`^[a-z_.]{1,64}$`)
-	sha256Hex = regexp.MustCompile(`^[0-9a-f]{64}$`)
-	version   = regexp.MustCompile(`^v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$`)
-)
+// rule is one rule of schema/input-rules.json. The generated file rules_gen.go has the rules
+// and one function for each rule, for example Domain and UnixUser. The panel API has the same
+// rules (api/app/Validation/InputRules.php), and the two run the examples in
+// schema/input-vectors.json. Do not write a pattern here: change the rules file and run
+// "go run ./cmd/cf-rules".
+type rule struct {
+	what      string
+	pattern   *regexp.Regexp
+	also, not []*regexp.Regexp
+	maxLength int
+	empty     bool
+	// echo is false when the error must not repeat the value, for example a long key.
+	echo bool
+}
 
-// UnixUser checks a website user name, for example "acme_x7k2".
-func UnixUser(s string) error { return match(unixUser, s, "Unix user") }
-
-// Domain checks a lower-case domain name. The panel has the same rule
-// (WebsiteController::DOMAIN), and the two use the examples in testdata/names.json.
-func Domain(s string) error {
-	if len(s) > 253 {
-		return fmt.Errorf("the domain %q is too long", s)
+func (r *rule) check(s string) error {
+	if s == "" && r.empty {
+		return nil
 	}
-	if err := match(domain, s, "domain"); err != nil {
-		return err
+	ok := (r.maxLength == 0 || len(s) <= r.maxLength) && r.pattern.MatchString(s)
+	for _, also := range r.also {
+		ok = ok && also.MatchString(s)
 	}
-	// The last label is not a number, so that the name is not an IP address (audit finding R5).
-	if last := s[strings.LastIndexByte(s, '.')+1:]; strings.Trim(last, "0123456789") == "" {
-		return fmt.Errorf("the domain %q is not valid", s)
+	for _, not := range r.not {
+		ok = ok && !not.MatchString(s)
 	}
-	return nil
+	switch {
+	case ok:
+		return nil
+	case r.echo:
+		return fmt.Errorf("the %s %q is not valid", r.what, s)
+	}
+	return fmt.Errorf("the %s is not valid", r.what)
 }
 
 // PanelDomain checks the domain of the panel. It is a domain, or "localhost" for a panel that
@@ -70,18 +72,6 @@ func SftpPort(port int) error {
 	return nil
 }
 
-// ID checks a ULID from the panel.
-func ID(s string) error { return match(id, s, "ID") }
-
-// DatabaseName checks a database or database user name.
-func DatabaseName(s string) error { return match(dbName, s, "database name") }
-
-// reservedDatabaseNames are names of the shared database servers (CF-01).
-var reservedDatabaseNames = map[string]bool{
-	"mysql": true, "sys": true, "information_schema": true, "performance_schema": true,
-	"postgres": true, "template0": true, "template1": true, "root": true, "mariadb.sys": true, "healthcheck": true,
-}
-
 // TenantDatabaseName checks the name of a database or a database user of a website. The name
 // must start with the Unix user of the website and "_", so that a tenant cannot use a system
 // name or a name of a different tenant (CF-01).
@@ -95,56 +85,26 @@ func TenantDatabaseName(unixUser, s string) error {
 	if !strings.HasPrefix(s, unixUser+"_") || len(s) == len(unixUser)+1 {
 		return fmt.Errorf("the database name %q does not start with %q", s, unixUser+"_")
 	}
-	if reservedDatabaseNames[s] || strings.HasPrefix(s, "pg_") {
+	if slices.Contains(reservedDatabaseNames, s) {
 		return fmt.Errorf("the database name %q is reserved", s)
 	}
-	return nil
-}
-
-// Image checks an image reference with a tag. The panel has the same rule for the reference
-// with no tag (ImageController::REFERENCE).
-func Image(s string) error {
-	m := image.FindStringSubmatch(s)
-	// The first part is the host of a registry: it has a dot or a port, or it is "localhost".
-	// Podman would search a name with no registry in its default registries (audit finding R5).
-	if m == nil || !(strings.Contains(m[1], ".") || m[3] != "" || m[1] == "localhost") {
-		return fmt.Errorf("the image %q is not valid", s)
+	for _, prefix := range reservedDatabasePrefixes {
+		if strings.HasPrefix(s, prefix) {
+			return fmt.Errorf("the database name %q is reserved", s)
+		}
 	}
 	return nil
 }
 
-// Digest checks an image digest. An empty digest is permitted.
-func Digest(s string) error {
-	if s == "" {
-		return nil
+// Command checks the start command of a custom image.
+func Command(args []string) error {
+	if len(args) > MaxCommandArguments {
+		return fmt.Errorf("the start command has more than %d arguments", MaxCommandArguments)
 	}
-	return match(digest, s, "digest")
-}
-
-// Extension checks the name of a PHP extension.
-func Extension(s string) error { return match(extension, s, "PHP extension") }
-
-// IniKey checks the name of a php.ini setting.
-func IniKey(s string) error { return match(iniKey, s, "php.ini key") }
-
-// IniValue checks a php.ini value. It must be on one line and must not contain quotes.
-func IniValue(s string) error {
-	if len(s) > 200 || strings.ContainsAny(s, "\"\n\r\x00") {
-		return fmt.Errorf("the php.ini value %q is not permitted", s)
-	}
-	return nil
-}
-
-// SHA256 checks a lower-case SHA-256 hash in hexadecimal.
-func SHA256(s string) error { return match(sha256Hex, s, "SHA-256 hash") }
-
-// Version checks an agent version, for example "0.1.0".
-func Version(s string) error { return match(version, s, "version") }
-
-// RestorePath checks a file path in a website. It must start with "/" and must not go up.
-func RestorePath(s string) error {
-	if !strings.HasPrefix(s, "/") || strings.ContainsRune(s, 0) || path.Clean(s) != s || strings.Contains(s, "/../") || strings.HasSuffix(s, "/..") {
-		return fmt.Errorf("the path %q is not permitted", s)
+	for _, a := range args {
+		if err := CommandArgument(a); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -169,65 +129,10 @@ func PanelURL(s string) error {
 	return fmt.Errorf("the panel address %q must start with https://", s)
 }
 
-func match(re *regexp.Regexp, s, what string) error {
-	if !re.MatchString(s) {
-		return fmt.Errorf("the %s %q is not valid", what, s)
-	}
-	return nil
-}
-
-var docRootPart = regexp.MustCompile(`^[A-Za-z0-9._-]{1,100}$`)
-
-// DocumentRoot checks a directory in /app, for example "public" or "web/htdocs". "." is /app.
-func DocumentRoot(s string) error {
-	if s == "" || s == "." {
-		return nil
-	}
-	parts := strings.Split(s, "/")
-	if len(parts) > 8 {
-		return fmt.Errorf("the document root %q is not valid", s)
-	}
-	for _, p := range parts {
-		if !docRootPart.MatchString(p) || p == "." || p == ".." {
-			return fmt.Errorf("the document root %q is not valid", s)
-		}
-	}
-	return nil
-}
-
-// Command checks the start command of a custom image: at most 32 arguments with no control
-// characters.
-func Command(args []string) error {
-	if len(args) > 32 {
-		return errors.New("the start command has more than 32 arguments")
-	}
-	for _, a := range args {
-		if a == "" || len(a) > 1024 {
-			return errors.New("each argument of the start command must have 1 to 1024 characters")
-		}
-		for _, r := range a {
-			if r < 0x20 || r == 0x7f {
-				return errors.New("the start command has a control character")
-			}
-		}
-	}
-	return nil
-}
-
 // Port checks a TCP port.
 func Port(p int32) error {
 	if p < 0 || p > 65535 {
 		return fmt.Errorf("the port %d is not valid", p)
-	}
-	return nil
-}
-
-var sshKey = regexp.MustCompile(`^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp256|ecdsa-sha2-nistp384|ecdsa-sha2-nistp521|sk-ssh-ed25519@openssh\.com|sk-ecdsa-sha2-nistp256@openssh\.com) [A-Za-z0-9+/]+={0,3}( [ -~]{0,200})?$`)
-
-// SSHKey checks one public key in the format of authorized_keys, with no options.
-func SSHKey(s string) error {
-	if len(s) > 8192 || !sshKey.MatchString(s) {
-		return errors.New("the SSH key is not a valid public key")
 	}
 	return nil
 }

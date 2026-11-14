@@ -358,7 +358,7 @@ paths:
         The panel refuses start and restart with status 409 while the customer of the website is
         suspended. The panel refuses all actions with status 422 for a website with the status
         `failed`, because the server has no container for it. Refer to "Make a failed website
-        again".
+        again". The panel refuses a stop with status 409 for a website that is stopped.
       requestBody:
         required: true
         content:
@@ -370,7 +370,7 @@ paths:
                 action: { type: string, enum: [start, stop, restart] }
       responses:
         '202': { $ref: '#/components/responses/JobOnly' }
-        '409': { description: The customer of the website is suspended. }
+        '409': { description: The customer of the website is suspended, or the status of the website does not permit the action. }
         '422': { $ref: '#/components/responses/Invalid' }
 
   /v1/websites/{id}/retry:
@@ -1528,13 +1528,16 @@ paths:
     post:
       tags: [Images]
       summary: Pause a rollout
-      description: Jobs that run now complete. The next stage does not start.
+      description: >-
+        Jobs that run now complete. The next stage does not start. Only a rollout with the state
+        `running` can pause.
       responses:
         '200':
           description: Paused.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Rollout' }
+        '409': { description: The rollout does not have the state `running`. }
 
   /v1/rollouts/{id}/resume:
     parameters:
@@ -1542,12 +1545,14 @@ paths:
     post:
       tags: [Images]
       summary: Resume a rollout
+      description: Only a rollout with the state `paused` can resume.
       responses:
         '200':
           description: Resumed.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Rollout' }
+        '409': { description: The rollout does not have the state `paused`. }
 
   /v1/rollouts/{id}/roll-back:
     parameters:
@@ -1555,13 +1560,16 @@ paths:
     post:
       tags: [Images]
       summary: Roll back a rollout
-      description: FR-1107. Put all updated websites back on the previous image.
+      description: >-
+        FR-1107. Put all updated websites back on the previous image. Only a rollout with the
+        state `running` or `paused` can roll back.
       responses:
         '200':
           description: Rolled back.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Rollout' }
+        '409': { description: The rollout is complete, or it is rolled back already. }
 
   /v1/customers:
     get:

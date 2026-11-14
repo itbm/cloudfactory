@@ -2,46 +2,135 @@ package validate
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
+	"slices"
+	"strings"
 	"testing"
+
+	"github.com/itbm/cloudfactory/agent/internal/rulesgen"
 )
 
-// Audit finding R5: the agent and the panel accept the same names. The two test their rules
-// with one list of examples (the panel: AuditFixesTest).
-func TestTheAgentAndThePanelUseTheSameExamplesForNames(t *testing.T) {
-	b, err := os.ReadFile("../../../testdata/names.json")
+// vector is one example of schema/input-vectors.json: a string, or {"repeat": [...]} with
+// strings and [string, number] pairs.
+type vector string
+
+func (v *vector) UnmarshalJSON(b []byte) error {
+	var plain string
+	if json.Unmarshal(b, &plain) == nil {
+		*v = vector(plain)
+		return nil
+	}
+	var parts struct{ Repeat []any }
+	if err := json.Unmarshal(b, &parts); err != nil {
+		return err
+	}
+	var out strings.Builder
+	for _, part := range parts.Repeat {
+		switch p := part.(type) {
+		case string:
+			out.WriteString(p)
+		case []any:
+			out.WriteString(strings.Repeat(p[0].(string), int(p[1].(float64))))
+		default:
+			return fmt.Errorf("the example part %v is not a string or a pair", part)
+		}
+	}
+	*v = vector(out.String())
+	return nil
+}
+
+// Audit findings R5 and F04: the agent and the panel accept the same values. The two have their
+// rules from schema/input-rules.json, and the two run the examples in schema/input-vectors.json
+// (the panel: api/tests/Unit/InputRulesTest.php).
+func TestTheAgentAndThePanelUseTheSameExamples(t *testing.T) {
+	b, err := os.ReadFile("../../../schema/input-vectors.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	var names struct {
-		Domains, Images struct{ Valid, Invalid []string }
+	var vectors struct {
+		Rules map[string]struct{ Valid, Invalid []vector }
 	}
-	if err := json.Unmarshal(b, &names); err != nil {
+	if err := json.Unmarshal(b, &vectors); err != nil {
 		t.Fatal(err)
 	}
-	if len(names.Domains.Valid) == 0 || len(names.Domains.Invalid) == 0 || len(names.Images.Valid) == 0 || len(names.Images.Invalid) == 0 {
-		t.Fatalf("the list has no examples: %+v", names)
-	}
-	for _, d := range names.Domains.Valid {
-		if err := Domain(d); err != nil {
-			t.Errorf("the agent refuses the domain %q, which the panel accepts", d)
+	for name := range vectors.Rules {
+		if rules[name] == nil {
+			t.Errorf("the examples have the rule %q, which does not exist", name)
 		}
 	}
-	for _, d := range names.Domains.Invalid {
-		if Domain(d) == nil {
-			t.Errorf("the agent accepts the domain %q, which the panel refuses", d)
+	for name, r := range rules {
+		examples := vectors.Rules[name]
+		if len(examples.Valid) == 0 || len(examples.Invalid) == 0 {
+			t.Errorf("the rule %q must have valid and invalid examples", name)
+		}
+		for _, v := range examples.Valid {
+			if err := r.check(string(v)); err != nil {
+				t.Errorf("%s: the agent refuses the valid example %.80q", name, v)
+			}
+		}
+		for _, v := range examples.Invalid {
+			if r.check(string(v)) == nil {
+				t.Errorf("%s: the agent accepts the invalid example %.80q", name, v)
+			}
 		}
 	}
-	// The list has references with no tag. The agent gets each reference with a tag.
-	for _, i := range names.Images.Valid {
-		if err := Image(i + ":8.4.0-1"); err != nil {
-			t.Errorf("the agent refuses the image %q, which the panel accepts", i)
+}
+
+// The generated files are current: the generator gives the same text for the rules file. CI
+// also runs the generator and compares the files.
+func TestTheGeneratedRulesAreCurrent(t *testing.T) {
+	schema, err := os.ReadFile("../../../schema/input-rules.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	goCode, phpCode, err := rulesgen.Generate(schema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for current, want := range map[string][]byte{"rules_gen.go": goCode, "../../../api/app/Validation/InputRules.php": phpCode} {
+		if got, err := os.ReadFile(current); err != nil || string(want) != string(got) {
+			t.Errorf("%s is not current. Run \"go run ./cmd/cf-rules\" in the directory agent.", current)
 		}
 	}
-	for _, i := range names.Images.Invalid {
-		if Image(i+":8.4.0-1") == nil {
-			t.Errorf("the agent accepts the image %q, which the panel refuses", i)
+}
+
+// An error does not repeat a long value such as an SSH key.
+func TestTheErrorOfAKeyDoesNotRepeatTheKey(t *testing.T) {
+	if err := SSHKey("ssh-dss AAAA"); err == nil || strings.Contains(err.Error(), "AAAA") {
+		t.Errorf("SSHKey: %v", err)
+	}
+	if err := Extension("Bad"); err == nil || err.Error() != `the PHP extension "Bad" is not valid` {
+		t.Errorf("Extension: %v", err)
+	}
+}
+
+func TestCommand(t *testing.T) {
+	if err := Command([]string{"node", "server.js", "--port=8080"}); err != nil {
+		t.Error(err)
+	}
+	if err := Command(nil); err != nil {
+		t.Error(err)
+	}
+	for _, bad := range [][]string{{""}, {"a\nb"}, {strings.Repeat("a", 1025)}, make([]string, MaxCommandArguments+1)} {
+		if Command(bad) == nil {
+			t.Errorf("Command accepts %.40q", bad)
 		}
+	}
+}
+
+func TestTenantDatabaseName(t *testing.T) {
+	if err := TenantDatabaseName("acme_x7k2", "acme_x7k2_shop"); err != nil {
+		t.Error(err)
+	}
+	for _, bad := range []string{"mysql", "acme_x7k2_", "other_ab12_shop", "pg_acme_x7k2_shop", "acme_x7k2_Shop"} {
+		if TenantDatabaseName("acme_x7k2", bad) == nil {
+			t.Errorf("TenantDatabaseName accepts %q", bad)
+		}
+	}
+	// A reserved name is refused for each Unix user (CF-01).
+	if slices.Contains(reservedDatabaseNames, "postgres") == false || TenantDatabaseName("pg_x7k2", "pg_x7k2_shop") == nil {
+		t.Error("a reserved database name is accepted")
 	}
 }
 
