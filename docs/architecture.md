@@ -76,9 +76,10 @@ bridge networks have the same problem for all connections, so websites do not us
 
 An nftables rule refuses a new connection to a website port on `169.254.77.1` unless it comes
 from root or from the user `cf-edge`. pasta opens each connection as the Unix user of the
-container, so a website cannot connect to a different website. All websites can connect to
-the database ports 3306 (MariaDB), 5432 (PostgreSQL) and 6379 (Valkey). The database password
-keeps each website to its own databases.
+container, so a website cannot connect to a different website.
+
+The database containers are not on this address. Each customer has its own database
+containers on an address of the database network. Refer to [Databases](#databases).
 
 ### Shared runtime images
 
@@ -191,18 +192,96 @@ the administrators. The image `sftp` has OpenSSH and `libnss-extrausers`.
 
 ## Databases
 
-Each server has one shared container for each database engine that its websites use. The Unix
-user `cf-db` runs these containers in gVisor. The agent starts a container when a website
-needs the engine for the first time.
+Each customer has its own database containers on a server: one container for each database
+engine that the websites of the customer use there. A customer cannot change the service of a
+different customer, because each container has its own database server, its own data, its own
+superuser and its own limits. The Unix user `cf-db` runs each container in its own gVisor
+sandbox. The agent starts a container when a website of the customer needs the engine for the
+first time.
 
-| Container | Engine | Port on `169.254.77.1` | Host name in a website container |
-| --------- | ------ | ---------------------- | -------------------------------- |
-| `cf-mariadb` | MariaDB | 3306 | `mariadb.internal` |
-| `cf-postgresql` | PostgreSQL | 5432 | `postgres.internal` |
-| `cf-valkey` | Valkey | 6379 | `valkey.internal` |
+| Container | Engine | Port | Host name in a website container |
+| --------- | ------ | ---- | -------------------------------- |
+| `cf-mariadb-<customer>` | MariaDB | 3306 | `mariadb.internal` |
+| `cf-postgresql-<customer>` | PostgreSQL | 5432 | `postgres.internal` |
+| `cf-valkey-<customer>` | Valkey | 6379 | `valkey.internal` |
 
-The name of each database and each database user starts with the Unix user of the website.
-The data is in `/var/lib/cf-db/<engine>`.
+`<customer>` is the ID of the customer in the panel, in lower case. The name of each database
+and each database user starts with the Unix user of the website. The data and the superuser
+passwords of a customer are in `/var/lib/cf-db/customers/<customer>`.
+
+### The database network
+
+The installer adds `169.254.80.1/20` to the loopback interface. This makes each address of the
+network `169.254.80.0/20` a local address of the server, and the addresses never leave the
+server. The agent gives each customer one address of the network on a server, from
+`169.254.80.2` to `169.254.95.254`. Thus a server can have database containers for 4093
+customers. The containers of a customer publish their ports only on the address of the
+customer.
+
+- Each website container gets the three host names with the address of its customer
+  (`AddHost=` in the unit). Thus an application uses the same host names and ports on all
+  servers, for all customers.
+- The agent keeps the record of the customers in `/var/lib/cloudfactory/sites.json`: the
+  address number of each customer, and the websites that use its containers.
+- The firewall has the set `database_access`. Each element is the UID of a website and the
+  address of its customer. A website can connect only to the database ports on the address in
+  its element. The agent writes the elements in
+  `/etc/cloudfactory/firewall/database-access.nft` and loads the file each time that a website
+  is made, removed or moved. Refer to [security.md](security.md#firewall).
+- The database servers see `169.254.80.1` as the address of each website container. A MariaDB
+  user with the access "website" can connect only from this address.
+
+When the last website of a customer on a server is removed, the agent stops the database
+containers of the customer and removes their data and their address.
+
+### Limits of the containers
+
+Each database container of a customer has a memory limit, and no swap, on the cgroup of its
+service. A customer that uses all its memory does not take memory from the containers of
+other customers.
+
+| Setting in `/etc/cloudfactory/agent.json` | Applies to | Default |
+| ----------------------------------------- | ---------- | ------- |
+| `databaseMemoryMb` | The MariaDB container and the PostgreSQL container of each customer | One quarter of the memory of the server, from 512 MB to 2048 MB |
+| `valkeyMemoryMb` | The data of the Valkey container of each customer | 1/32 of the memory of the server, from 32 MB to 256 MB |
+| `databaseCpus` | Each database container of each customer, in vCPUs | No limit |
+
+The Valkey container gets two times `valkeyMemoryMb` and 128 MB more, because Valkey needs
+memory to write its data file again. With no CPU limit, the kernel gives each container an
+equal part of the CPUs when the CPUs are busy.
+
+These limits do not reserve memory. The sum of the limits can be more than the memory of the
+server. Each container also uses memory when its databases have no work, so a server with
+many customers needs more memory than a server with shared database containers.
+
+### The shared containers of an earlier release
+
+In release 0.1.9 and earlier, all websites of a server used one MariaDB container
+(`cf-mariadb`) and one PostgreSQL container (`cf-postgresql`) on the private service address
+`169.254.77.1`. Their data is in `/var/lib/cf-db/mariadb` and `/var/lib/cf-db/postgresql`.
+
+A website from such a release keeps the shared containers until an administrator moves the
+databases of its server. The agent has the action `MoveDatabases` for one website:
+
+1. Start the database containers of the customer.
+2. Stop the website.
+3. Copy each database from the shared container to the container of the customer.
+4. Make each database user in the container of the customer, with the same password. The
+   agent copies the hash of the password, not the password.
+5. Start the website with the host names of the new containers.
+6. Remove the old copies from the shared containers.
+
+Before step 5, a failure starts the website again with the shared containers. After step 5,
+the job only removes the old copies, and a job that runs again does only that. When the last
+website of the server has moved, the agent stops the shared containers. Their data
+directories stay on the disk. Refer to
+[installation.md](installation.md#move-the-databases-of-a-server-from-an-earlier-release).
+
+An agent of this release adds the database network and the firewall rules to a server that
+the installer of an earlier release prepared. If the firewall file does not have the rules
+of the installer, the job stops and tells you to run the installer again.
+
+### Valkey
 
 Valkey has no databases with names. It has databases with numbers, and all users can use all
 numbers by default. Thus the agent makes a Valkey database from two parts:
@@ -213,16 +292,19 @@ numbers by default. Thus the agent makes a Valkey database from two parts:
   keeps the user in its database number. The rules also remove the commands of an
   administrator and the commands that change or show other databases.
 
-The user file of Valkey, `/var/lib/cf-db/valkey/users.acl`, is the record of the users and
-their numbers. The agent reads the file through Valkey, gives a new database the smallest free
-number, and sends the number to the panel in the result of the job and in each report. The
-agent connects to Valkey as the administrator user `default`. The password of this user is
-in `/var/lib/cf-db/valkey.secret`, which only root can read. The agent refuses a Valkey
-release before 9.1.2, because earlier releases do not have the rule for database numbers.
+The websites of one customer use the same Valkey container, so these rules keep the websites
+of one customer apart. The user file of Valkey,
+`/var/lib/cf-db/customers/<customer>/valkey/users.acl`, is the record of the users and their
+numbers. The agent reads the file through Valkey, gives a new database the smallest free
+number of the customer, and sends the number to the panel in the result of the job and in
+each report. The agent connects to Valkey as the administrator user `default`. The password
+of this user is in `/var/lib/cf-db/customers/<customer>/valkey.secret`, which only root can
+read. The agent refuses a Valkey release before 9.1.2, because earlier releases do not have
+the rule for database numbers.
 
-All the Valkey databases of a server use one memory limit (`valkeyMemoryMb`). When the memory
-is full, Valkey removes the keys that were not used for the longest time. Refer to
-[installation.md](installation.md#valkey).
+All the Valkey databases of a customer on a server use one memory limit (`valkeyMemoryMb`).
+When the memory is full, Valkey removes the keys of that customer that were not used for the
+longest time. Refer to [installation.md](installation.md#valkey).
 
 ## Change of runtime without downtime
 

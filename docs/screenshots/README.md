@@ -181,3 +181,11 @@ The databases of a website with a Valkey database: the host, the database number
 number of keys. The user of a Valkey database can only get a new password.
 
 ![36-valkey-database](36-valkey-database.png)
+
+## 37-move-databases
+
+The page of a server with websites from an earlier release. These websites use shared
+database containers. The administrator moves their databases to the database containers of
+each customer.
+
+![37-move-databases](37-move-databases.png)

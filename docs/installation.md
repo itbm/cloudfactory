@@ -201,8 +201,10 @@ Then the script does these steps:
    the update policy of the server and in its maintenance window. After an update, the agent
    runs `needrestart`, which restarts the services that use changed files. The script tells
    `needrestart` not to restart the agent, because a restart stops the update job.
-3. Add the private service address `169.254.77.1/32` to the loopback interface
-   (`cloudfactory-address.service`). The containers publish their ports only on this address.
+3. Add the private service address `169.254.77.1/32` and the database network
+   `169.254.80.1/20` to the loopback interface (`cloudfactory-address.service`). The
+   containers publish their ports only on these addresses. Each customer gets one address of
+   the database network for its database containers.
 4. Let systemd give the CPU, I/O, memory and process controllers to the user services
    (`Delegate=`). Rootless Podman needs them for the limits of each website.
 5. Hold the container packages, so that a host update cannot change them.
@@ -347,6 +349,10 @@ cf-agent panel unlock you@example.com
 If you updated the agent on the panel server in a different way, run `cf-agent panel update`
 as root there. This command changes the panel to the version of the agent.
 
+After the update from release 0.1.9 or an earlier release, move the databases of each server
+to the database containers of each customer. Refer to
+[Move the databases of a server from an earlier release](#move-the-databases-of-a-server-from-an-earlier-release).
+
 The update also changes the official runtime images to the tag of the new release. An image
 that no website uses changes immediately. An image that websites use shows the new tag on the
 **Updates** page, and you start the rollout there. An image with the update policy `manual`
@@ -407,20 +413,107 @@ Optional: the website users cannot sign in to the SSH service of the host, becau
 no key there and a locked password. To refuse them on the host in all cases, add
 `DenyGroups cf-sites` to the SSH configuration of the host.
 
+### Database containers of each customer
+
+Each customer has its own MariaDB, PostgreSQL and Valkey containers on a server. The websites
+of a customer on the server use the same containers. A website cannot connect to the
+containers of a different customer, and a customer that uses all its memory or fills its
+database server does not stop the databases of other customers.
+
+- The agent starts a container when a website of the customer needs the engine for the first
+  time. The first database of a customer thus needs more time than the next ones.
+- A website connects with the host names `mariadb.internal`, `postgres.internal` and
+  `valkey.internal`. The names are the same for all customers and all servers.
+- The agent removes the containers of a customer, with their data, when the last website of
+  the customer on the server is removed.
+
+Each container uses memory, also when its databases have no work. Give a server with many
+customers sufficient memory. To change the limits of the containers:
+
+1. Set these values in `/etc/cloudfactory/agent.json`:
+
+   | Setting | Function | Default |
+   | ------- | -------- | ------- |
+   | `"databaseMemoryMb"` | The memory limit of the MariaDB container and of the PostgreSQL container of each customer, in MB. The minimum is 256. | One quarter of the memory of the server, from 512 to 2048 |
+   | `"valkeyMemoryMb"` | The memory limit for the data of the Valkey container of each customer, in MB. The minimum is 16. | 1/32 of the memory of the server, from 32 to 256 |
+   | `"databaseCpus"` | The CPU limit of each database container, in vCPUs, for example `2`. | No limit |
+
+2. Restart the agent: `systemctl restart cf-agent`. The agent starts each database container
+   again with the new limits. The open connections stop, and the data stays.
+
+These limits apply:
+
+- All database containers of a server run as the Unix user `cf-db`, each in its own gVisor
+  sandbox. The database files of all customers have this owner on the host.
+- The database data of a customer has no disk quota. The disk quota of a website applies to
+  the files of the website only.
+- When MariaDB or PostgreSQL uses more memory than its limit, the kernel stops the database
+  server of that customer, and systemd starts it again.
+
+#### Move the databases of a server from an earlier release
+
+In release 0.1.9 and earlier, all websites of a server used one shared MariaDB container and
+one shared PostgreSQL container. After you update the agent of such a server, its websites
+continue to use the shared containers. The page of the server shows the number of these
+websites. A website with the shared containers cannot have a Valkey database.
+
+To give each customer its own containers:
+
+1. Make sure that the last backup of each website is complete (refer to [Backups](#backups)).
+2. In the panel, go to **Servers** and open the server.
+3. Select **Move the databases**. With the CLI: `cf servers move-databases SERVER`.
+
+The panel starts one job for each website. The job does these steps:
+
+1. Start the database containers of the customer.
+2. Stop the website.
+3. Copy the databases of the website to the containers of its customer.
+4. Make the database users there, with the same passwords.
+5. Start the website.
+6. Remove the old copies from the shared containers.
+
+The website does not operate from step 2 to step 5. The time depends on the size of the
+databases. The applications need no change: the host names, the ports, the user names and
+the passwords stay the same. An application must connect to the host name `mariadb.internal`
+or `postgres.internal`. If an application connects to the address `169.254.77.1`, change it
+to the host name before the move.
+
+In step 5, the agent makes sure that a website that answered before the move answers with
+the new containers too. A website that did not answer before the move, for example a website
+that gives the status 503 during maintenance, moves without this check.
+
+If a job fails before the end of step 5, the agent removes the new copies, and the website
+starts again with the shared containers. Find the cause in the job, then select **Move the
+databases** again. When the last website of the server has moved, the agent stops the shared
+containers. Their data directories, `/var/lib/cf-db/mariadb` and
+`/var/lib/cf-db/postgresql`, stay on the disk. Remove them when you are sure that all
+websites operate correctly.
+
+A new website on the server uses the containers of its customer immediately. A staging copy
+does too, also when its source website uses the shared containers.
+
+If you changed the firewall rules in `/etc/nftables.d-cloudfactory.nft`, the first job stops
+and tells you to run the installation script again on the server. The script writes the
+rules of this release.
+
 ### Valkey
 
 Valkey is a key-value store that keeps its data in memory. Use it for a cache, for sessions
 and for queues. An application that can use Redis can use Valkey with the same client library.
 
-Each server has one Valkey container, `cf-valkey`, for all the websites of the server. The
-agent starts the container when you make the first Valkey database on the server. The agent of
-the server must be from a release that has Valkey. If it is not, the panel does not let you
-select Valkey. Update the agent (refer to [Update to a new release](#update-to-a-new-release)).
+Each customer has one Valkey container on a server, for all the websites of the customer
+there. The agent starts the container when you make the first Valkey database of the customer
+on the server. The agent of the server must be from a release that has Valkey. If it is not,
+the panel does not let you select Valkey. Update the agent (refer to
+[Update to a new release](#update-to-a-new-release)). A website that uses the shared database
+containers of an earlier release cannot have a Valkey database until its databases move
+(refer to
+[Move the databases of a server from an earlier release](#move-the-databases-of-a-server-from-an-earlier-release)).
 
 A Valkey database has three parts:
 
-- A database number from 1 to 1023. The agent gives the smallest number that is free on the
-  server.
+- A database number from 1 to 1023. The agent gives the smallest number that is free for the
+  customer on the server.
 - A user with the name of the database. The user has access to this database number only.
 - A password. The panel shows it one time only.
 
@@ -481,10 +574,11 @@ the old password.
 
 These limits apply:
 
-- **Memory.** All the Valkey databases of a server use one memory limit. The default is one
-  eighth of the memory of the server, not less than 64 MB and not more than 1024 MB. When the
-  memory is full, Valkey removes the keys that were not used for the longest time, from all
-  websites. Do not keep data in Valkey that the application cannot make again.
+- **Memory.** All the Valkey databases of a customer on a server use one memory limit. The
+  default is 1/32 of the memory of the server, not less than 32 MB and not more than 256 MB.
+  When the memory is full, Valkey removes the keys that were not used for the longest time,
+  from all websites of that customer. The websites of other customers are not affected. Do
+  not keep data in Valkey that the application cannot make again.
 - **Backups.** A backup has no Valkey data, and a restore does not change it. Valkey keeps
   its data on the disk of the server (an append-only file), so the data stays after a restart.
 - **Staging copy.** The data of a Valkey database is not copied. The copy gets a new, empty
@@ -493,20 +587,16 @@ These limits apply:
 - **Users.** A Valkey database always has one user. The user can connect only from the
   container of the website. You cannot give it more databases or remove it. To remove the
   user, remove the database.
-- **Channels.** All databases use the same channels for publish and subscribe. A website can
-  use only the channels with a name that starts with its prefix, for example
+- **Channels.** All databases of a customer use the same channels for publish and subscribe.
+  A website can use only the channels with a name that starts with its prefix, for example
   `acme_x7k2_events`.
 - **Commands.** Valkey refuses the commands of an administrator (for example `CONFIG`, `ACL`,
   `MONITOR` and `CLIENT LIST`) and the commands that change or show other databases (for
   example `FLUSHALL`, `SWAPDB`, `MOVE`, `FUNCTION`, `SCRIPT FLUSH` and `PUBSUB`). To remove
   all the keys of the database, use `FLUSHDB`. Scripts with `EVAL` are permitted.
 
-To change the memory limit of a server:
-
-1. Set `"valkeyMemoryMb"` in `/etc/cloudfactory/agent.json`, for example
-   `"valkeyMemoryMb": 512`. The minimum is 16.
-2. Restart the agent: `systemctl restart cf-agent`. The agent starts Valkey again with the new
-   limit. The open connections stop, and the data stays.
+To change the memory limit, set `"valkeyMemoryMb"` (refer to
+[Database containers of each customer](#database-containers-of-each-customer)).
 
 ### Servers that you installed with release 0.1
 
@@ -569,20 +659,28 @@ The `firewall` check looks for the table `inet cloudfactory`. If the table is no
 
 ### Ports
 
-The firewall accepts only SSH, SFTP, HTTP, HTTPS and the agent port. It does not accept the
-database ports 3306 (MariaDB), 5432 (PostgreSQL) and 6379 (Valkey), so the databases are not
-open to the internet. A database user with the access "anywhere" can connect only after you
-add a rule for its port to `/etc/nftables.d-cloudfactory.nft`. Give only the addresses that
-need it. A Valkey user cannot have the access "anywhere".
+The firewall accepts only SSH, SFTP, HTTP, HTTPS and the agent port. The database containers
+publish their ports only on the database network `169.254.80.0/20` of the loopback interface,
+so the databases are not open to the internet.
 
-On a server that you installed with a release that had no Valkey, the agent adds port 6379 to
-the database rules in `/etc/nftables.d-cloudfactory.nft` when it makes the first Valkey
-database. If you changed these rules, the job stops and tells you to run the installation
-script again on the server.
+A database user with the access "anywhere" is not limited to the address of the website
+containers, and its connections must use TLS. A different computer can connect only after you
+send a port of the server to the database address of the customer with your own firewall
+rules. Cloudfactory does not make such rules. Give only the addresses that need it. A Valkey
+user cannot have the access "anywhere".
 
-The firewall also has an output rule for the private service address `169.254.77.1`. Only
-root and the edge proxy (`cf-edge`) can open a new connection to a port there, except the
-database ports. So a website cannot connect to a different website on the server.
+The firewall has an output rule for the private service address `169.254.77.1`. Only root and
+the edge proxy (`cf-edge`) can open a new connection to a port there, except the ports of
+the shared database containers of an earlier release. So a website cannot connect to a
+different website on the server.
+
+The firewall also has rules for the database network:
+
+- Only root and the website users can open a new connection to an address of the network.
+- A website user can connect only to the address of its customer, on the ports 3306
+  (MariaDB), 5432 (PostgreSQL) and 6379 (Valkey). The set `database_access` has the UID of
+  each website and the address of its customer. The agent writes the elements of the set in
+  `/etc/cloudfactory/firewall/database-access.nft`. Do not change this file.
 
 ### Connections from the websites
 
@@ -591,7 +689,9 @@ connection of these users, thus to each connection that a website opens:
 
 | Destination | Result |
 | ----------- | ------ |
-| MariaDB, PostgreSQL and Valkey on the private service address | Permitted |
+| MariaDB, PostgreSQL and Valkey of the customer of the website | Permitted |
+| The database containers of other customers | Refused |
+| The shared MariaDB and PostgreSQL containers of an earlier release | Permitted |
 | DNS (port 53) | Permitted |
 | The addresses of this server, on the HTTP and HTTPS ports | Permitted |
 | All other services of this server, for example SSH and the agent port | Refused |
@@ -623,10 +723,31 @@ Ubuntu 26.04. On both, the installation completed, the administrator signed in, 
 started and answered through the edge proxy on the private service address `169.254.77.1`.
 The virtual machines had no hardware virtualisation, so gVisor used the `systrap` platform.
 
+The database containers of each customer were checked in the virtual machine with Ubuntu
+26.04, with release 0.1.9 and the agent of this release:
+
+- The agent added the database network and the firewall rules to the server of release 0.1.9.
+- MariaDB and PostgreSQL of a customer started in gVisor, with the memory limit.
+- The move of a website with a MariaDB database and a PostgreSQL database. After the move,
+  the website container connected to MariaDB and to PostgreSQL with the same host names, user
+  names and passwords, and the data was the same.
+- A move that failed, and a website that did not answer after the move. The website started
+  again with the shared containers.
+- A website of a different customer, a website with the shared containers and a different
+  Unix user of the server (not `root`) could not connect to the containers of a customer.
+- The shared containers stopped when the last website of the server had moved.
+- The containers of a customer and their data went with the last website of the customer.
+- After a restart of the server, the database network and the firewall rules were there, the
+  containers of the customer started, and the website connected to its databases.
+
+The virtual machine is slow, because it has no hardware virtualisation. A new MariaDB
+container needed 6 minutes to start there, which is more than the 3 minutes that the agent
+waits. Thus the check used an agent with a longer time. The start time of a new database
+container on a server with hardware virtualisation was not measured.
+
 These items were not checked on a real server. After you install the release, check them, and
 report a problem in the issues of the repository:
 
-- A website container can connect to MariaDB and PostgreSQL.
 - Valkey in gVisor, and a website container that connects to it. The access rules of the
   Valkey users are checked with a real Valkey server when the Valkey image is built, but not
   in gVisor.
