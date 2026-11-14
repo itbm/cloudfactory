@@ -101,6 +101,11 @@ const (
 	// AgentServiceDeleteDatabaseServerProcedure is the fully-qualified name of the AgentService's
 	// DeleteDatabaseServer RPC.
 	AgentServiceDeleteDatabaseServerProcedure = "/cloudfactory.agent.v1.AgentService/DeleteDatabaseServer"
+	// AgentServiceSetMeshProcedure is the fully-qualified name of the AgentService's SetMesh RPC.
+	AgentServiceSetMeshProcedure = "/cloudfactory.agent.v1.AgentService/SetMesh"
+	// AgentServiceRotateMeshKeyProcedure is the fully-qualified name of the AgentService's
+	// RotateMeshKey RPC.
+	AgentServiceRotateMeshKeyProcedure = "/cloudfactory.agent.v1.AgentService/RotateMeshKey"
 	// AgentServiceGetStatusProcedure is the fully-qualified name of the AgentService's GetStatus RPC.
 	AgentServiceGetStatusProcedure = "/cloudfactory.agent.v1.AgentService/GetStatus"
 )
@@ -129,6 +134,8 @@ type AgentServiceClient interface {
 	SetPanelCertificate(context.Context, *connect.Request[v1.SetPanelCertificateRequest]) (*connect.Response[v1.JobAccepted], error)
 	SetDatabaseServer(context.Context, *connect.Request[v1.DatabaseServerRequest]) (*connect.Response[v1.JobAccepted], error)
 	DeleteDatabaseServer(context.Context, *connect.Request[v1.DeleteDatabaseServerRequest]) (*connect.Response[v1.JobAccepted], error)
+	SetMesh(context.Context, *connect.Request[v1.SetMeshRequest]) (*connect.Response[v1.JobAccepted], error)
+	RotateMeshKey(context.Context, *connect.Request[v1.RotateMeshKeyRequest]) (*connect.Response[v1.JobAccepted], error)
 	// Returns the actual state of the server at once. This method does not make a job.
 	GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.HostStatus], error)
 }
@@ -276,6 +283,18 @@ func NewAgentServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(agentServiceMethods.ByName("DeleteDatabaseServer")),
 			connect.WithClientOptions(opts...),
 		),
+		setMesh: connect.NewClient[v1.SetMeshRequest, v1.JobAccepted](
+			httpClient,
+			baseURL+AgentServiceSetMeshProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("SetMesh")),
+			connect.WithClientOptions(opts...),
+		),
+		rotateMeshKey: connect.NewClient[v1.RotateMeshKeyRequest, v1.JobAccepted](
+			httpClient,
+			baseURL+AgentServiceRotateMeshKeyProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("RotateMeshKey")),
+			connect.WithClientOptions(opts...),
+		),
 		getStatus: connect.NewClient[v1.GetStatusRequest, v1.HostStatus](
 			httpClient,
 			baseURL+AgentServiceGetStatusProcedure,
@@ -309,6 +328,8 @@ type agentServiceClient struct {
 	setPanelCertificate  *connect.Client[v1.SetPanelCertificateRequest, v1.JobAccepted]
 	setDatabaseServer    *connect.Client[v1.DatabaseServerRequest, v1.JobAccepted]
 	deleteDatabaseServer *connect.Client[v1.DeleteDatabaseServerRequest, v1.JobAccepted]
+	setMesh              *connect.Client[v1.SetMeshRequest, v1.JobAccepted]
+	rotateMeshKey        *connect.Client[v1.RotateMeshKeyRequest, v1.JobAccepted]
 	getStatus            *connect.Client[v1.GetStatusRequest, v1.HostStatus]
 }
 
@@ -422,6 +443,16 @@ func (c *agentServiceClient) DeleteDatabaseServer(ctx context.Context, req *conn
 	return c.deleteDatabaseServer.CallUnary(ctx, req)
 }
 
+// SetMesh calls cloudfactory.agent.v1.AgentService.SetMesh.
+func (c *agentServiceClient) SetMesh(ctx context.Context, req *connect.Request[v1.SetMeshRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return c.setMesh.CallUnary(ctx, req)
+}
+
+// RotateMeshKey calls cloudfactory.agent.v1.AgentService.RotateMeshKey.
+func (c *agentServiceClient) RotateMeshKey(ctx context.Context, req *connect.Request[v1.RotateMeshKeyRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return c.rotateMeshKey.CallUnary(ctx, req)
+}
+
 // GetStatus calls cloudfactory.agent.v1.AgentService.GetStatus.
 func (c *agentServiceClient) GetStatus(ctx context.Context, req *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.HostStatus], error) {
 	return c.getStatus.CallUnary(ctx, req)
@@ -451,6 +482,8 @@ type AgentServiceHandler interface {
 	SetPanelCertificate(context.Context, *connect.Request[v1.SetPanelCertificateRequest]) (*connect.Response[v1.JobAccepted], error)
 	SetDatabaseServer(context.Context, *connect.Request[v1.DatabaseServerRequest]) (*connect.Response[v1.JobAccepted], error)
 	DeleteDatabaseServer(context.Context, *connect.Request[v1.DeleteDatabaseServerRequest]) (*connect.Response[v1.JobAccepted], error)
+	SetMesh(context.Context, *connect.Request[v1.SetMeshRequest]) (*connect.Response[v1.JobAccepted], error)
+	RotateMeshKey(context.Context, *connect.Request[v1.RotateMeshKeyRequest]) (*connect.Response[v1.JobAccepted], error)
 	// Returns the actual state of the server at once. This method does not make a job.
 	GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.HostStatus], error)
 }
@@ -594,6 +627,18 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(agentServiceMethods.ByName("DeleteDatabaseServer")),
 		connect.WithHandlerOptions(opts...),
 	)
+	agentServiceSetMeshHandler := connect.NewUnaryHandler(
+		AgentServiceSetMeshProcedure,
+		svc.SetMesh,
+		connect.WithSchema(agentServiceMethods.ByName("SetMesh")),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentServiceRotateMeshKeyHandler := connect.NewUnaryHandler(
+		AgentServiceRotateMeshKeyProcedure,
+		svc.RotateMeshKey,
+		connect.WithSchema(agentServiceMethods.ByName("RotateMeshKey")),
+		connect.WithHandlerOptions(opts...),
+	)
 	agentServiceGetStatusHandler := connect.NewUnaryHandler(
 		AgentServiceGetStatusProcedure,
 		svc.GetStatus,
@@ -646,6 +691,10 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 			agentServiceSetDatabaseServerHandler.ServeHTTP(w, r)
 		case AgentServiceDeleteDatabaseServerProcedure:
 			agentServiceDeleteDatabaseServerHandler.ServeHTTP(w, r)
+		case AgentServiceSetMeshProcedure:
+			agentServiceSetMeshHandler.ServeHTTP(w, r)
+		case AgentServiceRotateMeshKeyProcedure:
+			agentServiceRotateMeshKeyHandler.ServeHTTP(w, r)
 		case AgentServiceGetStatusProcedure:
 			agentServiceGetStatusHandler.ServeHTTP(w, r)
 		default:
@@ -743,6 +792,14 @@ func (UnimplementedAgentServiceHandler) SetDatabaseServer(context.Context, *conn
 
 func (UnimplementedAgentServiceHandler) DeleteDatabaseServer(context.Context, *connect.Request[v1.DeleteDatabaseServerRequest]) (*connect.Response[v1.JobAccepted], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.DeleteDatabaseServer is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) SetMesh(context.Context, *connect.Request[v1.SetMeshRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.SetMesh is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) RotateMeshKey(context.Context, *connect.Request[v1.RotateMeshKeyRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.RotateMeshKey is not implemented"))
 }
 
 func (UnimplementedAgentServiceHandler) GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.HostStatus], error) {

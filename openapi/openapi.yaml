@@ -1335,6 +1335,144 @@ paths:
               schema: { $ref: '#/components/schemas/Server' }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  /v1/mesh:
+    get:
+      tags: [Servers]
+      summary: Get the mesh
+      description: >-
+        The mesh is the set of encrypted tunnels between the servers of the panel. The traffic
+        between two servers goes through the public internet, and WireGuard encrypts it. The
+        answer never has a private key or the secret key of a pair of servers.
+      responses:
+        '200':
+          description: The settings, the servers and the tunnels of the mesh.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Mesh' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    patch:
+      tags: [Servers]
+      summary: Change the address range or the port of the mesh
+      description: >-
+        A change is possible only while the mesh has no tunnel. After a change of the range,
+        each server gets a new mesh address with its next tunnel.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                range: { type: string, description: 'A private IPv4 network with a prefix length from 12 to 22. The default is 10.207.0.0/16.' }
+                port: { type: integer, minimum: 1024, maximum: 65535, description: The UDP port of the tunnels on each server. The default is 51820. }
+      responses:
+        '200':
+          description: The mesh.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Mesh' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/mesh/servers/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    patch:
+      tags: [Servers]
+      summary: Change the tunnel address of a server
+      description: >-
+        The tunnel address is the public IP address that the other servers send the tunnel
+        traffic to. With null, the panel finds the address from the address of the agent when
+        the server gets its next tunnel. The panel sends the new address to the peers of the server.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tunnelAddress]
+              properties:
+                tunnelAddress: { type: [string, 'null'], description: A public IPv4 or IPv6 address. }
+      responses:
+        '200':
+          description: The mesh, and one job for each peer of the server.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/Mesh' }
+                  - type: object
+                    properties:
+                      jobs: { type: array, items: { $ref: '#/components/schemas/Job' } }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/mesh/servers/{id}/rotate-key:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [Servers]
+      summary: Make a new tunnel key on a server
+      description: >-
+        The server makes a new key pair. The private key does not leave the server. When the job
+        is complete, the panel sends the new public key to the peers of the server. The tunnels
+        of the server do not operate between these two steps, usually for some seconds.
+      responses:
+        '202': { $ref: '#/components/responses/JobOnly' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/mesh/tunnels:
+    post:
+      tags: [Servers]
+      summary: Make a tunnel between two servers
+      description: >-
+        The agent of each server must be from a release that reports a tunnel key, and the panel
+        must know a public IP address of each server. The panel gives each server a mesh address,
+        makes the secret key of the pair, and sends the state to the two servers.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [servers]
+              properties:
+                servers: { type: array, minItems: 2, maxItems: 2, items: { type: string }, description: The IDs of the two servers. }
+      responses:
+        '201':
+          description: The tunnel, and one job for each of the two servers.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tunnel: { $ref: '#/components/schemas/MeshTunnel' }
+                  jobs: { type: array, items: { $ref: '#/components/schemas/Job' } }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/mesh/tunnels/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    delete:
+      tags: [Servers]
+      summary: Remove a tunnel
+      description: The panel sends the new state to the two servers. A server with no tunnel closes its tunnel port.
+      responses:
+        '202': { $ref: '#/components/responses/JobList' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/mesh/tunnels/{id}/repair:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [Servers]
+      summary: Test and repair a tunnel
+      description: >-
+        The panel sends the state to the two servers again. Each agent applies it, tests the
+        tunnel, and reports the result. The panel also does this without a request when a
+        server reports that it does not have the current state.
+      responses:
+        '202': { $ref: '#/components/responses/JobList' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   /v1/panel-certificate:
     get:
       tags: [Servers]
@@ -2072,6 +2210,14 @@ components:
             type: object
             properties:
               job: { $ref: '#/components/schemas/Job' }
+    JobList:
+      description: The jobs are in the queue.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              jobs: { type: array, items: { $ref: '#/components/schemas/Job' } }
     WebsiteJob:
       description: The panel recorded the change. The job is in the queue.
       content:
@@ -2272,6 +2418,52 @@ components:
               server: { type: string, description: The name of the server. }
               repository: { type: [string, 'null'], description: 'The restic repository of the server, for example s3:s3.amazonaws.com/bucket/servers/SERVER_ID. Limit the key of the server to this path. Null when no backup target is set.' }
               credentialNames: { type: array, items: { type: string }, description: The names of the credentials of the key of this server. Empty when the server uses the shared credentials. }
+    Mesh:
+      type: object
+      properties:
+        range: { type: string, description: 'The address range of the mesh, for example 10.207.0.0/16.' }
+        port: { type: integer, description: The UDP port of the tunnels on each server. }
+        servers:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              name: { type: string }
+              location: { type: string }
+              state: { type: string }
+              supported: { type: boolean, description: False when the agent of the server is from a release that cannot have tunnels. }
+              publicKey: { type: [string, 'null'], description: The public tunnel key that the agent reported. }
+              address: { type: [string, 'null'], description: The mesh address of the server. }
+              tunnelAddress: { type: [string, 'null'], description: The public IP address for the tunnel traffic. Null until the panel finds it or an administrator sets it. }
+              tunnels: { type: integer, description: The number of tunnels of the server. }
+              current: { type: boolean, description: True when the server has the mesh state that the panel wants. }
+        tunnels: { type: array, items: { $ref: '#/components/schemas/MeshTunnel' } }
+    MeshTunnel:
+      type: object
+      properties:
+        id: { type: string }
+        state:
+          type: string
+          enum: [up, down, waiting]
+          description: >-
+            `up`: the two servers reach each other through the tunnel. `down`: one server reports
+            that the other does not answer. `waiting`: a server did not report the tunnel in the
+            last three minutes.
+        roundTripMs: { type: [number, 'null'], description: The larger of the two measured round-trip times, in milliseconds. }
+        pinned: { type: boolean, description: True for a tunnel that an administrator made. }
+        sides:
+          type: array
+          description: What each of the two servers reported last.
+          items:
+            type: object
+            properties:
+              serverId: { type: string }
+              server: { type: [string, 'null'], description: The name of the server. }
+              reachable: { type: [boolean, 'null'] }
+              handshakeAt: { type: [string, 'null'], format: date-time, description: The time of the last WireGuard handshake. }
+              roundTripMs: { type: [number, 'null'] }
+        createdAt: { type: string, format: date-time }
     ServerRole:
       type: string
       enum: [web, database, email, dns, backup]

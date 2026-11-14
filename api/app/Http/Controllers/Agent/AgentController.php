@@ -12,6 +12,7 @@ use App\Models\DatabaseServer;
 use App\Models\Domain;
 use App\Models\Server;
 use App\Services\JobOutcome;
+use App\Services\Mesh;
 use App\Services\PanelCertificate;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -121,6 +122,17 @@ class AgentController extends Controller
             'panelCertificate.state' => ['required_with:panelCertificate', Rule::in(['valid', 'pending', 'expired'])],
             'panelCertificate.expiresAt' => ['nullable', 'date'],
             'panelCertificate.caCertificate' => ['nullable', 'string', 'max:8000'],
+            // The tunnel key of the server and the state of its tunnels to other servers. An
+            // agent of an earlier release does not send it.
+            'mesh' => ['nullable', 'array'],
+            'mesh.publicKey' => ['required_with:mesh', 'string', 'max:64'],
+            'mesh.version' => ['integer', 'min:0'],
+            'mesh.address' => ['nullable', 'string', 'max:45'],
+            'mesh.tunnels' => ['nullable', 'array', 'max:1000'],
+            'mesh.tunnels.*.server' => ['required', 'string', 'max:64'],
+            'mesh.tunnels.*.handshakeAt' => ['integer', 'min:0'],
+            'mesh.tunnels.*.reachable' => ['boolean'],
+            'mesh.tunnels.*.roundTripMicros' => ['integer', 'min:0'],
             // The panel CA that the agent trusts. An agent of an earlier release does not send it.
             'panelCaSha256' => ['nullable', 'string', 'regex:/^[0-9a-f]{64}$/'],
         ]);
@@ -157,6 +169,10 @@ class AgentController extends Controller
             foreach (AgentJob::where('server_id', $server->id)->where('state', JobState::Queued->value)->orderBy('created_at')->pluck('id') as $jobId) {
                 SendJobToAgent::dispatch($jobId);
             }
+        }
+        // The mesh: the public key of the server and the state of its tunnels.
+        if (isset($data['mesh'])) {
+            app(Mesh::class)->reported($server, $data['mesh']);
         }
         // FR-203: the current resource use of each website.
         foreach ($data['websites'] ?? [] as $use) {

@@ -30,6 +30,8 @@ enum AgentAction: string
     case SetPanelCertificate = 'SetPanelCertificate';
     case SetDatabaseServer = 'SetDatabaseServer';
     case DeleteDatabaseServer = 'DeleteDatabaseServer';
+    case SetMesh = 'SetMesh';
+    case RotateMeshKey = 'RotateMeshKey';
 
     /** The steps that the agent reports for this action. */
     public function steps(): array
@@ -57,6 +59,8 @@ enum AgentAction: string
             self::SetSftp => ['Set SFTP access'],
             self::ConfigureHost => ['Save settings', 'Restart websites', 'Restart services'],
             self::SetPanelCertificate => ['Change certificate method', 'Get TLS certificate'],
+            self::SetMesh => ['Set tunnels and firewall', 'Check tunnels'],
+            self::RotateMeshKey => ['Make new key'],
         };
     }
 

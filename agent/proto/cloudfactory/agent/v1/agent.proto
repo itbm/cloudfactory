@@ -36,6 +36,8 @@ service AgentService {
   rpc SetPanelCertificate(SetPanelCertificateRequest) returns (JobAccepted);
   rpc SetDatabaseServer(DatabaseServerRequest) returns (JobAccepted);
   rpc DeleteDatabaseServer(DeleteDatabaseServerRequest) returns (JobAccepted);
+  rpc SetMesh(SetMeshRequest) returns (JobAccepted);
+  rpc RotateMeshKey(RotateMeshKeyRequest) returns (JobAccepted);
 
   // Returns the actual state of the server at once. This method does not make a job.
   rpc GetStatus(GetStatusRequest) returns (HostStatus);
@@ -359,6 +361,51 @@ message SetPanelCertificateRequest {
   string job_id = 1;
   // "internal" (the certificate authority of the panel) or "letsencrypt".
   string method = 2;
+}
+
+// One other server that this server has an encrypted tunnel to.
+message MeshPeer {
+  // The ID of the other server in the panel.
+  string server = 1;
+  // The public key of the other server: 32 bytes in base64.
+  string public_key = 2;
+  // The secret key of this pair of servers: 32 bytes in base64. The panel makes it.
+  string preshared_key = 3;
+  // The public address and the UDP port of the other server, for example
+  // "203.0.113.2:51820" or "[2001:db8::2]:51820".
+  string endpoint = 4;
+  // The mesh address of the other server.
+  string address = 5;
+}
+
+// The full mesh state of one server: its tunnels to other servers. The traffic between the
+// servers goes through the public internet, and WireGuard encrypts it.
+message Mesh {
+  // The panel increases the version at each change. The agent reports the version that it has.
+  int64 version = 1;
+  // The address range of the mesh: a private IPv4 network, for example "10.207.0.0/16".
+  string range = 2;
+  // The mesh address of this server. An empty address with no peers takes the server out of
+  // the mesh.
+  string address = 3;
+  // The UDP port of the tunnels on this server.
+  int32 port = 4;
+  repeated MeshPeer peers = 5;
+}
+
+// Sets the tunnels of this server. The request always has the full state, so the agent can
+// do the same job again. The agent refuses a key that is not 32 bytes, an address outside
+// the mesh range, and a peer address that is not a public address.
+message SetMeshRequest {
+  string job_id = 1;
+  Mesh mesh = 2;
+}
+
+// Makes a new tunnel key on this server. The result has the new public key ("publicKey").
+// The private key does not leave the server. The tunnels of the server stop until each peer
+// has the new public key (SetMesh).
+message RotateMeshKeyRequest {
+  string job_id = 1;
 }
 
 message HostRequest {

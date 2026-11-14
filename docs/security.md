@@ -256,8 +256,11 @@ A person who controls the worker cannot do these things:
   system.
 - On the panel server: read the files of the panel, for example `APP_KEY` and the private
   key of the panel, or connect to the database of the panel.
-- Change the firewall. The exceptions are the elements of the set `database_access` and the
-  database addresses, which the root helper examines.
+- Change the firewall. The exceptions are the elements of the set `database_access`, the
+  database addresses and the elements of the sets of the mesh, which the root helper
+  examines.
+- Read the private tunnel key of the server, or the pre-shared keys after the root helper has
+  them. The worker sees a pre-shared key only in the job that brings it from the panel.
 - Install an agent binary that the release key did not sign.
 
 The boundary does not make the worker safe to lose. A person who controls the worker can
@@ -486,6 +489,47 @@ directory with mode 0700:
   bucket keeps deleted data for a set time.
 - A backup keeps the SHA-256 sum of each database dump (refer to [Databases](#databases)).
 
+## The mesh between servers
+
+The mesh is the set of encrypted tunnels between the servers of one panel (refer to
+[architecture.md](architecture.md#the-mesh-between-servers)). The traffic of a tunnel goes
+through the internet, so the design assumes that a person can read and change each packet.
+
+- **Encryption.** Each tunnel is a WireGuard tunnel. WireGuard encrypts each packet and
+  accepts a packet only from the key of the other server.
+- **Private keys.** The root helper of each server makes the key pair of the server. The
+  private key stays in a file of root on the server. The panel, the worker of the agent and
+  the other servers do not get it.
+- **Pre-shared keys.** Each tunnel also has a pre-shared key, which the panel makes. A person
+  who records the traffic now and breaks the key exchange later, for example with a quantum
+  computer, also needs this key. The panel keeps it encrypted in its database.
+- **The panel is the directory.** A server gets the public key of a different server only
+  from the panel, through the agent connection with mutual TLS. A person who controls the
+  panel can thus add a server to the mesh. That person can already run jobs on all servers.
+- **One address for each key.** A server accepts from a tunnel only the packets that have the
+  mesh address of the other server as their source (`AllowedIPs` has one address). Thus the
+  address that the firewall sees identifies the server that has the key.
+- **The tunnel port.** The firewall accepts the UDP port of the tunnels only from the tunnel
+  addresses of the other servers of its tunnels. For all other addresses, the port is closed.
+- **Traffic that comes out of a tunnel.** The firewall has a chain for it. The chain accepts
+  an ICMP echo request, with a rate limit, and drops all other traffic. Thus a tunnel does not
+  open SSH, the agent port, a database or a website of a server to the other servers. A later
+  release adds the rules for the private networks of the customers to this chain.
+- **Traffic into a tunnel.** Only root can open a connection to an address of the mesh range.
+  A website user, the worker of the agent and the service users get a refusal. A server does
+  not forward packets from or to the interface of the mesh.
+- **Checks of the state.** The worker and the root helper examine each value of the state
+  from the panel: the range is a private IPv4 network, each mesh address is in the range,
+  each tunnel address is a public IP address, and each key has the correct form. The root
+  helper refuses a state with an older version, so a recorded job cannot bring an old key
+  back.
+- **A server that an attacker controls.** That server has its own private key and the
+  pre-shared keys of its tunnels. It can send packets with its own mesh address into its
+  tunnels, and the other servers drop all of them except the echo requests. It cannot read
+  the traffic of a tunnel between two other servers. Make a new key on the server after you
+  repair it, or remove the server from the panel. The panel then removes its key from the
+  other servers.
+
 ## Firewall
 
 The installation script sets an nftables table. The table blocks all incoming traffic except
@@ -514,6 +558,15 @@ The table also limits the outgoing connections:
   private networks (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `100.64.0.0/10`), the
   link-local addresses (`169.254.0.0/16`, `fe80::/10`), the unique local addresses
   (`fc00::/7`), multicast, and port 25 of other servers.
+- The mesh has four sets: `mesh_port`, `mesh_range`, `mesh_endpoints4` and `mesh_endpoints6`.
+  The table accepts the UDP port in `mesh_port` only from the addresses in the two sets of
+  tunnel addresses. The chain `mesh_input` gets all traffic that comes out of a tunnel. It
+  accepts an ICMP echo request and drops the rest. Only root can open a connection to an
+  address in `mesh_range`. The chain `mesh_forward` drops each packet that a server would
+  forward from or to the interface `cf-mesh`. The agent writes the elements of the sets, and
+  nftables loads them from `/etc/cloudfactory/firewall/mesh.nft`. On a server from an earlier
+  release, the agent adds the sets and the rules to the file of the installer with the first
+  tunnel. Refer to [The mesh between servers](#the-mesh-between-servers).
 - The options `--allow-website-smtp` and `--allow-website-network` of the installation script
   open port 25 or a private network for the websites. Refer to
   [installation.md](installation.md#connections-from-the-websites).

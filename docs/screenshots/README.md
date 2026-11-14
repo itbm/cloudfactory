@@ -130,6 +130,12 @@ The values of a plan for websites and for database servers.
 
 ![admin-19-edit-plan](admin-19-edit-plan.png)
 
+### admin-20-network
+
+The encrypted tunnels between the servers. Each tunnel shows its state, the time of its last handshake and its round-trip time. An administrator makes, repairs and removes tunnels, and makes a new key on a server.
+
+![admin-20-network](admin-20-network.png)
+
 ## Reseller console
 
 A reseller signs in to the Customers page. The menu has no page of the platform.

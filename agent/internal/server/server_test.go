@@ -69,7 +69,13 @@ func TestOnlyThePanelCertificateIsAccepted(t *testing.T) {
 	ev := &events{got: map[string][]panel.Event{}}
 	runner := &jobs.Runner{Dir: filepath.Join(dir, "jobs"), Reporter: ev}
 	deps := &actions.Deps{Host: h, Run: run, Edge: nopEdge{}, State: actions.NewState(dir), Gvisor: quadlet.Runtime{RunscPath: "runsc", Platform: "systrap"},
-		Health: func(context.Context, int, string) (int, error) { return 200, nil }, DNSPointsHere: func(context.Context, string) bool { return false }}
+		Health: func(context.Context, int, string) (int, error) { return 200, nil }, DNSPointsHere: func(context.Context, string) bool { return false },
+		// The test never reads or changes the files of the computer. A website has a
+		// customer, thus CreateWebsite prepares the network of the database servers.
+		DataDir: filepath.Join(dir, "data"), SecretsDir: filepath.Join(dir, "secrets"), DBHome: filepath.Join(dir, "cf-db"),
+		SftpKeysDir: filepath.Join(dir, "sftp"), SftpUsersDir: filepath.Join(dir, "sftp-users"), SystemUnitDir: filepath.Join(dir, "system-units"),
+		FirewallFile: filepath.Join(dir, "cloudfactory.nft"), FirewallDir: filepath.Join(dir, "firewall"),
+		AddressUnit: filepath.Join(dir, "cloudfactory-address.service"), LoopControl: filepath.Join(dir, "no-loop-control")}
 	svc := &Service{Deps: deps, Runner: runner, Status: status.Collector{Run: run}}
 
 	ln, err := tls.Listen("tcp", "127.0.0.1:0", TLSConfig(agentCert, panelFP))
