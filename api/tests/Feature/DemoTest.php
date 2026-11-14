@@ -90,7 +90,7 @@ class DemoTest extends TestCase
         // The reseller: its own website and the websites of its two customers.
         $this->signInAs('reseller@example.com');
         $this->assertEqualsCanonicalizing(
-            ['northwind.example', 'cornerbakery.example', 'harbourbooks.example', 'events.harbourbooks.example'],
+            ['northwind.example.com', 'cornerbakery.example.org', 'harbourbooks.example.net', 'events.harbourbooks.example.net'],
             $this->getJson('/api/v1/websites?perPage=100')->assertOk()->json('data.*.name'),
         );
         $this->getJson('/api/v1/servers')->assertForbidden();
@@ -98,7 +98,7 @@ class DemoTest extends TestCase
         $this->signInAs('owner@example.com');
         $names = $this->getJson('/api/v1/websites?perPage=100')->assertOk()->json('data.*.name');
         $this->assertCount(5, $names);
-        $this->assertSame([], array_filter($names, fn ($n) => ! str_ends_with($n, 'acme.example')));
+        $this->assertSame([], array_filter($names, fn ($n) => ! str_ends_with($n, 'acme.example.com')));
     }
 
     public function test_the_demo_agent_completes_a_new_website_with_no_server(): void
@@ -107,7 +107,7 @@ class DemoTest extends TestCase
         $this->signInAs('owner@example.com');
         $image = Image::where('family', 'frankenphp')->first();
 
-        $response = $this->postJson('/api/v1/websites', ['name' => 'blog.acme.example', 'application' => 'WordPress', 'imageId' => $image->id])->assertStatus(202);
+        $response = $this->postJson('/api/v1/websites', ['name' => 'blog.acme.example.com', 'application' => 'WordPress', 'imageId' => $image->id])->assertStatus(202);
         $this->assertSame('starting', $response->json('website.status'));
 
         $job = $this->runJob($response->json('job.id'));
@@ -125,7 +125,7 @@ class DemoTest extends TestCase
         $this->signInAs('owner@example.com');
         $image = Image::where('family', 'frankenphp')->first();
 
-        $response = $this->postJson('/api/v1/websites', ['name' => 'fail.acme.example', 'application' => 'Website', 'imageId' => $image->id])->assertStatus(202);
+        $response = $this->postJson('/api/v1/websites', ['name' => 'fail.acme.example.com', 'application' => 'Website', 'imageId' => $image->id])->assertStatus(202);
         $job = $this->runJob($response->json('job.id'));
 
         $this->assertSame(JobState::Failed, $job->state);
@@ -138,7 +138,7 @@ class DemoTest extends TestCase
     {
         $this->seed(DemoSeeder::class);
         $this->signInAs('owner@example.com');
-        $website = Website::where('name', 'acme.example')->firstOrFail();
+        $website = Website::where('name', 'acme.example.com')->firstOrFail();
         $snapshots = $website->snapshots()->count();
 
         $backup = $this->postJson("/api/v1/websites/{$website->id}/snapshots")->assertStatus(202)->json('job.id');

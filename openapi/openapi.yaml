@@ -1552,6 +1552,91 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  /v1/setup:
+    get:
+      tags: [Servers]
+      summary: Get the setup checklist of the panel
+      description: >-
+        Only for an administrator. A new panel operates before the items are complete. Each item
+        gives its state, the effect while it is open, and the page of the web panel where you
+        complete it. The request changes nothing.
+      responses:
+        '200':
+          description: The checklist.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [complete, open, items]
+                properties:
+                  complete: { type: boolean, description: True when no item is open. }
+                  open: { type: integer, description: The number of open items. }
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, title, state, effect, detail, action]
+                      properties:
+                        id: { type: string, enum: [backups, totp, disk-limits, panel-certificate] }
+                        title: { type: string }
+                        state: { type: string, enum: [done, open, not_applicable], description: '"not_applicable": the item does not apply to this panel, for example a public certificate for panel.localhost.' }
+                        effect: { type: string, description: What occurs while the item is open. }
+                        detail: { type: string, description: The current state, in words. }
+                        action:
+                          type: object
+                          required: [label, target]
+                          properties:
+                            label: { type: string }
+                            target: { type: string, description: The path of the page in the web panel. }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /v1/account:
+    get:
+      tags: [Customers]
+      summary: Get the account of the signed-in user
+      description: >-
+        The customer of the user, its plan, how much of the plan it uses, who gives the service,
+        and the users who can sign in. For an administrator, who belongs to no customer, all
+        fields are null and "users" is empty.
+      responses:
+        '200':
+          description: The account.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [customer, provider, plan, usage, backups, users]
+                properties:
+                  customer:
+                    type: [object, 'null']
+                    properties:
+                      id: { type: string }
+                      name: { type: string }
+                      email: { type: string }
+                      role: { type: string, enum: [reseller, owner] }
+                      suspended: { type: boolean, description: True also when the reseller of the customer is suspended. }
+                      createdAt: { type: string, format: date-time }
+                  provider:
+                    type: [object, 'null']
+                    description: The reseller that gives the service. Null when the operator of the panel gives it.
+                    properties:
+                      name: { type: string }
+                      email: { type: string }
+                  plan: { oneOf: [{ $ref: '#/components/schemas/Plan' }, { type: 'null' }] }
+                  usage:
+                    type: [object, 'null']
+                    properties:
+                      websites: { type: integer }
+                      databases: { type: integer }
+                      diskBytes: { type: integer }
+                      customers: { type: [integer, 'null'], description: Only for a reseller. The number of its customers. }
+                  backups:
+                    type: object
+                    required: [available]
+                    properties:
+                      available: { type: boolean, description: False when the panel has no object storage for backups. A backup then fails. }
+                  users:
+                    type: array
+                    items: { $ref: '#/components/schemas/User' }
   /v1/audit:
     get:
       tags: [Audit]

@@ -28,7 +28,7 @@ use Illuminate\Support\Facades\Hash;
  * example of each state that a page can show: a failed website, a server with updates, a
  * degraded server, a suspended customer, a domain that waits for its DNS record.
  *
- * All names end with ".example" or ".test", which are reserved for examples. The password of
+ * All names end with ".example.com", ".example.org", ".example.net", ".example" or ".test", which are reserved for examples. A website domain ends with a public suffix, as on a real panel: the certificate of a name such as "api.acme.test" comes from the panel CA. The password of
  * each user is "password". Never use this data on a server with customers.
  */
 class DemoSeeder extends Seeder
@@ -89,12 +89,12 @@ class DemoSeeder extends Seeder
             $customer->created_at = now()->subDays($daysAgo);
             $customer->save();
         });
-        $this->customers['northwind'] = $c('Northwind Agency', 'ops@northwind.example', 'reseller', $p['Agency'], ['plan_ids' => [$p['Starter']->id, $p['Business']->id]], 300);
+        $this->customers['northwind'] = $c('Northwind Agency', 'ops@northwind.example.com', 'reseller', $p['Agency'], ['plan_ids' => [$p['Starter']->id, $p['Business']->id]], 300);
         $reseller = ['reseller_id' => $this->customers['northwind']->id];
-        $this->customers['bakery'] = $c('Corner Bakery', 'hello@cornerbakery.example', 'owner', $p['Starter'], $reseller, 120);
-        $this->customers['books'] = $c('Harbour Books', 'it@harbourbooks.example', 'owner', $p['Business'], $reseller, 45);
-        $this->customers['acme'] = $c('Acme Ltd', 'it@acme.example', 'owner', $p['Business'], [], 400);
-        $this->customers['lawson'] = $c('Lawson & Co', 'office@lawson.example', 'owner', $p['Starter'], ['suspended' => true, 'suspended_by' => 'administrator'], 200);
+        $this->customers['bakery'] = $c('Corner Bakery', 'hello@cornerbakery.example.org', 'owner', $p['Starter'], $reseller, 120);
+        $this->customers['books'] = $c('Harbour Books', 'it@harbourbooks.example.net', 'owner', $p['Business'], $reseller, 45);
+        $this->customers['acme'] = $c('Acme Ltd', 'it@acme.example.com', 'owner', $p['Business'], [], 400);
+        $this->customers['lawson'] = $c('Lawson & Co', 'office@lawson.example.org', 'owner', $p['Starter'], ['suspended' => true, 'suspended_by' => 'administrator'], 200);
 
         $password = Hash::make(self::PASSWORD);
         $u = fn (string $name, string $email, Role $role, ?Customer $customer = null) => User::create(['name' => $name, 'email' => $email, 'password' => $password, 'role' => $role, 'customer_id' => $customer?->id]);
@@ -102,10 +102,10 @@ class DemoSeeder extends Seeder
         $u('Priya Operations', 'operations@example.com', Role::Administrator);
         $u('Sam Reseller', 'reseller@example.com', Role::Reseller, $this->customers['northwind']);
         $u('Olu Owner', 'owner@example.com', Role::Owner, $this->customers['acme']);
-        $u('Morgan Finance', 'finance@acme.example', Role::Owner, $this->customers['acme']);
-        $u('Bea Baker', 'bea@cornerbakery.example', Role::Owner, $this->customers['bakery'])->forceFill(['must_change_password' => true])->save();
-        $u('Hari Books', 'hari@harbourbooks.example', Role::Owner, $this->customers['books']);
-        $u('Lee Lawson', 'lee@lawson.example', Role::Owner, $this->customers['lawson']);
+        $u('Morgan Finance', 'finance@acme.example.com', Role::Owner, $this->customers['acme']);
+        $u('Bea Baker', 'bea@cornerbakery.example.org', Role::Owner, $this->customers['bakery'])->forceFill(['must_change_password' => true])->save();
+        $u('Hari Books', 'hari@harbourbooks.example.net', Role::Owner, $this->customers['books']);
+        $u('Lee Lawson', 'lee@lawson.example.org', Role::Owner, $this->customers['lawson']);
     }
 
     private function images(): void
@@ -122,10 +122,12 @@ class DemoSeeder extends Seeder
         // FR-306: the panel warns 90 days before the security support of a PHP version stops.
         $official('apache-8.4', 'Apache + PHP-FPM · PHP 8.4', 'apache-php-fpm', '8.4', 'apache-php8.4', now()->addDays(60)->toDateString(), ['policy' => 'manual']);
         $official('apache-8.5', 'Apache + PHP-FPM · PHP 8.5', 'apache-php-fpm', '8.5', 'apache-php8.5', '2029-12-31');
-        // FR-307: an image that an administrator added. It has a tag only, and no signature.
+        // FR-307: an image that an administrator added. It has a tag only, and no signature. The
+        // last check of its registry failed, so the panel does not know if it is up to date.
         $this->images['node'] = Image::create([
             'name' => 'Node.js app', 'family' => 'node', 'reference' => 'registry.example/acme/storefront', 'tag' => 'stable', 'policy' => 'manual',
             'custom' => true, 'signature_verified' => false, 'container_port' => 3000, 'command' => ['node', 'server.js'], 'checked_at' => now()->subMinutes(20),
+            'check_error' => 'The registry registry.example refused the request: 401 Unauthorized.',
         ]);
     }
 
@@ -174,17 +176,17 @@ class DemoSeeder extends Seeder
         $key = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGh0dHBzOi8vY2xvdWRmYWN0b3J5LmV4YW1wbGUvZGVtbw olu@laptop';
         // name, application, customer, server, image, status, days since creation, use (CPU %, memory MB, disk MB, processes), more
         $rows = [
-            ['acme.example', 'WordPress', 'acme', 'web-1', 'frankenphp-8.4', 'running', 380, [18, 412, 6200, 24], ['sftp_enabled' => true, 'sftp_keys' => [$key]]],
-            ['shop.acme.example', 'WooCommerce', 'acme', 'web-1', 'frankenphp-8.4', 'running', 210, [61, 1730, 21400, 58], []],
-            ['api.acme.example', 'Laravel', 'acme', 'web-1', 'frankenphp-8.5', 'running', 95, [9, 300, 840, 12], ['worker_mode' => true]],
-            ['storefront.acme.example', 'Node.js app', 'acme', 'web-2', 'node', 'running', 20, [5, 210, 380, 9], []],
-            ['old.acme.example', 'Website', 'acme', 'web-1', 'apache-8.4', 'stopped', 390, [0, 0, 1900, 0], []],
-            ['northwind.example', 'WordPress', 'northwind', 'web-2', 'frankenphp-8.5', 'running', 290, [12, 380, 3100, 19], []],
-            ['cornerbakery.example', 'WordPress', 'bakery', 'web-2', 'apache-8.4', 'running', 110, [7, 260, 9100, 14], ['sftp_enabled' => true, 'sftp_keys' => [$key]]],
-            ['harbourbooks.example', 'WooCommerce', 'books', 'web-2', 'frankenphp-8.4', 'running', 40, [22, 640, 12800, 31], []],
+            ['acme.example.com', 'WordPress', 'acme', 'web-1', 'frankenphp-8.4', 'running', 380, [18, 412, 6200, 24], ['sftp_enabled' => true, 'sftp_keys' => [$key]]],
+            ['shop.acme.example.com', 'WooCommerce', 'acme', 'web-1', 'frankenphp-8.4', 'running', 210, [61, 1730, 21400, 58], []],
+            ['api.acme.example.com', 'Laravel', 'acme', 'web-1', 'frankenphp-8.5', 'running', 95, [9, 300, 840, 12], ['worker_mode' => true]],
+            ['storefront.acme.example.com', 'Node.js app', 'acme', 'web-2', 'node', 'running', 20, [5, 210, 380, 9], []],
+            ['old.acme.example.com', 'Website', 'acme', 'web-1', 'apache-8.4', 'stopped', 390, [0, 0, 1900, 0], []],
+            ['northwind.example.com', 'WordPress', 'northwind', 'web-2', 'frankenphp-8.5', 'running', 290, [12, 380, 3100, 19], []],
+            ['cornerbakery.example.org', 'WordPress', 'bakery', 'web-2', 'apache-8.4', 'running', 110, [7, 260, 9100, 14], ['sftp_enabled' => true, 'sftp_keys' => [$key]]],
+            ['harbourbooks.example.net', 'WooCommerce', 'books', 'web-2', 'frankenphp-8.4', 'running', 40, [22, 640, 12800, 31], []],
             // The panel could not make this website: the page shows the cause and "Try again".
-            ['events.harbourbooks.example', 'Laravel', 'books', 'web-3', 'frankenphp-8.5', 'failed', 0, [0, 0, 0, 0], []],
-            ['lawson.example', 'WordPress', 'lawson', 'web-1', 'apache-8.5', 'stopped', 190, [0, 0, 2400, 0], ['stopped_by_suspension' => true]],
+            ['events.harbourbooks.example.net', 'Laravel', 'books', 'web-3', 'frankenphp-8.5', 'failed', 0, [0, 0, 0, 0], []],
+            ['lawson.example.org', 'WordPress', 'lawson', 'web-1', 'apache-8.5', 'stopped', 190, [0, 0, 2400, 0], ['stopped_by_suspension' => true]],
         ];
         foreach ($rows as [$name, $application, $customer, $server, $image, $status, $days, $use, $more]) {
             $owner = $this->customers[$customer];
@@ -209,23 +211,23 @@ class DemoSeeder extends Seeder
         }
 
         $domain = fn (string $website, array $values) => $this->websites[$website]->domains()->create(['verification_token' => 'cf-demo', 'verified_at' => now(), ...$values]);
-        $domain('acme.example', ['name' => 'www.acme.example', 'kind' => DomainKind::Redirect, 'dns_points_here' => true, 'certificate_state' => 'valid', 'certificate_expires_at' => now()->addDays(64)]);
+        $domain('acme.example.com', ['name' => 'www.acme.example.com', 'kind' => DomainKind::Redirect, 'dns_points_here' => true, 'certificate_state' => 'valid', 'certificate_expires_at' => now()->addDays(64)]);
         // CF-03: the edge proxy serves a domain only after the customer proved it with a DNS record.
-        $domain('acme.example', ['name' => 'acme-outlet.example', 'kind' => DomainKind::Alias, 'verification_token' => 'cf-'.substr(hash('sha256', 'acme-outlet.example'), 0, 40), 'verified_at' => null]);
+        $domain('acme.example.com', ['name' => 'acme-outlet.example.com', 'kind' => DomainKind::Alias, 'verification_token' => 'cf-'.substr(hash('sha256', 'acme-outlet.example.com'), 0, 40), 'verified_at' => null]);
         // The DNS of this domain does not point to the server yet.
-        $domain('cornerbakery.example', ['name' => 'cornerbakery-orders.example', 'kind' => DomainKind::Alias, 'dns_points_here' => false, 'certificate_state' => 'pending']);
+        $domain('cornerbakery.example.org', ['name' => 'cornerbakery-orders.example.org', 'kind' => DomainKind::Alias, 'dns_points_here' => false, 'certificate_state' => 'pending']);
         // A name for a private network gets a certificate from the panel CA, not from Let's Encrypt.
-        $domain('api.acme.example', ['name' => 'api.acme.test', 'kind' => DomainKind::Alias, 'dns_points_here' => true, 'certificate_state' => 'valid', 'certificate_expires_at' => now()->addDays(80)]);
+        $domain('api.acme.example.com', ['name' => 'api.acme.test', 'kind' => DomainKind::Alias, 'dns_points_here' => true, 'certificate_state' => 'valid', 'certificate_expires_at' => now()->addDays(80)]);
     }
 
     private function databases(): void
     {
         // website, engine, name, size (MB), then for Valkey: number and keys
         $rows = [
-            ['acme.example', 'mariadb', 'wp', 310], ['shop.acme.example', 'mariadb', 'shop', 1840], ['shop.acme.example', 'valkey', 'cache', 0, 1, 18412],
-            ['api.acme.example', 'postgresql', 'app', 96], ['api.acme.example', 'valkey', 'queue', 0, 2, 227],
-            ['northwind.example', 'mariadb', 'wp', 140], ['cornerbakery.example', 'mariadb', 'wp', 220], ['harbourbooks.example', 'mariadb', 'shop', 760],
-            ['lawson.example', 'mariadb', 'wp', 88],
+            ['acme.example.com', 'mariadb', 'wp', 310], ['shop.acme.example.com', 'mariadb', 'shop', 1840], ['shop.acme.example.com', 'valkey', 'cache', 0, 1, 18412],
+            ['api.acme.example.com', 'postgresql', 'app', 96], ['api.acme.example.com', 'valkey', 'queue', 0, 2, 227],
+            ['northwind.example.com', 'mariadb', 'wp', 140], ['cornerbakery.example.org', 'mariadb', 'wp', 220], ['harbourbooks.example.net', 'mariadb', 'shop', 760],
+            ['lawson.example.org', 'mariadb', 'wp', 88],
         ];
         foreach ($rows as $row) {
             [$site, $engine, $suffix, $size] = $row;
@@ -236,7 +238,7 @@ class DemoSeeder extends Seeder
             $user->databases()->attach($database->id, ['privileges' => 'readwrite']);
         }
         // A second user that only reads, for example for a reporting tool.
-        $shop = $this->websites['shop.acme.example'];
+        $shop = $this->websites['shop.acme.example.com'];
         $reports = $shop->databaseUsers()->create(['engine' => 'mariadb', 'name' => $shop->unix_user.'_reports', 'access' => 'anywhere']);
         $reports->databases()->attach($shop->databases()->where('engine', 'mariadb')->value('id'), ['privileges' => 'readonly']);
     }
@@ -253,7 +255,7 @@ class DemoSeeder extends Seeder
             foreach ([1, 2, 3] as $night) {
                 $this->snapshot($website, 'scheduled', $size - $night * 3 * self::MB, $databases, today()->subDays($night - 1)->setTime(3, 2 + strlen($name) % 9));
             }
-            if (in_array($name, ['acme.example', 'shop.acme.example', 'harbourbooks.example'], true)) {
+            if (in_array($name, ['acme.example.com', 'shop.acme.example.com', 'harbourbooks.example.net'], true)) {
                 $this->snapshot($website, 'manual', $size, $databases, now()->subHours(5));
             }
         }
@@ -283,23 +285,23 @@ class DemoSeeder extends Seeder
 
             return $job;
         };
-        $job('web-1', AgentAction::Backup, 'Back up', JobState::Succeeded, 300, 'acme.example');
+        $job('web-1', AgentAction::Backup, 'Back up', JobState::Succeeded, 300, 'acme.example.com');
         $job('web-2', AgentAction::InstallHostUpdates, 'Install updates on web-2', JobState::Succeeded, 12 * 24 * 60);
-        $job('web-1', AgentAction::CreateDatabase, 'Create database', JobState::Succeeded, 95, 'api.acme.example');
-        $job('web-2', AgentAction::AddDomain, 'Add domain cornerbakery-orders.example', JobState::Succeeded, 70, 'cornerbakery.example');
+        $job('web-1', AgentAction::CreateDatabase, 'Create database', JobState::Succeeded, 95, 'api.acme.example.com');
+        $job('web-2', AgentAction::AddDomain, 'Add domain cornerbakery-orders.example.org', JobState::Succeeded, 70, 'cornerbakery.example.org');
         // The first try failed, and the second try of the same change succeeded.
-        $job('web-1', AgentAction::CreateDatabase, 'Create database', JobState::Failed, 50, 'shop.acme.example', [
-            'step' => 0, 'payload' => ['engine' => 'valkey', 'name' => $this->websites['shop.acme.example']->unix_user.'_cache'],
+        $job('web-1', AgentAction::CreateDatabase, 'Create database', JobState::Failed, 50, 'shop.acme.example.com', [
+            'step' => 0, 'payload' => ['engine' => 'valkey', 'name' => $this->websites['shop.acme.example.com']->unix_user.'_cache'],
             'error' => 'runuser -u cf-db -- env XDG_RUNTIME_DIR=/run/user/994 podman exec cf-valkey valkey-cli -s /run/valkey/valkey.sock PING: exit status 1: Could not connect to Valkey at /run/valkey/valkey.sock: No such file or directory',
         ]);
-        $job('web-1', AgentAction::CreateDatabase, 'Create database', JobState::Succeeded, 45, 'shop.acme.example', ['payload' => ['engine' => 'valkey', 'name' => $this->websites['shop.acme.example']->unix_user.'_cache']]);
-        $job('web-3', AgentAction::CreateWebsite, 'Create website', JobState::Failed, 25, 'events.harbourbooks.example', [
+        $job('web-1', AgentAction::CreateDatabase, 'Create database', JobState::Succeeded, 45, 'shop.acme.example.com', ['payload' => ['engine' => 'valkey', 'name' => $this->websites['shop.acme.example.com']->unix_user.'_cache']]);
+        $job('web-3', AgentAction::CreateWebsite, 'Create website', JobState::Failed, 25, 'events.harbourbooks.example.net', [
             'step' => 3,
-            'error' => 'systemctl start cf-site-'.$this->websites['events.harbourbooks.example']->unix_user.'.service: exit status 1: the container did not answer the health check on port 8080 in 90 seconds',
+            'error' => 'systemctl start cf-site-'.$this->websites['events.harbourbooks.example.net']->unix_user.'.service: exit status 1: the container did not answer the health check on port 8080 in 90 seconds',
         ]);
 
         // A rollout that ended yesterday. One website went back to the earlier image.
-        $sites = collect(['old.acme.example', 'cornerbakery.example'])->map(fn ($n) => $this->websites[$n]->id);
+        $sites = collect(['old.acme.example.com', 'cornerbakery.example.org'])->map(fn ($n) => $this->websites[$n]->id);
         $rollout = new Rollout([
             'image_id' => $this->images['apache-8.4']->id, 'from_tag' => '0.1.8', 'to_tag' => '0.1.9', 'severity' => 'security', 'state' => 'done', 'stage' => 3,
             'website_ids' => $sites->all(), 'updated_ids' => [$sites[1]],
@@ -325,9 +327,9 @@ class DemoSeeder extends Seeder
 
         $entries = [
             [$admin, 'Signed in', '', 6], [$admin, 'Started rollout', 'Apache + PHP-FPM · PHP 8.4 0.1.9', 1800], [$admin, 'Suspended customer', 'Lawson & Co', 2900],
-            [$reseller, 'Created customer', 'Harbour Books', 64800], [$reseller, 'Created website', 'events.harbourbooks.example', 25],
-            [$owner, 'Created database', $this->websites['shop.acme.example']->unix_user.'_cache', 45], [$owner, 'Backed up website', 'acme.example', 300],
-            [$owner, 'Added domain', 'acme-outlet.example', 130],
+            [$reseller, 'Created customer', 'Harbour Books', 64800], [$reseller, 'Created website', 'events.harbourbooks.example.net', 25],
+            [$owner, 'Created database', $this->websites['shop.acme.example.com']->unix_user.'_cache', 45], [$owner, 'Backed up website', 'acme.example.com', 300],
+            [$owner, 'Added domain', 'acme-outlet.example.com', 130],
         ];
         foreach ($entries as [$user, $action, $target, $minutesAgo]) {
             $entry = new AuditEntry(['user_id' => $user->id, 'actor' => $user->name, 'ip' => '203.0.113.'.(10 + $user->id), 'action' => $action, 'target' => $target, 'customer_id' => $user->customer_id]);
