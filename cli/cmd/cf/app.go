@@ -65,6 +65,21 @@ Usage:
   cf database-users set WEBSITE USER [--grant DATABASE=readonly|readwrite]... [--no-grants]
                         [--access website|anywhere] [--reset-password]
   cf database-users delete WEBSITE USER
+  cf mail domains list [--customer ID]
+  cf mail domains add DOMAIN [--customer ID] [--server SERVER]
+  cf mail domains get DOMAIN               Show the DNS records to add, and which of them the last check found.
+  cf mail domains check DOMAIN             Read the DNS records of the domain now.
+  cf mail domains retry DOMAIN             Add a mail domain again after the first job failed.
+  cf mail domains remove DOMAIN            Remove a mail domain that has no mailboxes and no addresses.
+  cf mail mailboxes list [--domain DOMAIN] [--customer ID]
+  cf mail mailboxes create ADDRESS [--quota-mb N]      The panel shows the password one time.
+  cf mail mailboxes set ADDRESS [--quota-mb N] [--new-password]
+  cf mail mailboxes delete ADDRESS         Remove a mailbox and its messages.
+  cf mail aliases list [--domain DOMAIN] [--customer ID]
+  cf mail aliases create ADDRESS --to ADDRESS... [--forward]
+                                           An alias sends to mailboxes of the customer. With --forward, the
+                                           destinations are addresses on other mail servers.
+  cf mail aliases delete ADDRESS
   cf backups list|create WEBSITE
   cf backups restore WEBSITE SNAPSHOT [--scope website|database|file] [--item ITEM] [--remove-new-files]
                        --remove-new-files is for a full website. It deletes the files that are not in the backup.
@@ -79,6 +94,8 @@ Usage:
   cf servers get SERVER
   cf servers set SERVER [--update-policy security|all|manual] [--window HH:MM-HH:MM] [--gvisor-platform systrap|kvm]
   cf servers update SERVER [--policy security|all|tools]   "tools" updates the held container tools.
+  cf servers mail SERVER --hostname NAME   Turn on email for a server, or change the host name of its mail server.
+                                           The name needs an A or AAAA record with the address of the server.
   cf servers reboot SERVER
   cf servers update-agent SERVER [--version VERSION] [--allow-downgrade]
   cf servers join-token
@@ -272,6 +289,8 @@ func (a *app) dispatch(ctx context.Context, args []string) error {
 		return a.images(ctx, sub, rest)
 	case "sftp":
 		return a.sftp(ctx, sub, rest)
+	case "mail", "email":
+		return a.mail(ctx, sub, rest)
 	case "customers", "customer":
 		return a.customers(ctx, sub, rest)
 	case "users", "user":
@@ -1141,7 +1160,7 @@ func (a *app) servers(ctx context.Context, sub string, args []string) error {
 	switch sub {
 	case "list", "ls":
 		return a.simpleList(ctx, "/servers", []string{"name", "state", "roles", "agentVersion", "rebootRequired", "id"})
-	case "get", "set", "update", "reboot", "update-agent", "check", "remove", "rm":
+	case "get", "set", "mail", "update", "reboot", "update-agent", "check", "remove", "rm":
 		return a.server(ctx, sub, args)
 	case "join-token":
 		var out struct {

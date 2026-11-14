@@ -228,6 +228,15 @@ func (a *app) server(ctx context.Context, sub string, args []string) error {
 			return errors.New("give --update-policy, --window or --gvisor-platform")
 		}
 		return a.change(ctx, http.MethodPatch, path, body)
+	case "mail":
+		hostname := fs.String("hostname", "", "the host name of the mail server, for example mail.example.net")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *hostname == "" {
+			return errors.New("give --hostname with the host name of the mail server")
+		}
+		return a.change(ctx, http.MethodPut, path+"/mail", map[string]any{"hostname": *hostname})
 	case "update":
 		policy := fs.String("policy", "", `security, all, or tools for the held container tools. The default is the policy of the server.`)
 		if err := fs.Parse(args[1:]); err != nil {
