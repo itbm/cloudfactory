@@ -128,7 +128,7 @@ interface ApiMe {
 interface ApiUser { id: number; name: string; email: string; role: User["role"]; customerId: string | null; totpEnabled: boolean; mustChangePassword: boolean; createdAt: string | null }
 interface ApiJob { id: string; title: string; ref: string | null; action?: string | null; state: Job["state"]; steps: string[]; step: number; error: string | null; websiteId: string | null; serverId: string | null; databaseServerId?: string | null; dnsZoneId?: string | null; createdAt: string; finishedAt: string | null }
 interface ApiWebsite {
-  id: string; name: string; application: string; customerId: string; serverId: string; planId: string; unixUser: string; status: Website["status"];
+  id: string; name: string; application: string; customerId: string; serverId: string; planId: string; unixUser: string; networkHost?: string | null; networkPort?: number | null; kind?: Website["kind"]; command?: string | null; status: Website["status"];
   runtime: { imageId: string; family: string; image: string; phpVersion: string | null; workerMode: boolean; extensions: string[]; phpIni: Record<string, string>; previousImageId: string | null; documentRoot?: string; digest?: string | null; signatureVerified?: boolean };
   sftp?: { enabled: boolean; host: string | null; port: number; username: string; authorizedKeys: string[] };
   limits: Limits; diskLimitApplied?: boolean | null; usage: Partial<Website["use"]> | null;
@@ -166,7 +166,7 @@ interface ApiDnsZone extends Omit<DnsZone, "delegation" | "dnssec" | "records" |
   createdAt: string | null;
   records?: ApiDnsRecord[];
 }
-interface ApiSnapshot { id: string; kind: "scheduled" | "manual"; sizeBytes: number; databases: string[]; createdAt: string }
+interface ApiSnapshot { id: string; kind: "scheduled" | "manual"; sizeBytes: number; databases: string[]; part?: "website" | "databases"; serverId?: string; createdAt: string }
 
 // Mapping from the API shapes to the state of the UI.
 
@@ -215,6 +215,9 @@ export function toPanelCertificate(c: ApiPanelCertificate): PanelCertificate {
 export function toWebsite(w: ApiWebsite): Website {
   return {
     id: w.id, name: w.name, application: w.application || "Website", customerId: w.customerId, serverId: w.serverId, unixUser: w.unixUser,
+    // An API from before the networks sends no name. The name comes from the Unix user.
+    networkHost: w.kind === "worker" ? null : w.networkHost ?? `${w.unixUser.replaceAll("_", "-")}.internal`, networkPort: w.kind === "worker" ? null : w.networkPort ?? 80,
+    kind: w.kind ?? "public", command: w.command ?? null,
     createdAt: w.createdAt, status: w.status, planId: w.planId, limits: w.limits, diskLimitApplied: w.diskLimitApplied ?? undefined,
     runtime: {
       kind: runtimeKind(w.runtime.family), imageId: w.runtime.imageId, phpVersion: (w.runtime.phpVersion ?? undefined) as Website["runtime"]["phpVersion"],
@@ -366,7 +369,8 @@ export async function load(previous: State): Promise<State> {
 
   // Databases and snapshots belong to each website.
   const all_ = websites.length <= DETAIL_LIMIT;
-  const perSite = await Promise.all(websites.filter((w) => all_ || shown.has(w.id)).map((w) => websiteDetails(w)));
+  const detailed = websites.filter((w) => all_ || shown.has(w.id));
+  const perSite = await Promise.all(detailed.map((w) => websiteDetails(w)));
   // Keep the data of the other websites from the previous load.
   const fresh = new Set(all_ ? websites.map((w) => w.id) : [...shown]);
   const exists = new Set(websites.map((w) => w.id));
@@ -405,6 +409,7 @@ export async function load(previous: State): Promise<State> {
     mesh,
     databases: [...kept(previous.databases), ...perSite.flatMap((s) => s.databases)],
     databaseUsers: [...kept(previous.databaseUsers), ...perSite.flatMap((s) => s.users)],
+    remoteDatabaseServers: { ...previous.remoteDatabaseServers, ...Object.fromEntries(perSite.map((s, i) => [detailed[i].id, s.remote])) },
     snapshots: [...kept(previous.snapshots), ...perSite.flatMap((s) => s.snapshots)].sort((a, b) => b.at.localeCompare(a.at)),
     backupPolicy: policy,
     plans,
@@ -425,13 +430,15 @@ export async function load(previous: State): Promise<State> {
 async function websiteDetails(w: { id: string; serverId: string }) {
   const optional = <T>(p: Promise<T>, fallback: T) => p.catch(() => fallback);
   const [db, snaps] = await Promise.all([
-    optional(request<{ databases: { id: string; engine: Database["engine"]; name: string; sizeBytes: number; number?: number | null; keys?: number | null; databaseServerId?: string | null; host?: string; port?: number }[]; users: { id: string; engine: Database["engine"]; name: string; grants: DatabaseGrant[]; access: DatabaseUser["access"]; databaseServerId?: string | null }[] }>("GET", `/websites/${w.id}/databases`), { databases: [], users: [] }),
+    optional(request<{ databases: { id: string; engine: Database["engine"]; name: string; sizeBytes: number; number?: number | null; keys?: number | null; databaseServerId?: string | null; host?: string; port?: number }[]; users: { id: string; engine: Database["engine"]; name: string; grants: DatabaseGrant[]; access: DatabaseUser["access"]; databaseServerId?: string | null }[]; servers?: { id: string; remote?: boolean }[] }>("GET", `/websites/${w.id}/databases`), { databases: [], users: [] }),
     optional(request<{ data: ApiSnapshot[] }>("GET", `/websites/${w.id}/snapshots`).then((r) => r.data), []),
   ]);
   return {
+    // The database servers on a different server that the website can use.
+    remote: (db.servers ?? []).filter((x) => x.remote).map((x) => x.id),
     databases: db.databases.map((d): Database => ({ id: d.id, name: d.name, engine: d.engine, websiteId: w.id, sizeBytes: d.sizeBytes ?? 0, serverId: w.serverId, number: d.number ?? undefined, keys: d.keys ?? undefined, databaseServerId: d.databaseServerId ?? undefined, host: d.host, port: d.port })),
     users: db.users.map((u): DatabaseUser => ({ id: u.id, name: u.name, engine: u.engine, websiteId: w.id, databaseServerId: u.databaseServerId ?? undefined, grants: u.grants ?? [], access: u.access })),
-    snapshots: snaps.map((s): Snapshot => ({ id: s.id, at: s.createdAt, kind: s.kind === "manual" ? "manual" : "nightly", sizeBytes: s.sizeBytes ?? 0, websiteId: w.id, databases: s.databases ?? [] })),
+    snapshots: snaps.map((s): Snapshot => ({ id: s.id, at: s.createdAt, kind: s.kind === "manual" ? "manual" : "nightly", sizeBytes: s.sizeBytes ?? 0, websiteId: w.id, databases: s.databases ?? [], part: s.part ?? "website", serverId: s.serverId })),
   };
 }
 
@@ -449,6 +456,7 @@ export async function showWebsite(previous: State, websiteId: string): Promise<(
     ...s,
     databases: [...s.databases.filter((x) => x.websiteId !== websiteId), ...d.databases],
     databaseUsers: [...s.databaseUsers.filter((x) => x.websiteId !== websiteId), ...d.users],
+    remoteDatabaseServers: { ...s.remoteDatabaseServers, [websiteId]: d.remote },
     snapshots: [...s.snapshots.filter((x) => x.websiteId !== websiteId), ...d.snapshots].sort((a, b) => b.at.localeCompare(a.at)),
   });
 }

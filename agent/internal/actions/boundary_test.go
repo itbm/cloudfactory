@@ -100,6 +100,9 @@ func TestTheRootHelperRunsTheCommandsOfThePolicy(t *testing.T) {
 		resticHead + "snapshots --tag " + tagOne,
 		resticHead + "forget --tag " + tagOne + ",kind=scheduled --group-by  --keep-daily 7 --keep-weekly 4",
 		resticHead + "backup " + app + " " + dumps + " --tag " + tagOne + " --tag kind=manual",
+		// The databases of a website of a different server.
+		resticHead + "backup " + dumps + " --tag " + tagOne + " --tag kind=scheduled-databases",
+		resticHead + "forget --tag " + tagOne + ",kind=manual-databases --group-by  --keep-last 10",
 		resticHead + "restore 1a2b3c4d --target " + stage + " --include " + app + "/public/index.php",
 	} {
 		if _, err := d.Run.Run(context.Background(), words(command)[0], words(command)[1:]...); err != nil {
@@ -255,6 +258,9 @@ func TestTheRootHelperRefusesCommandsOutsideThePolicy(t *testing.T) {
 		resticHead + "forget --tag " + tagOne + ",kind=scheduled --group-by  --keep-daily 7 --prune",
 		resticHead + "forget --tag " + tagOne + ",kind=scheduled --group-by ",
 		resticHead + "backup /etc " + dumps + " --tag " + tagOne + " --tag kind=manual",
+		resticHead + "backup /etc --tag " + tagOne + " --tag kind=manual-databases",
+		resticHead + "backup " + app + " --tag " + tagOne + " --tag kind=manual-databases",
+		resticHead + "backup " + dumps + " --tag " + tagOne + " --tag kind=manual",
 		resticHead + "backup " + app + " /etc --tag " + tagOne + " --tag kind=manual",
 		resticHead + "backup " + app + " " + root.dumpDir("bolt_k3m9") + " --tag " + tagOne + " --tag kind=manual",
 		resticHead + "backup " + root.Host.AppDir("admin_ab12") + " " + root.dumpDir("admin_ab12") + " --tag " + tagOne + " --tag kind=manual",

@@ -4,6 +4,7 @@ namespace App\Http\Resources;
 
 use App\Models\Domain;
 use App\Models\Website;
+use App\Services\Networks;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -22,6 +23,14 @@ class WebsiteResource extends JsonResource
             'serverId' => $this->server_id,
             'planId' => $this->plan_id,
             'unixUser' => $this->unix_user,
+            // The name and the port for a different website in a network with this website.
+            // A worker serves no HTTP: it has no name and no port.
+            'networkHost' => $this->isWorker() ? null : Networks::hostOf($this->resource),
+            'networkPort' => $this->isWorker() ? null : Networks::WEBSITE_PORT,
+            // "public", "private" (no domain, only for the websites of its networks) or "worker".
+            'kind' => $this->kind ?? Website::PUBLIC,
+            // The start command of a worker.
+            'command' => $this->isWorker() ? $this->command : null,
             'status' => $this->status->value,
             'runtime' => [
                 'imageId' => $this->image_id,

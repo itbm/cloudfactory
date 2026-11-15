@@ -141,6 +141,9 @@ class AgentController extends Controller
             'mesh.publicKey' => ['required_with:mesh', 'string', 'max:64'],
             'mesh.version' => ['integer', 'min:0'],
             'mesh.address' => ['nullable', 'string', 'max:45'],
+            // True when the agent can operate the members of the networks of the customers.
+            'mesh.networks' => ['boolean'],
+            'mesh.websites' => ['boolean'],
             'mesh.tunnels' => ['nullable', 'array', 'max:1000'],
             'mesh.tunnels.*.server' => ['required', 'string', 'max:64'],
             'mesh.tunnels.*.handshakeAt' => ['integer', 'min:0'],
@@ -230,7 +233,10 @@ class AgentController extends Controller
                 ? array_filter(['number' => $d['number'] ?? null, 'key_count' => $d['keys'] ?? null], fn ($v) => $v !== null)
                 : ['size_bytes' => $d['sizeBytes'] ?? 0];
             if ($values) {
-                Database::whereIn('website_id', $websiteIds)->where(['engine' => $d['engine'], 'name' => $d['name']])->update($values);
+                // The agent reports the databases in its database servers. The website of a
+                // database can be on a different server.
+                Database::where(fn ($q) => $q->whereIn('website_id', $websiteIds)->orWhereIn('database_server_id', $server->databaseServers()->select('id')))
+                    ->where(['engine' => $d['engine'], 'name' => $d['name']])->update($values);
             }
         }
         // The agent sends each result in more than one report. The panel keeps the newest run.

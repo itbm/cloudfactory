@@ -9,7 +9,7 @@ import { Topbar } from "../components/Layout";
 import { WebsiteMenu } from "../components/WebsiteMenu";
 import { Card, Empty, FormError, JobError, JobRow, Live, Meter, Status, Tabs, TerraformBadge, TerraformNotice } from "../components/ui";
 import { bytes, longDate, percent, ratio, relativeTime } from "../lib/format";
-import { certificateUntil, DISK_LIMIT_NOT_APPLIED, jobActive, WEBSITE_STATUS } from "../lib/labels";
+import { certificateUntil, DISK_LIMIT_NOT_APPLIED, jobActive, WEBSITE_KIND, WEBSITE_STATUS } from "../lib/labels";
 import { AccessTab, SshCard } from "./website/AccessTab";
 import { BackupsTab } from "./website/BackupsTab";
 import { CronTab } from "./website/CronTab";
@@ -290,6 +290,7 @@ export function WebsiteDetailPage() {
             <div className="detail-title">
               <h1>{website.name}</h1>
               <span className={`status-pill status-${status.tone}`}><Status tone={status.tone}>{status.label}</Status></span>
+              {website.kind !== "public" && <span className="tag">{WEBSITE_KIND[website.kind]}</span>}
               {website.managedByTerraform && <TerraformBadge />}
             </div>
             <p className="detail-meta">
@@ -297,19 +298,26 @@ export function WebsiteDetailPage() {
             </p>
           </div>
           <div className="btn-group">
-            <a className="btn" href={`https://${primary}`} target="_blank" rel="noreferrer">
-              Visit site <ArrowUpRight size={16} aria-hidden="true" />
-              <span className="visually-hidden">(opens in a new tab)</span>
-            </a>
+            {/* A private website and a worker have no public address. */}
+            {website.kind === "public" && (
+              <a className="btn" href={`https://${primary}`} target="_blank" rel="noreferrer">
+                Visit site <ArrowUpRight size={16} aria-hidden="true" />
+                <span className="visually-hidden">(opens in a new tab)</span>
+              </a>
+            )}
             <button type="button" className="btn" disabled={website.status !== "running" || restart.busy} onClick={() => void restart.run(website.id, "restart")}>Restart</button>
             <WebsiteMenu website={website} bordered />
           </div>
         </div>
         {website.status === "failed" && <FailedNotice website={website} />}
-        <Tabs label="Website sections" current={tab} items={TABS.map(([tabId, label]) => ({ id: tabId, label, href: tabId === "overview" ? `/websites/${website.id}` : `/websites/${website.id}/${tabId}` }))} />
+        <Tabs label="Website sections" current={tab} items={TABS.filter(([tabId]) => website.kind === "public" || tabId !== "domains").map(([tabId, label]) => ({ id: tabId, label, href: tabId === "overview" ? `/websites/${website.id}` : `/websites/${website.id}/${tabId}` }))} />
         {website.managedByTerraform && tab !== "overview" && <div style={{ marginBottom: 20 }}><TerraformNotice resource="this website" /></div>}
         {tab === "overview" && <Overview website={website} />}
-        {tab === "domains" && <DomainsTab website={website} />}
+        {tab === "domains" && (website.kind === "public" ? <DomainsTab website={website} /> : (
+          <Empty title="No domains">
+            <p>A {WEBSITE_KIND[website.kind].toLowerCase()} has no public address, so it has no domains.</p>
+          </Empty>
+        ))}
         {tab === "runtime" && <RuntimeTab website={website} />}
         {tab === "databases" && <DatabasesTab website={website} />}
         {tab === "files" && <FilesTab website={website} />}

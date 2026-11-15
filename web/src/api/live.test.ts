@@ -89,7 +89,7 @@ describe("mappers", () => {
   });
 
   it("maps a database server, and the database server of a job", () => {
-    const api = { id: "ds1", name: "mariadb-1", engine: "mariadb" as const, customerId: "c1", serverId: "s1", planId: "p1", status: "starting" as const, host: "mariadb.internal", port: 3306,
+    const api = { id: "ds1", name: "mariadb-1", engine: "mariadb" as const, customerId: "c1", serverId: "s1", planId: "p1", status: "starting" as const, host: "mariadb.internal", port: 3306, networkHost: "mariadb-1.internal", networkPort: 3306,
       limits: { vcpus: 1, memoryBytes: 536870912, diskBytes: 5368709120 }, usage: null, databases: 0, maxDatabases: 10, createdAt: null };
     // A new database server has no report of the server yet.
     expect(toDatabaseServer(api)).toEqual({ ...api, usage: undefined, createdAt: "" });

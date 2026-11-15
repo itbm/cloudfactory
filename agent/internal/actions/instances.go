@@ -137,25 +137,63 @@ func recordOf(s *agentv1.DatabaseServer) DatabaseServer {
 	return DatabaseServer{Engine: s.GetEngine(), Port: int(s.GetPort()), VCPUs: l.GetVcpus(), MemoryBytes: l.GetMemoryBytes(), DiskBytes: l.GetDiskBytes()}
 }
 
-// server gives the database server for a database or a database user of a website. id is the
-// ID of the database server from the request. A step calls the function when it runs.
+// server gives the database server for a database or a database user of a website that this
+// server has. id is the ID of the database server from the request. A step calls the function
+// when it runs.
 //
 // The function refuses a database server of a different customer.
 func (d *Deps) server(websiteID, id, engine string) (dbServer, error) {
+	return d.serverFor(websiteID, "", id, engine)
+}
+
+// serverFor is server for a job that can be for a website of a different server. The website
+// connects to the database server through the network of its customer. For such a website, the
+// agent has no record of the customer: customer is the ID of the customer from the panel.
+func (d *Deps) serverFor(websiteID, customer, id, engine string) (dbServer, error) {
 	if err := checkEngine(engine); err != nil {
 		return dbServer{}, err
 	}
 	if id == "" {
 		return dbServer{}, errNoDatabaseServer
 	}
-	customer, _, err := d.State.WebsiteDatabases(websiteID)
+	owner, err := d.customerOf(websiteID, customer)
 	if err != nil {
 		return dbServer{}, err
 	}
-	if customer == "" {
-		return dbServer{}, errNoCustomer
+	return d.serverOf(owner, id, engine)
+}
+
+// customerOf gives the customer whose database servers a job for a website can use.
+//
+//   - For a website that this server has, it is the customer in the record of the agent. A
+//     customer from the panel must agree with the record.
+//   - For a website of a different server, it is the customer from the panel.
+func (d *Deps) customerOf(websiteID, customer string) (string, error) {
+	customer = strings.ToLower(customer)
+	known, _, err := d.State.WebsiteDatabases(websiteID)
+	if err != nil {
+		return "", err
 	}
-	return d.serverOf(customer, id, engine)
+	if known != "" {
+		if customer != "" && customer != known {
+			return "", fmt.Errorf("the website %s is a website of the customer %s, not %s", websiteID, known, customer)
+		}
+		return known, nil
+	}
+	site, err := d.State.Get(websiteID)
+	if err != nil {
+		return "", err
+	}
+	if site != nil {
+		return "", errNoCustomer
+	}
+	if customer == "" {
+		return "", fmt.Errorf("this server does not have the website %s, and the request has no customer", websiteID)
+	}
+	if _, err := instanceKey(customer); err != nil {
+		return "", err
+	}
+	return customer, nil
 }
 
 // serverOf gives the container of a database server of a customer. It refuses a database
@@ -199,20 +237,20 @@ func (d *Deps) websiteServer(ctx context.Context, websiteID string, s *agentv1.D
 	if s.GetId() == "" {
 		return dbServer{}, errNoDatabaseServer
 	}
-	customer, _, err := d.State.WebsiteDatabases(websiteID)
-	if err != nil {
+	// For a website of a different server, the customer is the customer of the database
+	// server in the request (customerOf).
+	if known, _, err := d.State.WebsiteDatabases(websiteID); err != nil {
 		return dbServer{}, err
-	}
-	if customer == "" {
-		return dbServer{}, errNoCustomer
-	}
-	if customer != strings.ToLower(s.GetCustomer()) {
+	} else if known != "" && known != strings.ToLower(s.GetCustomer()) {
 		return dbServer{}, fmt.Errorf("the database server %s is not a database server of the customer of the website", s.GetId())
+	}
+	if _, err := d.customerOf(websiteID, s.GetCustomer()); err != nil {
+		return dbServer{}, err
 	}
 	if _, err := d.ensureServer(ctx, s, false); err != nil {
 		return dbServer{}, err
 	}
-	return d.server(websiteID, s.GetId(), engine)
+	return d.serverFor(websiteID, s.GetCustomer(), s.GetId(), engine)
 }
 
 // ensureServer makes sure that this server has a database server from the panel, and that
@@ -895,7 +933,13 @@ func (d *Deps) syncDatabaseAccess(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return d.loadDatabaseAccess(ctx, elements)
+	if err := d.loadDatabaseAccess(ctx, elements); err != nil {
+		return err
+	}
+	// The names and the access of the networks change with the websites and the database
+	// servers too (network.go).
+	d.syncNetworkLater(ctx)
+	return nil
 }
 
 // ensureDatabaseNetwork adds the database network to "lo", and the rules of the database

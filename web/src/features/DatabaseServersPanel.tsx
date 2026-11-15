@@ -51,7 +51,7 @@ export function DatabaseServersPanel() {
     <Card title="Database servers" actions={<button type="button" className="btn btn-primary" onClick={() => setCreating(true)}>New database server</button>}>
       <div className="card-body" style={{ paddingBottom: 12 }}>
         <p className="muted">
-          A database server is one container with MariaDB, PostgreSQL or Valkey. It has its own limits for CPU, memory and disk space, and a plan gives the number of its databases. All the websites of the customer on the same server can connect to it.
+          A database server is one container with MariaDB, PostgreSQL or Valkey. It has its own limits for CPU, memory and disk space, and a plan gives the number of its databases. All the websites of the customer can connect to it, also from a different server.
           {only && allowed !== undefined && <> {only.name} has {servers.filter((s) => s.customerId === only.id).length} of {allowed} database servers.</>}
         </p>
         <FormError error={retry.error ?? remove.error} />
@@ -88,8 +88,9 @@ export function DatabaseServersPanel() {
                   <td><Use server={s} /></td>
                   <td className="nowrap">{s.databases} of {s.maxDatabases}</td>
                   <td>
-                    <code>{s.host}:{s.port}</code>
-                    {host(s.serverId) && <span className="cell-sub">On the server {host(s.serverId)}</span>}
+                    {s.networkHost
+                      ? <><code className="nowrap">{s.networkHost}:{s.networkPort}</code><span className="cell-sub">Also <code>{s.host}:{s.port}</code>{host(s.serverId) ? ` on the server ${host(s.serverId)}` : " on its server"}</span></>
+                      : <><code>{s.host}:{s.port}</code>{host(s.serverId) && <span className="cell-sub">On the server {host(s.serverId)}</span>}</>}
                   </td>
                   <td style={{ minWidth: 120 }}>
                     <Status tone={status.tone}>{status.label}</Status>
@@ -113,7 +114,7 @@ export function DatabaseServersPanel() {
         </table>
       </TableWrap>
       <p className="card-body muted small" style={{ paddingTop: 12 }}>
-        The first database server of an engine has the usual port: <code>{DATABASE_PORT.mariadb}</code> for MariaDB, <code>{DATABASE_PORT.postgresql}</code> for PostgreSQL and <code>{DATABASE_PORT.valkey}</code> for Valkey. A second database server of the same engine gets the next port. An app connects to the host name and the port in the Host column.
+        An app connects to the first name in the Host column, for example <code>shop-db.internal:{DATABASE_PORT.mariadb}</code>. The name is the name of the database server with <code>.internal</code>, and the port is the usual port of the engine. The name is the same for each website of the customer, on the same server and on a different server. A website on the same server can also use the name of the engine: there, a second database server of the same engine has the next port.
       </p>
       {creating && <CreateDialog onClose={() => setCreating(false)} />}
       {editing && <ChangeDialog server={editing} onClose={() => setEditing(null)} />}
@@ -289,7 +290,7 @@ function CreateDialog({ onClose }: { onClose: () => void }) {
         </div>
         {(hosts.size > 1 || create.error?.fields.serverId) && (
           <div style={{ marginTop: 14 }}>
-            <Field label="Server" hint="Only the websites of the customer on the same server can connect to the database server." error={create.error?.fields.serverId}>
+            <Field label="Server" hint="The websites of the customer on a different server connect through an encrypted tunnel." error={create.error?.fields.serverId}>
               {(p) => (
                 <select {...p} className="select" value={serverId} onChange={(e) => setServerId(e.target.value)}>
                   <option value="">Automatic: the server with the most websites of the customer</option>

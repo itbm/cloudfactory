@@ -35,10 +35,26 @@ type meshSide struct {
 }
 
 type meshTunnel struct {
-	ID          string     `json:"id"`
-	State       string     `json:"state"`
-	RoundTripMs *float64   `json:"roundTripMs"`
-	Sides       []meshSide `json:"sides"`
+	ID          string   `json:"id"`
+	State       string   `json:"state"`
+	RoundTripMs *float64 `json:"roundTripMs"`
+	// Pinned is true for a tunnel that an administrator made. InUse is true when a website
+	// on one server uses a database server on the other.
+	Pinned bool       `json:"pinned"`
+	InUse  bool       `json:"inUse"`
+	Sides  []meshSide `json:"sides"`
+}
+
+// madeBy says who made the tunnel, and whether a website uses it.
+func (t meshTunnel) madeBy() string {
+	by := "panel"
+	if t.Pinned {
+		by = "administrator"
+	}
+	if t.InUse {
+		by += ", in use"
+	}
+	return by
 }
 
 type meshState struct {
@@ -122,13 +138,13 @@ func (a *app) printMesh(m meshState) {
 		return
 	}
 	tw = tabwriter.NewWriter(a.out, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(tw, "TUNNEL\tSTATE\tLAST HANDSHAKE\tROUND TRIP")
+	fmt.Fprintln(tw, "TUNNEL\tSTATE\tLAST HANDSHAKE\tROUND TRIP\tMADE BY")
 	for _, t := range m.Tunnels {
 		trip := "-"
 		if t.RoundTripMs != nil {
 			trip = fmt.Sprintf("%.1f ms", *t.RoundTripMs)
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", t.names(), t.State, t.handshake(), trip)
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", t.names(), t.State, t.handshake(), trip, t.madeBy())
 	}
 	tw.Flush()
 }

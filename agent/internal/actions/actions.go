@@ -20,6 +20,7 @@ import (
 	"github.com/itbm/cloudfactory/agent/internal/gate"
 	"github.com/itbm/cloudfactory/agent/internal/host"
 	"github.com/itbm/cloudfactory/agent/internal/hostupdate"
+	"github.com/itbm/cloudfactory/agent/internal/mesh"
 	"github.com/itbm/cloudfactory/agent/internal/quadlet"
 	"github.com/itbm/cloudfactory/agent/internal/selfupdate"
 )
@@ -209,6 +210,13 @@ type Deps struct {
 	accessLoaded string
 	// meshMu makes each change of the tunnels one step.
 	meshMu sync.Mutex
+	// networkMu makes each change of the networks one step in the worker.
+	networkMu sync.Mutex
+	// networkLoaded is the content of the firewall file of the networks that the kernel
+	// has. networkWarned is set after the warning for a server with no firewall file. meshMu
+	// protects the two.
+	networkLoaded string
+	networkWarned bool
 	// backupSlots limits the backups that operate at the same time (BackupSlots).
 	backupSlots chan struct{}
 	rtMu        sync.RWMutex
@@ -294,6 +302,8 @@ type stateFile struct {
 	// Databases has the record of each customer that has a website or a database server on
 	// this server. The key is the ID of the customer in lower case.
 	Databases map[string]*DatabaseInstance `json:"databases,omitempty"`
+	// Network has the networks of the customers on this server, from the panel (network.go).
+	Network *mesh.Network `json:"network,omitempty"`
 	// Cron has the cron jobs of each website. The key is the ID of the website.
 	Cron map[string][]CronEntry `json:"cron,omitempty"`
 }
@@ -486,7 +496,14 @@ func (s *State) ReleaseNext(id string) error {
 	return s.write(f)
 }
 
+// WebsitePortMin and WebsitePortMax are the limits of the host ports of the website
+// containers on the private service address.
+const (
+	WebsitePortMin = 20000
+	WebsitePortMax = 29999
+)
+
 // NewState gives a State in the data directory.
 func NewState(dataDir string) *State {
-	return &State{Path: filepath.Join(dataDir, "sites.json"), FirstPort: 20000, LastPort: 29999}
+	return &State{Path: filepath.Join(dataDir, "sites.json"), FirstPort: WebsitePortMin, LastPort: WebsitePortMax}
 }

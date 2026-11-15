@@ -20,6 +20,12 @@ const TUNNEL_STATE: Record<MeshTunnel["state"], { label: string; tone: Tone }> =
 /** The names of the two servers of a tunnel, for example "web-1 and web-2". */
 export const tunnelName = (t: MeshTunnel) => t.sides.map((s) => s.server ?? "a removed server").join(" and ");
 
+/** Why the mesh has the tunnel, as a sentence. */
+function tunnelUse(t: MeshTunnel): string {
+  if (t.inUse) return t.pinned ? "A website uses a database server on the other server." : "The panel made it: a website uses a database server on the other server.";
+  return t.pinned ? "" : "The panel made it for a network.";
+}
+
 /** The time of the most recent handshake that the two servers reported. */
 function lastHandshake(t: MeshTunnel): string | null {
   return t.sides.map((s) => s.handshakeAt).filter((at): at is string => !!at).sort().at(-1) ?? null;
@@ -166,6 +172,7 @@ export function NetworkPage() {
   const busy = jobs.some(jobActive);
   const able = mesh.servers.filter((s) => s.supported).length;
   const old = mesh.servers.filter((s) => !s.supported);
+  const noNetworks = mesh.servers.filter((s) => s.supported && !s.networks);
 
   return (
     <>
@@ -173,7 +180,7 @@ export function NetworkPage() {
       <main id="main" className="content content-wide">
         <PageHeader
           title="Network"
-          description="Encrypted tunnels between your servers. A tunnel lets two servers send private traffic to each other through the internet. The panel gives each server the public keys of the other servers, monitors each tunnel, and sends the tunnels again to a server that does not have them."
+          description="Encrypted tunnels between your servers. A tunnel lets two servers send private traffic to each other through the internet. The panel makes a tunnel when a website on one server uses a database server on the other, and removes it when no website needs it. You can also make a tunnel. The panel gives each server the public keys of the other servers, monitors each tunnel, and sends the tunnels again to a server that does not have them."
           actions={<button type="button" className="btn btn-primary" disabled={able < 2} onClick={() => setDialog({ kind: "make" })}>Make tunnel</button>}
         />
         <div className="stats">
@@ -190,6 +197,12 @@ export function NetworkPage() {
           </div>
         )}
 
+        {noNetworks.length > 0 && (
+          <div className="alert alert-warning" role="status">
+            <p><strong>{noNetworks.map((s) => s.name).join(", ")} cannot use the network names of database servers.</strong> The agent of {noNetworks.length === 1 ? "this server" : "these servers"} is from an earlier release. Update the agent on the page of the server.</p>
+          </div>
+        )}
+
         <Card title="Tunnels">
           {mesh.tunnels.length === 0
             ? <div className="card-body"><p className="muted">No tunnels yet. {able < 2 ? "A tunnel needs two servers with a current agent." : "Make a tunnel between two servers."}</p></div>
@@ -203,14 +216,15 @@ export function NetworkPage() {
                       const handshake = lastHandshake(t);
                       return (
                         <tr key={t.id}>
-                          <td><span className="cell-title mono">{tunnelName(t)}</span></td>
+                          <td><span className="cell-title mono">{tunnelName(t)}</span>{tunnelUse(t) && <div className="cell-sub">{tunnelUse(t)}</div>}</td>
                           <td><Status tone={st.tone}>{st.label}</Status>{t.state === "down" && downDetail(t) && <div className="cell-sub">{downDetail(t)}</div>}</td>
                           <td className="nowrap">{handshake ? relativeTime(handshake) : "Never"}</td>
                           <td className="nowrap">{t.roundTripMs === null ? "–" : `${t.roundTripMs.toLocaleString("en-GB", { maximumFractionDigits: 1 })} ms`}</td>
                           <td className="cell-actions">
                             <RowMenu label={`Actions for the tunnel between ${tunnelName(t)}`} actions={[
                               { label: "Repair", onSelect: () => void repair.run(t.id), disabled: busy },
-                              { label: "Remove", onSelect: () => setDialog({ kind: "remove", tunnel: t }), danger: true, disabled: busy },
+                              // The panel keeps a tunnel that a website uses.
+                              { label: "Remove", onSelect: () => setDialog({ kind: "remove", tunnel: t }), danger: true, disabled: busy || t.inUse },
                             ]} />
                           </td>
                         </tr>

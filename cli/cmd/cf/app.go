@@ -683,6 +683,16 @@ func (a *app) websites(ctx context.Context, sub string, args []string) error {
 			return a.printJSON(w)
 		}
 		fmt.Fprintf(a.out, "Name:     %s\nID:       %s\nStatus:   %s\nRuntime:  %s\nUser:     %s\n", w.Name, w.ID, w.Status, w.Runtime.Image, w.UnixUser)
+		// A different website in a network with this website connects to this name.
+		if w.Kind != "" && w.Kind != "public" {
+			fmt.Fprintf(a.out, "Kind:     %s\n", w.Kind)
+		}
+		if w.Command != "" {
+			fmt.Fprintf(a.out, "Command:  %s\n", w.Command)
+		}
+		if w.NetworkHost != "" {
+			fmt.Fprintf(a.out, "Network:  %s:%d\n", w.NetworkHost, w.NetworkPort)
+		}
 		for _, d := range w.Domains {
 			fmt.Fprintf(a.out, "Domain:   %s (%s)\n", d.Name, d.Kind)
 		}
@@ -700,11 +710,13 @@ func (a *app) websites(ctx context.Context, sub string, args []string) error {
 		customer := fs.String("customer", "", "the customer ID")
 		server := fs.String("server", "", "the server ID")
 		appName := fs.String("app", "", "the application, for example WordPress")
+		kind := fs.String("kind", "", "public (a website with a domain), private (no domain: only the websites of its networks connect to it) or worker (runs a command, no HTTP). For private and worker, the name is a short name, for example queue.")
+		command := fs.String("command", "", "the start command of a worker, for example \"php artisan queue:work\"")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
 		body := map[string]any{"name": args[0], "imageId": *image, "planId": *plan}
-		for k, v := range map[string]string{"customerId": *customer, "serverId": *server, "application": *appName} {
+		for k, v := range map[string]string{"customerId": *customer, "serverId": *server, "application": *appName, "kind": *kind, "command": *command} {
 			if v != "" {
 				body[k] = v
 			}

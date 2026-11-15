@@ -586,7 +586,9 @@ The job `Deploy` has these steps:
 A customer makes database servers as it makes websites. A database server is one container
 with one database engine: MariaDB, PostgreSQL or Valkey. It has its own data, its own
 superuser, its own port and its own limits. Each database of a website is in one database
-server of the customer of the website, on the server of the website.
+server of the customer of the website. The database server is on the server of the website,
+or on a different server that is in a network with the website
+(refer to [The networks of the customers](#the-networks-of-the-customers)).
 
 - A customer cannot change the service of a different customer, because the customers do
   not use the same containers. Each database server has its own Unix user and its own gVisor
@@ -617,6 +619,10 @@ only a database server that has no databases and no database users.
 | `cf-mariadb-<id>` | MariaDB | 3306 to 3355 | `mariadb.internal` |
 | `cf-postgresql-<id>` | PostgreSQL | 5432 to 5481 | `postgres.internal` |
 | `cf-valkey-<id>` | Valkey | 6379 to 6428 | `valkey.internal` |
+
+A website can also connect to a database server by its network name, for example
+`shop-db.internal`, with the usual port of the engine. That name is the same on each server.
+Refer to [The networks of the customers](#the-networks-of-the-customers).
 
 `<id>` is the ID of the database server in the panel, in lower case. The first database
 server of an engine of a customer on a server has the usual port of the engine. The next one
@@ -955,9 +961,181 @@ of each tunnel. The agent sends a report each minute.
 - When you remove a server from the panel, the panel removes its tunnels from the other
   servers.
 
-In this release, an administrator makes each tunnel (**Network > Make tunnel**, or
-`cf mesh connect SERVER SERVER`). A server with an agent from an earlier release cannot have
+The panel makes a tunnel when a website on one server uses a database server on the other
+server (refer to [The networks of the customers](#the-networks-of-the-customers)). It removes
+that tunnel when no website needs it. An administrator can also make a tunnel
+(**Network > Make tunnel**, or `cf mesh connect SERVER SERVER`). The panel does not remove a
+tunnel of an administrator. A server with an agent from an earlier release cannot have
 tunnels until you update its agent.
+
+## The networks of the customers
+
+A network is a private network of one customer. Its members are websites and database
+servers of the customer. A website can connect to each database server and to each other
+website that is in a network with it. The member can be on the server of the website or on a
+different server.
+
+Each customer has the network `default`. Each new website and each new database server of
+the customer is a member of it. In this release, `default` is the only network.
+
+### Names and addresses
+
+A database server has one name for the websites: the name of the database server and
+`.internal`, for example `shop-db.internal`. It answers on the usual port of its engine:
+3306 for MariaDB, 5432 for PostgreSQL and 6379 for Valkey. The name and the port are the
+same for each website, on each server. Thus the configuration of an app does not change when
+the database server or the website is on a different server.
+
+A website has one name for the other websites of its networks: its Unix user with `-` in
+place of `_`, and `.internal`. For example, the website with the Unix user `shop_a1b2` has
+the name `shop-a1b2.internal`. It answers on port 80, with HTTP. The connection does not go
+through the edge proxy, so it has no TLS of its own: the tunnel between two servers encrypts
+it. The panel shows the name on the **Settings** tab of the website, and `cf website show`
+prints it. A database server cannot have the name of a website of its customer.
+
+The panel gives each member one address of the mesh range (the member address). The
+addresses of the servers are the first 254 addresses of the range, and the member addresses
+are after them. A database server gets its address when the panel makes it. A website gets
+its address when a different website is in a network with it. A member address does not
+change. The name points to the member address on each server.
+
+The names `mariadb.internal`, `postgres.internal` and `valkey.internal` stay. They point to
+the database servers of the customer on the server of the website, where each database
+server has its own port. A database server cannot have the name `mariadb`, `postgres`,
+`valkey` or `localhost`.
+
+### A website with no public address
+
+A website has one of three kinds. Each kind is a website of the plan of the customer.
+
+| Kind | Domains and edge route | Port 80 in its networks | Container |
+| --- | --- | --- | --- |
+| `public` | Yes | Yes | The web server of the image |
+| `private` | No | Yes | The web server of the image |
+| `worker` | No | No | The start command of the customer |
+
+- **A private website** has no domain, no TLS certificate and no route in the edge proxy. The
+  agent gets a website with no domains, which it could operate before: a new website has no
+  route until its domain is verified. Only a website that is in a network with it can
+  connect to it, by its network name on port 80.
+- **A background worker** (the kind `worker`) runs one command of the customer, for example `php artisan queue:work`. The
+  panel sends the command as `sh -c "<command>"`, as for a cron job. The command runs in the
+  container of the worker: the same gVisor sandbox, Unix user, limits and firewall rules as
+  for a website. The container has no port on the private service address, and the worker
+  is not a member that answers. It can connect to the members of its networks. systemd
+  starts the command again when it stops. After a start, the agent makes sure that the
+  service stays active for 5 seconds. Thus a command with a wrong name fails the job. The
+  owner changes the command on the **Runtime** tab. The agent then starts a second
+  container with the new command and stops the first one, as for a change of the runtime.
+  For a short time, the two containers operate together.
+
+The user types a short name for a private website or a worker, for example `queue`. The
+panel makes the Unix user from it (`queue_a1b2`), and the name of the website is the network
+name (`queue-a1b2.internal`). This name is not a name of the internet, and no two websites
+have the same one. The panel makes a private website or a worker only on a server whose
+agent reported the function (`websites` in its mesh report). The kind of a website does not
+change after the panel made it. A private website and a worker cannot have a domain or a
+staging copy.
+
+### What each server gets
+
+The panel sends the networks of a server with its mesh state (the action `SetMesh`):
+
+- The members on the server. Each member has its address, its port, and the mesh addresses
+  of the other servers that have a website in a network with it.
+- The websites on the server that are in a network with a member. Each website has the
+  name, the address and the port of each member that it can connect to.
+- For each tunnel, the addresses of the members on the other server that a website of this
+  server uses. WireGuard sends the traffic for these addresses into that tunnel.
+
+A server with no tunnel also gets its members and its websites, with the address range. A
+website then uses the same name for a database server on its own server.
+
+The agent does this with the networks:
+
+1. The worker keeps the networks in its state. From them and from its records of the
+   websites and the database servers, it makes the firewall rules and the names of each
+   website. It leaves out a member or a website that the server does not have yet.
+2. The root helper examines each rule and each name. Then it loads the firewall elements from
+   `/etc/cloudfactory/firewall/network.nft` and writes the hosts file of each website:
+   `/etc/cloudfactory/websites/<user>/hosts`.
+3. The worker does the two steps again after each change of the websites and the database
+   servers, and when the agent starts.
+
+The container of a website has the hosts file of the website as its `/etc/hosts`. The agent
+changes the file in place, so a container that operates gets a new name with no restart. A
+website from an earlier release has the three names of the engines in its unit. It gets the
+hosts file, and thus the network names, when the agent writes its unit again: at the next
+restart, deploy or change of the runtime.
+
+### The path of a connection
+
+A website connects to `shop-db.internal:3306`, which is the member address.
+
+- **The database server is on a different server.** The firewall of the server of the website
+  lets only the Unix user of that website connect to the member address and the port. The
+  tunnel carries the connection. On the server of the database server, the firewall accepts
+  the connection only from a server that has a website in a network with the member. Then it
+  changes the destination to the address and the port of the container.
+- **The database server is on the same server.** The firewall changes the destination to the
+  address and the port of the container. It lets only the Unix user of a website that is in
+  a network with the member do this.
+
+A website that is a member has the same path. The destination changes to the port of the
+container of the website on the private service address (`169.254.77.1`). The rule that
+lets a website connect to a member is the first rule of the chain `output`, before the rule
+that closes the ports of the private service address. It compares the member address and
+port 80 from before the change. Thus the port of the container itself stays closed for each
+website. When the runtime of a website changes, its container gets a new port, and the agent
+writes the rules again. A website that its owner stopped stays a member: a connection to it
+gets a refusal.
+
+An agent reports that a website on it can be a member (`websites` in its mesh report). The
+panel makes a website a member only when the agent of its server and the agent of the server
+of the client reported this. An agent from an earlier release gets no member on port 80.
+
+In the two cases, the database server sees the address `169.254.80.1` as the client. A
+website that is a member also sees this address. This is
+the address that it sees for each website container. Thus a database user that can connect
+from a website can connect from each website of the networks of the database server, with
+its password.
+
+The panel changes the mesh after each change of a website, a database server or a network.
+It makes the tunnels that the networks need, removes the tunnels that it made and that no
+network needs, and sends the new state only to the servers whose state is different.
+
+### A database on a different server
+
+A website can have a database in a database server of its customer on a different server,
+when the two are in one network. The user selects the database server for a new database.
+With no selection, the panel uses a database server on the server of the website first.
+
+- **The jobs.** The panel sends the job for a database or for a database user to the agent
+  of the server of the database server. That agent has no record of the website, so the
+  job has the ID of the customer. The agent does the job only when the database server is a
+  database server of that customer. For a website that the agent has, the record of the
+  agent decides, and a different customer in the job is refused.
+- **The connection.** The app connects to the network name of the database server, for
+  example `shop-db.internal:3306`. The database user is the same as for a website on the
+  server of the database server: the database server sees one address for each website.
+- **The size.** Each agent reports the size of each database in its database servers. The
+  panel accepts the size of a database from the agent of its database server.
+- **The removal of the website.** The agent of the server of the website cannot remove a
+  database on a different server. The panel first sends a job for each such database and
+  each such database user to the agent of that server. When these jobs are complete, the
+  panel sends the job that removes the website. When one fails, the website stays, and the
+  user removes it again.
+
+Limits of this release:
+
+- A backup of a website with a database on a different server has two snapshots, in two
+  repositories (refer to [Backups](#backups)). When one of the two jobs fails, the backup
+  has only the other part.
+- The panel cannot make a staging copy of a website that has a database on a different
+  server.
+
+In this release, a network member is a database server. A later release adds websites as
+members, private websites, and networks with a name.
 
 ## Change of runtime without downtime
 
@@ -1014,11 +1192,19 @@ not keep them.
 - A backup has the files of the website and a dump of each MariaDB and PostgreSQL database.
   The panel keeps the SHA-256 sum of each dump, and the agent compares the dump with this sum
   before a restore. A backup has no Valkey data.
+- A website can have a database in a database server on a different server. The agent of
+  the server of the website cannot make a dump of it. Thus a backup of such a website has
+  two parts. The agent of the server of the website makes the snapshot of the files and of
+  the databases on that server. The agent of the server of the database server makes a
+  snapshot with only the dumps of the databases on that server, in the repository of that
+  server. The kind of that snapshot is `scheduled-databases` or `manual-databases`, and the
+  retention policy applies to each kind separately. The dump does not go to a different
+  server. A restore of such a database goes to the agent that has the snapshot.
 - Each snapshot has the tags `website=<website ID>` and `kind=scheduled` (a nightly backup) or
   `kind=manual` (a backup that a user starts). The retention policy removes only scheduled
   backups. The panel keeps the 10 newest manual backups of each website.
-- When a website is deleted, the panel records its server and the date after which its
-  backups can go (30 days by default).
+- When a website is deleted, the panel records each server that has a backup of it, and the
+  date after which its backups can go (30 days by default).
 - On Sunday, each healthy server removes the backups of those websites from its repository,
   and then the data that no snapshot uses.
 - A snapshot from the time when all servers used one repository has a mark. The panel

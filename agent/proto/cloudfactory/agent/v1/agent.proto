@@ -108,6 +108,12 @@ message Website {
   // The agent records the value in CreateWebsite. After that, it keeps the value of the
   // website. SetRuntime records the value only for a website that has none.
   string database_instance = 15;
+  // True for a background worker: the container serves no HTTP. It has no port on the private
+  // service address, no route in the edge proxy, and it is not a network member that answers.
+  // It can connect to the members of its networks. "command" is its start command, for each
+  // runtime. The command runs in the gVisor sandbox as the Unix user of the website, with the
+  // limits of the website.
+  bool worker = 16;
 }
 
 // A database server of a customer: one database container with one engine, in its own gVisor
@@ -250,6 +256,9 @@ message DeleteDatabaseRequest {
   repeated string users = 6;
   // The ID of the database server of the database.
   string database_server = 7;
+  // The ID of the customer of the website. It is necessary for a website of a different
+  // server, which connects through the network of the customer.
+  string customer = 8;
 }
 
 message DatabaseGrant {
@@ -287,6 +296,9 @@ message DeleteDatabaseUserRequest {
   repeated string website_databases = 6;
   // The ID of the database server of the user.
   string database_server = 7;
+  // The ID of the customer of the website. It is necessary for a website of a different
+  // server.
+  string customer = 8;
 }
 
 // A database or a database user of a website.
@@ -309,6 +321,13 @@ message BackupRequest {
   map<string, string> credentials = 7;
   // When set, the agent removes the snapshots of the website that the policy does not keep (FR-902).
   Retention retention = 8;
+  // True: the backup has only the dumps of the databases, not the files of the website. The
+  // panel sends such a backup to the server of a database server when the website is on a
+  // different server. The snapshot has the kind "<kind>-databases".
+  bool databases_only = 9;
+  // The ID of the customer of the website. It is necessary with databases_only: the agent
+  // has no record of a website of a different server.
+  string customer = 10;
 }
 
 // The snapshots of a website that the agent keeps. The policy applies to the snapshots of the
@@ -348,6 +367,9 @@ message RestoreRequest {
   bool delete_extra = 10;
   // Scope "database": the ID of the database server of the database.
   string database_server = 11;
+  // Scope "database": the ID of the customer of the website. It is necessary for a website
+  // of a different server.
+  string customer = 12;
 }
 
 // Sets the SFTP access of a website. The owner signs in as the Unix user of the website and sees
@@ -393,6 +415,42 @@ message MeshPeer {
   string endpoint = 4;
   // The mesh address of the other server.
   string address = 5;
+  // The addresses of the network members on the other server that a website of this server
+  // can connect to. The tunnel sends the traffic for these addresses to the other server.
+  repeated string members = 6;
+}
+
+// One network member on this server: a database server with a name ("<name>.internal") and
+// an address of the mesh range. The name and the address are the same on each server.
+message NetworkMember {
+  // The ID of the database server.
+  string id = 1;
+  // The member address.
+  string address = 2;
+  // The port that the member answers on: the usual port of its engine.
+  int32 port = 3;
+  // The mesh addresses of the other servers that have a website in a network of the member.
+  // Only these servers can connect to the member through a tunnel.
+  repeated string servers = 4;
+}
+
+// The name of one network member for a website.
+message NetworkName {
+  // The host name, for example "shop-db.internal".
+  string name = 1;
+  // The member address.
+  string address = 2;
+  // The port of the member.
+  int32 port = 3;
+}
+
+// One website of this server, with the network members that it can connect to. The agent
+// writes the names in the hosts file of the website container, and the firewall lets only
+// this website connect to these members.
+message NetworkWebsite {
+  // The ID of the website.
+  string id = 1;
+  repeated NetworkName names = 2;
 }
 
 // The full mesh state of one server: its tunnels to other servers. The traffic between the
@@ -408,6 +466,10 @@ message Mesh {
   // The UDP port of the tunnels on this server.
   int32 port = 4;
   repeated MeshPeer peers = 5;
+  // The networks of the customers on this server. A server with no tunnel can have them:
+  // then the request has the range, and no address and no peers.
+  repeated NetworkMember members = 6;
+  repeated NetworkWebsite websites = 7;
 }
 
 // Sets the tunnels of this server. The request always has the full state, so the agent can

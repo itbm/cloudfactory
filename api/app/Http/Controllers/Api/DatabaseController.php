@@ -44,15 +44,19 @@ class DatabaseController extends Controller
 
         return response()->json([
             'prefix' => DatabaseNames::prefix($website),
-            'databases' => $website->databases()->with('databaseServer')->orderBy('name')->get()->map(fn (Database $d) => self::present($d)),
+            'databases' => $website->databases()->with('databaseServer')->orderBy('name')->get()->map(fn (Database $d) => self::present($d, $website)),
             'users' => $website->databaseUsers()->with('databases')->orderBy('name')->get()->map(fn (DatabaseUser $u) => DatabaseUserController::present($u)),
             // The database servers that can get a database of this website: those of its
-            // customer on its server.
-            'servers' => DatabaseServers::forWebsite($website)->map(fn (DatabaseServer $s) => DatabaseServerController::present($s))->all(),
+            // customer on its server, and those in a network with the website.
+            'servers' => DatabaseServers::forWebsite($website)->map(fn (DatabaseServer $s) => DatabaseServerController::present($s) + [
+                // True for a database server on a different server from the website. The
+                // website connects to it by its network name.
+                'remote' => DatabaseServers::isRemote($website, $s),
+            ])->all(),
         ]);
     }
 
-    public static function present(Database $d): array
+    public static function present(Database $d, Website $website): array
     {
         return [
             'id' => $d->id,
@@ -60,8 +64,7 @@ class DatabaseController extends Controller
             'name' => $d->name,
             'databaseServerId' => $d->database_server_id,
             // The host name and the port that the application of the website connects to.
-            'host' => DatabaseServer::HOSTS[$d->engine],
-            'port' => $d->databaseServer->port,
+            ...DatabaseServers::connection($website, $d->databaseServer),
             'sizeBytes' => $d->size_bytes,
             // Valkey only: the database number that the application selects, and the number of
             // keys. The number is null until the agent made the database.
@@ -89,8 +92,7 @@ class DatabaseController extends Controller
             throw ValidationException::withMessages(['createUser' => 'A Valkey database always has a user with the same name.']);
         }
         // Each database is in a database server of the customer of the website. Only an agent
-        // that reports database servers, and the engine, can operate one.
-        DatabaseServers::checkHost($website->server, $data['engine']);
+        // that reports database servers, and the engine, can operate one (forDatabase).
         if (Database::where(['engine' => $data['engine'], 'name' => $name])->exists()) {
             throw ValidationException::withMessages(['name' => 'This database exists.']);
         }
@@ -112,7 +114,9 @@ class DatabaseController extends Controller
             return [$database, $server];
         });
         $password = $withUser ? Input::databasePassword() : null;
-        $job = $this->jobs->dispatch($website->server, AgentAction::CreateDatabase, array_filter([
+        // The job goes to the agent of the server of the database server. It can be a different
+        // server from the server of the website.
+        $job = $this->jobs->dispatch($server->server, AgentAction::CreateDatabase, array_filter([
             'websiteId' => $website->id,
             'unixUser' => $website->unix_user,
             'engine' => $data['engine'],
@@ -132,8 +136,7 @@ class DatabaseController extends Controller
             'user' => $withUser ? $name : null,
             'password' => $password,
             'databaseServerId' => $server->id,
-            'host' => DatabaseServer::HOSTS[$data['engine']],
-            'port' => $server->port,
+            ...DatabaseServers::connection($website, $server),
             'job' => new JobResource($job),
         ], 202);
     }
@@ -145,13 +148,15 @@ class DatabaseController extends Controller
         $users = $database->users->pluck('name')->sort()->values()->all();
         // Batch 1, finding 4: the panel removes the row when the job succeeds (JobOutcome).
         // The agent removes the access of each user to the database, then the database.
-        $job = $this->jobs->dispatch($website->server, AgentAction::DeleteDatabase, [
+        $job = $this->jobs->dispatch($database->databaseServer->server, AgentAction::DeleteDatabase, [
             'websiteId' => $website->id,
             'unixUser' => $website->unix_user,
             'engine' => $database->engine,
             'name' => $database->name,
             'users' => $users,
             'databaseServer' => $database->database_server_id,
+            // The agent of a different server has no record of the website.
+            'customer' => $website->customer_id,
         ], "Remove database {$database->name}", $website, databaseServer: $database->databaseServer);
         Audit::record($request, 'Removed database', "{$website->name} {$database->name}", $website->customer_id);
 

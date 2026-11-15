@@ -114,7 +114,7 @@ The certificate of the panel domain.
 
 ### admin-17-databases
 
-The database servers of each customer, with their plans, their use and their host names. Below them, the page shows the databases and the database users of all websites.
+The database servers of each customer, with their plans, their use and their names in the network of the customer. Below them, the page shows the databases and the database users of all websites.
 
 ![admin-17-databases](admin-17-databases.png)
 
@@ -132,7 +132,7 @@ The values of a plan for websites and for database servers.
 
 ### admin-20-network
 
-The encrypted tunnels between the servers. Each tunnel shows its state, the time of its last handshake and its round-trip time. An administrator makes, repairs and removes tunnels, and makes a new key on a server.
+The encrypted tunnels between the servers. Each tunnel shows its state, the time of its last handshake and its round-trip time. The panel makes a tunnel when the network of a customer needs it. An administrator makes, repairs and removes tunnels, and makes a new key on a server.
 
 ![admin-20-network](admin-20-network.png)
 

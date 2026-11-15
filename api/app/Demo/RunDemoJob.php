@@ -128,6 +128,7 @@ class RunDemoJob implements ShouldQueue
                 'publicKey' => $job->server->mesh_public_key,
                 'version' => $job->server->mesh_wanted_version,
                 'address' => $job->server->mesh_address,
+                'networks' => true,
                 'tunnels' => array_map(fn (array $peer) => [
                     'server' => $peer['server'], 'handshakeAt' => now()->getTimestamp(), 'reachable' => true, 'roundTripMicros' => random_int(4000, 24000),
                 ], Mesh::stateFor($job->server)['peers']),

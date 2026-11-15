@@ -2,7 +2,7 @@ import { useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { useAction, useStore } from "../api/hooks";
 import { createDatabase, createDatabaseUser, databaseServersFor, deleteDatabase, deleteDatabaseUser, partialDetails, setDatabaseUser, type GrantInput } from "../api/store";
-import type { DatabaseEngine, DatabasePrivileges, DatabaseUser } from "../api/types";
+import type { DatabaseEngine, DatabasePrivileges, DatabaseServer, DatabaseUser } from "../api/types";
 import { Card, ConfirmButton, Field, FormError, Modal, RowMenu, TableWrap } from "../components/ui";
 import { bytes, count } from "../lib/format";
 import { DATABASE_HOST, DATABASE_PORT, ENGINE_NAME as ENGINE, jobActive } from "../lib/labels";
@@ -38,9 +38,17 @@ export function DatabasesPanel({ websiteId }: { websiteId?: string }) {
   const changeUser = useAction(setDatabaseUser);
   const siteName = (id: string) => sites.find((w) => w.id === id)?.name ?? "Removed website";
   const serverName = (id?: string) => state.databaseServers.find((x) => x.id === id)?.name;
-  // The database servers that the selected website can use: those of its customer on its server.
+  // The database servers that the selected website can use: those of its customer on its server,
+  // and those on a different server that are in a network with the website.
   const website = sites.find((w) => w.id === site);
   const usable = databaseServersFor(state, website, engine);
+  // A database server on the server of the website shows its port. A database server on a
+  // different server shows that server, when the user can see the servers.
+  const where = (x: DatabaseServer) => {
+    if (x.serverId === website?.serverId) return `port ${x.port}`;
+    const server = state.servers.find((s) => s.id === x.serverId)?.name;
+    return server ? `on the server ${server}` : "on a different server";
+  };
   const prefix = (id: string) => `${sites.find((w) => w.id === id)?.unixUser ?? ""}_`;
   // The reason when a website cannot have a Valkey database: an agent of an earlier release
   // cannot operate Valkey. When the panel does not know the server, the API makes the check.
@@ -161,7 +169,7 @@ export function DatabasesPanel({ websiteId }: { websiteId?: string }) {
             </tbody>
           </table>
         </TableWrap>
-        <p className="card-body muted small" style={{ paddingTop: 12 }}>Each customer has its own database servers. By default, only the websites of the customer on the same server can connect to them, and each connection needs a user name and a password. A user is in one database server, and can have access only to the databases of its website in that database server.{users.some((u) => u.engine === "valkey") && " The user of a Valkey database has access to that database only. To remove the user, remove the database."}</p>
+        <p className="card-body muted small" style={{ paddingTop: 12 }}>Each customer has its own database servers. By default, only the websites of the customer can connect to them, and each connection needs a user name and a password. A user is in one database server, and can have access only to the databases of its website in that database server.{users.some((u) => u.engine === "valkey") && " The user of a Valkey database has access to that database only. To remove the user, remove the database."}</p>
       </Card>
 
       {asking?.action === "password" && (
@@ -208,14 +216,14 @@ export function DatabasesPanel({ websiteId }: { websiteId?: string }) {
                 <Field
                   label="Database server"
                   hint={usable.length === 0
-                    ? <>The customer has no {ENGINE[engine]} database server on the server of this website. The panel makes one with the plan of the customer.</>
-                    : <>The websites of the customer on the same server can connect to it. {websiteId ? <>To make more database servers, go to the <Link to="/databases">Databases</Link> page.</> : "To make more database servers, select New database server on this page."}</>}
+                    ? <>The website can use no {ENGINE[engine]} database server of its customer. The panel makes one on the server of the website, with the plan of the customer.</>
+                    : <>The websites of the customer can connect to it. {websiteId ? <>To make more database servers, go to the <Link to="/databases">Databases</Link> page.</> : "To make more database servers, select New database server on this page."}</>}
                   error={createDb.error?.fields.databaseServerId}
                 >
                   {(p) => (
                     <select {...p} className="select" value={dbServer} onChange={(e) => setDbServer(e.target.value)}>
                       <option value="">{usable.length === 0 ? `New ${ENGINE[engine]} database server` : "Automatic: the first database server with space"}</option>
-                      {usable.map((x) => <option key={x.id} value={x.id} disabled={x.databases >= x.maxDatabases}>{x.name} · port {x.port} · {x.databases} of {x.maxDatabases} databases</option>)}
+                      {usable.map((x) => <option key={x.id} value={x.id} disabled={x.databases >= x.maxDatabases}>{x.name} · {where(x)} · {x.databases} of {x.maxDatabases} databases</option>)}
                     </select>
                   )}
                 </Field>
@@ -251,7 +259,7 @@ export function DatabasesPanel({ websiteId }: { websiteId?: string }) {
                   <Field label="Database server" hint="A user is in one database server. It can have access only to the databases in it." error={createUser.error?.fields.databaseServerId}>
                     {(p) => (
                       <select {...p} className="select" value={dbServer || usable[0].id} onChange={(e) => { setDbServer(e.target.value); setGrants([]); }}>
-                        {usable.map((x) => <option key={x.id} value={x.id}>{x.name} · port {x.port}</option>)}
+                        {usable.map((x) => <option key={x.id} value={x.id}>{x.name} · {where(x)}</option>)}
                       </select>
                     )}
                   </Field>

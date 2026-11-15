@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useAction, useStore } from "../../api/hooks";
 import { imageOf, supportEnds } from "../../api/selectors";
-import { changeRuntime, revertRuntime, setDocumentRoot, setPhpSettings, setWorkerMode } from "../../api/store";
+import { changeRuntime, revertRuntime, setCommand, setDocumentRoot, setPhpSettings, setWorkerMode } from "../../api/store";
 import type { Website } from "../../api/types";
 import { Card, Field, FormError, Toggle } from "../../components/ui";
 import { longDate } from "../../lib/format";
@@ -19,6 +19,8 @@ export function RuntimeTab({ website }: { website: Website }) {
   const change = useAction(changeRuntime);
   const revert = useAction(revertRuntime);
   const worker = useAction(setWorkerMode);
+  const [command, setCommandText] = useState(website.command ?? "");
+  const start = useAction(setCommand);
   const [root, setRoot] = useState(website.runtime.documentRoot ?? "public");
   const docRoot = useAction(setDocumentRoot);
   const settings = useAction(async () => {
@@ -62,7 +64,18 @@ export function RuntimeTab({ website }: { website: Website }) {
             </div>
           </form>
         </Card>
-        {website.runtime.kind !== "oci" && (
+        {website.kind === "worker" && (
+          <Card title="Start command">
+            <form className="card-body" noValidate onSubmit={(e) => { e.preventDefault(); void start.run(website.id, command); }}>
+              <FormError error={start.error} />
+              <Field label="Command that the worker runs" hint={<>One command line. It runs in the container of the worker, in the gVisor sandbox, in the directory <code>/app</code>. When the command stops, the panel starts it again.</>} error={start.error?.fields.command}>
+                {(p) => <input {...p} className="input mono" value={command} onChange={(e) => setCommandText(e.target.value)} spellCheck={false} autoCapitalize="none" />}
+              </Field>
+              <button type="submit" className="btn" style={{ marginTop: 12 }} disabled={start.busy || busy || !command.trim() || command.trim() === (website.command ?? "")}>Save start command</button>
+            </form>
+          </Card>
+        )}
+        {website.runtime.kind !== "oci" && website.kind !== "worker" && (
           <Card title="Document root">
             <form className="card-body" noValidate onSubmit={(e) => { e.preventDefault(); void docRoot.run(website.id, root); }}>
               <FormError error={docRoot.error} />
@@ -73,7 +86,7 @@ export function RuntimeTab({ website }: { website: Website }) {
             </form>
           </Card>
         )}
-        {website.runtime.kind === "frankenphp" && (
+        {website.runtime.kind === "frankenphp" && website.kind !== "worker" && (
           <Card title="Worker mode">
             <div className="card-body">
               <FormError error={worker.error} />

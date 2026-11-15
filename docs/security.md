@@ -319,8 +319,8 @@ A person who controls the worker cannot do these things:
 - On the panel server: read the files of the panel, for example `APP_KEY` and the private
   key of the panel, or connect to the database of the panel.
 - Change the firewall. The exceptions are the elements of the set `database_access`, the
-  database addresses and the elements of the sets of the mesh, which the root helper
-  examines.
+  database addresses and the elements of the sets of the mesh and of the networks, which the
+  root helper examines.
 - Read the private tunnel key of the server, or the pre-shared keys after the root helper has
   them. The worker sees a pre-shared key only in the job that brings it from the panel.
 - Install an agent binary that the release key did not sign.
@@ -550,6 +550,10 @@ directory with mode 0700:
   to a server can delete the backups of that server. Versioning or an object lock in the
   bucket keeps deleted data for a set time.
 - A backup keeps the SHA-256 sum of each database dump (refer to [Databases](#databases)).
+- The backup of a database is in the repository of the server of its database server. For a
+  website with a database on a different server, the agent of that server makes the dump
+  and keeps it in its own repository. No dump and no repository password goes to a
+  different server, and no database user for backups is open to the network.
 
 ## The mesh between servers
 
@@ -568,18 +572,23 @@ through the internet, so the design assumes that a person can read and change ea
 - **The panel is the directory.** A server gets the public key of a different server only
   from the panel, through the agent connection with mutual TLS. A person who controls the
   panel can thus add a server to the mesh. That person can already run jobs on all servers.
-- **One address for each key.** A server accepts from a tunnel only the packets that have the
-  mesh address of the other server as their source (`AllowedIPs` has one address). Thus the
-  address that the firewall sees identifies the server that has the key.
+- **The addresses of each key.** A server accepts from a tunnel only the packets that have
+  the mesh address of the other server as their source, or the address of a network member
+  on the other server (`AllowedIPs`). A network member opens no connection, so a packet from
+  a member address is an answer. Thus the source address of a new connection identifies the
+  server that has the key. An address is the address of one server or of one member of one
+  server: the agent refuses a state that gives one address to two servers.
 - **The tunnel port.** The firewall accepts the UDP port of the tunnels only from the tunnel
   addresses of the other servers of its tunnels. For all other addresses, the port is closed.
 - **Traffic that comes out of a tunnel.** The firewall has a chain for it. The chain accepts
   an ICMP echo request, with a rate limit, and drops all other traffic. Thus a tunnel does not
-  open SSH, the agent port, a database or a website of a server to the other servers. A later
-  release adds the rules for the private networks of the customers to this chain.
-- **Traffic into a tunnel.** Only root can open a connection to an address of the mesh range.
-  A website user, the worker of the agent and the service users get a refusal. A server does
-  not forward packets from or to the interface of the mesh.
+  open SSH, the agent port, a database or a website of a server to the other servers. The
+  one exception is a network member: refer to
+  [The networks of the customers](#the-networks-of-the-customers).
+- **Traffic into a tunnel.** Only root, and a website for the members of its networks, can
+  open a connection to an address of the mesh range. Each other website user, the worker of
+  the agent and the service users get a refusal. A server does not forward packets from or to
+  the interface of the mesh.
 - **Checks of the state.** The worker and the root helper examine each value of the state
   from the panel: the range is a private IPv4 network, each mesh address is in the range,
   each tunnel address is a public IP address, and each key has the correct form. The root
@@ -591,6 +600,87 @@ through the internet, so the design assumes that a person can read and change ea
   the traffic of a tunnel between two other servers. Make a new key on the server after you
   repair it, or remove the server from the panel. The panel then removes its key from the
   other servers.
+
+## The networks of the customers
+
+A website connects to a database server of its networks by a name such as
+`shop-db.internal` (refer to
+[architecture.md](architecture.md#the-networks-of-the-customers)). The database server can be
+on a different server. A website also connects to a different website of its networks, by a
+name such as `shop-a1b2.internal` on port 80. These are the controls:
+
+- **The firewall decides, not the name.** The hosts file of a website has only the names of
+  the members of its networks. A website that writes an address in its own configuration gets
+  the same answer from the firewall as with a name.
+- **On the server of the website.** The firewall lets a connection to a member address pass
+  only for the Unix user of a website that is in a network with the member, and only on the
+  port of the member. pasta opens each connection of a container as the Unix user of the
+  container. Thus a website of a different customer on the same server gets a refusal.
+- **On the server of the member.** The firewall accepts a connection from a tunnel only when
+  three values agree: the mesh address of the server that sent it, the member address, and
+  the port of the member. The server that sent it must have a website in a network with the
+  member. The firewall compares the address and the port from before the address change, so
+  the port of the container on the server gives no access. All other traffic from a tunnel is
+  dropped, as before.
+- **What a server can do to a member of a different server.** A server whose root is in the
+  hands of an attacker can connect to each member that one of its websites can connect to. It
+  cannot connect to a member of a customer that has no website on it. Each connection also
+  needs the password of a database user. Put the websites of customers that must not share
+  this limit on different servers.
+- **The same client address.** A database server sees `169.254.80.1` as the client for each
+  website container, on its own server and on a different server. Thus a database user with
+  the access `website` can connect from each website that the firewall lets through, and from
+  no other address. A database server cannot find from the address which website connects. As
+  before, the password of the database user is the control between the websites of one
+  customer.
+- **A website that is a member has no password.** A database server asks for the password
+  of a database user. A website on port 80 does not: each website that is in a network with
+  it can send it requests, and the website sees the same client address for each of them.
+  Thus the members of one network trust each other. An application that must know which
+  website sent a request needs its own control, for example a token in the request. A server
+  whose root is in the hands of an attacker can send requests to each website member that
+  one of its websites can connect to.
+- **A website member and the edge proxy.** A connection to the network name does not go
+  through the edge proxy. It has no TLS, no access log of the edge and no stop page. Between
+  two servers, the WireGuard tunnel encrypts it. The port of the container on the private
+  service address stays closed for each website: the firewall accepts a connection of a
+  website only when the connection was to the member address and port 80 before the address
+  change, and the Unix user of the website has that member in its networks.
+- **A private website.** It has no route in the edge proxy, so no address on the internet
+  can send it a request. The port of its container on the private service address is closed
+  for each website, as for a public website. The only path is the member address on port 80.
+- **A worker with a command of the customer.** The command is one line with no control
+  characters (the rule `commandLine`, as for a cron job), and the agent checks each argument.
+  It runs only in the container of the worker: in the gVisor sandbox, as the Unix user of
+  the website, with no Linux capabilities, with a read-only image, and with the CPU, memory
+  and process limits of the plan. The firewall rules for the connections that a website
+  opens also apply. Thus the command can do what the PHP code of a website of the same
+  customer can do, and no more. A worker counts as a website of the plan, so a customer
+  cannot make more containers than the plan allows.
+- **Checks of the root helper.** The worker of the agent makes the rules, and the root helper
+  examines each one. A rule can open only an address of the mesh range that is not the
+  address of a server, only for a UID of a website user, and only on the usual port of an
+  engine or on port 80. The address change of a member can go only to a port of a database
+  server on the database network, or, for port 80, to a port of a website container on the
+  private service address (20000 to 29999). A name must end in `.internal`, and it can point only to an address of
+  the mesh range. Thus a worker that an attacker controls cannot use these operations to
+  open SSH, the agent port or a public address, or to give a website a false address for a
+  public name. It can give a website of its server access to a network member, as it can
+  give a website access to a database server of a different customer on its server. Each
+  connection also needs the password of a database user.
+- **The hosts file.** Root owns the file and its directory. The website container has the
+  file as a read-only mount.
+- **Database jobs for a website of a different server.** The agent of the server of a
+  database server runs the jobs for its databases and its database users. For a website of
+  a different server, the agent has no record of the website, so the job has the ID of the
+  customer. The agent does the job only when the database server is a database server of
+  that customer. For a website of its own server, the agent uses its record of the website:
+  a job with a different customer is refused. As before, each name of a database and of a
+  database user starts with the Unix user of the website, and the panel gives each website
+  a different Unix user.
+- **Tunnels that the panel makes.** The panel makes a tunnel between two servers only when a
+  website on one server is in a network with a database server on the other. It removes the
+  tunnel when this is no longer true.
 
 ## Firewall
 
@@ -631,6 +721,14 @@ The table also limits the outgoing connections:
   nftables loads them from `/etc/cloudfactory/firewall/mesh.nft`. On a server from an earlier
   release, the agent adds the sets and the rules to the file of the installer with the first
   tunnel. Refer to [The mesh between servers](#the-mesh-between-servers).
+- The networks have two sets and one map: `network_access` (the UID of a website, a member
+  address and a port), `mesh_access` (the mesh address of a server, a member address and a
+  port) and `mesh_members` (a member address and a port give the address and the port of the
+  container). The NAT chains change the destination of a connection to a member of the
+  server, from a tunnel and from a website of the server. They also set the source address
+  `169.254.80.1` for such a connection. The agent writes the elements, and nftables loads
+  them from `/etc/cloudfactory/firewall/network.nft`. Refer to
+  [The networks of the customers](#the-networks-of-the-customers).
 - The options `--allow-website-smtp` and `--allow-website-network` of the installation script
   open port 25 or a private network for the websites. Refer to
   [installation.md](installation.md#connections-from-the-websites).

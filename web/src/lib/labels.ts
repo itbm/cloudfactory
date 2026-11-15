@@ -1,4 +1,4 @@
-import type { DatabaseServerStatus, DnsDelegation, DnsRecordType, DnsZoneStatus, Domain, HostUpdatePolicy, JobState, RuntimeKind, ServerRole, ServerState, UpdatePolicy, WebsiteStatus } from "../api/types";
+import type { DatabaseServerStatus, DnsDelegation, DnsRecordType, DnsZoneStatus, Domain, HostUpdatePolicy, JobState, RuntimeKind, ServerRole, ServerState, UpdatePolicy, WebsiteKind, WebsiteStatus } from "../api/types";
 import type { Tone } from "../components/ui";
 import { daysUntil, longDate, relativeTime } from "./format";
 
@@ -70,6 +70,9 @@ type CertificateOf = Pick<Domain, "certificate" | "dnsPointsHere"> & { name?: st
 const fromPanelCa = (d: CertificateOf) => d.name !== undefined && !publicName(d.name);
 
 /** Short certificate text for the website list. */
+/** The words for a website with no public address. */
+export const WEBSITE_KIND: Record<WebsiteKind, string> = { public: "Website", private: "Private website", worker: "Background worker" };
+
 export function certificateText(d: CertificateOf): string {
   const c = d.certificate;
   switch (c.state) {

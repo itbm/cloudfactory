@@ -584,10 +584,19 @@ database server with limits that an administrator set for it keeps them.
 With the CLI: `cf database-servers create --engine mariadb --customer ID`.
 
 The agent starts the container. The first start of a database server needs some minutes on
-a slow server. The list shows the host name and the port for the applications, for example
-`mariadb.internal:3306`. The first database server of an engine of a customer on a server
-has the usual port of the engine (3306, 5432 or 6379). The next one has the next port, for
-example 3307. A database server keeps its port.
+a slow server. The list shows the host name and the port for the applications.
+
+- The first name is the network name: the name of the database server and `.internal`, with
+  the usual port of the engine, for example `shop-db.internal:3306`. Each website of the
+  customer can use it, on the same server and on a different server. When the website is on
+  a different server, the panel makes an encrypted tunnel between the two servers. A website
+  that the server had before this function gets the name at its next restart or deploy.
+- The second name is the name of the engine, for example `mariadb.internal:3306`. Only a
+  website on the same server can use it. There, the first database server of an engine of a
+  customer has the usual port of the engine (3306, 5432 or 6379). The next one has the next
+  port, for example 3307. A database server keeps its port.
+
+A database server cannot have the name `mariadb`, `postgres`, `valkey` or `localhost`.
 
 You do not have to make the first database server. When you make a database for a website
 and its customer has no database server of that engine on the server, the panel makes one

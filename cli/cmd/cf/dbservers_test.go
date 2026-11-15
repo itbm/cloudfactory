@@ -14,7 +14,7 @@ import (
 // query. With admin false, the panel refuses the list of servers.
 func databaseServerPanel(t *testing.T, admin bool) (*httptest.Server, *[]string) {
 	var calls []string
-	const reports = `{"id":"DS2","name":"mariadb-reports","engine":"mariadb","customerId":"C1","serverId":"S1","planId":"P1","status":"failed","host":"mariadb.internal","port":3307,` +
+	const reports = `{"id":"DS2","name":"mariadb-reports","engine":"mariadb","customerId":"C1","serverId":"S1","planId":"P1","status":"failed","host":"mariadb.internal","port":3307,"networkHost":"mariadb-reports.internal","networkPort":3306,` +
 		`"limits":{"vcpus":1,"memoryBytes":536870912,"diskBytes":5368709120},"usage":null,"databases":0,"maxDatabases":5}`
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -84,7 +84,7 @@ func TestDatabaseServersListAndGet(t *testing.T) {
 	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
 	if len(lines) != 4 || row(lines[0]) != "NAME ENGINE STATUS ADDRESS LIMITS DATABASES CUSTOMERID ID" ||
 		row(lines[1]) != "mariadb-1 mariadb running mariadb.internal:3306 2 vCPU, 1 GB memory, 10 GB disk 3 of 10 C1 DS1" ||
-		row(lines[2]) != "mariadb-reports mariadb failed mariadb.internal:3307 1 vCPU, 512 MB memory, 5 GB disk 0 of 5 C1 DS2" {
+		row(lines[2]) != "mariadb-reports mariadb failed mariadb-reports.internal:3306 1 vCPU, 512 MB memory, 5 GB disk 0 of 5 C1 DS2" {
 		t.Errorf("output:\n%s", out)
 	}
 

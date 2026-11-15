@@ -25,6 +25,7 @@ use App\Models\User;
 use App\Models\Website;
 use App\Services\Dns\Dnssec;
 use App\Services\Dns\Zones;
+use App\Services\Networks;
 use App\Services\PanelCertificate;
 use App\Services\SshKey;
 use Illuminate\Database\Seeder;
@@ -79,6 +80,7 @@ class DemoSeeder extends Seeder
         $this->websites();
         $this->dns();
         $this->databases();
+        $this->settleMesh();
         $this->backups();
         $this->cronJobsAndDeploys();
         $this->jobsAndRollout();
@@ -201,11 +203,23 @@ class DemoSeeder extends Seeder
     {
         [$one, $two] = [$this->servers['web-1'], $this->servers['web-2']];
         $key = fn (string $name) => base64_encode(hash('sha256', 'demo tunnel key of '.$name, true));
-        $one->update(['mesh_public_key' => $key('web-1'), 'mesh_address' => '10.207.0.1', 'mesh_endpoint' => '203.0.113.10', 'mesh_version' => 1, 'mesh_wanted_version' => 1]);
-        $two->update(['mesh_public_key' => $key('web-2'), 'mesh_address' => '10.207.0.2', 'mesh_endpoint' => '203.0.113.20', 'mesh_version' => 1, 'mesh_wanted_version' => 1]);
+        $one->update(['mesh_public_key' => $key('web-1'), 'mesh_address' => '10.207.0.1', 'mesh_endpoint' => '203.0.113.10', 'mesh_version' => 1, 'mesh_wanted_version' => 1, 'mesh_networks' => true, 'mesh_websites' => true]);
+        $two->update(['mesh_public_key' => $key('web-2'), 'mesh_address' => '10.207.0.2', 'mesh_endpoint' => '203.0.113.20', 'mesh_version' => 1, 'mesh_wanted_version' => 1, 'mesh_networks' => true, 'mesh_websites' => true]);
         [$a, $b] = strcmp($one->id, $two->id) < 0 ? [$one, $two] : [$two, $one];
         $side = fn (int $micros) => ['reachable' => true, 'handshakeAt' => now()->subSeconds(40)->getTimestamp(), 'roundTripMicros' => $micros, 'reportedAt' => now()->getTimestamp()];
         MeshTunnel::create(['server_a_id' => $a->id, 'server_b_id' => $b->id, 'preshared_key' => $key('web-1 and web-2'), 'pinned' => true, 'status' => [$a->id => $side(7400), $b->id => $side(7550)]]);
+    }
+
+    /**
+     * The websites and the database servers of the demo data changed the mesh state of the
+     * servers. In the demo data, each server has the state already.
+     */
+    private function settleMesh(): void
+    {
+        AgentJob::where('action', AgentAction::SetMesh->value)->delete();
+        foreach (Server::whereNotNull('mesh_public_key')->get() as $server) {
+            $server->update(['mesh_version' => $server->mesh_wanted_version]);
+        }
     }
 
     private function websites(): void
@@ -224,13 +238,23 @@ class DemoSeeder extends Seeder
             // The panel could not make this website: the page shows the cause and "Try again".
             ['events.harbourbooks.example.net', 'Laravel', 'books', 'web-3', 'frankenphp-8.5', 'failed', 0, [0, 0, 0, 0], []],
             ['lawson.example.org', 'WordPress', 'lawson', 'web-1', 'apache-8.5', 'stopped', 190, [0, 0, 2400, 0], ['stopped_by_suspension' => true]],
+            // A private website has no domain: the other websites of Acme connect to it by its
+            // network name. A worker runs a command and serves no HTTP. The name of each one
+            // is its network name, which the panel makes from the short name.
+            ['orders', 'Orders API', 'acme', 'web-2', 'frankenphp-8.5', 'running', 12, [4, 180, 210, 8], ['kind' => Website::PRIVATE]],
+            ['queue', 'Queue worker', 'acme', 'web-1', 'frankenphp-8.5', 'running', 12, [3, 140, 90, 5], ['kind' => Website::WORKER, 'command' => 'php artisan queue:work --tries=3']],
         ];
         foreach ($rows as [$name, $application, $customer, $server, $image, $status, $days, $use, $more]) {
             $owner = $this->customers[$customer];
             $plan = $owner->plan;
+            $unixUser = self::unixUser($name);
+            $public = ! isset($more['kind']);
+            if (! $public) {
+                $name = Networks::websiteName($unixUser).Networks::DOMAIN;
+            }
             $website = new Website([
                 'name' => $name, 'application' => $application, 'customer_id' => $owner->id, 'server_id' => $this->servers[$server]->id, 'plan_id' => $plan->id,
-                'image_id' => $this->images[$image]->id, 'unix_user' => self::unixUser($name), 'status' => $status,
+                'image_id' => $this->images[$image]->id, 'unix_user' => $unixUser, 'status' => $status,
                 'extensions' => $image === 'node' ? [] : ['opcache', 'intl', 'gd', 'zip'], 'php_ini' => $image === 'node' ? [] : ['memory_limit' => '256M', 'upload_max_filesize' => '64M'],
                 'limits' => $plan->limits, 'document_root' => $application === 'Laravel' ? 'public' : '.',
                 'usage' => ['cpuPercent' => $use[0], 'memoryBytes' => $use[1] * self::MB, 'diskBytes' => $use[2] * self::MB, 'processes' => $use[3]],
@@ -239,6 +263,10 @@ class DemoSeeder extends Seeder
             $website->created_at = now()->subDays($days);
             $website->updated_at = now()->subHours(min($days * 24, 30));
             $website->save();
+            $this->websites[$name] = $website;
+            if (! $public) {
+                continue;
+            }
             $failed = $status === 'failed';
             $website->domains()->create([
                 'name' => $name, 'kind' => DomainKind::Primary, 'verification_token' => 'cf-demo', 'verified_at' => now(), 'dns_points_here' => ! $failed,
@@ -338,14 +366,21 @@ class DemoSeeder extends Seeder
         $reports = $shop->databaseUsers()->create(['engine' => 'mariadb', 'name' => $shop->unix_user.'_reports', 'access' => 'anywhere', 'database_server_id' => $shop->databases()->where('engine', 'mariadb')->value('database_server_id')]);
         $reports->databases()->attach($shop->databases()->where('engine', 'mariadb')->value('id'), ['privileges' => 'readonly']);
 
-        // A second MariaDB server of one customer, with a smaller plan and no databases yet. It has the next port.
+        // A second MariaDB server of one customer, with a smaller plan. It has the next port.
         $acme = $this->customers['acme'];
         $starter = $this->plans['Starter'];
-        DatabaseServer::create([
+        $second = DatabaseServer::create([
             'customer_id' => $acme->id, 'server_id' => $shop->server_id, 'plan_id' => $starter->id, 'engine' => 'mariadb', 'name' => 'mariadb-reports',
             'port' => DatabaseServer::FIRST_PORT['mariadb'] + 1, 'limits' => $starter->database_limits, 'status' => DatabaseServer::RUNNING,
             'usage' => ['memoryBytes' => 96 * self::MB, 'diskBytes' => 70 * self::MB, 'diskSizeBytes' => $starter->database_limits['diskBytes']],
         ]);
+        // A website on a different server has a database in it. The website connects through
+        // the network of the customer, by the network name of the database server.
+        $storefront = $this->websites['storefront.acme.example.com'];
+        $name = $storefront->unix_user.'_orders';
+        $database = $storefront->databases()->create(['engine' => 'mariadb', 'name' => $name, 'size_bytes' => 52 * self::MB, 'database_server_id' => $second->id]);
+        $user = $storefront->databaseUsers()->create(['engine' => 'mariadb', 'name' => $name, 'access' => 'website', 'database_server_id' => $second->id]);
+        $user->databases()->attach($database->id, ['privileges' => 'readwrite']);
     }
 
     /**
@@ -374,11 +409,18 @@ class DemoSeeder extends Seeder
             if ($website->status->value === 'failed' || $website->created_at->gt(now()->subDay())) {
                 continue;
             }
-            $databases = $website->sqlDatabases()->get()->map(fn ($d) => "{$d->engine}:{$d->name}")->all();
+            // A backup has one part for the website, and one part for the databases on each
+            // different server.
+            [$remote, $local] = $website->sqlDatabases()->with('databaseServer')->get()->partition(fn ($d) => $d->databaseServer->server_id !== $website->server_id);
+            $databases = $local->map(fn ($d) => "{$d->engine}:{$d->name}")->values()->all();
             $size = (int) (($website->usage['diskBytes'] ?? 0) * 0.6);
             // The last three nights, and one manual backup for the busy websites.
             foreach ([1, 2, 3] as $night) {
-                $this->snapshot($website, 'scheduled', $size - $night * 3 * self::MB, $databases, today()->subDays($night - 1)->setTime(3, 2 + strlen($name) % 9));
+                $at = today()->subDays($night - 1)->setTime(3, 2 + strlen($name) % 9);
+                $this->snapshot($website, 'scheduled', $size - $night * 3 * self::MB, $databases, $at);
+                foreach ($remote->groupBy(fn ($d) => $d->databaseServer->server_id) as $serverId => $part) {
+                    $this->snapshot($website, 'scheduled', (int) ($part->sum('size_bytes') * 0.4), $part->map(fn ($d) => "{$d->engine}:{$d->name}")->values()->all(), $at, $serverId);
+                }
             }
             if (in_array($name, ['acme.example.com', 'shop.acme.example.com', 'harbourbooks.example.net'], true)) {
                 $this->snapshot($website, 'manual', $size, $databases, now()->subHours(5));
@@ -386,11 +428,13 @@ class DemoSeeder extends Seeder
         }
     }
 
-    private function snapshot(Website $website, string $kind, int $size, array $databases, \DateTimeInterface $at): void
+    /** @param  ?string  $serverId  The server of a part with only databases. Null is a backup of the website. */
+    private function snapshot(Website $website, string $kind, int $size, array $databases, \DateTimeInterface $at, ?string $serverId = null): void
     {
         $snapshot = new Snapshot([
-            'website_id' => $website->id, 'kind' => $kind, 'restic_id' => hash('sha256', $website->id.$kind.$at->format('c')), 'size_bytes' => max($size, self::MB),
+            'website_id' => $website->id, 'kind' => $kind, 'restic_id' => hash('sha256', $website->id.$kind.$at->format('c').$serverId), 'size_bytes' => max($size, self::MB),
             'databases' => $databases, 'mailboxes' => [], 'dump_hashes' => [],
+            'server_id' => $serverId ?? $website->server_id, 'part' => $serverId ? Snapshot::DATABASES : Snapshot::WEBSITE,
         ]);
         $snapshot->created_at = $at > now() ? now()->subHours(20) : $at;
         $snapshot->save();
@@ -530,7 +574,7 @@ class DemoSeeder extends Seeder
     /** The Unix user of a website: letters from the name, and four characters that do not change. */
     private static function unixUser(string $name): string
     {
-        return substr(preg_replace('/[^a-z0-9]/', '', explode('.', $name)[0].explode('.', $name)[1]), 0, 8).'_'.substr(hash('sha256', $name), 0, 4);
+        return substr(preg_replace('/[^a-z0-9]/', '', explode('.', $name)[0].(explode('.', $name)[1] ?? '')), 0, 8).'_'.substr(hash('sha256', $name), 0, 4);
     }
 
     /** A self-signed certificate, as an example of the certificate of the panel CA. */

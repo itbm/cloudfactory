@@ -8,7 +8,7 @@ import { Topbar } from "../components/Layout";
 import { WebsiteMenu } from "../components/WebsiteMenu";
 import { Card, JobRow, Live, Meter, PageHeader, Status, TerraformBadge } from "../components/ui";
 import { bytes, percent, ratio, relativeTime, shortAgo, shortDate } from "../lib/format";
-import { certificateText, DISK_LIMIT_NOT_APPLIED_ALL, jobActive, RUNTIME_KIND, WEBSITE_STATUS } from "../lib/labels";
+import { WEBSITE_KIND, certificateText, DISK_LIMIT_NOT_APPLIED_ALL, jobActive, RUNTIME_KIND, WEBSITE_STATUS } from "../lib/labels";
 
 const PAGE_SIZE = 7;
 
@@ -76,7 +76,7 @@ function WebsitesTable({ sites }: { sites: Website[] }) {
                 <td>
                   <Link className="cell-title" to={`/websites/${w.id}`}>{w.name}</Link>
                   <span className="cell-sub">
-                    {w.application}
+                    {w.kind !== "public" ? `${WEBSITE_KIND[w.kind]} · ` : ""}{w.application}
                     {domains > 1 ? ` · ${domains} domains` : ""}
                   </span>
                   {w.managedByTerraform && <TerraformBadge />}
@@ -87,7 +87,7 @@ function WebsitesTable({ sites }: { sites: Website[] }) {
                   {end && <div className="note-warning" style={{ marginTop: 6 }}>Support ends {shortDate(end)}</div>}
                 </td>
                 <td><Status tone={status.tone}>{status.label}</Status></td>
-                <td className="muted" style={{ minWidth: 150, maxWidth: 170 }}>{w.status === "failed" ? "–" : certificateText(w.domains.find((d) => d.kind === "primary") ?? w.domains[0])}</td>
+                <td className="muted" style={{ minWidth: 150, maxWidth: 170 }}>{w.status === "failed" || w.domains.length === 0 ? "–" : certificateText(w.domains.find((d) => d.kind === "primary") ?? w.domains[0])}</td>
                 {/* One column for the two values: with a column for each, the table was wider than the page. */}
                 <td className="nowrap">
                   {w.status !== "running" ? "–" : (

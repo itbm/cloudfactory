@@ -355,6 +355,29 @@ table inet cloudfactory {
   set database_access {
     typeof meta skuid . ip daddr . tcp dport
   }
+  # The networks of the customers. A network member is a database server or a website with a
+  # name and an address of the mesh range. The agent writes the elements in its file network.nft.
+  # The UID of a website of this server, the address of a member, and the port of the member.
+  set network_access {
+    typeof meta skuid . ip daddr . tcp dport
+  }
+  # The mesh address of a different server, the address of a member of this server, and the
+  # port of the member.
+  set mesh_access {
+    typeof ip saddr . ip daddr . tcp dport
+  }
+  # The address and the port of a member of this server give the address and the port of
+  # its container on the database network.
+  map mesh_members {
+    typeof ip daddr . tcp dport : ip daddr . tcp dport
+  }
+  # A database server sees each website container as $DATABASE_CLIENT_ADDRESS. A connection from a
+  # tunnel to a member gets the same source address, so the users of the databases do not
+  # change when a website is on a different server.
+  chain mesh_input_nat {
+    type nat hook input priority 100;
+    iifname "cf-mesh" ct status dnat snat ip to $DATABASE_CLIENT_ADDRESS
+  }
   # The mesh: the encrypted tunnels between the servers of one panel (the interface cf-mesh).
   # The agent writes the elements of the four sets in its file mesh.nft: the UDP port of the
   # tunnels, the address range of the mesh, and the public addresses of the peers.
@@ -375,6 +398,10 @@ table inet cloudfactory {
   # traffic is dropped: also the ports that are open for the internet, such as SSH.
   chain mesh_input {
     icmp type echo-request limit rate 50/second accept
+    # A server that has a website in a network of a member can connect to that member, on the
+    # port of the member. The rule compares the address and the port from before the address
+    # change (the chain prerouting).
+    ct state new ct status dnat ip saddr . ct original ip daddr . ct original proto-dst @mesh_access accept
     drop
   }
   # This server never sends the traffic of a tunnel to a different server or network, and
@@ -402,6 +429,11 @@ table inet cloudfactory {
   }
   chain output {
     type filter hook output priority filter; policy accept;
+    # The networks: a website can connect to the members of its networks. This rule is for a
+    # member on this server, after the address change (the chain output_nat). It compares the
+    # address and the port from before the change, so the address and the port of the
+    # container give no access.
+    ct state new meta l4proto tcp ct status dnat meta skuid . ct original ip daddr . ct original proto-dst @network_access accept
     # FR-1703: only root (the agent) and the edge proxy can connect to the website and panel
     # ports on the private service address. pasta opens each connection of a container as the
     # Unix user of the container, so a website cannot reach a different website. The rule
@@ -421,6 +453,10 @@ table inet cloudfactory {
     # to a private network or to a service of this server from it. The rule checks only new
     # connections, so it does not change the answers to the websites.
     ct state new meta skuid $DATABASE_UID_MIN-$DATABASE_UID_MAX jump refuse
+    # The networks: all other connections to a member on this server are refused. The last
+    # rule is for a member on a different server.
+    ct state new ct status dnat ct original ip daddr @mesh_range meta skuid != 0 jump refuse
+    ct state new meta skuid . ip daddr . tcp dport @network_access accept
     # The mesh: only root (the agent) can connect to an address of the mesh.
     ct state new ip daddr @mesh_range meta skuid != 0 jump refuse
     # Audit finding S1: the limits for the connections that a website container opens. The
@@ -453,6 +489,8 @@ ${website_networks}    # The edge proxy on the addresses of this server, so that
   }
   chain prerouting {
     type nat hook prerouting priority dstnat;
+    # A connection from a tunnel to a member of this server goes to the container of the member.
+    iifname "cf-mesh" dnat ip to ip daddr . tcp dport map @mesh_members
     tcp dport 80 redirect to :8080$dns_redirect
     tcp dport 443 redirect to :8443
     udp dport 443 redirect to :8443
@@ -463,6 +501,8 @@ ${website_networks}    # The edge proxy on the addresses of this server, so that
     # that calls the public address of this server, needs the same redirects here. The
     # output chain then sees port 8080 or 8443.
     type nat hook output priority -100;
+    # A website of this server uses the same member address as a website of a different server.
+    dnat ip to ip daddr . tcp dport map @mesh_members
     # pasta cannot send a connection from ::1 into gVisor (refer to postrouting_nat), and IPv6
     # has no private service address. Thus a connection from ::1 to port 80 or 443 is refused,
     # and the browser then uses 127.0.0.1.
@@ -478,6 +518,9 @@ ${website_networks}    # The edge proxy on the addresses of this server, so that
     # /etc/hosts gives as 127.0.1.1. Thus a redirected connection from a loopback address gets
     # the private service address as its source address. pasta then sends it to gVisor.
     type nat hook postrouting priority 100;
+    # A connection of this server to one of its own members gets the source address that a
+    # database server sees for each website container.
+    oif lo ct status dnat ct original ip daddr @mesh_range snat ip to $DATABASE_CLIENT_ADDRESS
     ip saddr 127.0.0.0/8 ct status dnat meta l4proto { tcp, udp } th dport { 8080, 8443 } snat ip to $SERVICE_ADDRESS
   }
 }

@@ -37,14 +37,19 @@ class RuntimeController extends Controller
             // Batch 1, finding 11: the directory in /app that the web server serves, for example
             // "web". "." is /app itself.
             'documentRoot' => ['sometimes', 'string', Input::rule('documentRoot')],
+            // The start command of a worker.
+            'command' => ['sometimes', 'string', Input::rule('commandLine')],
         ]);
+        if (isset($data['command']) && ! $website->isWorker()) {
+            throw ValidationException::withMessages(['command' => 'Only a worker has a start command.']);
+        }
         $plan = $website->plan;
         $changes = [];
         // Batch 1, finding 3: on failure, the panel puts these values back.
         $revert = [
             'image_id' => $website->image_id, 'image_tag' => $website->image_tag, 'previous_image_id' => $website->previous_image_id,
             'previous_image_tag' => $website->previous_image_tag, 'worker_mode' => $website->worker_mode, 'extensions' => $website->extensions,
-            'php_ini' => $website->php_ini, 'document_root' => $website->document_root,
+            'php_ini' => $website->php_ini, 'document_root' => $website->document_root, 'command' => $website->command,
         ];
         // Batch 3, finding 6: worker mode is checked against the image after the change.
         $newImage = $website->image;
@@ -62,6 +67,9 @@ class RuntimeController extends Controller
             // FR-303: keep the previous image, so that the owner can go back in one action.
             $changes += ['previous_image_id' => $website->image_id, 'previous_image_tag' => $website->currentTag(), 'image_id' => $image->id, 'image_tag' => null];
             $newImage = $image;
+        }
+        if (isset($data['command']) && $data['command'] !== $website->command) {
+            $changes['command'] = $data['command'];
         }
         if (isset($data['workerMode'])) {
             if ($data['workerMode'] && $newImage->family !== 'frankenphp') {
@@ -126,7 +134,7 @@ class RuntimeController extends Controller
             'previousTag' => $revert['image_tag'] ?? Image::find($revert['image_id'])?->tag,
             'revert' => $revert,
         ];
-        $job = $this->jobs->dispatch($website->server, AgentAction::SetRuntime, $payload, isset($changes['image_id']) ? "Change runtime to {$website->image->name}" : 'Apply PHP settings', $website);
+        $job = $this->jobs->dispatch($website->server, AgentAction::SetRuntime, $payload, isset($changes['image_id']) ? "Change runtime to {$website->image->name}" : (isset($changes['command']) ? 'Change start command' : 'Apply PHP settings'), $website);
         Audit::record($request, 'Changed runtime', $website->name, $website->customer_id);
 
         return response()->json(['website' => new WebsiteResource($website), 'job' => new JobResource($job)], 202);

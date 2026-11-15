@@ -37,6 +37,9 @@ class DomainController extends Controller
     public function store(Request $request, string $websiteId): JsonResponse
     {
         $website = $this->findWebsite($request, $websiteId);
+        if (! $website->isPublic()) {
+            throw ValidationException::withMessages(['name' => 'A '.Website::KIND_NAMES[$website->kind].' has no public address, so it cannot have a domain.']);
+        }
         $data = $request->validate([
             'name' => ['required', 'string', Input::rule('domain')],
             'kind' => ['required', Rule::in([DomainKind::Redirect->value, DomainKind::Alias->value])],

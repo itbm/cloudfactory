@@ -36,6 +36,8 @@ const (
 	DefaultPort = 51820
 	// MaxPeers is the maximum number of tunnels of one server.
 	MaxPeers = 250
+	// MaxMembers is the maximum number of network members in one state.
+	MaxMembers = 4000
 )
 
 // Peer is one other server that this server has a tunnel to.
@@ -50,6 +52,10 @@ type Peer struct {
 	Endpoint string `json:"endpoint"`
 	// Address is the mesh address of the other server.
 	Address string `json:"address"`
+	// Members are the mesh addresses of the network members on the other server that a
+	// website of this server can connect to (network.go). The tunnel sends the traffic for
+	// these addresses to the other server.
+	Members []string `json:"members,omitempty"`
 }
 
 // State is the full mesh state of one server. The panel sends all of it each time.
@@ -57,7 +63,8 @@ type State struct {
 	// Version is the version of the state in the panel. The agent reports the version that
 	// it has.
 	Version int64 `json:"version"`
-	// Range is the address range of the mesh, for example "10.207.0.0/16".
+	// Range is the address range of the mesh, for example "10.207.0.0/16". A server with
+	// no tunnel can have the range: the network members of the server have addresses of it.
 	Range string `json:"range"`
 	// Address is the mesh address of this server. An empty address with no peers means
 	// that the server is not in the mesh.
@@ -148,7 +155,11 @@ func (s State) Check() error {
 		return errors.New("the version of the mesh state is less than 0")
 	}
 	if s.Off() {
-		return nil
+		if s.Range == "" {
+			return nil
+		}
+		_, err := checkRange(s.Range)
+		return err
 	}
 	r, err := checkRange(s.Range)
 	if err != nil {
@@ -165,6 +176,7 @@ func (s State) Check() error {
 		return fmt.Errorf("the mesh state has %d peers; the maximum is %d", len(s.Peers), MaxPeers)
 	}
 	servers, keys, addresses := map[string]bool{}, map[string]bool{}, map[netip.Addr]bool{own: true}
+	members := 0
 	for _, p := range s.Peers {
 		if err := validate.ID(p.Server); err != nil {
 			return fmt.Errorf("the server of a peer: %w", err)
@@ -184,6 +196,24 @@ func (s State) Check() error {
 		}
 		servers[p.Server], keys[p.PublicKey], addresses[a] = true, true, true
 	}
+	// An address is the address of one server or of one member of one server. Thus a peer
+	// cannot get the traffic for a different server or for a member of a different server.
+	for _, p := range s.Peers {
+		for _, m := range p.Members {
+			a, err := checkAddress(m, r)
+			if err != nil {
+				return fmt.Errorf("a member of the peer %s: %w", p.Server, err)
+			}
+			if addresses[a] {
+				return fmt.Errorf("the member address %s of the peer %s is in the mesh state two times", m, p.Server)
+			}
+			addresses[a] = true
+			members++
+		}
+	}
+	if members > MaxMembers {
+		return fmt.Errorf("the mesh state has %d member addresses; the maximum is %d", members, MaxMembers)
+	}
 	return nil
 }
 
@@ -198,13 +228,19 @@ func (s State) sorted() []Peer {
 // Config gives the WireGuard configuration of the interface, for "wg syncconf". It has the
 // private key and the pre-shared keys, so only root can read the file.
 //
-// A peer can send only from its own mesh address (AllowedIPs). Thus the address that the
-// firewall sees is the address of the server that has the key.
+// A peer can send only from its own mesh address. Thus the address that the firewall sees
+// is the address of the server that has the key. AllowedIPs also has the addresses of the
+// network members on the peer: WireGuard sends the traffic for these addresses to the peer.
+// A network member opens no connection, so a packet from a member address is an answer.
 func (s State) Config(privateKey string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "[Interface]\nPrivateKey = %s\nListenPort = %d\n", privateKey, s.Port)
 	for _, p := range s.sorted() {
-		fmt.Fprintf(&b, "\n# Server %s\n[Peer]\nPublicKey = %s\nPresharedKey = %s\nEndpoint = %s\nAllowedIPs = %s/32\n", p.Server, p.PublicKey, p.PresharedKey, p.Endpoint, p.Address)
+		allowed := p.Address + "/32"
+		for _, m := range slices.Sorted(slices.Values(p.Members)) {
+			allowed += ", " + m + "/32"
+		}
+		fmt.Fprintf(&b, "\n# Server %s\n[Peer]\nPublicKey = %s\nPresharedKey = %s\nEndpoint = %s\nAllowedIPs = %s\n", p.Server, p.PublicKey, p.PresharedKey, p.Endpoint, allowed)
 	}
 	return b.String()
 }
@@ -245,6 +281,8 @@ func (s State) Firewall(header string) string {
 	}{{SetPort, nil}, {SetRange, nil}, {SetEndpoints4, v4}, {SetEndpoints6, v6}}
 	if !s.Off() {
 		sets[0].elements = []string{strconv.Itoa(s.Port)}
+	}
+	if s.Range != "" {
 		sets[1].elements = []string{s.Range}
 	}
 	for _, set := range sets {

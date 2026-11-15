@@ -1,6 +1,7 @@
 package actions
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -75,8 +76,8 @@ func (d *Deps) checkAllWebsites(ctx context.Context) error {
 		if s.Stopped {
 			continue
 		}
-		if err := d.waitReady(ctx, s.Port, primaryDomain(s.Website)); err != nil {
-			errs = append(errs, errors.New(primaryDomain(s.Website)+": "+err.Error()))
+		if err := d.waitSite(ctx, s.Website, s.Port, s.Suffix); err != nil {
+			errs = append(errs, errors.New(cmp.Or(primaryDomain(s.Website), s.UnixUser)+": "+err.Error()))
 		}
 	}
 	return errors.Join(errs...)
@@ -279,5 +280,5 @@ func (d *Deps) restartWithUnit(ctx context.Context, s *Site) error {
 	if _, err := d.Host.Systemctl(ctx, s.UnixUser, "restart", u.ServiceName()); err != nil {
 		return err
 	}
-	return d.waitReady(ctx, s.Port, primaryDomain(s.Website))
+	return d.waitSite(ctx, s.Website, s.Port, s.Suffix)
 }
