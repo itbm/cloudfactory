@@ -22,6 +22,7 @@ use App\Models\Setting;
 use App\Models\Snapshot;
 use App\Models\User;
 use App\Models\Website;
+use App\Services\OpenPgpKey;
 use App\Services\PanelCertificate;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Crypt;
@@ -218,10 +219,13 @@ class DemoSeeder extends Seeder
                 MailAlias::create(['customer_id' => $owner->id, 'mail_domain_id' => $domain->id, 'local_part' => $local, 'kind' => $kind, 'destinations' => $destinations, 'status' => MailDomain::ACTIVE]);
             }
         }
-        // One mailbox with encryption: the mail server encrypts its new mail with an OpenPGP key.
-        Mailbox::where('local_part', 'olu')->first()->update([
-            'public_key' => "-----BEGIN PGP PUBLIC KEY BLOCK-----\n\nmDMEZdemoRYJKwYBBAHaRw8BAQdA\n=demo\n-----END PGP PUBLIC KEY BLOCK-----\n",
-            'encryption' => ['fingerprints' => ['7C1D4E0B9A6F23585D0E1B7A4C92F6E3A8D50B17'], 'keyType' => 'OpenPGP v4: X25519', 'expiresAt' => null, 'warnings' => []],
+        // One mailbox with encryption: the panel made its OpenPGP keys, and the mail server
+        // encrypts its new mail with the public key.
+        $encrypted = Mailbox::with('domain')->where('local_part', 'olu')->first();
+        $keys = OpenPgpKey::generate($encrypted->address(), 'Demo-password-123');
+        $encrypted->update([
+            'public_key' => $keys['publicKey'], 'private_key' => $keys['privateKey'],
+            'encryption' => ['fingerprints' => [$keys['fingerprint']], 'keyType' => 'OpenPGP v4: X25519', 'expiresAt' => null, 'warnings' => []],
         ]);
 
         // A large customer, to show the Email page with many mailboxes and aliases.

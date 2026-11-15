@@ -12,7 +12,10 @@ use App\Models\Mailbox;
 use App\Models\MailDomain;
 use App\Models\Server;
 use App\Services\JobOutcome;
+use App\Services\Mail;
 use App\Services\MailDns;
+use App\Services\OpenPgpKey;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 /**
@@ -339,6 +342,92 @@ class MailTest extends TestCase
         $this->finish($job->id);
         $this->assertNull($mailbox->fresh()->encryption);
         $this->assertNull($mailbox->fresh()->public_key);
+    }
+
+    public function test_the_panel_makes_the_keys_of_a_mailbox_and_protects_the_private_key_with_its_password(): void
+    {
+        $this->hosting();
+        $this->actingWith($this->user(Role::Owner, $this->customer));
+        $domain = $this->domain();
+
+        // A new mailbox with encryption: the mail server gets the public key in the same job.
+        $response = $this->postJson('/api/v1/mail/mailboxes', ['domainId' => $domain->id, 'localPart' => 'olu', 'quotaBytes' => self::GB, 'password' => 'First-password-123', 'encrypt' => true])
+            ->assertAccepted()->assertJsonPath('mailbox.privateKey.passwordCurrent', true);
+        $job = AgentJob::findOrFail($response->json('job.id'));
+        $this->assertTrue($job->payload['setEncryption']);
+        $this->assertStringStartsWith('-----BEGIN PGP PUBLIC KEY BLOCK-----', $job->payload['publicKey']);
+        $this->assertStringNotContainsString('PRIVATE', json_encode($job->payload));
+        $this->finish($job->id, result: ['encryption' => ['fingerprints' => ['9E1777E56AFB330404EC710E0868736DF95B6518'], 'type' => 'OpenPGP v4: X25519']]);
+        $mailbox = Mailbox::firstOrFail();
+        $this->assertSame($job->payload['publicKey'], $mailbox->public_key);
+        $url = "/api/v1/mail/mailboxes/{$mailbox->id}";
+
+        // The list of mailboxes never has a key. The owner gets the protected private key on request.
+        $this->assertStringNotContainsString('PRIVATE KEY', $this->getJson('/api/v1/mail/mailboxes')->assertOk()->getContent());
+        $first = $this->getJson("{$url}/private-key")->assertOk()->assertJsonPath('address', 'olu@acme.example')->assertJsonPath('passwordCurrent', true)->json('privateKey');
+        $this->assertStringStartsWith('-----BEGIN PGP PRIVATE KEY BLOCK-----', $first);
+        $this->assertDatabaseHas('audit_entries', ['action' => 'Downloaded mailbox private key']);
+        // The database does not have the private key in a form that a person can read.
+        $this->assertStringNotContainsString('PGP', (string) DB::table('mailboxes')->value('private_key'));
+        // The first password opens the key. A different password does not.
+        $this->assertSame(1, OpenPgpKey::changePassword($first, 'First-password-123', 'x')['changed']);
+        $this->assertSame(0, OpenPgpKey::changePassword($first, 'Second-password-456', 'x')['changed']);
+
+        // A new password with the old password: the private key gets the new password.
+        $this->patchJson($url, ['password' => 'Second-password-456', 'currentPassword' => 'not the password'])->assertUnprocessable()->assertJsonValidationErrors('currentPassword');
+        $response = $this->patchJson($url, ['password' => 'Second-password-456', 'currentPassword' => 'First-password-123'])->assertAccepted()->assertJsonPath('mailbox.privateKey.passwordCurrent', true);
+        $this->assertArrayNotHasKey('setEncryption', AgentJob::findOrFail($response->json('job.id'))->payload);
+        $this->finish($response->json('job.id'));
+        $second = $this->getJson("{$url}/private-key")->json('privateKey');
+        $this->assertSame(1, OpenPgpKey::changePassword($second, 'Second-password-456', 'x')['changed']);
+        $this->assertSame(0, OpenPgpKey::changePassword($second, 'First-password-123', 'x')['changed']);
+
+        // A new password with no old password: the private key keeps its password, and the panel says so.
+        $response = $this->patchJson($url, ['newPassword' => true])->assertAccepted()->assertJsonPath('mailbox.privateKey.passwordCurrent', false);
+        $this->finish($response->json('job.id'));
+        $this->assertSame($second, $this->getJson("{$url}/private-key")->assertJsonPath('passwordCurrent', false)->json('privateKey'));
+
+        // The keys are there: "encrypt" again changes nothing.
+        $this->patchJson($url, ['encrypt' => true])->assertOk()->assertJsonPath('job', null);
+        // Encryption off, then on again: the panel makes a new key and keeps the old key for the old mail.
+        $this->finish($this->patchJson($url, ['encrypt' => false])->assertAccepted()->json('job.id'));
+        $this->assertNull($mailbox->fresh()->encryption);
+        $this->patchJson($url, ['encrypt' => true])->assertUnprocessable()->assertJsonValidationErrors('encrypt');
+        $this->patchJson($url, ['encrypt' => true, 'publicKey' => 'x', 'password' => 'Third-password-789'])->assertUnprocessable()->assertJsonValidationErrors('encrypt');
+        $response = $this->patchJson($url, ['encrypt' => true, 'password' => 'Third-password-789'])->assertAccepted()->assertJsonPath('mailbox.privateKey.passwordCurrent', false);
+        $job = AgentJob::findOrFail($response->json('job.id'));
+        $this->assertNotSame($mailbox->public_key, $job->payload['publicKey']);
+        $both = $this->getJson("{$url}/private-key")->json('privateKey');
+        $this->assertCount(2, OpenPgpKey::blocks($both));
+        $this->assertSame(['changed' => 1, 'kept' => 1], array_slice(OpenPgpKey::changePassword($both, 'Third-password-789', 'x'), 1));
+
+        // A mailbox with no keys of the panel has no private key. A different customer gets nothing.
+        $this->finish($this->postJson('/api/v1/mail/mailboxes', ['domainId' => $domain->id, 'localPart' => 'plain', 'quotaBytes' => self::GB])->assertAccepted()->assertJsonPath('mailbox.privateKey', null)->json('job.id'));
+        $this->getJson('/api/v1/mail/mailboxes/'.Mailbox::where('local_part', 'plain')->value('id').'/private-key')->assertNotFound();
+        $this->actingWith($this->user(Role::Owner, $this->customer($this->plan())));
+        $this->getJson("{$url}/private-key")->assertNotFound();
+    }
+
+    public function test_a_key_of_the_panel_has_the_form_of_an_openpgp_key(): void
+    {
+        $keys = OpenPgpKey::generate('olu@acme.example', 'First-password-123', 1794700000);
+        $this->assertMatchesRegularExpression('/^[0-9A-F]{40}$/', $keys['fingerprint']);
+        foreach (['publicKey' => 'PUBLIC', 'privateKey' => 'PRIVATE'] as $name => $kind) {
+            $this->assertMatchesRegularExpression("/^-----BEGIN PGP {$kind} KEY BLOCK-----\n\n([A-Za-z0-9+\/=]{1,64}\n)+=[A-Za-z0-9+\/]{4}\n-----END PGP {$kind} KEY BLOCK-----\n$/", $keys[$name]);
+        }
+        // The public key is a key that the panel accepts from an owner.
+        $this->assertSame($keys['publicKey'], Mail::publicKey($keys['publicKey']));
+        // Two keys for the same address are different keys.
+        $this->assertNotSame($keys['fingerprint'], OpenPgpKey::generate('olu@acme.example', 'First-password-123', 1794700000)['fingerprint']);
+        // The private key does not have the private numbers in a form that a person can read:
+        // the same key with a second password has a different text.
+        $moved = OpenPgpKey::changePassword($keys['privateKey'], 'First-password-123', 'Second-password-456');
+        $this->assertSame(['changed' => 1, 'kept' => 0], array_slice($moved, 1));
+        $this->assertNotSame($keys['privateKey'], $moved['privateKey']);
+        $back = OpenPgpKey::changePassword($moved['privateKey'], 'Second-password-456', 'First-password-123');
+        $this->assertSame(1, $back['changed']);
+        // Text that is not a key of the panel stays as it is.
+        $this->assertSame(['privateKey' => '', 'changed' => 0, 'kept' => 0], OpenPgpKey::changePassword('not a key', 'a', 'b'));
     }
 
     public function test_a_mailbox_that_the_agent_could_not_make_is_failed_and_can_be_removed(): void

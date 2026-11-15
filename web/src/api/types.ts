@@ -377,6 +377,12 @@ export interface Mailbox {
   usedBytes: number;
   /** Not null: the mail server encrypts each new message with the OpenPGP key of the owner. */
   encryption?: MailEncryption | null;
+  /**
+   * Not null: the panel made the OpenPGP keys of the mailbox and has the private key, in a form
+   * that only a password of the mailbox opens. "passwordCurrent" is false when the private key
+   * has an older password.
+   */
+  privateKey?: { passwordCurrent: boolean } | null;
 }
 
 /** What the mail server found in the OpenPGP public key of a mailbox. */

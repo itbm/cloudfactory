@@ -72,8 +72,12 @@ Usage:
   cf mail domains retry DOMAIN             Add a mail domain again after the first job failed.
   cf mail domains remove DOMAIN            Remove a mail domain that has no mailboxes and no addresses.
   cf mail mailboxes list [--domain DOMAIN] [--customer ID]
-  cf mail mailboxes create ADDRESS [--quota-mb N]      The panel shows the password one time.
-  cf mail mailboxes set ADDRESS [--quota-mb N] [--new-password] [--public-key FILE | --no-encryption]
+  cf mail mailboxes create ADDRESS [--quota-mb N] [--encrypt]
+                                           The panel shows the password one time. With --encrypt, the panel
+                                           makes OpenPGP keys and the mail server encrypts new mail.
+  cf mail mailboxes set ADDRESS [--quota-mb N] [--new-password] [--encrypt | --public-key FILE | --no-encryption]
+  cf mail mailboxes private-key ADDRESS [--output FILE]
+                                           The private key that the panel made. It needs the password of the mailbox.
   cf mail mailboxes delete ADDRESS         Remove a mailbox and its messages.
   cf mail aliases list [--domain DOMAIN] [--customer ID]
   cf mail aliases create ADDRESS --to ADDRESS... [--forward]

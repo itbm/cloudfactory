@@ -544,7 +544,7 @@ export function deleteMailDomain(domainId: string): Promise<void> {
 }
 
 /** Makes a mailbox. The answer has the password: the panel shows it one time. */
-export function createMailbox(input: { domainId: string; localPart: string; quotaBytes: number }): Promise<string> {
+export function createMailbox(input: { domainId: string; localPart: string; quotaBytes: number; encrypt?: boolean }): Promise<string> {
   return call(async () => {
     const r = await live.request<{ mailbox: live.ApiMailbox; password: string; job: live.ApiJob }>("POST", "/mail/mailboxes", { ...input, localPart: input.localPart.trim().toLowerCase() });
     update((d) => { d.mailboxes = [...d.mailboxes, live.toMailbox(r.mailbox)]; });
@@ -554,7 +554,7 @@ export function createMailbox(input: { domainId: string; localPart: string; quot
 }
 
 /** Changes the size of a mailbox, or gives it a new password. The answer is the new password, or "". */
-export function setMailbox(mailboxId: string, change: { quotaBytes?: number; newPassword?: boolean }): Promise<string> {
+export function setMailbox(mailboxId: string, change: { quotaBytes?: number; newPassword?: boolean; currentPassword?: string }): Promise<string> {
   return call(async () => {
     const r = await live.request<{ mailbox: live.ApiMailbox; password: string | null; job: live.ApiJob | null }>("PATCH", `/mail/mailboxes/${mailboxId}`, change);
     update((d) => { d.mailboxes = d.mailboxes.map((x) => (x.id === mailboxId ? live.toMailbox(r.mailbox) : x)); });
@@ -578,6 +578,26 @@ export function setMailboxEncryption(mailboxId: string, publicKey: string | null
       throw new ApiError(reason ? `The mail server refused the key. ${reason}` : "The mail server could not change the encryption. Try again.");
     }
   });
+}
+
+/**
+ * Turns on the encryption of a mailbox with keys that the panel makes. The mailbox gets a new
+ * password, and the private key gets the same password. The answer is the new password.
+ */
+export function encryptMailbox(mailboxId: string): Promise<string> {
+  return call(async () => {
+    const r = await live.request<{ mailbox: live.ApiMailbox; password: string | null; job: live.ApiJob | null }>("PATCH", `/mail/mailboxes/${mailboxId}`, { encrypt: true, newPassword: true });
+    if (r.job && (await track(r.job)).state === "failed") {
+      throw new ApiError("The mail server could not turn on the encryption. Try again.");
+    }
+    await refresh();
+    return r.password ?? "";
+  });
+}
+
+/** Gets the private keys that the panel made for a mailbox. A key needs the password of the mailbox. */
+export function mailboxPrivateKey(mailboxId: string): Promise<string> {
+  return call(async () => (await live.request<{ privateKey: string }>("GET", `/mail/mailboxes/${mailboxId}/private-key`)).privateKey);
 }
 
 /** Removes a mailbox and its messages. */

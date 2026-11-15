@@ -4,7 +4,7 @@ import { ChevronDown, ChevronRight, Lock, Search } from "lucide-react";
 import { useAction, useStore } from "../api/hooks";
 import { contextCustomers, inContext } from "../api/selectors";
 import {
-  MailVerificationError, checkMailDomain, createMailAlias, createMailDomain, createMailbox, deleteMailAlias, deleteMailDomain, deleteMailbox, retryMailDomain, setMailbox, setMailboxEncryption,
+  MailVerificationError, checkMailDomain, createMailAlias, createMailDomain, createMailbox, deleteMailAlias, deleteMailDomain, deleteMailbox, encryptMailbox, mailboxPrivateKey, retryMailDomain, setMailbox, setMailboxEncryption,
   type MailVerification,
 } from "../api/store";
 import type { MailAlias, MailDomain, MailRecord, Mailbox, State } from "../api/types";
@@ -357,11 +357,62 @@ function RecordsDialog({ domain, checking, onCheck, onClose }: { domain: MailDom
 }
 
 /** The password of a mailbox. The panel shows it one time. */
-function PasswordDialog({ address, password, onClose }: { address: string; password: string; onClose: () => void }) {
+function PasswordDialog({ address, password, mailboxId, onClose }: { address: string; password: string; mailboxId?: string; onClose: () => void }) {
   return (
     <Modal title={`Password of ${address}`} onClose={onClose} footer={<button type="button" className="btn btn-primary" onClick={onClose}>I copied the password</button>}>
       <p>Copy the password now. The panel does not show it again. If you lose it, give the mailbox a new password.</p>
       <div style={{ marginTop: 12 }}><CopyField value={password} label="Password" /></div>
+      {mailboxId && (
+        <div className="alert alert-info alert-stack" role="status" style={{ marginTop: 14 }}>
+          <p><strong>This password also opens the private key of the mailbox.</strong> To read the encrypted mail, put the private key in a mail program and give this password.</p>
+          <KeyDownload mailboxId={mailboxId} address={address} />
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+/** Downloads the private keys that the panel made. The file is not usable without the password of the mailbox. */
+function KeyDownload({ mailboxId, address }: { mailboxId: string; address: string }) {
+  const get = useAction(mailboxPrivateKey);
+  return (
+    <>
+      <FormError error={get.error} />
+      <button type="button" className="btn btn-sm" disabled={get.busy} onClick={async () => {
+        const r = await get.run(mailboxId);
+        if (!r.ok) return;
+        const url = URL.createObjectURL(new Blob([r.value], { type: "application/pgp-keys" }));
+        const link = Object.assign(document.createElement("a"), { href: url, download: `${address}-private-key.asc` });
+        link.click();
+        URL.revokeObjectURL(url);
+      }}>Download private key</button>
+    </>
+  );
+}
+
+/** Asks for the old password of an encrypted mailbox, so that its private key gets the new password too. */
+function NewPasswordDialog({ mailbox, onClose, onDone }: { mailbox: Mailbox; onClose: () => void; onDone: (password: string) => void }) {
+  const [current, setCurrent] = useState("");
+  const change = useAction(setMailbox);
+  return (
+    <Modal
+      title={`New password for ${mailbox.address}`}
+      onClose={onClose}
+      footer={<><button type="button" className="btn" onClick={onClose}>Cancel</button><button type="submit" form="mailbox-password" className="btn btn-primary" disabled={change.busy}>Make new password</button></>}
+    >
+      <form id="mailbox-password" noValidate onSubmit={async (e) => {
+        e.preventDefault();
+        const r = await change.run(mailbox.id, { newPassword: true, ...(current !== "" ? { currentPassword: current } : {}) });
+        if (r.ok) onDone(r.value);
+      }}>
+        <p>The private key of this mailbox is protected with the password of the mailbox. Give the current password, and the private key gets the new password too.</p>
+        <FormError error={change.error} shown={["currentPassword"]} />
+        <div style={{ marginTop: 12 }}>
+          <Field label="Current password (optional)" hint="Without it, the mailbox gets a new password and the private key keeps the old password. Keep the old password to open the private key." error={change.error?.fields.currentPassword}>
+            {(p) => <input {...p} className="input" type="password" autoComplete="off" value={current} onChange={(e) => setCurrent(e.target.value)} />}
+          </Field>
+        </div>
+      </form>
     </Modal>
   );
 }
@@ -385,7 +436,9 @@ function MailboxesCard({ boxes, aliases, domains, domainId, onDomain }: { boxes:
   const [editing, setEditing] = useState<Mailbox | null>(null);
   const [encrypting, setEncrypting] = useState<string | null>(null);
   const [removing, setRemoving] = useState<Mailbox | null>(null);
-  const [secret, setSecret] = useState<{ address: string; password: string } | null>(null);
+  // "withKey": the password also opens the private key that the panel made.
+  const [secret, setSecret] = useState<{ address: string; password: string; withKey?: boolean } | null>(null);
+  const [resetting, setResetting] = useState<string | null>(null);
   const [open, setOpen] = useState<Set<string>>(new Set());
   const change = useAction(setMailbox);
   const remove = useAction(deleteMailbox);
@@ -401,6 +454,7 @@ function MailboxesCard({ boxes, aliases, domains, domainId, onDomain }: { boxes:
   const list = usePaged(inDomain, (m, q) => m.address.includes(q) || (aliases.get(m.address) ?? []).some((a) => a.address.includes(q)) || (showCustomer && customer(m.customerId).toLowerCase().includes(q)));
   const toggle = (id: string) => setOpen((s) => { const next = new Set(s); if (!next.delete(id)) next.add(id); return next; });
   const encrypted = boxes.find((m) => m.id === encrypting);
+  const reset = boxes.find((m) => m.id === resetting);
 
   return (
     <Card title="Mailboxes">
@@ -453,7 +507,7 @@ function MailboxesCard({ boxes, aliases, domains, domainId, onDomain }: { boxes:
                           { label: "Add alias", onSelect: () => setOpen((s) => new Set(s).add(m.id)) },
                           { label: "Encryption", onSelect: () => setEncrypting(m.id) },
                           { label: "Change size", onSelect: () => setEditing(m) },
-                          { label: "New password", onSelect: () => void change.run(m.id, { newPassword: true }).then((r) => { if (r.ok && r.value) setSecret({ address: m.address, password: r.value }); }) },
+                          { label: "New password", onSelect: () => (m.privateKey ? setResetting(m.id) : void change.run(m.id, { newPassword: true }).then((r) => { if (r.ok && r.value) setSecret({ address: m.address, password: r.value }); })) },
                         ] : []),
                         { label: "Remove", danger: true, onSelect: () => setRemoving(m) },
                       ]} />
@@ -468,10 +522,11 @@ function MailboxesCard({ boxes, aliases, domains, domainId, onDomain }: { boxes:
         </table>
       </TableWrap>
       <Pager list={list} noun={["mailbox", "mailboxes"]} />
-      {creating && <NewMailboxDialog domains={active} domainId={domainId} onClose={() => setCreating(false)} onCreated={(address, password) => { setCreating(false); setSecret({ address, password }); }} />}
+      {creating && <NewMailboxDialog domains={active} domainId={domainId} onClose={() => setCreating(false)} onCreated={(address, password, withKey) => { setCreating(false); setSecret({ address, password, withKey }); }} />}
       {editing && <SizeDialog mailbox={editing} onClose={() => setEditing(null)} />}
       {encrypted && <EncryptionDialog mailbox={encrypted} onClose={() => setEncrypting(null)} />}
-      {secret && <PasswordDialog {...secret} onClose={() => setSecret(null)} />}
+      {secret && <PasswordDialog address={secret.address} password={secret.password} mailboxId={secret.withKey ? boxes.find((m) => m.address === secret.address)?.id : undefined} onClose={() => setSecret(null)} />}
+      {reset && <NewPasswordDialog mailbox={reset} onClose={() => setResetting(null)} onDone={(password) => { setResetting(null); if (password) setSecret({ address: reset.address, password, withKey: true }); }} />}
       {removing && (
         <Modal
           title={`Remove mailbox ${removing.address}?`}
@@ -546,19 +601,20 @@ function MailboxRows({ mailbox, aliases, expanded, domains, children }: { mailbo
 /** The encryption of a mailbox: the OpenPGP public key of its owner. */
 function EncryptionDialog({ mailbox, onClose }: { mailbox: Mailbox; onClose: () => void }) {
   const [key, setKey] = useState("");
-  const [replacing, setReplacing] = useState(!mailbox.encryption);
+  // "own" shows the form for an owner who has a key pair and keeps the private key.
+  const [own, setOwn] = useState(false);
+  const [password, setPassword] = useState("");
   const set = useAction(setMailboxEncryption);
+  const make = useAction(encryptMailbox);
   const e = mailbox.encryption;
-  const form = replacing || !e;
+  const busy = set.busy || make.busy;
+  const footer = own
+    ? <><button type="button" className="btn" onClick={() => setOwn(false)}>Back</button><button type="submit" form="mailbox-key" className="btn btn-primary" disabled={busy || key.trim() === ""}>{set.busy ? "The mail server reads the key…" : "Use this key"}</button></>
+    : e
+      ? <><button type="button" className="btn btn-danger" disabled={busy} onClick={() => void set.run(mailbox.id, null).then((r) => { if (r.ok) onClose(); })}>Turn off encryption</button><button type="button" className="btn" onClick={() => setOwn(true)}>Use my own key</button><button type="button" className="btn btn-primary" onClick={onClose}>Close</button></>
+      : <><button type="button" className="btn" onClick={onClose}>Cancel</button><button type="button" className="btn btn-primary" disabled={busy} onClick={() => void make.run(mailbox.id).then((r) => { if (r.ok) setPassword(r.value); })}>{make.busy ? "The panel makes the keys…" : "Turn on encryption"}</button></>;
   return (
-    <Modal
-      wide
-      title={`Encryption of ${mailbox.address}`}
-      onClose={onClose}
-      footer={form
-        ? <><button type="button" className="btn" onClick={onClose}>Cancel</button><button type="submit" form="mailbox-key" className="btn btn-primary" disabled={set.busy || key.trim() === ""}>{set.busy ? "The mail server reads the key…" : e ? "Use this key" : "Turn on encryption"}</button></>
-        : <><button type="button" className="btn btn-danger" disabled={set.busy} onClick={() => void set.run(mailbox.id, null).then((r) => { if (r.ok) onClose(); })}>Turn off encryption</button><button type="button" className="btn" onClick={() => setReplacing(true)}>Use a different key</button><button type="button" className="btn btn-primary" onClick={onClose}>Close</button></>}
-    >
+    <Modal wide title={`Encryption of ${mailbox.address}`} onClose={onClose} footer={footer}>
       {e && (
         <div className="alert alert-info alert-stack" role="status">
           <p><strong>Encryption is on.</strong> The mail server encrypts each new message with this key before it stores the message.</p>
@@ -570,28 +626,45 @@ function EncryptionDialog({ mailbox, onClose }: { mailbox: Mailbox; onClose: () 
           {e.warnings.map((w) => KEY_WARNING[w] && <p key={w} className="text-warning"><strong>Warning:</strong> {KEY_WARNING[w]}</p>)}
         </div>
       )}
-      {!form && <FormError error={set.error} />}
-      {form && (
+      {password !== "" && (
+        <div style={{ marginTop: 14 }}>
+          <p><strong>The mailbox has a new password.</strong> Copy it now. The panel does not show it again. The password also opens the private key.</p>
+          <div style={{ marginTop: 10 }}><CopyField value={password} label="Password" /></div>
+        </div>
+      )}
+      {!own && mailbox.privateKey && (
+        <div style={{ marginTop: 14 }}>
+          <p>{e ? "The panel made the keys of this mailbox." : "The panel has the private key from the time when the encryption was on. It opens the messages of that time."} To read the encrypted mail, put the private key in a mail program, for example Thunderbird, and give the password of the mailbox.</p>
+          {!mailbox.privateKey.passwordCurrent && <p className="text-warning" style={{ marginTop: 6 }}><strong>Warning:</strong> The mailbox got a new password after the panel made the key. The private key has an older password of the mailbox.</p>}
+          <div style={{ marginTop: 10 }}><KeyDownload mailboxId={mailbox.id} address={mailbox.address} /></div>
+        </div>
+      )}
+      {!own && <FormError error={set.error ?? make.error} />}
+      {!own && !e && (
+        <>
+          <p style={{ marginTop: mailbox.privateKey ? 14 : 0 }}>The panel makes a pair of OpenPGP keys for the mailbox. The mail server encrypts each new message with the public key before it stores the message. A person who gets the disks or the backups of the server cannot read the mail.</p>
+          <ul className="plain-list" style={{ margin: "10px 0 14px" }}>
+            <li>The mailbox gets a new password. The panel shows it one time. The private key is protected with the same password, and the panel keeps no password.</li>
+            <li>To read the mail, a mail program needs the private key and OpenPGP, for example Thunderbird. You download the private key here.</li>
+            <li>The messages that the mailbox has now do not change. The subject and the addresses of a message stay readable.</li>
+            <li>The server cannot search the text of encrypted messages.</li>
+          </ul>
+          <button type="button" className="btn btn-sm" onClick={() => setOwn(true)}>I have my own key</button>
+        </>
+      )}
+      {own && (
         <form id="mailbox-key" noValidate onSubmit={async (ev) => {
           ev.preventDefault();
           const r = await set.run(mailbox.id, key);
-          if (r.ok) { setKey(""); setReplacing(false); }
+          if (r.ok) { setKey(""); setOwn(false); }
         }}>
-          {!e && (
-            <>
-              <p>With an OpenPGP public key, the mail server encrypts each new message before it stores the message. Only the private key can decrypt the message, and the private key stays in the mail program of the owner. A person who gets the disks or the backups of the server cannot read the mail.</p>
-              <ul className="plain-list" style={{ margin: "10px 0 14px" }}>
-                <li>The mail program must have OpenPGP and the private key, for example Thunderbird. Webmail cannot show the messages.</li>
-                <li>If the owner loses the private key, nobody can read the encrypted messages.</li>
-                <li>The messages that the mailbox has now do not change. The subject and the addresses of a message stay readable.</li>
-                <li>The server cannot search the text of encrypted messages.</li>
-              </ul>
-            </>
-          )}
+          <p>Give the public key of a key pair that you made in your mail program. The private key stays with you: the panel never has it. If you lose the private key, nobody can read the encrypted messages.</p>
           <FormError error={set.error} shown={["publicKey"]} />
-          <Field label="OpenPGP public key" hint={<>Paste the key that the mail program exports. It starts with <code>-----BEGIN PGP PUBLIC KEY BLOCK-----</code>. Never give the private key.</>} error={set.error?.fields.publicKey}>
-            {(p) => <textarea {...p} className="input mono" rows={8} value={key} onChange={(ev) => setKey(ev.target.value)} autoCapitalize="none" spellCheck={false} placeholder="-----BEGIN PGP PUBLIC KEY BLOCK-----" />}
-          </Field>
+          <div style={{ marginTop: 12 }}>
+            <Field label="OpenPGP public key" hint={<>Paste the key that the mail program exports. It starts with <code>-----BEGIN PGP PUBLIC KEY BLOCK-----</code>. Never give the private key.</>} error={set.error?.fields.publicKey}>
+              {(p) => <textarea {...p} className="input mono" rows={8} value={key} onChange={(ev) => setKey(ev.target.value)} autoCapitalize="none" spellCheck={false} placeholder="-----BEGIN PGP PUBLIC KEY BLOCK-----" />}
+            </Field>
+          </div>
           <label className="btn btn-sm file-button" style={{ marginTop: 10 }}>
             Select a key file
             <input type="file" accept=".asc,.gpg,.pgp,.key,.txt,text/plain,application/pgp-keys" className="visually-hidden" onChange={(ev) => { const f = ev.target.files?.[0]; if (f && f.size <= 65536) void f.text().then(setKey); }} />
@@ -602,7 +675,6 @@ function EncryptionDialog({ mailbox, onClose }: { mailbox: Mailbox; onClose: () 
   );
 }
 
-/** An address field: the part before the @ sign, and the domain. */
 function AddressFields({ local, onLocal, domainId, onDomain, domains, error }: { local: string; onLocal: (v: string) => void; domainId: string; onDomain: (v: string) => void; domains: MailDomain[]; error?: string }) {
   return (
     <Field label="Address" hint="Use lower-case letters, digits, dots, hyphens and underscores." error={error}>
@@ -619,10 +691,11 @@ function AddressFields({ local, onLocal, domainId, onDomain, domains, error }: {
   );
 }
 
-function NewMailboxDialog({ domains, domainId: first, onClose, onCreated }: { domains: MailDomain[]; domainId?: string; onClose: () => void; onCreated: (address: string, password: string) => void }) {
+function NewMailboxDialog({ domains, domainId: first, onClose, onCreated }: { domains: MailDomain[]; domainId?: string; onClose: () => void; onCreated: (address: string, password: string, encrypted: boolean) => void }) {
   const [domainId, setDomainId] = useState(domains.find((d) => d.id === first)?.id ?? domains[0]?.id ?? "");
   const [local, setLocal] = useState("");
   const [size, setSize] = useState("1");
+  const [encrypt, setEncrypt] = useState(false);
   const create = useAction(createMailbox);
   const domain = domains.find((d) => d.id === domainId);
   return (
@@ -633,8 +706,8 @@ function NewMailboxDialog({ domains, domainId: first, onClose, onCreated }: { do
     >
       <form id="new-mailbox" noValidate onSubmit={async (e) => {
         e.preventDefault();
-        const r = await create.run({ domainId, localPart: local, quotaBytes: Math.round(+size * GB) });
-        if (r.ok) onCreated(`${local.trim().toLowerCase()}@${domain?.name ?? ""}`, r.value);
+        const r = await create.run({ domainId, localPart: local, quotaBytes: Math.round(+size * GB), ...(encrypt ? { encrypt: true } : {}) });
+        if (r.ok) onCreated(`${local.trim().toLowerCase()}@${domain?.name ?? ""}`, r.value, encrypt);
       }}>
         <FormError error={create.error} shown={["localPart", "domainId", "quotaBytes"]} />
         <AddressFields local={local} onLocal={setLocal} domainId={domainId} onDomain={setDomainId} domains={domains} error={create.error?.fields.localPart ?? create.error?.fields.domainId} />
@@ -643,6 +716,13 @@ function NewMailboxDialog({ domains, domainId: first, onClose, onCreated }: { do
             {(p) => <input {...p} className="input" type="number" min={0.1} step="any" value={size} onChange={(e) => setSize(e.target.value)} />}
           </Field>
         </div>
+        <label className="check" style={{ marginTop: 14, display: "flex", gap: 8, alignItems: "flex-start" }}>
+          <input type="checkbox" checked={encrypt} onChange={(e) => setEncrypt(e.target.checked)} style={{ marginTop: 3 }} />
+          <span>
+            <strong>Encrypt the stored mail</strong>
+            <span className="muted small" style={{ display: "block" }}>The panel makes OpenPGP keys for the mailbox, and the mail server encrypts each new message. To read the mail, a mail program needs the private key and the password of the mailbox.</span>
+          </span>
+        </label>
         <p className="muted small" style={{ marginTop: 12 }}>The panel makes a password and shows it one time.</p>
       </form>
     </Modal>

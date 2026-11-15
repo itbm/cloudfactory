@@ -208,27 +208,85 @@ describe("the email page", () => {
     expect(row("away@acme.example.com").textContent).toContain("sam@example.net");
   });
 
-  it("turns on the encryption of a mailbox with a public key, and shows the fingerprint", async () => {
+  it("makes the keys of a mailbox, shows the new password one time and gives the private key", async () => {
+    const api = await open("owner");
+    const info = getState().mailboxes.find((m) => m.address === "info@acme.example.com")!;
+    const encryption = { fingerprints: ["9E1777E56AFB330404EC710E0868736DF95B6518"], keyType: "OpenPGP v4: X25519", expiresAt: null, warnings: [] };
+    menu(row("info@acme.example.com"), "Encryption");
+    const dialog = screen.getByRole("dialog");
+    expect(dialog.textContent).toContain("The panel makes a pair of OpenPGP keys for the mailbox");
+    expect(within(dialog).queryByLabelText("OpenPGP public key")).toBeNull();
+    api.on(`PATCH /mail/mailboxes/${info.id}`, () => {
+      api.change<List>("/mail/mailboxes", (b) => { Object.assign(b.data.find((m) => m.id === info.id)!, { encryption, privateKey: { passwordCurrent: true } }); });
+      return [202, { mailbox: info, password: "new horse battery", job: apiJob({ id: "job-make", action: "SetMailbox" }) }];
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Turn on encryption" }));
+    await waitFor(() => expect(screen.getByRole("dialog").textContent).toContain("9E17 77E5 6AFB 3304 04EC 710E 0868 736D F95B 6518"));
+    expect(api.changes.at(-1)).toMatchObject({ method: "PATCH", body: { encrypt: true, newPassword: true } });
+    expect(screen.getByRole("dialog").textContent).toContain("new horse battery");
+    expect(screen.getByRole("dialog").textContent).toContain("The panel made the keys of this mailbox");
+
+    // The private key comes from the panel only when the user asks for it.
+    let asked = 0;
+    const made: Blob[] = [];
+    URL.createObjectURL = (blob: Blob) => { made.push(blob); return "blob:key"; };
+    URL.revokeObjectURL = () => {};
+    api.on(`GET /mail/mailboxes/${info.id}/private-key`, () => { asked++; return [200, { address: info.address, privateKey: "-----BEGIN PGP PRIVATE KEY BLOCK-----\n\nxYYE\n-----END PGP PRIVATE KEY BLOCK-----\n", passwordCurrent: true }]; });
+    expect(asked).toBe(0);
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Download private key" }));
+    await waitFor(() => expect(made).toHaveLength(1));
+    expect(await made[0].text()).toContain("BEGIN PGP PRIVATE KEY BLOCK");
+    fireEvent.click(within(screen.getByRole("dialog")).getAllByRole("button", { name: "Close" }).at(-1)!);
+
+    // A new password for a mailbox with keys of the panel: the old password moves the private key.
+    menu(row("info@acme.example.com"), "New password");
+    const reset = screen.getByRole("dialog");
+    api.on(`PATCH /mail/mailboxes/${info.id}`, () => [202, { mailbox: { ...info, encryption, privateKey: { passwordCurrent: true } }, password: "second horse", job: null }]);
+    fireEvent.change(within(reset).getByLabelText("Current password (optional)"), { target: { value: "new horse battery" } });
+    fireEvent.click(within(reset).getByRole("button", { name: "Make new password" }));
+    await waitFor(() => expect(screen.getByRole("dialog").textContent).toContain("This password also opens the private key"));
+    expect(api.changes.at(-1)).toMatchObject({ body: { newPassword: true, currentPassword: "new horse battery" } });
+  });
+
+  it("makes a new mailbox with encryption", async () => {
+    const api = await open("owner");
+    const added = { ...getState().mailboxes[0], id: "vault-box", address: "vault@acme.example.com", localPart: "vault", status: "pending", usedBytes: null, privateKey: { passwordCurrent: true } };
+    api.change<List>("/mail/mailboxes", (b) => b.data.push(added));
+    api.on("POST /mail/mailboxes", () => [202, { mailbox: added, password: "calm-stone-harbour-17", job: apiJob({ id: "job-vault", action: "SetMailbox" }) }]);
+    fireEvent.click(screen.getByRole("button", { name: "New mailbox" }));
+    const dialog = screen.getByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("Address"), { target: { value: "vault" } });
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: /Encrypt the stored mail/ }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Create mailbox" }));
+    await waitFor(() => expect(screen.getByRole("dialog").textContent).toContain("calm-stone-harbour-17"));
+    expect(api.changes.at(-1)).toMatchObject({ method: "POST", body: { localPart: "vault", encrypt: true } });
+    // The dialog with the password also gives the private key.
+    expect(screen.getByRole("dialog").textContent).toContain("This password also opens the private key");
+    expect(within(screen.getByRole("dialog")).getByRole("button", { name: "Download private key" })).toBeTruthy();
+  });
+
+  it("turns on the encryption of a mailbox with a public key of the owner, and shows the fingerprint", async () => {
     const api = await open("owner");
     const info = getState().mailboxes.find((m) => m.address === "info@acme.example.com")!;
     const key = "-----BEGIN PGP PUBLIC KEY BLOCK-----\n\nmDME\n-----END PGP PUBLIC KEY BLOCK-----";
     const encryption = { fingerprints: ["9E1777E56AFB330404EC710E0868736DF95B6518"], keyType: "OpenPGP v4: X25519", expiresAt: null, warnings: ["addressMismatch"] };
     menu(row("info@acme.example.com"), "Encryption");
     let dialog = screen.getByRole("dialog");
-    expect(dialog.textContent).toContain("Only the private key can decrypt the message");
-    expect((within(dialog).getByRole("button", { name: "Turn on encryption" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(within(dialog).getByRole("button", { name: "I have my own key" }));
+    expect(dialog.textContent).toContain("The private key stays with you");
+    expect((within(dialog).getByRole("button", { name: "Use this key" }) as HTMLButtonElement).disabled).toBe(true);
 
     // The mail server refuses a key that cannot encrypt: the job fails, and the dialog tells why.
     api.on(`PATCH /mail/mailboxes/${info.id}`, () => [202, { mailbox: info, password: null, job: apiJob({ id: "job-key", action: "SetMailbox", state: "failed", error: "Turn on encryption: the mail server refused the public key: The key contains no key usable for encryption." }) }]);
     fireEvent.change(within(dialog).getByLabelText("OpenPGP public key"), { target: { value: key } });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Turn on encryption" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Use this key" }));
     await waitFor(() => expect(dialog.textContent).toContain("The mail server refused the key. The key contains no key usable for encryption."));
 
     api.on(`PATCH /mail/mailboxes/${info.id}`, () => {
       api.change<List>("/mail/mailboxes", (b) => { b.data.find((m) => m.id === info.id)!.encryption = encryption; });
       return [202, { mailbox: info, password: null, job: apiJob({ id: "job-key2", action: "SetMailbox" }) }];
     });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Turn on encryption" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Use this key" }));
     await waitFor(() => expect(screen.getByRole("dialog").textContent).toContain("9E17 77E5 6AFB 3304 04EC 710E 0868 736D F95B 6518"));
     expect(api.changes.at(-1)).toMatchObject({ method: "PATCH", body: { publicKey: key } });
     dialog = screen.getByRole("dialog");

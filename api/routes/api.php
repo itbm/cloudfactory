@@ -101,6 +101,7 @@ Route::prefix('v1')->group(function () {
             Route::get('mail/mailboxes', [MailboxController::class, 'index']);
             Route::post('mail/mailboxes', [MailboxController::class, 'store']);
             Route::patch('mail/mailboxes/{id}', [MailboxController::class, 'update']);
+            Route::get('mail/mailboxes/{id}/private-key', [MailboxController::class, 'privateKey']);
             Route::delete('mail/mailboxes/{id}', [MailboxController::class, 'destroy']);
             Route::get('mail/aliases', [MailAliasController::class, 'index']);
             Route::post('mail/aliases', [MailAliasController::class, 'store']);

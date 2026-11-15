@@ -5,6 +5,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -37,6 +39,8 @@ func mailPanel(t *testing.T) (*httptest.Server, *[]string) {
 		case r.URL.Path == "/api/v1/mail/mailboxes" || r.URL.Path == "/api/v1/mail/mailboxes/MB1" && r.Method == http.MethodPatch:
 			w.WriteHeader(http.StatusAccepted)
 			w.Write([]byte(`{"mailbox":{"id":"MB2"},"password":"correct horse","job":null}`))
+		case r.URL.Path == "/api/v1/mail/mailboxes/MB1/private-key":
+			w.Write([]byte(`{"address":"info@acme.example.com","privateKey":"-----BEGIN PGP PRIVATE KEY BLOCK-----\n\nxYYE\n-----END PGP PRIVATE KEY BLOCK-----\n","passwordCurrent":false}`))
 		case r.URL.Path == "/api/v1/mail/aliases" && r.Method == http.MethodGet:
 			w.Write([]byte(`{"data":[{"id":"MA1","address":"sales@acme.example.com","kind":"alias","destinations":["info@acme.example.com","jo@acme.example.com"],"status":"active"}]}`))
 		case r.URL.Path == "/api/v1/servers" && r.Method == http.MethodGet:
@@ -112,6 +116,31 @@ func TestMailboxesAndAliases(t *testing.T) {
 	if !strings.Contains(out.String(), "Password: correct horse") {
 		t.Errorf("the output does not have the password:\n%s", out)
 	}
+	// The panel makes the keys: a new mailbox, and a mailbox that exists gets a new password too.
+	out.Reset()
+	for _, args := range [][]string{
+		{"mail", "mailboxes", "create", "olu@acme.example.com", "--encrypt"},
+		{"mail", "mailboxes", "set", "info@acme.example.com", "--encrypt"},
+	} {
+		if err := a.dispatch(ctx, args); err != nil {
+			t.Fatalf("%v: %v", args, err)
+		}
+	}
+	out.Reset()
+	if err := a.dispatch(ctx, []string{"mail", "mailboxes", "private-key", "info@acme.example.com"}); err != nil {
+		t.Fatal(err)
+	}
+	// The panel says that the key has an older password.
+	if !strings.Contains(out.String(), "-----BEGIN PGP PRIVATE KEY BLOCK-----\n") || !strings.Contains(out.String(), "older password") {
+		t.Errorf("output:\n%s", out)
+	}
+	file := filepath.Join(t.TempDir(), "key.asc")
+	if err := a.dispatch(ctx, []string{"mail", "mailboxes", "private-key", "info@acme.example.com", "--output", file}); err != nil {
+		t.Fatal(err)
+	}
+	if fi, err := os.Stat(file); err != nil || fi.Mode().Perm() != 0o600 {
+		t.Errorf("the key file: %v, %v", fi, err)
+	}
 	a.in = strings.NewReader("-----BEGIN PGP PUBLIC KEY BLOCK-----\n\nmDME\n-----END PGP PUBLIC KEY BLOCK-----\n")
 	for _, args := range [][]string{
 		{"mail", "mailboxes", "set", "info@acme.example.com", "--quota-mb", "4096", "--new-password"},
@@ -140,6 +169,8 @@ func TestMailboxesAndAliases(t *testing.T) {
 		{"mail", "mailboxes", "set", "info@acme.example.com"},
 		{"mail", "mailboxes", "set", "info@acme.example.com", "--public-key", "-", "--no-encryption"},
 		{"mail", "mailboxes", "set", "info@acme.example.com", "--public-key", "/no/such/file.asc"},
+		{"mail", "mailboxes", "set", "info@acme.example.com", "--encrypt", "--no-encryption"},
+		{"mail", "mailboxes", "private-key", "nobody@acme.example.com"},
 		{"mail", "aliases", "create", "team@acme.example.com"},
 		{"mail", "mailboxes", "delete", "nobody@acme.example.com"},
 		{"servers", "mail", "mail-1"},
@@ -152,6 +183,8 @@ func TestMailboxesAndAliases(t *testing.T) {
 	want := []string{
 		"GET /api/v1/mail/mailboxes?domainId=MD1",
 		`POST /api/v1/mail/mailboxes {"domainId":"MD1","localPart":"jo","quotaBytes":2147483648}`,
+		`POST /api/v1/mail/mailboxes {"domainId":"MD1","encrypt":true,"localPart":"olu","quotaBytes":1073741824}`,
+		`PATCH /api/v1/mail/mailboxes/MB1 {"encrypt":true,"newPassword":true}`,
 		`PATCH /api/v1/mail/mailboxes/MB1 {"newPassword":true,"quotaBytes":4294967296}`,
 		`PATCH /api/v1/mail/mailboxes/MB1 {"publicKey":"-----BEGIN PGP PUBLIC KEY BLOCK-----\n\nmDME\n-----END PGP PUBLIC KEY BLOCK-----\n"}`,
 		`PATCH /api/v1/mail/mailboxes/MB1 {"publicKey":null}`,

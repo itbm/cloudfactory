@@ -226,6 +226,7 @@ func (a *app) mailboxes(ctx context.Context, verb string, args []string) error {
 		}
 		fs := flag.NewFlagSet("create", flag.ContinueOnError)
 		quota := fs.Int64("quota-mb", 1024, "the size of the mailbox in MB")
+		encrypt := fs.Bool("encrypt", false, "the panel makes OpenPGP keys for the mailbox, and the mail server encrypts new mail with them")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
@@ -233,7 +234,40 @@ func (a *app) mailboxes(ctx context.Context, verb string, args []string) error {
 		if err != nil {
 			return err
 		}
-		return a.change(ctx, http.MethodPost, "/mail/mailboxes", map[string]any{"domainId": domain["id"], "localPart": local, "quotaBytes": *quota << 20})
+		body := map[string]any{"domainId": domain["id"], "localPart": local, "quotaBytes": *quota << 20}
+		if *encrypt {
+			body["encrypt"] = true
+		}
+		return a.change(ctx, http.MethodPost, "/mail/mailboxes", body)
+	case "private-key":
+		if err := need(args, 1, "a mailbox"); err != nil {
+			return err
+		}
+		fs := flag.NewFlagSet("private-key", flag.ContinueOnError)
+		output := fs.String("output", "", "write the private key to this file, not to the standard output")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		m, err := a.mailRow(ctx, "/mail/mailboxes", "mailbox", args[0])
+		if err != nil {
+			return err
+		}
+		var key struct {
+			PrivateKey      string `json:"privateKey"`
+			PasswordCurrent bool   `json:"passwordCurrent"`
+		}
+		if err := a.api.Do(ctx, http.MethodGet, fmt.Sprintf("/mail/mailboxes/%v/private-key", m["id"]), nil, nil, &key); err != nil {
+			return err
+		}
+		if !key.PasswordCurrent {
+			fmt.Fprintln(a.err, "The private key has an older password of the mailbox, not the current password.")
+		}
+		if *output == "" {
+			fmt.Fprint(a.out, key.PrivateKey)
+			return nil
+		}
+		// Only the owner of the file reads it. The key also needs the password of the mailbox.
+		return os.WriteFile(*output, []byte(key.PrivateKey), 0o600)
 	case "set", "delete", "rm", "remove":
 		if err := need(args, 1, "a mailbox"); err != nil {
 			return err
@@ -251,6 +285,7 @@ func (a *app) mailboxes(ctx context.Context, verb string, args []string) error {
 		password := fs.Bool("new-password", false, "give the mailbox a new password")
 		keyFile := fs.String("public-key", "", "a file with the OpenPGP public key of the owner, or - for the standard input: the mail server encrypts new mail with it")
 		noKey := fs.Bool("no-encryption", false, "turn off the encryption of new mail")
+		encrypt := fs.Bool("encrypt", false, "the panel makes OpenPGP keys for the mailbox. The mailbox gets a new password, and the private key gets the same password")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
@@ -261,8 +296,12 @@ func (a *app) mailboxes(ctx context.Context, verb string, args []string) error {
 		if *password {
 			body["newPassword"] = true
 		}
-		if *keyFile != "" && *noKey {
-			return errors.New("give --public-key or --no-encryption, not the two")
+		if (*keyFile != "" && *noKey) || (*encrypt && (*keyFile != "" || *noKey)) {
+			return errors.New("give one of --encrypt, --public-key and --no-encryption")
+		}
+		if *encrypt {
+			// The panel keeps no password, so the private key gets a new password of the mailbox.
+			body["encrypt"], body["newPassword"] = true, true
 		}
 		if *keyFile != "" {
 			// "-" reads the key from the standard input: gpg --armor --export NAME | cf mail mailboxes set ADDRESS --public-key -
@@ -282,7 +321,7 @@ func (a *app) mailboxes(ctx context.Context, verb string, args []string) error {
 			body["publicKey"] = nil
 		}
 		if len(body) == 0 {
-			return errors.New("give --quota-mb, --new-password, --public-key or --no-encryption")
+			return errors.New("give --quota-mb, --new-password, --encrypt, --public-key or --no-encryption")
 		}
 		return a.change(ctx, http.MethodPatch, path, body)
 	}

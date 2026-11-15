@@ -1126,6 +1126,12 @@ paths:
         size (`mailStorageBytes`). The response has the password of the mailbox. The panel
         makes a password when the request has none. The panel shows the password only in this
         response: it sends a hash to the mail server and keeps no password.
+
+
+        With `encrypt: true`, the panel makes the OpenPGP keys of the mailbox. The mail server
+        gets the public key and encrypts each new message with it before it stores the
+        message. The panel keeps the private key in a form that only the password of the
+        mailbox opens (refer to `GET /v1/mail/mailboxes/{id}/private-key`).
       requestBody:
         required: true
         content:
@@ -1138,6 +1144,7 @@ paths:
                 localPart: { type: string, pattern: '^[a-z0-9]([a-z0-9._-]{0,62}[a-z0-9])?$', example: info }
                 quotaBytes: { type: integer, minimum: 104857600 }
                 password: { type: string, minLength: 12, maxLength: 128 }
+                encrypt: { type: boolean, description: The panel makes OpenPGP keys for the mailbox. }
       responses:
         '202':
           description: The job makes the mailbox.
@@ -1168,6 +1175,17 @@ paths:
         private key can decrypt the message. Messages that the mailbox has do not change. The
         job fails when the mail server refuses the key, for example a key that cannot encrypt.
         `publicKey: null` turns off the encryption.
+
+
+        `encrypt: true` is the easy procedure: the panel makes the keys. The request must also
+        have `password` or `newPassword`, because the private key gets that password and the
+        panel keeps no password. `encrypt: false` turns off the encryption. The panel keeps
+        the private keys that it made, because they open the messages from before the change.
+
+
+        A new password with `currentPassword` also gives the new password to the private keys
+        that the panel made. Without `currentPassword`, the private keys keep the old
+        password, and `privateKey.passwordCurrent` of the mailbox is false.
       requestBody:
         required: true
         content:
@@ -1178,6 +1196,8 @@ paths:
                 quotaBytes: { type: integer, minimum: 104857600 }
                 password: { type: string, minLength: 12, maxLength: 128 }
                 newPassword: { type: boolean }
+                currentPassword: { type: string, maxLength: 128, description: The password that opens the private keys of the panel. }
+                encrypt: { type: boolean, description: 'True: the panel makes OpenPGP keys. False: the encryption is off. Not with `publicKey`.' }
                 publicKey: { type: [string, 'null'], maxLength: 65536 }
       responses:
         '200':
@@ -1198,6 +1218,32 @@ paths:
       responses:
         '202': { $ref: '#/components/responses/JobOnly' }
         '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/mail/mailboxes/{id}/private-key:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    get:
+      tags: [Email]
+      summary: Get the private keys that the panel made for a mailbox
+      description: >-
+        The private keys are in ASCII armour, the newest first. Each key is protected with the
+        password that the mailbox had when the panel made the key, or with a later password
+        (refer to `currentPassword`). A mail program needs the file and that password to read
+        the encrypted messages. The panel records each request in the audit log.
+      responses:
+        '200':
+          description: The private keys.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [address, privateKey, passwordCurrent]
+                properties:
+                  address: { type: string }
+                  privateKey: { type: string, description: One or more OpenPGP private key blocks. }
+                  publicKey: { type: [string, 'null'], description: The public key that the mail server uses now. }
+                  passwordCurrent: { type: boolean, description: False when the private keys have an older password of the mailbox. }
+        '404': { description: The mailbox is not there, or the panel made no keys for it. }
         '422': { $ref: '#/components/responses/Invalid' }
 
   /v1/mail/aliases:
@@ -2844,6 +2890,12 @@ components:
             keyType: { type: string, example: 'OpenPGP v4: RSA-3072, X25519' }
             expiresAt: { type: [string, 'null'], format: date-time }
             warnings: { type: array, items: { type: string }, description: 'For example `expiresSoon`, `weakRsa` or `addressMismatch`.' }
+        privateKey:
+          type: [object, 'null']
+          description: Not null when the panel made the keys of the mailbox and has the protected private key.
+          required: [passwordCurrent]
+          properties:
+            passwordCurrent: { type: boolean, description: False when the private key has an older password of the mailbox. }
         createdAt: { type: string, format: date-time }
     MailAlias:
       type: object
