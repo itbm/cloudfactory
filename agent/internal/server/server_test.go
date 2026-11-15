@@ -160,3 +160,4 @@ func (nopEdge) PanelCertificate(context.Context, string) (string, error) {
 }
 func (nopEdge) SetPanelCertificate(context.Context, string, string) error { return nil }
 func (nopEdge) PanelCARoot(context.Context) (string, error)               { return "", nil }
+func (nopEdge) SetPanelBrands(context.Context, string, []string) error    { return nil }

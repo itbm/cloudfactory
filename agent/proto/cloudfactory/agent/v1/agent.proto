@@ -34,6 +34,8 @@ service AgentService {
   rpc SetSftp(SetSftpRequest) returns (JobAccepted);
   rpc ConfigureHost(ConfigureHostRequest) returns (JobAccepted);
   rpc SetPanelCertificate(SetPanelCertificateRequest) returns (JobAccepted);
+  // Sets the panel domains of the resellers (white label). Only the panel server has them.
+  rpc SetPanelBrands(SetPanelBrandsRequest) returns (JobAccepted);
   rpc SetDatabaseServer(DatabaseServerRequest) returns (JobAccepted);
   rpc DeleteDatabaseServer(DeleteDatabaseServerRequest) returns (JobAccepted);
   rpc SetDnsZones(SetDnsZonesRequest) returns (JobAccepted);
@@ -402,6 +404,15 @@ message SetPanelCertificateRequest {
   string job_id = 1;
   // "internal" (the certificate authority of the panel) or "letsencrypt".
   string method = 2;
+}
+
+// The panel domains of the resellers. The edge proxy sends each of them to the panel, as the
+// panel domain, and gets a TLS certificate for each of them: from Let's Encrypt for a public
+// name, else from the certificate authority of the panel. The list is the full list: a domain
+// that is not in it loses its route and its certificate policy.
+message SetPanelBrandsRequest {
+  string job_id = 1;
+  repeated string domains = 2;
 }
 
 // One other server that this server has an encrypted tunnel to.

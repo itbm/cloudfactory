@@ -154,6 +154,10 @@ func (s *Service) SetPanelCertificate(_ context.Context, r *connect.Request[agen
 	return s.submit(s.Deps.SetPanelCertificate(r.Msg))
 }
 
+func (s *Service) SetPanelBrands(_ context.Context, r *connect.Request[agentv1.SetPanelBrandsRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.SetPanelBrands(r.Msg))
+}
+
 func (s *Service) SetCronJobs(_ context.Context, r *connect.Request[agentv1.SetCronJobsRequest]) (*connect.Response[agentv1.JobAccepted], error) {
 	return s.submit(s.Deps.SetCronJobs(r.Msg))
 }

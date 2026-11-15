@@ -33,6 +33,8 @@ type Edge interface {
 	// PanelCertificate gives the certificate method of the panel domain, or "" with no panel.
 	PanelCertificate(ctx context.Context, domain string) (string, error)
 	SetPanelCertificate(ctx context.Context, domain, method string) error
+	// SetPanelBrands sets the panel domains of the resellers (white label).
+	SetPanelBrands(ctx context.Context, domain string, brands []string) error
 	// PanelCARoot gives the root certificate of the CA of the panel in PEM format.
 	PanelCARoot(ctx context.Context) (string, error)
 }
