@@ -7,12 +7,14 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"html"
 	"io"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"text/tabwriter"
@@ -98,12 +100,40 @@ Usage:
                                                        A Valkey database has a database number, and always a user with the same name.
                                                        With no database server, the panel uses the first one of the engine with space.
   cf databases delete WEBSITE DATABASE
+  cf databases adminer WEBSITE DATABASE [--read-only]  Open a MariaDB or PostgreSQL database in Adminer, with a temporary
+                                                       database user that expires after 60 minutes. The command writes an
+                                                       HTML file that signs you in: open it in your browser.
   cf database-users list WEBSITE
   cf database-users create WEBSITE --engine mariadb|postgresql --name NAME [--grant DATABASE=readonly|readwrite]...
                            [--database-server DATABASE_SERVER]
   cf database-users set WEBSITE USER [--grant DATABASE=readonly|readwrite]... [--no-grants]
                         [--access website|anywhere] [--reset-password]
   cf database-users delete WEBSITE USER
+  cf mail domains list [--customer ID]
+  cf mail domains add DOMAIN [--customer ID] [--server SERVER]
+  cf mail domains get DOMAIN               Show the DNS records to add, and which of them the last check found.
+  cf mail domains check DOMAIN             Read the DNS records of the domain now.
+  cf mail domains retry DOMAIN             Add a mail domain again after the first job failed.
+  cf mail domains remove DOMAIN            Remove a mail domain that has no mailboxes and no addresses.
+  cf mail mailboxes list [--domain DOMAIN] [--customer ID]
+  cf mail mailboxes create ADDRESS [--quota-mb N] [--encrypt]
+                                           The panel shows the password one time. With --encrypt, the panel
+                                           makes OpenPGP keys and the mail server encrypts new mail.
+  cf mail mailboxes set ADDRESS [--quota-mb N] [--new-password] [--encrypt | --public-key FILE | --no-encryption]
+  cf mail mailboxes private-key ADDRESS [--output FILE]
+                                           The private key that the panel made. It needs the password of the mailbox.
+  cf mail mailboxes delete ADDRESS         Remove a mailbox and its messages.
+  cf mail aliases list [--domain DOMAIN] [--customer ID]
+  cf mail aliases create ADDRESS --to ADDRESS... [--forward]
+                                           An alias sends to mailboxes of the customer. With --forward, the
+                                           destinations are addresses on other mail servers.
+  cf mail aliases delete ADDRESS
+  cf mail clusters list
+  cf mail clusters create NAME --hostname NAME --member SERVER=HOSTNAME=ADDRESS[=REGION]...
+                                           3 or 5 servers with the email role and no mail server. Each member
+                                           has all the mail. ADDRESS is the public address of the server.
+  cf mail clusters get CLUSTER             Show the step of the setup, the members and the DNS records.
+  cf mail clusters retry CLUSTER           Start a step that failed again.
   cf dns list [--customer ID]                          The DNS zones, and the name servers of the panel.
   cf dns create DOMAIN [--customer ID]                 Then give the name servers to the registrar of the domain.
   cf dns get ZONE                                      The state of the zone, and the DS record when DNSSEC is on.
@@ -125,6 +155,18 @@ Usage:
   cf networks remove NETWORK [--website WEBSITE]... [--database-server DATABASE_SERVER]...
   cf networks rename NETWORK NAME
   cf networks delete NETWORK                           The members stay. The network "default" cannot be removed.
+  cf notifications list [--state STATE] [--event EVENT] [--limit N | --all]
+                                                       The emails that the panel sent. STATE is queued, sent, failed or skipped.
+  cf notifications get ID                              The text of one email.
+  cf notifications retry ID                            Send a failed or skipped email again.
+  cf notifications preferences                         The events that send an email to you.
+  cf notifications on|off EVENT...                     For example: cf notifications off job.failed usage.alert
+  cf mail-server get                                   The SMTP server (administrators: of the panel; resellers: their own).
+  cf mail-server set --host HOST --from ADDRESS [--port 587] [--encryption tls|starttls|none] [--user USER]
+                     [--from-name NAME] [--reply-to ADDRESS] [--keep-password] [--off]
+                                                       The password comes from CF_SMTP_PASSWORD, or the prompt.
+  cf mail-server test [--to ADDRESS]                   Send a test email at once.
+  cf mail-server remove
   cf backups list|create WEBSITE
   cf backups restore WEBSITE SNAPSHOT [--scope website|database|file] [--item ITEM] [--remove-new-files]
                        --remove-new-files is for a full website. It deletes the files that are not in the backup.
@@ -141,6 +183,8 @@ Usage:
                         [--roles web,database,dns] [--dns-name HOST | --no-dns-name]
                        A server with the role dns and a name server host name answers for all DNS zones.
   cf servers update SERVER [--policy security|all|tools]   "tools" updates the held container tools.
+  cf servers mail SERVER --hostname NAME   Turn on email for a server, or change the host name of its mail server.
+                                           The name needs an A or AAAA record with the address of the server.
   cf servers reboot SERVER
   cf servers update-agent SERVER [--version VERSION] [--allow-downgrade]
   cf servers join-token
@@ -335,6 +379,10 @@ func (a *app) dispatch(ctx context.Context, args []string) error {
 		return a.dns(ctx, sub, rest)
 	case "networks", "network":
 		return a.networks(ctx, sub, rest)
+	case "notifications", "notification":
+		return a.notifications(ctx, sub, rest)
+	case "mail-server":
+		return a.mailServer(ctx, sub, rest)
 	case "backups", "backup":
 		return a.backups(ctx, sub, rest)
 	case "jobs", "job":
@@ -349,6 +397,8 @@ func (a *app) dispatch(ctx context.Context, args []string) error {
 		return a.images(ctx, sub, rest)
 	case "sftp":
 		return a.sftp(ctx, sub, rest)
+	case "mail", "email":
+		return a.mail(ctx, sub, rest)
 	case "customers", "customer":
 		return a.customers(ctx, sub, rest)
 	case "users", "user":
@@ -1024,8 +1074,112 @@ func (a *app) databases(ctx context.Context, sub string, args []string) error {
 			return err
 		}
 		return a.change(ctx, http.MethodDelete, fmt.Sprintf("/websites/%s/databases/%v", w.ID, db["id"]), nil)
+	case "adminer":
+		if err := need(args, 2, "a website and a database"); err != nil {
+			return err
+		}
+		fs := flag.NewFlagSet("adminer", flag.ContinueOnError)
+		readOnly := fs.Bool("read-only", false, "the temporary database user can only read")
+		if err := fs.Parse(args[2:]); err != nil {
+			return err
+		}
+		l, err := a.dbList(ctx, w.ID)
+		if err != nil {
+			return err
+		}
+		db, err := l.find(l.Databases, args[1], "database")
+		if err != nil {
+			return err
+		}
+		privileges := "readwrite"
+		if *readOnly {
+			privileges = "readonly"
+		}
+		return a.adminer(ctx, w.ID, cell(db["id"]), privileges)
 	}
 	return fmt.Errorf("unknown command databases %s", sub)
+}
+
+// adminerLogin is a sign-in to Adminer (POST /websites/{id}/databases/{id}/adminer).
+type adminerLogin struct {
+	ID        string `json:"id"`
+	Status    string `json:"status"`
+	URL       string `json:"url"`
+	Username  string `json:"username"`
+	ExpiresAt string `json:"expiresAt"`
+}
+
+// adminer opens a database in Adminer. The panel makes a temporary database user for the
+// database. Adminer has no sign-in form for a password: the browser sends the user and its
+// password with a POST request. Thus the command writes a small HTML file that does this, and
+// the user opens the file in a browser.
+func (a *app) adminer(ctx context.Context, websiteID, databaseID, privileges string) error {
+	var out struct {
+		Login adminerLogin      `json:"login"`
+		Form  map[string]string `json:"form"`
+		Jobs  []client.Job      `json:"jobs"`
+	}
+	if err := a.api.Do(ctx, http.MethodPost, "/websites/"+websiteID+"/databases/"+databaseID+"/adminer", nil, map[string]any{"privileges": privileges}, &out); err != nil {
+		return err
+	}
+	if a.json {
+		return a.printJSON(out)
+	}
+	if a.noWait {
+		fmt.Fprintf(a.out, "Sign-in %s waits for its jobs. The password of the temporary database user is in the answer with --json only.\n", out.Login.ID)
+		return nil
+	}
+	for _, job := range out.Jobs {
+		if err := a.wait(ctx, job.ID); err != nil {
+			return err
+		}
+	}
+	var state struct {
+		Login adminerLogin `json:"login"`
+	}
+	if err := a.api.Do(ctx, http.MethodGet, "/adminer-logins/"+out.Login.ID, nil, nil, &state); err != nil {
+		return err
+	}
+	if state.Login.Status != "ready" {
+		return fmt.Errorf("adminer cannot sign in: the status of the sign-in is %s", state.Login.Status)
+	}
+	path, err := writeAdminerLauncher(out.Login.URL, out.Form)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(a.out, "Adminer: %s\nTemporary database user: %s (expires %s)\n", out.Login.URL, out.Login.Username, out.Login.ExpiresAt)
+	fmt.Fprintf(a.out, "Open this file in your browser to sign in: %s\nThe file has the password of the temporary database user. Remove it after you open it.\n", path)
+	return nil
+}
+
+// writeAdminerLauncher writes an HTML file that sends the sign-in form to Adminer. Only the
+// user can read the file.
+func writeAdminerLauncher(address string, form map[string]string) (string, error) {
+	var b strings.Builder
+	b.WriteString("<!doctype html>\n<html lang=\"en-GB\"><meta charset=\"utf-8\"><title>Open Adminer</title>\n")
+	b.WriteString("<body onload=\"document.forms[0].submit()\"><form method=\"post\" action=\"" + html.EscapeString(address) + "\">\n")
+	keys := make([]string, 0, len(form))
+	for k := range form {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		fmt.Fprintf(&b, "<input type=\"hidden\" name=\"auth[%s]\" value=\"%s\">\n", html.EscapeString(k), html.EscapeString(form[k]))
+	}
+	b.WriteString("<noscript><button>Open Adminer</button></noscript></form></body></html>\n")
+	f, err := os.CreateTemp("", "cf-adminer-*.html")
+	if err != nil {
+		return "", err
+	}
+	if err := f.Chmod(0o600); err != nil {
+		f.Close()
+		return "", err
+	}
+	if _, err := f.WriteString(b.String()); err != nil {
+		f.Close()
+		return "", err
+	}
+	return f.Name(), f.Close()
 }
 
 // valkeyConnection tells how an application connects to a new Valkey database. The agent gives
@@ -1262,7 +1416,7 @@ func (a *app) servers(ctx context.Context, sub string, args []string) error {
 	switch sub {
 	case "list", "ls":
 		return a.simpleList(ctx, "/servers", []string{"name", "state", "roles", "agentVersion", "rebootRequired", "id"})
-	case "get", "set", "update", "reboot", "update-agent", "check", "remove", "rm":
+	case "get", "set", "mail", "update", "reboot", "update-agent", "check", "remove", "rm":
 		return a.server(ctx, sub, args)
 	case "join-token":
 		var out struct {

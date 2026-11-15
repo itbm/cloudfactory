@@ -345,6 +345,41 @@ var ruleIPv6 = rule{
 // An IPv6 address in lower case, for the value of an AAAA record. It has only hexadecimal groups and colons: no IPv4 part and no zone.
 func IPv6(s string) error { return ruleIPv6.check(s) }
 
+var ruleMailAddress = rule{
+	what:      "mail address",
+	pattern:   regexp.MustCompile(`^[a-z0-9]([a-z0-9._+-]{0,62}[a-z0-9])?@([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`),
+	not:       []*regexp.Regexp{regexp.MustCompile(`\.\.`), regexp.MustCompile(`\.[0-9]+$`)},
+	maxLength: 254,
+	echo:      true,
+}
+
+// MailAddress checks a value with the rule "mailAddress" of schema/input-rules.json.
+//
+// A mail address in lower case, for example the destination of a forwarder.
+func MailAddress(s string) error { return ruleMailAddress.check(s) }
+
+var ruleMailLocalPart = rule{
+	what:    "mail address name",
+	pattern: regexp.MustCompile(`^[a-z0-9]([a-z0-9._-]{0,62}[a-z0-9])?$`),
+	not:     []*regexp.Regexp{regexp.MustCompile(`\.\.`)},
+	echo:    true,
+}
+
+// MailLocalPart checks a value with the rule "mailLocalPart" of schema/input-rules.json.
+//
+// The part of a mail address before the @ sign, in lower case. It has no plus sign: the mail server uses the text after a plus sign as a tag of the same mailbox.
+func MailLocalPart(s string) error { return ruleMailLocalPart.check(s) }
+
+var ruleMailPasswordHash = rule{
+	what:    "password hash",
+	pattern: regexp.MustCompile(`^\$2y\$1[0-9]\$[./A-Za-z0-9]{53}$`),
+}
+
+// MailPasswordHash checks a value with the rule "mailPasswordHash" of schema/input-rules.json.
+//
+// The bcrypt hash of a mailbox password. The panel makes it, and the agent gives it to the mail server. The agent never gets the password.
+func MailPasswordHash(s string) error { return ruleMailPasswordHash.check(s) }
+
 var ruleExtension = rule{
 	what:    "PHP extension",
 	pattern: regexp.MustCompile(`^[a-z0-9_]{1,40}$`),
@@ -368,6 +403,17 @@ var ruleRestorePath = rule{
 //
 // The path of a file or a directory in a website. It starts with "/". It has no empty part, no "." part, no ".." part and no "/" at the end.
 func RestorePath(s string) error { return ruleRestorePath.check(s) }
+
+var ruleRoutePath = rule{
+	what:    "route path",
+	pattern: regexp.MustCompile(`^/[a-z0-9]{1,40}/$`),
+	echo:    true,
+}
+
+// RoutePath checks a value with the rule "routePath" of schema/input-rules.json.
+//
+// The path prefix of the route of a website in the edge proxy, for example "/01jbq3z5k8n6/". It starts and ends with a slash, and has 1 to 40 lower-case letters and digits.
+func RoutePath(s string) error { return ruleRoutePath.check(s) }
 
 var ruleSecretName = rule{
 	what:    "name of a deploy secret",
@@ -467,8 +513,12 @@ var rules = map[string]*rule{
 	"iniValue":           &ruleIniValue,
 	"ipv4":               &ruleIPv4,
 	"ipv6":               &ruleIPv6,
+	"mailAddress":        &ruleMailAddress,
+	"mailLocalPart":      &ruleMailLocalPart,
+	"mailPasswordHash":   &ruleMailPasswordHash,
 	"phpExtension":       &ruleExtension,
 	"restorePath":        &ruleRestorePath,
+	"routePath":          &ruleRoutePath,
 	"secretName":         &ruleSecretName,
 	"secretValue":        &ruleSecretValue,
 	"sha256":             &ruleSHA256,

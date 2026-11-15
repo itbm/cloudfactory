@@ -1,0 +1,16 @@
+# The web server of the Adminer container. The edge proxy terminates TLS and sends the requests
+# of one path on the Adminer domain here. Each path is Adminer: Adminer makes its links from the
+# address of the request, so it works with each path prefix.
+{
+	frankenphp
+	admin off
+	auto_https off
+	persist_config off
+}
+
+:8080 {
+	root * /srv/adminer
+	header -Server
+	rewrite * /index.php
+	php
+}

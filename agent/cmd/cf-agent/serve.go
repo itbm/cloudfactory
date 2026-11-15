@@ -224,8 +224,13 @@ func newDeps(cfg config.Config, run execx.Runner) (*actions.Deps, error) {
 		EdgeImage:    cfg.Registry + "/edge:" + version,
 		AgentBinary:  binaryPath,
 		SftpImage:    cfg.Registry + "/sftp:" + version,
-		DnsImage:     cfg.Registry + "/dns:" + version,
-		SftpPort:     cfg.SftpPort,
+		MailImage:    cfg.Registry + "/mail:" + version,
+		// The database node of a mail cluster uses the MariaDB service image.
+		MailDBImage:   cfg.Registry + "/mariadb:" + version,
+		MailKeepImage: cfg.Registry + "/mail-keep:" + version,
+		WebmailImage:  cfg.Registry + "/webmail:" + version,
+		DnsImage:      cfg.Registry + "/dns:" + version,
+		SftpPort:      cfg.SftpPort,
 		// The panel uses these addresses for the DNS records of the websites on this server.
 		PublicAddresses: cfg.PublicAddresses,
 	}
@@ -541,12 +546,18 @@ func work(ctx context.Context, cfg config.Config, g gate.Gate) error {
 	if err := deps.EnsureDns(ctx); err != nil {
 		slog.Error("start the DNS server", "err", err)
 	}
+	// The mail server, on a server that has one. The agent does not wait for it.
+	go func() {
+		if err := deps.RefreshMail(ctx); err != nil {
+			slog.Error("start the mail server", "err", err)
+		}
+	}()
 	runner := &jobs.Runner{Dir: filepath.Join(cfg.DataDir, "jobs"), Reporter: reporter,
 		Timeout: time.Duration(cfg.JobTimeoutMinutes) * time.Minute, LongTimeout: time.Duration(cfg.LongJobTimeoutMinutes) * time.Minute}
 	if job, ok := deps.ResumeReboot(); ok {
 		runner.Resume(job)
 	}
-	collector := status.Collector{Run: g, Apt: apt, AgentVersion: version, GVisorVersion: gv.Current, Services: []string{"cf-agent", "ssh", "cf-sftp"}, UserServices: []string{host.EdgeUser + ":cf-edge.service"}, DiskPath: cfg.SitesDir, Extra: deps.FillReport}
+	collector := status.Collector{Run: g, Apt: apt, AgentVersion: version, GVisorVersion: gv.Current, Services: []string{"cf-agent", "ssh", "cf-sftp"}, UserServices: []string{host.EdgeUser + ":cf-edge.service"}, DiskPath: cfg.SitesDir, Net: &status.NetCounter{}, Extra: deps.FillReport}
 
 	go reportLoop(ctx, reporter, collector, time.Duration(cfg.ReportSeconds)*time.Second, cfg.PanelServerCertificateSHA256 == "", deps.SavePanelCAPin)
 	// The cron jobs of the websites.
@@ -555,6 +566,8 @@ func work(ctx context.Context, cfg config.Config, g gate.Gate) error {
 		for range time.Tick(24 * time.Hour) {
 			runner.Prune(time.Now().Add(-30 * 24 * time.Hour))
 			deps.PruneImages()
+			// The edge proxy renews the certificate of the mail host name.
+			deps.RenewMailCertificate(ctx)
 		}
 	}()
 

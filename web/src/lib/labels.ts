@@ -1,4 +1,4 @@
-import type { DatabaseServerStatus, DnsDelegation, DnsRecordType, DnsZoneStatus, Domain, HostUpdatePolicy, JobState, RuntimeKind, ServerRole, ServerState, UpdatePolicy, WebsiteKind, WebsiteStatus } from "../api/types";
+import type { DatabaseServerStatus, DnsDelegation, DnsRecordType, DnsZoneStatus, Domain, HostUpdatePolicy, JobState, MailStatus, RuntimeKind, ServerRole, ServerState, UpdatePolicy, WebsiteKind, WebsiteStatus } from "../api/types";
 import type { Tone } from "../components/ui";
 import { daysUntil, longDate, relativeTime } from "./format";
 
@@ -127,6 +127,14 @@ export const DATABASE_HOST = { mariadb: "mariadb.internal", postgresql: "postgre
 
 /** The port of the first database server of an engine. A second database server of the engine gets the next port. */
 export const DATABASE_PORT = { mariadb: 3306, postgresql: 5432, valkey: 6379 } as const;
+
+/** The status of a mail domain, a mailbox, an alias or a forwarder. */
+export const MAIL_STATUS: Record<MailStatus, { label: string; tone: Tone }> = {
+  pending: { label: "Setting up", tone: "info" },
+  active: { label: "Active", tone: "success" },
+  failed: { label: "Failed", tone: "danger" },
+  removing: { label: "Removing", tone: "info" },
+};
 
 export const DATABASE_SERVER_STATUS: Record<DatabaseServerStatus, { label: string; tone: Tone }> = {
   starting: { label: "Starting", tone: "info" },

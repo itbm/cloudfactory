@@ -45,6 +45,15 @@ type fakeEdge struct {
 	panel, root string
 	// methods are the methods that SetPanelCertificate got, in order.
 	methods []string
+	// brands are the reseller panel domains that SetPanelBrands got last.
+	brands []string
+}
+
+func (f *fakeEdge) SetPanelBrands(_ context.Context, _ string, brands []string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.brands = brands
+	return nil
 }
 
 func (f *fakeEdge) PanelCertificate(context.Context, string) (string, error) {
@@ -130,8 +139,12 @@ func settings(dir string, run *execx.Fake, edge *fakeEdge) *Deps {
 
 // testUID gives the UID and the GID of each user in the tests. The user of a database server
 // has an ID in the range of these users: 10000 and the last digit of the ID of the database
-// server. Each other user has the ID of a website user.
+// server. A service user (mail, webmail) has a system ID. Each other user has the ID of a
+// website user.
 func testUID(name string) (int, error) {
+	if name == host.MailUser || name == host.WebmailUser {
+		return 988, nil
+	}
 	if id, ok := strings.CutPrefix(name, host.DatabaseUserPrefix); ok && id != "" {
 		return host.DatabaseIDMin + int(id[len(id)-1]-'0'), nil
 	}
@@ -222,6 +235,11 @@ func TestCheckWebsiteRefusesBadValues(t *testing.T) {
 			w.Domains = append(w.Domains, &agentv1.Domain{Name: "y.example", Kind: "primary"})
 		},
 		func(w *agentv1.Website) { w.Domains[0].Name = "acme.example\nevil" },
+		func(w *agentv1.Website) { w.RoutePath = "/../" },
+		func(w *agentv1.Website) {
+			w.RoutePath = "/t1/"
+			w.Domains = append(w.Domains, &agentv1.Domain{Name: "www.acme.example", Kind: "redirect"})
+		},
 	} {
 		w := website("ghcr.io/cloudfactory/frankenphp-php8.4:8.4.0-1")
 		change(w)

@@ -17,7 +17,7 @@ describe("the state from the panel API", () => {
     const s = getState();
     expect(s.session).toMatchObject({ signedIn: true, user: { name: "Alex Admin", role: "administrator" }, contextId: "platform" });
     expect(s.websites).toHaveLength(14);
-    expect(s.servers.map((x) => x.name)).toEqual(["web-1", "web-2", "web-3"]);
+    expect(s.servers.map((x) => x.name)).toEqual(["mail-1", "web-1", "web-2", "web-3"]);
     expect(s.servers.find((x) => x.name === "web-3")).toMatchObject({ state: "degraded", agentUpdateAvailable: true, stateDetail: "Degraded: cf-sftp failed" });
     expect(s.images.find((i) => i.name === "FrankenPHP · PHP 8.4")).toMatchObject({ running: "0.1.9", available: "0.1.10" });
     expect(s.rollout).toMatchObject({ state: "done", rolledBack: 1 });

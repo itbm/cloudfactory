@@ -64,6 +64,26 @@ type Site struct {
 	// Stopped is true for a website that is stopped, for example because its customer is
 	// suspended. The edge proxy then answers with StoppedPage, not with an empty 502 answer.
 	Stopped bool
+	// Page is the text that the edge proxy gives for each request, with status 200. It is for
+	// a host name that has no website but needs a certificate: the host name of the mail
+	// server. The edge proxy gets the certificate, and the agent gives it to the mail server.
+	Page string
+	// Paths send some paths to a different port. The webmail is on the host name of the mail
+	// server, and the JMAP paths go to the mail server: the browser then uses one origin.
+	Paths []PathRoute
+	// Path is a path prefix such as "/01jbq3z5k8n6/", or "". With a prefix, the route has only
+	// the paths that start with it, so that more websites can have the same host. The database
+	// tool of each customer uses this (Adminer): all customers have one host.
+	Path string
+}
+
+// PathRoute sends the requests for some paths to a port. A path that ends with "*" is a prefix.
+// With port 0, the edge proxy refuses the requests with status 404. With methods, the route is
+// only for requests with one of these methods.
+type PathRoute struct {
+	Paths   []string
+	Methods []string
+	Port    int
 }
 
 // StoppedPage is the page of a stopped website. It has status 503. It does not tell a visitor
@@ -93,7 +113,8 @@ func (c *Client) EnsureBase(ctx context.Context) error {
 	return c.expect(ctx, http.MethodPost, "/load", BaseConfig(), http.StatusOK)
 }
 
-// BaseConfig is the configuration of a new edge proxy. It logs requests as JSON.
+// BaseConfig is the configuration of a new edge proxy. It logs requests as JSON, and it
+// counts the traffic of each host.
 func BaseConfig() map[string]any {
 	return map[string]any{
 		// CF-13: a Unix socket, not a TCP port. Only the edge user and root can open it.
@@ -107,6 +128,8 @@ func BaseConfig() map[string]any {
 			// answers ACME HTTP challenges.
 			"http_port":  8080,
 			"https_port": 8443,
+			// The traffic of each host, for the bandwidth of each website (Traffic).
+			"metrics": MetricsConfig(),
 			"servers": map[string]any{serverName: map[string]any{
 				"listen": []string{":8443"},
 				"routes": []any{},
@@ -182,9 +205,28 @@ func unknownID(body []byte) bool { return bytes.Contains(body, []byte("unknown o
 // SiteRoute is the route of the primary domain and the aliases. The route of a stopped website
 // keeps the domains, so that the edge proxy keeps their certificates.
 func SiteRoute(s Site, upstream string) map[string]any {
-	handler := map[string]any{
-		"handler":   "reverse_proxy",
-		"upstreams": []any{map[string]any{"dial": upstream + ":" + strconv.Itoa(s.Port)}},
+	proxy := func(port int) map[string]any {
+		return map[string]any{
+			"handler":   "reverse_proxy",
+			"upstreams": []any{map[string]any{"dial": upstream + ":" + strconv.Itoa(port)}},
+		}
+	}
+	handler := proxy(s.Port)
+	if len(s.Paths) > 0 {
+		routes := make([]any, 0, len(s.Paths)+1)
+		for _, p := range s.Paths {
+			handle := proxy(p.Port)
+			if p.Port == 0 {
+				handle = map[string]any{"handler": "static_response", "status_code": 404}
+			}
+			match := map[string]any{"path": p.Paths}
+			if len(p.Methods) > 0 {
+				match["method"] = p.Methods
+			}
+			routes = append(routes, map[string]any{"match": []any{match}, "handle": []any{handle}, "terminal": true})
+		}
+		routes = append(routes, map[string]any{"handle": []any{handler}})
+		handler = map[string]any{"handler": "subroute", "routes": routes}
 	}
 	if s.Stopped {
 		handler = map[string]any{
@@ -197,9 +239,21 @@ func SiteRoute(s Site, upstream string) map[string]any {
 			"body": StoppedPage,
 		}
 	}
+	if s.Page != "" {
+		handler = map[string]any{
+			"handler":     "static_response",
+			"status_code": 200,
+			"headers":     map[string]any{"Content-Type": []string{"text/plain; charset=utf-8"}},
+			"body":        s.Page,
+		}
+	}
+	match := map[string]any{"host": s.Hosts}
+	if s.Path != "" {
+		match["path"] = []string{s.Path + "*"}
+	}
 	return map[string]any{
 		"@id":      "cf-" + s.WebsiteID,
-		"match":    []any{map[string]any{"host": s.Hosts}},
+		"match":    []any{match},
 		"handle":   []any{handler},
 		"terminal": true,
 	}
@@ -264,6 +318,11 @@ func (c *Client) ApplyPanel(ctx context.Context, domain, method string, apiPort,
 	if err := c.SetPanelCertificate(ctx, domain, method); err != nil {
 		return err
 	}
+	// The reseller panel domains stay in the route (SetPanelBrands).
+	brands, err := c.PanelBrands(ctx)
+	if err != nil {
+		return err
+	}
 	dial := func(port int) []any { return []any{map[string]any{"dial": c.Upstream + ":" + strconv.Itoa(port)}} }
 	api := map[string]any{
 		"handler":   "reverse_proxy",
@@ -277,7 +336,7 @@ func (c *Client) ApplyPanel(ctx context.Context, domain, method string, apiPort,
 	}
 	route := map[string]any{
 		"@id":   "cf-panel",
-		"match": []any{map[string]any{"host": []string{domain}}},
+		"match": []any{map[string]any{"host": PanelHosts(domain, brands)}},
 		"handle": []any{map[string]any{"handler": "subroute", "routes": []any{
 			// R-17: browsers use only HTTPS for the panel domain after the first visit.
 			map[string]any{"handle": []any{map[string]any{"handler": "headers", "response": map[string]any{"set": map[string]any{

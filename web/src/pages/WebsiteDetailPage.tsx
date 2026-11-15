@@ -6,6 +6,7 @@ import { backupsReady, imageOf, runtimeLabel, supportEnds, tagOf, updateReady } 
 import { retryWebsite, setPower, backupNow, showWebsite } from "../api/store";
 import type { Website } from "../api/types";
 import { Topbar } from "../components/Layout";
+import { UsagePanel, WebsiteAlertSummary } from "../components/UsageCharts";
 import { WebsiteMenu } from "../components/WebsiteMenu";
 import { Card, Empty, FormError, JobError, JobRow, Live, Meter, Status, Tabs, TerraformBadge, TerraformNotice } from "../components/ui";
 import { bytes, longDate, percent, ratio, relativeTime } from "../lib/format";
@@ -23,6 +24,7 @@ import { SettingsTab } from "./website/SettingsTab";
 
 const TABS = [
   ["overview", "Overview"],
+  ["usage", "Usage"],
   ["domains", "Domains"],
   ["runtime", "Runtime"],
   ["files", "Files"],
@@ -112,8 +114,10 @@ export function ResourcesCard({ website }: { website: Website }) {
     ["Processes", `${use.processes} of ${limits.processes}`, ratio(use.processes, limits.processes)],
     ["Disk I/O", `${bytes(use.diskIoBytesPerSecond)}/s of ${bytes(limits.diskIoBytesPerSecond)}/s`, ratio(use.diskIoBytesPerSecond, limits.diskIoBytesPerSecond)],
   ];
+  // The bandwidth limit is for a calendar month. A plan with no bandwidth limit shows no meter.
+  if (limits.bandwidthBytes) rows.push(["Bandwidth this month", `${bytes(website.bandwidthBytes)} of ${bytes(limits.bandwidthBytes)}`, ratio(website.bandwidthBytes, limits.bandwidthBytes)]);
   return (
-    <Card title="Resources">
+    <Card title="Resources" actions={<Link to={`/websites/${website.id}/usage`}>See graphs</Link>}>
       <div className="card-body">
         {rows.map(([label, text, value, note]) => (
           <div className="resource" key={label}>
@@ -213,6 +217,7 @@ function Overview({ website }: { website: Website }) {
   return (
     <>
       <UpdateBanner website={website} />
+      <WebsiteAlertSummary websiteId={website.id} />
       <div className="detail-grid">
         <div className="stack">
           <RuntimeCard website={website} />
@@ -322,6 +327,7 @@ export function WebsiteDetailPage() {
             <p>A {WEBSITE_KIND[website.kind].toLowerCase()} has no public address, so it has no domains.</p>
           </Empty>
         ))}
+        {tab === "usage" && <UsagePanel key={website.id} subject="website" id={website.id} />}
         {tab === "runtime" && <RuntimeTab website={website} />}
         {tab === "databases" && <DatabasesTab website={website} />}
         {tab === "files" && <FilesTab website={website} />}

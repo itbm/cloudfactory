@@ -163,6 +163,91 @@ The product specification, section 6.4, gives the requirements.
   request for a database or a database user that has no database server, and a database
   server of a different customer.
 
+## Email
+
+- One mail server (Stalwart) on a server has the mail of all customers of that server. The
+  panel permits a change of a mail domain, a mailbox or an address only to a user of its
+  customer, to the reseller of that customer and to an administrator.
+- The container `cf-mail` runs in gVisor as the Unix user `cf-mail`, not as root. It has no
+  capabilities, cannot get new privileges, and has a read-only root file system.
+- The management API of the mail server has all rights on the mail. It is only on the
+  private service address `169.254.77.1:19025`, which the firewall keeps for root and the edge
+  proxy. Each request also needs the password of the administrator. The worker of the agent
+  connects through the root helper.
+- The worker cannot run a program as `cf-mail`, and cannot run a program in the container.
+  The root helper lets it only pull the image of this agent version, and start and stop the
+  service.
+- The root helper makes the unit, the settings and the firewall rules from its own settings.
+  The worker sends only the host name, and the root helper examines it.
+- The root helper copies the certificate of the mail host name from the storage of the edge
+  proxy. The user `cf-edge` owns that storage, so the root helper reads the files with no
+  symbolic links, and accepts only a certificate for the host name with its own key.
+- The panel sends the bcrypt hash of a mailbox password to the agent. The panel does not keep
+  the password, and the job record has no hash after the job.
+- A customer adds a domain that a different customer could own only after a DNS TXT record
+  shows that the customer controls the domain, as for a website domain.
+- The mail server opens connections only to the DNS and to port 25 of public addresses. It
+  cannot connect to a service of the server, to a private network or to the metadata service
+  of a cloud provider.
+- The mail server refuses mail for a domain that it does not have (no open relay). A mail
+  program must sign in to send mail.
+- A private key that the panel makes is protected with the password of the mailbox, and the
+  panel keeps it encrypted with the key of the application. Only the customer of the mailbox,
+  its reseller and an administrator can download it, and each download is an audit event.
+  Somebody with the database of the panel and the key of the application still needs the
+  password of the mailbox to use the private key.
+- The webmail runs as the Unix user `cf-webmail`, not as `cf-mail`. It cannot read the data
+  store of the mail server. It has no capabilities, cannot get new privileges, and has a
+  read-only root file system. The worker cannot run a program as `cf-webmail` or in its
+  container.
+- The edge proxy sends only the JMAP and DAV paths of the mail host name to the mail server.
+  The management API (`/api`) is not on the public host name.
+- The admin dashboard of the webmail has a random password of 64 characters, which no person
+  knows. Only the start script of the image uses it, on the address of the container, to
+  install the PGP plugin. The edge proxy refuses the paths of the dashboard and of the setup,
+  except `GET` requests for the paths that users need. The account of the administrator of
+  the mail server does not open the dashboard.
+- The PGP plugin is a pinned release. The build of the image stops when the package does not
+  have the expected SHA-256 hash. Users cannot upload plugins. The plugin runs in the
+  privileged sandbox of Bulwark: it has the same origin as the webmail. The build adds
+  `images/webmail/pgp-plugin/provision.js` to the plugin, and the image has no other change
+  to the plugin.
+- The files of each mailbox on the mail server have the private keys that the panel made,
+  each protected with the password of the mailbox. Only the owner of the mailbox and the
+  administrator of the mail server can read the file. A person who gets the data of the mail
+  server also needs the password to use the keys. The keys are not in the job records: the
+  panel adds them each time that it sends the job.
+- The plugin reads the key file with the password of the mailbox. It does not keep the
+  password. It keeps the keys in the browser, encrypted with that password.
+- In a mail cluster, the database and the cluster store listen only on the private network of
+  the cluster. Only the members can connect to it, and only root and `cf-mail` can connect to
+  the cluster ports on a member. The secrets of the cluster are encrypted in the database of
+  the panel, and are not in the job records.
+### Adminer
+
+- Each customer has its own Adminer container, in gVisor, with its own Unix user and limits.
+  No two customers share an Adminer process.
+- The container is a member of the networks of its customer only. The firewall lets it
+  connect to the MariaDB and PostgreSQL database servers of that customer, and to nothing
+  else in the private networks.
+- Adminer opens only MariaDB and PostgreSQL, and only a server name that ends in `.internal`.
+  It refuses other names before it connects. This is a second check: the firewall is the
+  first.
+- The user types no password. The panel makes a temporary database user with access to one
+  database only, and gives the password to the browser one time. The panel does not keep the
+  password. The user is removed after 60 minutes, or when its database is removed.
+- A user who can manage the databases of a website (the scope `databases`) can open them in
+  Adminer. The panel refuses this for a suspended customer, and writes an audit event for each
+  sign-in.
+- Adminer has no permanent login, sends `Cache-Control: no-store`, and refuses frames from
+  other sites (`frame-ancestors 'none'` and `X-Frame-Options: DENY`).
+- Adminer does not ask `adminer.org` for a new version, and its content security policy lets
+  the browser connect only to Adminer (`connect-src 'self'`) and refuses workers
+  (`worker-src 'none'`).
+- Each sign-in has its own random address, which Adminer does not show on a different
+  sign-in. Adminer keeps its session cookie on that address only. The address stops working
+  when the temporary user expires.
+
 ## Domains
 
 - The edge proxy serves a domain only after the customer verifies it. To verify a domain, the
@@ -261,7 +346,7 @@ helper does only the work of three lists:
 | --- | --- |
 | Commands | A program as the Unix user of a website (`runuser -u <user>`). A command of a fixed form as the Unix user of a database server or as `cf-edge`, for example a database client in the container of that database server. Some root commands with fixed arguments: the commands of the status report, the updates of the operating system, the reboot, and restic with paths that the root helper examines. |
 | Operations | Root work that has a name, for example `user.ensure`, `unit.write`, `user.quota`, `site.resize` and `db.prepare`. Each operation has typed values, and the root helper examines each value. |
-| Connections | The admin socket of the edge proxy, and some ports on the private service address and on the database network. |
+| Connections | The admin socket of the edge proxy, and some ports on the private service address and on the database network. One of these ports is the management API of the mail server. |
 
 These rules apply to the three lists:
 
@@ -728,6 +813,15 @@ The table also limits the outgoing connections:
   private networks (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `100.64.0.0/10`), the
   link-local addresses (`169.254.0.0/16`, `fe80::/10`), the unique local addresses
   (`fc00::/7`), multicast, and port 25 of other servers.
+- On a server with email, the agent adds the file `/etc/cloudfactory/firewall/mail.nft`. It
+  opens the mail ports 25, 465, 587 and 993 and redirects them to the ports of the mail
+  container. The chain `mail` gets each new connection of the user `cf-mail`. It permits DNS
+  and port 25 of public addresses, and refuses all other connections.
+- The chain `webmail` gets each new connection of the user `cf-webmail`. It permits DNS, the
+  edge proxy of the server (port 443, which the firewall sends to 8443) and port 443 of public
+  addresses. It refuses all other addresses of the server and the private networks.
+- On a member of a mail cluster, the file also accepts the private network (UDP port 51877)
+  from the other members, and the cluster ports on the interface `cf-mail`.
 - The mesh has four sets: `mesh_port`, `mesh_range`, `mesh_endpoints4` and `mesh_endpoints6`.
   The table accepts the UDP port in `mesh_port` only from the addresses in the two sets of
   tunnel addresses. The chain `mesh_input` gets all traffic that comes out of a tunnel. It
@@ -759,6 +853,14 @@ These items stay open in release 0.1:
   then controls the DNS of the domain. The panel asks for the TXT proof only while a
   different customer has a zone for the name. Before you remove a zone, set other name
   servers at the registrar.
+- **One origin for Adminer.** All customers use the same Adminer domain, so the browser puts
+  the Adminer pages of all customers in one origin. Each sign-in has its own random address,
+  `/<tool>/<random key>/`, and the session cookie of Adminer has this path only. Adminer
+  serves no other path, and keeps nothing in the storage of the browser. Thus a script on the
+  Adminer page of one sign-in does not get the cookie of a different sign-in, and cannot find
+  its address. The separation is the cookie path and a random address, not a separate origin.
+  Use one browser profile for each customer when you manage the databases of different
+  customers. A domain for each customer gives a separate origin.
 - **A server that had the role `dns`.** When you turn off DNS on a server, the panel removes
   the zones from the server. The empty container `cf-dns` and the firewall rules for port 53
   stay until you remove them.

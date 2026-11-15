@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
@@ -17,6 +18,8 @@ use Illuminate\Support\Facades\DB;
     'maintenance_window', 'pending_updates', 'reboot_required', 'services', 'usage', 'last_update_at', 'last_seen_at', 'local',
     'sftp_port', 'panel_ca_sha256', 'connection_error', 'connection_checked_at', 'database_engines', 'database_instances', 'dns_name', 'dns', 'addresses', 'dns_resync',
     'mesh_public_key', 'mesh_address', 'mesh_endpoint', 'mesh_version', 'mesh_wanted_version', 'mesh_networks', 'mesh_websites', 'mesh_moves', 'mesh_state_hash',
+    'sftp_port', 'panel_ca_sha256', 'connection_error', 'connection_checked_at', 'database_engines', 'database_instances', 'mail_hostname', 'mail_status',
+    'mail_cluster_id', 'mail_cluster_member',
 ])]
 #[Hidden(['agent_token_hash', 'backup_password', 'backup_credentials'])]
 class Server extends Model
@@ -76,6 +79,7 @@ class Server extends Model
     {
         return [
             'roles' => 'array',
+            'mail_cluster_member' => 'array',
             'pending_updates' => 'array',
             'services' => 'array',
             'usage' => 'array',
@@ -117,6 +121,23 @@ class Server extends Model
     public function databaseServers(): HasMany
     {
         return $this->hasMany(DatabaseServer::class);
+    }
+
+    public function mailDomains(): HasMany
+    {
+        return $this->hasMany(MailDomain::class);
+    }
+
+    /** The mail cluster that this server is a member of, or null. */
+    public function mailCluster(): BelongsTo
+    {
+        return $this->belongsTo(MailCluster::class);
+    }
+
+    /** True when the mail server of this server accepts mail domains and mailboxes. */
+    public function hasMail(): bool
+    {
+        return in_array('email', $this->roles ?? [], true) && $this->mail_hostname !== null && $this->mail_status !== null;
     }
 
     public function jobs(): HasMany

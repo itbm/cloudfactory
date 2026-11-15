@@ -24,6 +24,8 @@ export function SettingsTab({ website }: { website: Website }) {
       diskBytes: Number(form.disk) * GB,
       diskIoBytesPerSecond: Number(form.io) * MB,
       processes: Number(form.processes),
+      // The form has no field for the bandwidth: the website keeps the limit of its plan.
+      ...(website.limits.bandwidthBytes ? { bandwidthBytes: website.limits.bandwidthBytes } : {}),
     };
     return setLimits(website.id, limits);
   });

@@ -143,8 +143,24 @@ type Report struct {
 	// PanelCASHA256 is the fingerprint of the root certificate of the panel CA that this agent
 	// trusts. The panel changes to its own CA only when all other servers trust it.
 	PanelCASHA256 string `json:"panelCaSha256,omitempty"`
+	// Mail is the state of the mail server of this server. A server with no mail server does
+	// not send it.
+	Mail *MailReport `json:"mail,omitempty"`
 	// CronRuns are the results of the cron jobs that ran since the last reports.
 	CronRuns []CronRun `json:"cronRuns,omitempty"`
+}
+
+// MailReport is the state of the mail server and the size of each mailbox.
+type MailReport struct {
+	// State is "running" or "stopped".
+	State     string       `json:"state"`
+	Mailboxes []MailboxUse `json:"mailboxes"`
+}
+
+// MailboxUse is the size of the messages of one mailbox.
+type MailboxUse struct {
+	Address   string `json:"address"`
+	UsedBytes int64  `json:"usedBytes"`
 }
 
 // CronRun is the result of one run of a cron job of a website.
@@ -251,6 +267,11 @@ type HostUse struct {
 	CPUPercent    float64 `json:"cpuPercent"`
 	MemoryPercent float64 `json:"memoryPercent"`
 	DiskPercent   float64 `json:"diskPercent"`
+	// NetworkInBytes and NetworkOutBytes are the bytes that the network interfaces of the
+	// server received and sent since the last report. The agent does not count the loopback
+	// interface and the virtual interfaces of the containers and of the mesh.
+	NetworkInBytes  int64 `json:"networkInBytes"`
+	NetworkOutBytes int64 `json:"networkOutBytes"`
 }
 
 type Service struct {
@@ -270,6 +291,10 @@ type Usage struct {
 	MemoryBytes int64   `json:"memoryBytes"`
 	DiskBytes   int64   `json:"diskBytes"`
 	Processes   int64   `json:"processes"`
+	// BytesIn and BytesOut are the traffic of the domains of the website through the edge
+	// proxy since the last report: the sizes of the requests and of the answers.
+	BytesIn  int64 `json:"bytesIn"`
+	BytesOut int64 `json:"bytesOut"`
 }
 
 // ReportResponse is the answer of the panel to a report.

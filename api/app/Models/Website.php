@@ -20,6 +20,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
     'previous_image_tag', 'unix_user', 'status', 'worker_mode', 'extensions', 'php_ini', 'limits', 'usage',
     'staging_of', 'managed_by_terraform', 'document_root', 'sftp_enabled', 'sftp_keys',
     'stopped_by_suspension', 'sftp_closed_by_suspension', 'kind', 'command', 'install_command', 'environment',
+    'bandwidth_month', 'bandwidth_bytes',
 ])]
 // The API never gives the values of the environment variables.
 #[Hidden(['environment'])]

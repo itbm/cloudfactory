@@ -110,6 +110,43 @@ func (s *Service) PruneBackups(_ context.Context, r *connect.Request[agentv1.Pru
 	return s.submit(s.Deps.PruneBackups(r.Msg))
 }
 
+// The mail server of this server, and the domains, the mailboxes and the addresses on it.
+func (s *Service) SetMailServer(_ context.Context, r *connect.Request[agentv1.SetMailServerRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.SetMailServer(r.Msg))
+}
+
+func (s *Service) PrepareMailNode(_ context.Context, r *connect.Request[agentv1.PrepareMailNodeRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.PrepareMailNode(r.Msg))
+}
+
+func (s *Service) SetMailNode(_ context.Context, r *connect.Request[agentv1.SetMailNodeRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.SetMailNode(r.Msg))
+}
+
+func (s *Service) SetMailDomain(_ context.Context, r *connect.Request[agentv1.MailDomainRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.SetMailDomain(r.Msg))
+}
+
+func (s *Service) DeleteMailDomain(_ context.Context, r *connect.Request[agentv1.MailDomainRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.DeleteMailDomain(r.Msg))
+}
+
+func (s *Service) SetMailbox(_ context.Context, r *connect.Request[agentv1.SetMailboxRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.SetMailbox(r.Msg))
+}
+
+func (s *Service) DeleteMailbox(_ context.Context, r *connect.Request[agentv1.MailAddressRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.DeleteMailbox(r.Msg))
+}
+
+func (s *Service) SetMailAlias(_ context.Context, r *connect.Request[agentv1.SetMailAliasRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.SetMailAlias(r.Msg))
+}
+
+func (s *Service) DeleteMailAlias(_ context.Context, r *connect.Request[agentv1.MailAddressRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.DeleteMailAlias(r.Msg))
+}
+
 func (s *Service) SetSftp(_ context.Context, r *connect.Request[agentv1.SetSftpRequest]) (*connect.Response[agentv1.JobAccepted], error) {
 	return s.submit(s.Deps.SetSftp(r.Msg))
 }
@@ -152,6 +189,10 @@ func (s *Service) ConfigureHost(_ context.Context, r *connect.Request[agentv1.Co
 
 func (s *Service) SetPanelCertificate(_ context.Context, r *connect.Request[agentv1.SetPanelCertificateRequest]) (*connect.Response[agentv1.JobAccepted], error) {
 	return s.submit(s.Deps.SetPanelCertificate(r.Msg))
+}
+
+func (s *Service) SetPanelBrands(_ context.Context, r *connect.Request[agentv1.SetPanelBrandsRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.SetPanelBrands(r.Msg))
 }
 
 func (s *Service) SetCronJobs(_ context.Context, r *connect.Request[agentv1.SetCronJobsRequest]) (*connect.Response[agentv1.JobAccepted], error) {

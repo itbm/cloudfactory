@@ -1,14 +1,18 @@
 import { Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
 import { useStore } from "./api/hooks";
 import { retryLoad, signOut } from "./api/store";
+import { BrandTheme } from "./components/Brand";
 import { Layout } from "./components/Layout";
 import { HOME, canOpen } from "./lib/roles";
 import { AccountPage } from "./pages/AccountPage";
+import { AlertsPage } from "./pages/AlertsPage";
 import { AppsPage } from "./pages/AppsPage";
 import { BackupsPage } from "./pages/BackupsPage";
+import { BrandPage } from "./pages/BrandPage";
 import { CustomersPage } from "./pages/CustomersPage";
 import { DatabasesPage } from "./pages/DatabasesPage";
 import { DnsPage } from "./pages/DnsPage";
+import { EmailPage } from "./pages/EmailPage";
 import { NetworksPage } from "./pages/NetworksPage";
 import { FilesPage } from "./pages/FilesPage";
 import { JobsPage } from "./pages/JobsPage";
@@ -68,38 +72,44 @@ function Home() {
 
 export function App() {
   return (
-    <Routes>
-      <Route path="/login" element={<LoginPage />} />
-      <Route element={<RequireSignIn><Layout /></RequireSignIn>}>
-        <Route element={<RoleGuard />}>
-          <Route index element={<Home />} />
-          <Route path="overview" element={<OverviewPage />} />
-          <Route path="setup" element={<SetupPage />} />
-          <Route path="network" element={<NetworkPage />} />
-          <Route path="servers" element={<ServersPage />} />
-          <Route path="servers/:id" element={<ServersPage />} />
-          <Route path="updates" element={<UpdatesPage />} />
-          <Route path="customers" element={<CustomersPage />} />
-          <Route path="customers/:tab" element={<CustomersPage />} />
-          <Route path="plans" element={<PlansPage />} />
-          <Route path="websites" element={<WebsitesPage />} />
-          <Route path="websites/new" element={<NewWebsitePage />} />
-          <Route path="websites/:id" element={<WebsiteDetailPage />} />
-          <Route path="websites/:id/:tab" element={<WebsiteDetailPage />} />
-          <Route path="files" element={<FilesPage />} />
-          <Route path="databases" element={<DatabasesPage />} />
-          <Route path="dns" element={<DnsPage />} />
-          <Route path="dns/:id" element={<DnsPage />} />
-          <Route path="networks" element={<NetworksPage />} />
-          <Route path="backups" element={<BackupsPage />} />
-          <Route path="apps" element={<AppsPage />} />
-          <Route path="jobs" element={<JobsPage />} />
-          <Route path="account" element={<AccountPage />} />
-          <Route path="settings" element={<SettingsPage />} />
-          <Route path="settings/:tab" element={<SettingsPage />} />
-          <Route path="*" element={<Home />} />
+    <>
+      <BrandTheme />
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route element={<RequireSignIn><Layout /></RequireSignIn>}>
+          <Route element={<RoleGuard />}>
+            <Route index element={<Home />} />
+            <Route path="overview" element={<OverviewPage />} />
+            <Route path="setup" element={<SetupPage />} />
+            <Route path="network" element={<NetworkPage />} />
+            <Route path="servers" element={<ServersPage />} />
+            <Route path="servers/:id" element={<ServersPage />} />
+            <Route path="updates" element={<UpdatesPage />} />
+            <Route path="customers" element={<CustomersPage />} />
+            <Route path="customers/:tab" element={<CustomersPage />} />
+            <Route path="plans" element={<PlansPage />} />
+            <Route path="websites" element={<WebsitesPage />} />
+            <Route path="websites/new" element={<NewWebsitePage />} />
+            <Route path="websites/:id" element={<WebsiteDetailPage />} />
+            <Route path="websites/:id/:tab" element={<WebsiteDetailPage />} />
+            <Route path="files" element={<FilesPage />} />
+            <Route path="databases" element={<DatabasesPage />} />
+            <Route path="email" element={<EmailPage />} />
+            <Route path="dns" element={<DnsPage />} />
+            <Route path="dns/:id" element={<DnsPage />} />
+            <Route path="networks" element={<NetworksPage />} />
+            <Route path="backups" element={<BackupsPage />} />
+            <Route path="apps" element={<AppsPage />} />
+            <Route path="jobs" element={<JobsPage />} />
+            <Route path="alerts" element={<AlertsPage />} />
+            <Route path="account" element={<AccountPage />} />
+            <Route path="brand" element={<BrandPage />} />
+            <Route path="settings" element={<SettingsPage />} />
+            <Route path="settings/:tab" element={<SettingsPage />} />
+            <Route path="*" element={<Home />} />
+          </Route>
         </Route>
-      </Route>
-    </Routes>
+      </Routes>
+    </>
   );
 }

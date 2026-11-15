@@ -2,9 +2,11 @@
 
 namespace Database\Seeders;
 
+use App\Demo\DemoMailDns;
 use App\Enums\AgentAction;
 use App\Enums\DomainKind;
 use App\Enums\JobState;
+use App\Enums\NotificationEvent;
 use App\Enums\Role;
 use App\Models\AgentJob;
 use App\Models\AuditEntry;
@@ -14,24 +16,37 @@ use App\Models\DnsRecord;
 use App\Models\DnsZone;
 use App\Models\GitSource;
 use App\Models\Image;
+use App\Models\MailAlias;
+use App\Models\Mailbox;
+use App\Models\MailDomain;
+use App\Models\MailServer;
 use App\Models\MeshTunnel;
 use App\Models\Network;
 use App\Models\NetworkMember;
+use App\Models\NotificationDelivery;
+use App\Models\NotificationTemplate;
 use App\Models\Plan;
 use App\Models\Release;
 use App\Models\Rollout;
 use App\Models\Server;
 use App\Models\Setting;
 use App\Models\Snapshot;
+use App\Models\UsageAlert;
 use App\Models\User;
 use App\Models\Website;
+use App\Services\Branding;
 use App\Services\Dns\Dnssec;
 use App\Services\Dns\Zones;
 use App\Services\Networks;
+use App\Services\Notifications\Notifier;
+use App\Services\OpenPgpKey;
 use App\Services\PanelCertificate;
 use App\Services\SshKey;
+use App\Services\UsageRecorder;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 
@@ -80,26 +95,30 @@ class DemoSeeder extends Seeder
         $this->images();
         $this->servers();
         $this->websites();
+        $this->brand();
         $this->dns();
         $this->databases();
+        $this->usageHistory();
         $this->settleMesh();
         $this->backups();
         $this->cronJobsAndDeploys();
+        $this->mail();
         $this->jobsAndRollout();
         $this->settingsAndAudit();
+        $this->notifications();
     }
 
     private function plans(): void
     {
         $extensions = ['opcache', 'intl', 'gd', 'zip', 'exif', 'bcmath', 'mysqli', 'pdo_mysql', 'pdo_pgsql', 'redis', 'imagick', 'soap'];
-        // name, vCPUs, memory (GB), disk (GB), websites, then for the database servers: number, databases in each one, memory (MB), disk (GB), then the DNS zones and the named networks
-        foreach ([['Starter', 1, 1, 10, 3, 2, 5, 512, 2, 2, 0], ['Business', 2, 2, 40, 10, 6, 20, 1024, 10, 10, 3], ['Agency', 4, 4, 100, 50, 20, 50, 2048, 20, 50, 10]] as [$name, $cpu, $memory, $disk, $sites, $databaseServers, $databases, $databaseMemory, $databaseDisk, $zones, $networks]) {
+        // name, vCPUs, memory (GB), disk (GB), websites, then for the database servers: number, databases in each one, memory (MB), disk (GB), then the DNS zones, the named networks, the bandwidth of each website in a month (GB) and the mail storage (GB)
+        foreach ([['Starter', 1, 1, 10, 3, 2, 5, 512, 2, 2, 0, 100, 5], ['Business', 2, 2, 40, 10, 6, 20, 1024, 10, 10, 3, 500, 25], ['Agency', 4, 4, 100, 50, 20, 50, 2048, 20, 50, 10, 2000, 100]] as [$name, $cpu, $memory, $disk, $sites, $databaseServers, $databases, $databaseMemory, $databaseDisk, $zones, $networks, $bandwidth, $mail]) {
             $this->plans[$name] = Plan::create([
-                'name' => $name, 'websites' => $sites, 'mailboxes' => $sites * 10, 'databases' => $databases,
+                'name' => $name, 'websites' => $sites, 'mailboxes' => $sites * 10, 'mail_storage_bytes' => $mail * self::GB, 'databases' => $databases,
                 'database_servers' => $databaseServers, 'dns_zones' => $zones, 'networks' => $networks,
                 'database_limits' => ['vcpus' => min($cpu, 2), 'memoryBytes' => $databaseMemory * self::MB, 'diskBytes' => $databaseDisk * self::GB],
                 'php_extensions' => $name === 'Starter' ? array_slice($extensions, 0, 8) : $extensions,
-                'limits' => ['vcpus' => $cpu, 'memoryBytes' => $memory * self::GB, 'diskBytes' => $disk * self::GB, 'diskIoBytesPerSecond' => 50 * self::MB, 'processes' => 100 * $cpu],
+                'limits' => ['vcpus' => $cpu, 'memoryBytes' => $memory * self::GB, 'diskBytes' => $disk * self::GB, 'diskIoBytesPerSecond' => 50 * self::MB, 'processes' => 100 * $cpu, 'bandwidthBytes' => $bandwidth * self::GB],
             ]);
         }
     }
@@ -234,6 +253,77 @@ class DemoSeeder extends Seeder
         }
     }
 
+    /**
+     * A server with the email role, and the email of three customers: all DNS records found,
+     * a DKIM record missing, and a domain with no DNS check yet.
+     */
+    private function mail(): void
+    {
+        $host = 'mail-1.panel.example';
+        $server = Server::create([
+            'agent_version' => self::AGENT, 'os' => 'Debian 13', 'kernel' => '6.12.48', 'arch' => 'x86-64', 'podman_version' => '5.4.2', 'gvisor_version' => 'release-20261019.0',
+            'pending_updates' => [], 'last_seen_at' => now(), 'connection_checked_at' => now(), 'sftp_port' => 2222, 'database_engines' => [], 'database_instances' => true,
+            'name' => 'mail-1', 'location' => 'London', 'roles' => ['email'], 'state' => 'healthy', 'agent_url' => 'https://mail-1.panel.example:7443',
+            'services' => array_map(fn (string $n) => ['name' => $n, 'state' => 'running'], ['edge', 'cf-mail', 'firewall', 'podman']),
+            'usage' => ['cpuPercent' => 6, 'memoryPercent' => 31, 'diskPercent' => 18], 'last_update_at' => now()->subDays(5),
+            'mail_hostname' => $host, 'mail_status' => 'running',
+        ]);
+        $this->servers['mail-1'] = $server;
+
+        // customer, domain, which records the last check found (null: no check), mailboxes (name, size in MB, use in MB), then aliases and forwarders
+        $rows = [
+            ['acme', 'acme.example.com', fn () => true, [['info', 5120, 1260], ['sales', 2048, 1946], ['olu', 10240, 3411], ['finance', 2048, 212]],
+                [['hello', 'alias', ['info@acme.example.com']], ['team', 'forwarder', ['olu@acme.example.com', 'finance@acme.example.com', 'morgan@partner.example.net']]]],
+            ['bakery', 'cornerbakery.example.org', fn (array $r) => $r['purpose'] !== 'dkim', [['hello', 1024, 388], ['orders', 1024, 64]], [['bea', 'forwarder', ['bea.baker@mailbox.example.net']]]],
+            ['books', 'harbourbooks.example.net', null, [['shop', 2048, 0]], []],
+        ];
+        foreach ($rows as [$customer, $name, $found, $mailboxes, $aliases]) {
+            $owner = $this->customers[$customer];
+            $domain = MailDomain::create([
+                'customer_id' => $owner->id, 'server_id' => $server->id, 'name' => $name, 'status' => MailDomain::ACTIVE,
+                'records' => array_map(fn (array $r) => $r + ['found' => $found ? $found($r) : null], DemoMailDns::records($name, $host)),
+                'dns_checked_at' => $found ? now()->subHours(2) : null,
+            ]);
+            foreach ($mailboxes as [$local, $size, $used]) {
+                Mailbox::create(['customer_id' => $owner->id, 'mail_domain_id' => $domain->id, 'local_part' => $local, 'quota_bytes' => $size * self::MB, 'used_bytes' => $used * self::MB, 'status' => MailDomain::ACTIVE]);
+            }
+            foreach ($aliases as [$local, $kind, $destinations]) {
+                MailAlias::create(['customer_id' => $owner->id, 'mail_domain_id' => $domain->id, 'local_part' => $local, 'kind' => $kind, 'destinations' => $destinations, 'status' => MailDomain::ACTIVE]);
+            }
+        }
+        // One mailbox with encryption: the panel made its OpenPGP keys, and the mail server
+        // encrypts its new mail with the public key.
+        $encrypted = Mailbox::with('domain')->where('local_part', 'olu')->first();
+        $keys = OpenPgpKey::generate($encrypted->address(), 'Demo-password-123');
+        $encrypted->update([
+            'public_key' => $keys['publicKey'], 'private_key' => $keys['privateKey'],
+            'encryption' => ['fingerprints' => [$keys['fingerprint']], 'keyType' => 'OpenPGP v4: X25519', 'expiresAt' => null, 'warnings' => []],
+        ]);
+
+        // A large customer, to show the Email page with many mailboxes and aliases.
+        $owner = $this->customers['northwind'];
+        $domain = MailDomain::create([
+            'customer_id' => $owner->id, 'server_id' => $server->id, 'name' => 'northwind.example.com', 'status' => MailDomain::ACTIVE,
+            'records' => array_map(fn (array $r) => $r + ['found' => true], DemoMailDns::records('northwind.example.com', $host)), 'dns_checked_at' => now()->subHours(5),
+        ]);
+        $first = ['ada', 'ben', 'chloe', 'dev', 'elif', 'femi', 'grace', 'hugo', 'ines', 'jonas', 'kofi', 'lena'];
+        $last = ['adams', 'bello', 'chen', 'diaz', 'evans', 'fischer', 'garcia', 'haddad', 'ito', 'jensen', 'khan', 'lopez', 'meyer', 'novak', 'okoro'];
+        $n = 0;
+        foreach ($last as $surname) {
+            foreach ($first as $name) {
+                $n++;
+                Mailbox::create(['customer_id' => $owner->id, 'mail_domain_id' => $domain->id, 'local_part' => "$name.$surname", 'quota_bytes' => 500 * self::MB, 'used_bytes' => ($n * 37 % 480) * self::MB, 'status' => MailDomain::ACTIVE]);
+                if ($n % 3 === 0) {
+                    MailAlias::create(['customer_id' => $owner->id, 'mail_domain_id' => $domain->id, 'local_part' => $name[0].$surname, 'kind' => 'alias', 'destinations' => ["$name.$surname@northwind.example.com"], 'status' => MailDomain::ACTIVE]);
+                }
+            }
+        }
+        foreach (['support' => 'ada.adams', 'billing' => 'ada.adams', 'press' => 'ben.bello', 'jobs' => 'chloe.chen'] as $local => $box) {
+            MailAlias::create(['customer_id' => $owner->id, 'mail_domain_id' => $domain->id, 'local_part' => $local, 'kind' => 'alias', 'destinations' => ["$box@northwind.example.com"], 'status' => MailDomain::ACTIVE]);
+        }
+        MailAlias::create(['customer_id' => $owner->id, 'mail_domain_id' => $domain->id, 'local_part' => 'partners', 'kind' => 'forwarder', 'destinations' => ['alliances@partner.example.net', 'deals@reseller.example.org'], 'status' => MailDomain::ACTIVE]);
+    }
+
     private function websites(): void
     {
         $key = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGh0dHBzOi8vY2xvdWRmYWN0b3J5LmV4YW1wbGUvZGVtbw olu@laptop';
@@ -308,6 +398,28 @@ class DemoSeeder extends Seeder
     }
 
     /**
+     * White label: Northwind Agency has its own name, colour, logo, panel domain, name servers
+     * and mail host. The panel has the built-in brand.
+     */
+    private function brand(): void
+    {
+        $northwind = $this->customers['northwind'];
+        $northwind->update(['branding' => [
+            'name' => 'Northwind Hosting',
+            'colour' => '#0f766e',
+            'logo' => 'data:image/png;base64,'.base64_encode((string) file_get_contents(__DIR__.'/northwind-logo.png')),
+            'supportEmail' => 'support@northwind.example.com',
+            'panelDomain' => 'panel.northwind.example.com',
+            'nameServers' => array_map(fn (int $n) => "ns{$n}.northwind.example.com", range(1, count(Zones::nameServers()))),
+            'mailHost' => 'mail.northwind.example.com',
+        ]]);
+        Setting::put('brand_certificates', ['panel.northwind.example.com' => [
+            'domain' => 'panel.northwind.example.com', 'method' => 'letsencrypt', 'state' => 'valid',
+            'expiresAt' => now()->addDays(71)->toIso8601String(), 'error' => null, 'checkedAt' => now()->subMinutes(4)->toIso8601String(),
+        ]]);
+    }
+
+    /**
      * DNS hosting: a zone with DNSSEC, a zone that waits for the registrar, and a zone that
      * one DNS server did not take. Each zone has the records of the websites of its customer.
      */
@@ -330,15 +442,16 @@ class DemoSeeder extends Seeder
             $serial = now()->subHours(strlen($name))->timestamp;
             $zone = new DnsZone([
                 'customer_id' => $this->customers[$customer]->id, 'name' => $name, 'serial' => $serial, 'status' => DnsZone::ACTIVE,
-                'delegation' => $seen === null ? DnsZone::HERE : DnsZone::ELSEWHERE, 'delegation_name_servers' => $seen ?? $servers->pluck('dns_name')->all(),
+                'delegation' => $seen === null ? DnsZone::HERE : DnsZone::ELSEWHERE, 'delegation_name_servers' => $seen ?? Branding::nameServersFor($this->customers[$customer]),
                 'delegation_checked_at' => now()->subMinutes(9), 'dnssec' => $dnssec, 'dnssec_key' => $key['key'] ?? null,
                 'dnssec_public_key' => $key['publicKey'] ?? null, 'dnssec_key_tag' => $key['keyTag'] ?? null,
                 'sync' => $servers->mapWithKeys(fn (Server $s) => [$s->id => ['serial' => $serial, 'state' => $s->name === $failed ? 'failed' : 'ok']])->all(),
             ]);
             $zone->created_at = now()->subDays($days);
             $zone->save();
-            foreach ($servers as $server) {
-                $zone->records()->create(['name' => '@', 'type' => 'NS', 'ttl' => Zones::NS_TTL, 'value' => $server->dns_name, 'managed' => DnsRecord::NS]);
+            // The zones of Northwind Agency and of its customers have the name servers of its brand.
+            foreach (Branding::nameServersFor($this->customers[$customer]) as $host) {
+                $zone->records()->create(['name' => '@', 'type' => 'NS', 'ttl' => Zones::NS_TTL, 'value' => $host, 'managed' => DnsRecord::NS]);
             }
             // The A and AAAA records of the domains of the websites of the customer in the zone.
             foreach (Website::with(['domains', 'server'])->where('customer_id', $zone->customer_id)->get() as $website) {
@@ -407,6 +520,128 @@ class DemoSeeder extends Seeder
         $reports = Network::create(['customer_id' => $acme->id, 'name' => 'reports', 'is_default' => false]);
         NetworkMember::create(['network_id' => $reports->id, 'website_id' => $storefront->id]);
         NetworkMember::create(['network_id' => $reports->id, 'database_server_id' => $second->id]);
+    }
+
+    /**
+     * Usage history for the graphs, and usage alerts. The values follow a day cycle around the
+     * current use of each website, server and database server, with the same random values at
+     * each run. The disk use grows to its current value. The panel keeps buckets of 5 minutes
+     * for 8 days and of 1 hour for 400 days: the demo has 2 days of 5 minutes and 400 days of
+     * 1 hour.
+     */
+    private function usageHistory(): void
+    {
+        $now = now()->utc();
+        $month = $now->format('Y-m');
+        $monthStart = $now->copy()->startOfMonth();
+        // The traffic of each running website in one hour at the peak of the day, in MB.
+        $traffic = ['acme.example.com' => 180, 'shop.acme.example.com' => 420, 'api.acme.example.com' => 60, 'storefront.acme.example.com' => 35,
+            'northwind.example.com' => 90, 'cornerbakery.example.org' => 70, 'harbourbooks.example.net' => 1150, 'orders.internal' => 8];
+        $rows = [];
+        $flush = function (bool $all = false) use (&$rows) {
+            if ($all || count($rows) >= 500) {
+                foreach (array_chunk($rows, 500) as $chunk) {
+                    DB::table('usage_samples')->insert($chunk);
+                }
+                $rows = [];
+            }
+        };
+        // $at: the start of the bucket. $f: the factor of the day cycle, from about 0.3 to 1.
+        $add = function (string $type, string $id, int $minutes, Carbon $at, float $cpu, float $memory, float $disk, int $processes, int $bytes) use (&$rows, $flush) {
+            $samples = $minutes;
+            $rows[] = [
+                'subject_type' => $type, 'subject_id' => $id, 'resolution' => $minutes, 'bucket_at' => $at->format('Y-m-d H:i:s'), 'samples' => $samples,
+                'cpu_sum' => round($cpu * $samples, 2), 'cpu_max' => round($cpu * (1.2 + mt_rand(0, 60) / 100), 2), 'memory_sum' => round($memory * $samples), 'memory_max' => round($memory * (1.03 + mt_rand(0, 8) / 100)),
+                'disk' => round($disk), 'processes_max' => $processes, 'bytes_in' => (int) ($bytes * 0.08), 'bytes_out' => (int) ($bytes * 0.92),
+            ];
+            $flush();
+        };
+        $cycle = fn (Carbon $at) => 0.65 + 0.35 * sin(($at->hour + $at->minute / 60 - 9) / 24 * 2 * M_PI) + mt_rand(-8, 8) / 100;
+        $weekday = fn (Carbon $at) => $at->isWeekend() ? 0.75 : 1.0;
+
+        foreach ($this->websites as $name => $website) {
+            if ($website->status->value === 'failed') {
+                continue;
+            }
+            mt_srand(crc32($name));
+            $use = $website->usage;
+            $running = $website->status->value === 'running';
+            $peak = ($traffic[$name] ?? 0) * self::MB;
+            $created = $website->created_at->copy()->utc();
+            $monthBytes = 0;
+            foreach ([UsageRecorder::FINE => $now->copy()->subDays(2), UsageRecorder::COARSE => $now->copy()->subDays(400)] as $minutes => $from) {
+                $at = UsageRecorder::bucket($from->max($created), $minutes);
+                $span = max(1, $now->getTimestamp() - $created->getTimestamp());
+                for (; $at <= $now; $at->addMinutes($minutes)) {
+                    $f = max(0.2, $cycle($at)) * $weekday($at);
+                    $growth = 0.55 + 0.45 * min(1, ($at->getTimestamp() - $created->getTimestamp()) / $span);
+                    $stopped = ! $running && $at > $now->copy()->subDays(20);
+                    $bytes = $stopped ? 0 : (int) ($peak * $f * $minutes / 60);
+                    $add(UsageAlert::WEBSITE, $website->id, $minutes, $at->copy(),
+                        $stopped ? 0 : max(0.3, $use['cpuPercent'] * $f * 1.4 ?: 2 * $f),
+                        $stopped ? 0 : max(16 * self::MB, $use['memoryBytes'] * (0.85 + 0.15 * $f) ?: 64 * self::MB * $f),
+                        $use['diskBytes'] * $growth,
+                        $stopped ? 0 : (int) max(1, $use['processes'] * (0.7 + 0.4 * $f)),
+                        $bytes);
+                    if ($minutes === UsageRecorder::COARSE && $at >= $monthStart) {
+                        $monthBytes += $bytes;
+                    }
+                }
+            }
+            $website->forceFill(['bandwidth_month' => $month, 'bandwidth_bytes' => $monthBytes])->saveQuietly();
+        }
+
+        foreach ($this->servers as $name => $server) {
+            if (! $server->usage) {
+                continue;
+            }
+            mt_srand(crc32($name));
+            $u = $server->usage;
+            foreach ([UsageRecorder::FINE => $now->copy()->subDays(2), UsageRecorder::COARSE => $now->copy()->subDays(400)] as $minutes => $from) {
+                // The sample servers are new, but their history starts a year ago.
+                $at = UsageRecorder::bucket($from, $minutes);
+                for (; $at <= $now; $at->addMinutes($minutes)) {
+                    $f = max(0.2, $cycle($at)) * $weekday($at);
+                    $age = 1 - min(1, $now->diffInDays($at, true) / 400);
+                    $add(UsageAlert::SERVER, $server->id, $minutes, $at->copy(), min(100, $u['cpuPercent'] * $f * 1.3), min(100, $u['memoryPercent'] * (0.85 + 0.2 * $f)),
+                        $u['diskPercent'] * (0.6 + 0.4 * $age), 0, (int) (1600 * self::MB * $f * $minutes / 60 * ($u['cpuPercent'] / 20)));
+                }
+            }
+        }
+
+        foreach (DatabaseServer::all() as $databaseServer) {
+            mt_srand(crc32($databaseServer->id));
+            $u = $databaseServer->usage ?? [];
+            $created = ($databaseServer->created_at ?? $now)->copy()->utc()->subDays(60);
+            foreach ([UsageRecorder::FINE => $now->copy()->subDays(2), UsageRecorder::COARSE => $now->copy()->subDays(60)] as $minutes => $from) {
+                $at = UsageRecorder::bucket($from->max($created), $minutes);
+                for (; $at <= $now; $at->addMinutes($minutes)) {
+                    $f = max(0.2, $cycle($at));
+                    $age = 1 - min(1, $now->diffInDays($at, true) / 60);
+                    $add(UsageAlert::DATABASE_SERVER, $databaseServer->id, $minutes, $at->copy(), 0, ($u['memoryBytes'] ?? 0) * (0.9 + 0.1 * $f), ($u['diskBytes'] ?? 0) * (0.8 + 0.2 * $age), 0, 0);
+                }
+            }
+        }
+        $flush(true);
+        mt_srand();
+
+        // The alerts: the shop is near its memory limit, the bakery near its disk limit and the
+        // bookshop at its bandwidth limit of the month. A closed alert of a server shows the
+        // history.
+        $shop = $this->websites['shop.acme.example.com'];
+        $bakery = $this->websites['cornerbakery.example.org'];
+        $books = $this->websites['harbourbooks.example.net'];
+        $books->forceFill(['bandwidth_bytes' => (int) (0.962 * $books->limits['bandwidthBytes'])])->saveQuietly();
+        $alert = fn (Website|Server $subject, string $resource, string $level, float $used, float $limit, int $hoursAgo, ?int $resolvedHoursAgo = null) => UsageAlert::create([
+            'subject_type' => $subject instanceof Website ? UsageAlert::WEBSITE : UsageAlert::SERVER, 'subject_id' => $subject->id,
+            'customer_id' => $subject instanceof Website ? $subject->customer_id : null, 'server_id' => $subject instanceof Website ? $subject->server_id : $subject->id,
+            'resource' => $resource, 'level' => $level, 'used' => $used, 'limit' => $limit, 'percent' => round($used / $limit * 100, 1),
+            'notified_level' => $level, 'opened_at' => now()->subHours($hoursAgo), 'resolved_at' => $resolvedHoursAgo === null ? null : now()->subHours($resolvedHoursAgo),
+        ]);
+        $alert($books, 'bandwidth', UsageAlert::CRITICAL, $books->bandwidth_bytes, $books->limits['bandwidthBytes'], 30);
+        $alert($shop, 'memory', UsageAlert::WARNING, $shop->usage['memoryBytes'], $shop->limits['memoryBytes'], 5);
+        $alert($bakery, 'disk', UsageAlert::WARNING, $bakery->usage['diskBytes'], $bakery->limits['diskBytes'], 52);
+        $alert($this->servers['web-1'], 'memory', UsageAlert::WARNING, 86.4, 100, 70, 66);
     }
 
     /**
@@ -595,6 +830,51 @@ class DemoSeeder extends Seeder
             $entry->created_at = now()->subMinutes($minutesAgo);
             $entry->save();
         }
+    }
+
+    /**
+     * Email notifications: the SMTP server of the panel and of the reseller, a changed template
+     * of the reseller, the choices of some users, and the emails of the sample events. The demo
+     * mode sends no email (DemoMailTransport).
+     */
+    private function notifications(): void
+    {
+        MailServer::create([
+            'host' => 'smtp.mail.example', 'port' => 587, 'encryption' => 'starttls', 'username' => 'panel@example.com', 'password' => 'demo',
+            'from_address' => 'panel@example.com', 'from_name' => 'Cloudfactory', 'tested_at' => now()->subDays(3),
+        ]);
+        $northwind = $this->customers['northwind'];
+        MailServer::create([
+            'customer_id' => $northwind->id, 'host' => 'smtp.northwind.example.com', 'port' => 465, 'encryption' => 'tls', 'username' => 'noreply@northwind.example.com', 'password' => 'demo',
+            'from_address' => 'noreply@northwind.example.com', 'from_name' => 'Northwind Agency', 'reply_to' => 'support@northwind.example.com', 'tested_at' => now()->subDays(20),
+        ]);
+        NotificationTemplate::create([
+            'customer_id' => $northwind->id, 'event' => NotificationEvent::JobFailed->value, 'subject' => '[{{brand}}] A change to {{website}} failed',
+            'body' => "Hello {{name}},\n\nA change to your website {{website}} did not complete: {{job}}.\n\nThe error: {{error}}\n\nWe have the details too. Reply to this email if you need help.\n\nThe Northwind Agency team\n{{panelUrl}}",
+        ]);
+        User::where('email', 'finance@acme.example.com')->first()?->forceFill(['notification_preferences' => ['job.failed' => false, 'backup.failed' => false, 'certificate.expiring' => false]])->save();
+        User::where('email', 'operations@example.com')->first()?->forceFill(['notification_preferences' => ['job.failed' => false]])->save();
+
+        $notifier = app(Notifier::class);
+        $at = [];
+        foreach (AgentJob::where('state', JobState::Failed->value)->get() as $job) {
+            $notifier->jobFailed($job, $job->website_id ? Website::find($job->website_id) : null);
+            $at["job:{$job->id}"] = $job->finished_at;
+        }
+        $owner = User::where('email', 'owner@example.com')->first();
+        $notifier->newDevice($owner, 'Safari on iOS', '198.51.100.23');
+        $notifier->usageAlert($this->customers['acme'], ['resource' => 'Disk', 'website' => 'shop.acme.example.com', 'used' => '36.4 GB', 'limit' => '40 GB', 'percent' => 91, 'level' => 'warning'], 'usage:demo:disk');
+        $notifier->suspension($this->customers['lawson'], true);
+
+        $minutes = ['signin.new_device' => 2 * 24 * 60, 'usage.alert' => 8 * 60, 'account.suspended' => 2900];
+        foreach (NotificationDelivery::all() as $delivery) {
+            $created = isset($at[$delivery->dedupe_key]) ? $at[$delivery->dedupe_key] : now()->subMinutes($minutes[$delivery->event] ?? 60);
+            $delivery->forceFill(['state' => 'sent', 'attempts' => 1, 'sent_at' => $created->copy()->addSeconds(4), 'created_at' => $created, 'updated_at' => $created])->save();
+        }
+        // One email that the SMTP server refused 3 times.
+        NotificationDelivery::where('recipient', 'operations@example.com')->latest()->first()?->forceFill([
+            'state' => 'failed', 'attempts' => 3, 'sent_at' => null, 'error' => 'Expected response code "250" but got code "552", with message "552 5.2.2 Mailbox full".',
+        ])->save();
     }
 
     /** The Unix user of a website: letters from the name, and four characters that do not change. */

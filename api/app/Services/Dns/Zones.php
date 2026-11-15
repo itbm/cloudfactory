@@ -14,6 +14,7 @@ use App\Models\Server;
 use App\Models\User;
 use App\Models\Website;
 use App\Services\Audit;
+use App\Services\Branding;
 use App\Services\DomainPolicy;
 use App\Services\JobDispatcher;
 use App\Validation\InputRules;
@@ -242,6 +243,19 @@ class Zones
     }
 
     /**
+     * A reseller changed the host names of its name servers. The zones of the reseller and of
+     * its customers get new NS records, and the DNS servers get the zones again.
+     */
+    public function resellerNameServersChanged(Customer $reseller): void
+    {
+        $ids = Customer::where('id', $reseller->id)->orWhere('reseller_id', $reseller->id)->pluck('id');
+        foreach (DnsZone::with('customer')->whereIn('customer_id', $ids)->where('status', DnsZone::ACTIVE)->orderBy('name')->get() as $zone) {
+            self::writeNameServers($zone);
+            $this->changed($zone, "Update the name servers of DNS zone {$zone->name}");
+        }
+    }
+
+    /**
      * Sends all zones to all DNS servers, after a change of the name servers. Each zone gets
      * the new NS records. One job has at most MAX_DNS_ZONES_PER_JOB zones.
      */
@@ -422,7 +436,9 @@ class Zones
     public function checkDelegation(DnsZone $zone): void
     {
         $seen = $this->lookup->nameServers($zone->name);
-        $ours = self::nameServers();
+        // White label: the host names of the panel, or the host names that the reseller of
+        // the customer gave to the same name servers.
+        $ours = array_values(array_unique([...self::nameServers(), ...Branding::nameServersFor($zone->customer)]));
         $state = match (true) {
             $seen === [] => DnsZone::NONE,
             array_diff($seen, $ours) === [] => DnsZone::HERE,
@@ -530,10 +546,15 @@ class Zones
         return $made;
     }
 
-    /** Writes the NS records of the zone itself: one for each name server of the panel. */
+    /**
+     * Writes the NS records of the zone itself: one for each name server of the panel. A zone
+     * of a reseller, or of a customer of a reseller, gets the host names of the reseller when
+     * it has its own names for the name servers (white label).
+     */
     private static function writeNameServers(DnsZone $zone): void
     {
-        $hosts = self::nameServers();
+        $hosts = Branding::nameServersFor($zone->customer);
+        sort($hosts);
         $current = $zone->records()->where('managed', DnsRecord::NS)->pluck('value')->sort()->values()->all();
         if ($current === $hosts) {
             return;

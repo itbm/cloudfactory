@@ -10,6 +10,7 @@ use App\Models\DnsZone;
 use App\Models\Server;
 use App\Models\Website;
 use App\Services\Audit;
+use App\Services\Branding;
 use App\Services\Dns\Dnssec;
 use App\Services\Dns\Records;
 use App\Services\Dns\Zones;
@@ -64,8 +65,9 @@ class DnsZoneController extends Controller
 
         return response()->json([
             'data' => $zones->map(fn (DnsZone $z) => self::present($z, $servers)),
-            // The customer gives these host names to the registrar of each domain.
-            'nameServers' => $servers->pluck('dns_name')->unique()->values(),
+            // The customer gives these host names to the registrar of each domain. A customer of
+            // a reseller sees the host names of the reseller (white label).
+            'nameServers' => $request->user()->isAdministrator() ? $servers->pluck('dns_name')->unique()->values()->all() : Branding::nameServersFor($request->user()->customer),
         ]);
     }
 
@@ -233,7 +235,7 @@ class DnsZoneController extends Controller
             'status' => Zones::state($z, $servers),
             'serial' => $z->serial,
             'recordCount' => $z->records_count ?? $z->records()->count(),
-            'nameServers' => $servers->pluck('dns_name')->unique()->values()->all(),
+            'nameServers' => Branding::nameServersFor($z->customer),
             // What the public DNS says: "here" when the registrar sends the queries to the panel.
             'delegation' => [
                 'state' => $z->delegation,
@@ -247,7 +249,7 @@ class DnsZoneController extends Controller
             ],
             // The state of the zone on each name server: "ok", "pending" or "failed".
             'servers' => $servers->map(fn (Server $s) => [
-                'nameServer' => $s->dns_name,
+                'nameServer' => Branding::nameServerName($z->customer, $s->dns_name),
                 'state' => (($z->sync[$s->id]['serial'] ?? 0) < $z->serial) ? 'pending' : ($z->sync[$s->id]['state'] ?? 'pending'),
             ])->values()->all(),
             // The websites of the customer that have a domain in the zone.

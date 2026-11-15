@@ -48,7 +48,20 @@ type observer struct {
 	// dbLimited is the number of database servers with a disk limit. dbNoLimit is the number
 	// of them that have no user quota and no disk image: the server does not apply their limit.
 	dbLimited, dbNoLimit int
+	// traffic is the last traffic counter of each host of the edge proxy, to give the traffic
+	// since the last report. trafficRead is false until the first read.
+	traffic     map[string]caddy.Traffic
+	trafficRead bool
 }
+
+// trafficReader is the part of the edge proxy that gives the traffic of each host
+// (caddy.Client.Traffic).
+type trafficReader interface {
+	Traffic(ctx context.Context) (map[string]caddy.Traffic, error)
+}
+
+// trafficLimit is the time limit to read the metrics of the edge proxy.
+const trafficLimit = 5 * time.Second
 
 type cpuSample struct {
 	usec int64
@@ -124,12 +137,19 @@ func (d *Deps) FillReport(ctx context.Context, r *panel.Report) {
 		}
 		o.diskAt = now
 	}
+	traffic := d.trafficSince(ctx)
 	for _, s := range sites {
 		// A website that the server got after the last measurement.
 		if _, ok := o.image[s.ID]; !ok {
 			o.image[s.ID] = d.siteDiskState(ctx, s.UnixUser, false).Known
 		}
 		u := panel.Usage{ID: s.ID, DiskBytes: o.disk[s.ID]}
+		// The traffic of all domains of the website, also the redirect domains.
+		for _, dom := range s.Website.GetDomains() {
+			t := traffic[strings.ToLower(dom.GetName())]
+			u.BytesIn += t.In
+			u.BytesOut += t.Out
+		}
 		if !s.Stopped {
 			d.cgroupUse(ctx, s, &u, now)
 		}
@@ -164,6 +184,39 @@ func (d *Deps) FillReport(ctx context.Context, r *panel.Report) {
 	r.DatabaseEngines = Engines
 	r.DatabaseInstances = true
 	r.Services = append(r.Services, d.firewallService(ctx), d.helperService(), d.quotaService(sites), d.diskService())
+	r.Mail = d.mailReport(ctx)
+}
+
+// trafficSince gives the traffic of each host since the last report. The caller holds the
+// lock of the observer. The first read after a start of the agent gives no traffic: it only
+// keeps the counters. When the edge proxy started again, its counters start at 0, and the
+// traffic is the new counter.
+func (d *Deps) trafficSince(ctx context.Context) map[string]caddy.Traffic {
+	edge, ok := d.Edge.(trafficReader)
+	if !ok {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, trafficLimit)
+	defer cancel()
+	now, err := edge.Traffic(ctx)
+	if err != nil {
+		// The next read gives the traffic of both intervals.
+		return nil
+	}
+	o := &d.obs
+	out := map[string]caddy.Traffic{}
+	if o.trafficRead {
+		for host, t := range now {
+			prev := o.traffic[host]
+			delta := caddy.Traffic{In: t.In - prev.In, Out: t.Out - prev.Out}
+			if delta.In < 0 || delta.Out < 0 {
+				delta = t
+			}
+			out[host] = delta
+		}
+	}
+	o.traffic, o.trafficRead = now, true
+	return out
 }
 
 // databaseServerUse gives the state, the memory and the disk space of each database server of

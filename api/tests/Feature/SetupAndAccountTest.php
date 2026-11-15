@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Enums\Role;
 use App\Models\Database;
+use App\Models\MailServer;
 use App\Models\Setting;
 use App\Services\PanelCertificate;
 use Illuminate\Support\Facades\Crypt;
@@ -26,9 +27,10 @@ class SetupAndAccountTest extends TestCase
         $this->server(['name' => 'web-2', 'services' => [['name' => 'disk-quotas', 'state' => 'running', 'optional' => true]]]);
         PanelCertificate::record(['domain' => 'panel.example.com', 'method' => 'internal', 'state' => 'valid']);
 
-        $this->getJson('/api/v1/setup')->assertOk()->assertJson(['complete' => false, 'open' => 4]);
+        $this->getJson('/api/v1/setup')->assertOk()->assertJson(['complete' => false, 'open' => 5]);
         $items = $this->items();
-        $this->assertSame(['backups', 'totp', 'disk-limits', 'panel-certificate'], array_keys($items));
+        $this->assertSame(['backups', 'totp', 'disk-limits', 'panel-certificate', 'email'], array_keys($items));
+        $this->assertSame('No SMTP server is set.', $items['email']['detail']);
         foreach ($items as $item) {
             $this->assertSame('open', $item['state']);
             $this->assertNotSame('', $item['effect']);
@@ -51,9 +53,10 @@ class SetupAndAccountTest extends TestCase
         Setting::put('backup_policy', ['daily' => 7, 'weekly' => 4, 'monthly' => 6, 'time' => '02:30', 'target' => 's3:s3.example.com/backups']);
         Setting::put('backup_credentials', Crypt::encryptString(json_encode(['AWS_ACCESS_KEY_ID' => 'a', 'AWS_SECRET_ACCESS_KEY' => 'b'])));
         PanelCertificate::record(['domain' => 'panel.example.com', 'method' => 'letsencrypt', 'state' => 'valid']);
+        MailServer::create(['host' => 'smtp.example.com', 'port' => 587, 'encryption' => 'starttls', 'from_address' => 'panel@example.com', 'tested_at' => now()]);
 
         $this->getJson('/api/v1/setup')->assertOk()->assertJson(['complete' => true, 'open' => 0]);
-        $this->assertSame(['done', 'done', 'done', 'done'], array_column($this->items(), 'state'));
+        $this->assertSame(['done', 'done', 'done', 'done', 'done'], array_column($this->items(), 'state'));
     }
 
     public function test_an_item_that_does_not_apply_is_not_open(): void
@@ -99,7 +102,7 @@ class SetupAndAccountTest extends TestCase
             ->assertJsonPath('backups.available', false)
             ->assertJsonPath('provider.name', 'Northwind Agency')
             ->assertJsonPath('plan.name', 'Business')
-            ->assertJsonPath('usage', ['websites' => 2, 'databases' => 1, 'dnsZones' => 0, 'networks' => 0, 'diskBytes' => 1500, 'customers' => null])
+            ->assertJsonPath('usage', ['websites' => 2, 'databases' => 1, 'dnsZones' => 0, 'networks' => 0, 'diskBytes' => 1500, 'mailboxes' => 0, 'mailStorageBytes' => 0, 'bandwidthBytes' => 0, 'customers' => null])
             ->assertJsonCount(1, 'users')
             ->assertJsonPath('users.0.email', $user->email);
 

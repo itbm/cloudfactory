@@ -1,0 +1,47 @@
+# The webmail of a mail server (Bulwark). The agent starts one container on each server with a
+# mail server. The edge proxy sends the JMAP and DAV paths of the host name to the mail server,
+# and the other paths to this container. The release pipeline signs the image like all other
+# images (FR-1101).
+#   podman build -t webmail images/webmail
+# SPDX-License-Identifier: AGPL-3.0-only
+# Bulwark is AGPL-3.0-only: https://github.com/bulwarkmail/webmail
+FROM ghcr.io/bulwarkmail/webmail:1.21.2
+USER root
+# CVE scan, finding 3: take the security fixes that are newer than the base image. The release
+# workflow gives CF_REFRESH a new value for each build, so this step never comes from the build
+# cache.
+ARG CF_REFRESH
+RUN apk upgrade --no-cache
+# The agent starts the webmail as the user 1001 and the group 65533, which are the user nextjs
+# of the base image. A base image with different IDs stops the build.
+RUN test "$(id -u nextjs):$(id -g nextjs)" = 1001:65533
+# The PGP plugin "PGP True End-to-End" (GPL-3.0), a pinned release from the extension directory
+# of Bulwark. The build stops when the package is not the one that this file names. The source
+# of this release: https://github.com/paulhenry46/pgp-plugin/commit/74eb3ee2f026d523f7caf2049cc95b6afd75fdcd
+# pgp-plugin/patch.mjs adds pgp-plugin/provision.js: the plugin gets the keys of the mailbox
+# from the files of the mailbox, and the user uploads no file. The patch is the source of the
+# change. The start script installs the plugin through the admin dashboard of the webmail. To
+# change the release, change the release and the hash together, and check the patch.
+ARG PGP_PLUGIN_VERSION=2.0.2
+ARG PGP_PLUGIN_SHA256=42aefc1ea40f1ede6fd6948f0b8ae0f9485f6260b9742a05cbf34d7fe8623f78
+COPY pgp-plugin/ /tmp/pgp-plugin/
+RUN mkdir -p /opt/cf-webmail/plugins /tmp/pgp-plugin/package \
+ && wget -q -O /tmp/pgp-plugin/upstream.zip \
+      "https://extensions.bulwarkmail.org/api/v2/extensions/pgp-true-end-to-end/versions/${PGP_PLUGIN_VERSION}/bundle" \
+ && echo "${PGP_PLUGIN_SHA256}  /tmp/pgp-plugin/upstream.zip" | sha256sum -c - \
+ && apk add --no-cache --virtual .cf-zip zip \
+ && cd /tmp/pgp-plugin/package \
+ && unzip -q ../upstream.zip \
+ && node ../patch.mjs index.js ../provision.js \
+ && zip -q -X -r /opt/cf-webmail/plugins/pgp-true-end-to-end.zip . \
+ && sha256sum index.js | cut -d' ' -f1 > /opt/cf-webmail/plugins/pgp-true-end-to-end.code.sha256 \
+ && chmod 0644 /opt/cf-webmail/plugins/* \
+ && apk del .cf-zip \
+ && rm -rf /tmp/pgp-plugin
+COPY --chmod=0644 start.mjs /opt/cf-webmail/start.mjs
+ENV CF_PGP_PLUGIN_VERSION=${PGP_PLUGIN_VERSION}
+USER nextjs
+EXPOSE 3000
+CMD ["node", "/opt/cf-webmail/start.mjs"]
+LABEL org.opencontainers.image.source="https://github.com/itbm/cloudfactory" \
+      org.opencontainers.image.description="Cloudfactory webmail"

@@ -34,8 +34,19 @@ service AgentService {
   rpc SetSftp(SetSftpRequest) returns (JobAccepted);
   rpc ConfigureHost(ConfigureHostRequest) returns (JobAccepted);
   rpc SetPanelCertificate(SetPanelCertificateRequest) returns (JobAccepted);
+  // Sets the panel domains of the resellers (white label). Only the panel server has them.
+  rpc SetPanelBrands(SetPanelBrandsRequest) returns (JobAccepted);
   rpc SetDatabaseServer(DatabaseServerRequest) returns (JobAccepted);
   rpc DeleteDatabaseServer(DeleteDatabaseServerRequest) returns (JobAccepted);
+  rpc SetMailServer(SetMailServerRequest) returns (JobAccepted);
+  rpc PrepareMailNode(PrepareMailNodeRequest) returns (JobAccepted);
+  rpc SetMailNode(SetMailNodeRequest) returns (JobAccepted);
+  rpc SetMailDomain(MailDomainRequest) returns (JobAccepted);
+  rpc DeleteMailDomain(MailDomainRequest) returns (JobAccepted);
+  rpc SetMailbox(SetMailboxRequest) returns (JobAccepted);
+  rpc DeleteMailbox(MailAddressRequest) returns (JobAccepted);
+  rpc SetMailAlias(SetMailAliasRequest) returns (JobAccepted);
+  rpc DeleteMailAlias(MailAddressRequest) returns (JobAccepted);
   rpc SetDnsZones(SetDnsZonesRequest) returns (JobAccepted);
   rpc DeleteDnsZones(DeleteDnsZonesRequest) returns (JobAccepted);
   rpc SetCronJobs(SetCronJobsRequest) returns (JobAccepted);
@@ -118,10 +129,16 @@ message Website {
   // runtime. The command runs in the gVisor sandbox as the Unix user of the website, with the
   // limits of the website.
   bool worker = 16;
+  // A path prefix for the route of the website in the edge proxy, for example "/01jbq3z5k8n6/".
+  // Empty for a usual website: its route has all paths of its domains. With a value, the
+  // route has only the paths that start with the prefix, so that more than one website can
+  // have the same domain. The panel uses it for the database tool of each customer
+  // (Adminer), which has one domain for all customers. The domain has no redirect.
+  string route_path = 17;
   // The environment variables of the container of the website, and of its build containers. The
   // agent writes them to a file that only the Unix user of the website can read
   // (EnvironmentFile in the unit). The panel adds them to the job each time that it sends it.
-  map<string, string> environment = 17;
+  map<string, string> environment = 18;
 }
 
 // A database server of a customer: one database container with one engine, in its own gVisor
@@ -148,6 +165,121 @@ message DatabaseServer {
 message DatabaseServerRequest {
   string job_id = 1;
   DatabaseServer database_server = 2;
+}
+
+// Email. A server with the role "email" has one mail server (Stalwart) in a container, for
+// all customers of the server. The panel keeps the customers apart: it sends a mail domain
+// only for the customer that controls the domain.
+
+// SetMailServer starts the mail server, opens the mail ports in the firewall, and gets a TLS
+// certificate for the host name from the edge proxy.
+message SetMailServerRequest {
+  string job_id = 1;
+  // The name of the mail server in the DNS, for example "mail.example.net".
+  string hostname = 2;
+}
+
+// A mail cluster: mail servers on three or five servers that share their data. The mail
+// service continues when one server fails. The panel makes a cluster in three steps:
+// PrepareMailNode on each server, SetMailNode on each server, then SetMailServer on each
+// server.
+
+// PrepareMailNode makes the keys of the server for a mail cluster. The result of the job has
+// "keys": the public keys "wireguardKey", "keepKey" and "nodeKey". The private keys stay on
+// the server.
+message PrepareMailNodeRequest {
+  string job_id = 1;
+}
+
+// A member of a mail cluster.
+message MailClusterMember {
+  // The number of the member, from 1. It does not change.
+  int32 id = 1;
+  // The host name of the mail server of the member.
+  string name = 2;
+  // The public IP address of the server.
+  string endpoint = 3;
+  // The address of the member in the private network of the cluster (IPv4).
+  string address = 4;
+  // Members with the same number are near to each other.
+  int32 region = 5;
+  // The public keys from PrepareMailNode.
+  string wireguard_key = 6;
+  string keep_key = 7;
+  string node_key = 8;
+}
+
+// SetMailNode makes the server a member of a mail cluster. It makes the private network of
+// the cluster, and starts the cluster store and the database node of the server. The result
+// of the job has "database": the number of database nodes ("size") and the state of the node
+// ("state").
+message SetMailNodeRequest {
+  string job_id = 1;
+  // The name of the cluster.
+  string cluster = 2;
+  // The host name that all members share.
+  string hostname = 3;
+  // The number of this server in members.
+  int32 self = 4;
+  // All members: three or five.
+  repeated MailClusterMember members = 5;
+  // The secrets of the cluster: 32 hexadecimal digits each. All members get the same secrets.
+  string db_password = 6;
+  string keep_secret = 7;
+  string peer_secret = 8;
+  // True only for the one server that starts a new database cluster. The other servers
+  // join it.
+  bool bootstrap = 9;
+}
+
+// SetMailDomain adds a domain to the mail server. The result of the job has "records": the
+// DNS records that the owner of the domain adds (MX, SPF, DKIM and DMARC). DeleteMailDomain
+// removes a domain with no mailboxes and no other addresses.
+message MailDomainRequest {
+  string job_id = 1;
+  string domain = 2;
+}
+
+// SetMailbox makes a mailbox, or changes its size or its password.
+message SetMailboxRequest {
+  string job_id = 1;
+  string domain = 2;
+  // The part of the address before the @ sign.
+  string local_part = 3;
+  int64 quota_bytes = 4;
+  // The bcrypt hash of the password. The agent never gets the password. Empty: the mailbox
+  // keeps its password.
+  string password_hash = 5;
+  // True: the job sets the encryption of the mailbox. False: the encryption does not change.
+  bool set_encryption = 6;
+  // The OpenPGP public key of the owner of the mailbox, in ASCII armour. The mail server
+  // encrypts each new message with it before it stores the message. Only the private key,
+  // which the server never gets, can decrypt the message. Empty: the encryption is off.
+  string public_key = 7;
+  // True: the job writes the file with the private keys to the files of the mailbox. The
+  // panel adds this field each time that it sends the job: the job record does not have it.
+  bool set_key_file = 8;
+  // The private keys that the panel made for the mailbox, in ASCII armour. Each key is
+  // protected with the password of the mailbox. The PGP plugin of the webmail reads the file
+  // with that password. Empty: the job removes the file.
+  string private_keys = 9;
+}
+
+// DeleteMailbox removes a mailbox and its messages. DeleteMailAlias removes an alias or a
+// forwarder.
+message MailAddressRequest {
+  string job_id = 1;
+  string domain = 2;
+  string local_part = 3;
+}
+
+// SetMailAlias makes an address with no mailbox. The mail server sends each message for the
+// address to all destinations: an alias has one destination, a forwarder has a list.
+message SetMailAliasRequest {
+  string job_id = 1;
+  string domain = 2;
+  string local_part = 3;
+  repeated string destinations = 4;
 }
 
 // Stops a database server and removes its data. The panel sends it only for a database
@@ -408,6 +540,15 @@ message SetPanelCertificateRequest {
   string job_id = 1;
   // "internal" (the certificate authority of the panel) or "letsencrypt".
   string method = 2;
+}
+
+// The panel domains of the resellers. The edge proxy sends each of them to the panel, as the
+// panel domain, and gets a TLS certificate for each of them: from Let's Encrypt for a public
+// name, else from the certificate authority of the panel. The list is the full list: a domain
+// that is not in it loses its route and its certificate policy.
+message SetPanelBrandsRequest {
+  string job_id = 1;
+  repeated string domains = 2;
 }
 
 // One other server that this server has an encrypted tunnel to.

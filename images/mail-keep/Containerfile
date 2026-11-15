@@ -1,0 +1,25 @@
+# The cluster store of a mail cluster (Stalwart Keep). Each member of a mail cluster has one
+# container. The mail servers of the cluster share their locks and their counters in it. The
+# release pipeline signs the image like all other images (FR-1101).
+#   podman build -t mail-keep images/mail-keep
+# SPDX-License-Identifier: AGPL-3.0-only
+# Stalwart Keep needs Linux 6.12 or later on the host.
+FROM ghcr.io/stalwartlabs/keep:v1.0
+USER root
+# CVE scan, finding 3: take the security fixes that are newer than the base image. The release
+# workflow gives CF_REFRESH a new value for each build, so this step never comes from the build
+# cache.
+ARG DEBIAN_FRONTEND=noninteractive
+ARG CF_REFRESH
+RUN apt-get update \
+ && apt-get upgrade -y --no-install-recommends \
+ && rm -rf /var/lib/apt/lists/*
+# The agent starts the cluster store as the user 2000 and the group 2000, which is the user
+# keep of the base image. The Unix user of the mail server on the host has this ID in the
+# container, and reads the keys and the secrets. A base image with a different ID stops the
+# build.
+RUN test "$(id -u keep):$(id -g keep)" = 2000:2000
+USER keep
+EXPOSE 7000 7100
+LABEL org.opencontainers.image.source="https://github.com/itbm/cloudfactory" \
+      org.opencontainers.image.description="Cloudfactory mail cluster store"

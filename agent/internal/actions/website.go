@@ -73,6 +73,16 @@ func CheckWebsite(w *agentv1.Website) error {
 	if w.GetWorker() && len(w.GetDomains()) > 0 {
 		errs = append(errs, errors.New("a worker cannot have domains"))
 	}
+	// A route with a path prefix shares its domain with other websites. A redirect domain
+	// would send all paths of the domain to one of them.
+	if w.GetRoutePath() != "" {
+		errs = append(errs, validate.RoutePath(w.GetRoutePath()))
+		for _, d := range w.GetDomains() {
+			if d.GetKind() == "redirect" {
+				errs = append(errs, errors.New("a website with a route path cannot have a redirect domain"))
+			}
+		}
+	}
 	_, err := instanceKey(w.GetDatabaseInstance())
 	return errors.Join(append(errs, err)...)
 }
@@ -308,7 +318,7 @@ func envFileOf(d *Deps, w *agentv1.Website, suffix string) string {
 }
 
 func (d *Deps) site(w *agentv1.Website, port int) caddy.Site {
-	s := caddy.Site{WebsiteID: w.GetId(), Port: port, Primary: primaryDomain(w)}
+	s := caddy.Site{WebsiteID: w.GetId(), Port: port, Primary: primaryDomain(w), Path: w.GetRoutePath()}
 	for _, dom := range w.GetDomains() {
 		if dom.GetKind() == "redirect" {
 			s.Redirects = append(s.Redirects, dom.GetName())
