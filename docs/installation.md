@@ -1182,13 +1182,16 @@ with release 0.1.9 and the agent of this release. It examined the disk image of 
 - A disk limit of 512 MB, with 705 MB of files. The job failed with a clear message. The
   website did not stop, and the disk kept its size.
 - The status report showed `disk-quotas` as off, with the number of websites that had a disk
-  limit and no disk image. These websites were on the server before the check.
+  limit and no disk image. It showed `database-disk-limits` as off, with the number of
+  database servers that had a disk limit and no disk image. These websites and database
+  servers were on the server before the check.
 - After a restart of the server, the disk image was mounted before the website started. The
   website answered, and the file had the same content. The database servers with their own
   Unix users also started again.
 - The removal of the website, with an open SFTP session, removed its Unix user, its mount,
   its mount unit and its disk image file. The other websites continued to operate.
-- With the user quotas on again, the websites and the database servers operated.
+- With the user quotas on again, the websites and the database servers operated, and the
+  status report showed the two parts as on.
 
 This check also found a fault of release 0.1.9. On a server with shared runtime images, a
 website user could not pull an image: a custom image, or an image with no digest. The pull
