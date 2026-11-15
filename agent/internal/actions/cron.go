@@ -165,8 +165,10 @@ var cronExit = regexp.MustCompile(`(?s)^(.*)cf-exit:(\d+)\n?$`)
 
 // cronScript runs the command in the container and then writes the exit code. The output of
 // the command has its standard output and its standard error. "timeout" stops a command
-// that does not end.
-const cronScript = `timeout -k 10 "$1" podman exec --workdir /app "$2" sh -c "$3" 2>&1; echo "cf-exit:$?"`
+// that does not end. "tail" reads all the output and gives only the end of it to the agent,
+// so a command that writes much output continues and uses no memory of the agent
+// (adversarial review, finding G5-01). The agent keeps cronOutputMax bytes of that end.
+const cronScript = `{ timeout -k 10 "$1" podman exec --workdir /app "$2" sh -c "$3" 2>&1; echo "cf-exit:$?"; } | tail -c 16384`
 
 // runCron runs the command of a cron job in the container of the website and gives the result.
 func (d *Deps) runCron(ctx context.Context, site *Site, e CronEntry) panel.CronRun {

@@ -12,6 +12,7 @@ import (
 	"github.com/itbm/cloudfactory/agent/internal/gate"
 	"github.com/itbm/cloudfactory/agent/internal/host"
 	"github.com/itbm/cloudfactory/agent/internal/hostupdate"
+	"github.com/itbm/cloudfactory/agent/internal/jail"
 	"github.com/itbm/cloudfactory/agent/internal/validate"
 )
 
@@ -40,8 +41,12 @@ func (d *Deps) Allow(c gate.Command) error {
 	if len(argv) == 0 {
 		return errors.New("no command")
 	}
-	if len(c.Env) > 0 && argv[0] != "restic" {
+	jailed := len(argv) >= 2 && argv[0] == d.agentBinary() && argv[1] == jail.Command
+	if len(c.Env) > 0 && argv[0] != "restic" && !jailed {
 		return errors.New("only restic can have environment variables")
+	}
+	if jailed {
+		return d.allowJail(argv[2:], c.Env)
 	}
 	switch argv[0] {
 	case "runuser":
@@ -242,6 +247,65 @@ var (
 //
 //	restic --repo <target> [--password-file <key file>] --json --retry-lock 30m <command>
 func (d *Deps) allowRestic(args, env []string) error {
+	c, err := d.checkRestic(args, env)
+	if err != nil {
+		return err
+	}
+	if c.command == "backup" {
+		return errors.New("restic makes a backup only in a jail (cf-agent jail)")
+	}
+	return nil
+}
+
+// allowJail checks a backup command in a jail (Deps.restic, package jail). restic reads the
+// files of a website as root while the website can change them. In the jail, a symbolic link
+// in these files cannot point to a file of the host. The jail shows only the paths of the
+// backup and the key file of the agent, and nothing that the worker selects.
+//
+//	cf-agent jail --ro <path>... --tmp <temporary directory> -- restic … backup <path>... …
+func (d *Deps) allowJail(args, env []string) error {
+	o, err := jail.Parse(args)
+	if err != nil {
+		return err
+	}
+	if o.Argv[0] != "restic" {
+		return errors.New("only restic runs in a jail")
+	}
+	c, err := d.checkRestic(o.Argv[1:], env)
+	if err != nil {
+		return err
+	}
+	if c.command != "backup" {
+		return errors.New("only a backup runs in a jail")
+	}
+	shown := c.paths
+	if c.keyFile && d.ResticPasswordFile != "" {
+		shown = append(slices.Clone(shown), d.ResticPasswordFile)
+	}
+	if !slices.Equal(o.ReadOnly, shown) || o.Tmp != d.resticTmp() {
+		return errors.New("the jail of a backup shows only the paths of the backup")
+	}
+	return nil
+}
+
+// resticCommand is a restic command that the policy accepts.
+type resticCommand struct {
+	command string
+	// paths are the paths that a backup reads.
+	paths []string
+	// keyFile is true when restic reads the key file of the agent.
+	keyFile bool
+}
+
+// checkRestic checks a restic command against the forms of the policy (resticArgs).
+func (d *Deps) checkRestic(args, env []string) (resticCommand, error) {
+	var c resticCommand
+	err := d.resticArgs(args, env, &c)
+	return c, err
+}
+
+// resticArgs checks the arguments of restic, and records the command in c.
+func (d *Deps) resticArgs(args, env []string, c *resticCommand) error {
 	for _, kv := range env {
 		name, value, _ := strings.Cut(kv, "=")
 		if err := checkCredentials(map[string]string{name: value}); err != nil {
@@ -256,12 +320,14 @@ func (d *Deps) allowRestic(args, env []string) error {
 		if args[1] != d.ResticPasswordFile {
 			return errors.New("restic can read only the key file of the agent")
 		}
+		c.keyFile = true
 		args = args[2:]
 	}
 	if len(args) < 4 || !slices.Equal(args[:3], []string{"--json", "--retry-lock", "30m"}) {
 		return errors.New("the policy of the root helper does not have this restic command")
 	}
 	command, args := args[3], args[4:]
+	c.command = command
 	snapshots := func(ids []string) bool {
 		return len(ids) > 0 && !slices.ContainsFunc(ids, func(id string) bool { return !snapshotID.MatchString(id) })
 	}
@@ -299,6 +365,7 @@ func (d *Deps) allowRestic(args, env []string) error {
 			if args[0] != d.dumpDir(user) {
 				return errors.New("restic can make a backup only of the files and the database dumps of a website")
 			}
+			c.paths = []string{args[0]}
 			return nil
 		}
 		// The directory of a website and its dump directory.
@@ -312,6 +379,7 @@ func (d *Deps) allowRestic(args, env []string) error {
 		if args[0] != d.Host.AppDir(user) || args[1] != d.dumpDir(user) {
 			return errors.New("restic can make a backup only of the files and the database dumps of a website")
 		}
+		c.paths = []string{args[0], args[1]}
 		return nil
 	case "restore":
 		if len(args) != 5 || !snapshotID.MatchString(args[0]) || args[1] != "--target" || args[3] != "--include" {

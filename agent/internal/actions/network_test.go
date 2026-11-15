@@ -361,7 +361,7 @@ func TestABackupOfTheDatabasesOfAWebsiteOfADifferentServer(t *testing.T) {
 	dumps := filepath.Join(d.DataDir, "dumps", "shop_r4t6")
 	head := "restic --repo s3:backups/cf --password-file  --json --retry-lock 30m "
 	f.Rules = []execx.Rule{
-		{Prefix: head + "backup", Output: `{"message_type":"summary","snapshot_id":"1a2b3c4d","total_bytes_processed":2048}`},
+		{Prefix: "/usr/local/bin/cf-agent jail --ro ", Output: `{"message_type":"summary","snapshot_id":"1a2b3c4d","total_bytes_processed":2048}`},
 		{Prefix: head + "forget", Output: `[{"remove":[{"id":"0f0f0f0f"}]}]`},
 		{Prefix: podmanOf(key) + "exec cf-mariadb-" + key + " mariadb-dump", Output: "CREATE TABLE t (id int);\n"},
 	}
@@ -378,7 +378,7 @@ func TestABackupOfTheDatabasesOfAWebsiteOfADifferentServer(t *testing.T) {
 		t.Errorf("result = %v", r)
 	}
 	// The snapshot has only the dumps, and the retention is for this kind only.
-	if !f.Called(head+"backup "+dumps+" --tag website="+remoteID+" --tag kind=scheduled-databases") || !f.Called(head+"forget --tag website="+remoteID+",kind=scheduled-databases --group-by  --keep-daily 7 --keep-weekly 0 --keep-monthly 0") {
+	if !f.Called(testJail(d, dumps)+head+"backup "+dumps+" --tag website="+remoteID+" --tag kind=scheduled-databases") || !f.Called(head+"forget --tag website="+remoteID+",kind=scheduled-databases --group-by  --keep-daily 7 --keep-weekly 0 --keep-monthly 0") {
 		t.Errorf("calls = %v", f.Calls)
 	}
 	if _, err := os.Stat(dumps); !os.IsNotExist(err) {

@@ -159,7 +159,7 @@ func TestBackupMakesTheRepositoryAndUsesTheCredentials(t *testing.T) {
 	os.MkdirAll(d.Host.AppDir("acme_x7k2"), 0o755)
 	f.Rules = []execx.Rule{
 		{Prefix: "restic --repo s3:s3.eu-west-1.amazonaws.com/b --password-file  --json --retry-lock 30m cat config", Err: errors.New("restic: exit status 10: Fatal: repository does not exist")},
-		{Prefix: "restic --repo s3:s3.eu-west-1.amazonaws.com/b --password-file  --json --retry-lock 30m backup", Output: `{"message_type":"summary","snapshot_id":"aa11","total_bytes_processed":1}`},
+		{Prefix: "/usr/local/bin/cf-agent jail --ro ", Output: `{"message_type":"summary","snapshot_id":"aa11","total_bytes_processed":1}`},
 		{Prefix: "restic --repo s3:s3.eu-west-1.amazonaws.com/b --password-file  --json --retry-lock 30m forget", Output: `[{"keep":[{"id":"aa11"}],"remove":[{"id":"0011"},{"id":"0022"}]}]`},
 	}
 	creds := map[string]string{"AWS_ACCESS_KEY_ID": "AKIA1", "AWS_SECRET_ACCESS_KEY": "s3cret"}
@@ -201,7 +201,7 @@ func TestManualBackupsKeepTheNewestSnapshots(t *testing.T) {
 	d, f, _ := deps(t)
 	os.MkdirAll(d.Host.AppDir("acme_x7k2"), 0o755)
 	f.Rules = []execx.Rule{
-		{Prefix: "restic --repo s3:b/c --password-file  --json --retry-lock 30m backup", Output: `{"message_type":"summary","snapshot_id":"aa11","total_bytes_processed":1}`},
+		{Prefix: "/usr/local/bin/cf-agent jail --ro ", Output: `{"message_type":"summary","snapshot_id":"aa11","total_bytes_processed":1}`},
 		{Prefix: "restic --repo s3:b/c --password-file  --json --retry-lock 30m forget", Output: `[{"remove":[{"id":"0011"}]}]`},
 	}
 	job, err := d.Backup(&agentv1.BackupRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Kind: "manual", Target: "s3:b/c", Retention: &agentv1.Retention{Last: 10}})
@@ -676,7 +676,7 @@ func TestBackupUsesThePasswordFromThePanel(t *testing.T) {
 	d, f, _ := deps(t)
 	os.MkdirAll(d.Host.AppDir("acme_x7k2"), 0o755)
 	f.Rules = []execx.Rule{
-		{Prefix: "restic --repo s3:https://minio.example:9000/b --json --retry-lock 30m backup", Output: `{"message_type":"summary","snapshot_id":"aa11","total_bytes_processed":1}`},
+		{Prefix: "/usr/local/bin/cf-agent jail --ro ", Output: `{"message_type":"summary","snapshot_id":"aa11","total_bytes_processed":1}`},
 	}
 	creds := map[string]string{"RESTIC_PASSWORD": "repo-secret", "AWS_ACCESS_KEY_ID": "AKIA1"}
 	job, err := d.Backup(&agentv1.BackupRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Kind: "manual", Target: "s3:https://minio.example:9000/b", Credentials: creds})

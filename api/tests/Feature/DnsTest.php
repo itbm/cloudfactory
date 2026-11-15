@@ -235,6 +235,8 @@ class DnsTest extends TestCase
     public function test_a_customer_sees_and_changes_only_its_own_zones(): void
     {
         $this->hosting();
+        $txt = [];
+        $policy = $this->fakeTxt($txt);
         $plan = $this->customer->plan;
         $reseller = $this->customer($plan, ['name' => 'Reseller', 'role' => 'reseller']);
         $resold = $this->customer($plan, ['name' => 'Resold', 'reseller_id' => $reseller->id]);
@@ -254,6 +256,9 @@ class DnsTest extends TestCase
 
         $this->actingWith($this->user(Role::Reseller, $reseller));
         $this->getJson('/api/v1/dns-zones')->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.name', 'resold.example');
+        // A reseller is not an administrator: its customer proves control of the new name.
+        $this->postJson('/api/v1/dns-zones', ['name' => 'b.example', 'customerId' => $resold->id])->assertUnprocessable();
+        $txt['_cloudfactory-challenge.b.example'] = [$policy->claimToken($resold->id, 'b.example')];
         $this->postJson('/api/v1/dns-zones', ['name' => 'b.example', 'customerId' => $resold->id])->assertAccepted();
         $this->getJson("/api/v1/dns-zones/{$mine->id}")->assertNotFound();
     }
@@ -297,7 +302,8 @@ class DnsTest extends TestCase
         // A zone above the zone of the other customer.
         $this->postJson('/api/v1/dns-zones', ['name' => 'sub.example.net'])->assertUnprocessable()
             ->assertJsonPath('errors.name.0', fn (string $m) => str_starts_with($m, 'This name overlaps with a zone of a different customer.'));
-        // The own zones of a customer can be one in the other.
+        // The own zones of a customer can be one in the other. The first zone needs the proof.
+        $txt['_cloudfactory-challenge.mine.example'] = [$policy->claimToken($this->customer->id, 'mine.example')];
         $this->postJson('/api/v1/dns-zones', ['name' => 'mine.example'])->assertAccepted();
         $this->postJson('/api/v1/dns-zones', ['name' => 'shop.mine.example'])->assertAccepted();
         $this->postJson('/api/v1/dns-zones', ['name' => 'mine.example'])->assertUnprocessable()->assertJsonPath('errors.name.0', 'You have this zone already.');
@@ -307,6 +313,62 @@ class DnsTest extends TestCase
         $this->postJson('/api/v1/dns-zones', ['name' => 'example.com'])->assertAccepted();
         $this->assertSame($this->customer->id, DnsZone::where('name', 'example.com')->sole()->customer_id);
         $this->assertSame(0, DnsRecord::whereHas('zone', fn ($q) => $q->where('customer_id', $other->id)->where('name', 'example.com'))->count());
+    }
+
+    /** Adversarial review, findings A6-01 and A6-02: each new zone of a customer needs a proof. */
+    public function test_a_customer_proves_control_of_each_new_zone(): void
+    {
+        $this->hosting();
+        $txt = [];
+        $policy = $this->fakeTxt($txt);
+        $other = $this->customer($this->customer->plan, ['name' => 'Other Ltd']);
+        $squatter = $this->user(Role::Owner, $other);
+        $owner = $this->user(Role::Owner, $this->customer);
+
+        // No customer has a zone for the name or near it. The customer must prove control.
+        $this->actingWith($squatter);
+        foreach (['victim.example', 'www.victim.example'] as $name) {
+            $response = $this->postJson('/api/v1/dns-zones', ['name' => $name])->assertUnprocessable();
+            $this->assertStringStartsWith('Prove that you control this domain.', $response->json('errors.name.0'));
+            $this->assertStringContainsString("_cloudfactory-challenge.{$name} with the value {$policy->claimToken($other->id, $name)}", $response->json('errors.name.0'));
+        }
+        $this->assertSame(0, DnsZone::count());
+
+        // The domain points to the name servers of the panel and has no zone, for example
+        // after its zone was removed. That does not show which customer controls it.
+        $ns = ['victim.example' => self::NS];
+        $this->fakeNameServers($ns);
+        $this->postJson('/api/v1/dns-zones', ['name' => 'victim.example'])->assertUnprocessable();
+        // The token of a different customer is not a proof.
+        $txt['_cloudfactory-challenge.victim.example'] = [$policy->claimToken($this->customer->id, 'victim.example')];
+        $this->postJson('/api/v1/dns-zones', ['name' => 'victim.example'])->assertUnprocessable();
+        $this->assertSame(0, DnsZone::count());
+
+        // The owner of the domain has the TXT record, and makes the zone.
+        $this->actingWith($owner);
+        $this->postJson('/api/v1/dns-zones', ['name' => 'victim.example'])->assertAccepted();
+        // A name in a zone of the customer needs no second proof.
+        $this->postJson('/api/v1/dns-zones', ['name' => 'www.victim.example'])->assertAccepted();
+        $this->assertSame([$this->customer->id], DnsZone::pluck('customer_id')->unique()->values()->all());
+
+        // The other customer cannot take a name below the zone.
+        $this->actingWith($squatter);
+        $this->postJson('/api/v1/dns-zones', ['name' => 'mail.victim.example'])->assertUnprocessable()
+            ->assertJsonPath('errors.name.0', fn (string $m) => str_starts_with($m, 'This name overlaps with a zone of a different customer.'));
+    }
+
+    /** A verified domain of a website of the customer is a proof that the customer gave before. */
+    public function test_a_verified_website_domain_is_a_proof_for_its_zone(): void
+    {
+        $this->hosting();
+        $txt = [];
+        $this->fakeTxt($txt);
+        $website = $this->website($this->customer, $this->server(), $this->image(), 'shop.example');
+        $website->domains()->create(['name' => 'waiting.example', 'kind' => 'alias', 'verification_token' => 'cf-test', 'verified_at' => null]);
+
+        $this->actingWith($this->user(Role::Owner, $this->customer));
+        $this->postJson('/api/v1/dns-zones', ['name' => 'shop.example'])->assertAccepted();
+        $this->postJson('/api/v1/dns-zones', ['name' => 'waiting.example'])->assertUnprocessable();
     }
 
     public function test_only_an_administrator_makes_a_zone_for_a_name_of_the_panel(): void

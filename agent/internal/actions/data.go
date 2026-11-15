@@ -18,6 +18,7 @@ import (
 
 	agentv1 "github.com/itbm/cloudfactory/agent/gen/cloudfactory/agent/v1"
 	"github.com/itbm/cloudfactory/agent/internal/host"
+	"github.com/itbm/cloudfactory/agent/internal/jail"
 	"github.com/itbm/cloudfactory/agent/internal/jobs"
 	"github.com/itbm/cloudfactory/agent/internal/quadlet"
 	"github.com/itbm/cloudfactory/agent/internal/safefs"
@@ -663,8 +664,29 @@ func (d *Deps) restic(ctx context.Context, r repo, args ...string) (string, erro
 	for _, k := range slices.Sorted(maps.Keys(r.creds)) {
 		env = append(env, k+"="+r.creds[k])
 	}
-	return d.Run.RunEnv(ctx, env, "", "restic", append(base, args...)...)
+	argv := append([]string{"restic"}, append(base, args...)...)
+	if len(args) > 0 && args[0] == "backup" {
+		// A backup reads the files of a website, which the website can change at any time.
+		// restic runs in a jail, where a symbolic link in these files cannot point to a file
+		// of the host (adversarial review, finding G2-01).
+		j := jail.Options{Tmp: d.resticTmp(), Argv: argv}
+		for _, a := range args[1:] {
+			if strings.HasPrefix(a, "-") {
+				break
+			}
+			j.ReadOnly = append(j.ReadOnly, a)
+		}
+		if r.creds["RESTIC_PASSWORD"] == "" && d.ResticPasswordFile != "" {
+			j.ReadOnly = append(j.ReadOnly, d.ResticPasswordFile)
+		}
+		return d.Run.RunEnv(ctx, env, "", d.agentBinary(), j.Args()...)
+	}
+	return d.Run.RunEnv(ctx, env, "", argv[0], argv[1:]...)
 }
+
+// resticTmp is the directory of the temporary files of restic in the jail of a backup. Only
+// root can open it.
+func (d *Deps) resticTmp() string { return filepath.Join(d.DataDir, "restic-tmp") }
 
 // ensureRepo makes the repository when it does not exist, for example in a new bucket.
 // restic gives exit code 10 when there is no repository at the target.

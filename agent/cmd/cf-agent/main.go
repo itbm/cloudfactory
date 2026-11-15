@@ -37,6 +37,7 @@ import (
 	"github.com/itbm/cloudfactory/agent/internal/execx"
 	"github.com/itbm/cloudfactory/agent/internal/gvisor"
 	"github.com/itbm/cloudfactory/agent/internal/host"
+	"github.com/itbm/cloudfactory/agent/internal/jail"
 	"github.com/itbm/cloudfactory/agent/internal/panel"
 	"github.com/itbm/cloudfactory/agent/internal/pki"
 	"github.com/itbm/cloudfactory/agent/internal/quadlet"
@@ -77,6 +78,12 @@ func main() {
 			os.Exit(1)
 		}
 		return
+	}
+	// The jail of a backup. The root helper starts this command as root (actions.Deps.restic),
+	// so it is not in the usage text. It reads no settings of the agent.
+	if len(os.Args) > 2 && os.Args[1] == jail.Command {
+		fmt.Fprintln(os.Stderr, jail.Main(os.Args[2:]))
+		os.Exit(1)
 	}
 	if len(os.Args) < 2 {
 		fmt.Fprintln(os.Stderr, usageString)
