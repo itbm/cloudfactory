@@ -42,12 +42,12 @@ export function NotificationSettings() {
         </div>
         <TableWrap>
           <table>
-            <thead><tr><th scope="col">Event</th><th scope="col" style={{ width: 150 }}>Email</th></tr></thead>
+            <thead><tr><th scope="col">Event</th><th scope="col" style={{ width: 170 }}>Email</th></tr></thead>
             <tbody>
               {(prefs.data ?? []).map((p) => (
                 <tr key={p.event}>
                   <td><strong>{p.label}</strong><span className="cell-sub">{p.description}</span></td>
-                  <td>
+                  <td className="nowrap">
                     <Toggle checked={p.email} disabled={p.required || save.busy} label={`Email for ${p.label}`} onChange={(on) => void toggle(p, on)}>
                       {p.required ? "Always on" : p.email ? "On" : "Off"}
                     </Toggle>
@@ -205,9 +205,9 @@ function SmtpServer({ admin }: { admin: boolean }) {
         {saved && <p role="status" style={{ marginBottom: 12 }}><Status tone="success">Saved</Status> Send a test email to make sure that the server accepts the emails of the panel.</p>}
         {s?.testError && <div className="alert alert-danger" style={{ marginBottom: 12 }}><p><strong>The last test email failed.</strong> {s.testError}</p></div>}
         {s?.testedAt && !s.testError && <p className="muted small" style={{ marginBottom: 12 }}>The last test email went out {relativeTime(s.testedAt)}.</p>}
-        <div className="grid-2" style={{ gap: "0 20px", alignItems: "start" }}>
+        <div className="form-grid">
           <Field label="Host" hint="For example smtp.example.com." error={save.error?.fields.host}>{(p) => <input {...p} className="input" value={form.host} onChange={(e) => set("host", e.target.value)} placeholder="smtp.example.com" autoComplete="off" />}</Field>
-          <div className="grid-2" style={{ gap: "0 12px" }}>
+          <div className="form-grid form-grid-tight">
             <Field label="Port" error={save.error?.fields.port}>{(p) => (
               <select {...p} className="select" value={form.port} onChange={(e) => { const port = PORTS.find((x) => x.port === Number(e.target.value))!; setSaved(false); setForm((f) => ({ ...f, port: port.port, encryption: port.encryption })); }}>
                 {PORTS.map((x) => <option key={x.port} value={x.port}>{x.label}</option>)}
@@ -244,7 +244,7 @@ function SmtpServer({ admin }: { admin: boolean }) {
       </form>
       {s?.configured && (
         <div className="card-body" style={{ borderTop: "1px solid var(--border)" }}>
-          <h3 className="label" style={{ marginBottom: 8 }}>Test email</h3>
+          <h3 className="label" style={{ marginBottom: 10 }}>Test email</h3>
           <form className="inline-form" noValidate onSubmit={async (e) => {
             e.preventDefault();
             setTest(null);

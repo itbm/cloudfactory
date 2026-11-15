@@ -851,3 +851,7 @@ a.stat-link .stat-value { margin-bottom: 8px; }
   .template-editor { grid-template-columns: 1fr; }
   .email-preview iframe { height: 360px; }
 }
+.form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 20px; align-items: start; }
+.form-grid .field + .field { margin-top: 0; }
+.form-grid-tight { gap: 0 12px; }
+@media (max-width: 860px) { .form-grid:not(.form-grid-tight) { grid-template-columns: 1fr; } }
