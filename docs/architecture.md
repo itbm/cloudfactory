@@ -212,6 +212,14 @@ image, not 100.
 - In the container, the files of the image have the owner `nobody`. The website process runs
   as the website user and reads them as "other", the same as before.
 - A custom image stays in the storage of its website user, so other customers never see it.
+  The website user pulls it, and also pulls an image with no digest. This pull does not use
+  the shared stores: the agent gives Podman the storage option
+  `overlay.mount_program=/usr/bin/fuse-overlayfs` on the command line, and a storage option
+  there replaces all storage options of `website-storage.conf`. With the shared stores,
+  Podman finds a layer of the new image in a shared store, for example the empty layer that
+  most images have, and copies it. The copy fails with the error
+  `tar-split.gz: permission denied`, because a website user cannot read all files of a layer
+  that root pulled. Thus the user keeps a full copy of such an image.
 - After a runtime change, the agent removes the previous image from the storage of the website
   user, if it is there: a custom image, or a copy from before the shared store. Then it removes
   the shared images that no website uses, in two steps: first from `website-storage.conf`, then,
@@ -231,6 +239,88 @@ The container unit of a website sets these limits:
   `/sys/fs/cgroup/cgroup.subtree_control`, which a rootless user cannot do. A change of the
   limits in the panel uses `systemctl set-property` on the running service and also changes
   the unit.
+
+### Disk limit of a website
+
+The Unix user of a website owns the files of the website. The type of the disk limit comes
+from the file system of `/srv/cloudfactory/sites`. A database server has the same three
+types (refer to [Disk limit](#disk-limit)):
+
+| File system | Disk limit |
+| ----------- | ---------- |
+| User quotas are on | The user quota of the Unix user of the website |
+| No user quotas, and the server has loop devices | A disk image with the size of the limit, for each new website |
+| No user quotas and no loop devices | No limit |
+
+The installer turns on the user quotas of an ext4 or XFS file system. Refer to
+[installation.md](installation.md#disk-quotas).
+
+**User quota.** The hard limit of the quota is the disk limit, and the soft limit is 95% of
+it. The quota counts all files of the user on the file system: the files of the website, and
+the files in the home directory of the user. A website that is at its limit gets the error
+"disk quota exceeded" when it writes. A change of the limit applies immediately, and the
+website does not stop.
+
+**Disk image.** The website has its own file system:
+
+| Path | Content |
+| ---- | ------- |
+| `/srv/cloudfactory/sites/<user>` | The directory of the website user: the mount point of the disk image. Root owns it. |
+| `/srv/cloudfactory/sites/<user>/app` | The files of the website. The website user owns the directory. |
+| `/srv/cloudfactory/disks/<user>.img` | The disk image. Only root can open the directory `disks`. |
+
+1. The root helper makes the Unix user. Then it makes the file `<user>.img` with the size of
+   the disk limit, and makes an ext4 file system in it. The file is sparse: it uses only the
+   disk space that the website uses.
+2. A systemd mount unit (`srv-cloudfactory-sites-<user>.mount`) mounts the file as a loop
+   device on the directory of the website user, now and at each start of the server. The
+   mount is a part of `local-fs.target`, so it is there before the user manager of the
+   website starts the container. The mount has the options `nodev` and `nosuid`. With the
+   option `discard`, the file gives the disk space of removed files back to the server.
+3. The root helper makes the directory `app` in that file system.
+
+These rules apply to a website with a disk image:
+
+- A website that fills its disk gets the error "no space left on device". It cannot fill the
+  disk of the server, and the other websites continue to operate.
+- When the mount is not there, the directory `app` is not there, and Podman does not start
+  the container. Thus a website never starts with an empty directory in place of its files.
+- A larger limit makes the file system larger while the website operates.
+- For a smaller limit, the agent first compares the disk space that the website uses with the
+  new limit. If the files need more space, the job fails, the website does not stop, and the
+  disk keeps its size. If not, the agent stops the website, closes its SFTP sessions, makes
+  the file system smaller and starts the website again. A file system cannot become smaller
+  while a process uses it.
+- The limit applies to the directory of the website user only. The home directory of the
+  user is not on the disk image. It has the files of Podman, the log file of the website
+  (10 MB at most) and, for a custom image, the copy of the image. The website cannot write
+  there: its container, its cron jobs and the build container of a deploy write only in
+  `app` and in `/tmp`, which is in memory.
+- The file system has the directory `lost+found`. Only root can open it. An SFTP user sees
+  its name next to `app`.
+- The kernel counts the disk space of the file system. The status report of the agent gets
+  the use from the kernel, and does not read the files of the website. For a website with no
+  disk image, the agent measures the files.
+- When the agent removes the website, it closes the SFTP sessions of the website, removes
+  the Unix user, unmounts the file system, and removes the mount unit and the disk image.
+
+A website keeps the type of disk that it started with:
+
+- A website with a directory keeps the directory when the server has no user quotas. The
+  agent does not move the files of a website into a disk image. Such a website has no disk
+  limit.
+- A website with a disk image keeps the image when the file system gets user quotas later.
+- A website with no disk limit gets no disk image. When a website with a disk image loses its
+  limit, the image keeps its size, because a file system always has a size.
+
+The status report of the agent has the part `disk-quotas`. The part is on when the server
+applies the disk limit of each website: with user quotas, or when each website with a disk
+limit has a disk image. If not, the part is off, and its text gives the cause: no loop
+devices, or the number of websites with a disk limit and no disk image. The panel then shows
+"Not applied on this server" next to the disk limit of each website of that server.
+
+The disk images of the websites and of the database servers use the same code
+(`agent/internal/actions/loopdisk.go`).
 
 ## The edge proxy
 
@@ -281,11 +371,21 @@ the administrators. The image `sftp` has OpenSSH and `libnss-extrausers`.
 
   | Host directory | In the container | Access |
   | -------------- | ---------------- | ------ |
-  | `/srv/cloudfactory/sites` | `/srv/cloudfactory/sites` | Read and write |
+  | `/srv/cloudfactory/sites` | `/srv/cloudfactory/sites` | Read and write, with the later mounts of the host (`rslave`) |
   | `/etc/cloudfactory/sftp` (one `<user>.keys` file for each user) | `/etc/cloudfactory/sftp` | Read only |
   | `/etc/cloudfactory/sftp-users` (`passwd` and `group`) | `/var/lib/extrausers` | Read only |
   | `/var/lib/cloudfactory/sftp-host-keys` | `/etc/ssh/keys` | Read and write |
 
+- The disk image of a website is a mount below `/srv/cloudfactory/sites` (refer to
+  [Disk limit of a website](#disk-limit-of-a-website)). With `rslave`, the container gets each
+  mount and each unmount that the host makes there after the start of the container. gVisor
+  refuses a shared mount (`rshared`). The container does not need one, because it makes no
+  mounts.
+- The container starts with `--runtime-flag=dcache=0`. Without this flag, gVisor keeps files
+  of the host open in a cache after a session closes them. The host then cannot unmount the
+  disk image of a website ("target is busy"). The agent also closes the SFTP sessions of a
+  website before it unmounts the disk image, because an open session has its root directory
+  on that file system.
 - The agent writes the keys file of a website for each SFTP change. Then it writes `passwd` and
   `group` again, with each website user that has a key, and the UID and GID of the user on the
   host. sshd reads these files at each sign-in, so the container does not restart.
@@ -297,6 +397,111 @@ the administrators. The image `sftp` has OpenSSH and `libnss-extrausers`.
 - On a server from release 0.1, the agent then removes the SFTP configuration from the SSH
   service of the host. Until this step is complete, the agent reports port 22 to the panel.
   Refer to [installation.md](installation.md#servers-that-you-installed-with-release-01).
+
+## DNS hosting
+
+A server with the role `dns` and a name server host name is a DNS server. It has one
+container, `cf-dns`, with Knot DNS. The container answers the queries for the zones of all
+customers. It does not resolve other names.
+
+```text
+ resolver ──► port 53, UDP and TCP ──► nftables redirect ──► port 8053
+                                                               │
+                                          cf-dns (rootless Podman, gVisor, user cf-dns)
+                                                               │ reads
+                              /var/lib/cloudfactory/dns/etc    knot.conf and zones/<name>.zone
+                              /var/lib/cloudfactory/dns/db     keys and signatures (KASP, journal)
+```
+
+- The Unix user `cf-dns` runs the container. The installation script does not make the user.
+  The root helper makes it when the server gets its first zone.
+- Root owns `knot.conf` and the zone files, and the container reads them from a read-only
+  volume. The user `cf-dns` owns only the directory of the keys and the signatures.
+- The firewall redirects port 53 to port 8053, as it does for ports 80 and 443. The agent
+  adds the rules, which have the comment `# cloudfactory-dns`, when it starts the DNS server.
+  The installation script keeps the rules when you run it again.
+- The answers to one network have a rate limit (`mod-rrl`), so that an attacker cannot use
+  the server to send traffic to a different address. The server does not give its name or its
+  version.
+
+### The panel sends full zones
+
+The DNS servers do not use zone transfers between them. The panel has the records, and it
+sends each changed zone to each DNS server in a job:
+
+| Job | Work |
+| --- | ---- |
+| `SetDnsZones` | Start the DNS server if necessary, write the zone files, and load the zones. One job has 100 zones at most. |
+| `DeleteDnsZones` | Remove the zones, their files and their keys. |
+
+A zone in a job has its name, its serial and all its records. The root helper does not accept
+a zone file from the worker. It checks each record with the shared input rules and writes the
+zone file itself, so a person who controls the worker or the panel database cannot put a
+directive such as `$INCLUDE` in a zone file.
+
+Each change of a zone gives the zone a higher serial. The panel keeps, for each DNS server,
+the last serial that the server loaded. The state of a zone is `active` when each DNS server
+has the last serial, `updating` while a job runs, and `failed` when a server could not load
+the zone. A server that could not load a change continues to answer with the records that it
+had before.
+
+### A DNS server that does not have the last zones
+
+The panel corrects a DNS server by itself. The report of each agent, which the agent sends
+each minute and when it starts, has the list of the zones of the server with the serial that
+the DNS server loaded last. The panel compares the list with its zones:
+
+| The server reports | The panel does |
+| ------------------ | -------------- |
+| No zone, or a zone with a different serial | It sends the full zone again. |
+| The last serial, but the last job of the zone failed | It sends the full zone again. |
+| A zone that the panel does not have, or that the panel removes | It removes the zone from the server. |
+| Zones, and the server does not answer DNS queries now | It removes all zones from the server. |
+| A zone with a larger serial than the panel has | It gives the zone a larger serial and sends it to each DNS server. |
+
+Thus a server that was offline during a change, a server with a new disk and a server whose
+DNS server could not load a zone get the last zones with no work of an administrator. A
+server that starts with no data gets all zones.
+
+- The panel does nothing while a DNS job of the server is in the queue or runs.
+- After a try that did not correct the server, the panel waits 1 minute, then 2, then 4, up
+  to 60 minutes between two tries. A report that agrees with the panel ends the wait.
+- The agent records the serial of a zone only after the DNS server loaded the zone. A zone
+  file that the DNS server could not load does not count.
+- When the DNS container starts, Knot DNS loads the zone files from the disk. The server
+  thus answers with its last zones before the panel sends a correction.
+
+**Send again now** on the page of the zone, or `cf dns sync`, sends a zone again immediately.
+
+### Records that the panel makes
+
+- The panel makes the NS records of each zone from the name server host names of the DNS
+  servers. A user cannot change them. When the role `dns` or the name server host name of a
+  server changes, the panel sends all zones again.
+- When a website of the customer has a domain in a zone, the panel makes an A record, and an
+  AAAA record if the server has an IPv6 address, for the domain. The records point to the
+  public addresses that the agent of the server of the website reported. A user can change
+  such a record. Then the record belongs to the user, and the panel does not change it again.
+
+### The name servers of the domain
+
+A zone has an effect only when the registrar of the domain has the name servers of the
+panel. The panel asks the public DNS for the NS records of the domain and shows one of these
+states: the domain uses the name servers of the panel, it uses other name servers, it has no
+name servers, or the panel could not check. When the domain uses the name servers of the
+panel, the panel verifies the domains of the websites in the zone with no TXT record.
+
+### DNSSEC
+
+DNSSEC is off for a new zone. When a user turns it on, the panel makes one ECDSA P-256 key
+(algorithm 13) for the zone. The key signs the zone and its keys (a combined signing key).
+The panel keeps the private key encrypted, as it keeps the other secrets, and sends it to
+each DNS server with the zone, so all servers sign with the same key. The root helper gives
+the key to Knot DNS, and Knot DNS signs the zone with NSEC3 (no more iterations, no salt).
+The panel shows the DS record that the customer gives to the registrar.
+
+The panel does not change the key of a zone on a schedule. To change the key, remove the DS
+record at the registrar, turn DNSSEC off and on, and give the new DS record to the registrar.
 
 ## Files, logs, cron jobs and deploys of a website
 
@@ -535,8 +740,9 @@ uses. The panel shows them next to the limits.
 ### Disk limit
 
 The Unix user of a database server owns all files of the database server. Thus the disk
-limit of a database server is as the disk limit of a website. The type of the limit comes
-from the file system of `/var/lib/cf-db`:
+limit of a database server is as the disk limit of a website (refer to
+[Disk limit of a website](#disk-limit-of-a-website)). The type of the limit comes from the
+file system of `/var/lib/cf-db`:
 
 | File system | Disk limit |
 | ----------- | ---------- |
@@ -591,7 +797,14 @@ the server. The panel then shows `database-disk-limits` as an optional part of t
 that is off. This does not make the server degraded.
 
 A database server keeps the type of disk that it started with. A database server with a disk
-image keeps the image when the file system gets user quotas later.
+image keeps the image when the file system gets user quotas later. A database server with a
+directory keeps the directory when the file system has no user quotas, and then has no disk
+limit.
+
+The status report of the agent has the part `database-disk-limits`. The part is on when the
+server applies the disk limit of each database server. If not, the part is off, and its text
+gives the cause: no loop devices, or the number of database servers with a disk limit and no
+disk image. The part `disk-quotas` has the same rule for the websites.
 
 A database engine that cannot write does not lose data that it saved before, but it can stop:
 
@@ -604,7 +817,7 @@ A database engine that cannot write does not lose data that it saved before, but
 To correct this, make the disk limit of the database server larger. Then remove the data that
 is not necessary.
 
-The disk quota of a website does not include its databases.
+The disk limit of a website does not include its databases.
 
 ### Stop of a database server
 

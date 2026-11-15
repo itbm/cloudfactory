@@ -1,0 +1,35 @@
+# The DNS server of a server with the role "dns". One container on each of these servers. It
+# runs Knot DNS in gVisor, and answers the queries for the DNS zones of the customers.
+#   podman build -t dns images/dns
+# SPDX-License-Identifier: AGPL-3.0-only
+FROM docker.io/library/debian:13-slim
+
+ARG DEBIAN_FRONTEND=noninteractive
+# knot has the server (knotd) and the tools that the agent runs in the container: knotc and
+# keymgr. knot-dnsutils has kdig, with which an administrator can examine an answer. Knot DNS
+# 3.5 and later have keymgr in the package knot-keymgr. The build stops if a tool is absent.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends knot knot-dnsutils \
+ && { command -v keymgr >/dev/null || apt-get install -y --no-install-recommends knot-keymgr; } \
+ && command -v knotd knotc keymgr >/dev/null \
+ && rm -rf /var/lib/apt/lists/* /etc/knot/* \
+ && mkdir -p /etc/knot/zones /var/lib/knot /run/knot
+
+# CVE scan, finding 3: take the Debian security fixes that are newer than the base image. The
+# release workflow gives CF_REFRESH a new value for each build, so this step never comes from
+# the build cache.
+ARG CF_REFRESH
+RUN apt-get update \
+ && apt-get upgrade -y --no-install-recommends \
+ && rm -rf /var/lib/apt/lists/*
+
+# The agent writes /etc/knot/knot.conf and the zone files on the host, and the container
+# mounts them read-only. The server listens on port 8053 for UDP and TCP: the firewall of the
+# host redirects port 53 to it. The user of the container is root in the container only: the
+# agent runs the container as the Unix user cf-dns, with no capabilities.
+EXPOSE 8053/udp 8053/tcp
+STOPSIGNAL SIGTERM
+CMD ["knotd", "-c", "/etc/knot/knot.conf"]
+LABEL org.opencontainers.image.source="https://github.com/itbm/cloudfactory" \
+      org.opencontainers.image.licenses="AGPL-3.0-only" \
+      org.opencontainers.image.description="Cloudfactory DNS server"

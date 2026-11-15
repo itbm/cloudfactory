@@ -192,7 +192,7 @@ The backups of the websites that the server had stay in the object storage, in t
 | `--allow-unsigned REGISTRY` | Let Podman pull unsigned images from this registry. You can use this option more than one time. |
 | `--allow-website-smtp` | Let the websites connect to port 25 (SMTP) of other servers. Refer to [Connections from the websites](#connections-from-the-websites). |
 | `--allow-website-network NETWORK` | Let the websites connect to this private address or network, for example `10.0.5.0/24`. You can use this option more than one time. |
-| `--no-disk-quotas` | Do not turn on the user quotas of the file systems. Without user quotas, the server does not apply the disk limit of a website. Refer to [Disk quotas](#disk-quotas). |
+| `--no-disk-quotas` | Do not turn on the user quotas of the file systems. Without user quotas, each new website and each new database server with a disk limit gets a disk image. Refer to [Disk quotas](#disk-quotas). |
 | `--check`          | Do only the checks. Do not change the system.                            |
 
 ## What the script does
@@ -223,7 +223,7 @@ Then the script does these steps:
 10. Make the group of the website users and the directories for SFTP (refer to [SFTP](#sftp)).
     The script does not change the SSH service of the host.
 11. Turn on the user quotas of the file systems of `/srv/cloudfactory` and `/var/lib/cf-db`.
-    The server needs them to apply the disk limit of a website and of a database server
+    The server uses them to apply the disk limit of a website and of a database server
     (refer to [Disk quotas](#disk-quotas)). The option `--no-disk-quotas` skips this step.
 12. Set the firewall. The firewall accepts SSH (port 22), HTTP, HTTPS, the agent port and the
     SFTP port. It sends connections to ports 80 and 443 to the edge proxy, also connections
@@ -642,12 +642,16 @@ the image, correct the cause and select **Try again**. With the CLI:
   disk space of the server.
 - **A smaller disk limit.** The new limit must be more than the disk space that the
   database server uses. If it is not, the job fails and the limit stays as it is.
-- **Servers with no user quotas.** On a file system with no user quotas, each database
+- **Servers with no user quotas.** On a file system with no user quotas, each new database
   server has a disk image file with the size of its disk limit, in `/var/lib/cf-db/servers`.
   The file uses only the disk space that the database server uses. A database server that
   fills its disk gets the error "no space left on device". The disk image needs the device
   `/dev/loop-control`. A virtual machine and a physical server have it. A container of an
-  LXC host usually does not.
+  LXC host usually does not. Refer to [Disk images](#disk-images).
+- **A database server from before the disk images.** A database server that has a directory
+  on a file system with no user quotas keeps it, and has no disk limit. The panel then shows
+  `database-disk-limits` as an optional part that is off, with the number of these database
+  servers. To give them a limit, turn on the user quotas.
 - **Servers with no user quotas and no loop devices.** On such a server, the database
   servers have no disk limit, and the panel shows `database-disk-limits` as an optional part
   that is off. This does not make the server degraded.
@@ -667,7 +671,7 @@ the image, correct the cause and select **Try again**. With the CLI:
   of your own with a UID in this range or in the range of the website users (20000 to 59999).
 - **Connections from a database server.** A database server answers its clients, and opens
   no connection itself. The firewall refuses each connection that a database server opens.
-- **Disk quota of a website.** The disk quota of a website applies to the files of the
+- **Disk limit of a website.** The disk limit of a website applies to the files of the
   website only, not to its databases.
 
 #### A server from release 0.1.9
@@ -709,6 +713,95 @@ also has the files of the database servers of the customers.
 Then run the installation script of this release on the server, with all your options. The
 script writes the firewall rules of this release, which have no rule for the ports of the
 shared containers.
+
+### DNS hosting
+
+The panel can be the DNS provider of the domains of your customers. A customer makes a DNS
+zone for a domain, adds records, and gives the name servers of the panel to the registrar of
+the domain.
+
+#### Make a server a DNS server
+
+Use two servers, because most registrars want two name servers. The servers can also have
+other roles.
+
+1. Select a host name for each name server, for example `ns1.example.net` and
+   `ns2.example.net`. At the DNS provider of `example.net`, add an A record for each host name
+   with the public IPv4 address of its server, and an AAAA record if the server has an IPv6
+   address. If the host names are in a domain that the panel hosts, the registrar of that
+   domain must also have glue records for them.
+2. Make sure that port 53 (UDP and TCP) of each server is open in the firewall of your
+   provider. The firewall of the server opens the port itself.
+3. On the page of each server, in the card **DNS server**, type the host name and select
+   **Turn on DNS**. With the CLI:
+
+   ```sh
+   cf servers set web-1 --roles web,database,dns --dns-name ns1.example.net
+   cf servers set web-2 --roles web,database,dns --dns-name ns2.example.net
+   ```
+
+4. Set the number of DNS zones of each plan in **Plans**. A plan from an earlier release has
+   5 DNS zones. With 0, the customers of the plan cannot make a zone.
+
+The server starts its DNS container, `cf-dns`, when it gets its first zone. A server whose
+agent is from an earlier release cannot be a DNS server: update the agent first.
+
+#### Make a zone
+
+A customer, a reseller or an administrator makes a zone on the **DNS** page, or with the CLI:
+
+```sh
+cf dns create example.com
+cf dns add example.com MX @ mx1.example.net --priority 10
+cf dns add example.com TXT @ "v=spf1 include:example.net -all"
+cf dns records example.com
+```
+
+- The panel makes the NS records of the zone. It also makes the A and AAAA records of each
+  domain of a website of the customer that is in the zone.
+- Copy the other records that the domain uses at its current DNS provider to the zone. Then
+  set the name servers of the panel at the registrar of the domain. The page of the zone
+  shows if the registrar has them. `cf dns check example.com` checks again.
+- The types are A, AAAA, CNAME, MX, TXT, SRV, CAA and NS. A TTL is from 60 seconds to 7 days.
+- If a different customer has a zone for the domain or for a name above or below it, the
+  panel gives a TXT record. Add the record at the current DNS provider of the domain to prove
+  that you control the domain, and then make the zone again.
+
+#### DNSSEC
+
+Turn on DNSSEC on the page of the zone, or with `cf dns dnssec example.com on`. The panel
+then shows a DS record. Give the DS record to the registrar of the domain.
+
+Before you turn off DNSSEC, or remove a zone that has DNSSEC, remove the DS record at the
+registrar and wait one day. If the registrar still has the DS record, resolvers refuse all
+answers for the domain.
+
+#### A zone that a DNS server could not load
+
+The page of the zone shows the state of the zone on each name server. When a server could
+not load a change, it continues to answer with the records that it had before.
+
+The panel sends the zone again by itself. Each agent reports the zones of its server each
+minute and when it starts, and the panel sends each zone that the server does not have with
+the last serial. So a DNS server that was offline, or that you installed again, needs no
+work: it gets its zones in the first minutes after its agent starts. After a try with no
+result, the panel waits 1 minute, then 2, then 4, up to 60 minutes.
+
+To send a zone immediately, select **Send again now** or run `cf dns sync example.com`. To
+see the log of the DNS server, run on the server:
+
+```sh
+sudo -u cf-dns XDG_RUNTIME_DIR=/run/user/$(id -u cf-dns) journalctl --user -u cf-dns
+```
+
+#### Remove a zone or a DNS server
+
+- Before you remove a zone, set other name servers at the registrar of the domain. While the
+  registrar has the name servers of the panel, the domain does not resolve, and a different
+  customer can make a zone for it (refer to [security.md](security.md#known-limits)).
+- Before you turn off DNS on a server, remove its host name from the name servers at the
+  registrar of each domain. The panel then removes the zones from the server and sends the
+  new name server records to the other DNS servers.
 
 ### Valkey
 
@@ -900,12 +993,20 @@ root helper. To go back to release 0.1.9 or an earlier release after that time, 
 
 ### Disk quotas
 
-The server applies the disk limit of a website and of a database server with a user quota.
-Each website and each database server has its own Unix user, and the file system counts the
-disk space of each user. When a website or a database server is at its limit, a write to its
-files fails with the error `Disk quota exceeded`. The other websites and database servers
-continue to operate. A website or a database server with no disk limit has no user quota:
-the agent removes the user quota when you remove the limit.
+The server applies the disk limit of a website and of a database server. The type of the
+limit comes from the file system:
+
+| File system | Disk limit |
+| ----------- | ---------- |
+| User quotas are on | A user quota |
+| No user quotas, and the server has loop devices | A disk image for each new website and each new database server (refer to [Disk images](#disk-images)) |
+| No user quotas and no loop devices | No limit |
+
+With a user quota, each website and each database server has its own Unix user, and the file
+system counts the disk space of each user. When a website or a database server is at its
+limit, a write to its files fails with the error `Disk quota exceeded`. The other websites
+and database servers continue to operate. A website or a database server with no disk limit
+has no user quota: the agent removes the user quota when you remove the limit.
 
 The script turns on the user quotas of the file system of `/srv/cloudfactory`, which has the
 files of the websites. It does the same for the file system of `/var/lib/cf-db`, which has the
@@ -918,7 +1019,7 @@ The script shows the result for each file system:
 | ext4 | The script mounts the file system again with the options `usrjquota=aquota.user,jqfmt=vfsv1`, makes the quota file with `quotacheck -cum`, and turns on the quotas with `quotaon`. The websites continue to operate. On a large file system, `quotacheck` can use some minutes. |
 | ext4 with the feature `quota` | The script only turns on the quotas with `quotaon`. |
 | XFS | The script changes nothing, because XFS accepts the quota option only when it mounts the file system. Add the mount option `uquota` to the file system in `/etc/fstab`. For the root file system, add `rootflags=uquota` to the kernel command line. Restart the server and run the script again. |
-| A different file system | The script changes nothing. The server does not apply the disk limits. |
+| A different file system | The script changes nothing. The server uses disk images (refer to [Disk images](#disk-images)). |
 | A file system that has user quotas | The script changes nothing. |
 
 The script does not change `/etc/fstab`. It writes the mount points where it turned on the
@@ -928,8 +1029,8 @@ service cannot turn on the quotas, `systemctl status cloudfactory-quota.service`
 service as failed with the cause, and the panel shows `disk-quotas` as off.
 
 After the script turns on the quotas, it restarts the agent. At its start, the agent sets the
-disk limit of each website and of each database server that the server has. A database server
-that has a disk image keeps the disk image.
+disk limit of each website and of each database server that the server has. A website or a
+database server that has a disk image keeps the disk image.
 
 To turn on the quotas on a server of an earlier release, run the installation script on that
 server again. To turn the quotas off again, do these steps:
@@ -940,24 +1041,67 @@ server again. To turn the quotas off again, do these steps:
 4. Restart the agent: `systemctl restart cf-agent`.
 
 A quota does not turn on in some environments, for example in a container that cannot mount
-a file system again. Then the script shows a message and continues.
-
-On a server with no quotas, the panel shows `disk-quotas` as an optional part that is off. This
-does not make the server degraded. The setup checklist of the panel has the item
-"Turn on disk limits on each server" until all servers have quotas. The pages of a website
-show "Not applied on this server" next to the disk limit. A new database server on such a
-server gets a disk image, if the server has loop devices (refer to
-[Limits of a database server](#limits-of-a-database-server)).
+a file system again. Then the script shows a message and continues. The message tells you if
+the server uses disk images or has no disk limits.
 
 The shared runtime images in `/var/lib/cloudfactory-images` belong to root, so they do not
 count toward the disk limit of a website. Each runtime image uses about 0.6 to 0.8 GB one time
 for each server, not one time for each website.
 
+#### Disk images
+
+On a file system with no user quotas, the agent gives each new website and each new database
+server with a disk limit its own file system: a disk image file with the size of the limit,
+which the server mounts as a loop device. You do not configure this.
+
+- The disk image of a website is `/srv/cloudfactory/disks/<user>.img`. The server mounts it
+  on `/srv/cloudfactory/sites/<user>`, the directory of the website user. For the disk image
+  of a database server, refer to [Limits of a database server](#limits-of-a-database-server).
+- The file uses only the disk space that the website or the database server uses. The sum of
+  the disk limits can be more than the disk of the server, so monitor the free disk space of
+  the server.
+- A website or a database server that fills its disk gets the error
+  `No space left on device`. The other websites and database servers continue to operate.
+- A larger disk limit makes the file system larger while the website operates.
+- A smaller disk limit must be more than the disk space that the website uses. If it is
+  not, the job fails and the limit stays as it is. If it is, the agent stops the website for
+  the change, closes its open SFTP sessions, and starts the website again. In the check in a
+  slow virtual machine, this job was complete in less than 1 minute.
+- The disk limit of a website with a disk image applies to the files of the website. It does
+  not apply to the home directory of the website user, which has the files of Podman, the log
+  file of the website and, for a custom image, the copy of the image.
+- The directory of a website with a disk image has the directory `lost+found`, which only
+  root can open. An SFTP user sees its name next to `app`.
+- The disk image needs the device `/dev/loop-control`. A virtual machine and a physical
+  server have it. A container of an LXC host usually does not.
+- The agent mounts the disk images with systemd mount units in `/etc/systemd/system`, for
+  example `srv-cloudfactory-sites-acme_x7k2.mount`. Do not change or remove these units, the
+  directory `/srv/cloudfactory/disks` or its files.
+
+A website and a database server keep the type of disk that they started with:
+
+- A website that the server made with no user quotas and no loop devices, or with an earlier
+  release, has a directory. It keeps the directory, with no disk limit, until the file
+  system has user quotas. The agent does not move its files into a disk image. The same
+  applies to a database server that has a directory.
+- A website or a database server with a disk image keeps the image when you turn on the
+  user quotas later.
+
+The panel shows the part `disk-quotas` of a server as on when the server applies the disk
+limit of each website: with user quotas, or when each website with a disk limit has a disk
+image. If not, the part is an optional part that is off, and its text gives the cause. This
+does not make the server degraded. The setup checklist of the panel then has the item
+"Turn on disk limits on each server", and the pages of each website of that server show
+"Not applied on this server" next to the disk limit. The part `database-disk-limits` has the
+same rule for the database servers. To correct this, turn on the user quotas: run the
+installation script on the server again, or do the steps for your file system in the table
+above.
+
 #### A server that already has websites
 
-Before the quotas are on, a website has no disk limit on the server. When the script turns on
-the quotas, each website gets its limit immediately. Read these notes before you run the
-script on a server with websites:
+Before the quotas are on, a website with no disk image has no disk limit on the server. When
+the script turns on the quotas, each website gets its limit immediately. Read these notes
+before you run the script on a server with websites:
 
 - A website that uses more disk space than its limit cannot write files after the quotas are
   on. Compare the disk use of each website with its limit in the panel first. Then increase
@@ -986,15 +1130,16 @@ different server when one is available. Refer to [Add a server](#add-a-server).
 The `firewall` check looks for the table `inet cloudfactory`. If the table is not there, run
 `nft -f /etc/nftables.d-cloudfactory.nft` as root.
 
-The page of the server also shows the optional parts: the disk quotas (`disk-quotas`), the
-disk limits of the database servers (`database-disk-limits`) and the two processes of the
-agent (`agent-root-helper`). An optional part that is off does not make the server degraded.
+The page of the server also shows the optional parts: the disk limits of the websites
+(`disk-quotas`), the disk limits of the database servers (`database-disk-limits`) and the two
+processes of the agent (`agent-root-helper`). An optional part that is off does not make the
+server degraded.
 
 ### Ports
 
 The firewall accepts only SSH, SFTP, HTTP, HTTPS and the agent port. A server that has
 tunnels to other servers also accepts the UDP port of the tunnels (51820), only from those
-servers. The database servers
+servers. A server that has DNS zones also accepts port 53 (UDP and TCP). The database servers
 publish their ports only on the database network `169.254.80.0/20` of the loopback interface,
 so the databases are not open to the internet.
 
@@ -1059,8 +1204,8 @@ Ubuntu 26.04. On both, the installation completed, the administrator signed in, 
 started and answered through the edge proxy on the private service address `169.254.77.1`.
 The virtual machines had no hardware virtualisation, so gVisor used the `systrap` platform.
 
-The database servers were checked two times. Each check sent its requests directly to the
-agent, not through the panel.
+The database servers were checked two times, and the disk image of a website one time. Each
+check sent its requests directly to the agent, not through the panel.
 
 The first check was in the virtual machine with Ubuntu 26.04, with release 0.1.9 and an
 earlier version of the agent of this release. In that version, all database servers ran as one
@@ -1115,6 +1260,43 @@ release 0.1.9 and the agent of this release:
   [A server from release 0.1.9](#a-server-from-release-019)) kept the database servers and
   their data.
 
+The third check was in the same virtual machine with Debian 13, with the user quotas off,
+with release 0.1.9 and the agent of this release. It examined the disk image of a website:
+
+- A new website with a disk limit of 1 GB got a disk image. The file system of the website
+  had the size of the limit, and the image file used 33 MB of the disk of the server. The
+  website started in gVisor and answered.
+- The website wrote until its disk was full. The disk of the server did not fill. A
+  different website wrote 50 MB at that time, and the two websites answered. When the
+  website removed its file, the image file used 33 MB again.
+- A user uploaded a file with SFTP, through the SFTP container in gVisor on port 2200. The
+  file was on the disk image, with the Unix user of the website as its owner, and the
+  website container served it.
+- A larger disk limit (2 GB) made the file system larger. The website container did not
+  start again.
+- A smaller disk limit (1 GB), with an open SFTP session. The agent stopped the website,
+  closed the session, made the file system smaller and started the website again. The job
+  was complete in less than 1 minute, and a file of 5 MB had the same content after it.
+- A disk limit of 512 MB, with 705 MB of files. The job failed with a clear message. The
+  website did not stop, and the disk kept its size.
+- The status report showed `disk-quotas` as off, with the number of websites that had a disk
+  limit and no disk image. It showed `database-disk-limits` as off, with the number of
+  database servers that had a disk limit and no disk image. These websites and database
+  servers were on the server before the check.
+- After a restart of the server, the disk image was mounted before the website started. The
+  website answered, and the file had the same content. The database servers with their own
+  Unix users also started again.
+- The removal of the website, with an open SFTP session, removed its Unix user, its mount,
+  its mount unit and its disk image file. The other websites continued to operate.
+- With the user quotas on again, the websites and the database servers operated, and the
+  status report showed the two parts as on.
+
+This check also found a fault of release 0.1.9. On a server with shared runtime images, a
+website user could not pull an image: a custom image, or an image with no digest. The pull
+stopped with the error `tar-split.gz: permission denied`. The agent of this release corrects
+the fault (refer to [architecture.md](architecture.md#shared-runtime-images)). With the
+correction, a new website with an image that has no digest started and answered.
+
 In a different check, a database process with its own user ID and a user quota wrote data
 until the quota was full. MariaDB stopped. PostgreSQL lost the connection and refused new
 connections. Valkey refused the write. With the quota removed, PostgreSQL and Valkey
@@ -1135,12 +1317,11 @@ report a problem in the issues of the repository:
   Valkey image is built.
 - A database server that you make in the panel. The panel of this release was checked with
   its tests, not with a real agent.
-- A restart of the server with database servers that have their own Unix users.
-- Files that you upload with SFTP have the correct owner in the website container
-  (`--userns=keep-id` in gVisor). The SFTP image was checked with Docker and the same
-  capabilities, not in gVisor.
-- The SFTP container (OpenSSH as root in gVisor, with the bridge network of Podman) answers
-  on port 2200 and sees the real client address.
+- The SFTP container (OpenSSH as root in gVisor, with the bridge network of Podman) sees the
+  real client address. The third check showed only that it answers on port 2200.
+- A website that has a custom image.
+- The disk image of a website together with the file manager, the cron jobs and the deploys
+  of a website. They write in the directory `app`, which is on the disk image.
 - A backup and a restore of a website with databases, with real object storage.
 - The firewall rules for the connections from the websites, also with IPv6. They were checked
   with nftables in a network namespace, not with a real website container.

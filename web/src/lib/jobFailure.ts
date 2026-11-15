@@ -41,7 +41,7 @@ export function jobFailure(job: Job, role: Role): JobFailure {
 }
 
 /** The item of a job: two jobs with the same key do the same work on the same thing. */
-const itemKey = (job: Job) => `${job.action ?? job.title}|${job.websiteId ?? ""}|${job.serverId ?? ""}|${job.ref ?? ""}`;
+const itemKey = (job: Job) => `${job.action ?? job.title}|${job.websiteId ?? ""}|${job.serverId ?? ""}|${job.dnsZoneId ?? ""}|${job.ref ?? ""}`;
 
 /**
  * The IDs of the failed jobs that a later job for the same item completed. These failures

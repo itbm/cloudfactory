@@ -70,6 +70,12 @@ const (
 	opSftpStart  = "sftp.start"
 	opSftpRetire = "sftp.retire"
 
+	opDnsStart  = "dns.start"
+	opDnsWrite  = "dns.write"
+	opDnsLoad   = "dns.load"
+	opDnsRemove = "dns.remove"
+	opDnsStatus = "dns.status"
+
 	opDBPrepare      = "db.prepare"
 	opDBRemoveData   = "db.removeData"
 	opDBRemoveOld    = "db.removeOld"
@@ -81,7 +87,8 @@ const (
 
 	opSiteIni    = "site.ini"
 	opSiteExists = "site.exists"
-	opSiteSize   = "site.size"
+	opSiteDisk   = "site.disk"
+	opSiteResize = "site.resize"
 
 	opDumpsReset   = "dumps.reset"
 	opDumpsRemove  = "dumps.remove"
@@ -110,6 +117,16 @@ const (
 type (
 	userIn struct {
 		User string
+	}
+	ensureIn struct {
+		User string
+		// DiskBytes is the disk limit of a new website. 0 means no limit.
+		DiskBytes int64
+	}
+	siteIn struct {
+		User string
+		// Measure makes the helper measure the files of a website that has no disk image.
+		Measure bool
 	}
 	quotaIn struct {
 		User  string
@@ -214,7 +231,7 @@ type accessElement struct {
 // database server, and it cannot give the text of one of their units: the user of a database
 // server owns the data of a customer, and root does file work in the directory of the
 // database servers. The root helper makes their units from its own settings.
-var serviceUsers = []string{host.EdgeUser}
+var serviceUsers = []string{host.EdgeUser, host.DnsUser}
 
 // websiteUser checks that name is the Unix user of a website: the name has the form of a
 // website user, and a user that exists has a UID in the range of the website users. The
@@ -376,11 +393,14 @@ func (d *Deps) RootOps() map[string]gate.Handler {
 	h := d.Host
 	ops := map[string]gate.Handler{
 		// The Unix users of the websites, their units and their disk limits.
-		opUserEnsure: none(func(ctx context.Context, in userIn) error {
+		opUserEnsure: none(func(ctx context.Context, in ensureIn) error {
 			if err := d.websiteUser(in.User); err != nil {
 				return err
 			}
-			return h.EnsureUser(ctx, in.User)
+			if in.DiskBytes < 0 {
+				return errors.New("the disk limit is less than 0")
+			}
+			return d.ensureWebsiteUser(ctx, in.User, in.DiskBytes)
 		}),
 		opUserStorage: none(func(ctx context.Context, in userIn) error {
 			if err := d.existingWebsiteUser(in.User); err != nil {
@@ -392,7 +412,7 @@ func (d *Deps) RootOps() map[string]gate.Handler {
 			if err := d.websiteUser(in.User); err != nil {
 				return err
 			}
-			return h.RemoveUser(ctx, in.User)
+			return d.removeWebsiteUser(ctx, in.User)
 		}),
 		opUserQuota: none(func(ctx context.Context, in quotaIn) error {
 			if err := d.existingWebsiteUser(in.User); err != nil {
@@ -512,6 +532,16 @@ func (d *Deps) RootOps() map[string]gate.Handler {
 		opSftpStart:  none(func(ctx context.Context, _ gate.None) error { return d.startSftp(ctx) }),
 		opSftpRetire: none(func(ctx context.Context, _ gate.None) error { return d.retireHostSftp(ctx) }),
 
+		// The DNS server. The helper checks each zone again, writes the zone files and the
+		// configuration itself, and runs the tools of Knot as the DNS user.
+		opDnsStart:  none(func(ctx context.Context, _ gate.None) error { return d.startDns(ctx) }),
+		opDnsWrite:  none(func(ctx context.Context, in dnsWriteIn) error { return d.writeDnsZones(ctx, in.Zones) }),
+		opDnsLoad:   none(func(ctx context.Context, in dnsNamesIn) error { return d.loadDnsZones(ctx, in.Names) }),
+		opDnsRemove: none(func(ctx context.Context, in dnsNamesIn) error { return d.removeDnsZones(ctx, in.Names) }),
+		opDnsStatus: gate.Op(func(ctx context.Context, _ gate.None) (dnsStatusOut, error) {
+			return d.dnsStatus(ctx), nil
+		}),
+
 		// The database containers: their directories, disks and secrets, and the firewall.
 		opDBPrepare: gate.Op(func(ctx context.Context, in serverIn) (bool, error) {
 			if err := checkPrepare(in); err != nil {
@@ -563,11 +593,22 @@ func (d *Deps) RootOps() map[string]gate.Handler {
 			}
 			return d.appExists(ctx, in.User)
 		}),
-		opSiteSize: gate.Op(func(ctx context.Context, in userIn) (int64, error) {
+		opSiteDisk: gate.Op(func(ctx context.Context, in siteIn) (diskOut, error) {
 			if err := d.websiteUser(in.User); err != nil {
-				return 0, err
+				return diskOut{}, err
 			}
-			return d.siteSize(ctx, in.User), nil
+			return d.siteDiskState(ctx, in.User, in.Measure), nil
+		}),
+		// The disk image of a website gets the size of a new disk limit. The helper gives the
+		// worker no path: it makes the image file and the mount point from the name of the user.
+		opSiteResize: none(func(ctx context.Context, in quotaIn) error {
+			if err := d.existingWebsiteUser(in.User); err != nil {
+				return err
+			}
+			if in.Bytes <= 0 {
+				return errors.New("the disk limit is not more than 0")
+			}
+			return d.resizeSiteDisk(ctx, in.User, in.Bytes)
 		}),
 
 		// Backups: the database dumps and the directory of a restore. Only root can read them.
@@ -685,8 +726,10 @@ func (d *Deps) allowArgv(argv []string) error {
 // hostRoot is host.Root for the worker: each method asks the root helper.
 type hostRoot struct{ g gate.Gate }
 
+// EnsureUser gives no disk limit: the worker makes the user of a new website with
+// Deps.ensureWebsiteUser, which sends the limit.
 func (r hostRoot) EnsureUser(ctx context.Context, unixUser string) error {
-	return r.g.Call(ctx, opUserEnsure, userIn{User: unixUser}, nil)
+	return r.g.Call(ctx, opUserEnsure, ensureIn{User: unixUser}, nil)
 }
 
 func (r hostRoot) LinkStorageConfig(ctx context.Context, unixUser string) error {
@@ -869,15 +912,6 @@ func (d *Deps) appExists(ctx context.Context, unixUser string) (ok bool, err err
 		return false, err
 	}
 	return true, nil
-}
-
-// siteSize gives the size of the files of a website. It does not follow links.
-func (d *Deps) siteSize(ctx context.Context, unixUser string) (size int64) {
-	if d.Gate != nil {
-		_ = d.Gate.Call(ctx, opSiteSize, userIn{User: unixUser}, &size)
-		return size
-	}
-	return dirSize(d.Host.AppDir(unixUser))
 }
 
 // panelDomain gives the domain of the panel on the panel server. Only the user of the panel

@@ -7,6 +7,7 @@ use App\Enums\JobState;
 use App\Jobs\SendJobToAgent;
 use App\Models\AgentJob;
 use App\Models\DatabaseServer;
+use App\Models\DnsZone;
 use App\Models\Server;
 use App\Models\Website;
 
@@ -22,6 +23,7 @@ class JobDispatcher
         ?string $ref = null,
         ?string $rolloutId = null,
         ?DatabaseServer $databaseServer = null,
+        ?DnsZone $dnsZone = null,
     ): AgentJob {
         $job = AgentJob::create([
             'server_id' => $server->id,
@@ -29,6 +31,8 @@ class JobDispatcher
             // The job of a database server has no website. The owner of the database server
             // can see the job.
             'database_server_id' => $databaseServer?->id,
+            // The job of one DNS zone. The owner of the zone can see the job.
+            'dns_zone_id' => $dnsZone?->id,
             'rollout_id' => $rolloutId,
             'action' => $action,
             'title' => $title,

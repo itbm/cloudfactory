@@ -84,6 +84,8 @@ DATABASE_UID_MAX=19999
 WEBSITE_SMTP=0
 WEBSITE_NETWORKS=""
 # The script turns on user quotas, which apply the disk limits, unless the operator refuses it.
+# Without user quotas, the agent makes a disk image for each new website and each new database
+# server that has a disk limit.
 DISK_QUOTAS=1
 
 usage() {
@@ -124,8 +126,9 @@ Options:
                        and link-local networks and the services of this server. You can
                        give this option more than one time.
   --no-disk-quotas     Do not turn on user quotas on the file systems of the websites and the
-                       database servers. The server then does not apply the disk limit of a
-                       website, unless you turn on the quotas yourself.
+                       database servers. Each new website and each new database server with
+                       a disk limit then gets a disk image, unless you turn on the quotas
+                       yourself.
   --check              Do only the checks. Do not change the system.
   --help               Show this help.
 USAGE
@@ -326,6 +329,18 @@ firewall_rules() {
 		website_networks="$website_networks    $family daddr $network accept
 "
 	done
+	# DNS hosting: on a server that has DNS zones, the agent adds two rules for the DNS server
+	# to the file of this script (setDnsRules in agent/internal/actions/dns.go). When the script
+	# runs again, it keeps them. A rootless container cannot open port 53, so the firewall
+	# redirects port 53 to port 8053 of the DNS container.
+	dns_accept=""
+	dns_redirect=""
+	if grep -q '# cloudfactory-dns$' "$ROOT/etc/nftables.d-cloudfactory.nft" 2>/dev/null; then
+		dns_accept="
+    meta l4proto { tcp, udp } th dport { 53, 8053 } accept # cloudfactory-dns"
+		dns_redirect="
+    meta l4proto { tcp, udp } th dport 53 redirect to :8053 # cloudfactory-dns"
+	fi
 	smtp_rule="tcp dport 25 jump refuse"
 	[ "$WEBSITE_SMTP" -eq 1 ] && smtp_rule="# The option --allow-website-smtp: the websites can connect to port 25."
 	cat <<NFT
@@ -406,7 +421,7 @@ table inet cloudfactory {
     udp dport @mesh_port ip6 saddr @mesh_endpoints6 accept
     iifname "cf-mesh" jump mesh_input
     meta l4proto { icmp, ipv6-icmp } accept
-    tcp dport 22 accept
+    tcp dport 22 accept$dns_accept
     tcp dport $SFTP_PORT accept # cloudfactory-sftp
     tcp dport { 80, 443, 8080, 8443 } accept
     udp dport { 443, 8443 } accept
@@ -476,7 +491,7 @@ ${website_networks}    # The edge proxy on the addresses of this server, so that
     type nat hook prerouting priority dstnat;
     # A connection from a tunnel to a member of this server goes to the container of the member.
     iifname "cf-mesh" dnat ip to ip daddr . tcp dport map @mesh_members
-    tcp dport 80 redirect to :8080
+    tcp dport 80 redirect to :8080$dns_redirect
     tcp dport 443 redirect to :8443
     udp dport 443 redirect to :8443
   }
@@ -575,8 +590,9 @@ check_arch
 check_systemd
 check_tools
 # ---------------------------------------------------------------------------
-# Disk quotas. The disk limit of a website, and of a database server that has its own user ID,
-# is a user quota of the file system.
+# Disk quotas. The disk limit of a website, and of a database server, is a user quota of the
+# file system. On a file system with no user quotas, the agent makes a disk image for each new
+# website and each new database server that has a disk limit.
 # ---------------------------------------------------------------------------
 
 # The mount options of journaled user quotas for ext4. With them, the quota file is correct
@@ -604,9 +620,19 @@ quota_is_on() {
 	return 1
 }
 
+# without_quotas prints how the server applies the disk limits on a file system with no user
+# quotas. The agent uses a disk image, which needs loop devices. A container usually has none.
+without_quotas() {
+	if [ -e "$ROOT/dev/loop-control" ]; then
+		echo "Each new website and each new database server with a disk limit gets a disk image."
+	else
+		echo "The server has no loop devices (/dev/loop-control), so it does not apply the disk limits."
+	fi
+}
+
 # enable_quotas turns on user quotas on the file system that has a directory, and prints the
 # result. It does not change /etc/fstab. It never stops the installation: a server with no
-# quotas operates, and the panel shows that it does not apply the disk limits.
+# quotas operates, and the panel shows when it does not apply the disk limits.
 enable_quotas() {
 	target=$(findmnt --noheadings --output TARGET --target "$1" 2>/dev/null | head -n 1)
 	fstype=$(findmnt --noheadings --output FSTYPE --target "$1" 2>/dev/null | head -n 1)
@@ -633,7 +659,7 @@ enable_quotas() {
 		return 0
 		;;
 	*)
-		info "  $target ($fstype): the script cannot turn on user quotas on this type of file system. The server does not apply the disk limits."
+		info "  $target ($fstype): the script cannot turn on user quotas on this type of file system. $(without_quotas)"
 		return 0
 		;;
 	esac
@@ -642,12 +668,12 @@ enable_quotas() {
 	# and a quota file.
 	if ! quotaon --user "$target" 2>/dev/null || ! quota_is_on "$target"; then
 		if ! mount -o "remount,$QUOTA_OPTIONS" "$target" 2>/dev/null; then
-			info "  $target (ext4): the file system does not accept the quota options, for example in a container. The server does not apply the disk limits."
+			info "  $target (ext4): the file system does not accept the quota options, for example in a container. $(without_quotas)"
 			return 0
 		fi
 		# -c: make a new quota file. -u: for users. -m: do not mount the file system read-only.
 		if ! quotacheck -cum "$target" >/dev/null 2>&1 || ! quotaon --user "$target" 2>/dev/null || ! quota_is_on "$target"; then
-			info "  $target (ext4): the script cannot turn on the user quotas. The server does not apply the disk limits. Refer to \"Disk quotas\" in the installation guide."
+			info "  $target (ext4): the script cannot turn on the user quotas. $(without_quotas) Refer to \"Disk quotas\" in the installation guide."
 			return 0
 		fi
 	fi
@@ -679,7 +705,7 @@ while read -r mount; do
 		quotaon --user "\$mount"
 	fi
 	if ! is_on "\$mount"; then
-		echo "cloudfactory: cannot turn on the user quotas on \$mount. The server does not apply the disk limits." >&2
+		echo "cloudfactory: cannot turn on the user quotas on \$mount. A website or a database server with no disk image has no disk limit." >&2
 		status=1
 	fi
 done <$CF_ETC/quota-mounts
@@ -1030,12 +1056,13 @@ install -d -o root -g cf-sites -m 0750 /var/lib/cloudfactory-images
 install -d -m 0755 "$CF_ETC/sftp" "$CF_ETC/sftp-users"
 
 step "Turn on the disk quotas"
-# The agent sets a user quota for each website, and for each database server that has its own
-# user ID. The quotas must be on before the first website gets its files.
+# The agent sets a user quota for each website and for each database server. The quotas must
+# be on before the first website gets its files: a website that starts with no user quotas
+# gets a disk image, and keeps it.
 if [ "$DISK_QUOTAS" -eq 1 ]; then
 	setup_quotas
 else
-	info "  --no-disk-quotas: the script does not turn on the user quotas."
+	info "  --no-disk-quotas: the script does not turn on the user quotas. $(without_quotas)"
 fi
 
 step "Set the firewall"

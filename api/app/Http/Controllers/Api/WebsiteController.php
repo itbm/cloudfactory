@@ -21,6 +21,7 @@ use App\Models\Website;
 use App\Services\Audit;
 use App\Services\DatabaseNames;
 use App\Services\DatabaseServers;
+use App\Services\Dns\Zones;
 use App\Services\DomainPolicy;
 use App\Services\JobDispatcher;
 use App\Services\Networks;
@@ -168,6 +169,10 @@ class WebsiteController extends Controller
         });
 
         $job = $this->jobs->dispatch($server, AgentAction::CreateWebsite, JobDispatcher::websitePayload($website), 'Create '.Website::KIND_NAMES[$kind]." {$website->name}", $website);
+        // A DNS zone of the customer with the name in it gets the address records of the website.
+        if ($website->isPublic()) {
+            app(Zones::class)->websiteDomainAdded($website, $website->name);
+        }
         Audit::record($request, 'Created website', $website->name, $customer->id);
 
         return response()->json(['website' => new WebsiteResource($website->fresh(['image', 'domains'])), 'job' => new JobResource($job)], 202);

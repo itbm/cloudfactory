@@ -217,12 +217,14 @@ func TestSftpUnit(t *testing.T) {
 	for _, want := range []string{
 		"ContainerName=cf-sftp",
 		"Pull=never",
-		"GlobalArgs=--runtime=/usr/local/bin/runsc --runtime-flag=platform=systrap --runtime-flag=network=sandbox --runtime-flag=ignore-cgroups",
+		// gVisor keeps no file of a website open after a session closes it.
+		"GlobalArgs=--runtime=/usr/local/bin/runsc --runtime-flag=platform=systrap --runtime-flag=network=sandbox --runtime-flag=ignore-cgroups --runtime-flag=dcache=0",
 		"Network=bridge",
 		"After=nftables.service",
 		"PartOf=nftables.service",
 		"PublishPort=2222:2200",
-		"Volume=/srv/cloudfactory/sites:/srv/cloudfactory/sites",
+		// The container gets the disk image of a website that the server mounts later.
+		"Volume=/srv/cloudfactory/sites:/srv/cloudfactory/sites:rslave",
 		"Volume=/etc/cloudfactory/sftp:/etc/cloudfactory/sftp:ro",
 		"Volume=/etc/cloudfactory/sftp-users:/var/lib/extrausers:ro",
 		"Volume=/var/lib/cloudfactory/sftp-host-keys:/etc/ssh/keys",

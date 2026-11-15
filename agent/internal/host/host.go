@@ -23,6 +23,10 @@ import (
 // EdgeUser is the Unix user of the edge proxy. It cannot read the files of the websites (CF-04).
 const EdgeUser = "cf-edge"
 
+// DnsUser is the Unix user of the DNS server of a server with the role "dns". The root helper
+// of the agent makes it when the server gets its first zone.
+const DnsUser = "cf-dns"
+
 // AgentUser is the Unix user of the worker of the agent. The worker has the connection to
 // the panel and the jobs. It is not root: the root helper of the agent does the work that
 // needs root (package gate).
@@ -174,13 +178,7 @@ func (h *Host) EnsureUser(ctx context.Context, unixUser string) error {
 	if h.Root != nil {
 		return h.Root.EnsureUser(ctx, unixUser)
 	}
-	// Other users can go through the directories, but cannot list them.
-	if _, err := h.Run.Run(ctx, "install", "-d", "-m", "0711", filepath.Dir(h.Home(unixUser)), h.SitesDir); err != nil {
-		return err
-	}
-	// The firewall limits only the users in the range. The agent does not start a website as a
-	// user that the firewall does not find, for example a user that an administrator made.
-	if _, err := h.addUser(ctx, unixUser, h.Home(unixUser), WebsiteIDMin, WebsiteIDMax, "website users"); err != nil {
+	if err := h.EnsureAccount(ctx, unixUser); err != nil {
 		return err
 	}
 	// Audit finding F01: "install -d" follows a symbolic link, and changes the owner and the
@@ -220,6 +218,23 @@ func (h *Host) EnsureUser(ctx context.Context, unixUser string) error {
 	return h.startUserManager(ctx, unixUser)
 }
 
+// EnsureAccount makes the Unix user of a website and its home directory, if the user does not
+// exist. It does not make the directory of the website in SitesDir: the root helper can put
+// a file system of its own there first (a disk image). Only root runs it.
+func (h *Host) EnsureAccount(ctx context.Context, unixUser string) error {
+	if err := validate.UnixUser(unixUser); err != nil {
+		return err
+	}
+	// Other users can go through the directories, but cannot list them.
+	if _, err := h.Run.Run(ctx, "install", "-d", "-m", "0711", filepath.Dir(h.Home(unixUser)), h.SitesDir); err != nil {
+		return err
+	}
+	// The firewall limits only the users in the range. The agent does not start a website as a
+	// user that the firewall does not find, for example a user that an administrator made.
+	_, err := h.addUser(ctx, unixUser, h.Home(unixUser), WebsiteIDMin, WebsiteIDMax, "website users")
+	return err
+}
+
 // addUser makes a Unix user with a UID and a GID in a range, if the user does not exist. The
 // user has no password and no login shell. It gives the UID. A user that exists with a UID
 // outside the range is an error: the agent did not make that user. what names the range in
@@ -257,6 +272,33 @@ func (h *Host) startUserManager(ctx context.Context, unixUser string) error {
 	}
 	_, err = h.Run.Run(ctx, "systemctl", "start", fmt.Sprintf("user@%d.service", uid))
 	return err
+}
+
+// EnsureServiceUser makes the Unix user of a service of the agent if it does not exist, as the
+// installer makes the user of the edge proxy: a system user with rootless containers, no
+// password and no login shell. Its user services start at boot. Only root calls this function.
+func (h *Host) EnsureServiceUser(ctx context.Context, unixUser string) error {
+	if _, err := h.LookupUID(unixUser); err != nil {
+		var unknown user.UnknownUserError
+		if !errors.As(err, &unknown) {
+			return err
+		}
+		if _, err := h.Run.Run(ctx, "useradd", "--system", "--create-home", "--home-dir", "/var/lib/"+unixUser, "--shell", "/usr/sbin/nologin", "--add-subids-for-system", unixUser); err != nil {
+			return err
+		}
+	}
+	uid, err := h.LookupUID(unixUser)
+	if err != nil {
+		return err
+	}
+	// A system user. A website user or the user of a database server never has this name.
+	if uid == 0 || uid >= DatabaseIDMin {
+		return fmt.Errorf("the user %s has the UID %d, which is not the UID of a service user", unixUser, uid)
+	}
+	if _, err := h.Run.Run(ctx, "loginctl", "enable-linger", unixUser); err != nil {
+		return err
+	}
+	return h.startUserManager(ctx, unixUser)
 }
 
 // EnsureDatabaseUser makes the Unix user of a database server if it does not exist, with its
@@ -384,6 +426,16 @@ func (h *Host) RemoveUser(ctx context.Context, unixUser string) error {
 		return err
 	}
 	return os.RemoveAll(h.ConfigDir(unixUser))
+}
+
+// RemoveAccount stops the user services of a website user and removes the user, its home
+// directory and its units. It keeps the directory of the website in SitesDir. A user that
+// does not exist is not an error. Only root runs it.
+func (h *Host) RemoveAccount(ctx context.Context, unixUser string) error {
+	if err := validate.UnixUser(unixUser); err != nil {
+		return err
+	}
+	return h.removeAccount(ctx, unixUser)
 }
 
 // removeAccount stops the user services of a user and removes the user, its home directory and

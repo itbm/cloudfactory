@@ -192,7 +192,7 @@ func (a *app) server(ctx context.Context, sub string, args []string) error {
 		if a.json {
 			return a.printJSON(s)
 		}
-		for _, k := range []string{"name", "id", "state", "roles", "agentAddress", "os", "kernel", "agentVersion", "podmanVersion", "gvisorVersion", "gvisorPlatform", "updatePolicy", "maintenanceWindow", "rebootRequired"} {
+		for _, k := range []string{"name", "id", "state", "roles", "dnsName", "addresses", "agentAddress", "os", "kernel", "agentVersion", "podmanVersion", "gvisorVersion", "gvisorPlatform", "updatePolicy", "maintenanceWindow", "rebootRequired"} {
 			fmt.Fprintf(a.out, "%-18s %s\n", k+":", cell(s[k]))
 		}
 		a.connection(s)
@@ -215,17 +215,26 @@ func (a *app) server(ctx context.Context, sub string, args []string) error {
 		policy := fs.String("update-policy", "", "security, all or manual")
 		window := fs.String("window", "", "the maintenance window, for example 02:00-05:00")
 		platform := fs.String("gvisor-platform", "", "systrap or kvm")
+		roles := fs.String("roles", "", "the roles of the server, for example web,database,dns")
+		dnsName := fs.String("dns-name", "", "the host name of the server as a name server, for example ns1.example.com")
+		noDNSName := fs.Bool("no-dns-name", false, "remove the name server host name")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
 		body := map[string]any{}
-		for k, v := range map[string]string{"updatePolicy": *policy, "maintenanceWindow": *window, "gvisorPlatform": *platform} {
+		for k, v := range map[string]string{"updatePolicy": *policy, "maintenanceWindow": *window, "gvisorPlatform": *platform, "dnsName": *dnsName} {
 			if v != "" {
 				body[k] = v
 			}
 		}
+		if *roles != "" {
+			body["roles"] = strings.Split(*roles, ",")
+		}
+		if *noDNSName {
+			body["dnsName"] = nil
+		}
 		if len(body) == 0 {
-			return errors.New("give --update-policy, --window or --gvisor-platform")
+			return errors.New("give --update-policy, --window, --gvisor-platform, --roles, --dns-name or --no-dns-name")
 		}
 		return a.change(ctx, http.MethodPatch, path, body)
 	case "update":
@@ -648,7 +657,7 @@ func (a *app) plans(ctx context.Context, sub string) error {
 		return fmt.Errorf("unknown command plans %s", sub)
 	}
 	// "databases" is the number of databases of each database server with the plan.
-	return a.list(ctx, "/plans", nil, []string{"name", "websites", "mailboxes", "databaseServers", "databases", "id"})
+	return a.list(ctx, "/plans", nil, []string{"name", "websites", "mailboxes", "databaseServers", "databases", "dnsZones", "id"})
 }
 
 func (a *app) audit(ctx context.Context, sub string, args []string) error {

@@ -249,6 +249,8 @@ func TestTheInstallerHasTheNetworkRules(t *testing.T) {
 	}
 	// The installer has the address as a variable.
 	text := strings.ReplaceAll(string(b), "$DATABASE_CLIENT_ADDRESS", quadlet.DatabaseClientAddress)
+	// The rule of the DNS server follows the redirect of port 80 only on a DNS server.
+	text = strings.ReplaceAll(text, "$dns_redirect", "")
 	inOrder(t, text, []string{"table inet cloudfactory {"}, networkTableRules)
 	inOrder(t, text, []string{"chain mesh_input {"}, networkMeshInputRules, []string{"drop", "}"})
 	inOrder(t, text, []string{"chain output {", "type filter hook output priority filter; policy accept;"}, networkOutputFirstRules, []string{"# FR-1703: only root (the agent) and the edge proxy can connect to the website and panel"})

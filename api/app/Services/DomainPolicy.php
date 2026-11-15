@@ -6,6 +6,7 @@ use App\Models\Customer;
 use App\Models\Domain;
 use App\Models\Server;
 use App\Models\User;
+use App\Services\Dns\Zones;
 
 /**
  * CF-03 and CF-20: which domains a customer can use.
@@ -13,8 +14,9 @@ use App\Models\User;
  * - Nobody can use the panel domain, the host name of a server, or a sub-domain of one of these.
  * - Nobody else can use the panel domain of a reseller (R-03: only that exact name, not its zone).
  * - The edge proxy serves a domain only after the customer proves that they control it, with a
- *   DNS TXT record. A domain is verified at once when the user is an administrator, or when it
- *   is a verified domain of the same customer or a sub-domain of one.
+ *   DNS TXT record. A domain is verified at once when the user is an administrator, when it
+ *   is a verified domain of the same customer or a sub-domain of one, or when it is in a DNS
+ *   zone of the same customer that the public DNS delegates to the panel.
  */
 class DomainPolicy
 {
@@ -78,6 +80,11 @@ class DomainPolicy
     public function preVerified(User $user, string $customerId, string $name): bool
     {
         if ($user->isAdministrator()) {
+            return true;
+        }
+        // The customer has a DNS zone with the name in it, and the registrar of the domain
+        // sends the queries for the zone to the panel. Only the owner of the domain can do that.
+        if (Zones::controls($customerId, $name)) {
             return true;
         }
 

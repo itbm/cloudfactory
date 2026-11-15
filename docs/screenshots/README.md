@@ -136,6 +136,24 @@ The encrypted tunnels between the servers. Each tunnel shows its state, the time
 
 ![admin-20-network](admin-20-network.png)
 
+### admin-21-dns
+
+The DNS zones of all customers.
+
+![admin-21-dns](admin-21-dns.png)
+
+### admin-22-dns-zone-failed
+
+A DNS zone that a name server did not load.
+
+![admin-22-dns-zone-failed](admin-22-dns-zone-failed.png)
+
+### admin-23-server-dns
+
+The DNS role and the name server name of a server.
+
+![admin-23-server-dns](admin-23-server-dns.png)
+
 ## Reseller console
 
 A reseller signs in to the Customers page. The menu has no page of the platform.
@@ -163,6 +181,12 @@ The websites of the reseller and of its customers.
 The account of the reseller.
 
 ![reseller-04-account](reseller-04-account.png)
+
+### reseller-05-dns
+
+The DNS zones of the customers of a reseller.
+
+![reseller-05-dns](reseller-05-dns.png)
 
 ## Owner console
 
@@ -252,6 +276,24 @@ The last log lines of a website.
 
 ![owner-14-website-logs](owner-14-website-logs.png)
 
+### owner-15-dns
+
+The DNS zones of an owner.
+
+![owner-15-dns](owner-15-dns.png)
+
+### owner-16-dns-zone
+
+A DNS zone with its name servers, DNSSEC and records.
+
+![owner-16-dns-zone](owner-16-dns-zone.png)
+
+### owner-17-dns-add-record
+
+The dialogue to add a DNS record.
+
+![owner-17-dns-add-record](owner-17-dns-add-record.png)
+
 ## Phone width (390 px)
 
 Under 640 px, each row of a table shows as a card, and the tab bar scrolls with a shadow at the edge that has more tabs.
@@ -309,3 +351,9 @@ The customers as cards.
 The database servers and the databases of an owner as cards.
 
 ![phone-09-owner-databases](phone-09-owner-databases.png)
+
+### phone-10-owner-dns-zone
+
+A DNS zone at phone width.
+
+![phone-10-owner-dns-zone](phone-10-owner-dns-zone.png)

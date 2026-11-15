@@ -48,8 +48,9 @@ class WebsiteResource extends JsonResource
             ],
             'updateReady' => $this->updateReady(),
             'limits' => $this->limits,
-            // Audit item U4: false when the server of the website does not apply the disk limit,
-            // because its file system has no user quotas. Null when the server did not report it.
+            // Audit item U4: false when the server of the website does not apply the disk limit of
+            // each website: its file system has no user quotas, and a website has no disk image.
+            // Null when the server did not report it.
             'diskLimitApplied' => $this->server?->appliesDiskLimits(),
             'usage' => $this->usage,
             'domains' => $this->whenLoaded('domains', fn () => $this->domains->map(fn (Domain $d) => self::domain($d))),

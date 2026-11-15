@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\DatabaseController;
 use App\Http\Controllers\Api\DatabaseServerController;
 use App\Http\Controllers\Api\DatabaseUserController;
 use App\Http\Controllers\Api\DeployController;
+use App\Http\Controllers\Api\DnsZoneController;
 use App\Http\Controllers\Api\DomainController;
 use App\Http\Controllers\Api\FileController;
 use App\Http\Controllers\Api\ImageController;
@@ -118,6 +119,20 @@ Route::prefix('v1')->group(function () {
             Route::patch('database-servers/{id}', [DatabaseServerController::class, 'update']);
             Route::delete('database-servers/{id}', [DatabaseServerController::class, 'destroy']);
             Route::post('database-servers/{id}/retry', [DatabaseServerController::class, 'retry']);
+        });
+
+        // DNS hosting: the zones of a customer and their records.
+        Route::middleware('scope:dns')->group(function () {
+            Route::get('dns-zones', [DnsZoneController::class, 'index']);
+            Route::post('dns-zones', [DnsZoneController::class, 'store'])->middleware('throttle:dns-changes');
+            Route::get('dns-zones/{id}', [DnsZoneController::class, 'show']);
+            Route::delete('dns-zones/{id}', [DnsZoneController::class, 'destroy']);
+            Route::post('dns-zones/{id}/records', [DnsZoneController::class, 'storeRecord'])->middleware('throttle:dns-changes');
+            Route::patch('dns-zones/{id}/records/{recordId}', [DnsZoneController::class, 'updateRecord'])->middleware('throttle:dns-changes');
+            Route::delete('dns-zones/{id}/records/{recordId}', [DnsZoneController::class, 'destroyRecord'])->middleware('throttle:dns-changes');
+            Route::put('dns-zones/{id}/dnssec', [DnsZoneController::class, 'dnssec'])->middleware('throttle:dns-changes');
+            Route::post('dns-zones/{id}/check', [DnsZoneController::class, 'check'])->middleware('throttle:domain-checks');
+            Route::post('dns-zones/{id}/sync', [DnsZoneController::class, 'sync'])->middleware('throttle:dns-changes');
         });
 
         Route::middleware('scope:backups')->group(function () {

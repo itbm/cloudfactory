@@ -5,6 +5,8 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"fmt"
+	"github.com/itbm/cloudfactory/agent/internal/host"
 	"maps"
 	"net"
 	"os"
@@ -29,7 +31,9 @@ type observer struct {
 	// cgroups is the cgroup directory of each website service.
 	cgroups map[string]string
 
-	disk     map[string]int64
+	disk map[string]int64
+	// image is true for each website that has a disk image.
+	image    map[string]bool
 	diskAt   time.Time
 	domains  []panel.DomainState
 	domainAt time.Time
@@ -41,6 +45,9 @@ type observer struct {
 	// the disk space that each database server with no disk image uses.
 	dbCgroups map[string]string
 	dbDisk    map[string]int64
+	// dbLimited is the number of database servers with a disk limit. dbNoLimit is the number
+	// of them that have no user quota and no disk image: the server does not apply their limit.
+	dbLimited, dbNoLimit int
 }
 
 type cpuSample struct {
@@ -72,6 +79,21 @@ const (
 // certificate of the panel to a status report.
 func (d *Deps) FillReport(ctx context.Context, r *panel.Report) {
 	r.SftpPort = d.SftpPortInUse()
+	r.DNS = true
+	r.Addresses = d.ReportAddresses()
+	r.DNSZones = d.DnsZones(ctx)
+	// The DNS server is a service of this server only after its first zone job.
+	if d.DnsEnabled(ctx) {
+		state := "stopped"
+		out, _ := d.Host.Systemctl(ctx, host.DnsUser, "is-active", dnsServiceName)
+		switch strings.TrimSpace(out) {
+		case "active", "activating", "reloading":
+			state = "running"
+		case "failed":
+			state = "failed"
+		}
+		r.Services = append(r.Services, panel.Service{Name: dnsContainer, State: state})
+	}
 	r.CronRuns = d.cronReport()
 	// The panel server reports the certificate of the panel domain, and the root certificate
 	// of the panel CA, which the panel offers for download.
@@ -87,18 +109,26 @@ func (d *Deps) FillReport(ctx context.Context, r *panel.Report) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	if o.cpu == nil {
-		o.cpu, o.cgroups, o.disk = map[string]cpuSample{}, map[string]string{}, map[string]int64{}
+		o.cpu, o.cgroups, o.disk, o.image = map[string]cpuSample{}, map[string]string{}, map[string]int64{}, map[string]bool{}
 	}
 	now := time.Now()
 	// walk is true when this report measures the directories again.
 	walk := now.Sub(o.diskAt) > diskEvery
 	if walk {
+		clear(o.image)
 		for _, s := range sites {
-			o.disk[s.ID] = d.siteSize(ctx, s.UnixUser)
+			// A website with a disk image: the kernel gives the use, and the agent does not
+			// read the files.
+			st := d.siteDiskState(ctx, s.UnixUser, true)
+			o.disk[s.ID], o.image[s.ID] = max(st.Used, 0), st.Known
 		}
 		o.diskAt = now
 	}
 	for _, s := range sites {
+		// A website that the server got after the last measurement.
+		if _, ok := o.image[s.ID]; !ok {
+			o.image[s.ID] = d.siteDiskState(ctx, s.UnixUser, false).Known
+		}
 		u := panel.Usage{ID: s.ID, DiskBytes: o.disk[s.ID]}
 		if !s.Stopped {
 			d.cgroupUse(ctx, s, &u, now)
@@ -133,7 +163,7 @@ func (d *Deps) FillReport(ctx context.Context, r *panel.Report) {
 	r.DatabaseServers = d.databaseServerUse(ctx, walk)
 	r.DatabaseEngines = Engines
 	r.DatabaseInstances = true
-	r.Services = append(r.Services, d.firewallService(ctx), d.helperService(), d.quotaService(), d.diskService())
+	r.Services = append(r.Services, d.firewallService(ctx), d.helperService(), d.quotaService(sites), d.diskService())
 }
 
 // databaseServerUse gives the state, the memory and the disk space of each database server of
@@ -149,19 +179,28 @@ func (d *Deps) databaseServerUse(ctx context.Context, walk bool) []panel.Databas
 	if o.dbCgroups == nil {
 		o.dbCgroups, o.dbDisk = map[string]string{}, map[string]int64{}
 	}
+	o.dbLimited, o.dbNoLimit = 0, 0
 	for _, customer := range slices.Sorted(maps.Keys(instances)) {
 		servers := instances[customer].Servers
 		for _, id := range slices.Sorted(maps.Keys(servers)) {
 			s := dbServer{ID: id, Engine: servers[id].Engine}
 			u := panel.DatabaseServerUse{ID: id, State: "stopped"}
 			_, measured := o.dbDisk[id]
-			if st := d.diskState(ctx, s, walk || !measured); st.Known {
+			st := d.diskState(ctx, s, walk || !measured)
+			if st.Known {
 				u.DiskBytes, u.DiskSizeBytes = st.Used, st.Size
 			} else {
 				if st.Used >= 0 {
 					o.dbDisk[id] = st.Used
 				}
 				u.DiskBytes = o.dbDisk[id]
+			}
+			// The part "database-disk-limits" of the report (diskService).
+			if servers[id].DiskBytes > 0 {
+				o.dbLimited++
+				if !st.Known {
+					o.dbNoLimit++
+				}
 			}
 			dir := o.dbCgroups[id]
 			if dir == "" {
@@ -207,13 +246,38 @@ func (d *Deps) helperService() panel.Service {
 }
 
 // quotaService reports the disk limits of the websites. A server can operate without them.
-func (d *Deps) quotaService() panel.Service {
+// The caller holds the lock of the observations.
+//
+// The panel shows "Not applied on this server" next to the disk limit of each website of a
+// server that reports this part as stopped. The part is thus stopped when the server does not
+// apply the disk limit of one of its websites.
+func (d *Deps) quotaService(sites []*Site) panel.Service {
+	running := panel.Service{Name: "disk-quotas", State: "running", Optional: true}
 	if d.QuotaMount != "" {
-		return panel.Service{Name: "disk-quotas", State: "running", Optional: true}
+		return running
 	}
-	// The panel shows that the server does not apply the disk limits of the websites.
+	const guide = " Refer to \"Disk quotas\" in the installation guide."
+	if !d.loopDevices() {
+		return panel.Service{Name: "disk-quotas", State: "stopped", Optional: true,
+			Detail: "User quotas are off on the file system of the websites, and this server has no loop devices (" + d.loopControl() + "), so it does not apply the disk limit of a website." + guide}
+	}
+	// With no user quotas, a new website gets a disk image. A website that has a directory
+	// keeps it, and has no limit.
+	limited, none := 0, 0
+	for _, s := range sites {
+		if s.Website.GetLimits().GetDiskBytes() <= 0 {
+			continue
+		}
+		limited++
+		if !d.obs.image[s.ID] {
+			none++
+		}
+	}
+	if none == 0 {
+		return running
+	}
 	return panel.Service{Name: "disk-quotas", State: "stopped", Optional: true,
-		Detail: "User quotas are off on the file system of the websites, so this server does not apply the disk limit of a website. Refer to \"Disk quotas\" in the installation guide."}
+		Detail: fmt.Sprintf("User quotas are off on the file system of the websites. Websites with a disk limit and no disk image: %d of %d. This server does not apply the disk limit of these websites. Only a new website gets a disk image.", none, limited) + guide}
 }
 
 // cgroupUse reads the memory, CPU and process use of a website from the cgroup of its service.

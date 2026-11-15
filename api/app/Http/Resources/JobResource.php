@@ -52,6 +52,7 @@ class JobResource extends JsonResource
             'error' => self::errorFor($request, $this->resource),
             'websiteId' => $this->website_id,
             'databaseServerId' => $this->database_server_id,
+            'dnsZoneId' => $this->dns_zone_id,
             'serverId' => $this->server_id,
             'createdAt' => $this->created_at?->toIso8601String(),
             'finishedAt' => $this->finished_at?->toIso8601String(),

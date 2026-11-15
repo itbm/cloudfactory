@@ -10,6 +10,7 @@ import (
 
 	agentv1 "github.com/itbm/cloudfactory/agent/gen/cloudfactory/agent/v1"
 	"github.com/itbm/cloudfactory/agent/internal/execx"
+	"github.com/itbm/cloudfactory/agent/internal/panel"
 )
 
 // diskDeps gives the dependencies of a server with loop devices, and the MariaDB database
@@ -277,6 +278,40 @@ func TestADiskLimitThatFailsChangesNothing(t *testing.T) {
 	}
 	if _, err := os.Stat(d.dbDir(s)); !os.IsNotExist(err) {
 		t.Errorf("the disk image stays: %v", err)
+	}
+}
+
+// With no user quotas, a database server that has a directory has no disk limit, also when
+// the server has loop devices: only a new database server gets a disk image. The report
+// tells the panel the number of these database servers, as it does for the websites.
+func TestTheReportCountsTheDatabaseServersWithNoDiskLimit(t *testing.T) {
+	d, _, _ := deps(t)
+	customerServers(t, d, "mariadb", "postgresql")
+	if err := os.WriteFile(d.LoopControl, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	part := func() panel.Service {
+		var r panel.Report
+		d.FillReport(context.Background(), &r)
+		return r.Services[len(r.Services)-1]
+	}
+	if p := part(); p.Name != "database-disk-limits" || p.State != "stopped" || !p.Optional ||
+		!strings.Contains(p.Detail, "Database servers with a disk limit and no disk image: 2 of 2.") || !strings.Contains(p.Detail, "installation guide") {
+		t.Errorf("part = %+v", p)
+	}
+	// A database server with no disk limit is not in the numbers.
+	free := recordOf(databaseServer("postgresql"))
+	free.DiskBytes = 0
+	if _, err := d.putServer(customerKey, strings.ToLower(pgServerID), free, true); err != nil {
+		t.Fatal(err)
+	}
+	if p := part(); !strings.Contains(p.Detail, "Database servers with a disk limit and no disk image: 1 of 1.") {
+		t.Errorf("part = %+v", p)
+	}
+	// With user quotas, the server applies each limit.
+	both(d, func(d *Deps) { d.DBQuotaMount = "/" })
+	if p := part(); p.State != "running" || p.Detail != "" {
+		t.Errorf("part with user quotas = %+v", p)
 	}
 }
 

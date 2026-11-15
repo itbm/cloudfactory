@@ -119,8 +119,26 @@ The reasons:
   includes the users of the websites.
 - Rootful containers give more access to an attacker who escapes from gVisor.
 
-Release 0.3 (email) and release 0.2 (DNS) will add redirects for ports 25 and 53 in the same
-method.
+The DNS server uses the same method: the agent adds redirects from port 53 (UDP and TCP) to
+port 8053 when a server gets its first zone. Release 0.3 (email) will add a redirect for
+port 25 in the same method.
+
+## Knot DNS, and zones from the panel
+
+The DNS server is Knot DNS in one container on each server with the role `dns`.
+
+- Knot DNS is only an authoritative server. It has no resolver, and it signs zones with
+  DNSSEC itself. PowerDNS needs a database on each server. BIND has a resolver and more code
+  than this work needs.
+- The panel sends each full zone to each DNS server in a job. The servers do not use zone
+  transfers (AXFR) or notifications between them. Thus there is no primary server that must
+  be in operation, no transfer key to keep, and no open port between the servers. The cost
+  is one job for each DNS server and each change.
+- The root helper writes the zone files from records that it checks. It does not accept the
+  text of a zone file.
+- The panel makes the DNSSEC key of a zone and gives it to each DNS server. With a key that
+  each server made itself, the servers would give different signatures and the registrar
+  would need one DS record for each server.
 
 ## Who checks the registry for new image tags
 

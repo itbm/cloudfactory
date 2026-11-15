@@ -28,6 +28,8 @@ tags:
   - name: Deploys
     description: Deploys of a website from a Git repository.
   - name: Databases
+  - name: DNS
+    description: DNS hosting. The zones of the customers and their records.
   - name: Backups
   - name: Jobs
   - name: Servers
@@ -1465,6 +1467,203 @@ paths:
         '409': { description: The customer is suspended. }
         '422': { $ref: '#/components/responses/Invalid' }
 
+  /v1/dns-zones:
+    get:
+      tags: [DNS]
+      summary: List DNS zones
+      description: >-
+        The DNS zones of the customers that you can see. A customer makes a zone for a domain,
+        and then gives the name servers of the panel (`nameServers`) to the registrar of the
+        domain. The servers with the role `dns` answer the queries for each zone.
+      parameters:
+        - { name: customerId, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: The zones, and the host names of the name servers of the panel.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/DnsZone' } }
+                  nameServers: { type: array, items: { type: string }, description: Empty when the panel has no DNS server. A zone cannot be made then. }
+    post:
+      tags: [DNS]
+      summary: Create a DNS zone
+      description: >-
+        The plan of the customer gives the number of zones that the customer can have
+        (`dnsZones` of the plan). For a reseller, the zones of its customers count too.
+
+
+        The new zone gets one NS record for each name server of the panel, and the A and AAAA
+        records of the domains of the websites of the customer that are in the zone.
+
+
+        The response is 422 when a different customer has a zone with this name, with a name
+        above it or with a name in it. The message then gives a TXT record. Add the record at
+        your current DNS provider to prove that you control the domain, and send the request
+        again. Only an administrator can make a zone for the domain of the panel or for the
+        host name of a server.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, description: 'The domain, for example example.com.' }
+                customerId: { type: [string, 'null'], description: Default is the customer of the user. }
+      responses:
+        '202': { $ref: '#/components/responses/DnsZoneJobs' }
+        '409': { description: The customer is suspended. }
+        '422': { $ref: '#/components/responses/Invalid' }
+        '429': { description: Too many DNS changes in one minute. }
+
+  /v1/dns-zones/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    get:
+      tags: [DNS]
+      summary: Get a DNS zone with its records
+      responses:
+        '200':
+          description: The zone.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DnsZone' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [DNS]
+      summary: Remove a DNS zone
+      description: >-
+        Each DNS server removes the zone with all its records and its DNSSEC key. The zone has
+        the status `removing` until each job is complete. Before you remove a zone, change the
+        name servers at the registrar of the domain: while the registrar sends the queries to
+        the panel, a different customer of the panel could make a zone with the same name.
+        `jobs` is empty when the panel has no DNS server.
+      responses:
+        '202': { $ref: '#/components/responses/DnsJobs' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/dns-zones/{id}/records:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [DNS]
+      summary: Add a record to a DNS zone
+      description: >-
+        The response is 422 when the record is not correct for its type, when the zone has an
+        equal record, when a CNAME record and a different record would have the same name, and
+        when the zone has 1000 records.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - { $ref: '#/components/schemas/DnsRecordInput' }
+                - { type: object, required: [type, value] }
+      responses:
+        '202': { $ref: '#/components/responses/DnsRecordJobs' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+        '429': { description: Too many DNS changes in one minute. }
+
+  /v1/dns-zones/{id}/records/{recordId}:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+      - { name: recordId, in: path, required: true, schema: { type: string } }
+    patch:
+      tags: [DNS]
+      summary: Change a record of a DNS zone
+      description: >-
+        Changes the name, the value, the TTL or the priority. The type of a record does not
+        change. A record that the panel made for a website (`managed` is `website`) becomes a
+        record of the user: the panel does not change it after that. The response is 422 for an
+        NS record of the zone itself (`managed` is `ns`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DnsRecordInput' }
+      responses:
+        '202': { $ref: '#/components/responses/DnsRecordJobs' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+        '429': { description: Too many DNS changes in one minute. }
+    delete:
+      tags: [DNS]
+      summary: Remove a record from a DNS zone
+      description: The response is 422 for an NS record of the zone itself.
+      responses:
+        '202': { $ref: '#/components/responses/DnsJobs' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+        '429': { description: Too many DNS changes in one minute. }
+
+  /v1/dns-zones/{id}/dnssec:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    put:
+      tags: [DNS]
+      summary: Turn DNSSEC on or off for a DNS zone
+      description: >-
+        When DNSSEC is turned on, the panel makes a key for the zone (ECDSA P-256, algorithm
+        13), and each DNS server signs the zone with it. The response has the DS record
+        (`dnssec.ds`). Give the DS record to the registrar of the domain.
+
+
+        Before you turn DNSSEC off, remove the DS record at the registrar and wait for one day.
+        A resolver that has the DS record refuses a zone that has no signatures. The panel
+        makes a new key each time DNSSEC is turned on. `jobs` is empty when the value did not
+        change.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled]
+              properties:
+                enabled: { type: boolean }
+      responses:
+        '202': { $ref: '#/components/responses/DnsZoneJobs' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+        '429': { description: Too many DNS changes in one minute. }
+
+  /v1/dns-zones/{id}/check:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [DNS]
+      summary: Ask the public DNS for the name servers of a zone again
+      description: >-
+        The panel also asks every 15 minutes. When the public DNS gives the name servers of
+        the panel (`delegation.state` is `here`), the customer controls the zone: the panel
+        then verifies the domains of the websites of the customer that are in the zone.
+      responses:
+        '200':
+          description: The zone, with the new `delegation`.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DnsZone' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { description: Too many checks in one minute. }
+
+  /v1/dns-zones/{id}/sync:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [DNS]
+      summary: Send a DNS zone to each DNS server again
+      description: For a zone with the status `failed`, where a DNS server did not take the last change.
+      responses:
+        '202': { $ref: '#/components/responses/DnsZoneJobs' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { description: Too many DNS changes in one minute. }
+
   /v1/websites/{websiteId}/snapshots:
     parameters:
       - { $ref: '#/components/parameters/WebsiteId' }
@@ -1746,6 +1945,12 @@ paths:
                 gvisorPlatform: { type: string, enum: [systrap, kvm], description: KVM needs a bare-metal server. }
                 updatePolicy: { type: string, enum: [security, all, manual] }
                 maintenanceWindow: { type: string, pattern: '^[0-2][0-9]:[0-5][0-9]-[0-2][0-9]:[0-5][0-9]$' }
+                dnsName:
+                  type: [string, 'null']
+                  description: >-
+                    The host name of the server as a name server. A change of this name, or of the
+                    role `dns`, changes the NS records of each zone: the panel sends all zones to
+                    the DNS servers again.
       responses:
         '200':
           description: >-
@@ -2516,6 +2721,7 @@ paths:
                     properties:
                       websites: { type: integer }
                       databases: { type: integer }
+                      dnsZones: { type: integer, description: The number of DNS zones. For a reseller, the zones of its customers count too. }
                       diskBytes: { type: integer }
                       customers: { type: [integer, 'null'], description: Only for a reseller. The number of its customers. }
                   backups:
@@ -2689,6 +2895,32 @@ components:
               user: { $ref: '#/components/schemas/DatabaseUser' }
               password: { type: [string, 'null'] }
               job: { $ref: '#/components/schemas/Job' }
+    DnsJobs:
+      description: The jobs are in the queue, one for each DNS server.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              jobs: { type: array, items: { $ref: '#/components/schemas/Job' } }
+    DnsZoneJobs:
+      description: The panel recorded the change. The jobs are in the queue, one for each DNS server.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              zone: { $ref: '#/components/schemas/DnsZone' }
+              jobs: { type: array, items: { $ref: '#/components/schemas/Job' } }
+    DnsRecordJobs:
+      description: The panel recorded the record. The jobs are in the queue, one for each DNS server.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              record: { $ref: '#/components/schemas/DnsRecord' }
+              jobs: { type: array, items: { $ref: '#/components/schemas/Job' } }
     Unauthenticated:
       description: No token, or the token has expired.
       content:
@@ -2767,7 +2999,7 @@ components:
           additionalProperties: { type: array, items: { type: string } }
     Scope:
       type: string
-      enum: [websites:read, websites:write, databases:read, databases:write, backups:read, backups:write, servers:read, servers:write, images:read, images:write, customers:read, customers:write, users:read, users:write, audit:read, tokens:read, tokens:write]
+      enum: [websites:read, websites:write, databases:read, databases:write, dns:read, dns:write, backups:read, backups:write, servers:read, servers:write, images:read, images:write, customers:read, customers:write, users:read, users:write, audit:read, tokens:read, tokens:write]
     User:
       type: object
       properties:
@@ -2884,9 +3116,11 @@ components:
         diskLimitApplied:
           type: [boolean, 'null']
           description: >-
-            False when the server of the website does not apply the disk limit of the website,
-            because the file system of the websites has no user quotas. True when it applies the
-            limit. Null when the agent of the server did not report it.
+            False when the server of the website does not apply the disk limit of each of its
+            websites: the file system of the websites has no user quotas, and a website with a
+            disk limit has no disk image. True when the server applies the limits, with user
+            quotas or with a disk image for each website. Null when the agent of the server did
+            not report it.
         managedByTerraform: { type: boolean }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
@@ -2971,12 +3205,105 @@ components:
         error: { type: [string, 'null'], description: An administrator gets the full error of the agent. Other users get a short text. }
         websiteId: { type: [string, 'null'] }
         databaseServerId: { type: [string, 'null'], description: The database server of the job. A user sees the jobs of the websites and of the database servers of its customers. }
+        dnsZoneId: { type: [string, 'null'], description: The DNS zone of the job. A user sees the jobs of the DNS zones of its customers. }
         serverId: { type: string }
         createdAt: { type: string, format: date-time }
         finishedAt: { type: [string, 'null'], format: date-time }
     Engine:
       type: string
       enum: [mariadb, postgresql, valkey]
+    DnsRecordType:
+      type: string
+      enum: [A, AAAA, CNAME, MX, TXT, SRV, CAA, NS]
+    DnsRecordInput:
+      type: object
+      properties:
+        type: { $ref: '#/components/schemas/DnsRecordType' }
+        name:
+          type: [string, 'null']
+          description: >-
+            The name in the zone, for example `www` or `_dmarc`. `@` or no value is the zone
+            itself. A full name in the zone, for example `www.example.com`, is also correct. The
+            first label can be `*`.
+        value:
+          type: string
+          description: >-
+            A: an IPv4 address. AAAA: an IPv6 address. CNAME, MX and NS: a host name. TXT: the
+            text, at most 2048 printable ASCII characters, with no quotation marks around it.
+            SRV: `weight port target`, for example `5 5060 sip.example.com`. CAA: `flags tag
+            "value"`, for example `0 issue "letsencrypt.org"`.
+        ttl: { type: integer, minimum: 60, maximum: 604800, description: In seconds. The default is 3600. }
+        priority: { type: [integer, 'null'], minimum: 0, maximum: 65535, description: For MX and SRV records. The default is 10. }
+    DnsRecord:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string, description: '`@` for the zone itself.' }
+        type: { $ref: '#/components/schemas/DnsRecordType' }
+        value: { type: string }
+        ttl: { type: integer }
+        priority: { type: [integer, 'null'] }
+        managed:
+          type: [string, 'null']
+          enum: [ns, website, null]
+          description: >-
+            `ns`: an NS record of the zone itself. The panel keeps these records, and a user
+            cannot change them. `website`: an A or AAAA record that the panel made for a domain
+            of a website. The panel changes it when the server of the website gets a new
+            address, and removes it with the domain. Null: a record of the user.
+    DnsZone:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        customerId: { type: string }
+        status:
+          type: string
+          enum: [active, updating, failed, removing]
+          description: >-
+            `updating`: a DNS server does not have the last change yet. `failed`: a DNS server
+            did not take the last change. Send the zone again (`/sync`).
+        serial: { type: integer, description: The serial of the zone. It is the time of the last change, in seconds. A signed zone has a serial that the DNS server makes. }
+        recordCount: { type: integer }
+        nameServers: { type: array, items: { type: string }, description: The host names of the name servers of the panel. Give them to the registrar of the domain. }
+        delegation:
+          type: object
+          description: What the public DNS says about the zone.
+          properties:
+            state:
+              type: string
+              enum: [here, elsewhere, none, unknown]
+              description: >-
+                `here`: the public DNS gives the name servers of the panel. `elsewhere`: it
+                gives other name servers, so the zone on the panel has no effect yet. `none`:
+                it has no name servers for the domain. `unknown`: the panel did not ask yet.
+            nameServers: { type: array, items: { type: string }, description: The name servers that the public DNS gave. }
+            checkedAt: { type: [string, 'null'], format: date-time }
+        dnssec:
+          type: object
+          properties:
+            enabled: { type: boolean }
+            ds:
+              type: [object, 'null']
+              description: The DS record for the registrar of the domain. Null when DNSSEC is off.
+              properties:
+                keyTag: { type: integer }
+                algorithm: { type: integer, description: 13 (ECDSA P-256 with SHA-256). }
+                digestType: { type: integer, description: 2 (SHA-256). }
+                digest: { type: string }
+                record: { type: string, description: 'The full record, for example `example.com. IN DS 22976 13 2 3A81…`.' }
+            dnskey: { type: [string, 'null'], description: The DNSKEY record. Some registrars ask for it and not for the DS record. }
+        servers:
+          type: array
+          description: The state of the zone on each DNS server.
+          items:
+            type: object
+            properties:
+              nameServer: { type: string }
+              state: { type: string, enum: [ok, pending, failed, removed] }
+        websites: { type: integer, description: The number of websites of the customer that have a domain in the zone. }
+        createdAt: { type: string, format: date-time }
+        records: { type: array, items: { $ref: '#/components/schemas/DnsRecord' }, description: Only in the answer for one zone. }
     Snapshot:
       type: object
       properties:
@@ -3158,6 +3485,15 @@ components:
             cpuPercent: { type: number, description: The load average of one minute for each CPU. }
             memoryPercent: { type: number }
             diskPercent: { type: number, description: The file system of the website files. }
+        dnsName:
+          type: [string, 'null']
+          description: >-
+            The host name of the server as a name server, for example `ns1.example.com`. A
+            server with the role `dns` answers DNS queries only when it has this name. The name
+            must have an A or AAAA record with the address of the server at the DNS provider of
+            its domain.
+        dns: { type: boolean, description: True when the agent of the server can operate DNS. An agent of an earlier release cannot. }
+        addresses: { type: array, items: { type: string }, description: The public IP addresses that the agent reported. The panel uses them for the A and AAAA records of the websites on the server. }
         websites: { type: [integer, 'null'] }
         lastSeenAt: { type: [string, 'null'], format: date-time }
     Image:
@@ -3342,6 +3678,12 @@ components:
           description: >-
             The number of database servers of a customer with the plan. A request with no value
             keeps the value of the plan. A new plan gets 3.
+        dnsZones:
+          type: integer
+          minimum: 0
+          description: >-
+            The number of DNS zones of a customer with the plan. A request with no value keeps
+            the value of the plan. A new plan gets 5.
         databaseLimits:
           $ref: '#/components/schemas/DatabaseLimits'
           description: >-
@@ -3391,6 +3733,17 @@ components:
               containerTool: { type: boolean, description: A held container tool. The policy "tools" updates it (FR-1113). }
         rebootRequired: { type: boolean }
         lastUpdateAt: { type: string, format: date-time }
+        dns: { type: boolean, description: True when the agent can operate DNS. }
+        addresses: { type: array, maxItems: 16, items: { type: string }, description: The public IP addresses of the server. }
+        dnsZones:
+          type: [array, 'null']
+          description: The DNS zones of the server. The panel sends each zone that the server does not have with the last serial, and removes each zone that the server must not have. An agent that cannot operate DNS does not send the list.
+          items:
+            type: object
+            required: [name, serial]
+            properties:
+              name: { type: string, maxLength: 253 }
+              serial: { type: integer, minimum: 0, description: The serial of the zone that the DNS server loaded last. 0 when it loaded none. }
         services:
           type: array
           items:

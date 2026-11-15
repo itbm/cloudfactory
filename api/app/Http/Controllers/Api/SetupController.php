@@ -77,16 +77,18 @@ class SetupController extends Controller
     private static function diskLimits(): array
     {
         $servers = Server::orderBy('name')->get();
-        // An agent that reports no state for the disk quotas is an agent of an earlier release.
+        // An agent that reports no state for the disk quotas is an agent of an earlier release. A
+        // server with no user quotas applies the limits when each website with a limit has a disk
+        // image: the agent then reports the part as running.
         $without = $servers->filter(fn (Server $server) => $server->appliesDiskLimits() === false)->values();
         $item = self::item(
             'disk-limits',
             'Turn on disk limits on each server',
             $without->isEmpty(),
-            'Without user quotas on the file system, a server does not apply the disk limit of a plan. One website can fill the disk, and then all websites on that server stop.',
+            'A server applies the disk limit of a plan with a user quota, or with a disk image for each new website. Without a disk limit, one website can fill the disk, and then all websites on that server stop.',
             $without->isEmpty()
                 ? 'All servers apply the disk limit of each website.'
-                : 'These servers do not apply disk limits: '.$without->pluck('name')->implode(', ').'. Run the installation script on the server again: it turns on the user quotas of an ext4 file system. For a different file system, refer to "Disk quotas" in the installation guide.',
+                : 'These servers do not apply the disk limit of each website: '.$without->pluck('name')->implode(', ').'. The status of the server gives the cause. Run the installation script on the server again: it turns on the user quotas of an ext4 file system. For a different file system, refer to "Disk quotas" in the installation guide.',
             'Open the server',
             $without->count() === 1 ? '/servers/'.$without[0]->id : '/servers',
         );

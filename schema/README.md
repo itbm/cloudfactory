@@ -46,6 +46,9 @@ A set is a list of text values, for example the reserved database names. A limit
 for example the largest number of arguments of a start command. The generator writes each set
 and each limit as a constant in the two languages.
 
+The constant of a limit starts with `Max` (Go) or `MAX_` (PHP). A limit with `"smallest": true`
+is the smallest permitted number, and its constant starts with `Min` or `MIN_`.
+
 ## Format of `input-vectors.json`
 
 Each rule has a list `valid` and a list `invalid`. An example is a string, or an object for a

@@ -18,6 +18,7 @@ import type {
   DatabaseLimits,
   DatabasePrivileges,
   DatabaseServer,
+  DnsRecordType,
   Deploy,
   DomainKind,
   FileContent,
@@ -52,7 +53,7 @@ export function emptyState(): State {
   return {
     session: { signedIn: false, user: { id: "", name: "", email: "", role: "owner" }, contextId: "" },
     contexts: [], websites: [], jobs: [], activity: [], notifications: [], servers: [], images: [], rollout: undefined,
-    databaseServers: [], databases: [], databaseUsers: [], remoteDatabaseServers: {}, snapshots: [], plans: [], customers: [], users: [],
+    databaseServers: [], dnsZones: [], nameServers: [], databases: [], databaseUsers: [], remoteDatabaseServers: {}, snapshots: [], plans: [], customers: [], users: [],
     backupPolicy: { daily: 7, weekly: 4, monthly: 6, time: "03:00", target: "", credentialNames: [] },
     tokens: [], totpEnabled: false, securityNotices: [], audit: [], joinToken: "", joinCaSha256: undefined,
     panelDomain: "",
@@ -716,9 +717,127 @@ export function rollBackAll() {
   return call(() => live.request("POST", `/rollouts/${r.id}/roll-back`)).then(() => refresh());
 }
 
+// DNS hosting
+
+type DnsJobs = { jobs: live.ApiJob[] };
+
+function putDnsZone(zone: live.ApiDnsZone) {
+  update((d) => {
+    const next = live.toDnsZone(zone);
+    d.dnsZones = d.dnsZones.some((x) => x.id === next.id) ? d.dnsZones.map((x) => (x.id === next.id ? next : x)) : [...d.dnsZones, next].sort((a, b) => a.name.localeCompare(b.name));
+  });
+}
+
+/** Follows the jobs of a change of a zone: one job for each DNS server. Then it reads the zone again. */
+function trackZone(zoneId: string, jobs: live.ApiJob[]) {
+  update((d) => {
+    const z = d.dnsZones.find((x) => x.id === zoneId);
+    if (z && jobs.length && z.status !== "removing") z.status = "updating";
+  });
+  void Promise.all(jobs.map((j) => track(j))).then(() => showDnsZone(zoneId)).catch(() => undefined);
+}
+
+/** Reads the records of a zone. The zone page calls it when it opens. */
+export async function showDnsZone(zoneId: string): Promise<void> {
+  try {
+    const zone = await live.dnsZone(zoneId);
+    update((d) => {
+      d.dnsZones = d.dnsZones.some((x) => x.id === zone.id) ? d.dnsZones.map((x) => (x.id === zone.id ? zone : x)) : [...d.dnsZones, zone];
+    });
+  } catch {
+    // The zone is removed, or the API does not answer. The page shows what the panel has.
+  }
+}
+
+/** Makes a zone for a domain of a customer. The promise gives the ID of the zone. */
+export function createDnsZone(name: string, customerId?: string): Promise<string> {
+  return call(async () => {
+    const r = await live.request<{ zone: live.ApiDnsZone } & DnsJobs>("POST", "/dns-zones", { name: name.trim().toLowerCase().replace(/\.$/, ""), customerId: customerId || undefined });
+    putDnsZone(r.zone);
+    trackZone(r.zone.id, r.jobs);
+    return r.zone.id;
+  });
+}
+
+/** Removes a zone and all its records from each DNS server. */
+export function deleteDnsZone(zoneId: string): Promise<void> {
+  return call(async () => {
+    const r = await live.request<DnsJobs>("DELETE", `/dns-zones/${zoneId}`);
+    update((d) => {
+      const z = d.dnsZones.find((x) => x.id === zoneId);
+      if (z) z.status = "removing";
+    });
+    void Promise.all(r.jobs.map((j) => track(j))).then(() => refresh()).catch(() => undefined);
+    if (r.jobs.length === 0) void refresh();
+  });
+}
+
+export interface DnsRecordInput {
+  type: DnsRecordType;
+  name: string;
+  value: string;
+  ttl: number;
+  /** Only for an MX or an SRV record. */
+  priority?: number;
+}
+
+/** Adds a record, or changes the record with the ID. The type of a record does not change. */
+export function saveDnsRecord(zoneId: string, input: DnsRecordInput, recordId?: string): Promise<void> {
+  return call(async () => {
+    const body = { type: recordId ? undefined : input.type, name: input.name.trim() || "@", value: input.value.trim(), ttl: input.ttl, priority: input.priority };
+    const r = await live.request<{ record: live.ApiDnsRecord } & DnsJobs>(recordId ? "PATCH" : "POST", `/dns-zones/${zoneId}/records${recordId ? `/${recordId}` : ""}`, body);
+    update((d) => {
+      const z = d.dnsZones.find((x) => x.id === zoneId);
+      if (!z?.records) return;
+      const next = live.toDnsRecord(r.record);
+      z.records = recordId ? z.records.map((x) => (x.id === recordId ? next : x)) : [...z.records, next];
+      z.recordCount = z.records.length;
+    });
+    trackZone(zoneId, r.jobs);
+  });
+}
+
+export function deleteDnsRecord(zoneId: string, recordId: string): Promise<void> {
+  return call(async () => {
+    const r = await live.request<DnsJobs>("DELETE", `/dns-zones/${zoneId}/records/${recordId}`);
+    update((d) => {
+      const z = d.dnsZones.find((x) => x.id === zoneId);
+      if (!z?.records) return;
+      z.records = z.records.filter((x) => x.id !== recordId);
+      z.recordCount = z.records.length;
+    });
+    trackZone(zoneId, r.jobs);
+  });
+}
+
+/** Turns DNSSEC on or off. With DNSSEC on, the zone then has the DS record for the registrar. */
+export function setDnssec(zoneId: string, enabled: boolean): Promise<void> {
+  return call(async () => {
+    const r = await live.request<{ zone: live.ApiDnsZone } & DnsJobs>("PUT", `/dns-zones/${zoneId}/dnssec`, { enabled });
+    putDnsZone(r.zone);
+    trackZone(zoneId, r.jobs);
+  });
+}
+
+/** Asks the public DNS again for the name servers of the domain. */
+export function checkDnsZone(zoneId: string): Promise<void> {
+  return call(async () => {
+    putDnsZone(await live.request<live.ApiDnsZone>("POST", `/dns-zones/${zoneId}/check`));
+  });
+}
+
+/** Sends the zone to each DNS server again, for example after a job failed. */
+export function syncDnsZone(zoneId: string): Promise<void> {
+  return call(async () => {
+    const r = await live.request<{ zone: live.ApiDnsZone } & DnsJobs>("POST", `/dns-zones/${zoneId}/sync`);
+    putDnsZone(r.zone);
+    trackZone(zoneId, r.jobs);
+  });
+}
+
 // Servers (FR-1112 to FR-1118, FR-1201)
 
-export function setServer(serverId: string, change: { updatePolicy?: HostUpdatePolicy; maintenanceWindow?: string; gvisorPlatform?: "systrap" | "kvm"; roles?: ServerRole[] }) {
+export function setServer(serverId: string, change: { updatePolicy?: HostUpdatePolicy; maintenanceWindow?: string; gvisorPlatform?: "systrap" | "kvm"; roles?: ServerRole[]; dnsName?: string | null }) {
   // A new gVisor platform makes a job that writes the units again (ConfigureHost).
   return call(() => live.request<JobAnswer>("PATCH", `/servers/${serverId}`, change)).then((r) => (r?.job ? track(r.job).then(() => undefined) : refresh()));
 }
@@ -910,7 +1029,7 @@ export function setCustomer(customerId: string, change: Partial<Pick<Customer, "
 
 export function savePlan(plan: Plan) {
   const exists = state.plans.some((p) => p.id === plan.id);
-  const body = { name: plan.name.trim(), websites: plan.websites, mailboxes: plan.mailboxes, databases: plan.databases, phpExtensions: plan.phpExtensions, limits: plan.limits, databaseServers: plan.databaseServers, databaseLimits: plan.databaseLimits };
+  const body = { name: plan.name.trim(), websites: plan.websites, mailboxes: plan.mailboxes, databases: plan.databases, phpExtensions: plan.phpExtensions, limits: plan.limits, databaseServers: plan.databaseServers, databaseLimits: plan.databaseLimits, dnsZones: plan.dnsZones };
   return call(() => live.request(exists ? "PATCH" : "POST", exists ? `/plans/${plan.id}` : "/plans", body)).then(() => refresh());
 }
 

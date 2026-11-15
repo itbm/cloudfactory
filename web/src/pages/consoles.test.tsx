@@ -28,19 +28,19 @@ describe("the console of each role", () => {
   it("gives each role its own first page and its own menu", async () => {
     await open("administrator", "/");
     expect(heading()).toBe("Overview");
-    expect(menu()).toEqual(["Overview", "Finish setup", "Servers", "Network", "Images and updates", "Customers", "Plans", "Websites", "Files", "Databases", "Backups", "Apps", "Jobs and activity", "Settings"]);
+    expect(menu()).toEqual(["Overview", "Finish setup", "Servers", "Network", "Images and updates", "Customers", "Plans", "Websites", "Files", "Databases", "DNS", "Backups", "Apps", "Jobs and activity", "Settings"]);
     cleanup();
     reset();
 
     await open("reseller", "/");
     expect(heading()).toBe("Customers");
-    expect(menu()).toEqual(["Customers", "Plans", "Websites", "Files", "Databases", "Backups", "Apps", "Jobs and activity", "My account", "Settings"]);
+    expect(menu()).toEqual(["Customers", "Plans", "Websites", "Files", "Databases", "DNS", "Backups", "Apps", "Jobs and activity", "My account", "Settings"]);
     cleanup();
     reset();
 
     await open("owner", "/");
     expect(heading()).toBe("My websites");
-    expect(menu()).toEqual(["My websites", "Files", "Databases", "Backups", "Apps", "Activity", "My account", "Settings"]);
+    expect(menu()).toEqual(["My websites", "Files", "Databases", "DNS", "Backups", "Apps", "Activity", "My account", "Settings"]);
   });
 
   it("has no link from the menu of an owner or a reseller to a page that the role cannot open", () => {
@@ -110,7 +110,7 @@ describe("the setup checklist", () => {
       "Use a certificate that browsers trust for the panel Open",
       "Set the object storage for backups Done",
     ]);
-    expect(items[1].textContent).toContain("While this is open: Without user quotas on the file system, a server does not apply the disk limit of a plan.");
+    expect(items[1].textContent).toContain("While this is open: A server applies the disk limit of a plan with a user quota, or with a disk image for each new website.");
     expect(within(items[1]).getByRole("link").getAttribute("href")).toBe(`/servers/${getState().servers.find((s) => s.name === "web-1")!.id}`);
     // A done item has no effect text and no action.
     expect(items[3].textContent).not.toContain("While this is open");
@@ -140,13 +140,15 @@ describe("the overview of the administrator", () => {
     const main = screen.getByRole("main");
     expect(main.textContent).toContain("3 setup items are open");
     expect(within(main).getByRole("link", { name: "Servers: 3. 1 needs attention" })).toBeTruthy();
-    expect(within(main).getByRole("link", { name: "Failed jobs: 1. Not resolved" })).toBeTruthy();
+    expect(within(main).getByRole("link", { name: "Failed jobs: 2. Not resolved" })).toBeTruthy();
     expect(main.textContent).toContain("web-3 is degraded: cf-sftp failed.");
     expect(main.textContent).toContain("Node.js app could not be checked for updates.");
     // The failure of the database job has a later successful job, so it is not in the list.
     const jobs = within(main).getByRole("heading", { name: "Jobs" }).closest("section")!;
-    expect(within(jobs).getAllByRole("listitem")).toHaveLength(1);
+    expect(within(jobs).getAllByRole("listitem")).toHaveLength(2);
     expect(jobs.textContent).toContain("Create website events.harbourbooks.example.net");
+    // One DNS server could not load a zone. The job of the other DNS server does not resolve it.
+    expect(jobs.textContent).toContain("Add TXT record to harbourbooks.example.net");
     expect(jobs.textContent).toContain("Details for administrators");
   });
 });

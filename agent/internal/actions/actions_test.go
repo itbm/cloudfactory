@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -402,8 +403,38 @@ func TestACustomImageStaysWithTheWebsiteUser(t *testing.T) {
 	if err := run(t)(d.CreateWebsite(&agentv1.WebsiteRequest{JobId: jobID, Website: w})); err != nil {
 		t.Fatal(err)
 	}
-	if !f.Called("runuser -u acme_x7k2 -- env XDG_RUNTIME_DIR=/run/user/20001 podman pull --quiet registry.example/acme/app:1.0@"+sharedDigest) || f.Called("podman pull") {
+	// The pull of the website user does not use the shared stores (userPull).
+	if !f.Called(userPodman+"--storage-opt overlay.mount_program=/usr/bin/fuse-overlayfs pull --quiet registry.example/acme/app:1.0@"+sharedDigest) || f.Called("podman pull") {
 		t.Errorf("calls = %v", f.Calls)
+	}
+}
+
+// userPodman is the start of a Podman command of the website user of the tests.
+const userPodman = "runuser -u acme_x7k2 -- env XDG_RUNTIME_DIR=/run/user/20001 podman "
+
+// An image with no digest cannot go in the shared store, thus the website user pulls it. The
+// shared stores have layers that the user cannot copy, and the pull must not use them.
+func TestAnImageWithNoDigestIsAPullWithNoSharedStores(t *testing.T) {
+	d, f := sharedDeps(t)
+	w := website("ghcr.io/cloudfactory/frankenphp-php8.4:8.4.0-1")
+	if err := run(t)(d.CreateWebsite(&agentv1.WebsiteRequest{JobId: jobID, Website: w})); err != nil {
+		t.Fatal(err)
+	}
+	if !f.Called(userPodman + "--storage-opt overlay.mount_program=/usr/bin/fuse-overlayfs pull --quiet ghcr.io/cloudfactory/frankenphp-php8.4:8.4.0-1") {
+		t.Errorf("calls = %v", f.Calls)
+	}
+	// No pull with the storage settings of the user, and no pull by root.
+	if f.Called(userPodman+"pull") || f.Called("podman pull") {
+		t.Errorf("a pull used the shared stores: %v", f.Calls)
+	}
+}
+
+func TestAUserPullWithNoSharedStoreHasNoStorageOption(t *testing.T) {
+	if got := userPull(false, "registry.example/acme/app:1.0"); !slices.Equal(got, []string{"pull", "--quiet", "registry.example/acme/app:1.0"}) {
+		t.Errorf("arguments = %v", got)
+	}
+	if got := userPull(true, "registry.example/acme/app:1.0"); !slices.Equal(got, []string{"--storage-opt", "overlay.mount_program=" + images.FuseOverlayfs, "pull", "--quiet", "registry.example/acme/app:1.0"}) {
+		t.Errorf("arguments = %v", got)
 	}
 }
 
