@@ -15,6 +15,7 @@ use App\Services\Audit;
 use App\Services\DatabaseServers;
 use App\Services\DomainPolicy;
 use App\Services\JobDispatcher;
+use App\Services\Notifications\Notifier;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -135,6 +136,7 @@ class CustomerController extends Controller
         }
         if ($suspension) {
             $this->applySuspension($customer->fresh());
+            app(Notifier::class)->suspension($customer->fresh(), $suspension['suspended']);
         }
         Audit::record($request, 'Changed customer', $customer->name, $customer->id);
 

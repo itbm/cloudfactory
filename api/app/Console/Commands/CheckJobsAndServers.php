@@ -7,6 +7,7 @@ use App\Jobs\SendJobToAgent;
 use App\Models\AgentJob;
 use App\Models\Server;
 use App\Services\JobOutcome;
+use App\Services\Notifications\Notifier;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
@@ -25,11 +26,14 @@ use Illuminate\Console\Command;
 #[Description('Mark silent servers offline, and send or fail old jobs')]
 class CheckJobsAndServers extends Command
 {
-    public function handle(JobOutcome $outcome): int
+    public function handle(JobOutcome $outcome, Notifier $notifier): int
     {
-        $offline = Server::whereIn('state', ['healthy', 'degraded'])->where('last_seen_at', '<', now()->subMinutes(5))->update(['state' => 'offline']);
+        $silent = Server::whereIn('state', ['healthy', 'degraded'])->where('last_seen_at', '<', now()->subMinutes(5))->get();
+        $offline = Server::whereKey($silent->modelKeys())->whereIn('state', ['healthy', 'degraded'])->update(['state' => 'offline']);
         if ($offline) {
             $this->line("{$offline} servers are offline.");
+            // The administrators who want it get an email for each server.
+            $silent->each(fn (Server $server) => $notifier->serverOffline($server));
         }
 
         $open = AgentJob::whereIn('state', [JobState::Queued->value, JobState::Running->value]);

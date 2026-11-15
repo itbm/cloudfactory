@@ -16,3 +16,6 @@ Schedule::command('cloudfactory:check-dns')->everyFifteenMinutes()->withoutOverl
 
 // Batch 1, finding 2: servers that do not report, and jobs with no result.
 Schedule::command('cloudfactory:check-jobs')->everyMinute()->withoutOverlapping();
+
+// Email notifications: the TLS certificates that expire soon. One email for each certificate.
+Schedule::command('cloudfactory:check-certificates')->dailyAt('08:00')->withoutOverlapping();
