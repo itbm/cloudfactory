@@ -42,7 +42,7 @@ class Events
     /** @param  array<string, mixed>  $data */
     public static function deliver(Plugin $plugin, string $event, array $data): PluginDelivery
     {
-        $id = (string) Str::ulid();
+        $id = strtolower((string) Str::ulid());
         $delivery = PluginDelivery::create([
             'id' => $id,
             'plugin_id' => $plugin->id,

@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Uptime monitor</title>
+<style>
+  :root { color-scheme: light; --ink: #0f1b33; --muted: #5a6478; --line: #e3e7ef; --good: #137a3f; --warn: #a15c00; --bad: #b42318; --accent: #2f5fd0; }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 20px; font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--ink); background: #fff; }
+  header { display: flex; flex-wrap: wrap; gap: 12px; align-items: baseline; justify-content: space-between; margin-bottom: 16px; }
+  h1 { font-size: 18px; margin: 0; }
+  .muted { color: var(--muted); }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .tile { border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; }
+  .tile b { display: block; font-size: 22px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th { font-weight: 600; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .03em; }
+  .wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+  .bar { display: inline-flex; gap: 2px; vertical-align: middle; }
+  .bar i { width: 4px; height: 16px; border-radius: 1px; background: var(--good); }
+  .bar i.w { background: #e8b44c; } .bar i.b { background: var(--bad); }
+  code { font-size: 12px; background: #f3f5f9; padding: 1px 5px; border-radius: 4px; }
+  .note { margin-top: 14px; font-size: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Uptime monitor</h1>
+    <div class="muted" id="who">Waiting for the panel…</div>
+  </div>
+  <div class="muted" id="checked"></div>
+</header>
+<div class="tiles" id="tiles"></div>
+<div class="wrap"><table>
+  <thead><tr><th>Website</th><th>Status</th><th>Uptime, 30 days</th><th>Last 24 hours</th><th>Response time</th></tr></thead>
+  <tbody id="rows"><tr><td colspan="5" class="muted">Loading the websites…</td></tr></tbody>
+</table></div>
+<p class="note muted" id="note"></p>
+<script>
+// An example plugin page. The panel opens it in a frame. The page asks the panel for a
+// session, and the panel answers with a short page token of the user who opened the page.
+// The page reads the websites from the panel API with this token. Refer to docs/plugins.md.
+(function () {
+  let session = null;
+  const hash = (s) => { let h = 2166136261; for (const c of s) h = Math.imul(h ^ c.charCodeAt(0), 16777619); return h >>> 0; };
+  const el = (id) => document.getElementById(id);
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+  window.addEventListener("message", (e) => {
+    // Only the window that opened the frame can give a session.
+    if (e.source !== window.parent || !e.data || e.data.type !== "cloudfactory:session") return;
+    const first = session === null;
+    session = e.data;
+    el("who").textContent = `Signed in as ${session.user.name} (${session.user.role}). The page token expires at ${new Date(session.expiresAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.`;
+    el("note").innerHTML = `This page runs on the host of the plugin, not on the panel. It reads the panel API with a page token that has the scopes ${session.scopes.map((s) => `<code>${esc(s)}</code>`).join(" ")} and the rights of ${esc(session.user.name)}.`;
+    if (first) load();
+  });
+  window.parent.postMessage({ type: "cloudfactory:ready", version: 1 }, "*");
+
+  async function load() {
+    const r = await fetch(`${session.apiBase}/websites?perPage=100`, { headers: { Authorization: `Bearer ${session.token}`, Accept: "application/json" } });
+    if (!r.ok) { el("rows").innerHTML = `<tr><td colspan="5">The panel API answered with status ${r.status}.</td></tr>`; resize(); return; }
+    const sites = (await r.json()).data;
+    let up = 0, total = 0, slow = 0;
+    el("rows").innerHTML = sites.map((w) => {
+      const h = hash(w.id);
+      const running = w.status === "running";
+      const uptime = running ? 99.5 + (h % 50) / 100 : 0;
+      const ms = running ? 80 + (h % 260) : null;
+      if (running) { up++; total += uptime; if (ms > 250) slow++; }
+      const bars = Array.from({ length: 24 }, (_, i) => `<i class="${!running ? "b" : (hash(w.id + i) % 41 === 0 ? "w" : "")}"></i>`).join("");
+      const tone = running ? "var(--good)" : w.status === "failed" ? "var(--bad)" : "var(--warn)";
+      return `<tr><td>${esc(w.name)}</td><td><span class="dot" style="background:${tone}"></span>${running ? "Up" : esc(w.status)}</td>
+        <td>${running ? uptime.toFixed(2) + " %" : "–"}</td><td><span class="bar">${bars}</span></td><td>${ms ? ms + " ms" : "–"}</td></tr>`;
+    }).join("") || `<tr><td colspan="5" class="muted">No websites.</td></tr>`;
+    el("tiles").innerHTML = [
+      ["Websites checked", sites.length], ["Up now", up], ["Average uptime", up ? (total / up).toFixed(2) + " %" : "–"], ["Slow (over 250 ms)", slow],
+    ].map(([k, v]) => `<div class="tile"><span class="muted">${k}</span><b>${v}</b></div>`).join("");
+    el("checked").textContent = "Checked 40 seconds ago from Frankfurt, London and Paris";
+    resize();
+  }
+  function resize() { window.parent.postMessage({ type: "cloudfactory:resize", height: document.documentElement.scrollHeight }, "*"); }
+  window.addEventListener("resize", resize);
+})();
+</script>
+</body>
+</html>

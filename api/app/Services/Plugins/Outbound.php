@@ -14,6 +14,12 @@ namespace App\Services\Plugins;
  */
 class Outbound
 {
+    /** True when the loopback interface is permitted also with no developer mode (the demonstration mode). */
+    public function permitsLoopback(): bool
+    {
+        return false;
+    }
+
     /** @return list<string> */
     public function addresses(string $host): array
     {

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Enums\Role;
 use App\Http\Controllers\Controller;
+use App\Http\Middleware\AllowPluginOrigins;
 use App\Models\Plugin;
 use App\Models\PluginDelivery;
 use App\Models\PluginKey;
@@ -107,6 +108,7 @@ class PluginController extends Controller
 
             return [$plugin, self::newToken($plugin, $user)];
         });
+        AllowPluginOrigins::forget();
         Audit::record($request, 'Installed plugin', "{$spec['name']} {$spec['version']}");
 
         return response()->json([
@@ -141,6 +143,7 @@ class PluginController extends Controller
             $plugin->user?->tokens()->where('name', self::TOKEN_NAME)->update(['abilities' => json_encode($spec['scopes'])]);
             $plugin->user?->update(['name' => "Plugin: {$spec['name']}"]);
         });
+        AllowPluginOrigins::forget();
         Audit::record($request, 'Updated plugin', "{$spec['name']} {$old} to {$spec['version']}");
 
         return response()->json(self::present($plugin->fresh(['key', 'user'])));
@@ -165,6 +168,7 @@ class PluginController extends Controller
         if (! $plugin->enabled) {
             self::revokePageTokens($plugin);
         }
+        AllowPluginOrigins::forget();
         Audit::record($request, match (true) {
             array_key_exists('baseUrl', $data) => 'Changed the address of plugin',
             $plugin->enabled => 'Turned on plugin',
@@ -183,6 +187,7 @@ class PluginController extends Controller
             $plugin->user?->delete();
             $plugin->delete();
         });
+        AllowPluginOrigins::forget();
         Audit::record($request, 'Removed plugin', $plugin->name);
 
         return response()->json(null, 204);

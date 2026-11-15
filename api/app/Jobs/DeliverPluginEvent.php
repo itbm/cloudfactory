@@ -68,7 +68,7 @@ class DeliverPluginEvent implements ShouldQueue
     /** @return array{0: ?int, 1: ?string} The HTTP status and the error, or null for no error. */
     private function send(Plugin $plugin, PluginDelivery $delivery, string $url, Outbound $outbound): array
     {
-        $developerMode = (bool) Setting::get('plugins.developer_mode', false);
+        $developerMode = (bool) Setting::get('plugins.developer_mode', false) || $outbound->permitsLoopback();
         $parts = parse_url($url);
         $host = trim($parts['host'] ?? '', '[]');
         $port = $parts['port'] ?? (($parts['scheme'] ?? '') === 'http' ? 80 : 443);

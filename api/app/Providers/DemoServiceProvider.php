@@ -8,6 +8,7 @@ use App\Models\MeshTunnel;
 use App\Models\Server;
 use App\Services\AgentClient;
 use App\Services\Dns\Lookup;
+use App\Services\Plugins\Outbound;
 use Database\Seeders\DemoSeeder;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\ServiceProvider;
@@ -29,6 +30,14 @@ class DemoServiceProvider extends ServiceProvider
         $this->app->bind(AgentClient::class, fn () => self::enabled() ? new DemoAgentClient : new AgentClient);
         // The demonstration mode asks no real resolver for the name servers of a zone.
         $this->app->bind(Lookup::class, fn () => self::enabled() ? new DemoLookup : new Lookup);
+        // The sample plugin "Uptime monitor" is on the address of the demo API (127.0.0.1).
+        $this->app->bind(Outbound::class, fn () => self::enabled() ? new class extends Outbound
+        {
+            public function permitsLoopback(): bool
+            {
+                return true;
+            }
+        } : new Outbound);
     }
 
     public function boot(): void

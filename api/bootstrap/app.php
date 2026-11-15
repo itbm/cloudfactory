@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\AllowPluginOrigins;
 use App\Http\Middleware\AuthenticateAgent;
 use App\Http\Middleware\EnsureActive;
 use App\Http\Middleware\EnsureAdministrator;
@@ -31,6 +32,8 @@ return Application::configure(basePath: dirname(__DIR__))
         // so a request with no token and no "Accept: application/json" header (for example from
         // curl) got status 500 and an exception in the log. Now it gets status 401.
         $middleware->redirectGuestsTo(null);
+        // The pages of the plugins can call the API from the browser (AllowPluginOrigins).
+        $middleware->prepend(AllowPluginOrigins::class);
         // Audit batch 3, finding 1: all requests come through the edge proxy, which sets
         // X-Forwarded-For to the address of the client. The API ports are open only on the
         // service address of the host (CF-10), so only the edge proxy and the local agent can
