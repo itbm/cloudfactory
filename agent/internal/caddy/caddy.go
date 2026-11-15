@@ -93,7 +93,8 @@ func (c *Client) EnsureBase(ctx context.Context) error {
 	return c.expect(ctx, http.MethodPost, "/load", BaseConfig(), http.StatusOK)
 }
 
-// BaseConfig is the configuration of a new edge proxy. It logs requests as JSON.
+// BaseConfig is the configuration of a new edge proxy. It logs requests as JSON, and it
+// counts the traffic of each host.
 func BaseConfig() map[string]any {
 	return map[string]any{
 		// CF-13: a Unix socket, not a TCP port. Only the edge user and root can open it.
@@ -107,6 +108,8 @@ func BaseConfig() map[string]any {
 			// answers ACME HTTP challenges.
 			"http_port":  8080,
 			"https_port": 8443,
+			// The traffic of each host, for the bandwidth of each website (Traffic).
+			"metrics": MetricsConfig(),
 			"servers": map[string]any{serverName: map[string]any{
 				"listen": []string{":8443"},
 				"routes": []any{},
