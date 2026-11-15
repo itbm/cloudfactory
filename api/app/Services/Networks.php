@@ -96,6 +96,31 @@ class Networks
         }
     }
 
+    /**
+     * A website with a database in a database server on a different server connects through a
+     * network. A change of the networks must not take that connection away.
+     *
+     * @throws ValidationException
+     */
+    public static function checkDatabases(string $customerId): void
+    {
+        $pairs = DB::table('databases')
+            ->join('websites', 'websites.id', '=', 'databases.website_id')
+            ->join('database_servers', 'database_servers.id', '=', 'databases.database_server_id')
+            ->where('websites.customer_id', $customerId)
+            ->whereColumn('database_servers.server_id', '!=', 'websites.server_id')
+            ->select(['websites.id as website_id', 'websites.name as website', 'database_servers.id as database_server_id', 'database_servers.name as database_server'])
+            ->distinct()->get();
+        foreach ($pairs as $pair) {
+            $joined = DB::table('network_members as w')
+                ->join('network_members as d', 'd.network_id', '=', 'w.network_id')
+                ->where('w.website_id', $pair->website_id)->where('d.database_server_id', $pair->database_server_id)->exists();
+            if (! $joined) {
+                throw ValidationException::withMessages(['network' => "The website {$pair->website} has a database in the database server {$pair->database_server} on a different server. Keep the two in one network, or remove the database first."]);
+            }
+        }
+    }
+
     /** The named networks that count against the plan of a customer: for a reseller, also those of its customers. */
     public static function countFor(Customer $customer): int
     {

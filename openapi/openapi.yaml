@@ -1535,7 +1535,9 @@ paths:
       summary: Rename a network or change its members
       description: >-
         A list of members replaces the members of that type. A request with no list keeps
-        the members of that type. The network "default" keeps its name.
+        the members of that type. The network "default" keeps its name. The response is 422
+        when a website with a database in a database server on a different server would have
+        no network with that database server.
       requestBody:
         required: true
         content:
@@ -1559,7 +1561,8 @@ paths:
       summary: Remove a named network
       description: >-
         The members stay. They lose the connections of this network. The network "default"
-        cannot be removed (422).
+        cannot be removed (422). The response is also 422 when a website with a database in a
+        database server on a different server would have no network with that database server.
       responses:
         '204': { description: The network is removed. }
         '404': { $ref: '#/components/responses/NotFound' }

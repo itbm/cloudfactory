@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Enums\Role;
+use App\Models\Database;
 use App\Models\Network;
 use App\Models\Server;
 use App\Services\Mesh;
@@ -117,5 +118,31 @@ class NamedNetworkTest extends TestCase
         $this->getJson("/api/v1/networks/{$boltNet->id}")->assertNotFound();
         $this->patchJson("/api/v1/networks/{$boltNet->id}", ['websiteIds' => [$shop->id]])->assertNotFound();
         $this->assertSame([$default->id], array_column($this->getJson('/api/v1/networks')->json('data'), 'id'));
+    }
+
+    public function test_a_change_keeps_the_network_of_a_database_on_a_different_server(): void
+    {
+        $one = $this->networkServer();
+        $two = $this->server(['name' => 'web-2', 'agent_url' => 'https://203.0.113.2:7443',
+            'mesh_public_key' => base64_encode(hash('sha256', 'web-2', true)), 'mesh_networks' => true, 'mesh_websites' => true]);
+        $customer = $this->customer($this->plan(['networks' => 2]));
+        $image = $this->image();
+        $shop = $this->website($customer, $two, $image);
+        $local = $this->website($customer, $one, $image, 'blog.acme.example');
+        $database = $this->databaseServerOf($local, 'mariadb', ['name' => 'shop-db']);
+        Database::create(['website_id' => $shop->id, 'engine' => 'mariadb', 'name' => 'shop', 'database_server_id' => $database->id]);
+        $this->actingWith($this->user(Role::Owner, $customer));
+        $default = Networks::defaultFor($customer->id);
+
+        // The shop cannot leave the only network that it has with its database server.
+        $this->patchJson("/api/v1/networks/{$default->id}", ['websiteIds' => [$local->id]])
+            ->assertStatus(422)->assertJsonValidationErrors('network');
+        $this->assertTrue($default->members()->where('website_id', $shop->id)->exists());
+
+        // With a second network for the two, the shop can leave "default". Then that network stays.
+        $backend = $this->postJson('/api/v1/networks', ['name' => 'backend', 'websiteIds' => [$shop->id], 'databaseServerIds' => [$database->id]])->assertCreated()->json('id');
+        $this->patchJson("/api/v1/networks/{$default->id}", ['websiteIds' => [$local->id]])->assertOk();
+        $this->deleteJson("/api/v1/networks/{$backend}")->assertStatus(422)->assertJsonValidationErrors('network');
+        $this->assertNotNull(Network::find($backend));
     }
 }

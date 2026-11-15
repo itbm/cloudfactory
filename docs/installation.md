@@ -598,6 +598,35 @@ a slow server. The list shows the host name and the port for the applications.
 
 A database server cannot have the name `mariadb`, `postgres`, `valkey` or `localhost`.
 
+#### Private networks
+
+Each customer has the private network `default`. Each new website and each new database
+server of the customer is a member of it, so each website of the customer can connect to
+each database server of the customer by its network name.
+
+To keep some websites and database servers apart, make named networks:
+
+1. Give the plan a number of named networks: **Plans > Edit > Private networks**. With 0, a
+   customer with the plan has only the network `default`.
+2. Open **Private networks** and select **New network**.
+3. Type a name, and select the websites and the database servers of the network.
+4. To separate the members from the other websites, open the menu of the network `default`,
+   select **Change members**, and remove them from it.
+
+A website connects to a member only when one network has the two. The change applies
+immediately, and no website restarts.
+
+With the CLI:
+
+```sh
+cf networks create backend --website shop.example.com --database-server shop-db
+cf networks remove default --website shop.example.com --database-server shop-db
+cf networks get backend
+```
+
+The names of the engines (for example `mariadb.internal`) do not use the networks. A website
+can always use them for the database servers of its customer on its own server.
+
 You do not have to make the first database server. When you make a database for a website
 and its customer has no database server of that engine on the server, the panel makes one
 with the plan of the customer.

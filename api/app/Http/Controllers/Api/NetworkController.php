@@ -118,6 +118,7 @@ class NetworkController extends Controller
                     $data['websiteIds'] ?? $current->pluck('website_id')->filter()->values()->all(),
                     $data['databaseServerIds'] ?? $current->pluck('database_server_id')->filter()->values()->all(),
                 );
+                Networks::checkDatabases($network->customer_id);
             }
         });
         Mesh::refreshLater();
@@ -133,7 +134,10 @@ class NetworkController extends Controller
         if ($network->is_default) {
             throw ValidationException::withMessages(['network' => 'Each customer has the network "default". The panel does not remove it.']);
         }
-        $network->delete();
+        DB::transaction(function () use ($network) {
+            $network->delete();
+            Networks::checkDatabases($network->customer_id);
+        });
         Mesh::refreshLater();
         Audit::record($request, 'Removed network', $network->name, $network->customer_id);
 

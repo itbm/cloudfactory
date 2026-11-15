@@ -167,7 +167,7 @@ function NetworkDialog({ network, onClose }: { network?: PrivateNetwork; onClose
             {(p) => <input {...p} className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="backend" autoCapitalize="none" spellCheck={false} maxLength={40} />}
           </Field>
         )}
-        <fieldset className="checkbox-list" style={{ marginTop: 14 }}>
+        <fieldset className="checkbox-list checkbox-list-wide" style={{ marginTop: 14 }}>
           <legend>Websites</legend>
           {websites.map((w) => (
             <label key={w.id} className="check">
@@ -178,7 +178,7 @@ function NetworkDialog({ network, onClose }: { network?: PrivateNetwork; onClose
           {websites.length === 0 && <p className="muted small">The customer has no websites.</p>}
         </fieldset>
         {error?.fields.websiteIds && <p className="text-danger small">{error.fields.websiteIds}</p>}
-        <fieldset className="checkbox-list" style={{ marginTop: 14 }}>
+        <fieldset className="checkbox-list checkbox-list-wide" style={{ marginTop: 14 }}>
           <legend>Database servers</legend>
           {databaseServers.map((d) => (
             <label key={d.id} className="check">
