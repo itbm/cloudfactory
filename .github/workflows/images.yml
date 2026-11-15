@@ -252,7 +252,8 @@ jobs:
           fi
           case "$IMAGE" in
             frankenphp-*|apache-*) args="--read-only --tmpfs /tmp --user 1001:1001" want=200 ;;
-            adminer) args="--read-only --tmpfs /tmp --user 1001:1001" want=200 ;;
+            # Adminer answers only on the address of a sign-in: /<tool>/<32 hex digits>/.
+            adminer) args="--read-only --tmpfs /tmp --user 1001:1001" want=200 path=/test/0123456789abcdef0123456789abcdef/ ;;
             panel-web) args="--read-only --tmpfs /tmp" want=200 ;;
             edge) args="--read-only --tmpfs /data --tmpfs /run/caddy-admin" want=any ;;
           esac

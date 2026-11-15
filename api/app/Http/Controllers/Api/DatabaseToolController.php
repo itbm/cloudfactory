@@ -56,7 +56,7 @@ class DatabaseToolController extends Controller
         return [
             'id' => $login->id,
             'status' => DatabaseTools::state($login),
-            'url' => DatabaseTools::url($login->tool),
+            'url' => DatabaseTools::loginUrl($login),
             'websiteId' => $login->website_id,
             'databaseId' => $login->database_id,
             'databaseName' => $login->database_name,

@@ -905,6 +905,9 @@ panel makes the container when a user opens the first database of the customer.
   (`CF_ADMINER_DOMAIN`). The edge proxy sends the path `/<id of the tool>/` of that domain to
   the container of the customer. A website route has the field `routePath` for this. The
   websites with the same domain and different paths share one TLS policy in the edge proxy.
+  Each sign-in adds a random key to the path: `/<id of the tool>/<key>/`. Adminer keeps its
+  session cookie on the path of the request, so each sign-in has its own cookie, and a page of
+  a different sign-in on the same domain does not get it. `index.php` refuses each other path.
   The Adminer domain is a sub-domain of the panel domain, so no website can have it. The web
   panel keeps its token in the session storage of the browser, which is separate for each
   origin, so Adminer cannot read the token.

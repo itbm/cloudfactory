@@ -182,7 +182,11 @@ The product specification, section 6.4, gives the requirements.
 - Adminer has no permanent login, sends `Cache-Control: no-store`, and refuses frames from
   other sites (`frame-ancestors 'none'` and `X-Frame-Options: DENY`).
 - Adminer does not ask `adminer.org` for a new version, and its content security policy lets
-  the browser connect only to Adminer (`connect-src 'self'`).
+  the browser connect only to Adminer (`connect-src 'self'`) and refuses workers
+  (`worker-src 'none'`).
+- Each sign-in has its own random address, which Adminer does not show on a different
+  sign-in. Adminer keeps its session cookie on that address only. The address stops working
+  when the temporary user expires.
 
 ## Domains
 
@@ -780,17 +784,14 @@ These items stay open in release 0.1:
   then controls the DNS of the domain. The panel asks for the TXT proof only while a
   different customer has a zone for the name. Before you remove a zone, set other name
   servers at the registrar.
-- **One origin for Adminer.** All customers use the same Adminer domain, with a different
-  path for each customer. The browser thus puts the Adminer pages of all customers in one
-  origin. The browser sends a cookie by the address of a request, not by the page that sends
-  it. Thus a script that runs on an Adminer page of one customer can use the Adminer session
-  of a different customer in the same browser: it can read and change the databases of that
-  session until the temporary user expires. This needs a script in an Adminer page (a
-  cross-site scripting fault in Adminer), and a person who opened Adminer for the two
-  customers in one browser, for example an administrator or a reseller. The content security
-  policy of Adminer, with a nonce for each page, makes such a script difficult. Use one
-  browser profile for each customer when you manage the databases of different customers.
-  A domain for each customer removes this limit.
+- **One origin for Adminer.** All customers use the same Adminer domain, so the browser puts
+  the Adminer pages of all customers in one origin. Each sign-in has its own random address,
+  `/<tool>/<random key>/`, and the session cookie of Adminer has this path only. Adminer
+  serves no other path, and keeps nothing in the storage of the browser. Thus a script on the
+  Adminer page of one sign-in does not get the cookie of a different sign-in, and cannot find
+  its address. The separation is the cookie path and a random address, not a separate origin.
+  Use one browser profile for each customer when you manage the databases of different
+  customers. A domain for each customer gives a separate origin.
 - **A server that had the role `dns`.** When you turn off DNS on a server, the panel removes
   the zones from the server. The empty container `cf-dns` and the firewall rules for port 53
   stay until you remove them.

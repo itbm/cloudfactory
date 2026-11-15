@@ -12,7 +12,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * panel gives its password to the browser one time, and does not keep it. The panel removes
  * the database user from the database server when it expires.
  */
-#[Fillable(['database_tool_id', 'database_id', 'website_id', 'unix_user', 'database_server_id', 'user_id', 'engine', 'database_name', 'privileges', 'name', 'status', 'expires_at'])]
+#[Fillable(['database_tool_id', 'database_id', 'website_id', 'unix_user', 'database_server_id', 'user_id', 'engine', 'database_name', 'privileges', 'name', 'address_key', 'status', 'expires_at'])]
 class DatabaseToolLogin extends Model
 {
     use HasUlids;

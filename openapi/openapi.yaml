@@ -3858,7 +3858,7 @@ components:
       properties:
         id: { type: string }
         status: { type: string, enum: [starting, ready, failed, expired], description: '"ready": Adminer can sign in with the temporary database user.' }
-        url: { type: string, description: The address of the Adminer of the customer. }
+        url: { type: string, description: 'The address of this sign-in in Adminer: the address of the Adminer of the customer and a random key. Adminer keeps the session of the sign-in on this address only.' }
         websiteId: { type: [string, 'null'] }
         databaseId: { type: [string, 'null'] }
         databaseName: { type: string }

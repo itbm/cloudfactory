@@ -15,6 +15,22 @@
 // - Adminer does not ask adminer.org for a new version. The image has a fixed version, and the
 //   browser of the user does not connect to a different site.
 
+// Each sign-in has its own address, /<tool>/<random key>/, from the panel. Adminer keeps its
+// session cookie on the path of the request. Thus a page on a different address of this domain,
+// for example the Adminer of a different customer, does not get the cookie of this sign-in and
+// cannot find the address. Adminer serves only this one path for each sign-in: its links change
+// only the query.
+if (! preg_match('~^/[a-z0-9]+/[0-9a-f]{32}/(\?|$)~', $_SERVER['REQUEST_URI'] ?? '')) {
+    http_response_code(404);
+    header('Content-Type: text/html; charset=utf-8');
+    header('Cache-Control: no-store');
+    header("Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'");
+    echo '<!doctype html><html lang="en-GB"><meta charset="utf-8"><title>Adminer</title>';
+    echo '<body style="font-family: system-ui, sans-serif; max-width: 40rem; margin: 4rem auto; padding: 0 1rem">';
+    echo '<h1>Adminer</h1><p>To open a database, sign in to your hosting panel. Open <b>Databases</b>, and select <b>Open in Adminer</b> in the menu of the database.</p></body></html>';
+    exit;
+}
+
 // Adminer asks adminer.org for its newest version when this cookie has no value. The value 0
 // stops the request and shows no version notice.
 $_COOKIE['adminer_version'] = '0';
@@ -97,6 +113,7 @@ function adminer_object()
             foreach ($csp as &$policy) {
                 $policy['frame-ancestors'] = "'none'";
                 $policy['connect-src'] = "'self'";
+                $policy['worker-src'] = "'none'";
             }
 
             return $csp;

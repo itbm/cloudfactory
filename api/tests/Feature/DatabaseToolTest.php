@@ -39,7 +39,7 @@ class DatabaseToolTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        config(['cloudfactory.panel_domain' => 'panel.example.com']);
+        config(['cloudfactory.panel_domain' => 'panel.example.com', 'cloudfactory.adminer.url' => null]);
         $this->customer = $this->customer();
         $this->panel = $this->networkServer('panel', '203.0.113.1', ['local' => true, 'agent_version' => '0.3.0', 'mesh_endpoint' => '203.0.113.1']);
         $this->data = $this->networkServer('db-1', '203.0.113.2');
@@ -105,8 +105,11 @@ class DatabaseToolTest extends TestCase
         $open->assertJsonPath('form.driver', 'server')->assertJsonPath('form.server', 'mariadb.internal:3306')
             ->assertJsonPath('form.username', $user->payload['name'])->assertJsonPath('form.password', $user->payload['password'])
             ->assertJsonPath('form.db', $this->database->name)
-            ->assertJsonPath('login.status', 'starting')
-            ->assertJsonPath('login.url', 'https://adminer.panel.example.com/'.strtolower($tool->id).'/');
+            ->assertJsonPath('login.status', 'starting');
+        // Each sign-in has its own random address under the path of the tool.
+        $this->assertMatchesRegularExpression('~^https://adminer\.panel\.example\.com/'.strtolower($tool->id).'/[0-9a-f]{32}/$~', $open->json('login.url'));
+        $second = $this->postJson("/api/v1/websites/{$this->website->id}/databases/{$this->database->id}/adminer", ['privileges' => 'readonly'])->assertStatus(202);
+        $this->assertNotSame($open->json('login.url'), $second->json('login.url'));
 
         // The login is ready when the container and the database user are ready.
         $id = $open->json('login.id');

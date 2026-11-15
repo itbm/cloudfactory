@@ -41,6 +41,10 @@ return new class extends Migration
             $table->string('privileges');
             // The temporary database user. The panel does not keep its password.
             $table->string('name')->unique();
+            // The random part of the Adminer address of this sign-in: /<tool>/<key>/. The
+            // session cookie of Adminer has this path, so a page of a different sign-in on the
+            // same Adminer domain does not get the cookie and does not know the address.
+            $table->string('address_key', 32)->unique();
             $table->string('status');
             $table->timestamp('expires_at')->index();
             $table->timestamps();

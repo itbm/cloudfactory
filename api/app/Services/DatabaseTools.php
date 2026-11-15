@@ -80,6 +80,15 @@ class DatabaseTools
         return is_string($url) && $url !== '' ? rtrim($url, '/').$tool->path() : 'https://'.self::domain().$tool->path();
     }
 
+    /**
+     * The Adminer address of one sign-in: the address of the tool and a random part. Adminer
+     * keeps its session cookie on this path only.
+     */
+    public static function loginUrl(DatabaseToolLogin $login): string
+    {
+        return self::url($login->tool).$login->address_key.'/';
+    }
+
     /** The server of the Adminer containers: the panel server. */
     public static function panelServer(): ?Server
     {
@@ -248,6 +257,7 @@ class DatabaseTools
             'database_name' => $database->name,
             'privileges' => $privileges,
             'name' => self::loginName($website),
+            'address_key' => bin2hex(random_bytes(16)),
             'status' => DatabaseToolLogin::STARTING,
             'expires_at' => now()->addMinutes(max(1, (int) config('cloudfactory.adminer.minutes'))),
         ]);
