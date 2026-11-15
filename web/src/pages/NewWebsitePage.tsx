@@ -43,7 +43,7 @@ const PRESETS: Record<string, { command?: string; install?: string }> = {
 interface RuntimeGroup { key: string; title: string; images: RuntimeImage[] }
 
 const GROUP_TITLE: Partial<Record<RuntimeImage["family"], string>> = {
-  frankenphp: "FrankenPHP", "apache-php-fpm": "Apache + PHP-FPM (.htaccess)", node: "Node.js", python: "Python", edge: "Static files",
+  frankenphp: "FrankenPHP", "apache-php-fpm": "Apache + PHP-FPM", node: "Node.js", python: "Python", edge: "Static files",
 };
 
 /** The version of the language of an image, for example "PHP 8.5" or "24". */

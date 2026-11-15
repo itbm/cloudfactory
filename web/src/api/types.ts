@@ -797,6 +797,7 @@ export type TokenScope =
   | "databases:read" | "databases:write"
   | "backups:read" | "backups:write"
   | "tokens:read" | "tokens:write"
+  | "plugins:read" | "plugins:write"
   | "servers:read" | "servers:write"
   | "images:read" | "images:write"
   | "customers:read" | "customers:write"
@@ -964,6 +965,10 @@ export interface State {
   mesh?: Mesh;
   /** The private networks of the customers that the user can see. */
   networks: PrivateNetwork[];
+  /** The pages of the plugins that are on, for the role of the user. */
+  pluginPages: PluginPage[];
+  /** The actions of the plugins that are on, for the role of the user. */
+  pluginActions: PluginAction[];
   /** The open usage alerts that the user can see. */
   usageAlerts: UsageAlert[];
   /** The thresholds of the usage alerts, in percent of each limit. */
@@ -1076,6 +1081,134 @@ export interface Release {
 export interface Deploy {
   source: GitSource | null;
   releases: Release[];
+}
+
+// Plugins: programs outside the panel with their own token (docs/plugins.md). The panel
+// reads the list of plugins when an administrator opens the Plugins page.
+
+export type PluginEvent =
+  | "audit.recorded" | "job.finished"
+  | "website.created" | "website.changed" | "website.removed"
+  | "domain.added" | "domain.verified" | "domain.removed"
+  | "database.created" | "database.removed"
+  | "backup.started" | "restore.started" | "deploy.started"
+  | "customer.created" | "customer.changed" | "user.created";
+
+/** A before hook: the panel asks the plugin before the change, and the plugin can refuse it. */
+export type PluginHookEvent = "website.creating" | "website.removing" | "domain.adding" | "database.creating" | "customer.creating";
+
+export interface PluginHook {
+  event: PluginHookEvent;
+  path: string;
+  /** What the panel does when the plugin does not answer in 5 seconds. */
+  onError: "allow" | "refuse";
+}
+
+export type PluginActionTarget = "website" | "server" | "customer";
+
+/** A button of a plugin on the page of a website, a server or a customer. */
+export interface PluginAction {
+  pluginId: string;
+  pluginName: string;
+  id: string;
+  title: string;
+  target: PluginActionTarget;
+  /** A question that the panel asks before it runs the action. */
+  confirm: string | null;
+  roles: Role[];
+}
+
+/** The answer of a plugin to an action. The URL is on the address of the plugin. */
+export interface PluginActionResult {
+  message: string;
+  url: string | null;
+}
+
+/** A page of a plugin. The panel opens it in a frame with the origin of the plugin. */
+export interface PluginPage {
+  pluginId: string;
+  pluginName: string;
+  id: string;
+  title: string;
+  url: string;
+  origin: string;
+  roles: Role[];
+}
+
+export interface PluginKey {
+  id: string;
+  name: string;
+  fingerprint: string;
+  publicKey: string;
+  createdAt: string;
+}
+
+export interface PluginDelivery {
+  id: string;
+  event: PluginEvent | "plugin.test";
+  state: "pending" | "delivered" | "failed";
+  attempts: number;
+  responseStatus: number | null;
+  error: string | null;
+  payload: { id: string; event: string; createdAt: string; data: Record<string, unknown> };
+  createdAt: string;
+  deliveredAt: string | null;
+}
+
+export interface PluginManifest {
+  schema: 1;
+  slug: string;
+  name: string;
+  version: string;
+  publisher: string;
+  description: string;
+  scopes: string[];
+  events: PluginEvent[];
+  webhook: string | null;
+  pages: { id: string; title: string; path: string; roles: Role[] }[];
+  actions: { id: string; title: string; target: PluginActionTarget; path: string; roles: Role[]; confirm: string }[];
+  hooks: PluginHook[];
+  commands: { name: string; description: string }[];
+}
+
+export interface Plugin {
+  id: string;
+  slug: string;
+  name: string;
+  version: string;
+  publisher: string;
+  description: string;
+  enabled: boolean;
+  baseUrl: string;
+  webhookUrl: string | null;
+  scopes: string[];
+  events: PluginEvent[];
+  pages: PluginPage[];
+  actions: PluginAction[];
+  hooks: PluginHook[];
+  commands: { name: string; description: string }[];
+  signedBy: PluginKey | null;
+  tokenExpiresAt: string | null;
+  tokenLastUsedAt: string | null;
+  deliveries: { delivered: number; pending: number; failed: number; last: PluginDelivery | null };
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** The answer to an install or to new credentials. The panel shows the token and the secret one time. */
+export interface PluginCredentials {
+  plugin: Plugin;
+  token: string;
+  webhookSecret: string;
+}
+
+/** The token of a plugin page, for the user who opens it. */
+export interface PluginPageSession {
+  token: string;
+  expiresAt: string;
+  scopes: string[];
+  page: PluginPage;
+  user: { id: number; name: string; role: Role; customerId: string | null };
 }
 
 // Usage history and usage alerts. The panel reads the history when the user opens a graph.

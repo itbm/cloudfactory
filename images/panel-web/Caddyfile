@@ -7,7 +7,8 @@
 	root * /srv
 	encode zstd gzip
 	header {
-		Content-Security-Policy "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'"
+		# The pages of plugins open in a frame with the origin of the plugin (docs/plugins.md).
+		Content-Security-Policy "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; frame-src https:; frame-ancestors 'none'"
 		# R-17: the edge proxy serves the panel only over HTTPS.
 		Strict-Transport-Security "max-age=31536000"
 		X-Content-Type-Options nosniff

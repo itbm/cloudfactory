@@ -19,6 +19,7 @@ use App\Services\DomainPolicy;
 use App\Services\JobDispatcher;
 use App\Services\Notifications\Notifier;
 use App\Services\PanelCertificate;
+use App\Services\Plugins\Hooks;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -64,6 +65,10 @@ class CustomerController extends Controller
             $request->validate(['email' => ['max:255', Rule::unique('users', 'email')]], ['email.unique' => 'A user with this email exists already.']);
         }
         self::checkPlan($user, $data['planId']);
+        app(Hooks::class)->check('customer.creating', [
+            'name' => $data['name'], 'email' => $data['email'], 'role' => $data['role'], 'planId' => $data['planId'],
+            'resellerId' => $user->role === Role::Reseller ? $user->customer_id : null,
+        ], $user);
         [$customer, $account, $password] = DB::transaction(function () use ($data, $user, $createUser) {
             $customer = Customer::create([
                 'name' => $data['name'],

@@ -614,6 +614,62 @@ directory with mode 0700:
   would go over the network with no encryption. An `http://` address is permitted only for
   the same computer (`localhost` or a loopback address).
 - `cf logout` deletes the session in the panel, then removes the token from the computer.
+- `cf NAME` runs `cf-NAME` from the `PATH` only when `cf` has no command `NAME`, so a plugin
+  cannot replace a command of `cf`. The program gets the token of your sign-in.
+
+## Plugins
+
+A plugin is a program outside the panel ([plugins.md](plugins.md)). The boundary is the
+public API. The panel never runs the code of a plugin, and no plugin path leads to an agent or
+to the root helper.
+
+- **Token.** Each plugin has its own user and token. The token has only the scopes of the
+  manifest. A manifest cannot ask for `tokens:*`, `users:write` or `plugins:*`, so a plugin
+  cannot make tokens, reset a password or change its own access. Nobody can sign in as the
+  user of a plugin.
+- **Approval.** Only an administrator installs a plugin, adds a trusted key, makes new
+  credentials, changes the address of a plugin or turns on the developer mode. Each of these
+  needs the password and the TOTP code (audit finding F09). The review shows each scope in
+  plain words, and an update shows the scopes that it adds.
+- **Signature.** The panel installs only a manifest that a trusted ECDSA P-256 key signed. The
+  signature covers the exact bytes of the manifest, with the scopes. Only the developer mode
+  accepts no signature.
+- **Off means off.** A plugin that is off, or removed, gets status 403 for its token and its
+  page tokens, and gets no events.
+- **Webhooks.** Each delivery has an HMAC-SHA256 signature with a secret of 40 random
+  characters and a time. The panel resolves the host one time and connects to the checked
+  address, so a DNS answer that changes has no effect. It refuses the loopback interface, the
+  link-local range (with `169.254.77.1` and the cloud metadata service), and multicast
+  addresses. It does not follow redirects. The secret is encrypted at rest.
+- **Pages.** A page has the origin of the plugin. The panel refuses an address with the host
+  name of the panel, so the frame always separates the page from the panel. The page gets a
+  token of the user who opens it, for 15 minutes, only after it asks, and only to its own
+  origin. The rights of the user still apply. A page token cannot make a token. The frame has
+  no permission to change the top window. The Content Security Policy of the web panel
+  permits frames from `https:` only.
+- **Actions.** An action is a button of a plugin on a website, a server or a customer. Only a
+  sign-in session runs an action, and only on a target that the user can see. The plugin gets
+  a token of that user for 15 minutes, with the scopes of the plugin, so the rights of the user
+  still apply. The token of an action cannot make a token or run an action. The web panel shows
+  a link from the answer only when the link is on the address of the plugin.
+- **Before hooks.** A before hook lets a plugin refuse a change. It cannot change the request.
+  The panel waits 5 seconds or less for each plugin. The panel does not ask a plugin about its
+  own changes, so a plugin cannot block itself in a loop.
+- **CORS.** The API accepts browser calls from the origins of the plugins with pages. The API
+  sends no cookies (`supports_credentials` is false), so a call needs a token.
+
+What the boundary does not protect:
+
+- A plugin can do all that its scopes permit, for all customers. A plugin with
+  `websites:write` can delete each website. Approve only the scopes that the plugin needs.
+- A page can do all that its scopes permit, as the user who opens it, for 15 minutes.
+- The host of the plugin keeps the token. A person who gets access to that host gets the
+  token. Turn off the plugin, or make new credentials, at once.
+- A plugin can show false data on its page. The panel shows the origin of the page above the
+  frame.
+- A plugin with a before hook can stop the changes of its hook, for all users. A plugin that is
+  slow makes each of these changes up to 5 seconds slower. A hook with `"onError": "refuse"`
+  stops the changes while the plugin is down. Turn off the plugin to remove its hooks.
 
 ## Backups
 

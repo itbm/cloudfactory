@@ -26,6 +26,9 @@ use App\Models\NetworkMember;
 use App\Models\NotificationDelivery;
 use App\Models\NotificationTemplate;
 use App\Models\Plan;
+use App\Models\Plugin;
+use App\Models\PluginDelivery;
+use App\Models\PluginKey;
 use App\Models\Release;
 use App\Models\Rollout;
 use App\Models\Server;
@@ -41,6 +44,8 @@ use App\Services\Networks;
 use App\Services\Notifications\Notifier;
 use App\Services\OpenPgpKey;
 use App\Services\PanelCertificate;
+use App\Services\Plugins\Manifest;
+use App\Services\Plugins\Signatures;
 use App\Services\SshKey;
 use App\Services\UsageRecorder;
 use Illuminate\Database\Seeder;
@@ -106,6 +111,76 @@ class DemoSeeder extends Seeder
         $this->jobsAndRollout();
         $this->settingsAndAudit();
         $this->notifications();
+        $this->plugins();
+    }
+
+    /**
+     * Two plugins. "Uptime monitor" has a page for each role and receives the events. The demo
+     * API serves its page and its webhook (routes/web.php), on the address of the API, which
+     * is a different origin from the web panel. "Chat alerts" receives the failed jobs. Its
+     * address does not exist, so its deliveries fail.
+     */
+    private function plugins(): void
+    {
+        $private = openssl_pkey_new(['private_key_type' => OPENSSL_KEYTYPE_EC, 'curve_name' => 'prime256v1']);
+        $public = openssl_pkey_get_details($private)['key'];
+        $key = PluginKey::create(['name' => 'Example Plugins Ltd', 'public_key' => $public, 'fingerprint' => Signatures::fingerprint($public)]);
+        $sign = function (array $manifest) use ($private): array {
+            $json = json_encode($manifest, JSON_UNESCAPED_SLASHES);
+            openssl_sign($json, $signature, $private, OPENSSL_ALGO_SHA256);
+
+            return [Manifest::parse($json), base64_encode($signature)];
+        };
+        $plugins = [
+            [[
+                'schema' => 1, 'slug' => 'uptime', 'name' => 'Uptime monitor', 'version' => '1.4.0', 'publisher' => 'Example Plugins Ltd',
+                'description' => 'Checks each website every minute from three regions, and shows the uptime and the response time.',
+                'scopes' => ['websites:read', 'audit:read'], 'events' => ['audit.recorded', 'job.finished', 'website.created'], 'webhook' => '/hooks/cloudfactory',
+                'pages' => [['id' => 'status', 'title' => 'Uptime', 'path' => '/panel/status', 'roles' => ['administrator', 'reseller', 'owner']]],
+                'actions' => [['id' => 'check', 'title' => 'Check uptime now', 'target' => 'website', 'path' => '/actions/check', 'roles' => ['administrator', 'reseller', 'owner']]],
+                'hooks' => [['event' => 'website.removing', 'path' => '/hooks/before']],
+                'commands' => [['name' => 'uptime', 'description' => 'Shows the uptime of each website.']],
+            ], rtrim((string) env('CF_DEMO_PLUGIN_URL', 'http://127.0.0.1:8000'), '/').'/demo-plugins/uptime', true],
+            [[
+                'schema' => 1, 'slug' => 'chat-alerts', 'name' => 'Chat alerts', 'version' => '0.9.2', 'publisher' => 'Example Plugins Ltd',
+                'description' => 'Posts a message to a chat channel when a job fails.',
+                'scopes' => ['websites:read', 'customers:read'], 'events' => ['job.finished', 'customer.created'], 'webhook' => '/cloudfactory/events',
+                'actions' => [['id' => 'notify', 'title' => 'Send a test alert', 'target' => 'customer', 'path' => '/cloudfactory/actions/notify', 'roles' => ['administrator', 'reseller'], 'confirm' => 'Send a test alert to the chat channel of this customer?']],
+            ], 'https://alerts.example.net', true],
+        ];
+        foreach ($plugins as [$manifest, $baseUrl, $enabled]) {
+            [$spec, $signature] = $sign($manifest);
+            $plugin = Plugin::create([
+                'slug' => $spec['slug'], 'name' => $spec['name'], 'version' => $spec['version'], 'publisher' => $spec['publisher'],
+                'manifest' => json_encode($spec, JSON_UNESCAPED_SLASHES), 'signature' => $signature, 'plugin_key_id' => $key->id,
+                'enabled' => $enabled, 'base_url' => $baseUrl, 'webhook_secret' => 'whsec_'.Str::random(40),
+            ]);
+            $user = User::create(['name' => "Plugin: {$spec['name']}", 'email' => "plugin-{$spec['slug']}@plugins.invalid", 'password' => Str::random(64), 'role' => Role::Administrator, 'plugin_id' => $plugin->id]);
+            $plugin->update(['user_id' => $user->id]);
+            $user->createToken('Plugin', $spec['scopes'], now()->addDays(365))->accessToken->forceFill(['last_used_at' => now()->subMinutes(2)])->save();
+        }
+
+        // Some deliveries, so that the page of each plugin has a history.
+        $uptime = Plugin::where('slug', 'uptime')->first();
+        $alerts = Plugin::where('slug', 'chat-alerts')->first();
+        $rows = [
+            [$uptime, 'audit.recorded', ['action' => 'Created website', 'target' => 'events.harbourbooks.example.net', 'actor' => 'Rachel Reseller'], 'delivered', 1, 204, null, 25],
+            [$uptime, 'job.finished', ['title' => 'Create website events.harbourbooks.example.net', 'state' => 'succeeded'], 'delivered', 1, 204, null, 24],
+            [$uptime, 'audit.recorded', ['action' => 'Backed up website', 'target' => 'acme.example.com', 'actor' => 'Olivia Owner'], 'delivered', 1, 204, null, 300],
+            [$alerts, 'job.finished', ['title' => 'Create website fail.acme.example.com', 'state' => 'failed'], 'failed', 6, null, 'No connection: cURL error 6: Could not resolve host: alerts.example.net', 400],
+            [$alerts, 'job.finished', ['title' => 'Back up website acme.example.com', 'state' => 'succeeded'], 'pending', 2, 502, 'The webhook answered with HTTP status 502.', 12],
+        ];
+        foreach ($rows as [$plugin, $event, $data, $state, $attempts, $status, $error, $minutesAgo]) {
+            $id = strtolower((string) Str::ulid(now()->subMinutes($minutesAgo)));
+            $delivery = new PluginDelivery([
+                'plugin_id' => $plugin->id, 'event' => $event, 'state' => $state, 'attempts' => $attempts, 'response_status' => $status, 'error' => $error,
+                'payload' => ['id' => $id, 'event' => $event, 'createdAt' => now()->subMinutes($minutesAgo)->toIso8601String(), 'data' => $data],
+                'delivered_at' => $state === 'delivered' ? now()->subMinutes($minutesAgo) : null,
+            ]);
+            $delivery->id = $id;
+            $delivery->created_at = now()->subMinutes($minutesAgo);
+            $delivery->save();
+        }
     }
 
     private function plans(): void

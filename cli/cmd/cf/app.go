@@ -228,6 +228,19 @@ Usage:
   cf account password [--totp CODE]   The passwords come from CF_PASSWORD and CF_NEW_PASSWORD, or stdin.
   cf account totp setup
   cf account totp enable|disable --totp CODE
+  cf plugins list
+  cf plugins get|enable|disable|test|deliveries|remove PLUGIN    A PLUGIN is a slug (for example uptime) or an ID.
+  cf plugins install --address URL [--manifest plugin.json] [--signature plugin.json.sig] [--totp CODE]
+                       Shows the token and the webhook secret of the plugin one time.
+  cf plugins upgrade PLUGIN [--manifest plugin.json] [--signature plugin.json.sig] [--totp CODE]
+  cf plugins credentials PLUGIN [--totp CODE]    A new token and a new webhook secret. The old ones stop.
+  cf plugins keys list
+  cf plugins keys add --name NAME --file cosign.pub [--totp CODE]
+  cf plugins keys remove ID
+  cf plugins developer-mode on|off [--totp CODE]
+                       Changes that give a plugin access need your password from CF_PASSWORD or stdin.
+  cf NAME [ARG]...     Runs the program cf-NAME from the PATH, for example a command of a plugin.
+                       It gets CF_PANEL and CF_TOKEN of your sign-in.
   cf version
 
 A WEBSITE is a name (for example acme.example) or an ID. A SERVER is a name (for example web-1) or an ID. A DATABASE or USER is a name, with or without
@@ -346,6 +359,10 @@ func (a *app) dispatch(ctx context.Context, args []string) error {
 	case "logout":
 		return a.logout(ctx)
 	}
+	// "cf NAME" runs "cf-NAME" from the PATH when cf has no command NAME (plugins).
+	if found, err := a.runExternal(ctx, args); found {
+		return err
+	}
 	if a.api == nil {
 		s := loadSettings()
 		if s.Panel == "" || s.Token == "" {
@@ -422,6 +439,8 @@ func (a *app) dispatch(ctx context.Context, args []string) error {
 		return a.cron(ctx, sub, rest)
 	case "deploys", "deploy":
 		return a.deploys(ctx, sub, rest)
+	case "plugins", "plugin":
+		return a.plugins(ctx, sub, rest)
 	}
 	return fmt.Errorf("unknown command %q; see cf help", cmd)
 }

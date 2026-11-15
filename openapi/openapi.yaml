@@ -45,6 +45,8 @@ tags:
   - name: Users
     description: The users who can sign in. These routes need the users scope.
   - name: Audit
+  - name: Plugins
+    description: Programs outside the panel with their own token. Refer to docs/plugins.md.
   - name: Notifications
     description: >-
       Email notifications. Each user chooses the events that give an email. An administrator sets
@@ -3947,6 +3949,405 @@ paths:
                       lastPage: { type: integer }
                       total: { type: integer }
 
+  /v1/plugins:
+    get:
+      tags: [Plugins]
+      summary: List plugins
+      description: Needs an administrator and the plugins:read scope.
+      responses:
+        '200':
+          description: The plugins.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/Plugin' } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Plugins]
+      summary: Install a plugin
+      description: >-
+        Give the manifest as the exact text of `plugin.json`, and its signature: the base64
+        text of an ECDSA P-256 signature over the SHA-256 of the manifest, for example from
+        `cosign sign-blob --key cosign.key plugin.json`. A trusted key must have made the
+        signature (`/v1/plugin-keys`). Only the developer mode accepts no signature. Give
+        your password, and your TOTP code when TOTP is on. The response has the token of the
+        plugin and the secret of its webhook. The panel shows them only one time.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [manifest, baseUrl, password]
+              properties:
+                manifest: { type: string, maxLength: 32768, description: The text of plugin.json. }
+                signature: { type: [string, 'null'], maxLength: 512 }
+                baseUrl: { type: string, maxLength: 255, description: 'The address where you run the plugin, for example https://uptime.example.net. HTTPS only, except in the developer mode. Not the host name of the panel.' }
+                password: { type: string }
+                totp: { type: [string, 'null'], pattern: '^[0-9]{6}$' }
+      responses:
+        '201': { $ref: '#/components/responses/PluginCredentials' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/plugins/preview:
+    post:
+      tags: [Plugins]
+      summary: Read a manifest before you install it
+      description: >-
+        Checks the manifest and gives the scopes, the events and the pages that it asks for,
+        and the trusted key that signed it. It changes nothing.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [manifest]
+              properties:
+                manifest: { type: string }
+                signature: { type: [string, 'null'] }
+      responses:
+        '200':
+          description: The checked manifest.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  manifest: { $ref: '#/components/schemas/PluginManifest' }
+                  signedBy: { oneOf: [{ $ref: '#/components/schemas/PluginKey' }, { type: 'null' }] }
+                  installed: { type: [string, 'null'], description: The ID of the installed plugin with the same slug. }
+                  developerMode: { type: boolean }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/plugins/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    get:
+      tags: [Plugins]
+      summary: Get a plugin
+      responses:
+        '200':
+          description: The plugin.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Plugin' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Plugins]
+      summary: Install a new version of a plugin
+      description: >-
+        The manifest must have the same slug. The token keeps its value and gets the scopes of
+        the new manifest. Give your password, and your TOTP code when TOTP is on.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [manifest, password]
+              properties:
+                manifest: { type: string }
+                signature: { type: [string, 'null'] }
+                password: { type: string }
+                totp: { type: [string, 'null'] }
+      responses:
+        '200':
+          description: The plugin.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Plugin' }
+        '422': { $ref: '#/components/responses/Invalid' }
+    patch:
+      tags: [Plugins]
+      summary: Turn a plugin on or off, or change its address
+      description: >-
+        A plugin that is off has no access: its token and its page tokens get status 403, and
+        the panel sends it no events. A new address needs your password, and your TOTP code
+        when TOTP is on.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                enabled: { type: boolean }
+                baseUrl: { type: string }
+                password: { type: string }
+                totp: { type: [string, 'null'] }
+      responses:
+        '200':
+          description: The plugin.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Plugin' }
+        '422': { $ref: '#/components/responses/Invalid' }
+    delete:
+      tags: [Plugins]
+      summary: Remove a plugin
+      description: Removes the plugin, its user, its token, its page tokens and its deliveries.
+      responses:
+        '204': { description: The plugin is removed. }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/plugins/{id}/credentials:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [Plugins]
+      summary: Make a new token and a new webhook secret
+      description: The old token and the old secret stop at once. Give your password, and your TOTP code when TOTP is on.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password: { type: string }
+                totp: { type: [string, 'null'] }
+      responses:
+        '200': { $ref: '#/components/responses/PluginCredentials' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/plugins/{id}/test:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [Plugins]
+      summary: Send a test event
+      description: Sends the event `plugin.test` to the webhook of the plugin.
+      responses:
+        '202':
+          description: The delivery is in the queue.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PluginDelivery' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/plugins/{id}/deliveries:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    get:
+      tags: [Plugins]
+      summary: List the last 50 deliveries of a plugin
+      responses:
+        '200':
+          description: The deliveries, the newest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/PluginDelivery' } }
+
+  /v1/plugins/{id}/deliveries/{deliveryId}/retry:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+      - { name: deliveryId, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [Plugins]
+      summary: Send a delivery again
+      description: Makes a new delivery with the same event and data.
+      responses:
+        '202':
+          description: The new delivery is in the queue.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PluginDelivery' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/plugin-keys:
+    get:
+      tags: [Plugins]
+      summary: List the trusted keys
+      responses:
+        '200':
+          description: The keys that the panel trusts for plugin manifests.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/PluginKey' } }
+    post:
+      tags: [Plugins]
+      summary: Trust a key
+      description: An ECDSA P-256 public key in PEM format, for example cosign.pub. Give your password, and your TOTP code when TOTP is on.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, publicKey, password]
+              properties:
+                name: { type: string, maxLength: 100 }
+                publicKey: { type: string, maxLength: 4096 }
+                password: { type: string }
+                totp: { type: [string, 'null'] }
+      responses:
+        '201':
+          description: The key.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PluginKey' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/plugin-keys/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    delete:
+      tags: [Plugins]
+      summary: Stop trusting a key
+      description: The installed plugins stay. A new install or update needs a different trusted key.
+      responses:
+        '204': { description: The key is removed. }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/plugin-settings:
+    get:
+      tags: [Plugins]
+      summary: Get the plugin settings
+      responses:
+        '200':
+          description: The settings.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PluginSettings' }
+    put:
+      tags: [Plugins]
+      summary: Turn the developer mode on or off
+      description: >-
+        The developer mode accepts plugins with no signature, addresses with HTTP, and
+        webhooks on the loopback interface. Do not use it on a production panel. To turn it
+        on, give your password, and your TOTP code when TOTP is on.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [developerMode]
+              properties:
+                developerMode: { type: boolean }
+                password: { type: string }
+                totp: { type: [string, 'null'] }
+      responses:
+        '200':
+          description: The settings.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PluginSettings' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/plugin-pages:
+    get:
+      tags: [Plugins]
+      summary: List the plugin pages for your role
+      description: The pages of the plugins that are on, for the menu of the web panel. Each role.
+      responses:
+        '200':
+          description: The pages.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/PluginPage' } }
+
+  /v1/plugin-pages/{id}/{pageId}/session:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+      - { name: pageId, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [Plugins]
+      summary: Get a token for a plugin page
+      description: >-
+        Only a sign-in session can make this request. The token belongs to you, has the scopes
+        of the plugin, and expires after 15 minutes. Your own rights still apply. The web panel
+        sends the token to the frame of the page with postMessage.
+      responses:
+        '201':
+          description: The page token.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { type: string }
+                  expiresAt: { type: string, format: date-time }
+                  scopes: { type: array, items: { type: string } }
+                  page: { $ref: '#/components/schemas/PluginPage' }
+                  user:
+                    type: object
+                    properties:
+                      id: { type: integer }
+                      name: { type: string }
+                      role: { type: string, enum: [administrator, reseller, owner] }
+                      customerId: { type: [string, 'null'] }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/plugin-actions:
+    get:
+      tags: [Plugins]
+      summary: List the plugin actions for your role
+      description: The actions of the plugins that are on, for the pages of websites, servers and customers. Each role.
+      responses:
+        '200':
+          description: The actions.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/PluginAction' } }
+
+  /v1/plugin-actions/{id}/{actionId}:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+      - { name: actionId, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [Plugins]
+      summary: Run a plugin action
+      description: >-
+        Only a sign-in session can make this request. The panel sends the plugin a signed request
+        with a token that belongs to you, has the scopes of the plugin and expires after 15
+        minutes. You must be able to see the target. The plugin has 10 seconds to answer.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [targetId]
+              properties:
+                targetId: { type: string, description: The ID of the website, the server or the customer. }
+      responses:
+        '200':
+          description: The answer of the plugin.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  url: { type: [string, 'null'], description: A link on the address of the plugin, or null. }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+        '502':
+          description: The plugin did not answer, or answered with an error.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
   /agent/v1/join:
     post:
       tags: [Agent]
@@ -4110,6 +4511,16 @@ components:
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
+    PluginCredentials:
+      description: The plugin, its token and the secret of its webhook. The panel shows the token and the secret only one time.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              plugin: { $ref: '#/components/schemas/Plugin' }
+              token: { type: string }
+              webhookSecret: { type: string }
     Forbidden:
       description: The token does not have the necessary scope or role.
       content:
@@ -4170,6 +4581,136 @@ components:
               job: { $ref: '#/components/schemas/Job' }
 
   schemas:
+    PluginManifest:
+      type: object
+      description: The checked content of plugin.json. Refer to docs/plugins.md.
+      properties:
+        schema: { type: integer, enum: [1] }
+        slug: { type: string, pattern: '^[a-z0-9]([a-z0-9-]{0,38}[a-z0-9])?$' }
+        name: { type: string }
+        version: { type: string }
+        publisher: { type: string }
+        description: { type: string }
+        scopes: { type: array, items: { $ref: '#/components/schemas/Scope' }, description: 'Not tokens:read, tokens:write, users:write, plugins:read or plugins:write.' }
+        events: { type: array, items: { $ref: '#/components/schemas/PluginEvent' } }
+        webhook: { type: [string, 'null'], description: A path, for example /hooks/cloudfactory. }
+        pages:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              title: { type: string }
+              path: { type: string }
+              roles: { type: array, items: { type: string, enum: [administrator, reseller, owner] } }
+        actions:
+          type: array
+          description: Up to 20 buttons on websites, servers or customers.
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              title: { type: string }
+              target: { type: string, enum: [website, server, customer] }
+              path: { type: string }
+              roles: { type: array, items: { type: string, enum: [administrator, reseller, owner] } }
+              confirm: { type: string, description: A question that the web panel asks before it runs the action. Empty for no question. }
+        hooks:
+          type: array
+          description: Before hooks. The plugin can refuse the change.
+          items: { $ref: '#/components/schemas/PluginHook' }
+        commands:
+          type: array
+          items:
+            type: object
+            properties:
+              name: { type: string }
+              description: { type: string }
+    Plugin:
+      type: object
+      properties:
+        id: { type: string }
+        slug: { type: string }
+        name: { type: string }
+        version: { type: string }
+        publisher: { type: string }
+        description: { type: string }
+        enabled: { type: boolean }
+        baseUrl: { type: string }
+        webhookUrl: { type: [string, 'null'] }
+        scopes: { type: array, items: { $ref: '#/components/schemas/Scope' } }
+        events: { type: array, items: { type: string } }
+        pages: { type: array, items: { $ref: '#/components/schemas/PluginPage' } }
+        actions: { type: array, items: { $ref: '#/components/schemas/PluginAction' } }
+        hooks: { type: array, items: { $ref: '#/components/schemas/PluginHook' } }
+        commands: { type: array, items: { type: object, properties: { name: { type: string }, description: { type: string } } } }
+        signedBy: { oneOf: [{ $ref: '#/components/schemas/PluginKey' }, { type: 'null' }] }
+        tokenExpiresAt: { type: [string, 'null'], format: date-time }
+        tokenLastUsedAt: { type: [string, 'null'], format: date-time }
+        deliveries:
+          type: object
+          description: The counts of the last 24 hours, and the last delivery.
+          properties:
+            delivered: { type: integer }
+            pending: { type: integer }
+            failed: { type: integer }
+            last: { oneOf: [{ $ref: '#/components/schemas/PluginDelivery' }, { type: 'null' }] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    PluginPage:
+      type: object
+      properties:
+        pluginId: { type: string }
+        pluginName: { type: string }
+        id: { type: string }
+        title: { type: string }
+        url: { type: string }
+        origin: { type: string, description: The origin of the frame. The web panel sends the page token only to this origin. }
+        roles: { type: array, items: { type: string } }
+    PluginEvent:
+      type: string
+      description: An event that a plugin can receive. The named events are changes of the audit log with one action.
+      enum: [audit.recorded, job.finished, website.created, website.changed, website.removed, domain.added, domain.verified, domain.removed, database.created, database.removed, backup.started, restore.started, deploy.started, customer.created, customer.changed, user.created]
+    PluginHook:
+      type: object
+      properties:
+        event: { type: string, enum: [website.creating, website.removing, domain.adding, database.creating, customer.creating] }
+        path: { type: string }
+        onError: { type: string, enum: [allow, refuse], description: What the panel does when the plugin does not answer in 5 seconds. }
+    PluginAction:
+      type: object
+      properties:
+        pluginId: { type: string }
+        pluginName: { type: string }
+        id: { type: string }
+        title: { type: string }
+        target: { type: string, enum: [website, server, customer] }
+        confirm: { type: [string, 'null'] }
+        roles: { type: array, items: { type: string } }
+    PluginKey:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        fingerprint: { type: string, description: The SHA-256 of the DER bytes of the key. }
+        publicKey: { type: string }
+        createdAt: { type: string, format: date-time }
+    PluginDelivery:
+      type: object
+      properties:
+        id: { type: string }
+        event: { type: string, description: 'An event of PluginEvent, or plugin.test.' }
+        state: { type: string, enum: [pending, delivered, failed] }
+        attempts: { type: integer }
+        responseStatus: { type: [integer, 'null'] }
+        error: { type: [string, 'null'] }
+        payload: { type: object, description: 'The body that the webhook gets: id, event, createdAt and data.' }
+        createdAt: { type: string, format: date-time }
+        deliveredAt: { type: [string, 'null'], format: date-time }
+    PluginSettings:
+      type: object
+      properties:
+        developerMode: { type: boolean }
     Error:
       type: object
       properties:
@@ -4183,7 +4724,7 @@ components:
           additionalProperties: { type: array, items: { type: string } }
     Scope:
       type: string
-      enum: [websites:read, websites:write, databases:read, databases:write, dns:read, dns:write, backups:read, backups:write, mail:read, mail:write, servers:read, servers:write, images:read, images:write, customers:read, customers:write, users:read, users:write, audit:read, tokens:read, tokens:write]
+      enum: [websites:read, websites:write, databases:read, databases:write, dns:read, dns:write, backups:read, backups:write, mail:read, mail:write, servers:read, servers:write, images:read, images:write, customers:read, customers:write, users:read, users:write, audit:read, tokens:read, tokens:write, plugins:read, plugins:write]
     User:
       type: object
       properties:

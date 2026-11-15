@@ -1550,6 +1550,27 @@ not keep them.
 - A snapshot from the time when all servers used one repository has a mark. The panel
   restores it from the old repository with the old password.
 
+## Plugins
+
+```text
+ plugin host ──► public API (token with the scopes of the manifest)
+      ▲
+      └──── signed webhooks (DeliverPluginEvent, queue worker)
+ web panel ──► frame with the origin of the plugin ◄── page token (postMessage)
+ cf NAME ──► cf-NAME on the PATH
+```
+
+A plugin is a program outside the panel. The panel keeps its signed manifest (`plugins`), the
+keys that it trusts (`plugin_keys`) and the deliveries of its events (`plugin_deliveries`).
+Each plugin has its own user (`users.plugin_id`) and token. `App\Services\Audit` and
+`App\Services\JobOutcome` give the events `audit.recorded` and `job.finished` to
+`App\Services\Plugins\Events`, which records a delivery for each plugin that wants the
+event. The queue worker sends each delivery. `App\Services\Plugins\Hooks` asks the plugins
+with a before hook during the request, and `PluginController::runAction` sends an action to
+its plugin during the request. Both use `App\Services\Plugins\Caller`, which has the address
+rules and the signature of the webhooks. No part of the plugin system calls an agent.
+Refer to [plugins.md](plugins.md) and [security.md](security.md#plugins).
+
 ## White label
 
 The administrator sets the default brand in **Settings > Brand**: a name, a colour, a logo and

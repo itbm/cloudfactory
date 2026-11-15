@@ -21,6 +21,7 @@ import { FilesTab } from "./website/FilesTab";
 import { LogsTab } from "./website/LogsTab";
 import { RuntimeTab } from "./website/RuntimeTab";
 import { SettingsTab } from "./website/SettingsTab";
+import { PluginActionsCard } from "../components/PluginActions";
 
 const TABS = [
   ["overview", "Overview"],
@@ -228,6 +229,7 @@ function Overview({ website }: { website: Website }) {
           <DomainsCard website={website} />
           <SshCard website={website} />
           <BackupsCard website={website} />
+          <PluginActionsCard target="website" targetId={website.id} targetName={website.name} />
         </div>
       </div>
     </>

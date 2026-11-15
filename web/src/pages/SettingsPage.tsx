@@ -11,7 +11,7 @@ import { EmailDelivery, NotificationSettings } from "../features/Notifications";
 import { DefaultBrandSettings } from "./BrandPage";
 import { CopyField } from "./website/AccessTab";
 
-const SCOPES: TokenScope[] = ["websites:read", "websites:write", "databases:read", "databases:write", "backups:read", "backups:write", "servers:read", "servers:write", "images:read", "images:write", "customers:read", "customers:write", "users:read", "users:write", "audit:read", "notifications:read", "notifications:write", "tokens:read", "tokens:write"];
+const SCOPES: TokenScope[] = ["websites:read", "websites:write", "databases:read", "databases:write", "backups:read", "backups:write", "servers:read", "servers:write", "images:read", "images:write", "customers:read", "customers:write", "users:read", "users:write", "audit:read", "notifications:read", "notifications:write", "tokens:read", "tokens:write", "plugins:read", "plugins:write"];
 
 export function SettingsPage() {
   const state = useStore();
