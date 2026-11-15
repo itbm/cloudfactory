@@ -872,3 +872,19 @@ a.stat-link .stat-value { margin-bottom: 8px; }
   .address-input { flex-wrap: wrap; }
   .address-input .input, .address-input .select { flex-basis: 100%; }
 }
+
+/* Mail clusters: the steps of the setup, and the servers of a new cluster. */
+.section-title { font-size: 15px; font-weight: 600; margin: 18px 0 8px; }
+.cluster-steps { list-style: none; margin: 12px 0; padding: 0; display: grid; gap: 6px; }
+.cluster-step { display: flex; align-items: center; gap: 8px; }
+.cluster-step-done { color: var(--success); }
+.cluster-step-now { font-weight: 600; }
+.cluster-step-now svg { animation: spin 1.2s linear infinite; }
+.cluster-step-failed { color: var(--danger); font-weight: 600; }
+.cluster-step-todo { color: var(--text-muted); }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .cluster-step-now svg { animation: none; } }
+.cluster-members { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.cluster-member { border: 1px solid var(--border); border-radius: 8px; padding: 4px 12px; }
+.cluster-member-on { border-color: var(--primary); padding-bottom: 12px; }
+.cluster-member .check { flex-wrap: wrap; }

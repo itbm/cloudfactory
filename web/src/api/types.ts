@@ -412,6 +412,39 @@ export interface ServerMail {
   hostname: string;
   status: "starting" | "running" | "failed";
   domains: number;
+  /** Set when the server is a member of this mail cluster. The cluster controls its mail server. */
+  clusterId?: string | null;
+}
+
+/** The step of a member in the setup of its mail cluster. */
+export type MailClusterStep = "new" | "prepared" | "joined" | "running";
+
+/**
+ * A mail cluster: 3 or 5 servers with the email role. Each member has all the mail, so the
+ * mail service continues when one server fails. Only an administrator sees the clusters.
+ */
+export interface MailCluster {
+  id: string;
+  name: string;
+  /** The shared name. The MX records of the mail domains use it. */
+  hostname: string;
+  status: "setting_up" | "running" | "failed";
+  phase: "prepare" | "bootstrap" | "join" | "first" | "rest" | "done";
+  error: string | null;
+  members: {
+    serverId: string;
+    serverName: string;
+    serverState: string;
+    number: number;
+    hostname: string;
+    endpoint: string;
+    address: string;
+    region: number;
+    step: MailClusterStep;
+  }[];
+  records: { type: "A" | "AAAA"; name: string; value: string }[];
+  domains: number;
+  createdAt: string | null;
 }
 
 export type DatabaseServerStatus = "starting" | "running" | "stopped" | "failed" | "removing";
@@ -682,6 +715,7 @@ export interface State {
   rollout?: Rollout;
   databaseServers: DatabaseServer[];
   mailDomains: MailDomain[];
+  mailClusters: MailCluster[];
   mailboxes: Mailbox[];
   mailAliases: MailAlias[];
   databases: Database[];

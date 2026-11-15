@@ -6,6 +6,7 @@ import { checkConnection, installUpdates, loopbackName, newJoinToken, rebootServ
 import type { HostUpdatePolicy, Server, ServerRole } from "../api/types";
 import { Topbar } from "../components/Layout";
 import { CopyField } from "./website/AccessTab";
+import { MailClustersCard } from "./MailClusters";
 import { Card, ConfirmButton, Empty, Field, FormError, JobRow, Meter, Modal, PageHeader, Status, TableWrap } from "../components/ui";
 import { relativeTime } from "../lib/format";
 import { HOST_POLICY_LABEL, jobActive, roleList, SERVER_ROLE, SERVER_STATE } from "../lib/labels";
@@ -141,6 +142,7 @@ export function ServersPage() {
           <section className="card stat"><h2 className="stat-label">Need a reboot</h2><p className="stat-value">{reboots}</p></section>
         </div>
         <Card title="All servers"><ServersTable /></Card>
+        <MailClustersCard />
       </main>
       {params.get("add") && <AddServerDialog onClose={() => setParams({})} />}
     </>
@@ -164,7 +166,17 @@ function MailCard({ server, busy }: { server: Server; busy: boolean }) {
   const mail = server.mail;
   const [hostname, setHostname] = useState(mail?.hostname ?? "");
   const save = useAction(setServerMail);
-  const status = mail && MAIL_SERVER_STATUS[mail.status];
+  const status = mail?.status ? MAIL_SERVER_STATUS[mail.status] : undefined;
+  const cluster = useStore().mailClusters.find((c) => c.id === mail?.clusterId);
+  if (cluster) {
+    return (
+      <Card title="Email" actions={status && <Status tone={status.tone}>{status.label}</Status>}>
+        <div className="card-body">
+          <p>This server is a member of the mail cluster <Link to={`/servers?cluster=${cluster.id}`}>{cluster.name}</Link>. Its mail server has the host name <code>{mail?.hostname}</code>, and has the same mail as the other members. The cluster controls the mail server of this server.</p>
+        </div>
+      </Card>
+    );
+  }
   return (
     <Card title="Email" actions={status && <Status tone={status.tone}>{status.label}</Status>}>
       <div className="card-body">

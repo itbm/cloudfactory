@@ -30,6 +30,7 @@ import type {
   State,
   User,
   Website,
+  MailCluster,
 } from "./types";
 import { jobFailure, openFailures } from "../lib/jobFailure";
 import { degradedReason } from "./selectors";
@@ -310,7 +311,7 @@ export async function load(previous: State): Promise<State> {
   const admin = me.role === "administrator";
   const optional = <T>(p: Promise<T>, fallback: T) => p.catch(() => fallback);
 
-  const [websites, jobs, customers, plans, tokens, policy, servers, images, rollouts, audit, users, certificate, setup, account, databaseServers, mailDomains, mailboxes, mailAliases] = await Promise.all([
+  const [websites, jobs, customers, plans, tokens, policy, servers, images, rollouts, audit, users, certificate, setup, account, databaseServers, mailDomains, mailboxes, mailAliases, mailClusters] = await Promise.all([
     all<ApiWebsite>("/websites"),
     request<{ data: ApiJob[] }>("GET", "/jobs?perPage=50").then((r) => r.data),
     optional(request<{ data: ApiCustomer[] }>("GET", "/customers").then((r) => r.data), []),
@@ -331,6 +332,7 @@ export async function load(previous: State): Promise<State> {
     optional(request<{ data: ApiMailDomain[] }>("GET", "/mail/domains").then((r) => r.data), []),
     optional(request<{ data: ApiMailbox[] }>("GET", "/mail/mailboxes").then((r) => r.data), []),
     optional(request<{ data: MailAlias[] }>("GET", "/mail/aliases").then((r) => r.data), []),
+    admin ? optional(request<{ data: MailCluster[] }>("GET", "/mail-clusters").then((r) => r.data), []) : Promise.resolve([] as MailCluster[]),
   ]);
   // A customer or a reseller cannot list all images. They get the images for a new website.
   const runtimes = admin ? images.map((i) => toImage(i, rollouts))
@@ -375,6 +377,7 @@ export async function load(previous: State): Promise<State> {
     mailDomains: mailDomains.map(toMailDomain),
     mailboxes: mailboxes.map(toMailbox),
     mailAliases,
+    mailClusters,
     databases: [...kept(previous.databases), ...perSite.flatMap((s) => s.databases)],
     databaseUsers: [...kept(previous.databaseUsers), ...perSite.flatMap((s) => s.users)],
     snapshots: [...kept(previous.snapshots), ...perSite.flatMap((s) => s.snapshots)].sort((a, b) => b.at.localeCompare(a.at)),

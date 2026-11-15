@@ -28,6 +28,7 @@ import type {
   TokenScope,
   UpdatePolicy,
   Website,
+  MailCluster,
 } from "./types";
 
 /** An error that the API returns for incorrect input. The UI shows it next to the field. */
@@ -45,7 +46,7 @@ export function emptyState(): State {
   return {
     session: { signedIn: false, user: { id: "", name: "", email: "", role: "owner" }, contextId: "" },
     contexts: [], websites: [], jobs: [], activity: [], notifications: [], servers: [], images: [], rollout: undefined,
-    databaseServers: [], mailDomains: [], mailboxes: [], mailAliases: [], databases: [], databaseUsers: [], snapshots: [], plans: [], customers: [], users: [],
+    databaseServers: [], mailDomains: [], mailClusters: [], mailboxes: [], mailAliases: [], databases: [], databaseUsers: [], snapshots: [], plans: [], customers: [], users: [],
     backupPolicy: { daily: 7, weekly: 4, monthly: 6, time: "03:00", target: "", credentialNames: [] },
     tokens: [], totpEnabled: false, securityNotices: [], audit: [], joinToken: "", joinCaSha256: undefined,
     panelDomain: "",
@@ -619,6 +620,22 @@ export function deleteMailAlias(aliasId: string): Promise<void> {
 }
 
 /** Turns on email for a server, or changes the host name of its mail server. */
+/** A member of a new mail cluster. The endpoint is the public address of the server. */
+export interface NewClusterMember { serverId: string; hostname: string; endpoint: string; region: number }
+
+/** Makes a mail cluster. The panel makes it in steps, and the page shows each step. */
+export function createMailCluster(name: string, hostname: string, members: NewClusterMember[]) {
+  return call(() => live.request<MailCluster>("POST", "/mail-clusters", {
+    name: name.trim().toLowerCase(), hostname: hostname.trim().toLowerCase(),
+    members: members.map((m) => ({ serverId: m.serverId, hostname: m.hostname.trim().toLowerCase(), endpoint: m.endpoint.trim(), region: m.region })),
+  })).then(async (c) => { await refresh(); return c; });
+}
+
+/** Starts the step of a mail cluster that failed again. */
+export function retryMailCluster(clusterId: string) {
+  return call(() => live.request<MailCluster>("POST", `/mail-clusters/${clusterId}/retry`)).then(() => refresh());
+}
+
 export function setServerMail(serverId: string, hostname: string) {
   return call(() => live.request<JobAnswer>("PUT", `/servers/${serverId}/mail`, { hostname: hostname.trim().toLowerCase() })).then((r) => track(r.job).then(() => refresh()));
 }
