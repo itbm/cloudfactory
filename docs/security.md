@@ -163,6 +163,31 @@ The product specification, section 6.4, gives the requirements.
   request for a database or a database user that has no database server, and a database
   server of a different customer.
 
+### Adminer
+
+- Each customer has its own Adminer container, in gVisor, with its own Unix user and limits.
+  No two customers share an Adminer process.
+- The container is a member of the networks of its customer only. The firewall lets it
+  connect to the MariaDB and PostgreSQL database servers of that customer, and to nothing
+  else in the private networks.
+- Adminer opens only MariaDB and PostgreSQL, and only a server name that ends in `.internal`.
+  It refuses other names before it connects. This is a second check: the firewall is the
+  first.
+- The user types no password. The panel makes a temporary database user with access to one
+  database only, and gives the password to the browser one time. The panel does not keep the
+  password. The user is removed after 60 minutes, or when its database is removed.
+- A user who can manage the databases of a website (the scope `databases`) can open them in
+  Adminer. The panel refuses this for a suspended customer, and writes an audit event for each
+  sign-in.
+- Adminer has no permanent login, sends `Cache-Control: no-store`, and refuses frames from
+  other sites (`frame-ancestors 'none'` and `X-Frame-Options: DENY`).
+- Adminer does not ask `adminer.org` for a new version, and its content security policy lets
+  the browser connect only to Adminer (`connect-src 'self'`) and refuses workers
+  (`worker-src 'none'`).
+- Each sign-in has its own random address, which Adminer does not show on a different
+  sign-in. Adminer keeps its session cookie on that address only. The address stops working
+  when the temporary user expires.
+
 ## Domains
 
 - The edge proxy serves a domain only after the customer verifies it. To verify a domain, the
@@ -759,6 +784,14 @@ These items stay open in release 0.1:
   then controls the DNS of the domain. The panel asks for the TXT proof only while a
   different customer has a zone for the name. Before you remove a zone, set other name
   servers at the registrar.
+- **One origin for Adminer.** All customers use the same Adminer domain, so the browser puts
+  the Adminer pages of all customers in one origin. Each sign-in has its own random address,
+  `/<tool>/<random key>/`, and the session cookie of Adminer has this path only. Adminer
+  serves no other path, and keeps nothing in the storage of the browser. Thus a script on the
+  Adminer page of one sign-in does not get the cookie of a different sign-in, and cannot find
+  its address. The separation is the cookie path and a random address, not a separate origin.
+  Use one browser profile for each customer when you manage the databases of different
+  customers. A domain for each customer gives a separate origin.
 - **A server that had the role `dns`.** When you turn off DNS on a server, the panel removes
   the zones from the server. The empty container `cf-dns` and the firewall rules for port 53
   stay until you remove them.

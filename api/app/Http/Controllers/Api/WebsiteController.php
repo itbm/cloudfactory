@@ -191,6 +191,9 @@ class WebsiteController extends Controller
             'limits.diskBytes' => ['required_with:limits', 'integer', 'gt:0'],
             'limits.diskIoBytesPerSecond' => ['required_with:limits', 'integer', 'gt:0'],
             'limits.processes' => ['required_with:limits', 'integer', 'gt:0'],
+            // The traffic of each website in a calendar month. 0 or none is no limit. The panel
+            // shows the traffic and alerts near the limit. It does not stop the website.
+            'limits.bandwidthBytes' => ['sometimes', 'integer', 'min:0'],
             'managedByTerraform' => ['sometimes', 'boolean'],
         ]);
         if (isset($data['limits']) && ! $request->user()->isAdministrator()) {

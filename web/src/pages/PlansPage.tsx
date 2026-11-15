@@ -36,7 +36,7 @@ export function PlansPage() {
                 <td><strong>{p.name}</strong><span className="cell-sub">{p.phpExtensions.length} PHP extensions</span></td>
                 <td>{customers(p.id)}</td>
                 <td>{p.websites}</td>
-                <td>{p.limits.vcpus} vCPU · {bytes(p.limits.memoryBytes)} memory · {bytes(p.limits.diskBytes)} disk<span className="cell-sub">{bytes(p.limits.diskIoBytesPerSecond)}/s disk I/O · {p.limits.processes} processes</span></td>
+                <td>{p.limits.vcpus} vCPU · {bytes(p.limits.memoryBytes)} memory · {bytes(p.limits.diskBytes)} disk<span className="cell-sub">{bytes(p.limits.diskIoBytesPerSecond)}/s disk I/O · {p.limits.processes} processes · {p.limits.bandwidthBytes ? `${bytes(p.limits.bandwidthBytes)} bandwidth a month` : "no bandwidth limit"}</span></td>
                 <td>{p.databaseServers}</td>
                 <td>{limitsText(p.databaseLimits)}<span className="cell-sub">{p.databases} {p.databases === 1 ? "database" : "databases"} in each one</span></td>
                 <td>{p.dnsZones}</td>
@@ -57,7 +57,7 @@ export function PlansPage() {
 function PlanDialog({ plan, onClose }: { plan: Plan; onClose: () => void }) {
   const [f, setF] = useState({
     name: plan.name, websites: String(plan.websites), databases: String(plan.databases),
-    vcpus: String(plan.limits.vcpus), memory: String(plan.limits.memoryBytes / MB), disk: String(plan.limits.diskBytes / GB), io: String(plan.limits.diskIoBytesPerSecond / MB), processes: String(plan.limits.processes),
+    vcpus: String(plan.limits.vcpus), memory: String(plan.limits.memoryBytes / MB), disk: String(plan.limits.diskBytes / GB), io: String(plan.limits.diskIoBytesPerSecond / MB), processes: String(plan.limits.processes), bandwidth: String((plan.limits.bandwidthBytes ?? 0) / GB),
     databaseServers: String(plan.databaseServers), dbVcpus: String(plan.databaseLimits.vcpus), dbMemory: String(plan.databaseLimits.memoryBytes / MB), dbDisk: String(plan.databaseLimits.diskBytes / GB),
     dnsZones: String(plan.dnsZones),
     networks: String(plan.networks ?? 0),
@@ -66,7 +66,7 @@ function PlanDialog({ plan, onClose }: { plan: Plan; onClose: () => void }) {
   const save = useAction(savePlan);
   // The third value is the field of the API, for its error.
   type Row = [Exclude<keyof typeof f, "name" | "ext">, string, string];
-  const websiteFields: Row[] = [["websites", "Websites", "websites"], ["vcpus", "CPU (vCPU)", "limits.vcpus"], ["memory", "Memory (MB)", "limits.memoryBytes"], ["disk", "Disk (GB)", "limits.diskBytes"], ["io", "Disk I/O (MB/s)", "limits.diskIoBytesPerSecond"], ["processes", "Processes", "limits.processes"]];
+  const websiteFields: Row[] = [["websites", "Websites", "websites"], ["vcpus", "CPU (vCPU)", "limits.vcpus"], ["memory", "Memory (MB)", "limits.memoryBytes"], ["disk", "Disk (GB)", "limits.diskBytes"], ["io", "Disk I/O (MB/s)", "limits.diskIoBytesPerSecond"], ["processes", "Processes", "limits.processes"], ["bandwidth", "Bandwidth a month (GB, 0 is no limit)", "limits.bandwidthBytes"]];
   const databaseFields: Row[] = [["databaseServers", "Database servers", "databaseServers"], ["databases", "Databases in each one", "databases"], ["dbVcpus", "CPU (vCPU)", "databaseLimits.vcpus"], ["dbMemory", "Memory (MB)", "databaseLimits.memoryBytes"], ["dbDisk", "Disk (GB)", "databaseLimits.diskBytes"]];
   const dnsFields: Row[] = [["dnsZones", "DNS zones", "dnsZones"]];
   const networkFields: Row[] = [["networks", "Named networks", "networks"]];
@@ -77,7 +77,7 @@ function PlanDialog({ plan, onClose }: { plan: Plan; onClose: () => void }) {
     <Modal wide title={plan.id ? `Edit ${plan.name}` : "New plan"} onClose={onClose} footer={<><button type="button" className="btn" onClick={onClose}>Cancel</button><button type="submit" form="plan" className="btn btn-primary">Save plan</button></>}>
       <form id="plan" noValidate onSubmit={async (e) => {
         e.preventDefault();
-        const r = await save.run({ id: plan.id, name: f.name, websites: +f.websites, mailboxes: plan.mailboxes, databases: +f.databases, phpExtensions: f.ext, limits: { vcpus: +f.vcpus, memoryBytes: +f.memory * MB, diskBytes: +f.disk * GB, diskIoBytesPerSecond: +f.io * MB, processes: +f.processes }, databaseServers: +f.databaseServers, databaseLimits: { vcpus: +f.dbVcpus, memoryBytes: Math.round(+f.dbMemory * MB), diskBytes: Math.round(+f.dbDisk * GB) }, dnsZones: +f.dnsZones, networks: +f.networks });
+        const r = await save.run({ id: plan.id, name: f.name, websites: +f.websites, mailboxes: plan.mailboxes, databases: +f.databases, phpExtensions: f.ext, limits: { vcpus: +f.vcpus, memoryBytes: +f.memory * MB, diskBytes: +f.disk * GB, diskIoBytesPerSecond: +f.io * MB, processes: +f.processes, bandwidthBytes: Math.round(+f.bandwidth * GB) }, databaseServers: +f.databaseServers, databaseLimits: { vcpus: +f.dbVcpus, memoryBytes: Math.round(+f.dbMemory * MB), diskBytes: Math.round(+f.dbDisk * GB) }, dnsZones: +f.dnsZones, networks: +f.networks });
         if (r.ok) onClose();
       }}>
         <FormError error={save.error} shown={["name", ...websiteFields.map((x) => x[2]), ...databaseFields.map((x) => x[2]), "dnsZones", "networks"]} />

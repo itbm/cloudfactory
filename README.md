@@ -50,7 +50,7 @@ Refer to [docs/screenshots](docs/screenshots/README.md) for screenshots of all p
 | [`schema/`](schema)    | The input rules that the panel API and the agent share, and their examples. |
 | [`cli/`](cli)          | The command line tool `cf`. Go. It uses only the public API.              |
 | [`install/`](install)  | The installation script and its tests.                                    |
-| [`images/`](images)    | The Containerfiles of the runtime, edge, panel, database and DNS images.  |
+| [`images/`](images)    | The Containerfiles of the runtime, edge, panel, database, DNS and Adminer images. |
 | [`.github/workflows/`](.github/workflows) | CI, image scans, releases and the daily image rebuild. |
 | [`docs/`](docs)        | The documentation.                                                        |
 
@@ -91,6 +91,7 @@ the script before you run it.
 - [Security model](docs/security.md)
 - [Installation](docs/installation.md)
 - [Private networks: a guide for customers](docs/private-networks.md)
+- [Email notifications](docs/email-notifications.md)
 - [Development](docs/development.md)
 - [Releases and signing keys](docs/releasing.md)
 - [Decisions about the open questions](docs/decisions.md)

@@ -16,6 +16,7 @@ use App\Models\Rollout;
 use App\Models\Snapshot;
 use App\Models\Website;
 use App\Services\Dns\Zones;
+use App\Services\Notifications\Notifier;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -89,12 +90,18 @@ class JobOutcome
             ? $this->applySuccess($job, $website, $result)
             : $this->applyFailure($job, $website);
         $this->databaseServersOf($job, $state === JobState::Succeeded);
+        // The container of Adminer and its temporary database users.
+        DatabaseTools::jobFinished($job, $state === JobState::Succeeded);
         if (in_array($job->action, [AgentAction::SetDnsZones, AgentAction::DeleteDnsZones], true)) {
             Zones::jobFinished($job, $state === JobState::Succeeded);
         }
 
         if ($job->rollout_id && ($rollout = Rollout::find($job->rollout_id))) {
             $this->rollouts->jobFinished($rollout, $job);
+        }
+        // The users who want it get an email about the failure.
+        if ($state === JobState::Failed) {
+            app(Notifier::class)->jobFailed($job, $website);
         }
     }
 

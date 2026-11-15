@@ -30,6 +30,9 @@ type Collector struct {
 	ProcDir string
 	// DiskPath is the file system to measure, for example "/srv/cloudfactory".
 	DiskPath string
+	// Net counts the traffic of the network interfaces between two reports. Nil means that the
+	// report has no traffic.
+	Net *NetCounter
 	// Extra adds the parts of the report that the actions know, for example the use of each
 	// website.
 	Extra func(ctx context.Context, r *panel.Report)
@@ -93,6 +96,9 @@ func (c Collector) hostUse() *panel.HostUse {
 		if total := mem["MemTotal"]; total > 0 {
 			u.MemoryPercent = percent(total-mem["MemAvailable"], total)
 		}
+	}
+	if c.Net != nil {
+		u.NetworkInBytes, u.NetworkOutBytes = c.Net.Since(proc)
 	}
 	path := c.DiskPath
 	if path == "" {

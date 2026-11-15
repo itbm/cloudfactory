@@ -105,6 +105,9 @@ class PlanController extends Controller
             'limits.diskBytes' => ['required', 'integer', 'gt:0'],
             'limits.diskIoBytesPerSecond' => ['required', 'integer', 'gt:0'],
             'limits.processes' => ['required', 'integer', 'gt:0'],
+            // The traffic of each website in a calendar month. 0 or none is no limit. The panel
+            // shows the traffic and alerts near the limit. It does not stop the website.
+            'limits.bandwidthBytes' => ['sometimes', 'integer', 'min:0'],
             // The number of database servers of a customer with the plan, and the limits of
             // each database server with the plan. A request with none keeps the values of the
             // plan. A new plan gets 3 database servers, each with the vCPUs of a website, the

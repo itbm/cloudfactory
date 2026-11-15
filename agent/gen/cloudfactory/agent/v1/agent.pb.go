@@ -247,7 +247,13 @@ type Website struct {
 	// It can connect to the members of its networks. "command" is its start command, for each
 	// runtime. The command runs in the gVisor sandbox as the Unix user of the website, with the
 	// limits of the website.
-	Worker        bool `protobuf:"varint,16,opt,name=worker,proto3" json:"worker,omitempty"`
+	Worker bool `protobuf:"varint,16,opt,name=worker,proto3" json:"worker,omitempty"`
+	// A path prefix for the route of the website in the edge proxy, for example "/01jbq3z5k8n6/".
+	// Empty for a usual website: its route has all paths of its domains. With a value, the
+	// route has only the paths that start with the prefix, so that more than one website can
+	// have the same domain. The panel uses it for the database tool of each customer
+	// (Adminer), which has one domain for all customers. The domain has no redirect.
+	RoutePath     string `protobuf:"bytes,17,opt,name=route_path,json=routePath,proto3" json:"route_path,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -392,6 +398,13 @@ func (x *Website) GetWorker() bool {
 		return x.Worker
 	}
 	return false
+}
+
+func (x *Website) GetRoutePath() string {
+	if x != nil {
+		return x.RoutePath
+	}
+	return ""
 }
 
 // A database server of a customer: one database container with one engine, in its own gVisor
@@ -4712,7 +4725,7 @@ const file_cloudfactory_agent_v1_agent_proto_rawDesc = "" +
 	"\tprocesses\x18\x05 \x01(\x03R\tprocesses\"0\n" +
 	"\x06Domain\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
-	"\x04kind\x18\x02 \x01(\tR\x04kind\"\x86\x05\n" +
+	"\x04kind\x18\x02 \x01(\tR\x04kind\"\xa5\x05\n" +
 	"\aWebsite\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n" +
 	"\tunix_user\x18\x02 \x01(\tR\bunixUser\x12\x14\n" +
@@ -4734,7 +4747,9 @@ const file_cloudfactory_agent_v1_agent_proto_rawDesc = "" +
 	"\acommand\x18\r \x03(\tR\acommand\x12#\n" +
 	"\rdocument_root\x18\x0e \x01(\tR\fdocumentRoot\x12+\n" +
 	"\x11database_instance\x18\x0f \x01(\tR\x10databaseInstance\x12\x16\n" +
-	"\x06worker\x18\x10 \x01(\bR\x06worker\x1a9\n" +
+	"\x06worker\x18\x10 \x01(\bR\x06worker\x12\x1d\n" +
+	"\n" +
+	"route_path\x18\x11 \x01(\tR\troutePath\x1a9\n" +
 	"\vPhpIniEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x9f\x01\n" +

@@ -84,7 +84,7 @@ The overview of a website. A failed job that a later job resolved shows as "Fail
 
 ### admin-12-website-databases
 
-The databases of a website, with a Valkey database. The actions of a database user are in one menu.
+The databases of a website, with a Valkey database. A MariaDB or PostgreSQL database has **Open in Adminer**. The actions of a database user are in one menu.
 
 ![admin-12-website-databases](admin-12-website-databases.png)
 
@@ -293,6 +293,18 @@ A DNS zone with its name servers, DNSSEC and records.
 The dialogue to add a DNS record.
 
 ![owner-17-dns-add-record](owner-17-dns-add-record.png)
+
+### owner-18-website-databases
+
+The databases of a website. **Open in Adminer** opens a MariaDB or PostgreSQL database in Adminer in a new window.
+
+![owner-18-website-databases](owner-18-website-databases.png)
+
+### owner-19-adminer
+
+Adminer after **Open in Adminer**. The panel signed in with a temporary database user for this database only. The user typed no password.
+
+![owner-19-adminer](owner-19-adminer.png)
 
 ## Phone width (390 px)
 

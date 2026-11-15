@@ -118,6 +118,12 @@ message Website {
   // runtime. The command runs in the gVisor sandbox as the Unix user of the website, with the
   // limits of the website.
   bool worker = 16;
+  // A path prefix for the route of the website in the edge proxy, for example "/01jbq3z5k8n6/".
+  // Empty for a usual website: its route has all paths of its domains. With a value, the
+  // route has only the paths that start with the prefix, so that more than one website can
+  // have the same domain. The panel uses it for the database tool of each customer
+  // (Adminer), which has one domain for all customers. The domain has no redirect.
+  string route_path = 17;
 }
 
 // A database server of a customer: one database container with one engine, in its own gVisor

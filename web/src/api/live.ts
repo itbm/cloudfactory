@@ -32,6 +32,8 @@ import type {
   SetupChecklist,
   Snapshot,
   State,
+  UsageAlert,
+  UsageAlertSettings,
   User,
   Website,
 } from "./types";
@@ -136,7 +138,7 @@ interface ApiWebsite {
   id: string; name: string; application: string; customerId: string; serverId: string; planId: string; unixUser: string; networkHost?: string | null; networkPort?: number | null; kind?: Website["kind"]; command?: string | null; status: Website["status"];
   runtime: { imageId: string; family: string; image: string; phpVersion: string | null; workerMode: boolean; extensions: string[]; phpIni: Record<string, string>; previousImageId: string | null; documentRoot?: string; digest?: string | null; signatureVerified?: boolean };
   sftp?: { enabled: boolean; host: string | null; port: number; username: string; authorizedKeys: string[] };
-  limits: Limits; diskLimitApplied?: boolean | null; usage: Partial<Website["use"]> | null;
+  limits: Limits; diskLimitApplied?: boolean | null; usage: Partial<Website["use"]> | null; bandwidthBytes?: number;
   domains?: { name: string; kind: Website["domains"][number]["kind"]; dnsPointsHere: boolean; certificate: { state: Website["domains"][number]["certificate"]["state"]; expiresAt: string | null }; verified?: boolean; verification?: DomainVerification | null }[];
   stagingOf: string | null; managedByTerraform: boolean; createdAt: string; updatedAt: string;
 }
@@ -195,7 +197,7 @@ interface ApiAccount {
   customer: Account["customer"] | null;
   provider: { name: string; email: string } | null;
   plan: Plan | null;
-  usage: { websites: number; databases: number; diskBytes: number; customers: number | null; dnsZones?: number; networks?: number } | null;
+  usage: { websites: number; databases: number; diskBytes: number; customers: number | null; dnsZones?: number; networks?: number; bandwidthBytes?: number } | null;
   backups?: { available: boolean };
   users: ApiUser[];
 }
@@ -204,7 +206,7 @@ export function toAccount(a: ApiAccount): Account {
   const usage = a.usage ?? { websites: 0, databases: 0, diskBytes: 0, customers: null };
   return {
     customer: a.customer!, provider: a.provider ?? undefined, plan: a.plan ?? undefined,
-    usage: { websites: usage.websites, databases: usage.databases, diskBytes: usage.diskBytes, customers: usage.customers ?? undefined, dnsZones: usage.dnsZones ?? 0, networks: usage.networks ?? 0 },
+    usage: { websites: usage.websites, databases: usage.databases, diskBytes: usage.diskBytes, customers: usage.customers ?? undefined, dnsZones: usage.dnsZones ?? 0, networks: usage.networks ?? 0, bandwidthBytes: usage.bandwidthBytes ?? 0 },
     backupsAvailable: a.backups?.available ?? true,
     users: a.users.map(toUser),
   };
@@ -232,6 +234,7 @@ export function toWebsite(w: ApiWebsite): Website {
       digest: w.runtime.digest ?? undefined, signatureVerified: w.runtime.signatureVerified ?? undefined,
     },
     use: { cpuPercent: 0, memoryBytes: 0, diskBytes: 0, processes: 0, diskIoBytesPerSecond: 0, ...(w.usage ?? {}) },
+    bandwidthBytes: w.bandwidthBytes ?? 0,
     domains: (w.domains ?? []).map((d) => ({
       name: d.name, kind: d.kind, dnsPointsHere: d.dnsPointsHere, certificate: { state: d.certificate.state, expiresAt: d.certificate.expiresAt ?? undefined },
       ...(d.verified === false && d.verification ? { verification: d.verification } : {}),
@@ -354,7 +357,7 @@ export async function load(previous: State): Promise<State> {
   const admin = me.role === "administrator";
   const optional = <T>(p: Promise<T>, fallback: T) => p.catch(() => fallback);
 
-  const [websites, jobs, customers, plans, tokens, policy, servers, images, rollouts, audit, users, certificate, setup, account, databaseServers, dns, mesh, networks] = await Promise.all([
+  const [websites, jobs, customers, plans, tokens, policy, servers, images, rollouts, audit, users, certificate, setup, account, databaseServers, dns, mesh, networks, alerts] = await Promise.all([
     all<ApiWebsite>("/websites"),
     request<{ data: ApiJob[] }>("GET", "/jobs?perPage=50").then((r) => r.data),
     optional(request<{ data: ApiCustomer[] }>("GET", "/customers").then((r) => r.data), []),
@@ -377,6 +380,8 @@ export async function load(previous: State): Promise<State> {
     admin ? optional(request<Mesh>("GET", "/mesh"), undefined) : Promise.resolve(undefined),
     // A panel API of an earlier release has no private networks.
     optional(request<{ data: ApiNetwork[] }>("GET", "/networks").then((r) => r.data.map(toNetwork)), []),
+    // A panel API of an earlier release has no usage alerts.
+    optional(request<{ data: UsageAlert[]; settings: UsageAlertSettings }>("GET", "/usage-alerts"), { data: [], settings: previous.alertSettings }),
   ]);
   // The list has no records. The panel reads the records of the zones that the user opened.
   const zoneDetails = new Map<string, DnsZone>();
@@ -430,6 +435,8 @@ export async function load(previous: State): Promise<State> {
     nameServers: dns.nameServers ?? [],
     mesh,
     networks,
+    usageAlerts: alerts.data,
+    alertSettings: alerts.settings,
     databases: [...kept(previous.databases), ...perSite.flatMap((s) => s.databases)],
     databaseUsers: [...kept(previous.databaseUsers), ...perSite.flatMap((s) => s.users)],
     remoteDatabaseServers: { ...previous.remoteDatabaseServers, ...Object.fromEntries(perSite.map((s, i) => [detailed[i].id, s.remote])) },
@@ -486,8 +493,28 @@ export async function showWebsite(previous: State, websiteId: string): Promise<(
 
 // Session
 
+const DEVICE_KEY = "cloudfactory.device";
+
+/**
+ * A random ID of this browser. The panel sends an email to the user after a sign-in from a
+ * browser that it does not know. The ID stays after a sign-out.
+ */
+export function deviceId(): string | undefined {
+  try {
+    let id = localStorage.getItem(DEVICE_KEY);
+    if (!id || !/^[A-Za-z0-9_-]{16,100}$/.test(id)) {
+      id = crypto.randomUUID();
+      localStorage.setItem(DEVICE_KEY, id);
+    }
+    return id;
+  } catch {
+    // The browser keeps no data. The panel then knows the browser by its user agent.
+    return undefined;
+  }
+}
+
 export async function signIn(email: string, password: string, totp: string): Promise<void> {
-  const res = await request<{ token: string }>("POST", "/auth/login", { email, password, totp: totp || undefined });
+  const res = await request<{ token: string }>("POST", "/auth/login", { email, password, totp: totp || undefined, deviceId: deviceId() });
   token = res.token;
   writeToken(token);
 }

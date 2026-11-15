@@ -251,6 +251,11 @@ type HostUse struct {
 	CPUPercent    float64 `json:"cpuPercent"`
 	MemoryPercent float64 `json:"memoryPercent"`
 	DiskPercent   float64 `json:"diskPercent"`
+	// NetworkInBytes and NetworkOutBytes are the bytes that the network interfaces of the
+	// server received and sent since the last report. The agent does not count the loopback
+	// interface and the virtual interfaces of the containers and of the mesh.
+	NetworkInBytes  int64 `json:"networkInBytes"`
+	NetworkOutBytes int64 `json:"networkOutBytes"`
 }
 
 type Service struct {
@@ -270,6 +275,10 @@ type Usage struct {
 	MemoryBytes int64   `json:"memoryBytes"`
 	DiskBytes   int64   `json:"diskBytes"`
 	Processes   int64   `json:"processes"`
+	// BytesIn and BytesOut are the traffic of the domains of the website through the edge
+	// proxy since the last report: the sizes of the requests and of the answers.
+	BytesIn  int64 `json:"bytesIn"`
+	BytesOut int64 `json:"bytesOut"`
 }
 
 // ReportResponse is the answer of the panel to a report.

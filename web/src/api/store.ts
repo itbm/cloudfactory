@@ -38,6 +38,11 @@ import type {
   UpdatePolicy,
   Website,
   WebsiteKind,
+  UsageAlert,
+  UsageAlertSettings,
+  UsageHistory,
+  UsageRange,
+  UsageSubject,
 } from "./types";
 
 /** An error that the API returns for incorrect input. The UI shows it next to the field. */
@@ -55,7 +60,7 @@ export function emptyState(): State {
   return {
     session: { signedIn: false, user: { id: "", name: "", email: "", role: "owner" }, contextId: "" },
     contexts: [], websites: [], jobs: [], activity: [], notifications: [], servers: [], images: [], rollout: undefined,
-    databaseServers: [], dnsZones: [], nameServers: [], networks: [], databases: [], databaseUsers: [], remoteDatabaseServers: {}, snapshots: [], plans: [], customers: [], users: [],
+    databaseServers: [], dnsZones: [], nameServers: [], networks: [], usageAlerts: [], alertSettings: { warningPercent: 80, criticalPercent: 95 }, databases: [], databaseUsers: [], remoteDatabaseServers: {}, snapshots: [], plans: [], customers: [], users: [],
     backupPolicy: { daily: 7, weekly: 4, monthly: 6, time: "03:00", target: "", credentialNames: [] },
     tokens: [], totpEnabled: false, securityNotices: [], audit: [], joinToken: "", joinCaSha256: undefined,
     panelDomain: "",
@@ -397,6 +402,23 @@ export function deleteFile(websiteId: string, path: string): Promise<void> {
 /** The largest file that the panel sends in one request (FileController::MAX_WRITE). */
 export const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 
+/** The usage history of a website, a server or a database server, for the graphs. */
+export function readUsage(subject: UsageSubject, id: string, range: UsageRange): Promise<UsageHistory> {
+  const base = subject === "website" ? `/websites/${id}` : subject === "server" ? `/servers/${id}` : `/database-servers/${id}`;
+  return call(() => live.request<UsageHistory>("GET", `${base}/usage?range=${range}`));
+}
+
+/** The usage alerts, also the closed ones with state "all". */
+export function listUsageAlerts(state: "open" | "resolved" | "all" = "open"): Promise<UsageAlert[]> {
+  return call(() => live.request<{ data: UsageAlert[] }>("GET", `/usage-alerts?state=${state}`)).then((r) => r.data);
+}
+
+/** An administrator changes the thresholds of the usage alerts. */
+export async function setAlertSettings(settings: UsageAlertSettings): Promise<void> {
+  await call(() => live.request("PUT", "/usage-alerts/settings", settings));
+  await refresh();
+}
+
 /** The last lines of the output of the website container. */
 export function readLogs(websiteId: string, stream: "all" | "access" | "error" = "all", lines = 200): Promise<LogLine[]> {
   return call(() => live.request<{ lines: LogLine[] }>("GET", `/websites/${websiteId}/logs?lines=${lines}${stream === "all" ? "" : `&stream=${stream}`}`)).then((r) => r.lines);
@@ -686,6 +708,71 @@ export function deleteDatabaseUser(userId: string) {
   if (!user) throw new ApiError("The database user does not exist.");
   if (user.engine === "valkey") throw new ApiError("The user of a Valkey database goes with its database. Remove the database.");
   return call(() => live.request<JobAnswer>("DELETE", `/websites/${user.websiteId}/database-users/${userId}`)).then((r) => track(r.job)).then(() => refresh());
+}
+
+/** The state of a sign-in to Adminer (GET /v1/adminer-logins/{id}). */
+export interface AdminerLogin {
+  id: string;
+  status: "starting" | "ready" | "failed" | "expired";
+  url: string;
+  databaseName: string;
+  username: string;
+  expiresAt: string;
+}
+
+/** The fields of the sign-in form of Adminer, with the password of the temporary database user. */
+export interface AdminerForm {
+  driver: string;
+  server: string;
+  username: string;
+  password: string;
+  db: string;
+}
+
+/** The time between two checks of a sign-in, and the longest wait for a new Adminer container. */
+export const ADMINER_POLL_MS = 1500;
+const ADMINER_WAIT_MS = 4 * 60 * 1000;
+
+/**
+ * Opens a database in Adminer, with single sign-on. The panel makes a temporary database user
+ * for the database, and starts the Adminer of the customer if necessary. When the two are
+ * ready, the sign-in form goes to Adminer in the window "target". The user types no password,
+ * and the password is never on the screen.
+ */
+export async function openInAdminer(databaseId: string, target: Window, privileges: DatabasePrivileges = "readwrite"): Promise<void> {
+  const db = state.databases.find((x) => x.id === databaseId);
+  if (!db) throw new ApiError("The database does not exist.");
+  const r = await call(() => live.request<{ login: AdminerLogin; form: AdminerForm; jobs: live.ApiJob[] }>("POST", `/websites/${db.websiteId}/databases/${databaseId}/adminer`, { privileges }));
+  for (const job of r.jobs) void track(job).catch(() => undefined);
+  let login = r.login;
+  const until = Date.now() + ADMINER_WAIT_MS;
+  while (login.status === "starting") {
+    if (Date.now() > until) throw new ApiError("Adminer did not start in time. Look at the job on the Jobs page, and try again.");
+    await new Promise((done) => setTimeout(done, ADMINER_POLL_MS));
+    login = (await call(() => live.request<{ login: AdminerLogin }>("GET", `/adminer-logins/${login.id}`))).login;
+  }
+  if (login.status !== "ready") throw new ApiError(login.status === "expired" ? "The sign-in expired. Open the database again." : "The panel could not start Adminer, or could not make the temporary database user. Look at the job on the Jobs page.");
+  postAdminerForm(target, login.url, r.form);
+}
+
+/**
+ * Sends the sign-in form to Adminer in a window of the panel. The form is a POST request, so
+ * the password is not in an address or in the history of the browser.
+ */
+export function postAdminerForm(target: Window, url: string, form: AdminerForm) {
+  const doc = target.document;
+  const el = doc.createElement("form");
+  el.method = "post";
+  el.action = url;
+  for (const [key, value] of Object.entries(form)) {
+    const input = doc.createElement("input");
+    input.type = "hidden";
+    input.name = `auth[${key}]`;
+    input.value = value;
+    el.appendChild(input);
+  }
+  doc.body.appendChild(el);
+  el.submit();
 }
 
 /** FR-307: adds a custom image. The API checks the reference, the tag and the port. */

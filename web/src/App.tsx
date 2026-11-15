@@ -5,6 +5,7 @@ import { BrandTheme } from "./components/Brand";
 import { Layout } from "./components/Layout";
 import { HOME, canOpen } from "./lib/roles";
 import { AccountPage } from "./pages/AccountPage";
+import { AlertsPage } from "./pages/AlertsPage";
 import { AppsPage } from "./pages/AppsPage";
 import { BackupsPage } from "./pages/BackupsPage";
 import { BrandPage } from "./pages/BrandPage";
@@ -98,6 +99,7 @@ export function App() {
             <Route path="backups" element={<BackupsPage />} />
             <Route path="apps" element={<AppsPage />} />
             <Route path="jobs" element={<JobsPage />} />
+            <Route path="alerts" element={<AlertsPage />} />
             <Route path="account" element={<AccountPage />} />
             <Route path="brand" element={<BrandPage />} />
             <Route path="settings" element={<SettingsPage />} />

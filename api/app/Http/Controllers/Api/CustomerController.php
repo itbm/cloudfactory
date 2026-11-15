@@ -17,6 +17,7 @@ use App\Services\DatabaseServers;
 use App\Services\Dns\Zones;
 use App\Services\DomainPolicy;
 use App\Services\JobDispatcher;
+use App\Services\Notifications\Notifier;
 use App\Services\PanelCertificate;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -143,6 +144,7 @@ class CustomerController extends Controller
         }
         if ($suspension) {
             $this->applySuspension($customer->fresh());
+            app(Notifier::class)->suspension($customer->fresh(), $suspension['suspended']);
         }
         if (isset($data['branding'])) {
             $this->brandChanged($brandBefore, $customer->fresh());

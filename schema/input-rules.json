@@ -24,6 +24,12 @@
       "pattern": "^[a-z][a-z0-9]{0,15}_[a-z0-9]{4}$",
       "message": "Use a name such as acme_x7k2: a letter, at most 15 letters or digits, an underscore, and 4 letters or digits."
     },
+    "routePath": {
+      "what": "route path",
+      "doc": "The path prefix of the route of a website in the edge proxy, for example \"/01jbq3z5k8n6/\". It starts and ends with a slash, and has 1 to 40 lower-case letters and digits.",
+      "pattern": "^/[a-z0-9]{1,40}/$",
+      "message": "Use a path such as /01jbq3z5k8n6/: a slash, 1 to 40 lower-case letters and digits, and a slash."
+    },
     "domain": {
       "what": "domain",
       "doc": "A domain name in lower case. Each label has 1 to 63 characters. The last label is not a number, so that the name is not an IP address (audit finding R5).",
