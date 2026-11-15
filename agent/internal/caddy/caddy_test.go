@@ -71,6 +71,21 @@ func (f *fakeCaddy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case r.URL.Path == "/config/apps/http/servers/edge/tls_connection_policies":
 		b, _ := io.ReadAll(r.Body)
 		f.policies = string(b)
+	case (r.Method == http.MethodPatch || r.Method == http.MethodGet) && strings.Count(r.URL.Path, "/") == 3 && strings.HasPrefix(r.URL.Path, "/id/"):
+		// A field of an object, for example /id/cf-panel/match.
+		id, field, _ := strings.Cut(strings.TrimPrefix(r.URL.Path, "/id/"), "/")
+		list, i := f.object(id)
+		if i < 0 {
+			http.Error(w, `{"error":"unknown object ID '`+id+`'"}`, http.StatusNotFound)
+			return
+		}
+		if r.Method == http.MethodGet {
+			json.NewEncoder(w).Encode(list[i][field])
+			return
+		}
+		var value any
+		readJSON(r, &value)
+		list[i][field] = value
 	case r.Method == http.MethodPatch && strings.HasPrefix(r.URL.Path, "/id/"):
 		id := strings.TrimPrefix(r.URL.Path, "/id/")
 		var object map[string]any

@@ -14,6 +14,7 @@ import {
   LogOut,
   Menu,
   Network,
+  Palette,
   Search,
   Server,
   Settings2,
@@ -31,6 +32,7 @@ import type { AccountContext, Tone } from "../api/types";
 import { relativeTime } from "../lib/format";
 import { jobActive } from "../lib/labels";
 import { HOME, NAVIGATION, ROLE_LABEL, type NavEntry, type NavSection } from "../lib/roles";
+import { BrandMark, useBrand } from "./Brand";
 import { CommandPalette } from "./CommandPalette";
 import { SecurityNotices } from "./SecurityNotices";
 import { Status } from "./ui";
@@ -44,15 +46,8 @@ const LayoutContext = createContext<LayoutState>({ openSearch: () => {}, toggleN
 
 const DEFAULT_PLACEHOLDER = "Search websites, domains and jobs";
 
-export function Logo() {
-  return (
-    <svg width="28" height="28" viewBox="0 0 32 32" aria-hidden="true">
-      <path d="M8 19a5 5 0 0 1 1.2-9.8A6.5 6.5 0 0 1 21.6 9.6 4.8 4.8 0 0 1 24 19Z" fill="#fff" />
-      <path d="M5 21h22v6H5z" fill="#5b8def" />
-      <path d="M8 23h3v2H8zm5 0h3v2h-3zm5 0h3v2h-3z" fill="#0f1b33" />
-    </svg>
-  );
-}
+// The built-in logo is in Brand.tsx, with the brand of the reseller or the administrator.
+export { Logo } from "./Brand";
 
 function ContextSwitcher() {
   const state = useStore();
@@ -194,6 +189,7 @@ const ICONS: Record<NavEntry["icon"], ReactNode> = {
   jobs: <Activity size={18} />,
   alerts: <BellRing size={18} />,
   account: <CircleUser size={18} />,
+  brand: <Palette size={18} />,
   settings: <Settings2 size={18} />,
 };
 
@@ -259,6 +255,7 @@ export function Layout() {
   const navigate = useNavigate();
   const user = state.session.user;
   const initials = user.name.split(" ").map((p) => p[0]).join("");
+  const brand = useBrand();
 
   return (
     <LayoutContext.Provider
@@ -268,17 +265,18 @@ export function Layout() {
       <div className="app">
         <nav className={`sidebar${navOpen ? " open" : ""}`} aria-label="Main">
           <NavLink to={HOME[user.role]} className="brand">
-            <Logo />
-            <span className="visually-hidden">Cloudfactory home</span>
-            <span aria-hidden="true" style={{ color: "#fff" }}>
-              cloudfactory<span>.io</span>
-            </span>
+            <BrandMark brand={brand} />
+            <span className="visually-hidden">{brand.name} home</span>
           </NavLink>
           <ContextSwitcher />
           {/* Each role has its own menu. A setup that is complete needs no link. */}
           {NAVIGATION[user.role]
             .map((section) => ({ ...section, items: section.items.filter((item) => item.to !== "/setup" || (state.setup ? !state.setup.complete : false)) }))
             .map((section, i) => <NavGroup key={section.title ?? i} section={section} index={i} />)}
+          {/* White label: the customers of a reseller ask the reseller for help. */}
+          {user.role !== "administrator" && brand.supportEmail && (
+            <a className="sidebar-help" href={`mailto:${brand.supportEmail}`} title={brand.supportEmail}>Get help by email</a>
+          )}
           <div className="sidebar-user">
             <span className="avatar" aria-hidden="true">{initials}</span>
             <span style={{ flex: 1 }}>

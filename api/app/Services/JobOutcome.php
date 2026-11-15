@@ -167,6 +167,9 @@ class JobOutcome
             // The agent gives the new state of the certificate. The panel does not wait for the next report.
             AgentAction::SetPanelCertificate => $job->server->local && is_array($result['panelCertificate'] ?? null)
                 && PanelCertificate::record($result['panelCertificate']),
+            // The state of the certificate of each reseller panel domain (white label).
+            AgentAction::SetPanelBrands => $job->server->local && is_array($result['panelBrands'] ?? null)
+                && Branding::recordCertificates($result['panelBrands']),
             AgentAction::AddDomain => Domain::where('name', $p['domain'] ?? '')->update([
                 'dns_points_here' => (bool) ($result['dnsPointsHere'] ?? true),
                 'certificate_state' => ($result['dnsPointsHere'] ?? true) ? 'valid' : 'pending',

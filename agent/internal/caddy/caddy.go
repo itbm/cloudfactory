@@ -275,6 +275,11 @@ func (c *Client) ApplyPanel(ctx context.Context, domain, method string, apiPort,
 	if err := c.SetPanelCertificate(ctx, domain, method); err != nil {
 		return err
 	}
+	// The reseller panel domains stay in the route (SetPanelBrands).
+	brands, err := c.PanelBrands(ctx)
+	if err != nil {
+		return err
+	}
 	dial := func(port int) []any { return []any{map[string]any{"dial": c.Upstream + ":" + strconv.Itoa(port)}} }
 	api := map[string]any{
 		"handler":   "reverse_proxy",
@@ -288,7 +293,7 @@ func (c *Client) ApplyPanel(ctx context.Context, domain, method string, apiPort,
 	}
 	route := map[string]any{
 		"@id":   "cf-panel",
-		"match": []any{map[string]any{"host": []string{domain}}},
+		"match": []any{map[string]any{"host": PanelHosts(domain, brands)}},
 		"handle": []any{map[string]any{"handler": "subroute", "routes": []any{
 			// R-17: browsers use only HTTPS for the panel domain after the first visit.
 			map[string]any{"handle": []any{map[string]any{"handler": "headers", "response": map[string]any{"set": map[string]any{

@@ -44,7 +44,7 @@ shows what this repository has now.
 
 | Item | Notes |
 | ---- | ----- |
-| Areas without an API | The API of release 0.1 has no email, SSH shell, passkeys, branding or system settings. The web panel has no pages for these areas. |
+| Areas without an API | The API of release 0.1 has no email, SSH shell, passkeys or system settings. The web panel has no pages for these areas. |
 | File manager | The file manager reads files up to 2 MiB and writes files up to 5 MiB. It has no archive actions and no change of permissions. Use SFTP for large files. |
 | Logs | The panel shows the last lines that the container of a website wrote. A website that was made before this release writes its log file after its next start. The panel has no search in old log lines and no access log of the edge proxy. |
 | Deploys | A deploy starts by hand or with a webhook. The panel does not check the signature that a Git host puts on a webhook: the secret is the address. The panel has no deploy on a schedule, and does not go back automatically after the switch. The build runs in the runtime image of the website, which has Git and Composer but not Node.js. A website with a custom image cannot deploy from Git. |

@@ -136,6 +136,12 @@ class RunDemoJob implements ShouldQueue
                 ], Mesh::stateFor($job->server)['peers']),
             ]],
             AgentAction::RotateMeshKey => ['publicKey' => base64_encode(random_bytes(32))],
+            AgentAction::SetPanelBrands => ['panelBrands' => array_map(fn (string $d) => [
+                'domain' => $d,
+                'method' => PanelCertificate::publicName($d) ? 'letsencrypt' : 'internal',
+                'state' => 'valid',
+                'expiresAt' => now()->addDays(90)->toIso8601String(),
+            ], array_values(array_filter((array) ($p['domains'] ?? []), 'is_string')))],
             AgentAction::SetPanelCertificate => ['panelCertificate' => [
                 ...array_intersect_key(PanelCertificate::current(), array_flip(['domain', 'caCertificate'])),
                 'method' => $p['method'] ?? 'internal',

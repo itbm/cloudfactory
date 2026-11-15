@@ -7,6 +7,8 @@ import type {
   ApiToken,
   AuditEntry,
   BackupPolicy,
+  Brand,
+  BrandStatus,
   Customer,
   Database,
   DatabaseGrant,
@@ -22,6 +24,7 @@ import type {
   PanelCertificate,
   Plan,
   PrivateNetwork,
+  ResellerBranding,
   Rollout,
   RuntimeImage,
   RuntimeKind,
@@ -127,6 +130,7 @@ const shown = new Set<string>();
 interface ApiMe {
   id: number; name: string; email: string; role: User["role"]; customerId: string | null; totpEnabled: boolean; mustChangePassword?: boolean;
   totpSetupRequired?: boolean; securityNotices?: { action: string; target: string; actor: string; at: string | null }[];
+  brand?: Brand;
 }
 interface ApiUser { id: number; name: string; email: string; role: User["role"]; customerId: string | null; totpEnabled: boolean; mustChangePassword: boolean; createdAt: string | null }
 interface ApiJob { id: string; title: string; ref: string | null; action?: string | null; state: Job["state"]; steps: string[]; step: number; error: string | null; websiteId: string | null; serverId: string | null; databaseServerId?: string | null; dnsZoneId?: string | null; createdAt: string; finishedAt: string | null }
@@ -154,7 +158,7 @@ interface ApiRollout {
   id: string; imageId: string; title: string; fromTag: string; toTag: string; severity: Rollout["severity"]; state: Rollout["state"]; stages: Rollout["stages"];
   websites: number; healthy: number; rolledBack: number; running: number; rollbacks: Rollout["rollbacks"]; startedAt: string; finishedAt?: string | null;
 }
-interface ApiCustomer { id: string; name: string; email: string; role: Customer["role"]; planId: string; resellerId: string | null; suspended: boolean; createdAt: string }
+interface ApiCustomer { id: string; name: string; email: string; role: Customer["role"]; planId: string; resellerId: string | null; suspended: boolean; createdAt: string; branding?: ResellerBranding | [] | null; brandStatus?: BrandStatus | null }
 interface ApiToken_ { id: number; name: string; scopes: string[]; createdAt: string; expiresAt: string | null; lastUsedAt: string | null }
 interface ApiAudit { id: number; at: string; actor: string; ip: string | null; action: string; target: string }
 interface ApiPanelCertificate {
@@ -312,7 +316,12 @@ export async function dnsZone(id: string): Promise<DnsZone> {
   return toDnsZone(await request<ApiDnsZone>("GET", `/dns-zones/${id}`));
 }
 
-const toCustomer = (c: ApiCustomer): Customer => ({ id: c.id, name: c.name, email: c.email, planId: c.planId, role: c.role, resellerId: c.resellerId ?? undefined, createdAt: c.createdAt, suspended: c.suspended });
+const toCustomer = (c: ApiCustomer): Customer => ({
+  id: c.id, name: c.name, email: c.email, planId: c.planId, role: c.role, resellerId: c.resellerId ?? undefined, createdAt: c.createdAt, suspended: c.suspended,
+  // PHP gives an empty brand as an empty list.
+  branding: c.branding && !Array.isArray(c.branding) ? c.branding : undefined,
+  brandStatus: c.brandStatus ?? undefined,
+});
 
 export const toUser = (u: ApiUser): ManagedUser => ({
   id: String(u.id), name: u.name, email: u.email, role: u.role, customerId: u.customerId ?? undefined, totpEnabled: u.totpEnabled, mustChangePassword: u.mustChangePassword, createdAt: u.createdAt ?? "",
@@ -326,6 +335,11 @@ const toAudit = (a: ApiAudit): AuditEntry => ({ id: String(a.id), at: a.at, acto
 
 // Loading
 
+/** White label: the brand of the sign-in page, for the domain that the browser opened. */
+export async function signInBrand(): Promise<Brand> {
+  return request<Brand>("GET", "/brand");
+}
+
 /** Loads the full state for the signed-in user from the API. */
 export async function load(previous: State): Promise<State> {
   const me = await request<ApiMe>("GET", "/me");
@@ -333,12 +347,12 @@ export async function load(previous: State): Promise<State> {
   // Audit finding B5: with a temporary password, the API refuses each other request. The
   // panel shows only the form for a new password.
   if (me.mustChangePassword) {
-    return { ...previous, session: { signedIn: true, mustChangePassword: true, user, contextId: previous.session.contextId }, totpEnabled: me.totpEnabled };
+    return { ...previous, brand: me.brand ?? previous.brand, session: { signedIn: true, mustChangePassword: true, user, contextId: previous.session.contextId }, totpEnabled: me.totpEnabled };
   }
   // Second audit, finding F09: an administrator or a reseller must set up TOTP first. The API
   // refuses each other request until then.
   if (me.totpSetupRequired) {
-    return { ...previous, session: { signedIn: true, totpSetupRequired: true, user, contextId: previous.session.contextId }, totpEnabled: false };
+    return { ...previous, brand: me.brand ?? previous.brand, session: { signedIn: true, totpSetupRequired: true, user, contextId: previous.session.contextId }, totpEnabled: false };
   }
   const admin = me.role === "administrator";
   const optional = <T>(p: Promise<T>, fallback: T) => p.catch(() => fallback);
@@ -404,6 +418,7 @@ export async function load(previous: State): Promise<State> {
   return {
     ...previous,
     session: { signedIn: true, user, contextId },
+    brand: me.brand ?? previous.brand,
     contexts,
     websites: websites.map(toWebsite),
     jobs: mappedJobs,

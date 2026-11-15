@@ -45,6 +45,15 @@ type fakeEdge struct {
 	panel, root string
 	// methods are the methods that SetPanelCertificate got, in order.
 	methods []string
+	// brands are the reseller panel domains that SetPanelBrands got last.
+	brands []string
+}
+
+func (f *fakeEdge) SetPanelBrands(_ context.Context, _ string, brands []string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.brands = brands
+	return nil
 }
 
 func (f *fakeEdge) PanelCertificate(context.Context, string) (string, error) {

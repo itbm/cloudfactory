@@ -8,6 +8,7 @@ import { Card, ConfirmButton, Field, FormError, JobRow, Modal, PageHeader, Statu
 import { auditCsv } from "../lib/csv";
 import { daysUntil, longDate, relativeTime, shortDate } from "../lib/format";
 import { EmailDelivery, NotificationSettings } from "../features/Notifications";
+import { DefaultBrandSettings } from "./BrandPage";
 import { CopyField } from "./website/AccessTab";
 
 const SCOPES: TokenScope[] = ["websites:read", "websites:write", "databases:read", "databases:write", "backups:read", "backups:write", "servers:read", "servers:write", "images:read", "images:write", "customers:read", "customers:write", "users:read", "users:write", "audit:read", "notifications:read", "notifications:write", "tokens:read", "tokens:write"];
@@ -26,7 +27,7 @@ export function SettingsPage() {
     ...(sendsEmail ? [{ id: "email", label: "Email delivery" }] : []),
     { id: "tokens", label: "API tokens" },
     { id: "audit", label: "Audit log" },
-    ...(isAdmin ? [{ id: "panel", label: "Panel certificate" }] : []),
+    ...(isAdmin ? [{ id: "panel", label: "Panel certificate" }, { id: "brand", label: "Brand" }] : []),
   ];
   const tab = tabs.some((t) => t.id === asked) ? asked! : "security";
   const setTab = (id: string) => navigate(id === "security" ? "/settings" : `/settings/${id}`);
@@ -42,6 +43,7 @@ export function SettingsPage() {
         {tab === "tokens" && <Tokens />}
         {tab === "audit" && <Audit />}
         {tab === "panel" && <PanelCertificateSettings />}
+        {tab === "brand" && <DefaultBrandSettings />}
       </main>
     </>
   );

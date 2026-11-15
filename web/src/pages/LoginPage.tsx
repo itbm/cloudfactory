@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAction } from "../api/hooks";
 import { signIn } from "../api/store";
-import { Logo } from "../components/Layout";
+import { BrandMark, useBrand } from "../components/Brand";
 import { Field, FormError } from "../components/ui";
 
 /**
@@ -11,6 +11,7 @@ import { Field, FormError } from "../components/ui";
  */
 export function LoginPage() {
   const navigate = useNavigate();
+  const brand = useBrand();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
@@ -24,8 +25,8 @@ export function LoginPage() {
     <main className="login" id="main">
       <div className="card">
         <div className="brand">
-          <span style={{ background: "#0f1b33", borderRadius: 8, padding: 4, display: "inline-flex" }}><Logo /></span>
-          <span style={{ color: "var(--text)" }}>cloudfactory<span>.io</span></span>
+          <BrandMark brand={brand} tone="light" />
+          <span className="visually-hidden">{brand.name}</span>
         </div>
         <h1 style={{ fontSize: 22, marginBottom: 6 }}>Sign in</h1>
         <p className="muted" style={{ marginBottom: 18 }}>

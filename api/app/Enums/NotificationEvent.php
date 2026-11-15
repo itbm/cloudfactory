@@ -83,14 +83,14 @@ enum NotificationEvent: string
      */
     public function variables(): array
     {
-        $common = ['name' => 'Alex Smith', 'brand' => 'CloudFactory', 'panelUrl' => 'https://panel.example.com'];
+        $common = ['name' => 'Alex Smith', 'brand' => 'Cloudfactory', 'panelUrl' => 'https://panel.example.com'];
 
         return $common + match ($this) {
             self::JobFailed => ['job' => 'Create database shop_main', 'website' => 'shop.example.com', 'server' => 'web-1', 'error' => 'The database server did not answer.', 'time' => '15 Nov 2026 03:12 UTC'],
             self::BackupFailed => ['website' => 'shop.example.com', 'server' => 'web-1', 'error' => 'The object storage refused the key.', 'time' => '15 Nov 2026 03:00 UTC'],
             self::CertificateExpiring => ['domain' => 'shop.example.com', 'website' => 'shop.example.com', 'expiresAt' => '29 Nov 2026', 'days' => '14', 'state' => 'valid'],
-            self::AccountSuspended => ['account' => 'Acme Ltd', 'provider' => 'CloudFactory', 'supportEmail' => 'support@example.com'],
-            self::AccountRestored => ['account' => 'Acme Ltd', 'provider' => 'CloudFactory'],
+            self::AccountSuspended => ['account' => 'Acme Ltd', 'provider' => 'Cloudfactory', 'supportEmail' => 'support@example.com'],
+            self::AccountRestored => ['account' => 'Acme Ltd', 'provider' => 'Cloudfactory'],
             self::NewDeviceSignIn => ['device' => 'Firefox on Linux', 'ip' => '203.0.113.7', 'time' => '15 Nov 2026 09:41 UTC'],
             self::UsageAlert => ['account' => 'Acme Ltd', 'resource' => 'Disk', 'website' => 'shop.example.com', 'used' => '9.1 GB', 'limit' => '10 GB', 'percent' => '91', 'level' => 'warning'],
             self::ServerOffline => ['server' => 'web-2', 'lastSeen' => '15 Nov 2026 02:55 UTC'],

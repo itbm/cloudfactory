@@ -1335,6 +1335,35 @@ not keep them.
 - A snapshot from the time when all servers used one repository has a mark. The panel
   restores it from the old repository with the old password.
 
+## White label
+
+The administrator sets the default brand in **Settings > Brand**: a name, a colour, a logo and
+a support email. Each reseller sets its own brand on the **Brand** page. The reseller and its
+customers see only the brand of the reseller. A field that the reseller did not set comes from
+the reseller (its name and its email) or from the built-in values. It never comes from the
+default brand, so a customer of a reseller does not see the name of the hosting company.
+
+- **Checks.** White text on the colour must have a contrast of 4.5:1 or more (WCAG 2.2 AA). A
+  logo is a PNG, JPEG or WebP image of 256 KB or less and 2048 by 2048 pixels or less. The
+  panel reads the real type of the image. SVG is not allowed, because an SVG file can hold a
+  script.
+- **Panel domain.** A reseller can set its own panel domain. It must prove control of the
+  domain, as for a website domain. The panel sends the full list of reseller panel domains to
+  the agent on the panel server (`SetPanelBrands`). The edge proxy adds the domains to the panel
+  route and gets a certificate for each one: from Let's Encrypt for a public name, else from the
+  panel CA. The sign-in page reads `GET /api/v1/brand`, which gives the brand of the domain of
+  the request.
+- **Name servers.** Where the panel has DNS hosting, a reseller can give one host name to each
+  name server of the panel, for example `ns1.agency.example`. The zones of the reseller and of
+  its customers then get these names in their NS records, and so in the SOA record. A
+  delegation to these names counts as a delegation to the panel. When the administrator adds or
+  removes a DNS server, the number of names does not agree, and the zones use the names of the
+  panel until the reseller gives a new list.
+- **Mail host.** A reseller can set a mail host name. The email hosting shows it to the customers
+  of the reseller.
+
+Refer to the [screenshots](screenshots/white-label).
+
 ## The panel on the first server
 
 The installation script installs the panel on the first server. `cf-agent panel install` makes

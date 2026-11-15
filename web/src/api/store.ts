@@ -11,6 +11,7 @@ import * as live from "./live";
 import type {
   ApiToken,
   BackupPolicy,
+  BrandFields,
   Confirmation,
   CronJob,
   Customer,
@@ -29,6 +30,7 @@ import type {
   LogLine,
   Mesh,
   Plan,
+  ResellerBranding,
   ServerRole,
   State,
   PanelCertificateMethod,
@@ -1155,6 +1157,30 @@ export function deleteUser(userId: string, confirm?: Confirmation) {
 
 export function setCustomer(customerId: string, change: Partial<Pick<Customer, "planId" | "suspended">>) {
   return call(() => live.request("PATCH", `/customers/${customerId}`, change)).then(() => refresh());
+}
+
+// White label
+
+/** The default brand that the administrator sets. Only an administrator can read it. */
+export function defaultBrand(): Promise<BrandFields> {
+  return call(() => live.request<BrandFields & Record<string, unknown>>("GET", "/brand/default"));
+}
+
+/** Changes the default brand. A null value removes the field. */
+export function saveDefaultBrand(change: { [K in keyof BrandFields]?: BrandFields[K] | null }) {
+  return call(() => live.request<BrandFields>("PUT", "/brand/default", change)).then(async (r) => {
+    await refresh();
+    return r;
+  });
+}
+
+/**
+ * Changes the brand of a reseller. A null value removes the field. A new panel domain, name
+ * server host name or mail host name needs a proof of control: the error message gives the
+ * TXT record.
+ */
+export function saveResellerBrand(customerId: string, change: { [K in keyof ResellerBranding]?: ResellerBranding[K] | null }) {
+  return call(() => live.request("PATCH", `/customers/${customerId}`, { branding: change })).then(() => refresh());
 }
 
 export function savePlan(plan: Plan) {

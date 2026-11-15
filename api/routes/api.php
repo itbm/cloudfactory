@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\AccountController;
 use App\Http\Controllers\Api\AuditController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BackupController;
+use App\Http\Controllers\Api\BrandController;
 use App\Http\Controllers\Api\CronJobController;
 use App\Http\Controllers\Api\CustomerController;
 use App\Http\Controllers\Api\DatabaseController;
@@ -43,6 +44,8 @@ use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->group(function () {
     Route::post('auth/login', [AuthController::class, 'login'])->middleware('throttle:10,1');
+    // White label: the brand of the sign-in page, for the domain of the request.
+    Route::get('brand', [BrandController::class, 'show'])->middleware('throttle:60,1');
     // The webhook of a website: a Git host calls it after a push. The token in the address is
     // the only credential.
     Route::post('hooks/deploy/{token}', [DeployController::class, 'hook'])->middleware('throttle:30,1');
@@ -214,6 +217,9 @@ Route::prefix('v1')->group(function () {
             Route::patch('customers/{id}', [CustomerController::class, 'update']);
             Route::get('plans', [PlanController::class, 'index']);
             Route::post('plans', [PlanController::class, 'store'])->middleware('admin');
+            // White label: the default brand of the panel.
+            Route::get('brand/default', [BrandController::class, 'showDefault'])->middleware('admin');
+            Route::put('brand/default', [BrandController::class, 'updateDefault'])->middleware('admin');
             Route::patch('plans/{id}', [PlanController::class, 'update'])->middleware('admin');
         });
 

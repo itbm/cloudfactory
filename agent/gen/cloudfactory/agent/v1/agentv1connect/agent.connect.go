@@ -95,6 +95,9 @@ const (
 	// AgentServiceSetPanelCertificateProcedure is the fully-qualified name of the AgentService's
 	// SetPanelCertificate RPC.
 	AgentServiceSetPanelCertificateProcedure = "/cloudfactory.agent.v1.AgentService/SetPanelCertificate"
+	// AgentServiceSetPanelBrandsProcedure is the fully-qualified name of the AgentService's
+	// SetPanelBrands RPC.
+	AgentServiceSetPanelBrandsProcedure = "/cloudfactory.agent.v1.AgentService/SetPanelBrands"
 	// AgentServiceSetDatabaseServerProcedure is the fully-qualified name of the AgentService's
 	// SetDatabaseServer RPC.
 	AgentServiceSetDatabaseServerProcedure = "/cloudfactory.agent.v1.AgentService/SetDatabaseServer"
@@ -169,6 +172,8 @@ type AgentServiceClient interface {
 	SetSftp(context.Context, *connect.Request[v1.SetSftpRequest]) (*connect.Response[v1.JobAccepted], error)
 	ConfigureHost(context.Context, *connect.Request[v1.ConfigureHostRequest]) (*connect.Response[v1.JobAccepted], error)
 	SetPanelCertificate(context.Context, *connect.Request[v1.SetPanelCertificateRequest]) (*connect.Response[v1.JobAccepted], error)
+	// Sets the panel domains of the resellers (white label). Only the panel server has them.
+	SetPanelBrands(context.Context, *connect.Request[v1.SetPanelBrandsRequest]) (*connect.Response[v1.JobAccepted], error)
 	SetDatabaseServer(context.Context, *connect.Request[v1.DatabaseServerRequest]) (*connect.Response[v1.JobAccepted], error)
 	DeleteDatabaseServer(context.Context, *connect.Request[v1.DeleteDatabaseServerRequest]) (*connect.Response[v1.JobAccepted], error)
 	SetDnsZones(context.Context, *connect.Request[v1.SetDnsZonesRequest]) (*connect.Response[v1.JobAccepted], error)
@@ -326,6 +331,12 @@ func NewAgentServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(agentServiceMethods.ByName("SetPanelCertificate")),
 			connect.WithClientOptions(opts...),
 		),
+		setPanelBrands: connect.NewClient[v1.SetPanelBrandsRequest, v1.JobAccepted](
+			httpClient,
+			baseURL+AgentServiceSetPanelBrandsProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("SetPanelBrands")),
+			connect.WithClientOptions(opts...),
+		),
 		setDatabaseServer: connect.NewClient[v1.DatabaseServerRequest, v1.JobAccepted](
 			httpClient,
 			baseURL+AgentServiceSetDatabaseServerProcedure,
@@ -471,6 +482,7 @@ type agentServiceClient struct {
 	setSftp               *connect.Client[v1.SetSftpRequest, v1.JobAccepted]
 	configureHost         *connect.Client[v1.ConfigureHostRequest, v1.JobAccepted]
 	setPanelCertificate   *connect.Client[v1.SetPanelCertificateRequest, v1.JobAccepted]
+	setPanelBrands        *connect.Client[v1.SetPanelBrandsRequest, v1.JobAccepted]
 	setDatabaseServer     *connect.Client[v1.DatabaseServerRequest, v1.JobAccepted]
 	deleteDatabaseServer  *connect.Client[v1.DeleteDatabaseServerRequest, v1.JobAccepted]
 	setDnsZones           *connect.Client[v1.SetDnsZonesRequest, v1.JobAccepted]
@@ -591,6 +603,11 @@ func (c *agentServiceClient) ConfigureHost(ctx context.Context, req *connect.Req
 // SetPanelCertificate calls cloudfactory.agent.v1.AgentService.SetPanelCertificate.
 func (c *agentServiceClient) SetPanelCertificate(ctx context.Context, req *connect.Request[v1.SetPanelCertificateRequest]) (*connect.Response[v1.JobAccepted], error) {
 	return c.setPanelCertificate.CallUnary(ctx, req)
+}
+
+// SetPanelBrands calls cloudfactory.agent.v1.AgentService.SetPanelBrands.
+func (c *agentServiceClient) SetPanelBrands(ctx context.Context, req *connect.Request[v1.SetPanelBrandsRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return c.setPanelBrands.CallUnary(ctx, req)
 }
 
 // SetDatabaseServer calls cloudfactory.agent.v1.AgentService.SetDatabaseServer.
@@ -715,6 +732,8 @@ type AgentServiceHandler interface {
 	SetSftp(context.Context, *connect.Request[v1.SetSftpRequest]) (*connect.Response[v1.JobAccepted], error)
 	ConfigureHost(context.Context, *connect.Request[v1.ConfigureHostRequest]) (*connect.Response[v1.JobAccepted], error)
 	SetPanelCertificate(context.Context, *connect.Request[v1.SetPanelCertificateRequest]) (*connect.Response[v1.JobAccepted], error)
+	// Sets the panel domains of the resellers (white label). Only the panel server has them.
+	SetPanelBrands(context.Context, *connect.Request[v1.SetPanelBrandsRequest]) (*connect.Response[v1.JobAccepted], error)
 	SetDatabaseServer(context.Context, *connect.Request[v1.DatabaseServerRequest]) (*connect.Response[v1.JobAccepted], error)
 	DeleteDatabaseServer(context.Context, *connect.Request[v1.DeleteDatabaseServerRequest]) (*connect.Response[v1.JobAccepted], error)
 	SetDnsZones(context.Context, *connect.Request[v1.SetDnsZonesRequest]) (*connect.Response[v1.JobAccepted], error)
@@ -866,6 +885,12 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 		AgentServiceSetPanelCertificateProcedure,
 		svc.SetPanelCertificate,
 		connect.WithSchema(agentServiceMethods.ByName("SetPanelCertificate")),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentServiceSetPanelBrandsHandler := connect.NewUnaryHandler(
+		AgentServiceSetPanelBrandsProcedure,
+		svc.SetPanelBrands,
+		connect.WithSchema(agentServiceMethods.ByName("SetPanelBrands")),
 		connect.WithHandlerOptions(opts...),
 	)
 	agentServiceSetDatabaseServerHandler := connect.NewUnaryHandler(
@@ -1030,6 +1055,8 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 			agentServiceConfigureHostHandler.ServeHTTP(w, r)
 		case AgentServiceSetPanelCertificateProcedure:
 			agentServiceSetPanelCertificateHandler.ServeHTTP(w, r)
+		case AgentServiceSetPanelBrandsProcedure:
+			agentServiceSetPanelBrandsHandler.ServeHTTP(w, r)
 		case AgentServiceSetDatabaseServerProcedure:
 			agentServiceSetDatabaseServerHandler.ServeHTTP(w, r)
 		case AgentServiceDeleteDatabaseServerProcedure:
@@ -1157,6 +1184,10 @@ func (UnimplementedAgentServiceHandler) ConfigureHost(context.Context, *connect.
 
 func (UnimplementedAgentServiceHandler) SetPanelCertificate(context.Context, *connect.Request[v1.SetPanelCertificateRequest]) (*connect.Response[v1.JobAccepted], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.SetPanelCertificate is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) SetPanelBrands(context.Context, *connect.Request[v1.SetPanelBrandsRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.SetPanelBrands is not implemented"))
 }
 
 func (UnimplementedAgentServiceHandler) SetDatabaseServer(context.Context, *connect.Request[v1.DatabaseServerRequest]) (*connect.Response[v1.JobAccepted], error) {
