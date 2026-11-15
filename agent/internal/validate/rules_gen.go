@@ -93,6 +93,77 @@ var ruleDigest = rule{
 // The digest of an image. An empty digest is permitted.
 func Digest(s string) error { return ruleDigest.check(s) }
 
+var ruleDNSCaa = rule{
+	what:    "CAA value",
+	pattern: regexp.MustCompile(`^(0|128) (issue|issuewild|iodef) "[ !#-\[\]-~]{0,255}"$`),
+	echo:    true,
+}
+
+// DNSCaa checks a value with the rule "dnsCaa" of schema/input-rules.json.
+//
+// The value of a CAA record: the flags (0 or 128), the tag and a text in quotation marks. The text has no quotation mark and no backslash.
+func DNSCaa(s string) error { return ruleDNSCaa.check(s) }
+
+var ruleDNSHost = rule{
+	what:      "DNS host name",
+	pattern:   regexp.MustCompile(`^((_[a-z0-9]([a-z0-9-]{0,60}[a-z0-9])?|[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)\.)+[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`),
+	not:       []*regexp.Regexp{regexp.MustCompile(`\.[0-9]+$`)},
+	maxLength: 253,
+	echo:      true,
+}
+
+// DNSHost checks a value with the rule "dnsHost" of schema/input-rules.json.
+//
+// The full host name in the value of a CNAME, NS, MX or SRV record, in lower case, with no dot at the end. A label can start with an underscore. The last label is not a number.
+func DNSHost(s string) error { return ruleDNSHost.check(s) }
+
+var ruleDNSRecordName = rule{
+	what:      "DNS record name",
+	pattern:   regexp.MustCompile(`^(@|\*|(\*\.)?(_[a-z0-9]([a-z0-9-]{0,60}[a-z0-9])?|[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)(\.(_[a-z0-9]([a-z0-9-]{0,60}[a-z0-9])?|[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?))*)$`),
+	maxLength: 200,
+	echo:      true,
+}
+
+// DNSRecordName checks a value with the rule "dnsRecordName" of schema/input-rules.json.
+//
+// The name of a DNS record in its zone, without the name of the zone: "@" for the zone itself, "*" for a wildcard, or labels such as "www", "_dmarc" and "*.dev". A label can start with an underscore.
+func DNSRecordName(s string) error { return ruleDNSRecordName.check(s) }
+
+var ruleDNSSrv = rule{
+	what:      "SRV value",
+	pattern:   regexp.MustCompile(`^(0|[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]) (0|[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]) ((_[a-z0-9]([a-z0-9-]{0,60}[a-z0-9])?|[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)\.)+[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`),
+	not:       []*regexp.Regexp{regexp.MustCompile(`\.[0-9]+$`)},
+	maxLength: 270,
+	echo:      true,
+}
+
+// DNSSrv checks a value with the rule "dnsSrv" of schema/input-rules.json.
+//
+// The value of an SRV record after the priority: the weight, the port and the host name of the target.
+func DNSSrv(s string) error { return ruleDNSSrv.check(s) }
+
+var ruleDNSTxt = rule{
+	what:      "TXT value",
+	pattern:   regexp.MustCompile(`^[ -~]+$`),
+	maxLength: 2048,
+}
+
+// DNSTxt checks a value with the rule "dnsTxt" of schema/input-rules.json.
+//
+// The text of a TXT record: printable ASCII characters. The agent adds the quotation marks and divides a long text into parts of 255 characters.
+func DNSTxt(s string) error { return ruleDNSTxt.check(s) }
+
+var ruleDNSSECKey = rule{
+	what:      "DNSSEC key",
+	pattern:   regexp.MustCompile(`^-----BEGIN PRIVATE KEY-----\n([A-Za-z0-9+/]{1,76}={0,2}\n){1,8}-----END PRIVATE KEY-----\n$`),
+	maxLength: 600,
+}
+
+// DNSSECKey checks a value with the rule "dnssecKey" of schema/input-rules.json.
+//
+// The private DNSSEC key of a zone: an ECDSA P-256 key in the PKCS #8 PEM format. The panel makes it.
+func DNSSECKey(s string) error { return ruleDNSSECKey.check(s) }
+
 var ruleDocumentRoot = rule{
 	what:      "document root",
 	pattern:   regexp.MustCompile(`^(\.|[A-Za-z0-9_-][A-Za-z0-9._-]{0,99}(/[A-Za-z0-9_-][A-Za-z0-9._-]{0,99}){0,7})$`),
@@ -228,6 +299,28 @@ var ruleIniValue = rule{
 // A php.ini value. It is on one line and has no double quotes.
 func IniValue(s string) error { return ruleIniValue.check(s) }
 
+var ruleIPv4 = rule{
+	what:    "IPv4 address",
+	pattern: regexp.MustCompile(`^(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3}$`),
+	echo:    true,
+}
+
+// IPv4 checks a value with the rule "ipv4" of schema/input-rules.json.
+//
+// An IPv4 address in the usual form, for the value of an A record.
+func IPv4(s string) error { return ruleIPv4.check(s) }
+
+var ruleIPv6 = rule{
+	what:    "IPv6 address",
+	pattern: regexp.MustCompile(`^(([0-9a-f]{1,4}:){7}[0-9a-f]{1,4}|([0-9a-f]{1,4}:){1,7}:|([0-9a-f]{1,4}:){1,6}:[0-9a-f]{1,4}|([0-9a-f]{1,4}:){1,5}(:[0-9a-f]{1,4}){1,2}|([0-9a-f]{1,4}:){1,4}(:[0-9a-f]{1,4}){1,3}|([0-9a-f]{1,4}:){1,3}(:[0-9a-f]{1,4}){1,4}|([0-9a-f]{1,4}:){1,2}(:[0-9a-f]{1,4}){1,5}|[0-9a-f]{1,4}:(:[0-9a-f]{1,4}){1,6}|:(:[0-9a-f]{1,4}){1,7}|::)$`),
+	echo:    true,
+}
+
+// IPv6 checks a value with the rule "ipv6" of schema/input-rules.json.
+//
+// An IPv6 address in lower case, for the value of an AAAA record. It has only hexadecimal groups and colons: no IPv4 part and no zone.
+func IPv6(s string) error { return ruleIPv6.check(s) }
+
 var ruleExtension = rule{
 	what:    "PHP extension",
 	pattern: regexp.MustCompile(`^[a-z0-9_]{1,40}$`),
@@ -329,6 +422,12 @@ var rules = map[string]*rule{
 	"databaseNameSuffix": &ruleDatabaseNameSuffix,
 	"databasePassword":   &ruleDatabasePassword,
 	"digest":             &ruleDigest,
+	"dnsCaa":             &ruleDNSCaa,
+	"dnsHost":            &ruleDNSHost,
+	"dnsRecordName":      &ruleDNSRecordName,
+	"dnsSrv":             &ruleDNSSrv,
+	"dnsTxt":             &ruleDNSTxt,
+	"dnssecKey":          &ruleDNSSECKey,
 	"documentRoot":       &ruleDocumentRoot,
 	"domain":             &ruleDomain,
 	"filePath":           &ruleFilePath,
@@ -340,6 +439,8 @@ var rules = map[string]*rule{
 	"imageTag":           &ruleImageTag,
 	"iniKey":             &ruleIniKey,
 	"iniValue":           &ruleIniValue,
+	"ipv4":               &ruleIPv4,
+	"ipv6":               &ruleIPv6,
 	"phpExtension":       &ruleExtension,
 	"restorePath":        &ruleRestorePath,
 	"secretName":         &ruleSecretName,
@@ -349,6 +450,9 @@ var rules = map[string]*rule{
 	"unixUser":           &ruleUnixUser,
 	"version":            &ruleVersion,
 }
+
+// The types of DNS record that a user can make.
+var dnsRecordTypes = []string{"A", "AAAA", "CNAME", "MX", "TXT", "SRV", "CAA", "NS"}
 
 // Names that the database servers use (CF-01).
 var reservedDatabaseNames = []string{"mysql", "sys", "information_schema", "performance_schema", "postgres", "template0", "template1", "root", "mariadb.sys", "healthcheck"}
@@ -367,3 +471,15 @@ const MaxCronJobs = 20
 
 // MaxDeploySecrets: The largest number of secrets of a deploy.
 const MaxDeploySecrets = 50
+
+// MaxDnsRecordsPerZone: The largest number of records in a DNS zone.
+const MaxDnsRecordsPerZone = 1000
+
+// MinDnsShortTtl: The smallest TTL of a DNS record, in seconds.
+const MinDnsShortTtl = 60
+
+// MaxDnsTtl: The largest TTL of a DNS record, in seconds.
+const MaxDnsTtl = 604800
+
+// MaxDnsZonesPerJob: The largest number of DNS zones in one job of the agent.
+const MaxDnsZonesPerJob = 100

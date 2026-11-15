@@ -30,6 +30,7 @@ export function AccountPage() {
   const rows = plan ? [
     { label: "Websites", text: `${usage.websites} of ${plan.websites}`, value: ratio(usage.websites, plan.websites) },
     { label: "Database servers", text: `${databaseServers} of ${plan.databaseServers}`, value: ratio(databaseServers, plan.databaseServers) },
+    { label: "DNS zones", text: `${usage.dnsZones} of ${plan.dnsZones}`, value: ratio(usage.dnsZones, plan.dnsZones) },
   ] : [];
   return (
     <>

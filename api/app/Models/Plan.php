@@ -15,10 +15,10 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * - "database_limits" are the limits of each database server with the plan: "vcpus",
  *   "memoryBytes" and "diskBytes".
  * - "databases" is the number of databases of each database server with the plan.
- * - "websites" and "database_servers" are the numbers of websites and of database servers of a
- *   customer with the plan.
+ * - "websites", "database_servers" and "dns_zones" are the numbers of websites, of database
+ *   servers and of DNS zones of a customer with the plan.
  */
-#[Fillable(['name', 'limits', 'websites', 'mailboxes', 'databases', 'php_extensions', 'database_servers', 'database_limits'])]
+#[Fillable(['name', 'limits', 'websites', 'mailboxes', 'databases', 'php_extensions', 'database_servers', 'database_limits', 'dns_zones'])]
 class Plan extends Model
 {
     use HasFactory, HasUlids;
@@ -26,9 +26,12 @@ class Plan extends Model
     /** The number of database servers of a customer, when a request for a new plan gives none. */
     public const DEFAULT_DATABASE_SERVERS = 3;
 
+    /** The number of DNS zones of a customer, when a request for a new plan gives none. */
+    public const DEFAULT_DNS_ZONES = 5;
+
     protected function casts(): array
     {
-        return ['limits' => 'array', 'php_extensions' => 'array', 'database_limits' => 'array', 'database_servers' => 'integer'];
+        return ['limits' => 'array', 'php_extensions' => 'array', 'database_limits' => 'array', 'database_servers' => 'integer', 'dns_zones' => 'integer'];
     }
 
     /** Each plan has limits for its database servers, also a plan from a request with none. */
@@ -36,6 +39,7 @@ class Plan extends Model
     {
         static::saving(function (Plan $plan) {
             $plan->database_servers ??= self::DEFAULT_DATABASE_SERVERS;
+            $plan->dns_zones ??= self::DEFAULT_DNS_ZONES;
             $plan->database_limits ??= self::defaultDatabaseLimits($plan->limits ?? []);
         });
     }

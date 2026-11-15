@@ -13,9 +13,11 @@ use App\Models\JoinToken;
 use App\Models\Server;
 use App\Services\AgentClient;
 use App\Services\Audit;
+use App\Services\Dns\Zones;
 use App\Services\JobDispatcher;
 use App\Services\Mesh;
 use App\Services\PanelCertificate;
+use App\Validation\Input;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -26,7 +28,7 @@ use Illuminate\Validation\ValidationException;
 /** FR-1112 to FR-1118 and FR-1201 to FR-1203: servers and host updates. */
 class ServerController extends Controller
 {
-    public function __construct(private JobDispatcher $jobs) {}
+    public function __construct(private JobDispatcher $jobs, private Zones $zones) {}
 
     public function index(): JsonResponse
     {
@@ -51,7 +53,10 @@ class ServerController extends Controller
             'maintenanceWindow' => ['sometimes', 'regex:/^([01]\d|2[0-3]):[0-5]\d-([01]\d|2[0-3]):[0-5]\d$/'],
             // FR-310: systrap by default. KVM only on bare metal.
             'gvisorPlatform' => ['sometimes', Rule::in(['systrap', 'kvm'])],
-        ]);
+            // The host name of the server as a name server, for example "ns1.example.net". A
+            // server with the role "dns" answers DNS queries only when it has this name.
+            'dnsName' => ['sometimes', 'nullable', 'string', Input::rule('domain'), Rule::unique('servers', 'dns_name')->ignore($server->id)],
+        ], ['dnsName.unique' => 'A different server has this name server host name.']);
         if (($data['gvisorPlatform'] ?? null) === 'kvm' && ! $server->bare_metal) {
             throw ValidationException::withMessages(['gvisorPlatform' => 'The KVM platform needs a bare-metal server.']);
         }
@@ -59,7 +64,17 @@ class ServerController extends Controller
         // platform when the job succeeds.
         $platform = $data['gvisorPlatform'] ?? null;
         unset($data['gvisorPlatform']);
+        $answered = Zones::servers()->contains('id', $server->id);
+        $nameServers = Zones::nameServers();
         $server->update(collect($data)->mapWithKeys(fn ($v, $k) => [Str::snake($k) => $v])->all());
+        // A change of the role "dns" or of the name server host name changes the NS records
+        // of all zones. A server that does not answer DNS queries now loses its zones.
+        if (Zones::nameServers() !== $nameServers) {
+            if ($answered && ! Zones::servers()->contains('id', $server->id)) {
+                $this->zones->retire($server);
+            }
+            $this->zones->pushAll();
+        }
         $job = null;
         if ($platform !== null && $platform !== $server->gvisor_platform) {
             $job = $this->jobs->dispatch($server, AgentAction::ConfigureHost, ['gvisorPlatform' => $platform], "Change gVisor platform of {$server->name} to {$platform}");
@@ -182,6 +197,7 @@ class ServerController extends Controller
         if ($server->database_servers_count > 0) {
             throw ValidationException::withMessages(['server' => "This server has {$server->database_servers_count} ".($server->database_servers_count === 1 ? 'database server' : 'database servers').'. Remove the database servers first.']);
         }
+        $answered = Zones::servers()->contains('id', $server->id);
         // The tunnels of the server go with it. The other servers then close their side.
         $peers = Mesh::peersOf($server);
         DB::transaction(function () use ($server) {
@@ -189,6 +205,10 @@ class ServerController extends Controller
             AgentJob::where('server_id', $server->id)->delete();
             $server->delete();
         });
+        // The zones lose the NS record of a server that answered DNS queries.
+        if ($answered) {
+            $this->zones->pushAll();
+        }
         app(Mesh::class)->sync(...$peers);
         Audit::record($request, 'Removed server', $server->name);
 
@@ -246,6 +266,11 @@ class ServerController extends Controller
             'databaseInstances' => (bool) $s->database_instances,
             // The number of database servers of customers on this server.
             'databaseServers' => $s->database_servers_count ?? null,
+            // DNS hosting: the host name of the server as a name server, true when the agent
+            // can operate DNS, and the public addresses that the agent reported.
+            'dnsName' => $s->dns_name,
+            'dns' => (bool) $s->dns,
+            'addresses' => $s->addresses ?? [],
             'bareMetal' => $s->bare_metal,
             'updatePolicy' => $s->update_policy,
             'maintenanceWindow' => $s->maintenance_window,

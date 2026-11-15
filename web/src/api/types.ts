@@ -165,6 +165,8 @@ export interface Job {
   serverId?: string;
   /** The database server that the job makes, changes or removes. */
   databaseServerId?: string;
+  /** The DNS zone that the job sends to a DNS server. */
+  dnsZoneId?: string;
 }
 
 export interface ActivityItem {
@@ -313,6 +315,61 @@ export interface Server {
   services: ServerService[];
   /** The port of the SFTP container of the websites (spec section 10). 22 for an agent of release 0.1. */
   sftpPort: number;
+  /** The host name of the server as a name server, for example ns1.example.com. */
+  dnsName?: string;
+  /** True when the agent of the server can operate the DNS server. */
+  dns: boolean;
+  /** The public IP addresses that the agent of the server reported. */
+  addresses: string[];
+}
+
+export type DnsRecordType = "A" | "AAAA" | "CNAME" | "MX" | "TXT" | "SRV" | "CAA" | "NS";
+
+export interface DnsRecord {
+  id: string;
+  /** The name in the zone: "@" for the zone itself, "www", "*.shop". */
+  name: string;
+  type: DnsRecordType;
+  value: string;
+  /** In seconds. */
+  ttl: number;
+  /** Only an MX or an SRV record has a priority. */
+  priority?: number;
+  /** A record that the panel made: a name server of the zone, or the address of a website. */
+  managed?: "ns" | "website";
+}
+
+/** updating: a DNS server does not have the last change yet. failed: a DNS server could not load the zone. */
+export type DnsZoneStatus = "active" | "updating" | "failed" | "removing";
+
+/**
+ * What the public DNS says about the zone. here: the registrar sends the queries to the name
+ * servers of the panel. elsewhere: to other name servers. none: the domain has no name servers.
+ */
+export type DnsDelegation = "here" | "elsewhere" | "none" | "unknown";
+
+export interface DnsZone {
+  id: string;
+  name: string;
+  customerId: string;
+  status: DnsZoneStatus;
+  serial: number;
+  recordCount: number;
+  nameServers: string[];
+  delegation: { state: DnsDelegation; nameServers: string[]; checkedAt?: string };
+  dnssec: {
+    enabled: boolean;
+    /** The DS record that the customer gives to the registrar of the domain. */
+    ds?: { keyTag: number; algorithm: number; digestType: number; digest: string; record: string };
+    dnskey?: string;
+  };
+  /** The state of the zone on each name server. */
+  servers: { nameServer: string; state: "ok" | "pending" | "failed" | "removed" }[];
+  /** The number of websites of the customer with a domain in the zone. */
+  websites: number;
+  createdAt: string;
+  /** Undefined until the panel has read the records of the zone. */
+  records?: DnsRecord[];
 }
 
 export type DatabaseEngine = "mariadb" | "postgresql" | "valkey";
@@ -473,6 +530,8 @@ export interface Plan {
   databaseServers: number;
   /** The limits of each database server with the plan. */
   databaseLimits: DatabaseLimits;
+  /** The number of DNS zones of a customer with the plan. */
+  dnsZones: number;
 }
 
 export interface Customer {
@@ -550,7 +609,7 @@ export interface Account {
   /** The reseller that gives the service. Undefined: the operator of the panel gives it. */
   provider?: { name: string; email: string };
   plan?: Plan;
-  usage: { websites: number; databases: number; diskBytes: number; customers?: number };
+  usage: { websites: number; databases: number; diskBytes: number; customers?: number; dnsZones: number };
   /** False when the panel has no object storage for backups. A backup then fails. */
   backupsAvailable: boolean;
   users: ManagedUser[];
@@ -641,6 +700,10 @@ export interface State {
   images: RuntimeImage[];
   rollout?: Rollout;
   databaseServers: DatabaseServer[];
+  /** The DNS zones of the customers that the user can see. */
+  dnsZones: DnsZone[];
+  /** The host names of the DNS servers of the panel. Empty: the panel has no DNS server. */
+  nameServers: string[];
   /** The mesh. Only an administrator has it. */
   mesh?: Mesh;
   databases: Database[];

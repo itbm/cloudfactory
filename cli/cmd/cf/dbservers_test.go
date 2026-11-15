@@ -43,8 +43,8 @@ func databaseServerPanel(t *testing.T, admin bool) (*httptest.Server, *[]string)
 			}
 			w.Write([]byte(`{"data":[{"id":"S1","name":"web-1"}]}`))
 		case r.URL.Path == "/api/v1/plans":
-			w.Write([]byte(`{"data":[{"id":"P1","name":"Standard","websites":5,"mailboxes":10,"databaseServers":3,"databases":5,"databaseLimits":{"vcpus":1,"memoryBytes":536870912,"diskBytes":5368709120}},` +
-				`{"id":"P2","name":"Business","websites":20,"mailboxes":50,"databaseServers":6,"databases":10,"databaseLimits":{"vcpus":2,"memoryBytes":1073741824,"diskBytes":10737418240}}]}`))
+			w.Write([]byte(`{"data":[{"id":"P1","name":"Standard","websites":5,"mailboxes":10,"databaseServers":3,"databases":5,"dnsZones":2,"databaseLimits":{"vcpus":1,"memoryBytes":536870912,"diskBytes":5368709120}},` +
+				`{"id":"P2","name":"Business","websites":20,"mailboxes":50,"databaseServers":6,"databases":10,"dnsZones":10,"databaseLimits":{"vcpus":2,"memoryBytes":1073741824,"diskBytes":10737418240}}]}`))
 		case r.URL.Path == "/api/v1/database-servers" && r.Method == http.MethodPost:
 			w.WriteHeader(http.StatusAccepted)
 			w.Write([]byte(`{"databaseServer":{"id":"DS9","name":"valkey-sessions","engine":"valkey","host":"valkey.internal","port":6380},"job":null}`))
@@ -260,7 +260,7 @@ func TestPlansListShowsTheDatabaseServers(t *testing.T) {
 		t.Fatal(err)
 	}
 	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
-	if len(lines) != 3 || row(lines[0]) != "NAME WEBSITES MAILBOXES DATABASESERVERS DATABASES ID" || row(lines[1]) != "Standard 5 10 3 5 P1" || row(lines[2]) != "Business 20 50 6 10 P2" {
+	if len(lines) != 3 || row(lines[0]) != "NAME WEBSITES MAILBOXES DATABASESERVERS DATABASES DNSZONES ID" || row(lines[1]) != "Standard 5 10 3 5 2 P1" || row(lines[2]) != "Business 20 50 6 10 10 P2" {
 		t.Errorf("output:\n%s", out)
 	}
 }
