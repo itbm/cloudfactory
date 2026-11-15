@@ -9,6 +9,7 @@ import { BackupsPage } from "./pages/BackupsPage";
 import { CustomersPage } from "./pages/CustomersPage";
 import { DatabasesPage } from "./pages/DatabasesPage";
 import { DnsPage } from "./pages/DnsPage";
+import { NetworksPage } from "./pages/NetworksPage";
 import { FilesPage } from "./pages/FilesPage";
 import { JobsPage } from "./pages/JobsPage";
 import { LoginPage } from "./pages/LoginPage";
@@ -89,6 +90,7 @@ export function App() {
           <Route path="databases" element={<DatabasesPage />} />
           <Route path="dns" element={<DnsPage />} />
           <Route path="dns/:id" element={<DnsPage />} />
+          <Route path="networks" element={<NetworksPage />} />
           <Route path="backups" element={<BackupsPage />} />
           <Route path="apps" element={<AppsPage />} />
           <Route path="jobs" element={<JobsPage />} />

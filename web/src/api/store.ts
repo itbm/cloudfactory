@@ -717,6 +717,37 @@ export function rollBackAll() {
   return call(() => live.request("POST", `/rollouts/${r.id}/roll-back`)).then(() => refresh());
 }
 
+// Private networks
+
+/** The members of a network: the IDs of its websites and of its database servers. */
+export interface NetworkMembers { websiteIds: string[]; databaseServerIds: string[] }
+
+const networkName = (name: string) => name.trim().toLowerCase();
+
+/** Makes a named network for a customer. The plan of the customer gives the number of them. */
+export function createNetwork(name: string, customerId: string, members: NetworkMembers): Promise<void> {
+  return call(async () => {
+    await live.request("POST", "/networks", { name: networkName(name), customerId: customerId || undefined, ...members });
+    await refresh();
+  });
+}
+
+/** Changes the members of a network and, for a named network, its name. */
+export function saveNetwork(networkId: string, name: string | undefined, members: NetworkMembers): Promise<void> {
+  return call(async () => {
+    await live.request("PATCH", `/networks/${networkId}`, { name: name === undefined ? undefined : networkName(name), ...members });
+    await refresh();
+  });
+}
+
+/** Removes a named network. Its members stay. */
+export function deleteNetwork(networkId: string): Promise<void> {
+  return call(async () => {
+    await live.request("DELETE", `/networks/${networkId}`);
+    await refresh();
+  });
+}
+
 // DNS hosting
 
 type DnsJobs = { jobs: live.ApiJob[] };

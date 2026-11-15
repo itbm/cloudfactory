@@ -31,6 +31,7 @@ export function AccountPage() {
     { label: "Websites", text: `${usage.websites} of ${plan.websites}`, value: ratio(usage.websites, plan.websites) },
     { label: "Database servers", text: `${databaseServers} of ${plan.databaseServers}`, value: ratio(databaseServers, plan.databaseServers) },
     { label: "DNS zones", text: `${usage.dnsZones} of ${plan.dnsZones}`, value: ratio(usage.dnsZones, plan.dnsZones) },
+    ...(plan.networks ? [{ label: "Named networks", text: `${usage.networks} of ${plan.networks}`, value: ratio(usage.networks, plan.networks) }] : []),
   ] : [];
   return (
     <>
