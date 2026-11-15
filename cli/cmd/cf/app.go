@@ -44,6 +44,31 @@ Usage:
   cf sftp get WEBSITE
   cf sftp set WEBSITE [--on|--off] [--key-file FILE]... [--no-keys]
   cf runtime revert WEBSITE
+  cf files list WEBSITE [PATH]                         The file manager. A PATH starts at the directory of the website,
+                                                       for example /public/index.php. Use SFTP for a file of more than 5 MB.
+  cf files get WEBSITE PATH [--output FILE]
+  cf files put WEBSITE PATH --from FILE [--create-only]   "--from -" reads the standard input.
+  cf files mkdir WEBSITE PATH
+  cf files move WEBSITE PATH NEW_PATH
+  cf files delete WEBSITE PATH                         A directory goes with all that it contains.
+  cf logs WEBSITE [--lines N] [--type access|error]    The last lines of the output of the container.
+  cf cron list WEBSITE
+  cf cron add WEBSITE --schedule "M H DOM MON DOW" --command COMMAND [--off]
+                                                       The command runs in the container of the website, in /app. The time is UTC.
+  cf cron set WEBSITE CRON_ID [--schedule SCHEDULE] [--command COMMAND] [--on | --off]
+  cf cron run WEBSITE CRON_ID                          Run the command now. The command fails when its exit code is not 0.
+  cf cron delete WEBSITE CRON_ID
+  cf deploys show WEBSITE                              The Git repository, the deploy key, the webhook and the releases.
+  cf deploys connect WEBSITE --repository URL --branch BRANCH [--web-directory DIR] [--trigger manual|webhook]
+                             [--build COMMAND]... [--no-build]
+                                                       Also changes the settings. For a private repository, add the deploy key
+                                                       that the command shows to the repository.
+  cf deploys secret set WEBSITE NAME                   An environment variable of the build commands. The value is read
+                                                       from CF_SECRET or stdin.
+  cf deploys secret remove WEBSITE NAME
+  cf deploys start WEBSITE                             Deploy the branch now. The website changes to the new release with no stop.
+  cf deploys activate WEBSITE RELEASE_ID               Go back to a release that is on the server.
+  cf deploys disconnect WEBSITE
   cf database-servers list [--customer ID] [--server SERVER] [--engine mariadb|postgresql|valkey]
   cf database-servers get DATABASE_SERVER
   cf database-servers create --engine mariadb|postgresql|valkey [--name NAME] [--customer ID] [--plan ID] [--server SERVER]
@@ -99,6 +124,13 @@ Usage:
   cf servers join-token
   cf servers check SERVER                  Tests the connection from the panel to the server.
   cf servers remove SERVER                 Removes a server that has no websites from the panel.
+  cf mesh show                             The encrypted tunnels between the servers, with their state.
+  cf mesh connect SERVER SERVER            Makes a tunnel between two servers.
+  cf mesh repair SERVER SERVER             Sends the tunnel state to the two servers again and tests the tunnel.
+  cf mesh disconnect SERVER SERVER         Removes the tunnel between two servers.
+  cf mesh rotate-key SERVER                Makes a new tunnel key on a server. Its tunnels stop for a short time.
+  cf mesh set-address SERVER ADDRESS|auto  Sets the public IP address for the tunnel traffic of a server.
+  cf mesh set [--range CIDR] [--port N]    Possible only while the mesh has no tunnel.
   cf panel-certificate show
   cf panel-certificate set internal|letsencrypt
                        "internal": a certificate from the panel CA. "letsencrypt" needs a public domain.
@@ -283,6 +315,8 @@ func (a *app) dispatch(ctx context.Context, args []string) error {
 		return a.jobs(ctx, sub, rest)
 	case "servers", "server":
 		return a.servers(ctx, sub, rest)
+	case "mesh":
+		return a.mesh(ctx, sub, rest)
 	case "panel-certificate":
 		return a.panelCertificate(ctx, sub, rest)
 	case "images", "image":
@@ -303,6 +337,15 @@ func (a *app) dispatch(ctx context.Context, args []string) error {
 		return a.rollouts(ctx, sub, rest)
 	case "tokens", "token":
 		return a.tokens(ctx, sub, rest)
+	case "files", "file":
+		return a.files(ctx, sub, rest)
+	case "logs":
+		// "cf logs WEBSITE": the command has no second word.
+		return a.logs(ctx, sub, rest)
+	case "cron":
+		return a.cron(ctx, sub, rest)
+	case "deploys", "deploy":
+		return a.deploys(ctx, sub, rest)
 	}
 	return fmt.Errorf("unknown command %q; see cf help", cmd)
 }

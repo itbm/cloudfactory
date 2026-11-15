@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"sync"
@@ -140,6 +141,15 @@ type Deps struct {
 	// AddressUnit is the systemd unit of the installer that adds the private addresses to
 	// "lo". The default is "/etc/systemd/system/cloudfactory-address.service".
 	AddressUnit string
+	// MeshDir holds the tunnel key and the mesh state of this server. Only root can read
+	// it. The default is "/etc/cloudfactory/mesh".
+	MeshDir string
+	// MeshPing sends one echo request from a mesh address to a mesh address and gives the
+	// round-trip time. Nil means mesh.Ping. Tests replace it.
+	MeshPing func(ctx context.Context, from, to netip.Addr, timeout time.Duration) (time.Duration, error)
+	// MeshWait is the maximum time that SetMesh waits for the answers of the peers. The
+	// default is 10 seconds.
+	MeshWait time.Duration
 	// HostSftpConfig is the SSH configuration of the host from release 0.1. The default is
 	// "/etc/ssh/sshd_config.d/50-cloudfactory-sftp.conf".
 	HostSftpConfig string
@@ -151,6 +161,14 @@ type Deps struct {
 	SavePanelCA func(fingerprint string) error
 	// EdgeImage is the image of the edge proxy of this agent version.
 	EdgeImage string
+	// AgentBinary is the path of the program of the agent. The file manager starts it as the
+	// Unix user of a website. The default is "/usr/local/bin/cf-agent".
+	AgentBinary string
+	// CronLimit is the time limit of the command of a cron job. The default is 1 hour.
+	CronLimit time.Duration
+	// BuildLimit is the time limit of each step of a deploy that runs commands. The default
+	// is 20 minutes.
+	BuildLimit time.Duration
 
 	// CgroupRoot is "/sys/fs/cgroup". Tests use a different directory.
 	CgroupRoot string
@@ -189,10 +207,13 @@ type Deps struct {
 	// kernel has.
 	accessMu     sync.Mutex
 	accessLoaded string
+	// meshMu makes each change of the tunnels one step.
+	meshMu sync.Mutex
 	// backupSlots limits the backups that operate at the same time (BackupSlots).
 	backupSlots chan struct{}
 	rtMu        sync.RWMutex
 	obs         observer
+	cron        cronRuns
 }
 
 // Images is the part of the shared image store that the actions use (images.Store).
@@ -273,6 +294,8 @@ type stateFile struct {
 	// Databases has the record of each customer that has a website or a database server on
 	// this server. The key is the ID of the customer in lower case.
 	Databases map[string]*DatabaseInstance `json:"databases,omitempty"`
+	// Cron has the cron jobs of each website. The key is the ID of the website.
+	Cron map[string][]CronEntry `json:"cron,omitempty"`
 }
 
 // DatabaseInstance is what the agent knows about the database servers of one customer. The
@@ -381,6 +404,7 @@ func (s *State) Delete(id string) error {
 		return err
 	}
 	delete(f.Sites, id)
+	delete(f.Cron, id)
 	return s.write(f)
 }
 

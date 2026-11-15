@@ -352,10 +352,44 @@ table inet cloudfactory {
   set database_access {
     typeof meta skuid . ip daddr . tcp dport
   }
+  # The mesh: the encrypted tunnels between the servers of one panel (the interface cf-mesh).
+  # The agent writes the elements of the four sets in its file mesh.nft: the UDP port of the
+  # tunnels, the address range of the mesh, and the public addresses of the peers.
+  set mesh_port {
+    typeof udp dport
+  }
+  set mesh_range {
+    typeof ip daddr
+    flags interval
+  }
+  set mesh_endpoints4 {
+    typeof ip saddr
+  }
+  set mesh_endpoints6 {
+    typeof ip6 saddr
+  }
+  # All traffic that comes out of a tunnel. A peer can measure the round-trip time. All other
+  # traffic is dropped: also the ports that are open for the internet, such as SSH.
+  chain mesh_input {
+    icmp type echo-request limit rate 50/second accept
+    drop
+  }
+  # This server never sends the traffic of a tunnel to a different server or network, and
+  # never sends the traffic of a different network into a tunnel.
+  chain mesh_forward {
+    type filter hook forward priority filter; policy accept;
+    iifname "cf-mesh" drop
+    oifname "cf-mesh" drop
+  }
   chain input {
     type filter hook input priority filter; policy drop;
     ct state established,related accept
     iif lo accept
+    # The mesh: only a peer can send to the tunnel port. The traffic that comes out of a
+    # tunnel has its own chain, before the rules of the public ports.
+    udp dport @mesh_port ip saddr @mesh_endpoints4 accept
+    udp dport @mesh_port ip6 saddr @mesh_endpoints6 accept
+    iifname "cf-mesh" jump mesh_input
     meta l4proto { icmp, ipv6-icmp } accept
     tcp dport 22 accept$dns_accept
     tcp dport $SFTP_PORT accept # cloudfactory-sftp
@@ -384,6 +418,8 @@ table inet cloudfactory {
     # to a private network or to a service of this server from it. The rule checks only new
     # connections, so it does not change the answers to the websites.
     ct state new meta skuid $DATABASE_UID_MIN-$DATABASE_UID_MAX jump refuse
+    # The mesh: only root (the agent) can connect to an address of the mesh.
+    ct state new ip daddr @mesh_range meta skuid != 0 jump refuse
     # Audit finding S1: the limits for the connections that a website container opens. The
     # agent makes each website user with a UID from $WEBSITE_UID_MIN to $WEBSITE_UID_MAX. The
     # rule checks only new connections, so it does not change the answers to the visitors.
@@ -733,7 +769,7 @@ apt-get install -y -q --no-install-recommends \
 	podman passt uidmap netavark aardvark-dns conmon crun fuse-overlayfs \
 	nftables unattended-upgrades needrestart restic apparmor apparmor-utils \
 	systemd-container dbus-user-session ca-certificates curl openssl bzip2 \
-	openssh-server quota iproute2
+	openssh-server quota iproute2 wireguard-tools
 
 # The website users mount the shared images with fuse-overlayfs (agent package images).
 modprobe fuse 2>/dev/null || true

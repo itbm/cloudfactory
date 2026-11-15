@@ -9,10 +9,12 @@ import { BackupsPage } from "./pages/BackupsPage";
 import { CustomersPage } from "./pages/CustomersPage";
 import { DatabasesPage } from "./pages/DatabasesPage";
 import { DnsPage } from "./pages/DnsPage";
+import { FilesPage } from "./pages/FilesPage";
 import { JobsPage } from "./pages/JobsPage";
 import { LoginPage } from "./pages/LoginPage";
 import { NewWebsitePage } from "./pages/NewWebsitePage";
 import { OverviewPage } from "./pages/OverviewPage";
+import { NetworkPage } from "./pages/NetworkPage";
 import { PlansPage } from "./pages/PlansPage";
 import { ServersPage } from "./pages/ServersPage";
 import { SetPasswordPage } from "./pages/SetPasswordPage";
@@ -72,6 +74,7 @@ export function App() {
           <Route index element={<Home />} />
           <Route path="overview" element={<OverviewPage />} />
           <Route path="setup" element={<SetupPage />} />
+          <Route path="network" element={<NetworkPage />} />
           <Route path="servers" element={<ServersPage />} />
           <Route path="servers/:id" element={<ServersPage />} />
           <Route path="updates" element={<UpdatesPage />} />
@@ -82,6 +85,7 @@ export function App() {
           <Route path="websites/new" element={<NewWebsitePage />} />
           <Route path="websites/:id" element={<WebsiteDetailPage />} />
           <Route path="websites/:id/:tab" element={<WebsiteDetailPage />} />
+          <Route path="files" element={<FilesPage />} />
           <Route path="databases" element={<DatabasesPage />} />
           <Route path="dns" element={<DnsPage />} />
           <Route path="dns/:id" element={<DnsPage />} />

@@ -195,3 +195,18 @@ agent into a worker with the user `cf-agent` and a root helper (refer to
 
 The boundary has limits: the worker can still act as each website user, and it manages the
 database servers. [security.md](security.md#the-root-helper-of-the-agent) gives the full list.
+
+## WireGuard tunnels between the servers, with the panel as the directory of keys
+
+The websites of a customer must be able to use a database on a different server. The traffic
+between two servers goes through the internet.
+
+| Item | Decision | Reason |
+| ---- | -------- | ------ |
+| Protection of the traffic | One WireGuard tunnel for each pair of servers that needs one. | The kernel has WireGuard, it has a small configuration, and it protects all protocols. TLS for each database engine needs certificates and settings for each engine and each client. |
+| Who has the keys | Each server makes its own key pair. The panel has only the public keys and the pre-shared keys. | A copy of the database of the panel does not give the private keys of the servers. |
+| Who can add a tunnel | Only the panel, through the agent connection. | The panel already has mutual TLS with each agent, and it knows which servers need a tunnel. |
+| Commands from the panel to the agents | They stay on port 7443 with mutual TLS. They do not use the tunnels. | A fault in the mesh must not stop the panel from repairing the mesh. |
+| Where root is necessary | The root helper has three operations: apply a state, give the status, and make a new key. The worker cannot run `wg`, `ip` or `nft`. | The same boundary as for the other work of the agent. |
+| What a tunnel permits | An echo request only, in this release. | A tunnel between two servers must not open the services of a server. Each later function adds its own rule. |
+| Test and repair | One action, **Repair**: the panel sends the state again, and each server tests the tunnel. The reports of the agents give the state of each tunnel each minute. | A test with no repair has no use for an administrator, and the state is on the page already. |

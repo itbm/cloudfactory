@@ -55,7 +55,12 @@ The demo agent (`api/app/Demo`) fails these jobs, so that you can see a failure:
 
 - a new website or a new domain with a name that starts with `fail.`;
 - a new database with a name that ends with `_fail`;
+- a deploy from a repository with `fail` in its address (the build step fails);
+- a cron job with `fail` in its command, when you select **Run now**;
 - a change of a DNS zone with a name that starts with `fail.`.
+
+In the demonstration mode, the file manager shows a small set of sample files for each
+website, and keeps your changes in the cache. The logs are sample lines.
 
 The demo mode does not ask the public DNS. For a DNS zone with a name that starts with
 `elsewhere.`, it answers that the domain uses the name servers of a registrar. For each other

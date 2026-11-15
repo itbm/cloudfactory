@@ -147,6 +147,10 @@ The two servers must be able to connect to each other:
   address that the new server uses for its connection to the panel. If the new server is behind
   NAT, this IP address is a private address. Then give the public address with `--address`, for
   example `--address 203.0.113.20`.
+- For a tunnel between two servers (**Network** in the panel), each of the two servers must
+  accept UDP port 51820 from the other server. The firewall of Cloudfactory opens the port
+  for the other server automatically. If your provider has its own firewall, open the port
+  there.
 
 About one minute after the server joins, the panel tests the connection to the agent. If the
 panel cannot connect, the server shows as degraded, and the page of the server shows the reason,
@@ -1068,8 +1072,9 @@ agent (`agent-root-helper`). An optional part that is off does not make the serv
 
 ### Ports
 
-The firewall accepts only SSH, SFTP, HTTP, HTTPS and the agent port. A server that has DNS
-zones also accepts port 53 (UDP and TCP). The database servers
+The firewall accepts only SSH, SFTP, HTTP, HTTPS and the agent port. A server that has
+tunnels to other servers also accepts the UDP port of the tunnels (51820), only from those
+servers. A server that has DNS zones also accepts port 53 (UDP and TCP). The database servers
 publish their ports only on the database network `169.254.80.0/20` of the loopback interface,
 so the databases are not open to the internet.
 

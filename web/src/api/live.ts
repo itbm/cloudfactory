@@ -18,6 +18,7 @@ import type {
   Job,
   Limits,
   ManagedUser,
+  Mesh,
   PanelCertificate,
   Plan,
   Rollout,
@@ -331,7 +332,7 @@ export async function load(previous: State): Promise<State> {
   const admin = me.role === "administrator";
   const optional = <T>(p: Promise<T>, fallback: T) => p.catch(() => fallback);
 
-  const [websites, jobs, customers, plans, tokens, policy, servers, images, rollouts, audit, users, certificate, setup, account, databaseServers, dns] = await Promise.all([
+  const [websites, jobs, customers, plans, tokens, policy, servers, images, rollouts, audit, users, certificate, setup, account, databaseServers, dns, mesh] = await Promise.all([
     all<ApiWebsite>("/websites"),
     request<{ data: ApiJob[] }>("GET", "/jobs?perPage=50").then((r) => r.data),
     optional(request<{ data: ApiCustomer[] }>("GET", "/customers").then((r) => r.data), []),
@@ -350,6 +351,8 @@ export async function load(previous: State): Promise<State> {
     optional(request<{ data: ApiDatabaseServer[] }>("GET", "/database-servers").then((r) => r.data), []),
     // The DNS zones, and the name servers that a customer gives to the registrar of a domain.
     optional(request<{ data: ApiDnsZone[]; nameServers?: string[] }>("GET", "/dns-zones"), { data: [], nameServers: [] }),
+    // A panel API of an earlier release has no mesh.
+    admin ? optional(request<Mesh>("GET", "/mesh"), undefined) : Promise.resolve(undefined),
   ]);
   // The list has no records. The panel reads the records of the zones that the user opened.
   const zoneDetails = new Map<string, DnsZone>();
@@ -399,6 +402,7 @@ export async function load(previous: State): Promise<State> {
     databaseServers: databaseServers.map(toDatabaseServer),
     dnsZones: dns.data.map((z) => zoneDetails.get(z.id) ?? { ...toDnsZone(z), records: previous.dnsZones.find((x) => x.id === z.id && x.serial === z.serial)?.records }),
     nameServers: dns.nameServers ?? [],
+    mesh,
     databases: [...kept(previous.databases), ...perSite.flatMap((s) => s.databases)],
     databaseUsers: [...kept(previous.databaseUsers), ...perSite.flatMap((s) => s.users)],
     snapshots: [...kept(previous.snapshots), ...perSite.flatMap((s) => s.snapshots)].sort((a, b) => b.at.localeCompare(a.at)),

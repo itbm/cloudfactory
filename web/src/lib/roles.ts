@@ -20,7 +20,7 @@ export interface NavEntry {
   to: string;
   label: string;
   /** The name of the icon (components/Layout.tsx). */
-  icon: "overview" | "setup" | "servers" | "updates" | "customers" | "plans" | "websites" | "databases" | "dns" | "backups" | "apps" | "jobs" | "account" | "settings";
+  icon: "overview" | "setup" | "servers" | "network" | "updates" | "customers" | "plans" | "websites" | "files" | "databases" | "dns" | "backups" | "apps" | "jobs" | "account" | "settings";
 }
 
 export interface NavSection {
@@ -31,6 +31,7 @@ export interface NavSection {
 
 const hosting = (websites: string, jobs: string): NavEntry[] => [
   { to: "/websites", label: websites, icon: "websites" },
+  { to: "/files", label: "Files", icon: "files" },
   { to: "/databases", label: "Databases", icon: "databases" },
   { to: "/dns", label: "DNS", icon: "dns" },
   { to: "/backups", label: "Backups", icon: "backups" },
@@ -50,7 +51,7 @@ const account: NavSection = {
 export const NAVIGATION: Record<Role, NavSection[]> = {
   administrator: [
     { items: [{ to: "/overview", label: "Overview", icon: "overview" }, { to: "/setup", label: "Finish setup", icon: "setup" }] },
-    { title: "Platform", items: [{ to: "/servers", label: "Servers", icon: "servers" }, { to: "/updates", label: "Images and updates", icon: "updates" }] },
+    { title: "Platform", items: [{ to: "/servers", label: "Servers", icon: "servers" }, { to: "/network", label: "Network", icon: "network" }, { to: "/updates", label: "Images and updates", icon: "updates" }] },
     { title: "Customers", items: [{ to: "/customers", label: "Customers", icon: "customers" }, { to: "/plans", label: "Plans", icon: "plans" }] },
     { title: "Hosting", items: hosting("Websites", "Jobs and activity") },
     { title: "Panel", items: [{ to: "/settings", label: "Settings", icon: "settings" }] },
@@ -71,6 +72,7 @@ const ONLY: [prefix: string, roles: Role[]][] = [
   ["/overview", ["administrator"]],
   ["/setup", ["administrator"]],
   ["/servers", ["administrator"]],
+  ["/network", ["administrator"]],
   ["/updates", ["administrator"]],
   ["/customers", ["administrator", "reseller"]],
   ["/plans", ["administrator", "reseller"]],

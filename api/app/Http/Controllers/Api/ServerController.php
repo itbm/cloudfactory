@@ -15,6 +15,7 @@ use App\Services\AgentClient;
 use App\Services\Audit;
 use App\Services\Dns\Zones;
 use App\Services\JobDispatcher;
+use App\Services\Mesh;
 use App\Services\PanelCertificate;
 use App\Validation\Input;
 use Illuminate\Http\JsonResponse;
@@ -197,6 +198,8 @@ class ServerController extends Controller
             throw ValidationException::withMessages(['server' => "This server has {$server->database_servers_count} ".($server->database_servers_count === 1 ? 'database server' : 'database servers').'. Remove the database servers first.']);
         }
         $answered = Zones::servers()->contains('id', $server->id);
+        // The tunnels of the server go with it. The other servers then close their side.
+        $peers = Mesh::peersOf($server);
         DB::transaction(function () use ($server) {
             // The jobs of the server go with it. The audit log keeps the record of the actions.
             AgentJob::where('server_id', $server->id)->delete();
@@ -206,6 +209,7 @@ class ServerController extends Controller
         if ($answered) {
             $this->zones->pushAll();
         }
+        app(Mesh::class)->sync(...$peers);
         Audit::record($request, 'Removed server', $server->name);
 
         return response()->json(null, 204);

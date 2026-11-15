@@ -32,6 +32,12 @@ enum AgentAction: string
     case DeleteDatabaseServer = 'DeleteDatabaseServer';
     case SetDnsZones = 'SetDnsZones';
     case DeleteDnsZones = 'DeleteDnsZones';
+    case SetCronJobs = 'SetCronJobs';
+    case RunCronJob = 'RunCronJob';
+    case Deploy = 'Deploy';
+    case ActivateRelease = 'ActivateRelease';
+    case SetMesh = 'SetMesh';
+    case RotateMeshKey = 'RotateMeshKey';
 
     /** The steps that the agent reports for this action. */
     public function steps(): array
@@ -61,6 +67,14 @@ enum AgentAction: string
             self::SetPanelCertificate => ['Change certificate method', 'Get TLS certificate'],
             self::SetDnsZones => ['Start DNS server', 'Write zones', 'Load zones'],
             self::DeleteDnsZones => ['Remove zones'],
+            self::SetCronJobs => ['Save the cron jobs'],
+            self::RunCronJob => ['Run the command'],
+            // The steps after "Build" are the steps of SetRuntime: the agent starts the website
+            // from the new release with no stop.
+            self::Deploy => ['Get the code', 'Build', ...self::SetRuntime->steps(), 'Remove old releases'],
+            self::ActivateRelease => ['Check the release', ...self::SetRuntime->steps()],
+            self::SetMesh => ['Set tunnels and firewall', 'Check tunnels'],
+            self::RotateMeshKey => ['Make new key'],
         };
     }
 

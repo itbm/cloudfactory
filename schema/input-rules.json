@@ -8,7 +8,14 @@
     "dnsLabel": "(_[a-z0-9]([a-z0-9-]{0,60}[a-z0-9])?|[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)",
     "shortNumber": "(0|[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])",
     "octet": "(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])",
-    "hexGroup": "[0-9a-f]{1,4}"
+    "hexGroup": "[0-9a-f]{1,4}",
+    "cronMinutes": "(\\*|[0-5]?[0-9](-[0-5]?[0-9])?)(/[1-9][0-9]?)?(,(\\*|[0-5]?[0-9](-[0-5]?[0-9])?)(/[1-9][0-9]?)?)*",
+    "cronHours": "(\\*|([01]?[0-9]|2[0-3])(-([01]?[0-9]|2[0-3]))?)(/[1-9][0-9]?)?(,(\\*|([01]?[0-9]|2[0-3])(-([01]?[0-9]|2[0-3]))?)(/[1-9][0-9]?)?)*",
+    "cronDays": "(\\*|(0?[1-9]|[12][0-9]|3[01])(-(0?[1-9]|[12][0-9]|3[01]))?)(/[1-9][0-9]?)?(,(\\*|(0?[1-9]|[12][0-9]|3[01])(-(0?[1-9]|[12][0-9]|3[01]))?)(/[1-9][0-9]?)?)*",
+    "cronMonths": "(\\*|(0?[1-9]|1[0-2])(-(0?[1-9]|1[0-2]))?)(/[1-9][0-9]?)?(,(\\*|(0?[1-9]|1[0-2])(-(0?[1-9]|1[0-2]))?)(/[1-9][0-9]?)?)*",
+    "cronWeekdays": "(\\*|[0-7](-[0-7])?)(/[1-9][0-9]?)?(,(\\*|[0-7](-[0-7])?)(/[1-9][0-9]?)?)*",
+    "gitHost": "[A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?(:[0-9]{1,5})?",
+    "gitPath": "[A-Za-z0-9_][A-Za-z0-9._~/-]{0,199}"
   },
   "rules": {
     "unixUser": {
@@ -217,6 +224,58 @@
       "maxLength": 600,
       "echo": false,
       "message": "Enter a private key in the PKCS #8 PEM format."
+    },
+    "filePath": {
+      "what": "path",
+      "doc": "The path of a file or a directory in the files of a website, for the file manager. \"/\" is the directory of the website, which the container has at /app. The path has no empty part, no \".\" part, no \"..\" part, no control characters and no \"/\" at the end.",
+      "pattern": "^(/|(/[^/\\x00-\\x1f\\x7f]+)+)$",
+      "not": ["/\\.\\.?(/|$)"],
+      "maxLength": 1024,
+      "message": "Enter a path that starts with /, for example /public/index.php. Do not use \"//\", \".\" or \"..\" parts, or a / at the end."
+    },
+    "cronSchedule": {
+      "what": "cron schedule",
+      "doc": "The schedule of a cron job: minute, hour, day of the month, month and day of the week, with one space between them. Each field is \"*\", a number, a range or a list, with an optional step. The day of the week is 0 to 7, and 0 and 7 are Sunday.",
+      "pattern": "^{cronMinutes} {cronHours} {cronDays} {cronMonths} {cronWeekdays}$",
+      "maxLength": 200,
+      "message": "Enter 5 fields: minute, hour, day of the month, month and day of the week. For example */5 * * * * or 0 3 * * 1."
+    },
+    "commandLine": {
+      "what": "command",
+      "doc": "One command line for the shell of a website container: the command of a cron job or a build command of a deploy. It is on one line and has no control characters.",
+      "pattern": "^[^\\x00-\\x1f\\x7f]+$",
+      "maxLength": 1000,
+      "echo": false,
+      "message": "Enter a command of 1 to 1000 characters on one line."
+    },
+    "gitRepository": {
+      "what": "Git repository",
+      "doc": "The address of a Git repository: HTTPS with no user name and no password, SSH as a URL, or the short SSH form \"git@host:path\". It cannot start with \"-\", and it cannot name a file or a helper program.",
+      "pattern": "^(https://{gitHost}/{gitPath}|ssh://[a-z0-9_][a-z0-9_-]{0,31}@{gitHost}/{gitPath}|[a-z0-9_][a-z0-9_-]{0,31}@[A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?:{gitPath})$",
+      "not": ["\\.\\.", "//[^/]*//"],
+      "maxLength": 300,
+      "message": "Enter the address of a Git repository, for example https://github.com/acme/shop.git or git@github.com:acme/shop.git."
+    },
+    "gitBranch": {
+      "what": "Git branch",
+      "doc": "The name of a Git branch. It cannot start with \"-\".",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._/-]{0,99}$",
+      "not": ["\\.\\.", "//", "[/.]$", "\\.lock$"],
+      "message": "Enter the name of a branch, for example main. Use letters, digits, dots, underscores, hyphens and slashes."
+    },
+    "secretName": {
+      "what": "name of a deploy secret",
+      "doc": "The name of an environment variable that a deploy gives to the build commands.",
+      "pattern": "^[A-Z_][A-Z0-9_]{0,63}$",
+      "message": "Use 1 to 64 capital letters, digits and underscores. Do not start with a digit."
+    },
+    "secretValue": {
+      "what": "value of a deploy secret",
+      "doc": "The value of a deploy secret. It is on one line.",
+      "pattern": "^[^\\x00\\n\\r]+$",
+      "maxLength": 4096,
+      "echo": false,
+      "message": "Enter a value of 1 to 4096 characters on one line."
     }
   },
   "sets": {
@@ -254,6 +313,18 @@
     "dnsZonesPerJob": {
       "doc": "The largest number of DNS zones in one job of the agent.",
       "value": 100
+    },
+    "cronJobs": {
+      "doc": "The largest number of cron jobs of a website.",
+      "value": 20
+    },
+    "buildCommands": {
+      "doc": "The largest number of build commands of a deploy.",
+      "value": 10
+    },
+    "deploySecrets": {
+      "doc": "The largest number of secrets of a deploy.",
+      "value": 50
     }
   }
 }

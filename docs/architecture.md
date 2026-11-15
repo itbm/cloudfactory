@@ -403,6 +403,84 @@ The panel shows the DS record that the customer gives to the registrar.
 The panel does not change the key of a zone on a schedule. To change the key, remove the DS
 record at the registrar, turn DNSSEC off and on, and give the new DS record to the registrar.
 
+## Files, logs, cron jobs and deploys of a website
+
+The agent does all of this work as the Unix user of the website (`runuser -u <user>`). The
+root helper permits each program as a website user, so this work adds no operation to its
+lists.
+
+### File manager and logs
+
+The panel does not make a job for a file operation or for the logs. The API calls the agent
+and gives the answer in the same request.
+
+```text
+ web panel or cf ──► API ──► worker ──► runuser -u <user> -- cf-agent site-files <directory>
+```
+
+- The worker starts `cf-agent site-files` as the website user and sends one request as JSON
+  on standard input. The program opens the directory of the website as a root directory
+  (`os.Root`), so a path or a symbolic link cannot go out of that directory.
+- A path starts with `/`. `/` is the directory of the website, which is `/app` in the
+  container.
+- The limits are 2 MiB for a read, 5 MiB for a write and 2000 entries for a list.
+- The unit of a website container has the log driver `k8s-file`. The container writes its
+  standard output and its standard error to `website.log` in the home directory of the
+  website user. Podman starts a new file at 10 MB. For the logs, the agent reads the last
+  lines of this file as the website user. A line from standard output has the stream
+  `access`, and a line from standard error has the stream `error`.
+
+### Cron jobs
+
+- The panel keeps the cron jobs of a website and sends the full list to the agent with the
+  job `SetCronJobs`. The agent keeps the list in its state file.
+- Each minute, the worker starts the commands whose schedule agrees with the time in UTC. A
+  schedule has the 5 fields of cron. The agent does not start a command while the previous
+  run of that cron job continues.
+- The agent runs a command with `podman exec --workdir /app <container> sh -c <command>` as
+  the website user. Thus the command runs in the gVisor container of the website, with the
+  limits of the website. The agent stops a command after 1 hour.
+- The agent sends the exit code and the end of the output of each run in its status report.
+  The panel shows them for the last run.
+- **Run now** makes the job `RunCronJob`. The job fails when the exit code is not 0.
+
+### Deploys from Git
+
+A website can have one Git source: a repository, a branch, a web directory, build commands
+and secrets. The panel makes an Ed25519 deploy key for the source and shows the public key.
+
+The job `Deploy` has these steps:
+
+1. **Get the code.** The agent clones the branch into `releases/<release ID>` in the
+   directory of the website.
+2. **Build.** The agent runs the build commands in that directory.
+3. The steps of a runtime change (refer to
+   [Change of runtime without downtime](#change-of-runtime-without-downtime)): the agent
+   starts a second container with the document root `releases/<release ID>/<web directory>`,
+   does a health check, changes the route, and stops the old container.
+4. **Remove old releases.** The agent removes the release directories that the panel does
+   not keep. The panel keeps the live release and the last 4 releases before it.
+
+- Steps 1 and 2 run in a build container, not in the live container. The build container
+  uses the runtime image of the website and gVisor, has the same limits as a website, and
+  runs as the website user. It sees the directory of the website as `/app`.
+- The agent writes the deploy key and the secrets to files that only the website user can
+  read, for the time of the build, and then removes them. The secrets are environment
+  variables of the build commands. The panel adds the key and the secrets to the job when
+  it sends the job, so they are not in the `agent_jobs` table.
+- The link `current` in the directory of the website points to the live release. The
+  directory `shared` is for files that all releases use, for example `.env` and uploads.
+  A build command can make a link to it.
+- When a step fails, the old container continues, and the agent removes the new release
+  directory. The release has the state `failed` and shows the cause.
+- **Go back** makes the job `ActivateRelease`. It does step 3 with a release that the server
+  keeps.
+- A Git host starts a deploy with `POST /api/v1/hooks/deploy/<token>`. The request needs no
+  sign-in: the token in the address is the secret. The panel ignores a push to a different
+  branch.
+- While a website deploys from Git, the panel refuses a change of the document root on the
+  Runtime tab. Change the web directory of the Git source.
+
 ## Databases
 
 A customer makes database servers as it makes websites. A database server is one container
@@ -697,6 +775,81 @@ All the Valkey databases of one database server use the memory limit of that dat
 When the memory is full, Valkey removes the keys of that database server that were not used
 for the longest time. A customer that needs a separate limit for one website makes a second
 Valkey database server. Refer to [installation.md](installation.md#valkey).
+
+## The mesh between servers
+
+The mesh is the set of encrypted tunnels between the servers of one panel. A tunnel lets two
+servers send private traffic to each other through the internet. In this release, only root
+on a server can use a tunnel, and the only traffic is the test of the tunnel. A later release
+uses the tunnels for the private networks of the customers.
+
+Each server has one WireGuard interface with the name `cf-mesh`. The values of the mesh are
+in the panel (**Network**):
+
+| Value | Default | Function |
+| ----- | ------- | -------- |
+| Address range | `10.207.0.0/16` | Each server gets one address from the first 254 addresses of the range, with its first tunnel. |
+| UDP port | 51820 | The port of the tunnels on each server. |
+| Tunnel address | Automatic | The public IP address that the other servers send the tunnel traffic of a server to. The default is the address that the panel connects to the agent with. |
+
+You can change the address range and the port only while the mesh has no tunnel.
+
+### Keys
+
+- The root helper of the agent makes the key pair of its server. The private key is in
+  `/etc/cloudfactory/mesh/private.key`. Only root can read it, and it never leaves the
+  server. The agent sends the public key to the panel in each report.
+- The panel is the directory of the public keys. It gives a server the public keys of only
+  the servers that it has a tunnel to.
+- The panel makes one pre-shared key for each tunnel. It keeps the key encrypted in its
+  database, and it sends the key to the two servers of the tunnel through the agent
+  connection (mutual TLS).
+- **Make new key** (`cf mesh rotate-key SERVER`) makes a new key pair on a server. The tunnels
+  of the server do not operate until the panel sends the new public key to the other servers.
+  That occurs automatically when the job is complete.
+
+### The state of a server
+
+The panel sends a server the full state of its tunnels with the action `SetMesh`: the address
+range, the address of the server, the port, and each other server with its public key, its
+pre-shared key, its tunnel address and its mesh address. The state has a version number.
+
+1. The worker of the agent examines the state and sends it to the root helper.
+2. The root helper examines the state again. It refuses a state with an older version than
+   the one that it has.
+3. The root helper writes the state to `/etc/cloudfactory/mesh/mesh.json`, writes the
+   elements of the firewall sets, and applies the WireGuard configuration with
+   `wg syncconf`. A tunnel that did not change continues to operate.
+4. The agent sends one ICMP echo request to each other server through its tunnel. The result
+   of the job has the answer, the round-trip time and the time of the last handshake.
+
+When the root helper starts, for example after a reboot, it applies the state of the file
+again. A state with no address and no tunnels removes the interface.
+
+If the server has no `wg` command, the root helper installs the package `wireguard-tools`.
+The installer of this release installs it.
+
+### How the panel monitors the tunnels
+
+Each agent report has the public key of the server, the version of its state and the state
+of each tunnel. The agent sends a report each minute.
+
+- A tunnel is **up** when the two servers got an answer through it in the last three minutes.
+  It is **down** when one server got no answer. Before the first reports, the panel shows that
+  it waits for the servers.
+- When a server reports a different version than the panel wants, the panel sends the state
+  again. It does this one time in two minutes for a server at most.
+- When a server reports a new public key, the panel sends the key to the other servers of its
+  tunnels.
+- **Repair** (`cf mesh repair SERVER SERVER`) sends the state to the two servers of a tunnel
+  again and tests the tunnel. Use it after you correct a problem, for example a firewall of
+  your provider that does not let the UDP port through.
+- When you remove a server from the panel, the panel removes its tunnels from the other
+  servers.
+
+In this release, an administrator makes each tunnel (**Network > Make tunnel**, or
+`cf mesh connect SERVER SERVER`). A server with an agent from an earlier release cannot have
+tunnels until you update its agent.
 
 ## Change of runtime without downtime
 

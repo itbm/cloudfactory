@@ -2,7 +2,9 @@
 
 namespace App\Console\Commands;
 
+use App\Demo\DemoAgentClient;
 use App\Demo\Fixtures;
+use App\Services\AgentClient;
 use Database\Seeders\DemoSeeder;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
@@ -57,13 +59,20 @@ class DemoFixtures extends Command
         // demonstration mode, the configuration has a different release, and the files change.
         $latest = config('cloudfactory.agent.latest_version');
         config(['cloudfactory.agent.latest_version' => DemoSeeder::AGENT]);
+        // The demo agent gives the files and the logs of the sample websites, and the cache of
+        // its files is in memory. The sample data has encrypted values: a computer with no
+        // key gets a key for this command only.
+        $before = ['cache.default' => config('cache.default'), 'app.key' => config('app.key')];
+        config(['cache.default' => 'array', 'app.key' => config('app.key') ?: 'base64:'.base64_encode(random_bytes(32))]);
+        app()->instance(AgentClient::class, new DemoAgentClient);
         try {
             Artisan::call('migrate', ['--database' => 'fixtures', '--force' => true]);
             (new DemoSeeder)->run();
 
             return array_map(fn (string $role) => Fixtures::capture($role), array_combine(array_keys(Fixtures::USERS), array_keys(Fixtures::USERS)));
         } finally {
-            config(['cloudfactory.agent.latest_version' => $latest]);
+            config(['cloudfactory.agent.latest_version' => $latest] + $before);
+            app()->forgetInstance(AgentClient::class);
             Carbon::setTestNow();
             DB::purge('fixtures');
             DB::setDefaultConnection($previous);

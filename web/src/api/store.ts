@@ -12,15 +12,22 @@ import type {
   ApiToken,
   BackupPolicy,
   Confirmation,
+  CronJob,
   Customer,
   DatabaseEngine,
   DatabaseLimits,
   DatabasePrivileges,
   DatabaseServer,
   DnsRecordType,
+  Deploy,
   DomainKind,
+  FileContent,
+  FileEntry,
+  FileList,
   HostUpdatePolicy,
   Job,
+  LogLine,
+  Mesh,
   Plan,
   ServerRole,
   State,
@@ -339,6 +346,116 @@ export function setDocumentRoot(websiteId: string, documentRoot: string) {
 
 export function setPhpSettings(websiteId: string, extensions: string[], phpIni: Record<string, string>) {
   return call(() => live.request<JobAnswer>("PUT", `/websites/${websiteId}/runtime`, { extensions, phpIni })).then((r) => track(r.job));
+}
+
+// Files, logs, cron jobs and deploys
+//
+// The panel reads these when the user opens their page, and does not keep them in the state.
+// The agent does each file operation as the Unix user of the website, in the website directory.
+
+const filesOf = (websiteId: string) => `/websites/${websiteId}/files`;
+
+export function listFiles(websiteId: string, path: string): Promise<FileList> {
+  return call(() => live.request<FileList>("GET", `${filesOf(websiteId)}?path=${q(path)}`));
+}
+
+export function readFile(websiteId: string, path: string): Promise<FileContent> {
+  return call(() => live.request<FileContent>("GET", `${filesOf(websiteId)}/content?path=${q(path)}`));
+}
+
+/** Writes a file. With createOnly, the API refuses a path that exists. */
+export function writeFile(websiteId: string, path: string, content: string, options: { encoding?: "utf8" | "base64"; createOnly?: boolean } = {}): Promise<FileEntry> {
+  return call(() => live.request<{ file: FileEntry }>("PUT", `${filesOf(websiteId)}/content`, { path, content, ...options })).then((r) => r.file);
+}
+
+export function makeDirectory(websiteId: string, path: string): Promise<FileEntry> {
+  return call(() => live.request<{ file: FileEntry }>("POST", `${filesOf(websiteId)}/directories`, { path })).then((r) => r.file);
+}
+
+export function moveFile(websiteId: string, from: string, to: string): Promise<FileEntry> {
+  return call(() => live.request<{ file: FileEntry }>("POST", `${filesOf(websiteId)}/move`, { from, to })).then((r) => r.file);
+}
+
+/** Removes a file, or a directory with all that is in it. */
+export function deleteFile(websiteId: string, path: string): Promise<void> {
+  return call(() => live.request<void>("DELETE", `${filesOf(websiteId)}?path=${q(path)}`));
+}
+
+/** The largest file that the panel sends in one request (FileController::MAX_WRITE). */
+export const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
+
+/** The last lines of the output of the website container. */
+export function readLogs(websiteId: string, stream: "all" | "access" | "error" = "all", lines = 200): Promise<LogLine[]> {
+  return call(() => live.request<{ lines: LogLine[] }>("GET", `/websites/${websiteId}/logs?lines=${lines}${stream === "all" ? "" : `&stream=${stream}`}`)).then((r) => r.lines);
+}
+
+export function listCronJobs(websiteId: string): Promise<CronJob[]> {
+  return call(() => live.request<{ data: CronJob[] }>("GET", `/websites/${websiteId}/cron-jobs`)).then((r) => r.data);
+}
+
+type CronAnswer = { cronJob: CronJob; job: live.ApiJob | null };
+
+export function addCronJob(websiteId: string, schedule: string, command: string): Promise<CronJob> {
+  return call(() => live.request<CronAnswer>("POST", `/websites/${websiteId}/cron-jobs`, { schedule: schedule.trim().replace(/\s+/g, " "), command: command.trim() })).then((r) => {
+    void track(r.job);
+    return r.cronJob;
+  });
+}
+
+export function setCronJob(websiteId: string, cronJobId: string, change: { schedule?: string; command?: string; enabled?: boolean }): Promise<CronJob> {
+  return call(() => live.request<CronAnswer>("PATCH", `/websites/${websiteId}/cron-jobs/${cronJobId}`, change)).then((r) => {
+    void track(r.job);
+    return r.cronJob;
+  });
+}
+
+export function removeCronJob(websiteId: string, cronJobId: string): Promise<void> {
+  return call(() => live.request<JobAnswer>("DELETE", `/websites/${websiteId}/cron-jobs/${cronJobId}`)).then((r) => void track(r.job));
+}
+
+/** Runs the command of a cron job now. The promise resolves when the command has finished. */
+export function runCronJob(websiteId: string, cronJobId: string): Promise<Job> {
+  return call(() => live.request<JobAnswer>("POST", `/websites/${websiteId}/cron-jobs/${cronJobId}/run`)).then((r) => track(r.job));
+}
+
+export function readDeploy(websiteId: string): Promise<Deploy> {
+  return call(() => live.request<Deploy>("GET", `/websites/${websiteId}/deploy`));
+}
+
+export interface GitSourceInput {
+  repository: string;
+  branch: string;
+  webDirectory: string;
+  trigger: "manual" | "webhook";
+  buildCommands: string[];
+}
+
+/** Connects a Git repository to the website, or changes the connection. */
+export function setGitSource(websiteId: string, input: GitSourceInput): Promise<Deploy> {
+  const body = { ...input, repository: input.repository.trim(), branch: input.branch.trim(), webDirectory: input.webDirectory.trim() || ".", buildCommands: input.buildCommands.map((c) => c.trim()).filter(Boolean) };
+  return call(() => live.request<Deploy>("PUT", `/websites/${websiteId}/deploy`, body));
+}
+
+export function removeGitSource(websiteId: string): Promise<void> {
+  return call(() => live.request<void>("DELETE", `/websites/${websiteId}/deploy`));
+}
+
+export function setDeploySecret(websiteId: string, name: string, value: string): Promise<Deploy> {
+  return call(() => live.request<Deploy>("PUT", `/websites/${websiteId}/deploy/secrets/${q(name.trim())}`, { value }));
+}
+
+export function removeDeploySecret(websiteId: string, name: string): Promise<Deploy> {
+  return call(() => live.request<Deploy>("DELETE", `/websites/${websiteId}/deploy/secrets/${q(name)}`));
+}
+
+/** Starts a deploy of the branch. The job promise resolves when the release is live or has failed. */
+export function startDeploy(websiteId: string): Promise<{ job: Promise<Job> }> {
+  return call(() => live.request<JobAnswer>("POST", `/websites/${websiteId}/deploy/releases`)).then((r) => ({ job: track(r.job) }));
+}
+
+/** Makes a release that the server keeps the live release again. */
+export function activateRelease(websiteId: string, releaseId: string): Promise<{ job: Promise<Job> }> {
+  return call(() => live.request<JobAnswer>("POST", `/websites/${websiteId}/deploy/releases/${releaseId}/activate`)).then((r) => ({ job: track(r.job) }));
 }
 
 // SFTP
@@ -768,6 +885,57 @@ export function setPanelCertificate(method: PanelCertificateMethod) {
     update((d) => { d.panelCertificate = live.toPanelCertificate(r); });
     return track(r.job);
   });
+}
+
+// The mesh: the encrypted tunnels between the servers
+//
+// Each change gives the jobs that send the new state to the servers. The page shows the
+// result of each job, and the servers report the state of each tunnel each minute.
+
+type MeshJobs = { jobs?: live.ApiJob[] };
+
+/** Waits for the jobs of a change to the mesh, then reads the mesh again. */
+const trackAll = (jobs: live.ApiJob[] = []) => (jobs.length > 0 ? Promise.all(jobs.map((job) => track(job))).then(() => undefined) : refresh());
+
+/** Changes the address range or the UDP port of the mesh. Possible only while the mesh has no tunnel. */
+export function setMesh(change: { range?: string; port?: number }) {
+  return call(() => live.request<Mesh>("PATCH", "/mesh", change)).then((mesh) => update((d) => { d.mesh = mesh; }));
+}
+
+/**
+ * Makes a tunnel between two servers. The promise is complete when the API accepts the
+ * request, so that a dialog can show an error of the API. The jobs continue after that.
+ */
+export function makeTunnel(serverA: string, serverB: string) {
+  return call(() => live.request<MeshJobs>("POST", "/mesh/tunnels", { servers: [serverA, serverB] })).then((r) => { void trackAll(r.jobs); });
+}
+
+/** Sends the mesh state to the two servers of a tunnel again. Each server then tests the tunnel. */
+export function repairTunnel(tunnelId: string) {
+  return call(() => live.request<MeshJobs>("POST", `/mesh/tunnels/${tunnelId}/repair`)).then((r) => trackAll(r.jobs));
+}
+
+export function removeTunnel(tunnelId: string) {
+  return call(() => live.request<MeshJobs>("DELETE", `/mesh/tunnels/${tunnelId}`)).then((r) => trackAll(r.jobs));
+}
+
+/**
+ * Sets the public IP address for the tunnel traffic of a server. Null: the panel finds the
+ * address. The promise is complete when the API accepts the address.
+ */
+export function setTunnelAddress(serverId: string, tunnelAddress: string | null) {
+  return call(() => live.request<Mesh & MeshJobs>("PATCH", `/mesh/servers/${serverId}`, { tunnelAddress })).then(({ jobs, ...mesh }) => {
+    update((d) => { d.mesh = mesh; });
+    void trackAll(jobs);
+  });
+}
+
+/**
+ * Makes a new tunnel key on a server. The private key does not leave the server. The tunnels
+ * of the server do not operate until its peers have the new public key.
+ */
+export function rotateTunnelKey(serverId: string) {
+  return call(() => live.request<JobAnswer>("POST", `/mesh/servers/${serverId}/rotate-key`)).then((r) => track(r.job));
 }
 
 // Customers, plans and branding (FR-102, FR-106, FR-202)

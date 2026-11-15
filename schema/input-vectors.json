@@ -79,7 +79,7 @@
         "localhost",
         "acme.example;rm -rf /",
         "example.com\n",
-        "exämple.com",
+        "ex\u00e4mple.com",
         {
           "repeat": [
             [
@@ -422,7 +422,7 @@
         "/.htaccess",
         "/a/..b",
         "/a/b...",
-        "/my files/café.txt",
+        "/my files/caf\u00e9.txt",
         {
           "repeat": [
             [
@@ -521,7 +521,7 @@
         "node",
         "--port=8080",
         "a b",
-        "café",
+        "caf\u00e9",
         {
           "repeat": [
             [
@@ -536,7 +536,7 @@
         "a\nb",
         "a\tb",
         "a\u0000b",
-        "ab",
+        "a\u007fb",
         "a\u001bb",
         {
           "repeat": [
@@ -549,7 +549,7 @@
         {
           "repeat": [
             [
-              "é",
+              "\u00e9",
               513
             ]
           ]
@@ -581,7 +581,7 @@
         "command=\"id\" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGhvc3Qga2V5IGZvciB0ZXN0cyBvbmx5IQ",
         "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGhvc3Qga2V5IGZvciB0ZXN0cyBvbmx5IQ\n",
         "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGhvc3Qga2V5IGZvciB0ZXN0cyBvbmx5IQ\nssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGhvc3Qga2V5IGZvciB0ZXN0cyBvbmx5IQ",
-        "ssh-ed25519 AAAA café",
+        "ssh-ed25519 AAAA caf\u00e9",
         {
           "repeat": [
             "ssh-rsa ",
@@ -634,7 +634,7 @@
         "abcdefghijklmnop ",
         "abcdefghijklmnop\n",
         "abcdefghijklmnop$x",
-        "abcdefghijklmnép",
+        "abcdefghijklmn\u00e9p",
         "abcdefghijklmnop\\"
       ]
     },
@@ -664,6 +664,272 @@
             [
               "a",
               256
+            ]
+          ]
+        }
+      ]
+    },
+    "filePath": {
+      "valid": [
+        "/",
+        "/public/index.php",
+        "/public",
+        "/.htaccess",
+        "/a/..b",
+        "/my files/caf\u00e9.txt",
+        {
+          "repeat": [
+            [
+              "/abcdefg",
+              128
+            ]
+          ]
+        }
+      ],
+      "invalid": [
+        "",
+        "public",
+        "/public/",
+        "//",
+        "/a//b",
+        "/..",
+        "/a/../b",
+        "/a/.",
+        "/./a",
+        "/a\nb",
+        "/a\u0000b",
+        "/tab\there",
+        {
+          "repeat": [
+            [
+              "/abcdefg",
+              128
+            ],
+            "/"
+          ]
+        },
+        {
+          "repeat": [
+            [
+              "/abcdefg",
+              128
+            ],
+            "/x"
+          ]
+        }
+      ]
+    },
+    "cronSchedule": {
+      "valid": [
+        "* * * * *",
+        "*/5 * * * *",
+        "0 3 * * 1",
+        "0,30 9-17 * * 1-5",
+        "15 4 1 1 *",
+        "59 23 31 12 7",
+        "0 0 * * 0",
+        "5/10 * * * *",
+        "0 */2 1,15 * *",
+        "00 03 01 01 0"
+      ],
+      "invalid": [
+        "",
+        "* * * *",
+        "* * * * * *",
+        "60 * * * *",
+        "* 24 * * *",
+        "* * 0 * *",
+        "* * 32 * *",
+        "* * * 13 *",
+        "* * * 0 *",
+        "* * * * 8",
+        "*/0 * * * *",
+        "*/100 * * * *",
+        "@daily",
+        "* * * * mon",
+        "*  * * * *",
+        " * * * * *",
+        "* * * * * ",
+        "1- * * * *",
+        "1,,2 * * * *",
+        "* * * * *\n",
+        "-1 * * * *"
+      ]
+    },
+    "commandLine": {
+      "valid": [
+        "php artisan schedule:run",
+        "wp cron event run --due-now",
+        "composer install --no-dev && npm ci",
+        "a",
+        "caf\u00e9 \"x\" $HOME | tee /tmp/out",
+        {
+          "repeat": [
+            [
+              "a",
+              1000
+            ]
+          ]
+        }
+      ],
+      "invalid": [
+        "",
+        "a\nb",
+        "a\rb",
+        "tab\there",
+        "a\u0000b",
+        "a\u007fb",
+        {
+          "repeat": [
+            [
+              "a",
+              1001
+            ]
+          ]
+        }
+      ]
+    },
+    "gitRepository": {
+      "valid": [
+        "https://github.com/acme/shop.git",
+        "https://gitlab.example.com:8443/group/sub/shop",
+        "git@github.com:acme/shop.git",
+        "ssh://git@git.example.com/acme/shop.git",
+        "ssh://git@git.example.com:2222/acme/shop.git",
+        "gitea@code.example.org:team/app"
+      ],
+      "invalid": [
+        "",
+        "shop",
+        "http://github.com/acme/shop.git",
+        "https://user:pass@github.com/acme/shop.git",
+        "https://github.com",
+        "https://github.com/",
+        "file:///etc/passwd",
+        "/srv/repo.git",
+        "ext::sh -c id",
+        "-oProxyCommand=id",
+        "--upload-pack=id",
+        "git@github.com:-oProxyCommand=x",
+        "git@-host:acme/shop",
+        "https://github.com/acme/../shop",
+        "https://github.com/acme/shop.git?x=1",
+        "https://github.com/acme/shop git",
+        "git@github.com:acme/shop.git\n",
+        "ssh://git@host//acme//x",
+        "GIT@github.com:acme/shop.git",
+        {
+          "repeat": [
+            "https://github.com/a",
+            [
+              "b",
+              300
+            ]
+          ]
+        }
+      ]
+    },
+    "gitBranch": {
+      "valid": [
+        "main",
+        "master",
+        "release/1.2",
+        "feature/shop-42",
+        "v2",
+        "a",
+        {
+          "repeat": [
+            [
+              "a",
+              100
+            ]
+          ]
+        }
+      ],
+      "invalid": [
+        "",
+        "-main",
+        "--upload-pack=x",
+        "/main",
+        "main/",
+        "a..b",
+        "a//b",
+        "main.lock",
+        "main.",
+        "a b",
+        "caf\u00e9",
+        "main\n",
+        "a~1",
+        "a^",
+        "a:b",
+        {
+          "repeat": [
+            [
+              "a",
+              101
+            ]
+          ]
+        }
+      ]
+    },
+    "secretName": {
+      "valid": [
+        "STRIPE_SECRET_KEY",
+        "A",
+        "_PRIVATE",
+        "NPM_TOKEN_2",
+        {
+          "repeat": [
+            [
+              "A",
+              64
+            ]
+          ]
+        }
+      ],
+      "invalid": [
+        "",
+        "stripe",
+        "2FA",
+        "A-B",
+        "A B",
+        "A=B",
+        "A\n",
+        {
+          "repeat": [
+            [
+              "A",
+              65
+            ]
+          ]
+        }
+      ]
+    },
+    "secretValue": {
+      "valid": [
+        "sk_live_123",
+        "a b c",
+        "\"quoted\" $x \\ #",
+        "caf\u00e9",
+        {
+          "repeat": [
+            [
+              "a",
+              4096
+            ]
+          ]
+        }
+      ],
+      "invalid": [
+        "",
+        "a\nb",
+        "a\rb",
+        "a\u0000b",
+        {
+          "repeat": [
+            [
+              "a",
+              4097
             ]
           ]
         }
@@ -805,7 +1071,7 @@
         "a\nb",
         "a\n",
         "tab\there",
-        "café",
+        "caf\u00e9",
         "\u0000",
         {
           "repeat": [

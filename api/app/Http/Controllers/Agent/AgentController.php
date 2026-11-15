@@ -7,16 +7,19 @@ use App\Http\Controllers\Controller;
 use App\Jobs\CheckAgentConnection;
 use App\Jobs\SendJobToAgent;
 use App\Models\AgentJob;
+use App\Models\CronJob;
 use App\Models\Database;
 use App\Models\DatabaseServer;
 use App\Models\Domain;
 use App\Models\Server;
 use App\Services\Dns\Zones;
 use App\Services\JobOutcome;
+use App\Services\Mesh;
 use App\Services\PanelCertificate;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 /** Reports from the agents: job progress, results and the actual state of the server. */
@@ -132,8 +135,26 @@ class AgentController extends Controller
             'panelCertificate.state' => ['required_with:panelCertificate', Rule::in(['valid', 'pending', 'expired'])],
             'panelCertificate.expiresAt' => ['nullable', 'date'],
             'panelCertificate.caCertificate' => ['nullable', 'string', 'max:8000'],
+            // The tunnel key of the server and the state of its tunnels to other servers. An
+            // agent of an earlier release does not send it.
+            'mesh' => ['nullable', 'array'],
+            'mesh.publicKey' => ['required_with:mesh', 'string', 'max:64'],
+            'mesh.version' => ['integer', 'min:0'],
+            'mesh.address' => ['nullable', 'string', 'max:45'],
+            'mesh.tunnels' => ['nullable', 'array', 'max:1000'],
+            'mesh.tunnels.*.server' => ['required', 'string', 'max:64'],
+            'mesh.tunnels.*.handshakeAt' => ['integer', 'min:0'],
+            'mesh.tunnels.*.reachable' => ['boolean'],
+            'mesh.tunnels.*.roundTripMicros' => ['integer', 'min:0'],
             // The panel CA that the agent trusts. An agent of an earlier release does not send it.
             'panelCaSha256' => ['nullable', 'string', 'regex:/^[0-9a-f]{64}$/'],
+            // The results of the cron jobs that ran since the last reports.
+            'cronRuns' => ['nullable', 'array', 'max:10000'],
+            'cronRuns.*.websiteId' => ['required', 'string', 'max:64'],
+            'cronRuns.*.id' => ['required', 'string', 'max:64'],
+            'cronRuns.*.at' => ['required', 'date'],
+            'cronRuns.*.exitCode' => ['required', 'integer'],
+            'cronRuns.*.output' => ['nullable', 'string'],
         ]);
 
         // A server is degraded when a necessary service does not run. An optional part, for
@@ -186,6 +207,10 @@ class AgentController extends Controller
         if (is_array($data['dnsZones'] ?? null)) {
             app(Zones::class)->reconcile($server->fresh(), $data['dnsZones']);
         }
+        // The mesh: the public key of the server and the state of its tunnels.
+        if (isset($data['mesh'])) {
+            app(Mesh::class)->reported($server, $data['mesh']);
+        }
         // FR-203: the current resource use of each website.
         foreach ($data['websites'] ?? [] as $use) {
             $server->websites()->whereKey($use['id'])->update(['usage' => json_encode(collect($use)->except('id'))]);
@@ -207,6 +232,13 @@ class AgentController extends Controller
             if ($values) {
                 Database::whereIn('website_id', $websiteIds)->where(['engine' => $d['engine'], 'name' => $d['name']])->update($values);
             }
+        }
+        // The agent sends each result in more than one report. The panel keeps the newest run.
+        foreach ($data['cronRuns'] ?? [] as $run) {
+            $at = Carbon::parse($run['at']);
+            CronJob::whereIn('website_id', $websiteIds)->where('website_id', $run['websiteId'])->whereKey($run['id'])
+                ->where(fn ($q) => $q->whereNull('last_run_at')->orWhere('last_run_at', '<', $at))
+                ->update(['last_run_at' => $at, 'last_exit_code' => $run['exitCode'], 'last_output' => Str::limit((string) ($run['output'] ?? ''), 4000)]);
         }
         // The agent reports the ID of a database server in lower case, as the panel has it.
         foreach ($data['databaseServers'] ?? [] as $use) {

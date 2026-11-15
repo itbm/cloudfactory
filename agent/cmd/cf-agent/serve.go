@@ -86,6 +86,10 @@ func serve(ctx context.Context) error {
 	root.QuotaMount = root.Host.QuotaMount(ctx, cfg.SitesDir)
 	root.FindDatabaseQuotas(ctx)
 	srv := &gate.Server{Run: run, Allow: root.Allow, Ops: root.RootOps(), Dial: root.RootDial}
+	// The tunnels to other servers operate after a restart with no connection to the panel.
+	if err := root.RestoreMesh(ctx); err != nil {
+		slog.Error("start the tunnels of the mesh", "err", err)
+	}
 
 	if os.Getenv(oneProcessEnv) == "1" {
 		slog.Warn("the agent operates as one root process, because " + oneProcessEnv + " is set")
@@ -217,6 +221,7 @@ func newDeps(cfg config.Config, run execx.Runner) (*actions.Deps, error) {
 		// The images of the services have the version of the agent. The release signs them.
 		ServiceImage: func(name string) string { return cfg.Registry + "/" + name + ":" + version },
 		EdgeImage:    cfg.Registry + "/edge:" + version,
+		AgentBinary:  binaryPath,
 		SftpImage:    cfg.Registry + "/sftp:" + version,
 		DnsImage:     cfg.Registry + "/dns:" + version,
 		SftpPort:     cfg.SftpPort,
@@ -539,6 +544,8 @@ func work(ctx context.Context, cfg config.Config, g gate.Gate) error {
 	collector := status.Collector{Run: g, Apt: apt, AgentVersion: version, GVisorVersion: gv.Current, Services: []string{"cf-agent", "ssh", "cf-sftp"}, UserServices: []string{host.EdgeUser + ":cf-edge.service"}, DiskPath: cfg.SitesDir, Extra: deps.FillReport}
 
 	go reportLoop(ctx, reporter, collector, time.Duration(cfg.ReportSeconds)*time.Second, cfg.PanelServerCertificateSHA256 == "", deps.SavePanelCAPin)
+	// The cron jobs of the websites.
+	go deps.RunCron(ctx)
 	go func() {
 		for range time.Tick(24 * time.Hour) {
 			runner.Prune(time.Now().Add(-30 * 24 * time.Hour))

@@ -8,6 +8,7 @@ use App\Models\AgentJob;
 use App\Models\Database;
 use App\Models\Website;
 use App\Services\JobOutcome;
+use App\Services\Mesh;
 use App\Services\PanelCertificate;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -20,6 +21,8 @@ use Illuminate\Foundation\Queue\Queueable;
  * - a new website or a new domain with a name that starts with "fail.", for example
  *   "fail.example.com";
  * - a new database with a name that ends with "_fail";
+ * - a deploy from a repository with "fail" in its address;
+ * - a cron job with "fail" in its command;
  * - a DNS zone with a name that starts with "fail.".
  */
 class RunDemoJob implements ShouldQueue
@@ -85,6 +88,14 @@ class RunDemoJob implements ShouldQueue
                 'step' => 2,
                 'error' => 'knotc -b zone-reload '.collect($p['zones'])->pluck('name')->first(fn ($n) => str_starts_with((string) $n, 'fail.')).': exit status 1: error: (operation timed out)',
             ],
+            $job->action === AgentAction::Deploy && str_contains((string) ($p['repository'] ?? ''), 'fail') => [
+                'step' => 1,
+                'error' => "a build command failed: exit status 2: Installing dependencies from lock file\nYour lock file does not contain a compatible set of packages. Please run composer update.",
+            ],
+            $job->action === AgentAction::RunCronJob && str_contains((string) ($p['cronJob']['command'] ?? ''), 'fail') => [
+                'step' => 0,
+                'error' => 'the command ended with exit code 1: PHP Fatal error:  Uncaught RuntimeException: The export did not complete in /app/src/export.php:18',
+            ],
             default => null,
         };
     }
@@ -103,7 +114,25 @@ class RunDemoJob implements ShouldQueue
             AgentAction::CreateDatabase => ($p['engine'] ?? '') === Database::VALKEY ? ['number' => self::freeValkeyNumber($job)] : [],
             AgentAction::Backup => ['snapshotId' => bin2hex(random_bytes(32)), 'sizeBytes' => random_int(40, 900) * 1024 ** 2, 'dumps' => [], 'forgotten' => []],
             AgentAction::InstallHostUpdates => ['rebootRequired' => false],
+            AgentAction::RunCronJob => ['cronJobId' => $p['cronJob']['id'] ?? '', 'exitCode' => 0, 'output' => "Running scheduled tasks.\nDone in 0.4 s.", 'ranAt' => now()->toIso8601String()],
+            AgentAction::Deploy => [
+                'releaseId' => $p['releaseId'] ?? '',
+                'commit' => sha1((string) ($p['releaseId'] ?? '')),
+                'message' => 'Update the '.(['home page', 'checkout form', 'product list', 'contact page'][crc32((string) ($p['releaseId'] ?? '')) % 4]),
+                'removed' => [],
+                'documentRoot' => $p['website']['documentRoot'] ?? '',
+            ],
             AgentAction::UpdateAgent => ['version' => config('cloudfactory.agent.latest_version')],
+            // Each peer answers through its tunnel.
+            AgentAction::SetMesh => ['mesh' => [
+                'publicKey' => $job->server->mesh_public_key,
+                'version' => $job->server->mesh_wanted_version,
+                'address' => $job->server->mesh_address,
+                'tunnels' => array_map(fn (array $peer) => [
+                    'server' => $peer['server'], 'handshakeAt' => now()->getTimestamp(), 'reachable' => true, 'roundTripMicros' => random_int(4000, 24000),
+                ], Mesh::stateFor($job->server)['peers']),
+            ]],
+            AgentAction::RotateMeshKey => ['publicKey' => base64_encode(random_bytes(32))],
             AgentAction::SetPanelCertificate => ['panelCertificate' => [
                 ...array_intersect_key(PanelCertificate::current(), array_flip(['domain', 'caCertificate'])),
                 'method' => $p['method'] ?? 'internal',

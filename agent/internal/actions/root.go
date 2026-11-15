@@ -15,6 +15,7 @@ import (
 	"github.com/itbm/cloudfactory/agent/internal/gate"
 	"github.com/itbm/cloudfactory/agent/internal/host"
 	"github.com/itbm/cloudfactory/agent/internal/images"
+	"github.com/itbm/cloudfactory/agent/internal/panel"
 	"github.com/itbm/cloudfactory/agent/internal/pki"
 	"github.com/itbm/cloudfactory/agent/internal/quadlet"
 	"github.com/itbm/cloudfactory/agent/internal/selfupdate"
@@ -104,6 +105,8 @@ const (
 	opRebootMark  = "reboot.mark"
 	opRebootTake  = "reboot.take"
 	opRebootClear = "reboot.clear"
+
+	// The mesh operations are in mesh.go: opMeshApply, opMeshStatus and opMeshRotate.
 
 	opStateRead  = "state.read"
 	opStateWrite = "state.write"
@@ -646,6 +649,13 @@ func (d *Deps) RootOps() map[string]gate.Handler {
 		}),
 		// removeSecret removes only a file that secretFile made.
 		opSecretRemove: none(func(ctx context.Context, in pathIn) error { return d.removeSecret(ctx, in.Path) }),
+
+		// The mesh: the tunnels to other servers. The helper checks each value of the state
+		// (mesh.State.Check), and it makes each path and each command itself. The private
+		// key stays in the helper.
+		opMeshApply:  none(func(ctx context.Context, in meshIn) error { return d.applyMesh(ctx, in.State) }),
+		opMeshStatus: gate.Op(func(ctx context.Context, _ gate.None) (*panel.Mesh, error) { return d.meshStatus(ctx) }),
+		opMeshRotate: gate.Op(func(ctx context.Context, _ gate.None) (string, error) { return d.rotateMeshKey(ctx) }),
 
 		opPanelDomain: gate.Op(func(ctx context.Context, _ gate.None) (string, error) { return d.panelDomain(ctx) }),
 

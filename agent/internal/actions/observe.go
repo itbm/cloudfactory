@@ -88,11 +88,13 @@ func (d *Deps) FillReport(ctx context.Context, r *panel.Report) {
 		}
 		r.Services = append(r.Services, panel.Service{Name: dnsContainer, State: state})
 	}
+	r.CronRuns = d.cronReport()
 	// The panel server reports the certificate of the panel domain, and the root certificate
 	// of the panel CA, which the panel offers for download.
 	if domain, err := d.panelDomain(ctx); err == nil && d.Edge != nil {
 		r.PanelCertificate = d.PanelCertificateState(ctx, domain)
 	}
+	r.Mesh = d.meshReport(ctx)
 	sites, err := d.State.All()
 	if err != nil {
 		return
