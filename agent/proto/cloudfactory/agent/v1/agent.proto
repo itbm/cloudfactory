@@ -42,6 +42,7 @@ service AgentService {
   rpc RunCronJob(RunCronJobRequest) returns (JobAccepted);
   rpc Deploy(DeployRequest) returns (JobAccepted);
   rpc ActivateRelease(ActivateReleaseRequest) returns (JobAccepted);
+  rpc InstallDependencies(InstallDependenciesRequest) returns (JobAccepted);
   rpc SetMesh(SetMeshRequest) returns (JobAccepted);
   rpc RotateMeshKey(RotateMeshKeyRequest) returns (JobAccepted);
   rpc SendDatabaseServer(SendDatabaseServerRequest) returns (JobAccepted);
@@ -89,7 +90,7 @@ message Website {
   string image = 3;
   // The digest that the agent pulls, for example "sha256:...". Empty for a custom image.
   string image_digest = 4;
-  // "frankenphp", "apache-php-fpm" or "custom".
+  // "frankenphp", "apache-php-fpm", "node", "python" or "custom".
   string runtime = 5;
   string php_version = 6;
   bool worker_mode = 7;
@@ -100,6 +101,7 @@ message Website {
   // Runtime "custom": the port in the container that serves HTTP. 0 means 8080 (FR-307).
   int32 container_port = 12;
   // Runtime "custom": the start command, as a list of arguments. Empty means the command of the image.
+  // Runtimes "node" and "python": the start command of the application, as for a worker.
   repeated string command = 13;
   // The directory in /app that the web server serves, for example "web". Empty means "public",
   // and "." means /app itself.
@@ -116,6 +118,10 @@ message Website {
   // runtime. The command runs in the gVisor sandbox as the Unix user of the website, with the
   // limits of the website.
   bool worker = 16;
+  // The environment variables of the container of the website, and of its build containers. The
+  // agent writes them to a file that only the Unix user of the website can read
+  // (EnvironmentFile in the unit). The panel adds them to the job each time that it sends it.
+  map<string, string> environment = 17;
 }
 
 // A database server of a customer: one database container with one engine, in its own gVisor
@@ -660,6 +666,18 @@ message ActivateReleaseRequest {
   // The website with the document root of the release.
   Website website = 2;
   string release_id = 3;
+  HealthCheck health_check = 4;
+}
+
+// InstallDependencies runs the install command of a Node.js or Python website, for example
+// "npm ci", in a build container in the application directory (the document root). Then it
+// starts the website again with no stop, as SetRuntime does. If a step fails, the website
+// continues with the container that it had.
+message InstallDependenciesRequest {
+  string job_id = 1;
+  Website website = 2;
+  // One command line for "sh -c".
+  string command = 3;
   HealthCheck health_check = 4;
 }
 

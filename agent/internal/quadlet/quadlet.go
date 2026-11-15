@@ -83,7 +83,7 @@ type Website struct {
 	Port       int    // the host port on ServiceAddress that the edge proxy uses
 	SiteDir    string // the files of the website on the host
 	IniFile    string // the generated php.ini on the host
-	Runtime    string // "frankenphp", "apache-php-fpm" or "custom"
+	Runtime    string // "frankenphp", "apache-php-fpm", "node", "python" or "custom"
 	WorkerMode bool
 	Limits     Limits
 	Gvisor     Runtime
@@ -109,6 +109,9 @@ type Website struct {
 	// path, the container has this file as its /etc/hosts, and the file has the database
 	// host names.
 	HostsFile string
+	// EnvFile is the environment file of the container on the host, or "" for a website with
+	// no environment variables. Only the Unix user of the website can read it.
+	EnvFile string
 	// LogFile is the file on the host that gets the output of the container, for the logs in
 	// the panel. Empty means that the output goes only to the journal.
 	LogFile string
@@ -126,6 +129,17 @@ const (
 	PostgreSQLHost = "postgres.internal"
 	ValkeyHost     = "valkey.internal"
 )
+
+// AppPort is the port in the container of a Node.js or Python website. The application
+// listens on the port in the variable PORT.
+const AppPort = 8080
+
+// IsApp reports whether the runtime runs an application of the customer with its start
+// command: Node.js or Python.
+func IsApp(runtime string) bool { return runtime == "node" || runtime == "python" }
+
+// IsPHP reports whether the runtime is a PHP runtime with a php.ini file.
+func IsPHP(runtime string) bool { return runtime == "frankenphp" || runtime == "apache-php-fpm" }
 
 // ContainerName is the name of the Podman container.
 func (w Website) ContainerName() string { return "cf-" + w.UnixUser + w.Suffix }
@@ -264,7 +278,7 @@ func ContainerUnit(w Website) string {
 		line("AddHost", ValkeyHost+":"+w.DatabaseAddress)
 	}
 	line("Volume", w.SiteDir+":/app:Z")
-	if w.IniFile != "" && w.Runtime != "custom" {
+	if w.IniFile != "" && IsPHP(w.Runtime) {
 		line("Volume", w.IniFile+":/usr/local/etc/php/conf.d/zz-cloudfactory.ini:ro,Z")
 	}
 	line("Label", "io.cloudfactory.website="+w.ID)
@@ -273,8 +287,20 @@ func ContainerUnit(w Website) string {
 	if root == "" {
 		root = "/app/public"
 	}
-	if w.Runtime != "custom" {
+	if IsPHP(w.Runtime) {
 		line("Environment", "CF_DOCUMENT_ROOT="+root)
+	}
+	if IsApp(w.Runtime) {
+		// The start script of the image (images/node/cf-app, images/python/cf-app) goes to this
+		// directory, and puts the programs of the dependencies in the PATH.
+		line("Environment", "CF_APP_DIR="+root)
+		line("Environment", "PORT="+strconv.Itoa(AppPort))
+		line("Environment", "HOST=0.0.0.0")
+		line("WorkingDir", root)
+	}
+	if w.EnvFile != "" {
+		// The variables of the customer. Podman reads the file as the Unix user of the website.
+		line("EnvironmentFile", w.EnvFile)
 	}
 	if w.Runtime == "frankenphp" && w.WorkerMode {
 		// The value has a space, so it is in quotes. systemd splits Environment at spaces.
@@ -293,7 +319,7 @@ func ContainerUnit(w Website) string {
 		line("PodmanArgs", "--log-opt=path="+w.LogFile+" --log-opt=max-size="+LogFileMax)
 	}
 
-	if (w.Runtime == "custom" || w.Worker) && len(w.Command) > 0 {
+	if (w.Runtime == "custom" || w.Worker || IsApp(w.Runtime)) && len(w.Command) > 0 {
 		line("Exec", execLine(w.Command))
 	}
 

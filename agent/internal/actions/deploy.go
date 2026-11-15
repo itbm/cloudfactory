@@ -5,10 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"path"
 	"path/filepath"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -133,6 +133,12 @@ func commandError(what string, err error) error {
 // working directory is the release. systemd-run puts the container in a unit with the limits
 // of the website, as for the service of the website (quadlet.Runtime.GlobalArgs).
 func (d *Deps) build(ctx context.Context, w *agentv1.Website, releaseID string, options []string, script string, args ...string) (string, error) {
+	return d.buildIn(ctx, w, path.Join("/app", ReleasesDir, releaseID), options, script, args...)
+}
+
+// buildIn runs a script in a build container of the website (build), with the working
+// directory workdir in the container.
+func (d *Deps) buildIn(ctx context.Context, w *agentv1.Website, workdir string, options []string, script string, args ...string) (string, error) {
 	user := w.GetUnixUser()
 	uid, err := d.Host.LookupUID(user)
 	if err != nil {
@@ -147,7 +153,12 @@ func (d *Deps) build(ctx context.Context, w *agentv1.Website, releaseID string, 
 	argv = append(argv, strings.Fields(u.Gvisor.GlobalArgs())...)
 	argv = append(argv, "run", "--rm", "--pull=never", "--network=pasta", "--userns=keep-id", "--cap-drop=all",
 		"--security-opt=no-new-privileges", "--read-only", "--tmpfs=/tmp", "--env=HOME=/tmp",
-		"--volume="+u.SiteDir+":/app:Z", "--workdir="+path.Join("/app", ReleasesDir, releaseID))
+		"--volume="+u.SiteDir+":/app:Z", "--workdir="+workdir)
+	if quadlet.IsApp(w.GetRuntime()) {
+		// The start script of the image puts the programs of the dependencies in the PATH
+		// (images/node/cf-app, images/python/cf-app), as in the container of the website.
+		argv = append(argv, "--env=CF_APP_DIR="+workdir, "--entrypoint=/usr/local/bin/cf-app")
+	}
 	if u.DatabaseAddress != "" {
 		// A build command, for example a database migration, can connect to the database
 		// servers of the customer, as the website can.
@@ -251,17 +262,15 @@ func (d *Deps) Deploy(req *agentv1.DeployRequest) (jobs.Job, error) {
 				return nil
 			}
 			var options []string
-			if secrets := req.GetSecrets(); len(secrets) > 0 {
-				names := make([]string, 0, len(secrets))
-				for name := range secrets {
-					names = append(names, name)
-				}
-				sort.Strings(names)
-				var b strings.Builder
-				for _, name := range names {
-					b.WriteString(name + "=" + secrets[name] + "\n")
-				}
-				file, err := d.writeDeployFile(ctx, user, id+".env", b.String())
+			// The build commands get the environment variables of the website and the secrets
+			// of the deploy. A secret replaces a variable with the same name.
+			env := maps.Clone(w.GetEnvironment())
+			if env == nil {
+				env = map[string]string{}
+			}
+			maps.Copy(env, req.GetSecrets())
+			if len(env) > 0 {
+				file, err := d.writeDeployFile(ctx, user, id+".env", envFile(env))
 				if err != nil {
 					return err
 				}
@@ -365,5 +374,64 @@ func (d *Deps) ActivateRelease(req *agentv1.ActivateReleaseRequest) (jobs.Job, e
 	}
 	return jobs.Job{ID: req.GetJobId(), Key: w.GetId(), Steps: steps, OnFailure: inner.OnFailure, Result: func() map[string]any {
 		return map[string]any{"releaseId": id, "documentRoot": w.GetDocumentRoot()}
+	}}, nil
+}
+
+// InstallDependencies runs the install command of a Node.js or Python website in a build
+// container, in the application directory, and then starts the website again with no stop
+// (SetRuntime). The new container uses the new dependencies. The install command writes in
+// the directory that the running container uses, for example node_modules. Thus, for a short
+// time, the running container can see new files before it stops.
+func (d *Deps) InstallDependencies(req *agentv1.InstallDependenciesRequest) (jobs.Job, error) {
+	w := req.GetWebsite()
+	if err := errors.Join(CheckWebsite(w), validate.CommandLine(req.GetCommand())); err != nil {
+		return jobs.Job{}, err
+	}
+	if !quadlet.IsApp(w.GetRuntime()) {
+		return jobs.Job{}, fmt.Errorf("the runtime %q has no install command", w.GetRuntime())
+	}
+	user := w.GetUnixUser()
+	inner, err := d.SetRuntime(&agentv1.WebsiteRequest{JobId: req.GetJobId(), Website: w, HealthCheck: req.GetHealthCheck()})
+	if err != nil {
+		return jobs.Job{}, err
+	}
+	cleanup := func(ctx context.Context) {
+		if _, err := d.asUser(ctx, user, "", "rm", "-rf", "--", d.deployFiles(user)); err != nil {
+			slog.Warn("remove the files of the install", "website", w.GetId(), "err", err)
+		}
+	}
+	steps := []jobs.Step{{Name: "Install dependencies", Do: func(ctx context.Context) error {
+		defer cleanup(context.WithoutCancel(ctx))
+		site, err := d.State.Get(w.GetId())
+		if err != nil {
+			return err
+		}
+		if site == nil {
+			return errors.New("the agent does not know this website; create it first")
+		}
+		if err := d.pullImage(ctx, w); err != nil {
+			return err
+		}
+		var options []string
+		if env := w.GetEnvironment(); len(env) > 0 {
+			file, err := d.writeDeployFile(ctx, user, "install.env", envFile(env))
+			if err != nil {
+				return err
+			}
+			options = append(options, "--env-file="+file)
+		}
+		// The output goes to the standard error, so that the end of it is in the error of a
+		// command that fails.
+		if _, err := d.buildIn(ctx, w, documentRoot(w), options, "set -e\nexec 1>&2\n"+req.GetCommand()); err != nil {
+			return commandError("the install command failed", err)
+		}
+		return nil
+	}}}
+	steps = append(steps, inner.Steps...)
+	return jobs.Job{ID: req.GetJobId(), Key: w.GetId(), Long: true, Steps: steps, OnFailure: func(ctx context.Context) {
+		if inner.OnFailure != nil {
+			inner.OnFailure(ctx)
+		}
+		cleanup(ctx)
 	}}, nil
 }

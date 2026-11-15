@@ -935,6 +935,75 @@
         }
       ]
     },
+    "envName": {
+      "valid": [
+        "DATABASE_URL",
+        "NODE_ENV",
+        "django_settings",
+        "_X",
+        "PORT2",
+        "CFX",
+        {
+          "repeat": [
+            [
+              "A",
+              64
+            ]
+          ]
+        }
+      ],
+      "invalid": [
+        "",
+        "2FA",
+        "A-B",
+        "A B",
+        "A=B",
+        "A\n",
+        "PORT",
+        "HOME",
+        "PATH",
+        "HOST",
+        "PWD",
+        "CF_TOKEN",
+        {
+          "repeat": [
+            [
+              "A",
+              65
+            ]
+          ]
+        }
+      ]
+    },
+    "envValue": {
+      "valid": [
+        "",
+        "production",
+        "postgres://app:secret@postgres.internal:5432/app",
+        "a=b \"c\" $d",
+        {
+          "repeat": [
+            [
+              "x",
+              4096
+            ]
+          ]
+        }
+      ],
+      "invalid": [
+        "a\nb",
+        "a\rb",
+        "a\u0000b",
+        {
+          "repeat": [
+            [
+              "x",
+              4097
+            ]
+          ]
+        }
+      ]
+    },
     "dnsRecordName": {
       "valid": [
         "@",
