@@ -983,6 +983,36 @@ These limits apply:
 To change the memory limit, change the database server (refer to
 [Change or remove a database server](#change-or-remove-a-database-server)).
 
+### Adminer
+
+Adminer is a web tool for MariaDB and PostgreSQL databases. To open a database:
+
+1. On the page of the website, go to **Databases**.
+2. In the row of the database, select **Open in Adminer**.
+
+Adminer opens in a new window. You do not type a password: the panel makes a temporary
+database user with access to this database only. The user is valid for 60 minutes. After this
+time, open the database from the panel again. With the CLI, run
+`cf databases adminer WEBSITE DATABASE`. Add `--read-only` for a user that cannot change the
+data.
+
+Before you use Adminer, do these steps:
+
+1. Add a DNS record for `adminer.<panel domain>`, for example `adminer.panel.example.com`,
+   that points to the panel server. To use a different name, set `CF_ADMINER_DOMAIN` in
+   `/var/lib/cloudfactory/panel/panel.env` and restart the panel services. The name must not
+   be the domain of a website.
+2. The edge proxy gets a certificate for the name. It uses Let's Encrypt for a public name and
+   the panel CA for a local name, as for the panel domain (refer to
+   [The panel certificate](#the-panel-certificate)).
+
+The panel makes one Adminer container for each customer on the panel server, the first time
+that a user of the customer opens a database. The container uses the image `adminer` of the
+release of the panel server. To change the time that a temporary user is valid, set
+`CF_ADMINER_MINUTES`.
+
+Adminer does not open Valkey databases.
+
 ### Servers that you installed with release 0.1
 
 Release 0.1 used the SSH service of the host for SFTP, on port 22. Later releases move SFTP to

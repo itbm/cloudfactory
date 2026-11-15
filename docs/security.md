@@ -163,6 +163,25 @@ The product specification, section 6.4, gives the requirements.
   request for a database or a database user that has no database server, and a database
   server of a different customer.
 
+### Adminer
+
+- Each customer has its own Adminer container, in gVisor, with its own Unix user and limits.
+  No two customers share an Adminer process.
+- The container is a member of the networks of its customer only. The firewall lets it
+  connect to the MariaDB and PostgreSQL database servers of that customer, and to nothing
+  else in the private networks.
+- Adminer opens only MariaDB and PostgreSQL, and only a server name that ends in `.internal`.
+  It refuses other names before it connects. This is a second check: the firewall is the
+  first.
+- The user types no password. The panel makes a temporary database user with access to one
+  database only, and gives the password to the browser one time. The panel does not keep the
+  password. The user is removed after 60 minutes, or when its database is removed.
+- A user who can manage the databases of a website (the scope `databases`) can open them in
+  Adminer. The panel refuses this for a suspended customer, and writes an audit event for each
+  sign-in.
+- Adminer has no permanent login, sends `Cache-Control: no-store`, and refuses frames from
+  other sites (`frame-ancestors 'none'` and `X-Frame-Options: DENY`).
+
 ## Domains
 
 - The edge proxy serves a domain only after the customer verifies it. To verify a domain, the
@@ -759,6 +778,14 @@ These items stay open in release 0.1:
   then controls the DNS of the domain. The panel asks for the TXT proof only while a
   different customer has a zone for the name. Before you remove a zone, set other name
   servers at the registrar.
+- **One origin for Adminer.** All customers use the same Adminer domain, with a different
+  path for each customer. The browser thus puts the Adminer pages of all customers in one
+  origin. The session cookie of Adminer has the path of the customer, and Adminer uses a
+  content security policy with a nonce for each page. A script that runs on an Adminer page
+  of one customer can still read the pages of a different customer in the same browser. A
+  domain for each customer needs a certificate for each customer, and the limits of
+  Let's Encrypt make this difficult. Use one browser profile for each customer when you
+  manage databases of different customers.
 - **A server that had the role `dns`.** When you turn off DNS on a server, the panel removes
   the zones from the server. The empty container `cf-dns` and the firewall rules for port 53
   stay until you remove them.
