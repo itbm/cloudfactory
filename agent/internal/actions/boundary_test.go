@@ -117,9 +117,10 @@ func TestTheRootHelperRunsTheCommandsOfThePolicy(t *testing.T) {
 		resticHead + "init",
 		resticHead + "snapshots --tag " + tagOne,
 		resticHead + "forget --tag " + tagOne + ",kind=scheduled --group-by  --keep-daily 7 --keep-weekly 4",
-		resticHead + "backup " + app + " " + dumps + " --tag " + tagOne + " --tag kind=manual",
+		// A backup runs in a jail that shows only the paths of the backup and the key file.
+		jailOf(root, app, dumps) + resticHead + "backup " + app + " " + dumps + " --tag " + tagOne + " --tag kind=manual",
 		// The databases of a website of a different server.
-		resticHead + "backup " + dumps + " --tag " + tagOne + " --tag kind=scheduled-databases",
+		jailOf(root, dumps) + resticHead + "backup " + dumps + " --tag " + tagOne + " --tag kind=scheduled-databases",
 		resticHead + "forget --tag " + tagOne + ",kind=manual-databases --group-by  --keep-last 10",
 		resticHead + "restore 1a2b3c4d --target " + stage + " --include " + app + "/public/index.php",
 	} {
@@ -130,6 +131,11 @@ func TestTheRootHelperRunsTheCommandsOfThePolicy(t *testing.T) {
 	if len(f.Calls) == 0 {
 		t.Error("the fake runner got no command")
 	}
+}
+
+// jailOf gives the start of a backup command: the jail that shows the paths and the key file.
+func jailOf(root *Deps, paths ...string) string {
+	return root.agentBinary() + " jail --ro " + strings.Join(paths, " --ro ") + " --ro " + root.ResticPasswordFile + " --tmp " + root.resticTmp() + " -- "
 }
 
 // words splits a command of a test at each space. Two spaces give an empty argument.
@@ -297,6 +303,20 @@ func TestTheRootHelperRefusesCommandsOutsideThePolicy(t *testing.T) {
 		resticHead + "forget --prune " + "1a2b3c4d",
 		resticHead + "forget --tag " + tagOne + ",kind=scheduled --group-by  --keep-daily 7 --prune",
 		resticHead + "forget --tag " + tagOne + ",kind=scheduled --group-by ",
+		// Adversarial review, finding G2-01: a backup outside the jail, and a jail that shows
+		// more than the paths of the backup or runs a different program.
+		resticHead + "backup " + app + " " + dumps + " --tag " + tagOne + " --tag kind=manual",
+		resticHead + "backup " + dumps + " --tag " + tagOne + " --tag kind=scheduled-databases",
+		jailOf(root, app, dumps, "/etc/shadow") + resticHead + "backup " + app + " " + dumps + " --tag " + tagOne + " --tag kind=manual",
+		jailOf(root, app, "/") + resticHead + "backup " + app + " " + dumps + " --tag " + tagOne + " --tag kind=manual",
+		jailOf(root, app) + resticHead + "backup " + app + " " + dumps + " --tag " + tagOne + " --tag kind=manual",
+		strings.Replace(jailOf(root, app, dumps), root.resticTmp(), app, 1) + resticHead + "backup " + app + " " + dumps + " --tag " + tagOne + " --tag kind=manual",
+		jailOf(root, app, dumps) + resticHead + "init",
+		jailOf(root, app, dumps) + resticHead + "restore 1a2b3c4d --target " + stage + " --include " + app,
+		jailOf(root, app, dumps) + "sh -c id",
+		jailOf(root, app, dumps) + resticHead + "backup /etc " + dumps + " --tag " + tagOne + " --tag kind=manual",
+		root.agentBinary() + " jail --ro " + app + " --ro " + dumps + " --tmp " + root.resticTmp(),
+		root.agentBinary() + " serve",
 		resticHead + "backup /etc " + dumps + " --tag " + tagOne + " --tag kind=manual",
 		resticHead + "backup /etc --tag " + tagOne + " --tag kind=manual-databases",
 		resticHead + "backup " + app + " --tag " + tagOne + " --tag kind=manual-databases",

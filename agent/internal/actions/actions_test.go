@@ -697,7 +697,7 @@ func TestBackupGivesTheSnapshotID(t *testing.T) {
 	var dumpMode os.FileMode
 	var dumpNames []string
 	f.Rules = []execx.Rule{
-		{Prefix: "restic --repo s3:backups/cf --password-file  --json --retry-lock 30m backup", Output: `{"message_type":"status"}` + "\n" + `{"message_type":"summary","snapshot_id":"1a2b3c4d","total_bytes_processed":2048}`, Do: func() error {
+		{Prefix: "/usr/local/bin/cf-agent jail --ro ", Output: `{"message_type":"status"}` + "\n" + `{"message_type":"summary","snapshot_id":"1a2b3c4d","total_bytes_processed":2048}`, Do: func() error {
 			// The state of the dump directory at the time of the upload.
 			if info, err := os.Stat(dumps); err == nil {
 				dumpMode = info.Mode().Perm()
@@ -731,7 +731,7 @@ func TestBackupGivesTheSnapshotID(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(d.Host.SiteRoot("acme_x7k2"), ".cloudfactory")); !os.IsNotExist(err) {
 		t.Error("the agent wrote a dump in the home of the website")
 	}
-	if !f.Called("restic --repo s3:backups/cf --password-file  --json --retry-lock 30m backup " + d.Host.AppDir("acme_x7k2") + " " + dumps) {
+	if !f.Called(testJail(d, d.Host.AppDir("acme_x7k2"), dumps) + "restic --repo s3:backups/cf --password-file  --json --retry-lock 30m backup " + d.Host.AppDir("acme_x7k2") + " " + dumps) {
 		t.Errorf("calls = %v", f.Calls)
 	}
 	if _, err := d.Backup(&agentv1.BackupRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Kind: "manual", Target: "/tmp"}); err == nil {
@@ -1079,4 +1079,10 @@ func TestTheWatchNeedsTheExpectedStatus(t *testing.T) {
 	if edge.sites[websiteID].Port != 20000 {
 		t.Errorf("traffic did not go back to the old container: %+v", edge.sites[websiteID])
 	}
+}
+
+// testJail gives the start of the backup command of a test: the jail that shows only the
+// paths of the backup. The Deps of a test has no key file.
+func testJail(d *Deps, paths ...string) string {
+	return d.agentBinary() + " jail --ro " + strings.Join(paths, " --ro ") + " --tmp " + d.resticTmp() + " -- "
 }

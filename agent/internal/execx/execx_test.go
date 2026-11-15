@@ -3,6 +3,8 @@ package execx
 import (
 	"bytes"
 	"context"
+	"errors"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -63,5 +65,52 @@ func TestHostRemovesTheVariablesOfTheLoginSession(t *testing.T) {
 		if !found {
 			t.Errorf("the command did not get %s", want)
 		}
+	}
+}
+
+// Adversarial review, finding G5-01: a command of a website, for example a cron command, can
+// write output with no end. The agent keeps a fixed quantity of it.
+func TestHostKeepsALimitedQuantityOfOutput(t *testing.T) {
+	ctx := context.Background()
+	// 40 MiB of standard output, and then a last line.
+	out, err := Host{}.Run(ctx, "sh", "-c", "head -c 41943040 /dev/zero | tr '\\0' 'a'; echo; echo cf-exit:0")
+	if !errors.Is(err, ErrOutputLimit) {
+		t.Fatalf("error = %v, want ErrOutputLimit", err)
+	}
+	if len(out) > MaxOutput+maxOutputEnd+100 {
+		t.Fatalf("the agent kept %d bytes of output", len(out))
+	}
+	if !strings.HasPrefix(out, "aaaa") || !strings.HasSuffix(out, "cf-exit:0\n") || !strings.Contains(out, "[cf-agent: removed ") {
+		t.Fatalf("the output does not have its start, its end and the note: %q … %q", out[:20], out[len(out)-40:])
+	}
+
+	// 40 MiB of standard error of a command that fails: the error has the end only.
+	_, err = Host{}.Run(ctx, "sh", "-c", "head -c 41943040 /dev/zero | tr '\\0' 'a' >&2; echo the end >&2; exit 3")
+	if err == nil || !strings.HasSuffix(err.Error(), "the end") || len(err.Error()) > 2200 {
+		t.Fatalf("error = %.80q (%d bytes)", err, len(fmt.Sprint(err)))
+	}
+
+	// A small output stays as it is.
+	out, err = Host{}.Run(ctx, "sh", "-c", "echo one; echo two")
+	if err != nil || out != "one\ntwo\n" {
+		t.Fatalf("out = %q, err = %v", out, err)
+	}
+}
+
+func TestOutputKeepsItsStartAndItsEnd(t *testing.T) {
+	o := newOutput(maxOutputEnd + 10)
+	for i := 0; i < 1000; i++ {
+		_, _ = o.Write([]byte(strings.Repeat("x", 1000)))
+	}
+	_, _ = o.Write([]byte("END"))
+	s := o.String()
+	if !o.Cut() || !strings.HasPrefix(s, "xxxxxxxxxx\n[cf-agent: removed ") || !strings.HasSuffix(s, "END") {
+		t.Fatalf("output = %.60q", s)
+	}
+	if len(o.start) != 10 || len(o.end) > 2*maxOutputEnd {
+		t.Fatalf("start = %d bytes, end = %d bytes", len(o.start), len(o.end))
+	}
+	if got := int64(10) + o.removed + int64(len(o.end)); got != 1000*1000+3 {
+		t.Fatalf("the parts have %d bytes", got)
 	}
 }

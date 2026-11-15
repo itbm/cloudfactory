@@ -1025,7 +1025,7 @@ func TestBackupAndRestoreUseTheDatabaseServerOfADatabase(t *testing.T) {
 	staging := filepath.Join(d.DataDir, "restore", jobID)
 	file := filepath.Join(staging, d.DataDir, "dumps", "acme_x7k2", "mariadb-acme_x7k2_blog.dump")
 	f.Rules = []execx.Rule{
-		{Prefix: "restic --repo s3:b/c --password-file  --json --retry-lock 30m backup", Output: `{"message_type":"summary","snapshot_id":"1a2b3c4d","total_bytes_processed":2048}`},
+		{Prefix: "/usr/local/bin/cf-agent jail --ro ", Output: `{"message_type":"summary","snapshot_id":"1a2b3c4d","total_bytes_processed":2048}`},
 		{Prefix: "restic --repo s3:b/c --password-file  --json --retry-lock 30m restore", Do: func() error { return writeFile(file, dump) }},
 	}
 	f.Calls, f.Inputs = nil, nil

@@ -29,8 +29,9 @@ use Illuminate\Validation\ValidationException;
  * - Each server with the role "dns" and a name server host name answers for all zones. The
  *   panel sends the full zone to each of these servers after each change (SetDnsZones). The
  *   servers do not transfer zones between them.
- * - A zone belongs to one customer. A customer cannot make a zone with a name in a zone of a
- *   different customer, or above one, unless it proves control of the name in the public DNS.
+ * - A zone belongs to one customer. A customer makes a zone only after it proves control of
+ *   the name in the public DNS (checkName). The name servers are the same for all customers,
+ *   so a domain that points to them does not show which customer controls it.
  * - The panel makes the NS records of each zone, and the A and AAAA records of the domains
  *   of the websites of the customer.
  */
@@ -122,10 +123,16 @@ class Zones
      *
      * - Only an administrator makes a zone for the domain of the panel, the host name of a
      *   server or of a name server, or for a name above one of them.
+     * - A customer proves control of each new zone name. The proof is a TXT record in the
+     *   public DNS, a zone of the same customer that has the name in it, or a verified domain
+     *   of a website of the customer. All customers use the same name servers. Thus a domain
+     *   that points to the panel does not prove which customer controls it, and a name below
+     *   the domain of a different person is not free to take (adversarial review, findings
+     *   A6-01 and A6-02).
      * - A name that a different customer has as a zone, or a name in such a zone or above it:
-     *   the customer first proves control with a TXT record in the public DNS. When the
-     *   queries for the other zone do not come to the panel, a verified domain of a website of
-     *   the customer is also a proof.
+     *   the TXT record is the proof. When the queries for the other zone do not come to the
+     *   panel, a verified website domain of the customer is also a proof, and so is a zone of
+     *   the customer that the public DNS sends to the panel.
      *
      * @throws ValidationException
      */
@@ -150,13 +157,25 @@ class Zones
                     ? 'The panel removes a zone with this name. Try again in one minute.'
                     : 'You have this zone already.']);
             }
-            $proved = $user->isAdministrator()
-                || (! $other->delegatedHere() && $this->policy->preVerified($user, $customer->id, $name))
-                || $this->policy->proves($customer->id, $name);
+        }
+        $administrator = $user->isAdministrator();
+        // The TXT record is the proof that no other customer can copy: its value is a keyed
+        // hash of the customer and the name.
+        $txt = ! $administrator && $this->policy->proves($customer->id, $name);
+        // A proof that the customer gave before: a zone of the customer that has the name in
+        // it, or a verified domain of a website of the customer.
+        $before = ! $administrator && ! $txt && $this->provedBefore($customer->id, $name);
+        $challenge = " add a TXT record _cloudfactory-challenge.{$name} with the value {$this->policy->claimToken($customer->id, $name)} at your current DNS provider, and then try again. DNS changes can take some minutes.";
+        if (! $administrator && ! $txt && ! $before && $overlap->isEmpty()) {
+            throw ValidationException::withMessages(['name' => 'Prove that you control this domain. To do that,'.$challenge
+                .' If the domain uses the name servers of this panel already, speak to your provider.']);
+        }
+        foreach ($overlap as $other) {
+            $proved = $administrator || $txt || (! $other->delegatedHere() && $this->policy->preVerified($user, $customer->id, $name));
             if (! $proved) {
                 $same = $other->name === $name;
                 throw ValidationException::withMessages(['name' => ($same ? 'A different customer has this zone.' : 'This name overlaps with a zone of a different customer.')
-                    ." If you control the domain, add a TXT record _cloudfactory-challenge.{$name} with the value {$this->policy->claimToken($customer->id, $name)} at your current DNS provider, and then try again. DNS changes can take some minutes."]);
+                    .' If you control the domain,'.$challenge]);
             }
             if ($other->name === $name) {
                 if ($other->status === DnsZone::REMOVING) {
@@ -170,6 +189,23 @@ class Zones
         }
 
         return $taken;
+    }
+
+    /**
+     * True when the customer gave a proof of control for the name before: the customer has an
+     * active zone with the name in it, or a verified domain of a website that is the name or
+     * is above it.
+     */
+    private function provedBefore(string $customerId, string $name): bool
+    {
+        if (self::zoneOf($customerId, $name) !== null) {
+            return true;
+        }
+
+        return Domain::whereNotNull('verified_at')
+            ->whereHas('website', fn ($q) => $q->where('customer_id', $customerId))
+            ->pluck('name')
+            ->contains(fn (string $verified) => DomainPolicy::within($name, $verified));
     }
 
     /**

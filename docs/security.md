@@ -87,6 +87,10 @@ The product specification, section 6.4, gives the requirements.
   limits of a website. The firewall rules for the website user apply to both.
 - A customer controls the commands of its cron jobs and its builds. This gives the customer
   no new rights: the customer can run the same code in its website.
+- The agent keeps a limited quantity of the output of each command: the first 8 MiB of the
+  standard output, and the start and the end of the error output. It discards the remainder
+  while the command runs. A command of a customer thus cannot use all the memory of the
+  agent with its output. A cron job keeps only the last 16 KiB of its output.
 - The panel encrypts the private deploy key, the webhook token and the build secrets in its
   database. The API gives the names of the secrets, not their values. The private key and
   the secrets are in a job only when the panel sends it to the agent.
@@ -266,10 +270,18 @@ The product specification, section 6.4, gives the requirements.
 
 - A zone belongs to one customer. A user can see and change only the zones of the customers
   that the user controls, and each DNS request needs the token scope `dns`.
-- A customer cannot make a zone for a name that is the same as, above or below a zone of a
-  different customer, unless the customer proves control of the domain. The proof is a DNS TXT
-  record at `_cloudfactory-challenge.<domain>`, as for the domain of a website. An
-  administrator needs no proof.
+- A customer proves control of a domain before the customer makes a zone for it. The proof is
+  a DNS TXT record at `_cloudfactory-challenge.<domain>`, as for the domain of a website. The
+  value of the record is a keyed hash of the customer and the name, so the record of one
+  customer is not a proof for a different customer. An administrator needs no proof.
+- A customer needs no new record for a name in a zone that the customer has already, or for
+  a verified domain of a website of the customer and the names below it.
+- All customers use the same name servers. Thus name servers that point to the panel are not
+  a proof for a new zone, and a zone of one customer does not let a different customer make
+  a zone below it or above it. For a name that is the same as, above or below a zone of a
+  different customer, the TXT record is the proof.
+- A domain that uses the name servers of the panel and has no zone cannot show a TXT record.
+  An administrator makes the zone for such a domain.
 - A customer cannot make a zone for the domain of the panel, the host name of a server or a
   name server host name.
 - The plan of a customer gives the number of its zones. A zone has 1000 records at most. A
@@ -703,6 +715,16 @@ What the boundary does not protect:
   to a server can delete the backups of that server. Versioning or an object lock in the
   bucket keeps deleted data for a set time.
 - A backup keeps the SHA-256 sum of each database dump (refer to [Databases](#databases)).
+- restic reads the files of a website as root while the website operates, and the owner of
+  the website can replace a directory with a symbolic link at any time. Thus the agent runs
+  each `restic backup` in a jail (`cf-agent jail`): a mount namespace whose root is an empty
+  file system in memory. The jail has only the system programs (`/usr`), the CA
+  certificates, the files that find a host name, four devices, the paths of the backup
+  (read-only) and a temporary directory. It has no `/proc`, no `/root`, no `/etc/shadow`, no
+  `/etc/cloudfactory` and no files of a different website. A link in the files of a website
+  then points to a file of the same backup or to nothing. The agent opens each path of the
+  jail without symbolic links, and the root helper refuses a `restic backup` that is not in
+  a jail with exactly the paths of the backup.
 - The backup of a database is in the repository of the server of its database server. For a
   website with a database on a different server, the agent of that server makes the dump
   and keeps it in its own repository. No dump and no repository password goes to a
@@ -915,12 +937,10 @@ The table also limits the outgoing connections:
 
 These items stay open in release 0.1:
 
-- **A domain that points to the panel after its zone is removed.** When a customer removes a
-  zone, or an administrator removes a customer, the registrar of the domain can still have
-  the name servers of the panel. A different customer who makes a zone for the same domain
-  then controls the DNS of the domain. The panel asks for the TXT proof only while a
-  different customer has a zone for the name. Before you remove a zone, set other name
-  servers at the registrar.
+- **Zones from before the TXT proof was mandatory.** The panel asks for the TXT proof when a
+  customer makes a zone. It does not examine the zones that customers made before this rule.
+  An administrator examines these zones on the **DNS** page and removes a zone that its
+  customer does not control.
 - **One origin for Adminer.** All customers use the same Adminer domain, so the browser puts
   the Adminer pages of all customers in one origin. Each sign-in has its own random address,
   `/<tool>/<random key>/`, and the session cookie of Adminer has this path only. Adminer

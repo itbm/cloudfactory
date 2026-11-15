@@ -3,8 +3,8 @@
 package execx
 
 import (
-	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -80,9 +80,9 @@ func (h Host) RunEnv(ctx context.Context, env []string, stdin, name string, args
 	if stdin != "" {
 		cmd.Stdin = strings.NewReader(stdin)
 	}
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+	stdout, stderr := newOutput(MaxOutput), newOutput(0)
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
 	if err := cmd.Run(); err != nil {
 		msg := strings.TrimSpace(stderr.String())
 		if len(msg) > 2000 {
@@ -90,15 +90,78 @@ func (h Host) RunEnv(ctx context.Context, env []string, stdin, name string, args
 		}
 		return stdout.String(), fmt.Errorf("%s %s: %w: %s", name, strings.Join(args, " "), err, msg)
 	}
+	if stdout.Cut() {
+		// The caller gets the start and the end of the output. A caller that reads a
+		// structure from the output must not use a part of it as the full output.
+		return stdout.String(), fmt.Errorf("%s: %w", name, ErrOutputLimit)
+	}
 	return stdout.String(), nil
+}
+
+// MaxOutput is the largest standard output of one command that the agent keeps in memory.
+// A larger output uses Stream.
+const MaxOutput = 8 << 20
+
+// maxOutputEnd is the size of the end of the output that the agent keeps when it removes a
+// part of the output. The standard error of a command keeps only its end.
+const maxOutputEnd = 64 << 10
+
+// ErrOutputLimit is the error of a command that ended with no error and wrote more than
+// MaxOutput to its standard output.
+var ErrOutputLimit = errors.New("the command wrote too much output, and the agent removed a part of it")
+
+// output keeps the output of a command in memory, with a limit. The owner of a website
+// controls the output of a cron command, a build command and the log of the website. With no
+// limit, such a command used all the memory of the agent (adversarial review, finding G5-01).
+//
+// output keeps the first bytes, up to the limit, and the last maxOutputEnd bytes. It reads and
+// discards the bytes between them, so the command continues and does not stop on a full pipe.
+type output struct {
+	start    []byte
+	maxStart int
+	end      []byte
+	removed  int64
+}
+
+// newOutput gives an output that keeps limit bytes at most, and maxOutputEnd bytes when limit
+// is smaller than that.
+func newOutput(limit int) *output {
+	return &output{maxStart: max(limit-maxOutputEnd, 0)}
+}
+
+func (o *output) Write(p []byte) (int, error) {
+	n := len(p)
+	if room := o.maxStart - len(o.start); room > 0 {
+		take := min(room, len(p))
+		o.start = append(o.start, p[:take]...)
+		p = p[take:]
+	}
+	o.end = append(o.end, p...)
+	// The end can grow to two times its size before the old half goes: one copy for each
+	// maxOutputEnd bytes, not one for each write.
+	if extra := len(o.end) - maxOutputEnd; extra > maxOutputEnd {
+		o.removed += int64(extra)
+		o.end = append(o.end[:0], o.end[extra:]...)
+	}
+	return n, nil
+}
+
+// Cut reports whether a part of the output was removed.
+func (o *output) Cut() bool { return o.removed > 0 }
+
+func (o *output) String() string {
+	if !o.Cut() {
+		return string(o.start) + string(o.end)
+	}
+	return string(o.start) + fmt.Sprintf("\n[cf-agent: removed %d bytes of output]\n", o.removed) + string(o.end)
 }
 
 func (h Host) Stream(ctx context.Context, stdin io.Reader, stdout io.Writer, name string, args ...string) error {
 	cmd := h.command(ctx, nil, name, args...)
 	cmd.Stdin = stdin
 	cmd.Stdout = stdout
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
+	stderr := newOutput(0)
+	cmd.Stderr = stderr
 	if err := cmd.Run(); err != nil {
 		msg := strings.TrimSpace(stderr.String())
 		if len(msg) > 2000 {
@@ -119,10 +182,10 @@ func (h Host) Pipe(ctx context.Context, from, to []string) error {
 	if err != nil {
 		return err
 	}
-	var srcErr, dstErr bytes.Buffer
-	src.Stderr = &srcErr
+	srcErr, dstErr := newOutput(0), newOutput(0)
+	src.Stderr = srcErr
 	dst.Stdin = out
-	dst.Stderr = &dstErr
+	dst.Stderr = dstErr
 	if err := src.Start(); err != nil {
 		return err
 	}
