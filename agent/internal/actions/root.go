@@ -962,7 +962,8 @@ func checkEnvFile(content string) error {
 		if !ok {
 			return errors.New("a line of the environment file has no \"=\"")
 		}
-		if err := errors.Join(validate.EnvName(name), validate.EnvValue(value)); err != nil {
+		// A name that starts with CF_ is for a plugin that the panel runs (envNameOf).
+		if err := errors.Join(envNameOf("custom", name), validate.EnvValue(value)); err != nil {
 			return err
 		}
 	}

@@ -257,7 +257,9 @@ type Website struct {
 	RoutePath string `protobuf:"bytes,17,opt,name=route_path,json=routePath,proto3" json:"route_path,omitempty"`
 	// The environment variables of the container of the website, and of its build containers. The
 	// agent writes them to a file that only the Unix user of the website can read
-	// (EnvironmentFile in the unit). The panel adds them to the job each time that it sends it.
+	// (EnvironmentFile in the unit), so the values are not in the unit or in a command line. The
+	// panel adds the variables of a website to the job each time that it sends it. A plugin that
+	// the panel runs (runtime "custom") gets its token this way too (docs/plugins.md).
 	Environment   map[string]string `protobuf:"bytes,18,rep,name=environment,proto3" json:"environment,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

@@ -185,12 +185,12 @@ func TestAppRuntimesRefuseBadInput(t *testing.T) {
 }
 
 func TestTheRootHelperWritesOnlyValidEnvironmentFiles(t *testing.T) {
-	for _, bad := range []string{"NOEQUALS\n", "PORT=1\n", "CF_X=1\n", "A=1\n\nB=2\n", "1A=b\n"} {
+	for _, bad := range []string{"NOEQUALS\n", "PORT=1\n", "HOME=/x\n", "A-B=1\n", "A=1\n\nB=2\n", "1A=b\n"} {
 		if err := checkEnvFile(bad); err == nil {
 			t.Errorf("%q: no error", bad)
 		}
 	}
-	for _, good := range []string{"", "A=\n", "A=b=c\nB=d e\n"} {
+	for _, good := range []string{"", "A=\n", "A=b=c\nB=d e\n", "CF_TOKEN=7|abc\n"} {
 		if err := checkEnvFile(good); err != nil {
 			t.Errorf("%q: %v", good, err)
 		}

@@ -13,8 +13,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * A plugin: a program outside the panel that uses the public API with its own token. The
  * panel keeps the signed manifest, the address of the plugin and the secret of its webhooks.
  */
-#[Fillable(['slug', 'name', 'version', 'publisher', 'manifest', 'signature', 'plugin_key_id', 'enabled', 'base_url', 'webhook_secret', 'user_id'])]
-#[Hidden(['webhook_secret'])]
+#[Fillable(['slug', 'name', 'version', 'publisher', 'manifest', 'signature', 'plugin_key_id', 'enabled', 'base_url', 'webhook_secret', 'user_id', 'server_id', 'unix_user', 'host', 'container_status', 'hosted_token'])]
+#[Hidden(['webhook_secret', 'hosted_token'])]
 class Plugin extends Model
 {
     use HasUlids;
@@ -24,7 +24,25 @@ class Plugin extends Model
         return [
             'enabled' => 'boolean',
             'webhook_secret' => 'encrypted',
+            'hosted_token' => 'encrypted',
         ];
+    }
+
+    /** True when the panel runs the plugin in a container (App\Services\Plugins\Hosting). */
+    public function hosted(): bool
+    {
+        return $this->unix_user !== null;
+    }
+
+    /** @return array{ref: string, digest: string, port: int}|null The image of the manifest. */
+    public function image(): ?array
+    {
+        return $this->spec()['image'] ?? null;
+    }
+
+    public function server(): BelongsTo
+    {
+        return $this->belongsTo(Server::class);
     }
 
     /** @return array<string, mixed> */

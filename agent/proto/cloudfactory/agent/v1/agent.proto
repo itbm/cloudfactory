@@ -137,7 +137,9 @@ message Website {
   string route_path = 17;
   // The environment variables of the container of the website, and of its build containers. The
   // agent writes them to a file that only the Unix user of the website can read
-  // (EnvironmentFile in the unit). The panel adds them to the job each time that it sends it.
+  // (EnvironmentFile in the unit), so the values are not in the unit or in a command line. The
+  // panel adds the variables of a website to the job each time that it sends it. A plugin that
+  // the panel runs (runtime "custom") gets its token this way too (docs/plugins.md).
   map<string, string> environment = 18;
 }
 

@@ -214,6 +214,17 @@ var ruleEnvValue = rule{
 // The value of an environment variable of a website container. It is on one line. It can be empty.
 func EnvValue(s string) error { return ruleEnvValue.check(s) }
 
+var ruleEnvironmentValue = rule{
+	what:      "value of a container environment variable",
+	pattern:   regexp.MustCompile(`^[A-Za-z0-9_.,:/|@+=~-]+$`),
+	maxLength: 1024,
+}
+
+// EnvironmentValue checks a value with the rule "environmentValue" of schema/input-rules.json.
+//
+// The value of an environment variable of a plugin container, for example its token. The agent writes it in the unit of the container, so it has no space, quote, "%", "$" or backslash.
+func EnvironmentValue(s string) error { return ruleEnvironmentValue.check(s) }
+
 var ruleFilePath = rule{
 	what:      "path",
 	pattern:   regexp.MustCompile(`^(/|(/[^/\x00-\x1f\x7f]+)+)$`),
@@ -502,6 +513,7 @@ var rules = map[string]*rule{
 	"domain":             &ruleDomain,
 	"envName":            &ruleEnvName,
 	"envValue":           &ruleEnvValue,
+	"environmentValue":   &ruleEnvironmentValue,
 	"filePath":           &ruleFilePath,
 	"gitBranch":          &ruleGitBranch,
 	"gitRepository":      &ruleGitRepository,
@@ -541,6 +553,9 @@ const MaxBuildCommands = 10
 
 // MaxCommandArguments: The largest number of arguments of a start command.
 const MaxCommandArguments = 32
+
+// MaxContainerEnvironment: The largest number of environment variables of a container.
+const MaxContainerEnvironment = 20
 
 // MaxCronJobs: The largest number of cron jobs of a website.
 const MaxCronJobs = 20

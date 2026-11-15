@@ -49,7 +49,7 @@ func CheckWebsite(w *agentv1.Website) error {
 		errs = append(errs, fmt.Errorf("a website can have %d environment variables", validate.MaxEnvironmentVariables))
 	}
 	for k, v := range w.GetEnvironment() {
-		errs = append(errs, validate.EnvName(k), validate.EnvValue(v))
+		errs = append(errs, envNameOf(w.GetRuntime(), k), validate.EnvValue(v))
 	}
 	primary := 0
 	for _, d := range w.GetDomains() {
@@ -1141,4 +1141,14 @@ func (d *Deps) changeDomain(req *agentv1.DomainRequest, add bool) (jobs.Job, err
 		// Caddy gets the certificate itself when the DNS points here (FR-404).
 		{Name: "Get TLS certificate", Do: func(context.Context) error { return nil }},
 	}, Result: func() map[string]any { return map[string]any{"dnsPointsHere": dnsHere} }}, nil
+}
+
+// envNameOf checks the name of an environment variable. A plugin that the panel runs (runtime
+// "custom") gets names that start with CF_, for example CF_TOKEN (docs/plugins.md). The other
+// websites cannot use these names, which are for the agent and the images.
+func envNameOf(runtime, name string) error {
+	if runtime == "custom" && strings.HasPrefix(name, "CF_") {
+		return validate.SecretName(name)
+	}
+	return validate.EnvName(name)
 }

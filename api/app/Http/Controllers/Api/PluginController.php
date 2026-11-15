@@ -16,6 +16,7 @@ use App\Services\Audit;
 use App\Services\Plugins\Actions;
 use App\Services\Plugins\Caller;
 use App\Services\Plugins\Events;
+use App\Services\Plugins\Hosting;
 use App\Services\Plugins\Manifest;
 use App\Services\Plugins\Signatures;
 use Illuminate\Http\JsonResponse;
@@ -45,6 +46,8 @@ class PluginController extends Controller
 {
     use Concerns;
 
+    public function __construct(private Hosting $hosting) {}
+
     /** A plugin token is valid for one year (FR-104: each token has an expiry date). */
     private const TOKEN_DAYS = 365;
 
@@ -58,12 +61,12 @@ class PluginController extends Controller
 
     public function index(): JsonResponse
     {
-        return response()->json(['data' => Plugin::with(['key', 'user'])->orderBy('name')->get()->map(fn (Plugin $p) => self::present($p))]);
+        return response()->json(['data' => Plugin::with(['key', 'user', 'server'])->orderBy('name')->get()->map(fn (Plugin $p) => self::present($p))]);
     }
 
     public function show(string $id): JsonResponse
     {
-        return response()->json(self::present(Plugin::with(['key', 'user'])->findOrFail($id)));
+        return response()->json(self::present(Plugin::with(['key', 'user', 'server'])->findOrFail($id)));
     }
 
     /** Reads a manifest and gives what it asks for, before the administrator installs it. */
@@ -89,22 +92,31 @@ class PluginController extends Controller
         $data = $request->validate([
             'manifest' => ['required', 'string'],
             'signature' => ['nullable', 'string', 'max:512'],
-            'baseUrl' => ['required', 'string', 'max:255'],
+            // A plugin outside the panel has an address. A plugin that the panel runs has a server
+            // and a host name instead (Hosting).
+            'hosted' => ['sometimes', 'boolean'],
+            'baseUrl' => ['exclude_if:hosted,true', 'required', 'string', 'max:255'],
+            'serverId' => ['exclude_unless:hosted,true', 'nullable', 'string', 'max:64'],
+            'host' => ['exclude_unless:hosted,true', 'nullable', 'string', 'max:253'],
         ]);
         AuthController::confirmIdentity($request);
         $spec = Manifest::parse($data['manifest']);
         $key = self::checkSignature($data['manifest'], $data['signature'] ?? null);
-        $baseUrl = Manifest::checkBaseUrl($data['baseUrl'], self::developerMode());
+        $hosted = (bool) ($data['hosted'] ?? false);
+        [$server, $host] = $hosted ? Hosting::place($spec, $data['serverId'] ?? null, $data['host'] ?? null) : [null, null];
+        $baseUrl = Manifest::checkBaseUrl($hosted ? "https://{$host}" : $data['baseUrl'], self::developerMode());
         if (Plugin::where('slug', $spec['slug'])->exists()) {
             throw ValidationException::withMessages(['manifest' => "The plugin \"{$spec['slug']}\" is installed. To install a new version, update it."]);
         }
 
         $secret = 'whsec_'.Str::random(40);
-        [$plugin, $token] = DB::transaction(function () use ($spec, $data, $key, $baseUrl, $secret) {
+        [$plugin, $token] = DB::transaction(function () use ($spec, $data, $key, $baseUrl, $secret, $server, $host) {
             $plugin = Plugin::create([
                 'slug' => $spec['slug'], 'name' => $spec['name'], 'version' => $spec['version'], 'publisher' => $spec['publisher'],
                 'manifest' => json_encode($spec, JSON_UNESCAPED_SLASHES), 'signature' => $data['signature'] ?? null,
                 'plugin_key_id' => $key?->id, 'enabled' => true, 'base_url' => $baseUrl, 'webhook_secret' => $secret,
+                'server_id' => $server?->id, 'host' => $host, 'unix_user' => $server ? Hosting::unixUser() : null,
+                'container_status' => $server ? Hosting::STARTING : null,
             ]);
             // The user of the plugin. It has the role "administrator", so the scopes of its token
             // are the only limit. Its password is random and nobody knows it, and the sign-in
@@ -114,16 +126,25 @@ class PluginController extends Controller
                 'password' => Str::random(64), 'role' => Role::Administrator, 'plugin_id' => $plugin->id,
             ]);
             $plugin->update(['user_id' => $user->id]);
+            $token = self::newToken($plugin, $user);
+            if ($plugin->hosted()) {
+                $plugin->update(['hosted_token' => $token]);
+            }
 
-            return [$plugin, self::newToken($plugin, $user)];
+            return [$plugin, $token];
         });
+        if ($plugin->hosted()) {
+            $this->hosting->start($plugin, false);
+        }
         AllowPluginOrigins::forget();
-        Audit::record($request, 'Installed plugin', "{$spec['name']} {$spec['version']}");
+        Audit::record($request, 'Installed plugin', "{$spec['name']} {$spec['version']}".($plugin->hosted() ? " on {$server->name}" : ''));
 
         return response()->json([
-            'plugin' => self::present($plugin->fresh(['key', 'user'])),
-            'token' => $token,
-            'webhookSecret' => $secret,
+            'plugin' => self::present($plugin->fresh(['key', 'user', 'server'])),
+            // The panel gives the token and the secret to the container of a plugin that it
+            // runs, so nobody needs to see them.
+            'token' => $plugin->hosted() ? null : $token,
+            'webhookSecret' => $plugin->hosted() ? null : $secret,
         ], 201);
     }
 
@@ -141,7 +162,11 @@ class PluginController extends Controller
             throw ValidationException::withMessages(['manifest' => "This manifest is for the plugin \"{$spec['slug']}\", not \"{$plugin->slug}\"."]);
         }
         $key = self::checkSignature($data['manifest'], $data['signature'] ?? null);
+        if ($plugin->hosted() && empty($spec['image'])) {
+            throw ValidationException::withMessages(['manifest' => 'The panel runs this plugin, so its manifest must have an image.']);
+        }
         $old = $plugin->version;
+        $oldImage = $plugin->image();
         DB::transaction(function () use ($plugin, $spec, $data, $key) {
             $plugin->update([
                 'name' => $spec['name'], 'version' => $spec['version'], 'publisher' => $spec['publisher'],
@@ -152,6 +177,10 @@ class PluginController extends Controller
             $plugin->user?->tokens()->where('name', self::TOKEN_NAME)->update(['abilities' => json_encode($spec['scopes'])]);
             $plugin->user?->update(['name' => "Plugin: {$spec['name']}"]);
         });
+        // A new image, or a new port: the agent starts the new container, then stops the old one.
+        if ($plugin->hosted() && $oldImage !== $spec['image']) {
+            $this->hosting->start($plugin->fresh(), $plugin->container_status !== Hosting::FAILED);
+        }
         AllowPluginOrigins::forget();
         Audit::record($request, 'Updated plugin', "{$spec['name']} {$old} to {$spec['version']}");
 
@@ -166,14 +195,22 @@ class PluginController extends Controller
             'baseUrl' => ['sometimes', 'string', 'max:255'],
         ]);
         if (array_key_exists('baseUrl', $data)) {
+            if ($plugin->hosted()) {
+                throw ValidationException::withMessages(['baseUrl' => 'The panel runs this plugin on its own host name. Remove the plugin and install it again to change it.']);
+            }
             // A new address sends the events and the page tokens to a different host.
             AuthController::confirmIdentity($request);
             $plugin->base_url = Manifest::checkBaseUrl($data['baseUrl'], self::developerMode());
         }
+        $power = array_key_exists('enabled', $data) && $plugin->hosted() && $plugin->enabled !== $data['enabled'];
         if (array_key_exists('enabled', $data)) {
             $plugin->enabled = $data['enabled'];
         }
         $plugin->save();
+        // A plugin that the panel runs stops when it is off, and starts again when it is on.
+        if ($power) {
+            $this->hosting->power($plugin, $plugin->enabled);
+        }
         if (! $plugin->enabled) {
             self::revokePageTokens($plugin);
         }
@@ -189,7 +226,11 @@ class PluginController extends Controller
 
     public function destroy(Request $request, string $id): JsonResponse
     {
-        $plugin = Plugin::with('user')->findOrFail($id);
+        $plugin = Plugin::with(['user', 'server'])->findOrFail($id);
+        if ($plugin->hosted() && $plugin->server) {
+            // The agent removes the container, its Unix user and its route.
+            $this->hosting->remove($plugin);
+        }
         DB::transaction(function () use ($plugin) {
             self::revokePageTokens($plugin);
             $plugin->user?->tokens()->delete();
@@ -210,12 +251,40 @@ class PluginController extends Controller
         $secret = 'whsec_'.Str::random(40);
         $token = DB::transaction(function () use ($plugin, $secret) {
             $plugin->update(['webhook_secret' => $secret]);
+            $token = self::newToken($plugin, $plugin->user);
+            if ($plugin->hosted()) {
+                $plugin->update(['hosted_token' => $token]);
+            }
 
-            return self::newToken($plugin, $plugin->user);
+            return $token;
         });
+        // The container gets the new values: the agent starts a new container, then stops the old one.
+        if ($plugin->hosted()) {
+            $this->hosting->start($plugin, $plugin->container_status !== Hosting::FAILED);
+        }
         Audit::record($request, 'Made new credentials for plugin', $plugin->name);
 
-        return response()->json(['plugin' => self::present($plugin->fresh(['key', 'user'])), 'token' => $token, 'webhookSecret' => $secret]);
+        return response()->json([
+            'plugin' => self::present($plugin->fresh(['key', 'user', 'server'])),
+            'token' => $plugin->hosted() ? null : $token,
+            'webhookSecret' => $plugin->hosted() ? null : $secret,
+        ]);
+    }
+
+    /** Makes the container of a plugin that the panel runs again, for example after a failure. */
+    public function restart(Request $request, string $id): JsonResponse
+    {
+        $plugin = Plugin::with('server')->findOrFail($id);
+        if (! $plugin->hosted() || ! $plugin->server) {
+            throw ValidationException::withMessages(['plugin' => 'The panel does not run this plugin.']);
+        }
+        if (! $plugin->enabled) {
+            throw ValidationException::withMessages(['plugin' => 'Turn on the plugin first.']);
+        }
+        $this->hosting->start($plugin, $plugin->container_status !== Hosting::FAILED);
+        Audit::record($request, 'Started plugin container again', $plugin->name);
+
+        return response()->json(self::present($plugin->fresh(['key', 'user', 'server'])), 202);
     }
 
     public function test(Request $request, string $id): JsonResponse
@@ -499,6 +568,13 @@ class PluginController extends Controller
             'actions' => array_map(fn (array $a) => self::presentAction($p, $a), $p->actions()),
             'hooks' => $p->hooks(),
             'commands' => $spec['commands'] ?? [],
+            'image' => $spec['image'] ?? null,
+            'hosting' => $p->hosted() ? [
+                'serverId' => $p->server_id,
+                'serverName' => $p->server?->name,
+                'host' => $p->host,
+                'status' => $p->container_status,
+            ] : null,
             'signedBy' => $p->key ? self::presentKey($p->key) : null,
             'tokenExpiresAt' => $token?->expires_at?->toIso8601String(),
             'tokenLastUsedAt' => $token?->last_used_at?->toIso8601String(),

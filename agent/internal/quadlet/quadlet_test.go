@@ -428,3 +428,17 @@ func TestDatabaseAddress(t *testing.T) {
 		}
 	}
 }
+
+func TestTheEnvironmentIsInAFileNotInTheUnit(t *testing.T) {
+	for _, runtime := range []string{"frankenphp", "custom", "node"} {
+		w := website()
+		w.Runtime = runtime
+		w.EnvFile = "/home/acme/.config/cloudfactory/env"
+		if u := ContainerUnit(w); !strings.Contains(u, "\nEnvironmentFile=/home/acme/.config/cloudfactory/env\n") {
+			t.Errorf("%s: the unit has no EnvironmentFile:\n%s", runtime, u)
+		}
+	}
+	if u := ContainerUnit(website()); strings.Contains(u, "EnvironmentFile=") {
+		t.Errorf("a website with no variables has an EnvironmentFile:\n%s", u)
+	}
+}

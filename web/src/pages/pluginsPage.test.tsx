@@ -51,6 +51,33 @@ describe("the Plugins page", () => {
   });
 });
 
+describe("a plugin that the panel runs", () => {
+  it("shows its container, and installs a new one on a server of the panel", async () => {
+    const api = await open("administrator", "/plugins");
+    const main = screen.getByRole("main");
+    await waitFor(() => expect(main.textContent).toContain("Status page 2.0.1"));
+    expect(main.textContent).toContain("Container of ghcr.io/");
+    expect(main.textContent).toContain("Running");
+
+    const manifest = { schema: 1, slug: "audit-feed", name: "Audit feed", version: "1.0.0", publisher: "Example Plugins Ltd", description: "", scopes: ["websites:read"], events: [], webhook: null, pages: [], actions: [], hooks: [], commands: [], image: { ref: "ghcr.io/example/audit-feed:1.0.0", digest: `sha256:${"a".repeat(64)}`, port: 8080 } };
+    api.on("POST /plugins/preview", () => ({ manifest, signedBy: { id: "k1", name: "Example Plugins Ltd" }, installed: null, developerMode: false }));
+    api.on("POST /plugins", () => [201, { plugin: { id: "p9", name: "Audit feed" }, token: null, webhookSecret: null }]);
+    fireEvent.click(screen.getByRole("button", { name: "Install plugin" }));
+    const dialog = screen.getByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("Manifest (plugin.json)"), { target: { value: JSON.stringify(manifest) } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Check the manifest" }));
+    await waitFor(() => expect(dialog.textContent).toContain("Where the plugin runs"));
+    // A plugin with an image runs in the panel by default, so the dialog asks for no address.
+    expect(within(dialog).queryByLabelText("Address of the plugin")).toBeNull();
+    fireEvent.change(within(dialog).getByLabelText(/Host name/), { target: { value: "feed.plugins.panel.example" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Install plugin" }));
+    await waitFor(() => expect(api.changes.some((c) => c.method === "POST" && c.path === "/plugins")).toBe(true));
+    const body = api.changes.find((c) => c.path === "/plugins")?.body as Record<string, unknown>;
+    expect(body).toMatchObject({ hosted: true, serverId: null, host: "feed.plugins.panel.example" });
+    expect(body).not.toHaveProperty("baseUrl");
+  });
+});
+
 describe("a plugin action", () => {
   it("is a button on the website, and shows the answer of the plugin", async () => {
     const { pluginActions, websites } = (await signedIn("owner"), getState());

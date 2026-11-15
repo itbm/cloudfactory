@@ -1168,8 +1168,19 @@ export interface PluginManifest {
   pages: { id: string; title: string; path: string; roles: Role[] }[];
   actions: { id: string; title: string; target: PluginActionTarget; path: string; roles: Role[]; confirm: string }[];
   hooks: PluginHook[];
+  /** An image for the panel to run. The digest is in the signed manifest. */
+  image: PluginImage | null;
   commands: { name: string; description: string }[];
 }
+
+export interface PluginImage {
+  ref: string;
+  digest: string;
+  port: number;
+}
+
+/** Where to run a new plugin: on a host of the administrator, or in a container of the panel. */
+export type PluginPlacement = { hosted: false; baseUrl: string } | { hosted: true; serverId: string | null; host: string };
 
 export interface Plugin {
   id: string;
@@ -1186,6 +1197,9 @@ export interface Plugin {
   pages: PluginPage[];
   actions: PluginAction[];
   hooks: PluginHook[];
+  image: PluginImage | null;
+  /** The container of a plugin that the panel runs, or null for a plugin outside the panel. */
+  hosting: { serverId: string | null; serverName: string | null; host: string; status: "starting" | "running" | "stopped" | "failed" | "removing" } | null;
   commands: { name: string; description: string }[];
   signedBy: PluginKey | null;
   tokenExpiresAt: string | null;
@@ -1198,8 +1212,9 @@ export interface Plugin {
 /** The answer to an install or to new credentials. The panel shows the token and the secret one time. */
 export interface PluginCredentials {
   plugin: Plugin;
-  token: string;
-  webhookSecret: string;
+  /** Null for a plugin that the panel runs: its container gets the values. */
+  token: string | null;
+  webhookSecret: string | null;
 }
 
 /** The token of a plugin page, for the user who opens it. */

@@ -3980,11 +3980,14 @@ paths:
           application/json:
             schema:
               type: object
-              required: [manifest, baseUrl, password]
+              required: [manifest, password]
               properties:
                 manifest: { type: string, maxLength: 32768, description: The text of plugin.json. }
                 signature: { type: [string, 'null'], maxLength: 512 }
-                baseUrl: { type: string, maxLength: 255, description: 'The address where you run the plugin, for example https://uptime.example.net. HTTPS only, except in the developer mode. Not the host name of the panel.' }
+                baseUrl: { type: string, maxLength: 255, description: 'The address where you run the plugin, for example https://uptime.example.net. HTTPS only, except in the developer mode. Not the host name of the panel. Necessary when hosted is false.' }
+                hosted: { type: boolean, description: 'True: the panel runs the image of the manifest in a gVisor container. The manifest must have an image.' }
+                serverId: { type: [string, 'null'], description: 'With hosted: the server of the container. By default the panel server.' }
+                host: { type: [string, 'null'], description: 'With hosted: the host name of the plugin. By default the slug and the plugins domain, for example uptime.plugins.example.com.' }
                 password: { type: string }
                 totp: { type: [string, 'null'], pattern: '^[0-9]{6}$' }
       responses:
@@ -4113,6 +4116,21 @@ paths:
                 totp: { type: [string, 'null'] }
       responses:
         '200': { $ref: '#/components/responses/PluginCredentials' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/plugins/{id}/container:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [Plugins]
+      summary: Start the container of a plugin again
+      description: Only for a plugin that the panel runs. The agent makes the container again, for example after a failure.
+      responses:
+        '202':
+          description: The plugin. The agent starts the container.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Plugin' }
         '422': { $ref: '#/components/responses/Invalid' }
 
   /v1/plugins/{id}/test:
@@ -4519,8 +4537,8 @@ components:
             type: object
             properties:
               plugin: { $ref: '#/components/schemas/Plugin' }
-              token: { type: string }
-              webhookSecret: { type: string }
+              token: { type: [string, 'null'], description: Null for a plugin that the panel runs. The container gets the token. }
+              webhookSecret: { type: [string, 'null'], description: Null for a plugin that the panel runs. }
     Forbidden:
       description: The token does not have the necessary scope or role.
       content:
@@ -4619,6 +4637,7 @@ components:
           type: array
           description: Before hooks. The plugin can refuse the change.
           items: { $ref: '#/components/schemas/PluginHook' }
+        image: { oneOf: [{ $ref: '#/components/schemas/PluginImage' }, { type: 'null' }] }
         commands:
           type: array
           items:
@@ -4643,6 +4662,17 @@ components:
         pages: { type: array, items: { $ref: '#/components/schemas/PluginPage' } }
         actions: { type: array, items: { $ref: '#/components/schemas/PluginAction' } }
         hooks: { type: array, items: { $ref: '#/components/schemas/PluginHook' } }
+        image: { oneOf: [{ $ref: '#/components/schemas/PluginImage' }, { type: 'null' }] }
+        hosting:
+          description: The container of a plugin that the panel runs, or null for a plugin outside the panel.
+          oneOf:
+            - type: 'null'
+            - type: object
+              properties:
+                serverId: { type: [string, 'null'] }
+                serverName: { type: [string, 'null'] }
+                host: { type: string }
+                status: { type: string, enum: [starting, running, stopped, failed, removing] }
         commands: { type: array, items: { type: object, properties: { name: { type: string }, description: { type: string } } } }
         signedBy: { oneOf: [{ $ref: '#/components/schemas/PluginKey' }, { type: 'null' }] }
         tokenExpiresAt: { type: [string, 'null'], format: date-time }
@@ -4671,6 +4701,13 @@ components:
       type: string
       description: An event that a plugin can receive. The named events are changes of the audit log with one action.
       enum: [audit.recorded, job.finished, website.created, website.changed, website.removed, domain.added, domain.verified, domain.removed, database.created, database.removed, backup.started, restore.started, deploy.started, customer.created, customer.changed, user.created]
+    PluginImage:
+      type: object
+      description: A container image for the panel to run. The digest is necessary, so the signature of the manifest covers the image.
+      properties:
+        ref: { type: string, description: 'The image with a tag, for example ghcr.io/example/uptime:1.4.0.' }
+        digest: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+        port: { type: integer, minimum: 1024, maximum: 65535, description: The HTTP port in the container. 8080 by default. }
     PluginHook:
       type: object
       properties:

@@ -240,6 +240,14 @@ func TestCheckWebsiteRefusesBadValues(t *testing.T) {
 			w.RoutePath = "/t1/"
 			w.Domains = append(w.Domains, &agentv1.Domain{Name: "www.acme.example", Kind: "redirect"})
 		},
+		// Only a plugin that the panel runs (runtime "custom") can have a name that starts with
+		// CF_. A value has no line break, because the agent writes one variable on each line.
+		func(w *agentv1.Website) { w.Environment = map[string]string{"CF_TOKEN": "1|abc"} },
+		func(w *agentv1.Website) {
+			w.Runtime = "custom"
+			w.Environment = map[string]string{"CF_TOKEN": "1|abc\nExecStartPre=/bin/evil"}
+		},
+		func(w *agentv1.Website) { w.Runtime = "custom"; w.Environment = map[string]string{"cf-token": "x"} },
 	} {
 		w := website("ghcr.io/cloudfactory/frankenphp-php8.4:8.4.0-1")
 		change(w)

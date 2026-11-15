@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Enums\AgentAction;
 use App\Enums\JobState;
 use App\Enums\Role;
 use App\Jobs\DeliverPluginEvent;
@@ -473,6 +474,82 @@ class PluginTest extends TestCase
             'actions' => [['id' => 'x', 'title' => 'X', 'target' => 'agent', 'path' => '/x', 'roles' => ['administrator']]],
             'hooks' => [['event' => 'agent.connecting', 'path' => '/../x']],
         ])])->assertUnprocessable()->assertJsonValidationErrors(['actions.0.target', 'hooks.0.event', 'hooks.0.path']);
+    }
+
+    public function test_the_panel_runs_a_plugin_from_its_signed_image_in_a_container(): void
+    {
+        config(['cloudfactory.panel_domain' => 'panel.example.com', 'app.url' => 'https://panel.example.com']);
+        $this->admin();
+        $this->trustKey();
+        $panel = $this->server(['name' => 'panel', 'local' => true]);
+        $image = ['ref' => 'ghcr.io/example/uptime:1.4.0', 'digest' => 'sha256:'.str_repeat('a', 64), 'port' => 9000];
+        $manifest = $this->manifest(['image' => $image]);
+
+        $out = $this->postJson('/api/v1/plugins', ['manifest' => $manifest, 'signature' => $this->sign($manifest), 'hosted' => true, 'password' => 'password'])
+            ->assertCreated()
+            ->assertJsonPath('plugin.baseUrl', 'https://uptime.plugins.panel.example.com')
+            ->assertJsonPath('plugin.hosting.serverName', 'panel')
+            ->assertJsonPath('plugin.hosting.status', 'starting')
+            // The container gets the credentials. Nobody needs to see them.
+            ->assertJsonPath('token', null)->assertJsonPath('webhookSecret', null)
+            ->json('plugin');
+
+        $job = AgentJob::where('action', AgentAction::CreateWebsite)->sole();
+        $this->assertSame($panel->id, $job->server_id);
+        $w = $job->payload['website'];
+        $this->assertSame('custom', $w['runtime']);
+        $this->assertSame([$image['ref'], $image['digest'], 9000], [$w['image'], $w['imageDigest'], $w['containerPort']]);
+        $this->assertMatchesRegularExpression('/^plugin_[a-z0-9]{4}$/', $w['unixUser']);
+        $this->assertSame([['name' => 'uptime.plugins.panel.example.com', 'kind' => 'primary']], $w['domains']);
+        // Its own database instance: it connects to no database server of a customer.
+        $this->assertSame($out['id'], $w['databaseInstance']);
+        $this->assertSame('https://panel.example.com', $w['environment']['CF_PANEL']);
+        $this->assertStringStartsWith('whsec_', $w['environment']['CF_WEBHOOK_SECRET']);
+        $this->assertSame(['audit:read', 'websites:read'], PersonalAccessToken::findToken($w['environment']['CF_TOKEN'])->abilities);
+
+        // When the job is complete, the panel keeps no credentials in the job.
+        app(JobOutcome::class)->finish($job, JobState::Succeeded);
+        $this->assertSame('running', Plugin::find($out['id'])->container_status);
+        $this->assertArrayNotHasKey('environment', $job->fresh()->payload['website']);
+
+        // Off stops the container. New credentials go to a new container.
+        $this->patchJson("/api/v1/plugins/{$out['id']}", ['enabled' => false])->assertOk();
+        $stop = AgentJob::where('action', AgentAction::SetWebsitePower)->sole();
+        $this->assertSame('stop', $stop->payload['power']);
+        app(JobOutcome::class)->finish($stop, JobState::Succeeded);
+        $this->assertSame('stopped', Plugin::find($out['id'])->container_status);
+        $this->postJson("/api/v1/plugins/{$out['id']}/credentials", ['password' => 'password'])->assertOk()->assertJsonPath('token', null);
+        $update = AgentJob::where('action', AgentAction::SetRuntime)->sole();
+        $this->assertNotSame($w['environment']['CF_TOKEN'], $update->payload['website']['environment']['CF_TOKEN']);
+        $this->assertNull(PersonalAccessToken::findToken($w['environment']['CF_TOKEN']));
+
+        // A plugin that the panel runs keeps its host name, and its manifest keeps an image.
+        $this->patchJson("/api/v1/plugins/{$out['id']}", ['baseUrl' => 'https://evil.example', 'password' => 'password'])->assertUnprocessable();
+        $plain = $this->manifest(['version' => '1.5.0']);
+        $this->putJson("/api/v1/plugins/{$out['id']}", ['manifest' => $plain, 'signature' => $this->sign($plain), 'password' => 'password'])->assertUnprocessable();
+
+        // Remove: the agent removes the container and its Unix user.
+        $this->deleteJson("/api/v1/plugins/{$out['id']}")->assertNoContent();
+        $remove = AgentJob::where('action', AgentAction::DeleteWebsite)->sole();
+        $this->assertSame($w['unixUser'], $remove->payload['unixUser']);
+    }
+
+    public function test_the_panel_runs_only_a_plugin_with_an_image_on_a_free_host_name(): void
+    {
+        $this->admin();
+        $this->trustKey();
+        $this->server(['name' => 'panel', 'local' => true]);
+        $manifest = $this->manifest();
+        $this->postJson('/api/v1/plugins', ['manifest' => $manifest, 'signature' => $this->sign($manifest), 'hosted' => true, 'password' => 'password'])
+            ->assertUnprocessable()->assertJsonValidationErrors('hosting');
+
+        $manifest = $this->manifest(['image' => ['ref' => 'ghcr.io/example/uptime:1.4.0', 'digest' => 'sha256:'.str_repeat('b', 64)]]);
+        $this->website($this->customer(), $this->server(), $this->image(), 'taken.example.com');
+        $this->postJson('/api/v1/plugins', ['manifest' => $manifest, 'signature' => $this->sign($manifest), 'hosted' => true, 'host' => 'taken.example.com', 'password' => 'password'])
+            ->assertUnprocessable()->assertJsonValidationErrors('host');
+        // An image with no digest: the signature would not cover the image.
+        $this->postJson('/api/v1/plugins/preview', ['manifest' => $this->manifest(['image' => ['ref' => 'ghcr.io/example/uptime:latest', 'digest' => 'latest']])])
+            ->assertUnprocessable()->assertJsonValidationErrors('image.digest');
     }
 
     public function test_only_an_administrator_manages_plugins(): void

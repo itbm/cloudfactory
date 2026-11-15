@@ -619,9 +619,9 @@ directory with mode 0700:
 
 ## Plugins
 
-A plugin is a program outside the panel ([plugins.md](plugins.md)). The boundary is the
-public API. The panel never runs the code of a plugin, and no plugin path leads to an agent or
-to the root helper.
+A plugin is a program with its own token ([plugins.md](plugins.md)). The boundary is the
+public API. The panel process never runs the code of a plugin, and no plugin path leads to an
+agent or to the root helper.
 
 - **Token.** Each plugin has its own user and token. The token has only the scopes of the
   manifest. A manifest cannot ask for `tokens:*`, `users:write` or `plugins:*`, so a plugin
@@ -655,6 +655,16 @@ to the root helper.
 - **Before hooks.** A before hook lets a plugin refuse a change. It cannot change the request.
   The panel waits 5 seconds or less for each plugin. The panel does not ask a plugin about its
   own changes, so a plugin cannot block itself in a loop.
+- **Containers.** The panel runs a plugin only from the image of a signed manifest. The
+  signature covers the digest, and the agent pulls the image by its digest. The container is a
+  website with the runtime `custom`: its own Unix user, rootless Podman, gVisor and fixed
+  limits. Its database instance is the plugin, so the firewall lets it connect to no database
+  server. It gets no files of a customer, no socket of the agent and no root helper. The token
+  and the webhook secret go only to the container, as environment variables in a file that
+  only its Unix user can read (mode 0600, `EnvironmentFile=` in the unit). The job payload with them is encrypted at rest,
+  and the panel removes the environment from the payload when the job is complete. The host
+  name is on its own domain (`plugins.` and the panel domain by default), and the panel refuses
+  a host name that a website, a domain or a plugin has.
 - **CORS.** The API accepts browser calls from the origins of the plugins with pages. The API
   sends no cookies (`supports_credentials` is false), so a call needs a token.
 
@@ -664,7 +674,9 @@ What the boundary does not protect:
   `websites:write` can delete each website. Approve only the scopes that the plugin needs.
 - A page can do all that its scopes permit, as the user who opens it, for 15 minutes.
 - The host of the plugin keeps the token. A person who gets access to that host gets the
-  token. Turn off the plugin, or make new credentials, at once.
+  token. Turn off the plugin, or make new credentials, at once. For a plugin in the panel,
+  root on its server can read the token.
+- A container of a plugin can connect to the internet and to the public API, like a website.
 - A plugin can show false data on its page. The panel shows the origin of the page above the
   frame.
 - A plugin with a before hook can stop the changes of its hook, for all users. A plugin that is
