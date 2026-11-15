@@ -102,7 +102,7 @@ class SetupAndAccountTest extends TestCase
             ->assertJsonPath('backups.available', false)
             ->assertJsonPath('provider.name', 'Northwind Agency')
             ->assertJsonPath('plan.name', 'Business')
-            ->assertJsonPath('usage', ['websites' => 2, 'databases' => 1, 'dnsZones' => 0, 'networks' => 0, 'diskBytes' => 1500, 'customers' => null])
+            ->assertJsonPath('usage', ['websites' => 2, 'databases' => 1, 'dnsZones' => 0, 'networks' => 0, 'diskBytes' => 1500, 'bandwidthBytes' => 0, 'customers' => null])
             ->assertJsonCount(1, 'users')
             ->assertJsonPath('users.0.email', $user->email);
 

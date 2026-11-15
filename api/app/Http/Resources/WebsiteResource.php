@@ -53,6 +53,8 @@ class WebsiteResource extends JsonResource
             // Null when the server did not report it.
             'diskLimitApplied' => $this->server?->appliesDiskLimits(),
             'usage' => $this->usage,
+            // The traffic of the website in the current calendar month, in bytes in and out.
+            'bandwidthBytes' => $this->bandwidth_month === now()->utc()->format('Y-m') ? (int) $this->bandwidth_bytes : 0,
             'domains' => $this->whenLoaded('domains', fn () => $this->domains->map(fn (Domain $d) => self::domain($d))),
             // Spec section 10: the owner signs in as the Unix user of the website, with an SSH key, to
             // the SFTP container of the server.

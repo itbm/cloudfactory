@@ -546,7 +546,7 @@ func work(ctx context.Context, cfg config.Config, g gate.Gate) error {
 	if job, ok := deps.ResumeReboot(); ok {
 		runner.Resume(job)
 	}
-	collector := status.Collector{Run: g, Apt: apt, AgentVersion: version, GVisorVersion: gv.Current, Services: []string{"cf-agent", "ssh", "cf-sftp"}, UserServices: []string{host.EdgeUser + ":cf-edge.service"}, DiskPath: cfg.SitesDir, Extra: deps.FillReport}
+	collector := status.Collector{Run: g, Apt: apt, AgentVersion: version, GVisorVersion: gv.Current, Services: []string{"cf-agent", "ssh", "cf-sftp"}, UserServices: []string{host.EdgeUser + ":cf-edge.service"}, DiskPath: cfg.SitesDir, Net: &status.NetCounter{}, Extra: deps.FillReport}
 
 	go reportLoop(ctx, reporter, collector, time.Duration(cfg.ReportSeconds)*time.Second, cfg.PanelServerCertificateSHA256 == "", deps.SavePanelCAPin)
 	// The cron jobs of the websites.

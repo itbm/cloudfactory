@@ -21,6 +21,7 @@ import {
   Signpost,
   Tags,
   Users,
+  BellRing,
 } from "lucide-react";
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
@@ -191,6 +192,7 @@ const ICONS: Record<NavEntry["icon"], ReactNode> = {
   backups: <History size={18} />,
   apps: <Boxes size={18} />,
   jobs: <Activity size={18} />,
+  alerts: <BellRing size={18} />,
   account: <CircleUser size={18} />,
   settings: <Settings2 size={18} />,
 };
@@ -200,6 +202,9 @@ function NavMark({ to }: { to: string }) {
   const state = useStore();
   if (to === "/updates" && (state.rollout?.state === "running" || state.rollout?.state === "paused")) {
     return <span className="count">1<span className="visually-hidden"> in progress</span></span>;
+  }
+  if (to === "/alerts" && state.usageAlerts.length > 0) {
+    return <span className="count">{state.usageAlerts.length}<span className="visually-hidden"> open</span></span>;
   }
   if (to === "/setup" && state.setup && state.setup.open > 0) {
     return <span className="count">{state.setup.open}<span className="visually-hidden"> open</span></span>;

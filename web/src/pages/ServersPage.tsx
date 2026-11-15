@@ -1,3 +1,4 @@
+import { UsagePanel } from "../components/UsageCharts";
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useAction, useStore } from "../api/hooks";
@@ -380,7 +381,7 @@ function ServerDetail({ id }: { id: string }) {
             <Card title="Jobs">
               <div className="card-body">{jobs.length ? <ul className="job-list">{jobs.map((j) => <JobRow key={j.id} job={j} />)}</ul> : <p className="muted">No jobs yet.</p>}</div>
             </Card>
-            <Card title="Use">
+            <Card title="Use" actions={<a href="#usage-graphs">See graphs</a>}>
               <div className="card-body">
                 {([["CPU", server.cpuPercent], ["Memory", server.memoryPercent], ["Disk", server.diskPercent]] as const).map(([l, v]) => (
                   <div className="resource" key={l}><div className="row"><span>{l}</span><span>{v}%</span></div><Meter value={v / 100} label={`${l} ${v}%`} tone={v >= 90 ? "danger" : v >= 75 ? "warning" : undefined} /></div>
@@ -431,6 +432,10 @@ function ServerDetail({ id }: { id: string }) {
               </div>
             </Card>
           </div>
+        </div>
+        <div style={{ marginTop: 20 }}>
+          <span id="usage-graphs" />
+          <UsagePanel key={server.id} subject="server" id={server.id} />
         </div>
       </main>
     </>

@@ -28,19 +28,19 @@ describe("the console of each role", () => {
   it("gives each role its own first page and its own menu", async () => {
     await open("administrator", "/");
     expect(heading()).toBe("Overview");
-    expect(menu()).toEqual(["Overview", "Finish setup", "Servers", "Network", "Images and updates", "Customers", "Plans", "Websites", "Files", "Databases", "DNS", "Private networks", "Backups", "Apps", "Jobs and activity", "Settings"]);
+    expect(menu()).toEqual(["Overview", "Finish setup", "Servers", "Network", "Images and updates", "Customers", "Plans", "Websites", "Files", "Databases", "DNS", "Private networks", "Backups", "Apps", "Jobs and activity", "Usage alerts", "Settings"]);
     cleanup();
     reset();
 
     await open("reseller", "/");
     expect(heading()).toBe("Customers");
-    expect(menu()).toEqual(["Customers", "Plans", "Websites", "Files", "Databases", "DNS", "Private networks", "Backups", "Apps", "Jobs and activity", "My account", "Settings"]);
+    expect(menu()).toEqual(["Customers", "Plans", "Websites", "Files", "Databases", "DNS", "Private networks", "Backups", "Apps", "Jobs and activity", "Usage alerts", "My account", "Settings"]);
     cleanup();
     reset();
 
     await open("owner", "/");
     expect(heading()).toBe("My websites");
-    expect(menu()).toEqual(["My websites", "Files", "Databases", "DNS", "Private networks", "Backups", "Apps", "Activity", "My account", "Settings"]);
+    expect(menu()).toEqual(["My websites", "Files", "Databases", "DNS", "Private networks", "Backups", "Apps", "Activity", "Usage alerts", "My account", "Settings"]);
   });
 
   it("has no link from the menu of an owner or a reseller to a page that the role cannot open", () => {
@@ -68,7 +68,7 @@ describe("the console of each role", () => {
   });
 
   it("shows no administrator word on the pages of an owner", async () => {
-    for (const path of ["/websites", "/files", `/websites/SITE/files`, `/websites/SITE/cron`, `/websites/SITE/deploys`, `/websites/SITE/logs`, "/databases", "/backups", "/apps", "/jobs", "/account", "/settings", `/websites/SITE`, `/websites/SITE/settings`, `/websites/SITE/backups`]) {
+    for (const path of ["/websites", "/files", `/websites/SITE/files`, `/websites/SITE/cron`, `/websites/SITE/deploys`, `/websites/SITE/logs`, "/databases", "/backups", "/apps", "/jobs", "/alerts", `/websites/SITE/usage`, "/account", "/settings", `/websites/SITE`, `/websites/SITE/settings`, `/websites/SITE/backups`]) {
       await open("owner", "/");
       cleanup();
       render(<MemoryRouter initialEntries={[path.replace("SITE", website("shop.acme.example.com").id)]}><App /></MemoryRouter>);

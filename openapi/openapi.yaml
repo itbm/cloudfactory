@@ -33,6 +33,8 @@ tags:
   - name: Networks
     description: The private networks of the customers, like a VPC.
   - name: Backups
+  - name: Usage
+    description: The usage history for the graphs, and the alerts near the limits.
   - name: Jobs
   - name: Servers
     description: Administrators only.
@@ -859,6 +861,70 @@ paths:
         '422': { $ref: '#/components/responses/Invalid' }
         '503': { description: The panel cannot connect to the server of the website. }
 
+  /v1/websites/{websiteId}/usage:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+    get:
+      tags: [Usage]
+      summary: Read the usage history of a website
+      description: >-
+        The resource use of the website for a graph. The agent reports each minute. The panel
+        keeps buckets of 5 minutes for 8 days, and buckets of 1 hour for 400 days. The range
+        `24h` has a point for each 5 minutes, `7d` for each hour, `30d` for each 3 hours, `90d`
+        for each 12 hours and `1y` for each 2 days. A point with no report has null values.
+        The bandwidth is the traffic of the domains of the website through the edge proxy in
+        the current calendar month (UTC).
+      parameters:
+        - { $ref: '#/components/parameters/UsageRange' }
+      responses:
+        '200':
+          description: The history.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/UsageHistory' }
+                  - type: object
+                    properties:
+                      limits: { $ref: '#/components/schemas/Limits' }
+                      bandwidth:
+                        type: object
+                        properties:
+                          month: { type: string, example: '2026-11' }
+                          bytes: { type: integer }
+                          limitBytes: { type: integer, description: 0 means no limit. }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/usage-alerts:
+    get:
+      tags: [Usage]
+      summary: List the usage alerts
+      description: >-
+        An alert opens when a resource of a website, a server or a database server reaches the
+        warning percent of its limit, and becomes critical at the critical percent. It closes
+        when the use goes 5 points below the warning percent. CPU and memory use the average of
+        the last 30 minutes. An administrator sees all alerts, also those of the servers. A
+        reseller sees the alerts of its customers, and an owner the alerts of their websites
+        and database servers. The panel does not stop a website at its limit because of an
+        alert. The panel fires the Laravel events `UsageAlertRaised` and `UsageAlertResolved`
+        for delivery, for example by email.
+      parameters:
+        - { name: state, in: query, schema: { type: string, enum: [open, resolved, all], default: open } }
+        - { name: subjectType, in: query, schema: { type: string, enum: [website, server, database_server] } }
+        - { name: subjectId, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: The alerts, open and critical first. At most 200.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/UsageAlert' } }
+                  settings: { $ref: '#/components/schemas/UsageAlertSettings' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
   /v1/websites/{websiteId}/cron-jobs:
     parameters:
       - { $ref: '#/components/parameters/WebsiteId' }
@@ -1480,6 +1546,23 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { description: The customer is suspended. }
         '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/database-servers/{id}/usage:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    get:
+      tags: [Usage]
+      summary: Read the usage history of a database server
+      description: Memory and disk of the database server. Refer to the usage history of a website for the ranges.
+      parameters:
+        - { $ref: '#/components/parameters/UsageRange' }
+      responses:
+        '200':
+          description: The history.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UsageHistory' }
+        '404': { $ref: '#/components/responses/NotFound' }
 
   /v1/database-servers/{id}/move:
     parameters:
@@ -2245,6 +2328,44 @@ paths:
               schema: { $ref: '#/components/schemas/Mesh' }
         '422': { $ref: '#/components/responses/Invalid' }
 
+  /v1/servers/{id}/usage:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    get:
+      tags: [Usage]
+      summary: Read the usage history of a server
+      description: >-
+        CPU, memory and disk in percent of the server, and the traffic of its physical network
+        interfaces. Only for administrators. Refer to the usage history of a website for the
+        ranges.
+      parameters:
+        - { $ref: '#/components/parameters/UsageRange' }
+      responses:
+        '200':
+          description: The history.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UsageHistory' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/usage-alerts/settings:
+    put:
+      tags: [Usage]
+      summary: Change the thresholds of the usage alerts
+      description: Only for administrators. The thresholds are percents of each limit.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UsageAlertSettings' }
+      responses:
+        '200':
+          description: Changed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UsageAlertSettings' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
   /v1/mesh/servers/{id}:
     parameters:
       - { $ref: '#/components/parameters/Id' }
@@ -2884,6 +3005,7 @@ paths:
                       dnsZones: { type: integer, description: The number of DNS zones. For a reseller, the zones of its customers count too. }
                       networks: { type: integer, description: The number of named networks. For a reseller, the named networks of its customers count too. }
                       diskBytes: { type: integer }
+                      bandwidthBytes: { type: integer, description: The traffic of the websites in the current calendar month (UTC). }
                       customers: { type: [integer, 'null'], description: Only for a reseller. The number of its customers. }
                   backups:
                     type: object
@@ -3292,6 +3414,10 @@ components:
       in: path
       required: true
       schema: { type: string }
+    UsageRange:
+      name: range
+      in: query
+      schema: { type: string, enum: ['24h', '7d', '30d', '90d', '1y'], default: '24h' }
 
   responses:
     DatabaseUserJob:
@@ -3468,6 +3594,67 @@ components:
         diskBytes: { type: integer }
         diskIoBytesPerSecond: { type: integer }
         processes: { type: integer }
+        bandwidthBytes:
+          type: integer
+          description: >-
+            The traffic of a website in a calendar month. 0 or none means no limit. The panel
+            shows alerts near the limit. It does not stop the website.
+    UsageHistory:
+      type: object
+      properties:
+        range: { type: string, enum: ['24h', '7d', '30d', '90d', '1y'] }
+        stepMinutes: { type: integer, description: The length of each point. }
+        from: { type: string, format: date-time }
+        to: { type: string, format: date-time }
+        points:
+          type: array
+          items:
+            type: object
+            description: >-
+              The values of one point. Each value is null when no report is in the point. CPU is
+              the percent of one CPU, and for a server the percent of the server. Memory is
+              the average and the largest value, in bytes or, for a server, in percent. Disk is
+              the last value. The traffic is the sum in the point. A database server has no CPU
+              and no traffic.
+            properties:
+              at: { type: string, format: date-time }
+              cpuPercent: { type: [number, 'null'] }
+              cpuMaxPercent: { type: [number, 'null'] }
+              memoryBytes: { type: [integer, 'null'] }
+              memoryMaxBytes: { type: [integer, 'null'] }
+              memoryPercent: { type: [number, 'null'] }
+              memoryMaxPercent: { type: [number, 'null'] }
+              diskBytes: { type: [integer, 'null'] }
+              diskPercent: { type: [number, 'null'] }
+              processes: { type: [integer, 'null'] }
+              bytesIn: { type: [integer, 'null'] }
+              bytesOut: { type: [integer, 'null'] }
+        alerts: { type: array, items: { $ref: '#/components/schemas/UsageAlert' }, description: The open alerts. }
+    UsageAlert:
+      type: object
+      properties:
+        id: { type: string }
+        subjectType: { type: string, enum: [website, server, database_server] }
+        subjectId: { type: string }
+        subjectName: { type: [string, 'null'], description: Null when the subject was removed. }
+        customerId: { type: [string, 'null'], description: Null for a server. }
+        serverId: { type: [string, 'null'] }
+        resource: { type: string, enum: [cpu, memory, disk, bandwidth, processes] }
+        level: { type: string, enum: [warning, critical] }
+        used: { type: number }
+        limit: { type: number }
+        percent: { type: number }
+        usedText: { type: string, example: 9.1 GB }
+        limitText: { type: string, example: 10 GB }
+        openedAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        resolvedAt: { type: [string, 'null'], format: date-time }
+    UsageAlertSettings:
+      type: object
+      required: [warningPercent, criticalPercent]
+      properties:
+        warningPercent: { type: integer, minimum: 1, maximum: 99, default: 80 }
+        criticalPercent: { type: integer, minimum: 2, maximum: 100, default: 95, description: Larger than warningPercent. }
     WebsiteKind:
       type: string
       enum: [public, private, worker]
@@ -3517,6 +3704,7 @@ components:
         updateReady: { type: boolean }
         limits: { $ref: '#/components/schemas/Limits' }
         usage: { type: [object, 'null'] }
+        bandwidthBytes: { type: integer, description: The traffic of the website in the current calendar month (UTC), in and out. }
         domains:
           type: array
           items: { $ref: '#/components/schemas/Domain' }
@@ -4265,6 +4453,8 @@ components:
             cpuPercent: { type: number, description: The load average of one minute for each CPU. }
             memoryPercent: { type: number }
             diskPercent: { type: number, description: The file system of the website files. }
+            networkInBytes: { type: integer, description: The bytes that the physical network interfaces received since the last report. }
+            networkOutBytes: { type: integer, description: The bytes that the physical network interfaces sent since the last report. }
         websites:
           type: array
           items:
@@ -4275,6 +4465,8 @@ components:
               memoryBytes: { type: integer }
               diskBytes: { type: integer }
               processes: { type: integer }
+              bytesIn: { type: integer, description: The size of the requests to the domains of the website through the edge proxy since the last report. }
+              bytesOut: { type: integer, description: The size of the answers since the last report. }
         domains:
           type: [array, 'null']
           description: The DNS and the certificate of each domain of the websites on the server.
