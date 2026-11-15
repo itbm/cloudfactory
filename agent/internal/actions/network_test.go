@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	agentv1 "github.com/itbm/cloudfactory/agent/gen/cloudfactory/agent/v1"
+	"github.com/itbm/cloudfactory/agent/internal/execx"
 )
 
 const (
@@ -339,5 +340,60 @@ func TestACustomerFromThePanelMustAgreeWithTheRecord(t *testing.T) {
 	err := run(t)(d.DeleteDatabase(&agentv1.DeleteDatabaseRequest{JobId: jobID2, WebsiteId: websiteID, UnixUser: "acme_x7k2", Engine: "mariadb", Name: "acme_x7k2_shop", DatabaseServer: databaseServer("mariadb").GetId(), Customer: otherCustomerID}))
 	if err == nil || !strings.Contains(err.Error(), "is a website of the customer") {
 		t.Errorf("a different customer for a website of this server: %v", err)
+	}
+}
+
+// The backup of a database of a website of a different server: only the dumps, with a kind of
+// its own. The agent has no record of the website, and the customer comes from the panel.
+func TestABackupOfTheDatabasesOfAWebsiteOfADifferentServer(t *testing.T) {
+	d, f, _ := deps(t)
+	users(d)
+	const remoteID = "01JBQ3Z5K8N6T4W2X9Y7R5P3R1"
+	server := databaseServer("mariadb")
+	if err := run(t)(d.SetDatabaseServer(&agentv1.DatabaseServerRequest{JobId: jobID, DatabaseServer: server})); err != nil {
+		t.Fatal(err)
+	}
+	key := strings.ToLower(server.GetId())
+	dumps := filepath.Join(d.DataDir, "dumps", "shop_r4t6")
+	head := "restic --repo s3:backups/cf --password-file  --json --retry-lock 30m "
+	f.Rules = []execx.Rule{
+		{Prefix: head + "backup", Output: `{"message_type":"summary","snapshot_id":"1a2b3c4d","total_bytes_processed":2048}`},
+		{Prefix: head + "forget", Output: `[{"remove":[{"id":"0f0f0f0f"}]}]`},
+		{Prefix: podmanOf(key) + "exec cf-mariadb-" + key + " mariadb-dump", Output: "CREATE TABLE t (id int);\n"},
+	}
+	request := func() *agentv1.BackupRequest {
+		return &agentv1.BackupRequest{JobId: jobID2, WebsiteId: remoteID, UnixUser: "shop_r4t6", Kind: "scheduled", Target: "s3:backups/cf", DatabasesOnly: true, Customer: customerID,
+			Databases: []*agentv1.DatabaseRef{{Engine: "mariadb", Name: "shop_r4t6_blog", DatabaseServer: server.GetId()}}, Retention: &agentv1.Retention{Daily: 7}}
+	}
+	job, err := d.Backup(request())
+	if err := run(t)(job, err); err != nil {
+		t.Fatal(err)
+	}
+	r := job.Result()
+	if r["snapshotId"] != "1a2b3c4d" || len(r["dumps"].(map[string]any)) != 1 || len(r["forgotten"].([]string)) != 1 {
+		t.Errorf("result = %v", r)
+	}
+	// The snapshot has only the dumps, and the retention is for this kind only.
+	if !f.Called(head+"backup "+dumps+" --tag website="+remoteID+" --tag kind=scheduled-databases") || !f.Called(head+"forget --tag website="+remoteID+",kind=scheduled-databases --group-by  --keep-daily 7 --keep-weekly 0 --keep-monthly 0") {
+		t.Errorf("calls = %v", f.Calls)
+	}
+	if _, err := os.Stat(dumps); !os.IsNotExist(err) {
+		t.Errorf("the dumps are on the disk after the backup: %v", err)
+	}
+	// The customer is necessary, and it must be the customer of the database server.
+	noCustomer := request()
+	noCustomer.Customer = ""
+	if _, err := d.Backup(noCustomer); err == nil {
+		t.Error("a backup of the databases only with no customer was accepted")
+	}
+	other := request()
+	other.Customer = otherCustomerID
+	if err := run(t)(d.Backup(other)); err == nil || !strings.Contains(err.Error(), "is not a database server of the customer") {
+		t.Errorf("a backup with a different customer: %v", err)
+	}
+	empty := request()
+	empty.Databases = nil
+	if _, err := d.Backup(empty); err == nil {
+		t.Error("a backup of the databases only with no database was accepted")
 	}
 }

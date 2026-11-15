@@ -410,6 +410,14 @@ export interface Snapshot {
   sizeBytes: number;
   websiteId: string;
   databases: string[];
+  /**
+   * website: the files and the databases on the server of the website.
+   * databases: only the databases in the database servers on a different server. The backup
+   * is in the repository of that server.
+   */
+  part: "website" | "databases";
+  /** The server whose repository has the snapshot. */
+  serverId?: string;
 }
 
 export interface BackupPolicy {

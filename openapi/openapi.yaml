@@ -1476,6 +1476,13 @@ paths:
         Makes a manual backup. The panel keeps the newest manual backups of each website (the
         field "manual" of the backup policy). The retention policy of the scheduled backups does
         not remove the manual backups.
+
+
+        The agent of the server of the website makes the backup of the files and of the
+        databases on that server. The response has this job. For a website with a database in
+        a database server on a different server, the panel also sends a job to the agent of
+        that server. That job makes a snapshot with only those databases (`part` is
+        `databases`), in the repository of that server.
       responses:
         '202': { $ref: '#/components/responses/JobOnly' }
 
@@ -1489,6 +1496,8 @@ paths:
       description: >-
         FR-903. Restore the full website, one database or one file. A restore of the full
         website keeps the files that are not in the snapshot, unless removeNewFiles is true.
+        A snapshot with the part `databases` has only databases: the scope must be `database`,
+        and the agent of the server of the snapshot does the restore.
       requestBody:
         required: true
         content:
@@ -2944,6 +2953,15 @@ components:
         kind: { type: string, enum: [scheduled, manual] }
         sizeBytes: { type: integer }
         databases: { type: array, items: { type: string }, description: For example "mariadb:shop". Use this value as the restore item. A snapshot has no Valkey data. }
+        part:
+          type: string
+          enum: [website, databases]
+          description: >-
+            `website`: the files of the website and the databases in the database servers on
+            the server of the website. `databases`: only the databases in the database servers
+            on one different server. A backup of a website with such databases has one snapshot
+            of each part.
+        serverId: { type: string, description: The server whose repository has the snapshot. }
         mailboxes: { type: array, items: { type: string } }
         createdAt: { type: string, format: date-time }
     BackupPolicy:

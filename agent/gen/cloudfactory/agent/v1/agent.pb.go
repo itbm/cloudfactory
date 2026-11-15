@@ -1784,7 +1784,14 @@ type BackupRequest struct {
 	// The environment variables of restic for the object storage, for example AWS_ACCESS_KEY_ID.
 	Credentials map[string]string `protobuf:"bytes,7,rep,name=credentials,proto3" json:"credentials,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	// When set, the agent removes the snapshots of the website that the policy does not keep (FR-902).
-	Retention     *Retention `protobuf:"bytes,8,opt,name=retention,proto3" json:"retention,omitempty"`
+	Retention *Retention `protobuf:"bytes,8,opt,name=retention,proto3" json:"retention,omitempty"`
+	// True: the backup has only the dumps of the databases, not the files of the website. The
+	// panel sends such a backup to the server of a database server when the website is on a
+	// different server. The snapshot has the kind "<kind>-databases".
+	DatabasesOnly bool `protobuf:"varint,9,opt,name=databases_only,json=databasesOnly,proto3" json:"databases_only,omitempty"`
+	// The ID of the customer of the website. It is necessary with databases_only: the agent
+	// has no record of a website of a different server.
+	Customer      string `protobuf:"bytes,10,opt,name=customer,proto3" json:"customer,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1873,6 +1880,20 @@ func (x *BackupRequest) GetRetention() *Retention {
 		return x.Retention
 	}
 	return nil
+}
+
+func (x *BackupRequest) GetDatabasesOnly() bool {
+	if x != nil {
+		return x.DatabasesOnly
+	}
+	return false
+}
+
+func (x *BackupRequest) GetCustomer() string {
+	if x != nil {
+		return x.Customer
+	}
+	return ""
 }
 
 // The snapshots of a website that the agent keeps. The policy applies to the snapshots of the
@@ -2035,8 +2056,11 @@ type RestoreRequest struct {
 	DeleteExtra bool `protobuf:"varint,10,opt,name=delete_extra,json=deleteExtra,proto3" json:"delete_extra,omitempty"`
 	// Scope "database": the ID of the database server of the database.
 	DatabaseServer string `protobuf:"bytes,11,opt,name=database_server,json=databaseServer,proto3" json:"database_server,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// Scope "database": the ID of the customer of the website. It is necessary for a website
+	// of a different server.
+	Customer      string `protobuf:"bytes,12,opt,name=customer,proto3" json:"customer,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *RestoreRequest) Reset() {
@@ -2142,6 +2166,13 @@ func (x *RestoreRequest) GetDeleteExtra() bool {
 func (x *RestoreRequest) GetDatabaseServer() string {
 	if x != nil {
 		return x.DatabaseServer
+	}
+	return ""
+}
+
+func (x *RestoreRequest) GetCustomer() string {
+	if x != nil {
+		return x.Customer
 	}
 	return ""
 }
@@ -4313,7 +4344,7 @@ const file_cloudfactory_agent_v1_agent_proto_rawDesc = "" +
 	"\vDatabaseRef\x12\x16\n" +
 	"\x06engine\x18\x01 \x01(\tR\x06engine\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12'\n" +
-	"\x0fdatabase_server\x18\x03 \x01(\tR\x0edatabaseServer\"\xa9\x03\n" +
+	"\x0fdatabase_server\x18\x03 \x01(\tR\x0edatabaseServer\"\xec\x03\n" +
 	"\rBackupRequest\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x1d\n" +
 	"\n" +
@@ -4323,7 +4354,10 @@ const file_cloudfactory_agent_v1_agent_proto_rawDesc = "" +
 	"\tdatabases\x18\x05 \x03(\v2\".cloudfactory.agent.v1.DatabaseRefR\tdatabases\x12\x16\n" +
 	"\x06target\x18\x06 \x01(\tR\x06target\x12W\n" +
 	"\vcredentials\x18\a \x03(\v25.cloudfactory.agent.v1.BackupRequest.CredentialsEntryR\vcredentials\x12>\n" +
-	"\tretention\x18\b \x01(\v2 .cloudfactory.agent.v1.RetentionR\tretention\x1a>\n" +
+	"\tretention\x18\b \x01(\v2 .cloudfactory.agent.v1.RetentionR\tretention\x12%\n" +
+	"\x0edatabases_only\x18\t \x01(\bR\rdatabasesOnly\x12\x1a\n" +
+	"\bcustomer\x18\n" +
+	" \x01(\tR\bcustomer\x1a>\n" +
 	"\x10CredentialsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"g\n" +
@@ -4339,7 +4373,7 @@ const file_cloudfactory_agent_v1_agent_proto_rawDesc = "" +
 	"\x12forget_website_ids\x18\x04 \x03(\tR\x10forgetWebsiteIds\x1a>\n" +
 	"\x10CredentialsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xcd\x03\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xe9\x03\n" +
 	"\x0eRestoreRequest\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x1d\n" +
 	"\n" +
@@ -4355,7 +4389,8 @@ const file_cloudfactory_agent_v1_agent_proto_rawDesc = "" +
 	"\vcredentials\x18\t \x03(\v26.cloudfactory.agent.v1.RestoreRequest.CredentialsEntryR\vcredentials\x12!\n" +
 	"\fdelete_extra\x18\n" +
 	" \x01(\bR\vdeleteExtra\x12'\n" +
-	"\x0fdatabase_server\x18\v \x01(\tR\x0edatabaseServer\x1a>\n" +
+	"\x0fdatabase_server\x18\v \x01(\tR\x0edatabaseServer\x12\x1a\n" +
+	"\bcustomer\x18\f \x01(\tR\bcustomer\x1a>\n" +
 	"\x10CredentialsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xcd\x01\n" +

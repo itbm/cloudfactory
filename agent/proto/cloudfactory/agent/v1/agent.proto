@@ -313,6 +313,13 @@ message BackupRequest {
   map<string, string> credentials = 7;
   // When set, the agent removes the snapshots of the website that the policy does not keep (FR-902).
   Retention retention = 8;
+  // True: the backup has only the dumps of the databases, not the files of the website. The
+  // panel sends such a backup to the server of a database server when the website is on a
+  // different server. The snapshot has the kind "<kind>-databases".
+  bool databases_only = 9;
+  // The ID of the customer of the website. It is necessary with databases_only: the agent
+  // has no record of a website of a different server.
+  string customer = 10;
 }
 
 // The snapshots of a website that the agent keeps. The policy applies to the snapshots of the
@@ -352,6 +359,9 @@ message RestoreRequest {
   bool delete_extra = 10;
   // Scope "database": the ID of the database server of the database.
   string database_server = 11;
+  // Scope "database": the ID of the customer of the website. It is necessary for a website
+  // of a different server.
+  string customer = 12;
 }
 
 // Sets the SFTP access of a website. The owner signs in as the Unix user of the website and sees

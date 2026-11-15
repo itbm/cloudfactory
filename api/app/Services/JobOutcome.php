@@ -147,7 +147,7 @@ class JobOutcome
             AgentAction::SetWebsitePower => $website?->moveTo(($p['power'] ?? '') === 'stop' ? WebsiteStatus::Stopped : WebsiteStatus::Running),
             AgentAction::DeleteWebsite => $website && $this->deleteWebsite($website),
             // Audit finding R8: the backups of these deleted websites are gone.
-            AgentAction::PruneBackups => BackupRemoval::whereIn('website_id', array_filter((array) ($p['forgetWebsiteIds'] ?? []), 'is_string'))->delete(),
+            AgentAction::PruneBackups => BackupRemoval::where('server_id', $job->server_id)->whereIn('website_id', array_filter((array) ($p['forgetWebsiteIds'] ?? []), 'is_string'))->delete(),
             AgentAction::SetSftp => $website?->update([
                 'sftp_enabled' => (bool) ($p['enabled'] ?? false),
                 'sftp_keys' => $p['authorizedKeys'] ?? [],
@@ -161,7 +161,7 @@ class JobOutcome
                 'certificate_state' => ($result['dnsPointsHere'] ?? true) ? 'valid' : 'pending',
                 'certificate_expires_at' => ($result['dnsPointsHere'] ?? true) ? now()->addDays(90) : null,
             ]),
-            AgentAction::Backup => $website && $this->recordSnapshot($website, $p, $result),
+            AgentAction::Backup => $website && $this->recordSnapshot($job, $website, $p, $result),
             // Batch 1, finding 4: the panel removes the row when the item is gone from the server.
             AgentAction::CreateDatabase => $website && $this->databaseMade($website, $p, $result),
             AgentAction::DeleteDatabase => $website && $this->databaseRemoved($website, $p) && $this->continueRemoval($website, $p),
@@ -383,19 +383,27 @@ class JobOutcome
      */
     private function deleteWebsite(Website $website): bool
     {
-        BackupRemoval::updateOrCreate(['website_id' => $website->id], [
-            'website_name' => $website->name,
-            'server_id' => $website->server_id,
-            'remove_after' => now()->addDays(max(0, (int) config('cloudfactory.deleted_website_backup_days', 30))),
-        ]);
+        // The backups of the databases on a different server are in the repository of that
+        // server. Each server removes the backups in its own repository.
+        $servers = $website->snapshots()->reorder()->whereNotNull('server_id')->distinct()->pluck('server_id')->push($website->server_id)->unique();
+        foreach ($servers as $serverId) {
+            BackupRemoval::updateOrCreate(['website_id' => $website->id, 'server_id' => $serverId], [
+                'website_name' => $website->name,
+                'remove_after' => now()->addDays(max(0, (int) config('cloudfactory.deleted_website_backup_days', 30))),
+            ]);
+        }
 
         return (bool) $website->delete();
     }
 
-    private function recordSnapshot(Website $website, array $p, array $result): bool
+    private function recordSnapshot(AgentJob $job, Website $website, array $p, array $result): bool
     {
+        // A backup with only databases is in the repository of a different server.
+        $part = ($p['databasesOnly'] ?? false) ? Snapshot::DATABASES : Snapshot::WEBSITE;
         Snapshot::create([
             'website_id' => $website->id,
+            'server_id' => $job->server_id,
+            'part' => $part,
             'kind' => $p['kind'] ?? 'manual',
             'restic_id' => $result['snapshotId'] ?? null,
             'size_bytes' => (int) ($result['sizeBytes'] ?? 0),
@@ -409,7 +417,8 @@ class JobOutcome
         // FR-902: the agent removed the snapshots that the retention policy does not keep.
         $forgotten = array_filter((array) ($result['forgotten'] ?? []), 'is_string');
         if ($forgotten) {
-            $website->snapshots()->whereIn('restic_id', $forgotten)->delete();
+            // The IDs are from the repository of the server of the job.
+            $website->snapshots()->where('part', $part)->where(fn ($q) => $q->where('server_id', $job->server_id)->orWhereNull('server_id'))->whereIn('restic_id', $forgotten)->delete();
         }
 
         return true;

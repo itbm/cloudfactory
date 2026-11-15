@@ -859,8 +859,9 @@ With no selection, the panel uses a database server on the server of the website
 
 Limits of this release:
 
-- A backup of a website has its files and the databases on the server of the website. It
-  does not have a database on a different server.
+- A backup of a website with a database on a different server has two snapshots, in two
+  repositories (refer to [Backups](#backups)). When one of the two jobs fails, the backup
+  has only the other part.
 - The panel cannot make a staging copy of a website that has a database on a different
   server.
 
@@ -922,11 +923,19 @@ not keep them.
 - A backup has the files of the website and a dump of each MariaDB and PostgreSQL database.
   The panel keeps the SHA-256 sum of each dump, and the agent compares the dump with this sum
   before a restore. A backup has no Valkey data.
+- A website can have a database in a database server on a different server. The agent of
+  the server of the website cannot make a dump of it. Thus a backup of such a website has
+  two parts. The agent of the server of the website makes the snapshot of the files and of
+  the databases on that server. The agent of the server of the database server makes a
+  snapshot with only the dumps of the databases on that server, in the repository of that
+  server. The kind of that snapshot is `scheduled-databases` or `manual-databases`, and the
+  retention policy applies to each kind separately. The dump does not go to a different
+  server. A restore of such a database goes to the agent that has the snapshot.
 - Each snapshot has the tags `website=<website ID>` and `kind=scheduled` (a nightly backup) or
   `kind=manual` (a backup that a user starts). The retention policy removes only scheduled
   backups. The panel keeps the 10 newest manual backups of each website.
-- When a website is deleted, the panel records its server and the date after which its
-  backups can go (30 days by default).
+- When a website is deleted, the panel records each server that has a backup of it, and the
+  date after which its backups can go (30 days by default).
 - On Sunday, each healthy server removes the backups of those websites from its repository,
   and then the data that no snapshot uses.
 - A snapshot from the time when all servers used one repository has a mark. The panel

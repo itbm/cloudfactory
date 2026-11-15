@@ -218,7 +218,7 @@ func (d *Deps) allowUserSystemctl(args []string) error {
 
 var (
 	resticTagRE  = regexp.MustCompile(`^website=[0-9A-Za-z]{26}$`)
-	resticKindRE = regexp.MustCompile(`^website=[0-9A-Za-z]{26},kind=(manual|scheduled)$`)
+	resticKindRE = regexp.MustCompile(`^website=[0-9A-Za-z]{26},kind=(manual|scheduled)(-databases)?$`)
 	countRE      = regexp.MustCompile(`^[0-9]{1,9}$`)
 )
 
@@ -275,6 +275,18 @@ func (d *Deps) allowRestic(args, env []string) error {
 			return allowRetention(args[4:])
 		}
 	case "backup":
+		// Only the dump directory of a website: the databases of a website of a different
+		// server (Backup with databases_only).
+		if len(args) == 5 && args[1] == "--tag" && resticTagRE.MatchString(args[2]) && args[3] == "--tag" && (args[4] == "kind=manual-databases" || args[4] == "kind=scheduled-databases") {
+			user := filepath.Base(args[0])
+			if err := d.websiteUser(user); err != nil {
+				return fmt.Errorf("restic backup: %w", err)
+			}
+			if args[0] != d.dumpDir(user) {
+				return errors.New("restic can make a backup only of the files and the database dumps of a website")
+			}
+			return nil
+		}
 		// The directory of a website and its dump directory.
 		if len(args) != 6 || args[2] != "--tag" || !resticTagRE.MatchString(args[3]) || args[4] != "--tag" || (args[5] != "kind=manual" && args[5] != "kind=scheduled") {
 			break

@@ -6,10 +6,12 @@ use App\Enums\AgentAction;
 use App\Enums\JobState;
 use App\Http\Controllers\Api\BackupController;
 use App\Models\AgentJob;
+use App\Models\BackupRemoval;
 use App\Models\Customer;
 use App\Models\Database;
 use App\Models\DatabaseServer;
 use App\Models\Server;
+use App\Models\Setting;
 use App\Models\Website;
 use App\Services\JobOutcome;
 use Tests\TestCase;
@@ -182,15 +184,65 @@ class RemoteDatabaseTest extends TestCase
         $this->assertNull($this->website->fresh());
     }
 
-    public function test_a_backup_has_only_the_databases_on_the_server_of_the_website(): void
+    public function test_a_backup_has_a_part_for_the_databases_on_a_different_server(): void
     {
-        $this->remoteDatabase();
+        Setting::put('backup_policy', ['daily' => 7, 'weekly' => 4, 'monthly' => 6, 'time' => '03:00', 'target' => 's3:s3.example.com/bucket']);
+        $remote = $this->remoteDatabase();
         $local = $this->databaseServerOf($this->website, 'postgresql', ['name' => 'local-db']);
         $made = $this->postJson("/api/v1/websites/{$this->website->id}/databases", ['engine' => 'postgresql', 'name' => 'reports', 'databaseServerId' => $local->id])->assertStatus(202);
         $this->finish($made->json('job.id'));
 
-        $payload = BackupController::backupPayload($this->website, 'manual');
-        $this->assertSame([$local->id], array_column($payload['databases'], 'databaseServer'));
+        $backup = $this->postJson("/api/v1/websites/{$this->website->id}/snapshots")->assertStatus(202);
+        $jobs = AgentJob::where('action', AgentAction::Backup->value)->orderBy('id')->get();
+        $this->assertCount(2, $jobs);
+        // The agent of the server of the website: the files and the databases on that server.
+        [$main, $part] = [$jobs->firstWhere('server_id', $this->web->id), $jobs->firstWhere('server_id', $this->data->id)];
+        $this->assertSame($main->id, $backup->json('job.id'));
+        $this->assertSame([$local->id], array_column($main->payload['databases'], 'databaseServer'));
+        $this->assertArrayNotHasKey('databasesOnly', $main->payload);
+        // The agent of the server of the database server: only that database, in the
+        // repository of its own server.
+        $this->assertSame([$remote->name], array_column($part->payload['databases'], 'name'));
+        $this->assertTrue($part->payload['databasesOnly']);
+        $this->assertSame($this->customer->id, $part->payload['customer']);
+        $this->assertSame(BackupController::repository($this->data), $part->payload['target']);
+        $this->assertNotSame($main->payload['target'], $part->payload['target']);
+
+        $hash = str_repeat('a', 64);
+        $this->finish($main->id, result: ['snapshotId' => '1a2b3c4d', 'sizeBytes' => 10, 'dumps' => ["postgresql:{$made->json('name')}" => $hash]]);
+        $this->finish($part->id, result: ['snapshotId' => '5e6f7a8b', 'sizeBytes' => 5, 'dumps' => ["mariadb:{$remote->name}" => $hash]]);
+        $list = collect($this->getJson("/api/v1/websites/{$this->website->id}/snapshots")->assertOk()->json('data'))->keyBy('part');
+        $this->assertSame($this->web->id, $list['website']['serverId']);
+        $this->assertSame(["postgresql:{$made->json('name')}"], $list['website']['databases']);
+        $this->assertSame($this->data->id, $list['databases']['serverId']);
+        $this->assertSame(["mariadb:{$remote->name}"], $list['databases']['databases']);
+
+        // The retention of one part does not remove a snapshot of the other part.
+        $again = $this->postJson("/api/v1/websites/{$this->website->id}/snapshots")->assertStatus(202);
+        $second = AgentJob::where('action', AgentAction::Backup->value)->where('server_id', $this->data->id)->orderByDesc('id')->first();
+        $this->finish($second->id, result: ['snapshotId' => '9c9c9c9c', 'sizeBytes' => 5, 'dumps' => ["mariadb:{$remote->name}" => $hash], 'forgotten' => ['5e6f7a8b', '1a2b3c4d']]);
+        $this->assertSame(['1a2b3c4d', '9c9c9c9c'], $this->website->snapshots()->reorder()->orderBy('restic_id')->pluck('restic_id')->all());
+
+        // The restore of the database goes to the agent that has the backup.
+        $snapshot = $this->website->snapshots()->where('restic_id', '9c9c9c9c')->firstOrFail();
+        $restore = $this->postJson("/api/v1/websites/{$this->website->id}/snapshots/{$snapshot->id}/restore", ['scope' => 'database', 'item' => "mariadb:{$remote->name}"])->assertStatus(202);
+        $job = AgentJob::findOrFail($restore->json('job.id'));
+        $this->assertSame($this->data->id, $job->server_id);
+        $this->assertSame($this->customer->id, $job->payload['customer']);
+        $this->assertSame(BackupController::repository($this->data), $job->payload['target']);
+        $this->assertSame($this->remote->id, $job->payload['databaseServer']);
+        // A backup with only databases has no files to restore.
+        $this->postJson("/api/v1/websites/{$this->website->id}/snapshots/{$snapshot->id}/restore", ['scope' => 'website'])
+            ->assertStatus(422)->assertJsonValidationErrors(['scope' => 'This backup has only databases. Select a database to restore.']);
+
+        // When the panel removes the website, each server removes the backups in its repository.
+        $this->website->databases()->delete();
+        $this->website->databaseUsers()->delete();
+        $removal = $this->deleteJson("/api/v1/websites/{$this->website->id}")->assertStatus(202);
+        $this->finish($removal->json('job.id'));
+        $expected = [$this->data->id, $this->web->id];
+        sort($expected);
+        $this->assertSame($expected, BackupRemoval::where('website_id', $this->website->id)->orderBy('server_id')->pluck('server_id')->all());
     }
 
     public function test_a_staging_copy_refuses_a_website_with_a_database_on_a_different_server(): void

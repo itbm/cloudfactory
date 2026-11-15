@@ -513,6 +513,10 @@ directory with mode 0700:
   to a server can delete the backups of that server. Versioning or an object lock in the
   bucket keeps deleted data for a set time.
 - A backup keeps the SHA-256 sum of each database dump (refer to [Databases](#databases)).
+- The backup of a database is in the repository of the server of its database server. For a
+  website with a database on a different server, the agent of that server makes the dump
+  and keeps it in its own repository. No dump and no repository password goes to a
+  different server, and no database user for backups is open to the network.
 
 ## The mesh between servers
 

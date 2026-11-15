@@ -325,11 +325,18 @@ class DemoSeeder extends Seeder
             if ($website->status->value === 'failed' || $website->created_at->gt(now()->subDay())) {
                 continue;
             }
-            $databases = $website->sqlDatabases()->get()->map(fn ($d) => "{$d->engine}:{$d->name}")->all();
+            // A backup has one part for the website, and one part for the databases on each
+            // different server.
+            [$remote, $local] = $website->sqlDatabases()->with('databaseServer')->get()->partition(fn ($d) => $d->databaseServer->server_id !== $website->server_id);
+            $databases = $local->map(fn ($d) => "{$d->engine}:{$d->name}")->values()->all();
             $size = (int) (($website->usage['diskBytes'] ?? 0) * 0.6);
             // The last three nights, and one manual backup for the busy websites.
             foreach ([1, 2, 3] as $night) {
-                $this->snapshot($website, 'scheduled', $size - $night * 3 * self::MB, $databases, today()->subDays($night - 1)->setTime(3, 2 + strlen($name) % 9));
+                $at = today()->subDays($night - 1)->setTime(3, 2 + strlen($name) % 9);
+                $this->snapshot($website, 'scheduled', $size - $night * 3 * self::MB, $databases, $at);
+                foreach ($remote->groupBy(fn ($d) => $d->databaseServer->server_id) as $serverId => $part) {
+                    $this->snapshot($website, 'scheduled', (int) ($part->sum('size_bytes') * 0.4), $part->map(fn ($d) => "{$d->engine}:{$d->name}")->values()->all(), $at, $serverId);
+                }
             }
             if (in_array($name, ['acme.example.com', 'shop.acme.example.com', 'harbourbooks.example.net'], true)) {
                 $this->snapshot($website, 'manual', $size, $databases, now()->subHours(5));
@@ -337,11 +344,13 @@ class DemoSeeder extends Seeder
         }
     }
 
-    private function snapshot(Website $website, string $kind, int $size, array $databases, \DateTimeInterface $at): void
+    /** @param  ?string  $serverId  The server of a part with only databases. Null is a backup of the website. */
+    private function snapshot(Website $website, string $kind, int $size, array $databases, \DateTimeInterface $at, ?string $serverId = null): void
     {
         $snapshot = new Snapshot([
-            'website_id' => $website->id, 'kind' => $kind, 'restic_id' => hash('sha256', $website->id.$kind.$at->format('c')), 'size_bytes' => max($size, self::MB),
+            'website_id' => $website->id, 'kind' => $kind, 'restic_id' => hash('sha256', $website->id.$kind.$at->format('c').$serverId), 'size_bytes' => max($size, self::MB),
             'databases' => $databases, 'mailboxes' => [], 'dump_hashes' => [],
+            'server_id' => $serverId ?? $website->server_id, 'part' => $serverId ? Snapshot::DATABASES : Snapshot::WEBSITE,
         ]);
         $snapshot->created_at = $at > now() ? now()->subHours(20) : $at;
         $snapshot->save();
