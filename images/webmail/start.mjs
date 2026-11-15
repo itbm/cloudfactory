@@ -23,17 +23,19 @@ server.on("exit", (code, signal) => process.exit(code ?? (signal ? 1 : 0)));
 const log = (message) => console.log(`cf-webmail: ${message}`);
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// The server answers. The admin dashboard does not need the mail server, so the install does
+// not wait for it: /api/health/ready also checks the connection to the mail server.
 async function ready() {
   for (let i = 0; i < 120; i++) {
     try {
-      const res = await fetch(`${BASE}/api/health/ready`);
+      const res = await fetch(`${BASE}/api/health/live`);
       if (res.ok) return;
     } catch {
       // The server is not listening yet.
     }
     await sleep(1000);
   }
-  throw new Error("the webmail did not become ready in 2 minutes");
+  throw new Error("the webmail did not answer in 2 minutes");
 }
 
 async function install() {
