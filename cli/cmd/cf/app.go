@@ -7,12 +7,14 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"html"
 	"io"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"text/tabwriter"
@@ -88,6 +90,9 @@ Usage:
                                                        A Valkey database has a database number, and always a user with the same name.
                                                        With no database server, the panel uses the first one of the engine with space.
   cf databases delete WEBSITE DATABASE
+  cf databases adminer WEBSITE DATABASE [--read-only]  Open a MariaDB or PostgreSQL database in Adminer, with a temporary
+                                                       database user that expires after 60 minutes. The command writes an
+                                                       HTML file that signs you in: open it in your browser.
   cf database-users list WEBSITE
   cf database-users create WEBSITE --engine mariadb|postgresql --name NAME [--grant DATABASE=readonly|readwrite]...
                            [--database-server DATABASE_SERVER]
@@ -1005,8 +1010,112 @@ func (a *app) databases(ctx context.Context, sub string, args []string) error {
 			return err
 		}
 		return a.change(ctx, http.MethodDelete, fmt.Sprintf("/websites/%s/databases/%v", w.ID, db["id"]), nil)
+	case "adminer":
+		if err := need(args, 2, "a website and a database"); err != nil {
+			return err
+		}
+		fs := flag.NewFlagSet("adminer", flag.ContinueOnError)
+		readOnly := fs.Bool("read-only", false, "the temporary database user can only read")
+		if err := fs.Parse(args[2:]); err != nil {
+			return err
+		}
+		l, err := a.dbList(ctx, w.ID)
+		if err != nil {
+			return err
+		}
+		db, err := l.find(l.Databases, args[1], "database")
+		if err != nil {
+			return err
+		}
+		privileges := "readwrite"
+		if *readOnly {
+			privileges = "readonly"
+		}
+		return a.adminer(ctx, w.ID, cell(db["id"]), privileges)
 	}
 	return fmt.Errorf("unknown command databases %s", sub)
+}
+
+// adminerLogin is a sign-in to Adminer (POST /websites/{id}/databases/{id}/adminer).
+type adminerLogin struct {
+	ID        string `json:"id"`
+	Status    string `json:"status"`
+	URL       string `json:"url"`
+	Username  string `json:"username"`
+	ExpiresAt string `json:"expiresAt"`
+}
+
+// adminer opens a database in Adminer. The panel makes a temporary database user for the
+// database. Adminer has no sign-in form for a password: the browser sends the user and its
+// password with a POST request. Thus the command writes a small HTML file that does this, and
+// the user opens the file in a browser.
+func (a *app) adminer(ctx context.Context, websiteID, databaseID, privileges string) error {
+	var out struct {
+		Login adminerLogin      `json:"login"`
+		Form  map[string]string `json:"form"`
+		Jobs  []client.Job      `json:"jobs"`
+	}
+	if err := a.api.Do(ctx, http.MethodPost, "/websites/"+websiteID+"/databases/"+databaseID+"/adminer", nil, map[string]any{"privileges": privileges}, &out); err != nil {
+		return err
+	}
+	if a.json {
+		return a.printJSON(out)
+	}
+	if a.noWait {
+		fmt.Fprintf(a.out, "Sign-in %s waits for its jobs. The password of the temporary database user is in the answer with --json only.\n", out.Login.ID)
+		return nil
+	}
+	for _, job := range out.Jobs {
+		if err := a.wait(ctx, job.ID); err != nil {
+			return err
+		}
+	}
+	var state struct {
+		Login adminerLogin `json:"login"`
+	}
+	if err := a.api.Do(ctx, http.MethodGet, "/adminer-logins/"+out.Login.ID, nil, nil, &state); err != nil {
+		return err
+	}
+	if state.Login.Status != "ready" {
+		return fmt.Errorf("adminer cannot sign in: the status of the sign-in is %s", state.Login.Status)
+	}
+	path, err := writeAdminerLauncher(out.Login.URL, out.Form)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(a.out, "Adminer: %s\nTemporary database user: %s (expires %s)\n", out.Login.URL, out.Login.Username, out.Login.ExpiresAt)
+	fmt.Fprintf(a.out, "Open this file in your browser to sign in: %s\nThe file has the password of the temporary database user. Remove it after you open it.\n", path)
+	return nil
+}
+
+// writeAdminerLauncher writes an HTML file that sends the sign-in form to Adminer. Only the
+// user can read the file.
+func writeAdminerLauncher(address string, form map[string]string) (string, error) {
+	var b strings.Builder
+	b.WriteString("<!doctype html>\n<html lang=\"en-GB\"><meta charset=\"utf-8\"><title>Open Adminer</title>\n")
+	b.WriteString("<body onload=\"document.forms[0].submit()\"><form method=\"post\" action=\"" + html.EscapeString(address) + "\">\n")
+	keys := make([]string, 0, len(form))
+	for k := range form {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		fmt.Fprintf(&b, "<input type=\"hidden\" name=\"auth[%s]\" value=\"%s\">\n", html.EscapeString(k), html.EscapeString(form[k]))
+	}
+	b.WriteString("<noscript><button>Open Adminer</button></noscript></form></body></html>\n")
+	f, err := os.CreateTemp("", "cf-adminer-*.html")
+	if err != nil {
+		return "", err
+	}
+	if err := f.Chmod(0o600); err != nil {
+		f.Close()
+		return "", err
+	}
+	if _, err := f.WriteString(b.String()); err != nil {
+		f.Close()
+		return "", err
+	}
+	return f.Name(), f.Close()
 }
 
 // valkeyConnection tells how an application connects to a new Valkey database. The agent gives

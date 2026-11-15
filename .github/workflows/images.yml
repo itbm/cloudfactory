@@ -28,6 +28,7 @@ jobs:
           - { image: apache-php8.4, context: images/apache-php-fpm, file: images/apache-php-fpm/Containerfile, args: PHP_VERSION=8.4 }
           - { image: edge, context: images/edge, file: images/edge/Containerfile, args: '' }
           - { image: sftp, context: images/sftp, file: images/sftp/Containerfile, args: '' }
+          - { image: adminer, context: images/adminer, file: images/adminer/Containerfile, args: '' }
           - { image: dns, context: images/dns, file: images/dns/Containerfile, args: '' }
           - { image: panel-api, context: ., file: images/panel-api/Containerfile, args: '' }
           - { image: panel-web, context: ., file: images/panel-web/Containerfile, args: '' }
@@ -251,6 +252,8 @@ jobs:
           fi
           case "$IMAGE" in
             frankenphp-*|apache-*) args="--read-only --tmpfs /tmp --user 1001:1001" want=200 ;;
+            # Adminer answers only on the address of a sign-in: /<tool>/<32 hex digits>/.
+            adminer) args="--read-only --tmpfs /tmp --user 1001:1001" want=200 path=/test/0123456789abcdef0123456789abcdef/ ;;
             panel-web) args="--read-only --tmpfs /tmp" want=200 ;;
             edge) args="--read-only --tmpfs /data --tmpfs /run/caddy-admin" want=any ;;
           esac

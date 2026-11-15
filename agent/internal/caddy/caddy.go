@@ -64,6 +64,10 @@ type Site struct {
 	// Stopped is true for a website that is stopped, for example because its customer is
 	// suspended. The edge proxy then answers with StoppedPage, not with an empty 502 answer.
 	Stopped bool
+	// Path is a path prefix such as "/01jbq3z5k8n6/", or "". With a prefix, the route has only
+	// the paths that start with it, so that more websites can have the same host. The database
+	// tool of each customer uses this (Adminer): all customers have one host.
+	Path string
 }
 
 // StoppedPage is the page of a stopped website. It has status 503. It does not tell a visitor
@@ -200,9 +204,13 @@ func SiteRoute(s Site, upstream string) map[string]any {
 			"body": StoppedPage,
 		}
 	}
+	match := map[string]any{"host": s.Hosts}
+	if s.Path != "" {
+		match["path"] = []string{s.Path + "*"}
+	}
 	return map[string]any{
 		"@id":      "cf-" + s.WebsiteID,
-		"match":    []any{map[string]any{"host": s.Hosts}},
+		"match":    []any{match},
 		"handle":   []any{handler},
 		"terminal": true,
 	}

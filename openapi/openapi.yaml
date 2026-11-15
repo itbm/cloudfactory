@@ -1320,6 +1320,75 @@ paths:
         '202': { $ref: '#/components/responses/JobOnly' }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  /v1/websites/{websiteId}/databases/{databaseId}/adminer:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+      - { name: databaseId, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [Databases]
+      summary: Open a database in Adminer
+      description: >-
+        Single sign-on for the database tool. The panel makes a temporary database user with
+        access to this one database, and gives its password in the response one time. The panel
+        does not keep the password. Send the fields of `form` to the sign-in form of Adminer at
+        `login.url`, as `auth[driver]`, `auth[server]`, `auth[username]`, `auth[password]` and
+        `auth[db]`, with a POST request. The web panel does this in a new window.
+
+
+        Each customer has one Adminer container on the panel server, in its own gVisor sandbox,
+        and it can connect only to the database servers of its customer. The first request
+        starts it. Wait until `GET /v1/adminer-logins/{id}` gives the status `ready`. The
+        temporary database user expires after 60 minutes, and the panel then removes it.
+        Adminer opens only MariaDB and PostgreSQL databases: the response is 422 for a Valkey
+        database. The response is 409 when the customer is suspended.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                privileges: { type: string, enum: [readonly, readwrite], default: readwrite }
+      responses:
+        '202':
+          description: The panel makes the temporary database user, and starts Adminer if necessary.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  login: { $ref: '#/components/schemas/AdminerLogin' }
+                  form:
+                    type: object
+                    description: The fields of the sign-in form of Adminer. Only this response has the password.
+                    properties:
+                      driver: { type: string, enum: [server, pgsql], description: '"server" is MariaDB.' }
+                      server: { type: string, description: 'The name of the database server for Adminer, for example "shop-db.internal" or "mariadb.internal:3307".' }
+                      username: { type: string }
+                      password: { type: string }
+                      db: { type: string }
+                  jobs: { type: array, items: { $ref: '#/components/schemas/Job' } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: The customer of the website is suspended. }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/adminer-logins/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [Databases]
+      summary: Get the state of an Adminer sign-in
+      description: Only the user who opened the database sees the sign-in. The response has no password.
+      responses:
+        '200':
+          description: The sign-in.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  login: { $ref: '#/components/schemas/AdminerLogin' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   /v1/websites/{websiteId}/database-users:
     parameters:
       - { $ref: '#/components/parameters/WebsiteId' }
@@ -4232,6 +4301,18 @@ components:
         databaseServerId: { type: string, description: The database server of the user. }
         access: { type: string, enum: [website, anywhere], description: '"website": only the website container can connect. "anywhere": any address, with TLS.' }
         grants: { type: array, items: { $ref: '#/components/schemas/DatabaseGrant' } }
+    AdminerLogin:
+      type: object
+      properties:
+        id: { type: string }
+        status: { type: string, enum: [starting, ready, failed, expired], description: '"ready": Adminer can sign in with the temporary database user.' }
+        url: { type: string, description: 'The address of this sign-in in Adminer: the address of the Adminer of the customer and a random key. Adminer keeps the session of the sign-in on this address only.' }
+        websiteId: { type: [string, 'null'] }
+        databaseId: { type: [string, 'null'] }
+        databaseName: { type: string }
+        privileges: { type: string, enum: [readonly, readwrite] }
+        username: { type: string, description: The temporary database user. }
+        expiresAt: { type: string, format: date-time }
     DatabaseGrant:
       type: object
       properties:

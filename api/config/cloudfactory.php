@@ -28,6 +28,19 @@ return [
 
     'panel_domain' => env('CF_PANEL_DOMAIN', 'panel.cloudfactory.io'),
 
+    // The database tool (Adminer). Each customer has one Adminer container on the panel
+    // server, and the browser opens it on this domain, with one path for each customer. With
+    // no value, the domain is "adminer." and the panel domain. The DNS of the domain must
+    // point to the panel server. It is a sub-domain of the panel domain, so no website can
+    // have it.
+    'adminer' => [
+        'domain' => env('CF_ADMINER_DOMAIN'),
+        // Development only: the address of Adminer in place of https://<domain><path>.
+        'url' => env('CF_ADMINER_URL'),
+        // The time that a temporary database user for Adminer is valid.
+        'minutes' => (int) env('CF_ADMINER_MINUTES', 60),
+    ],
+
     // R-14: the address of the installation script in the "Add server" command. Each GitHub
     // release has the script with its signature (docs/installation.md). With no value, the
     // panel gives the script of its own release, so that a new server gets the same release.

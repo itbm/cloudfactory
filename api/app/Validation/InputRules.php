@@ -96,6 +96,9 @@ final class InputRules
     /** The path of a file or a directory in a website. It starts with "/". It has no empty part, no "." part, no ".." part and no "/" at the end. */
     public const RESTORE_PATH = '/^(?=[\\s\\S]{0,4096}\\z)(?![\\s\\S]*?(?:\\/\\.\\.?(\\/|$)))(?:^(\\/|(\\/[^\\/\\x00]+)+)$)/D';
 
+    /** The path prefix of the route of a website in the edge proxy, for example "/01jbq3z5k8n6/". It starts and ends with a slash, and has 1 to 40 lower-case letters and digits. */
+    public const ROUTE_PATH = '/^(?:^\\/[a-z0-9]{1,40}\\/$)/D';
+
     /** The name of an environment variable that a deploy gives to the build commands. */
     public const SECRET_NAME = '/^(?:^[A-Z_][A-Z0-9_]{0,63}$)/D';
 
@@ -145,6 +148,7 @@ final class InputRules
         'ipv6' => self::IPV6,
         'phpExtension' => self::PHP_EXTENSION,
         'restorePath' => self::RESTORE_PATH,
+        'routePath' => self::ROUTE_PATH,
         'secretName' => self::SECRET_NAME,
         'secretValue' => self::SECRET_VALUE,
         'sha256' => self::SHA256,
@@ -184,6 +188,7 @@ final class InputRules
         'ipv6' => 'Enter an IPv6 address in lower-case letters, for example 2001:db8::10.',
         'phpExtension' => 'Use 1 to 40 lower-case letters, digits and underscores.',
         'restorePath' => 'Enter a path that starts with /, for example /public/index.php. Do not use "//", "." or ".." parts, or a / at the end.',
+        'routePath' => 'Use a path such as /01jbq3z5k8n6/: a slash, 1 to 40 lower-case letters and digits, and a slash.',
         'secretName' => 'Use 1 to 64 capital letters, digits and underscores. Do not start with a digit.',
         'secretValue' => 'Enter a value of 1 to 4096 characters on one line.',
         'sha256' => 'Enter 64 hexadecimal digits in lower case.',

@@ -222,6 +222,11 @@ func TestCheckWebsiteRefusesBadValues(t *testing.T) {
 			w.Domains = append(w.Domains, &agentv1.Domain{Name: "y.example", Kind: "primary"})
 		},
 		func(w *agentv1.Website) { w.Domains[0].Name = "acme.example\nevil" },
+		func(w *agentv1.Website) { w.RoutePath = "/../" },
+		func(w *agentv1.Website) {
+			w.RoutePath = "/t1/"
+			w.Domains = append(w.Domains, &agentv1.Domain{Name: "www.acme.example", Kind: "redirect"})
+		},
 	} {
 		w := website("ghcr.io/cloudfactory/frankenphp-php8.4:8.4.0-1")
 		change(w)

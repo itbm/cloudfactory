@@ -67,6 +67,21 @@ The demo mode does not ask the public DNS. For a DNS zone with a name that start
 zone, it answers that the domain uses the name servers of the panel.
 
 The panel ignores `CF_DEMO` when `APP_ENV` is `production`. Do not set it on a server.
+To try **Open in Adminer** in the demonstration mode, start Adminer on your computer and set
+its address in `api/.env`, for example `CF_ADMINER_URL=http://127.0.0.1:8090`. The panel adds
+the path of the customer to this address:
+
+```sh
+mkdir -p /tmp/adminer && cp images/adminer/index.php /tmp/adminer/
+curl -fsSL -o /tmp/adminer/adminer.php \
+  https://github.com/vrana/adminer/releases/download/v5.5.1/adminer-5.5.1.php
+php -S 127.0.0.1:8090 -t /tmp/adminer /tmp/adminer/index.php
+```
+
+Adminer opens only server names that end in `.internal`. To connect to a local database,
+add the name of the database server to `/etc/hosts`, for example
+`127.0.0.1 shop-db.internal`.
+
 
 ### Consoles for each role
 

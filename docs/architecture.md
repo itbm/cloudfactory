@@ -890,6 +890,48 @@ When the memory is full, Valkey removes the keys of that database server that we
 for the longest time. A customer that needs a separate limit for one website makes a second
 Valkey database server. Refer to [installation.md](installation.md#valkey).
 
+### Adminer
+
+Adminer is a web tool for MariaDB and PostgreSQL databases. Adminer has no driver for Valkey,
+so the panel does not open a Valkey database in Adminer.
+
+Each customer has one Adminer container (`images/adminer`). The container is on the panel
+server, in gVisor, with its own Unix user (`adminer_<random>`) and the limits of
+`DatabaseTools::LIMITS`. The panel makes it with the usual website jobs (`CreateWebsite` with
+the runtime `custom`, and `SetRuntime` when the release of the panel server changes). The
+panel makes the container when a user opens the first database of the customer.
+
+- **Address.** All customers use one Adminer domain, `adminer.<panel domain>` by default
+  (`CF_ADMINER_DOMAIN`). The edge proxy sends the path `/<id of the tool>/` of that domain to
+  the container of the customer. A website route has the field `routePath` for this. The
+  websites with the same domain and different paths share one TLS policy in the edge proxy.
+  Each sign-in adds a random key to the path: `/<id of the tool>/<key>/`. Adminer keeps its
+  session cookie on the path of the request, so each sign-in has its own cookie, and a page of
+  a different sign-in on the same domain does not get it. `index.php` refuses each other path.
+  The Adminer domain is a sub-domain of the panel domain, so no website can have it. The web
+  panel keeps its token in the session storage of the browser, which is separate for each
+  origin, so Adminer cannot read the token.
+- **Network.** The container is a member of the networks of its customer, like a website
+  that connects to each MariaDB and PostgreSQL database server of the customer
+  (`DatabaseTools::links()` in `Networks::links()`). The mesh, the firewall and the host file
+  thus let it connect only to the database servers of its customer. A database server on a
+  different server is reachable through the tunnel to that server.
+- **Sign-in.** The panel stores no database passwords. To open a database, the panel makes a
+  temporary database user, `<unix user of the website>_adminer_<random>`, with access to that
+  database only (`SetDatabaseUser`). The access is read and write, or read only. The API gives
+  the password one time, in the answer of
+  `POST /v1/websites/{websiteId}/databases/{databaseId}/adminer`, and does not keep it. The
+  web panel opens a new window, waits until `GET /v1/adminer-logins/{id}` gives `ready`, and
+  sends the sign-in form of Adminer with the user and the password. The command
+  `cf databases adminer` writes a local HTML file that sends the same form.
+- **Expiry.** A temporary user is valid for 60 minutes (`CF_ADMINER_MINUTES`). Each minute,
+  the command `cloudfactory:expire-adminer-logins` removes the users that are not valid
+  (`DeleteDatabaseUser`), and the users of a database that was removed.
+- **Checks in Adminer.** `images/adminer/index.php` shows no sign-in form. It refuses a
+  driver that is not MariaDB or PostgreSQL, and a server name that is not `<name>.internal`
+  with an optional port, before Adminer connects. It turns off the permanent login, shows only
+  the databases of the sign-in, and refuses frames from other sites.
+
 ## The mesh between servers
 
 The mesh is the set of encrypted tunnels between the servers of one panel. A tunnel lets two
