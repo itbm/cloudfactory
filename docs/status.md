@@ -15,6 +15,7 @@ shows what this repository has now.
 | New image tags from the registry: the panel checks each hour and accepts a tag only with a good signature (FR-1110) | `api/app/Services/ImageUpdateChecker.php` |
 | Host CPU, memory and disk use in the agent report | `agent/internal/status` |
 | CPU, memory and disk use of each website in the agent report | `agent/internal/actions/observe.go` |
+| Usage history and usage alerts: the agent reports the traffic of each website (from the metrics of the edge proxy) and of each server. The panel keeps buckets of 5 minutes for 8 days and of 1 hour for 400 days, and shows graphs of CPU, memory, disk and traffic for each website, server and database server (**Usage** tab, server page). A plan can have a bandwidth limit for each month. An alert opens at the warning threshold of a limit (80% by default) and becomes critical at the critical threshold (95%). The page **Usage alerts** shows the alerts of each role, and an administrator sets the thresholds. The events `UsageAlertRaised` and `UsageAlertResolved` and the email notifier deliver them. The panel does not stop a website at a limit because of an alert | `agent/internal/caddy/traffic.go`, `api/app/Services/UsageRecorder.php`, `api/app/Http/Controllers/Api/UsageController.php`, `web/src/components/UsageCharts.tsx`, `web/src/pages/AlertsPage.tsx` |
 | Panel API: accounts, users with temporary passwords, scoped tokens, TOTP, customers, plans, websites, domains, runtimes, databases, backups, servers, images, rollouts, jobs and audit events | `api/` |
 | Users: administrators and resellers add users, reset passwords and delete users in the web panel and the CLI. Root on the panel server can reset a password and remove a sign-in lock | `api/app/Http/Controllers/Api/UserController.php`, `web/src/pages/CustomersPage.tsx`, `cli/cmd/cf/admin.go` |
 | A PostgreSQL database for the panel, and HTTPS with a pinned certificate between the panel and the agent on the panel server | `agent/internal/quadlet`, `install/install.sh` |
@@ -43,7 +44,7 @@ shows what this repository has now.
 
 | Item | Notes |
 | ---- | ----- |
-| Areas without an API | The API of release 0.1 has no email, SSH shell, passkeys, alerts, branding or system settings. The web panel has no pages for these areas. |
+| Areas without an API | The API of release 0.1 has no email, SSH shell, passkeys, branding or system settings. The web panel has no pages for these areas. |
 | File manager | The file manager reads files up to 2 MiB and writes files up to 5 MiB. It has no archive actions and no change of permissions. Use SFTP for large files. |
 | Logs | The panel shows the last lines that the container of a website wrote. A website that was made before this release writes its log file after its next start. The panel has no search in old log lines and no access log of the edge proxy. |
 | Deploys | A deploy starts by hand or with a webhook. The panel does not check the signature that a Git host puts on a webhook: the secret is the address. The panel has no deploy on a schedule, and does not go back automatically after the switch. The build runs in the runtime image of the website, which has Git and Composer but not Node.js. A website with a custom image cannot deploy from Git. |

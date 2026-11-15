@@ -4,6 +4,7 @@ import { retryLoad, signOut } from "./api/store";
 import { Layout } from "./components/Layout";
 import { HOME, canOpen } from "./lib/roles";
 import { AccountPage } from "./pages/AccountPage";
+import { AlertsPage } from "./pages/AlertsPage";
 import { AppsPage } from "./pages/AppsPage";
 import { BackupsPage } from "./pages/BackupsPage";
 import { CustomersPage } from "./pages/CustomersPage";
@@ -94,6 +95,7 @@ export function App() {
           <Route path="backups" element={<BackupsPage />} />
           <Route path="apps" element={<AppsPage />} />
           <Route path="jobs" element={<JobsPage />} />
+          <Route path="alerts" element={<AlertsPage />} />
           <Route path="account" element={<AccountPage />} />
           <Route path="settings" element={<SettingsPage />} />
           <Route path="settings/:tab" element={<SettingsPage />} />

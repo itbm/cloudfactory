@@ -8,6 +8,8 @@ use App\Models\AuditEntry;
 use App\Models\User;
 use App\Services\Audit;
 use App\Services\LoginThrottle;
+use App\Services\Notifications\Devices;
+use App\Services\Notifications\Notifier;
 use App\Services\Totp;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -44,6 +46,9 @@ class AuthController extends Controller
             'email' => ['required', 'email'],
             'password' => ['required', 'string'],
             'totp' => ['nullable', 'digits:6'],
+            // A random ID that the web panel keeps in the browser. A sign-in from a different
+            // device gives an email to the user.
+            'deviceId' => ['nullable', 'string', 'max:100'],
         ]);
         $ip = (string) $request->ip();
         if ($seconds = LoginThrottle::lockedFor($data['email'], $ip)) {
@@ -82,6 +87,9 @@ class AuthController extends Controller
         $token = $user->createToken(self::SESSION, ['*'], now()->addHours(12));
         $request->setUserResolver(fn () => $user);
         Audit::record($request, $user->totp_secret ? 'Signed in with password and TOTP' : 'Signed in with password', $user->email);
+        if (Devices::seen($user, $request)) {
+            app(Notifier::class)->newDevice($user, Devices::label((string) $request->userAgent()), $ip);
+        }
 
         return response()->json(['token' => $token->plainTextToken, 'expiresAt' => $token->accessToken->expires_at?->toIso8601String()]);
     }

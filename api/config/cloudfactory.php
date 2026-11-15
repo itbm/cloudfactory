@@ -87,6 +87,9 @@ return [
         // customers, and thus get the access of those users. It cannot change administrators.
         'users:read', 'users:write',
         'audit:read',
+        // Email notifications: the preferences of the user, the sent emails, and for
+        // administrators and resellers the SMTP server and the templates.
+        'notifications:read', 'notifications:write',
         // CF-02: only a token with this scope, or a session token, can see and change tokens.
         'tokens:read', 'tokens:write',
     ],

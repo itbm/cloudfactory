@@ -28,19 +28,19 @@ describe("the console of each role", () => {
   it("gives each role its own first page and its own menu", async () => {
     await open("administrator", "/");
     expect(heading()).toBe("Overview");
-    expect(menu()).toEqual(["Overview", "Finish setup", "Servers", "Network", "Images and updates", "Customers", "Plans", "Websites", "Files", "Databases", "DNS", "Private networks", "Backups", "Apps", "Jobs and activity", "Settings"]);
+    expect(menu()).toEqual(["Overview", "Finish setup", "Servers", "Network", "Images and updates", "Customers", "Plans", "Websites", "Files", "Databases", "DNS", "Private networks", "Backups", "Apps", "Jobs and activity", "Usage alerts", "Settings"]);
     cleanup();
     reset();
 
     await open("reseller", "/");
     expect(heading()).toBe("Customers");
-    expect(menu()).toEqual(["Customers", "Plans", "Websites", "Files", "Databases", "DNS", "Private networks", "Backups", "Apps", "Jobs and activity", "My account", "Settings"]);
+    expect(menu()).toEqual(["Customers", "Plans", "Websites", "Files", "Databases", "DNS", "Private networks", "Backups", "Apps", "Jobs and activity", "Usage alerts", "My account", "Settings"]);
     cleanup();
     reset();
 
     await open("owner", "/");
     expect(heading()).toBe("My websites");
-    expect(menu()).toEqual(["My websites", "Files", "Databases", "DNS", "Private networks", "Backups", "Apps", "Activity", "My account", "Settings"]);
+    expect(menu()).toEqual(["My websites", "Files", "Databases", "DNS", "Private networks", "Backups", "Apps", "Activity", "Usage alerts", "My account", "Settings"]);
   });
 
   it("has no link from the menu of an owner or a reseller to a page that the role cannot open", () => {
@@ -68,7 +68,7 @@ describe("the console of each role", () => {
   });
 
   it("shows no administrator word on the pages of an owner", async () => {
-    for (const path of ["/websites", "/files", `/websites/SITE/files`, `/websites/SITE/cron`, `/websites/SITE/deploys`, `/websites/SITE/logs`, "/databases", "/backups", "/apps", "/jobs", "/account", "/settings", `/websites/SITE`, `/websites/SITE/settings`, `/websites/SITE/backups`]) {
+    for (const path of ["/websites", "/files", `/websites/SITE/files`, `/websites/SITE/cron`, `/websites/SITE/deploys`, `/websites/SITE/logs`, "/databases", "/backups", "/apps", "/jobs", "/alerts", `/websites/SITE/usage`, "/account", "/settings", `/websites/SITE`, `/websites/SITE/settings`, `/websites/SITE/backups`]) {
       await open("owner", "/");
       cleanup();
       render(<MemoryRouter initialEntries={[path.replace("SITE", website("shop.acme.example.com").id)]}><App /></MemoryRouter>);
@@ -102,13 +102,14 @@ describe("the setup checklist", () => {
   it("shows each open item with its effect and a link to the page that completes it", async () => {
     await open("administrator", "/setup");
     const main = screen.getByRole("main");
-    expect(main.textContent).toContain("1 of 4 items are done.");
+    expect(main.textContent).toContain("2 of 5 items are done.");
     const items = within(main).getAllByRole("listitem");
     expect(items.map((i) => within(i).getByRole("heading").textContent)).toEqual([
       "Turn on two-step sign-in for each administrator Open",
       "Turn on disk limits on each server Open",
       "Use a certificate that browsers trust for the panel Open",
       "Set the object storage for backups Done",
+      "Set up the SMTP server for email notifications Done",
     ]);
     expect(items[1].textContent).toContain("While this is open: A server applies the disk limit of a plan with a user quota, or with a disk image for each new website.");
     expect(within(items[1]).getByRole("link").getAttribute("href")).toBe(`/servers/${getState().servers.find((s) => s.name === "web-1")!.id}`);

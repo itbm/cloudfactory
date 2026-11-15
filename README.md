@@ -91,6 +91,7 @@ the script before you run it.
 - [Security model](docs/security.md)
 - [Installation](docs/installation.md)
 - [Private networks: a guide for customers](docs/private-networks.md)
+- [Email notifications](docs/email-notifications.md)
 - [Development](docs/development.md)
 - [Releases and signing keys](docs/releasing.md)
 - [Decisions about the open questions](docs/decisions.md)
