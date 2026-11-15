@@ -27,6 +27,7 @@ use App\Http\Controllers\Api\RuntimeController;
 use App\Http\Controllers\Api\ServerController;
 use App\Http\Controllers\Api\SetupController;
 use App\Http\Controllers\Api\SftpController;
+use App\Http\Controllers\Api\UsageController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\WebsiteController;
 use Illuminate\Support\Facades\Route;
@@ -86,6 +87,8 @@ Route::prefix('v1')->group(function () {
             Route::post('websites/{websiteId}/files/directories', [FileController::class, 'makeDirectory'])->middleware('throttle:site-tools');
             Route::post('websites/{websiteId}/files/move', [FileController::class, 'move'])->middleware('throttle:site-tools');
             Route::get('websites/{websiteId}/logs', [LogController::class, 'index'])->middleware('throttle:site-tools');
+            Route::get('websites/{websiteId}/usage', [UsageController::class, 'website']);
+            Route::get('usage-alerts', [UsageController::class, 'alerts']);
 
             Route::get('websites/{websiteId}/cron-jobs', [CronJobController::class, 'index']);
             Route::post('websites/{websiteId}/cron-jobs', [CronJobController::class, 'store']);
@@ -127,6 +130,7 @@ Route::prefix('v1')->group(function () {
             Route::delete('database-servers/{id}', [DatabaseServerController::class, 'destroy']);
             Route::post('database-servers/{id}/retry', [DatabaseServerController::class, 'retry']);
             Route::post('database-servers/{id}/move', [DatabaseServerController::class, 'move']);
+            Route::get('database-servers/{id}/usage', [UsageController::class, 'databaseServer']);
         });
 
         // DNS hosting: the zones of a customer and their records.
@@ -165,6 +169,8 @@ Route::prefix('v1')->group(function () {
             Route::post('servers/{id}/update-agent', [ServerController::class, 'updateAgent']);
             Route::post('servers/{id}/check-connection', [ServerController::class, 'checkConnection']);
             Route::delete('servers/{id}', [ServerController::class, 'destroy']);
+            Route::get('servers/{id}/usage', [UsageController::class, 'server']);
+            Route::put('usage-alerts/settings', [UsageController::class, 'updateSettings']);
             // The mesh: the encrypted tunnels between the servers.
             Route::get('mesh', [MeshController::class, 'show']);
             Route::patch('mesh', [MeshController::class, 'update']);

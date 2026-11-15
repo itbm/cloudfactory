@@ -16,3 +16,6 @@ Schedule::command('cloudfactory:check-dns')->everyFifteenMinutes()->withoutOverl
 
 // Batch 1, finding 2: servers that do not report, and jobs with no result.
 Schedule::command('cloudfactory:check-jobs')->everyMinute()->withoutOverlapping();
+
+// Usage history: the panel keeps the buckets of 5 minutes for 8 days and of 1 hour for 400 days.
+Schedule::command('cloudfactory:prune-usage')->daily()->withoutOverlapping();

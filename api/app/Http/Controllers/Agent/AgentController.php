@@ -16,6 +16,7 @@ use App\Services\Dns\Zones;
 use App\Services\JobOutcome;
 use App\Services\Mesh;
 use App\Services\PanelCertificate;
+use App\Services\UsageRecorder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -84,12 +85,16 @@ class AgentController extends Controller
             'usage.cpuPercent' => ['numeric', 'between:0,100'],
             'usage.memoryPercent' => ['numeric', 'between:0,100'],
             'usage.diskPercent' => ['numeric', 'between:0,100'],
+            'usage.networkInBytes' => ['integer', 'min:0'],
+            'usage.networkOutBytes' => ['integer', 'min:0'],
             'websites' => ['array'],
             'websites.*.id' => ['required', 'string'],
             'websites.*.cpuPercent' => ['numeric'],
             'websites.*.memoryBytes' => ['integer'],
             'websites.*.diskBytes' => ['integer'],
             'websites.*.processes' => ['integer'],
+            'websites.*.bytesIn' => ['integer', 'min:0'],
+            'websites.*.bytesOut' => ['integer', 'min:0'],
             // FR-402 and FR-403: the DNS and the certificate of each domain on the server.
             'domains' => ['nullable', 'array'],
             'domains.*.name' => ['required', 'string', 'max:253'],
@@ -216,8 +221,10 @@ class AgentController extends Controller
         }
         // FR-203: the current resource use of each website.
         foreach ($data['websites'] ?? [] as $use) {
-            $server->websites()->whereKey($use['id'])->update(['usage' => json_encode(collect($use)->except('id'))]);
+            $server->websites()->whereKey($use['id'])->update(['usage' => json_encode(collect($use)->except(['id', 'bytesIn', 'bytesOut']))]);
         }
+        // The usage history, and the alerts of the resources that are near their limits.
+        app(UsageRecorder::class)->record($server, $data);
         // An agent reports only the domains and databases of its own websites.
         $websiteIds = $server->websites()->pluck('id');
         foreach ($data['domains'] ?? [] as $d) {

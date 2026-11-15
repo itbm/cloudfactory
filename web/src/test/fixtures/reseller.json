@@ -6,7 +6,7 @@
             "name": "Sam Reseller",
             "email": "reseller@example.com",
             "role": "reseller",
-            "customerId": "01m7eds8b349bek5nqhm6qj4ys",
+            "customerId": "01m7eg076dkr23wwb4b86bdp7b",
             "totpEnabled": false,
             "mustChangePassword": false,
             "totpSetupRequired": false,
@@ -18,12 +18,12 @@
         "body": {
             "data": [
                 {
-                    "id": "01m7eds8kbkrs25a1h8wrczb5f",
+                    "id": "01m7eg07gm3w5h8px8hghh3h10",
                     "name": "cornerbakery.example.org",
                     "application": "WordPress",
-                    "customerId": "01m7eds8b349bek5nqhm6qj4yt",
-                    "serverId": "01m7eds8hmgxgvyhb72c1hqje4",
-                    "planId": "01m7eds8b0k9qchqx2m5hegyp7",
+                    "customerId": "01m7eg076dkr23wwb4b86bdp7c",
+                    "serverId": "01m7eg07eefnnehjfy8e67n9m4",
+                    "planId": "01m7eg0769jjvyvp4czkak0y3q",
                     "unixUser": "cornerba_f8cd",
                     "networkHost": "cornerba-f8cd.internal",
                     "networkPort": 80,
@@ -31,7 +31,7 @@
                     "command": null,
                     "status": "running",
                     "runtime": {
-                        "imageId": "01m7eds8hjegff1c3ks0d6z0y6",
+                        "imageId": "01m7eg07ebf9fqhjy7prsqwg8f",
                         "family": "apache-php-fpm",
                         "image": "ghcr.io/itbm/apache-php8.4:0.1.9",
                         "digest": "sha256:2c769f34728835f87dbb42aa4aeb6b443fd1ec20ce7100ba72602ebea79af8d2",
@@ -58,7 +58,8 @@
                         "memoryBytes": 1073741824,
                         "diskBytes": 10737418240,
                         "diskIoBytesPerSecond": 52428800,
-                        "processes": 100
+                        "processes": 100,
+                        "bandwidthBytes": 107374182400
                     },
                     "diskLimitApplied": true,
                     "usage": {
@@ -67,6 +68,7 @@
                         "diskBytes": 9542041600,
                         "processes": 14
                     },
+                    "bandwidthBytes": 14259718159,
                     "domains": [
                         {
                             "name": "cornerbakery.example.org",
@@ -103,15 +105,15 @@
                     "stagingOf": null,
                     "managedByTerraform": false,
                     "createdAt": "2026-07-27T10:00:00+00:00",
-                    "updatedAt": "2026-11-13T04:00:00+00:00"
+                    "updatedAt": "2026-11-14T10:00:00+00:00"
                 },
                 {
-                    "id": "01m7eds8kk8sr50jst582whjpm",
+                    "id": "01m7eg07gxrw173nqwyacq1e1c",
                     "name": "events.harbourbooks.example.net",
                     "application": "Laravel",
-                    "customerId": "01m7eds8b349bek5nqhm6qj4yv",
-                    "serverId": "01m7eds8hmgxgvyhb72c1hqje5",
-                    "planId": "01m7eds8b1846gx8njd2d11bpr",
+                    "customerId": "01m7eg076dkr23wwb4b86bdp7d",
+                    "serverId": "01m7eg07efe2743dmwzxz2r8s9",
+                    "planId": "01m7eg076bpjmr70a7bcw9akg8",
                     "unixUser": "eventsha_08d5",
                     "networkHost": "eventsha-08d5.internal",
                     "networkPort": 80,
@@ -119,7 +121,7 @@
                     "command": null,
                     "status": "failed",
                     "runtime": {
-                        "imageId": "01m7eds8hjegff1c3ks0d6z0y5",
+                        "imageId": "01m7eg07ebf9fqhjy7prsqwg8e",
                         "family": "frankenphp",
                         "image": "ghcr.io/itbm/frankenphp-php8.5:0.1.9",
                         "digest": "sha256:afb8d84dc8308b7282ae0ffc18a43ae2964ce03b9b3d5e8dd6297f3203a6bba1",
@@ -146,7 +148,8 @@
                         "memoryBytes": 2147483648,
                         "diskBytes": 42949672960,
                         "diskIoBytesPerSecond": 52428800,
-                        "processes": 200
+                        "processes": 200,
+                        "bandwidthBytes": 536870912000
                     },
                     "diskLimitApplied": true,
                     "usage": {
@@ -155,6 +158,7 @@
                         "diskBytes": 0,
                         "processes": 0
                     },
+                    "bandwidthBytes": 0,
                     "domains": [
                         {
                             "name": "events.harbourbooks.example.net",
@@ -181,12 +185,12 @@
                     "updatedAt": "2026-11-14T10:00:00+00:00"
                 },
                 {
-                    "id": "01m7eds8kfe2c9fhyhzy42jxeg",
+                    "id": "01m7eg07gsh5hkekqtppptgbdk",
                     "name": "harbourbooks.example.net",
                     "application": "WooCommerce",
-                    "customerId": "01m7eds8b349bek5nqhm6qj4yv",
-                    "serverId": "01m7eds8hmgxgvyhb72c1hqje4",
-                    "planId": "01m7eds8b1846gx8njd2d11bpr",
+                    "customerId": "01m7eg076dkr23wwb4b86bdp7d",
+                    "serverId": "01m7eg07eefnnehjfy8e67n9m4",
+                    "planId": "01m7eg076bpjmr70a7bcw9akg8",
                     "unixUser": "harbourb_fe76",
                     "networkHost": "harbourb-fe76.internal",
                     "networkPort": 80,
@@ -194,7 +198,7 @@
                     "command": null,
                     "status": "running",
                     "runtime": {
-                        "imageId": "01m7eds8hh7fj6m71ar9akj8rk",
+                        "imageId": "01m7eg07ea595cnjdvamwd692s",
                         "family": "frankenphp",
                         "image": "ghcr.io/itbm/frankenphp-php8.4:0.1.9",
                         "digest": "sha256:d7d6deae0d2513f9811ddf0ba35dda532d605c37a724c2b090e9591a99d2b88b",
@@ -221,7 +225,8 @@
                         "memoryBytes": 2147483648,
                         "diskBytes": 42949672960,
                         "diskIoBytesPerSecond": 52428800,
-                        "processes": 200
+                        "processes": 200,
+                        "bandwidthBytes": 536870912000
                     },
                     "diskLimitApplied": true,
                     "usage": {
@@ -230,6 +235,7 @@
                         "diskBytes": 13421772800,
                         "processes": 31
                     },
+                    "bandwidthBytes": 516469817344,
                     "domains": [
                         {
                             "name": "harbourbooks.example.net",
@@ -253,15 +259,15 @@
                     "stagingOf": null,
                     "managedByTerraform": false,
                     "createdAt": "2026-10-05T10:00:00+00:00",
-                    "updatedAt": "2026-11-13T04:00:00+00:00"
+                    "updatedAt": "2026-11-14T10:00:00+00:00"
                 },
                 {
-                    "id": "01m7eds8k6er5m39pd1xcr8a6a",
+                    "id": "01m7eg07gfedtznhjcrxnsnq4c",
                     "name": "northwind.example.com",
                     "application": "WordPress",
-                    "customerId": "01m7eds8b349bek5nqhm6qj4ys",
-                    "serverId": "01m7eds8hmgxgvyhb72c1hqje4",
-                    "planId": "01m7eds8b2t6nfjc8d3c7vm8rr",
+                    "customerId": "01m7eg076dkr23wwb4b86bdp7b",
+                    "serverId": "01m7eg07eefnnehjfy8e67n9m4",
+                    "planId": "01m7eg076bpjmr70a7bcw9akg9",
                     "unixUser": "northwin_8223",
                     "networkHost": "northwin-8223.internal",
                     "networkPort": 80,
@@ -269,7 +275,7 @@
                     "command": null,
                     "status": "running",
                     "runtime": {
-                        "imageId": "01m7eds8hjegff1c3ks0d6z0y5",
+                        "imageId": "01m7eg07ebf9fqhjy7prsqwg8e",
                         "family": "frankenphp",
                         "image": "ghcr.io/itbm/frankenphp-php8.5:0.1.9",
                         "digest": "sha256:afb8d84dc8308b7282ae0ffc18a43ae2964ce03b9b3d5e8dd6297f3203a6bba1",
@@ -296,7 +302,8 @@
                         "memoryBytes": 4294967296,
                         "diskBytes": 107374182400,
                         "diskIoBytesPerSecond": 52428800,
-                        "processes": 400
+                        "processes": 400,
+                        "bandwidthBytes": 2147483648000
                     },
                     "diskLimitApplied": true,
                     "usage": {
@@ -305,6 +312,7 @@
                         "diskBytes": 3250585600,
                         "processes": 19
                     },
+                    "bandwidthBytes": 18419801769,
                     "domains": [
                         {
                             "name": "northwind.example.com",
@@ -328,7 +336,7 @@
                     "stagingOf": null,
                     "managedByTerraform": false,
                     "createdAt": "2026-01-28T10:00:00+00:00",
-                    "updatedAt": "2026-11-13T04:00:00+00:00"
+                    "updatedAt": "2026-11-14T10:00:00+00:00"
                 }
             ],
             "links": {
@@ -373,7 +381,7 @@
         "body": {
             "data": [
                 {
-                    "id": "01m7eds8rsdbp588wqe398s79a",
+                    "id": "01m7eg09pmxrqxq7sxtek3eqdv",
                     "title": "Create website",
                     "ref": "events.harbourbooks.example.net",
                     "action": "CreateWebsite",
@@ -388,15 +396,15 @@
                     ],
                     "step": 3,
                     "error": "The step \"Start container in gVisor\" failed on the server. Your provider can see the details.",
-                    "websiteId": "01m7eds8kk8sr50jst582whjpm",
+                    "websiteId": "01m7eg07gxrw173nqwyacq1e1c",
                     "databaseServerId": null,
                     "dnsZoneId": null,
-                    "serverId": "01m7eds8hmgxgvyhb72c1hqje5",
+                    "serverId": "01m7eg07efe2743dmwzxz2r8s9",
                     "createdAt": "2026-11-14T09:35:00+00:00",
                     "finishedAt": "2026-11-14T09:36:00+00:00"
                 },
                 {
-                    "id": "01m7eds8rt4ggytm2pq7tjv7rh",
+                    "id": "01m7eg09pnhbw05etjf3j2bftz",
                     "title": "Add TXT record to harbourbooks.example.net",
                     "ref": "harbourbooks.example.net",
                     "action": "SetDnsZones",
@@ -410,13 +418,13 @@
                     "error": null,
                     "websiteId": null,
                     "databaseServerId": null,
-                    "dnsZoneId": "01m7eds8mq8njndrxe2pwqq15n",
-                    "serverId": "01m7eds8hkz7gbq2n1fy1p9crf",
+                    "dnsZoneId": "01m7eg07j536205zwfhn8jw02s",
+                    "serverId": "01m7eg07ed2n6ne4g8c0qasmpy",
                     "createdAt": "2026-11-14T09:27:00+00:00",
                     "finishedAt": "2026-11-14T09:28:00+00:00"
                 },
                 {
-                    "id": "01m7eds8rt4ggytm2pq7tjv7rj",
+                    "id": "01m7eg09pnhbw05etjf3j2bfv0",
                     "title": "Add TXT record to harbourbooks.example.net",
                     "ref": "harbourbooks.example.net",
                     "action": "SetDnsZones",
@@ -430,13 +438,13 @@
                     "error": "The step \"Load zones\" failed on the server. Your provider can see the details.",
                     "websiteId": null,
                     "databaseServerId": null,
-                    "dnsZoneId": "01m7eds8mq8njndrxe2pwqq15n",
-                    "serverId": "01m7eds8hmgxgvyhb72c1hqje4",
+                    "dnsZoneId": "01m7eg07j536205zwfhn8jw02s",
+                    "serverId": "01m7eg07eefnnehjfy8e67n9m4",
                     "createdAt": "2026-11-14T09:27:00+00:00",
                     "finishedAt": "2026-11-14T09:28:00+00:00"
                 },
                 {
-                    "id": "01m7eds8rrck3eff63jeytrxmt",
+                    "id": "01m7eg09pkz4thwdmasfcpawzs",
                     "title": "Add domain cornerbakery-orders.example.org",
                     "ref": "cornerbakery.example.org",
                     "action": "AddDomain",
@@ -448,10 +456,10 @@
                     ],
                     "step": 3,
                     "error": null,
-                    "websiteId": "01m7eds8kbkrs25a1h8wrczb5f",
+                    "websiteId": "01m7eg07gm3w5h8px8hghh3h10",
                     "databaseServerId": null,
                     "dnsZoneId": null,
-                    "serverId": "01m7eds8hmgxgvyhb72c1hqje4",
+                    "serverId": "01m7eg07eefnnehjfy8e67n9m4",
                     "createdAt": "2026-11-14T08:50:00+00:00",
                     "finishedAt": "2026-11-14T08:51:00+00:00"
                 }
@@ -498,12 +506,12 @@
         "body": {
             "data": [
                 {
-                    "id": "01m7eds8b349bek5nqhm6qj4yt",
+                    "id": "01m7eg076dkr23wwb4b86bdp7c",
                     "name": "Corner Bakery",
                     "email": "hello@cornerbakery.example.org",
                     "role": "owner",
-                    "planId": "01m7eds8b0k9qchqx2m5hegyp7",
-                    "resellerId": "01m7eds8b349bek5nqhm6qj4ys",
+                    "planId": "01m7eg0769jjvyvp4czkak0y3q",
+                    "resellerId": "01m7eg076dkr23wwb4b86bdp7b",
                     "branding": null,
                     "allowedPlanIds": null,
                     "suspended": false,
@@ -513,12 +521,12 @@
                     "createdAt": "2026-07-17T10:00:00+00:00"
                 },
                 {
-                    "id": "01m7eds8b349bek5nqhm6qj4yv",
+                    "id": "01m7eg076dkr23wwb4b86bdp7d",
                     "name": "Harbour Books",
                     "email": "it@harbourbooks.example.net",
                     "role": "owner",
-                    "planId": "01m7eds8b1846gx8njd2d11bpr",
-                    "resellerId": "01m7eds8b349bek5nqhm6qj4ys",
+                    "planId": "01m7eg076bpjmr70a7bcw9akg8",
+                    "resellerId": "01m7eg076dkr23wwb4b86bdp7b",
                     "branding": null,
                     "allowedPlanIds": null,
                     "suspended": false,
@@ -528,17 +536,17 @@
                     "createdAt": "2026-09-30T10:00:00+00:00"
                 },
                 {
-                    "id": "01m7eds8b349bek5nqhm6qj4ys",
+                    "id": "01m7eg076dkr23wwb4b86bdp7b",
                     "name": "Northwind Agency",
                     "email": "ops@northwind.example.com",
                     "role": "reseller",
-                    "planId": "01m7eds8b2t6nfjc8d3c7vm8rr",
+                    "planId": "01m7eg076bpjmr70a7bcw9akg9",
                     "resellerId": null,
                     "branding": null,
                     "allowedPlanIds": [
-                        "01m7eds8b2t6nfjc8d3c7vm8rr",
-                        "01m7eds8b0k9qchqx2m5hegyp7",
-                        "01m7eds8b1846gx8njd2d11bpr"
+                        "01m7eg076bpjmr70a7bcw9akg9",
+                        "01m7eg0769jjvyvp4czkak0y3q",
+                        "01m7eg076bpjmr70a7bcw9akg8"
                     ],
                     "suspended": false,
                     "suspendedBy": null,
@@ -554,14 +562,15 @@
         "body": {
             "data": [
                 {
-                    "id": "01m7eds8b2t6nfjc8d3c7vm8rr",
+                    "id": "01m7eg076bpjmr70a7bcw9akg9",
                     "name": "Agency",
                     "limits": {
                         "vcpus": 4,
                         "memoryBytes": 4294967296,
                         "diskBytes": 107374182400,
                         "diskIoBytesPerSecond": 52428800,
-                        "processes": 400
+                        "processes": 400,
+                        "bandwidthBytes": 2147483648000
                     },
                     "websites": 50,
                     "mailboxes": 500,
@@ -590,14 +599,15 @@
                     "networks": 10
                 },
                 {
-                    "id": "01m7eds8b1846gx8njd2d11bpr",
+                    "id": "01m7eg076bpjmr70a7bcw9akg8",
                     "name": "Business",
                     "limits": {
                         "vcpus": 2,
                         "memoryBytes": 2147483648,
                         "diskBytes": 42949672960,
                         "diskIoBytesPerSecond": 52428800,
-                        "processes": 200
+                        "processes": 200,
+                        "bandwidthBytes": 536870912000
                     },
                     "websites": 10,
                     "mailboxes": 100,
@@ -626,14 +636,15 @@
                     "networks": 3
                 },
                 {
-                    "id": "01m7eds8b0k9qchqx2m5hegyp7",
+                    "id": "01m7eg0769jjvyvp4czkak0y3q",
                     "name": "Starter",
                     "limits": {
                         "vcpus": 1,
                         "memoryBytes": 1073741824,
                         "diskBytes": 10737418240,
                         "diskIoBytesPerSecond": 52428800,
-                        "processes": 100
+                        "processes": 100,
+                        "bandwidthBytes": 107374182400
                     },
                     "websites": 3,
                     "mailboxes": 30,
@@ -742,7 +753,7 @@
                     "name": "Bea Baker",
                     "email": "bea@cornerbakery.example.org",
                     "role": "owner",
-                    "customerId": "01m7eds8b349bek5nqhm6qj4yt",
+                    "customerId": "01m7eg076dkr23wwb4b86bdp7c",
                     "totpEnabled": false,
                     "mustChangePassword": true,
                     "createdAt": "2026-11-14T10:00:00+00:00"
@@ -752,7 +763,7 @@
                     "name": "Hari Books",
                     "email": "hari@harbourbooks.example.net",
                     "role": "owner",
-                    "customerId": "01m7eds8b349bek5nqhm6qj4yv",
+                    "customerId": "01m7eg076dkr23wwb4b86bdp7d",
                     "totpEnabled": false,
                     "mustChangePassword": false,
                     "createdAt": "2026-11-14T10:00:00+00:00"
@@ -762,7 +773,7 @@
                     "name": "Sam Reseller",
                     "email": "reseller@example.com",
                     "role": "reseller",
-                    "customerId": "01m7eds8b349bek5nqhm6qj4ys",
+                    "customerId": "01m7eg076dkr23wwb4b86bdp7b",
                     "totpEnabled": false,
                     "mustChangePassword": false,
                     "createdAt": "2026-11-14T10:00:00+00:00"
@@ -781,7 +792,7 @@
         "body": {
             "data": [
                 {
-                    "id": "01m7eds8hjegff1c3ks0d6z0y6",
+                    "id": "01m7eg07ebf9fqhjy7prsqwg8f",
                     "name": "Apache + PHP-FPM · PHP 8.4",
                     "family": "apache-php-fpm",
                     "tag": "0.1.9",
@@ -790,7 +801,7 @@
                     "supportEndsAt": "2027-01-13T00:00:00+00:00"
                 },
                 {
-                    "id": "01m7eds8hjegff1c3ks0d6z0y7",
+                    "id": "01m7eg07ecny0cykv995x7c5a9",
                     "name": "Apache + PHP-FPM · PHP 8.5",
                     "family": "apache-php-fpm",
                     "tag": "0.1.9",
@@ -799,7 +810,7 @@
                     "supportEndsAt": "2029-12-31T00:00:00+00:00"
                 },
                 {
-                    "id": "01m7eds8hh7fj6m71ar9akj8rk",
+                    "id": "01m7eg07ea595cnjdvamwd692s",
                     "name": "FrankenPHP · PHP 8.4",
                     "family": "frankenphp",
                     "tag": "0.1.9",
@@ -808,7 +819,7 @@
                     "supportEndsAt": "2028-12-31T00:00:00+00:00"
                 },
                 {
-                    "id": "01m7eds8hjegff1c3ks0d6z0y5",
+                    "id": "01m7eg07ebf9fqhjy7prsqwg8e",
                     "name": "FrankenPHP · PHP 8.5",
                     "family": "frankenphp",
                     "tag": "0.1.9",
@@ -829,7 +840,7 @@
         "status": 200,
         "body": {
             "customer": {
-                "id": "01m7eds8b349bek5nqhm6qj4ys",
+                "id": "01m7eg076dkr23wwb4b86bdp7b",
                 "name": "Northwind Agency",
                 "email": "ops@northwind.example.com",
                 "role": "reseller",
@@ -838,14 +849,15 @@
             },
             "provider": null,
             "plan": {
-                "id": "01m7eds8b2t6nfjc8d3c7vm8rr",
+                "id": "01m7eg076bpjmr70a7bcw9akg9",
                 "name": "Agency",
                 "limits": {
                     "vcpus": 4,
                     "memoryBytes": 4294967296,
                     "diskBytes": 107374182400,
                     "diskIoBytesPerSecond": 52428800,
-                    "processes": 400
+                    "processes": 400,
+                    "bandwidthBytes": 2147483648000
                 },
                 "websites": 50,
                 "mailboxes": 500,
@@ -879,6 +891,7 @@
                 "dnsZones": 3,
                 "networks": 0,
                 "diskBytes": 3250585600,
+                "bandwidthBytes": 18419801769,
                 "customers": 2
             },
             "backups": {
@@ -890,7 +903,7 @@
                     "name": "Sam Reseller",
                     "email": "reseller@example.com",
                     "role": "reseller",
-                    "customerId": "01m7eds8b349bek5nqhm6qj4ys",
+                    "customerId": "01m7eg076dkr23wwb4b86bdp7b",
                     "totpEnabled": false,
                     "mustChangePassword": false,
                     "createdAt": "2026-11-14T10:00:00+00:00"
@@ -903,13 +916,13 @@
         "body": {
             "data": [
                 {
-                    "id": "01m7eds8p66nbncxwvjcbtjgy3",
+                    "id": "01m7eg07kca01s8at2z6k79wp7",
                     "name": "mariadb-1",
                     "engine": "mariadb",
-                    "customerId": "01m7eds8b349bek5nqhm6qj4ys",
-                    "serverId": "01m7eds8hmgxgvyhb72c1hqje4",
+                    "customerId": "01m7eg076dkr23wwb4b86bdp7b",
+                    "serverId": "01m7eg07eefnnehjfy8e67n9m4",
                     "movingToServerId": null,
-                    "planId": "01m7eds8b2t6nfjc8d3c7vm8rr",
+                    "planId": "01m7eg076bpjmr70a7bcw9akg9",
                     "status": "running",
                     "host": "mariadb.internal",
                     "port": 3306,
@@ -930,13 +943,13 @@
                     "createdAt": "2026-11-14T10:00:00+00:00"
                 },
                 {
-                    "id": "01m7eds8phev5wxxfaqy27xj7v",
+                    "id": "01m7eg07kmn8f64ck94skjphzf",
                     "name": "mariadb-1",
                     "engine": "mariadb",
-                    "customerId": "01m7eds8b349bek5nqhm6qj4yt",
-                    "serverId": "01m7eds8hmgxgvyhb72c1hqje4",
+                    "customerId": "01m7eg076dkr23wwb4b86bdp7c",
+                    "serverId": "01m7eg07eefnnehjfy8e67n9m4",
                     "movingToServerId": null,
-                    "planId": "01m7eds8b0k9qchqx2m5hegyp7",
+                    "planId": "01m7eg0769jjvyvp4czkak0y3q",
                     "status": "running",
                     "host": "mariadb.internal",
                     "port": 3306,
@@ -957,13 +970,13 @@
                     "createdAt": "2026-11-14T10:00:00+00:00"
                 },
                 {
-                    "id": "01m7eds8pwpj05m2thg1kq6yv9",
+                    "id": "01m7eg07kwm02s33g11xn9fa9a",
                     "name": "mariadb-1",
                     "engine": "mariadb",
-                    "customerId": "01m7eds8b349bek5nqhm6qj4yv",
-                    "serverId": "01m7eds8hmgxgvyhb72c1hqje4",
+                    "customerId": "01m7eg076dkr23wwb4b86bdp7d",
+                    "serverId": "01m7eg07eefnnehjfy8e67n9m4",
                     "movingToServerId": null,
-                    "planId": "01m7eds8b1846gx8njd2d11bpr",
+                    "planId": "01m7eg076bpjmr70a7bcw9akg8",
                     "status": "running",
                     "host": "mariadb.internal",
                     "port": 3306,
@@ -991,9 +1004,9 @@
         "body": {
             "data": [
                 {
-                    "id": "01m7eds8mndrv4q93744rh2yt7",
+                    "id": "01m7eg07j3t6jr78kak95mat53",
                     "name": "cornerbakery.example.org",
-                    "customerId": "01m7eds8b349bek5nqhm6qj4yt",
+                    "customerId": "01m7eg076dkr23wwb4b86bdp7c",
                     "status": "active",
                     "serial": 1794564000,
                     "recordCount": 6,
@@ -1028,9 +1041,9 @@
                     "createdAt": "2026-08-06T10:00:00+00:00"
                 },
                 {
-                    "id": "01m7eds8mq8njndrxe2pwqq15n",
+                    "id": "01m7eg07j536205zwfhn8jw02s",
                     "name": "harbourbooks.example.net",
-                    "customerId": "01m7eds8b349bek5nqhm6qj4yv",
+                    "customerId": "01m7eg076dkr23wwb4b86bdp7d",
                     "status": "failed",
                     "serial": 1794564000,
                     "recordCount": 6,
@@ -1065,9 +1078,9 @@
                     "createdAt": "2026-10-07T10:00:00+00:00"
                 },
                 {
-                    "id": "01m7eds8mkbzsm8kbc5qv2fbqr",
+                    "id": "01m7eg07j1464g046ajcanbank",
                     "name": "northwind.example.com",
-                    "customerId": "01m7eds8b349bek5nqhm6qj4ys",
+                    "customerId": "01m7eg076dkr23wwb4b86bdp7b",
                     "status": "active",
                     "serial": 1794574800,
                     "recordCount": 4,
@@ -1119,58 +1132,105 @@
         "body": {
             "data": [
                 {
-                    "id": "01m7eds8k7rzaadysyb6wdzpya",
-                    "customerId": "01m7eds8b349bek5nqhm6qj4ys",
+                    "id": "01m7eg07ggqvjtyf5rfxy3gt5j",
+                    "customerId": "01m7eg076dkr23wwb4b86bdp7b",
                     "name": "default",
                     "isDefault": true,
                     "websiteIds": [
-                        "01m7eds8k6er5m39pd1xcr8a6a"
+                        "01m7eg07gfedtznhjcrxnsnq4c"
                     ],
                     "databaseServerIds": [
-                        "01m7eds8p66nbncxwvjcbtjgy3"
+                        "01m7eg07kca01s8at2z6k79wp7"
                     ],
                     "createdAt": "2026-11-14T10:00:00+00:00"
                 },
                 {
-                    "id": "01m7eds8kbkrs25a1h8wrczb5g",
-                    "customerId": "01m7eds8b349bek5nqhm6qj4yt",
+                    "id": "01m7eg07gm3w5h8px8hghh3h11",
+                    "customerId": "01m7eg076dkr23wwb4b86bdp7c",
                     "name": "default",
                     "isDefault": true,
                     "websiteIds": [
-                        "01m7eds8kbkrs25a1h8wrczb5f"
+                        "01m7eg07gm3w5h8px8hghh3h10"
                     ],
                     "databaseServerIds": [
-                        "01m7eds8phev5wxxfaqy27xj7v"
+                        "01m7eg07kmn8f64ck94skjphzf"
                     ],
                     "createdAt": "2026-11-14T10:00:00+00:00"
                 },
                 {
-                    "id": "01m7eds8kfe2c9fhyhzy42jxeh",
-                    "customerId": "01m7eds8b349bek5nqhm6qj4yv",
+                    "id": "01m7eg07gsh5hkekqtppptgbdm",
+                    "customerId": "01m7eg076dkr23wwb4b86bdp7d",
                     "name": "default",
                     "isDefault": true,
                     "websiteIds": [
-                        "01m7eds8kfe2c9fhyhzy42jxeg",
-                        "01m7eds8kk8sr50jst582whjpm"
+                        "01m7eg07gsh5hkekqtppptgbdk",
+                        "01m7eg07gxrw173nqwyacq1e1c"
                     ],
                     "databaseServerIds": [
-                        "01m7eds8pwpj05m2thg1kq6yv9"
+                        "01m7eg07kwm02s33g11xn9fa9a"
                     ],
                     "createdAt": "2026-11-14T10:00:00+00:00"
                 }
             ]
         }
     },
-    "GET /websites/01m7eds8kbkrs25a1h8wrczb5f/databases": {
+    "GET /usage-alerts": {
+        "status": 200,
+        "body": {
+            "data": [
+                {
+                    "id": "01m7eg09nr7psd62hdwzbbegjj",
+                    "subjectType": "website",
+                    "subjectId": "01m7eg07gsh5hkekqtppptgbdk",
+                    "subjectName": "harbourbooks.example.net",
+                    "customerId": "01m7eg076dkr23wwb4b86bdp7d",
+                    "serverId": "01m7eg07eefnnehjfy8e67n9m4",
+                    "resource": "bandwidth",
+                    "level": "critical",
+                    "used": 516469817344,
+                    "limit": 536870912000,
+                    "percent": 96.2,
+                    "usedText": "481 GB",
+                    "limitText": "500 GB",
+                    "openedAt": "2026-11-13T04:00:00+00:00",
+                    "updatedAt": "2026-11-14T10:00:00+00:00",
+                    "resolvedAt": null
+                },
+                {
+                    "id": "01m7eg09nr7psd62hdwzbbegjm",
+                    "subjectType": "website",
+                    "subjectId": "01m7eg07gm3w5h8px8hghh3h10",
+                    "subjectName": "cornerbakery.example.org",
+                    "customerId": "01m7eg076dkr23wwb4b86bdp7c",
+                    "serverId": "01m7eg07eefnnehjfy8e67n9m4",
+                    "resource": "disk",
+                    "level": "warning",
+                    "used": 9542041600,
+                    "limit": 10737418240,
+                    "percent": 88.9,
+                    "usedText": "8.9 GB",
+                    "limitText": "10 GB",
+                    "openedAt": "2026-11-12T06:00:00+00:00",
+                    "updatedAt": "2026-11-14T10:00:00+00:00",
+                    "resolvedAt": null
+                }
+            ],
+            "settings": {
+                "warningPercent": 80,
+                "criticalPercent": 95
+            }
+        }
+    },
+    "GET /websites/01m7eg07gm3w5h8px8hghh3h10/databases": {
         "status": 200,
         "body": {
             "prefix": "cornerba_f8cd_",
             "databases": [
                 {
-                    "id": "01m7eds8pthdmxqmq7v5nqthf9",
+                    "id": "01m7eg07ktgve8w94z1rtvq11h",
                     "engine": "mariadb",
                     "name": "cornerba_f8cd_wp",
-                    "databaseServerId": "01m7eds8phev5wxxfaqy27xj7v",
+                    "databaseServerId": "01m7eg07kmn8f64ck94skjphzf",
                     "host": "mariadb.internal",
                     "port": 3306,
                     "sizeBytes": 230686720,
@@ -1180,14 +1240,14 @@
             ],
             "users": [
                 {
-                    "id": "01m7eds8pthdmxqmq7v5nqthfa",
+                    "id": "01m7eg07kv28n6c2gftqpx3613",
                     "engine": "mariadb",
                     "name": "cornerba_f8cd_wp",
                     "access": "website",
-                    "databaseServerId": "01m7eds8phev5wxxfaqy27xj7v",
+                    "databaseServerId": "01m7eg07kmn8f64ck94skjphzf",
                     "grants": [
                         {
-                            "databaseId": "01m7eds8pthdmxqmq7v5nqthf9",
+                            "databaseId": "01m7eg07ktgve8w94z1rtvq11h",
                             "database": "cornerba_f8cd_wp",
                             "privileges": "readwrite"
                         }
@@ -1196,13 +1256,13 @@
             ],
             "servers": [
                 {
-                    "id": "01m7eds8phev5wxxfaqy27xj7v",
+                    "id": "01m7eg07kmn8f64ck94skjphzf",
                     "name": "mariadb-1",
                     "engine": "mariadb",
-                    "customerId": "01m7eds8b349bek5nqhm6qj4yt",
-                    "serverId": "01m7eds8hmgxgvyhb72c1hqje4",
+                    "customerId": "01m7eg076dkr23wwb4b86bdp7c",
+                    "serverId": "01m7eg07eefnnehjfy8e67n9m4",
                     "movingToServerId": null,
-                    "planId": "01m7eds8b0k9qchqx2m5hegyp7",
+                    "planId": "01m7eg0769jjvyvp4czkak0y3q",
                     "status": "running",
                     "host": "mariadb.internal",
                     "port": 3306,
@@ -1226,63 +1286,63 @@
             ]
         }
     },
-    "GET /websites/01m7eds8kbkrs25a1h8wrczb5f/snapshots": {
+    "GET /websites/01m7eg07gm3w5h8px8hghh3h10/snapshots": {
         "status": 200,
         "body": {
             "data": [
                 {
-                    "id": "01m7eds8ra1y64pjph5wtmg07g",
+                    "id": "01m7eg09p6gjxmq4ksqt5fzgat",
                     "kind": "scheduled",
                     "sizeBytes": 5722079232,
                     "databases": [
                         "mariadb:cornerba_f8cd_wp"
                     ],
                     "part": "website",
-                    "serverId": "01m7eds8hmgxgvyhb72c1hqje4",
+                    "serverId": "01m7eg07eefnnehjfy8e67n9m4",
                     "mailboxes": [],
                     "createdAt": "2026-11-14T03:08:00+00:00"
                 },
                 {
-                    "id": "01m7eds8ra1y64pjph5wtmg07h",
+                    "id": "01m7eg09p7hx9aksfmtjwy8h5y",
                     "kind": "scheduled",
                     "sizeBytes": 5718933504,
                     "databases": [
                         "mariadb:cornerba_f8cd_wp"
                     ],
                     "part": "website",
-                    "serverId": "01m7eds8hmgxgvyhb72c1hqje4",
+                    "serverId": "01m7eg07eefnnehjfy8e67n9m4",
                     "mailboxes": [],
                     "createdAt": "2026-11-13T03:08:00+00:00"
                 },
                 {
-                    "id": "01m7eds8ra1y64pjph5wtmg07j",
+                    "id": "01m7eg09p7hx9aksfmtjwy8h5z",
                     "kind": "scheduled",
                     "sizeBytes": 5715787776,
                     "databases": [
                         "mariadb:cornerba_f8cd_wp"
                     ],
                     "part": "website",
-                    "serverId": "01m7eds8hmgxgvyhb72c1hqje4",
+                    "serverId": "01m7eg07eefnnehjfy8e67n9m4",
                     "mailboxes": [],
                     "createdAt": "2026-11-12T03:08:00+00:00"
                 }
             ]
         }
     },
-    "GET /websites/01m7eds8kbkrs25a1h8wrczb5f/cron-jobs": {
+    "GET /websites/01m7eg07gm3w5h8px8hghh3h10/cron-jobs": {
         "status": 200,
         "body": {
             "data": []
         }
     },
-    "GET /websites/01m7eds8kbkrs25a1h8wrczb5f/deploy": {
+    "GET /websites/01m7eg07gm3w5h8px8hghh3h10/deploy": {
         "status": 200,
         "body": {
             "source": null,
             "releases": []
         }
     },
-    "GET /websites/01m7eds8kbkrs25a1h8wrczb5f/files?path=%2F": {
+    "GET /websites/01m7eg07gm3w5h8px8hghh3h10/files?path=%2F": {
         "status": 200,
         "body": {
             "path": "/",
@@ -1336,7 +1396,7 @@
             "truncated": false
         }
     },
-    "GET /websites/01m7eds8kbkrs25a1h8wrczb5f/files?path=%2Fpublic": {
+    "GET /websites/01m7eg07gm3w5h8px8hghh3h10/files?path=%2Fpublic": {
         "status": 200,
         "body": {
             "path": "/public",
@@ -1372,7 +1432,7 @@
             "truncated": false
         }
     },
-    "GET /websites/01m7eds8kbkrs25a1h8wrczb5f/files/content?path=%2Fpublic%2Findex.php": {
+    "GET /websites/01m7eg07gm3w5h8px8hghh3h10/files/content?path=%2Fpublic%2Findex.php": {
         "status": 200,
         "body": {
             "file": {
@@ -1388,239 +1448,244 @@
             "content": "<?php\n\nrequire __DIR__.'/../src/bootstrap.php';\n\necho render('home', ['title' => 'cornerbakery.example.org']);\n"
         }
     },
-    "GET /websites/01m7eds8kbkrs25a1h8wrczb5f/logs?lines=200": {
+    "GET /websites/01m7eg07gm3w5h8px8hghh3h10/logs?lines=200": {
         "status": 200,
         "body": {
             "lines": [
                 {
-                    "at": "2026-11-14T09:46:52Z",
+                    "at": "2026-11-14T09:45:11Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794649612,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/products/42\",\"status\":200,\"duration\":0.133,\"size\":1229,\"remote_ip\":\"203.0.113.173\"}"
+                    "text": "{\"ts\":1794649511,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/products/42\",\"status\":200,\"duration\":0.01,\"size\":32416,\"remote_ip\":\"203.0.113.98\"}"
                 },
                 {
-                    "at": "2026-11-14T09:47:23Z",
+                    "at": "2026-11-14T09:45:40Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794649643,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/\",\"status\":200,\"duration\":0.382,\"size\":40590,\"remote_ip\":\"203.0.113.152\"}"
+                    "text": "{\"ts\":1794649540,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/wp-login.php\",\"status\":404,\"duration\":0.067,\"size\":37806,\"remote_ip\":\"203.0.113.97\"}"
                 },
                 {
-                    "at": "2026-11-14T09:47:56Z",
+                    "at": "2026-11-14T09:45:55Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794649676,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/products\",\"status\":200,\"duration\":0.292,\"size\":30429,\"remote_ip\":\"203.0.113.54\"}"
+                    "text": "{\"ts\":1794649555,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/cart\",\"status\":200,\"duration\":0.042,\"size\":10123,\"remote_ip\":\"203.0.113.106\"}"
                 },
                 {
-                    "at": "2026-11-14T09:47:58Z",
+                    "at": "2026-11-14T09:46:33Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794649678,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/contact\",\"status\":200,\"duration\":0.311,\"size\":20674,\"remote_ip\":\"203.0.113.156\"}"
+                    "text": "{\"ts\":1794649593,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/search?q=tea\",\"status\":200,\"duration\":0.219,\"size\":21661,\"remote_ip\":\"203.0.113.52\"}"
                 },
                 {
-                    "at": "2026-11-14T09:48:14Z",
+                    "at": "2026-11-14T09:47:12Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794649694,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/products\",\"status\":200,\"duration\":0.133,\"size\":10094,\"remote_ip\":\"203.0.113.159\"}"
+                    "text": "{\"ts\":1794649632,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/cart\",\"status\":200,\"duration\":0.082,\"size\":39481,\"remote_ip\":\"203.0.113.56\"}"
                 },
                 {
-                    "at": "2026-11-14T09:48:14Z",
+                    "at": "2026-11-14T09:47:44Z",
+                    "stream": "access",
+                    "text": "{\"ts\":1794649664,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/wp-login.php\",\"status\":404,\"duration\":0.284,\"size\":40488,\"remote_ip\":\"203.0.113.234\"}"
+                },
+                {
+                    "at": "2026-11-14T09:48:10Z",
+                    "stream": "access",
+                    "text": "{\"ts\":1794649690,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/favicon.ico\",\"status\":404,\"duration\":0.167,\"size\":18570,\"remote_ip\":\"203.0.113.178\"}"
+                },
+                {
+                    "at": "2026-11-14T09:48:10Z",
                     "stream": "error",
                     "text": "PHP Warning:  Undefined array key \"utm_source\" in /app/src/bootstrap.php on line 14"
                 },
                 {
-                    "at": "2026-11-14T09:48:28Z",
+                    "at": "2026-11-14T09:48:20Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794649708,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/cart\",\"status\":200,\"duration\":0.317,\"size\":13892,\"remote_ip\":\"203.0.113.80\"}"
+                    "text": "{\"ts\":1794649700,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/search?q=tea\",\"status\":200,\"duration\":0.286,\"size\":46018,\"remote_ip\":\"203.0.113.115\"}"
                 },
                 {
-                    "at": "2026-11-14T09:48:32Z",
+                    "at": "2026-11-14T09:48:40Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794649712,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/products/42\",\"status\":200,\"duration\":0.003,\"size\":20987,\"remote_ip\":\"203.0.113.163\"}"
+                    "text": "{\"ts\":1794649720,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/cart\",\"status\":200,\"duration\":0.328,\"size\":2662,\"remote_ip\":\"203.0.113.213\"}"
                 },
                 {
-                    "at": "2026-11-14T09:48:58Z",
+                    "at": "2026-11-14T09:49:13Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794649738,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/css/site.css\",\"status\":200,\"duration\":0.011,\"size\":4550,\"remote_ip\":\"203.0.113.166\"}"
+                    "text": "{\"ts\":1794649753,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/products/42\",\"status\":200,\"duration\":0.348,\"size\":47459,\"remote_ip\":\"203.0.113.165\"}"
                 },
                 {
-                    "at": "2026-11-14T09:49:25Z",
+                    "at": "2026-11-14T09:49:18Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794649765,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/search?q=tea\",\"status\":200,\"duration\":0.239,\"size\":39333,\"remote_ip\":\"203.0.113.104\"}"
-                },
-                {
-                    "at": "2026-11-14T09:49:50Z",
-                    "stream": "access",
-                    "text": "{\"ts\":1794649790,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/\",\"status\":200,\"duration\":0.32,\"size\":27752,\"remote_ip\":\"203.0.113.116\"}"
+                    "text": "{\"ts\":1794649758,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/css/site.css\",\"status\":200,\"duration\":0.206,\"size\":22247,\"remote_ip\":\"203.0.113.34\"}"
                 },
                 {
                     "at": "2026-11-14T09:49:50Z",
-                    "stream": "error",
-                    "text": "PHP Deprecated:  Implicit conversion from float 19.99 to int loses precision in /app/src/cart.php on line 52"
+                    "stream": "access",
+                    "text": "{\"ts\":1794649790,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/search?q=tea\",\"status\":200,\"duration\":0.343,\"size\":22244,\"remote_ip\":\"203.0.113.80\"}"
                 },
                 {
-                    "at": "2026-11-14T09:49:59Z",
+                    "at": "2026-11-14T09:50:03Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794649799,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/products\",\"status\":200,\"duration\":0.368,\"size\":1848,\"remote_ip\":\"203.0.113.17\"}"
+                    "text": "{\"ts\":1794649803,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/wp-login.php\",\"status\":404,\"duration\":0.391,\"size\":18157,\"remote_ip\":\"203.0.113.66\"}"
                 },
                 {
                     "at": "2026-11-14T09:50:26Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794649826,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/wp-login.php\",\"status\":404,\"duration\":0.267,\"size\":3744,\"remote_ip\":\"203.0.113.175\"}"
+                    "text": "{\"ts\":1794649826,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/products/42\",\"status\":200,\"duration\":0.268,\"size\":41931,\"remote_ip\":\"203.0.113.241\"}"
                 },
                 {
-                    "at": "2026-11-14T09:50:46Z",
+                    "at": "2026-11-14T09:51:05Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794649846,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/cart\",\"status\":200,\"duration\":0.01,\"size\":38065,\"remote_ip\":\"203.0.113.191\"}"
+                    "text": "{\"ts\":1794649865,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/search?q=tea\",\"status\":200,\"duration\":0.087,\"size\":8949,\"remote_ip\":\"203.0.113.222\"}"
                 },
                 {
-                    "at": "2026-11-14T09:50:57Z",
+                    "at": "2026-11-14T09:51:32Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794649857,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/\",\"status\":200,\"duration\":0.033,\"size\":21508,\"remote_ip\":\"203.0.113.17\"}"
+                    "text": "{\"ts\":1794649892,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/\",\"status\":200,\"duration\":0.018,\"size\":43507,\"remote_ip\":\"203.0.113.100\"}"
                 },
                 {
-                    "at": "2026-11-14T09:50:57Z",
-                    "stream": "error",
-                    "text": "PHP Warning:  Undefined array key \"utm_source\" in /app/src/bootstrap.php on line 14"
-                },
-                {
-                    "at": "2026-11-14T09:51:34Z",
+                    "at": "2026-11-14T09:51:53Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794649894,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/products/42\",\"status\":200,\"duration\":0.232,\"size\":30812,\"remote_ip\":\"203.0.113.187\"}"
+                    "text": "{\"ts\":1794649913,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/favicon.ico\",\"status\":404,\"duration\":0.19,\"size\":30077,\"remote_ip\":\"203.0.113.53\"}"
                 },
                 {
-                    "at": "2026-11-14T09:51:56Z",
+                    "at": "2026-11-14T09:52:26Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794649916,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/favicon.ico\",\"status\":404,\"duration\":0.267,\"size\":12329,\"remote_ip\":\"203.0.113.219\"}"
+                    "text": "{\"ts\":1794649946,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/search?q=tea\",\"status\":200,\"duration\":0.322,\"size\":5353,\"remote_ip\":\"203.0.113.107\"}"
                 },
                 {
-                    "at": "2026-11-14T09:52:08Z",
+                    "at": "2026-11-14T09:52:51Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794649928,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/products\",\"status\":200,\"duration\":0.07,\"size\":19279,\"remote_ip\":\"203.0.113.84\"}"
+                    "text": "{\"ts\":1794649971,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/css/site.css\",\"status\":200,\"duration\":0.275,\"size\":29072,\"remote_ip\":\"203.0.113.238\"}"
                 },
                 {
-                    "at": "2026-11-14T09:52:30Z",
+                    "at": "2026-11-14T09:53:18Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794649950,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/products/42\",\"status\":200,\"duration\":0.255,\"size\":34566,\"remote_ip\":\"203.0.113.212\"}"
+                    "text": "{\"ts\":1794649998,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/favicon.ico\",\"status\":404,\"duration\":0.297,\"size\":13684,\"remote_ip\":\"203.0.113.125\"}"
                 },
                 {
-                    "at": "2026-11-14T09:52:30Z",
-                    "stream": "error",
-                    "text": "PHP Warning:  Undefined array key \"utm_source\" in /app/src/bootstrap.php on line 14"
-                },
-                {
-                    "at": "2026-11-14T09:52:53Z",
+                    "at": "2026-11-14T09:53:23Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794649973,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/\",\"status\":200,\"duration\":0.137,\"size\":6076,\"remote_ip\":\"203.0.113.39\"}"
+                    "text": "{\"ts\":1794650003,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/css/site.css\",\"status\":200,\"duration\":0.343,\"size\":9274,\"remote_ip\":\"203.0.113.180\"}"
                 },
                 {
-                    "at": "2026-11-14T09:52:59Z",
+                    "at": "2026-11-14T09:53:37Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794649979,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/wp-login.php\",\"status\":404,\"duration\":0.374,\"size\":15887,\"remote_ip\":\"203.0.113.101\"}"
+                    "text": "{\"ts\":1794650017,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/wp-login.php\",\"status\":404,\"duration\":0.088,\"size\":13353,\"remote_ip\":\"203.0.113.4\"}"
                 },
                 {
-                    "at": "2026-11-14T09:53:32Z",
+                    "at": "2026-11-14T09:54:11Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794650012,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/favicon.ico\",\"status\":404,\"duration\":0.059,\"size\":19873,\"remote_ip\":\"203.0.113.248\"}"
+                    "text": "{\"ts\":1794650051,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/\",\"status\":200,\"duration\":0.389,\"size\":41515,\"remote_ip\":\"203.0.113.45\"}"
                 },
                 {
-                    "at": "2026-11-14T09:54:10Z",
+                    "at": "2026-11-14T09:54:41Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794650050,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/css/site.css\",\"status\":200,\"duration\":0.336,\"size\":19593,\"remote_ip\":\"203.0.113.138\"}"
+                    "text": "{\"ts\":1794650081,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/search?q=tea\",\"status\":200,\"duration\":0.274,\"size\":26922,\"remote_ip\":\"203.0.113.193\"}"
                 },
                 {
-                    "at": "2026-11-14T09:54:15Z",
+                    "at": "2026-11-14T09:54:47Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794650055,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/api/stock?id=42\",\"status\":200,\"duration\":0.283,\"size\":33695,\"remote_ip\":\"203.0.113.125\"}"
+                    "text": "{\"ts\":1794650087,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/favicon.ico\",\"status\":404,\"duration\":0.241,\"size\":40241,\"remote_ip\":\"203.0.113.147\"}"
                 },
                 {
-                    "at": "2026-11-14T09:54:22Z",
-                    "stream": "access",
-                    "text": "{\"ts\":1794650062,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/api/stock?id=42\",\"status\":200,\"duration\":0.4,\"size\":41199,\"remote_ip\":\"203.0.113.240\"}"
-                },
-                {
-                    "at": "2026-11-14T09:54:52Z",
-                    "stream": "access",
-                    "text": "{\"ts\":1794650092,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/contact\",\"status\":200,\"duration\":0.293,\"size\":47680,\"remote_ip\":\"203.0.113.148\"}"
-                },
-                {
-                    "at": "2026-11-14T09:55:06Z",
-                    "stream": "access",
-                    "text": "{\"ts\":1794650106,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/cart\",\"status\":200,\"duration\":0.082,\"size\":5625,\"remote_ip\":\"203.0.113.15\"}"
-                },
-                {
-                    "at": "2026-11-14T09:55:27Z",
-                    "stream": "access",
-                    "text": "{\"ts\":1794650127,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/products/42\",\"status\":200,\"duration\":0.201,\"size\":25892,\"remote_ip\":\"203.0.113.142\"}"
-                },
-                {
-                    "at": "2026-11-14T09:55:27Z",
+                    "at": "2026-11-14T09:54:47Z",
                     "stream": "error",
                     "text": "PHP Deprecated:  Implicit conversion from float 19.99 to int loses precision in /app/src/cart.php on line 52"
                 },
                 {
-                    "at": "2026-11-14T09:55:57Z",
+                    "at": "2026-11-14T09:55:12Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794650157,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/api/stock?id=42\",\"status\":200,\"duration\":0.212,\"size\":47252,\"remote_ip\":\"203.0.113.74\"}"
+                    "text": "{\"ts\":1794650112,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/api/stock?id=42\",\"status\":200,\"duration\":0.229,\"size\":28666,\"remote_ip\":\"203.0.113.80\"}"
                 },
                 {
-                    "at": "2026-11-14T09:56:04Z",
+                    "at": "2026-11-14T09:55:41Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794650164,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/search?q=tea\",\"status\":200,\"duration\":0.255,\"size\":12761,\"remote_ip\":\"203.0.113.81\"}"
+                    "text": "{\"ts\":1794650141,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/products\",\"status\":200,\"duration\":0.101,\"size\":40183,\"remote_ip\":\"203.0.113.79\"}"
                 },
                 {
-                    "at": "2026-11-14T09:56:37Z",
-                    "stream": "access",
-                    "text": "{\"ts\":1794650197,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/products\",\"status\":200,\"duration\":0.163,\"size\":6451,\"remote_ip\":\"203.0.113.91\"}"
+                    "at": "2026-11-14T09:55:41Z",
+                    "stream": "error",
+                    "text": "PHP Warning:  Undefined array key \"utm_source\" in /app/src/bootstrap.php on line 14"
                 },
                 {
-                    "at": "2026-11-14T09:56:39Z",
+                    "at": "2026-11-14T09:56:03Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794650199,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/api/stock?id=42\",\"status\":200,\"duration\":0.109,\"size\":22784,\"remote_ip\":\"203.0.113.232\"}"
+                    "text": "{\"ts\":1794650163,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/contact\",\"status\":200,\"duration\":0.214,\"size\":37706,\"remote_ip\":\"203.0.113.120\"}"
                 },
                 {
-                    "at": "2026-11-14T09:56:43Z",
+                    "at": "2026-11-14T09:56:25Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794650203,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/wp-login.php\",\"status\":404,\"duration\":0.036,\"size\":27611,\"remote_ip\":\"203.0.113.220\"}"
+                    "text": "{\"ts\":1794650185,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/wp-login.php\",\"status\":404,\"duration\":0.269,\"size\":16621,\"remote_ip\":\"203.0.113.126\"}"
                 },
                 {
-                    "at": "2026-11-14T09:57:13Z",
+                    "at": "2026-11-14T09:57:05Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794650233,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/wp-login.php\",\"status\":404,\"duration\":0.102,\"size\":20781,\"remote_ip\":\"203.0.113.209\"}"
+                    "text": "{\"ts\":1794650225,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/favicon.ico\",\"status\":404,\"duration\":0.057,\"size\":34207,\"remote_ip\":\"203.0.113.191\"}"
                 },
                 {
-                    "at": "2026-11-14T09:57:49Z",
+                    "at": "2026-11-14T09:57:28Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794650269,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/search?q=tea\",\"status\":200,\"duration\":0.112,\"size\":19861,\"remote_ip\":\"203.0.113.223\"}"
+                    "text": "{\"ts\":1794650248,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/products/42\",\"status\":200,\"duration\":0.106,\"size\":25776,\"remote_ip\":\"203.0.113.196\"}"
                 },
                 {
-                    "at": "2026-11-14T09:58:11Z",
+                    "at": "2026-11-14T09:57:34Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794650291,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/products\",\"status\":200,\"duration\":0.166,\"size\":46956,\"remote_ip\":\"203.0.113.112\"}"
+                    "text": "{\"ts\":1794650254,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/contact\",\"status\":200,\"duration\":0.276,\"size\":45368,\"remote_ip\":\"203.0.113.167\"}"
                 },
                 {
-                    "at": "2026-11-14T09:58:17Z",
-                    "stream": "access",
-                    "text": "{\"ts\":1794650297,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/search?q=tea\",\"status\":200,\"duration\":0.337,\"size\":10370,\"remote_ip\":\"203.0.113.50\"}"
+                    "at": "2026-11-14T09:57:34Z",
+                    "stream": "error",
+                    "text": "PHP Warning:  Undefined array key \"utm_source\" in /app/src/bootstrap.php on line 14"
                 },
                 {
-                    "at": "2026-11-14T09:58:52Z",
+                    "at": "2026-11-14T09:57:56Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794650332,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/contact\",\"status\":200,\"duration\":0.204,\"size\":28857,\"remote_ip\":\"203.0.113.42\"}"
+                    "text": "{\"ts\":1794650276,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/contact\",\"status\":200,\"duration\":0.176,\"size\":31715,\"remote_ip\":\"203.0.113.27\"}"
                 },
                 {
-                    "at": "2026-11-14T09:59:05Z",
+                    "at": "2026-11-14T09:57:59Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794650345,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/css/site.css\",\"status\":200,\"duration\":0.139,\"size\":22878,\"remote_ip\":\"203.0.113.35\"}"
+                    "text": "{\"ts\":1794650279,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/css/site.css\",\"status\":200,\"duration\":0.078,\"size\":29751,\"remote_ip\":\"203.0.113.208\"}"
                 },
                 {
-                    "at": "2026-11-14T09:59:15Z",
+                    "at": "2026-11-14T09:58:08Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794650355,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/\",\"status\":200,\"duration\":0.3,\"size\":2243,\"remote_ip\":\"203.0.113.7\"}"
+                    "text": "{\"ts\":1794650288,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/wp-login.php\",\"status\":404,\"duration\":0.131,\"size\":2546,\"remote_ip\":\"203.0.113.76\"}"
                 },
                 {
-                    "at": "2026-11-14T09:59:28Z",
+                    "at": "2026-11-14T09:58:24Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794650368,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/api/stock?id=42\",\"status\":200,\"duration\":0.014,\"size\":9627,\"remote_ip\":\"203.0.113.36\"}"
+                    "text": "{\"ts\":1794650304,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/wp-login.php\",\"status\":404,\"duration\":0.287,\"size\":36088,\"remote_ip\":\"203.0.113.96\"}"
+                },
+                {
+                    "at": "2026-11-14T09:58:39Z",
+                    "stream": "access",
+                    "text": "{\"ts\":1794650319,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/api/stock?id=42\",\"status\":200,\"duration\":0.282,\"size\":20845,\"remote_ip\":\"203.0.113.46\"}"
+                },
+                {
+                    "at": "2026-11-14T09:58:57Z",
+                    "stream": "access",
+                    "text": "{\"ts\":1794650337,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/products/42\",\"status\":200,\"duration\":0.2,\"size\":3631,\"remote_ip\":\"203.0.113.73\"}"
+                },
+                {
+                    "at": "2026-11-14T09:59:08Z",
+                    "stream": "access",
+                    "text": "{\"ts\":1794650348,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/wp-login.php\",\"status\":404,\"duration\":0.321,\"size\":47812,\"remote_ip\":\"203.0.113.51\"}"
+                },
+                {
+                    "at": "2026-11-14T09:59:08Z",
+                    "stream": "error",
+                    "text": "PHP Deprecated:  Implicit conversion from float 19.99 to int loses precision in /app/src/cart.php on line 52"
+                },
+                {
+                    "at": "2026-11-14T09:59:37Z",
+                    "stream": "access",
+                    "text": "{\"ts\":1794650377,\"method\":\"GET\",\"host\":\"cornerbakery.example.org\",\"uri\":\"/products\",\"status\":200,\"duration\":0.123,\"size\":24608,\"remote_ip\":\"203.0.113.137\"}"
+                },
+                {
+                    "at": "2026-11-14T09:59:37Z",
+                    "stream": "error",
+                    "text": "PHP Deprecated:  Implicit conversion from float 19.99 to int loses precision in /app/src/cart.php on line 52"
                 }
             ]
         }
     },
-    "GET /websites/01m7eds8kk8sr50jst582whjpm/databases": {
+    "GET /websites/01m7eg07gxrw173nqwyacq1e1c/databases": {
         "status": 200,
         "body": {
             "prefix": "eventsha_08d5_",
@@ -1629,26 +1694,26 @@
             "servers": []
         }
     },
-    "GET /websites/01m7eds8kk8sr50jst582whjpm/snapshots": {
+    "GET /websites/01m7eg07gxrw173nqwyacq1e1c/snapshots": {
         "status": 200,
         "body": {
             "data": []
         }
     },
-    "GET /websites/01m7eds8kk8sr50jst582whjpm/cron-jobs": {
+    "GET /websites/01m7eg07gxrw173nqwyacq1e1c/cron-jobs": {
         "status": 200,
         "body": {
             "data": []
         }
     },
-    "GET /websites/01m7eds8kk8sr50jst582whjpm/deploy": {
+    "GET /websites/01m7eg07gxrw173nqwyacq1e1c/deploy": {
         "status": 200,
         "body": {
             "source": null,
             "releases": []
         }
     },
-    "GET /websites/01m7eds8kk8sr50jst582whjpm/files?path=%2F": {
+    "GET /websites/01m7eg07gxrw173nqwyacq1e1c/files?path=%2F": {
         "status": 422,
         "body": {
             "message": "The panel could not make this website. Use \"Try again\" on the website first, or delete the website.",
@@ -1659,7 +1724,7 @@
             }
         }
     },
-    "GET /websites/01m7eds8kk8sr50jst582whjpm/files?path=%2Fpublic": {
+    "GET /websites/01m7eg07gxrw173nqwyacq1e1c/files?path=%2Fpublic": {
         "status": 422,
         "body": {
             "message": "The panel could not make this website. Use \"Try again\" on the website first, or delete the website.",
@@ -1670,7 +1735,7 @@
             }
         }
     },
-    "GET /websites/01m7eds8kk8sr50jst582whjpm/files/content?path=%2Fpublic%2Findex.php": {
+    "GET /websites/01m7eg07gxrw173nqwyacq1e1c/files/content?path=%2Fpublic%2Findex.php": {
         "status": 422,
         "body": {
             "message": "The panel could not make this website. Use \"Try again\" on the website first, or delete the website.",
@@ -1681,7 +1746,7 @@
             }
         }
     },
-    "GET /websites/01m7eds8kk8sr50jst582whjpm/logs?lines=200": {
+    "GET /websites/01m7eg07gxrw173nqwyacq1e1c/logs?lines=200": {
         "status": 422,
         "body": {
             "message": "The panel could not make this website. Use \"Try again\" on the website first, or delete the website.",
@@ -1692,16 +1757,16 @@
             }
         }
     },
-    "GET /websites/01m7eds8kfe2c9fhyhzy42jxeg/databases": {
+    "GET /websites/01m7eg07gsh5hkekqtppptgbdk/databases": {
         "status": 200,
         "body": {
             "prefix": "harbourb_fe76_",
             "databases": [
                 {
-                    "id": "01m7eds8q4fycswm941eb8ywax",
+                    "id": "01m7eg07m2mp0qksww9cezkqm6",
                     "engine": "mariadb",
                     "name": "harbourb_fe76_shop",
-                    "databaseServerId": "01m7eds8pwpj05m2thg1kq6yv9",
+                    "databaseServerId": "01m7eg07kwm02s33g11xn9fa9a",
                     "host": "mariadb.internal",
                     "port": 3306,
                     "sizeBytes": 796917760,
@@ -1711,14 +1776,14 @@
             ],
             "users": [
                 {
-                    "id": "01m7eds8q5tdhbp80v3c3ys9xv",
+                    "id": "01m7eg07m2mp0qksww9cezkqm7",
                     "engine": "mariadb",
                     "name": "harbourb_fe76_shop",
                     "access": "website",
-                    "databaseServerId": "01m7eds8pwpj05m2thg1kq6yv9",
+                    "databaseServerId": "01m7eg07kwm02s33g11xn9fa9a",
                     "grants": [
                         {
-                            "databaseId": "01m7eds8q4fycswm941eb8ywax",
+                            "databaseId": "01m7eg07m2mp0qksww9cezkqm6",
                             "database": "harbourb_fe76_shop",
                             "privileges": "readwrite"
                         }
@@ -1727,13 +1792,13 @@
             ],
             "servers": [
                 {
-                    "id": "01m7eds8pwpj05m2thg1kq6yv9",
+                    "id": "01m7eg07kwm02s33g11xn9fa9a",
                     "name": "mariadb-1",
                     "engine": "mariadb",
-                    "customerId": "01m7eds8b349bek5nqhm6qj4yv",
-                    "serverId": "01m7eds8hmgxgvyhb72c1hqje4",
+                    "customerId": "01m7eg076dkr23wwb4b86bdp7d",
+                    "serverId": "01m7eg07eefnnehjfy8e67n9m4",
                     "movingToServerId": null,
-                    "planId": "01m7eds8b1846gx8njd2d11bpr",
+                    "planId": "01m7eg076bpjmr70a7bcw9akg8",
                     "status": "running",
                     "host": "mariadb.internal",
                     "port": 3306,
@@ -1757,75 +1822,75 @@
             ]
         }
     },
-    "GET /websites/01m7eds8kfe2c9fhyhzy42jxeg/snapshots": {
+    "GET /websites/01m7eg07gsh5hkekqtppptgbdk/snapshots": {
         "status": 200,
         "body": {
             "data": [
                 {
-                    "id": "01m7eds8rc7r172dhjen1jq2wv",
+                    "id": "01m7eg09p9133gsytd1rka9h7w",
                     "kind": "manual",
                     "sizeBytes": 8053063680,
                     "databases": [
                         "mariadb:harbourb_fe76_shop"
                     ],
                     "part": "website",
-                    "serverId": "01m7eds8hmgxgvyhb72c1hqje4",
+                    "serverId": "01m7eg07eefnnehjfy8e67n9m4",
                     "mailboxes": [],
                     "createdAt": "2026-11-14T05:00:00+00:00"
                 },
                 {
-                    "id": "01m7eds8rbzc7yg16zwnyk9b96",
+                    "id": "01m7eg09p8kwa0pb6x4j0rvwvy",
                     "kind": "scheduled",
                     "sizeBytes": 8049917952,
                     "databases": [
                         "mariadb:harbourb_fe76_shop"
                     ],
                     "part": "website",
-                    "serverId": "01m7eds8hmgxgvyhb72c1hqje4",
+                    "serverId": "01m7eg07eefnnehjfy8e67n9m4",
                     "mailboxes": [],
                     "createdAt": "2026-11-14T03:08:00+00:00"
                 },
                 {
-                    "id": "01m7eds8rbzc7yg16zwnyk9b97",
+                    "id": "01m7eg09p8kwa0pb6x4j0rvwvz",
                     "kind": "scheduled",
                     "sizeBytes": 8046772224,
                     "databases": [
                         "mariadb:harbourb_fe76_shop"
                     ],
                     "part": "website",
-                    "serverId": "01m7eds8hmgxgvyhb72c1hqje4",
+                    "serverId": "01m7eg07eefnnehjfy8e67n9m4",
                     "mailboxes": [],
                     "createdAt": "2026-11-13T03:08:00+00:00"
                 },
                 {
-                    "id": "01m7eds8rc7r172dhjen1jq2wt",
+                    "id": "01m7eg09p9133gsytd1rka9h7v",
                     "kind": "scheduled",
                     "sizeBytes": 8043626496,
                     "databases": [
                         "mariadb:harbourb_fe76_shop"
                     ],
                     "part": "website",
-                    "serverId": "01m7eds8hmgxgvyhb72c1hqje4",
+                    "serverId": "01m7eg07eefnnehjfy8e67n9m4",
                     "mailboxes": [],
                     "createdAt": "2026-11-12T03:08:00+00:00"
                 }
             ]
         }
     },
-    "GET /websites/01m7eds8kfe2c9fhyhzy42jxeg/cron-jobs": {
+    "GET /websites/01m7eg07gsh5hkekqtppptgbdk/cron-jobs": {
         "status": 200,
         "body": {
             "data": []
         }
     },
-    "GET /websites/01m7eds8kfe2c9fhyhzy42jxeg/deploy": {
+    "GET /websites/01m7eg07gsh5hkekqtppptgbdk/deploy": {
         "status": 200,
         "body": {
             "source": null,
             "releases": []
         }
     },
-    "GET /websites/01m7eds8kfe2c9fhyhzy42jxeg/files?path=%2F": {
+    "GET /websites/01m7eg07gsh5hkekqtppptgbdk/files?path=%2F": {
         "status": 200,
         "body": {
             "path": "/",
@@ -1879,7 +1944,7 @@
             "truncated": false
         }
     },
-    "GET /websites/01m7eds8kfe2c9fhyhzy42jxeg/files?path=%2Fpublic": {
+    "GET /websites/01m7eg07gsh5hkekqtppptgbdk/files?path=%2Fpublic": {
         "status": 200,
         "body": {
             "path": "/public",
@@ -1915,7 +1980,7 @@
             "truncated": false
         }
     },
-    "GET /websites/01m7eds8kfe2c9fhyhzy42jxeg/files/content?path=%2Fpublic%2Findex.php": {
+    "GET /websites/01m7eg07gsh5hkekqtppptgbdk/files/content?path=%2Fpublic%2Findex.php": {
         "status": 200,
         "body": {
             "file": {
@@ -1931,263 +1996,253 @@
             "content": "<?php\n\nrequire __DIR__.'/../src/bootstrap.php';\n\necho render('home', ['title' => 'harbourbooks.example.net']);\n"
         }
     },
-    "GET /websites/01m7eds8kfe2c9fhyhzy42jxeg/logs?lines=200": {
+    "GET /websites/01m7eg07gsh5hkekqtppptgbdk/logs?lines=200": {
         "status": 200,
         "body": {
             "lines": [
                 {
                     "at": "2026-11-14T09:45:31Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794649531,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/wp-login.php\",\"status\":404,\"duration\":0.139,\"size\":40956,\"remote_ip\":\"203.0.113.68\"}"
+                    "text": "{\"ts\":1794649531,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/search?q=tea\",\"status\":200,\"duration\":0.067,\"size\":45444,\"remote_ip\":\"203.0.113.182\"}"
                 },
                 {
-                    "at": "2026-11-14T09:45:31Z",
+                    "at": "2026-11-14T09:46:11Z",
+                    "stream": "access",
+                    "text": "{\"ts\":1794649571,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/cart\",\"status\":200,\"duration\":0.051,\"size\":45898,\"remote_ip\":\"203.0.113.194\"}"
+                },
+                {
+                    "at": "2026-11-14T09:46:36Z",
+                    "stream": "access",
+                    "text": "{\"ts\":1794649596,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/favicon.ico\",\"status\":404,\"duration\":0.153,\"size\":3078,\"remote_ip\":\"203.0.113.132\"}"
+                },
+                {
+                    "at": "2026-11-14T09:46:36Z",
                     "stream": "error",
                     "text": "PHP Warning:  Undefined array key \"utm_source\" in /app/src/bootstrap.php on line 14"
                 },
                 {
-                    "at": "2026-11-14T09:45:44Z",
+                    "at": "2026-11-14T09:46:45Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794649544,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/api/stock?id=42\",\"status\":500,\"duration\":0.315,\"size\":20997,\"remote_ip\":\"203.0.113.201\"}"
+                    "text": "{\"ts\":1794649605,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/contact\",\"status\":200,\"duration\":0.007,\"size\":2709,\"remote_ip\":\"203.0.113.126\"}"
                 },
                 {
-                    "at": "2026-11-14T09:45:44Z",
-                    "stream": "error",
-                    "text": "PHP Fatal error:  Uncaught RuntimeException: The stock service did not answer in /app/src/stock.php:31"
+                    "at": "2026-11-14T09:47:21Z",
+                    "stream": "access",
+                    "text": "{\"ts\":1794649641,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/api/stock?id=42\",\"status\":200,\"duration\":0.039,\"size\":12670,\"remote_ip\":\"203.0.113.78\"}"
                 },
                 {
-                    "at": "2026-11-14T09:46:24Z",
+                    "at": "2026-11-14T09:47:26Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794649584,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/wp-login.php\",\"status\":404,\"duration\":0.362,\"size\":28094,\"remote_ip\":\"203.0.113.55\"}"
+                    "text": "{\"ts\":1794649646,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/css/site.css\",\"status\":200,\"duration\":0.186,\"size\":20261,\"remote_ip\":\"203.0.113.191\"}"
                 },
                 {
-                    "at": "2026-11-14T09:47:01Z",
+                    "at": "2026-11-14T09:47:52Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794649621,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/contact\",\"status\":200,\"duration\":0.281,\"size\":27833,\"remote_ip\":\"203.0.113.158\"}"
-                },
-                {
-                    "at": "2026-11-14T09:47:24Z",
-                    "stream": "access",
-                    "text": "{\"ts\":1794649644,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/products/42\",\"status\":200,\"duration\":0.068,\"size\":18953,\"remote_ip\":\"203.0.113.74\"}"
+                    "text": "{\"ts\":1794649672,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/api/stock?id=42\",\"status\":200,\"duration\":0.227,\"size\":14527,\"remote_ip\":\"203.0.113.164\"}"
                 },
                 {
                     "at": "2026-11-14T09:48:00Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794649680,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/wp-login.php\",\"status\":404,\"duration\":0.196,\"size\":17896,\"remote_ip\":\"203.0.113.195\"}"
+                    "text": "{\"ts\":1794649680,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/\",\"status\":200,\"duration\":0.234,\"size\":19778,\"remote_ip\":\"203.0.113.30\"}"
                 },
                 {
-                    "at": "2026-11-14T09:48:21Z",
+                    "at": "2026-11-14T09:48:26Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794649701,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/products\",\"status\":200,\"duration\":0.069,\"size\":20555,\"remote_ip\":\"203.0.113.171\"}"
+                    "text": "{\"ts\":1794649706,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/products\",\"status\":200,\"duration\":0.228,\"size\":35769,\"remote_ip\":\"203.0.113.94\"}"
                 },
                 {
-                    "at": "2026-11-14T09:48:21Z",
-                    "stream": "error",
-                    "text": "PHP Deprecated:  Implicit conversion from float 19.99 to int loses precision in /app/src/cart.php on line 52"
-                },
-                {
-                    "at": "2026-11-14T09:48:44Z",
+                    "at": "2026-11-14T09:49:05Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794649724,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/css/site.css\",\"status\":200,\"duration\":0.085,\"size\":20661,\"remote_ip\":\"203.0.113.120\"}"
-                },
-                {
-                    "at": "2026-11-14T09:48:53Z",
-                    "stream": "access",
-                    "text": "{\"ts\":1794649733,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/cart\",\"status\":200,\"duration\":0.34,\"size\":38763,\"remote_ip\":\"203.0.113.51\"}"
+                    "text": "{\"ts\":1794649745,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/cart\",\"status\":200,\"duration\":0.13,\"size\":12557,\"remote_ip\":\"203.0.113.199\"}"
                 },
                 {
                     "at": "2026-11-14T09:49:25Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794649765,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/search?q=tea\",\"status\":200,\"duration\":0.249,\"size\":34631,\"remote_ip\":\"203.0.113.32\"}"
+                    "text": "{\"ts\":1794649765,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/contact\",\"status\":200,\"duration\":0.317,\"size\":27827,\"remote_ip\":\"203.0.113.95\"}"
                 },
                 {
-                    "at": "2026-11-14T09:49:55Z",
+                    "at": "2026-11-14T09:49:51Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794649795,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/wp-login.php\",\"status\":404,\"duration\":0.325,\"size\":46552,\"remote_ip\":\"203.0.113.115\"}"
+                    "text": "{\"ts\":1794649791,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/favicon.ico\",\"status\":404,\"duration\":0.288,\"size\":23125,\"remote_ip\":\"203.0.113.220\"}"
                 },
                 {
-                    "at": "2026-11-14T09:50:07Z",
+                    "at": "2026-11-14T09:50:03Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794649807,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/search?q=tea\",\"status\":200,\"duration\":0.159,\"size\":6924,\"remote_ip\":\"203.0.113.174\"}"
+                    "text": "{\"ts\":1794649803,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/\",\"status\":200,\"duration\":0.364,\"size\":43127,\"remote_ip\":\"203.0.113.193\"}"
                 },
                 {
-                    "at": "2026-11-14T09:50:24Z",
+                    "at": "2026-11-14T09:50:03Z",
+                    "stream": "error",
+                    "text": "PHP Warning:  Undefined array key \"utm_source\" in /app/src/bootstrap.php on line 14"
+                },
+                {
+                    "at": "2026-11-14T09:50:32Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794649824,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/contact\",\"status\":200,\"duration\":0.259,\"size\":36821,\"remote_ip\":\"203.0.113.186\"}"
+                    "text": "{\"ts\":1794649832,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/products/42\",\"status\":200,\"duration\":0.197,\"size\":7403,\"remote_ip\":\"203.0.113.154\"}"
                 },
                 {
-                    "at": "2026-11-14T09:50:52Z",
+                    "at": "2026-11-14T09:50:48Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794649852,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/favicon.ico\",\"status\":404,\"duration\":0.121,\"size\":30838,\"remote_ip\":\"203.0.113.58\"}"
+                    "text": "{\"ts\":1794649848,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/products\",\"status\":200,\"duration\":0.036,\"size\":11996,\"remote_ip\":\"203.0.113.171\"}"
                 },
                 {
-                    "at": "2026-11-14T09:51:01Z",
+                    "at": "2026-11-14T09:50:48Z",
+                    "stream": "error",
+                    "text": "PHP Warning:  Undefined array key \"utm_source\" in /app/src/bootstrap.php on line 14"
+                },
+                {
+                    "at": "2026-11-14T09:50:58Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794649861,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/products/42\",\"status\":200,\"duration\":0.071,\"size\":20775,\"remote_ip\":\"203.0.113.95\"}"
+                    "text": "{\"ts\":1794649858,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/search?q=tea\",\"status\":200,\"duration\":0.349,\"size\":3318,\"remote_ip\":\"203.0.113.50\"}"
                 },
                 {
-                    "at": "2026-11-14T09:51:28Z",
+                    "at": "2026-11-14T09:50:58Z",
+                    "stream": "error",
+                    "text": "PHP Warning:  Undefined array key \"utm_source\" in /app/src/bootstrap.php on line 14"
+                },
+                {
+                    "at": "2026-11-14T09:51:02Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794649888,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/api/stock?id=42\",\"status\":200,\"duration\":0.257,\"size\":38200,\"remote_ip\":\"203.0.113.29\"}"
+                    "text": "{\"ts\":1794649862,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/search?q=tea\",\"status\":200,\"duration\":0.385,\"size\":26150,\"remote_ip\":\"203.0.113.46\"}"
                 },
                 {
-                    "at": "2026-11-14T09:51:30Z",
+                    "at": "2026-11-14T09:51:10Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794649890,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/search?q=tea\",\"status\":200,\"duration\":0.177,\"size\":16342,\"remote_ip\":\"203.0.113.2\"}"
+                    "text": "{\"ts\":1794649870,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/wp-login.php\",\"status\":404,\"duration\":0.142,\"size\":18004,\"remote_ip\":\"203.0.113.107\"}"
                 },
                 {
-                    "at": "2026-11-14T09:52:01Z",
+                    "at": "2026-11-14T09:51:43Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794649921,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/cart\",\"status\":200,\"duration\":0.142,\"size\":35758,\"remote_ip\":\"203.0.113.146\"}"
+                    "text": "{\"ts\":1794649903,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/favicon.ico\",\"status\":404,\"duration\":0.333,\"size\":30641,\"remote_ip\":\"203.0.113.194\"}"
                 },
                 {
-                    "at": "2026-11-14T09:52:01Z",
+                    "at": "2026-11-14T09:52:11Z",
+                    "stream": "access",
+                    "text": "{\"ts\":1794649931,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/css/site.css\",\"status\":200,\"duration\":0.32,\"size\":42537,\"remote_ip\":\"203.0.113.208\"}"
+                },
+                {
+                    "at": "2026-11-14T09:52:11Z",
+                    "stream": "error",
+                    "text": "PHP Warning:  Undefined array key \"utm_source\" in /app/src/bootstrap.php on line 14"
+                },
+                {
+                    "at": "2026-11-14T09:52:25Z",
+                    "stream": "access",
+                    "text": "{\"ts\":1794649945,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/wp-login.php\",\"status\":404,\"duration\":0.146,\"size\":12847,\"remote_ip\":\"203.0.113.224\"}"
+                },
+                {
+                    "at": "2026-11-14T09:52:25Z",
                     "stream": "error",
                     "text": "PHP Deprecated:  Implicit conversion from float 19.99 to int loses precision in /app/src/cart.php on line 52"
                 },
                 {
-                    "at": "2026-11-14T09:52:20Z",
+                    "at": "2026-11-14T09:52:50Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794649940,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/contact\",\"status\":200,\"duration\":0.094,\"size\":35342,\"remote_ip\":\"203.0.113.214\"}"
-                },
-                {
-                    "at": "2026-11-14T09:52:23Z",
-                    "stream": "access",
-                    "text": "{\"ts\":1794649943,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/products/42\",\"status\":200,\"duration\":0.293,\"size\":25174,\"remote_ip\":\"203.0.113.192\"}"
-                },
-                {
-                    "at": "2026-11-14T09:52:28Z",
-                    "stream": "access",
-                    "text": "{\"ts\":1794649948,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/\",\"status\":200,\"duration\":0.241,\"size\":12599,\"remote_ip\":\"203.0.113.230\"}"
+                    "text": "{\"ts\":1794649970,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/search?q=tea\",\"status\":200,\"duration\":0.197,\"size\":28142,\"remote_ip\":\"203.0.113.173\"}"
                 },
                 {
                     "at": "2026-11-14T09:52:54Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794649974,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/contact\",\"status\":200,\"duration\":0.304,\"size\":37212,\"remote_ip\":\"203.0.113.24\"}"
+                    "text": "{\"ts\":1794649974,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/search?q=tea\",\"status\":200,\"duration\":0.119,\"size\":34424,\"remote_ip\":\"203.0.113.66\"}"
                 },
                 {
-                    "at": "2026-11-14T09:53:06Z",
+                    "at": "2026-11-14T09:53:10Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794649986,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/wp-login.php\",\"status\":404,\"duration\":0.394,\"size\":10538,\"remote_ip\":\"203.0.113.120\"}"
+                    "text": "{\"ts\":1794649990,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/api/stock?id=42\",\"status\":200,\"duration\":0.366,\"size\":27495,\"remote_ip\":\"203.0.113.74\"}"
                 },
                 {
-                    "at": "2026-11-14T09:53:32Z",
+                    "at": "2026-11-14T09:53:19Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794650012,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/api/stock?id=42\",\"status\":200,\"duration\":0.038,\"size\":2886,\"remote_ip\":\"203.0.113.62\"}"
+                    "text": "{\"ts\":1794649999,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/wp-login.php\",\"status\":404,\"duration\":0.181,\"size\":2932,\"remote_ip\":\"203.0.113.220\"}"
                 },
                 {
-                    "at": "2026-11-14T09:54:09Z",
+                    "at": "2026-11-14T09:53:56Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794650049,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/css/site.css\",\"status\":200,\"duration\":0.046,\"size\":32814,\"remote_ip\":\"203.0.113.241\"}"
+                    "text": "{\"ts\":1794650036,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/wp-login.php\",\"status\":404,\"duration\":0.009,\"size\":730,\"remote_ip\":\"203.0.113.176\"}"
+                },
+                {
+                    "at": "2026-11-14T09:54:07Z",
+                    "stream": "access",
+                    "text": "{\"ts\":1794650047,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/api/stock?id=42\",\"status\":200,\"duration\":0.224,\"size\":37763,\"remote_ip\":\"203.0.113.21\"}"
                 },
                 {
                     "at": "2026-11-14T09:54:41Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794650081,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/cart\",\"status\":200,\"duration\":0.156,\"size\":13865,\"remote_ip\":\"203.0.113.73\"}"
+                    "text": "{\"ts\":1794650081,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/cart\",\"status\":200,\"duration\":0.049,\"size\":21134,\"remote_ip\":\"203.0.113.24\"}"
                 },
                 {
-                    "at": "2026-11-14T09:55:02Z",
+                    "at": "2026-11-14T09:55:18Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794650102,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/css/site.css\",\"status\":200,\"duration\":0.372,\"size\":43735,\"remote_ip\":\"203.0.113.92\"}"
+                    "text": "{\"ts\":1794650118,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/cart\",\"status\":200,\"duration\":0.006,\"size\":7077,\"remote_ip\":\"203.0.113.87\"}"
                 },
                 {
-                    "at": "2026-11-14T09:55:17Z",
+                    "at": "2026-11-14T09:55:38Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794650117,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/\",\"status\":200,\"duration\":0.023,\"size\":7574,\"remote_ip\":\"203.0.113.155\"}"
+                    "text": "{\"ts\":1794650138,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/cart\",\"status\":200,\"duration\":0.207,\"size\":47712,\"remote_ip\":\"203.0.113.39\"}"
                 },
                 {
-                    "at": "2026-11-14T09:55:17Z",
-                    "stream": "error",
-                    "text": "PHP Warning:  Undefined array key \"utm_source\" in /app/src/bootstrap.php on line 14"
-                },
-                {
-                    "at": "2026-11-14T09:55:22Z",
+                    "at": "2026-11-14T09:56:14Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794650122,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/products/42\",\"status\":200,\"duration\":0.23,\"size\":30825,\"remote_ip\":\"203.0.113.238\"}"
+                    "text": "{\"ts\":1794650174,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/products/42\",\"status\":200,\"duration\":0.104,\"size\":16691,\"remote_ip\":\"203.0.113.208\"}"
                 },
                 {
-                    "at": "2026-11-14T09:55:29Z",
+                    "at": "2026-11-14T09:56:51Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794650129,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/favicon.ico\",\"status\":404,\"duration\":0.101,\"size\":28097,\"remote_ip\":\"203.0.113.146\"}"
+                    "text": "{\"ts\":1794650211,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/api/stock?id=42\",\"status\":200,\"duration\":0.386,\"size\":30756,\"remote_ip\":\"203.0.113.86\"}"
                 },
                 {
-                    "at": "2026-11-14T09:56:00Z",
+                    "at": "2026-11-14T09:57:04Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794650160,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/favicon.ico\",\"status\":404,\"duration\":0.247,\"size\":3704,\"remote_ip\":\"203.0.113.148\"}"
+                    "text": "{\"ts\":1794650224,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/cart\",\"status\":200,\"duration\":0.248,\"size\":9257,\"remote_ip\":\"203.0.113.6\"}"
                 },
                 {
-                    "at": "2026-11-14T09:56:00Z",
-                    "stream": "error",
-                    "text": "PHP Warning:  Undefined array key \"utm_source\" in /app/src/bootstrap.php on line 14"
-                },
-                {
-                    "at": "2026-11-14T09:56:03Z",
+                    "at": "2026-11-14T09:57:10Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794650163,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/cart\",\"status\":200,\"duration\":0.265,\"size\":815,\"remote_ip\":\"203.0.113.121\"}"
+                    "text": "{\"ts\":1794650230,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/wp-login.php\",\"status\":404,\"duration\":0.164,\"size\":2177,\"remote_ip\":\"203.0.113.133\"}"
                 },
                 {
-                    "at": "2026-11-14T09:56:21Z",
+                    "at": "2026-11-14T09:57:41Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794650181,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/products\",\"status\":200,\"duration\":0.331,\"size\":10999,\"remote_ip\":\"203.0.113.152\"}"
+                    "text": "{\"ts\":1794650261,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/api/stock?id=42\",\"status\":200,\"duration\":0.292,\"size\":21430,\"remote_ip\":\"203.0.113.68\"}"
                 },
                 {
-                    "at": "2026-11-14T09:56:55Z",
+                    "at": "2026-11-14T09:58:19Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794650215,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/search?q=tea\",\"status\":200,\"duration\":0.257,\"size\":18055,\"remote_ip\":\"203.0.113.141\"}"
+                    "text": "{\"ts\":1794650299,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/cart\",\"status\":200,\"duration\":0.173,\"size\":28600,\"remote_ip\":\"203.0.113.40\"}"
                 },
                 {
-                    "at": "2026-11-14T09:56:55Z",
-                    "stream": "error",
-                    "text": "PHP Deprecated:  Implicit conversion from float 19.99 to int loses precision in /app/src/cart.php on line 52"
-                },
-                {
-                    "at": "2026-11-14T09:57:24Z",
+                    "at": "2026-11-14T09:58:52Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794650244,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/products/42\",\"status\":200,\"duration\":0.057,\"size\":24425,\"remote_ip\":\"203.0.113.135\"}"
+                    "text": "{\"ts\":1794650332,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/cart\",\"status\":200,\"duration\":0.214,\"size\":45201,\"remote_ip\":\"203.0.113.234\"}"
                 },
                 {
-                    "at": "2026-11-14T09:57:45Z",
+                    "at": "2026-11-14T09:59:05Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794650265,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/products\",\"status\":200,\"duration\":0.24,\"size\":22881,\"remote_ip\":\"203.0.113.111\"}"
+                    "text": "{\"ts\":1794650345,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/search?q=tea\",\"status\":200,\"duration\":0.315,\"size\":26854,\"remote_ip\":\"203.0.113.175\"}"
                 },
                 {
-                    "at": "2026-11-14T09:58:11Z",
+                    "at": "2026-11-14T09:59:11Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794650291,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/search?q=tea\",\"status\":200,\"duration\":0.088,\"size\":14972,\"remote_ip\":\"203.0.113.144\"}"
+                    "text": "{\"ts\":1794650351,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/products/42\",\"status\":200,\"duration\":0.094,\"size\":14957,\"remote_ip\":\"203.0.113.14\"}"
                 },
                 {
-                    "at": "2026-11-14T09:58:11Z",
-                    "stream": "error",
-                    "text": "PHP Warning:  Undefined array key \"utm_source\" in /app/src/bootstrap.php on line 14"
-                },
-                {
-                    "at": "2026-11-14T09:58:49Z",
+                    "at": "2026-11-14T09:59:27Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794650329,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/favicon.ico\",\"status\":404,\"duration\":0.311,\"size\":26665,\"remote_ip\":\"203.0.113.198\"}"
-                },
-                {
-                    "at": "2026-11-14T09:59:23Z",
-                    "stream": "access",
-                    "text": "{\"ts\":1794650363,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/\",\"status\":200,\"duration\":0.055,\"size\":29427,\"remote_ip\":\"203.0.113.82\"}"
-                },
-                {
-                    "at": "2026-11-14T09:59:58Z",
-                    "stream": "access",
-                    "text": "{\"ts\":1794650398,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/favicon.ico\",\"status\":404,\"duration\":0.363,\"size\":4735,\"remote_ip\":\"203.0.113.63\"}"
+                    "text": "{\"ts\":1794650367,\"method\":\"GET\",\"host\":\"harbourbooks.example.net\",\"uri\":\"/cart\",\"status\":200,\"duration\":0.399,\"size\":14546,\"remote_ip\":\"203.0.113.238\"}"
                 }
             ]
         }
     },
-    "GET /websites/01m7eds8k6er5m39pd1xcr8a6a/databases": {
+    "GET /websites/01m7eg07gfedtznhjcrxnsnq4c/databases": {
         "status": 200,
         "body": {
             "prefix": "northwin_8223_",
             "databases": [
                 {
-                    "id": "01m7eds8pfrzvvyb23phe1s7bj",
+                    "id": "01m7eg07kk59name7q5b30wcqq",
                     "engine": "mariadb",
                     "name": "northwin_8223_wp",
-                    "databaseServerId": "01m7eds8p66nbncxwvjcbtjgy3",
+                    "databaseServerId": "01m7eg07kca01s8at2z6k79wp7",
                     "host": "mariadb.internal",
                     "port": 3306,
                     "sizeBytes": 146800640,
@@ -2197,14 +2252,14 @@
             ],
             "users": [
                 {
-                    "id": "01m7eds8pgh67m3readbyfph93",
+                    "id": "01m7eg07kk59name7q5b30wcqr",
                     "engine": "mariadb",
                     "name": "northwin_8223_wp",
                     "access": "website",
-                    "databaseServerId": "01m7eds8p66nbncxwvjcbtjgy3",
+                    "databaseServerId": "01m7eg07kca01s8at2z6k79wp7",
                     "grants": [
                         {
-                            "databaseId": "01m7eds8pfrzvvyb23phe1s7bj",
+                            "databaseId": "01m7eg07kk59name7q5b30wcqq",
                             "database": "northwin_8223_wp",
                             "privileges": "readwrite"
                         }
@@ -2213,13 +2268,13 @@
             ],
             "servers": [
                 {
-                    "id": "01m7eds8p66nbncxwvjcbtjgy3",
+                    "id": "01m7eg07kca01s8at2z6k79wp7",
                     "name": "mariadb-1",
                     "engine": "mariadb",
-                    "customerId": "01m7eds8b349bek5nqhm6qj4ys",
-                    "serverId": "01m7eds8hmgxgvyhb72c1hqje4",
+                    "customerId": "01m7eg076dkr23wwb4b86bdp7b",
+                    "serverId": "01m7eg07eefnnehjfy8e67n9m4",
                     "movingToServerId": null,
-                    "planId": "01m7eds8b2t6nfjc8d3c7vm8rr",
+                    "planId": "01m7eg076bpjmr70a7bcw9akg9",
                     "status": "running",
                     "host": "mariadb.internal",
                     "port": 3306,
@@ -2243,55 +2298,55 @@
             ]
         }
     },
-    "GET /websites/01m7eds8k6er5m39pd1xcr8a6a/snapshots": {
+    "GET /websites/01m7eg07gfedtznhjcrxnsnq4c/snapshots": {
         "status": 200,
         "body": {
             "data": [
                 {
-                    "id": "01m7eds8r9pq9c9a2tdxfttavz",
+                    "id": "01m7eg09p5ez17z6vm6stvpyyz",
                     "kind": "scheduled",
                     "sizeBytes": 1947205632,
                     "databases": [
                         "mariadb:northwin_8223_wp"
                     ],
                     "part": "website",
-                    "serverId": "01m7eds8hmgxgvyhb72c1hqje4",
+                    "serverId": "01m7eg07eefnnehjfy8e67n9m4",
                     "mailboxes": [],
                     "createdAt": "2026-11-14T03:05:00+00:00"
                 },
                 {
-                    "id": "01m7eds8r9pq9c9a2tdxfttaw0",
+                    "id": "01m7eg09p5ez17z6vm6stvpyz0",
                     "kind": "scheduled",
                     "sizeBytes": 1944059904,
                     "databases": [
                         "mariadb:northwin_8223_wp"
                     ],
                     "part": "website",
-                    "serverId": "01m7eds8hmgxgvyhb72c1hqje4",
+                    "serverId": "01m7eg07eefnnehjfy8e67n9m4",
                     "mailboxes": [],
                     "createdAt": "2026-11-13T03:05:00+00:00"
                 },
                 {
-                    "id": "01m7eds8r9pq9c9a2tdxfttaw1",
+                    "id": "01m7eg09p5ez17z6vm6stvpyz1",
                     "kind": "scheduled",
                     "sizeBytes": 1940914176,
                     "databases": [
                         "mariadb:northwin_8223_wp"
                     ],
                     "part": "website",
-                    "serverId": "01m7eds8hmgxgvyhb72c1hqje4",
+                    "serverId": "01m7eg07eefnnehjfy8e67n9m4",
                     "mailboxes": [],
                     "createdAt": "2026-11-12T03:05:00+00:00"
                 }
             ]
         }
     },
-    "GET /websites/01m7eds8k6er5m39pd1xcr8a6a/cron-jobs": {
+    "GET /websites/01m7eg07gfedtznhjcrxnsnq4c/cron-jobs": {
         "status": 200,
         "body": {
             "data": [
                 {
-                    "id": "01m7eds8rj6ywqfnrxzfxtrewg",
+                    "id": "01m7eg09pfsdkqp3x8f3m4dx02",
                     "schedule": "30 1 * * *",
                     "command": "wp db optimize",
                     "enabled": true,
@@ -2303,14 +2358,14 @@
             ]
         }
     },
-    "GET /websites/01m7eds8k6er5m39pd1xcr8a6a/deploy": {
+    "GET /websites/01m7eg07gfedtznhjcrxnsnq4c/deploy": {
         "status": 200,
         "body": {
             "source": null,
             "releases": []
         }
     },
-    "GET /websites/01m7eds8k6er5m39pd1xcr8a6a/files?path=%2F": {
+    "GET /websites/01m7eg07gfedtznhjcrxnsnq4c/files?path=%2F": {
         "status": 200,
         "body": {
             "path": "/",
@@ -2364,7 +2419,7 @@
             "truncated": false
         }
     },
-    "GET /websites/01m7eds8k6er5m39pd1xcr8a6a/files?path=%2Fpublic": {
+    "GET /websites/01m7eg07gfedtznhjcrxnsnq4c/files?path=%2Fpublic": {
         "status": 200,
         "body": {
             "path": "/public",
@@ -2400,7 +2455,7 @@
             "truncated": false
         }
     },
-    "GET /websites/01m7eds8k6er5m39pd1xcr8a6a/files/content?path=%2Fpublic%2Findex.php": {
+    "GET /websites/01m7eg07gfedtznhjcrxnsnq4c/files/content?path=%2Fpublic%2Findex.php": {
         "status": 200,
         "body": {
             "file": {
@@ -2416,249 +2471,239 @@
             "content": "<?php\n\nrequire __DIR__.'/../src/bootstrap.php';\n\necho render('home', ['title' => 'northwind.example.com']);\n"
         }
     },
-    "GET /websites/01m7eds8k6er5m39pd1xcr8a6a/logs?lines=200": {
+    "GET /websites/01m7eg07gfedtznhjcrxnsnq4c/logs?lines=200": {
         "status": 200,
         "body": {
             "lines": [
                 {
+                    "at": "2026-11-14T09:46:00Z",
+                    "stream": "access",
+                    "text": "{\"ts\":1794649560,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/contact\",\"status\":200,\"duration\":0.027,\"size\":19414,\"remote_ip\":\"203.0.113.138\"}"
+                },
+                {
                     "at": "2026-11-14T09:46:07Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794649567,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/api/stock?id=42\",\"status\":200,\"duration\":0.042,\"size\":26400,\"remote_ip\":\"203.0.113.146\"}"
+                    "text": "{\"ts\":1794649567,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/search?q=tea\",\"status\":200,\"duration\":0.38,\"size\":25736,\"remote_ip\":\"203.0.113.146\"}"
                 },
                 {
-                    "at": "2026-11-14T09:46:07Z",
-                    "stream": "error",
-                    "text": "PHP Warning:  Undefined array key \"utm_source\" in /app/src/bootstrap.php on line 14"
-                },
-                {
-                    "at": "2026-11-14T09:46:13Z",
+                    "at": "2026-11-14T09:46:35Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794649573,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/wp-login.php\",\"status\":404,\"duration\":0.117,\"size\":18043,\"remote_ip\":\"203.0.113.22\"}"
+                    "text": "{\"ts\":1794649595,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/products/42\",\"status\":200,\"duration\":0.191,\"size\":9850,\"remote_ip\":\"203.0.113.47\"}"
                 },
                 {
-                    "at": "2026-11-14T09:46:41Z",
+                    "at": "2026-11-14T09:46:59Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794649601,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/search?q=tea\",\"status\":200,\"duration\":0.221,\"size\":25765,\"remote_ip\":\"203.0.113.60\"}"
+                    "text": "{\"ts\":1794649619,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/wp-login.php\",\"status\":404,\"duration\":0.353,\"size\":23002,\"remote_ip\":\"203.0.113.4\"}"
                 },
                 {
-                    "at": "2026-11-14T09:47:00Z",
-                    "stream": "access",
-                    "text": "{\"ts\":1794649620,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/search?q=tea\",\"status\":200,\"duration\":0.054,\"size\":24822,\"remote_ip\":\"203.0.113.88\"}"
-                },
-                {
-                    "at": "2026-11-14T09:47:26Z",
-                    "stream": "access",
-                    "text": "{\"ts\":1794649646,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/favicon.ico\",\"status\":404,\"duration\":0.232,\"size\":12850,\"remote_ip\":\"203.0.113.246\"}"
-                },
-                {
-                    "at": "2026-11-14T09:47:29Z",
-                    "stream": "access",
-                    "text": "{\"ts\":1794649649,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/contact\",\"status\":200,\"duration\":0.227,\"size\":19975,\"remote_ip\":\"203.0.113.6\"}"
-                },
-                {
-                    "at": "2026-11-14T09:48:04Z",
-                    "stream": "access",
-                    "text": "{\"ts\":1794649684,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/\",\"status\":200,\"duration\":0.186,\"size\":40788,\"remote_ip\":\"203.0.113.89\"}"
-                },
-                {
-                    "at": "2026-11-14T09:48:36Z",
-                    "stream": "access",
-                    "text": "{\"ts\":1794649716,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/\",\"status\":200,\"duration\":0.303,\"size\":28591,\"remote_ip\":\"203.0.113.49\"}"
-                },
-                {
-                    "at": "2026-11-14T09:48:39Z",
-                    "stream": "access",
-                    "text": "{\"ts\":1794649719,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/api/stock?id=42\",\"status\":200,\"duration\":0.085,\"size\":8984,\"remote_ip\":\"203.0.113.104\"}"
-                },
-                {
-                    "at": "2026-11-14T09:48:55Z",
-                    "stream": "access",
-                    "text": "{\"ts\":1794649735,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/products\",\"status\":200,\"duration\":0.132,\"size\":6421,\"remote_ip\":\"203.0.113.213\"}"
-                },
-                {
-                    "at": "2026-11-14T09:48:55Z",
+                    "at": "2026-11-14T09:46:59Z",
                     "stream": "error",
                     "text": "PHP Deprecated:  Implicit conversion from float 19.99 to int loses precision in /app/src/cart.php on line 52"
                 },
                 {
-                    "at": "2026-11-14T09:49:29Z",
+                    "at": "2026-11-14T09:47:16Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794649769,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/\",\"status\":200,\"duration\":0.315,\"size\":26780,\"remote_ip\":\"203.0.113.103\"}"
+                    "text": "{\"ts\":1794649636,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/search?q=tea\",\"status\":200,\"duration\":0.229,\"size\":12844,\"remote_ip\":\"203.0.113.229\"}"
                 },
                 {
-                    "at": "2026-11-14T09:50:03Z",
+                    "at": "2026-11-14T09:47:52Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794649803,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/products/42\",\"status\":200,\"duration\":0.324,\"size\":43220,\"remote_ip\":\"203.0.113.19\"}"
+                    "text": "{\"ts\":1794649672,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/favicon.ico\",\"status\":404,\"duration\":0.109,\"size\":1157,\"remote_ip\":\"203.0.113.121\"}"
                 },
                 {
-                    "at": "2026-11-14T09:50:24Z",
+                    "at": "2026-11-14T09:48:13Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794649824,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/products/42\",\"status\":200,\"duration\":0.064,\"size\":11309,\"remote_ip\":\"203.0.113.247\"}"
+                    "text": "{\"ts\":1794649693,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/cart\",\"status\":200,\"duration\":0.225,\"size\":6040,\"remote_ip\":\"203.0.113.2\"}"
                 },
                 {
-                    "at": "2026-11-14T09:50:35Z",
+                    "at": "2026-11-14T09:48:28Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794649835,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/products/42\",\"status\":200,\"duration\":0.273,\"size\":14910,\"remote_ip\":\"203.0.113.46\"}"
+                    "text": "{\"ts\":1794649708,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/cart\",\"status\":200,\"duration\":0.238,\"size\":13765,\"remote_ip\":\"203.0.113.205\"}"
                 },
                 {
-                    "at": "2026-11-14T09:50:44Z",
+                    "at": "2026-11-14T09:48:50Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794649844,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/products/42\",\"status\":200,\"duration\":0.323,\"size\":28392,\"remote_ip\":\"203.0.113.147\"}"
+                    "text": "{\"ts\":1794649730,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/cart\",\"status\":200,\"duration\":0.252,\"size\":10632,\"remote_ip\":\"203.0.113.64\"}"
                 },
                 {
-                    "at": "2026-11-14T09:51:10Z",
+                    "at": "2026-11-14T09:48:55Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794649870,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/cart\",\"status\":200,\"duration\":0.33,\"size\":44687,\"remote_ip\":\"203.0.113.17\"}"
+                    "text": "{\"ts\":1794649735,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/api/stock?id=42\",\"status\":500,\"duration\":0.062,\"size\":47274,\"remote_ip\":\"203.0.113.91\"}"
                 },
                 {
-                    "at": "2026-11-14T09:51:10Z",
-                    "stream": "error",
-                    "text": "PHP Deprecated:  Implicit conversion from float 19.99 to int loses precision in /app/src/cart.php on line 52"
-                },
-                {
-                    "at": "2026-11-14T09:51:17Z",
-                    "stream": "access",
-                    "text": "{\"ts\":1794649877,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/products/42\",\"status\":200,\"duration\":0.226,\"size\":23724,\"remote_ip\":\"203.0.113.82\"}"
-                },
-                {
-                    "at": "2026-11-14T09:51:33Z",
-                    "stream": "access",
-                    "text": "{\"ts\":1794649893,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/api/stock?id=42\",\"status\":500,\"duration\":0.284,\"size\":22804,\"remote_ip\":\"203.0.113.176\"}"
-                },
-                {
-                    "at": "2026-11-14T09:51:33Z",
+                    "at": "2026-11-14T09:48:55Z",
                     "stream": "error",
                     "text": "PHP Fatal error:  Uncaught RuntimeException: The stock service did not answer in /app/src/stock.php:31"
                 },
                 {
-                    "at": "2026-11-14T09:52:07Z",
+                    "at": "2026-11-14T09:49:21Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794649927,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/products/42\",\"status\":200,\"duration\":0.393,\"size\":32642,\"remote_ip\":\"203.0.113.181\"}"
+                    "text": "{\"ts\":1794649761,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/search?q=tea\",\"status\":200,\"duration\":0.052,\"size\":17681,\"remote_ip\":\"203.0.113.90\"}"
                 },
                 {
-                    "at": "2026-11-14T09:52:41Z",
+                    "at": "2026-11-14T09:49:34Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794649961,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/products/42\",\"status\":200,\"duration\":0.211,\"size\":32902,\"remote_ip\":\"203.0.113.44\"}"
+                    "text": "{\"ts\":1794649774,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/products\",\"status\":200,\"duration\":0.271,\"size\":28678,\"remote_ip\":\"203.0.113.66\"}"
                 },
                 {
-                    "at": "2026-11-14T09:53:06Z",
+                    "at": "2026-11-14T09:49:50Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794649986,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/products/42\",\"status\":200,\"duration\":0.147,\"size\":5970,\"remote_ip\":\"203.0.113.134\"}"
+                    "text": "{\"ts\":1794649790,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/css/site.css\",\"status\":200,\"duration\":0.165,\"size\":9739,\"remote_ip\":\"203.0.113.33\"}"
                 },
                 {
-                    "at": "2026-11-14T09:53:25Z",
+                    "at": "2026-11-14T09:50:28Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794650005,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/wp-login.php\",\"status\":404,\"duration\":0.283,\"size\":29232,\"remote_ip\":\"203.0.113.218\"}"
+                    "text": "{\"ts\":1794649828,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/cart\",\"status\":200,\"duration\":0.051,\"size\":11515,\"remote_ip\":\"203.0.113.216\"}"
                 },
                 {
-                    "at": "2026-11-14T09:53:59Z",
+                    "at": "2026-11-14T09:51:05Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794650039,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/products\",\"status\":200,\"duration\":0.341,\"size\":19857,\"remote_ip\":\"203.0.113.219\"}"
+                    "text": "{\"ts\":1794649865,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/search?q=tea\",\"status\":200,\"duration\":0.097,\"size\":37298,\"remote_ip\":\"203.0.113.46\"}"
                 },
                 {
-                    "at": "2026-11-14T09:54:06Z",
+                    "at": "2026-11-14T09:51:07Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794650046,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/search?q=tea\",\"status\":200,\"duration\":0.238,\"size\":29943,\"remote_ip\":\"203.0.113.38\"}"
+                    "text": "{\"ts\":1794649867,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/cart\",\"status\":200,\"duration\":0.126,\"size\":14612,\"remote_ip\":\"203.0.113.214\"}"
                 },
                 {
-                    "at": "2026-11-14T09:54:10Z",
-                    "stream": "access",
-                    "text": "{\"ts\":1794650050,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/search?q=tea\",\"status\":200,\"duration\":0.384,\"size\":42495,\"remote_ip\":\"203.0.113.102\"}"
+                    "at": "2026-11-14T09:51:07Z",
+                    "stream": "error",
+                    "text": "PHP Warning:  Undefined array key \"utm_source\" in /app/src/bootstrap.php on line 14"
                 },
                 {
-                    "at": "2026-11-14T09:54:42Z",
+                    "at": "2026-11-14T09:51:38Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794650082,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/contact\",\"status\":200,\"duration\":0.055,\"size\":44733,\"remote_ip\":\"203.0.113.171\"}"
+                    "text": "{\"ts\":1794649898,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/cart\",\"status\":200,\"duration\":0.141,\"size\":8781,\"remote_ip\":\"203.0.113.113\"}"
                 },
                 {
-                    "at": "2026-11-14T09:54:44Z",
+                    "at": "2026-11-14T09:51:58Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794650084,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/search?q=tea\",\"status\":200,\"duration\":0.343,\"size\":5639,\"remote_ip\":\"203.0.113.143\"}"
+                    "text": "{\"ts\":1794649918,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/cart\",\"status\":200,\"duration\":0.152,\"size\":14382,\"remote_ip\":\"203.0.113.60\"}"
                 },
                 {
-                    "at": "2026-11-14T09:54:47Z",
+                    "at": "2026-11-14T09:52:31Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794650087,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/css/site.css\",\"status\":200,\"duration\":0.008,\"size\":2231,\"remote_ip\":\"203.0.113.37\"}"
+                    "text": "{\"ts\":1794649951,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/contact\",\"status\":200,\"duration\":0.312,\"size\":3975,\"remote_ip\":\"203.0.113.50\"}"
                 },
                 {
-                    "at": "2026-11-14T09:55:26Z",
+                    "at": "2026-11-14T09:52:50Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794650126,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/\",\"status\":200,\"duration\":0.295,\"size\":19549,\"remote_ip\":\"203.0.113.209\"}"
+                    "text": "{\"ts\":1794649970,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/products\",\"status\":200,\"duration\":0.168,\"size\":34921,\"remote_ip\":\"203.0.113.74\"}"
                 },
                 {
-                    "at": "2026-11-14T09:55:55Z",
+                    "at": "2026-11-14T09:53:00Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794650155,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/products/42\",\"status\":200,\"duration\":0.048,\"size\":39434,\"remote_ip\":\"203.0.113.136\"}"
+                    "text": "{\"ts\":1794649980,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/\",\"status\":200,\"duration\":0.15,\"size\":11848,\"remote_ip\":\"203.0.113.230\"}"
                 },
                 {
-                    "at": "2026-11-14T09:55:57Z",
+                    "at": "2026-11-14T09:53:36Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794650157,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/favicon.ico\",\"status\":404,\"duration\":0.226,\"size\":25797,\"remote_ip\":\"203.0.113.37\"}"
+                    "text": "{\"ts\":1794650016,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/products\",\"status\":200,\"duration\":0.397,\"size\":43782,\"remote_ip\":\"203.0.113.154\"}"
                 },
                 {
-                    "at": "2026-11-14T09:56:01Z",
+                    "at": "2026-11-14T09:54:04Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794650161,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/wp-login.php\",\"status\":404,\"duration\":0.041,\"size\":33539,\"remote_ip\":\"203.0.113.81\"}"
+                    "text": "{\"ts\":1794650044,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/css/site.css\",\"status\":200,\"duration\":0.027,\"size\":23100,\"remote_ip\":\"203.0.113.229\"}"
+                },
+                {
+                    "at": "2026-11-14T09:54:16Z",
+                    "stream": "access",
+                    "text": "{\"ts\":1794650056,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/search?q=tea\",\"status\":200,\"duration\":0.274,\"size\":25779,\"remote_ip\":\"203.0.113.118\"}"
+                },
+                {
+                    "at": "2026-11-14T09:54:53Z",
+                    "stream": "access",
+                    "text": "{\"ts\":1794650093,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/\",\"status\":200,\"duration\":0.196,\"size\":12934,\"remote_ip\":\"203.0.113.250\"}"
+                },
+                {
+                    "at": "2026-11-14T09:55:07Z",
+                    "stream": "access",
+                    "text": "{\"ts\":1794650107,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/cart\",\"status\":200,\"duration\":0.388,\"size\":10718,\"remote_ip\":\"203.0.113.128\"}"
+                },
+                {
+                    "at": "2026-11-14T09:55:28Z",
+                    "stream": "access",
+                    "text": "{\"ts\":1794650128,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/wp-login.php\",\"status\":404,\"duration\":0.262,\"size\":26916,\"remote_ip\":\"203.0.113.246\"}"
+                },
+                {
+                    "at": "2026-11-14T09:56:00Z",
+                    "stream": "access",
+                    "text": "{\"ts\":1794650160,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/products\",\"status\":200,\"duration\":0.037,\"size\":45054,\"remote_ip\":\"203.0.113.138\"}"
                 },
                 {
                     "at": "2026-11-14T09:56:37Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794650197,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/cart\",\"status\":200,\"duration\":0.33,\"size\":3135,\"remote_ip\":\"203.0.113.201\"}"
+                    "text": "{\"ts\":1794650197,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/products\",\"status\":200,\"duration\":0.257,\"size\":14720,\"remote_ip\":\"203.0.113.186\"}"
                 },
                 {
-                    "at": "2026-11-14T09:57:16Z",
+                    "at": "2026-11-14T09:56:59Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794650236,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/wp-login.php\",\"status\":404,\"duration\":0.231,\"size\":5669,\"remote_ip\":\"203.0.113.97\"}"
+                    "text": "{\"ts\":1794650219,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/api/stock?id=42\",\"status\":200,\"duration\":0.254,\"size\":46312,\"remote_ip\":\"203.0.113.182\"}"
                 },
                 {
-                    "at": "2026-11-14T09:57:26Z",
+                    "at": "2026-11-14T09:57:07Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794650246,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/cart\",\"status\":200,\"duration\":0.173,\"size\":15713,\"remote_ip\":\"203.0.113.161\"}"
+                    "text": "{\"ts\":1794650227,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/cart\",\"status\":200,\"duration\":0.197,\"size\":18098,\"remote_ip\":\"203.0.113.29\"}"
                 },
                 {
-                    "at": "2026-11-14T09:57:39Z",
-                    "stream": "access",
-                    "text": "{\"ts\":1794650259,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/favicon.ico\",\"status\":404,\"duration\":0.126,\"size\":20913,\"remote_ip\":\"203.0.113.118\"}"
-                },
-                {
-                    "at": "2026-11-14T09:57:39Z",
+                    "at": "2026-11-14T09:57:07Z",
                     "stream": "error",
                     "text": "PHP Deprecated:  Implicit conversion from float 19.99 to int loses precision in /app/src/cart.php on line 52"
                 },
                 {
-                    "at": "2026-11-14T09:58:03Z",
+                    "at": "2026-11-14T09:57:18Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794650283,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/search?q=tea\",\"status\":200,\"duration\":0.251,\"size\":2612,\"remote_ip\":\"203.0.113.126\"}"
+                    "text": "{\"ts\":1794650238,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/css/site.css\",\"status\":200,\"duration\":0.085,\"size\":6492,\"remote_ip\":\"203.0.113.58\"}"
                 },
                 {
-                    "at": "2026-11-14T09:58:27Z",
+                    "at": "2026-11-14T09:57:38Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794650307,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/\",\"status\":200,\"duration\":0.196,\"size\":1252,\"remote_ip\":\"203.0.113.247\"}"
+                    "text": "{\"ts\":1794650258,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/css/site.css\",\"status\":200,\"duration\":0.229,\"size\":33903,\"remote_ip\":\"203.0.113.20\"}"
                 },
                 {
-                    "at": "2026-11-14T09:59:05Z",
+                    "at": "2026-11-14T09:57:42Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794650345,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/products\",\"status\":200,\"duration\":0.223,\"size\":40737,\"remote_ip\":\"203.0.113.137\"}"
+                    "text": "{\"ts\":1794650262,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/favicon.ico\",\"status\":404,\"duration\":0.386,\"size\":35377,\"remote_ip\":\"203.0.113.154\"}"
+                },
+                {
+                    "at": "2026-11-14T09:58:10Z",
+                    "stream": "access",
+                    "text": "{\"ts\":1794650290,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/wp-login.php\",\"status\":404,\"duration\":0.396,\"size\":27909,\"remote_ip\":\"203.0.113.166\"}"
+                },
+                {
+                    "at": "2026-11-14T09:58:14Z",
+                    "stream": "access",
+                    "text": "{\"ts\":1794650294,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/cart\",\"status\":200,\"duration\":0.342,\"size\":34385,\"remote_ip\":\"203.0.113.27\"}"
+                },
+                {
+                    "at": "2026-11-14T09:58:43Z",
+                    "stream": "access",
+                    "text": "{\"ts\":1794650323,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/css/site.css\",\"status\":200,\"duration\":0.027,\"size\":39005,\"remote_ip\":\"203.0.113.203\"}"
+                },
+                {
+                    "at": "2026-11-14T09:59:00Z",
+                    "stream": "access",
+                    "text": "{\"ts\":1794650340,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/\",\"status\":200,\"duration\":0.342,\"size\":4973,\"remote_ip\":\"203.0.113.17\"}"
                 },
                 {
                     "at": "2026-11-14T09:59:24Z",
                     "stream": "access",
-                    "text": "{\"ts\":1794650364,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/cart\",\"status\":200,\"duration\":0.168,\"size\":30242,\"remote_ip\":\"203.0.113.166\"}"
+                    "text": "{\"ts\":1794650364,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/cart\",\"status\":200,\"duration\":0.099,\"size\":19565,\"remote_ip\":\"203.0.113.216\"}"
                 },
                 {
-                    "at": "2026-11-14T09:59:24Z",
-                    "stream": "error",
-                    "text": "PHP Warning:  Undefined array key \"utm_source\" in /app/src/bootstrap.php on line 14"
+                    "at": "2026-11-14T09:59:56Z",
+                    "stream": "access",
+                    "text": "{\"ts\":1794650396,\"method\":\"GET\",\"host\":\"northwind.example.com\",\"uri\":\"/wp-login.php\",\"status\":404,\"duration\":0.362,\"size\":29377,\"remote_ip\":\"203.0.113.78\"}"
                 }
             ]
         }
     },
-    "GET /dns-zones/01m7eds8mndrv4q93744rh2yt7": {
+    "GET /dns-zones/01m7eg07j3t6jr78kak95mat53": {
         "status": 200,
         "body": {
-            "id": "01m7eds8mndrv4q93744rh2yt7",
+            "id": "01m7eg07j3t6jr78kak95mat53",
             "name": "cornerbakery.example.org",
-            "customerId": "01m7eds8b349bek5nqhm6qj4yt",
+            "customerId": "01m7eg076dkr23wwb4b86bdp7c",
             "status": "active",
             "serial": 1794564000,
             "recordCount": 6,
@@ -2693,7 +2738,7 @@
             "createdAt": "2026-08-06T10:00:00+00:00",
             "records": [
                 {
-                    "id": "01m7eds8mp5qj9qza56hfhyd8n",
+                    "id": "01m7eg07j46embykv53rj36vz6",
                     "name": "@",
                     "type": "A",
                     "value": "203.0.113.20",
@@ -2702,7 +2747,7 @@
                     "managed": "website"
                 },
                 {
-                    "id": "01m7eds8mq8njndrxe2pwqq15m",
+                    "id": "01m7eg07j536205zwfhn8jw02r",
                     "name": "@",
                     "type": "AAAA",
                     "value": "2001:db8:20::1",
@@ -2711,7 +2756,7 @@
                     "managed": "website"
                 },
                 {
-                    "id": "01m7eds8mvkrfe7j218znk6bnv",
+                    "id": "01m7eg07j96gtgxawy4hweh7zy",
                     "name": "@",
                     "type": "MX",
                     "value": "mail.cornerbakery.example.org",
@@ -2720,7 +2765,7 @@
                     "managed": null
                 },
                 {
-                    "id": "01m7eds8mndrv4q93744rh2yt8",
+                    "id": "01m7eg07j3t6jr78kak95mat54",
                     "name": "@",
                     "type": "NS",
                     "value": "ns1.panel.example",
@@ -2729,7 +2774,7 @@
                     "managed": "ns"
                 },
                 {
-                    "id": "01m7eds8mp5qj9qza56hfhyd8m",
+                    "id": "01m7eg07j3t6jr78kak95mat55",
                     "name": "@",
                     "type": "NS",
                     "value": "ns2.panel.example",
@@ -2738,7 +2783,7 @@
                     "managed": "ns"
                 },
                 {
-                    "id": "01m7eds8mvkrfe7j218znk6bnw",
+                    "id": "01m7eg07j96gtgxawy4hweh7zz",
                     "name": "mail",
                     "type": "A",
                     "value": "198.51.100.80",
@@ -2749,12 +2794,12 @@
             ]
         }
     },
-    "GET /dns-zones/01m7eds8mq8njndrxe2pwqq15n": {
+    "GET /dns-zones/01m7eg07j536205zwfhn8jw02s": {
         "status": 200,
         "body": {
-            "id": "01m7eds8mq8njndrxe2pwqq15n",
+            "id": "01m7eg07j536205zwfhn8jw02s",
             "name": "harbourbooks.example.net",
-            "customerId": "01m7eds8b349bek5nqhm6qj4yv",
+            "customerId": "01m7eg076dkr23wwb4b86bdp7d",
             "status": "failed",
             "serial": 1794564000,
             "recordCount": 6,
@@ -2789,7 +2834,7 @@
             "createdAt": "2026-10-07T10:00:00+00:00",
             "records": [
                 {
-                    "id": "01m7eds8msx3ce4ajqst52pngg",
+                    "id": "01m7eg07j7vaebgxrbejrdwkkq",
                     "name": "@",
                     "type": "A",
                     "value": "203.0.113.20",
@@ -2798,7 +2843,7 @@
                     "managed": "website"
                 },
                 {
-                    "id": "01m7eds8msx3ce4ajqst52pngh",
+                    "id": "01m7eg07j7vaebgxrbejrdwkkr",
                     "name": "@",
                     "type": "AAAA",
                     "value": "2001:db8:20::1",
@@ -2807,7 +2852,7 @@
                     "managed": "website"
                 },
                 {
-                    "id": "01m7eds8mq8njndrxe2pwqq15p",
+                    "id": "01m7eg07j536205zwfhn8jw02t",
                     "name": "@",
                     "type": "NS",
                     "value": "ns1.panel.example",
@@ -2816,7 +2861,7 @@
                     "managed": "ns"
                 },
                 {
-                    "id": "01m7eds8mrc4jercsfb0dkkty2",
+                    "id": "01m7eg07j60vsd0qqhb60jc44s",
                     "name": "@",
                     "type": "NS",
                     "value": "ns2.panel.example",
@@ -2825,7 +2870,7 @@
                     "managed": "ns"
                 },
                 {
-                    "id": "01m7eds8mvkrfe7j218znk6bnx",
+                    "id": "01m7eg07j96gtgxawy4hweh800",
                     "name": "@",
                     "type": "TXT",
                     "value": "v=spf1 -all",
@@ -2834,7 +2879,7 @@
                     "managed": null
                 },
                 {
-                    "id": "01m7eds8msx3ce4ajqst52pngj",
+                    "id": "01m7eg07j7vaebgxrbejrdwkks",
                     "name": "events",
                     "type": "A",
                     "value": "203.0.113.30",
@@ -2845,12 +2890,12 @@
             ]
         }
     },
-    "GET /dns-zones/01m7eds8mkbzsm8kbc5qv2fbqr": {
+    "GET /dns-zones/01m7eg07j1464g046ajcanbank": {
         "status": 200,
         "body": {
-            "id": "01m7eds8mkbzsm8kbc5qv2fbqr",
+            "id": "01m7eg07j1464g046ajcanbank",
             "name": "northwind.example.com",
-            "customerId": "01m7eds8b349bek5nqhm6qj4ys",
+            "customerId": "01m7eg076dkr23wwb4b86bdp7b",
             "status": "active",
             "serial": 1794574800,
             "recordCount": 4,
@@ -2885,7 +2930,7 @@
             "createdAt": "2026-02-07T10:00:00+00:00",
             "records": [
                 {
-                    "id": "01m7eds8mmh7840wkdbzxggpjw",
+                    "id": "01m7eg07j2gmc9gdwf8p544sz7",
                     "name": "@",
                     "type": "A",
                     "value": "203.0.113.20",
@@ -2894,7 +2939,7 @@
                     "managed": "website"
                 },
                 {
-                    "id": "01m7eds8mndrv4q93744rh2yt6",
+                    "id": "01m7eg07j3t6jr78kak95mat52",
                     "name": "@",
                     "type": "AAAA",
                     "value": "2001:db8:20::1",
@@ -2903,7 +2948,7 @@
                     "managed": "website"
                 },
                 {
-                    "id": "01m7eds8mkbzsm8kbc5qv2fbqs",
+                    "id": "01m7eg07j1464g046ajcanbanm",
                     "name": "@",
                     "type": "NS",
                     "value": "ns1.panel.example",
@@ -2912,7 +2957,7 @@
                     "managed": "ns"
                 },
                 {
-                    "id": "01m7eds8mmh7840wkdbzxggpjv",
+                    "id": "01m7eg07j1464g046ajcanbann",
                     "name": "@",
                     "type": "NS",
                     "value": "ns2.panel.example",
