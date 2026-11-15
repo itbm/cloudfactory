@@ -253,7 +253,13 @@ type Website struct {
 	// route has only the paths that start with the prefix, so that more than one website can
 	// have the same domain. The panel uses it for the database tool of each customer
 	// (Adminer), which has one domain for all customers. The domain has no redirect.
-	RoutePath     string `protobuf:"bytes,17,opt,name=route_path,json=routePath,proto3" json:"route_path,omitempty"`
+	RoutePath string `protobuf:"bytes,17,opt,name=route_path,json=routePath,proto3" json:"route_path,omitempty"`
+	// Runtime "custom": environment variables of the container, for example the token of a
+	// plugin that the panel runs (docs/plugins.md). The names are the rule "secretName" and the
+	// values the rule "environmentValue" of schema/input-rules.json, so that the agent writes
+	// them in the unit with no quotes. Up to 20. The unit is in the home directory of the Unix
+	// user of the website, which only that user and root can read.
+	Environment   map[string]string `protobuf:"bytes,18,rep,name=environment,proto3" json:"environment,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -405,6 +411,13 @@ func (x *Website) GetRoutePath() string {
 		return x.RoutePath
 	}
 	return ""
+}
+
+func (x *Website) GetEnvironment() map[string]string {
+	if x != nil {
+		return x.Environment
+	}
+	return nil
 }
 
 // A database server of a customer: one database container with one engine, in its own gVisor
@@ -5361,7 +5374,7 @@ const file_cloudfactory_agent_v1_agent_proto_rawDesc = "" +
 	"\tprocesses\x18\x05 \x01(\x03R\tprocesses\"0\n" +
 	"\x06Domain\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
-	"\x04kind\x18\x02 \x01(\tR\x04kind\"\xa5\x05\n" +
+	"\x04kind\x18\x02 \x01(\tR\x04kind\"\xb8\x06\n" +
 	"\aWebsite\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1b\n" +
 	"\tunix_user\x18\x02 \x01(\tR\bunixUser\x12\x14\n" +
@@ -5385,8 +5398,12 @@ const file_cloudfactory_agent_v1_agent_proto_rawDesc = "" +
 	"\x11database_instance\x18\x0f \x01(\tR\x10databaseInstance\x12\x16\n" +
 	"\x06worker\x18\x10 \x01(\bR\x06worker\x12\x1d\n" +
 	"\n" +
-	"route_path\x18\x11 \x01(\tR\troutePath\x1a9\n" +
+	"route_path\x18\x11 \x01(\tR\troutePath\x12Q\n" +
+	"\venvironment\x18\x12 \x03(\v2/.cloudfactory.agent.v1.Website.EnvironmentEntryR\venvironment\x1a9\n" +
 	"\vPhpIniEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\x1a>\n" +
+	"\x10EnvironmentEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x9f\x01\n" +
 	"\x0eDatabaseServer\x12\x0e\n" +
@@ -5869,7 +5886,7 @@ func file_cloudfactory_agent_v1_agent_proto_rawDescGZIP() []byte {
 	return file_cloudfactory_agent_v1_agent_proto_rawDescData
 }
 
-var file_cloudfactory_agent_v1_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 76)
+var file_cloudfactory_agent_v1_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 77)
 var file_cloudfactory_agent_v1_agent_proto_goTypes = []any{
 	(*JobAccepted)(nil),                  // 0: cloudfactory.agent.v1.JobAccepted
 	(*Limits)(nil),                       // 1: cloudfactory.agent.v1.Limits
@@ -5943,159 +5960,161 @@ var file_cloudfactory_agent_v1_agent_proto_goTypes = []any{
 	(*LogLine)(nil),                      // 69: cloudfactory.agent.v1.LogLine
 	(*Logs)(nil),                         // 70: cloudfactory.agent.v1.Logs
 	nil,                                  // 71: cloudfactory.agent.v1.Website.PhpIniEntry
-	nil,                                  // 72: cloudfactory.agent.v1.BackupRequest.CredentialsEntry
-	nil,                                  // 73: cloudfactory.agent.v1.PruneBackupsRequest.CredentialsEntry
-	nil,                                  // 74: cloudfactory.agent.v1.RestoreRequest.CredentialsEntry
-	nil,                                  // 75: cloudfactory.agent.v1.DeployRequest.SecretsEntry
+	nil,                                  // 72: cloudfactory.agent.v1.Website.EnvironmentEntry
+	nil,                                  // 73: cloudfactory.agent.v1.BackupRequest.CredentialsEntry
+	nil,                                  // 74: cloudfactory.agent.v1.PruneBackupsRequest.CredentialsEntry
+	nil,                                  // 75: cloudfactory.agent.v1.RestoreRequest.CredentialsEntry
+	nil,                                  // 76: cloudfactory.agent.v1.DeployRequest.SecretsEntry
 }
 var file_cloudfactory_agent_v1_agent_proto_depIdxs = []int32{
 	71, // 0: cloudfactory.agent.v1.Website.php_ini:type_name -> cloudfactory.agent.v1.Website.PhpIniEntry
 	1,  // 1: cloudfactory.agent.v1.Website.limits:type_name -> cloudfactory.agent.v1.Limits
 	2,  // 2: cloudfactory.agent.v1.Website.domains:type_name -> cloudfactory.agent.v1.Domain
-	1,  // 3: cloudfactory.agent.v1.DatabaseServer.limits:type_name -> cloudfactory.agent.v1.Limits
-	4,  // 4: cloudfactory.agent.v1.DatabaseServerRequest.database_server:type_name -> cloudfactory.agent.v1.DatabaseServer
-	8,  // 5: cloudfactory.agent.v1.SetMailNodeRequest.members:type_name -> cloudfactory.agent.v1.MailClusterMember
-	3,  // 6: cloudfactory.agent.v1.WebsiteRequest.website:type_name -> cloudfactory.agent.v1.Website
-	15, // 7: cloudfactory.agent.v1.WebsiteRequest.health_check:type_name -> cloudfactory.agent.v1.HealthCheck
-	17, // 8: cloudfactory.agent.v1.WebsiteRequest.copy_databases:type_name -> cloudfactory.agent.v1.DatabaseCopy
-	18, // 9: cloudfactory.agent.v1.WebsiteRequest.copy_users:type_name -> cloudfactory.agent.v1.DatabaseUserCopy
-	4,  // 10: cloudfactory.agent.v1.WebsiteRequest.database_servers:type_name -> cloudfactory.agent.v1.DatabaseServer
-	28, // 11: cloudfactory.agent.v1.DeleteWebsiteRequest.databases:type_name -> cloudfactory.agent.v1.DatabaseRef
-	28, // 12: cloudfactory.agent.v1.DeleteWebsiteRequest.database_users:type_name -> cloudfactory.agent.v1.DatabaseRef
-	1,  // 13: cloudfactory.agent.v1.SetLimitsRequest.limits:type_name -> cloudfactory.agent.v1.Limits
-	4,  // 14: cloudfactory.agent.v1.CreateDatabaseRequest.database_server:type_name -> cloudfactory.agent.v1.DatabaseServer
-	25, // 15: cloudfactory.agent.v1.SetDatabaseUserRequest.grants:type_name -> cloudfactory.agent.v1.DatabaseGrant
-	4,  // 16: cloudfactory.agent.v1.SetDatabaseUserRequest.database_server:type_name -> cloudfactory.agent.v1.DatabaseServer
-	28, // 17: cloudfactory.agent.v1.BackupRequest.databases:type_name -> cloudfactory.agent.v1.DatabaseRef
-	72, // 18: cloudfactory.agent.v1.BackupRequest.credentials:type_name -> cloudfactory.agent.v1.BackupRequest.CredentialsEntry
-	30, // 19: cloudfactory.agent.v1.BackupRequest.retention:type_name -> cloudfactory.agent.v1.Retention
-	73, // 20: cloudfactory.agent.v1.PruneBackupsRequest.credentials:type_name -> cloudfactory.agent.v1.PruneBackupsRequest.CredentialsEntry
-	74, // 21: cloudfactory.agent.v1.RestoreRequest.credentials:type_name -> cloudfactory.agent.v1.RestoreRequest.CredentialsEntry
-	39, // 22: cloudfactory.agent.v1.NetworkWebsite.names:type_name -> cloudfactory.agent.v1.NetworkName
-	37, // 23: cloudfactory.agent.v1.Mesh.peers:type_name -> cloudfactory.agent.v1.MeshPeer
-	38, // 24: cloudfactory.agent.v1.Mesh.members:type_name -> cloudfactory.agent.v1.NetworkMember
-	40, // 25: cloudfactory.agent.v1.Mesh.websites:type_name -> cloudfactory.agent.v1.NetworkWebsite
-	41, // 26: cloudfactory.agent.v1.SetMeshRequest.mesh:type_name -> cloudfactory.agent.v1.Mesh
-	4,  // 27: cloudfactory.agent.v1.ReceiveDatabaseServerRequest.database_server:type_name -> cloudfactory.agent.v1.DatabaseServer
-	51, // 28: cloudfactory.agent.v1.DnsZone.records:type_name -> cloudfactory.agent.v1.DnsRecord
-	52, // 29: cloudfactory.agent.v1.SetDnsZonesRequest.zones:type_name -> cloudfactory.agent.v1.DnsZone
-	49, // 30: cloudfactory.agent.v1.HostStatus.pending_updates:type_name -> cloudfactory.agent.v1.PendingUpdate
-	50, // 31: cloudfactory.agent.v1.HostStatus.services:type_name -> cloudfactory.agent.v1.Service
-	56, // 32: cloudfactory.agent.v1.SetCronJobsRequest.cron_jobs:type_name -> cloudfactory.agent.v1.CronJob
-	56, // 33: cloudfactory.agent.v1.RunCronJobRequest.cron_job:type_name -> cloudfactory.agent.v1.CronJob
-	3,  // 34: cloudfactory.agent.v1.DeployRequest.website:type_name -> cloudfactory.agent.v1.Website
-	75, // 35: cloudfactory.agent.v1.DeployRequest.secrets:type_name -> cloudfactory.agent.v1.DeployRequest.SecretsEntry
-	15, // 36: cloudfactory.agent.v1.DeployRequest.health_check:type_name -> cloudfactory.agent.v1.HealthCheck
-	3,  // 37: cloudfactory.agent.v1.ActivateReleaseRequest.website:type_name -> cloudfactory.agent.v1.Website
-	15, // 38: cloudfactory.agent.v1.ActivateReleaseRequest.health_check:type_name -> cloudfactory.agent.v1.HealthCheck
-	62, // 39: cloudfactory.agent.v1.FileList.entries:type_name -> cloudfactory.agent.v1.FileEntry
-	62, // 40: cloudfactory.agent.v1.FileContent.file:type_name -> cloudfactory.agent.v1.FileEntry
-	69, // 41: cloudfactory.agent.v1.Logs.lines:type_name -> cloudfactory.agent.v1.LogLine
-	16, // 42: cloudfactory.agent.v1.AgentService.CreateWebsite:input_type -> cloudfactory.agent.v1.WebsiteRequest
-	19, // 43: cloudfactory.agent.v1.AgentService.DeleteWebsite:input_type -> cloudfactory.agent.v1.DeleteWebsiteRequest
-	20, // 44: cloudfactory.agent.v1.AgentService.SetWebsitePower:input_type -> cloudfactory.agent.v1.SetWebsitePowerRequest
-	21, // 45: cloudfactory.agent.v1.AgentService.SetLimits:input_type -> cloudfactory.agent.v1.SetLimitsRequest
-	16, // 46: cloudfactory.agent.v1.AgentService.SetRuntime:input_type -> cloudfactory.agent.v1.WebsiteRequest
-	22, // 47: cloudfactory.agent.v1.AgentService.AddDomain:input_type -> cloudfactory.agent.v1.DomainRequest
-	22, // 48: cloudfactory.agent.v1.AgentService.RemoveDomain:input_type -> cloudfactory.agent.v1.DomainRequest
-	23, // 49: cloudfactory.agent.v1.AgentService.CreateDatabase:input_type -> cloudfactory.agent.v1.CreateDatabaseRequest
-	24, // 50: cloudfactory.agent.v1.AgentService.DeleteDatabase:input_type -> cloudfactory.agent.v1.DeleteDatabaseRequest
-	26, // 51: cloudfactory.agent.v1.AgentService.SetDatabaseUser:input_type -> cloudfactory.agent.v1.SetDatabaseUserRequest
-	27, // 52: cloudfactory.agent.v1.AgentService.DeleteDatabaseUser:input_type -> cloudfactory.agent.v1.DeleteDatabaseUserRequest
-	29, // 53: cloudfactory.agent.v1.AgentService.Backup:input_type -> cloudfactory.agent.v1.BackupRequest
-	32, // 54: cloudfactory.agent.v1.AgentService.Restore:input_type -> cloudfactory.agent.v1.RestoreRequest
-	46, // 55: cloudfactory.agent.v1.AgentService.InstallHostUpdates:input_type -> cloudfactory.agent.v1.HostRequest
-	46, // 56: cloudfactory.agent.v1.AgentService.Reboot:input_type -> cloudfactory.agent.v1.HostRequest
-	47, // 57: cloudfactory.agent.v1.AgentService.UpdateAgent:input_type -> cloudfactory.agent.v1.UpdateAgentRequest
-	31, // 58: cloudfactory.agent.v1.AgentService.PruneBackups:input_type -> cloudfactory.agent.v1.PruneBackupsRequest
-	33, // 59: cloudfactory.agent.v1.AgentService.SetSftp:input_type -> cloudfactory.agent.v1.SetSftpRequest
-	34, // 60: cloudfactory.agent.v1.AgentService.ConfigureHost:input_type -> cloudfactory.agent.v1.ConfigureHostRequest
-	35, // 61: cloudfactory.agent.v1.AgentService.SetPanelCertificate:input_type -> cloudfactory.agent.v1.SetPanelCertificateRequest
-	36, // 62: cloudfactory.agent.v1.AgentService.SetPanelBrands:input_type -> cloudfactory.agent.v1.SetPanelBrandsRequest
-	5,  // 63: cloudfactory.agent.v1.AgentService.SetDatabaseServer:input_type -> cloudfactory.agent.v1.DatabaseServerRequest
-	14, // 64: cloudfactory.agent.v1.AgentService.DeleteDatabaseServer:input_type -> cloudfactory.agent.v1.DeleteDatabaseServerRequest
-	6,  // 65: cloudfactory.agent.v1.AgentService.SetMailServer:input_type -> cloudfactory.agent.v1.SetMailServerRequest
-	7,  // 66: cloudfactory.agent.v1.AgentService.PrepareMailNode:input_type -> cloudfactory.agent.v1.PrepareMailNodeRequest
-	9,  // 67: cloudfactory.agent.v1.AgentService.SetMailNode:input_type -> cloudfactory.agent.v1.SetMailNodeRequest
-	10, // 68: cloudfactory.agent.v1.AgentService.SetMailDomain:input_type -> cloudfactory.agent.v1.MailDomainRequest
-	10, // 69: cloudfactory.agent.v1.AgentService.DeleteMailDomain:input_type -> cloudfactory.agent.v1.MailDomainRequest
-	11, // 70: cloudfactory.agent.v1.AgentService.SetMailbox:input_type -> cloudfactory.agent.v1.SetMailboxRequest
-	12, // 71: cloudfactory.agent.v1.AgentService.DeleteMailbox:input_type -> cloudfactory.agent.v1.MailAddressRequest
-	13, // 72: cloudfactory.agent.v1.AgentService.SetMailAlias:input_type -> cloudfactory.agent.v1.SetMailAliasRequest
-	12, // 73: cloudfactory.agent.v1.AgentService.DeleteMailAlias:input_type -> cloudfactory.agent.v1.MailAddressRequest
-	53, // 74: cloudfactory.agent.v1.AgentService.SetDnsZones:input_type -> cloudfactory.agent.v1.SetDnsZonesRequest
-	54, // 75: cloudfactory.agent.v1.AgentService.DeleteDnsZones:input_type -> cloudfactory.agent.v1.DeleteDnsZonesRequest
-	57, // 76: cloudfactory.agent.v1.AgentService.SetCronJobs:input_type -> cloudfactory.agent.v1.SetCronJobsRequest
-	58, // 77: cloudfactory.agent.v1.AgentService.RunCronJob:input_type -> cloudfactory.agent.v1.RunCronJobRequest
-	59, // 78: cloudfactory.agent.v1.AgentService.Deploy:input_type -> cloudfactory.agent.v1.DeployRequest
-	60, // 79: cloudfactory.agent.v1.AgentService.ActivateRelease:input_type -> cloudfactory.agent.v1.ActivateReleaseRequest
-	42, // 80: cloudfactory.agent.v1.AgentService.SetMesh:input_type -> cloudfactory.agent.v1.SetMeshRequest
-	43, // 81: cloudfactory.agent.v1.AgentService.RotateMeshKey:input_type -> cloudfactory.agent.v1.RotateMeshKeyRequest
-	44, // 82: cloudfactory.agent.v1.AgentService.SendDatabaseServer:input_type -> cloudfactory.agent.v1.SendDatabaseServerRequest
-	45, // 83: cloudfactory.agent.v1.AgentService.ReceiveDatabaseServer:input_type -> cloudfactory.agent.v1.ReceiveDatabaseServerRequest
-	48, // 84: cloudfactory.agent.v1.AgentService.GetStatus:input_type -> cloudfactory.agent.v1.GetStatusRequest
-	61, // 85: cloudfactory.agent.v1.AgentService.ListFiles:input_type -> cloudfactory.agent.v1.FileRequest
-	61, // 86: cloudfactory.agent.v1.AgentService.ReadFile:input_type -> cloudfactory.agent.v1.FileRequest
-	65, // 87: cloudfactory.agent.v1.AgentService.WriteFile:input_type -> cloudfactory.agent.v1.WriteFileRequest
-	61, // 88: cloudfactory.agent.v1.AgentService.MakeDirectory:input_type -> cloudfactory.agent.v1.FileRequest
-	66, // 89: cloudfactory.agent.v1.AgentService.MoveFile:input_type -> cloudfactory.agent.v1.MoveFileRequest
-	61, // 90: cloudfactory.agent.v1.AgentService.DeleteFile:input_type -> cloudfactory.agent.v1.FileRequest
-	68, // 91: cloudfactory.agent.v1.AgentService.GetLogs:input_type -> cloudfactory.agent.v1.GetLogsRequest
-	0,  // 92: cloudfactory.agent.v1.AgentService.CreateWebsite:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,  // 93: cloudfactory.agent.v1.AgentService.DeleteWebsite:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,  // 94: cloudfactory.agent.v1.AgentService.SetWebsitePower:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,  // 95: cloudfactory.agent.v1.AgentService.SetLimits:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,  // 96: cloudfactory.agent.v1.AgentService.SetRuntime:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,  // 97: cloudfactory.agent.v1.AgentService.AddDomain:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,  // 98: cloudfactory.agent.v1.AgentService.RemoveDomain:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,  // 99: cloudfactory.agent.v1.AgentService.CreateDatabase:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,  // 100: cloudfactory.agent.v1.AgentService.DeleteDatabase:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,  // 101: cloudfactory.agent.v1.AgentService.SetDatabaseUser:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,  // 102: cloudfactory.agent.v1.AgentService.DeleteDatabaseUser:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,  // 103: cloudfactory.agent.v1.AgentService.Backup:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,  // 104: cloudfactory.agent.v1.AgentService.Restore:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,  // 105: cloudfactory.agent.v1.AgentService.InstallHostUpdates:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,  // 106: cloudfactory.agent.v1.AgentService.Reboot:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,  // 107: cloudfactory.agent.v1.AgentService.UpdateAgent:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,  // 108: cloudfactory.agent.v1.AgentService.PruneBackups:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,  // 109: cloudfactory.agent.v1.AgentService.SetSftp:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,  // 110: cloudfactory.agent.v1.AgentService.ConfigureHost:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,  // 111: cloudfactory.agent.v1.AgentService.SetPanelCertificate:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,  // 112: cloudfactory.agent.v1.AgentService.SetPanelBrands:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,  // 113: cloudfactory.agent.v1.AgentService.SetDatabaseServer:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,  // 114: cloudfactory.agent.v1.AgentService.DeleteDatabaseServer:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,  // 115: cloudfactory.agent.v1.AgentService.SetMailServer:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,  // 116: cloudfactory.agent.v1.AgentService.PrepareMailNode:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,  // 117: cloudfactory.agent.v1.AgentService.SetMailNode:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,  // 118: cloudfactory.agent.v1.AgentService.SetMailDomain:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,  // 119: cloudfactory.agent.v1.AgentService.DeleteMailDomain:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,  // 120: cloudfactory.agent.v1.AgentService.SetMailbox:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,  // 121: cloudfactory.agent.v1.AgentService.DeleteMailbox:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,  // 122: cloudfactory.agent.v1.AgentService.SetMailAlias:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,  // 123: cloudfactory.agent.v1.AgentService.DeleteMailAlias:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,  // 124: cloudfactory.agent.v1.AgentService.SetDnsZones:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,  // 125: cloudfactory.agent.v1.AgentService.DeleteDnsZones:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,  // 126: cloudfactory.agent.v1.AgentService.SetCronJobs:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,  // 127: cloudfactory.agent.v1.AgentService.RunCronJob:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,  // 128: cloudfactory.agent.v1.AgentService.Deploy:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,  // 129: cloudfactory.agent.v1.AgentService.ActivateRelease:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,  // 130: cloudfactory.agent.v1.AgentService.SetMesh:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,  // 131: cloudfactory.agent.v1.AgentService.RotateMeshKey:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,  // 132: cloudfactory.agent.v1.AgentService.SendDatabaseServer:output_type -> cloudfactory.agent.v1.JobAccepted
-	0,  // 133: cloudfactory.agent.v1.AgentService.ReceiveDatabaseServer:output_type -> cloudfactory.agent.v1.JobAccepted
-	55, // 134: cloudfactory.agent.v1.AgentService.GetStatus:output_type -> cloudfactory.agent.v1.HostStatus
-	63, // 135: cloudfactory.agent.v1.AgentService.ListFiles:output_type -> cloudfactory.agent.v1.FileList
-	64, // 136: cloudfactory.agent.v1.AgentService.ReadFile:output_type -> cloudfactory.agent.v1.FileContent
-	62, // 137: cloudfactory.agent.v1.AgentService.WriteFile:output_type -> cloudfactory.agent.v1.FileEntry
-	62, // 138: cloudfactory.agent.v1.AgentService.MakeDirectory:output_type -> cloudfactory.agent.v1.FileEntry
-	62, // 139: cloudfactory.agent.v1.AgentService.MoveFile:output_type -> cloudfactory.agent.v1.FileEntry
-	67, // 140: cloudfactory.agent.v1.AgentService.DeleteFile:output_type -> cloudfactory.agent.v1.FileDeleted
-	70, // 141: cloudfactory.agent.v1.AgentService.GetLogs:output_type -> cloudfactory.agent.v1.Logs
-	92, // [92:142] is the sub-list for method output_type
-	42, // [42:92] is the sub-list for method input_type
-	42, // [42:42] is the sub-list for extension type_name
-	42, // [42:42] is the sub-list for extension extendee
-	0,  // [0:42] is the sub-list for field type_name
+	72, // 3: cloudfactory.agent.v1.Website.environment:type_name -> cloudfactory.agent.v1.Website.EnvironmentEntry
+	1,  // 4: cloudfactory.agent.v1.DatabaseServer.limits:type_name -> cloudfactory.agent.v1.Limits
+	4,  // 5: cloudfactory.agent.v1.DatabaseServerRequest.database_server:type_name -> cloudfactory.agent.v1.DatabaseServer
+	8,  // 6: cloudfactory.agent.v1.SetMailNodeRequest.members:type_name -> cloudfactory.agent.v1.MailClusterMember
+	3,  // 7: cloudfactory.agent.v1.WebsiteRequest.website:type_name -> cloudfactory.agent.v1.Website
+	15, // 8: cloudfactory.agent.v1.WebsiteRequest.health_check:type_name -> cloudfactory.agent.v1.HealthCheck
+	17, // 9: cloudfactory.agent.v1.WebsiteRequest.copy_databases:type_name -> cloudfactory.agent.v1.DatabaseCopy
+	18, // 10: cloudfactory.agent.v1.WebsiteRequest.copy_users:type_name -> cloudfactory.agent.v1.DatabaseUserCopy
+	4,  // 11: cloudfactory.agent.v1.WebsiteRequest.database_servers:type_name -> cloudfactory.agent.v1.DatabaseServer
+	28, // 12: cloudfactory.agent.v1.DeleteWebsiteRequest.databases:type_name -> cloudfactory.agent.v1.DatabaseRef
+	28, // 13: cloudfactory.agent.v1.DeleteWebsiteRequest.database_users:type_name -> cloudfactory.agent.v1.DatabaseRef
+	1,  // 14: cloudfactory.agent.v1.SetLimitsRequest.limits:type_name -> cloudfactory.agent.v1.Limits
+	4,  // 15: cloudfactory.agent.v1.CreateDatabaseRequest.database_server:type_name -> cloudfactory.agent.v1.DatabaseServer
+	25, // 16: cloudfactory.agent.v1.SetDatabaseUserRequest.grants:type_name -> cloudfactory.agent.v1.DatabaseGrant
+	4,  // 17: cloudfactory.agent.v1.SetDatabaseUserRequest.database_server:type_name -> cloudfactory.agent.v1.DatabaseServer
+	28, // 18: cloudfactory.agent.v1.BackupRequest.databases:type_name -> cloudfactory.agent.v1.DatabaseRef
+	73, // 19: cloudfactory.agent.v1.BackupRequest.credentials:type_name -> cloudfactory.agent.v1.BackupRequest.CredentialsEntry
+	30, // 20: cloudfactory.agent.v1.BackupRequest.retention:type_name -> cloudfactory.agent.v1.Retention
+	74, // 21: cloudfactory.agent.v1.PruneBackupsRequest.credentials:type_name -> cloudfactory.agent.v1.PruneBackupsRequest.CredentialsEntry
+	75, // 22: cloudfactory.agent.v1.RestoreRequest.credentials:type_name -> cloudfactory.agent.v1.RestoreRequest.CredentialsEntry
+	39, // 23: cloudfactory.agent.v1.NetworkWebsite.names:type_name -> cloudfactory.agent.v1.NetworkName
+	37, // 24: cloudfactory.agent.v1.Mesh.peers:type_name -> cloudfactory.agent.v1.MeshPeer
+	38, // 25: cloudfactory.agent.v1.Mesh.members:type_name -> cloudfactory.agent.v1.NetworkMember
+	40, // 26: cloudfactory.agent.v1.Mesh.websites:type_name -> cloudfactory.agent.v1.NetworkWebsite
+	41, // 27: cloudfactory.agent.v1.SetMeshRequest.mesh:type_name -> cloudfactory.agent.v1.Mesh
+	4,  // 28: cloudfactory.agent.v1.ReceiveDatabaseServerRequest.database_server:type_name -> cloudfactory.agent.v1.DatabaseServer
+	51, // 29: cloudfactory.agent.v1.DnsZone.records:type_name -> cloudfactory.agent.v1.DnsRecord
+	52, // 30: cloudfactory.agent.v1.SetDnsZonesRequest.zones:type_name -> cloudfactory.agent.v1.DnsZone
+	49, // 31: cloudfactory.agent.v1.HostStatus.pending_updates:type_name -> cloudfactory.agent.v1.PendingUpdate
+	50, // 32: cloudfactory.agent.v1.HostStatus.services:type_name -> cloudfactory.agent.v1.Service
+	56, // 33: cloudfactory.agent.v1.SetCronJobsRequest.cron_jobs:type_name -> cloudfactory.agent.v1.CronJob
+	56, // 34: cloudfactory.agent.v1.RunCronJobRequest.cron_job:type_name -> cloudfactory.agent.v1.CronJob
+	3,  // 35: cloudfactory.agent.v1.DeployRequest.website:type_name -> cloudfactory.agent.v1.Website
+	76, // 36: cloudfactory.agent.v1.DeployRequest.secrets:type_name -> cloudfactory.agent.v1.DeployRequest.SecretsEntry
+	15, // 37: cloudfactory.agent.v1.DeployRequest.health_check:type_name -> cloudfactory.agent.v1.HealthCheck
+	3,  // 38: cloudfactory.agent.v1.ActivateReleaseRequest.website:type_name -> cloudfactory.agent.v1.Website
+	15, // 39: cloudfactory.agent.v1.ActivateReleaseRequest.health_check:type_name -> cloudfactory.agent.v1.HealthCheck
+	62, // 40: cloudfactory.agent.v1.FileList.entries:type_name -> cloudfactory.agent.v1.FileEntry
+	62, // 41: cloudfactory.agent.v1.FileContent.file:type_name -> cloudfactory.agent.v1.FileEntry
+	69, // 42: cloudfactory.agent.v1.Logs.lines:type_name -> cloudfactory.agent.v1.LogLine
+	16, // 43: cloudfactory.agent.v1.AgentService.CreateWebsite:input_type -> cloudfactory.agent.v1.WebsiteRequest
+	19, // 44: cloudfactory.agent.v1.AgentService.DeleteWebsite:input_type -> cloudfactory.agent.v1.DeleteWebsiteRequest
+	20, // 45: cloudfactory.agent.v1.AgentService.SetWebsitePower:input_type -> cloudfactory.agent.v1.SetWebsitePowerRequest
+	21, // 46: cloudfactory.agent.v1.AgentService.SetLimits:input_type -> cloudfactory.agent.v1.SetLimitsRequest
+	16, // 47: cloudfactory.agent.v1.AgentService.SetRuntime:input_type -> cloudfactory.agent.v1.WebsiteRequest
+	22, // 48: cloudfactory.agent.v1.AgentService.AddDomain:input_type -> cloudfactory.agent.v1.DomainRequest
+	22, // 49: cloudfactory.agent.v1.AgentService.RemoveDomain:input_type -> cloudfactory.agent.v1.DomainRequest
+	23, // 50: cloudfactory.agent.v1.AgentService.CreateDatabase:input_type -> cloudfactory.agent.v1.CreateDatabaseRequest
+	24, // 51: cloudfactory.agent.v1.AgentService.DeleteDatabase:input_type -> cloudfactory.agent.v1.DeleteDatabaseRequest
+	26, // 52: cloudfactory.agent.v1.AgentService.SetDatabaseUser:input_type -> cloudfactory.agent.v1.SetDatabaseUserRequest
+	27, // 53: cloudfactory.agent.v1.AgentService.DeleteDatabaseUser:input_type -> cloudfactory.agent.v1.DeleteDatabaseUserRequest
+	29, // 54: cloudfactory.agent.v1.AgentService.Backup:input_type -> cloudfactory.agent.v1.BackupRequest
+	32, // 55: cloudfactory.agent.v1.AgentService.Restore:input_type -> cloudfactory.agent.v1.RestoreRequest
+	46, // 56: cloudfactory.agent.v1.AgentService.InstallHostUpdates:input_type -> cloudfactory.agent.v1.HostRequest
+	46, // 57: cloudfactory.agent.v1.AgentService.Reboot:input_type -> cloudfactory.agent.v1.HostRequest
+	47, // 58: cloudfactory.agent.v1.AgentService.UpdateAgent:input_type -> cloudfactory.agent.v1.UpdateAgentRequest
+	31, // 59: cloudfactory.agent.v1.AgentService.PruneBackups:input_type -> cloudfactory.agent.v1.PruneBackupsRequest
+	33, // 60: cloudfactory.agent.v1.AgentService.SetSftp:input_type -> cloudfactory.agent.v1.SetSftpRequest
+	34, // 61: cloudfactory.agent.v1.AgentService.ConfigureHost:input_type -> cloudfactory.agent.v1.ConfigureHostRequest
+	35, // 62: cloudfactory.agent.v1.AgentService.SetPanelCertificate:input_type -> cloudfactory.agent.v1.SetPanelCertificateRequest
+	36, // 63: cloudfactory.agent.v1.AgentService.SetPanelBrands:input_type -> cloudfactory.agent.v1.SetPanelBrandsRequest
+	5,  // 64: cloudfactory.agent.v1.AgentService.SetDatabaseServer:input_type -> cloudfactory.agent.v1.DatabaseServerRequest
+	14, // 65: cloudfactory.agent.v1.AgentService.DeleteDatabaseServer:input_type -> cloudfactory.agent.v1.DeleteDatabaseServerRequest
+	6,  // 66: cloudfactory.agent.v1.AgentService.SetMailServer:input_type -> cloudfactory.agent.v1.SetMailServerRequest
+	7,  // 67: cloudfactory.agent.v1.AgentService.PrepareMailNode:input_type -> cloudfactory.agent.v1.PrepareMailNodeRequest
+	9,  // 68: cloudfactory.agent.v1.AgentService.SetMailNode:input_type -> cloudfactory.agent.v1.SetMailNodeRequest
+	10, // 69: cloudfactory.agent.v1.AgentService.SetMailDomain:input_type -> cloudfactory.agent.v1.MailDomainRequest
+	10, // 70: cloudfactory.agent.v1.AgentService.DeleteMailDomain:input_type -> cloudfactory.agent.v1.MailDomainRequest
+	11, // 71: cloudfactory.agent.v1.AgentService.SetMailbox:input_type -> cloudfactory.agent.v1.SetMailboxRequest
+	12, // 72: cloudfactory.agent.v1.AgentService.DeleteMailbox:input_type -> cloudfactory.agent.v1.MailAddressRequest
+	13, // 73: cloudfactory.agent.v1.AgentService.SetMailAlias:input_type -> cloudfactory.agent.v1.SetMailAliasRequest
+	12, // 74: cloudfactory.agent.v1.AgentService.DeleteMailAlias:input_type -> cloudfactory.agent.v1.MailAddressRequest
+	53, // 75: cloudfactory.agent.v1.AgentService.SetDnsZones:input_type -> cloudfactory.agent.v1.SetDnsZonesRequest
+	54, // 76: cloudfactory.agent.v1.AgentService.DeleteDnsZones:input_type -> cloudfactory.agent.v1.DeleteDnsZonesRequest
+	57, // 77: cloudfactory.agent.v1.AgentService.SetCronJobs:input_type -> cloudfactory.agent.v1.SetCronJobsRequest
+	58, // 78: cloudfactory.agent.v1.AgentService.RunCronJob:input_type -> cloudfactory.agent.v1.RunCronJobRequest
+	59, // 79: cloudfactory.agent.v1.AgentService.Deploy:input_type -> cloudfactory.agent.v1.DeployRequest
+	60, // 80: cloudfactory.agent.v1.AgentService.ActivateRelease:input_type -> cloudfactory.agent.v1.ActivateReleaseRequest
+	42, // 81: cloudfactory.agent.v1.AgentService.SetMesh:input_type -> cloudfactory.agent.v1.SetMeshRequest
+	43, // 82: cloudfactory.agent.v1.AgentService.RotateMeshKey:input_type -> cloudfactory.agent.v1.RotateMeshKeyRequest
+	44, // 83: cloudfactory.agent.v1.AgentService.SendDatabaseServer:input_type -> cloudfactory.agent.v1.SendDatabaseServerRequest
+	45, // 84: cloudfactory.agent.v1.AgentService.ReceiveDatabaseServer:input_type -> cloudfactory.agent.v1.ReceiveDatabaseServerRequest
+	48, // 85: cloudfactory.agent.v1.AgentService.GetStatus:input_type -> cloudfactory.agent.v1.GetStatusRequest
+	61, // 86: cloudfactory.agent.v1.AgentService.ListFiles:input_type -> cloudfactory.agent.v1.FileRequest
+	61, // 87: cloudfactory.agent.v1.AgentService.ReadFile:input_type -> cloudfactory.agent.v1.FileRequest
+	65, // 88: cloudfactory.agent.v1.AgentService.WriteFile:input_type -> cloudfactory.agent.v1.WriteFileRequest
+	61, // 89: cloudfactory.agent.v1.AgentService.MakeDirectory:input_type -> cloudfactory.agent.v1.FileRequest
+	66, // 90: cloudfactory.agent.v1.AgentService.MoveFile:input_type -> cloudfactory.agent.v1.MoveFileRequest
+	61, // 91: cloudfactory.agent.v1.AgentService.DeleteFile:input_type -> cloudfactory.agent.v1.FileRequest
+	68, // 92: cloudfactory.agent.v1.AgentService.GetLogs:input_type -> cloudfactory.agent.v1.GetLogsRequest
+	0,  // 93: cloudfactory.agent.v1.AgentService.CreateWebsite:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,  // 94: cloudfactory.agent.v1.AgentService.DeleteWebsite:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,  // 95: cloudfactory.agent.v1.AgentService.SetWebsitePower:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,  // 96: cloudfactory.agent.v1.AgentService.SetLimits:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,  // 97: cloudfactory.agent.v1.AgentService.SetRuntime:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,  // 98: cloudfactory.agent.v1.AgentService.AddDomain:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,  // 99: cloudfactory.agent.v1.AgentService.RemoveDomain:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,  // 100: cloudfactory.agent.v1.AgentService.CreateDatabase:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,  // 101: cloudfactory.agent.v1.AgentService.DeleteDatabase:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,  // 102: cloudfactory.agent.v1.AgentService.SetDatabaseUser:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,  // 103: cloudfactory.agent.v1.AgentService.DeleteDatabaseUser:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,  // 104: cloudfactory.agent.v1.AgentService.Backup:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,  // 105: cloudfactory.agent.v1.AgentService.Restore:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,  // 106: cloudfactory.agent.v1.AgentService.InstallHostUpdates:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,  // 107: cloudfactory.agent.v1.AgentService.Reboot:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,  // 108: cloudfactory.agent.v1.AgentService.UpdateAgent:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,  // 109: cloudfactory.agent.v1.AgentService.PruneBackups:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,  // 110: cloudfactory.agent.v1.AgentService.SetSftp:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,  // 111: cloudfactory.agent.v1.AgentService.ConfigureHost:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,  // 112: cloudfactory.agent.v1.AgentService.SetPanelCertificate:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,  // 113: cloudfactory.agent.v1.AgentService.SetPanelBrands:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,  // 114: cloudfactory.agent.v1.AgentService.SetDatabaseServer:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,  // 115: cloudfactory.agent.v1.AgentService.DeleteDatabaseServer:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,  // 116: cloudfactory.agent.v1.AgentService.SetMailServer:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,  // 117: cloudfactory.agent.v1.AgentService.PrepareMailNode:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,  // 118: cloudfactory.agent.v1.AgentService.SetMailNode:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,  // 119: cloudfactory.agent.v1.AgentService.SetMailDomain:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,  // 120: cloudfactory.agent.v1.AgentService.DeleteMailDomain:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,  // 121: cloudfactory.agent.v1.AgentService.SetMailbox:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,  // 122: cloudfactory.agent.v1.AgentService.DeleteMailbox:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,  // 123: cloudfactory.agent.v1.AgentService.SetMailAlias:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,  // 124: cloudfactory.agent.v1.AgentService.DeleteMailAlias:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,  // 125: cloudfactory.agent.v1.AgentService.SetDnsZones:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,  // 126: cloudfactory.agent.v1.AgentService.DeleteDnsZones:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,  // 127: cloudfactory.agent.v1.AgentService.SetCronJobs:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,  // 128: cloudfactory.agent.v1.AgentService.RunCronJob:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,  // 129: cloudfactory.agent.v1.AgentService.Deploy:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,  // 130: cloudfactory.agent.v1.AgentService.ActivateRelease:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,  // 131: cloudfactory.agent.v1.AgentService.SetMesh:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,  // 132: cloudfactory.agent.v1.AgentService.RotateMeshKey:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,  // 133: cloudfactory.agent.v1.AgentService.SendDatabaseServer:output_type -> cloudfactory.agent.v1.JobAccepted
+	0,  // 134: cloudfactory.agent.v1.AgentService.ReceiveDatabaseServer:output_type -> cloudfactory.agent.v1.JobAccepted
+	55, // 135: cloudfactory.agent.v1.AgentService.GetStatus:output_type -> cloudfactory.agent.v1.HostStatus
+	63, // 136: cloudfactory.agent.v1.AgentService.ListFiles:output_type -> cloudfactory.agent.v1.FileList
+	64, // 137: cloudfactory.agent.v1.AgentService.ReadFile:output_type -> cloudfactory.agent.v1.FileContent
+	62, // 138: cloudfactory.agent.v1.AgentService.WriteFile:output_type -> cloudfactory.agent.v1.FileEntry
+	62, // 139: cloudfactory.agent.v1.AgentService.MakeDirectory:output_type -> cloudfactory.agent.v1.FileEntry
+	62, // 140: cloudfactory.agent.v1.AgentService.MoveFile:output_type -> cloudfactory.agent.v1.FileEntry
+	67, // 141: cloudfactory.agent.v1.AgentService.DeleteFile:output_type -> cloudfactory.agent.v1.FileDeleted
+	70, // 142: cloudfactory.agent.v1.AgentService.GetLogs:output_type -> cloudfactory.agent.v1.Logs
+	93, // [93:143] is the sub-list for method output_type
+	43, // [43:93] is the sub-list for method input_type
+	43, // [43:43] is the sub-list for extension type_name
+	43, // [43:43] is the sub-list for extension extendee
+	0,  // [0:43] is the sub-list for field type_name
 }
 
 func init() { file_cloudfactory_agent_v1_agent_proto_init() }
@@ -6109,7 +6128,7 @@ func file_cloudfactory_agent_v1_agent_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_cloudfactory_agent_v1_agent_proto_rawDesc), len(file_cloudfactory_agent_v1_agent_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   76,
+			NumMessages:   77,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

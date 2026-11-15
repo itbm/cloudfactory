@@ -57,6 +57,9 @@ final class InputRules
     /** A domain name in lower case. Each label has 1 to 63 characters. The last label is not a number, so that the name is not an IP address (audit finding R5). */
     public const DOMAIN = '/^(?=[\\s\\S]{0,253}\\z)(?![\\s\\S]*?(?:\\.[0-9]+$))(?:^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$)/D';
 
+    /** The value of an environment variable of a plugin container, for example its token. The agent writes it in the unit of the container, so it has no space, quote, "%", "$" or backslash. */
+    public const ENVIRONMENT_VALUE = '/^(?=[\\s\\S]{0,1024}\\z)(?:^[A-Za-z0-9_.,:\\/|@+=~-]+$)/D';
+
     /** The path of a file or a directory in the files of a website, for the file manager. "/" is the directory of the website, which the container has at /app. The path has no empty part, no "." part, no ".." part, no control characters and no "/" at the end. */
     public const FILE_PATH = '/^(?=[\\s\\S]{0,1024}\\z)(?![\\s\\S]*?(?:\\/\\.\\.?(\\/|$)))(?:^(\\/|(\\/[^\\/\\x00-\\x1f\\x7f]+)+)$)/D';
 
@@ -144,6 +147,7 @@ final class InputRules
         'dnssecKey' => self::DNSSEC_KEY,
         'documentRoot' => self::DOCUMENT_ROOT,
         'domain' => self::DOMAIN,
+        'environmentValue' => self::ENVIRONMENT_VALUE,
         'filePath' => self::FILE_PATH,
         'gitBranch' => self::GIT_BRANCH,
         'gitRepository' => self::GIT_REPOSITORY,
@@ -187,6 +191,7 @@ final class InputRules
         'dnssecKey' => 'Enter a private key in the PKCS #8 PEM format.',
         'documentRoot' => 'Enter a directory in /app, for example public or web/htdocs. Use letters, digits, dots, underscores and hyphens, and at most 8 parts.',
         'domain' => 'Enter a domain name in lower-case letters, for example shop.example.com.',
+        'environmentValue' => 'Use 1 to 1024 letters, digits and the characters _ . , : / | @ + = ~ -.',
         'filePath' => 'Enter a path that starts with /, for example /public/index.php. Do not use "//", "." or ".." parts, or a / at the end.',
         'gitBranch' => 'Enter the name of a branch, for example main. Use letters, digits, dots, underscores, hyphens and slashes.',
         'gitRepository' => 'Enter the address of a Git repository, for example https://github.com/acme/shop.git or git@github.com:acme/shop.git.',
@@ -226,6 +231,9 @@ final class InputRules
 
     /** The largest number of arguments of a start command. */
     public const MAX_COMMAND_ARGUMENTS = 32;
+
+    /** The largest number of environment variables of a container. */
+    public const MAX_CONTAINER_ENVIRONMENT = 20;
 
     /** The largest number of cron jobs of a website. */
     public const MAX_CRON_JOBS = 20;

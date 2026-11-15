@@ -160,6 +160,25 @@ class DemoSeeder extends Seeder
             $user->createToken('Plugin', $spec['scopes'], now()->addDays(365))->accessToken->forceFill(['last_used_at' => now()->subMinutes(2)])->save();
         }
 
+        // A plugin that the panel runs: a container of its signed image on the panel server.
+        [$spec, $signature] = $sign([
+            'schema' => 1, 'slug' => 'status-page', 'name' => 'Status page', 'version' => '2.0.1', 'publisher' => 'Example Plugins Ltd',
+            'description' => 'A public status page for each customer, with the state of its websites.',
+            'scopes' => ['websites:read'], 'events' => ['job.finished', 'website.created', 'website.removed'], 'webhook' => '/events',
+            'image' => ['ref' => 'ghcr.io/example-plugins/status-page:2.0.1', 'digest' => 'sha256:'.hash('sha256', 'status-page 2.0.1'), 'port' => 8080],
+        ]);
+        $panelServer = Server::where('local', true)->first();
+        $plugin = Plugin::create([
+            'slug' => $spec['slug'], 'name' => $spec['name'], 'version' => $spec['version'], 'publisher' => $spec['publisher'],
+            'manifest' => json_encode($spec, JSON_UNESCAPED_SLASHES), 'signature' => $signature, 'plugin_key_id' => $key->id,
+            'enabled' => true, 'base_url' => 'https://status-page.plugins.panel.example', 'webhook_secret' => 'whsec_'.Str::random(40),
+            'server_id' => $panelServer?->id, 'unix_user' => 'plugin_st4p', 'host' => 'status-page.plugins.panel.example', 'container_status' => 'running',
+        ]);
+        $user = User::create(['name' => "Plugin: {$spec['name']}", 'email' => "plugin-{$spec['slug']}@plugins.invalid", 'password' => Str::random(64), 'role' => Role::Administrator, 'plugin_id' => $plugin->id]);
+        $token = $user->createToken('Plugin', $spec['scopes'], now()->addDays(365));
+        $token->accessToken->forceFill(['last_used_at' => now()->subMinute()])->save();
+        $plugin->update(['user_id' => $user->id, 'hosted_token' => $token->plainTextToken]);
+
         // Some deliveries, so that the page of each plugin has a history.
         $uptime = Plugin::where('slug', 'uptime')->first();
         $alerts = Plugin::where('slug', 'chat-alerts')->first();

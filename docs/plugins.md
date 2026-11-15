@@ -1,7 +1,14 @@
 # Plugins
 
-A plugin adds a function to the panel. A plugin is a program that you run outside the panel,
-on a host that you select. The panel never runs the code of a plugin.
+A plugin adds a function to the panel. A plugin is a program with its own token. You run it in
+one of two places:
+
+- On a host that you select, outside the panel.
+- In a container that the panel runs, when the manifest gives a signed image. Refer to
+  [Run a plugin in the panel](#run-a-plugin-in-the-panel).
+
+The panel process never runs the code of a plugin. In the two cases, the plugin uses only the
+public API.
 
 A plugin can do these things:
 
@@ -32,6 +39,7 @@ A plugin cannot do these things:
 | `plugin.json` | The manifest. It gives the name, the scopes, the events, the pages, the actions, the before hooks and the commands. |
 | `plugin.json.sig` | The signature of the manifest. The publisher makes it with an ECDSA P-256 key. |
 | A server | Your program. It receives the webhooks, serves the pages and calls the API. |
+| A container image | Optional. The same program as an OCI image, so that the panel can run it. |
 | `cf-NAME` | Optional. A program for each command of the plugin. |
 
 [`plugins/example`](../plugins/example) has a complete example.
@@ -60,7 +68,12 @@ A plugin cannot do these things:
   ],
   "commands": [
     { "name": "uptime", "description": "Shows the uptime of each website." }
-  ]
+  ],
+  "image": {
+    "ref": "ghcr.io/example/uptime:1.4.0",
+    "digest": "sha256:4f1c…",
+    "port": 8080
+  }
 }
 ```
 
@@ -76,6 +89,7 @@ A plugin cannot do these things:
 | `actions` | Up to 20 actions. `target` is `website`, `server` or `customer`. `roles` gives the roles that see the button. `confirm` is optional: a question that the panel asks before it runs the action. |
 | `hooks` | Up to 20 before hooks. `event` is a hook of the table in [Before hooks](#before-hooks). `onError` is `allow` (the default) or `refuse`. |
 | `commands` | Up to 20 commands. The panel shows them only as information. |
+| `image` | Optional. `ref` is the image with a tag. `digest` is its `sha256:` digest, with 64 hexadecimal digits. `port` is the port of the program in the container, 1024 to 65535 (default 8080). |
 
 Each path starts with `/`. A path cannot have `..`, a query or a fragment. The paths are
 relative to the address of the plugin. The administrator gives the address at the install,
@@ -131,6 +145,60 @@ The CLI reads the signature from `plugin.json.sig`. It reads your password from 
 or stdin.
 
 ![The review before an install: the scopes in plain words, the events, the pages and the signature](screenshots/plugins/3-install-review.png)
+
+## Run a plugin in the panel
+
+When the manifest has an `image`, the panel can run the plugin. You do not need a host for it.
+
+1. Do steps 1 and 3 of [Install a plugin](#install-a-plugin).
+2. In **Where the plugin runs**, select **In a container of the panel**.
+3. Optional: select a server with the role `web`. The default is the panel server.
+4. Optional: give a host name. The default is `SLUG.plugins.` and the panel domain, for
+   example `uptime.plugins.panel.example.com`. Set `CF_PLUGINS_DOMAIN` to use a different
+   domain. The DNS record of the host name must point to the server.
+5. Type your password, and the TOTP code when TOTP is on. Select **Install plugin**.
+
+With the CLI:
+
+```sh
+cf plugins install --hosted --manifest plugin.json
+cf plugins install --hosted --server SERVER_ID --host uptime.plugins.example.com --manifest plugin.json
+```
+
+The panel does not show the token and the webhook secret. It gives them to the container as
+these environment variables:
+
+| Variable | Value |
+| -------- | ----- |
+| `CF_PANEL` | The address of the panel. |
+| `CF_TOKEN` | The token of the plugin. |
+| `CF_WEBHOOK_SECRET` | The secret of the webhook signatures. |
+
+The address of the plugin is `https://` and the host name. The edge proxy of the server gets a
+certificate for it and sends the requests to the port of the image.
+
+The agent runs the container in the same way as a website with the runtime `custom`:
+
+- Its own Unix user (`plugin_<random>`), its own rootless Podman and a gVisor sandbox.
+- 1 vCPU, 512 MB of memory, 1 GB of disk, 20 MB/s of disk I/O and 128 processes.
+- No files of a customer, and no connection to a database server.
+- The exact image of the digest. The signature of the manifest covers the digest, so the
+  panel runs only the image that the publisher signed.
+
+![The choice of where the plugin runs, with the server and the host name](screenshots/plugins/8-install-in-panel.png)
+
+The card of the plugin shows the server and the state of the container: **Starting**,
+**Running**, **Stopped**, **Failed** or **Removing**. When the state is **Failed**, select
+**Start again**, or use `cf plugins restart PLUGIN`.
+
+![The card of a plugin that runs in the panel, with its server, its state and its image](screenshots/plugins/7-hosted-plugin.png)
+
+| Change | What the panel does |
+| ------ | ------------------- |
+| Turn off or on | Stops or starts the container. |
+| Install a new version with a different image | Replaces the container with the new image. A new version of a plugin in the panel must have an image. |
+| Make new credentials | Starts the container again with the new token and secret. |
+| Remove | Removes the container, its Unix user and its route. |
 
 ### Manage a plugin
 

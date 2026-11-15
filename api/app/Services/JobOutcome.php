@@ -21,6 +21,7 @@ use App\Models\Website;
 use App\Services\Dns\Zones;
 use App\Services\Notifications\Notifier;
 use App\Services\Plugins\Events;
+use App\Services\Plugins\Hosting;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -100,6 +101,8 @@ class JobOutcome
         }
         // The container of Adminer and its temporary database users.
         DatabaseTools::jobFinished($job, $state === JobState::Succeeded);
+        // The container of a plugin that the panel runs.
+        Hosting::jobFinished($job, $state === JobState::Succeeded);
         if (in_array($job->action, [AgentAction::SetDnsZones, AgentAction::DeleteDnsZones], true)) {
             Zones::jobFinished($job, $state === JobState::Succeeded);
         }
@@ -564,6 +567,10 @@ class JobOutcome
     private static function withoutPasswords(array $payload): array
     {
         unset($payload['password'], $payload['passwordHash'], $payload['token']);
+        // The token and the webhook secret of a plugin that the panel runs.
+        if (is_array($payload['website'] ?? null)) {
+            unset($payload['website']['environment']);
+        }
         // The DNS servers have the DNSSEC keys now. The zone keeps its key.
         if (is_array($payload['zones'] ?? null)) {
             $payload['zones'] = array_map(fn ($z) => is_array($z) ? array_diff_key($z, ['dnssecKey' => true]) : $z, $payload['zones']);

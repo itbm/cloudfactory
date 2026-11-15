@@ -939,6 +939,40 @@
         }
       ]
     },
+    "environmentValue": {
+      "valid": [
+        "7|Kq2vA9xR",
+        "whsec_abc123",
+        "https://panel.example.com",
+        "a=b,c~d+e@f-g.h:i/j",
+        {
+          "repeat": [
+            [
+              "a",
+              1024
+            ]
+          ]
+        }
+      ],
+      "invalid": [
+        "",
+        "a b",
+        "a\nb",
+        "%h",
+        "$HOME",
+        "\"quoted\"",
+        "a\\b",
+        "caf\u00e9",
+        {
+          "repeat": [
+            [
+              "a",
+              1025
+            ]
+          ]
+        }
+      ]
+    },
     "dnsRecordName": {
       "valid": [
         "@",

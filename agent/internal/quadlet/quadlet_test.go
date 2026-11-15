@@ -428,3 +428,17 @@ func TestDatabaseAddress(t *testing.T) {
 		}
 	}
 }
+
+func TestOnlyACustomImageGetsItsEnvironment(t *testing.T) {
+	w := website()
+	w.Environment = map[string]string{"CF_TOKEN": "7|abc", "CF_PANEL": "https://panel.example"}
+	if u := ContainerUnit(w); strings.Contains(u, "CF_TOKEN") {
+		t.Errorf("a PHP website got the environment:\n%s", u)
+	}
+	w.Runtime = "custom"
+	u := ContainerUnit(w)
+	// The names are in order, so that the unit is the same each time.
+	if !strings.Contains(u, "Environment=CF_PANEL=https://panel.example\nEnvironment=CF_TOKEN=7|abc\n") {
+		t.Errorf("unit does not have the environment:\n%s", u)
+	}
+}

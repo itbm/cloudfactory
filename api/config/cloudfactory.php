@@ -41,6 +41,14 @@ return [
         'minutes' => (int) env('CF_ADMINER_MINUTES', 60),
     ],
 
+    // Plugins that the panel runs (docs/plugins.md). Each one gets the host name "<slug>." and
+    // this domain, unless the administrator gives a different host name. With no value, the
+    // domain is "plugins." and the panel domain. The DNS of the host names must point to the
+    // server of the plugin, for example with a wildcard record "*.plugins.example.com".
+    'plugins' => [
+        'domain' => env('CF_PLUGINS_DOMAIN'),
+    ],
+
     // R-14: the address of the installation script in the "Add server" command. Each GitHub
     // release has the script with its signature (docs/installation.md). With no value, the
     // panel gives the script of its own release, so that a new server gets the same release.

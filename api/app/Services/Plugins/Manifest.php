@@ -3,13 +3,16 @@
 namespace App\Services\Plugins;
 
 use App\Enums\Role;
+use App\Validation\Input;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
 /**
  * The manifest of a plugin (plugin.json). It gives the name of the plugin, the scopes that its
- * token gets, the events that it receives, its pages, its actions and its before hooks. The paths are relative to the
+ * token gets, the events that it receives, its pages, its actions and its before hooks. A
+ * manifest with an image can also run in a container that the panel operates (Hosting). The
+ * image has a digest, so the signature of the manifest also covers the image. The paths are relative to the
  * address where the administrator runs the plugin.
  *
  * The panel reads the manifest only as data. It never runs code from a plugin.
@@ -89,6 +92,10 @@ class Manifest
             'hooks.*.event' => ['required', 'string', 'distinct', Rule::in(Hooks::NAMES)],
             'hooks.*.path' => ['required', 'string', 'regex:'.self::PATH, 'not_regex:#\.\.#'],
             'hooks.*.onError' => ['sometimes', 'string', Rule::in(['allow', 'refuse'])],
+            'image' => ['sometimes', 'nullable', 'array:ref,digest,port'],
+            'image.ref' => ['required_with:image', 'string', Input::rule('image')],
+            'image.digest' => ['required_with:image', 'string', 'regex:/^sha256:[0-9a-f]{64}$/'],
+            'image.port' => ['sometimes', 'integer', 'between:1024,65535'],
             'commands' => ['sometimes', 'array', 'max:20'],
             'commands.*.name' => ['required', 'string', 'regex:'.self::SLUG, 'distinct'],
             'commands.*.description' => ['nullable', 'string', 'max:200'],
@@ -108,6 +115,8 @@ class Manifest
             'hooks.*.event.in' => 'The hook ":input" is not known. Use one of: '.implode(', ', Hooks::NAMES).'.',
             'hooks.*.path.regex' => 'Give a path that starts with "/", for example /hooks/before.',
             'hooks.*.path.not_regex' => 'A path cannot have "..".',
+            'image.digest.regex' => 'Give the digest of the image, for example sha256: and 64 hexadecimal digits. The signature of the manifest then covers the image.',
+            'image.port.between' => 'The port of the image is from 1024 to 65535.',
         ]);
         $v->validate();
 
@@ -131,6 +140,9 @@ class Manifest
             'hooks' => array_map(fn (array $h) => [
                 'event' => $h['event'], 'path' => $h['path'], 'onError' => $h['onError'] ?? 'allow',
             ], array_values($data['hooks'] ?? [])),
+            'image' => isset($data['image']) ? [
+                'ref' => $data['image']['ref'], 'digest' => $data['image']['digest'], 'port' => (int) ($data['image']['port'] ?? 8080),
+            ] : null,
             'commands' => array_map(fn (array $c) => [
                 'name' => $c['name'], 'description' => $c['description'] ?? '',
             ], array_values($data['commands'] ?? [])),

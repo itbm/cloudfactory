@@ -1100,6 +1100,32 @@ panel makes the container when a user opens the first database of the customer.
   with an optional port, before Adminer connects. It turns off the permanent login, shows only
   the databases of the sign-in, and refuses frames from other sites.
 
+### Plugins in the panel
+
+A plugin with an `image` in its manifest can run in the panel ([plugins.md](plugins.md#run-a-plugin-in-the-panel)).
+`App\Services\Plugins\Hosting` operates the container with the usual website jobs, like
+Adminer:
+
+| Change | Job |
+| ------ | --- |
+| Install | `CreateWebsite` with the runtime `custom` |
+| New image, new credentials, start again | `SetRuntime` |
+| Turn off or on | `SetWebsitePower` |
+| Remove | `DeleteWebsite` |
+
+- The website ID is the ID of the plugin. The Unix user is `plugin_<random>`. The limits are
+  `Hosting::LIMITS`.
+- The database instance is the ID of the plugin, so the container is a member of no network of
+  a customer and connects to no database server.
+- The route of the edge proxy has the host name of the plugin. The table `plugins` keeps the
+  server, the host name, the Unix user, the state of the container and the token (encrypted).
+- The field `environment` of a website gives `CF_PANEL`, `CF_TOKEN` and `CF_WEBHOOK_SECRET`.
+  The agent accepts it only for the runtime `custom`, with up to 20 names (`secretName`) and
+  values (`environmentValue`), and writes it as `Environment=` lines in the rootless unit.
+  `JobOutcome::withoutPasswords` removes it from the payload when the job is complete.
+- The payload key `hostedPlugin` lets `Hosting::jobFinished` set the state of the container:
+  `running`, `stopped` or `failed`.
+
 ## The mesh between servers
 
 The mesh is the set of encrypted tunnels between the servers of one panel. A tunnel lets two

@@ -72,6 +72,17 @@ func CheckWebsite(w *agentv1.Website) error {
 			}
 		}
 	}
+	// Only a custom image gets environment variables: the panel gives a plugin that it runs
+	// its token and its webhook secret this way. The values go in the unit with no quotes.
+	if len(w.GetEnvironment()) > 0 && w.GetRuntime() != "custom" {
+		errs = append(errs, errors.New("only a website with the runtime \"custom\" can have environment variables"))
+	}
+	if len(w.GetEnvironment()) > validate.MaxContainerEnvironment {
+		errs = append(errs, fmt.Errorf("a website can have %d environment variables", validate.MaxContainerEnvironment))
+	}
+	for k, v := range w.GetEnvironment() {
+		errs = append(errs, validate.SecretName(k), validate.EnvironmentValue(v))
+	}
 	_, err := instanceKey(w.GetDatabaseInstance())
 	return errors.Join(append(errs, err)...)
 }
@@ -253,6 +264,7 @@ func (d *Deps) unit(w *agentv1.Website, port int, suffix string) quadlet.Website
 		DatabaseAddress: d.databaseAddress(w.GetId()),
 		HostsFile:       d.hostsFileOf(w.GetUnixUser()),
 		LogFile:         d.logFile(w.GetUnixUser()),
+		Environment:     w.GetEnvironment(),
 		Limits:          quadlet.Limits{VCPUs: l.GetVcpus(), MemoryBytes: l.GetMemoryBytes(), Processes: l.GetProcesses(), DiskIOBytesPerSecond: l.GetDiskIoBytesPerSecond(), BlockDevice: d.BlockDevice},
 	}
 }

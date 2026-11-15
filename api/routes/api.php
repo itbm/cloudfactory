@@ -278,6 +278,7 @@ Route::prefix('v1')->group(function () {
             Route::patch('plugins/{id}', [PluginController::class, 'update']);
             Route::delete('plugins/{id}', [PluginController::class, 'destroy']);
             Route::post('plugins/{id}/credentials', [PluginController::class, 'rotate'])->middleware('throttle:10,1');
+            Route::post('plugins/{id}/container', [PluginController::class, 'restart'])->middleware('throttle:10,1');
             Route::post('plugins/{id}/test', [PluginController::class, 'test'])->middleware('throttle:30,1');
             Route::get('plugins/{id}/deliveries', [PluginController::class, 'deliveries']);
             Route::post('plugins/{id}/deliveries/{deliveryId}/retry', [PluginController::class, 'retry'])->middleware('throttle:30,1');

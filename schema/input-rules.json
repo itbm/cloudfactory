@@ -304,6 +304,14 @@
       "maxLength": 4096,
       "echo": false,
       "message": "Enter a value of 1 to 4096 characters on one line."
+    },
+    "environmentValue": {
+      "what": "value of a container environment variable",
+      "doc": "The value of an environment variable of a plugin container, for example its token. The agent writes it in the unit of the container, so it has no space, quote, \"%\", \"$\" or backslash.",
+      "pattern": "^[A-Za-z0-9_.,:/|@+=~-]+$",
+      "maxLength": 1024,
+      "echo": false,
+      "message": "Use 1 to 1024 letters, digits and the characters _ . , : / | @ + = ~ -."
     }
   },
   "sets": {
@@ -353,6 +361,10 @@
     "deploySecrets": {
       "doc": "The largest number of secrets of a deploy.",
       "value": 50
+    },
+    "containerEnvironment": {
+      "doc": "The largest number of environment variables of a container.",
+      "value": 20
     }
   }
 }
