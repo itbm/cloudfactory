@@ -26,6 +26,11 @@ jobs:
           - { image: frankenphp-php8.4, context: images/frankenphp, file: images/frankenphp/Containerfile, args: PHP_VERSION=8.4 }
           - { image: frankenphp-php8.5, context: images/frankenphp, file: images/frankenphp/Containerfile, args: PHP_VERSION=8.5 }
           - { image: apache-php8.4, context: images/apache-php-fpm, file: images/apache-php-fpm/Containerfile, args: PHP_VERSION=8.4 }
+          - { image: node22, context: images/node, file: images/node/Containerfile, args: NODE_VERSION=22 }
+          - { image: node24, context: images/node, file: images/node/Containerfile, args: NODE_VERSION=24 }
+          - { image: node26, context: images/node, file: images/node/Containerfile, args: NODE_VERSION=26 }
+          - { image: python3.13, context: images/python, file: images/python/Containerfile, args: PYTHON_VERSION=3.13 }
+          - { image: python3.14, context: images/python, file: images/python/Containerfile, args: PYTHON_VERSION=3.14 }
           - { image: edge, context: images/edge, file: images/edge/Containerfile, args: '' }
           - { image: sftp, context: images/sftp, file: images/sftp/Containerfile, args: '' }
           - { image: dns, context: images/dns, file: images/dns/Containerfile, args: '' }
@@ -247,6 +252,58 @@ jobs:
             check 401 -H "X-Cloudfactory-Direct-Cert-Sha256: $agent_fingerprint" http://127.0.0.1:18080/api/agent/v1/report
             # A client of the HTTPS port cannot pass as the edge proxy.
             check 401 -H 'X-Cloudfactory-Edge: 1' -H "X-Client-Cert-Sha256: $agent_fingerprint" https://127.0.0.1:18443/api/agent/v1/report
+            exit 0
+          fi
+          if [ "$IMAGE" != "${IMAGE#node}" ] || [ "$IMAGE" != "${IMAGE#python}" ]; then
+            # The settings of quadlet.ContainerUnit for a Node.js or Python website: a read-only
+            # root file system, no capabilities, the Unix user of the website, and the directory
+            # of the website at /app. First a new website with no application gets the welcome
+            # page. Then the install command runs in a build container, as the agent runs it,
+            # and the container runs the start command of the application.
+            app="$RUNNER_TEMP/app" src="$RUNNER_TEMP/app-src"
+            mkdir -p "$app" "$src"
+            sudo chown 1001:1001 "$app"
+            run() { docker run --cap-drop=all --security-opt no-new-privileges --read-only --tmpfs /tmp --user 1001:1001 -v "$app:/app" "$@"; }
+            case "$IMAGE" in
+              node*)
+                start='npm start' install='npm install --omit=dev'
+                printf '%s\n' '{"name":"smoke","version":"1.0.0","private":true,"scripts":{"start":"node server.js"}}' >"$src/package.json"
+                printf '%s\n' 'require("node:http").createServer((q, r) => r.end("smoke " + process.env.SMOKE)).listen(process.env.PORT, process.env.HOST);' >"$src/server.js"
+                ;;
+              python*)
+                start='python app.py' install='python -m venv .venv && .venv/bin/pip install -r requirements.txt'
+                : >"$src/requirements.txt"
+                printf '%s\n' 'import os, sys' 'from http.server import BaseHTTPRequestHandler, HTTPServer' \
+                  'assert sys.prefix.endswith("/.venv"), sys.prefix' \
+                  'class H(BaseHTTPRequestHandler):' \
+                  '    def do_GET(self):' \
+                  '        self.send_response(200); self.end_headers(); self.wfile.write(("smoke " + os.environ["SMOKE"]).encode())' \
+                  'HTTPServer((os.environ["HOST"], int(os.environ["PORT"])), H).serve_forever()' >"$src/app.py"
+                ;;
+            esac
+            get() {
+              body=""
+              for _ in $(seq 1 30); do
+                body=$(curl -s http://127.0.0.1:18080/ || true)
+                [ -n "$body" ] && break
+                sleep 2
+              done
+              docker logs smoke
+              docker inspect -f '{{.State.Running}}' smoke | grep -q true
+              docker rm -f smoke >/dev/null
+            }
+            # The welcome page of a new website.
+            run -d --name smoke -p 127.0.0.1:18080:8080 "$IMAGE:test" sh -c "$start"
+            get
+            echo "$body" | grep -q 'This website is ready'
+            # The application, with its dependencies.
+            sudo cp -r "$src/." "$app/"
+            sudo chown -R 1001:1001 "$app"
+            run --rm --env CF_APP_DIR=/app --workdir /app "$IMAGE:test" sh -c "set -e; $install"
+            run -d --name smoke -p 127.0.0.1:18080:8080 --env SMOKE=ok "$IMAGE:test" sh -c "$start"
+            get
+            echo "body: $body"
+            [ "$body" = "smoke ok" ]
             exit 0
           fi
           case "$IMAGE" in

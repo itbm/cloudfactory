@@ -1,0 +1,45 @@
+# Node.js runtime image. Build one image for each Node.js version:
+#   podman build --build-arg NODE_VERSION=24 -t node24 images/node
+#
+# The container runs the start command of the website, for example "npm start", in the
+# application directory (CF_APP_DIR, the document root of the website). The application
+# listens on the port in the variable PORT (8080). The agent runs the install command, for
+# example "npm ci --omit=dev", in a build container of this image.
+# SPDX-License-Identifier: AGPL-3.0-only
+ARG NODE_VERSION=24
+FROM docker.io/library/node:${NODE_VERSION}-trixie-slim
+
+ARG DEBIAN_FRONTEND=noninteractive
+# Deploys from Git: the agent gets the code and runs the build commands in a container of this
+# image, so the image has Git and an SSH client. Some npm packages build native code with
+# node-gyp, which needs Python, make and a C++ compiler.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends git openssh-client ca-certificates python3 make g++ \
+ && rm -rf /var/lib/apt/lists/*
+# CVE scan, finding 3: take the Debian security fixes that are newer than the base image. The
+# release workflow gives CF_REFRESH a new value for each build, so this step never comes from
+# the build cache.
+ARG CF_REFRESH
+RUN apt-get update \
+ && apt-get upgrade -y --no-install-recommends \
+ && rm -rf /var/lib/apt/lists/*
+COPY --chmod=0755 cf-app /usr/local/bin/cf-app
+COPY welcome.js /usr/local/share/cloudfactory/welcome.js
+
+# The container root file system is read-only. npm keeps its cache and its logs in /tmp.
+ENV HOME=/tmp \
+    NODE_ENV=production \
+    npm_config_cache=/tmp/.npm \
+    npm_config_update_notifier=false \
+    npm_config_fund=false \
+    PORT=8080 \
+    HOST=0.0.0.0 \
+    CF_APP_DIR=/app
+
+WORKDIR /app
+EXPOSE 8080
+ENTRYPOINT ["/usr/local/bin/cf-app"]
+CMD ["sh", "-c", "npm start"]
+LABEL org.opencontainers.image.source="https://github.com/itbm/cloudfactory" \
+      org.opencontainers.image.licenses="AGPL-3.0-only" \
+      org.opencontainers.image.description="Cloudfactory Node.js runtime"

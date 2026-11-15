@@ -1,0 +1,24 @@
+#!/bin/sh
+# The start script of the Python image. It goes to the application directory, uses the
+# virtual environment ".venv" of the application when it is there, and runs the command.
+#
+# A new website has no application yet. Then the script serves the welcome page, so that the
+# health check of the agent passes. Upload an app.py, or change the start command.
+# SPDX-License-Identifier: AGPL-3.0-only
+set -e
+dir="${CF_APP_DIR:-/app}"
+if [ ! -d "$dir" ]; then
+	echo "cf-app: the application directory $dir does not exist" >&2
+	exit 1
+fi
+cd "$dir"
+if [ -x "$dir/.venv/bin/python" ]; then
+	VIRTUAL_ENV="$dir/.venv"
+	PATH="$VIRTUAL_ENV/bin:$PATH"
+	export VIRTUAL_ENV PATH
+fi
+if [ -n "$CF_WELCOME" ] || { [ ! -f app.py ] && [ "$*" = "sh -c python app.py" ]; }; then
+	echo "cf-app: no app.py in $dir. Serving the welcome page." >&2
+	exec python /usr/local/share/cloudfactory/welcome.py
+fi
+exec "$@"
