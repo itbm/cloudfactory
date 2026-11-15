@@ -20,6 +20,10 @@ use App\Http\Controllers\Api\FileController;
 use App\Http\Controllers\Api\ImageController;
 use App\Http\Controllers\Api\JobController;
 use App\Http\Controllers\Api\LogController;
+use App\Http\Controllers\Api\MailAliasController;
+use App\Http\Controllers\Api\MailboxController;
+use App\Http\Controllers\Api\MailClusterController;
+use App\Http\Controllers\Api\MailDomainController;
 use App\Http\Controllers\Api\MailServerController;
 use App\Http\Controllers\Api\MeshController;
 use App\Http\Controllers\Api\NetworkController;
@@ -157,6 +161,24 @@ Route::prefix('v1')->group(function () {
             Route::post('dns-zones/{id}/sync', [DnsZoneController::class, 'sync'])->middleware('throttle:dns-changes');
         });
 
+        // Email: the mail domains of a customer, with their mailboxes, aliases and forwarders.
+        Route::middleware('scope:mail')->group(function () {
+            Route::get('mail/domains', [MailDomainController::class, 'index']);
+            Route::post('mail/domains', [MailDomainController::class, 'store'])->middleware('throttle:domain-changes');
+            Route::get('mail/domains/{id}', [MailDomainController::class, 'show']);
+            Route::post('mail/domains/{id}/check', [MailDomainController::class, 'check'])->middleware('throttle:domain-checks');
+            Route::post('mail/domains/{id}/retry', [MailDomainController::class, 'retry']);
+            Route::delete('mail/domains/{id}', [MailDomainController::class, 'destroy']);
+            Route::get('mail/mailboxes', [MailboxController::class, 'index']);
+            Route::post('mail/mailboxes', [MailboxController::class, 'store']);
+            Route::patch('mail/mailboxes/{id}', [MailboxController::class, 'update']);
+            Route::get('mail/mailboxes/{id}/private-key', [MailboxController::class, 'privateKey']);
+            Route::delete('mail/mailboxes/{id}', [MailboxController::class, 'destroy']);
+            Route::get('mail/aliases', [MailAliasController::class, 'index']);
+            Route::post('mail/aliases', [MailAliasController::class, 'store']);
+            Route::delete('mail/aliases/{id}', [MailAliasController::class, 'destroy']);
+        });
+
         Route::middleware('scope:backups')->group(function () {
             Route::get('websites/{websiteId}/snapshots', [BackupController::class, 'index']);
             Route::post('websites/{websiteId}/snapshots', [BackupController::class, 'store']);
@@ -178,6 +200,13 @@ Route::prefix('v1')->group(function () {
             Route::post('servers/{id}/reboot', [ServerController::class, 'reboot']);
             Route::post('servers/{id}/update-agent', [ServerController::class, 'updateAgent']);
             Route::post('servers/{id}/check-connection', [ServerController::class, 'checkConnection']);
+            // Turns on email for a server with the email role.
+            Route::put('servers/{id}/mail', [ServerController::class, 'setMail']);
+            // Mail clusters: mail servers on three or five servers that share their data.
+            Route::get('mail-clusters', [MailClusterController::class, 'index']);
+            Route::post('mail-clusters', [MailClusterController::class, 'store']);
+            Route::get('mail-clusters/{id}', [MailClusterController::class, 'show']);
+            Route::post('mail-clusters/{id}/retry', [MailClusterController::class, 'retry']);
             Route::delete('servers/{id}', [ServerController::class, 'destroy']);
             Route::get('servers/{id}/usage', [UsageController::class, 'server']);
             Route::put('usage-alerts/settings', [UsageController::class, 'updateSettings']);

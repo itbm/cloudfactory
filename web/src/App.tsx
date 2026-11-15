@@ -12,6 +12,7 @@ import { BrandPage } from "./pages/BrandPage";
 import { CustomersPage } from "./pages/CustomersPage";
 import { DatabasesPage } from "./pages/DatabasesPage";
 import { DnsPage } from "./pages/DnsPage";
+import { EmailPage } from "./pages/EmailPage";
 import { NetworksPage } from "./pages/NetworksPage";
 import { FilesPage } from "./pages/FilesPage";
 import { JobsPage } from "./pages/JobsPage";
@@ -93,6 +94,7 @@ export function App() {
             <Route path="websites/:id/:tab" element={<WebsiteDetailPage />} />
             <Route path="files" element={<FilesPage />} />
             <Route path="databases" element={<DatabasesPage />} />
+            <Route path="email" element={<EmailPage />} />
             <Route path="dns" element={<DnsPage />} />
             <Route path="dns/:id" element={<DnsPage />} />
             <Route path="networks" element={<NetworksPage />} />

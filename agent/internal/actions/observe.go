@@ -184,6 +184,7 @@ func (d *Deps) FillReport(ctx context.Context, r *panel.Report) {
 	r.DatabaseEngines = Engines
 	r.DatabaseInstances = true
 	r.Services = append(r.Services, d.firewallService(ctx), d.helperService(), d.quotaService(sites), d.diskService())
+	r.Mail = d.mailReport(ctx)
 }
 
 // trafficSince gives the traffic of each host since the last report. The caller holds the

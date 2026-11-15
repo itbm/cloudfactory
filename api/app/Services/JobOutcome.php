@@ -11,6 +11,9 @@ use App\Models\CronJob;
 use App\Models\Database;
 use App\Models\DatabaseServer;
 use App\Models\Domain;
+use App\Models\MailAlias;
+use App\Models\Mailbox;
+use App\Models\MailDomain;
 use App\Models\Release;
 use App\Models\Rollout;
 use App\Models\Snapshot;
@@ -90,6 +93,10 @@ class JobOutcome
             ? $this->applySuccess($job, $website, $result)
             : $this->applyFailure($job, $website);
         $this->databaseServersOf($job, $state === JobState::Succeeded);
+        // A job of the setup of a mail cluster: the next step starts when the step is complete.
+        if (isset($job->payload['mailClusterId']) && in_array($job->action, [AgentAction::PrepareMailNode, AgentAction::SetMailNode, AgentAction::SetMailServer], true)) {
+            app(MailClusters::class)->finished($job, $state === JobState::Succeeded, $result);
+        }
         // The container of Adminer and its temporary database users.
         DatabaseTools::jobFinished($job, $state === JobState::Succeeded);
         if (in_array($job->action, [AgentAction::SetDnsZones, AgentAction::DeleteDnsZones], true)) {
@@ -202,6 +209,15 @@ class JobOutcome
                 'agent_version' => $result['version'] ?? config('cloudfactory.agent.latest_version'),
                 'state' => 'healthy',
             ]),
+            AgentAction::SetMailServer => $job->server->update(['mail_status' => 'running']),
+            // The mail server made the DKIM keys of the domain. The result has the DNS records.
+            AgentAction::SetMailDomain => MailDomain::whereKey($p['mailDomainId'] ?? '')->where('status', MailDomain::PENDING)->first()
+                ?->update(['status' => MailDomain::ACTIVE, 'records' => Mail::records($result['records'] ?? null)]),
+            AgentAction::SetMailbox => $this->mailboxSet($p, $result),
+            AgentAction::SetMailAlias => MailAlias::whereKey($p['mailAliasId'] ?? '')->where('status', MailDomain::PENDING)->update(['status' => MailDomain::ACTIVE]),
+            AgentAction::DeleteMailDomain => MailDomain::whereKey($p['mailDomainId'] ?? '')->where('status', MailDomain::REMOVING)->delete(),
+            AgentAction::DeleteMailbox => Mailbox::whereKey($p['mailboxId'] ?? '')->where('status', MailDomain::REMOVING)->delete(),
+            AgentAction::DeleteMailAlias => MailAlias::whereKey($p['mailAliasId'] ?? '')->where('status', MailDomain::REMOVING)->delete(),
             default => null,
         };
     }
@@ -235,6 +251,19 @@ class JobOutcome
             AgentAction::DeleteDatabaseServer => $this->databaseServerStays($job, $p),
             // The database server stays on the old server.
             AgentAction::ReceiveDatabaseServer => $this->databaseServerNotMoved($job, $p),
+            // A mail server that operated before the change operates with its old host name.
+            AgentAction::SetMailServer => $job->server->update(($p['previous']['status'] ?? null) === 'running' && ! $job->server->mailDomains()->exists()
+                ? ['mail_hostname' => $p['previous']['hostname'] ?? $job->server->mail_hostname, 'mail_status' => 'running']
+                : ['mail_status' => 'failed']),
+            AgentAction::SetMailDomain => MailDomain::whereKey($p['mailDomainId'] ?? '')->where('status', MailDomain::PENDING)->update(['status' => MailDomain::FAILED]),
+            // A new mailbox is possibly not on the mail server. A change that failed keeps the old size.
+            AgentAction::SetMailbox => ($p['create'] ?? false)
+                ? Mailbox::whereKey($p['mailboxId'] ?? '')->where('status', MailDomain::PENDING)->update(['status' => MailDomain::FAILED])
+                : (is_int($p['previousQuotaBytes'] ?? null) ? Mailbox::whereKey($p['mailboxId'] ?? '')->update(['quota_bytes' => $p['previousQuotaBytes']]) : null),
+            AgentAction::SetMailAlias => MailAlias::whereKey($p['mailAliasId'] ?? '')->where('status', MailDomain::PENDING)->update(['status' => MailDomain::FAILED]),
+            AgentAction::DeleteMailDomain => MailDomain::whereKey($p['mailDomainId'] ?? '')->where('status', MailDomain::REMOVING)->update(['status' => self::mailStatus($p)]),
+            AgentAction::DeleteMailbox => Mailbox::whereKey($p['mailboxId'] ?? '')->where('status', MailDomain::REMOVING)->update(['status' => self::mailStatus($p)]),
+            AgentAction::DeleteMailAlias => MailAlias::whereKey($p['mailAliasId'] ?? '')->where('status', MailDomain::REMOVING)->update(['status' => self::mailStatus($p)]),
             default => null,
         };
     }
@@ -496,9 +525,33 @@ class JobOutcome
         return true;
     }
 
+    /**
+     * The mail server has the mailbox. A job that set the encryption gives what the mail
+     * server found in the public key, and the panel then keeps the key.
+     */
+    private function mailboxSet(array $p, array $result): void
+    {
+        $mailbox = Mailbox::find($p['mailboxId'] ?? '');
+        if (! $mailbox) {
+            return;
+        }
+        $changes = $mailbox->status === MailDomain::PENDING ? ['status' => MailDomain::ACTIVE] : [];
+        if ($p['setEncryption'] ?? false) {
+            $key = is_string($p['publicKey'] ?? null) ? $p['publicKey'] : '';
+            $changes += $key === '' ? ['public_key' => null, 'encryption' => null] : ['public_key' => $key, 'encryption' => Mail::encryption($result['encryption'] ?? null)];
+        }
+        $mailbox->update($changes);
+    }
+
+    /** The state of a mail record from before a removal that failed. */
+    private static function mailStatus(array $p): string
+    {
+        return in_array($p['previousStatus'] ?? '', [MailDomain::ACTIVE, MailDomain::FAILED], true) ? $p['previousStatus'] : MailDomain::ACTIVE;
+    }
+
     private static function withoutPasswords(array $payload): array
     {
-        unset($payload['password'], $payload['token']);
+        unset($payload['password'], $payload['passwordHash'], $payload['token']);
         // The DNS servers have the DNSSEC keys now. The zone keeps its key.
         if (is_array($payload['zones'] ?? null)) {
             $payload['zones'] = array_map(fn ($z) => is_array($z) ? array_diff_key($z, ['dnssecKey' => true]) : $z, $payload['zones']);

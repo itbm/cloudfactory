@@ -13,6 +13,9 @@ import type {
   Database,
   DatabaseGrant,
   DatabaseServer,
+  MailAlias,
+  MailDomain,
+  Mailbox,
   DatabaseUser,
   DnsRecord,
   DnsZone,
@@ -36,13 +39,14 @@ import type {
   UsageAlertSettings,
   User,
   Website,
+  MailCluster,
 } from "./types";
 import { jobFailure, openFailures } from "../lib/jobFailure";
 import { degradedReason } from "./selectors";
 
 /** The error of a request. store.ts makes an ApiError from it. */
 export class LiveError extends Error {
-  constructor(message: string, readonly fields: Record<string, string> = {}, readonly status = 0) {
+  constructor(message: string, readonly fields: Record<string, string> = {}, readonly status = 0, /** The answer of the API. Some answers have more fields than the errors. */ readonly body?: unknown) {
     super(message);
     this.name = "LiveError";
   }
@@ -102,7 +106,7 @@ export async function request<T>(method: string, path: string, body?: unknown): 
   // With one error, the message says what to correct. Some forms do not show each field.
   const messages = Object.values(fields);
   const message = res.status === 422 ? (messages.length === 1 ? messages[0] : "Correct the errors and try again.") : (data as { message?: string }).message || `The panel API gave status ${res.status}.`;
-  throw new LiveError(message, fields, res.status);
+  throw new LiveError(message, fields, res.status, data);
 }
 
 /** Reads all pages of a paginated list. Batch 1, finding 9: it reads each page, with no limit. */
@@ -145,7 +149,7 @@ interface ApiWebsite {
 interface ApiServer {
   id: string; name: string; location: string; roles: Server["roles"]; state: Server["state"]; agentVersion: string | null; os: string | null; kernel: string | null; arch: string | null;
   podmanVersion: string | null; gvisorVersion: string | null; gvisorPlatform: Server["gvisorPlatform"]; bareMetal: boolean; updatePolicy: Server["updatePolicy"]; maintenanceWindow: string;
-  pendingUpdates: Server["pendingUpdates"]; lastUpdateAt: string | null; rebootRequired: boolean; agentUpdateAvailable?: boolean; agentAddress?: string | null; connectionError?: string | null; panel?: boolean; databaseEngines?: Database["engine"][]; databaseInstances?: boolean; services: Server["services"]; sftpPort?: number | null; dnsName?: string | null; dns?: boolean; addresses?: string[];
+  pendingUpdates: Server["pendingUpdates"]; lastUpdateAt: string | null; rebootRequired: boolean; agentUpdateAvailable?: boolean; agentAddress?: string | null; connectionError?: string | null; panel?: boolean; databaseEngines?: Database["engine"][]; databaseInstances?: boolean; services: Server["services"]; sftpPort?: number | null; dnsName?: string | null; dns?: boolean; addresses?: string[]; mail?: Server["mail"] | null;
   usage: { cpuPercent?: number; memoryPercent?: number; diskPercent?: number } | null;
 }
 interface ApiImage {
@@ -259,6 +263,7 @@ export function toServer(s: ApiServer): Server {
     databaseEngines: s.databaseEngines ?? undefined,
     databaseInstances: s.databaseInstances ?? false,
     dnsName: s.dnsName ?? undefined, dns: s.dns ?? false, addresses: s.addresses ?? [],
+    mail: s.mail ?? undefined,
     stateDetail: s.state === "degraded" ? (s.connectionError ? "Degraded: the panel cannot connect" : degradedReason(s.services ?? [])) : undefined,
   };
 }
@@ -291,6 +296,10 @@ export function toRollout(r: ApiRollout, servers: number): Rollout {
   };
 }
 
+interface ApiMailDomain extends Omit<MailDomain, "dnsCheckedAt"> { dnsCheckedAt: string | null }
+interface ApiMailbox extends Omit<Mailbox, "usedBytes"> { usedBytes: number | null }
+export const toMailDomain = (d: ApiMailDomain): MailDomain => ({ ...d, records: d.records ?? [], dnsCheckedAt: d.dnsCheckedAt ?? undefined });
+export const toMailbox = (m: ApiMailbox): Mailbox => ({ ...m, usedBytes: m.usedBytes ?? 0 });
 export const toDatabaseServer = (s: ApiDatabaseServer): DatabaseServer => ({ ...s, usage: s.usage ?? undefined, createdAt: s.createdAt ?? "" });
 
 export const toDnsRecord = (r: ApiDnsRecord): DnsRecord => ({ id: r.id, name: r.name, type: r.type, value: r.value, ttl: r.ttl, priority: r.priority ?? undefined, managed: r.managed ?? undefined });
@@ -357,7 +366,7 @@ export async function load(previous: State): Promise<State> {
   const admin = me.role === "administrator";
   const optional = <T>(p: Promise<T>, fallback: T) => p.catch(() => fallback);
 
-  const [websites, jobs, customers, plans, tokens, policy, servers, images, rollouts, audit, users, certificate, setup, account, databaseServers, dns, mesh, networks, alerts] = await Promise.all([
+  const [websites, jobs, customers, plans, tokens, policy, servers, images, rollouts, audit, users, certificate, setup, account, databaseServers, dns, mesh, networks, alerts, mailDomains, mailboxes, mailAliases, mailClusters] = await Promise.all([
     all<ApiWebsite>("/websites"),
     request<{ data: ApiJob[] }>("GET", "/jobs?perPage=50").then((r) => r.data),
     optional(request<{ data: ApiCustomer[] }>("GET", "/customers").then((r) => r.data), []),
@@ -382,6 +391,11 @@ export async function load(previous: State): Promise<State> {
     optional(request<{ data: ApiNetwork[] }>("GET", "/networks").then((r) => r.data.map(toNetwork)), []),
     // A panel API of an earlier release has no usage alerts.
     optional(request<{ data: UsageAlert[]; settings: UsageAlertSettings }>("GET", "/usage-alerts"), { data: [], settings: previous.alertSettings }),
+    // Email. A panel of an earlier release, or a token with no mail scope, gives no lists.
+    optional(request<{ data: ApiMailDomain[] }>("GET", "/mail/domains").then((r) => r.data), []),
+    optional(request<{ data: ApiMailbox[] }>("GET", "/mail/mailboxes").then((r) => r.data), []),
+    optional(request<{ data: MailAlias[] }>("GET", "/mail/aliases").then((r) => r.data), []),
+    admin ? optional(request<{ data: MailCluster[] }>("GET", "/mail-clusters").then((r) => r.data), []) : Promise.resolve([] as MailCluster[]),
   ]);
   // The list has no records. The panel reads the records of the zones that the user opened.
   const zoneDetails = new Map<string, DnsZone>();
@@ -437,6 +451,10 @@ export async function load(previous: State): Promise<State> {
     networks,
     usageAlerts: alerts.data,
     alertSettings: alerts.settings,
+    mailDomains: mailDomains.map(toMailDomain),
+    mailboxes: mailboxes.map(toMailbox),
+    mailAliases,
+    mailClusters,
     databases: [...kept(previous.databases), ...perSite.flatMap((s) => s.databases)],
     databaseUsers: [...kept(previous.databaseUsers), ...perSite.flatMap((s) => s.users)],
     remoteDatabaseServers: { ...previous.remoteDatabaseServers, ...Object.fromEntries(perSite.map((s, i) => [detailed[i].id, s.remote])) },
@@ -556,4 +574,4 @@ export async function waitForJob(job: ApiJob | Job, onChange: (job: Job) => void
   return current;
 }
 
-export type { ApiDatabaseServer, ApiDnsRecord, ApiDnsZone, ApiJob, ApiPanelCertificate, ApiUser, ApiWebsite };
+export type { ApiDatabaseServer, ApiDnsRecord, ApiDnsZone, ApiMailDomain, ApiMailbox, ApiJob, ApiPanelCertificate, ApiUser, ApiWebsite };

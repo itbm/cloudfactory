@@ -52,6 +52,9 @@ class AccountController extends Controller
                 // The named networks that count against the plan: for a reseller, also those of its customers.
                 'networks' => Networks::countFor($customer),
                 'diskBytes' => (int) $websites->sum(fn (Website $w) => $w->usage['diskBytes'] ?? 0),
+                // The mailboxes of the customer, and the total of their sizes.
+                'mailboxes' => $customer->mailboxes()->count(),
+                'mailStorageBytes' => (int) $customer->mailboxes()->sum('quota_bytes'),
                 // The traffic of the websites in the current calendar month.
                 'bandwidthBytes' => (int) $websites->sum(fn (Website $w) => $w->bandwidth_month === $month ? $w->bandwidth_bytes : 0),
                 // Only for a reseller: the number of its customers.

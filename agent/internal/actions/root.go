@@ -231,7 +231,7 @@ type accessElement struct {
 // database server, and it cannot give the text of one of their units: the user of a database
 // server owns the data of a customer, and root does file work in the directory of the
 // database servers. The root helper makes their units from its own settings.
-var serviceUsers = []string{host.EdgeUser, host.DnsUser}
+var serviceUsers = []string{host.EdgeUser, host.DnsUser, host.MailUser, host.WebmailUser}
 
 // websiteUser checks that name is the Unix user of a website: the name has the form of a
 // website user, and a user that exists has a UID in the range of the website users. The
@@ -709,6 +709,10 @@ func (d *Deps) RootOps() map[string]gate.Handler {
 			}
 			return d.State.save(in.Data)
 		}),
+	}
+	// The mail server.
+	for name, op := range d.mailRootOps() {
+		ops[name] = op
 	}
 	return ops
 }

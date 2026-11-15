@@ -99,6 +99,31 @@ Usage:
   cf database-users set WEBSITE USER [--grant DATABASE=readonly|readwrite]... [--no-grants]
                         [--access website|anywhere] [--reset-password]
   cf database-users delete WEBSITE USER
+  cf mail domains list [--customer ID]
+  cf mail domains add DOMAIN [--customer ID] [--server SERVER]
+  cf mail domains get DOMAIN               Show the DNS records to add, and which of them the last check found.
+  cf mail domains check DOMAIN             Read the DNS records of the domain now.
+  cf mail domains retry DOMAIN             Add a mail domain again after the first job failed.
+  cf mail domains remove DOMAIN            Remove a mail domain that has no mailboxes and no addresses.
+  cf mail mailboxes list [--domain DOMAIN] [--customer ID]
+  cf mail mailboxes create ADDRESS [--quota-mb N] [--encrypt]
+                                           The panel shows the password one time. With --encrypt, the panel
+                                           makes OpenPGP keys and the mail server encrypts new mail.
+  cf mail mailboxes set ADDRESS [--quota-mb N] [--new-password] [--encrypt | --public-key FILE | --no-encryption]
+  cf mail mailboxes private-key ADDRESS [--output FILE]
+                                           The private key that the panel made. It needs the password of the mailbox.
+  cf mail mailboxes delete ADDRESS         Remove a mailbox and its messages.
+  cf mail aliases list [--domain DOMAIN] [--customer ID]
+  cf mail aliases create ADDRESS --to ADDRESS... [--forward]
+                                           An alias sends to mailboxes of the customer. With --forward, the
+                                           destinations are addresses on other mail servers.
+  cf mail aliases delete ADDRESS
+  cf mail clusters list
+  cf mail clusters create NAME --hostname NAME --member SERVER=HOSTNAME=ADDRESS[=REGION]...
+                                           3 or 5 servers with the email role and no mail server. Each member
+                                           has all the mail. ADDRESS is the public address of the server.
+  cf mail clusters get CLUSTER             Show the step of the setup, the members and the DNS records.
+  cf mail clusters retry CLUSTER           Start a step that failed again.
   cf dns list [--customer ID]                          The DNS zones, and the name servers of the panel.
   cf dns create DOMAIN [--customer ID]                 Then give the name servers to the registrar of the domain.
   cf dns get ZONE                                      The state of the zone, and the DS record when DNSSEC is on.
@@ -148,6 +173,8 @@ Usage:
                         [--roles web,database,dns] [--dns-name HOST | --no-dns-name]
                        A server with the role dns and a name server host name answers for all DNS zones.
   cf servers update SERVER [--policy security|all|tools]   "tools" updates the held container tools.
+  cf servers mail SERVER --hostname NAME   Turn on email for a server, or change the host name of its mail server.
+                                           The name needs an A or AAAA record with the address of the server.
   cf servers reboot SERVER
   cf servers update-agent SERVER [--version VERSION] [--allow-downgrade]
   cf servers join-token
@@ -358,6 +385,8 @@ func (a *app) dispatch(ctx context.Context, args []string) error {
 		return a.images(ctx, sub, rest)
 	case "sftp":
 		return a.sftp(ctx, sub, rest)
+	case "mail", "email":
+		return a.mail(ctx, sub, rest)
 	case "customers", "customer":
 		return a.customers(ctx, sub, rest)
 	case "users", "user":
@@ -1352,7 +1381,7 @@ func (a *app) servers(ctx context.Context, sub string, args []string) error {
 	switch sub {
 	case "list", "ls":
 		return a.simpleList(ctx, "/servers", []string{"name", "state", "roles", "agentVersion", "rebootRequired", "id"})
-	case "get", "set", "update", "reboot", "update-agent", "check", "remove", "rm":
+	case "get", "set", "mail", "update", "reboot", "update-agent", "check", "remove", "rm":
 		return a.server(ctx, sub, args)
 	case "join-token":
 		var out struct {

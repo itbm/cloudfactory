@@ -90,6 +90,15 @@ final class InputRules
     /** An IPv6 address in lower case, for the value of an AAAA record. It has only hexadecimal groups and colons: no IPv4 part and no zone. */
     public const IPV6 = '/^(?:^(([0-9a-f]{1,4}:){7}[0-9a-f]{1,4}|([0-9a-f]{1,4}:){1,7}:|([0-9a-f]{1,4}:){1,6}:[0-9a-f]{1,4}|([0-9a-f]{1,4}:){1,5}(:[0-9a-f]{1,4}){1,2}|([0-9a-f]{1,4}:){1,4}(:[0-9a-f]{1,4}){1,3}|([0-9a-f]{1,4}:){1,3}(:[0-9a-f]{1,4}){1,4}|([0-9a-f]{1,4}:){1,2}(:[0-9a-f]{1,4}){1,5}|[0-9a-f]{1,4}:(:[0-9a-f]{1,4}){1,6}|:(:[0-9a-f]{1,4}){1,7}|::)$)/D';
 
+    /** A mail address in lower case, for example the destination of a forwarder. */
+    public const MAIL_ADDRESS = '/^(?=[\\s\\S]{0,254}\\z)(?![\\s\\S]*?(?:\\.\\.))(?![\\s\\S]*?(?:\\.[0-9]+$))(?:^[a-z0-9]([a-z0-9._+-]{0,62}[a-z0-9])?@([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$)/D';
+
+    /** The part of a mail address before the @ sign, in lower case. It has no plus sign: the mail server uses the text after a plus sign as a tag of the same mailbox. */
+    public const MAIL_LOCAL_PART = '/^(?![\\s\\S]*?(?:\\.\\.))(?:^[a-z0-9]([a-z0-9._-]{0,62}[a-z0-9])?$)/D';
+
+    /** The bcrypt hash of a mailbox password. The panel makes it, and the agent gives it to the mail server. The agent never gets the password. */
+    public const MAIL_PASSWORD_HASH = '/^(?:^\\$2y\\$1[0-9]\\$[.\\/A-Za-z0-9]{53}$)/D';
+
     /** The name of a PHP extension. */
     public const PHP_EXTENSION = '/^(?:^[a-z0-9_]{1,40}$)/D';
 
@@ -146,6 +155,9 @@ final class InputRules
         'iniValue' => self::INI_VALUE,
         'ipv4' => self::IPV4,
         'ipv6' => self::IPV6,
+        'mailAddress' => self::MAIL_ADDRESS,
+        'mailLocalPart' => self::MAIL_LOCAL_PART,
+        'mailPasswordHash' => self::MAIL_PASSWORD_HASH,
         'phpExtension' => self::PHP_EXTENSION,
         'restorePath' => self::RESTORE_PATH,
         'routePath' => self::ROUTE_PATH,
@@ -186,6 +198,9 @@ final class InputRules
         'iniValue' => 'Use at most 200 characters on one line, with no double quotes.',
         'ipv4' => 'Enter an IPv4 address, for example 203.0.113.10.',
         'ipv6' => 'Enter an IPv6 address in lower-case letters, for example 2001:db8::10.',
+        'mailAddress' => 'Enter a mail address in lower-case letters, for example sales@example.com.',
+        'mailLocalPart' => 'Use 1 to 64 lower-case letters, digits, dots, hyphens and underscores. Start and end with a letter or a digit.',
+        'mailPasswordHash' => 'Enter a bcrypt hash.',
         'phpExtension' => 'Use 1 to 40 lower-case letters, digits and underscores.',
         'restorePath' => 'Enter a path that starts with /, for example /public/index.php. Do not use "//", "." or ".." parts, or a / at the end.',
         'routePath' => 'Use a path such as /01jbq3z5k8n6/: a slash, 1 to 40 lower-case letters and digits, and a slash.',

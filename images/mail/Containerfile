@@ -1,0 +1,30 @@
+# The mail server of a server (Stalwart). One container on each server that has email. The
+# release pipeline signs the image like all other images (FR-1101).
+#   podman build -t mail images/mail
+# SPDX-License-Identifier: AGPL-3.0-only
+# The agent needs release 1.1 or later: from that release, Stalwart keeps all its settings in
+# its data store, and the agent changes them through the management API.
+FROM docker.io/stalwartlabs/stalwart:v1.1
+USER root
+# CVE scan, finding 3: take the security fixes that are newer than the base image. The release
+# workflow gives CF_REFRESH a new value for each build, so this step never comes from the build
+# cache.
+ARG DEBIAN_FRONTEND=noninteractive
+ARG CF_REFRESH
+RUN apt-get update \
+ && apt-get upgrade -y --no-install-recommends \
+ && rm -rf /var/lib/apt/lists/*
+# The base image gives the program the capability to listen on a port below 1024. The agent
+# starts the container with no capabilities, and the kernel then refuses to start a program
+# that has a file capability. The mail server listens on ports above 1024: the firewall of the
+# host redirects the public ports to them.
+RUN setcap -r /usr/local/bin/stalwart \
+ && test -z "$(getcap /usr/local/bin/stalwart)"
+# The agent starts the mail server as the user 2000 and the group 2000, which is the user
+# stalwart of the base image. The Unix user of the mail server on the host owns the data
+# files, and has this ID in the container. A base image with a different ID stops the build.
+RUN test "$(id -u stalwart):$(id -g stalwart)" = 2000:2000
+USER stalwart
+EXPOSE 2025 2465 2587 2993 8080
+LABEL org.opencontainers.image.source="https://github.com/itbm/cloudfactory" \
+      org.opencontainers.image.description="Cloudfactory mail server"

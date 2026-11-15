@@ -139,8 +139,12 @@ func settings(dir string, run *execx.Fake, edge *fakeEdge) *Deps {
 
 // testUID gives the UID and the GID of each user in the tests. The user of a database server
 // has an ID in the range of these users: 10000 and the last digit of the ID of the database
-// server. Each other user has the ID of a website user.
+// server. A service user (mail, webmail) has a system ID. Each other user has the ID of a
+// website user.
 func testUID(name string) (int, error) {
+	if name == host.MailUser || name == host.WebmailUser {
+		return 988, nil
+	}
 	if id, ok := strings.CutPrefix(name, host.DatabaseUserPrefix); ok && id != "" {
 		return host.DatabaseIDMin + int(id[len(id)-1]-'0'), nil
 	}

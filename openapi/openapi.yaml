@@ -33,6 +33,7 @@ tags:
   - name: Networks
     description: The private networks of the customers, like a VPC.
   - name: Backups
+  - name: Email
   - name: Usage
     description: The usage history for the graphs, and the alerts near the limits.
   - name: Jobs
@@ -1976,6 +1977,343 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '429': { description: Too many DNS changes in one minute. }
 
+  /v1/mail/domains:
+    get:
+      tags: [Email]
+      summary: List mail domains
+      description: >-
+        The mail domains of the customers that you can see. A mail domain is a domain that
+        receives and sends email on the mail server of one server. All customers of a server
+        use one mail server, and the panel keeps them apart.
+      parameters:
+        - { name: customerId, in: query, schema: { type: string } }
+        - { name: serverId, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: The mail domains.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/MailDomain' } }
+    post:
+      tags: [Email]
+      summary: Add a mail domain
+      description: >-
+        The customer must control the domain. A verified domain of a website of the customer,
+        and each sub-domain of one, needs no proof. An administrator needs no proof. For each
+        other domain, the response is 422 with `verification`: add that DNS TXT record and send
+        the request again.
+
+
+        A customer has all its mail domains on one server. By default, that is the first
+        server with email turned on. Only an administrator can set `serverId`. The mail server
+        makes the DKIM keys of the domain. When the job is complete, `records` of the mail
+        domain has the DNS records to add.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, example: example.com }
+                customerId: { type: string, description: Necessary for an administrator and a reseller. }
+                serverId: { type: string }
+      responses:
+        '202':
+          description: The job adds the domain to the mail server.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mailDomain: { $ref: '#/components/schemas/MailDomain' }
+                  job: { $ref: '#/components/schemas/Job' }
+        '409': { description: The customer is suspended. }
+        '422':
+          description: >-
+            The request is not valid, or the customer must show that it controls the domain.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  errors: { type: object, additionalProperties: { type: array, items: { type: string } } }
+                  verification:
+                    type: object
+                    description: The DNS TXT record that shows that the customer controls the domain.
+                    properties:
+                      type: { type: string, enum: [TXT] }
+                      name: { type: string }
+                      value: { type: string }
+
+  /v1/mail/domains/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    get:
+      tags: [Email]
+      summary: Get a mail domain
+      responses:
+        '200':
+          description: The mail domain.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MailDomain' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Email]
+      summary: Remove a mail domain
+      description: The response is 422 when the mail domain has mailboxes, aliases or forwarders.
+      responses:
+        '202': { $ref: '#/components/responses/JobOnly' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/mail/domains/{id}/check:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [Email]
+      summary: Check the DNS records of a mail domain
+      description: >-
+        The panel looks up each record of `records` and sets `found`. The MX record must name
+        the mail server. The SPF record can be longer than the value that the panel shows. The
+        DKIM records must have the same key.
+      responses:
+        '200':
+          description: The mail domain, with the result of the check.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MailDomain' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/mail/domains/{id}/retry:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [Email]
+      summary: Add a failed mail domain again
+      description: For a mail domain with the status `failed`. The response is 422 for each other status.
+      responses:
+        '202':
+          description: The job adds the domain to the mail server.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mailDomain: { $ref: '#/components/schemas/MailDomain' }
+                  job: { $ref: '#/components/schemas/Job' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/mail/mailboxes:
+    get:
+      tags: [Email]
+      summary: List mailboxes
+      parameters:
+        - { name: customerId, in: query, schema: { type: string } }
+        - { name: domainId, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: The mailboxes.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/Mailbox' } }
+    post:
+      tags: [Email]
+      summary: Create a mailbox
+      description: >-
+        The plan of the customer gives the number of mailboxes (`mailboxes`) and their total
+        size (`mailStorageBytes`). The response has the password of the mailbox. The panel
+        makes a password when the request has none. The panel shows the password only in this
+        response: it sends a hash to the mail server and keeps no password.
+
+
+        With `encrypt: true`, the panel makes the OpenPGP keys of the mailbox. The mail server
+        gets the public key and encrypts each new message with it before it stores the
+        message. The panel keeps the private key in a form that only the password of the
+        mailbox opens (refer to `GET /v1/mail/mailboxes/{id}/private-key`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [domainId, localPart, quotaBytes]
+              properties:
+                domainId: { type: string }
+                localPart: { type: string, pattern: '^[a-z0-9]([a-z0-9._-]{0,62}[a-z0-9])?$', example: info }
+                quotaBytes: { type: integer, minimum: 104857600 }
+                password: { type: string, minLength: 12, maxLength: 128 }
+                encrypt: { type: boolean, description: The panel makes OpenPGP keys for the mailbox. }
+      responses:
+        '202':
+          description: The job makes the mailbox.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mailbox: { $ref: '#/components/schemas/Mailbox' }
+                  password: { type: string }
+                  job: { $ref: '#/components/schemas/Job' }
+        '409': { description: The customer is suspended. }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/mail/mailboxes/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    patch:
+      tags: [Email]
+      summary: Change the size, the password or the encryption of a mailbox
+      description: >-
+        `newPassword: true` asks the panel for a new password. The response has the new
+        password one time. A larger mailbox must be in the limit of the plan.
+
+
+        `publicKey` is one OpenPGP public key block in ASCII armour. The mail server then
+        encrypts each new message with the key before it stores the message, and only the
+        private key can decrypt the message. Messages that the mailbox has do not change. The
+        job fails when the mail server refuses the key, for example a key that cannot encrypt.
+        `publicKey: null` turns off the encryption.
+
+
+        `encrypt: true` is the easy procedure: the panel makes the keys. The request must also
+        have `password` or `newPassword`, because the private key gets that password and the
+        panel keeps no password. `encrypt: false` turns off the encryption. The panel keeps
+        the private keys that it made, because they open the messages from before the change.
+
+
+        A new password with `currentPassword` also gives the new password to the private keys
+        that the panel made. Without `currentPassword`, the private keys keep the old
+        password, and `privateKey.passwordCurrent` of the mailbox is false.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                quotaBytes: { type: integer, minimum: 104857600 }
+                password: { type: string, minLength: 12, maxLength: 128 }
+                newPassword: { type: boolean }
+                currentPassword: { type: string, maxLength: 128, description: The password that opens the private keys of the panel. }
+                encrypt: { type: boolean, description: 'True: the panel makes OpenPGP keys. False: the encryption is off. Not with `publicKey`.' }
+                publicKey: { type: [string, 'null'], maxLength: 65536 }
+      responses:
+        '200':
+          description: The request changed nothing. `job` is null.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MailboxChange' }
+        '202':
+          description: The job changes the mailbox.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MailboxChange' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+    delete:
+      tags: [Email]
+      summary: Remove a mailbox and its messages
+      responses:
+        '202': { $ref: '#/components/responses/JobOnly' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/mail/mailboxes/{id}/private-key:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    get:
+      tags: [Email]
+      summary: Get the private keys that the panel made for a mailbox
+      description: >-
+        The private keys are in ASCII armour, the newest first. Each key is protected with the
+        password that the mailbox had when the panel made the key, or with a later password
+        (refer to `currentPassword`). A mail program needs the file and that password to read
+        the encrypted messages. The panel records each request in the audit log.
+      responses:
+        '200':
+          description: The private keys.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [address, privateKey, passwordCurrent]
+                properties:
+                  address: { type: string }
+                  privateKey: { type: string, description: One or more OpenPGP private key blocks. }
+                  publicKey: { type: [string, 'null'], description: The public key that the mail server uses now. }
+                  passwordCurrent: { type: boolean, description: False when the private keys have an older password of the mailbox. }
+        '404': { description: The mailbox is not there, or the panel made no keys for it. }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/mail/aliases:
+    get:
+      tags: [Email]
+      summary: List aliases and forwarders
+      parameters:
+        - { name: customerId, in: query, schema: { type: string } }
+        - { name: domainId, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: The aliases and the forwarders.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/MailAlias' } }
+    post:
+      tags: [Email]
+      summary: Create an alias or a forwarder
+      description: >-
+        An alias is a second address of one mailbox of the same customer: `destinations` has
+        the address of that mailbox. A forwarder sends each message to 1 to 50 addresses, which
+        can be on other mail servers.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [domainId, localPart, kind, destinations]
+              properties:
+                domainId: { type: string }
+                localPart: { type: string, pattern: '^[a-z0-9]([a-z0-9._-]{0,62}[a-z0-9])?$' }
+                kind: { type: string, enum: [alias, forwarder] }
+                destinations: { type: array, minItems: 1, maxItems: 50, items: { type: string } }
+      responses:
+        '202':
+          description: The job makes the address.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mailAlias: { $ref: '#/components/schemas/MailAlias' }
+                  job: { $ref: '#/components/schemas/Job' }
+        '409': { description: The customer is suspended. }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/mail/aliases/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    delete:
+      tags: [Email]
+      summary: Remove an alias or a forwarder
+      responses:
+        '202': { $ref: '#/components/responses/JobOnly' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
   /v1/websites/{websiteId}/snapshots:
     parameters:
       - { $ref: '#/components/parameters/WebsiteId' }
@@ -2534,6 +2872,135 @@ paths:
       responses:
         '202': { $ref: '#/components/responses/JobList' }
         '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/servers/{id}/mail:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    put:
+      tags: [Servers]
+      summary: Turn on email for a server
+      description: >-
+        For a server with the role `email`. The agent starts the mail server (Stalwart) in a
+        container, opens the ports 25, 465, 587 and 993, and gets a TLS certificate for the host
+        name. The host name must point to the server in the DNS, and the reverse DNS of the
+        server must give the host name.
+
+
+        The same request starts a mail server again when its job failed. The response is 422
+        when the server does not have the role, when a change is in progress, and when the
+        host name changes while the server has mail domains.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [hostname]
+              properties:
+                hostname: { type: string, example: mail.example.net }
+      responses:
+        '202':
+          description: The job starts the mail server.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  server: { $ref: '#/components/schemas/Server' }
+                  job: { $ref: '#/components/schemas/Job' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/mail-clusters:
+    get:
+      tags: [Servers]
+      summary: List the mail clusters
+      description: Only an administrator sees the mail clusters.
+      responses:
+        '200':
+          description: The mail clusters.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/MailCluster' } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Servers]
+      summary: Make a mail cluster
+      description: >-
+        A mail cluster has 3 or 5 servers with the role `email`. Each member has all the mail,
+        so the mail service continues when one server fails. The members can be in different
+        regions. They connect through a private network on UDP port 51877.
+
+
+        Each server must be online, and must not have a mail server. The panel makes the
+        cluster in steps: each server makes its keys, the first server starts the database
+        cluster, the other servers join it, then the mail servers start. Get the cluster to
+        see the step. Add the DNS records in `records`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, hostname, members]
+              properties:
+                name: { type: string, example: eu, description: 'Lower-case letters, digits and hyphens, 32 characters or fewer.' }
+                hostname: { type: string, example: mail.example.net, description: The shared name of the cluster. The MX records of the mail domains use it. }
+                members:
+                  type: array
+                  minItems: 3
+                  maxItems: 5
+                  items:
+                    type: object
+                    required: [serverId, hostname, endpoint]
+                    properties:
+                      serverId: { type: string }
+                      hostname: { type: string, example: m1.example.net, description: The name of this member. Mail programs connect to it. }
+                      endpoint: { type: string, example: 192.0.2.1, description: The public address of the server. }
+                      region: { type: integer, minimum: 0, maximum: 99, description: Servers with the same number are near to each other. }
+      responses:
+        '202':
+          description: The setup starts.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MailCluster' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/mail-clusters/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    get:
+      tags: [Servers]
+      summary: Get a mail cluster
+      responses:
+        '200':
+          description: The mail cluster.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MailCluster' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/mail-clusters/{id}/retry:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [Servers]
+      summary: Start a failed setup again
+      description: >-
+        Starts the step that failed again, on the members that did not complete it. The
+        response is 422 when the setup did not fail, or when a job of the setup is not complete.
+      responses:
+        '202':
+          description: The step starts again.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MailCluster' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
 
   /v1/panel-certificate:
     get:
@@ -3119,6 +3586,8 @@ paths:
                       dnsZones: { type: integer, description: The number of DNS zones. For a reseller, the zones of its customers count too. }
                       networks: { type: integer, description: The number of named networks. For a reseller, the named networks of its customers count too. }
                       diskBytes: { type: integer }
+                      mailboxes: { type: integer, description: The number of mailboxes of the customer. }
+                      mailStorageBytes: { type: integer, description: The total of the sizes of the mailboxes. }
                       bandwidthBytes: { type: integer, description: The traffic of the websites in the current calendar month (UTC). }
                       customers: { type: [integer, 'null'], description: Only for a reseller. The number of its customers. }
                   backups:
@@ -3648,7 +4117,7 @@ components:
           additionalProperties: { type: array, items: { type: string } }
     Scope:
       type: string
-      enum: [websites:read, websites:write, databases:read, databases:write, dns:read, dns:write, backups:read, backups:write, servers:read, servers:write, images:read, images:write, customers:read, customers:write, users:read, users:write, audit:read, tokens:read, tokens:write]
+      enum: [websites:read, websites:write, databases:read, databases:write, dns:read, dns:write, backups:read, backups:write, mail:read, mail:write, servers:read, servers:write, images:read, images:write, customers:read, customers:write, users:read, users:write, audit:read, tokens:read, tokens:write]
     User:
       type: object
       properties:
@@ -4163,6 +4632,14 @@ components:
             With an agent of an earlier release, the websites of the server cannot have a
             database. Update the agent of the server.
         databaseServers: { type: [integer, 'null'], description: The number of database servers of customers on the server. A server with database servers cannot be removed. }
+        mail:
+          type: [object, 'null']
+          description: The mail server of the server. Null until an administrator turns on email.
+          properties:
+            hostname: { type: string, description: The host name that mail programs and other mail servers connect to. }
+            status: { type: string, enum: [starting, running, stopped, failed] }
+            domains: { type: integer, description: The number of mail domains on the server. A server with mail domains cannot be removed. }
+            clusterId: { type: [string, 'null'], description: Not null when the server is a member of this mail cluster. }
         os: { type: [string, 'null'] }
         kernel: { type: [string, 'null'] }
         arch: { type: [string, 'null'] }
@@ -4328,6 +4805,122 @@ components:
         vcpus: { type: number, exclusiveMinimum: 0 }
         memoryBytes: { type: integer, minimum: 536870912, description: 512 MB or more. }
         diskBytes: { type: integer, minimum: 1073741824, description: 1 GB or more. }
+    MailCluster:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        hostname: { type: string, description: The shared name of the cluster. }
+        status: { type: string, enum: [setting_up, running, failed] }
+        phase: { type: string, enum: [prepare, bootstrap, join, first, rest, done], description: The step of the setup. }
+        error: { type: [string, 'null'] }
+        members:
+          type: array
+          items:
+            type: object
+            properties:
+              serverId: { type: string }
+              serverName: { type: string }
+              serverState: { type: string }
+              number: { type: integer }
+              hostname: { type: string }
+              endpoint: { type: string }
+              address: { type: string, description: The address of the member in the private network. }
+              region: { type: integer }
+              step: { type: string, enum: [new, prepared, joined, running] }
+        records:
+          type: array
+          description: The DNS records to add. The shared name gives each member, and each member has its own name.
+          items:
+            type: object
+            properties:
+              type: { type: string, enum: [A, AAAA] }
+              name: { type: string }
+              value: { type: string }
+        domains: { type: integer, description: The number of mail domains on the members. }
+        createdAt: { type: string, format: date-time }
+    MailDomain:
+      type: object
+      required: [id, name, customerId, serverId, status, records, dnsReady]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        customerId: { type: string }
+        serverId: { type: string }
+        status: { $ref: '#/components/schemas/MailStatus' }
+        mailHost: { type: string, description: 'Mail programs connect to this host name: IMAP on port 993, SMTP on port 465 or 587.' }
+        records:
+          type: array
+          description: The DNS records that the customer adds for the domain. Empty until the mail server has the domain.
+          items:
+            type: object
+            required: [type, name, value, purpose]
+            properties:
+              type: { type: string, enum: [MX, TXT] }
+              name: { type: string }
+              value: { type: string }
+              purpose: { type: string, enum: [mx, spf, dkim, dmarc] }
+              found: { type: [boolean, 'null'], description: The result of the last DNS check. Null before the first check. }
+        dnsReady: { type: boolean, description: True when the last check found all records. }
+        dnsCheckedAt: { type: [string, 'null'], format: date-time }
+        mailboxes: { type: integer }
+        aliases: { type: integer, description: The number of aliases and forwarders. }
+        createdAt: { type: string, format: date-time }
+    MailStatus:
+      type: string
+      enum: [pending, active, failed, removing]
+      description: >-
+        `pending`: the job that adds the record is not complete. `failed`: the agent could not
+        add the record. `removing`: the job that removes the record is not complete.
+    MailboxChange:
+      type: object
+      properties:
+        mailbox: { $ref: '#/components/schemas/Mailbox' }
+        password: { type: [string, 'null'], description: The new password. Null when the password did not change. }
+        job: { oneOf: [{ $ref: '#/components/schemas/Job' }, { type: 'null' }] }
+    Mailbox:
+      type: object
+      required: [id, address, localPart, domainId, customerId, status, quotaBytes, usedBytes]
+      properties:
+        id: { type: string }
+        address: { type: string }
+        localPart: { type: string }
+        domainId: { type: string }
+        customerId: { type: string }
+        status: { $ref: '#/components/schemas/MailStatus' }
+        quotaBytes: { type: integer, description: The size of the mailbox. }
+        usedBytes: { type: integer, description: The size of the messages, from the last report of the agent. }
+        encryption:
+          type: [object, 'null']
+          description: >-
+            Not null when the mail server encrypts each new message of the mailbox with an
+            OpenPGP public key. The values are what the mail server found in the key.
+          required: [fingerprints, keyType, expiresAt, warnings]
+          properties:
+            fingerprints: { type: array, items: { type: string }, description: The fingerprints of the keys in the block. }
+            keyType: { type: string, example: 'OpenPGP v4: RSA-3072, X25519' }
+            expiresAt: { type: [string, 'null'], format: date-time }
+            warnings: { type: array, items: { type: string }, description: 'For example `expiresSoon`, `weakRsa` or `addressMismatch`.' }
+        privateKey:
+          type: [object, 'null']
+          description: Not null when the panel made the keys of the mailbox and has the protected private key.
+          required: [passwordCurrent]
+          properties:
+            passwordCurrent: { type: boolean, description: False when the private key has an older password of the mailbox. }
+        createdAt: { type: string, format: date-time }
+    MailAlias:
+      type: object
+      required: [id, address, localPart, domainId, customerId, kind, destinations, status]
+      properties:
+        id: { type: string }
+        address: { type: string }
+        localPart: { type: string }
+        domainId: { type: string }
+        customerId: { type: string }
+        kind: { type: string, enum: [alias, forwarder] }
+        destinations: { type: array, items: { type: string } }
+        status: { $ref: '#/components/schemas/MailStatus' }
+        createdAt: { type: string, format: date-time }
     DatabaseServer:
       type: object
       properties:
@@ -4444,7 +5037,13 @@ components:
       properties:
         name: { type: string }
         websites: { type: integer, minimum: 1 }
-        mailboxes: { type: integer, minimum: 0 }
+        mailboxes: { type: integer, minimum: 0, description: The number of mailboxes of a customer with the plan. }
+        mailStorageBytes:
+          type: integer
+          minimum: 0
+          description: >-
+            The total size of the mailboxes of a customer with the plan. A request with no value
+            keeps the value of the plan. A new plan gets 10 GB.
         databases:
           type: integer
           minimum: 0
@@ -4685,6 +5284,20 @@ components:
         databaseInstances:
           type: boolean
           description: True when the agent can operate the database servers of customers. An agent of an earlier release does not send the field.
+        mail:
+          type: [object, 'null']
+          description: The mail server of the server. An agent sends it when the mail server is installed.
+          required: [state]
+          properties:
+            state: { type: string, enum: [running, stopped] }
+            mailboxes:
+              type: array
+              items:
+                type: object
+                required: [address, usedBytes]
+                properties:
+                  address: { type: string }
+                  usedBytes: { type: integer }
         databaseServers:
           type: [array, 'null']
           description: The state and the resource use of each database server on the server.

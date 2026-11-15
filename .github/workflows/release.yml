@@ -94,6 +94,9 @@ jobs:
           - { image: mariadb, context: images/mariadb, file: images/mariadb/Containerfile, args: '' }
           - { image: postgresql, context: images/postgresql, file: images/postgresql/Containerfile, args: '' }
           - { image: valkey, context: images/valkey, file: images/valkey/Containerfile, args: '' }
+          - { image: mail, context: images/mail, file: images/mail/Containerfile, args: '' }
+          - { image: mail-keep, context: images/mail-keep, file: images/mail-keep/Containerfile, args: '' }
+          - { image: webmail, context: images/webmail, file: images/webmail/Containerfile, args: '' }
           - { image: panel-api, context: ., file: images/panel-api/Containerfile, args: '' }
           - { image: panel-web, context: ., file: images/panel-web/Containerfile, args: '' }
     steps:

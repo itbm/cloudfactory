@@ -79,6 +79,7 @@ return [
         'websites:read', 'websites:write',
         'databases:read', 'databases:write',
         'backups:read', 'backups:write',
+        'mail:read', 'mail:write',
         'dns:read', 'dns:write',
         'servers:read', 'servers:write',
         'images:read', 'images:write',

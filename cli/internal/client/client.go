@@ -69,6 +69,9 @@ type Error struct {
 	Status  int
 	Message string
 	Fields  map[string][]string
+	// Body is the answer of the panel. Some answers have more fields than the message, for
+	// example the DNS record that shows who controls a domain.
+	Body []byte
 }
 
 func (e *Error) Error() string {
@@ -122,7 +125,7 @@ func (c *Client) Do(ctx context.Context, method, path string, query url.Values, 
 		return err
 	}
 	if resp.StatusCode >= 400 {
-		e := &Error{Status: resp.StatusCode}
+		e := &Error{Status: resp.StatusCode, Body: data}
 		var payload struct {
 			Message string              `json:"message"`
 			Errors  map[string][]string `json:"errors"`

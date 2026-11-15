@@ -120,6 +120,37 @@ type Deps struct {
 	SftpUsersDir string
 	// SftpImage is the image of the SFTP container of this agent version.
 	SftpImage string
+	// MailImage is the image of the mail server of this agent version.
+	MailImage string
+	// MailDBImage and MailKeepImage are the images of the database node and of the cluster
+	// store of a member of a mail cluster.
+	MailDBImage   string
+	MailKeepImage string
+	// WebmailImage is the image of the webmail (Bulwark) of a mail server. Empty means no
+	// webmail: the edge proxy then answers the host name of the mail server with a short page.
+	WebmailImage string
+	// WebmailHome and WebmailConfigDir are the directories of the webmail. The defaults are
+	// "/var/lib/cf-webmail" and "/etc/cloudfactory/webmail". Tests replace them.
+	WebmailHome      string
+	WebmailConfigDir string
+	// WireGuardDir holds the settings of the private network of a mail cluster. The default
+	// is "/etc/wireguard". Tests replace it.
+	WireGuardDir string
+	// MailNodeWait is the maximum time that a job waits for the database node of a mail
+	// cluster. The default is 30 minutes. MailNodePoll is the time between two checks.
+	MailNodeWait time.Duration
+	MailNodePoll time.Duration
+	// MailHome is the home directory of the Unix user of the mail server. The default is
+	// "/var/lib/cf-mail". MailConfigDir holds the files of root for the mail server. The
+	// default is "/etc/cloudfactory/mail". Tests replace them.
+	MailHome      string
+	MailConfigDir string
+	// MailURL is the address of the management API of the mail server. Empty means the port
+	// on the private service address, through the root helper. Tests replace it.
+	MailURL string
+	// MailCertificateWait is the maximum time that a job waits for the certificate of the
+	// mail host name. The default is 3 minutes.
+	MailCertificateWait time.Duration
 	// SftpPort is the public SFTP port of the server. 0 means quadlet.DefaultSftpPort.
 	SftpPort int
 	// DnsImage is the image of the DNS server of this agent version.

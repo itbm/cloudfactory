@@ -320,6 +320,8 @@ export interface Server {
   rebootRequired: boolean;
   /** The panel has a newer agent for this server. */
   agentUpdateAvailable?: boolean;
+  /** The mail server of this server. Undefined when email is off. */
+  mail?: ServerMail;
   /** The host and the port that the panel uses to connect to the agent. */
   agentAddress?: string;
   /** The reason when the panel could not connect to the agent. The jobs of the server then fail. */
@@ -397,6 +399,123 @@ export interface DatabaseLimits {
   vcpus: number;
   memoryBytes: number;
   diskBytes: number;
+}
+
+// Email
+//
+// A customer has mail domains. Each mail domain has mailboxes, and addresses that send their
+// mail to other addresses: aliases and forwarders. The mail server of a server has the mail
+// of all customers on that server.
+
+export type MailStatus = "pending" | "active" | "failed" | "removing";
+
+/** A DNS record that the owner of a mail domain adds. */
+export interface MailRecord {
+  type: string;
+  name: string;
+  value: string;
+  /** "mx", "spf", "dkim" or "dmarc". */
+  purpose: string;
+  /** Null before the first check of the DNS. */
+  found: boolean | null;
+}
+
+export interface MailDomain {
+  id: string;
+  name: string;
+  customerId: string;
+  serverId: string;
+  status: MailStatus;
+  /** Mail programs connect to this host name: IMAP on port 993, SMTP on port 465 or 587. */
+  mailHost: string;
+  records: MailRecord[];
+  /** True when the last check found all records. */
+  dnsReady: boolean;
+  dnsCheckedAt?: string;
+  mailboxes: number;
+  aliases: number;
+}
+
+export interface Mailbox {
+  id: string;
+  address: string;
+  localPart: string;
+  domainId: string;
+  customerId: string;
+  status: MailStatus;
+  quotaBytes: number;
+  /** The size of the messages, from the last report of the server. */
+  usedBytes: number;
+  /** Not null: the mail server encrypts each new message with the OpenPGP key of the owner. */
+  encryption?: MailEncryption | null;
+  /**
+   * Not null: the panel made the OpenPGP keys of the mailbox and has the private key, in a form
+   * that only a password of the mailbox opens. "passwordCurrent" is false when the private key
+   * has an older password.
+   */
+  privateKey?: { passwordCurrent: boolean } | null;
+}
+
+/** What the mail server found in the OpenPGP public key of a mailbox. */
+export interface MailEncryption {
+  fingerprints: string[];
+  /** For example "OpenPGP v4: RSA-3072, X25519". */
+  keyType: string;
+  expiresAt: string | null;
+  /** For example "expiresSoon", "weakRsa" or "addressMismatch". */
+  warnings: string[];
+}
+
+export interface MailAlias {
+  id: string;
+  address: string;
+  localPart: string;
+  domainId: string;
+  customerId: string;
+  /** alias: the destinations are mailboxes of the customer. forwarder: they are other addresses. */
+  kind: "alias" | "forwarder";
+  destinations: string[];
+  status: MailStatus;
+}
+
+/** The mail server of a server. An administrator turns it on. */
+export interface ServerMail {
+  hostname: string;
+  status: "starting" | "running" | "failed";
+  domains: number;
+  /** Set when the server is a member of this mail cluster. The cluster controls its mail server. */
+  clusterId?: string | null;
+}
+
+/** The step of a member in the setup of its mail cluster. */
+export type MailClusterStep = "new" | "prepared" | "joined" | "running";
+
+/**
+ * A mail cluster: 3 or 5 servers with the email role. Each member has all the mail, so the
+ * mail service continues when one server fails. Only an administrator sees the clusters.
+ */
+export interface MailCluster {
+  id: string;
+  name: string;
+  /** The shared name. The MX records of the mail domains use it. */
+  hostname: string;
+  status: "setting_up" | "running" | "failed";
+  phase: "prepare" | "bootstrap" | "join" | "first" | "rest" | "done";
+  error: string | null;
+  members: {
+    serverId: string;
+    serverName: string;
+    serverState: string;
+    number: number;
+    hostname: string;
+    endpoint: string;
+    address: string;
+    region: number;
+    step: MailClusterStep;
+  }[];
+  records: { type: "A" | "AAAA"; name: string; value: string }[];
+  domains: number;
+  createdAt: string | null;
 }
 
 /**
@@ -557,7 +676,10 @@ export interface Plan {
   name: string;
   limits: Limits;
   websites: number;
+  /** The number of mailboxes of a customer with the plan. */
   mailboxes: number;
+  /** The total size of the mailboxes of a customer with the plan. */
+  mailStorageBytes: number;
   /** The number of databases of each database server with the plan. */
   databases: number;
   phpExtensions: string[];
@@ -819,6 +941,10 @@ export interface State {
   images: RuntimeImage[];
   rollout?: Rollout;
   databaseServers: DatabaseServer[];
+  mailDomains: MailDomain[];
+  mailClusters: MailCluster[];
+  mailboxes: Mailbox[];
+  mailAliases: MailAlias[];
   /** The DNS zones of the customers that the user can see. */
   dnsZones: DnsZone[];
   /** The host names of the DNS servers of the panel. Empty: the panel has no DNS server. */

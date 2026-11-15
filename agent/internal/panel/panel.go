@@ -143,8 +143,24 @@ type Report struct {
 	// PanelCASHA256 is the fingerprint of the root certificate of the panel CA that this agent
 	// trusts. The panel changes to its own CA only when all other servers trust it.
 	PanelCASHA256 string `json:"panelCaSha256,omitempty"`
+	// Mail is the state of the mail server of this server. A server with no mail server does
+	// not send it.
+	Mail *MailReport `json:"mail,omitempty"`
 	// CronRuns are the results of the cron jobs that ran since the last reports.
 	CronRuns []CronRun `json:"cronRuns,omitempty"`
+}
+
+// MailReport is the state of the mail server and the size of each mailbox.
+type MailReport struct {
+	// State is "running" or "stopped".
+	State     string       `json:"state"`
+	Mailboxes []MailboxUse `json:"mailboxes"`
+}
+
+// MailboxUse is the size of the messages of one mailbox.
+type MailboxUse struct {
+	Address   string `json:"address"`
+	UsedBytes int64  `json:"usedBytes"`
 }
 
 // CronRun is the result of one run of a cron job of a website.

@@ -23,6 +23,15 @@ import (
 // EdgeUser is the Unix user of the edge proxy. It cannot read the files of the websites (CF-04).
 const EdgeUser = "cf-edge"
 
+// MailUser is the Unix user of the mail server of a server with the email role. The root
+// helper makes the user when an administrator turns on email.
+const MailUser = "cf-mail"
+
+// WebmailUser is the Unix user of the webmail of a mail server. The webmail has its own user:
+// it opens connections to the edge proxy of the server and to the internet, which the mail
+// server cannot do.
+const WebmailUser = "cf-webmail"
+
 // DnsUser is the Unix user of the DNS server of a server with the role "dns". The root helper
 // of the agent makes it when the server gets its first zone.
 const DnsUser = "cf-dns"
@@ -275,15 +284,19 @@ func (h *Host) startUserManager(ctx context.Context, unixUser string) error {
 }
 
 // EnsureServiceUser makes the Unix user of a service of the agent if it does not exist, as the
-// installer makes the user of the edge proxy: a system user with rootless containers, no
-// password and no login shell. Its user services start at boot. Only root calls this function.
-func (h *Host) EnsureServiceUser(ctx context.Context, unixUser string) error {
+// installer makes the user of the edge proxy: a system user with rootless containers, a home
+// directory, no password and no login shell. An empty home gives /var/lib/<user>. Its user
+// services start at boot. Only root calls this function.
+func (h *Host) EnsureServiceUser(ctx context.Context, unixUser, home string) error {
+	if home == "" {
+		home = "/var/lib/" + unixUser
+	}
 	if _, err := h.LookupUID(unixUser); err != nil {
 		var unknown user.UnknownUserError
 		if !errors.As(err, &unknown) {
 			return err
 		}
-		if _, err := h.Run.Run(ctx, "useradd", "--system", "--create-home", "--home-dir", "/var/lib/"+unixUser, "--shell", "/usr/sbin/nologin", "--add-subids-for-system", unixUser); err != nil {
+		if _, err := h.Run.Run(ctx, "useradd", "--system", "--create-home", "--home-dir", home, "--shell", "/usr/sbin/nologin", "--add-subids-for-system", unixUser); err != nil {
 			return err
 		}
 	}

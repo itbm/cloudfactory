@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use App\Demo\DemoMailDns;
 use App\Enums\AgentAction;
 use App\Enums\DomainKind;
 use App\Enums\JobState;
@@ -15,6 +16,9 @@ use App\Models\DnsRecord;
 use App\Models\DnsZone;
 use App\Models\GitSource;
 use App\Models\Image;
+use App\Models\MailAlias;
+use App\Models\Mailbox;
+use App\Models\MailDomain;
 use App\Models\MailServer;
 use App\Models\MeshTunnel;
 use App\Models\Network;
@@ -35,6 +39,7 @@ use App\Services\Dns\Dnssec;
 use App\Services\Dns\Zones;
 use App\Services\Networks;
 use App\Services\Notifications\Notifier;
+use App\Services\OpenPgpKey;
 use App\Services\PanelCertificate;
 use App\Services\SshKey;
 use App\Services\UsageRecorder;
@@ -97,6 +102,7 @@ class DemoSeeder extends Seeder
         $this->settleMesh();
         $this->backups();
         $this->cronJobsAndDeploys();
+        $this->mail();
         $this->jobsAndRollout();
         $this->settingsAndAudit();
         $this->notifications();
@@ -105,10 +111,10 @@ class DemoSeeder extends Seeder
     private function plans(): void
     {
         $extensions = ['opcache', 'intl', 'gd', 'zip', 'exif', 'bcmath', 'mysqli', 'pdo_mysql', 'pdo_pgsql', 'redis', 'imagick', 'soap'];
-        // name, vCPUs, memory (GB), disk (GB), websites, then for the database servers: number, databases in each one, memory (MB), disk (GB), then the DNS zones, the named networks and the bandwidth of each website in a month (GB)
-        foreach ([['Starter', 1, 1, 10, 3, 2, 5, 512, 2, 2, 0, 100], ['Business', 2, 2, 40, 10, 6, 20, 1024, 10, 10, 3, 500], ['Agency', 4, 4, 100, 50, 20, 50, 2048, 20, 50, 10, 2000]] as [$name, $cpu, $memory, $disk, $sites, $databaseServers, $databases, $databaseMemory, $databaseDisk, $zones, $networks, $bandwidth]) {
+        // name, vCPUs, memory (GB), disk (GB), websites, then for the database servers: number, databases in each one, memory (MB), disk (GB), then the DNS zones, the named networks, the bandwidth of each website in a month (GB) and the mail storage (GB)
+        foreach ([['Starter', 1, 1, 10, 3, 2, 5, 512, 2, 2, 0, 100, 5], ['Business', 2, 2, 40, 10, 6, 20, 1024, 10, 10, 3, 500, 25], ['Agency', 4, 4, 100, 50, 20, 50, 2048, 20, 50, 10, 2000, 100]] as [$name, $cpu, $memory, $disk, $sites, $databaseServers, $databases, $databaseMemory, $databaseDisk, $zones, $networks, $bandwidth, $mail]) {
             $this->plans[$name] = Plan::create([
-                'name' => $name, 'websites' => $sites, 'mailboxes' => $sites * 10, 'databases' => $databases,
+                'name' => $name, 'websites' => $sites, 'mailboxes' => $sites * 10, 'mail_storage_bytes' => $mail * self::GB, 'databases' => $databases,
                 'database_servers' => $databaseServers, 'dns_zones' => $zones, 'networks' => $networks,
                 'database_limits' => ['vcpus' => min($cpu, 2), 'memoryBytes' => $databaseMemory * self::MB, 'diskBytes' => $databaseDisk * self::GB],
                 'php_extensions' => $name === 'Starter' ? array_slice($extensions, 0, 8) : $extensions,
@@ -235,6 +241,77 @@ class DemoSeeder extends Seeder
         foreach (Server::whereNotNull('mesh_public_key')->get() as $server) {
             $server->update(['mesh_version' => $server->mesh_wanted_version]);
         }
+    }
+
+    /**
+     * A server with the email role, and the email of three customers: all DNS records found,
+     * a DKIM record missing, and a domain with no DNS check yet.
+     */
+    private function mail(): void
+    {
+        $host = 'mail-1.panel.example';
+        $server = Server::create([
+            'agent_version' => self::AGENT, 'os' => 'Debian 13', 'kernel' => '6.12.48', 'arch' => 'x86-64', 'podman_version' => '5.4.2', 'gvisor_version' => 'release-20261019.0',
+            'pending_updates' => [], 'last_seen_at' => now(), 'connection_checked_at' => now(), 'sftp_port' => 2222, 'database_engines' => [], 'database_instances' => true,
+            'name' => 'mail-1', 'location' => 'London', 'roles' => ['email'], 'state' => 'healthy', 'agent_url' => 'https://mail-1.panel.example:7443',
+            'services' => array_map(fn (string $n) => ['name' => $n, 'state' => 'running'], ['edge', 'cf-mail', 'firewall', 'podman']),
+            'usage' => ['cpuPercent' => 6, 'memoryPercent' => 31, 'diskPercent' => 18], 'last_update_at' => now()->subDays(5),
+            'mail_hostname' => $host, 'mail_status' => 'running',
+        ]);
+        $this->servers['mail-1'] = $server;
+
+        // customer, domain, which records the last check found (null: no check), mailboxes (name, size in MB, use in MB), then aliases and forwarders
+        $rows = [
+            ['acme', 'acme.example.com', fn () => true, [['info', 5120, 1260], ['sales', 2048, 1946], ['olu', 10240, 3411], ['finance', 2048, 212]],
+                [['hello', 'alias', ['info@acme.example.com']], ['team', 'forwarder', ['olu@acme.example.com', 'finance@acme.example.com', 'morgan@partner.example.net']]]],
+            ['bakery', 'cornerbakery.example.org', fn (array $r) => $r['purpose'] !== 'dkim', [['hello', 1024, 388], ['orders', 1024, 64]], [['bea', 'forwarder', ['bea.baker@mailbox.example.net']]]],
+            ['books', 'harbourbooks.example.net', null, [['shop', 2048, 0]], []],
+        ];
+        foreach ($rows as [$customer, $name, $found, $mailboxes, $aliases]) {
+            $owner = $this->customers[$customer];
+            $domain = MailDomain::create([
+                'customer_id' => $owner->id, 'server_id' => $server->id, 'name' => $name, 'status' => MailDomain::ACTIVE,
+                'records' => array_map(fn (array $r) => $r + ['found' => $found ? $found($r) : null], DemoMailDns::records($name, $host)),
+                'dns_checked_at' => $found ? now()->subHours(2) : null,
+            ]);
+            foreach ($mailboxes as [$local, $size, $used]) {
+                Mailbox::create(['customer_id' => $owner->id, 'mail_domain_id' => $domain->id, 'local_part' => $local, 'quota_bytes' => $size * self::MB, 'used_bytes' => $used * self::MB, 'status' => MailDomain::ACTIVE]);
+            }
+            foreach ($aliases as [$local, $kind, $destinations]) {
+                MailAlias::create(['customer_id' => $owner->id, 'mail_domain_id' => $domain->id, 'local_part' => $local, 'kind' => $kind, 'destinations' => $destinations, 'status' => MailDomain::ACTIVE]);
+            }
+        }
+        // One mailbox with encryption: the panel made its OpenPGP keys, and the mail server
+        // encrypts its new mail with the public key.
+        $encrypted = Mailbox::with('domain')->where('local_part', 'olu')->first();
+        $keys = OpenPgpKey::generate($encrypted->address(), 'Demo-password-123');
+        $encrypted->update([
+            'public_key' => $keys['publicKey'], 'private_key' => $keys['privateKey'],
+            'encryption' => ['fingerprints' => [$keys['fingerprint']], 'keyType' => 'OpenPGP v4: X25519', 'expiresAt' => null, 'warnings' => []],
+        ]);
+
+        // A large customer, to show the Email page with many mailboxes and aliases.
+        $owner = $this->customers['northwind'];
+        $domain = MailDomain::create([
+            'customer_id' => $owner->id, 'server_id' => $server->id, 'name' => 'northwind.example.com', 'status' => MailDomain::ACTIVE,
+            'records' => array_map(fn (array $r) => $r + ['found' => true], DemoMailDns::records('northwind.example.com', $host)), 'dns_checked_at' => now()->subHours(5),
+        ]);
+        $first = ['ada', 'ben', 'chloe', 'dev', 'elif', 'femi', 'grace', 'hugo', 'ines', 'jonas', 'kofi', 'lena'];
+        $last = ['adams', 'bello', 'chen', 'diaz', 'evans', 'fischer', 'garcia', 'haddad', 'ito', 'jensen', 'khan', 'lopez', 'meyer', 'novak', 'okoro'];
+        $n = 0;
+        foreach ($last as $surname) {
+            foreach ($first as $name) {
+                $n++;
+                Mailbox::create(['customer_id' => $owner->id, 'mail_domain_id' => $domain->id, 'local_part' => "$name.$surname", 'quota_bytes' => 500 * self::MB, 'used_bytes' => ($n * 37 % 480) * self::MB, 'status' => MailDomain::ACTIVE]);
+                if ($n % 3 === 0) {
+                    MailAlias::create(['customer_id' => $owner->id, 'mail_domain_id' => $domain->id, 'local_part' => $name[0].$surname, 'kind' => 'alias', 'destinations' => ["$name.$surname@northwind.example.com"], 'status' => MailDomain::ACTIVE]);
+                }
+            }
+        }
+        foreach (['support' => 'ada.adams', 'billing' => 'ada.adams', 'press' => 'ben.bello', 'jobs' => 'chloe.chen'] as $local => $box) {
+            MailAlias::create(['customer_id' => $owner->id, 'mail_domain_id' => $domain->id, 'local_part' => $local, 'kind' => 'alias', 'destinations' => ["$box@northwind.example.com"], 'status' => MailDomain::ACTIVE]);
+        }
+        MailAlias::create(['customer_id' => $owner->id, 'mail_domain_id' => $domain->id, 'local_part' => 'partners', 'kind' => 'forwarder', 'destinations' => ['alliances@partner.example.net', 'deals@reseller.example.org'], 'status' => MailDomain::ACTIVE]);
     }
 
     private function websites(): void

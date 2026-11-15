@@ -398,6 +398,174 @@ the administrators. The image `sftp` has OpenSSH and `libnss-extrausers`.
   service of the host. Until this step is complete, the agent reports port 22 to the panel.
   Refer to [installation.md](installation.md#servers-that-you-installed-with-release-01).
 
+## Email
+
+A server can have one mail server for the mail domains of the customers. An administrator
+turns it on for a server with a host name (`PUT /v1/servers/{id}/mail`, or
+`cf servers mail SERVER --hostname NAME`). The mail server is Stalwart, release 1.1 or later,
+in the container `cf-mail` of the Unix user `cf-mail`. The image `mail` is the image of
+Stalwart with no file capabilities.
+
+```text
+ other mail servers ──► port 25  ─┐
+ mail programs ──► 465, 587, 993 ─┼─► nftables redirect ──► cf-mail (rootless Podman, gVisor)
+                                  │      ports 2025, 2465, 2587 and 2993
+ worker of the agent ──► root helper ──► 169.254.77.1:19025 ──► management API (port 8080)
+```
+
+One container has the mail of all customers of the server, because a server has one port 25.
+The panel keeps the customers apart: each mail domain has one customer, and the panel sends a
+job only for a domain of that customer.
+
+| Part | Where | Notes |
+| ---- | ----- | ----- |
+| Mail domains, mailboxes, aliases and forwarders | The database of the panel, and the data store of the mail server | The panel is the source. The agent applies each change through the management API (`agent/internal/stalwart`). |
+| Settings of the mail server | The data store of the mail server, in `/var/lib/cf-mail/data` | The file `/etc/cloudfactory/mail/config.json` names only the data store. Root owns it. |
+| Password of the administrator of the management API | `/etc/cloudfactory/mail/admin.env` | Only root and the group `cf-mail` can read the file. The root helper gives the password to the worker. |
+| TLS certificate | `/etc/cloudfactory/mail/certs` | The edge proxy gets and renews the certificate of the mail host name. The root helper copies it for the mail server, at the start of the agent and one time each day. |
+| Passwords of the mailboxes | The mail server keeps a bcrypt hash | The panel makes the hash and sends only the hash. The panel shows the password one time. The agent never has it. |
+
+The first start of the mail server is in the recovery mode of Stalwart, which has only the
+management API. The agent sets the listeners, the host name and the certificate, and then
+starts the mail server again. Thus the mail server never listens with the default settings of
+its image.
+
+A new mail domain gets two DKIM keys from the mail server. The result of the job has the DNS
+records that the owner of the domain adds: MX, SPF, DKIM and DMARC. The panel reads the DNS
+when the user asks (`POST /v1/mail/domains/{id}/check`) and shows which records it found.
+
+The status report of the agent has the state of the mail server and the size of the messages
+of each mailbox. The plan of a customer gives the number of its mailboxes and the total size
+of these mailboxes.
+
+### Encryption of the stored mail (OpenPGP)
+
+A mailbox can have an OpenPGP public key. The mail server then encrypts each new message with
+that key before it stores the message. Thus a copy of the data store does not show the mail.
+There are two methods:
+
+- The panel makes the keys (`encrypt: true` on `POST /v1/mail/mailboxes` or
+  `PATCH /v1/mail/mailboxes/{id}`). `App\Services\OpenPgpKey` makes an Ed25519 key for
+  signatures and a Curve25519 key for encryption. The password of the mailbox protects the
+  private key (S2K iterated and salted SHA-256, AES-256). The panel keeps the private key
+  encrypted with the key of the application. It sends the public key to the agent in the job.
+  It adds the protected private keys (`setKeyFile`, `privateKeys`) each time that it sends a
+  `SetMailbox` job, so that the job record does not have them. The agent writes them to the
+  file `OpenPGP/private-key.asc` in the files of the mailbox (JMAP `FileNode`).
+- The user gives a public key of their own (`publicKey`). The panel then has no private key.
+
+The user downloads the private key (`GET /v1/mail/mailboxes/{id}/private-key`, or
+`cf mail mailboxes private-key ADDRESS`) and adds it to a mail program or to the PGP plugin of
+the webmail. Each download is an audit event. A new password protects the private key again
+when the user gives the current password. Without the current password, the panel keeps the
+old protection and shows that the key has an older password (`privateKey.passwordCurrent`).
+
+The mail server encrypts only new mail. It does not encrypt the messages that the mailbox has
+before the key, and it cannot decrypt the stored mail. Search on the server does not find
+words in an encrypted message.
+
+### Webmail (Bulwark)
+
+Each mail server has a webmail: Bulwark, release 1.21 or later, in the container `cf-webmail`
+of the Unix user `cf-webmail`. The webmail is on the host name of the mail server.
+
+```text
+ browser ──► https://MAIL-HOST ──► edge proxy ─┬─► /.well-known/jmap, /jmap/*, /dav/* ──► 169.254.77.1:19025 (mail server)
+                                               ├─► /admin/*, /api/admin/*, /setup/* ──► 404 (refused)
+                                               └─► all other paths ──► 169.254.77.1:19027 (cf-webmail)
+ cf-webmail ──► https://MAIL-HOST (examines each sign-in through the edge proxy)
+```
+
+The browser uses one origin for the webmail and for JMAP, thus the mail server needs no CORS
+settings. The edge proxy does not send `/api` to the mail server: the management API is not
+on the public host name. Mail programs use the same name for CalDAV and CardDAV
+(`https://MAIL-HOST/dav`).
+
+| Part | Where | Notes |
+| ---- | ----- | ----- |
+| Settings and secret | `/etc/cloudfactory/webmail/webmail.env` | Only root and the group `cf-webmail` can read the file. The secret encrypts the settings of the users. The agent keeps it when the settings change. |
+| Settings of the users | `/var/lib/cf-webmail/data` | Encrypted with the secret. The webmail keeps no mail. |
+| Root certificate of the panel CA | `/etc/cloudfactory/webmail/ca.crt` | Only for a host name that is not public, for example `mail.example.test`. |
+
+The webmail sends no telemetry and does not look for updates: the release of the agent sets
+the image.
+
+#### PGP plugin
+
+The image of the webmail has the plugin "PGP True End-to-End", release 2.0.2. The build gets
+the package from the extension directory of Bulwark, and stops when its SHA-256 hash is not
+the hash in `images/webmail/Containerfile`. To change the release, change the release and the
+hash together.
+
+The start script of the image (`images/webmail/start.mjs`) starts the webmail, and then:
+
+1. Signs in to the admin dashboard of the webmail on `127.0.0.1`, with `ADMIN_PASSWORD` from
+   the settings file. The agent makes this password and keeps it, as the secret.
+2. Turns on the plugins of the admin, and turns off the plugins that users upload.
+3. Installs the plugin when the installed release is different, and turns it on for all
+   users.
+
+When a step fails, the webmail operates without the plugin, and the log of the container
+tells why. The next start tries again.
+
+The edge proxy refuses the paths of the admin dashboard and of the setup. It lets `GET`
+requests through for the few paths of the dashboard API that users need: the rules of the
+webmail (`/api/admin/policy`), the code and the public settings of the plugins, the themes and
+the images of the login page.
+
+The build adds `images/webmail/pgp-plugin/provision.js` to the plugin
+(`images/webmail/pgp-plugin/patch.mjs`). The user does not upload a key:
+
+1. When the user signs in, the plugin looks for a public key with the description
+   `CloudFactory` on the mail server. This key tells that the panel made the keys of the
+   mailbox. Without it, the plugin asks nothing.
+2. When the browser has no key for the mailbox, the plugin asks one time for the password of
+   the mailbox.
+3. With that password, the plugin reads `OpenPGP/private-key.asc` through JMAP on the same
+   host name. The mail server examines the password.
+4. The plugin adds the keys that open with the password, keeps them encrypted in the browser,
+   and unlocks them. It then decrypts the mail in the browser.
+
+A key that has an older password of the mailbox does not open. The plugin then tells the user
+to download the key in the panel. In a new session, the plugin asks for the password again
+to unlock the keys, as it does for all keys.
+
+### Mail clusters
+
+A mail cluster puts the same mail on 3 or 5 servers with the email role. When one server
+fails, the other servers continue to receive and deliver mail. The servers can be in
+different regions. An administrator makes a cluster (`POST /v1/mail-clusters`,
+`cf mail clusters create`, or the Servers page).
+
+Each member has:
+
+- the mail server `cf-mail`, with its own host name and certificate;
+- a node of a MariaDB Galera cluster, `cf-mail-db`, with the data store of the mail servers;
+- a member of the cluster store, `cf-mail-keep` (Stalwart Keep), with the locks and the
+  counters of the mail servers;
+- the private network `cf-mail` (WireGuard, UDP port 51877). The database and the cluster
+  store listen only on the address of the member in this network.
+
+The panel makes the cluster in steps. A step starts when all jobs of the step before it are
+complete:
+
+| Step | Job | What occurs |
+| ---- | --- | ----------- |
+| `prepare` | `PrepareMailNode` on each server | Each server makes its keys and gives the public keys. |
+| `bootstrap` | `SetMailNode` on the first server | The first server makes the private network and starts the database cluster. |
+| `join` | `SetMailNode` on the other servers | The other servers join the private network and the database cluster. |
+| `first` | `SetMailServer` on the first server | The first mail server starts and writes the settings to the database. |
+| `rest` | `SetMailServer` on the other servers | The other mail servers start with those settings. |
+
+A job that fails stops the setup. An administrator starts the step again
+(`POST /v1/mail-clusters/{id}/retry`): only the servers that did not complete the step do it
+again. The secrets of the cluster are not in the jobs. The panel adds them each time that it
+sends a `SetMailNode` job. When the server of a mail domain is offline, a different member does
+the mail jobs of that domain.
+
+The shared name of the cluster has an A or AAAA record for each member. The MX records of the
+mail domains use the shared name. Mail programs and the webmail use the host name of one
+member.
 ## DNS hosting
 
 A server with the role `dns` and a name server host name is a DNS server. It has one
