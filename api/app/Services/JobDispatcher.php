@@ -65,7 +65,12 @@ class JobDispatcher
                 'documentRoot' => $website->document_root ?? 'public',
                 // FR-307: the port and the start command of a custom image.
                 'containerPort' => $website->image->custom ? (int) $website->image->container_port : 0,
-                'command' => $website->image->custom ? ($website->image->command ?? []) : [],
+                // A worker runs the command of the customer in the shell of its container, as a
+                // cron job does. The container is the gVisor sandbox of the website.
+                'command' => $website->isWorker() && $website->command !== null
+                    ? ['sh', '-c', $website->command]
+                    : ($website->image->custom ? ($website->image->command ?? []) : []),
+                'worker' => $website->isWorker(),
                 // CF-03: the edge proxy serves only the domains that the customer verified.
                 'domains' => $website->domains->filter(fn ($d) => $d->verified())->map(fn ($d) => ['name' => $d->name, 'kind' => $d->kind->value])->values()->all(),
                 // The customer of the website. The website can use the database servers of this

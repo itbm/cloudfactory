@@ -190,6 +190,8 @@ class Networks
             ->join('websites', 'websites.id', '=', 'w.website_id')
             ->join('websites as members', 'members.id', '=', 'm.website_id')
             ->whereColumn('members.id', '!=', 'websites.id')
+            // A worker serves no HTTP, so it is not a member that answers.
+            ->where('members.kind', '!=', Website::WORKER)
             ->whereNotNull('members.server_id')
             ->select([
                 'websites.id as website_id', 'websites.server_id as website_server_id',

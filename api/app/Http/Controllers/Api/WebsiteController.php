@@ -23,6 +23,7 @@ use App\Services\DatabaseNames;
 use App\Services\DatabaseServers;
 use App\Services\DomainPolicy;
 use App\Services\JobDispatcher;
+use App\Services\Networks;
 use App\Services\WebsiteRemoval;
 use App\Validation\Input;
 use App\Validation\InputRules;
@@ -46,6 +47,12 @@ class WebsiteController extends Controller
      * IP address is not a domain name.
      */
     public const DOMAIN = InputRules::DOMAIN;
+
+    /**
+     * The short name that a user types for a private website or a worker: lower-case letters,
+     * digits and "-". The panel makes the Unix user and the network name from it.
+     */
+    public const SHORT_NAME = '/^[a-z]([a-z0-9-]{0,38}[a-z0-9])?$/';
 
     /** The PHP extensions of a new website, when the plan has them. The owner can change them. */
     public const DEFAULT_EXTENSIONS = ['opcache', 'intl', 'gd', 'zip', 'mysqli', 'pdo_mysql', 'pdo_pgsql'];
@@ -73,8 +80,13 @@ class WebsiteController extends Controller
 
     public function store(Request $request): JsonResponse
     {
+        $kind = $request->input('kind', Website::PUBLIC);
         $data = $request->validate([
-            'name' => ['required', 'string', 'lowercase', 'regex:'.self::DOMAIN],
+            'kind' => ['sometimes', Rule::in(Website::KINDS)],
+            // A website has the name of its first domain. A private website and a worker have
+            // no domain: the user types a short name, and the panel makes the network name.
+            'name' => ['required', 'string', 'lowercase', 'regex:'.($kind === Website::PUBLIC ? self::DOMAIN : self::SHORT_NAME)],
+            'command' => [Rule::requiredIf($kind === Website::WORKER), Rule::prohibitedIf($kind !== Website::WORKER), 'string', Input::rule('commandLine')],
             'application' => ['nullable', 'string', 'max:100'],
             'imageId' => ['required', 'exists:images,id'],
             'planId' => ['nullable', 'exists:plans,id'],
@@ -111,34 +123,51 @@ class WebsiteController extends Controller
         if (! $server || ! in_array('web', $server->roles, true)) {
             throw ValidationException::withMessages(['serverId' => 'Select a server with the web role.']);
         }
-        $proved = DomainController::checkName($this->domains, $data['name'], $customer->id, $request);
+        $unixUser = self::unixUser($data['name']);
+        $domain = null;
+        if ($kind === Website::PUBLIC) {
+            $proved = DomainController::checkName($this->domains, $data['name'], $customer->id, $request);
+            $domain = DomainController::newDomain($this->domains, $request, $customer->id, $data['name'], DomainKind::Primary, $proved);
+        } else {
+            // Only the websites of its networks connect to a private website, and a worker
+            // needs the start command: the two need an agent with these functions.
+            if (! Networks::supportsWebsites($server)) {
+                throw ValidationException::withMessages(['kind' => "The agent on the server {$server->name} did not report that it can operate a ".Website::KIND_NAMES[$kind].'. Update the agent of the server, then try again.']);
+            }
+            // The name of the website is its network name, for example "queue-a1b2.internal".
+            // It is not a domain name of the internet, and no two websites have the same one.
+            $data['name'] = Networks::websiteName($unixUser).Networks::DOMAIN;
+        }
         if (Website::where('name', $data['name'])->exists()) {
             throw ValidationException::withMessages(['name' => 'The name has already been taken.']);
         }
-        $domain = DomainController::newDomain($this->domains, $request, $customer->id, $data['name'], DomainKind::Primary, $proved);
 
-        $website = DB::transaction(function () use ($data, $customer, $image, $plan, $server, $domain) {
+        $website = DB::transaction(function () use ($data, $kind, $unixUser, $customer, $image, $plan, $server, $domain) {
             self::checkWebsiteLimit($customer);
             $website = Website::create([
                 'name' => $data['name'],
+                'kind' => $kind,
+                'command' => $data['command'] ?? null,
                 'application' => $data['application'] ?? '',
                 'customer_id' => $customer->id,
                 'server_id' => $server->id,
                 'plan_id' => $plan->id,
                 'image_id' => $image->id,
-                'unix_user' => self::unixUser($data['name']),
+                'unix_user' => $unixUser,
                 'status' => WebsiteStatus::Starting,
                 // The database drivers are on from the start: most PHP applications need one.
                 'extensions' => $image->isPhp() ? array_values(array_intersect(self::DEFAULT_EXTENSIONS, $plan->php_extensions)) : [],
                 'php_ini' => $image->isPhp() ? ['memory_limit' => '256M', 'upload_max_filesize' => '64M', 'max_execution_time' => '60'] : [],
                 'limits' => $plan->limits,
             ]);
-            $website->domains()->create($domain);
+            if ($domain) {
+                $website->domains()->create($domain);
+            }
 
             return $website;
         });
 
-        $job = $this->jobs->dispatch($server, AgentAction::CreateWebsite, JobDispatcher::websitePayload($website), "Create website {$website->name}", $website);
+        $job = $this->jobs->dispatch($server, AgentAction::CreateWebsite, JobDispatcher::websitePayload($website), 'Create '.Website::KIND_NAMES[$kind]." {$website->name}", $website);
         Audit::record($request, 'Created website', $website->name, $customer->id);
 
         return response()->json(['website' => new WebsiteResource($website->fresh(['image', 'domains'])), 'job' => new JobResource($job)], 202);
@@ -276,6 +305,9 @@ class WebsiteController extends Controller
     {
         $source = $this->findWebsite($request, $id);
         $this->refuseSuspended($source->customer);
+        if (! $source->isPublic()) {
+            throw ValidationException::withMessages(['website' => 'The panel makes a staging copy only of a website with a domain.']);
+        }
         $name = 'staging.'.preg_replace('/^www\./', '', $source->name);
         if (Website::where('name', $name)->exists()) {
             throw ValidationException::withMessages(['name' => "{$name} exists."]);

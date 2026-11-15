@@ -168,6 +168,9 @@ type Website struct {
 	UnixUser    string `json:"unixUser"`
 	NetworkHost string `json:"networkHost"`
 	NetworkPort int    `json:"networkPort"`
+	// Kind is "public", "private" or "worker". Command is the start command of a worker.
+	Kind        string `json:"kind"`
+	Command     string `json:"command"`
 	UpdateReady bool   `json:"updateReady"`
 	Runtime     struct {
 		ImageID    string   `json:"imageId"`

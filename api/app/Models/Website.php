@@ -18,11 +18,36 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
     'name', 'application', 'customer_id', 'server_id', 'plan_id', 'image_id', 'image_tag', 'previous_image_id',
     'previous_image_tag', 'unix_user', 'status', 'worker_mode', 'extensions', 'php_ini', 'limits', 'usage',
     'staging_of', 'managed_by_terraform', 'document_root', 'sftp_enabled', 'sftp_keys',
-    'stopped_by_suspension', 'sftp_closed_by_suspension',
+    'stopped_by_suspension', 'sftp_closed_by_suspension', 'kind', 'command',
 ])]
 class Website extends Model
 {
     use GuardsState, HasFactory, HasUlids;
+
+    /** A website with domains. The edge proxy serves it. */
+    public const PUBLIC = 'public';
+
+    /** A website with no domain: only the websites of its networks can connect to it. */
+    public const PRIVATE = 'private';
+
+    /** A background worker: its container runs a command of the customer and serves no HTTP. */
+    public const WORKER = 'worker';
+
+    public const KINDS = [self::PUBLIC, self::PRIVATE, self::WORKER];
+
+    /** The words for a kind in a message. */
+    public const KIND_NAMES = [self::PUBLIC => 'website', self::PRIVATE => 'private website', self::WORKER => 'worker'];
+
+    /** True for a website that the edge proxy serves on its domains. */
+    public function isPublic(): bool
+    {
+        return ($this->kind ?? self::PUBLIC) === self::PUBLIC;
+    }
+
+    public function isWorker(): bool
+    {
+        return $this->kind === self::WORKER;
+    }
 
     /** The table of the permitted changes is in App\Enums\WebsiteStatus. */
     public static function stateAttribute(): string
@@ -62,7 +87,7 @@ class Website extends Model
                 Networks::leave($website);
                 Networks::join($website);
             }
-            if ($website->wasChanged(['customer_id', 'server_id'])) {
+            if ($website->wasChanged(['customer_id', 'server_id', 'kind'])) {
                 Mesh::refreshLater();
             }
         });

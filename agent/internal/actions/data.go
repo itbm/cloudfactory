@@ -1136,7 +1136,7 @@ func (d *Deps) Restore(req *agentv1.RestoreRequest) (jobs.Job, error) {
 					return err
 				}
 			}
-			return d.waitReady(ctx, site.Port, primaryDomain(site.Website))
+			return d.waitSite(ctx, site.Website, site.Port, site.Suffix)
 		}},
 	}, OnFailure: cleanup}, nil
 }

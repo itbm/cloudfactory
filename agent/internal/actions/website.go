@@ -58,6 +58,10 @@ func CheckWebsite(w *agentv1.Website) error {
 	if primary == 0 && len(w.GetDomains()) > 0 {
 		errs = append(errs, errors.New("a website with domains must have a primary domain"))
 	}
+	// A worker has no public address.
+	if w.GetWorker() && len(w.GetDomains()) > 0 {
+		errs = append(errs, errors.New("a worker cannot have domains"))
+	}
 	_, err := instanceKey(w.GetDatabaseInstance())
 	return errors.Join(append(errs, err)...)
 }
@@ -215,7 +219,7 @@ func (d *Deps) unit(w *agentv1.Website, port int, suffix string) quadlet.Website
 		ID: w.GetId(), Name: primaryDomain(w), UnixUser: w.GetUnixUser(), Image: imageRef(w), Port: port,
 		SiteDir: d.Host.AppDir(w.GetUnixUser()), IniFile: d.iniPath(w.GetUnixUser(), suffix),
 		Runtime: w.GetRuntime(), WorkerMode: w.GetWorkerMode(), Gvisor: d.runtime(), Suffix: suffix,
-		DocumentRoot: documentRoot(w), ContainerPort: int(w.GetContainerPort()), Command: w.GetCommand(),
+		DocumentRoot: documentRoot(w), ContainerPort: int(w.GetContainerPort()), Command: w.GetCommand(), Worker: w.GetWorker(),
 		// The database host names of the container point to the database containers of the
 		// customer of the website.
 		DatabaseAddress: d.databaseAddress(w.GetId()),
@@ -299,6 +303,39 @@ func (d *Deps) waitReady(ctx context.Context, port int, hostname string) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-time.After(time.Second):
+		}
+	}
+}
+
+// workerSettle is the time that the container of a worker must operate before the agent
+// reports that it started. A command that stops immediately, for example a command with a
+// wrong name, fails the job in this time.
+const workerSettle = 5 * time.Second
+
+// waitSite waits until the container of a website operates. A website must answer on its
+// port. A worker serves no HTTP: its service must be active, and stay active for a short time.
+func (d *Deps) waitSite(ctx context.Context, w *agentv1.Website, port int, suffix string) error {
+	if !w.GetWorker() {
+		return d.waitReady(ctx, port, primaryDomain(w))
+	}
+	settle := workerSettle
+	if d.ReadyTimeout > 0 && d.ReadyTimeout < settle {
+		settle = d.ReadyTimeout
+	}
+	service := quadlet.Website{UnixUser: w.GetUnixUser(), Suffix: suffix}.ServiceName()
+	for end := time.Now().Add(settle); ; {
+		// systemd starts a container again after it stops (Restart=always). Between two
+		// starts, the service is not active.
+		if _, err := d.Host.Systemctl(ctx, w.GetUnixUser(), "is-active", service); err != nil {
+			return fmt.Errorf("the container of the worker does not operate. Examine the start command and the logs: %w", err)
+		}
+		if !time.Now().Before(end) {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(min(time.Second, settle)):
 		}
 	}
 }
@@ -411,7 +448,7 @@ func (d *Deps) CreateWebsite(req *agentv1.WebsiteRequest) (jobs.Job, error) {
 			if err := d.startContainer(ctx, w, port, ""); err != nil {
 				return err
 			}
-			return d.waitReady(ctx, port, primaryDomain(w))
+			return d.waitSite(ctx, w, port, "")
 		}},
 		{Name: "Configure edge proxy", Do: func(ctx context.Context) error {
 			if err := d.Edge.EnsureBase(ctx); err != nil {
@@ -692,7 +729,7 @@ func (d *Deps) SetRuntime(req *agentv1.WebsiteRequest) (jobs.Job, error) {
 			if old.Stopped {
 				return nil
 			}
-			return d.waitReady(ctx, newPort, hostname)
+			return d.waitSite(ctx, w, newPort, newSuffix)
 		}},
 		{Name: "Switch traffic", Do: func(ctx context.Context) error {
 			if old.Stopped {
@@ -702,6 +739,10 @@ func (d *Deps) SetRuntime(req *agentv1.WebsiteRequest) (jobs.Job, error) {
 				return err
 			}
 			switched = true
+			// A worker serves no HTTP, so it has no health check after the switch.
+			if w.GetWorker() {
+				return nil
+			}
 			return d.watch(ctx, newPort, hostname, req.GetHealthCheck())
 		}},
 		{Name: "Stop old container", Do: func(ctx context.Context) error {
@@ -883,7 +924,7 @@ func (d *Deps) SetWebsitePower(req *agentv1.SetWebsitePowerRequest) (jobs.Job, e
 			if action == "stop" {
 				return nil
 			}
-			return d.waitReady(ctx, site.Port, primaryDomain(site.Website))
+			return d.waitSite(ctx, site.Website, site.Port, site.Suffix)
 		}},
 	}}, nil
 }

@@ -93,8 +93,12 @@ type Website struct {
 	DocumentRoot string
 	// ContainerPort is the HTTP port in the container. 0 means 8080. Only a custom image sets it.
 	ContainerPort int
-	// Command replaces the start command of a custom image. Empty means the command of the image.
+	// Command replaces the start command of a custom image or of a worker. Empty means the
+	// command of the image.
 	Command []string
+	// Worker is true for a background worker: the container serves no HTTP, so it has no
+	// port on ServiceAddress.
+	Worker bool
 	// Stopped is true when the owner stopped the website. Then systemd does not start it at boot.
 	Stopped bool
 	// DatabaseAddress is the address of the database servers of the customer of the website
@@ -243,7 +247,9 @@ func ContainerUnit(w Website) string {
 	if w.Runtime == "custom" && w.ContainerPort > 0 {
 		containerPort = w.ContainerPort
 	}
-	line("PublishPort", ServiceAddress+":"+strconv.Itoa(w.Port)+":"+strconv.Itoa(containerPort))
+	if !w.Worker {
+		line("PublishPort", ServiceAddress+":"+strconv.Itoa(w.Port)+":"+strconv.Itoa(containerPort))
+	}
 	// The hosts file of the website has the names of the database servers of the customer
 	// and of the members of the networks of the website. The agent changes the file in
 	// place, so the container gets a new name with no restart. Podman makes no hosts file.
@@ -287,7 +293,7 @@ func ContainerUnit(w Website) string {
 		line("PodmanArgs", "--log-opt=path="+w.LogFile+" --log-opt=max-size="+LogFileMax)
 	}
 
-	if w.Runtime == "custom" && len(w.Command) > 0 {
+	if (w.Runtime == "custom" || w.Worker) && len(w.Command) > 0 {
 		line("Exec", execLine(w.Command))
 	}
 

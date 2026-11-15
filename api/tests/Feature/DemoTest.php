@@ -84,7 +84,7 @@ class DemoTest extends TestCase
         $this->seed(DemoSeeder::class);
 
         $this->signInAs('admin@example.com');
-        $this->getJson('/api/v1/websites?perPage=100')->assertOk()->assertJsonCount(10, 'data');
+        $this->getJson('/api/v1/websites?perPage=100')->assertOk()->assertJsonCount(12, 'data');
         $this->getJson('/api/v1/servers')->assertOk()->assertJsonCount(3, 'data');
 
         // The reseller: its own website and the websites of its two customers.
@@ -97,8 +97,8 @@ class DemoTest extends TestCase
 
         $this->signInAs('owner@example.com');
         $names = $this->getJson('/api/v1/websites?perPage=100')->assertOk()->json('data.*.name');
-        $this->assertCount(5, $names);
-        $this->assertSame([], array_filter($names, fn ($n) => ! str_ends_with($n, 'acme.example.com')));
+        $this->assertCount(7, $names);
+        $this->assertSame(['orders-1c16.internal', 'queue-00b1.internal'], array_values(array_filter($names, fn ($n) => ! str_ends_with($n, 'acme.example.com'))));
     }
 
     public function test_the_demo_agent_completes_a_new_website_with_no_server(): void

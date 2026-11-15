@@ -106,6 +106,12 @@ message Website {
   // The agent records the value in CreateWebsite. After that, it keeps the value of the
   // website. SetRuntime records the value only for a website that has none.
   string database_instance = 15;
+  // True for a background worker: the container serves no HTTP. It has no port on the private
+  // service address, no route in the edge proxy, and it is not a network member that answers.
+  // It can connect to the members of its networks. "command" is its start command, for each
+  // runtime. The command runs in the gVisor sandbox as the Unix user of the website, with the
+  // limits of the website.
+  bool worker = 16;
 }
 
 // A database server of a customer: one database container with one engine, in its own gVisor

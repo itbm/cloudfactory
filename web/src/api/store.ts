@@ -34,6 +34,7 @@ import type {
   TokenScope,
   UpdatePolicy,
   Website,
+  WebsiteKind,
 } from "./types";
 
 /** An error that the API returns for incorrect input. The UI shows it next to the field. */
@@ -219,12 +220,17 @@ export interface NewWebsite {
   planId: string;
   serverId: string;
   customerId: string;
+  kind?: WebsiteKind;
+  /** The start command of a worker. */
+  command?: string;
 }
 
 export function createWebsite(input: NewWebsite): Promise<{ websiteId: string; job: Promise<Job> }> | { websiteId: string; job: Promise<Job> } {
   return call(async () => {
     const r = await live.request<{ website: live.ApiWebsite; job: live.ApiJob }>("POST", "/websites", {
       // CF-07: only an administrator selects the plan here. The panel uses the plan of the customer.
+      // A private website and a worker have no domain: the name is a short name.
+      kind: input.kind && input.kind !== "public" ? input.kind : undefined, command: input.kind === "worker" ? input.command?.trim() : undefined,
       name: input.name.trim().toLowerCase(), application: input.application, imageId: input.imageId, planId: state.session.contextId === "platform" || state.session.user.role === "administrator" ? input.planId : undefined,
       serverId: input.serverId || undefined, customerId: input.customerId && input.customerId !== "platform" ? input.customerId : undefined,
     });
@@ -328,6 +334,11 @@ export function changeRuntime(websiteId: string, imageId: string) {
 /** FR-303: go back to the previous image in one action. */
 export function revertRuntime(websiteId: string) {
   return call(() => live.request<JobAnswer>("POST", `/websites/${websiteId}/runtime/revert`)).then((r) => track(r.job));
+}
+
+/** The start command of a worker. The panel starts a new container with the command. */
+export function setCommand(websiteId: string, command: string) {
+  return call(() => live.request<JobAnswer>("PUT", `/websites/${websiteId}/runtime`, { command: command.trim() })).then((r) => track(r.job));
 }
 
 export function setWorkerMode(websiteId: string, on: boolean) {

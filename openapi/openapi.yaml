@@ -285,6 +285,14 @@ paths:
         does not get a website. A PHP website starts with the extensions opcache, intl, gd, zip,
         mysqli, pdo_mysql and pdo_pgsql when the plan has them. The edge proxy serves the primary
         domain only after it is verified (refer to "Add a redirect or an alias").
+
+
+        With `kind` "private" or "worker", the website has no domain and no public address. The
+        name in the request is a short name, and the panel makes the name of the website from
+        it: the network name, for example `orders-a1b2.internal`. A different website of the
+        customer connects to a private website by this name on port 80. A worker runs `command`
+        in its container and serves no HTTP. Each kind is a website of the plan of the
+        customer. The agent of the server must be from a release with these functions.
       requestBody:
         required: true
         content:
@@ -293,7 +301,9 @@ paths:
               type: object
               required: [name, imageId]
               properties:
-                name: { type: string, description: The primary domain. Lower case. }
+                name: { type: string, description: 'The primary domain, in lower case. For the kinds "private" and "worker": a short name of lower-case letters, digits and "-", for example "queue".' }
+                kind: { $ref: '#/components/schemas/WebsiteKind' }
+                command: { type: string, maxLength: 1000, description: 'Necessary for the kind "worker", and only for it: one command line for the shell of the container, for example "php artisan queue:work". It runs in the gVisor sandbox as the Unix user of the website, in the directory /app.' }
                 application: { type: string, maxLength: 100 }
                 imageId: { type: string }
                 planId: { type: string, description: The plan of the customer when you do not give it. Only an administrator or the reseller of the customer can give a different plan. }
@@ -608,6 +618,7 @@ paths:
               properties:
                 imageId: { type: string }
                 workerMode: { type: boolean, description: Only for FrankenPHP. }
+                command: { type: string, maxLength: 1000, description: 'Only for a worker: the new start command. The agent starts a new container with it.' }
                 documentRoot: { type: string, maxLength: 200, description: 'Batch 1, finding 11. The directory in /app that the web server serves, for example "web". "." is /app. The default is "public".' }
                 extensions: { type: array, items: { type: string }, description: Only the extensions of the plan. }
                 phpIni:
@@ -2816,6 +2827,13 @@ components:
         diskBytes: { type: integer }
         diskIoBytesPerSecond: { type: integer }
         processes: { type: integer }
+    WebsiteKind:
+      type: string
+      enum: [public, private, worker]
+      description: >-
+        "public": a website with domains, which the edge proxy serves. "private": a website with
+        no domain: only the websites of its networks connect to it. "worker": a background
+        worker that runs a command and serves no HTTP.
     Website:
       type: object
       properties:
@@ -2828,10 +2846,17 @@ components:
         unixUser: { type: string }
         networkHost:
           type: string
-          description: The name of the website for a different website of the customer in a network with it, for example "shop-a1b2.internal". The name comes from the Unix user. It is the same on each server.
+          nullable: true
+          description: The name of the website for a different website of the customer in a network with it, for example "shop-a1b2.internal". The name comes from the Unix user. It is the same on each server. Null for a worker.
         networkPort:
           type: integer
-          description: The port that the website answers on in its networks. It is 80, with HTTP. The tunnel between two servers encrypts the traffic.
+          nullable: true
+          description: The port that the website answers on in its networks. It is 80, with HTTP. The tunnel between two servers encrypts the traffic. Null for a worker.
+        kind: { $ref: '#/components/schemas/WebsiteKind' }
+        command:
+          type: string
+          nullable: true
+          description: The start command of a worker. Null for the other kinds.
         status: { $ref: '#/components/schemas/WebsiteStatus' }
         runtime:
           type: object

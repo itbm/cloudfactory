@@ -791,6 +791,39 @@ the database servers of the customer on the server of the website, where each da
 server has its own port. A database server cannot have the name `mariadb`, `postgres`,
 `valkey` or `localhost`.
 
+### A website with no public address
+
+A website has one of three kinds. Each kind is a website of the plan of the customer.
+
+| Kind | Domains and edge route | Port 80 in its networks | Container |
+| --- | --- | --- | --- |
+| `public` | Yes | Yes | The web server of the image |
+| `private` | No | Yes | The web server of the image |
+| `worker` | No | No | The start command of the customer |
+
+- **A private website** has no domain, no TLS certificate and no route in the edge proxy. The
+  agent gets a website with no domains, which it could operate before: a new website has no
+  route until its domain is verified. Only a website that is in a network with it can
+  connect to it, by its network name on port 80.
+- **A background worker** (the kind `worker`) runs one command of the customer, for example `php artisan queue:work`. The
+  panel sends the command as `sh -c "<command>"`, as for a cron job. The command runs in the
+  container of the worker: the same gVisor sandbox, Unix user, limits and firewall rules as
+  for a website. The container has no port on the private service address, and the worker
+  is not a member that answers. It can connect to the members of its networks. systemd
+  starts the command again when it stops. After a start, the agent makes sure that the
+  service stays active for 5 seconds. Thus a command with a wrong name fails the job. The
+  owner changes the command on the **Runtime** tab. The agent then starts a second
+  container with the new command and stops the first one, as for a change of the runtime.
+  For a short time, the two containers operate together.
+
+The user types a short name for a private website or a worker, for example `queue`. The
+panel makes the Unix user from it (`queue_a1b2`), and the name of the website is the network
+name (`queue-a1b2.internal`). This name is not a name of the internet, and no two websites
+have the same one. The panel makes a private website or a worker only on a server whose
+agent reported the function (`websites` in its mesh report). The kind of a website does not
+change after the panel made it. A private website and a worker cannot have a domain or a
+staging copy.
+
 ### What each server gets
 
 The panel sends the networks of a server with its mesh state (the action `SetMesh`):

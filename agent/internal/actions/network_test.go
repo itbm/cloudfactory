@@ -1,11 +1,14 @@
 package actions
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	agentv1 "github.com/itbm/cloudfactory/agent/gen/cloudfactory/agent/v1"
 	"github.com/itbm/cloudfactory/agent/internal/execx"
@@ -466,5 +469,76 @@ func TestAWebsiteIsAMember(t *testing.T) {
 	}
 	if fw := networkFile(t, d); strings.Contains(fw, "mesh_members {") {
 		t.Errorf("the firewall after the website is gone:\n%s", fw)
+	}
+}
+
+// worker gives a background worker: a website with no domains and with a start command.
+func worker() *agentv1.Website {
+	w := website("ghcr.io/cloudfactory/frankenphp-php8.4:8.4.0-1")
+	w.Domains, w.Worker, w.Command = nil, true, []string{"php", "artisan", "queue:work", "--tries=3"}
+	return w
+}
+
+// A worker serves no HTTP: its container has no port on the private service address, no
+// route in the edge proxy, and the start command of the customer.
+func TestAWorkerHasNoPortAndNoRoute(t *testing.T) {
+	d, f, edge := deps(t)
+	d.ReadyTimeout = time.Millisecond
+	health := 0
+	check := d.Health
+	d.Health = func(ctx context.Context, port int, hostname string) (int, error) {
+		health++
+		return check(ctx, port, hostname)
+	}
+	if err := run(t)(d.CreateWebsite(&agentv1.WebsiteRequest{JobId: jobID, Website: worker()})); err != nil {
+		t.Fatal(err)
+	}
+	u := unitFile(t, d, "acme_x7k2", "cf-acme_x7k2.container")
+	if strings.Contains(u, "PublishPort=") || !strings.Contains(u, `Exec="php" "artisan" "queue:work" "--tries=3"`+"\n") {
+		t.Errorf("the unit of the worker:\n%s", u)
+	}
+	// The sandbox and the limits are those of a website.
+	for _, want := range []string{"Network=pasta\n", "ReadOnly=true\n", "NoNewPrivileges=true\n", "DropCapability=all\n"} {
+		if !strings.Contains(u, want) {
+			t.Errorf("no %q in the unit of the worker:\n%s", want, u)
+		}
+	}
+	if health != 0 {
+		t.Errorf("the agent sent %d HTTP checks to a worker", health)
+	}
+	if !f.Called("systemctl --user --machine=acme_x7k2@ is-active cf-acme_x7k2.service") {
+		t.Errorf("the agent did not check the service of the worker:\n%s", strings.Join(f.Calls, "\n"))
+	}
+	// With no names, the edge proxy removes the routes of a website (caddy.Apply).
+	if site := edge.sites[websiteID]; len(site.Hosts) != 0 || len(site.Redirects) != 0 {
+		t.Errorf("the worker has a route in the edge proxy: %+v", site)
+	}
+
+	// A change of the runtime starts the new container with no HTTP check.
+	next := worker()
+	next.Image = "ghcr.io/cloudfactory/frankenphp-php8.5:8.5.0-1"
+	if err := run(t)(d.SetRuntime(&agentv1.WebsiteRequest{JobId: jobID2, Website: next, HealthCheck: &agentv1.HealthCheck{Status: 200, Seconds: 300}})); err != nil {
+		t.Fatal(err)
+	}
+	if health != 0 || !f.Called("systemctl --user --machine=acme_x7k2@ is-active cf-acme_x7k2-b.service") {
+		t.Errorf("the change of the runtime: %d HTTP checks, calls:\n%s", health, strings.Join(f.Calls, "\n"))
+	}
+
+	// A worker cannot have a domain.
+	bad := worker()
+	bad.Domains = []*agentv1.Domain{{Name: "acme.example", Kind: "primary"}}
+	if _, err := d.CreateWebsite(&agentv1.WebsiteRequest{JobId: jobID, Website: bad}); err == nil {
+		t.Error("the agent accepts a worker with a domain")
+	}
+}
+
+// A start command that stops immediately fails the job.
+func TestAWorkerWhoseCommandStopsFailsTheJob(t *testing.T) {
+	d, f, _ := deps(t)
+	d.ReadyTimeout = time.Millisecond
+	f.Rules = append(f.Rules, execx.Rule{Prefix: "systemctl --user --machine=acme_x7k2@ is-active", Do: func() error { return errors.New("activating") }})
+	err := run(t)(d.CreateWebsite(&agentv1.WebsiteRequest{JobId: jobID, Website: worker()}))
+	if err == nil || !strings.Contains(err.Error(), "start command") {
+		t.Errorf("err = %v", err)
 	}
 }

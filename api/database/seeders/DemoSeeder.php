@@ -21,6 +21,7 @@ use App\Models\Setting;
 use App\Models\Snapshot;
 use App\Models\User;
 use App\Models\Website;
+use App\Services\Networks;
 use App\Services\PanelCertificate;
 use App\Services\SshKey;
 use Illuminate\Database\Seeder;
@@ -226,13 +227,23 @@ class DemoSeeder extends Seeder
             // The panel could not make this website: the page shows the cause and "Try again".
             ['events.harbourbooks.example.net', 'Laravel', 'books', 'web-3', 'frankenphp-8.5', 'failed', 0, [0, 0, 0, 0], []],
             ['lawson.example.org', 'WordPress', 'lawson', 'web-1', 'apache-8.5', 'stopped', 190, [0, 0, 2400, 0], ['stopped_by_suspension' => true]],
+            // A private website has no domain: the other websites of Acme connect to it by its
+            // network name. A worker runs a command and serves no HTTP. The name of each one
+            // is its network name, which the panel makes from the short name.
+            ['orders', 'Orders API', 'acme', 'web-2', 'frankenphp-8.5', 'running', 12, [4, 180, 210, 8], ['kind' => Website::PRIVATE]],
+            ['queue', 'Queue worker', 'acme', 'web-1', 'frankenphp-8.5', 'running', 12, [3, 140, 90, 5], ['kind' => Website::WORKER, 'command' => 'php artisan queue:work --tries=3']],
         ];
         foreach ($rows as [$name, $application, $customer, $server, $image, $status, $days, $use, $more]) {
             $owner = $this->customers[$customer];
             $plan = $owner->plan;
+            $unixUser = self::unixUser($name);
+            $public = ! isset($more['kind']);
+            if (! $public) {
+                $name = Networks::websiteName($unixUser).Networks::DOMAIN;
+            }
             $website = new Website([
                 'name' => $name, 'application' => $application, 'customer_id' => $owner->id, 'server_id' => $this->servers[$server]->id, 'plan_id' => $plan->id,
-                'image_id' => $this->images[$image]->id, 'unix_user' => self::unixUser($name), 'status' => $status,
+                'image_id' => $this->images[$image]->id, 'unix_user' => $unixUser, 'status' => $status,
                 'extensions' => $image === 'node' ? [] : ['opcache', 'intl', 'gd', 'zip'], 'php_ini' => $image === 'node' ? [] : ['memory_limit' => '256M', 'upload_max_filesize' => '64M'],
                 'limits' => $plan->limits, 'document_root' => $application === 'Laravel' ? 'public' : '.',
                 'usage' => ['cpuPercent' => $use[0], 'memoryBytes' => $use[1] * self::MB, 'diskBytes' => $use[2] * self::MB, 'processes' => $use[3]],
@@ -241,6 +252,10 @@ class DemoSeeder extends Seeder
             $website->created_at = now()->subDays($days);
             $website->updated_at = now()->subHours(min($days * 24, 30));
             $website->save();
+            $this->websites[$name] = $website;
+            if (! $public) {
+                continue;
+            }
             $failed = $status === 'failed';
             $website->domains()->create([
                 'name' => $name, 'kind' => DomainKind::Primary, 'verification_token' => 'cf-demo', 'verified_at' => now(), 'dns_points_here' => ! $failed,
@@ -479,7 +494,7 @@ class DemoSeeder extends Seeder
     /** The Unix user of a website: letters from the name, and four characters that do not change. */
     private static function unixUser(string $name): string
     {
-        return substr(preg_replace('/[^a-z0-9]/', '', explode('.', $name)[0].explode('.', $name)[1]), 0, 8).'_'.substr(hash('sha256', $name), 0, 4);
+        return substr(preg_replace('/[^a-z0-9]/', '', explode('.', $name)[0].(explode('.', $name)[1] ?? '')), 0, 8).'_'.substr(hash('sha256', $name), 0, 4);
     }
 
     /** A self-signed certificate, as an example of the certificate of the panel CA. */

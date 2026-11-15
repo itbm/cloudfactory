@@ -609,6 +609,17 @@ name such as `shop-a1b2.internal` on port 80. These are the controls:
   service address stays closed for each website: the firewall accepts a connection of a
   website only when the connection was to the member address and port 80 before the address
   change, and the Unix user of the website has that member in its networks.
+- **A private website.** It has no route in the edge proxy, so no address on the internet
+  can send it a request. The port of its container on the private service address is closed
+  for each website, as for a public website. The only path is the member address on port 80.
+- **A worker with a command of the customer.** The command is one line with no control
+  characters (the rule `commandLine`, as for a cron job), and the agent checks each argument.
+  It runs only in the container of the worker: in the gVisor sandbox, as the Unix user of
+  the website, with no Linux capabilities, with a read-only image, and with the CPU, memory
+  and process limits of the plan. The firewall rules for the connections that a website
+  opens also apply. Thus the command can do what the PHP code of a website of the same
+  customer can do, and no more. A worker counts as a website of the plan, so a customer
+  cannot make more containers than the plan allows.
 - **Checks of the root helper.** The worker of the agent makes the rules, and the root helper
   examines each one. A rule can open only an address of the mesh range that is not the
   address of a server, only for a UID of a website user, and only on the usual port of an

@@ -115,6 +115,8 @@ export interface SftpAccess {
   authorizedKeys: string[];
 }
 
+export type WebsiteKind = "public" | "private" | "worker";
+
 export interface Website {
   id: string;
   name: string;
@@ -122,10 +124,17 @@ export interface Website {
   customerId: string;
   serverId: string;
   unixUser: string;
-  /** The name of the website for a different website in a network with it, for example "shop-a1b2.internal". */
-  networkHost: string;
-  /** The port that the website answers on in its networks. */
-  networkPort: number;
+  /** The name of the website for a different website in a network with it, for example "shop-a1b2.internal". Null for a worker. */
+  networkHost: string | null;
+  /** The port that the website answers on in its networks. Null for a worker. */
+  networkPort: number | null;
+  /**
+   * "public": a website with domains. "private": a website with no domain, only for the
+   * websites of its networks. "worker": a background worker that serves no HTTP.
+   */
+  kind: WebsiteKind;
+  /** The start command of a worker. */
+  command: string | null;
   createdAt: string;
   status: WebsiteStatus;
   runtime: Runtime;

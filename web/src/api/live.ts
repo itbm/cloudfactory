@@ -126,7 +126,7 @@ interface ApiMe {
 interface ApiUser { id: number; name: string; email: string; role: User["role"]; customerId: string | null; totpEnabled: boolean; mustChangePassword: boolean; createdAt: string | null }
 interface ApiJob { id: string; title: string; ref: string | null; action?: string | null; state: Job["state"]; steps: string[]; step: number; error: string | null; websiteId: string | null; serverId: string | null; databaseServerId?: string | null; createdAt: string; finishedAt: string | null }
 interface ApiWebsite {
-  id: string; name: string; application: string; customerId: string; serverId: string; planId: string; unixUser: string; networkHost?: string | null; networkPort?: number; status: Website["status"];
+  id: string; name: string; application: string; customerId: string; serverId: string; planId: string; unixUser: string; networkHost?: string | null; networkPort?: number | null; kind?: Website["kind"]; command?: string | null; status: Website["status"];
   runtime: { imageId: string; family: string; image: string; phpVersion: string | null; workerMode: boolean; extensions: string[]; phpIni: Record<string, string>; previousImageId: string | null; documentRoot?: string; digest?: string | null; signatureVerified?: boolean };
   sftp?: { enabled: boolean; host: string | null; port: number; username: string; authorizedKeys: string[] };
   limits: Limits; diskLimitApplied?: boolean | null; usage: Partial<Website["use"]> | null;
@@ -207,7 +207,8 @@ export function toWebsite(w: ApiWebsite): Website {
   return {
     id: w.id, name: w.name, application: w.application || "Website", customerId: w.customerId, serverId: w.serverId, unixUser: w.unixUser,
     // An API from before the networks sends no name. The name comes from the Unix user.
-    networkHost: w.networkHost ?? `${w.unixUser.replaceAll("_", "-")}.internal`, networkPort: w.networkPort ?? 80,
+    networkHost: w.kind === "worker" ? null : w.networkHost ?? `${w.unixUser.replaceAll("_", "-")}.internal`, networkPort: w.kind === "worker" ? null : w.networkPort ?? 80,
+    kind: w.kind ?? "public", command: w.command ?? null,
     createdAt: w.createdAt, status: w.status, planId: w.planId, limits: w.limits, diskLimitApplied: w.diskLimitApplied ?? undefined,
     runtime: {
       kind: runtimeKind(w.runtime.family), imageId: w.runtime.imageId, phpVersion: (w.runtime.phpVersion ?? undefined) as Website["runtime"]["phpVersion"],
