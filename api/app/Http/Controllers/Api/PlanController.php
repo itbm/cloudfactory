@@ -112,6 +112,9 @@ class PlanController extends Controller
             'databaseServers' => ['sometimes', 'integer', 'min:0', 'max:1000000'],
             // The number of DNS zones of a customer with the plan. A new plan gets 5.
             'dnsZones' => ['sometimes', 'integer', 'min:0', 'max:1000000'],
+            // The number of named networks of a customer with the plan, in addition to the
+            // network "default". 0 turns named networks off. A new plan gets 0.
+            'networks' => ['sometimes', 'integer', 'min:0', 'max:1000'],
             'databaseLimits' => ['sometimes', 'array'],
             'databaseLimits.vcpus' => ['required_with:databaseLimits', 'numeric', 'gt:0', 'max:1024'],
             'databaseLimits.memoryBytes' => ['required_with:databaseLimits', 'integer', 'min:'.DatabaseServer::MIN_MEMORY],
@@ -130,6 +133,7 @@ class PlanController extends Controller
             'limits' => $d['limits'],
             ...(isset($d['databaseServers']) ? ['database_servers' => $d['databaseServers']] : []),
             ...(isset($d['dnsZones']) ? ['dns_zones' => $d['dnsZones']] : []),
+            ...(isset($d['networks']) ? ['networks' => $d['networks']] : []),
             ...(isset($d['databaseLimits']) ? ['database_limits' => [
                 'vcpus' => (float) $d['databaseLimits']['vcpus'],
                 'memoryBytes' => (int) $d['databaseLimits']['memoryBytes'],
@@ -191,6 +195,8 @@ class PlanController extends Controller
             'databaseLimits' => $p->database_limits,
             // The number of DNS zones of a customer with the plan.
             'dnsZones' => $p->dns_zones,
+            // The number of named networks of a customer with the plan, in addition to "default".
+            'networks' => $p->networks ?? 0,
         ];
     }
 }

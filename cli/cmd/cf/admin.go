@@ -657,7 +657,7 @@ func (a *app) plans(ctx context.Context, sub string) error {
 		return fmt.Errorf("unknown command plans %s", sub)
 	}
 	// "databases" is the number of databases of each database server with the plan.
-	return a.list(ctx, "/plans", nil, []string{"name", "websites", "mailboxes", "databaseServers", "databases", "dnsZones", "id"})
+	return a.list(ctx, "/plans", nil, []string{"name", "websites", "mailboxes", "databaseServers", "databases", "dnsZones", "networks", "id"})
 }
 
 func (a *app) audit(ctx context.Context, sub string, args []string) error {

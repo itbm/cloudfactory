@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Customer;
 use App\Models\DatabaseServer;
 use App\Models\Network;
 use App\Models\NetworkMember;
@@ -25,7 +26,8 @@ use Illuminate\Validation\ValidationException;
  * servers encrypts the traffic.
  *
  * Each customer has the network "default". Each new website and each new database server of
- * the customer is a member of it.
+ * the customer is a member of it. The plan of the customer can permit named networks: the
+ * customer makes them and selects their members. A member can also leave "default".
  */
 class Networks
 {
@@ -38,6 +40,9 @@ class Networks
      * its customer on its own server.
      */
     public const RESERVED = ['mariadb', 'postgres', 'valkey', 'localhost'];
+
+    /** The maximum number of websites, and of database servers, in one request for the members of a network. */
+    public const MAX_MEMBERS = 1000;
 
     /** The port that a website answers on as a network member. */
     public const WEBSITE_PORT = 80;
@@ -61,6 +66,74 @@ class Networks
     public static function defaultFor(string $customerId): Network
     {
         return Network::firstOrCreate(['customer_id' => $customerId, 'name' => Network::DEFAULT], ['is_default' => true]);
+    }
+
+    /**
+     * The plan of a customer limits the number of its named networks. The network "default"
+     * does not count. As for websites, the named networks of the customers of a reseller count
+     * against the plan of the reseller, with the networks of the reseller itself. The caller
+     * holds the lock on the customer row.
+     *
+     * @throws ValidationException
+     */
+    public static function checkLimit(Customer $customer): void
+    {
+        $allowed = (int) $customer->plan->networks;
+        if ($allowed === 0) {
+            throw ValidationException::withMessages(['name' => "The {$customer->plan->name} plan has only the network \"default\". Ask your provider for a plan with named networks."]);
+        }
+        if (Network::where('customer_id', $customer->id)->where('is_default', false)->count() >= $allowed) {
+            throw ValidationException::withMessages(['name' => "The {$customer->plan->name} plan allows {$allowed} named ".self::plural($allowed).'.']);
+        }
+        if ($customer->reseller_id || $customer->role === 'reseller') {
+            $reseller = $customer->reseller_id ? Customer::with('plan')->lockForUpdate()->findOrFail($customer->reseller_id) : $customer;
+            $total = (int) $reseller->plan->networks;
+            if (self::countFor($reseller) >= $total) {
+                throw ValidationException::withMessages(['name' => $customer->reseller_id
+                    ? "The {$reseller->plan->name} plan of your provider allows {$total} named ".self::plural($total).' in total.'
+                    : "The {$reseller->plan->name} plan allows {$total} named ".self::plural($total).' in total, for you and your customers.']);
+            }
+        }
+    }
+
+    /**
+     * A website with a database in a database server on a different server connects through a
+     * network. A change of the networks must not take that connection away.
+     *
+     * @throws ValidationException
+     */
+    public static function checkDatabases(string $customerId): void
+    {
+        $pairs = DB::table('databases')
+            ->join('websites', 'websites.id', '=', 'databases.website_id')
+            ->join('database_servers', 'database_servers.id', '=', 'databases.database_server_id')
+            ->where('websites.customer_id', $customerId)
+            ->whereColumn('database_servers.server_id', '!=', 'websites.server_id')
+            ->select(['websites.id as website_id', 'websites.name as website', 'database_servers.id as database_server_id', 'database_servers.name as database_server'])
+            ->distinct()->get();
+        foreach ($pairs as $pair) {
+            $joined = DB::table('network_members as w')
+                ->join('network_members as d', 'd.network_id', '=', 'w.network_id')
+                ->where('w.website_id', $pair->website_id)->where('d.database_server_id', $pair->database_server_id)->exists();
+            if (! $joined) {
+                throw ValidationException::withMessages(['network' => "The website {$pair->website} has a database in the database server {$pair->database_server} on a different server. Keep the two in one network, or remove the database first."]);
+            }
+        }
+    }
+
+    /** The named networks that count against the plan of a customer: for a reseller, also those of its customers. */
+    public static function countFor(Customer $customer): int
+    {
+        $ids = $customer->role === 'reseller'
+            ? Customer::where('id', $customer->id)->orWhere('reseller_id', $customer->id)->pluck('id')->all()
+            : [$customer->id];
+
+        return Network::whereIn('customer_id', $ids)->where('is_default', false)->count();
+    }
+
+    private static function plural(int $count): string
+    {
+        return $count === 1 ? 'network' : 'networks';
     }
 
     /** Makes a new website or a new database server a member of the network "default" of its customer. */

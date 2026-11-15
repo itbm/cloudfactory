@@ -976,7 +976,38 @@ website that is in a network with it. The member can be on the server of the web
 different server.
 
 Each customer has the network `default`. Each new website and each new database server of
-the customer is a member of it. In this release, `default` is the only network.
+the customer is a member of it.
+
+### Named networks
+
+A customer can make more networks, to keep some websites and database servers apart. A
+network of this type is a named network. For example, the network `backend` has a shop and
+its database server, and the blog of the same customer is not in it.
+
+- The plan of the customer gives the number of named networks (`networks` of the plan). The
+  network `default` is not one of them. With 0, the customer has only the network `default`.
+  A new plan gets 0. For a reseller, the named networks of its customers count too.
+- A network can have any number of websites and database servers of its customer. A website
+  or a database server can be in more than one network, or in none.
+- A website connects to a member only when one network has the two. To separate two
+  members, remove one of them from each network that has the two. Thus a member that must
+  be apart from the others must also leave the network `default`.
+- The name of a network has lower-case letters, digits and `-`, and a maximum of 40
+  characters. The names of the members do not change with the network: a database server has
+  the same network name in each network.
+- The network `default` keeps its name, and the panel does not remove it. When a named
+  network is removed, its members stay.
+- When a website has a database in a database server on a different server, the panel
+  refuses a change that leaves the two with no network. The website would lose its database.
+- The names `mariadb.internal`, `postgres.internal` and `valkey.internal` do not use the
+  networks. A website can always use them for the database servers of its customer on its
+  own server.
+
+The user changes the networks on the page **Private networks**, with `cf networks`, or with
+the paths `/v1/networks` of the API. A token needs the scope `websites:read` to read the networks and `websites:write` to change them. A change needs
+no new function of the agent: the panel sends the new list of connections to each server with
+the mesh state, and the agent changes the firewall elements and the hosts files. No
+container restarts.
 
 ### Names and addresses
 

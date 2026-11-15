@@ -53,7 +53,7 @@ export function emptyState(): State {
   return {
     session: { signedIn: false, user: { id: "", name: "", email: "", role: "owner" }, contextId: "" },
     contexts: [], websites: [], jobs: [], activity: [], notifications: [], servers: [], images: [], rollout: undefined,
-    databaseServers: [], dnsZones: [], nameServers: [], databases: [], databaseUsers: [], remoteDatabaseServers: {}, snapshots: [], plans: [], customers: [], users: [],
+    databaseServers: [], dnsZones: [], nameServers: [], networks: [], databases: [], databaseUsers: [], remoteDatabaseServers: {}, snapshots: [], plans: [], customers: [], users: [],
     backupPolicy: { daily: 7, weekly: 4, monthly: 6, time: "03:00", target: "", credentialNames: [] },
     tokens: [], totpEnabled: false, securityNotices: [], audit: [], joinToken: "", joinCaSha256: undefined,
     panelDomain: "",
@@ -717,6 +717,37 @@ export function rollBackAll() {
   return call(() => live.request("POST", `/rollouts/${r.id}/roll-back`)).then(() => refresh());
 }
 
+// Private networks
+
+/** The members of a network: the IDs of its websites and of its database servers. */
+export interface NetworkMembers { websiteIds: string[]; databaseServerIds: string[] }
+
+const networkName = (name: string) => name.trim().toLowerCase();
+
+/** Makes a named network for a customer. The plan of the customer gives the number of them. */
+export function createNetwork(name: string, customerId: string, members: NetworkMembers): Promise<void> {
+  return call(async () => {
+    await live.request("POST", "/networks", { name: networkName(name), customerId: customerId || undefined, ...members });
+    await refresh();
+  });
+}
+
+/** Changes the members of a network and, for a named network, its name. */
+export function saveNetwork(networkId: string, name: string | undefined, members: NetworkMembers): Promise<void> {
+  return call(async () => {
+    await live.request("PATCH", `/networks/${networkId}`, { name: name === undefined ? undefined : networkName(name), ...members });
+    await refresh();
+  });
+}
+
+/** Removes a named network. Its members stay. */
+export function deleteNetwork(networkId: string): Promise<void> {
+  return call(async () => {
+    await live.request("DELETE", `/networks/${networkId}`);
+    await refresh();
+  });
+}
+
 // DNS hosting
 
 type DnsJobs = { jobs: live.ApiJob[] };
@@ -1029,7 +1060,7 @@ export function setCustomer(customerId: string, change: Partial<Pick<Customer, "
 
 export function savePlan(plan: Plan) {
   const exists = state.plans.some((p) => p.id === plan.id);
-  const body = { name: plan.name.trim(), websites: plan.websites, mailboxes: plan.mailboxes, databases: plan.databases, phpExtensions: plan.phpExtensions, limits: plan.limits, databaseServers: plan.databaseServers, databaseLimits: plan.databaseLimits, dnsZones: plan.dnsZones };
+  const body = { name: plan.name.trim(), websites: plan.websites, mailboxes: plan.mailboxes, databases: plan.databases, phpExtensions: plan.phpExtensions, limits: plan.limits, databaseServers: plan.databaseServers, databaseLimits: plan.databaseLimits, dnsZones: plan.dnsZones, networks: plan.networks };
   return call(() => live.request(exists ? "PATCH" : "POST", exists ? `/plans/${plan.id}` : "/plans", body)).then(() => refresh());
 }
 

@@ -589,6 +589,12 @@ through the internet, so the design assumes that a person can read and change ea
   open a connection to an address of the mesh range. Each other website user, the worker of
   the agent and the service users get a refusal. A server does not forward packets from or to
   the interface of the mesh.
+- **Named networks.** A customer can separate its own websites and database servers with
+  named networks. The firewall then refuses a connection from a website to a member address
+  that is in none of its networks. This is a separation between the applications of one
+  customer. It does not replace the separation between customers, which does not depend on
+  the networks. The names of the engines stay open between a website and the database
+  servers of its customer on the same server.
 - **Checks of the state.** The worker and the root helper examine each value of the state
   from the panel: the range is a private IPv4 network, each mesh address is in the range,
   each tunnel address is a public IP address, and each key has the correct form. The root

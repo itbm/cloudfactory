@@ -30,6 +30,8 @@ tags:
   - name: Databases
   - name: DNS
     description: DNS hosting. The zones of the customers and their records.
+  - name: Networks
+    description: The private networks of the customers, like a VPC.
   - name: Backups
   - name: Jobs
   - name: Servers
@@ -1467,6 +1469,105 @@ paths:
         '409': { description: The customer is suspended. }
         '422': { $ref: '#/components/responses/Invalid' }
 
+  /v1/networks:
+    get:
+      tags: [Networks]
+      summary: List private networks
+      description: >-
+        The private networks of the customers that you can see. Each customer has the network
+        "default". The plan of the customer gives the number of named networks in addition to
+        it (`networks` of the plan). A website connects to each other member of each network
+        that it is in, by the name `<name>.internal`, on its own server and on a different
+        server.
+      parameters:
+        - { name: customerId, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: The networks.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/Network' } }
+    post:
+      tags: [Networks]
+      summary: Create a named network
+      description: >-
+        The response is 422 when the plan of the customer does not let the customer have one
+        more named network. For a reseller, the named networks of its customers count too.
+        Each member must be a website or a database server of the customer.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, pattern: '^[a-z0-9]([a-z0-9-]{0,38}[a-z0-9])?$', description: 'Not "default".' }
+                customerId: { type: [string, 'null'], description: Default is the customer of the user. }
+                websiteIds: { type: array, maxItems: 1000, items: { type: string } }
+                databaseServerIds: { type: array, maxItems: 1000, items: { type: string } }
+      responses:
+        '201':
+          description: The network.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Network' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/networks/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    get:
+      tags: [Networks]
+      summary: Get a private network
+      responses:
+        '200':
+          description: The network.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Network' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Networks]
+      summary: Rename a network or change its members
+      description: >-
+        A list of members replaces the members of that type. A request with no list keeps
+        the members of that type. The network "default" keeps its name. The response is 422
+        when a website with a database in a database server on a different server would have
+        no network with that database server.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, pattern: '^[a-z0-9]([a-z0-9-]{0,38}[a-z0-9])?$' }
+                websiteIds: { type: array, maxItems: 1000, items: { type: string } }
+                databaseServerIds: { type: array, maxItems: 1000, items: { type: string } }
+      responses:
+        '200':
+          description: The network.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Network' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+    delete:
+      tags: [Networks]
+      summary: Remove a named network
+      description: >-
+        The members stay. They lose the connections of this network. The network "default"
+        cannot be removed (422). The response is also 422 when a website with a database in a
+        database server on a different server would have no network with that database server.
+      responses:
+        '204': { description: The network is removed. }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
   /v1/dns-zones:
     get:
       tags: [DNS]
@@ -2722,6 +2823,7 @@ paths:
                       websites: { type: integer }
                       databases: { type: integer }
                       dnsZones: { type: integer, description: The number of DNS zones. For a reseller, the zones of its customers count too. }
+                      networks: { type: integer, description: The number of named networks. For a reseller, the named networks of its customers count too. }
                       diskBytes: { type: integer }
                       customers: { type: [integer, 'null'], description: Only for a reseller. The number of its customers. }
                   backups:
@@ -3684,6 +3786,14 @@ components:
           description: >-
             The number of DNS zones of a customer with the plan. A request with no value keeps
             the value of the plan. A new plan gets 5.
+        networks:
+          type: integer
+          minimum: 0
+          maximum: 1000
+          description: >-
+            The number of named private networks of a customer with the plan, in addition to the
+            network "default". 0 turns named networks off. A request with no value keeps the
+            value of the plan. A new plan gets 0.
         databaseLimits:
           $ref: '#/components/schemas/DatabaseLimits'
           description: >-
@@ -3691,6 +3801,17 @@ components:
             limits of the plan. A new plan gets the vCPUs of a website, the half of its memory
             and the half of its disk space. A change gives the new limits to the database
             servers of the plan that have the limits of the plan.
+    Network:
+      type: object
+      required: [id, customerId, name, isDefault, websiteIds, databaseServerIds]
+      properties:
+        id: { type: string }
+        customerId: { type: string }
+        name: { type: string }
+        isDefault: { type: boolean, description: True for the network "default" of the customer. }
+        websiteIds: { type: array, items: { type: string } }
+        databaseServerIds: { type: array, items: { type: string } }
+        createdAt: { type: [string, 'null'], format: date-time }
     Plan:
       allOf:
         - { $ref: '#/components/schemas/PlanInput' }

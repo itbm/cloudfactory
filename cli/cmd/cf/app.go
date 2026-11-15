@@ -103,6 +103,14 @@ Usage:
   cf dns check ZONE                                    Ask the public DNS for the name servers of the zone again.
   cf dns sync ZONE                                     Send the zone to each DNS server again.
   cf dns delete ZONE
+  cf networks list [--customer ID]                     The private networks. Each customer has the network "default".
+  cf networks create NAME [--customer ID] [--website WEBSITE]... [--database-server DATABASE_SERVER]...
+                                                       The plan of the customer gives the number of named networks.
+  cf networks get NETWORK                              The members, with the name and the port that a website connects to.
+  cf networks add NETWORK [--website WEBSITE]... [--database-server DATABASE_SERVER]...
+  cf networks remove NETWORK [--website WEBSITE]... [--database-server DATABASE_SERVER]...
+  cf networks rename NETWORK NAME
+  cf networks delete NETWORK                           The members stay. The network "default" cannot be removed.
   cf backups list|create WEBSITE
   cf backups restore WEBSITE SNAPSHOT [--scope website|database|file] [--item ITEM] [--remove-new-files]
                        --remove-new-files is for a full website. It deletes the files that are not in the backup.
@@ -309,6 +317,8 @@ func (a *app) dispatch(ctx context.Context, args []string) error {
 		return a.databaseUsers(ctx, sub, rest)
 	case "dns":
 		return a.dns(ctx, sub, rest)
+	case "networks", "network":
+		return a.networks(ctx, sub, rest)
 	case "backups", "backup":
 		return a.backups(ctx, sub, rest)
 	case "jobs", "job":

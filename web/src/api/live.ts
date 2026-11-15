@@ -21,6 +21,7 @@ import type {
   Mesh,
   PanelCertificate,
   Plan,
+  PrivateNetwork,
   Rollout,
   RuntimeImage,
   RuntimeKind,
@@ -190,7 +191,7 @@ interface ApiAccount {
   customer: Account["customer"] | null;
   provider: { name: string; email: string } | null;
   plan: Plan | null;
-  usage: { websites: number; databases: number; diskBytes: number; customers: number | null; dnsZones?: number } | null;
+  usage: { websites: number; databases: number; diskBytes: number; customers: number | null; dnsZones?: number; networks?: number } | null;
   backups?: { available: boolean };
   users: ApiUser[];
 }
@@ -199,7 +200,7 @@ export function toAccount(a: ApiAccount): Account {
   const usage = a.usage ?? { websites: 0, databases: 0, diskBytes: 0, customers: null };
   return {
     customer: a.customer!, provider: a.provider ?? undefined, plan: a.plan ?? undefined,
-    usage: { websites: usage.websites, databases: usage.databases, diskBytes: usage.diskBytes, customers: usage.customers ?? undefined, dnsZones: usage.dnsZones ?? 0 },
+    usage: { websites: usage.websites, databases: usage.databases, diskBytes: usage.diskBytes, customers: usage.customers ?? undefined, dnsZones: usage.dnsZones ?? 0, networks: usage.networks ?? 0 },
     backupsAvailable: a.backups?.available ?? true,
     users: a.users.map(toUser),
   };
@@ -287,6 +288,10 @@ export const toDatabaseServer = (s: ApiDatabaseServer): DatabaseServer => ({ ...
 
 export const toDnsRecord = (r: ApiDnsRecord): DnsRecord => ({ id: r.id, name: r.name, type: r.type, value: r.value, ttl: r.ttl, priority: r.priority ?? undefined, managed: r.managed ?? undefined });
 
+export interface ApiNetwork extends PrivateNetwork { createdAt?: string | null }
+
+export const toNetwork = (n: ApiNetwork): PrivateNetwork => ({ id: n.id, customerId: n.customerId, name: n.name, isDefault: n.isDefault, websiteIds: n.websiteIds ?? [], databaseServerIds: n.databaseServerIds ?? [] });
+
 export const toDnsZone = (z: ApiDnsZone): DnsZone => ({
   ...z,
   delegation: { state: z.delegation.state, nameServers: z.delegation.nameServers ?? [], checkedAt: z.delegation.checkedAt ?? undefined },
@@ -335,7 +340,7 @@ export async function load(previous: State): Promise<State> {
   const admin = me.role === "administrator";
   const optional = <T>(p: Promise<T>, fallback: T) => p.catch(() => fallback);
 
-  const [websites, jobs, customers, plans, tokens, policy, servers, images, rollouts, audit, users, certificate, setup, account, databaseServers, dns, mesh] = await Promise.all([
+  const [websites, jobs, customers, plans, tokens, policy, servers, images, rollouts, audit, users, certificate, setup, account, databaseServers, dns, mesh, networks] = await Promise.all([
     all<ApiWebsite>("/websites"),
     request<{ data: ApiJob[] }>("GET", "/jobs?perPage=50").then((r) => r.data),
     optional(request<{ data: ApiCustomer[] }>("GET", "/customers").then((r) => r.data), []),
@@ -356,6 +361,8 @@ export async function load(previous: State): Promise<State> {
     optional(request<{ data: ApiDnsZone[]; nameServers?: string[] }>("GET", "/dns-zones"), { data: [], nameServers: [] }),
     // A panel API of an earlier release has no mesh.
     admin ? optional(request<Mesh>("GET", "/mesh"), undefined) : Promise.resolve(undefined),
+    // A panel API of an earlier release has no private networks.
+    optional(request<{ data: ApiNetwork[] }>("GET", "/networks").then((r) => r.data.map(toNetwork)), []),
   ]);
   // The list has no records. The panel reads the records of the zones that the user opened.
   const zoneDetails = new Map<string, DnsZone>();
@@ -407,6 +414,7 @@ export async function load(previous: State): Promise<State> {
     dnsZones: dns.data.map((z) => zoneDetails.get(z.id) ?? { ...toDnsZone(z), records: previous.dnsZones.find((x) => x.id === z.id && x.serial === z.serial)?.records }),
     nameServers: dns.nameServers ?? [],
     mesh,
+    networks,
     databases: [...kept(previous.databases), ...perSite.flatMap((s) => s.databases)],
     databaseUsers: [...kept(previous.databaseUsers), ...perSite.flatMap((s) => s.users)],
     remoteDatabaseServers: { ...previous.remoteDatabaseServers, ...Object.fromEntries(perSite.map((s, i) => [detailed[i].id, s.remote])) },

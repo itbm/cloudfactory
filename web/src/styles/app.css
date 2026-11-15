@@ -631,6 +631,8 @@ a.cell-title:hover { text-decoration: underline; }
 .form-section .form-row { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
 .checkbox-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 4px 12px; margin: 0; padding: 0; border: 0; }
 .checkbox-list legend { font-weight: 600; font-size: 14px; margin-bottom: 6px; }
+.checkbox-list-wide { grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); }
+.checkbox-list-wide .check input { flex: none; }
 .check { display: flex; align-items: center; gap: 8px; min-height: var(--target); }
 .check input { width: 20px; height: 20px; accent-color: var(--primary); }
 .radio-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; border: 0; padding: 0; margin: 0; }
