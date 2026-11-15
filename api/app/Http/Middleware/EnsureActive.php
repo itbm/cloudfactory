@@ -4,6 +4,7 @@ namespace App\Http\Middleware;
 
 use App\Enums\Role;
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\PluginController;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -25,6 +26,10 @@ class EnsureActive
 
     public function handle(Request $request, Closure $next): Response
     {
+        // A plugin that is off, or removed, has no access. Its page tokens stop too.
+        if (PluginController::refusesToken($request)) {
+            return response()->json(['message' => 'This plugin is off. An administrator can turn it on in Plugins.'], 403);
+        }
         if ($request->user()?->isSuspended()) {
             return response()->json(['message' => 'This account is suspended. Contact your provider.'], 403);
         }

@@ -76,5 +76,7 @@ return [
         'audit:read',
         // CF-02: only a token with this scope, or a session token, can see and change tokens.
         'tokens:read', 'tokens:write',
+        // Only an administrator can install plugins. A plugin cannot have this scope.
+        'plugins:read', 'plugins:write',
     ],
 ];

@@ -50,7 +50,8 @@ class AuthController extends Controller
             return response()->json(['message' => "Too many failed attempts. Try again in {$seconds} seconds."], 429)
                 ->header('Retry-After', (string) $seconds);
         }
-        $user = User::where('email', $data['email'])->first();
+        // Nobody signs in as the user of a plugin. Only the token of the plugin uses it.
+        $user = User::where('email', $data['email'])->whereNull('plugin_id')->first();
         $passwordOk = Hash::check($data['password'], $user?->password ?? self::dummyHash()) && $user;
         // Audit finding S8: with no second factor, the answer for a suspended account must not
         // show that the password is correct.
