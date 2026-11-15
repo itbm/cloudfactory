@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useAction, useStore } from "../api/hooks";
 import { contextCustomers, inContext } from "../api/selectors";
-import { createDatabaseServer, deleteDatabaseServer, retryDatabaseServer, setDatabaseServer } from "../api/store";
+import { createDatabaseServer, deleteDatabaseServer, moveDatabaseServer, retryDatabaseServer, setDatabaseServer } from "../api/store";
 import type { Customer, DatabaseEngine, DatabaseLimits, DatabaseServer, Plan, State } from "../api/types";
 import { Card, Field, FormError, JobError, Meter, Modal, RowMenu, Status, TableWrap } from "../components/ui";
 import { bytes, GB, MB } from "../lib/format";
@@ -37,6 +37,8 @@ export function DatabaseServersPanel() {
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState<DatabaseServer | null>(null);
   const [removing, setRemoving] = useState<DatabaseServer | null>(null);
+  const [moving, setMoving] = useState<DatabaseServer | null>(null);
+  const admin = state.session.user.role === "administrator";
   const retry = useAction(retryDatabaseServer);
   const remove = useAction(deleteDatabaseServer);
   const plan = (id: string) => state.plans.find((p) => p.id === id);
@@ -94,14 +96,16 @@ export function DatabaseServersPanel() {
                   </td>
                   <td style={{ minWidth: 120 }}>
                     <Status tone={status.tone}>{status.label}</Status>
+                    {s.status === "moving" && <span className="cell-sub">To {host(s.movingToServerId ?? "") ?? "a different server"}</span>}
                     {job && <span className="cell-sub">{job.steps[Math.min(job.step, job.steps.length - 1)]}…</span>}
                     {failed && <JobError job={failed} />}
                   </td>
                   <td className="cell-actions">
-                    {s.status !== "removing" && (
+                    {s.status !== "removing" && s.status !== "moving" && (
                       <RowMenu label={`Actions for the database server ${s.name}`} actions={[
                         ...(s.status === "failed" ? [{ label: "Try again", onSelect: () => void retry.run(s.id) }] : []),
                         { label: "Change", onSelect: () => setEditing(s) },
+                        ...(admin && (s.status === "running" || s.status === "stopped") ? [{ label: "Move to a different server", onSelect: () => setMoving(s) }] : []),
                         { label: "Remove", danger: true, onSelect: () => setRemoving(s) },
                       ]} />
                     )}
@@ -118,6 +122,7 @@ export function DatabaseServersPanel() {
       </p>
       {creating && <CreateDialog onClose={() => setCreating(false)} />}
       {editing && <ChangeDialog server={editing} onClose={() => setEditing(null)} />}
+      {moving && <MoveDialog server={moving} onClose={() => setMoving(null)} />}
       {removing && (
         removing.databases > 0 ? (
           <Modal title={`Remove database server ${removing.name}?`} onClose={() => setRemoving(null)} footer={<button type="button" className="btn btn-primary" onClick={() => setRemoving(null)}>Close</button>}>
@@ -311,6 +316,60 @@ function CreateDialog({ onClose }: { onClose: () => void }) {
             {custom && <LimitFields value={limits} onChange={setLimits} errors={create.error?.fields} />}
           </>
         )}
+      </form>
+    </Modal>
+  );
+}
+
+/**
+ * Moves a database server to a different server. The data goes through the encrypted tunnel
+ * between the two servers. The database server keeps its name and its network address.
+ */
+function MoveDialog({ server, onClose }: { server: DatabaseServer; onClose: () => void }) {
+  const state = useStore();
+  const targets = state.servers.filter((s) => s.id !== server.serverId && s.roles.includes("web")).sort((a, b) => a.name.localeCompare(b.name));
+  const [serverId, setServerId] = useState(() => targets.find((s) => s.state === "healthy")?.id ?? targets[0]?.id ?? "");
+  const move = useAction(moveDatabaseServer);
+  const from = state.servers.find((s) => s.id === server.serverId)?.name ?? "its server";
+  // The websites with a database in the database server. Those on the old server lose the name of the engine.
+  const websiteIds = new Set(state.databases.filter((d) => d.databaseServerId === server.id).map((d) => d.websiteId));
+  const onOld = state.websites.filter((w) => websiteIds.has(w.id) && w.serverId === server.serverId);
+
+  return (
+    <Modal
+      wide
+      title={`Move database server ${server.name}`}
+      onClose={onClose}
+      footer={<><button type="button" className="btn" onClick={onClose}>Cancel</button><button type="submit" form="move-dbs" className="btn btn-primary" disabled={move.busy || !serverId}>Move database server</button></>}
+    >
+      <form id="move-dbs" noValidate onSubmit={async (e) => {
+        e.preventDefault();
+        const r = await move.run(server.id, serverId);
+        if (r.ok) onClose();
+      }}>
+        <FormError error={move.error} shown={["serverId"]} />
+        <p>
+          The panel moves the database server from {from} to the new server. The data goes through the encrypted tunnel between the two servers. The database server keeps its name, its databases, its users and its network name <code>{server.networkHost ?? server.host}</code>.
+        </p>
+        <Field label="New server" error={move.error?.fields.serverId}>
+          {(p) => (
+            <select {...p} className="select" value={serverId} onChange={(e) => setServerId(e.target.value)}>
+              {targets.map((s) => <option key={s.id} value={s.id}>{s.name}{s.state !== "healthy" ? ` · ${s.state}` : ""}</option>)}
+            </select>
+          )}
+        </Field>
+        {targets.length === 0 && <p className="muted small">There is no other server with the web role.</p>}
+        <div className="alert alert-warning alert-stack" style={{ marginTop: 14 }}>
+          <p><strong>Before you move it</strong></p>
+          <ul className="notice-list">
+            <li>The database server does not operate while its data moves. The time depends on the size of the data: about one minute for each 5 GB on a 1 Gbit/s connection.</li>
+            <li>
+              After the move, a website connects with the network name <code>{server.networkHost ? `${server.networkHost}:${server.networkPort}` : "<name>.internal"}</code>. An app that uses <code>{server.host}:{server.port}</code> loses the connection. Change it to the network name first.
+              {onOld.length > 0 && <> These websites are on {from} now: {onOld.map((w) => w.name).join(", ")}.</>}
+            </li>
+            <li>Each website with a database in the database server must be in a network with it, or on the new server.</li>
+          </ul>
+        </div>
       </form>
     </Modal>
   );
