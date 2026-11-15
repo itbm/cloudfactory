@@ -161,10 +161,10 @@ class DemoSeeder extends Seeder
         // Two servers answer DNS queries. The customers give their host names to the registrar of a domain.
         $dns = fn (int $n) => ['dns' => true, 'dns_name' => "ns{$n}.panel.example", 'addresses' => ["203.0.113.{$n}0", "2001:db8:{$n}0::1"]];
         $dnsService = [['name' => 'cf-dns', 'state' => 'running']];
-        // The panel server. Its disk quotas are off, as on a server with a file system that has no user quotas.
+        // The panel server. Its disk quotas are off, and it has websites from before the disk images.
         $this->servers['web-1'] = Server::create([
             ...$common, 'name' => 'web-1', 'location' => 'London', 'roles' => ['web', 'database', 'dns'], 'state' => 'healthy', 'local' => true, 'agent_url' => 'https://web-1.panel.example:7443', ...$dns(1),
-            'services' => [...$services, ...$dnsService, ['name' => 'disk-quotas', 'state' => 'stopped', 'optional' => true, 'detail' => 'User quotas are off on the file system of the websites, so this server does not apply the disk limit of a website. Refer to "Disk quotas" in the installation guide.']],
+            'services' => [...$services, ...$dnsService, ['name' => 'disk-quotas', 'state' => 'stopped', 'optional' => true, 'detail' => 'User quotas are off on the file system of the websites. Websites with a disk limit and no disk image: 5 of 5. This server does not apply the disk limit of these websites. Only a new website gets a disk image. Refer to "Disk quotas" in the installation guide.']],
             'usage' => ['cpuPercent' => 23, 'memoryPercent' => 58, 'diskPercent' => 41], 'last_update_at' => now()->subDays(3),
         ]);
         // Updates wait, and the last update needs a restart.

@@ -128,8 +128,9 @@ export interface Website {
   planId: string;
   limits: Limits;
   /**
-   * False when the server of the website does not apply the disk limit, because its file
-   * system has no user quotas. No value when the server did not report it.
+   * False when the server of the website does not apply the disk limit of each website: its
+   * file system has no user quotas, and a website has no disk image. No value when the server
+   * did not report it.
    */
   diskLimitApplied?: boolean;
   use: ResourceUse;

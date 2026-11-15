@@ -38,6 +38,12 @@ The product specification, section 6.4, gives the requirements.
   directories, and it stops if one of them is not a directory. The website user makes the
   directory `app/public`. Thus a symbolic link that a website puts in its own files cannot
   make root change the files of a different website.
+- The server applies the disk limit of a website with a user quota. On a file system with no
+  user quotas, a new website with a disk limit has its own file system: a disk image, which
+  the server mounts on the directory of the website with the options `nodev` and `nosuid`.
+  Thus a website that fills its disk cannot fill the disk of the server. Only root can open
+  the directory of the disk images (`/srv/cloudfactory/disks`). Refer to
+  [architecture.md](architecture.md#disk-limit-of-a-website).
 
 ## SFTP
 
@@ -52,7 +58,9 @@ The product specification, section 6.4, gives the requirements.
   cannot read the files of a different website. A bug in sshd after the sign-in has only the
   permissions of the website user.
 - The container sees only the website directories in `/srv/cloudfactory/sites`. It does not
-  see the home directories, with the Podman storage of each user.
+  see the home directories, with the Podman storage of each user, or the disk image files.
+  It gets the mounts of the host below `/srv/cloudfactory/sites` (`rslave`), and it cannot
+  give a mount to the host.
 - SFTP accepts SSH keys only. A key cannot open a shell, a terminal or a forwarded port.
 - Only a website user with at least one key is in the user list of the container. The agent
   never puts a user with a UID or GID below 1000 in the list.
@@ -99,9 +107,10 @@ The product specification, section 6.4, gives the requirements.
   disk space. A customer thus cannot read the data of a different customer through a fault
   of a database engine, and cannot use the CPU time, the memory, the disk space or the
   connections of the database server of a different customer.
-- The disk limit of a database server is a file system with the size of the limit (a disk
-  image on a loop device). A database server that fills its disk cannot fill the disk of the
-  server. Refer to [architecture.md](architecture.md#disk-limit).
+- The disk limit of a database server is a user quota of its Unix user. On a file system
+  with no user quotas, it is a file system with the size of the limit (a disk image on a
+  loop device). A database server that fills its disk cannot fill the disk of the server.
+  Refer to [architecture.md](architecture.md#disk-limit).
 - The firewall lets a website connect only to the database address of its customer, on the
   ports of the database servers of its customer (refer to [Firewall](#firewall)). A website
   cannot open a connection to the database servers of a different customer, also when it
@@ -251,7 +260,7 @@ helper does only the work of three lists:
 | List | What the worker can ask for |
 | --- | --- |
 | Commands | A program as the Unix user of a website (`runuser -u <user>`). A command of a fixed form as the Unix user of a database server or as `cf-edge`, for example a database client in the container of that database server. Some root commands with fixed arguments: the commands of the status report, the updates of the operating system, the reboot, and restic with paths that the root helper examines. |
-| Operations | Root work that has a name, for example `user.ensure`, `unit.write`, `user.quota` and `db.prepare`. Each operation has typed values, and the root helper examines each value. |
+| Operations | Root work that has a name, for example `user.ensure`, `unit.write`, `user.quota`, `site.resize` and `db.prepare`. Each operation has typed values, and the root helper examines each value. |
 | Connections | The admin socket of the edge proxy, and some ports on the private service address and on the database network. |
 
 These rules apply to the three lists:
@@ -266,6 +275,11 @@ These rules apply to the three lists:
 - The worker cannot give the text of a unit of a database server or of `cf-edge`, and it
   cannot run a program of its choice as these users. The root helper makes
   these units from its own settings.
+- The root helper makes, mounts and changes the disk image of a website and of a database
+  server. The worker gives only the Unix user of the website or the ID of the database
+  server, and the disk limit. The root helper makes the path of the image file, the mount
+  point and the mount unit from its own settings, and it runs `mkfs.ext4`, `resize2fs` and
+  `e2fsck` only on that image file. The worker cannot mount a file of its choice.
 - The root helper makes the Unix user of a database server (`db-<id>`) from the ID of the
   database server. It uses such a user only when the UID of the user is in the range from
   10000 to 19999. As that user, the worker can run only a database client in the container
@@ -675,12 +689,24 @@ These items stay open in release 0.1:
   proxy. Refer to [The root helper of the agent](#the-root-helper-of-the-agent). A possible
   correction for the edge proxy is a root helper that accepts only the route changes of a
   fixed form.
-- **Disk space of the databases.** A server with no user quotas and no loop devices (for
+- **Servers with no disk limits.** A server with no user quotas and no loop devices (for
   example a container of an LXC host with a file system that is not ext4 or XFS) cannot apply
-  the disk limit of a database server. On such a server, a customer that fills the disk of
-  the server with database data stops the database servers of all customers. The panel shows
-  `database-disk-limits` as a part of the server that is off.
+  the disk limit of a website or of a database server. On such a server, a customer that
+  fills the disk of the server stops the websites and the database servers of all customers.
+  The panel shows `disk-quotas` and `database-disk-limits` as parts of the server that are
+  off.
+- **Websites and database servers from before the disk images.** On a file system with no
+  user quotas, a website or a database server that has a directory keeps it, and has no disk
+  limit. Only a new website or a new database server gets a disk image. The panel shows
+  `disk-quotas` or `database-disk-limits` as a part of the server that is off, with the
+  number of these websites or database servers. To give them a limit, turn on the user
+  quotas.
+- **Home directory of a website with a disk image.** The disk image limits the files of the
+  website. It does not limit the home directory of the website user, which has the files of
+  Podman, the log file of the website (10 MB at most) and, for a custom image, the copy of
+  the image. A customer with a custom image can thus use disk space of the server with the
+  size of that image. A user quota counts these files.
 - **Sum of the disk limits.** A user quota and a disk image use only the disk space that
-  the database server uses, and the sum of the disk limits can be more than the disk of the
-  server. Monitor the free disk space of the server.
+  the website or the database server uses, and the sum of the disk limits can be more than
+  the disk of the server. Monitor the free disk space of the server.
 - **Base images.** The Containerfiles name the base images by tag, not by digest.

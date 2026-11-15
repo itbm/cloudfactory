@@ -1416,7 +1416,7 @@
                             "name": "disk-quotas",
                             "state": "stopped",
                             "optional": true,
-                            "detail": "User quotas are off on the file system of the websites, so this server does not apply the disk limit of a website. Refer to \"Disk quotas\" in the installation guide."
+                            "detail": "User quotas are off on the file system of the websites. Websites with a disk limit and no disk image: 5 of 5. This server does not apply the disk limit of these websites. Only a new website gets a disk image. Refer to \"Disk quotas\" in the installation guide."
                         }
                     ],
                     "sftpPort": 2222,
@@ -2063,8 +2063,8 @@
                     "id": "disk-limits",
                     "title": "Turn on disk limits on each server",
                     "state": "open",
-                    "effect": "Without user quotas on the file system, a server does not apply the disk limit of a plan. One website can fill the disk, and then all websites on that server stop.",
-                    "detail": "These servers do not apply disk limits: web-1. Run the installation script on the server again: it turns on the user quotas of an ext4 file system. For a different file system, refer to \"Disk quotas\" in the installation guide.",
+                    "effect": "A server applies the disk limit of a plan with a user quota, or with a disk image for each new website. Without a disk limit, one website can fill the disk, and then all websites on that server stop.",
+                    "detail": "These servers do not apply the disk limit of each website: web-1. The status of the server gives the cause. Run the installation script on the server again: it turns on the user quotas of an ext4 file system. For a different file system, refer to \"Disk quotas\" in the installation guide.",
                     "action": {
                         "label": "Open the server",
                         "target": "/servers/01m7e9p0j19wv6ds02ehnaajd7"

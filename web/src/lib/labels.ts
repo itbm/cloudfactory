@@ -159,7 +159,8 @@ export function ttlText(seconds: number): string {
 
 /**
  * The text next to a disk limit that the server of the website does not apply (audit item U4).
- * A server applies the limit only when its file system has user quotas.
+ * A server applies the limit with a user quota of its file system, or with a disk image for
+ * each website.
  */
 export const DISK_LIMIT_NOT_APPLIED = "Not applied on this server";
 
