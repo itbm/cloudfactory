@@ -42,6 +42,11 @@ tags:
   - name: Users
     description: The users who can sign in. These routes need the users scope.
   - name: Audit
+  - name: Notifications
+    description: >-
+      Email notifications. Each user chooses the events that give an email. An administrator sets
+      the SMTP server and the templates of the panel. A reseller can set its own SMTP server and
+      templates for the emails to its customers. These routes need the notifications scope.
   - name: Agent
     description: Only the agent on a server uses these routes. They use the agent token, not a user token.
 
@@ -72,6 +77,13 @@ paths:
                 email: { type: string, format: email }
                 password: { type: string }
                 totp: { type: string, pattern: '^[0-9]{6}$', description: Necessary when TOTP is on for the user. }
+                deviceId:
+                  type: string
+                  maxLength: 100
+                  description: >-
+                    A random ID that the client keeps, 16 to 100 letters, digits, "-" or "_". After the
+                    first sign-in of a user, a sign-in from a device that the panel does not know
+                    sends an email to the user. With no ID, the panel knows a device by its user agent.
       responses:
         '200':
           description: Signed in.
@@ -2881,6 +2893,254 @@ paths:
                   users:
                     type: array
                     items: { $ref: '#/components/schemas/User' }
+  /v1/me/notification-preferences:
+    get:
+      tags: [Notifications]
+      summary: Get the email notifications of the signed-in user
+      description: >-
+        The events that the role of the user can receive, and whether each event sends an email
+        to the user. A new user receives all events. The security events ("required") always send
+        an email.
+      responses:
+        '200':
+          description: The events.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/NotificationPreference' } }
+    put:
+      tags: [Notifications]
+      summary: Choose the email notifications of the signed-in user
+      description: Give only the events to change. A required event cannot be turned off.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [events]
+              properties:
+                events:
+                  type: object
+                  additionalProperties: { type: boolean }
+                  example: { job.failed: false, usage.alert: true }
+      responses:
+        '200':
+          description: The events, after the change.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/NotificationPreference' } }
+        '422': { $ref: '#/components/responses/Invalid' }
+  /v1/notifications:
+    get:
+      tags: [Notifications]
+      summary: List the emails that the panel sent
+      description: >-
+        An administrator sees all emails. A reseller sees the emails to its users and to the
+        users of its customers. A customer sees the emails to the users of its account. A sign-in
+        email has the IP address of the person who signed in, so only that user and the
+        administrators see it.
+      parameters:
+        - { name: state, in: query, schema: { type: string, enum: [queued, sent, failed, skipped] } }
+        - { name: event, in: query, schema: { $ref: '#/components/schemas/NotificationEvent' } }
+        - { name: perPage, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1 } }
+      responses:
+        '200':
+          description: One page of emails. The newest email is first.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/NotificationDelivery' } }
+                  meta:
+                    type: object
+                    properties:
+                      currentPage: { type: integer }
+                      lastPage: { type: integer }
+                      total: { type: integer }
+  /v1/notifications/{id}:
+    get:
+      tags: [Notifications]
+      summary: Get one email, with its text
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      responses:
+        '200':
+          description: The email.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/NotificationDelivery' }
+                  - { type: object, properties: { body: { type: string } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/notifications/{id}/retry:
+    post:
+      tags: [Notifications]
+      summary: Send a failed or skipped email again
+      description: >-
+        For example after a correction of the SMTP server. An administrator can send each email
+        again. A reseller can send again the emails to its customers.
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      responses:
+        '200':
+          description: The email is in the queue.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NotificationDelivery' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'The email is not failed or skipped, or no SMTP server is set.' }
+  /v1/mail-server:
+    get:
+      tags: [Notifications]
+      summary: Get the SMTP server
+      description: >-
+        An administrator gets the server of the panel. A reseller gets its own server. With no
+        server of its own, the emails to the customers of a reseller go through the server of
+        the panel (panelFallback), with the name of the reseller. Other users get status 403.
+      responses:
+        '200':
+          description: The server. "configured" is false when there is none.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MailServer' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    put:
+      tags: [Notifications]
+      summary: Set the SMTP server
+      description: >-
+        The panel connects only to the SMTP ports 25, 465, 587 and 2525. For a reseller, the host
+        must have a public address. The panel never shows the password again: leave out
+        "password" to keep it, or send an empty value to remove it. A change of the host, the
+        port, the encryption, the user or the password needs a new test.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MailServerInput' }
+      responses:
+        '200':
+          description: The server.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MailServer' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Invalid' }
+    delete:
+      tags: [Notifications]
+      summary: Remove the SMTP server
+      responses:
+        '204': { description: Removed. }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /v1/mail-server/test:
+    post:
+      tags: [Notifications]
+      summary: Send a test email
+      description: >-
+        The panel sends the email at once, and gives the answer of the SMTP server. An
+        administrator can send it to any address. A reseller sends it to its own address.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                to: { type: string, format: email, description: Administrators only. The default is the address of the user. }
+      responses:
+        '200':
+          description: The result. "sent" is false when the server did not accept the email.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sent: { type: boolean }
+                  to: { type: string }
+                  error: { type: [string, 'null'] }
+                  server: { $ref: '#/components/schemas/MailServer' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { description: No SMTP server is set. }
+  /v1/notification-templates:
+    get:
+      tags: [Notifications]
+      summary: List the email templates
+      description: >-
+        The subject and the text of the email of each event. In a template, {{name}} is a value,
+        for example {{website}}. "variables" gives the values of each event. A reseller gets only
+        the events of its customers, and starts from the templates of the panel.
+      responses:
+        '200':
+          description: The templates.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/NotificationTemplate' } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /v1/notification-templates/{event}:
+    put:
+      tags: [Notifications]
+      summary: Change an email template
+      parameters: [{ name: event, in: path, required: true, schema: { $ref: '#/components/schemas/NotificationEvent' } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NotificationTemplateInput' }
+      responses:
+        '200':
+          description: The template.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NotificationTemplate' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+    delete:
+      tags: [Notifications]
+      summary: Reset an email template
+      description: The template goes back to the template of the panel (for a reseller) or to the default.
+      parameters: [{ name: event, in: path, required: true, schema: { $ref: '#/components/schemas/NotificationEvent' } }]
+      responses:
+        '200':
+          description: The template, after the reset.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NotificationTemplate' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/notification-templates/{event}/preview:
+    post:
+      tags: [Notifications]
+      summary: Preview an email template with example values
+      parameters: [{ name: event, in: path, required: true, schema: { $ref: '#/components/schemas/NotificationEvent' } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NotificationTemplateInput' }
+      responses:
+        '200':
+          description: The email.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  subject: { type: string }
+                  text: { type: string }
+                  html: { type: string }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
   /v1/audit:
     get:
       tags: [Audit]
@@ -3870,6 +4130,78 @@ components:
         - type: object
           properties:
             id: { type: string }
+    NotificationEvent:
+      type: string
+      enum: [job.failed, backup.failed, certificate.expiring, account.suspended, account.restored, signin.new_device, usage.alert, server.offline]
+    NotificationPreference:
+      type: object
+      properties:
+        event: { $ref: '#/components/schemas/NotificationEvent' }
+        label: { type: string }
+        description: { type: string }
+        email: { type: boolean, description: True when the event sends an email to the user. }
+        required: { type: boolean, description: A security email. The user cannot turn it off. }
+    NotificationDelivery:
+      type: object
+      properties:
+        id: { type: string }
+        event: { $ref: '#/components/schemas/NotificationEvent' }
+        label: { type: string }
+        recipient: { type: string }
+        subject: { type: string }
+        state: { type: string, enum: [queued, sent, failed, skipped], description: '"skipped": no SMTP server was set. The panel tries 3 times before "failed".' }
+        error: { type: [string, 'null'] }
+        attempts: { type: integer }
+        sentBy: { type: string, enum: [panel, reseller], description: The SMTP server that sends the email. }
+        createdAt: { type: string, format: date-time }
+        sentAt: { type: [string, 'null'], format: date-time }
+    MailServer:
+      type: object
+      properties:
+        configured: { type: boolean }
+        enabled: { type: boolean }
+        host: { type: [string, 'null'] }
+        port: { type: [integer, 'null'] }
+        encryption: { type: [string, 'null'], enum: [tls, starttls, none, null] }
+        username: { type: [string, 'null'] }
+        hasPassword: { type: boolean }
+        fromAddress: { type: [string, 'null'] }
+        fromName: { type: [string, 'null'] }
+        replyTo: { type: [string, 'null'] }
+        testedAt: { type: [string, 'null'], format: date-time }
+        testError: { type: [string, 'null'] }
+        panelFallback: { type: [boolean, 'null'], description: For a reseller only. True when the server of the panel sends the emails while the reseller has none. }
+    MailServerInput:
+      type: object
+      required: [host, port, encryption, fromAddress]
+      properties:
+        enabled: { type: boolean, default: true }
+        host: { type: string, maxLength: 253 }
+        port: { type: integer, enum: [25, 465, 587, 2525] }
+        encryption: { type: string, enum: [tls, starttls, none], description: '"tls": TLS from the start (port 465). "starttls": the server must give STARTTLS. "none": no TLS.' }
+        username: { type: [string, 'null'], maxLength: 200 }
+        password: { type: [string, 'null'], maxLength: 500 }
+        fromAddress: { type: string, format: email }
+        fromName: { type: [string, 'null'], maxLength: 100 }
+        replyTo: { type: [string, 'null'], format: email }
+    NotificationTemplate:
+      type: object
+      properties:
+        event: { $ref: '#/components/schemas/NotificationEvent' }
+        label: { type: string }
+        description: { type: string }
+        subject: { type: string }
+        body: { type: string }
+        changed: { type: boolean, description: True when this scope changed the template. }
+        originalSubject: { type: string, description: The subject after a reset. }
+        originalBody: { type: string }
+        variables: { type: array, items: { type: string } }
+    NotificationTemplateInput:
+      type: object
+      required: [subject, body]
+      properties:
+        subject: { type: string, maxLength: 200 }
+        body: { type: string, maxLength: 10000 }
     PanelCertificate:
       type: object
       required: [domain, method, state, letsEncryptAvailable, serversWithoutCa]

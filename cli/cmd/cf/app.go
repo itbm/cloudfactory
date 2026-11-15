@@ -115,6 +115,18 @@ Usage:
   cf networks remove NETWORK [--website WEBSITE]... [--database-server DATABASE_SERVER]...
   cf networks rename NETWORK NAME
   cf networks delete NETWORK                           The members stay. The network "default" cannot be removed.
+  cf notifications list [--state STATE] [--event EVENT] [--limit N | --all]
+                                                       The emails that the panel sent. STATE is queued, sent, failed or skipped.
+  cf notifications get ID                              The text of one email.
+  cf notifications retry ID                            Send a failed or skipped email again.
+  cf notifications preferences                         The events that send an email to you.
+  cf notifications on|off EVENT...                     For example: cf notifications off job.failed usage.alert
+  cf mail-server get                                   The SMTP server (administrators: of the panel; resellers: their own).
+  cf mail-server set --host HOST --from ADDRESS [--port 587] [--encryption tls|starttls|none] [--user USER]
+                     [--from-name NAME] [--reply-to ADDRESS] [--keep-password] [--off]
+                                                       The password comes from CF_SMTP_PASSWORD, or the prompt.
+  cf mail-server test [--to ADDRESS]                   Send a test email at once.
+  cf mail-server remove
   cf backups list|create WEBSITE
   cf backups restore WEBSITE SNAPSHOT [--scope website|database|file] [--item ITEM] [--remove-new-files]
                        --remove-new-files is for a full website. It deletes the files that are not in the backup.
@@ -323,6 +335,10 @@ func (a *app) dispatch(ctx context.Context, args []string) error {
 		return a.dns(ctx, sub, rest)
 	case "networks", "network":
 		return a.networks(ctx, sub, rest)
+	case "notifications", "notification":
+		return a.notifications(ctx, sub, rest)
+	case "mail-server":
+		return a.mailServer(ctx, sub, rest)
 	case "backups", "backup":
 		return a.backups(ctx, sub, rest)
 	case "jobs", "job":
