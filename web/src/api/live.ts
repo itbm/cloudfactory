@@ -129,8 +129,8 @@ interface ApiMe {
 interface ApiUser { id: number; name: string; email: string; role: User["role"]; customerId: string | null; totpEnabled: boolean; mustChangePassword: boolean; createdAt: string | null }
 interface ApiJob { id: string; title: string; ref: string | null; action?: string | null; state: Job["state"]; steps: string[]; step: number; error: string | null; websiteId: string | null; serverId: string | null; databaseServerId?: string | null; dnsZoneId?: string | null; createdAt: string; finishedAt: string | null }
 interface ApiWebsite {
-  id: string; name: string; application: string; customerId: string; serverId: string; planId: string; unixUser: string; networkHost?: string | null; networkPort?: number | null; kind?: Website["kind"]; command?: string | null; status: Website["status"];
-  runtime: { imageId: string; family: string; image: string; phpVersion: string | null; workerMode: boolean; extensions: string[]; phpIni: Record<string, string>; previousImageId: string | null; documentRoot?: string; digest?: string | null; signatureVerified?: boolean };
+  id: string; name: string; application: string; customerId: string; serverId: string; planId: string; unixUser: string; networkHost?: string | null; networkPort?: number | null; kind?: Website["kind"]; command?: string | null; installCommand?: string | null; environment?: string[]; status: Website["status"];
+  runtime: { imageId: string; family: string; image: string; phpVersion: string | null; version?: string | null; workerMode: boolean; extensions: string[]; phpIni: Record<string, string>; previousImageId: string | null; documentRoot?: string; digest?: string | null; signatureVerified?: boolean };
   sftp?: { enabled: boolean; host: string | null; port: number; username: string; authorizedKeys: string[] };
   limits: Limits; diskLimitApplied?: boolean | null; usage: Partial<Website["use"]> | null;
   domains?: { name: string; kind: Website["domains"][number]["kind"]; dnsPointsHere: boolean; certificate: { state: Website["domains"][number]["certificate"]["state"]; expiresAt: string | null }; verified?: boolean; verification?: DomainVerification | null }[];
@@ -143,11 +143,14 @@ interface ApiServer {
   usage: { cpuPercent?: number; memoryPercent?: number; diskPercent?: number } | null;
 }
 interface ApiImage {
-  id: string; name: string; family: RuntimeImage["family"]; reference: string; tag: string; digest: string | null; availableTag: string | null; phpVersion: RuntimeImage["phpVersion"] | null;
+  id: string; name: string; family: RuntimeImage["family"]; reference: string; tag: string; digest: string | null; availableTag: string | null; phpVersion: RuntimeImage["phpVersion"] | null; version?: string | null;
   supportEndsAt: string | null; policy: RuntimeImage["policy"]; custom: boolean; signatureVerified: boolean; websites: number | null; checkedAt?: string | null; checkError?: string | null;
   containerPort?: number; command?: string[] | null;
 }
-interface ApiRuntimeImage { id: string; name: string; family: RuntimeImage["family"]; tag: string; phpVersion?: RuntimeImage["phpVersion"] | null; custom: boolean; supportEndsAt: string | null }
+interface ApiRuntimeImage {
+  id: string; name: string; family: RuntimeImage["family"]; tag: string; phpVersion?: RuntimeImage["phpVersion"] | null; version?: string | null; custom: boolean; supportEndsAt: string | null;
+  defaults?: RuntimeImage["defaults"] | null;
+}
 interface ApiRollout {
   id: string; imageId: string; title: string; fromTag: string; toTag: string; severity: Rollout["severity"]; state: Rollout["state"]; stages: Rollout["stages"];
   websites: number; healthy: number; rolledBack: number; running: number; rollbacks: Rollout["rollbacks"]; startedAt: string; finishedAt?: string | null;
@@ -172,7 +175,7 @@ interface ApiSnapshot { id: string; kind: "scheduled" | "manual"; sizeBytes: num
 // Mapping from the API shapes to the state of the UI.
 
 const runtimeKind = (family: string): RuntimeKind =>
-  family === "frankenphp" || family === "apache-php-fpm" ? family : family === "static" || family === "edge" ? "static" : "oci";
+  family === "frankenphp" || family === "apache-php-fpm" || family === "node" || family === "python" ? family : family === "static" || family === "edge" ? "static" : "oci";
 
 const tagOfReference = (ref: string) => {
   const at = ref.lastIndexOf(":");
@@ -218,13 +221,14 @@ export function toWebsite(w: ApiWebsite): Website {
     id: w.id, name: w.name, application: w.application || "Website", customerId: w.customerId, serverId: w.serverId, unixUser: w.unixUser,
     // An API from before the networks sends no name. The name comes from the Unix user.
     networkHost: w.kind === "worker" ? null : w.networkHost ?? `${w.unixUser.replaceAll("_", "-")}.internal`, networkPort: w.kind === "worker" ? null : w.networkPort ?? 80,
-    kind: w.kind ?? "public", command: w.command ?? null,
+    kind: w.kind ?? "public", command: w.command ?? null, installCommand: w.installCommand ?? null, environment: w.environment ?? [],
     createdAt: w.createdAt, status: w.status, planId: w.planId, limits: w.limits, diskLimitApplied: w.diskLimitApplied ?? undefined,
     runtime: {
       kind: runtimeKind(w.runtime.family), imageId: w.runtime.imageId, phpVersion: (w.runtime.phpVersion ?? undefined) as Website["runtime"]["phpVersion"],
+      version: w.runtime.version ?? undefined,
       workerMode: w.runtime.workerMode, extensions: w.runtime.extensions ?? [], phpIni: w.runtime.phpIni ?? {},
       previous: w.runtime.previousImageId ? { imageId: w.runtime.previousImageId, tag: "" } : undefined,
-      documentRoot: w.runtime.documentRoot ?? "public",
+      documentRoot: w.runtime.documentRoot ?? (w.runtime.family === "node" || w.runtime.family === "python" ? "." : "public"),
       digest: w.runtime.digest ?? undefined, signatureVerified: w.runtime.signatureVerified ?? undefined,
     },
     use: { cpuPercent: 0, memoryBytes: 0, diskBytes: 0, processes: 0, diskIoBytesPerSecond: 0, ...(w.usage ?? {}) },
@@ -260,7 +264,7 @@ export function toImage(i: ApiImage, rollouts: ApiRollout[]): RuntimeImage {
   const rolling = rollouts.some((r) => r.imageId === i.id && (r.state === "running" || r.state === "paused"));
   return {
     id: i.id, name: i.name, family: i.family, reference: i.reference, running: i.tag, available: i.availableTag ?? undefined,
-    availableNote: i.availableTag && rolling ? "rolling_out" : undefined, phpVersion: i.phpVersion ?? undefined, supportEndsAt: i.supportEndsAt ?? undefined,
+    availableNote: i.availableTag && rolling ? "rolling_out" : undefined, phpVersion: i.phpVersion ?? undefined, version: i.version ?? undefined, supportEndsAt: i.supportEndsAt ?? undefined,
     websites: String(i.websites ?? 0), policy: i.policy, checkError: i.checkError ?? undefined,
     custom: i.custom, signatureVerified: i.signatureVerified, digest: i.digest ?? "", containerPort: i.containerPort, command: i.command ?? undefined,
   };
@@ -268,7 +272,8 @@ export function toImage(i: ApiImage, rollouts: ApiRollout[]): RuntimeImage {
 
 export function toRuntimeImage(i: ApiRuntimeImage): RuntimeImage {
   return {
-    id: i.id, name: i.name, family: i.family, reference: "", running: i.tag, phpVersion: i.phpVersion ?? undefined, supportEndsAt: i.supportEndsAt ?? undefined,
+    id: i.id, name: i.name, family: i.family, reference: "", running: i.tag, phpVersion: i.phpVersion ?? undefined, version: i.version ?? undefined,
+    defaults: i.defaults ?? undefined, supportEndsAt: i.supportEndsAt ?? undefined,
     websites: "", policy: "manual", custom: i.custom, signatureVerified: !i.custom, digest: "",
   };
 }

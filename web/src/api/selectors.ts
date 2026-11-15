@@ -27,6 +27,10 @@ export function runtimeLabel(s: State, w: Website): string {
       return `FrankenPHP${w.runtime.workerMode ? " worker" : ""} · PHP ${w.runtime.phpVersion}`;
     case "apache-php-fpm":
       return `Apache + PHP-FPM ${w.runtime.phpVersion}`;
+    case "node":
+      return `Node.js ${w.runtime.version ?? ""}`.trim();
+    case "python":
+      return `Python ${w.runtime.version ?? ""}`.trim();
     case "static":
       return "Caddy · static files";
     case "oci":

@@ -61,15 +61,19 @@ function RuntimeCard({ website }: { website: Website }) {
   const state = useStore();
   const image = imageOf(state, website);
   const isPhp = website.runtime.kind === "frankenphp" || website.runtime.kind === "apache-php-fpm";
+  const isApp = website.runtime.kind === "node" || website.runtime.kind === "python";
   // The website gives the digest to all roles. Only an administrator has the list of images.
   const digest = website.runtime.digest || image?.digest;
   return (
-    <Card title="Runtime" actions={isPhp && <Link to={`/websites/${website.id}/runtime`}>Change PHP version</Link>}>
+    <Card title="Runtime" actions={(isPhp || isApp) && <Link to={`/websites/${website.id}/runtime`}>{isPhp ? "Change PHP version" : "Change runtime"}</Link>}>
       <div className="card-body">
         <table className="kv">
           <tbody>
             <tr><th scope="row">Engine</th><td>{runtimeLabel(state, website).split(" · ")[0]} {tagOf(state, website)}{website.runtime.kind === "frankenphp" ? ` · ${website.runtime.workerMode ? "worker mode" : "classic mode"}` : ""}</td></tr>
+            {isApp && website.runtime.version && <tr><th scope="row">{website.runtime.kind === "node" ? "Node.js" : "Python"}</th><td>{website.runtime.version}{supportEnds(state, website) && <span className="note-warning"> · support ends {longDate(supportEnds(state, website)!)}</span>}</td></tr>}
             {website.runtime.phpVersion && <tr><th scope="row">PHP</th><td>{website.runtime.phpVersion}{supportEnds(state, website) && <span className="note-warning"> · support ends {longDate(supportEnds(state, website)!)}</span>}</td></tr>}
+            {isApp && website.command && <tr><th scope="row">Start command</th><td><code>{website.command}</code></td></tr>}
+            {isApp && <tr><th scope="row">Variables</th><td>{website.environment.length ? website.environment.join(", ") : <span className="muted">None</span>}</td></tr>}
             <tr><th scope="row">Image</th><td><code>{website.imageReference ?? `${image?.reference}:${tagOf(state, website)}${website.runtime.phpVersion && image?.family !== "apache-php-fpm" ? `-php${website.runtime.phpVersion}` : ""}`}</code></td></tr>
             <tr>
               <th scope="row">Digest</th>

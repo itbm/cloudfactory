@@ -16,7 +16,7 @@ describe("the state from the panel API", () => {
     await signedIn("administrator");
     const s = getState();
     expect(s.session).toMatchObject({ signedIn: true, user: { name: "Alex Admin", role: "administrator" }, contextId: "platform" });
-    expect(s.websites).toHaveLength(12);
+    expect(s.websites).toHaveLength(14);
     expect(s.servers.map((x) => x.name)).toEqual(["web-1", "web-2", "web-3"]);
     expect(s.servers.find((x) => x.name === "web-3")).toMatchObject({ state: "degraded", agentUpdateAvailable: true, stateDetail: "Degraded: cf-sftp failed" });
     expect(s.images.find((i) => i.name === "FrankenPHP · PHP 8.4")).toMatchObject({ running: "0.1.9", available: "0.1.10" });
@@ -32,7 +32,7 @@ describe("the state from the panel API", () => {
     await signedIn("reseller");
     const s = getState();
     expect(s.session.user.role).toBe("reseller");
-    expect(visibleWebsites(s).map((w) => w.name).sort()).toEqual(["cornerbakery.example.org", "events.harbourbooks.example.net", "harbourbooks.example.net", "northwind.example.com"]);
+    expect(visibleWebsites(s).map((w) => w.name).sort()).toEqual(["cornerbakery.example.org", "events.harbourbooks.example.net", "harbourbooks.example.net", "northwind.example.com", "reports.northwind.example.com"]);
     expect(contextCustomers(s).map((c) => c.name).sort()).toEqual(["Corner Bakery", "Harbour Books", "Northwind Agency"]);
     expect(s.servers).toEqual([]);
     // A reseller cannot list all images. It gets the images for a new website.
@@ -43,7 +43,7 @@ describe("the state from the panel API", () => {
   it("gives an owner only its own websites and its own customer", async () => {
     await signedIn("owner");
     const s = getState();
-    expect(visibleWebsites(s)).toHaveLength(7);
+    expect(visibleWebsites(s)).toHaveLength(8);
     expect(visibleWebsites(s).every((w) => w.name.endsWith("acme.example.com") || w.kind !== "public")).toBe(true);
     expect(s.customers.map((c) => c.name)).toEqual(["Acme Ltd"]);
     expect(s.servers).toEqual([]);
@@ -54,7 +54,7 @@ describe("the state from the panel API", () => {
     await signedIn("administrator");
     const northwind = getState().customers.find((c) => c.name === "Northwind Agency")!;
     setContext(northwind.id);
-    expect(visibleWebsites(getState())).toHaveLength(4);
+    expect(visibleWebsites(getState())).toHaveLength(5);
   });
 
   it("lists the website that the panel could not make first", async () => {
@@ -69,7 +69,7 @@ describe("the state from the panel API", () => {
     resetState();
     start();
     expect(getState().session).toMatchObject({ signedIn: true, loading: true });
-    await expect.poll(() => getState().websites.length).toBe(7);
+    await expect.poll(() => getState().websites.length).toBe(8);
   });
 });
 
