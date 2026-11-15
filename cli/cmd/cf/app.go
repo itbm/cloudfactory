@@ -666,6 +666,10 @@ func (a *app) websites(ctx context.Context, sub string, args []string) error {
 			return a.printJSON(w)
 		}
 		fmt.Fprintf(a.out, "Name:     %s\nID:       %s\nStatus:   %s\nRuntime:  %s\nUser:     %s\n", w.Name, w.ID, w.Status, w.Runtime.Image, w.UnixUser)
+		// A different website in a network with this website connects to this name.
+		if w.NetworkHost != "" {
+			fmt.Fprintf(a.out, "Network:  %s:%d\n", w.NetworkHost, w.NetworkPort)
+		}
 		for _, d := range w.Domains {
 			fmt.Fprintf(a.out, "Domain:   %s (%s)\n", d.Name, d.Kind)
 		}

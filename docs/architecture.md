@@ -758,8 +758,9 @@ tunnels until you update its agent.
 ## The networks of the customers
 
 A network is a private network of one customer. Its members are websites and database
-servers of the customer. A website can connect to each database server that is in a network
-with it. The database server can be on the server of the website or on a different server.
+servers of the customer. A website can connect to each database server and to each other
+website that is in a network with it. The member can be on the server of the website or on a
+different server.
 
 Each customer has the network `default`. Each new website and each new database server of
 the customer is a member of it. In this release, `default` is the only network.
@@ -772,10 +773,18 @@ A database server has one name for the websites: the name of the database server
 same for each website, on each server. Thus the configuration of an app does not change when
 the database server or the website is on a different server.
 
-The panel gives each database server one address of the mesh range (the member address).
-The addresses of the servers are the first 254 addresses of the range, and the member
-addresses are after them. A member address does not change. The name points to the member
-address on each server.
+A website has one name for the other websites of its networks: its Unix user with `-` in
+place of `_`, and `.internal`. For example, the website with the Unix user `shop_a1b2` has
+the name `shop-a1b2.internal`. It answers on port 80, with HTTP. The connection does not go
+through the edge proxy, so it has no TLS of its own: the tunnel between two servers encrypts
+it. The panel shows the name on the **Settings** tab of the website, and `cf website show`
+prints it. A database server cannot have the name of a website of its customer.
+
+The panel gives each member one address of the mesh range (the member address). The
+addresses of the servers are the first 254 addresses of the range, and the member addresses
+are after them. A database server gets its address when the panel makes it. A website gets
+its address when a different website is in a network with it. A member address does not
+change. The name points to the member address on each server.
 
 The names `mariadb.internal`, `postgres.internal` and `valkey.internal` stay. They point to
 the database servers of the customer on the server of the website, where each database
@@ -788,8 +797,8 @@ The panel sends the networks of a server with its mesh state (the action `SetMes
 
 - The members on the server. Each member has its address, its port, and the mesh addresses
   of the other servers that have a website in a network with it.
-- The websites on the server that are in a network with a database server. Each website has
-  the name, the address and the port of each database server that it can connect to.
+- The websites on the server that are in a network with a member. Each website has the
+  name, the address and the port of each member that it can connect to.
 - For each tunnel, the addresses of the members on the other server that a website of this
   server uses. WireGuard sends the traffic for these addresses into that tunnel.
 
@@ -826,7 +835,21 @@ A website connects to `shop-db.internal:3306`, which is the member address.
   address and the port of the container. It lets only the Unix user of a website that is in
   a network with the member do this.
 
-In the two cases, the database server sees the address `169.254.80.1` as the client. This is
+A website that is a member has the same path. The destination changes to the port of the
+container of the website on the private service address (`169.254.77.1`). The rule that
+lets a website connect to a member is the first rule of the chain `output`, before the rule
+that closes the ports of the private service address. It compares the member address and
+port 80 from before the change. Thus the port of the container itself stays closed for each
+website. When the runtime of a website changes, its container gets a new port, and the agent
+writes the rules again. A website that its owner stopped stays a member: a connection to it
+gets a refusal.
+
+An agent reports that a website on it can be a member (`websites` in its mesh report). The
+panel makes a website a member only when the agent of its server and the agent of the server
+of the client reported this. An agent from an earlier release gets no member on port 80.
+
+In the two cases, the database server sees the address `169.254.80.1` as the client. A
+website that is a member also sees this address. This is
 the address that it sees for each website container. Thus a database user that can connect
 from a website can connect from each website of the networks of the database server, with
 its password.

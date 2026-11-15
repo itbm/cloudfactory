@@ -132,6 +132,7 @@ class AgentController extends Controller
             'mesh.address' => ['nullable', 'string', 'max:45'],
             // True when the agent can operate the members of the networks of the customers.
             'mesh.networks' => ['boolean'],
+            'mesh.websites' => ['boolean'],
             'mesh.tunnels' => ['nullable', 'array', 'max:1000'],
             'mesh.tunnels.*.server' => ['required', 'string', 'max:64'],
             'mesh.tunnels.*.handshakeAt' => ['integer', 'min:0'],

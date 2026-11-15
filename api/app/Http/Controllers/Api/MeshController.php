@@ -9,6 +9,7 @@ use App\Models\DatabaseServer;
 use App\Models\MeshTunnel;
 use App\Models\Server;
 use App\Models\Setting;
+use App\Models\Website;
 use App\Services\Audit;
 use App\Services\JobDispatcher;
 use App\Services\Mesh;
@@ -54,6 +55,7 @@ class MeshController extends Controller
             Server::whereNotNull('mesh_address')->update(['mesh_address' => null]);
             // The network members get addresses of the new range.
             DatabaseServer::whereNotNull('mesh_address')->update(['mesh_address' => null]);
+            Website::whereNotNull('mesh_address')->update(['mesh_address' => null]);
             $this->mesh->refresh();
             Audit::record($request, 'Changed mesh settings', "{$settings['range']} port {$settings['port']}");
         }

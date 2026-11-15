@@ -122,6 +122,10 @@ export interface Website {
   customerId: string;
   serverId: string;
   unixUser: string;
+  /** The name of the website for a different website in a network with it, for example "shop-a1b2.internal". */
+  networkHost: string;
+  /** The port that the website answers on in its networks. */
+  networkPort: number;
   createdAt: string;
   status: WebsiteStatus;
   runtime: Runtime;

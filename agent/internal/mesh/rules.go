@@ -78,8 +78,8 @@ func add(out []string, indent string, lines []string) []string {
 
 // networkTableRules are the sets, the map and the chain of the networks in the table.
 var networkTableRules = []string{
-	"# The networks of the customers. A network member is a database server with a name and an",
-	"# address of the mesh range. The agent writes the elements in its file network.nft.",
+	"# The networks of the customers. A network member is a database server or a website with a",
+	"# name and an address of the mesh range. The agent writes the elements in its file network.nft.",
 	"# The UID of a website of this server, the address of a member, and the port of the member.",
 	"set " + SetNetworkAccess + " {",
 	"  typeof meta skuid . ip daddr . tcp dport",
@@ -111,12 +111,21 @@ var networkMeshInputRules = []string{
 	"ct state new ct status dnat ip saddr . ct original ip daddr . ct original proto-dst @" + SetMeshAccess + " accept",
 }
 
+// networkOutputFirstRules are the first rules of the chain "output". They are before the rule
+// that closes the ports of the websites on the private service address: a member can be a
+// website, and its container is on that address.
+var networkOutputFirstRules = []string{
+	"# The networks: a website can connect to the members of its networks. This rule is for a",
+	"# member on this server, after the address change (the chain output_nat). It compares the",
+	"# address and the port from before the change, so the address and the port of the",
+	"# container give no access.",
+	"ct state new meta l4proto tcp ct status dnat meta skuid . ct original ip daddr . ct original proto-dst @" + SetNetworkAccess + " accept",
+}
+
 // networkOutputRules go into the chain "output", before the rule that refuses the mesh range.
 var networkOutputRules = []string{
-	"# The networks: a website can connect to the members of its networks. The first two rules",
-	"# are for a member on this server, after the address change (the chain output_nat). The",
-	"# third rule is for a member on a different server.",
-	"ct state new meta l4proto tcp ct status dnat meta skuid . ct original ip daddr . ct original proto-dst @" + SetNetworkAccess + " accept",
+	"# The networks: all other connections to a member on this server are refused. The last",
+	"# rule is for a member on a different server.",
 	"ct state new ct status dnat ct original ip daddr @" + SetRange + " meta skuid != 0 jump refuse",
 	"ct state new meta skuid . ip daddr . tcp dport @" + SetNetworkAccess + " accept",
 }
@@ -141,6 +150,8 @@ var networkPostroutingRules = []string{
 }
 
 var natTypeRE = regexp.MustCompile(`^type nat hook \w+ priority `)
+
+var outputTypeRE = regexp.MustCompile(`^type filter hook output priority `)
 
 // addNetworkRules adds the rules of the networks to a file that has the rules of the mesh.
 func addNetworkRules(content string) (string, error) {
@@ -170,6 +181,9 @@ func addNetworkRules(content string) (string, error) {
 			chain = strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(text, "chain "), "{"))
 		case text == "}":
 			chain = ""
+		case chain == "output" && outputTypeRE.MatchString(text) && !done["output first"]:
+			out = add(out, indentOf(l), networkOutputFirstRules)
+			done["output first"] = true
 		case natTypeRE.MatchString(text) && !done[chain]:
 			if rules := map[string][]string{"prerouting": networkPreroutingRules, "output_nat": networkOutputNATRules, "postrouting_nat": networkPostroutingRules}[chain]; rules != nil {
 				out = add(out, indentOf(l), rules)
@@ -177,7 +191,7 @@ func addNetworkRules(content string) (string, error) {
 			}
 		}
 	}
-	for _, part := range []string{"table", "mesh_input", "output", "prerouting", "output_nat", "postrouting_nat"} {
+	for _, part := range []string{"table", "mesh_input", "output first", "output", "prerouting", "output_nat", "postrouting_nat"} {
 		if !done[part] {
 			return "", errors.New("the file does not have the rules of the installer, so the agent cannot add the rules of the networks")
 		}

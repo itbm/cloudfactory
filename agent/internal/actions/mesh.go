@@ -423,7 +423,7 @@ func (d *Deps) meshStatus(ctx context.Context) (*panel.Mesh, error) {
 	if err != nil {
 		return nil, err
 	}
-	out := &panel.Mesh{Tunnels: []panel.Tunnel{}, Networks: true}
+	out := &panel.Mesh{Tunnels: []panel.Tunnel{}, Networks: true, Websites: true}
 	if out.PublicKey, err = mesh.PublicKey(key); err != nil {
 		return nil, err
 	}

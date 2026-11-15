@@ -22,8 +22,12 @@ func network() Network {
 
 func rules() Rules {
 	return Rules{
-		Members: []MemberRule{{Address: "10.207.1.10", Port: 3306, Local: "169.254.80.5", LocalPort: 3307, Servers: []string{"10.207.0.2", "10.207.0.3"}}},
-		Access:  []AccessRule{{UID: 20001, Address: "10.207.1.10", Port: 3306}, {UID: 20002, Address: "10.207.1.11", Port: 6379}},
+		Members: []MemberRule{
+			{Address: "10.207.1.10", Port: 3306, Local: "169.254.80.5", LocalPort: 3307, Servers: []string{"10.207.0.2", "10.207.0.3"}},
+			// A website: its container is on the private service address.
+			{Address: "10.207.1.12", Port: 80, Local: quadlet.ServiceAddress, LocalPort: 20005, Servers: []string{"10.207.0.2"}},
+		},
+		Access: []AccessRule{{UID: 20001, Address: "10.207.1.10", Port: 3306}, {UID: 20002, Address: "10.207.1.11", Port: 6379}, {UID: 20002, Address: "10.207.1.12", Port: 80}},
 	}
 }
 
@@ -63,14 +67,14 @@ func TestNetworkCheck(t *testing.T) {
 }
 
 func TestRulesCheck(t *testing.T) {
-	if err := rules().Check("10.207.0.0/16", meshServers, 20000, 59999); err != nil {
+	if err := rules().Check("10.207.0.0/16", meshServers, 20000, 59999, 20000, 29999); err != nil {
 		t.Fatal(err)
 	}
 	// A server with no networks needs no mesh range.
-	if err := (Rules{}).Check("", nil, 20000, 59999); err != nil {
+	if err := (Rules{}).Check("", nil, 20000, 59999, 20000, 29999); err != nil {
 		t.Error(err)
 	}
-	if err := rules().Check("", nil, 20000, 59999); err == nil {
+	if err := rules().Check("", nil, 20000, 59999, 20000, 29999); err == nil {
 		t.Error("Check accepts rules on a server with no mesh range")
 	}
 	for name, change := range map[string]func(*Rules){
@@ -85,6 +89,15 @@ func TestRulesCheck(t *testing.T) {
 		"member two times":                func(r *Rules) { r.Members = append(r.Members, r.Members[0]) },
 		"server outside the range":        func(r *Rules) { r.Members[0].Servers = []string{"192.168.1.1"} },
 		"server with a member address":    func(r *Rules) { r.Members[0].Servers = []string{"10.207.1.10"} },
+		"website on the database network": func(r *Rules) { r.Members[1].Local = "169.254.80.5" },
+		"website port of an engine":       func(r *Rules) { r.Members[1].LocalPort = 3306 },
+		"website port of the agent":       func(r *Rules) { r.Members[1].LocalPort = 7443 },
+		"website port of the proxy":       func(r *Rules) { r.Members[1].LocalPort = 8080 },
+		"website port above the range":    func(r *Rules) { r.Members[1].LocalPort = 30000 },
+		"database on the service address": func(r *Rules) { r.Members[0].Local, r.Members[0].LocalPort = quadlet.ServiceAddress, 20005 },
+		"two members on one container": func(r *Rules) {
+			r.Members = append(r.Members, MemberRule{Address: "10.207.1.13", Port: 80, Local: quadlet.ServiceAddress, LocalPort: 20005})
+		},
 		"UID of root":                     func(r *Rules) { r.Access[0].UID = 0 },
 		"UID of a database server":        func(r *Rules) { r.Access[0].UID = 60001 },
 		"access to a server address":      func(r *Rules) { r.Access[0].Address = "10.207.0.3" },
@@ -93,7 +106,7 @@ func TestRulesCheck(t *testing.T) {
 	} {
 		r := rules()
 		change(&r)
-		if err := r.Check("10.207.0.0/16", meshServers, 20000, 59999); err == nil {
+		if err := r.Check("10.207.0.0/16", meshServers, 20000, 59999, 20000, 29999); err == nil {
 			t.Errorf("%s: Check accepts the rules", name)
 		}
 	}
@@ -103,9 +116,9 @@ func TestRulesFirewall(t *testing.T) {
 	got := rules().Firewall("# header\n")
 	for _, want := range []string{
 		"# header\n",
-		"flush set inet cloudfactory network_access\nadd element inet cloudfactory network_access { 20001 . 10.207.1.10 . 3306, 20002 . 10.207.1.11 . 6379 }\n",
-		"flush set inet cloudfactory mesh_access\nadd element inet cloudfactory mesh_access { 10.207.0.2 . 10.207.1.10 . 3306, 10.207.0.3 . 10.207.1.10 . 3306 }\n",
-		"flush map inet cloudfactory mesh_members\nadd element inet cloudfactory mesh_members { 10.207.1.10 . 3306 : 169.254.80.5 . 3307 }\n",
+		"flush set inet cloudfactory network_access\nadd element inet cloudfactory network_access { 20001 . 10.207.1.10 . 3306, 20002 . 10.207.1.11 . 6379, 20002 . 10.207.1.12 . 80 }\n",
+		"flush set inet cloudfactory mesh_access\nadd element inet cloudfactory mesh_access { 10.207.0.2 . 10.207.1.10 . 3306, 10.207.0.2 . 10.207.1.12 . 80, 10.207.0.3 . 10.207.1.10 . 3306 }\n",
+		"flush map inet cloudfactory mesh_members\nadd element inet cloudfactory mesh_members { 10.207.1.10 . 3306 : 169.254.80.5 . 3307, 10.207.1.12 . 80 : 169.254.77.1 . 20005 }\n",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("no %q in:\n%s", want, got)
@@ -214,6 +227,7 @@ func TestAddNetworkRules(t *testing.T) {
 	}
 	inOrder(t, next, []string{"table inet cloudfactory {"}, networkTableRules)
 	inOrder(t, next, []string{"chain mesh_input {"}, networkMeshInputRules, []string{"drop", "}"})
+	inOrder(t, next, []string{"chain output {", "type filter hook output priority filter; policy accept;"}, networkOutputFirstRules, []string{"# FR-1703: only root (the agent) and the edge proxy can connect to the website and panel"})
 	inOrder(t, next, []string{"chain output {"}, networkOutputRules, outputRules[len(outputRules)-1:])
 	inOrder(t, next, []string{"chain prerouting {", "type nat hook prerouting priority dstnat;"}, networkPreroutingRules, []string{"tcp dport 80 redirect to :8080"})
 	inOrder(t, next, []string{"chain output_nat {", "type nat hook output priority -100;"}, networkOutputNATRules, []string{"fib daddr type local tcp dport 80 redirect to :8080"})
@@ -237,6 +251,7 @@ func TestTheInstallerHasTheNetworkRules(t *testing.T) {
 	text := strings.ReplaceAll(string(b), "$DATABASE_CLIENT_ADDRESS", quadlet.DatabaseClientAddress)
 	inOrder(t, text, []string{"table inet cloudfactory {"}, networkTableRules)
 	inOrder(t, text, []string{"chain mesh_input {"}, networkMeshInputRules, []string{"drop", "}"})
+	inOrder(t, text, []string{"chain output {", "type filter hook output priority filter; policy accept;"}, networkOutputFirstRules, []string{"# FR-1703: only root (the agent) and the edge proxy can connect to the website and panel"})
 	inOrder(t, text, []string{"chain output {"}, networkOutputRules, outputRules[len(outputRules)-1:])
 	inOrder(t, text, []string{"chain prerouting {", "type nat hook prerouting priority dstnat;"}, networkPreroutingRules, []string{"tcp dport 80 redirect to :8080"})
 	inOrder(t, text, []string{"chain output_nat {", "type nat hook output priority -100;"}, networkOutputNATRules, []string{"fib daddr type local tcp dport 80 redirect to :8080"})

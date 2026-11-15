@@ -4,6 +4,7 @@ namespace App\Http\Resources;
 
 use App\Models\Domain;
 use App\Models\Website;
+use App\Services\Networks;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -22,6 +23,9 @@ class WebsiteResource extends JsonResource
             'serverId' => $this->server_id,
             'planId' => $this->plan_id,
             'unixUser' => $this->unix_user,
+            // The name and the port for a different website in a network with this website.
+            'networkHost' => Networks::hostOf($this->resource),
+            'networkPort' => Networks::WEBSITE_PORT,
             'status' => $this->status->value,
             'runtime' => [
                 'imageId' => $this->image_id,

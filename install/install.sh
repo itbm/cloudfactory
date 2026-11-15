@@ -340,8 +340,8 @@ table inet cloudfactory {
   set database_access {
     typeof meta skuid . ip daddr . tcp dport
   }
-  # The networks of the customers. A network member is a database server with a name and an
-  # address of the mesh range. The agent writes the elements in its file network.nft.
+  # The networks of the customers. A network member is a database server or a website with a
+  # name and an address of the mesh range. The agent writes the elements in its file network.nft.
   # The UID of a website of this server, the address of a member, and the port of the member.
   set network_access {
     typeof meta skuid . ip daddr . tcp dport
@@ -414,6 +414,11 @@ table inet cloudfactory {
   }
   chain output {
     type filter hook output priority filter; policy accept;
+    # The networks: a website can connect to the members of its networks. This rule is for a
+    # member on this server, after the address change (the chain output_nat). It compares the
+    # address and the port from before the change, so the address and the port of the
+    # container give no access.
+    ct state new meta l4proto tcp ct status dnat meta skuid . ct original ip daddr . ct original proto-dst @network_access accept
     # FR-1703: only root (the agent) and the edge proxy can connect to the website and panel
     # ports on the private service address. pasta opens each connection of a container as the
     # Unix user of the container, so a website cannot reach a different website. The rule
@@ -433,10 +438,8 @@ table inet cloudfactory {
     # to a private network or to a service of this server from it. The rule checks only new
     # connections, so it does not change the answers to the websites.
     ct state new meta skuid $DATABASE_UID_MIN-$DATABASE_UID_MAX jump refuse
-    # The networks: a website can connect to the members of its networks. The first two rules
-    # are for a member on this server, after the address change (the chain output_nat). The
-    # third rule is for a member on a different server.
-    ct state new meta l4proto tcp ct status dnat meta skuid . ct original ip daddr . ct original proto-dst @network_access accept
+    # The networks: all other connections to a member on this server are refused. The last
+    # rule is for a member on a different server.
     ct state new ct status dnat ct original ip daddr @mesh_range meta skuid != 0 jump refuse
     ct state new meta skuid . ip daddr . tcp dport @network_access accept
     # The mesh: only root (the agent) can connect to an address of the mesh.

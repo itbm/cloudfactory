@@ -1,6 +1,7 @@
 package actions
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -395,5 +396,75 @@ func TestABackupOfTheDatabasesOfAWebsiteOfADifferentServer(t *testing.T) {
 	empty.Databases = nil
 	if _, err := d.Backup(empty); err == nil {
 		t.Error("a backup of the databases only with no database was accepted")
+	}
+}
+
+// A website is a member: it answers on port 80 of its member address, for a website of the
+// same server and for a website of a peer. The address change goes to the port of its
+// container on the private service address.
+func TestAWebsiteIsAMember(t *testing.T) {
+	d, _ := meshServer(t)
+	if err := run(t)(d.CreateWebsite(&agentv1.WebsiteRequest{JobId: jobID, Website: website("ghcr.io/cloudfactory/frankenphp-php8.4:8.4.0-1")})); err != nil {
+		t.Fatal(err)
+	}
+	if err := run(t)(d.CreateWebsite(&agentv1.WebsiteRequest{JobId: jobID2, Website: secondWebsite("ghcr.io/cloudfactory/frankenphp-php8.4:8.4.0-1")})); err != nil {
+		t.Fatal(err)
+	}
+	const address = "10.207.1.30"
+	req := meshRequest(7)
+	req.Mesh.Members = []*agentv1.NetworkMember{{Id: websiteID, Address: address, Port: 80, Servers: []string{"10.207.0.2"}}}
+	req.Mesh.Websites = []*agentv1.NetworkWebsite{{Id: websiteID2, Names: []*agentv1.NetworkName{{Name: "acme-x7k2.internal", Address: address, Port: 80}}}}
+	job, err := d.SetMesh(req)
+	if err := runSteps(t, job, err); err != nil {
+		t.Fatal(err)
+	}
+	first, _ := d.State.Get(websiteID)
+	uid, err := d.Host.LookupUID("beta_y8m3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	member := func(port int) string {
+		return fmt.Sprintf("add element inet cloudfactory mesh_members { %s . 80 : 169.254.77.1 . %d }\n", address, port)
+	}
+	fw := networkFile(t, d)
+	for _, want := range []string{
+		fmt.Sprintf("add element inet cloudfactory network_access { %d . %s . 80 }\n", uid, address),
+		"add element inet cloudfactory mesh_access { 10.207.0.2 . " + address + " . 80 }\n",
+		member(first.Port),
+	} {
+		if !strings.Contains(fw, want) {
+			t.Errorf("no %q in:\n%s", want, fw)
+		}
+	}
+	if hosts := websiteHostsFile(t, d, "beta_y8m3"); !strings.Contains(hosts, address+" acme-x7k2.internal\n") {
+		t.Errorf("the hosts file of the second website:\n%s", hosts)
+	}
+	// The first rule of the chain "output" gives the access, before the rule that closes the
+	// ports of the private service address.
+	b, _ := os.ReadFile(rootOf(d).FirewallFile)
+	accept := strings.Index(string(b), "ct original proto-dst @network_access accept")
+	if closed := strings.Index(string(b), "ip daddr 169.254.77.1 tcp dport"); accept < 0 || closed < 0 || accept > closed {
+		t.Errorf("the rule of the members is not before the rule of the service address:\n%s", b)
+	}
+
+	// A change of the runtime gives the website a new container on a new port. The member
+	// address goes to the new port.
+	if err := run(t)(d.SetRuntime(&agentv1.WebsiteRequest{JobId: jobID2, Website: website("ghcr.io/cloudfactory/frankenphp-php8.5:8.5.0-1")})); err != nil {
+		t.Fatal(err)
+	}
+	next, _ := d.State.Get(websiteID)
+	if next.Port == first.Port {
+		t.Fatalf("the website kept the port %d", next.Port)
+	}
+	if fw := networkFile(t, d); !strings.Contains(fw, member(next.Port)) {
+		t.Errorf("the firewall after the change of the runtime:\n%s", fw)
+	}
+
+	// The agent removes the website: the member goes.
+	if err := run(t)(d.DeleteWebsite(&agentv1.DeleteWebsiteRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2"})); err != nil {
+		t.Fatal(err)
+	}
+	if fw := networkFile(t, d); strings.Contains(fw, "mesh_members {") {
+		t.Errorf("the firewall after the website is gone:\n%s", fw)
 	}
 }

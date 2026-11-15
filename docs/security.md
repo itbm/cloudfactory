@@ -569,7 +569,8 @@ through the internet, so the design assumes that a person can read and change ea
 A website connects to a database server of its networks by a name such as
 `shop-db.internal` (refer to
 [architecture.md](architecture.md#the-networks-of-the-customers)). The database server can be
-on a different server. These are the controls:
+on a different server. A website also connects to a different website of its networks, by a
+name such as `shop-a1b2.internal` on port 80. These are the controls:
 
 - **The firewall decides, not the name.** The hosts file of a website has only the names of
   the members of its networks. A website that writes an address in its own configuration gets
@@ -595,11 +596,25 @@ on a different server. These are the controls:
   no other address. A database server cannot find from the address which website connects. As
   before, the password of the database user is the control between the websites of one
   customer.
+- **A website that is a member has no password.** A database server asks for the password
+  of a database user. A website on port 80 does not: each website that is in a network with
+  it can send it requests, and the website sees the same client address for each of them.
+  Thus the members of one network trust each other. An application that must know which
+  website sent a request needs its own control, for example a token in the request. A server
+  whose root is in the hands of an attacker can send requests to each website member that
+  one of its websites can connect to.
+- **A website member and the edge proxy.** A connection to the network name does not go
+  through the edge proxy. It has no TLS, no access log of the edge and no stop page. Between
+  two servers, the WireGuard tunnel encrypts it. The port of the container on the private
+  service address stays closed for each website: the firewall accepts a connection of a
+  website only when the connection was to the member address and port 80 before the address
+  change, and the Unix user of the website has that member in its networks.
 - **Checks of the root helper.** The worker of the agent makes the rules, and the root helper
   examines each one. A rule can open only an address of the mesh range that is not the
   address of a server, only for a UID of a website user, and only on the usual port of an
-  engine. The address change of a member can go only to a port of a database server on the
-  database network. A name must end in `.internal`, and it can point only to an address of
+  engine or on port 80. The address change of a member can go only to a port of a database
+  server on the database network, or, for port 80, to a port of a website container on the
+  private service address (20000 to 29999). A name must end in `.internal`, and it can point only to an address of
   the mesh range. Thus a worker that an attacker controls cannot use these operations to
   open SSH, the agent port or a public address, or to give a website a false address for a
   public name. It can give a website of its server access to a network member, as it can

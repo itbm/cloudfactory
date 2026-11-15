@@ -166,6 +166,8 @@ type Website struct {
 	Status      string `json:"status"`
 	ServerID    string `json:"serverId"`
 	UnixUser    string `json:"unixUser"`
+	NetworkHost string `json:"networkHost"`
+	NetworkPort int    `json:"networkPort"`
 	UpdateReady bool   `json:"updateReady"`
 	Runtime     struct {
 		ImageID    string   `json:"imageId"`

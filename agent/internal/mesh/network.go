@@ -88,8 +88,14 @@ func CheckName(name string) error {
 	return nil
 }
 
-// MemberPorts are the ports that a member can answer on: the usual ports of the engines.
-var MemberPorts = []int{quadlet.DatabasePort("mariadb"), quadlet.DatabasePort("postgresql"), quadlet.DatabasePort("valkey")}
+// WebsitePort is the port that a website answers on as a network member. It is HTTP: the
+// tunnel between two servers encrypts the traffic, and a connection on one server does not
+// leave the server.
+const WebsitePort = 80
+
+// MemberPorts are the ports that a member can answer on: the usual ports of the engines for
+// a database server, and WebsitePort for a website.
+var MemberPorts = []int{quadlet.DatabasePort("mariadb"), quadlet.DatabasePort("postgresql"), quadlet.DatabasePort("valkey"), WebsitePort}
 
 func checkMemberPort(port int) error {
 	if !slices.Contains(MemberPorts, port) {
@@ -215,13 +221,15 @@ type Rules struct {
 
 // Check checks each rule. meshRange is the address range of the mesh on this server, and
 // servers are the mesh addresses of this server and of its peers. uidMin and uidMax are the
-// limits of the UID of a website user.
+// limits of the UID of a website user. portMin and portMax are the limits of the port of a
+// website container on the private service address.
 //
 // After the check, a rule can open only an address of the mesh range that is not the address
 // of a server, only for the Unix user of a website or for a server, and only on the usual
-// port of an engine. The address change of a member can go only to a port of a database
-// server on the database network.
-func (r Rules) Check(meshRange string, servers []string, uidMin, uidMax int) error {
+// port of an engine or on WebsitePort. The address change of a member can go only to a port
+// of a database server on the database network, or to a port of a website container on the
+// private service address.
+func (r Rules) Check(meshRange string, servers []string, uidMin, uidMax, portMin, portMax int) error {
 	if len(r.Members) == 0 && len(r.Access) == 0 {
 		return nil
 	}
@@ -249,10 +257,14 @@ func (r Rules) Check(meshRange string, servers []string, uidMin, uidMax int) err
 		if err := errors.Join(member(m.Address), checkMemberPort(m.Port)); err != nil {
 			return err
 		}
-		if _, err := quadlet.DatabaseNumber(m.Local); err != nil {
+		if m.Port == WebsitePort {
+			// A website: its container is on the private service address.
+			if m.Local != quadlet.ServiceAddress || m.LocalPort < portMin || m.LocalPort > portMax {
+				return fmt.Errorf("the member %s: %s . %d is not the address and the port of a website container", m.Address, m.Local, m.LocalPort)
+			}
+		} else if _, err := quadlet.DatabaseNumber(m.Local); err != nil {
 			return fmt.Errorf("the member %s: %w", m.Address, err)
-		}
-		if !slices.ContainsFunc([]string{"mariadb", "postgresql", "valkey"}, func(engine string) bool {
+		} else if !slices.ContainsFunc([]string{"mariadb", "postgresql", "valkey"}, func(engine string) bool {
 			return quadlet.DatabasePort(engine) == m.Port && quadlet.CheckDatabasePort(engine, m.LocalPort) == nil
 		}) {
 			return fmt.Errorf("the member %s: %d is not a port of a database server for the port %d", m.Address, m.LocalPort, m.Port)

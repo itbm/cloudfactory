@@ -97,6 +97,7 @@ class DatabaseServerController extends Controller
         if ($name !== null && $customer->databaseServers()->where('name', $name)->exists()) {
             throw ValidationException::withMessages(['name' => 'This customer has a database server with this name.']);
         }
+        self::refuseWebsiteName($customer, $name);
         $host = self::host($request, $customer, $data['serverId'] ?? null);
 
         $server = DatabaseServers::make($customer, $host, $data['engine'], Plan::findOrFail($planId), $name, $data['limits'] ?? null);
@@ -153,6 +154,9 @@ class DatabaseServerController extends Controller
         }
         if (isset($data['name']) && $data['name'] !== $server->name && $server->customer->databaseServers()->where('name', $data['name'])->exists()) {
             throw ValidationException::withMessages(['name' => 'This customer has a database server with this name.']);
+        }
+        if (isset($data['name']) && $data['name'] !== $server->name) {
+            self::refuseWebsiteName($server->customer, $data['name']);
         }
         self::refuseRemoved($server);
 
@@ -287,5 +291,18 @@ class DatabaseServerController extends Controller
             'maxDatabases' => $s->plan->databases,
             'createdAt' => $s->created_at?->toIso8601String(),
         ];
+    }
+
+    /**
+     * A website of the customer is a network member with a name from its Unix user. A
+     * database server cannot have the same name.
+     *
+     * @throws ValidationException
+     */
+    private static function refuseWebsiteName(Customer $customer, ?string $name): void
+    {
+        if ($name !== null && $customer->websites()->where('unix_user', str_replace('-', '_', $name))->exists()) {
+            throw ValidationException::withMessages(['name' => "A website of this customer has the network name {$name}".Networks::DOMAIN.'. Use a different name.']);
+        }
     }
 }

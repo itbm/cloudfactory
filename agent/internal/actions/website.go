@@ -669,7 +669,12 @@ func (d *Deps) SetRuntime(req *agentv1.WebsiteRequest) (jobs.Job, error) {
 				if _, err := d.Host.Systemctl(ctx, user, "daemon-reload"); err != nil {
 					return err
 				}
-				return d.State.Put(&Site{ID: w.GetId(), UnixUser: user, Port: newPort, Suffix: newSuffix, Website: w, Stopped: true})
+				if err := d.State.Put(&Site{ID: w.GetId(), UnixUser: user, Port: newPort, Suffix: newSuffix, Website: w, Stopped: true}); err != nil {
+					return err
+				}
+				// A website that is a network member answers on its new port.
+				d.syncNetworkLater(ctx)
+				return nil
 			}
 			newSuffix = "-b"
 			if old.Suffix == "-b" {
@@ -709,6 +714,8 @@ func (d *Deps) SetRuntime(req *agentv1.WebsiteRequest) (jobs.Job, error) {
 			// From here, the website uses the new container. If the old container does not
 			// stop, the job fails, but the new container continues.
 			committed = true
+			// A website that is a network member answers on its new port.
+			d.syncNetworkLater(ctx)
 			if err := d.stopContainer(ctx, user, old.Suffix); err != nil {
 				return err
 			}

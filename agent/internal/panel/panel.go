@@ -162,6 +162,9 @@ type Mesh struct {
 	// Networks is true: this agent can operate the members of the networks of the customers
 	// (package mesh, network.go). An agent from before the networks does not send it.
 	Networks bool `json:"networks"`
+	// Websites is true: on this agent, a website can be a network member that answers on
+	// port 80.
+	Websites bool `json:"websites"`
 }
 
 // Tunnel is the state of the tunnel to one other server.

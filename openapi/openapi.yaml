@@ -2826,6 +2826,12 @@ components:
         serverId: { type: string }
         planId: { type: string }
         unixUser: { type: string }
+        networkHost:
+          type: string
+          description: The name of the website for a different website of the customer in a network with it, for example "shop-a1b2.internal". The name comes from the Unix user. It is the same on each server.
+        networkPort:
+          type: integer
+          description: The port that the website answers on in its networks. It is 80, with HTTP. The tunnel between two servers encrypts the traffic.
         status: { $ref: '#/components/schemas/WebsiteStatus' }
         runtime:
           type: object

@@ -387,9 +387,11 @@ class Mesh
         // An agent that can operate network members reports it. A server that can do it now,
         // or that has its first key now, gets its part of the networks.
         $networks = (bool) ($mesh['networks'] ?? false);
-        $new = $server->mesh_public_key === null || $server->mesh_networks !== $networks;
+        // A later agent also reports that a website can be a member that answers.
+        $websites = $networks && ($mesh['websites'] ?? false);
+        $new = $server->mesh_public_key === null || $server->mesh_networks !== $networks || $server->mesh_websites !== $websites;
         $this->keyOf($server, $key);
-        $server->update(['mesh_version' => $version, 'mesh_networks' => $networks]);
+        $server->update(['mesh_version' => $version, 'mesh_networks' => $networks, 'mesh_websites' => $websites]);
         if ($new) {
             $this->refresh();
             $server->refresh();

@@ -487,7 +487,14 @@ func (s *State) ReleaseNext(id string) error {
 	return s.write(f)
 }
 
+// WebsitePortMin and WebsitePortMax are the limits of the host ports of the website
+// containers on the private service address.
+const (
+	WebsitePortMin = 20000
+	WebsitePortMax = 29999
+)
+
 // NewState gives a State in the data directory.
 func NewState(dataDir string) *State {
-	return &State{Path: filepath.Join(dataDir, "sites.json"), FirstPort: 20000, LastPort: 29999}
+	return &State{Path: filepath.Join(dataDir, "sites.json"), FirstPort: WebsitePortMin, LastPort: WebsitePortMax}
 }

@@ -144,6 +144,19 @@ func (d *Deps) networkRules() (networkIn, error) {
 			}
 		}
 	}
+	// A website of this server that is a member answers on WebsitePort. Its container has a
+	// port on the private service address. A website that its owner stopped stays a member:
+	// its port has no listener, so a connection gets a refusal.
+	for _, m := range network.Members {
+		if m.Port != mesh.WebsitePort {
+			continue
+		}
+		for _, s := range sites {
+			if strings.EqualFold(s.ID, m.ID) && s.UnixUser != "" {
+				in.Rules.Members = append(in.Rules.Members, mesh.MemberRule{Address: m.Address, Port: m.Port, Local: quadlet.ServiceAddress, LocalPort: s.Port, Servers: m.Servers})
+			}
+		}
+	}
 	names := map[string][]mesh.Name{}
 	for _, w := range network.Websites {
 		names[strings.ToLower(w.ID)] = w.Names
@@ -208,7 +221,7 @@ func (d *Deps) applyNetwork(ctx context.Context, in networkIn) error {
 		servers = append(servers, p.Address)
 	}
 	// The check is first: the helper writes nothing when one value is not correct.
-	if err := in.Rules.Check(state.Range, servers, host.WebsiteIDMin, host.WebsiteIDMax); err != nil {
+	if err := in.Rules.Check(state.Range, servers, host.WebsiteIDMin, host.WebsiteIDMax, WebsitePortMin, WebsitePortMax); err != nil {
 		return err
 	}
 	contents := make([]string, len(in.Hosts))
