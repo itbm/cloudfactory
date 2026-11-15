@@ -20,6 +20,8 @@ A plugin cannot do these things:
   `plugins:write`. With these scopes, a plugin could make tokens, take a user account or
   change its own access.
 
+![The Plugins page with two signed plugins, their scopes and the trusted keys](screenshots/plugins/1-plugins.png)
+
 ## Parts of a plugin
 
 | Part | What it is |
@@ -116,6 +118,8 @@ cf plugins install --manifest plugin.json --address https://uptime.example.net
 
 The CLI reads the signature from `plugin.json.sig`. It reads your password from `CF_PASSWORD`
 or stdin.
+
+![The review before an install: the scopes in plain words, the events, the pages and the signature](screenshots/plugins/3-install-review.png)
 
 ### Manage a plugin
 
@@ -260,6 +264,8 @@ The web panel gives the page a page token with `postMessage`:
    ```
 
 4. The page calls the API with `Authorization: Bearer <token>`.
+
+![The page of the example plugin for a website owner. It shows only the websites of the owner.](screenshots/plugins/5-plugin-page-owner.png)
 
 The page token:
 
