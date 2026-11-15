@@ -96,6 +96,8 @@ export interface Limits {
   diskBytes: number;
   diskIoBytesPerSecond: number;
   processes: number;
+  /** The traffic of a website in a calendar month. 0 or none: no limit. */
+  bandwidthBytes?: number;
 }
 
 export interface ResourceUse {
@@ -147,6 +149,8 @@ export interface Website {
    */
   diskLimitApplied?: boolean;
   use: ResourceUse;
+  /** The traffic of the website in the current calendar month (UTC), in and out. */
+  bandwidthBytes: number;
   domains: Domain[];
   /** The SFTP access from the panel API. */
   sftp?: SftpAccess;
@@ -660,7 +664,7 @@ export interface Account {
   /** The reseller that gives the service. Undefined: the operator of the panel gives it. */
   provider?: { name: string; email: string };
   plan?: Plan;
-  usage: { websites: number; databases: number; diskBytes: number; customers?: number; dnsZones: number; networks: number };
+  usage: { websites: number; databases: number; diskBytes: number; customers?: number; dnsZones: number; networks: number; bandwidthBytes: number };
   /** False when the panel has no object storage for backups. A backup then fails. */
   backupsAvailable: boolean;
   users: ManagedUser[];
@@ -763,6 +767,10 @@ export interface State {
   mesh?: Mesh;
   /** The private networks of the customers that the user can see. */
   networks: PrivateNetwork[];
+  /** The open usage alerts that the user can see. */
+  usageAlerts: UsageAlert[];
+  /** The thresholds of the usage alerts, in percent of each limit. */
+  alertSettings: UsageAlertSettings;
   databases: Database[];
   databaseUsers: DatabaseUser[];
   /**
@@ -871,4 +879,61 @@ export interface Release {
 export interface Deploy {
   source: GitSource | null;
   releases: Release[];
+}
+
+// Usage history and usage alerts. The panel reads the history when the user opens a graph.
+
+export type UsageRange = "24h" | "7d" | "30d" | "90d" | "1y";
+export type UsageSubject = "website" | "server" | "database_server";
+export type UsageResource = "cpu" | "memory" | "disk" | "bandwidth" | "processes";
+
+/** One point of a graph. A value is null when no report is in the point. */
+export interface UsagePoint {
+  at: string;
+  cpuPercent: number | null;
+  cpuMaxPercent: number | null;
+  memoryBytes?: number | null;
+  memoryMaxBytes?: number | null;
+  memoryPercent?: number | null;
+  memoryMaxPercent?: number | null;
+  diskBytes?: number | null;
+  diskPercent?: number | null;
+  processes?: number | null;
+  bytesIn?: number | null;
+  bytesOut?: number | null;
+}
+
+export interface UsageHistory {
+  range: UsageRange;
+  stepMinutes: number;
+  from: string;
+  to: string;
+  points: UsagePoint[];
+  limits?: Partial<Limits>;
+  bandwidth?: { month: string; bytes: number; limitBytes: number };
+  alerts: UsageAlert[];
+}
+
+export interface UsageAlert {
+  id: string;
+  subjectType: UsageSubject;
+  subjectId: string;
+  subjectName: string | null;
+  customerId: string | null;
+  serverId: string | null;
+  resource: UsageResource;
+  level: "warning" | "critical";
+  used: number;
+  limit: number;
+  percent: number;
+  usedText: string;
+  limitText: string;
+  openedAt: string;
+  updatedAt: string;
+  resolvedAt: string | null;
+}
+
+export interface UsageAlertSettings {
+  warningPercent: number;
+  criticalPercent: number;
 }

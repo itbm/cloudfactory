@@ -56,6 +56,10 @@ export function panelApi(role: Role): PanelApi {
     if (key === "POST /auth/login") return respond({ status: 200, body: { token: "1|test" } });
     if (key === "POST /auth/logout") return respond({ status: 204, body: null });
     if (answers[key]) return respond(answers[key]);
+    // The usage graphs: the fixtures have no history. A test can give one with "on".
+    if (method === "GET" && /^\/(websites|servers|database-servers)\/[^/]+\/usage\?range=/.test(path)) {
+      return respond({ status: 200, body: usageHistory(path) });
+    }
     // A test must give the answer to each change that it makes.
     return respond({ status: 500, body: { message: `The test has no answer for "${key}".` } });
   }));
@@ -95,3 +99,20 @@ export const apiJob = (over: Record<string, unknown> = {}) => ({
 });
 
 export { refresh };
+
+/** A usage history of 24 hours with two points with values, for the graphs. */
+export function usageHistory(path = "/websites/x/usage?range=24h") {
+  const now = Date.UTC(2026, 10, 15, 12, 0);
+  const points = Array.from({ length: 288 }, (_, i) => {
+    const at = new Date(now - (287 - i) * 300_000).toISOString().replace(".000Z", "Z");
+    const has = i >= 286;
+    return { at, cpuPercent: has ? 40 + i - 286 : null, cpuMaxPercent: has ? 60 : null, memoryBytes: has ? 512 * 1024 ** 2 : null, memoryMaxBytes: has ? 600 * 1024 ** 2 : null,
+      diskBytes: has ? 3 * 1024 ** 3 : null, processes: has ? 12 : null, bytesIn: has ? 1000 : null, bytesOut: has ? 90000 : null,
+      memoryPercent: has ? 50 : null, memoryMaxPercent: has ? 55 : null, diskPercent: has ? 30 : null };
+  });
+  return {
+    range: "24h", stepMinutes: 5, from: points[0].at, to: points[287].at, points,
+    ...(path.startsWith("/websites/") ? { limits: { vcpus: 2, memoryBytes: 2 * 1024 ** 3, diskBytes: 40 * 1024 ** 3, bandwidthBytes: 500 * 1024 ** 3 }, bandwidth: { month: "2026-11", bytes: 12 * 1024 ** 3, limitBytes: 500 * 1024 ** 3 } } : {}),
+    alerts: [],
+  };
+}

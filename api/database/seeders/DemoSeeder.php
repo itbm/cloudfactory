@@ -470,8 +470,8 @@ class DemoSeeder extends Seeder
             mt_srand(crc32($name));
             $u = $server->usage;
             foreach ([UsageRecorder::FINE => $now->copy()->subDays(2), UsageRecorder::COARSE => $now->copy()->subDays(400)] as $minutes => $from) {
-                $created = $server->created_at->copy()->utc();
-                $at = UsageRecorder::bucket($from->max($created), $minutes);
+                // The sample servers are new, but their history starts a year ago.
+                $at = UsageRecorder::bucket($from, $minutes);
                 for (; $at <= $now; $at->addMinutes($minutes)) {
                     $f = max(0.2, $cycle($at)) * $weekday($at);
                     $age = 1 - min(1, $now->diffInDays($at, true) / 400);

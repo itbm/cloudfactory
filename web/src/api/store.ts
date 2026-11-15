@@ -36,6 +36,11 @@ import type {
   UpdatePolicy,
   Website,
   WebsiteKind,
+  UsageAlert,
+  UsageAlertSettings,
+  UsageHistory,
+  UsageRange,
+  UsageSubject,
 } from "./types";
 
 /** An error that the API returns for incorrect input. The UI shows it next to the field. */
@@ -53,7 +58,7 @@ export function emptyState(): State {
   return {
     session: { signedIn: false, user: { id: "", name: "", email: "", role: "owner" }, contextId: "" },
     contexts: [], websites: [], jobs: [], activity: [], notifications: [], servers: [], images: [], rollout: undefined,
-    databaseServers: [], dnsZones: [], nameServers: [], networks: [], databases: [], databaseUsers: [], remoteDatabaseServers: {}, snapshots: [], plans: [], customers: [], users: [],
+    databaseServers: [], dnsZones: [], nameServers: [], networks: [], usageAlerts: [], alertSettings: { warningPercent: 80, criticalPercent: 95 }, databases: [], databaseUsers: [], remoteDatabaseServers: {}, snapshots: [], plans: [], customers: [], users: [],
     backupPolicy: { daily: 7, weekly: 4, monthly: 6, time: "03:00", target: "", credentialNames: [] },
     tokens: [], totpEnabled: false, securityNotices: [], audit: [], joinToken: "", joinCaSha256: undefined,
     panelDomain: "",
@@ -394,6 +399,23 @@ export function deleteFile(websiteId: string, path: string): Promise<void> {
 
 /** The largest file that the panel sends in one request (FileController::MAX_WRITE). */
 export const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
+
+/** The usage history of a website, a server or a database server, for the graphs. */
+export function readUsage(subject: UsageSubject, id: string, range: UsageRange): Promise<UsageHistory> {
+  const base = subject === "website" ? `/websites/${id}` : subject === "server" ? `/servers/${id}` : `/database-servers/${id}`;
+  return call(() => live.request<UsageHistory>("GET", `${base}/usage?range=${range}`));
+}
+
+/** The usage alerts, also the closed ones with state "all". */
+export function listUsageAlerts(state: "open" | "resolved" | "all" = "open"): Promise<UsageAlert[]> {
+  return call(() => live.request<{ data: UsageAlert[] }>("GET", `/usage-alerts?state=${state}`)).then((r) => r.data);
+}
+
+/** An administrator changes the thresholds of the usage alerts. */
+export async function setAlertSettings(settings: UsageAlertSettings): Promise<void> {
+  await call(() => live.request("PUT", "/usage-alerts/settings", settings));
+  await refresh();
+}
 
 /** The last lines of the output of the website container. */
 export function readLogs(websiteId: string, stream: "all" | "access" | "error" = "all", lines = 200): Promise<LogLine[]> {
