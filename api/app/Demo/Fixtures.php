@@ -2,6 +2,7 @@
 
 namespace App\Demo;
 
+use App\Models\DnsZone;
 use App\Models\User;
 use App\Models\Website;
 use Illuminate\Contracts\Http\Kernel;
@@ -20,7 +21,7 @@ class Fixtures
     /** The requests that the web panel sends when it loads (web/src/api/live.ts). */
     public const PATHS = [
         '/me', '/websites?perPage=100&page=1', '/jobs?perPage=50', '/customers', '/plans', '/tokens', '/backup-policy', '/servers', '/images',
-        '/rollouts', '/audit?perPage=100', '/users', '/panel-certificate', '/runtime-images', '/setup', '/account', '/database-servers', '/mesh',
+        '/rollouts', '/audit?perPage=100', '/users', '/panel-certificate', '/runtime-images', '/setup', '/account', '/database-servers', '/dns-zones', '/mesh',
     ];
 
     /**
@@ -37,6 +38,11 @@ class Fixtures
         foreach (self::websites($user) as $id) {
             array_push($paths, "/websites/{$id}/databases", "/websites/{$id}/snapshots", "/websites/{$id}/cron-jobs", "/websites/{$id}/deploy",
                 "/websites/{$id}/files?path=%2F", "/websites/{$id}/files?path=%2Fpublic", "/websites/{$id}/files/content?path=%2Fpublic%2Findex.php", "/websites/{$id}/logs?lines=200");
+        }
+        // The page of a DNS zone reads the zone with its records.
+        $visible = $user->visibleCustomerIds();
+        foreach (DnsZone::when($visible !== null, fn ($q) => $q->whereIn('customer_id', $visible))->orderBy('name')->pluck('id') as $id) {
+            $paths[] = "/dns-zones/{$id}";
         }
         $answers = [];
         foreach ($paths as $path) {

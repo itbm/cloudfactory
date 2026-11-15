@@ -147,6 +147,66 @@ export function ServersPage() {
   );
 }
 
+/**
+ * The DNS server of the server. A server answers DNS queries when it has the role DNS and a
+ * name server host name. The customers give the host name to the registrar of each domain.
+ */
+function DnsCard({ server }: { server: Server }) {
+  const state = useStore();
+  const save = useAction(setServer);
+  const on = server.roles.includes("dns");
+  const [name, setName] = useState(server.dnsName ?? "");
+  const zones = state.dnsZones.length;
+  const others = state.servers.filter((s) => s.id !== server.id && s.roles.includes("dns") && s.dnsName).length;
+  return (
+    <Card title="DNS server" id="dns">
+      <div className="card-body">
+        <FormError error={save.error} shown={["dnsName", "roles"]} />
+        {!server.dns && <p className="muted" style={{ marginBottom: 12 }}>The agent of this server cannot operate a DNS server. Update the agent first.</p>}
+        <form className="inline-form" noValidate onSubmit={(e) => {
+          e.preventDefault();
+          const dnsName = name.trim().toLowerCase().replace(/\.$/, "");
+          void save.run(server.id, { roles: on || !dnsName ? server.roles : [...server.roles, "dns"], dnsName: dnsName || null });
+        }}>
+          <Field label="Name server host name" hint={<>For example <code>ns1.example.net</code>. The host name must have an A record{server.addresses.length > 1 ? " and an AAAA record" : ""} for this server at the DNS provider of its own domain.</>} error={save.error?.fields.dnsName}>
+            {(p) => <input {...p} className="input mono" value={name} onChange={(e) => setName(e.target.value)} placeholder="ns1.example.net" autoCapitalize="none" spellCheck={false} disabled={!server.dns} />}
+          </Field>
+          <div className="field"><span className="label" aria-hidden="true">&nbsp;</span><button type="submit" className="btn" disabled={!server.dns || save.busy}>{on ? "Save" : "Turn on DNS"}</button></div>
+        </form>
+        <table className="kv" style={{ marginTop: 14 }}>
+          <tbody>
+            <tr>
+              <th scope="row">State</th>
+              <td>
+                {on && server.dnsName
+                  ? <Status tone="success">Answers DNS queries</Status>
+                  : on ? <Status tone="warning">Needs a name server host name</Status> : <Status tone="neutral">Off</Status>}
+                {on && server.dnsName && <span className="cell-sub">{zones} {zones === 1 ? "zone" : "zones"} on port 53, UDP and TCP.{others === 0 && " Most registrars want two name servers: give the role DNS to a second server."}</span>}
+              </td>
+            </tr>
+            <tr><th scope="row">Addresses</th><td>{server.addresses.length ? server.addresses.map((a) => <code key={a} style={{ display: "block" }}>{a}</code>) : <span className="muted">The agent reported no public address.</span>}</td></tr>
+          </tbody>
+        </table>
+        {on && (
+          <p style={{ marginTop: 14 }}>
+            <ConfirmButton
+              className="btn btn-danger"
+              disabled={save.busy || server.roles.length < 2}
+              title={`Turn off DNS on ${server.name}?`}
+              confirm="Turn off DNS"
+              message={<p>The panel removes all zones from this server, and removes its host name from the name servers of each zone. First remove <code>{server.dnsName ?? "the host name"}</code> from the name servers at the registrar of each domain. If the registrar still has it, a part of the DNS queries for the domains fails.</p>}
+              onConfirm={() => void save.run(server.id, { roles: server.roles.filter((r) => r !== "dns") })}
+            >
+              Turn off DNS
+            </ConfirmButton>
+            {server.roles.length < 2 && <span className="muted small"> A server has one role or more. DNS is the only role of this server.</span>}
+          </p>
+        )}
+      </div>
+    </Card>
+  );
+}
+
 /** The number of packages that the server page shows before the user asks for all. */
 const PACKAGE_ROWS = 8;
 
@@ -288,6 +348,7 @@ function ServerDetail({ id }: { id: string }) {
                 </form>
               </div>
             </Card>
+            <DnsCard server={server} />
             {!server.panel && (
               <Card title="Remove this server">
                 <div className="card-body">

@@ -224,7 +224,10 @@ func newDeps(cfg config.Config, run execx.Runner) (*actions.Deps, error) {
 		EdgeImage:    cfg.Registry + "/edge:" + version,
 		AgentBinary:  binaryPath,
 		SftpImage:    cfg.Registry + "/sftp:" + version,
+		DnsImage:     cfg.Registry + "/dns:" + version,
 		SftpPort:     cfg.SftpPort,
+		// The panel uses these addresses for the DNS records of the websites on this server.
+		PublicAddresses: cfg.PublicAddresses,
 	}
 	// CF-13: the admin API of the edge proxy is a Unix socket.
 	if path, ok := strings.CutPrefix(cfg.CaddyAdmin, "unix://"); ok {
@@ -533,6 +536,10 @@ func work(ctx context.Context, cfg config.Config, g gate.Gate) error {
 	// from the SSH service of the host to the container.
 	if err := deps.EnsureSftp(ctx); err != nil {
 		slog.Error("start the SFTP container", "err", err)
+	}
+	// The DNS server, on a server that has DNS zones.
+	if err := deps.EnsureDns(ctx); err != nil {
+		slog.Error("start the DNS server", "err", err)
 	}
 	runner := &jobs.Runner{Dir: filepath.Join(cfg.DataDir, "jobs"), Reporter: reporter,
 		Timeout: time.Duration(cfg.JobTimeoutMinutes) * time.Minute, LongTimeout: time.Duration(cfg.LongJobTimeoutMinutes) * time.Minute}

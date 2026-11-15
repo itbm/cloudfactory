@@ -11,5 +11,8 @@ Schedule::command('cloudfactory:backups')->everyMinute()->withoutOverlapping();
 // FR-1112: host updates in the maintenance window of each server.
 Schedule::command('cloudfactory:host-updates')->everyTenMinutes()->withoutOverlapping();
 
+// DNS hosting: the name servers of each zone in the public DNS.
+Schedule::command('cloudfactory:check-dns')->everyFifteenMinutes()->withoutOverlapping();
+
 // Batch 1, finding 2: servers that do not report, and jobs with no result.
 Schedule::command('cloudfactory:check-jobs')->everyMinute()->withoutOverlapping();

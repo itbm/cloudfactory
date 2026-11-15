@@ -30,6 +30,8 @@ enum AgentAction: string
     case SetPanelCertificate = 'SetPanelCertificate';
     case SetDatabaseServer = 'SetDatabaseServer';
     case DeleteDatabaseServer = 'DeleteDatabaseServer';
+    case SetDnsZones = 'SetDnsZones';
+    case DeleteDnsZones = 'DeleteDnsZones';
     case SetCronJobs = 'SetCronJobs';
     case RunCronJob = 'RunCronJob';
     case Deploy = 'Deploy';
@@ -63,6 +65,8 @@ enum AgentAction: string
             self::SetSftp => ['Set SFTP access'],
             self::ConfigureHost => ['Save settings', 'Restart websites', 'Restart services'],
             self::SetPanelCertificate => ['Change certificate method', 'Get TLS certificate'],
+            self::SetDnsZones => ['Start DNS server', 'Write zones', 'Load zones'],
+            self::DeleteDnsZones => ['Remove zones'],
             self::SetCronJobs => ['Save the cron jobs'],
             self::RunCronJob => ['Run the command'],
             // The steps after "Build" are the steps of SetRuntime: the agent starts the website

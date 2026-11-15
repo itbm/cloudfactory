@@ -705,6 +705,95 @@ Then run the installation script of this release on the server, with all your op
 script writes the firewall rules of this release, which have no rule for the ports of the
 shared containers.
 
+### DNS hosting
+
+The panel can be the DNS provider of the domains of your customers. A customer makes a DNS
+zone for a domain, adds records, and gives the name servers of the panel to the registrar of
+the domain.
+
+#### Make a server a DNS server
+
+Use two servers, because most registrars want two name servers. The servers can also have
+other roles.
+
+1. Select a host name for each name server, for example `ns1.example.net` and
+   `ns2.example.net`. At the DNS provider of `example.net`, add an A record for each host name
+   with the public IPv4 address of its server, and an AAAA record if the server has an IPv6
+   address. If the host names are in a domain that the panel hosts, the registrar of that
+   domain must also have glue records for them.
+2. Make sure that port 53 (UDP and TCP) of each server is open in the firewall of your
+   provider. The firewall of the server opens the port itself.
+3. On the page of each server, in the card **DNS server**, type the host name and select
+   **Turn on DNS**. With the CLI:
+
+   ```sh
+   cf servers set web-1 --roles web,database,dns --dns-name ns1.example.net
+   cf servers set web-2 --roles web,database,dns --dns-name ns2.example.net
+   ```
+
+4. Set the number of DNS zones of each plan in **Plans**. A plan from an earlier release has
+   5 DNS zones. With 0, the customers of the plan cannot make a zone.
+
+The server starts its DNS container, `cf-dns`, when it gets its first zone. A server whose
+agent is from an earlier release cannot be a DNS server: update the agent first.
+
+#### Make a zone
+
+A customer, a reseller or an administrator makes a zone on the **DNS** page, or with the CLI:
+
+```sh
+cf dns create example.com
+cf dns add example.com MX @ mx1.example.net --priority 10
+cf dns add example.com TXT @ "v=spf1 include:example.net -all"
+cf dns records example.com
+```
+
+- The panel makes the NS records of the zone. It also makes the A and AAAA records of each
+  domain of a website of the customer that is in the zone.
+- Copy the other records that the domain uses at its current DNS provider to the zone. Then
+  set the name servers of the panel at the registrar of the domain. The page of the zone
+  shows if the registrar has them. `cf dns check example.com` checks again.
+- The types are A, AAAA, CNAME, MX, TXT, SRV, CAA and NS. A TTL is from 60 seconds to 7 days.
+- If a different customer has a zone for the domain or for a name above or below it, the
+  panel gives a TXT record. Add the record at the current DNS provider of the domain to prove
+  that you control the domain, and then make the zone again.
+
+#### DNSSEC
+
+Turn on DNSSEC on the page of the zone, or with `cf dns dnssec example.com on`. The panel
+then shows a DS record. Give the DS record to the registrar of the domain.
+
+Before you turn off DNSSEC, or remove a zone that has DNSSEC, remove the DS record at the
+registrar and wait one day. If the registrar still has the DS record, resolvers refuse all
+answers for the domain.
+
+#### A zone that a DNS server could not load
+
+The page of the zone shows the state of the zone on each name server. When a server could
+not load a change, it continues to answer with the records that it had before.
+
+The panel sends the zone again by itself. Each agent reports the zones of its server each
+minute and when it starts, and the panel sends each zone that the server does not have with
+the last serial. So a DNS server that was offline, or that you installed again, needs no
+work: it gets its zones in the first minutes after its agent starts. After a try with no
+result, the panel waits 1 minute, then 2, then 4, up to 60 minutes.
+
+To send a zone immediately, select **Send again now** or run `cf dns sync example.com`. To
+see the log of the DNS server, run on the server:
+
+```sh
+sudo -u cf-dns XDG_RUNTIME_DIR=/run/user/$(id -u cf-dns) journalctl --user -u cf-dns
+```
+
+#### Remove a zone or a DNS server
+
+- Before you remove a zone, set other name servers at the registrar of the domain. While the
+  registrar has the name servers of the panel, the domain does not resolve, and a different
+  customer can make a zone for it (refer to [security.md](security.md#known-limits)).
+- Before you turn off DNS on a server, remove its host name from the name servers at the
+  registrar of each domain. The panel then removes the zones from the server and sends the
+  new name server records to the other DNS servers.
+
 ### Valkey
 
 Valkey is a key-value store that keeps its data in memory. Use it for a cache, for sessions
@@ -1041,7 +1130,7 @@ server degraded.
 
 The firewall accepts only SSH, SFTP, HTTP, HTTPS and the agent port. A server that has
 tunnels to other servers also accepts the UDP port of the tunnels (51820), only from those
-servers. The database servers
+servers. A server that has DNS zones also accepts port 53 (UDP and TCP). The database servers
 publish their ports only on the database network `169.254.80.0/20` of the loopback interface,
 so the databases are not open to the internet.
 

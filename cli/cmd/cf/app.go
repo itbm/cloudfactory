@@ -90,6 +90,19 @@ Usage:
   cf database-users set WEBSITE USER [--grant DATABASE=readonly|readwrite]... [--no-grants]
                         [--access website|anywhere] [--reset-password]
   cf database-users delete WEBSITE USER
+  cf dns list [--customer ID]                          The DNS zones, and the name servers of the panel.
+  cf dns create DOMAIN [--customer ID]                 Then give the name servers to the registrar of the domain.
+  cf dns get ZONE                                      The state of the zone, and the DS record when DNSSEC is on.
+  cf dns records ZONE [--type TYPE]
+  cf dns add ZONE TYPE NAME VALUE [--ttl SECONDS] [--priority N]
+                       TYPE is A, AAAA, CNAME, MX, TXT, SRV, CAA or NS. NAME is @ for the zone itself.
+                       For example: cf dns add example.com MX @ mail.example.com --priority 10
+  cf dns set ZONE RECORD_ID [--name NAME] [--value VALUE] [--ttl SECONDS] [--priority N]
+  cf dns remove ZONE RECORD_ID
+  cf dns dnssec ZONE on|off                            Before "off", remove the DS record at the registrar.
+  cf dns check ZONE                                    Ask the public DNS for the name servers of the zone again.
+  cf dns sync ZONE                                     Send the zone to each DNS server again.
+  cf dns delete ZONE
   cf backups list|create WEBSITE
   cf backups restore WEBSITE SNAPSHOT [--scope website|database|file] [--item ITEM] [--remove-new-files]
                        --remove-new-files is for a full website. It deletes the files that are not in the backup.
@@ -103,6 +116,8 @@ Usage:
   cf servers list
   cf servers get SERVER
   cf servers set SERVER [--update-policy security|all|manual] [--window HH:MM-HH:MM] [--gvisor-platform systrap|kvm]
+                        [--roles web,database,dns] [--dns-name HOST | --no-dns-name]
+                       A server with the role dns and a name server host name answers for all DNS zones.
   cf servers update SERVER [--policy security|all|tools]   "tools" updates the held container tools.
   cf servers reboot SERVER
   cf servers update-agent SERVER [--version VERSION] [--allow-downgrade]
@@ -292,6 +307,8 @@ func (a *app) dispatch(ctx context.Context, args []string) error {
 		return a.databases(ctx, sub, rest)
 	case "database-users", "database-user", "db-users":
 		return a.databaseUsers(ctx, sub, rest)
+	case "dns":
+		return a.dns(ctx, sub, rest)
 	case "backups", "backup":
 		return a.backups(ctx, sub, rest)
 	case "jobs", "job":

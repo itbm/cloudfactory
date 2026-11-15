@@ -119,6 +119,14 @@ type Deps struct {
 	SftpImage string
 	// SftpPort is the public SFTP port of the server. 0 means quadlet.DefaultSftpPort.
 	SftpPort int
+	// DnsImage is the image of the DNS server of this agent version.
+	DnsImage string
+	// DnsTest lets a test run Knot on the host, with no container. Nil in the agent.
+	DnsTest *DnsTest
+	// PublicAddresses are the public IP addresses of the settings, for a server behind NAT.
+	PublicAddresses []string
+	// InterfaceAddrs gives the addresses of the network interfaces. Nil means net.InterfaceAddrs.
+	InterfaceAddrs func() ([]net.Addr, error)
 	// SftpReady checks that the SFTP container answers on a port. Nil means an SSH connection
 	// to quadlet.ServiceAddress. Tests replace it.
 	SftpReady func(ctx context.Context, port int) error
@@ -184,6 +192,7 @@ type Deps struct {
 	// valkeyMu makes the search for a free Valkey database number and its user one step.
 	valkeyMu sync.Mutex
 	sftpMu   sync.Mutex
+	dnsMu    sync.Mutex
 	// dbReady has the database servers that this agent process started and that answered.
 	dbReady map[dbServer]bool
 	// dbStart has one lock for each database server. The start and the removal of a database

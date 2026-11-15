@@ -256,6 +256,7 @@ func (d *Deps) ConfigureHost(req *agentv1.ConfigureHostRequest) (jobs.Job, error
 			if d.SftpImage != "" {
 				errs = append(errs, d.EnsureSftp(ctx))
 			}
+			errs = append(errs, d.EnsureDns(ctx))
 			return errors.Join(errs...)
 		}},
 	}}, nil

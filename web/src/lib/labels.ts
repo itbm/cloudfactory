@@ -1,4 +1,4 @@
-import type { DatabaseServerStatus, Domain, HostUpdatePolicy, JobState, RuntimeKind, ServerRole, ServerState, UpdatePolicy, WebsiteStatus } from "../api/types";
+import type { DatabaseServerStatus, DnsDelegation, DnsRecordType, DnsZoneStatus, Domain, HostUpdatePolicy, JobState, RuntimeKind, ServerRole, ServerState, UpdatePolicy, WebsiteStatus } from "../api/types";
 import type { Tone } from "../components/ui";
 import { daysUntil, longDate, relativeTime } from "./format";
 
@@ -130,6 +130,32 @@ export const DATABASE_SERVER_STATUS: Record<DatabaseServerStatus, { label: strin
   failed: { label: "Failed", tone: "danger" },
   removing: { label: "Removing", tone: "info" },
 };
+
+export const DNS_ZONE_STATUS: Record<DnsZoneStatus, { label: string; tone: Tone }> = {
+  active: { label: "Active", tone: "success" },
+  updating: { label: "Updating", tone: "info" },
+  failed: { label: "Failed", tone: "danger" },
+  removing: { label: "Removing", tone: "info" },
+};
+
+/** What the registrar of the domain says about the name servers of a zone. */
+export const DNS_DELEGATION: Record<DnsDelegation, { label: string; tone: Tone }> = {
+  here: { label: "Uses these name servers", tone: "success" },
+  elsewhere: { label: "Uses other name servers", tone: "warning" },
+  none: { label: "No name servers found", tone: "warning" },
+  unknown: { label: "Not checked", tone: "neutral" },
+};
+
+export const DNS_RECORD_TYPES: DnsRecordType[] = ["A", "AAAA", "CNAME", "MX", "TXT", "SRV", "CAA", "NS"];
+
+/** "1 hour" for 3600. A value that is not a full unit stays in seconds. */
+export function ttlText(seconds: number): string {
+  const units: [number, string][] = [[86400, "day"], [3600, "hour"], [60, "minute"]];
+  for (const [size, name] of units) {
+    if (seconds >= size && seconds % size === 0) return `${seconds / size} ${name}${seconds === size ? "" : "s"}`;
+  }
+  return `${seconds} seconds`;
+}
 
 /**
  * The text next to a disk limit that the server of the website does not apply (audit item U4).

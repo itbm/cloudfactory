@@ -192,6 +192,23 @@ rule() {
 line() { grep -nxF -- "    $1" "$2" | head -n 1 | cut -d: -f1 | grep . || echo 0; }
 
 firewall >"$WORK/default.nft"
+# DNS hosting: the agent adds the rules of the DNS server to the firewall file, after the rule
+# of port 22 and after the redirect of port 80. The script keeps them when it runs again.
+rule "a server with no DNS zones has port 53 closed" no 'meta l4proto { tcp, udp } th dport { 53, 8053 } accept # cloudfactory-dns' "$WORK/default.nft"
+rule "the agent finds the rule of port 22" yes 'tcp dport 22 accept' "$WORK/default.nft"
+rule "the agent finds the redirect of port 80" yes 'tcp dport 80 redirect to :8080' "$WORK/default.nft"
+firewall_dns() {
+	root=$(fake debian 13)
+	# shellcheck disable=SC2016 # $* expands in the fake command.
+	printf '#!/bin/sh\ncase "$*" in *cf-edge*) echo 991 ;; *cf-panel*) echo 992 ;; *) echo 0 ;; esac\n' >"$root/bin/id"
+	mkdir -p "$root/etc"
+	printf '    meta l4proto { tcp, udp } th dport { 53, 8053 } accept # cloudfactory-dns\n' >"$root/etc/nftables.d-cloudfactory.nft"
+	CF_TEST_ROOT="$root" CF_TEST_PRINT=firewall PATH="$root/bin:$PATH" sh "$WORK/install.sh" --check $panel 2>&1 | sed '1,/^All checks passed\.$/d'
+}
+firewall_dns >"$WORK/dns.nft"
+rule "the script keeps the open DNS port" yes 'meta l4proto { tcp, udp } th dport { 53, 8053 } accept # cloudfactory-dns' "$WORK/dns.nft"
+rule "the script keeps the redirect of the DNS port" yes 'meta l4proto { tcp, udp } th dport 53 redirect to :8053 # cloudfactory-dns' "$WORK/dns.nft"
+if grep -q 'dnsRuleMarker = "# cloudfactory-dns"' "$HERE/../agent/internal/actions/dns.go"; then PASS=$((PASS + 1)); else FAIL=$((FAIL + 1)); echo 'FAIL: the marker of the DNS firewall rules'; fi
 rule "the website users go to the website chain" yes 'ct state new meta skuid 20000-59999 jump websites' "$WORK/default.nft"
 rule "a website reaches the database servers of its customer" yes 'meta skuid . ip daddr . tcp dport @database_access accept' "$WORK/default.nft"
 rule "the rule of the database servers has no list of ports" no 'meta skuid . ip daddr @database_access tcp dport { 3306, 5432, 6379 } accept' "$WORK/default.nft"
@@ -298,7 +315,7 @@ for bad in example.com 10.0.0.0/8/1 0.0.0.0/0 '10.0.0.1;drop' 10.0.0.1/ fd00::1.
 done
 # nftables checks the syntax of the rules, when the test runs as root on a system with nft.
 if command -v nft >/dev/null 2>&1 && printf 'table inet cloudfactory_test\n' | nft -c -f - 2>/dev/null; then
-	for file in default allowed; do
+	for file in default allowed dns; do
 		if nft -c -f "$WORK/$file.nft"; then PASS=$((PASS + 1)); else FAIL=$((FAIL + 1)); printf 'FAIL: nft refuses the %s firewall rules\n' "$file"; fi
 	done
 else

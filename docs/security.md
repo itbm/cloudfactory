@@ -177,6 +177,29 @@ The product specification, section 6.4, gives the requirements.
   certificate order. A customer can add 30 domains in one hour and start 10 domain checks in
   one minute. An administrator has no such limit.
 
+## DNS zones
+
+- A zone belongs to one customer. A user can see and change only the zones of the customers
+  that the user controls, and each DNS request needs the token scope `dns`.
+- A customer cannot make a zone for a name that is the same as, above or below a zone of a
+  different customer, unless the customer proves control of the domain. The proof is a DNS TXT
+  record at `_cloudfactory-challenge.<domain>`, as for the domain of a website. An
+  administrator needs no proof.
+- A customer cannot make a zone for the domain of the panel, the host name of a server or a
+  name server host name.
+- The plan of a customer gives the number of its zones. A zone has 1000 records at most. A
+  customer can make 60 DNS changes in one minute.
+- The panel and the root helper check each record with the same rules
+  (`schema/input-rules.json`): the type, the name, the TTL, and the value for the type. The
+  root helper writes the zone file from the checked records. A record cannot have a new line,
+  a `$` directive or an open quotation mark.
+- The container `cf-dns` runs in gVisor with a Unix user that has no other work. It can read
+  the zone files and cannot change them. It can write only its keys and signatures.
+- The private DNSSEC key of a zone is encrypted in the panel database. On a DNS server, only
+  the user `cf-dns` and root can read it.
+- The DNS server answers only for its zones. It has no recursion, and it limits the rate of
+  the answers to one network.
+
 ## The edge proxy
 
 - The admin API of Caddy listens on a Unix socket, not on a TCP port. Only the user `cf-edge`
@@ -573,7 +596,9 @@ through the internet, so the design assumes that a person can read and change ea
 
 The installation script sets an nftables table. The table blocks all incoming traffic except
 SSH, SFTP (port 2200 by default), HTTP, HTTPS and the agent port. The agent changes only the
-SFTP rule, which has the comment `# cloudfactory-sftp`.
+SFTP rule, which has the comment `# cloudfactory-sftp`, and the rules of the DNS server,
+which have the comment `# cloudfactory-dns`. The DNS rules open port 53 (UDP and TCP) on a
+server that has DNS zones.
 
 The table also limits the outgoing connections:
 
@@ -613,6 +638,16 @@ The table also limits the outgoing connections:
 ## Known limits
 
 These items stay open in release 0.1:
+
+- **A domain that points to the panel after its zone is removed.** When a customer removes a
+  zone, or an administrator removes a customer, the registrar of the domain can still have
+  the name servers of the panel. A different customer who makes a zone for the same domain
+  then controls the DNS of the domain. The panel asks for the TXT proof only while a
+  different customer has a zone for the name. Before you remove a zone, set other name
+  servers at the registrar.
+- **A server that had the role `dns`.** When you turn off DNS on a server, the panel removes
+  the zones from the server. The empty container `cf-dns` and the firewall rules for port 53
+  stay until you remove them.
 
 - **Image tags.** The signature policy accepts a signed image for each tag of its repository
   (`matchRepository`). A person who can write to the registry can thus give an old signed

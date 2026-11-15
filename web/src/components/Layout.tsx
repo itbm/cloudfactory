@@ -17,6 +17,7 @@ import {
   Search,
   Server,
   Settings2,
+  Signpost,
   Tags,
   Users,
 } from "lucide-react";
@@ -184,6 +185,7 @@ const ICONS: Record<NavEntry["icon"], ReactNode> = {
   websites: <Globe size={18} />,
   files: <FolderOpen size={18} />,
   databases: <Database size={18} />,
+  dns: <Signpost size={18} />,
   backups: <History size={18} />,
   apps: <Boxes size={18} />,
   jobs: <Activity size={18} />,

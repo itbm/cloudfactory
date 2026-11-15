@@ -148,4 +148,27 @@ describe("the database servers of each customer", () => {
     expect(screen.queryByRole("button", { name: "Move the databases" })).toBeNull();
     expect(screen.queryByText(/shared database containers/)).toBeNull();
   });
+  it("shows the DNS server of a server, and turns on DNS with a name server host name", async () => {
+    page("web-1");
+    const card = screen.getByRole("heading", { name: "DNS server" }).closest("section")!;
+    expect(card.textContent).toContain("Answers DNS queries");
+    expect((within(card).getByLabelText("Name server host name") as HTMLInputElement).value).toBe("ns1.panel.example");
+    expect(card.textContent).toContain("203.0.113.10");
+    cleanup();
+
+    // The agent of web-3 is of an earlier release: it cannot operate a DNS server.
+    page("web-3");
+    const off = screen.getByRole("heading", { name: "DNS server" }).closest("section")!;
+    expect(off.textContent).toContain("The agent of this server cannot operate a DNS server.");
+    expect((within(off).getByRole("button", { name: "Turn on DNS" }) as HTMLButtonElement).disabled).toBe(true);
+    cleanup();
+
+    page("web-2");
+    const on = screen.getByRole("heading", { name: "DNS server" }).closest("section")!;
+    api.on(`PATCH /servers/${server("web-2").id}`, () => ({ job: null }));
+    fireEvent.change(within(on).getByLabelText("Name server host name"), { target: { value: "NS3.panel.example." } });
+    fireEvent.click(within(on).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(api.changes.at(-1)?.method).toBe("PATCH"));
+    expect(api.changes.at(-1)!.body).toEqual({ roles: server("web-2").roles, dnsName: "ns3.panel.example" });
+  });
 });

@@ -329,6 +329,18 @@ firewall_rules() {
 		website_networks="$website_networks    $family daddr $network accept
 "
 	done
+	# DNS hosting: on a server that has DNS zones, the agent adds two rules for the DNS server
+	# to the file of this script (setDnsRules in agent/internal/actions/dns.go). When the script
+	# runs again, it keeps them. A rootless container cannot open port 53, so the firewall
+	# redirects port 53 to port 8053 of the DNS container.
+	dns_accept=""
+	dns_redirect=""
+	if grep -q '# cloudfactory-dns$' "$ROOT/etc/nftables.d-cloudfactory.nft" 2>/dev/null; then
+		dns_accept="
+    meta l4proto { tcp, udp } th dport { 53, 8053 } accept # cloudfactory-dns"
+		dns_redirect="
+    meta l4proto { tcp, udp } th dport 53 redirect to :8053 # cloudfactory-dns"
+	fi
 	smtp_rule="tcp dport 25 jump refuse"
 	[ "$WEBSITE_SMTP" -eq 1 ] && smtp_rule="# The option --allow-website-smtp: the websites can connect to port 25."
 	cat <<NFT
@@ -382,7 +394,7 @@ table inet cloudfactory {
     udp dport @mesh_port ip6 saddr @mesh_endpoints6 accept
     iifname "cf-mesh" jump mesh_input
     meta l4proto { icmp, ipv6-icmp } accept
-    tcp dport 22 accept
+    tcp dport 22 accept$dns_accept
     tcp dport $SFTP_PORT accept # cloudfactory-sftp
     tcp dport { 80, 443, 8080, 8443 } accept
     udp dport { 443, 8443 } accept
@@ -441,7 +453,7 @@ ${website_networks}    # The edge proxy on the addresses of this server, so that
   }
   chain prerouting {
     type nat hook prerouting priority dstnat;
-    tcp dport 80 redirect to :8080
+    tcp dport 80 redirect to :8080$dns_redirect
     tcp dport 443 redirect to :8443
     udp dport 443 redirect to :8443
   }

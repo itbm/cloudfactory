@@ -6,6 +6,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"github.com/itbm/cloudfactory/agent/internal/host"
 	"maps"
 	"net"
 	"os"
@@ -78,6 +79,21 @@ const (
 // certificate of the panel to a status report.
 func (d *Deps) FillReport(ctx context.Context, r *panel.Report) {
 	r.SftpPort = d.SftpPortInUse()
+	r.DNS = true
+	r.Addresses = d.ReportAddresses()
+	r.DNSZones = d.DnsZones(ctx)
+	// The DNS server is a service of this server only after its first zone job.
+	if d.DnsEnabled(ctx) {
+		state := "stopped"
+		out, _ := d.Host.Systemctl(ctx, host.DnsUser, "is-active", dnsServiceName)
+		switch strings.TrimSpace(out) {
+		case "active", "activating", "reloading":
+			state = "running"
+		case "failed":
+			state = "failed"
+		}
+		r.Services = append(r.Services, panel.Service{Name: dnsContainer, State: state})
+	}
 	r.CronRuns = d.cronReport()
 	// The panel server reports the certificate of the panel domain, and the root certificate
 	// of the panel CA, which the panel offers for download.
