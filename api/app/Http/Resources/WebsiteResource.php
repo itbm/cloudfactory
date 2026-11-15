@@ -29,8 +29,12 @@ class WebsiteResource extends JsonResource
             'networkPort' => $this->isWorker() ? null : Networks::WEBSITE_PORT,
             // "public", "private" (no domain, only for the websites of its networks) or "worker".
             'kind' => $this->kind ?? Website::PUBLIC,
-            // The start command of a worker.
-            'command' => $this->isWorker() ? $this->command : null,
+            // The start command of a worker, or of a Node.js or Python website.
+            'command' => $this->hasStartCommand() ? $this->command : null,
+            // The install command of a Node.js or Python website, or null.
+            'installCommand' => $image->isApp() ? $this->install_command : null,
+            // The names of the environment variables. The API never gives the values.
+            'environment' => array_keys($this->variables()),
             'status' => $this->status->value,
             'runtime' => [
                 'imageId' => $this->image_id,
@@ -39,11 +43,13 @@ class WebsiteResource extends JsonResource
                 'digest' => $image->digest,
                 'signatureVerified' => $image->signature_verified,
                 'phpVersion' => $image->php_version,
+                // The version of Node.js or Python, for example "24" or "3.14".
+                'version' => $image->runtime_version,
                 'workerMode' => $this->worker_mode,
                 'extensions' => $this->extensions,
                 'phpIni' => (object) $this->php_ini,
                 'previousImageId' => $this->previous_image_id,
-                'documentRoot' => $this->document_root ?? 'public',
+                'documentRoot' => $this->document_root ?? ($image->isApp() ? '.' : 'public'),
                 'supportEndsAt' => $image->support_ends_at?->toDateString(),
             ],
             'updateReady' => $this->updateReady(),

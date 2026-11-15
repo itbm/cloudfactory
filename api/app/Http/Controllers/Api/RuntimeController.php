@@ -7,7 +7,9 @@ use App\Enums\WebsiteStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\JobResource;
 use App\Http\Resources\WebsiteResource;
+use App\Models\AgentJob;
 use App\Models\Image;
+use App\Models\Website;
 use App\Services\Audit;
 use App\Services\JobDispatcher;
 use App\Validation\Input;
@@ -16,7 +18,11 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
 
-/** FR-303 to FR-305: PHP version, extensions, php.ini values and worker mode. */
+/**
+ * FR-303 to FR-305: PHP version, extensions, php.ini values and worker mode. The version,
+ * the start command and the install command of a Node.js or Python website. The environment
+ * variables of each website.
+ */
 class RuntimeController extends Controller
 {
     use Concerns;
@@ -37,11 +43,16 @@ class RuntimeController extends Controller
             // Batch 1, finding 11: the directory in /app that the web server serves, for example
             // "web". "." is /app itself.
             'documentRoot' => ['sometimes', 'string', Input::rule('documentRoot')],
-            // The start command of a worker.
+            // The start command of a worker, or of a Node.js or Python website.
             'command' => ['sometimes', 'string', Input::rule('commandLine')],
+            // The install command of a Node.js or Python website. Empty: no install step.
+            'installCommand' => ['sometimes', 'nullable', 'string', Input::rule('commandLine')],
         ]);
-        if (isset($data['command']) && ! $website->isWorker()) {
-            throw ValidationException::withMessages(['command' => 'Only a worker has a start command.']);
+        if (isset($data['command']) && ! $website->hasStartCommand()) {
+            throw ValidationException::withMessages(['command' => 'Only a worker, or a Node.js or Python website, has a start command.']);
+        }
+        if (array_key_exists('installCommand', $data) && ! $website->image->isApp()) {
+            throw ValidationException::withMessages(['installCommand' => 'Only a Node.js or Python website has an install command.']);
         }
         $plan = $website->plan;
         $changes = [];
@@ -50,13 +61,14 @@ class RuntimeController extends Controller
             'image_id' => $website->image_id, 'image_tag' => $website->image_tag, 'previous_image_id' => $website->previous_image_id,
             'previous_image_tag' => $website->previous_image_tag, 'worker_mode' => $website->worker_mode, 'extensions' => $website->extensions,
             'php_ini' => $website->php_ini, 'document_root' => $website->document_root, 'command' => $website->command,
+            'install_command' => $website->install_command,
         ];
         // Batch 3, finding 6: worker mode is checked against the image after the change.
         $newImage = $website->image;
 
         if (isset($data['imageId']) && $data['imageId'] !== $website->image_id) {
             $image = Image::findOrFail($data['imageId']);
-            if ($image->isPhp() !== $website->image->isPhp()) {
+            if ($image->kind() !== $website->image->kind()) {
                 throw ValidationException::withMessages(['imageId' => 'Select an image of the same kind.']);
             }
             // R-02: as for a new website, only an administrator selects a custom image. The owner
@@ -69,7 +81,13 @@ class RuntimeController extends Controller
             $newImage = $image;
         }
         if (isset($data['command']) && $data['command'] !== $website->command) {
-            $changes['command'] = $data['command'];
+            $changes['command'] = trim($data['command']);
+        }
+        if (array_key_exists('installCommand', $data)) {
+            $install = trim((string) $data['installCommand']);
+            if (($install === '' ? null : $install) !== $website->install_command) {
+                $changes['install_command'] = $install === '' ? null : $install;
+            }
         }
         if (isset($data['workerMode'])) {
             if ($data['workerMode'] && $newImage->family !== 'frankenphp') {
@@ -134,7 +152,18 @@ class RuntimeController extends Controller
             'previousTag' => $revert['image_tag'] ?? Image::find($revert['image_id'])?->tag,
             'revert' => $revert,
         ];
-        $job = $this->jobs->dispatch($website->server, AgentAction::SetRuntime, $payload, isset($changes['image_id']) ? "Change runtime to {$website->image->name}" : (isset($changes['command']) ? 'Change start command' : 'Apply PHP settings'), $website);
+        // A new Node.js or Python version needs the dependencies again: a native module of
+        // Node.js and a virtual environment of Python are for one version.
+        if (isset($changes['image_id']) && $website->image->isApp() && $website->install_command) {
+            $job = self::install($this->jobs, $website, $payload, "Change runtime to {$website->image->name}");
+        } else {
+            $job = $this->jobs->dispatch($website->server, AgentAction::SetRuntime, $payload, match (true) {
+                isset($changes['image_id']) => "Change runtime to {$website->image->name}",
+                isset($changes['command']) => 'Change start command',
+                $website->image->isApp() => 'Apply runtime settings',
+                default => 'Apply PHP settings',
+            }, $website);
+        }
         Audit::record($request, 'Changed runtime', $website->name, $website->customer_id);
 
         return response()->json(['website' => new WebsiteResource($website), 'job' => new JobResource($job)], 202);
@@ -150,6 +179,80 @@ class RuntimeController extends Controller
         $request->merge(['imageId' => $website->previous_image_id]);
 
         return $this->update($request, $websiteId);
+    }
+
+    /**
+     * Installs the dependencies of a Node.js or Python website, and starts the website again
+     * with no stop: the job InstallDependencies.
+     */
+    public function installDependencies(Request $request, string $websiteId): JsonResponse
+    {
+        $website = $this->changeable($request, $websiteId);
+        if (! $website->image->isApp()) {
+            throw ValidationException::withMessages(['installCommand' => 'Only a Node.js or Python website has an install command.']);
+        }
+        if (! $website->install_command) {
+            throw ValidationException::withMessages(['installCommand' => 'Enter an install command first.']);
+        }
+        $job = self::install($this->jobs, $website, JobDispatcher::websitePayload($website), 'Install dependencies');
+        Audit::record($request, 'Installed dependencies', $website->name, $website->customer_id);
+
+        return response()->json(['job' => new JobResource($job)], 202);
+    }
+
+    /**
+     * Sets and removes environment variables of the website container, and starts the website
+     * again with no stop. A value of null removes the variable. The API never gives the values.
+     */
+    public function environment(Request $request, string $websiteId): JsonResponse
+    {
+        $website = $this->changeable($request, $websiteId);
+        $data = $request->validate([
+            'variables' => ['present', 'array', 'max:'.InputRules::MAX_ENVIRONMENT_VARIABLES],
+            'variables.*' => ['nullable', 'string', Input::rule('envValue')],
+        ]);
+        $env = $website->variables();
+        foreach ($data['variables'] as $name => $value) {
+            if (! Input::valid('envName', (string) $name)) {
+                throw ValidationException::withMessages(["variables.{$name}" => InputRules::MESSAGES['envName']]);
+            }
+            if ($value === null) {
+                unset($env[$name]);
+            } else {
+                $env[$name] = $value;
+            }
+        }
+        if (count($env) > InputRules::MAX_ENVIRONMENT_VARIABLES) {
+            throw ValidationException::withMessages(['variables' => 'A website can have '.InputRules::MAX_ENVIRONMENT_VARIABLES.' environment variables. Remove one first.']);
+        }
+        ksort($env);
+        if ($env === $website->variables()) {
+            return response()->json(['website' => new WebsiteResource($website), 'job' => null]);
+        }
+        $website->update(['environment' => $env ?: null]);
+        Audit::record($request, 'Changed environment variables', $website->name.': '.implode(', ', array_keys($data['variables'])), $website->customer_id);
+        $website->refresh()->load(['image', 'domains']);
+        // The new container gets the new values. If its health check fails, the old container
+        // continues with the old values, and the panel keeps the new values for the next start.
+        $job = $this->jobs->dispatch($website->server, AgentAction::SetRuntime, JobDispatcher::websitePayload($website), 'Apply environment variables', $website);
+
+        return response()->json(['website' => new WebsiteResource($website), 'job' => new JobResource($job)], 202);
+    }
+
+    /** @param  array<string, mixed>  $payload */
+    private static function install(JobDispatcher $jobs, Website $website, array $payload, string $title): AgentJob
+    {
+        return $jobs->dispatch($website->server, AgentAction::InstallDependencies, $payload + ['command' => $website->install_command], $title, $website);
+    }
+
+    /** A website that can change: the panel made it, and its customer is not suspended. */
+    private function changeable(Request $request, string $websiteId): Website
+    {
+        $website = $this->findWebsite($request, $websiteId);
+        WebsiteController::refuseFailed($website);
+        abort_if($website->customer?->isSuspended() ?? false, 409, 'This customer is suspended. Lift the suspension first.');
+
+        return $website;
     }
 
     private const SIZE = '/^[1-9][0-9]{0,5}[KMG]?$/';

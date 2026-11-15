@@ -84,20 +84,20 @@ class DemoTest extends TestCase
         $this->seed(DemoSeeder::class);
 
         $this->signInAs('admin@example.com');
-        $this->getJson('/api/v1/websites?perPage=100')->assertOk()->assertJsonCount(12, 'data');
+        $this->getJson('/api/v1/websites?perPage=100')->assertOk()->assertJsonCount(14, 'data');
         $this->getJson('/api/v1/servers')->assertOk()->assertJsonCount(3, 'data');
 
         // The reseller: its own website and the websites of its two customers.
         $this->signInAs('reseller@example.com');
         $this->assertEqualsCanonicalizing(
-            ['northwind.example.com', 'cornerbakery.example.org', 'harbourbooks.example.net', 'events.harbourbooks.example.net'],
+            ['northwind.example.com', 'reports.northwind.example.com', 'cornerbakery.example.org', 'harbourbooks.example.net', 'events.harbourbooks.example.net'],
             $this->getJson('/api/v1/websites?perPage=100')->assertOk()->json('data.*.name'),
         );
         $this->getJson('/api/v1/servers')->assertForbidden();
 
         $this->signInAs('owner@example.com');
         $names = $this->getJson('/api/v1/websites?perPage=100')->assertOk()->json('data.*.name');
-        $this->assertCount(7, $names);
+        $this->assertCount(8, $names);
         $this->assertSame(['orders-1c16.internal', 'queue-00b1.internal'], array_values(array_filter($names, fn ($n) => ! str_ends_with($n, 'acme.example.com'))));
     }
 

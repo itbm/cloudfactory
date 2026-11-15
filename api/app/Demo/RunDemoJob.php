@@ -23,6 +23,7 @@ use Illuminate\Foundation\Queue\Queueable;
  * - a new database with a name that ends with "_fail";
  * - a deploy from a repository with "fail" in its address;
  * - a cron job with "fail" in its command;
+ * - an install of dependencies with "fail" in its install command;
  * - a DNS zone with a name that starts with "fail.".
  */
 class RunDemoJob implements ShouldQueue
@@ -91,6 +92,10 @@ class RunDemoJob implements ShouldQueue
             $job->action === AgentAction::Deploy && str_contains((string) ($p['repository'] ?? ''), 'fail') => [
                 'step' => 1,
                 'error' => "a build command failed: exit status 2: Installing dependencies from lock file\nYour lock file does not contain a compatible set of packages. Please run composer update.",
+            ],
+            $job->action === AgentAction::InstallDependencies && str_contains((string) ($p['command'] ?? ''), 'fail') => [
+                'step' => 0,
+                'error' => "the install command failed: exit status 1: npm error code EUSAGE\nnpm error The `npm ci` command can only install with an existing package-lock.json.",
             ],
             $job->action === AgentAction::RunCronJob && str_contains((string) ($p['cronJob']['command'] ?? ''), 'fail') => [
                 'step' => 0,

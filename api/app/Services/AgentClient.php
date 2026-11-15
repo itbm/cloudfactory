@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\BackupController;
 use App\Models\AgentJob;
 use App\Models\GitSource;
 use App\Models\Server;
+use App\Models\Website;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\RequestException;
@@ -40,7 +41,7 @@ class AgentClient
             ->withHeaders(['Connect-Protocol-Version' => '1'])
             ->post('/'.self::SERVICE.'/'.$job->action->value, [
                 'jobId' => $job->id,
-                ...$payload,
+                ...self::withEnvironment($job, $payload),
                 // The credentials of the object storage and the password of the repository are not
                 // in the job. The panel adds the current values each time that it sends the job.
                 // Second audit, finding F08: a server with its own key gets that key only.
@@ -54,6 +55,27 @@ class AgentClient
                 ...($job->action === AgentAction::Deploy ? self::deploySecrets($job) : []),
             ])
             ->throw();
+    }
+
+    /**
+     * The environment variables of the website of a job. They are not in the job: they can
+     * have secrets, for example the password of a database. The panel adds the current values
+     * each time that it sends a job with the website, as for the secrets of a deploy.
+     *
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    private static function withEnvironment(AgentJob $job, array $payload): array
+    {
+        if (! is_array($payload['website'] ?? null) || ! $job->website_id || ($payload['website']['id'] ?? null) !== $job->website_id) {
+            return $payload;
+        }
+        $variables = Website::whereKey($job->website_id)->first()?->variables() ?? [];
+        if ($variables) {
+            $payload['website']['environment'] = (object) $variables;
+        }
+
+        return $payload;
     }
 
     /**

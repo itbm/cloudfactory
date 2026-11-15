@@ -203,6 +203,8 @@ class JobOutcome
             AgentAction::CreateWebsite => $website?->moveTo(WebsiteStatus::Failed),
             // FR-1105: the agent went back to the previous image. The panel records the same.
             // Batch 1, finding 3: a change of the PHP settings has the old settings in "revert".
+            // An install with a change of the runtime version goes back in the same way.
+            AgentAction::InstallDependencies => isset($p['revert']) ? $website?->update($p['revert']) : null,
             AgentAction::SetRuntime => $website?->update(isset($p['revert']) ? $p['revert'] : [
                 'image_id' => $p['previousImageId'] ?? $website->image_id,
                 'image_tag' => $p['previousTag'] ?? $website->image_tag,

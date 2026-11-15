@@ -36,7 +36,9 @@ class ImageController extends Controller
 
         return response()->json(['data' => $images->map(fn (Image $i) => [
             'id' => $i->id, 'name' => $i->name, 'family' => $i->family, 'tag' => $i->tag,
-            'phpVersion' => $i->php_version, 'custom' => $i->custom, 'supportEndsAt' => $i->support_ends_at?->toIso8601String(),
+            'phpVersion' => $i->php_version, 'version' => $i->runtime_version, 'custom' => $i->custom, 'supportEndsAt' => $i->support_ends_at?->toIso8601String(),
+            // The usual commands of a Node.js or Python image, for the form of a new website.
+            'defaults' => Image::APP_DEFAULTS[$i->family] ?? null,
         ])]);
     }
 
@@ -115,6 +117,7 @@ class ImageController extends Controller
             'availableTag' => $i->available_tag,
             'availableDigest' => $i->available_digest,
             'phpVersion' => $i->php_version,
+            'version' => $i->runtime_version,
             'supportEndsAt' => $i->support_ends_at?->toDateString(),
             'policy' => $i->policy->value,
             'custom' => $i->custom,

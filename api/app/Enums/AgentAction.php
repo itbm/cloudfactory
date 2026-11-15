@@ -36,6 +36,7 @@ enum AgentAction: string
     case RunCronJob = 'RunCronJob';
     case Deploy = 'Deploy';
     case ActivateRelease = 'ActivateRelease';
+    case InstallDependencies = 'InstallDependencies';
     case SetMesh = 'SetMesh';
     case RotateMeshKey = 'RotateMeshKey';
     case SendDatabaseServer = 'SendDatabaseServer';
@@ -75,6 +76,9 @@ enum AgentAction: string
             // from the new release with no stop.
             self::Deploy => ['Get the code', 'Build', ...self::SetRuntime->steps(), 'Remove old releases'],
             self::ActivateRelease => ['Check the release', ...self::SetRuntime->steps()],
+            // The agent installs the dependencies in a build container, then starts the website
+            // again with no stop.
+            self::InstallDependencies => ['Install dependencies', ...self::SetRuntime->steps()],
             self::SetMesh => ['Set tunnels and firewall', 'Check tunnels'],
             self::RotateMeshKey => ['Make new key'],
             self::SendDatabaseServer => ['Stop database server', 'Send data'],

@@ -82,12 +82,16 @@ class WebsiteController extends Controller
     public function store(Request $request): JsonResponse
     {
         $kind = $request->input('kind', Website::PUBLIC);
+        // A Node.js or Python website runs a start command, as a worker does.
+        $app = (bool) Image::find($request->input('imageId'))?->isApp();
         $data = $request->validate([
             'kind' => ['sometimes', Rule::in(Website::KINDS)],
             // A website has the name of its first domain. A private website and a worker have
             // no domain: the user types a short name, and the panel makes the network name.
             'name' => ['required', 'string', 'lowercase', 'regex:'.($kind === Website::PUBLIC ? self::DOMAIN : self::SHORT_NAME)],
-            'command' => [Rule::requiredIf($kind === Website::WORKER), Rule::prohibitedIf($kind !== Website::WORKER), 'string', Input::rule('commandLine')],
+            'command' => [Rule::requiredIf($kind === Website::WORKER), Rule::prohibitedIf($kind !== Website::WORKER && ! $app), 'string', Input::rule('commandLine')],
+            // The install command of a Node.js or Python website. Empty: no install step.
+            'installCommand' => [Rule::prohibitedIf(! $app), 'nullable', 'string', Input::rule('commandLine')],
             'application' => ['nullable', 'string', 'max:100'],
             'imageId' => ['required', 'exists:images,id'],
             'planId' => ['nullable', 'exists:plans,id'],
@@ -145,10 +149,16 @@ class WebsiteController extends Controller
 
         $website = DB::transaction(function () use ($data, $kind, $unixUser, $customer, $image, $plan, $server, $domain) {
             self::checkWebsiteLimit($customer);
+            // The usual commands of the family, when the user gave none.
+            $defaults = Image::APP_DEFAULTS[$image->family] ?? null;
+            $install = array_key_exists('installCommand', $data) ? trim((string) $data['installCommand']) : ($defaults['install'] ?? '');
             $website = Website::create([
                 'name' => $data['name'],
                 'kind' => $kind,
-                'command' => $data['command'] ?? null,
+                'command' => isset($data['command']) ? trim($data['command']) : ($defaults['command'] ?? null),
+                'install_command' => $defaults && $install !== '' ? $install : null,
+                // A Node.js or Python website runs from its application directory: /app.
+                ...($defaults ? ['document_root' => '.'] : []),
                 'application' => $data['application'] ?? '',
                 'customer_id' => $customer->id,
                 'server_id' => $server->id,

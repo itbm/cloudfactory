@@ -59,6 +59,22 @@ class InstallPanel extends Command
             ]), $tag);
         }
 
+        // Node.js and Python. The dates are the end of support of each version: the end of
+        // the LTS of Node.js, and the end of the security fixes of Python.
+        $apps = [
+            ['node', 'node22', 'Node.js 22', '22', '2027-04-30'],
+            ['node', 'node24', 'Node.js 24', '24', '2028-04-30'],
+            ['node', 'node26', 'Node.js 26', '26', '2029-04-30'],
+            ['python', 'python3.13', 'Python 3.13', '3.13', '2029-10-31'],
+            ['python', 'python3.14', 'Python 3.14', '3.14', '2030-10-31'],
+        ];
+        foreach ($apps as [$family, $package, $name, $version, $ends]) {
+            self::upgrade(Image::firstOrCreate(['reference' => "{$registry}/{$package}"], [
+                'name' => $name, 'family' => $family, 'runtime_version' => $version,
+                'tag' => $tag, 'support_ends_at' => $ends, 'policy' => 'security_automatic', 'signature_verified' => true,
+            ]), $tag);
+        }
+
         $gb = 1024 ** 3;
         $extensions = ['opcache', 'intl', 'gd', 'zip', 'exif', 'bcmath', 'mysqli', 'pdo_mysql', 'pdo_pgsql', 'redis', 'imagick', 'soap'];
         // A plan gives the limits of a website and of a database server. A database server has

@@ -76,6 +76,8 @@ Route::prefix('v1')->group(function () {
             Route::put('websites/{websiteId}/sftp', [SftpController::class, 'update']);
             Route::put('websites/{websiteId}/runtime', [RuntimeController::class, 'update']);
             Route::post('websites/{websiteId}/runtime/revert', [RuntimeController::class, 'revert']);
+            Route::post('websites/{websiteId}/runtime/install', [RuntimeController::class, 'installDependencies']);
+            Route::patch('websites/{websiteId}/environment', [RuntimeController::class, 'environment']);
 
             // The file manager and the logs. The agent does each request as the Unix user of
             // the website, and gives the answer at once.

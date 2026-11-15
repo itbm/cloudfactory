@@ -144,10 +144,20 @@ class DemoSeeder extends Seeder
         // FR-306: the panel warns 90 days before the security support of a PHP version stops.
         $official('apache-8.4', 'Apache + PHP-FPM · PHP 8.4', 'apache-php-fpm', '8.4', 'apache-php8.4', now()->addDays(60)->toDateString(), ['policy' => 'manual']);
         $official('apache-8.5', 'Apache + PHP-FPM · PHP 8.5', 'apache-php-fpm', '8.5', 'apache-php8.5', '2029-12-31');
+        // Node.js and Python: the container runs the start command of the website.
+        $app = fn (string $key, string $name, string $family, string $version, string $ends) => $this->images[$key] = Image::create([
+            'name' => $name, 'family' => $family, 'runtime_version' => $version, 'reference' => "{$registry}/{$key}", 'tag' => '0.1.9', 'digest' => $digest($key.':0.1.9'),
+            'support_ends_at' => $ends, 'policy' => 'security_automatic', 'signature_verified' => true, 'checked_at' => now()->subMinutes(20),
+        ]);
+        $app('node22', 'Node.js 22', 'node', '22', '2027-04-30');
+        $app('node24', 'Node.js 24', 'node', '24', '2028-04-30');
+        $app('node26', 'Node.js 26', 'node', '26', '2029-04-30');
+        $app('python3.13', 'Python 3.13', 'python', '3.13', '2029-10-31');
+        $app('python3.14', 'Python 3.14', 'python', '3.14', '2030-10-31');
         // FR-307: an image that an administrator added. It has a tag only, and no signature. The
         // last check of its registry failed, so the panel does not know if it is up to date.
         $this->images['node'] = Image::create([
-            'name' => 'Node.js app', 'family' => 'node', 'reference' => 'registry.example/acme/storefront', 'tag' => 'stable', 'policy' => 'manual',
+            'name' => 'Node.js app', 'family' => 'custom', 'reference' => 'registry.example/acme/storefront', 'tag' => 'stable', 'policy' => 'manual',
             'custom' => true, 'signature_verified' => false, 'container_port' => 3000, 'command' => ['node', 'server.js'], 'checked_at' => now()->subMinutes(20),
             'check_error' => 'The registry registry.example refused the request: 401 Unauthorized.',
         ]);
@@ -245,6 +255,16 @@ class DemoSeeder extends Seeder
             // is its network name, which the panel makes from the short name.
             ['orders', 'Orders API', 'acme', 'web-2', 'frankenphp-8.5', 'running', 12, [4, 180, 210, 8], ['kind' => Website::PRIVATE]],
             ['queue', 'Queue worker', 'acme', 'web-1', 'frankenphp-8.5', 'running', 12, [3, 140, 90, 5], ['kind' => Website::WORKER, 'command' => 'php artisan queue:work --tries=3']],
+            // Node.js and Python websites run their start command. The panel keeps the values
+            // of the environment variables encrypted, and shows only the names.
+            ['dashboard.acme.example.com', 'Next.js', 'acme', 'web-2', 'node24', 'running', 8, [6, 320, 610, 11], [
+                'command' => 'npm start', 'install_command' => 'npm ci --omit=dev',
+                'environment' => ['NODE_ENV' => 'production', 'DATABASE_URL' => 'postgres://dashboard:demo@postgres.internal:5432/dashboard', 'SESSION_SECRET' => 'demo-secret'],
+            ]],
+            ['reports.northwind.example.com', 'Django', 'northwind', 'web-1', 'python3.14', 'running', 30, [4, 260, 480, 7], [
+                'command' => 'gunicorn --bind 0.0.0.0:$PORT reports.wsgi', 'install_command' => 'python -m venv .venv && .venv/bin/pip install -r requirements.txt',
+                'environment' => ['DJANGO_SETTINGS_MODULE' => 'reports.settings', 'DJANGO_SECRET_KEY' => 'demo-secret'],
+            ]],
         ];
         foreach ($rows as [$name, $application, $customer, $server, $image, $status, $days, $use, $more]) {
             $owner = $this->customers[$customer];
@@ -257,7 +277,7 @@ class DemoSeeder extends Seeder
             $website = new Website([
                 'name' => $name, 'application' => $application, 'customer_id' => $owner->id, 'server_id' => $this->servers[$server]->id, 'plan_id' => $plan->id,
                 'image_id' => $this->images[$image]->id, 'unix_user' => $unixUser, 'status' => $status,
-                'extensions' => $image === 'node' ? [] : ['opcache', 'intl', 'gd', 'zip'], 'php_ini' => $image === 'node' ? [] : ['memory_limit' => '256M', 'upload_max_filesize' => '64M'],
+                'extensions' => $this->images[$image]->isPhp() ? ['opcache', 'intl', 'gd', 'zip'] : [], 'php_ini' => $this->images[$image]->isPhp() ? ['memory_limit' => '256M', 'upload_max_filesize' => '64M'] : [],
                 'limits' => $plan->limits, 'document_root' => $application === 'Laravel' ? 'public' : '.',
                 'usage' => ['cpuPercent' => $use[0], 'memoryBytes' => $use[1] * self::MB, 'diskBytes' => $use[2] * self::MB, 'processes' => $use[3]],
                 ...$more,
