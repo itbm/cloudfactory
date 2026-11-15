@@ -157,6 +157,23 @@ The product specification, section 6.4, gives the requirements.
   of a cloud provider.
 - The mail server refuses mail for a domain that it does not have (no open relay). A mail
   program must sign in to send mail.
+- A private key that the panel makes is protected with the password of the mailbox, and the
+  panel keeps it encrypted with the key of the application. Only the customer of the mailbox,
+  its reseller and an administrator can download it, and each download is an audit event.
+  Somebody with the database of the panel and the key of the application still needs the
+  password of the mailbox to use the private key.
+- The webmail runs as the Unix user `cf-webmail`, not as `cf-mail`. It cannot read the data
+  store of the mail server. It has no capabilities, cannot get new privileges, and has a
+  read-only root file system. The worker cannot run a program as `cf-webmail` or in its
+  container.
+- The edge proxy sends only the JMAP and DAV paths of the mail host name to the mail server.
+  The management API (`/api`) is not on the public host name.
+- The admin dashboard of the webmail is off. The account of the administrator of the mail
+  server does not open it.
+- In a mail cluster, the database and the cluster store listen only on the private network of
+  the cluster. Only the members can connect to it, and only root and `cf-mail` can connect to
+  the cluster ports on a member. The secrets of the cluster are encrypted in the database of
+  the panel, and are not in the job records.
 
 ## Domains
 
@@ -547,6 +564,11 @@ The table also limits the outgoing connections:
   opens the mail ports 25, 465, 587 and 993 and redirects them to the ports of the mail
   container. The chain `mail` gets each new connection of the user `cf-mail`. It permits DNS
   and port 25 of public addresses, and refuses all other connections.
+- The chain `webmail` gets each new connection of the user `cf-webmail`. It permits DNS, the
+  edge proxy of the server (port 443, which the firewall sends to 8443) and port 443 of public
+  addresses. It refuses all other addresses of the server and the private networks.
+- On a member of a mail cluster, the file also accepts the private network (UDP port 51877)
+  from the other members, and the cluster ports on the interface `cf-mail`.
 - The options `--allow-website-smtp` and `--allow-website-network` of the installation script
   open port 25 or a private network for the websites. Refer to
   [installation.md](installation.md#connections-from-the-websites).

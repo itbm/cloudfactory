@@ -188,4 +188,23 @@ database servers. [security.md](security.md#the-root-helper-of-the-agent) gives 
 | Ports | The mail server listens above 1024, and nftables redirects the public ports | The container has no capabilities and does not run as root. The edge proxy uses the same method. |
 | Certificate | The edge proxy gets it, and the root helper copies it | The server has one ACME client, and the mail server needs no port 80. |
 | Passwords | The panel makes a password and sends a bcrypt hash | The agent and the job records never have the password. |
-| Webmail, spam training, calendars | Not in this release | The first release has the parts that each mail program needs. |
+| Webmail | Bulwark, on the host name of the mail server | Bulwark has the AGPL-3.0 licence and uses JMAP, which Stalwart has. It has mail, calendars and contacts. Stalwart 1.1 has no webmail. |
+| Spam training | Not in this release | The first release has the parts that each mail program needs. |
+
+## Mail clusters with the database and the cluster store on each member
+
+| Item | Decision | Reason |
+| ---- | -------- | ------ |
+| Size | 3 or 5 servers | A cluster needs a majority after one failure. With an even number, the cluster stops when the network between the two halves fails. |
+| Data store | MariaDB Galera, one node on each member | Each member has all the mail. The panel needs no external database. |
+| Locks and counters | Stalwart Keep, one member on each server | Stalwart needs a shared in-memory store for a cluster. Keep replicates it with no external service. |
+| Network | WireGuard between the members | The members can be in different regions. The database and the cluster store are never on a public address. |
+| Host names | Each member has its own name and certificate. The cluster has a shared name for MX | Each member gets its certificate with the HTTP challenge, as a single mail server does. A certificate for the shared name needs a relay of the ACME challenge between the members, which this release does not have. |
+
+## Generated OpenPGP keys
+
+| Item | Decision | Reason |
+| ---- | -------- | ------ |
+| Who makes the keys | The panel, when the user asks | The user does not need a separate program. The user can still give a public key of their own. |
+| Protection of the private key | The password of the mailbox | The user has one password for the mail program, the webmail and the key. |
+| Decryption in the webmail | A plugin of the webmail | Bulwark has no OpenPGP decryption. The plugin "PGP True End-to-End" (GPL-3.0) decrypts in the browser. |

@@ -338,6 +338,91 @@ The status report of the agent has the state of the mail server and the size of 
 of each mailbox. The plan of a customer gives the number of its mailboxes and the total size
 of these mailboxes.
 
+### Encryption of the stored mail (OpenPGP)
+
+A mailbox can have an OpenPGP public key. The mail server then encrypts each new message with
+that key before it stores the message. Thus a copy of the data store does not show the mail.
+There are two methods:
+
+- The panel makes the keys (`encrypt: true` on `POST /v1/mail/mailboxes` or
+  `PATCH /v1/mail/mailboxes/{id}`). `App\Services\OpenPgpKey` makes an Ed25519 key for
+  signatures and a Curve25519 key for encryption. The password of the mailbox protects the
+  private key (S2K iterated and salted SHA-256, AES-256). The panel keeps the private key
+  encrypted with the key of the application, and sends only the public key to the agent.
+- The user gives a public key of their own (`publicKey`). The panel then has no private key.
+
+The user downloads the private key (`GET /v1/mail/mailboxes/{id}/private-key`, or
+`cf mail mailboxes private-key ADDRESS`) and adds it to a mail program or to the PGP plugin of
+the webmail. Each download is an audit event. A new password protects the private key again
+when the user gives the current password. Without the current password, the panel keeps the
+old protection and shows that the key has an older password (`privateKey.passwordCurrent`).
+
+The mail server encrypts only new mail. It does not encrypt the messages that the mailbox has
+before the key, and it cannot decrypt the stored mail. Search on the server does not find
+words in an encrypted message.
+
+### Webmail (Bulwark)
+
+Each mail server has a webmail: Bulwark, release 1.21 or later, in the container `cf-webmail`
+of the Unix user `cf-webmail`. The webmail is on the host name of the mail server.
+
+```text
+ browser ──► https://MAIL-HOST ──► edge proxy ─┬─► /.well-known/jmap, /jmap/*, /dav/* ──► 169.254.77.1:19025 (mail server)
+                                               └─► all other paths ──► 169.254.77.1:19027 (cf-webmail)
+ cf-webmail ──► https://MAIL-HOST (examines each sign-in through the edge proxy)
+```
+
+The browser uses one origin for the webmail and for JMAP, thus the mail server needs no CORS
+settings. The edge proxy does not send `/api` to the mail server: the management API is not
+on the public host name. Mail programs use the same name for CalDAV and CardDAV
+(`https://MAIL-HOST/dav`).
+
+| Part | Where | Notes |
+| ---- | ----- | ----- |
+| Settings and secret | `/etc/cloudfactory/webmail/webmail.env` | Only root and the group `cf-webmail` can read the file. The secret encrypts the settings of the users. The agent keeps it when the settings change. |
+| Settings of the users | `/var/lib/cf-webmail/data` | Encrypted with the secret. The webmail keeps no mail. |
+| Root certificate of the panel CA | `/etc/cloudfactory/webmail/ca.crt` | Only for a host name that is not public, for example `mail.example.test`. |
+
+The webmail sends no telemetry and does not look for updates: the release of the agent sets
+the image. Its admin dashboard is off.
+
+### Mail clusters
+
+A mail cluster puts the same mail on 3 or 5 servers with the email role. When one server
+fails, the other servers continue to receive and deliver mail. The servers can be in
+different regions. An administrator makes a cluster (`POST /v1/mail-clusters`,
+`cf mail clusters create`, or the Servers page).
+
+Each member has:
+
+- the mail server `cf-mail`, with its own host name and certificate;
+- a node of a MariaDB Galera cluster, `cf-mail-db`, with the data store of the mail servers;
+- a member of the cluster store, `cf-mail-keep` (Stalwart Keep), with the locks and the
+  counters of the mail servers;
+- the private network `cf-mail` (WireGuard, UDP port 51877). The database and the cluster
+  store listen only on the address of the member in this network.
+
+The panel makes the cluster in steps. A step starts when all jobs of the step before it are
+complete:
+
+| Step | Job | What occurs |
+| ---- | --- | ----------- |
+| `prepare` | `PrepareMailNode` on each server | Each server makes its keys and gives the public keys. |
+| `bootstrap` | `SetMailNode` on the first server | The first server makes the private network and starts the database cluster. |
+| `join` | `SetMailNode` on the other servers | The other servers join the private network and the database cluster. |
+| `first` | `SetMailServer` on the first server | The first mail server starts and writes the settings to the database. |
+| `rest` | `SetMailServer` on the other servers | The other mail servers start with those settings. |
+
+A job that fails stops the setup. An administrator starts the step again
+(`POST /v1/mail-clusters/{id}/retry`): only the servers that did not complete the step do it
+again. The secrets of the cluster are not in the jobs. The panel adds them each time that it
+sends a `SetMailNode` job. When the server of a mail domain is offline, a different member does
+the mail jobs of that domain.
+
+The shared name of the cluster has an A or AAAA record for each member. The MX records of the
+mail domains use the shared name. Mail programs and the webmail use the host name of one
+member.
+
 ## Databases
 
 A customer makes database servers as it makes websites. A database server is one container
