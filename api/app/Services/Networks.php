@@ -284,6 +284,33 @@ class Networks
     }
 
     /**
+     * The links of one server: the links of its websites and the links to its members, in the
+     * order of links(). Mesh::refresh calculates the states of all servers, so the panel
+     * groups the links one time for all servers.
+     *
+     * @return list<object>
+     */
+    private static function linksOf(string $serverId): array
+    {
+        $links = self::links();
+        if (self::$index === null || self::$index[0] !== $links) {
+            $map = [];
+            foreach ($links as $link) {
+                $map[$link->website_server_id][] = $link;
+                if ($link->server_id !== $link->website_server_id) {
+                    $map[$link->server_id][] = $link;
+                }
+            }
+            self::$index = [$links, $map];
+        }
+
+        return self::$index[1][$serverId] ?? [];
+    }
+
+    /** @var array{0: Collection, 1: array<string, list<object>>}|null The links of links() by server. */
+    private static ?array $index = null;
+
+    /**
      * True when a website can connect to a database server on a different server: the two are
      * in one network, and the agents of the two servers can operate network members.
      */
@@ -368,7 +395,7 @@ class Networks
             return $addresses[$link->member_id] ??= $link->mesh_address
                 ?? self::addressFor($link->kind === 'website' ? Website::findOrFail($link->member_id) : DatabaseServer::findOrFail($link->member_id));
         };
-        foreach (self::links() as $link) {
+        foreach (self::linksOf($server->id) as $link) {
             $local = $link->server_id === $server->id;
             $here = $link->website_server_id === $server->id;
             if ((! $local && ! $here) || ! self::usable($link, $servers)) {

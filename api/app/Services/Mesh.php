@@ -253,11 +253,15 @@ class Mesh
      */
     public static function stateFor(Server $server): array
     {
-        $settings = self::settings();
+        $settings = self::$cache['settings'] ?? self::settings();
         $peers = [];
         $complete = collect();
-        foreach ($server->mesh_address ? self::tunnelsOf($server) : [] as $tunnel) {
-            $other = Server::find($tunnel->otherId($server->id));
+        $tunnels = isset(self::$cache['tunnels'])
+            ? self::$cache['tunnels']->filter(fn (MeshTunnel $t) => $t->server_a_id === $server->id || $t->server_b_id === $server->id)
+            : ($server->mesh_address ? self::tunnelsOf($server) : collect());
+        foreach ($server->mesh_address ? $tunnels : [] as $tunnel) {
+            $id = $tunnel->otherId($server->id);
+            $other = isset(self::$cache['servers']) ? self::$cache['servers']->get($id) : Server::find($id);
             $address = $other ? self::tunnelAddress($other) : null;
             // A peer that is not complete gets its tunnel when the panel has its values.
             if (! $other || ! $other->mesh_public_key || ! $other->mesh_address || $address === null) {
@@ -346,9 +350,11 @@ class Mesh
                     $tunnel->delete();
                 }
             }
+            // One read of the servers, the tunnels and the settings for all the states below.
+            $servers = Server::whereNotNull('mesh_public_key')->get()->keyBy('id');
+            self::$cache = ['servers' => Server::all()->keyBy('id'), 'tunnels' => MeshTunnel::all(), 'settings' => self::settings()];
             $changed = [];
             foreach ($servers as $server) {
-                $server->refresh();
                 // A server that never got a state has the state of a server with no tunnel.
                 $previous = $server->mesh_state_hash ?? hash('sha256', json_encode(['peers' => []]));
                 if (self::fingerprint($server) !== $previous) {
@@ -359,6 +365,7 @@ class Mesh
             return $this->sync(...$changed);
         } finally {
             Networks::$links = null;
+            self::$cache = null;
         }
     }
 
@@ -368,7 +375,40 @@ class Mesh
      */
     public static function refreshLater(): void
     {
-        DB::afterCommit(fn () => app(self::class)->refresh());
+        // Many changes in one transaction (for example an import) need one refresh only.
+        if (DB::transactionLevel() === 0) {
+            app(self::class)->refresh();
+
+            return;
+        }
+        if (self::$refreshPending) {
+            return;
+        }
+        self::$refreshPending = true;
+        DB::afterCommit(function () {
+            self::$refreshPending = false;
+            app(self::class)->refresh();
+        });
+    }
+
+    /**
+     * The servers, the tunnels and the settings while refresh calculates the states of all
+     * servers. Null at other times.
+     *
+     * @var array{servers: Collection<string, Server>, tunnels: Collection<int, MeshTunnel>, settings: array<string, mixed>}|null
+     */
+    private static ?array $cache = null;
+
+    /** True while a refresh waits for the end of the current transaction. */
+    private static bool $refreshPending = false;
+
+    /**
+     * A rollback drops the refresh that waits for the commit. The next change then asks for a
+     * new one. A refresh more than necessary does no harm.
+     */
+    public static function forgetPendingRefresh(): void
+    {
+        self::$refreshPending = false;
     }
 
     /**
