@@ -10,7 +10,10 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
  * A private network of a customer. Its members are websites and database servers of the
- * customer. A website can connect to each database server that is in a network with it.
+ * customer. A website can connect to each other member of a network that it is in.
+ *
+ * Each customer has the network "default". The plan of the customer gives the number of
+ * named networks in addition to it.
  */
 #[Fillable(['customer_id', 'name', 'is_default'])]
 class Network extends Model
@@ -29,6 +32,9 @@ class Network extends Model
     {
         return $this->belongsTo(Customer::class);
     }
+
+    /** The name of a named network: lower-case letters, digits and "-". */
+    public const NAME = '/^[a-z0-9]([a-z0-9-]{0,38}[a-z0-9])?$/';
 
     public function members(): HasMany
     {

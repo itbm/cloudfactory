@@ -19,6 +19,7 @@ use App\Http\Controllers\Api\ImageController;
 use App\Http\Controllers\Api\JobController;
 use App\Http\Controllers\Api\LogController;
 use App\Http\Controllers\Api\MeshController;
+use App\Http\Controllers\Api\NetworkController;
 use App\Http\Controllers\Api\PanelCertificateController;
 use App\Http\Controllers\Api\PlanController;
 use App\Http\Controllers\Api\RolloutController;
@@ -113,6 +114,12 @@ Route::prefix('v1')->group(function () {
             Route::patch('websites/{websiteId}/database-users/{userId}', [DatabaseUserController::class, 'update']);
             Route::delete('websites/{websiteId}/database-users/{userId}', [DatabaseUserController::class, 'destroy']);
             // The database servers of a customer: containers with their own limits, as websites.
+            // The private networks of the customers (VPC).
+            Route::get('networks', [NetworkController::class, 'index']);
+            Route::post('networks', [NetworkController::class, 'store']);
+            Route::get('networks/{id}', [NetworkController::class, 'show']);
+            Route::patch('networks/{id}', [NetworkController::class, 'update']);
+            Route::delete('networks/{id}', [NetworkController::class, 'destroy']);
             Route::get('database-servers', [DatabaseServerController::class, 'index']);
             Route::post('database-servers', [DatabaseServerController::class, 'store']);
             Route::get('database-servers/{id}', [DatabaseServerController::class, 'show']);

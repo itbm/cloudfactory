@@ -9,6 +9,7 @@ use App\Models\Database;
 use App\Models\User;
 use App\Models\Website;
 use App\Services\Dns\Zones;
+use App\Services\Networks;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -47,6 +48,8 @@ class AccountController extends Controller
                 'databases' => Database::whereIn('website_id', $websites->pluck('id'))->count(),
                 // The DNS zones that count against the plan: for a reseller, also those of its customers.
                 'dnsZones' => Zones::countFor($customer),
+                // The named networks that count against the plan: for a reseller, also those of its customers.
+                'networks' => Networks::countFor($customer),
                 'diskBytes' => (int) $websites->sum(fn (Website $w) => $w->usage['diskBytes'] ?? 0),
                 // Only for a reseller: the number of its customers.
                 'customers' => $user->role === Role::Reseller ? Customer::where('reseller_id', $customer->id)->count() : null,

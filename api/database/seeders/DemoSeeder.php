@@ -15,6 +15,8 @@ use App\Models\DnsZone;
 use App\Models\GitSource;
 use App\Models\Image;
 use App\Models\MeshTunnel;
+use App\Models\Network;
+use App\Models\NetworkMember;
 use App\Models\Plan;
 use App\Models\Release;
 use App\Models\Rollout;
@@ -90,11 +92,11 @@ class DemoSeeder extends Seeder
     private function plans(): void
     {
         $extensions = ['opcache', 'intl', 'gd', 'zip', 'exif', 'bcmath', 'mysqli', 'pdo_mysql', 'pdo_pgsql', 'redis', 'imagick', 'soap'];
-        // name, vCPUs, memory (GB), disk (GB), websites, then for the database servers: number, databases in each one, memory (MB), disk (GB), then the DNS zones
-        foreach ([['Starter', 1, 1, 10, 3, 2, 5, 512, 2, 2], ['Business', 2, 2, 40, 10, 6, 20, 1024, 10, 10], ['Agency', 4, 4, 100, 50, 20, 50, 2048, 20, 50]] as [$name, $cpu, $memory, $disk, $sites, $databaseServers, $databases, $databaseMemory, $databaseDisk, $zones]) {
+        // name, vCPUs, memory (GB), disk (GB), websites, then for the database servers: number, databases in each one, memory (MB), disk (GB), then the DNS zones and the named networks
+        foreach ([['Starter', 1, 1, 10, 3, 2, 5, 512, 2, 2, 0], ['Business', 2, 2, 40, 10, 6, 20, 1024, 10, 10, 3], ['Agency', 4, 4, 100, 50, 20, 50, 2048, 20, 50, 10]] as [$name, $cpu, $memory, $disk, $sites, $databaseServers, $databases, $databaseMemory, $databaseDisk, $zones, $networks]) {
             $this->plans[$name] = Plan::create([
                 'name' => $name, 'websites' => $sites, 'mailboxes' => $sites * 10, 'databases' => $databases,
-                'database_servers' => $databaseServers, 'dns_zones' => $zones,
+                'database_servers' => $databaseServers, 'dns_zones' => $zones, 'networks' => $networks,
                 'database_limits' => ['vcpus' => min($cpu, 2), 'memoryBytes' => $databaseMemory * self::MB, 'diskBytes' => $databaseDisk * self::GB],
                 'php_extensions' => $name === 'Starter' ? array_slice($extensions, 0, 8) : $extensions,
                 'limits' => ['vcpus' => $cpu, 'memoryBytes' => $memory * self::GB, 'diskBytes' => $disk * self::GB, 'diskIoBytesPerSecond' => 50 * self::MB, 'processes' => 100 * $cpu],
@@ -381,6 +383,10 @@ class DemoSeeder extends Seeder
         $database = $storefront->databases()->create(['engine' => 'mariadb', 'name' => $name, 'size_bytes' => 52 * self::MB, 'database_server_id' => $second->id]);
         $user = $storefront->databaseUsers()->create(['engine' => 'mariadb', 'name' => $name, 'access' => 'website', 'database_server_id' => $second->id]);
         $user->databases()->attach($database->id, ['privileges' => 'readwrite']);
+        // A named network: only the storefront and the reports database server are in it.
+        $reports = Network::create(['customer_id' => $acme->id, 'name' => 'reports', 'is_default' => false]);
+        NetworkMember::create(['network_id' => $reports->id, 'website_id' => $storefront->id]);
+        NetworkMember::create(['network_id' => $reports->id, 'database_server_id' => $second->id]);
     }
 
     /**

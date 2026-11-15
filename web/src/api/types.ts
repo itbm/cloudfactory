@@ -561,6 +561,26 @@ export interface Plan {
   databaseLimits: DatabaseLimits;
   /** The number of DNS zones of a customer with the plan. */
   dnsZones: number;
+  /**
+   * The number of named private networks of a customer with the plan, in addition to the
+   * network "default". 0: the customer has only the network "default". An earlier panel API
+   * does not give it.
+   */
+  networks?: number;
+}
+
+/**
+ * A private network of a customer, like a VPC. Each website in the network connects to each
+ * other member by its network name, on the same server and on a different server. Each
+ * customer has the network "default".
+ */
+export interface PrivateNetwork {
+  id: string;
+  customerId: string;
+  name: string;
+  isDefault: boolean;
+  websiteIds: string[];
+  databaseServerIds: string[];
 }
 
 export interface Customer {
@@ -638,7 +658,7 @@ export interface Account {
   /** The reseller that gives the service. Undefined: the operator of the panel gives it. */
   provider?: { name: string; email: string };
   plan?: Plan;
-  usage: { websites: number; databases: number; diskBytes: number; customers?: number; dnsZones: number };
+  usage: { websites: number; databases: number; diskBytes: number; customers?: number; dnsZones: number; networks: number };
   /** False when the panel has no object storage for backups. A backup then fails. */
   backupsAvailable: boolean;
   users: ManagedUser[];
@@ -739,6 +759,8 @@ export interface State {
   nameServers: string[];
   /** The mesh. Only an administrator has it. */
   mesh?: Mesh;
+  /** The private networks of the customers that the user can see. */
+  networks: PrivateNetwork[];
   databases: Database[];
   databaseUsers: DatabaseUser[];
   /**
