@@ -92,6 +92,8 @@ func (a *app) mail(ctx context.Context, sub string, args []string) error {
 		return a.mailboxes(ctx, verb, rest)
 	case "aliases", "alias":
 		return a.mailAliases(ctx, verb, rest)
+	case "clusters", "cluster":
+		return a.mailClusters(ctx, verb, rest)
 	}
 	return fmt.Errorf("unknown command mail %s", sub)
 }
@@ -409,4 +411,118 @@ func (a *app) mailAliases(ctx context.Context, verb string, args []string) error
 		return a.change(ctx, http.MethodDelete, fmt.Sprintf("/mail/aliases/%v", r["id"]), nil)
 	}
 	return fmt.Errorf("unknown command mail aliases %s", verb)
+}
+
+// A mail cluster has 3 or 5 servers. Each member has all the mail, so the mail service
+// continues when one server fails. Only an administrator makes a cluster.
+
+// mailCluster gets a mail cluster by its name or by its ID.
+func (a *app) mailCluster(ctx context.Context, ref string) (map[string]any, error) {
+	rows, err := client.All[map[string]any](ctx, a.api, "/mail-clusters", nil)
+	if err != nil {
+		return nil, err
+	}
+	for _, c := range rows {
+		if c["id"] == ref || c["name"] == strings.ToLower(ref) {
+			return c, nil
+		}
+	}
+	return nil, fmt.Errorf("there is no mail cluster %s. See: cf mail clusters list", ref)
+}
+
+func (a *app) mailClusters(ctx context.Context, verb string, args []string) error {
+	switch verb {
+	case "list", "ls":
+		rows, err := client.All[map[string]any](ctx, a.api, "/mail-clusters", nil)
+		if err != nil {
+			return err
+		}
+		if a.json {
+			return a.printJSON(rows)
+		}
+		for _, c := range rows {
+			members, _ := c["members"].([]any)
+			c["members"] = len(members)
+		}
+		a.table(rows, []string{"name", "hostname", "status", "phase", "members", "domains", "id"})
+		return nil
+	case "create", "add":
+		if err := need(args, 1, "a name"); err != nil {
+			return err
+		}
+		fs := flag.NewFlagSet("create", flag.ContinueOnError)
+		hostname := fs.String("hostname", "", "the shared name of the cluster. The MX records use it.")
+		var members multi
+		fs.Var(&members, "member", "SERVER=HOSTNAME=ADDRESS[=REGION], one for each server")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *hostname == "" {
+			return errors.New("give the shared name of the cluster with --hostname")
+		}
+		if len(members) != 3 && len(members) != 5 {
+			return errors.New("a mail cluster has 3 or 5 servers. Give --member for each server")
+		}
+		list := make([]map[string]any, 0, len(members))
+		for _, m := range members {
+			parts := strings.Split(m, "=")
+			if len(parts) < 3 || len(parts) > 4 {
+				return fmt.Errorf("%q is not a member. Give SERVER=HOSTNAME=ADDRESS[=REGION], for example mail-1=m1.example.net=192.0.2.1=0", m)
+			}
+			id, err := a.serverID(ctx, parts[0])
+			if err != nil {
+				return err
+			}
+			member := map[string]any{"serverId": id, "hostname": parts[1], "endpoint": parts[2]}
+			if len(parts) == 4 {
+				var region int
+				if _, err := fmt.Sscanf(parts[3], "%d", &region); err != nil {
+					return fmt.Errorf("the region of %s is not a number", parts[0])
+				}
+				member["region"] = region
+			}
+			list = append(list, member)
+		}
+		err := a.change(ctx, http.MethodPost, "/mail-clusters", map[string]any{"name": args[0], "hostname": *hostname, "members": list})
+		if err == nil && !a.json {
+			fmt.Fprintf(a.out, "The setup takes some minutes. See the step and the DNS records to add: cf mail clusters get %s\n", args[0])
+		}
+		return err
+	case "get", "show", "retry":
+		if err := need(args, 1, "a mail cluster"); err != nil {
+			return err
+		}
+		c, err := a.mailCluster(ctx, args[0])
+		if err != nil {
+			return err
+		}
+		if verb == "retry" {
+			return a.change(ctx, http.MethodPost, fmt.Sprintf("/mail-clusters/%v/retry", c["id"]), nil)
+		}
+		if a.json {
+			return a.printJSON(c)
+		}
+		fmt.Fprintf(a.out, "Cluster:      %s\nID:           %s\nShared name:  %s\nStatus:       %s (step %s)\n", cell(c["name"]), cell(c["id"]), cell(c["hostname"]), cell(c["status"]), cell(c["phase"]))
+		if c["error"] != nil {
+			fmt.Fprintf(a.out, "Error:        %s\nStart the step again: cf mail clusters retry %s\n", cell(c["error"]), cell(c["name"]))
+		}
+		fmt.Fprintln(a.out)
+		var rows []map[string]any
+		members, _ := c["members"].([]any)
+		for _, v := range members {
+			m, _ := v.(map[string]any)
+			rows = append(rows, m)
+		}
+		a.table(rows, []string{"number", "serverName", "hostname", "endpoint", "address", "region", "step", "serverState"})
+		fmt.Fprintln(a.out, "\nAdd these DNS records:")
+		rows = nil
+		records, _ := c["records"].([]any)
+		for _, v := range records {
+			r, _ := v.(map[string]any)
+			rows = append(rows, r)
+		}
+		a.table(rows, []string{"type", "name", "value"})
+		return nil
+	}
+	return fmt.Errorf("unknown command mail clusters %s", verb)
 }

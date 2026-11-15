@@ -44,7 +44,11 @@ func mailPanel(t *testing.T) (*httptest.Server, *[]string) {
 		case r.URL.Path == "/api/v1/mail/aliases" && r.Method == http.MethodGet:
 			w.Write([]byte(`{"data":[{"id":"MA1","address":"sales@acme.example.com","kind":"alias","destinations":["info@acme.example.com","jo@acme.example.com"],"status":"active"}]}`))
 		case r.URL.Path == "/api/v1/servers" && r.Method == http.MethodGet:
-			w.Write([]byte(`{"data":[{"id":"S1","name":"mail-1"}]}`))
+			w.Write([]byte(`{"data":[{"id":"S1","name":"mail-1"},{"id":"S2","name":"mail-2"},{"id":"S3","name":"mail-3"}]}`))
+		case r.URL.Path == "/api/v1/mail-clusters" && r.Method == http.MethodGet:
+			w.Write([]byte(`{"data":[{"id":"MC1","name":"eu","hostname":"mail.example.net","status":"failed","phase":"join","error":"mail-2: the agent stopped","domains":0,` +
+				`"members":[{"number":1,"serverName":"mail-1","hostname":"m1.example.net","endpoint":"192.0.2.1","address":"10.77.16.1","region":0,"step":"joined","serverState":"online"}],` +
+				`"records":[{"type":"A","name":"mail.example.net","value":"192.0.2.1"}]}]}`))
 		default:
 			w.WriteHeader(http.StatusAccepted)
 			w.Write([]byte(`{"job":null}`))
@@ -193,6 +197,53 @@ func TestMailboxesAndAliases(t *testing.T) {
 		`POST /api/v1/mail/aliases {"destinations":["jo@example.org"],"domainId":"MD1","kind":"forwarder","localPart":"away"}`,
 		"DELETE /api/v1/mail/aliases/MA1",
 		`PUT /api/v1/servers/S1/mail {"hostname":"mail.example.net"}`,
+	}
+	if strings.Join(*calls, "\n") != strings.Join(want, "\n") {
+		t.Errorf("calls:\n%s", strings.Join(*calls, "\n"))
+	}
+}
+
+func TestMailClusters(t *testing.T) {
+	srv, calls := mailPanel(t)
+	a, out := testApp(srv)
+	ctx := context.Background()
+	if err := a.dispatch(ctx, []string{"mail", "clusters", "list"}); err != nil {
+		t.Fatal(err)
+	}
+	if lines := strings.Split(strings.TrimSpace(out.String()), "\n"); len(lines) != 2 || row(lines[1]) != "eu mail.example.net failed join 1 0 MC1" {
+		t.Errorf("output:\n%s", out)
+	}
+	out.Reset()
+	if err := a.dispatch(ctx, []string{"mail", "clusters", "get", "eu"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"failed (step join)", "mail-2: the agent stopped", "cf mail clusters retry eu", "10.77.16.1", "mail.example.net  192.0.2.1"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("output does not have %q:\n%s", want, out)
+		}
+	}
+	for _, args := range [][]string{
+		{"mail", "clusters", "create", "eu", "--hostname", "mail.example.net", "--member", "mail-1=m1.example.net=192.0.2.1=0", "--member", "mail-2=m2.example.net=192.0.2.2", "--member", "mail-3=m3.example.net=192.0.2.3=1"},
+		{"mail", "clusters", "retry", "eu"},
+	} {
+		if err := a.dispatch(ctx, args); err != nil {
+			t.Fatalf("%v: %v", args, err)
+		}
+	}
+	for _, args := range [][]string{
+		{"mail", "clusters", "create", "eu", "--member", "mail-1=m1.example.net=192.0.2.1"},
+		{"mail", "clusters", "create", "eu", "--hostname", "mail.example.net", "--member", "mail-1=m1.example.net=192.0.2.1", "--member", "mail-2=m2.example.net=192.0.2.2"},
+		{"mail", "clusters", "create", "eu", "--hostname", "mail.example.net", "--member", "mail-1=m1", "--member", "mail-2=m2.example.net=192.0.2.2", "--member", "mail-3=m3.example.net=192.0.2.3"},
+		{"mail", "clusters", "create", "eu", "--hostname", "mail.example.net", "--member", "mail-1=m1.example.net=192.0.2.1=x", "--member", "mail-2=m2.example.net=192.0.2.2", "--member", "mail-3=m3.example.net=192.0.2.3"},
+		{"mail", "clusters", "get", "us"},
+	} {
+		if err := a.dispatch(ctx, args); err == nil {
+			t.Errorf("%v must be an error", args)
+		}
+	}
+	want := []string{
+		`POST /api/v1/mail-clusters {"hostname":"mail.example.net","members":[{"endpoint":"192.0.2.1","hostname":"m1.example.net","region":0,"serverId":"S1"},{"endpoint":"192.0.2.2","hostname":"m2.example.net","serverId":"S2"},{"endpoint":"192.0.2.3","hostname":"m3.example.net","region":1,"serverId":"S3"}],"name":"eu"}`,
+		"POST /api/v1/mail-clusters/MC1/retry",
 	}
 	if strings.Join(*calls, "\n") != strings.Join(want, "\n") {
 		t.Errorf("calls:\n%s", strings.Join(*calls, "\n"))

@@ -84,6 +84,12 @@ Usage:
                                            An alias sends to mailboxes of the customer. With --forward, the
                                            destinations are addresses on other mail servers.
   cf mail aliases delete ADDRESS
+  cf mail clusters list
+  cf mail clusters create NAME --hostname NAME --member SERVER=HOSTNAME=ADDRESS[=REGION]...
+                                           3 or 5 servers with the email role and no mail server. Each member
+                                           has all the mail. ADDRESS is the public address of the server.
+  cf mail clusters get CLUSTER             Show the step of the setup, the members and the DNS records.
+  cf mail clusters retry CLUSTER           Start a step that failed again.
   cf backups list|create WEBSITE
   cf backups restore WEBSITE SNAPSHOT [--scope website|database|file] [--item ITEM] [--remove-new-files]
                        --remove-new-files is for a full website. It deletes the files that are not in the backup.
