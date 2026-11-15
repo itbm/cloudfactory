@@ -83,8 +83,26 @@ func (d *Deps) pullImage(ctx context.Context, w *agentv1.Website) error {
 	if d.shared(w) {
 		return d.Images.Ensure(ctx, imageRef(w))
 	}
-	_, err := d.Host.Podman(ctx, w.GetUnixUser(), "pull", "--quiet", imageRef(w))
+	_, err := d.Host.Podman(ctx, w.GetUnixUser(), userPull(d.Images != nil, imageRef(w))...)
 	return err
+}
+
+// userPull gives the Podman arguments for a pull by a website user: a custom image, or an
+// image with no digest.
+//
+// With a shared image store, the storage settings of a website user have the shared stores.
+// Podman finds a layer of the new image there, for example the empty layer that most images
+// have, and copies it. The copy fails, because the user cannot read all files of a layer that
+// root pulled ("tar-split.gz: permission denied"). A storage option on the command line
+// replaces all storage options of the settings file. Thus this pull does not use the shared
+// stores, and the user gets a full copy of the image. The option is the mount program of the
+// settings file (images.Store).
+func userPull(sharedStore bool, ref string) []string {
+	args := []string{"pull", "--quiet", ref}
+	if sharedStore {
+		args = append([]string{"--storage-opt", "overlay.mount_program=" + images.FuseOverlayfs}, args...)
+	}
+	return args
 }
 
 // removeOldImage removes the previous image of a website from the storage of the website user,
