@@ -150,10 +150,10 @@ class DemoSeeder extends Seeder
             'gvisor_version' => 'release-20261019.0', 'pending_updates' => [], 'last_seen_at' => now(), 'connection_checked_at' => now(), 'sftp_port' => 2222,
             'database_engines' => ['mariadb', 'postgresql', 'valkey'], 'database_instances' => true,
         ];
-        // The panel server. Its disk quotas are off, as on a server with a file system that has no user quotas.
+        // The panel server. Its disk quotas are off, and it has websites from before the disk images.
         $this->servers['web-1'] = Server::create([
             ...$common, 'name' => 'web-1', 'location' => 'London', 'roles' => ['web', 'database'], 'state' => 'healthy', 'local' => true, 'agent_url' => 'https://web-1.panel.example:7443',
-            'services' => [...$services, ['name' => 'disk-quotas', 'state' => 'stopped', 'optional' => true, 'detail' => 'User quotas are off on the file system of the websites, so this server does not apply the disk limit of a website. Refer to "Disk quotas" in the installation guide.']],
+            'services' => [...$services, ['name' => 'disk-quotas', 'state' => 'stopped', 'optional' => true, 'detail' => 'User quotas are off on the file system of the websites. Websites with a disk limit and no disk image: 5 of 5. This server does not apply the disk limit of these websites. Only a new website gets a disk image. Refer to "Disk quotas" in the installation guide.']],
             'usage' => ['cpuPercent' => 23, 'memoryPercent' => 58, 'diskPercent' => 41], 'last_update_at' => now()->subDays(3),
         ]);
         // Updates wait, and the last update needs a restart.

@@ -388,7 +388,9 @@ func (d *Deps) CreateWebsite(req *agentv1.WebsiteRequest) (jobs.Job, error) {
 			if _, err := d.useDatabases(instance, w.GetId()); err != nil {
 				return err
 			}
-			if err := d.Host.EnsureUser(ctx, user); err != nil {
+			// On a server with no user quotas, the new user gets a disk image with the size
+			// of the disk limit (sitedisk.go).
+			if err := d.ensureWebsiteUser(ctx, user, max(w.GetLimits().GetDiskBytes(), 0)); err != nil {
 				return err
 			}
 			if err := d.applyDiskQuota(ctx, user, w.GetLimits()); err != nil {
@@ -821,7 +823,7 @@ func (d *Deps) DeleteWebsite(req *agentv1.DeleteWebsiteRequest) (jobs.Job, error
 			if err := d.removeSftpKeys(ctx, user); err != nil {
 				return err
 			}
-			if err := d.Host.RemoveUser(ctx, user); err != nil {
+			if err := d.removeWebsiteUser(ctx, user); err != nil {
 				return err
 			}
 			if err := d.State.Delete(req.GetWebsiteId()); err != nil {
@@ -915,6 +917,11 @@ func (d *Deps) SetLimits(req *agentv1.SetLimitsRequest) (jobs.Job, error) {
 			if site == nil {
 				return errors.New("the agent does not know this website")
 			}
+			// The disk limit is first: a disk image that cannot become smaller stops the job
+			// before a different limit changes.
+			if err := d.changeDiskLimit(ctx, site, l.GetDiskBytes()); err != nil {
+				return err
+			}
 			w := proto.Clone(site.Website).(*agentv1.Website)
 			w.Limits = l
 			u := d.unit(w, site.Port, site.Suffix)
@@ -923,9 +930,6 @@ func (d *Deps) SetLimits(req *agentv1.SetLimitsRequest) (jobs.Job, error) {
 				return err
 			}
 			if _, err := d.Host.Systemctl(ctx, site.UnixUser, "daemon-reload"); err != nil {
-				return err
-			}
-			if err := d.applyDiskQuota(ctx, site.UnixUser, l); err != nil {
 				return err
 			}
 			// The limits are on the cgroup of the service (quadlet.Runtime.GlobalArgs). A
@@ -942,8 +946,9 @@ func (d *Deps) SetLimits(req *agentv1.SetLimitsRequest) (jobs.Job, error) {
 	}}, nil
 }
 
-// applyDiskQuota sets the disk limit of a website user (FR-202), when the server has user
-// quotas. The status report tells the panel when it does not.
+// applyDiskQuota sets the user quota of a website user (FR-202), when the server has user
+// quotas. With no user quotas, a website has a disk image (sitedisk.go), or the status report
+// tells the panel that the server does not apply the disk limit.
 //
 // The function also sets the quota of a website with no disk limit, to remove a limit: the
 // website can have a limit from an earlier plan, and a new user can get the UID of a user

@@ -110,7 +110,7 @@ describe("the setup checklist", () => {
       "Use a certificate that browsers trust for the panel Open",
       "Set the object storage for backups Done",
     ]);
-    expect(items[1].textContent).toContain("While this is open: Without user quotas on the file system, a server does not apply the disk limit of a plan.");
+    expect(items[1].textContent).toContain("While this is open: A server applies the disk limit of a plan with a user quota, or with a disk image for each new website.");
     expect(within(items[1]).getByRole("link").getAttribute("href")).toBe(`/servers/${getState().servers.find((s) => s.name === "web-1")!.id}`);
     // A done item has no effect text and no action.
     expect(items[3].textContent).not.toContain("While this is open");

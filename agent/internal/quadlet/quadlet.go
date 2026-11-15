@@ -640,7 +640,10 @@ func SftpUnit(s Sftp) string {
 		"ContainerName=cf-sftp",
 		"Image=" + s.Image,
 		"Pull=never",
-		"GlobalArgs=" + s.Gvisor.GlobalArgs(),
+		// "dcache=0": gVisor keeps no file of a website open after a session closes it. With
+		// its usual cache, the server cannot unmount the disk image of a website that a
+		// session used, and the disk space of a removed file stays in use.
+		"GlobalArgs=" + s.Gvisor.GlobalArgs() + " --runtime-flag=dcache=0",
 		// Audit finding B3: Podman refuses the pasta network for a container that root runs
 		// ("pasta networking is only supported for rootless mode"), so the service did not
 		// start. The bridge network of Podman also gives the container its own network
@@ -653,7 +656,10 @@ func SftpUnit(s Sftp) string {
 		// No ":Z": a new SELinux label would change the label of the files of all websites.
 		// Only the website directories. The home directories (with the Podman storage of each
 		// user) are not in the container.
-		"Volume=" + s.SitesDir + ":/srv/cloudfactory/sites",
+		// "rslave": the container gets each file system that the server mounts or unmounts
+		// below the directory later, for example the disk image of a new website. gVisor
+		// refuses "rshared".
+		"Volume=" + s.SitesDir + ":/srv/cloudfactory/sites:rslave",
 		"Volume=" + s.KeysDir + ":/etc/cloudfactory/sftp:ro",
 		// libnss-extrausers reads the website users from this directory.
 		"Volume=" + s.UsersDir + ":/var/lib/extrausers:ro",

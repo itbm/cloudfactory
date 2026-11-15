@@ -2819,9 +2819,11 @@ components:
         diskLimitApplied:
           type: [boolean, 'null']
           description: >-
-            False when the server of the website does not apply the disk limit of the website,
-            because the file system of the websites has no user quotas. True when it applies the
-            limit. Null when the agent of the server did not report it.
+            False when the server of the website does not apply the disk limit of each of its
+            websites: the file system of the websites has no user quotas, and a website with a
+            disk limit has no disk image. True when the server applies the limits, with user
+            quotas or with a disk image for each website. Null when the agent of the server did
+            not report it.
         managedByTerraform: { type: boolean }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }

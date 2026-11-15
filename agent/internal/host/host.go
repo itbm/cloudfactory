@@ -174,13 +174,7 @@ func (h *Host) EnsureUser(ctx context.Context, unixUser string) error {
 	if h.Root != nil {
 		return h.Root.EnsureUser(ctx, unixUser)
 	}
-	// Other users can go through the directories, but cannot list them.
-	if _, err := h.Run.Run(ctx, "install", "-d", "-m", "0711", filepath.Dir(h.Home(unixUser)), h.SitesDir); err != nil {
-		return err
-	}
-	// The firewall limits only the users in the range. The agent does not start a website as a
-	// user that the firewall does not find, for example a user that an administrator made.
-	if _, err := h.addUser(ctx, unixUser, h.Home(unixUser), WebsiteIDMin, WebsiteIDMax, "website users"); err != nil {
+	if err := h.EnsureAccount(ctx, unixUser); err != nil {
 		return err
 	}
 	// Audit finding F01: "install -d" follows a symbolic link, and changes the owner and the
@@ -218,6 +212,23 @@ func (h *Host) EnsureUser(ctx context.Context, unixUser string) error {
 		return err
 	}
 	return h.startUserManager(ctx, unixUser)
+}
+
+// EnsureAccount makes the Unix user of a website and its home directory, if the user does not
+// exist. It does not make the directory of the website in SitesDir: the root helper can put
+// a file system of its own there first (a disk image). Only root runs it.
+func (h *Host) EnsureAccount(ctx context.Context, unixUser string) error {
+	if err := validate.UnixUser(unixUser); err != nil {
+		return err
+	}
+	// Other users can go through the directories, but cannot list them.
+	if _, err := h.Run.Run(ctx, "install", "-d", "-m", "0711", filepath.Dir(h.Home(unixUser)), h.SitesDir); err != nil {
+		return err
+	}
+	// The firewall limits only the users in the range. The agent does not start a website as a
+	// user that the firewall does not find, for example a user that an administrator made.
+	_, err := h.addUser(ctx, unixUser, h.Home(unixUser), WebsiteIDMin, WebsiteIDMax, "website users")
+	return err
 }
 
 // addUser makes a Unix user with a UID and a GID in a range, if the user does not exist. The
@@ -384,6 +395,16 @@ func (h *Host) RemoveUser(ctx context.Context, unixUser string) error {
 		return err
 	}
 	return os.RemoveAll(h.ConfigDir(unixUser))
+}
+
+// RemoveAccount stops the user services of a website user and removes the user, its home
+// directory and its units. It keeps the directory of the website in SitesDir. A user that
+// does not exist is not an error. Only root runs it.
+func (h *Host) RemoveAccount(ctx context.Context, unixUser string) error {
+	if err := validate.UnixUser(unixUser); err != nil {
+		return err
+	}
+	return h.removeAccount(ctx, unixUser)
 }
 
 // removeAccount stops the user services of a user and removes the user, its home directory and

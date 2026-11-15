@@ -487,6 +487,13 @@ called "the script does not mount XFS again" no "mount -o remount,usrjquota=aquo
 root=$(quota_root btrfs btrfs)
 out=$(quotas "$root")
 said "a file system type with no user quotas" "/ (btrfs): the script cannot turn on user quotas on this type of file system." "$out"
+# Without user quotas, the agent applies a disk limit with a disk image, which needs loop
+# devices. The script tells the operator the result for this server.
+said "no user quotas and no loop devices" "The server has no loop devices (/dev/loop-control), so it does not apply the disk limits." "$out"
+mkdir -p "$root/dev"
+: >"$root/dev/loop-control"
+out=$(quotas "$root")
+said "no user quotas, with loop devices" "/ (btrfs): the script cannot turn on user quotas on this type of file system. Each new website and each new database server with a disk limit gets a disk image." "$out"
 
 # The database servers on their own file system: the two file systems get the quotas.
 root=$(quota_root two)
