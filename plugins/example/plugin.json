@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "slug": "uptime",
+  "name": "Uptime monitor",
+  "version": "1.4.0",
+  "publisher": "Example Plugins Ltd",
+  "description": "Checks each website every minute from three regions, and shows the uptime and the response time.",
+  "scopes": ["websites:read", "audit:read"],
+  "events": ["audit.recorded", "job.finished"],
+  "webhook": "/hooks/cloudfactory",
+  "pages": [
+    { "id": "status", "title": "Uptime", "path": "/panel/status", "roles": ["administrator", "reseller", "owner"] }
+  ],
+  "commands": [
+    { "name": "uptime", "description": "Shows the uptime of each website." }
+  ]
+}
