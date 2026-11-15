@@ -248,6 +248,9 @@ message DeleteDatabaseRequest {
   repeated string users = 6;
   // The ID of the database server of the database.
   string database_server = 7;
+  // The ID of the customer of the website. It is necessary for a website of a different
+  // server, which connects through the network of the customer.
+  string customer = 8;
 }
 
 message DatabaseGrant {
@@ -285,6 +288,9 @@ message DeleteDatabaseUserRequest {
   repeated string website_databases = 6;
   // The ID of the database server of the user.
   string database_server = 7;
+  // The ID of the customer of the website. It is necessary for a website of a different
+  // server.
+  string customer = 8;
 }
 
 // A database or a database user of a website.

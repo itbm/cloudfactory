@@ -51,7 +51,7 @@ export function emptyState(): State {
   return {
     session: { signedIn: false, user: { id: "", name: "", email: "", role: "owner" }, contextId: "" },
     contexts: [], websites: [], jobs: [], activity: [], notifications: [], servers: [], images: [], rollout: undefined,
-    databaseServers: [], databases: [], databaseUsers: [], snapshots: [], plans: [], customers: [], users: [],
+    databaseServers: [], databases: [], databaseUsers: [], remoteDatabaseServers: {}, snapshots: [], plans: [], customers: [], users: [],
     backupPolicy: { daily: 7, weekly: 4, monthly: 6, time: "03:00", target: "", credentialNames: [] },
     tokens: [], totpEnabled: false, securityNotices: [], audit: [], joinToken: "", joinCaSha256: undefined,
     panelDomain: "",
@@ -530,12 +530,18 @@ export type GrantInput = { databaseId: string; privileges: DatabasePrivileges };
 // engine and its own limits. The plan of the customer gives the number of its database
 // servers. The plan of a database server gives its limits and the number of its databases.
 
-/** The database servers that a website can use: those of its customer on its server. */
-export function databaseServersFor(s: State, website: Pick<Website, "customerId" | "serverId"> | undefined, engine?: DatabaseEngine): DatabaseServer[] {
+/**
+ * The database servers that a website can use: those of its customer on its server, then those
+ * on a different server that are in a network with the website. The API gives the second group.
+ */
+export function databaseServersFor(s: State, website: Pick<Website, "id" | "customerId" | "serverId"> | undefined, engine?: DatabaseEngine): DatabaseServer[] {
   if (!website) return [];
-  return s.databaseServers
-    .filter((x) => x.customerId === website.customerId && x.serverId === website.serverId && x.status !== "removing" && (!engine || x.engine === engine))
-    .sort((a, b) => a.port - b.port);
+  const remote = s.remoteDatabaseServers[website.id] ?? [];
+  const usable = s.databaseServers.filter((x) => x.customerId === website.customerId && x.status !== "removing" && (!engine || x.engine === engine));
+  return [
+    ...usable.filter((x) => x.serverId === website.serverId).sort((a, b) => a.port - b.port),
+    ...usable.filter((x) => x.serverId !== website.serverId && remote.includes(x.id)).sort((a, b) => a.name.localeCompare(b.name)),
+  ];
 }
 
 function putDatabaseServer(server: live.ApiDatabaseServer) {

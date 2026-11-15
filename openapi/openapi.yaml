@@ -350,6 +350,13 @@ paths:
     delete:
       tags: [Websites]
       summary: Remove a website
+      description: >-
+        The agent of the server of the website removes the website, with its databases and its
+        database users. For a website with a database in a database server on a different
+        server, the panel first sends a job for each such database and each such database user
+        to the agent of that server, and the response has the first of these jobs. The panel
+        removes the website when these jobs are complete. When one fails, the website stays:
+        remove it again.
       responses:
         '202': { $ref: '#/components/responses/JobOnly' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -409,7 +416,8 @@ paths:
         the copies in it. The data of a Valkey database is not copied: the copy gets a new, empty
         Valkey database, with its own user, for each Valkey database of the website. The response
         shows the passwords of the new users once. The response is 422 when a database server
-        has no space for the copies.
+        has no space for the copies, and when the website has a database in a database server
+        on a different server.
       responses:
         '202':
           description: The job makes the copy.
@@ -1107,8 +1115,19 @@ paths:
                         engine: { $ref: '#/components/schemas/Engine' }
                         name: { type: string }
                         databaseServerId: { type: string, description: The database server that has the database. }
-                        host: { type: string, description: 'The host name that the application of the website connects to, for example `mariadb.internal`.' }
-                        port: { type: integer, description: The port of the database server. }
+                        host:
+                          type: string
+                          description: >-
+                            The host name that the application of the website connects to. It is
+                            the name of the engine, for example `mariadb.internal`, for a database
+                            server on the server of the website. It is the network name, for example
+                            `shop-db.internal`, for a database server on a different server.
+                        port:
+                          type: integer
+                          description: >-
+                            The port that the application connects to: the port of the database
+                            server on the server of the website, or the usual port of the engine
+                            for a database server on a different server.
                         sizeBytes: { type: integer, description: Not used for Valkey. }
                         number:
                           type: [integer, 'null']
@@ -1122,7 +1141,9 @@ paths:
                     type: array
                     description: >-
                       The database servers that can get a database of this website: those of its
-                      customer on its server.
+                      customer on its server, then those of its customer on a different server
+                      that are in a network with the website. Each one also has `remote`: true
+                      for a database server on a different server.
                     items: { $ref: '#/components/schemas/DatabaseServer' }
     post:
       tags: [Databases]
@@ -1139,10 +1160,14 @@ paths:
         cannot connect to the database servers of a different customer.
 
 
-        `databaseServerId` selects the database server. With none, the database goes into the
-        first database server of the engine that has space. When the customer has no database
-        server of the engine on the server of the website, the panel makes one with the plan of
-        the customer. The response is 422 when the database server has the number of databases
+        `databaseServerId` selects the database server. It can be a database server of the
+        customer on a different server that is in a network with the website: the website then
+        connects to the network name of the database server, for example `shop-db.internal`,
+        on the usual port of the engine. The job goes to the agent of the server of the
+        database server. With no `databaseServerId`, the database goes into the first database
+        server of the engine that has space, and the database servers on the server of the
+        website are first. When the website can use no database server of the engine, the
+        panel makes one on the server of the website with the plan of the customer. The response is 422 when the database server has the number of databases
         that its plan allows, and when the plan of the customer allows no more database servers.
 
 

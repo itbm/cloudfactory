@@ -282,14 +282,21 @@ class DemoSeeder extends Seeder
         $reports = $shop->databaseUsers()->create(['engine' => 'mariadb', 'name' => $shop->unix_user.'_reports', 'access' => 'anywhere', 'database_server_id' => $shop->databases()->where('engine', 'mariadb')->value('database_server_id')]);
         $reports->databases()->attach($shop->databases()->where('engine', 'mariadb')->value('id'), ['privileges' => 'readonly']);
 
-        // A second MariaDB server of one customer, with a smaller plan and no databases yet. It has the next port.
+        // A second MariaDB server of one customer, with a smaller plan. It has the next port.
         $acme = $this->customers['acme'];
         $starter = $this->plans['Starter'];
-        DatabaseServer::create([
+        $second = DatabaseServer::create([
             'customer_id' => $acme->id, 'server_id' => $shop->server_id, 'plan_id' => $starter->id, 'engine' => 'mariadb', 'name' => 'mariadb-reports',
             'port' => DatabaseServer::FIRST_PORT['mariadb'] + 1, 'limits' => $starter->database_limits, 'status' => DatabaseServer::RUNNING,
             'usage' => ['memoryBytes' => 96 * self::MB, 'diskBytes' => 70 * self::MB, 'diskSizeBytes' => $starter->database_limits['diskBytes']],
         ]);
+        // A website on a different server has a database in it. The website connects through
+        // the network of the customer, by the network name of the database server.
+        $storefront = $this->websites['storefront.acme.example.com'];
+        $name = $storefront->unix_user.'_orders';
+        $database = $storefront->databases()->create(['engine' => 'mariadb', 'name' => $name, 'size_bytes' => 52 * self::MB, 'database_server_id' => $second->id]);
+        $user = $storefront->databaseUsers()->create(['engine' => 'mariadb', 'name' => $name, 'access' => 'website', 'database_server_id' => $second->id]);
+        $user->databases()->attach($database->id, ['privileges' => 'readwrite']);
     }
 
     /**

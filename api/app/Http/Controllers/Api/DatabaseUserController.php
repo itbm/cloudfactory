@@ -116,13 +116,15 @@ class DatabaseUserController extends Controller
             throw ValidationException::withMessages(['user' => 'The user of a Valkey database goes with its database. Remove the database.']);
         }
         // Batch 1, finding 4: the panel removes the row when the job succeeds (JobOutcome).
-        $job = $this->jobs->dispatch($website->server, AgentAction::DeleteDatabaseUser, [
+        $job = $this->jobs->dispatch($user->databaseServer->server, AgentAction::DeleteDatabaseUser, [
             'websiteId' => $website->id,
             'unixUser' => $website->unix_user,
             'engine' => $user->engine,
             'name' => $user->name,
             'websiteDatabases' => self::websiteDatabases($website, $user),
             'databaseServer' => $user->database_server_id,
+            // The agent of a different server has no record of the website.
+            'customer' => $website->customer_id,
         ], "Remove database user {$user->name}", $website, databaseServer: $user->databaseServer);
         Audit::record($request, 'Removed database user', "{$website->name} {$user->name}", $website->customer_id);
 
@@ -198,12 +200,12 @@ class DatabaseUserController extends Controller
                 return $servers[0];
             }
             throw ValidationException::withMessages(['databaseServerId' => $servers->isEmpty()
-                ? 'This customer has no '.DatabaseServers::engineName($engine).' database server on the server of the website. Make a database first.'
+                ? 'This website can use no '.DatabaseServers::engineName($engine).' database server of its customer. Make a database first.'
                 : 'Select the database server of the user.']);
         }
         $server = $servers->firstWhere('id', $id);
         if (! $server) {
-            throw ValidationException::withMessages(['databaseServerId' => 'Select a database server of the customer of this website, on the server of the website, with the engine of the user.']);
+            throw ValidationException::withMessages(['databaseServerId' => 'Select a database server of the customer of this website that the website can connect to, with the engine of the user.']);
         }
 
         return $server;
@@ -214,7 +216,8 @@ class DatabaseUserController extends Controller
     {
         $user->load('databases');
 
-        return $this->jobs->dispatch($website->server, AgentAction::SetDatabaseUser, array_filter([
+        // The job goes to the agent of the server of the database server.
+        return $this->jobs->dispatch($user->databaseServer->server, AgentAction::SetDatabaseUser, array_filter([
             'websiteId' => $website->id,
             'unixUser' => $website->unix_user,
             'engine' => $user->engine,

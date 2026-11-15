@@ -160,6 +160,22 @@ class Networks
     }
 
     /**
+     * True when a website can connect to a database server on a different server: the two are
+     * in one network, and the agents of the two servers can operate network members.
+     */
+    public static function reaches(Website $website, DatabaseServer $server): bool
+    {
+        if (self::hostOf($server) === null || $server->status === DatabaseServer::REMOVING) {
+            return false;
+        }
+        $shared = NetworkMember::where('website_id', $website->id)
+            ->whereIn('network_id', NetworkMember::where('database_server_id', $server->id)->select('network_id'))
+            ->exists();
+
+        return $shared && self::supports($website->server) && self::supports($server->server);
+    }
+
+    /**
      * The pairs of servers that need a tunnel: one has a website and the other has a database
      * server of a network of that website. The key is the two server IDs, the smaller first.
      *

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Enums\AgentAction;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\JobResource;
+use App\Models\Database;
 use App\Models\Server;
 use App\Models\Setting;
 use App\Models\Website;
@@ -14,6 +15,7 @@ use App\Validation\Input;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -50,6 +52,16 @@ class BackupController extends Controller
     }
 
     /**
+     * The SQL databases of a website in the database servers on the server of the website.
+     *
+     * @return Collection<int, Database>
+     */
+    public static function localDatabases(Website $website)
+    {
+        return $website->sqlDatabases()->whereHas('databaseServer', fn ($q) => $q->where('server_id', $website->server_id))->orderBy('name')->get()->values();
+    }
+
+    /**
      * The payload of a backup. A scheduled backup also applies the retention policy (FR-902).
      *
      * Audit finding R8: the agent applies the policy only to the scheduled backups. For the
@@ -66,8 +78,10 @@ class BackupController extends Controller
             'websiteId' => $website->id,
             'unixUser' => $website->unix_user,
             'kind' => $kind,
-            // Each database with the ID of its database server.
-            'databases' => $website->sqlDatabases()->orderBy('name')->get()->map(fn ($d) => ['engine' => $d->engine, 'name' => $d->name, 'databaseServer' => $d->database_server_id])->all(),
+            // Each database with the ID of its database server. The agent of the server of the
+            // website makes the backup, so the backup has only the databases in the database
+            // servers on that server.
+            'databases' => self::localDatabases($website)->map(fn ($d) => ['engine' => $d->engine, 'name' => $d->name, 'databaseServer' => $d->database_server_id])->all(),
             'target' => self::repository($website->server),
             'retention' => $retention,
         ];

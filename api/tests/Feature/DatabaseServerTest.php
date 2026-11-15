@@ -325,7 +325,7 @@ class DatabaseServerTest extends TestCase
         $ofBolt = $this->databaseServer('mariadb', ['customerId' => $bolt->id]);
         $elsewhere = $this->server(['database_engines' => self::ENGINES, 'database_instances' => true]);
         $onOtherServer = $this->databaseServer('mariadb', ['serverId' => $elsewhere->id]);
-        $error = ['databaseServerId' => 'Select a database server of the customer of this website, on the server of the website, with the engine of the database.'];
+        $error = ['databaseServerId' => 'Select a database server of the customer of this website that the website can connect to, with the engine of the database.'];
 
         // A database server of a different customer, on a different server, or with a different engine.
         $this->postJson($databases, ['engine' => 'mariadb', 'name' => 'shop', 'databaseServerId' => $ofBolt->id])->assertJsonValidationErrors($error);
@@ -383,7 +383,7 @@ class DatabaseServerTest extends TestCase
         $response = $this->postJson($users, ['engine' => 'mariadb', 'name' => 'later', 'databaseServerId' => $second->id])->assertAccepted()->assertJsonPath('user.databaseServerId', $second->id);
         $this->assertSame([$prefix.'reports'], AgentJob::findOrFail($response->json('job.id'))->payload['websiteDatabases']);
         $this->postJson($users, ['engine' => 'postgresql', 'name' => 'pg'])
-            ->assertJsonValidationErrors(['databaseServerId' => 'This customer has no PostgreSQL database server on the server of the website. Make a database first.']);
+            ->assertJsonValidationErrors(['databaseServerId' => 'This website can use no PostgreSQL database server of its customer. Make a database first.']);
         $only = $this->databaseServer('postgresql');
         $this->postJson($users, ['engine' => 'postgresql', 'name' => 'pg'])->assertAccepted()->assertJsonPath('user.databaseServerId', $only->id);
 

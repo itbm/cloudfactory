@@ -1331,8 +1331,11 @@ type DeleteDatabaseRequest struct {
 	Users []string `protobuf:"bytes,6,rep,name=users,proto3" json:"users,omitempty"`
 	// The ID of the database server of the database.
 	DatabaseServer string `protobuf:"bytes,7,opt,name=database_server,json=databaseServer,proto3" json:"database_server,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// The ID of the customer of the website. It is necessary for a website of a different
+	// server, which connects through the network of the customer.
+	Customer      string `protobuf:"bytes,8,opt,name=customer,proto3" json:"customer,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *DeleteDatabaseRequest) Reset() {
@@ -1410,6 +1413,13 @@ func (x *DeleteDatabaseRequest) GetUsers() []string {
 func (x *DeleteDatabaseRequest) GetDatabaseServer() string {
 	if x != nil {
 		return x.DatabaseServer
+	}
+	return ""
+}
+
+func (x *DeleteDatabaseRequest) GetCustomer() string {
+	if x != nil {
+		return x.Customer
 	}
 	return ""
 }
@@ -1607,8 +1617,11 @@ type DeleteDatabaseUserRequest struct {
 	WebsiteDatabases []string               `protobuf:"bytes,6,rep,name=website_databases,json=websiteDatabases,proto3" json:"website_databases,omitempty"`
 	// The ID of the database server of the user.
 	DatabaseServer string `protobuf:"bytes,7,opt,name=database_server,json=databaseServer,proto3" json:"database_server,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// The ID of the customer of the website. It is necessary for a website of a different
+	// server.
+	Customer      string `protobuf:"bytes,8,opt,name=customer,proto3" json:"customer,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *DeleteDatabaseUserRequest) Reset() {
@@ -1686,6 +1699,13 @@ func (x *DeleteDatabaseUserRequest) GetWebsiteDatabases() []string {
 func (x *DeleteDatabaseUserRequest) GetDatabaseServer() string {
 	if x != nil {
 		return x.DatabaseServer
+	}
+	return ""
+}
+
+func (x *DeleteDatabaseUserRequest) GetCustomer() string {
+	if x != nil {
+		return x.Customer
 	}
 	return ""
 }
@@ -4250,7 +4270,7 @@ const file_cloudfactory_agent_v1_agent_proto_rawDesc = "" +
 	"\x04user\x18\x06 \x01(\tR\x04user\x12\x1a\n" +
 	"\bpassword\x18\a \x01(\tR\bpassword\x12\x16\n" +
 	"\x06access\x18\b \x01(\tR\x06access\x12N\n" +
-	"\x0fdatabase_server\x18\t \x01(\v2%.cloudfactory.agent.v1.DatabaseServerR\x0edatabaseServer\"\xd5\x01\n" +
+	"\x0fdatabase_server\x18\t \x01(\v2%.cloudfactory.agent.v1.DatabaseServerR\x0edatabaseServer\"\xf1\x01\n" +
 	"\x15DeleteDatabaseRequest\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x1d\n" +
 	"\n" +
@@ -4259,7 +4279,8 @@ const file_cloudfactory_agent_v1_agent_proto_rawDesc = "" +
 	"\x04name\x18\x04 \x01(\tR\x04name\x12\x1b\n" +
 	"\tunix_user\x18\x05 \x01(\tR\bunixUser\x12\x14\n" +
 	"\x05users\x18\x06 \x03(\tR\x05users\x12'\n" +
-	"\x0fdatabase_server\x18\a \x01(\tR\x0edatabaseServer\"K\n" +
+	"\x0fdatabase_server\x18\a \x01(\tR\x0edatabaseServer\x12\x1a\n" +
+	"\bcustomer\x18\b \x01(\tR\bcustomer\"K\n" +
 	"\rDatabaseGrant\x12\x1a\n" +
 	"\bdatabase\x18\x01 \x01(\tR\bdatabase\x12\x1e\n" +
 	"\n" +
@@ -4278,7 +4299,7 @@ const file_cloudfactory_agent_v1_agent_proto_rawDesc = "" +
 	"\x06grants\x18\t \x03(\v2$.cloudfactory.agent.v1.DatabaseGrantR\x06grants\x12+\n" +
 	"\x11website_databases\x18\n" +
 	" \x03(\tR\x10websiteDatabases\x12N\n" +
-	"\x0fdatabase_server\x18\v \x01(\v2%.cloudfactory.agent.v1.DatabaseServerR\x0edatabaseServer\"\xf0\x01\n" +
+	"\x0fdatabase_server\x18\v \x01(\v2%.cloudfactory.agent.v1.DatabaseServerR\x0edatabaseServer\"\x8c\x02\n" +
 	"\x19DeleteDatabaseUserRequest\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x1d\n" +
 	"\n" +
@@ -4287,7 +4308,8 @@ const file_cloudfactory_agent_v1_agent_proto_rawDesc = "" +
 	"\x06engine\x18\x04 \x01(\tR\x06engine\x12\x12\n" +
 	"\x04name\x18\x05 \x01(\tR\x04name\x12+\n" +
 	"\x11website_databases\x18\x06 \x03(\tR\x10websiteDatabases\x12'\n" +
-	"\x0fdatabase_server\x18\a \x01(\tR\x0edatabaseServer\"b\n" +
+	"\x0fdatabase_server\x18\a \x01(\tR\x0edatabaseServer\x12\x1a\n" +
+	"\bcustomer\x18\b \x01(\tR\bcustomer\"b\n" +
 	"\vDatabaseRef\x12\x16\n" +
 	"\x06engine\x18\x01 \x01(\tR\x06engine\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12'\n" +

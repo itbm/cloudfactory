@@ -272,3 +272,72 @@ func TestSetMeshRefusesFaultyNetworks(t *testing.T) {
 		}
 	}
 }
+
+// A website of a different server uses a database server of its customer on this server. The
+// agent has no record of the website: the customer comes from the panel.
+func TestADatabaseJobForAWebsiteOfADifferentServer(t *testing.T) {
+	d, f, _ := deps(t)
+	users(d)
+	const remoteID = "01JBQ3Z5K8N6T4W2X9Y7R5P3R1"
+	if err := run(t)(d.SetDatabaseServer(&agentv1.DatabaseServerRequest{JobId: jobID, DatabaseServer: databaseServer("mariadb")})); err != nil {
+		t.Fatal(err)
+	}
+	f.Calls, f.Inputs = nil, nil
+	if err := run(t)(d.CreateDatabase(mariaRequest(remoteID, "shop_r4t6", "shop_r4t6_blog", databaseServer("mariadb")))); err != nil {
+		t.Fatal(err)
+	}
+	sql := strings.Join(f.Inputs, "")
+	// The website connects through the network. The database server sees the address of the
+	// websites of this server, so the user has the same host.
+	for _, want := range []string{"CREATE DATABASE `shop_r4t6_blog`", "'shop_r4t6_blog'@'169.254.80.1'"} {
+		if !strings.Contains(sql, want) {
+			t.Errorf("the statements do not have %q:\n%s", want, sql)
+		}
+	}
+	// The agent made no record of the website.
+	if key, _, err := d.State.WebsiteDatabases(remoteID); err != nil || key != "" {
+		t.Errorf("the agent has a record of the website: %q, %v", key, err)
+	}
+	remove := func(customer string) error {
+		return run(t)(d.DeleteDatabase(&agentv1.DeleteDatabaseRequest{JobId: jobID2, WebsiteId: remoteID, UnixUser: "shop_r4t6", Engine: "mariadb", Name: "shop_r4t6_blog", DatabaseServer: databaseServer("mariadb").GetId(), Customer: customer}))
+	}
+	if err := remove(""); err == nil || !strings.Contains(err.Error(), "has no customer") {
+		t.Errorf("a request with no customer: %v", err)
+	}
+	if err := remove(otherCustomerID); err == nil || !strings.Contains(err.Error(), "is not a database server of the customer") {
+		t.Errorf("a request with a different customer: %v", err)
+	}
+	f.Inputs = nil
+	if err := remove(customerID); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(strings.Join(f.Inputs, ""), "DROP DATABASE IF EXISTS `shop_r4t6_blog`;") {
+		t.Errorf("the database stays:\n%s", strings.Join(f.Inputs, ""))
+	}
+	// A database server of a different customer stays closed for the website.
+	stolen := otherServer()
+	if err := run(t)(d.SetDatabaseServer(&agentv1.DatabaseServerRequest{JobId: jobID, DatabaseServer: stolen})); err != nil {
+		t.Fatal(err)
+	}
+	stolen.Customer = customerID
+	if err := run(t)(d.CreateDatabase(mariaRequest(remoteID, "shop_r4t6", "shop_r4t6_shop", stolen))); err == nil {
+		t.Error("the agent used a database server of a different customer")
+	}
+}
+
+// A website of this server keeps the check with the record of the agent: a customer from the
+// panel that is different is refused.
+func TestACustomerFromThePanelMustAgreeWithTheRecord(t *testing.T) {
+	d, _, _ := deps(t)
+	users(d)
+	if err := run(t)(d.CreateWebsite(&agentv1.WebsiteRequest{JobId: jobID, Website: customerWebsite()})); err != nil {
+		t.Fatal(err)
+	}
+	if err := run(t)(d.CreateDatabase(mariaRequest(websiteID, "acme_x7k2", "acme_x7k2_shop", databaseServer("mariadb")))); err != nil {
+		t.Fatal(err)
+	}
+	err := run(t)(d.DeleteDatabase(&agentv1.DeleteDatabaseRequest{JobId: jobID2, WebsiteId: websiteID, UnixUser: "acme_x7k2", Engine: "mariadb", Name: "acme_x7k2_shop", DatabaseServer: databaseServer("mariadb").GetId(), Customer: otherCustomerID}))
+	if err == nil || !strings.Contains(err.Error(), "is a website of the customer") {
+		t.Errorf("a different customer for a website of this server: %v", err)
+	}
+}

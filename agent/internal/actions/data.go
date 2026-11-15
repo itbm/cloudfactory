@@ -230,7 +230,7 @@ func (d *Deps) CreateDatabase(req *agentv1.CreateDatabaseRequest) (jobs.Job, err
 	if user != "" {
 		steps = append(steps,
 			jobs.Step{Name: "Create user", Do: func(ctx context.Context) error {
-				srv, err := d.server(req.GetWebsiteId(), req.GetDatabaseServer().GetId(), engine)
+				srv, err := d.serverFor(req.GetWebsiteId(), req.GetDatabaseServer().GetCustomer(), req.GetDatabaseServer().GetId(), engine)
 				if err != nil {
 					return err
 				}
@@ -241,7 +241,7 @@ func (d *Deps) CreateDatabase(req *agentv1.CreateDatabaseRequest) (jobs.Job, err
 				return d.createUser(ctx, srv, user, pass, host, req.GetAccess())
 			}},
 			jobs.Step{Name: "Allow the website container only", Do: func(ctx context.Context) error {
-				srv, err := d.server(req.GetWebsiteId(), req.GetDatabaseServer().GetId(), engine)
+				srv, err := d.serverFor(req.GetWebsiteId(), req.GetDatabaseServer().GetCustomer(), req.GetDatabaseServer().GetId(), engine)
 				if err != nil {
 					return err
 				}
@@ -484,7 +484,7 @@ func (d *Deps) DeleteDatabaseUser(req *agentv1.DeleteDatabaseUserRequest) (jobs.
 	}
 	return jobs.Job{ID: req.GetJobId(), Key: req.GetWebsiteId(), Steps: []jobs.Step{
 		{Name: "Remove user", Do: func(ctx context.Context) error {
-			srv, err := d.server(req.GetWebsiteId(), req.GetDatabaseServer(), engine)
+			srv, err := d.serverFor(req.GetWebsiteId(), req.GetCustomer(), req.GetDatabaseServer(), engine)
 			if err != nil {
 				return err
 			}
@@ -539,7 +539,7 @@ func (d *Deps) DeleteDatabase(req *agentv1.DeleteDatabaseRequest) (jobs.Job, err
 	if engine == "valkey" {
 		return jobs.Job{ID: req.GetJobId(), Key: req.GetWebsiteId(), Steps: []jobs.Step{
 			{Name: "Remove database and user", Do: func(ctx context.Context) error {
-				srv, err := d.server(req.GetWebsiteId(), req.GetDatabaseServer(), engine)
+				srv, err := d.serverFor(req.GetWebsiteId(), req.GetCustomer(), req.GetDatabaseServer(), engine)
 				if err != nil {
 					return err
 				}
@@ -549,7 +549,7 @@ func (d *Deps) DeleteDatabase(req *agentv1.DeleteDatabaseRequest) (jobs.Job, err
 	}
 	return jobs.Job{ID: req.GetJobId(), Key: req.GetWebsiteId(), Steps: []jobs.Step{
 		{Name: "Remove access of users", Do: func(ctx context.Context) error {
-			srv, err := d.server(req.GetWebsiteId(), req.GetDatabaseServer(), engine)
+			srv, err := d.serverFor(req.GetWebsiteId(), req.GetCustomer(), req.GetDatabaseServer(), engine)
 			if err != nil {
 				return err
 			}
@@ -568,7 +568,7 @@ func (d *Deps) DeleteDatabase(req *agentv1.DeleteDatabaseRequest) (jobs.Job, err
 			return err
 		}},
 		{Name: "Remove database", Do: func(ctx context.Context) error {
-			srv, err := d.server(req.GetWebsiteId(), req.GetDatabaseServer(), engine)
+			srv, err := d.serverFor(req.GetWebsiteId(), req.GetCustomer(), req.GetDatabaseServer(), engine)
 			if err != nil {
 				return err
 			}

@@ -603,6 +603,14 @@ on a different server. These are the controls:
   connection also needs the password of a database user.
 - **The hosts file.** Root owns the file and its directory. The website container has the
   file as a read-only mount.
+- **Database jobs for a website of a different server.** The agent of the server of a
+  database server runs the jobs for its databases and its database users. For a website of
+  a different server, the agent has no record of the website, so the job has the ID of the
+  customer. The agent does the job only when the database server is a database server of
+  that customer. For a website of its own server, the agent uses its record of the website:
+  a job with a different customer is refused. As before, each name of a database and of a
+  database user starts with the Unix user of the website, and the panel gives each website
+  a different Unix user.
 - **Tunnels that the panel makes.** The panel makes a tunnel between two servers only when a
   website on one server is in a network with a database server on the other. It removes the
   tunnel when this is no longer true.

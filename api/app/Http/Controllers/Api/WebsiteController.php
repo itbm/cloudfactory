@@ -23,6 +23,7 @@ use App\Services\DatabaseNames;
 use App\Services\DatabaseServers;
 use App\Services\DomainPolicy;
 use App\Services\JobDispatcher;
+use App\Services\WebsiteRemoval;
 use App\Validation\Input;
 use App\Validation\InputRules;
 use Illuminate\Http\JsonResponse;
@@ -199,16 +200,9 @@ class WebsiteController extends Controller
     public function destroy(Request $request, string $id): JsonResponse
     {
         $website = $this->findWebsite($request, $id);
-        // The agent also removes the databases and the database users of the website, so that a
-        // later website with the same Unix user does not get them. The database servers of
-        // the customer stay.
-        $ref = fn ($item) => ['engine' => $item->engine, 'name' => $item->name, 'databaseServer' => $item->database_server_id];
-        $job = $this->jobs->dispatch($website->server, AgentAction::DeleteWebsite, [
-            'websiteId' => $website->id,
-            'unixUser' => $website->unix_user,
-            'databases' => $website->databases()->orderBy('name')->get()->map($ref)->all(),
-            'databaseUsers' => $website->databaseUsers()->orderBy('name')->get()->map($ref)->all(),
-        ], "Remove website {$website->name}", $website);
+        // A website with a database on a different server gets a job for that server first
+        // (WebsiteRemoval).
+        $job = app(WebsiteRemoval::class)->start($website);
         Audit::record($request, 'Removed website', $website->name, $website->customer_id);
 
         return response()->json(['job' => new JobResource($job)], 202);
@@ -285,6 +279,11 @@ class WebsiteController extends Controller
         $name = 'staging.'.preg_replace('/^www\./', '', $source->name);
         if (Website::where('name', $name)->exists()) {
             throw ValidationException::withMessages(['name' => "{$name} exists."]);
+        }
+        // The agent of the server of the website makes the copy. It cannot copy a database
+        // that is in a database server on a different server.
+        if ($source->databases()->whereHas('databaseServer', fn ($q) => $q->where('server_id', '!=', $source->server_id))->exists()) {
+            throw ValidationException::withMessages(['website' => 'This website has a database in a database server on a different server. The panel cannot make a staging copy of such a website yet.']);
         }
         $proved = DomainController::checkName($this->domains, $name, $source->customer_id, $request);
         $domain = DomainController::newDomain($this->domains, $request, $source->customer_id, $name, DomainKind::Primary, $proved);

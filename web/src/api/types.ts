@@ -656,6 +656,11 @@ export interface State {
   mesh?: Mesh;
   databases: Database[];
   databaseUsers: DatabaseUser[];
+  /**
+   * For each website, the IDs of the database servers on a different server that the website
+   * can use. The website connects to them by their network names.
+   */
+  remoteDatabaseServers: Record<string, string[]>;
   snapshots: Snapshot[];
   backupPolicy: BackupPolicy;
   plans: Plan[];

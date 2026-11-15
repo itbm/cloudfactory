@@ -381,7 +381,9 @@ The job `Deploy` has these steps:
 A customer makes database servers as it makes websites. A database server is one container
 with one database engine: MariaDB, PostgreSQL or Valkey. It has its own data, its own
 superuser, its own port and its own limits. Each database of a website is in one database
-server of the customer of the website, on the server of the website.
+server of the customer of the website. The database server is on the server of the website,
+or on a different server that is in a network with the website
+(refer to [The networks of the customers](#the-networks-of-the-customers)).
 
 - A customer cannot change the service of a different customer, because the customers do
   not use the same containers. Each database server has its own Unix user and its own gVisor
@@ -833,9 +835,37 @@ The panel changes the mesh after each change of a website, a database server or 
 It makes the tunnels that the networks need, removes the tunnels that it made and that no
 network needs, and sends the new state only to the servers whose state is different.
 
-In this release, a network member is a database server. The panel makes the databases and
-the database users of a database server through a website on the same server. A later
-release adds websites as members, private websites, and networks with a name.
+### A database on a different server
+
+A website can have a database in a database server of its customer on a different server,
+when the two are in one network. The user selects the database server for a new database.
+With no selection, the panel uses a database server on the server of the website first.
+
+- **The jobs.** The panel sends the job for a database or for a database user to the agent
+  of the server of the database server. That agent has no record of the website, so the
+  job has the ID of the customer. The agent does the job only when the database server is a
+  database server of that customer. For a website that the agent has, the record of the
+  agent decides, and a different customer in the job is refused.
+- **The connection.** The app connects to the network name of the database server, for
+  example `shop-db.internal:3306`. The database user is the same as for a website on the
+  server of the database server: the database server sees one address for each website.
+- **The size.** Each agent reports the size of each database in its database servers. The
+  panel accepts the size of a database from the agent of its database server.
+- **The removal of the website.** The agent of the server of the website cannot remove a
+  database on a different server. The panel first sends a job for each such database and
+  each such database user to the agent of that server. When these jobs are complete, the
+  panel sends the job that removes the website. When one fails, the website stays, and the
+  user removes it again.
+
+Limits of this release:
+
+- A backup of a website has its files and the databases on the server of the website. It
+  does not have a database on a different server.
+- The panel cannot make a staging copy of a website that has a database on a different
+  server.
+
+In this release, a network member is a database server. A later release adds websites as
+members, private websites, and networks with a name.
 
 ## Change of runtime without downtime
 

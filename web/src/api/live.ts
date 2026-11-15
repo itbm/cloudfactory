@@ -329,7 +329,8 @@ export async function load(previous: State): Promise<State> {
 
   // Databases and snapshots belong to each website.
   const all_ = websites.length <= DETAIL_LIMIT;
-  const perSite = await Promise.all(websites.filter((w) => all_ || shown.has(w.id)).map((w) => websiteDetails(w)));
+  const detailed = websites.filter((w) => all_ || shown.has(w.id));
+  const perSite = await Promise.all(detailed.map((w) => websiteDetails(w)));
   // Keep the data of the other websites from the previous load.
   const fresh = new Set(all_ ? websites.map((w) => w.id) : [...shown]);
   const exists = new Set(websites.map((w) => w.id));
@@ -366,6 +367,7 @@ export async function load(previous: State): Promise<State> {
     mesh,
     databases: [...kept(previous.databases), ...perSite.flatMap((s) => s.databases)],
     databaseUsers: [...kept(previous.databaseUsers), ...perSite.flatMap((s) => s.users)],
+    remoteDatabaseServers: { ...previous.remoteDatabaseServers, ...Object.fromEntries(perSite.map((s, i) => [detailed[i].id, s.remote])) },
     snapshots: [...kept(previous.snapshots), ...perSite.flatMap((s) => s.snapshots)].sort((a, b) => b.at.localeCompare(a.at)),
     backupPolicy: policy,
     plans,
@@ -386,10 +388,12 @@ export async function load(previous: State): Promise<State> {
 async function websiteDetails(w: { id: string; serverId: string }) {
   const optional = <T>(p: Promise<T>, fallback: T) => p.catch(() => fallback);
   const [db, snaps] = await Promise.all([
-    optional(request<{ databases: { id: string; engine: Database["engine"]; name: string; sizeBytes: number; number?: number | null; keys?: number | null; databaseServerId?: string | null; host?: string; port?: number }[]; users: { id: string; engine: Database["engine"]; name: string; grants: DatabaseGrant[]; access: DatabaseUser["access"]; databaseServerId?: string | null }[] }>("GET", `/websites/${w.id}/databases`), { databases: [], users: [] }),
+    optional(request<{ databases: { id: string; engine: Database["engine"]; name: string; sizeBytes: number; number?: number | null; keys?: number | null; databaseServerId?: string | null; host?: string; port?: number }[]; users: { id: string; engine: Database["engine"]; name: string; grants: DatabaseGrant[]; access: DatabaseUser["access"]; databaseServerId?: string | null }[]; servers?: { id: string; remote?: boolean }[] }>("GET", `/websites/${w.id}/databases`), { databases: [], users: [] }),
     optional(request<{ data: ApiSnapshot[] }>("GET", `/websites/${w.id}/snapshots`).then((r) => r.data), []),
   ]);
   return {
+    // The database servers on a different server that the website can use.
+    remote: (db.servers ?? []).filter((x) => x.remote).map((x) => x.id),
     databases: db.databases.map((d): Database => ({ id: d.id, name: d.name, engine: d.engine, websiteId: w.id, sizeBytes: d.sizeBytes ?? 0, serverId: w.serverId, number: d.number ?? undefined, keys: d.keys ?? undefined, databaseServerId: d.databaseServerId ?? undefined, host: d.host, port: d.port })),
     users: db.users.map((u): DatabaseUser => ({ id: u.id, name: u.name, engine: u.engine, websiteId: w.id, databaseServerId: u.databaseServerId ?? undefined, grants: u.grants ?? [], access: u.access })),
     snapshots: snaps.map((s): Snapshot => ({ id: s.id, at: s.createdAt, kind: s.kind === "manual" ? "manual" : "nightly", sizeBytes: s.sizeBytes ?? 0, websiteId: w.id, databases: s.databases ?? [] })),
@@ -410,6 +414,7 @@ export async function showWebsite(previous: State, websiteId: string): Promise<(
     ...s,
     databases: [...s.databases.filter((x) => x.websiteId !== websiteId), ...d.databases],
     databaseUsers: [...s.databaseUsers.filter((x) => x.websiteId !== websiteId), ...d.users],
+    remoteDatabaseServers: { ...s.remoteDatabaseServers, [websiteId]: d.remote },
     snapshots: [...s.snapshots.filter((x) => x.websiteId !== websiteId), ...d.snapshots].sort((a, b) => b.at.localeCompare(a.at)),
   });
 }

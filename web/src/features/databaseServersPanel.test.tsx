@@ -138,6 +138,10 @@ describe("the database servers panel", () => {
     expect(within(screen.getByRole("dialog")).queryByRole("button", { name: "Remove database server" })).toBeNull();
     fireEvent.click(within(screen.getByRole("dialog")).getAllByRole("button", { name: "Close" }).at(-1)!);
 
+    // The second MariaDB server has one database. This test removes a database server with none.
+    cleanup();
+    server("mariadb-reports").databases = 0;
+    render(<MemoryRouter><DatabaseServersPanel /></MemoryRouter>);
     const id = server("mariadb-reports").id;
     api.on(`DELETE /database-servers/${id}`, () => [202, { job: apiJob({ action: "DeleteDatabaseServer", databaseServerId: id }) }]);
     fireEvent.click(actions(row("mariadb-reports")).find((b) => b.textContent === "Remove")!);
@@ -171,11 +175,25 @@ describe("the database server of a new database", () => {
     fireEvent.click(screen.getByRole("button", { name: "New database" }));
     const dialog = screen.getByRole("dialog");
     const select = within(dialog).getByLabelText("Database server") as HTMLSelectElement;
-    expect([...select.options].map((o) => o.textContent)).toEqual(["Automatic: the first database server with space", "mariadb-1 · port 3306 · 2 of 20 databases", "mariadb-reports · port 3307 · 0 of 5 databases"]);
+    expect([...select.options].map((o) => o.textContent)).toEqual(["Automatic: the first database server with space", "mariadb-1 · port 3306 · 2 of 20 databases", "mariadb-reports · port 3307 · 1 of 5 databases"]);
     fireEvent.change(select, { target: { value: server("mariadb-reports").id } });
     fireEvent.change(within(dialog).getByLabelText("Name"), { target: { value: "stats" } });
     fireEvent.click(within(dialog).getByRole("button", { name: "Create database" }));
     await waitFor(() => expect(api.changes.at(-1)).toMatchObject({ method: "POST", body: { engine: "mariadb", name: "stats", databaseServerId: server("mariadb-reports").id } }));
+  });
+
+  it("offers the database servers on a different server, with the network name for the app", async () => {
+    await signedIn("administrator");
+    // This website of Acme is on web-2. The database servers of Acme are on web-1.
+    const storefront = website("storefront.acme.example.com");
+    render(<MemoryRouter><DatabasesPanel websiteId={storefront.id} /></MemoryRouter>);
+    // Its database is in a database server on web-1: the app connects to the network name,
+    // on the usual port of the engine.
+    const database = screen.getAllByRole("row").find((r) => r.textContent?.includes("_orders"))!;
+    expect(database.textContent).toContain("mariadb-reports.internal:3306");
+    fireEvent.click(screen.getByRole("button", { name: "New database" }));
+    const select = within(screen.getByRole("dialog")).getByLabelText("Database server") as HTMLSelectElement;
+    expect([...select.options].map((o) => o.textContent)).toEqual(["Automatic: the first database server with space", "mariadb-1 · on the server web-1 · 2 of 20 databases", "mariadb-reports · on the server web-1 · 1 of 5 databases"]);
   });
 
   it("shows only the database servers of the engine, and does not offer a full one", async () => {

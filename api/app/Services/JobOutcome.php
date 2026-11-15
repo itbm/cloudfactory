@@ -164,10 +164,10 @@ class JobOutcome
             AgentAction::Backup => $website && $this->recordSnapshot($website, $p, $result),
             // Batch 1, finding 4: the panel removes the row when the item is gone from the server.
             AgentAction::CreateDatabase => $website && $this->databaseMade($website, $p, $result),
-            AgentAction::DeleteDatabase => $website && $this->databaseRemoved($website, $p),
+            AgentAction::DeleteDatabase => $website && $this->databaseRemoved($website, $p) && $this->continueRemoval($website, $p),
             // The panel removes the record when the database server is gone from the server.
             AgentAction::DeleteDatabaseServer => $this->databaseServerRemoved($job),
-            AgentAction::DeleteDatabaseUser => $website?->databaseUsers()->where(['engine' => $p['engine'] ?? '', 'name' => $p['name'] ?? ''])->delete(),
+            AgentAction::DeleteDatabaseUser => $website && ($website->databaseUsers()->where(['engine' => $p['engine'] ?? '', 'name' => $p['name'] ?? ''])->delete() || true) && $this->continueRemoval($website, $p),
             AgentAction::InstallHostUpdates => $job->server->update([
                 'pending_updates' => self::updatesLeft($job->server->pending_updates ?? [], (string) ($p['policy'] ?? 'security')),
                 'last_update_at' => now(),
@@ -353,6 +353,19 @@ class JobOutcome
         return true;
     }
 
+    /**
+     * A job for a database or a database user on a different server can be a part of the
+     * removal of its website. The panel then continues with the removal (WebsiteRemoval).
+     */
+    private function continueRemoval(Website $website, array $p): bool
+    {
+        if ($p[WebsiteRemoval::THEN] ?? false) {
+            app(WebsiteRemoval::class)->continue($website);
+        }
+
+        return true;
+    }
+
     private function removeNewDatabase(?Website $website, array $p): void
     {
         if (! $website) {
@@ -387,7 +400,8 @@ class JobOutcome
             'restic_id' => $result['snapshotId'] ?? null,
             'size_bytes' => (int) ($result['sizeBytes'] ?? 0),
             // The agent restores a database by "engine:name".
-            'databases' => $website->sqlDatabases()->get()->map(fn ($d) => "{$d->engine}:{$d->name}")->all(),
+            // The backup has the databases of the job, not the databases that the website has now.
+            'databases' => collect($p['databases'] ?? [])->map(fn ($d) => ($d['engine'] ?? '').':'.($d['name'] ?? ''))->values()->all(),
             'mailboxes' => [],
             // CF-06: the restore checks each dump against the hash from the backup.
             'dump_hashes' => self::dumpHashes($result['dumps'] ?? []),
