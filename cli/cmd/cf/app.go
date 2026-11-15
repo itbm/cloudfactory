@@ -73,7 +73,7 @@ Usage:
   cf mail domains remove DOMAIN            Remove a mail domain that has no mailboxes and no addresses.
   cf mail mailboxes list [--domain DOMAIN] [--customer ID]
   cf mail mailboxes create ADDRESS [--quota-mb N]      The panel shows the password one time.
-  cf mail mailboxes set ADDRESS [--quota-mb N] [--new-password]
+  cf mail mailboxes set ADDRESS [--quota-mb N] [--new-password] [--public-key FILE | --no-encryption]
   cf mail mailboxes delete ADDRESS         Remove a mailbox and its messages.
   cf mail aliases list [--domain DOMAIN] [--customer ID]
   cf mail aliases create ADDRESS --to ADDRESS... [--forward]

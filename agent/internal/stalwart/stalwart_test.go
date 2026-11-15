@@ -2,8 +2,10 @@ package stalwart
 
 import (
 	"context"
+	"errors"
 	"os"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -118,6 +120,42 @@ func TestRealServer(t *testing.T) {
 	}
 	if err := c.SetMailbox(ctx, "missing.example.com", "info", 1<<30, hash); err == nil {
 		t.Fatal("a mailbox in a domain that the server does not have must fail")
+	}
+	// Encryption at rest with the OpenPGP public key of the owner of the mailbox.
+	publicKey, err := os.ReadFile("testdata/public-key.asc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		key, err := c.SetEncryption(ctx, domain, "info", string(publicKey))
+		if err != nil || len(key.Fingerprints) != 1 || key.Fingerprints[0] != "9E1777E56AFB330404EC710E0868736DF95B6518" || !strings.HasPrefix(key.Type, "OpenPGP") {
+			t.Fatalf("key %+v, err %v", key, err)
+		}
+	}
+	accounts, err := c.get(ctx, "x:Account", nil, "name", "encryptionAtRest")
+	if err != nil || len(accounts) != 1 || accounts[0]["encryptionAtRest"].(object)["@type"] != "Enabled" {
+		t.Fatalf("accounts %v, err %v", accounts, err)
+	}
+	// The second time removed the key of the first time.
+	keys, err := c.call(ctx, "x:PublicKey/get", object{"accountId": accounts[0]["id"]})
+	if list, _ := keys["list"].([]any); err != nil || len(list) != 1 {
+		t.Fatalf("keys %v, err %v", keys, err)
+	}
+	var refused *ErrKey
+	if _, err := c.SetEncryption(ctx, domain, "info", "-----BEGIN PGP PUBLIC KEY BLOCK-----\n\nAAAA\n-----END PGP PUBLIC KEY BLOCK-----\n"); !errors.As(err, &refused) {
+		t.Fatalf("a block with no key gave %v", err)
+	}
+	if _, err := c.SetEncryption(ctx, domain, "nobody", string(publicKey)); err == nil {
+		t.Fatal("a key for a mailbox that the server does not have must fail")
+	}
+	for range 2 {
+		if key, err := c.SetEncryption(ctx, domain, "info", ""); err != nil || key != nil {
+			t.Fatalf("key %+v, err %v", key, err)
+		}
+	}
+	accounts, err = c.get(ctx, "x:Account", nil, "encryptionAtRest")
+	if err != nil || accounts[0]["encryptionAtRest"].(object)["@type"] != "Disabled" {
+		t.Fatalf("accounts %v, err %v", accounts, err)
 	}
 	usage, err := c.Usage(ctx)
 	if _, ok := usage["info@"+domain]; err != nil || !ok {

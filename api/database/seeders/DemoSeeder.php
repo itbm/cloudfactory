@@ -218,6 +218,34 @@ class DemoSeeder extends Seeder
                 MailAlias::create(['customer_id' => $owner->id, 'mail_domain_id' => $domain->id, 'local_part' => $local, 'kind' => $kind, 'destinations' => $destinations, 'status' => MailDomain::ACTIVE]);
             }
         }
+        // One mailbox with encryption: the mail server encrypts its new mail with an OpenPGP key.
+        Mailbox::where('local_part', 'olu')->first()->update([
+            'public_key' => "-----BEGIN PGP PUBLIC KEY BLOCK-----\n\nmDMEZdemoRYJKwYBBAHaRw8BAQdA\n=demo\n-----END PGP PUBLIC KEY BLOCK-----\n",
+            'encryption' => ['fingerprints' => ['7C1D4E0B9A6F23585D0E1B7A4C92F6E3A8D50B17'], 'keyType' => 'OpenPGP v4: X25519', 'expiresAt' => null, 'warnings' => []],
+        ]);
+
+        // A large customer, to show the Email page with many mailboxes and aliases.
+        $owner = $this->customers['northwind'];
+        $domain = MailDomain::create([
+            'customer_id' => $owner->id, 'server_id' => $server->id, 'name' => 'northwind.example.com', 'status' => MailDomain::ACTIVE,
+            'records' => array_map(fn (array $r) => $r + ['found' => true], DemoMailDns::records('northwind.example.com', $host)), 'dns_checked_at' => now()->subHours(5),
+        ]);
+        $first = ['ada', 'ben', 'chloe', 'dev', 'elif', 'femi', 'grace', 'hugo', 'ines', 'jonas', 'kofi', 'lena'];
+        $last = ['adams', 'bello', 'chen', 'diaz', 'evans', 'fischer', 'garcia', 'haddad', 'ito', 'jensen', 'khan', 'lopez', 'meyer', 'novak', 'okoro'];
+        $n = 0;
+        foreach ($last as $surname) {
+            foreach ($first as $name) {
+                $n++;
+                Mailbox::create(['customer_id' => $owner->id, 'mail_domain_id' => $domain->id, 'local_part' => "$name.$surname", 'quota_bytes' => 500 * self::MB, 'used_bytes' => ($n * 37 % 480) * self::MB, 'status' => MailDomain::ACTIVE]);
+                if ($n % 3 === 0) {
+                    MailAlias::create(['customer_id' => $owner->id, 'mail_domain_id' => $domain->id, 'local_part' => $name[0].$surname, 'kind' => 'alias', 'destinations' => ["$name.$surname@northwind.example.com"], 'status' => MailDomain::ACTIVE]);
+                }
+            }
+        }
+        foreach (['support' => 'ada.adams', 'billing' => 'ada.adams', 'press' => 'ben.bello', 'jobs' => 'chloe.chen'] as $local => $box) {
+            MailAlias::create(['customer_id' => $owner->id, 'mail_domain_id' => $domain->id, 'local_part' => $local, 'kind' => 'alias', 'destinations' => ["$box@northwind.example.com"], 'status' => MailDomain::ACTIVE]);
+        }
+        MailAlias::create(['customer_id' => $owner->id, 'mail_domain_id' => $domain->id, 'local_part' => 'partners', 'kind' => 'forwarder', 'destinations' => ['alliances@partner.example.net', 'deals@reseller.example.org'], 'status' => MailDomain::ACTIVE]);
     }
 
     private function websites(): void

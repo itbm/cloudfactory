@@ -218,6 +218,26 @@ func TestTheMailJobsCheckTheirValues(t *testing.T) {
 	if _, err := d.SetMailbox(&agentv1.SetMailboxRequest{Domain: "acme.example.com", LocalPart: "info", QuotaBytes: 1 << 30, PasswordHash: mailHash}); err != nil {
 		t.Errorf("a correct mailbox: %v", err)
 	}
+	const block = "-----BEGIN PGP PUBLIC KEY BLOCK-----\n\nmDMEavj2\n=x1Qq\n-----END PGP PUBLIC KEY BLOCK-----\n"
+	for name, req := range map[string]*agentv1.SetMailboxRequest{
+		"a private key":            {SetEncryption: true, PublicKey: strings.ReplaceAll(block, "PUBLIC", "PRIVATE")},
+		"two blocks":               {SetEncryption: true, PublicKey: block + block},
+		"text that is not a key":   {SetEncryption: true, PublicKey: "my key"},
+		"a key with a NUL":         {SetEncryption: true, PublicKey: strings.Replace(block, "mDME", "mD\x00E", 1)},
+		"a very large key":         {SetEncryption: true, PublicKey: strings.Replace(block, "mDME", strings.Repeat("A", mailMaxPublicKey), 1)},
+		"a key that the job drops": {PublicKey: block},
+	} {
+		req.Domain, req.LocalPart, req.QuotaBytes = "acme.example.com", "info", 1<<30
+		if _, err := d.SetMailbox(req); err == nil {
+			t.Errorf("SetMailbox accepted %s", name)
+		}
+	}
+	for name, key := range map[string]string{"a key": block, "a key with CRLF": strings.ReplaceAll(block, "\n", "\r\n"), "no key": ""} {
+		job, err := d.SetMailbox(&agentv1.SetMailboxRequest{Domain: "acme.example.com", LocalPart: "info", QuotaBytes: 1 << 30, SetEncryption: true, PublicKey: key})
+		if err != nil || len(job.Steps) != 2 {
+			t.Errorf("%s: %d steps, err %v", name, len(job.Steps), err)
+		}
+	}
 	many := make([]string, mailMaxDestinations+1)
 	for i := range many {
 		many[i] = "a@example.org"

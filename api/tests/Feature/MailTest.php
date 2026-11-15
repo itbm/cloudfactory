@@ -291,6 +291,56 @@ class MailTest extends TestCase
         $this->assertTrue(password_verify($response->json('password'), AgentJob::findOrFail($response->json('job.id'))->payload['passwordHash']));
     }
 
+    public function test_the_owner_of_a_mailbox_turns_on_encryption_with_a_public_key(): void
+    {
+        $this->hosting();
+        $this->actingWith($this->user(Role::Owner, $this->customer));
+        $mailbox = $this->mailbox($this->domain());
+        $url = "/api/v1/mail/mailboxes/{$mailbox->id}";
+        $key = "-----BEGIN PGP PUBLIC KEY BLOCK-----\n\nmDMEavj2cRYJKwYBBAHaRw8BAQdA\n=x1Qq\n-----END PGP PUBLIC KEY BLOCK-----\n";
+
+        $jobs = AgentJob::count();
+        foreach ([
+            'my key',
+            str_replace('PUBLIC', 'PRIVATE', $key),
+            $key.$key,
+            str_replace('mDME', "mD\u{e9}E", $key),
+            str_repeat('A', Mailbox::MAX_PUBLIC_KEY + 1),
+        ] as $wrong) {
+            $this->patchJson($url, ['publicKey' => $wrong])->assertUnprocessable()->assertJsonValidationErrors('publicKey');
+        }
+        $this->assertSame($jobs, AgentJob::count());
+        // No key for a mailbox with no encryption changes nothing.
+        $this->patchJson($url, ['publicKey' => null])->assertOk()->assertJsonPath('job', null);
+
+        // A key from Windows has CRLF line ends.
+        $response = $this->patchJson($url, ['publicKey' => "\n".str_replace("\n", "\r\n", $key)])->assertAccepted()->assertJsonPath('mailbox.encryption', null);
+        $job = AgentJob::findOrFail($response->json('job.id'));
+        $this->assertTrue($job->payload['setEncryption']);
+        $this->assertSame($key, $job->payload['publicKey']);
+        $this->assertArrayNotHasKey('passwordHash', $job->payload);
+        // The mail server refused the key: the mailbox has no encryption.
+        $this->finish($job->id, JobState::Failed);
+        $this->assertNull($mailbox->fresh()->encryption);
+
+        $job = $this->patchJson($url, ['publicKey' => $key])->assertAccepted()->json('job.id');
+        $this->finish($job, result: ['encryption' => [
+            'fingerprints' => ['9E1777E56AFB330404EC710E0868736DF95B6518', '<b>'], 'type' => 'OpenPGP v4: X25519', 'expiresAt' => '2030-01-02T03:04:05Z', 'warnings' => ['expiresSoon', 'not a warning!'],
+        ]]);
+        $this->getJson('/api/v1/mail/mailboxes')->assertOk()->assertJsonPath('data.0.encryption', [
+            'fingerprints' => ['9E1777E56AFB330404EC710E0868736DF95B6518'], 'keyType' => 'OpenPGP v4: X25519', 'expiresAt' => '2030-01-02T03:04:05+00:00', 'warnings' => ['expiresSoon'],
+        ]);
+        $this->assertSame($key, $mailbox->fresh()->public_key);
+        // The same key again changes nothing.
+        $this->patchJson($url, ['publicKey' => $key])->assertOk()->assertJsonPath('job', null);
+
+        $job = AgentJob::findOrFail($this->patchJson($url, ['publicKey' => null])->assertAccepted()->json('job.id'));
+        $this->assertSame(['setEncryption' => true, 'publicKey' => ''], array_intersect_key($job->payload, ['setEncryption' => 1, 'publicKey' => 1]));
+        $this->finish($job->id);
+        $this->assertNull($mailbox->fresh()->encryption);
+        $this->assertNull($mailbox->fresh()->public_key);
+    }
+
     public function test_a_mailbox_that_the_agent_could_not_make_is_failed_and_can_be_removed(): void
     {
         $this->hosting();

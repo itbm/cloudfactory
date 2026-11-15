@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -567,8 +568,12 @@ func (c *Client) SetDomain(ctx context.Context, name string) ([]Record, error) {
 			return nil, err
 		}
 	}
-	// The server makes the keys in a task, some moments after it makes the domain.
+	// The server makes the keys in a task, some moments after it makes the domain, and it does
+	// not make all keys at the same moment. The records are complete when they have a DKIM
+	// key and two more reads give the same records.
 	deadline := time.Now().Add(time.Minute)
+	var last []Record
+	same := 0
 	for {
 		list, err := c.get(ctx, "x:Domain", []string{id}, "dnsZoneFile", "dkimManagement")
 		if err != nil {
@@ -579,7 +584,13 @@ func (c *Client) SetDomain(ctx context.Context, name string) ([]Record, error) {
 		}
 		zone, _ := list[0]["dnsZoneFile"].(string)
 		records := Records(zone, name)
-		if hasPurpose(records, "dkim") {
+		if hasPurpose(records, "dkim") && reflect.DeepEqual(records, last) {
+			same++
+		} else {
+			same = 0
+		}
+		last = records
+		if same >= 2 {
 			if management, _ := list[0]["dkimManagement"].(object); management["@type"] != "Manual" {
 				if err := c.update(ctx, "x:Domain", id, object{"dkimManagement": object{"@type": "Manual"}}); err != nil {
 					return nil, err
@@ -681,6 +692,146 @@ func (c *Client) SetMailbox(ctx context.Context, domain, localPart string, quota
 		changes["credentials"] = credentials
 	}
 	return c.update(ctx, "x:Account", id, changes)
+}
+
+// KeyDescription is the description of the public keys that the panel adds. The owner of a
+// mailbox can add other keys in a mail program: the panel does not change those.
+const KeyDescription = "CloudFactory"
+
+// Key tells what the mail server found in an OpenPGP public key.
+type Key struct {
+	// The fingerprints of the keys in the block, in upper-case hexadecimal.
+	Fingerprints []string `json:"fingerprints"`
+	// For example "OpenPGP v4: RSA-3072, X25519".
+	Type string `json:"type"`
+	// RFC 3339, or empty for a key that does not expire.
+	ExpiresAt string `json:"expiresAt"`
+	// For example "expiresSoon", "weakRsa" or "addressMismatch".
+	Warnings []string `json:"warnings"`
+}
+
+// ErrKey is the error of a public key that the mail server refused.
+type ErrKey struct{ Reason string }
+
+func (e *ErrKey) Error() string { return "the mail server refused the public key: " + e.Reason }
+
+// SetEncryption turns on encryption at rest for a mailbox, with an OpenPGP public key in
+// ASCII armour. The mail server then encrypts each message before it stores the message, and
+// only the private key can decrypt it. Messages that the mailbox has do not change. An empty
+// key turns off the encryption: new messages are then not encrypted.
+func (c *Client) SetEncryption(ctx context.Context, domain, localPart, publicKey string) (*Key, error) {
+	domainID, err := c.existingDomain(ctx, domain)
+	if err != nil {
+		return nil, err
+	}
+	id, err := c.accountID(ctx, domainID, localPart)
+	if err != nil {
+		return nil, err
+	}
+	if id == "" {
+		return nil, fmt.Errorf("the mail server does not have the mailbox %s@%s", localPart, domain)
+	}
+	// The keys of a mailbox are objects of its account, not of the administrator.
+	listed, err := c.call(ctx, "x:PublicKey/get", object{"accountId": id, "properties": []string{"description"}})
+	if err != nil {
+		return nil, err
+	}
+	var old []string
+	items, _ := listed["list"].([]any)
+	for _, item := range items {
+		if o, ok := item.(object); ok && o["description"] == KeyDescription {
+			if keyID, ok := o["id"].(string); ok {
+				old = append(old, keyID)
+			}
+		}
+	}
+	if publicKey == "" {
+		if err := c.update(ctx, "x:Account", id, object{"encryptionAtRest": object{"@type": "Disabled"}}); err != nil {
+			return nil, err
+		}
+		return nil, c.destroyKeys(ctx, id, old)
+	}
+	created, err := c.call(ctx, "x:PublicKey/set", object{"accountId": id, "create": object{"new": object{"key": publicKey, "description": KeyDescription}}})
+	if err != nil {
+		return nil, err
+	}
+	keyID := ""
+	if made, ok := created["created"].(object); ok {
+		if o, ok := made["new"].(object); ok {
+			keyID, _ = o["id"].(string)
+		}
+	}
+	if keyID == "" {
+		failed, _ := created["notCreated"].(object)
+		e := setError("x:PublicKey/set", failed["new"])
+		if e.Type == "invalidProperties" {
+			return nil, &ErrKey{Reason: e.Detail}
+		}
+		return nil, e
+	}
+	// encryptOnAppend: the server also encrypts the messages that a mail program stores, for
+	// example the copies of sent mail.
+	if err := c.update(ctx, "x:Account", id, object{"encryptionAtRest": object{"@type": "Enabled", "publicKey": keyID, "encryptOnAppend": true}}); err != nil {
+		// Without this, each failed job leaves one more key in the account.
+		_ = c.destroyKeys(ctx, id, []string{keyID})
+		return nil, err
+	}
+	if err := c.destroyKeys(ctx, id, old); err != nil {
+		return nil, err
+	}
+	got, err := c.call(ctx, "x:PublicKey/get", object{"accountId": id, "ids": []string{keyID}})
+	if err != nil {
+		return nil, err
+	}
+	key := &Key{}
+	if list, _ := got["list"].([]any); len(list) == 1 {
+		if o, ok := list[0].(object); ok {
+			key.Type, _ = o["keyType"].(string)
+			key.ExpiresAt, _ = o["expiresAt"].(string)
+			key.Fingerprints = texts(o["fingerprints"])
+			key.Warnings = texts(o["warnings"])
+		}
+	}
+	return key, nil
+}
+
+func (c *Client) destroyKeys(ctx context.Context, accountID string, ids []string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	result, err := c.call(ctx, "x:PublicKey/set", object{"accountId": accountID, "destroy": ids})
+	if err != nil {
+		return err
+	}
+	failed, _ := result["notDestroyed"].(object)
+	for _, id := range ids {
+		if failed[id] != nil {
+			if e := setError("x:PublicKey/set", failed[id]); e.Type != "notFound" {
+				return e
+			}
+		}
+	}
+	return nil
+}
+
+// texts gives the texts of a JSON list. Stalwart writes some lists as a map of each value to
+// true.
+func texts(v any) []string {
+	out := []string{}
+	switch v := v.(type) {
+	case []any:
+		for _, x := range v {
+			if s, ok := x.(string); ok {
+				out = append(out, s)
+			}
+		}
+	case object:
+		for s := range v {
+			out = append(out, s)
+		}
+		sort.Strings(out)
+	}
+	return out
 }
 
 // DeleteMailbox removes a mailbox and its messages. A mailbox that the server does not have

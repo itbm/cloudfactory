@@ -150,6 +150,48 @@ class Mail
         }
     }
 
+    /**
+     * Gives an OpenPGP public key block with LF line ends, or refuses text that is not one
+     * public key block in ASCII armour. The mail server reads the key: it refuses a key that
+     * cannot encrypt, for example a key that expired.
+     *
+     * @throws ValidationException
+     */
+    public static function publicKey(string $key): string
+    {
+        $key = trim(str_replace(["\r\n", "\r"], "\n", $key))."\n";
+        $begin = '-----BEGIN PGP PUBLIC KEY BLOCK-----';
+        $end = '-----END PGP PUBLIC KEY BLOCK-----';
+        if (str_contains($key, 'PRIVATE KEY')) {
+            throw ValidationException::withMessages(['publicKey' => 'This is a private key. Do not give a private key to a server. Export the public key from your mail program.']);
+        }
+        $body = substr($key, strlen($begin), -strlen($end) - 1);
+        if (! str_starts_with($key, $begin."\n") || ! str_ends_with($key, "\n".$end."\n") || str_contains($body, '-----') || preg_match('/[^\x20-\x7e\n]/', $body)) {
+            throw ValidationException::withMessages(['publicKey' => 'Give one OpenPGP public key. It starts with the line "'.$begin.'" and ends with the line "'.$end.'".']);
+        }
+
+        return $key;
+    }
+
+    /**
+     * What the mail server found in a public key, from the result of a job.
+     *
+     * @return array{fingerprints: list<string>, keyType: string, expiresAt: ?string, warnings: list<string>}
+     */
+    public static function encryption(mixed $result): array
+    {
+        $r = is_array($result) ? $result : [];
+        $texts = fn (mixed $list, string $pattern) => array_values(array_filter(is_array($list) ? array_slice($list, 0, 10) : [], fn ($v) => is_string($v) && preg_match($pattern, $v)));
+        $expires = is_string($r['expiresAt'] ?? null) && strtotime($r['expiresAt']) ? date(DATE_ATOM, strtotime($r['expiresAt'])) : null;
+
+        return [
+            'fingerprints' => $texts($r['fingerprints'] ?? null, '/^[0-9A-Fa-f]{32,128}$/'),
+            'keyType' => is_string($r['type'] ?? null) && preg_match('/^[\x20-\x7e]{1,200}$/', $r['type']) ? $r['type'] : 'OpenPGP',
+            'expiresAt' => $expires,
+            'warnings' => $texts($r['warnings'] ?? null, '/^[A-Za-z]{1,40}$/'),
+        ];
+    }
+
     public static function validLocalPart(mixed $value): bool
     {
         return Input::valid('mailLocalPart', $value);

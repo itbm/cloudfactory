@@ -1157,10 +1157,17 @@ paths:
       - { $ref: '#/components/parameters/Id' }
     patch:
       tags: [Email]
-      summary: Change the size or the password of a mailbox
+      summary: Change the size, the password or the encryption of a mailbox
       description: >-
         `newPassword: true` asks the panel for a new password. The response has the new
         password one time. A larger mailbox must be in the limit of the plan.
+
+
+        `publicKey` is one OpenPGP public key block in ASCII armour. The mail server then
+        encrypts each new message with the key before it stores the message, and only the
+        private key can decrypt the message. Messages that the mailbox has do not change. The
+        job fails when the mail server refuses the key, for example a key that cannot encrypt.
+        `publicKey: null` turns off the encryption.
       requestBody:
         required: true
         content:
@@ -1171,6 +1178,7 @@ paths:
                 quotaBytes: { type: integer, minimum: 104857600 }
                 password: { type: string, minLength: 12, maxLength: 128 }
                 newPassword: { type: boolean }
+                publicKey: { type: [string, 'null'], maxLength: 65536 }
       responses:
         '200':
           description: The request changed nothing. `job` is null.
@@ -2825,6 +2833,17 @@ components:
         status: { $ref: '#/components/schemas/MailStatus' }
         quotaBytes: { type: integer, description: The size of the mailbox. }
         usedBytes: { type: integer, description: The size of the messages, from the last report of the agent. }
+        encryption:
+          type: [object, 'null']
+          description: >-
+            Not null when the mail server encrypts each new message of the mailbox with an
+            OpenPGP public key. The values are what the mail server found in the key.
+          required: [fingerprints, keyType, expiresAt, warnings]
+          properties:
+            fingerprints: { type: array, items: { type: string }, description: The fingerprints of the keys in the block. }
+            keyType: { type: string, example: 'OpenPGP v4: RSA-3072, X25519' }
+            expiresAt: { type: [string, 'null'], format: date-time }
+            warnings: { type: array, items: { type: string }, description: 'For example `expiresSoon`, `weakRsa` or `addressMismatch`.' }
         createdAt: { type: string, format: date-time }
     MailAlias:
       type: object

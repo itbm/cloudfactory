@@ -182,7 +182,7 @@ class JobOutcome
             // The mail server made the DKIM keys of the domain. The result has the DNS records.
             AgentAction::SetMailDomain => MailDomain::whereKey($p['mailDomainId'] ?? '')->where('status', MailDomain::PENDING)->first()
                 ?->update(['status' => MailDomain::ACTIVE, 'records' => Mail::records($result['records'] ?? null)]),
-            AgentAction::SetMailbox => Mailbox::whereKey($p['mailboxId'] ?? '')->where('status', MailDomain::PENDING)->update(['status' => MailDomain::ACTIVE]),
+            AgentAction::SetMailbox => $this->mailboxSet($p, $result),
             AgentAction::SetMailAlias => MailAlias::whereKey($p['mailAliasId'] ?? '')->where('status', MailDomain::PENDING)->update(['status' => MailDomain::ACTIVE]),
             AgentAction::DeleteMailDomain => MailDomain::whereKey($p['mailDomainId'] ?? '')->where('status', MailDomain::REMOVING)->delete(),
             AgentAction::DeleteMailbox => Mailbox::whereKey($p['mailboxId'] ?? '')->where('status', MailDomain::REMOVING)->delete(),
@@ -343,6 +343,24 @@ class JobOutcome
         }
 
         return true;
+    }
+
+    /**
+     * The mail server has the mailbox. A job that set the encryption gives what the mail
+     * server found in the public key, and the panel then keeps the key.
+     */
+    private function mailboxSet(array $p, array $result): void
+    {
+        $mailbox = Mailbox::find($p['mailboxId'] ?? '');
+        if (! $mailbox) {
+            return;
+        }
+        $changes = $mailbox->status === MailDomain::PENDING ? ['status' => MailDomain::ACTIVE] : [];
+        if ($p['setEncryption'] ?? false) {
+            $key = is_string($p['publicKey'] ?? null) ? $p['publicKey'] : '';
+            $changes += $key === '' ? ['public_key' => null, 'encryption' => null] : ['public_key' => $key, 'encryption' => Mail::encryption($result['encryption'] ?? null)];
+        }
+        $mailbox->update($changes);
     }
 
     /** The state of a mail record from before a removal that failed. */

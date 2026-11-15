@@ -72,7 +72,11 @@ class MailboxController extends Controller
         return response()->json(['mailbox' => self::present($mailbox), 'password' => $password, 'job' => new JobResource($job)], 202);
     }
 
-    /** Changes the size, the password or both. "newPassword" asks the panel for a new password. */
+    /**
+     * Changes the size, the password or the encryption. "newPassword" asks the panel for a new
+     * password. "publicKey" is an OpenPGP public key: the mail server then encrypts each new
+     * message with it, and only the private key of the owner can decrypt the message.
+     */
     public function update(Request $request, string $id): JsonResponse
     {
         $mailbox = $this->visible($request)->with('customer.plan')->findOrFail($id);
@@ -80,6 +84,8 @@ class MailboxController extends Controller
             'quotaBytes' => ['sometimes', 'integer', 'min:'.Mailbox::MIN_QUOTA, 'max:'.Mailbox::MAX_QUOTA],
             ...self::passwordRule(),
             'newPassword' => ['sometimes', 'boolean'],
+            // An OpenPGP public key turns on the encryption. Null turns it off.
+            'publicKey' => ['sometimes', 'nullable', 'string', 'max:'.Mailbox::MAX_PUBLIC_KEY],
         ], self::MESSAGES);
         Mail::refuseRemoved($mailbox, 'mailboxId', 'mailbox');
         if ($mailbox->status === MailDomain::FAILED) {
@@ -87,7 +93,11 @@ class MailboxController extends Controller
         }
         $password = $data['password'] ?? (($data['newPassword'] ?? false) ? Mail::password() : null);
         $quota = $data['quotaBytes'] ?? $mailbox->quota_bytes;
-        if ($password === null && $quota === $mailbox->quota_bytes) {
+        $setKey = array_key_exists('publicKey', $data);
+        $key = $setKey && $data['publicKey'] !== null ? Mail::publicKey($data['publicKey']) : '';
+        // The same key again, or no key for a mailbox with no encryption, changes nothing.
+        $setKey = $setKey && $key !== ($mailbox->public_key ?? '');
+        if ($password === null && $quota === $mailbox->quota_bytes && ! $setKey) {
             return response()->json(['mailbox' => self::present($mailbox), 'password' => null, 'job' => null]);
         }
         if ($quota > $mailbox->quota_bytes) {
@@ -98,8 +108,14 @@ class MailboxController extends Controller
         $previous = $mailbox->quota_bytes;
         $mailbox->update(['quota_bytes' => $quota]);
         $job = $this->jobs->dispatch($mailbox->domain->server, AgentAction::SetMailbox, self::payload($mailbox) + ['previousQuotaBytes' => $previous]
-            + ($password !== null ? ['passwordHash' => Mail::hash($password)] : []), "Change mailbox {$mailbox->address()}", customerId: $mailbox->customer_id);
-        Audit::record($request, $password !== null ? 'Changed mailbox password' : 'Changed mailbox size', $mailbox->address(), $mailbox->customer_id);
+            + ($password !== null ? ['passwordHash' => Mail::hash($password)] : [])
+            + ($setKey ? ['setEncryption' => true, 'publicKey' => $key] : []), "Change mailbox {$mailbox->address()}", customerId: $mailbox->customer_id);
+        Audit::record($request, match (true) {
+            $setKey && $key !== '' => 'Turned on mailbox encryption',
+            $setKey => 'Turned off mailbox encryption',
+            $password !== null => 'Changed mailbox password',
+            default => 'Changed mailbox size',
+        }, $mailbox->address(), $mailbox->customer_id);
 
         return response()->json(['mailbox' => self::present($mailbox), 'password' => $password, 'job' => new JobResource($job)], 202);
     }
@@ -155,6 +171,7 @@ class MailboxController extends Controller
         'password.min' => 'Use a password of 12 characters or more.',
         'password.regex' => 'Use only letters, digits, spaces and the usual symbols in the password.',
         'quotaBytes.min' => 'A mailbox has 100 MB or more.',
+        'publicKey.max' => 'The public key is larger than 64 KB.',
     ];
 
     public static function present(Mailbox $m): array
@@ -169,6 +186,8 @@ class MailboxController extends Controller
             'quotaBytes' => $m->quota_bytes,
             // The last report of the agent.
             'usedBytes' => $m->used_bytes,
+            // Not null: the mail server encrypts each new message with this OpenPGP key.
+            'encryption' => $m->encryption,
             'createdAt' => $m->created_at?->toIso8601String(),
         ];
     }

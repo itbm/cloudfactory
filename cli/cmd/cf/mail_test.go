@@ -112,8 +112,11 @@ func TestMailboxesAndAliases(t *testing.T) {
 	if !strings.Contains(out.String(), "Password: correct horse") {
 		t.Errorf("the output does not have the password:\n%s", out)
 	}
+	a.in = strings.NewReader("-----BEGIN PGP PUBLIC KEY BLOCK-----\n\nmDME\n-----END PGP PUBLIC KEY BLOCK-----\n")
 	for _, args := range [][]string{
 		{"mail", "mailboxes", "set", "info@acme.example.com", "--quota-mb", "4096", "--new-password"},
+		{"mail", "mailboxes", "set", "info@acme.example.com", "--public-key", "-"},
+		{"mail", "mailboxes", "set", "info@acme.example.com", "--no-encryption"},
 		{"mail", "mailboxes", "delete", "info@acme.example.com"},
 		{"mail", "aliases", "create", "team@acme.example.com", "--to", "info@acme.example.com", "--to", "jo@acme.example.com"},
 		{"mail", "aliases", "create", "away@acme.example.com", "--to", "jo@example.org", "--forward"},
@@ -135,6 +138,8 @@ func TestMailboxesAndAliases(t *testing.T) {
 		{"mail", "mailboxes", "create", "jo"},
 		{"mail", "mailboxes", "create", "jo@other.example.com"},
 		{"mail", "mailboxes", "set", "info@acme.example.com"},
+		{"mail", "mailboxes", "set", "info@acme.example.com", "--public-key", "-", "--no-encryption"},
+		{"mail", "mailboxes", "set", "info@acme.example.com", "--public-key", "/no/such/file.asc"},
 		{"mail", "aliases", "create", "team@acme.example.com"},
 		{"mail", "mailboxes", "delete", "nobody@acme.example.com"},
 		{"servers", "mail", "mail-1"},
@@ -148,6 +153,8 @@ func TestMailboxesAndAliases(t *testing.T) {
 		"GET /api/v1/mail/mailboxes?domainId=MD1",
 		`POST /api/v1/mail/mailboxes {"domainId":"MD1","localPart":"jo","quotaBytes":2147483648}`,
 		`PATCH /api/v1/mail/mailboxes/MB1 {"newPassword":true,"quotaBytes":4294967296}`,
+		`PATCH /api/v1/mail/mailboxes/MB1 {"publicKey":"-----BEGIN PGP PUBLIC KEY BLOCK-----\n\nmDME\n-----END PGP PUBLIC KEY BLOCK-----\n"}`,
+		`PATCH /api/v1/mail/mailboxes/MB1 {"publicKey":null}`,
 		"DELETE /api/v1/mail/mailboxes/MB1",
 		`POST /api/v1/mail/aliases {"destinations":["info@acme.example.com","jo@acme.example.com"],"domainId":"MD1","kind":"alias","localPart":"team"}`,
 		`POST /api/v1/mail/aliases {"destinations":["jo@example.org"],"domainId":"MD1","kind":"forwarder","localPart":"away"}`,

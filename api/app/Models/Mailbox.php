@@ -7,8 +7,13 @@ use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-/** One mailbox. The panel keeps no password: the mail server has a hash of it. */
-#[Fillable(['customer_id', 'mail_domain_id', 'local_part', 'quota_bytes', 'used_bytes', 'status'])]
+/**
+ * One mailbox. The panel keeps no password: the mail server has a hash of it.
+ *
+ * "encryption" is not null when the mail server encrypts each new message with the OpenPGP
+ * public key of the owner ("public_key").
+ */
+#[Fillable(['customer_id', 'mail_domain_id', 'local_part', 'quota_bytes', 'used_bytes', 'status', 'public_key', 'encryption'])]
 class Mailbox extends Model
 {
     use HasUlids;
@@ -18,9 +23,12 @@ class Mailbox extends Model
 
     public const MAX_QUOTA = 1024 ** 4;
 
+    /** The largest public key block: 64 KB. A block can have more than one key. */
+    public const MAX_PUBLIC_KEY = 64 * 1024;
+
     protected function casts(): array
     {
-        return ['quota_bytes' => 'integer', 'used_bytes' => 'integer'];
+        return ['quota_bytes' => 'integer', 'used_bytes' => 'integer', 'encryption' => 'array'];
     }
 
     public function domain(): BelongsTo

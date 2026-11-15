@@ -6,8 +6,10 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 
 	"github.com/itbm/cloudfactory/cli/internal/client"
@@ -206,9 +208,17 @@ func (a *app) mailboxes(ctx context.Context, verb string, args []string) error {
 			return a.printJSON(rows)
 		}
 		for _, m := range rows {
+			m["encryption_"] = m["encryption"]
 			m["use"] = byteSize(m["usedBytes"]) + " of " + byteSize(m["quotaBytes"])
+			m["encryption"] = "off"
+			if e, ok := m["encryption_"].(map[string]any); ok {
+				m["encryption"] = "OpenPGP"
+				if prints, _ := e["fingerprints"].([]any); len(prints) > 0 {
+					m["encryption"] = fmt.Sprintf("OpenPGP %v", prints[0])
+				}
+			}
 		}
-		a.table(rows, []string{"address", "status", "use", "customerId", "id"})
+		a.table(rows, []string{"address", "status", "use", "encryption", "customerId", "id"})
 		return nil
 	case "create", "add":
 		if err := need(args, 1, "an address"); err != nil {
@@ -239,6 +249,8 @@ func (a *app) mailboxes(ctx context.Context, verb string, args []string) error {
 		fs := flag.NewFlagSet("set", flag.ContinueOnError)
 		quota := fs.Int64("quota-mb", 0, "the new size of the mailbox in MB")
 		password := fs.Bool("new-password", false, "give the mailbox a new password")
+		keyFile := fs.String("public-key", "", "a file with the OpenPGP public key of the owner, or - for the standard input: the mail server encrypts new mail with it")
+		noKey := fs.Bool("no-encryption", false, "turn off the encryption of new mail")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
@@ -249,8 +261,28 @@ func (a *app) mailboxes(ctx context.Context, verb string, args []string) error {
 		if *password {
 			body["newPassword"] = true
 		}
+		if *keyFile != "" && *noKey {
+			return errors.New("give --public-key or --no-encryption, not the two")
+		}
+		if *keyFile != "" {
+			// "-" reads the key from the standard input: gpg --armor --export NAME | cf mail mailboxes set ADDRESS --public-key -
+			var key []byte
+			var err error
+			if *keyFile == "-" {
+				key, err = io.ReadAll(io.LimitReader(a.in, 1<<20))
+			} else {
+				key, err = os.ReadFile(*keyFile)
+			}
+			if err != nil {
+				return fmt.Errorf("the public key: %w", err)
+			}
+			body["publicKey"] = string(key)
+		}
+		if *noKey {
+			body["publicKey"] = nil
+		}
 		if len(body) == 0 {
-			return errors.New("give --quota-mb or --new-password")
+			return errors.New("give --quota-mb, --new-password, --public-key or --no-encryption")
 		}
 		return a.change(ctx, http.MethodPatch, path, body)
 	}

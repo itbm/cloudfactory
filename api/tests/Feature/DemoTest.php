@@ -86,7 +86,7 @@ class DemoTest extends TestCase
         $this->signInAs('admin@example.com');
         $this->getJson('/api/v1/websites?perPage=100')->assertOk()->assertJsonCount(10, 'data');
         $this->getJson('/api/v1/servers')->assertOk()->assertJsonCount(4, 'data');
-        $this->getJson('/api/v1/mail/domains')->assertOk()->assertJsonCount(3, 'data');
+        $this->getJson('/api/v1/mail/domains')->assertOk()->assertJsonCount(4, 'data');
 
         // The reseller: its own website and the websites of its two customers.
         $this->signInAs('reseller@example.com');
@@ -95,7 +95,7 @@ class DemoTest extends TestCase
             $this->getJson('/api/v1/websites?perPage=100')->assertOk()->json('data.*.name'),
         );
         $this->getJson('/api/v1/servers')->assertForbidden();
-        $this->assertSame(['cornerbakery.example.org', 'harbourbooks.example.net'], $this->getJson('/api/v1/mail/domains')->assertOk()->json('data.*.name'));
+        $this->assertSame(['cornerbakery.example.org', 'harbourbooks.example.net', 'northwind.example.com'], $this->getJson('/api/v1/mail/domains')->assertOk()->json('data.*.name'));
 
         $this->signInAs('owner@example.com');
         $this->assertSame(['acme.example.com'], $this->getJson('/api/v1/mail/domains')->assertOk()->json('data.*.name'));

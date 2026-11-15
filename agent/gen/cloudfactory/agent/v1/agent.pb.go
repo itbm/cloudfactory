@@ -642,7 +642,13 @@ type SetMailboxRequest struct {
 	QuotaBytes int64  `protobuf:"varint,4,opt,name=quota_bytes,json=quotaBytes,proto3" json:"quota_bytes,omitempty"`
 	// The bcrypt hash of the password. The agent never gets the password. Empty: the mailbox
 	// keeps its password.
-	PasswordHash  string `protobuf:"bytes,5,opt,name=password_hash,json=passwordHash,proto3" json:"password_hash,omitempty"`
+	PasswordHash string `protobuf:"bytes,5,opt,name=password_hash,json=passwordHash,proto3" json:"password_hash,omitempty"`
+	// True: the job sets the encryption of the mailbox. False: the encryption does not change.
+	SetEncryption bool `protobuf:"varint,6,opt,name=set_encryption,json=setEncryption,proto3" json:"set_encryption,omitempty"`
+	// The OpenPGP public key of the owner of the mailbox, in ASCII armour. The mail server
+	// encrypts each new message with it before it stores the message. Only the private key,
+	// which the server never gets, can decrypt the message. Empty: the encryption is off.
+	PublicKey     string `protobuf:"bytes,7,opt,name=public_key,json=publicKey,proto3" json:"public_key,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -708,6 +714,20 @@ func (x *SetMailboxRequest) GetQuotaBytes() int64 {
 func (x *SetMailboxRequest) GetPasswordHash() string {
 	if x != nil {
 		return x.PasswordHash
+	}
+	return ""
+}
+
+func (x *SetMailboxRequest) GetSetEncryption() bool {
+	if x != nil {
+		return x.SetEncryption
+	}
+	return false
+}
+
+func (x *SetMailboxRequest) GetPublicKey() string {
+	if x != nil {
+		return x.PublicKey
 	}
 	return ""
 }
@@ -3057,7 +3077,7 @@ const file_cloudfactory_agent_v1_agent_proto_rawDesc = "" +
 	"\bhostname\x18\x02 \x01(\tR\bhostname\"B\n" +
 	"\x11MailDomainRequest\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x16\n" +
-	"\x06domain\x18\x02 \x01(\tR\x06domain\"\xa7\x01\n" +
+	"\x06domain\x18\x02 \x01(\tR\x06domain\"\xed\x01\n" +
 	"\x11SetMailboxRequest\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x16\n" +
 	"\x06domain\x18\x02 \x01(\tR\x06domain\x12\x1d\n" +
@@ -3065,7 +3085,10 @@ const file_cloudfactory_agent_v1_agent_proto_rawDesc = "" +
 	"local_part\x18\x03 \x01(\tR\tlocalPart\x12\x1f\n" +
 	"\vquota_bytes\x18\x04 \x01(\x03R\n" +
 	"quotaBytes\x12#\n" +
-	"\rpassword_hash\x18\x05 \x01(\tR\fpasswordHash\"b\n" +
+	"\rpassword_hash\x18\x05 \x01(\tR\fpasswordHash\x12%\n" +
+	"\x0eset_encryption\x18\x06 \x01(\bR\rsetEncryption\x12\x1d\n" +
+	"\n" +
+	"public_key\x18\a \x01(\tR\tpublicKey\"b\n" +
 	"\x12MailAddressRequest\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x16\n" +
 	"\x06domain\x18\x02 \x01(\tR\x06domain\x12\x1d\n" +

@@ -154,6 +154,12 @@ message SetMailboxRequest {
   // The bcrypt hash of the password. The agent never gets the password. Empty: the mailbox
   // keeps its password.
   string password_hash = 5;
+  // True: the job sets the encryption of the mailbox. False: the encryption does not change.
+  bool set_encryption = 6;
+  // The OpenPGP public key of the owner of the mailbox, in ASCII armour. The mail server
+  // encrypts each new message with it before it stores the message. Only the private key,
+  // which the server never gets, can decrypt the message. Empty: the encryption is off.
+  string public_key = 7;
 }
 
 // DeleteMailbox removes a mailbox and its messages. DeleteMailAlias removes an alias or a

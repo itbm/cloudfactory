@@ -338,9 +338,68 @@ func (d *Deps) SetMailbox(req *agentv1.SetMailboxRequest) (jobs.Job, error) {
 			return jobs.Job{}, fmt.Errorf("password hash: %w", err)
 		}
 	}
-	return d.mailStep(req.GetJobId(), "Set mailbox", func(ctx context.Context, c *stalwart.Client) error {
+	publicKey := req.GetPublicKey()
+	if !req.GetSetEncryption() && publicKey != "" {
+		return jobs.Job{}, errors.New("the job has a public key, but it does not set the encryption")
+	}
+	if err := checkPublicKey(publicKey); err != nil {
+		return jobs.Job{}, err
+	}
+	job := d.mailStep(req.GetJobId(), "Set mailbox", func(ctx context.Context, c *stalwart.Client) error {
 		return c.SetMailbox(ctx, domain, localPart, quota, hash)
-	}), nil
+	})
+	if !req.GetSetEncryption() {
+		return job, nil
+	}
+	var key *stalwart.Key
+	name := "Turn on encryption"
+	if publicKey == "" {
+		name = "Turn off encryption"
+	}
+	job.Steps = append(job.Steps, jobs.Step{Name: name, Do: func(ctx context.Context) error {
+		c, err := d.mailClient(ctx)
+		if err != nil {
+			return err
+		}
+		key, err = c.SetEncryption(ctx, domain, localPart, publicKey)
+		return err
+	}})
+	// The panel shows the fingerprint, so that the owner can compare it with the mail program.
+	job.Result = func() map[string]any { return map[string]any{"encryption": key} }
+	return job, nil
+}
+
+// mailMaxPublicKey is the largest public key block. A block can have more than one key, and a
+// post-quantum key is some kilobytes.
+const mailMaxPublicKey = 64 << 10
+
+const (
+	pgpBegin = "-----BEGIN PGP PUBLIC KEY BLOCK-----"
+	pgpEnd   = "-----END PGP PUBLIC KEY BLOCK-----"
+)
+
+// checkPublicKey accepts one OpenPGP public key block in ASCII armour. The mail server reads
+// the key and refuses a key that cannot encrypt: this check only keeps other data out.
+func checkPublicKey(key string) error {
+	if key == "" {
+		return nil
+	}
+	if len(key) > mailMaxPublicKey {
+		return fmt.Errorf("the public key is larger than %d KB", mailMaxPublicKey>>10)
+	}
+	body, ok := strings.CutPrefix(strings.TrimRight(key, "\r\n"), pgpBegin)
+	if ok {
+		body, ok = strings.CutSuffix(body, pgpEnd)
+	}
+	if !ok || strings.Contains(body, "-----") {
+		return errors.New("the public key is not one OpenPGP public key block in ASCII armour")
+	}
+	for _, r := range body {
+		if r != '\n' && r != '\r' && (r < 0x20 || r > 0x7e) {
+			return errors.New("the public key has characters that ASCII armour does not have")
+		}
+	}
+	return nil
 }
 
 // DeleteMailbox removes a mailbox and its messages.
