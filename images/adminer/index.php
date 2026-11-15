@@ -12,6 +12,12 @@
 //   check gives a clear message before the connection.
 // - Adminer shows only the databases of the sign-in: the temporary database user has access to
 //   those databases only.
+// - Adminer does not ask adminer.org for a new version. The image has a fixed version, and the
+//   browser of the user does not connect to a different site.
+
+// Adminer asks adminer.org for its newest version when this cookie has no value. The value 0
+// stops the request and shows no version notice.
+$_COOKIE['adminer_version'] = '0';
 
 function adminer_object()
 {
@@ -87,8 +93,10 @@ function adminer_object()
         public function csp(array $csp)
         {
             // No page of a different site can show Adminer in a frame.
+            // The browser connects only to Adminer.
             foreach ($csp as &$policy) {
                 $policy['frame-ancestors'] = "'none'";
+                $policy['connect-src'] = "'self'";
             }
 
             return $csp;

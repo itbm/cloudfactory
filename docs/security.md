@@ -181,6 +181,8 @@ The product specification, section 6.4, gives the requirements.
   sign-in.
 - Adminer has no permanent login, sends `Cache-Control: no-store`, and refuses frames from
   other sites (`frame-ancestors 'none'` and `X-Frame-Options: DENY`).
+- Adminer does not ask `adminer.org` for a new version, and its content security policy lets
+  the browser connect only to Adminer (`connect-src 'self'`).
 
 ## Domains
 

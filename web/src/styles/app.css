@@ -354,6 +354,8 @@ a.cell-title:hover { text-decoration: underline; }
 .cell-sub { display: block; color: var(--text-muted); font-size: 13px; }
 .cell-sub.mono { font-size: 12px; }
 .cell-actions { width: 56px; text-align: right; }
+/* More than one button in an actions cell: one row, with a gap. */
+.cell-buttons { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
 
 .table-footer {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
@@ -812,6 +814,7 @@ a.stat-link .stat-value { margin-bottom: 8px; }
   .table-cards td[data-label]:first-child { padding-left: 0; padding-bottom: 6px; padding-right: 44px; }
   .table-cards td[data-label]:first-child::before { content: none; }
   .table-cards td.cell-actions { padding-top: 8px; }
+  .table-cards .cell-buttons { justify-content: flex-start; }
   /* The menu of a row is at the top right of its card. */
   .table-cards td.cell-actions:has(> .menu) { position: absolute; top: 4px; right: 6px; padding: 0; }
   .table-cards .grant { flex-wrap: wrap; white-space: normal; }

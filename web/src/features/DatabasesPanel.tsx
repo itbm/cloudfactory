@@ -128,13 +128,15 @@ export function DatabasesPanel({ websiteId }: { websiteId?: string }) {
                       <span className="cell-sub">{serverName(d.databaseServerId) ?? "Database server"}</span>
                       {d.engine === "valkey" && <span className="cell-sub">{d.number === undefined ? "The number comes when the job is complete" : <>Database number <strong>{d.number}</strong></>}</span>}
                     </td>
-                    <td className="cell-actions" style={{ width: 240 }}>
+                    <td className="cell-actions" style={{ width: 260 }}>
+                      <div className="cell-buttons">
                       {d.engine !== "valkey" && (
                         <button type="button" className="btn btn-sm" disabled={adminer?.id === d.id && !adminer.error} onClick={() => openAdminer(d)}>
                           {adminer?.id === d.id && !adminer.error ? "Opening…" : "Open in Adminer"}
                         </button>
                       )}
                       <ConfirmButton className="btn btn-sm btn-danger" title={`Remove database ${d.name}?`} confirm="Remove database" message={d.engine === "valkey" ? <p>The data and the user of the database are removed now. A backup has no Valkey data, so you cannot restore it.</p> : <p>The data is removed now. The users of this database lose access to it. You can restore it from a backup for the retention period.</p>} onConfirm={() => deleteDatabase(d.id)}>Remove</ConfirmButton>
+                      </div>
                     </td>
                   </tr>
                 );
