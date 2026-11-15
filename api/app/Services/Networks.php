@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Customer;
+use App\Models\Database;
 use App\Models\DatabaseServer;
 use App\Models\Network;
 use App\Models\NetworkMember;
@@ -117,6 +118,25 @@ class Networks
                 ->where('w.website_id', $pair->website_id)->where('d.database_server_id', $pair->database_server_id)->exists();
             if (! $joined) {
                 throw ValidationException::withMessages(['network' => "The website {$pair->website} has a database in the database server {$pair->database_server} on a different server. Keep the two in one network, or remove the database first."]);
+            }
+        }
+    }
+
+    /**
+     * After a move, each website with a database in the database server that is not on the
+     * new server connects through a network. The two must be in one network before the move.
+     *
+     * @throws ValidationException
+     */
+    public static function checkMove(DatabaseServer $server, Server $to): void
+    {
+        $websites = Website::whereIn('id', Database::where('database_server_id', $server->id)->whereNotNull('website_id')->select('website_id'))
+            ->where('server_id', '!=', $to->id)->orderBy('name')->get(['id', 'name']);
+        $members = NetworkMember::whereIn('network_id', NetworkMember::where('database_server_id', $server->id)->select('network_id'))
+            ->whereNotNull('website_id')->pluck('website_id')->flip();
+        foreach ($websites as $website) {
+            if (! $members->has($website->id)) {
+                throw ValidationException::withMessages(['serverId' => "The website {$website->name} has a database in this database server, and it is not on the new server. Put the website and the database server in one network first."]);
             }
         }
     }
@@ -360,6 +380,13 @@ class Networks
                 sort($pair);
                 $pairs[implode(' ', $pair)] = $pair;
             }
+        }
+        // A database server that moves goes through the tunnel between its old server and its
+        // new server.
+        foreach (DatabaseServer::where('status', DatabaseServer::MOVING)->whereNotNull('moving_to_server_id')->get(['server_id', 'moving_to_server_id']) as $move) {
+            $pair = [$move->server_id, $move->moving_to_server_id];
+            sort($pair);
+            $pairs[implode(' ', $pair)] = $pair;
         }
 
         return $pairs;

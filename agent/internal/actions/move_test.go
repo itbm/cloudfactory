@@ -16,6 +16,9 @@ import (
 	"github.com/itbm/cloudfactory/agent/internal/safefs"
 )
 
+// The tests do not wait for a tunnel that never comes.
+func init() { peerWait = 10 * time.Millisecond }
+
 const moveToken = "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"
 
 // writeMeshState gives the root helper of d a mesh state with one peer, 10.207.0.2.
@@ -111,7 +114,7 @@ func TestAMoveCarriesTheDataAndTheSecret(t *testing.T) {
 		sent <- err
 	}()
 	in := transferIn{Server: s, Peer: "10.207.0.2", Token: moveToken}
-	ok, err := to.receiveFrom(b, in, time.Now().Add(time.Minute), uid, gid, 0)
+	ok, err := to.receiveFrom(b, in, uid, gid, 0)
 	if !ok || err != nil {
 		t.Fatalf("receive: %v %v", ok, err)
 	}
@@ -155,7 +158,7 @@ func TestAMoveRefusesAWrongToken(t *testing.T) {
 	go func() {
 		_, _ = a.Write([]byte(transferHello + strings.Repeat("f", 64) + "\n"))
 	}()
-	ok, err := to.receiveFrom(b, transferIn{Server: s, Token: moveToken}, time.Now().Add(time.Minute), 0, 0, 0)
+	ok, err := to.receiveFrom(b, transferIn{Server: s, Token: moveToken}, 0, 0, 0)
 	if ok || err != nil {
 		t.Errorf("a wrong token: %v %v", ok, err)
 	}

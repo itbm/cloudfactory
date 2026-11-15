@@ -145,6 +145,7 @@ class DatabaseController extends Controller
     {
         $website = $this->findWebsite($request, $websiteId);
         $database = $website->databases()->with('users')->findOrFail($databaseId);
+        DatabaseServers::refuseMoving($database->databaseServer, 'database');
         $users = $database->users->pluck('name')->sort()->values()->all();
         // Batch 1, finding 4: the panel removes the row when the job succeeds (JobOutcome).
         // The agent removes the access of each user to the database, then the database.

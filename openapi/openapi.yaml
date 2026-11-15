@@ -1469,6 +1469,53 @@ paths:
         '409': { description: The customer is suspended. }
         '422': { $ref: '#/components/responses/Invalid' }
 
+  /v1/database-servers/{id}/move:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [Databases]
+      summary: Move a database server to a different server
+      description: >-
+        Only an administrator. The database server keeps its ID, its name, its databases, its
+        users and its network name. Its data goes through the encrypted tunnel between the two
+        servers. The database server does not operate while the data moves. After the move, a
+        website on a different server connects through a network with the network name, for
+        example `shop-db.internal`. A website that uses the name of the engine, for example
+        `mariadb.internal`, connects only on the server of the database server.
+
+
+        The response is 422 when: the server is the same server, the server does not have the
+        web role, a server is not healthy, an agent cannot move database servers, a website
+        with a database in the database server is not on the new server and not in a network
+        with the database server, or the database server does not operate or changes now. When
+        the move fails, the database server stays on the old server and operates there.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [serverId]
+              properties:
+                serverId: { type: string, description: The server that gets the database server. }
+      responses:
+        '202':
+          description: >-
+            The new server receives the database server, and the old server sends it. The first
+            job is the job of the new server.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  databaseServer: { $ref: '#/components/schemas/DatabaseServer' }
+                  jobs:
+                    type: array
+                    items: { $ref: '#/components/schemas/Job' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
   /v1/networks:
     get:
       tags: [Networks]
@@ -3694,13 +3741,18 @@ components:
         engine: { $ref: '#/components/schemas/Engine' }
         customerId: { type: string }
         serverId: { type: string, description: The server that has the container. }
+        movingToServerId:
+          type: string
+          nullable: true
+          description: The server that receives the database server, while its status is `moving`.
         planId: { type: string, description: The plan gives the limits and the number of databases. }
         status:
           type: string
-          enum: [starting, running, stopped, failed, removing]
+          enum: [starting, running, stopped, failed, moving, removing]
           description: >-
             "starting": the agent makes the database server. "stopped": the agent reports that the
             container does not operate. "failed": the agent could not make the database server.
+            "moving": the database server moves to a different server, and does not operate.
             "removing": the agent removes the database server.
         host: { type: string, description: 'The host name that a website container connects to: `mariadb.internal`, `postgres.internal` or `valkey.internal`.' }
         port: { type: integer, description: The port that a website container connects to. }

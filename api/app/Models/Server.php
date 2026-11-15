@@ -16,7 +16,7 @@ use Illuminate\Support\Facades\DB;
     'os', 'kernel', 'arch', 'podman_version', 'gvisor_version', 'gvisor_platform', 'bare_metal', 'update_policy',
     'maintenance_window', 'pending_updates', 'reboot_required', 'services', 'usage', 'last_update_at', 'last_seen_at', 'local',
     'sftp_port', 'panel_ca_sha256', 'connection_error', 'connection_checked_at', 'database_engines', 'database_instances', 'dns_name', 'dns', 'addresses', 'dns_resync',
-    'mesh_public_key', 'mesh_address', 'mesh_endpoint', 'mesh_version', 'mesh_wanted_version', 'mesh_networks', 'mesh_websites', 'mesh_state_hash',
+    'mesh_public_key', 'mesh_address', 'mesh_endpoint', 'mesh_version', 'mesh_wanted_version', 'mesh_networks', 'mesh_websites', 'mesh_moves', 'mesh_state_hash',
 ])]
 #[Hidden(['agent_token_hash', 'backup_password', 'backup_credentials'])]
 class Server extends Model
@@ -91,6 +91,7 @@ class Server extends Model
             'mesh_version' => 'integer',
             'mesh_networks' => 'boolean',
             'mesh_websites' => 'boolean',
+            'mesh_moves' => 'boolean',
             'mesh_wanted_version' => 'integer',
             'last_update_at' => 'datetime',
             'last_seen_at' => 'datetime',

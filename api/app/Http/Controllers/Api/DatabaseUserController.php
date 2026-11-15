@@ -115,6 +115,7 @@ class DatabaseUserController extends Controller
         if ($user->engine === Database::VALKEY) {
             throw ValidationException::withMessages(['user' => 'The user of a Valkey database goes with its database. Remove the database.']);
         }
+        DatabaseServers::refuseMoving($user->databaseServer, 'user');
         // Batch 1, finding 4: the panel removes the row when the job succeeds (JobOutcome).
         $job = $this->jobs->dispatch($user->databaseServer->server, AgentAction::DeleteDatabaseUser, [
             'websiteId' => $website->id,
@@ -215,6 +216,7 @@ class DatabaseUserController extends Controller
     private function dispatch(Website $website, DatabaseUser $user, string $title, ?string $password, bool $create)
     {
         $user->load('databases');
+        DatabaseServers::refuseMoving($user->databaseServer, 'user');
 
         // The job goes to the agent of the server of the database server.
         return $this->jobs->dispatch($user->databaseServer->server, AgentAction::SetDatabaseUser, array_filter([

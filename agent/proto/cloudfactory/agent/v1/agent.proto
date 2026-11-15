@@ -514,7 +514,9 @@ message ReceiveDatabaseServerRequest {
   // The mesh address of the old server. It must be the address of a peer of this server.
   string from = 3;
   string token = 4;
-  // The time that this server waits for the data, in seconds. 0 means 1 hour.
+  // The time that this server waits for the old server to connect, in seconds. 0 means 15
+  // minutes. The data has no time limit, but a connection that sends nothing for 2 minutes
+  // ends.
   int32 timeout_seconds = 5;
 }
 

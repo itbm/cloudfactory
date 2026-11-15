@@ -126,6 +126,7 @@ Route::prefix('v1')->group(function () {
             Route::patch('database-servers/{id}', [DatabaseServerController::class, 'update']);
             Route::delete('database-servers/{id}', [DatabaseServerController::class, 'destroy']);
             Route::post('database-servers/{id}/retry', [DatabaseServerController::class, 'retry']);
+            Route::post('database-servers/{id}/move', [DatabaseServerController::class, 'move']);
         });
 
         // DNS hosting: the zones of a customer and their records.

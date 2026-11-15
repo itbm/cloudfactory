@@ -65,9 +65,14 @@ const (
 	// transferAnswer is the time in which the server that receives must write the last files
 	// to the disk and answer.
 	transferAnswer = 10 * time.Minute
+	// transferIdle is the longest time with no data while the data arrives.
+	transferIdle = 2 * time.Minute
 	// maxSecret is the largest secret file that the server that receives accepts.
 	maxSecret = 4096
 )
+
+// peerWait is the longest time that a move waits for the tunnel to the other server.
+var peerWait = 2 * time.Minute
 
 var tokenPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
@@ -78,8 +83,9 @@ type transferIn struct {
 	Peer string
 	// Token is the secret of this move: 64 hexadecimal digits.
 	Token string
-	// Timeout is the time in seconds in which the old server must send the data. Only the
-	// server that receives uses it.
+	// Timeout is the time in seconds in which the old server must connect. Only the server
+	// that receives uses it. The data itself has no time limit, but a connection that sends
+	// nothing for transferIdle ends.
 	Timeout int64
 }
 
@@ -134,7 +140,7 @@ func (d *Deps) ReceiveDatabaseServer(req *agentv1.ReceiveDatabaseServerRequest) 
 	}
 	timeout := int64(req.GetTimeoutSeconds())
 	if timeout <= 0 {
-		timeout = 3600
+		timeout = 900
 	}
 	srv := dbServer{ID: key, Engine: s.GetEngine()}
 	in := transferIn{Server: srv, Peer: req.GetFrom(), Token: req.GetToken(), Timeout: timeout}
@@ -210,7 +216,7 @@ func (d *Deps) transferAddresses(in transferIn) (own, peer netip.Addr, err error
 		return own, peer, err
 	}
 	if !ok || st.Off() {
-		return own, peer, errors.New("this server is not in the mesh")
+		return own, peer, fmt.Errorf("this server is not in the mesh, so the other server is %w", errNoPeer)
 	}
 	if own, err = netip.ParseAddr(st.Address); err != nil {
 		return own, peer, err
@@ -221,7 +227,29 @@ func (d *Deps) transferAddresses(in transferIn) (own, peer netip.Addr, err error
 			return own, peer, err
 		}
 	}
-	return own, peer, fmt.Errorf("the server with the mesh address %s is not a peer of this server", in.Peer)
+	return own, peer, fmt.Errorf("the server with the mesh address %s is %w of this server", in.Peer, errNoPeer)
+}
+
+// errNoPeer is the error of a move to a server that is not a peer in the mesh state.
+var errNoPeer = errors.New("not a peer")
+
+// waitTransferAddresses is transferAddresses. The panel makes the tunnel between the two
+// servers when the move starts, so the mesh state can get the other server some seconds
+// after the job starts.
+func (d *Deps) waitTransferAddresses(ctx context.Context, in transferIn) (own, peer netip.Addr, err error) {
+	ctx, cancel := context.WithTimeout(ctx, peerWait)
+	defer cancel()
+	for {
+		own, peer, err = d.transferAddresses(in)
+		if !errors.Is(err, errNoPeer) {
+			return own, peer, err
+		}
+		select {
+		case <-ctx.Done():
+			return own, peer, err
+		case <-time.After(time.Second):
+		}
+	}
 }
 
 // secretPath gives the file with the secret of the superuser of a database server.
@@ -238,7 +266,7 @@ func (d *Deps) sendServer(ctx context.Context, in transferIn) error {
 	if d.Gate != nil {
 		return d.Gate.Call(ctx, opDBSend, in, nil)
 	}
-	own, peer, err := d.transferAddresses(in)
+	own, peer, err := d.waitTransferAddresses(ctx, in)
 	if err != nil {
 		return err
 	}
@@ -402,7 +430,7 @@ func (d *Deps) receiveServer(ctx context.Context, in transferIn) error {
 	if d.Gate != nil {
 		return d.Gate.Call(ctx, opDBReceive, in, nil)
 	}
-	own, peer, err := d.transferAddresses(in)
+	own, peer, err := d.waitTransferAddresses(ctx, in)
 	if err != nil {
 		return err
 	}
@@ -457,7 +485,7 @@ func (d *Deps) receiveServer(ctx context.Context, in transferIn) error {
 			conn.Close()
 			continue
 		}
-		ok, err := d.receiveFrom(conn, in, deadline, uid, gid, record.DiskBytes)
+		ok, err := d.receiveFrom(conn, in, uid, gid, record.DiskBytes)
 		if !ok {
 			// A connection with a wrong token does not stop the move.
 			conn.Close()
@@ -481,9 +509,9 @@ func (d *Deps) receiveServer(ctx context.Context, in transferIn) error {
 
 // receiveFrom reads the token and the tar stream from one connection. ok is false when the
 // connection does not have the token of the move.
-func (d *Deps) receiveFrom(conn net.Conn, in transferIn, deadline time.Time, uid, gid int, limit int64) (ok bool, err error) {
-	_ = conn.SetDeadline(time.Now().Add(30 * time.Second))
-	r := bufio.NewReaderSize(conn, 1<<20)
+func (d *Deps) receiveFrom(conn net.Conn, in transferIn, uid, gid int, limit int64) (ok bool, err error) {
+	idle := &idleReader{conn: conn, timeout: 30 * time.Second}
+	r := bufio.NewReaderSize(idle, 1<<20)
 	line, err := r.ReadSlice('\n')
 	if err != nil {
 		return false, err
@@ -492,7 +520,8 @@ func (d *Deps) receiveFrom(conn net.Conn, in transferIn, deadline time.Time, uid
 	if !found || subtle.ConstantTimeCompare([]byte(token), []byte(in.Token)) != 1 {
 		return false, nil
 	}
-	_ = conn.SetDeadline(deadline)
+	// The data can take hours. A connection that sends nothing for transferIdle ends.
+	idle.timeout = transferIdle
 	s := in.Server
 	disk, err := safefs.Open(d.diskDir(s))
 	if err != nil {
@@ -518,6 +547,17 @@ func (d *Deps) receiveFrom(conn net.Conn, in transferIn, deadline time.Time, uid
 	}
 	unix.Sync()
 	return true, nil
+}
+
+// idleReader ends a read when the connection sends nothing for the time of timeout.
+type idleReader struct {
+	conn    net.Conn
+	timeout time.Duration
+}
+
+func (r *idleReader) Read(p []byte) (int, error) {
+	_ = r.conn.SetReadDeadline(time.Now().Add(r.timeout))
+	return r.conn.Read(p)
 }
 
 // receiveTree writes the files of a tar stream in the data directory, with the owner of the

@@ -38,6 +38,8 @@ enum AgentAction: string
     case ActivateRelease = 'ActivateRelease';
     case SetMesh = 'SetMesh';
     case RotateMeshKey = 'RotateMeshKey';
+    case SendDatabaseServer = 'SendDatabaseServer';
+    case ReceiveDatabaseServer = 'ReceiveDatabaseServer';
 
     /** The steps that the agent reports for this action. */
     public function steps(): array
@@ -75,6 +77,8 @@ enum AgentAction: string
             self::ActivateRelease => ['Check the release', ...self::SetRuntime->steps()],
             self::SetMesh => ['Set tunnels and firewall', 'Check tunnels'],
             self::RotateMeshKey => ['Make new key'],
+            self::SendDatabaseServer => ['Stop database server', 'Send data'],
+            self::ReceiveDatabaseServer => ['Prepare database server', 'Receive data', 'Start database server'],
         };
     }
 

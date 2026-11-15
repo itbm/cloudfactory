@@ -256,7 +256,8 @@ class AgentController extends Controller
             // container that stopped changes only a database server that operated: the job
             // that makes or changes a database server gives its own result (JobOutcome).
             $status = match (true) {
-                $databaseServer->status === DatabaseServer::REMOVING => DatabaseServer::REMOVING,
+                // A move or a removal gives its own result.
+                in_array($databaseServer->status, [DatabaseServer::REMOVING, DatabaseServer::MOVING], true) => $databaseServer->status,
                 $use['state'] === 'running' => DatabaseServer::RUNNING,
                 $databaseServer->status === DatabaseServer::RUNNING => DatabaseServer::STOPPED,
                 default => $databaseServer->status,

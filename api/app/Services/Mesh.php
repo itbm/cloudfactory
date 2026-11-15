@@ -429,9 +429,11 @@ class Mesh
         $networks = (bool) ($mesh['networks'] ?? false);
         // A later agent also reports that a website can be a member that answers.
         $websites = $networks && ($mesh['websites'] ?? false);
+        // A later agent also reports that it can send and receive a database server.
+        $moves = $networks && ($mesh['moves'] ?? false);
         $new = $server->mesh_public_key === null || $server->mesh_networks !== $networks || $server->mesh_websites !== $websites;
         $this->keyOf($server, $key);
-        $server->update(['mesh_version' => $version, 'mesh_networks' => $networks, 'mesh_websites' => $websites]);
+        $server->update(['mesh_version' => $version, 'mesh_networks' => $networks, 'mesh_websites' => $websites, 'mesh_moves' => $moves]);
         if ($new) {
             $this->refresh();
             $server->refresh();

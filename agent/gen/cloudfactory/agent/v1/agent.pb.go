@@ -2964,7 +2964,9 @@ type ReceiveDatabaseServerRequest struct {
 	// The mesh address of the old server. It must be the address of a peer of this server.
 	From  string `protobuf:"bytes,3,opt,name=from,proto3" json:"from,omitempty"`
 	Token string `protobuf:"bytes,4,opt,name=token,proto3" json:"token,omitempty"`
-	// The time that this server waits for the data, in seconds. 0 means 1 hour.
+	// The time that this server waits for the old server to connect, in seconds. 0 means 15
+	// minutes. The data has no time limit, but a connection that sends nothing for 2 minutes
+	// ends.
 	TimeoutSeconds int32 `protobuf:"varint,5,opt,name=timeout_seconds,json=timeoutSeconds,proto3" json:"timeout_seconds,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache

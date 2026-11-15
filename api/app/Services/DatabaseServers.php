@@ -243,12 +243,26 @@ class DatabaseServers
         if ($locked->status === DatabaseServer::REMOVING) {
             throw ValidationException::withMessages([$field => "The panel removes the database server {$locked->name}. Select a different database server."]);
         }
+        self::refuseMoving($locked, $field);
         $count = $locked->databases()->count();
         if ($count + $new > $locked->plan->databases) {
             throw ValidationException::withMessages([$field => "The {$locked->plan->name} plan allows {$locked->plan->databases} databases in a database server. The database server {$locked->name} has {$count}."]);
         }
 
         return $locked;
+    }
+
+    /**
+     * The data of a database server that moves goes to the new server. A change of its
+     * databases or its users in that time would be lost.
+     *
+     * @throws ValidationException
+     */
+    public static function refuseMoving(DatabaseServer $server, string $field = 'databaseServer'): void
+    {
+        if ($server->status === DatabaseServer::MOVING) {
+            throw ValidationException::withMessages([$field => "The database server {$server->name} moves to a different server now. Wait until the move is complete."]);
+        }
     }
 
     public static function engineName(string $engine): string
