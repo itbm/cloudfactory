@@ -782,12 +782,15 @@ These items stay open in release 0.1:
   servers at the registrar.
 - **One origin for Adminer.** All customers use the same Adminer domain, with a different
   path for each customer. The browser thus puts the Adminer pages of all customers in one
-  origin. The session cookie of Adminer has the path of the customer, and Adminer uses a
-  content security policy with a nonce for each page. A script that runs on an Adminer page
-  of one customer can still read the pages of a different customer in the same browser. A
-  domain for each customer needs a certificate for each customer, and the limits of
-  Let's Encrypt make this difficult. Use one browser profile for each customer when you
-  manage databases of different customers.
+  origin. The browser sends a cookie by the address of a request, not by the page that sends
+  it. Thus a script that runs on an Adminer page of one customer can use the Adminer session
+  of a different customer in the same browser: it can read and change the databases of that
+  session until the temporary user expires. This needs a script in an Adminer page (a
+  cross-site scripting fault in Adminer), and a person who opened Adminer for the two
+  customers in one browser, for example an administrator or a reseller. The content security
+  policy of Adminer, with a nonce for each page, makes such a script difficult. Use one
+  browser profile for each customer when you manage the databases of different customers.
+  A domain for each customer removes this limit.
 - **A server that had the role `dns`.** When you turn off DNS on a server, the panel removes
   the zones from the server. The empty container `cf-dns` and the firewall rules for port 53
   stay until you remove them.
