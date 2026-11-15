@@ -205,8 +205,8 @@ class DemoSeeder extends Seeder
     {
         [$one, $two] = [$this->servers['web-1'], $this->servers['web-2']];
         $key = fn (string $name) => base64_encode(hash('sha256', 'demo tunnel key of '.$name, true));
-        $one->update(['mesh_public_key' => $key('web-1'), 'mesh_address' => '10.207.0.1', 'mesh_endpoint' => '203.0.113.10', 'mesh_version' => 1, 'mesh_wanted_version' => 1, 'mesh_networks' => true, 'mesh_websites' => true]);
-        $two->update(['mesh_public_key' => $key('web-2'), 'mesh_address' => '10.207.0.2', 'mesh_endpoint' => '203.0.113.20', 'mesh_version' => 1, 'mesh_wanted_version' => 1, 'mesh_networks' => true, 'mesh_websites' => true]);
+        $one->update(['mesh_public_key' => $key('web-1'), 'mesh_address' => '10.207.0.1', 'mesh_endpoint' => '203.0.113.10', 'mesh_version' => 1, 'mesh_wanted_version' => 1, 'mesh_networks' => true, 'mesh_websites' => true, 'mesh_moves' => true]);
+        $two->update(['mesh_public_key' => $key('web-2'), 'mesh_address' => '10.207.0.2', 'mesh_endpoint' => '203.0.113.20', 'mesh_version' => 1, 'mesh_wanted_version' => 1, 'mesh_networks' => true, 'mesh_websites' => true, 'mesh_moves' => true]);
         [$a, $b] = strcmp($one->id, $two->id) < 0 ? [$one, $two] : [$two, $one];
         $side = fn (int $micros) => ['reachable' => true, 'handshakeAt' => now()->subSeconds(40)->getTimestamp(), 'roundTripMicros' => $micros, 'reportedAt' => now()->getTimestamp()];
         MeshTunnel::create(['server_a_id' => $a->id, 'server_b_id' => $b->id, 'preshared_key' => $key('web-1 and web-2'), 'pinned' => true, 'status' => [$a->id => $side(7400), $b->id => $side(7550)]]);

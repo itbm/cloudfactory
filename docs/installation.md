@@ -627,6 +627,9 @@ cf networks get backend
 The names of the engines (for example `mariadb.internal`) do not use the networks. A website
 can always use them for the database servers of its customer on its own server.
 
+Give your customers the guide [Private networks: a guide for customers](private-networks.md).
+It tells them how to connect an app with the network names, and how to make named networks.
+
 You do not have to make the first database server. When you make a database for a website
 and its customer has no database server of that engine on the server, the panel makes one
 with the plan of the customer.
@@ -656,6 +659,47 @@ container and its data.
 If the first job of a database server fails, for example because the server could not pull
 the image, correct the cause and select **Try again**. With the CLI:
 `cf database-servers retry DATABASE_SERVER`.
+
+#### Move a database server to a different server
+
+An administrator can move a database server to a different server, for example to make
+space on a server or before you remove a server. The database server keeps its name, its
+databases, its users and its network name, for example `shop-db.internal`.
+
+Before you move a database server:
+
+1. Make sure that the two servers are healthy, and that their agents are of this release or
+   later. The panel refuses the move when an agent cannot move database servers.
+2. Make sure that each app connects with the network name and the usual port of the engine,
+   for example `shop-db.internal:3306`. An app that uses the engine name, for example
+   `mariadb.internal:3307`, loses the connection after the move. The **Host** column of the
+   list of the database servers shows the two names.
+3. Make sure that each website with a database in the database server is on the new server,
+   or in a network with the database server. The panel refuses the move when it is not.
+4. Select a time with little traffic. The database server does not operate while its data
+   moves. The time depends on the size of the data: about one minute for each 5 GB on a
+   1 Gbit/s connection between the servers.
+
+To move a database server:
+
+1. Open **Databases**. In the list of the database servers, open the menu of the database
+   server and select **Move to a different server**.
+2. Select the new server, and select **Move database server**.
+3. The status is **Moving** until the new server operates the database server. Then the
+   status is **Running**, and the **Host** column shows the new server.
+
+With the CLI:
+
+```sh
+cf database-servers move shop-db --server web-2
+```
+
+The data goes through the encrypted tunnel between the two servers. The panel makes the
+tunnel if it does not exist, and removes it after the move when no network needs it.
+
+If the move fails, the database server stays on the old server and operates there. The new
+server removes what it received. Look at the jobs of the two servers on **Jobs** for the
+cause, correct it, and move the database server again.
 
 #### Limits of a database server
 
@@ -1168,7 +1212,9 @@ server degraded.
 
 The firewall accepts only SSH, SFTP, HTTP, HTTPS and the agent port. A server that has
 tunnels to other servers also accepts the UDP port of the tunnels (51820), only from those
-servers. A server that has DNS zones also accepts port 53 (UDP and TCP). The database servers
+servers. While a database server moves to a server, that server also accepts TCP port 7445
+on its mesh address, only from the mesh address of the old server. A server that has DNS
+zones also accepts port 53 (UDP and TCP). The database servers
 publish their ports only on the database network `169.254.80.0/20` of the loopback interface,
 so the databases are not open to the internet.
 
