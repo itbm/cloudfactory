@@ -30,6 +30,9 @@ Usage:
   cf websites list [--status STATUS]
   cf websites get WEBSITE
   cf websites create NAME --image ID --plan ID [--customer ID] [--server ID] [--app NAME]
+                     [--kind public|private|worker] [--command COMMAND] [--install COMMAND]
+                                                       A Node.js or Python image needs no --command: the panel uses the
+                                                       usual start command and install command of the image.
   cf websites set WEBSITE [--plan ID] [--app NAME] [--vcpus N] [--memory-mb N] [--disk-gb N] [--io-mb N] [--processes N]
   cf websites delete WEBSITE
   cf websites start|stop|restart|staging WEBSITE      staging shows the passwords of the new database users once.
@@ -40,7 +43,14 @@ Usage:
   cf domains primary WEBSITE DOMAIN                    Make a verified domain the primary domain.
   cf domains check WEBSITE DOMAIN                      Check the DNS of the domain again.
   cf runtime set WEBSITE [--image ID] [--worker-mode on|off] [--extensions a,b] [--ini key=value]...
-                         [--document-root DIR]
+                         [--document-root DIR] [--command COMMAND] [--install COMMAND]
+                                                       --command: the start command of a worker or of a Node.js or
+                                                       Python website. --install "": no install step.
+  cf runtime install WEBSITE                           Run the install command, for example npm ci, then start the
+                                                       Node.js or Python website again with no stop.
+  cf env list WEBSITE                                  The names of the environment variables. The panel does not show values.
+  cf env set WEBSITE NAME                              The value is read from CF_VALUE or stdin. The website starts again with no stop.
+  cf env unset WEBSITE NAME...
   cf sftp get WEBSITE
   cf sftp set WEBSITE [--on|--off] [--key-file FILE]... [--no-keys]
   cf runtime revert WEBSITE
@@ -313,6 +323,8 @@ func (a *app) dispatch(ctx context.Context, args []string) error {
 		return a.domains(ctx, sub, rest)
 	case "runtime":
 		return a.runtime(ctx, sub, rest)
+	case "env":
+		return a.env(ctx, sub, rest)
 	case "database-servers", "database-server", "db-servers":
 		return a.databaseServers(ctx, sub, rest)
 	case "databases", "database":
@@ -701,8 +713,17 @@ func (a *app) websites(ctx context.Context, sub string, args []string) error {
 		if w.Kind != "" && w.Kind != "public" {
 			fmt.Fprintf(a.out, "Kind:     %s\n", w.Kind)
 		}
+		if w.Runtime.Version != nil {
+			fmt.Fprintf(a.out, "Version:  %s\n", *w.Runtime.Version)
+		}
 		if w.Command != "" {
 			fmt.Fprintf(a.out, "Command:  %s\n", w.Command)
+		}
+		if w.InstallCommand != "" {
+			fmt.Fprintf(a.out, "Install:  %s\n", w.InstallCommand)
+		}
+		if len(w.Environment) > 0 {
+			fmt.Fprintf(a.out, "Env:      %s\n", strings.Join(w.Environment, ", "))
 		}
 		if w.NetworkHost != "" {
 			fmt.Fprintf(a.out, "Network:  %s:%d\n", w.NetworkHost, w.NetworkPort)
@@ -725,11 +746,15 @@ func (a *app) websites(ctx context.Context, sub string, args []string) error {
 		server := fs.String("server", "", "the server ID")
 		appName := fs.String("app", "", "the application, for example WordPress")
 		kind := fs.String("kind", "", "public (a website with a domain), private (no domain: only the websites of its networks connect to it) or worker (runs a command, no HTTP). For private and worker, the name is a short name, for example queue.")
-		command := fs.String("command", "", "the start command of a worker, for example \"php artisan queue:work\"")
+		command := fs.String("command", "", "the start command of a worker or of a Node.js or Python website, for example \"php artisan queue:work\"")
+		install := fs.String("install", "", "the install command of a Node.js or Python website, for example \"npm ci\". Give \"\" for no install step.")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
 		body := map[string]any{"name": args[0], "imageId": *image, "planId": *plan}
+		if given(fs, "install") {
+			body["installCommand"] = *install
+		}
 		for k, v := range map[string]string{"customerId": *customer, "serverId": *server, "application": *appName, "kind": *kind, "command": *command} {
 			if v != "" {
 				body[k] = v
@@ -804,18 +829,28 @@ func (a *app) runtime(ctx context.Context, sub string, args []string) error {
 	switch sub {
 	case "revert":
 		return a.change(ctx, http.MethodPost, "/websites/"+w.ID+"/runtime/revert", nil)
+	case "install":
+		return a.runtimeInstall(ctx, w.ID)
 	case "set":
 		fs := flag.NewFlagSet("set", flag.ContinueOnError)
 		image := fs.String("image", "", "the image ID")
 		worker := fs.String("worker-mode", "", "on or off")
 		exts := fs.String("extensions", "", "the PHP extensions, separated by commas")
 		root := fs.String("document-root", "", `the directory that the web server serves, for example web, or "." for the top directory`)
+		command := fs.String("command", "", "the start command of a worker or of a Node.js or Python website")
+		install := fs.String("install", "", `the install command of a Node.js or Python website, or "" for no install step`)
 		var ini multi
 		fs.Var(&ini, "ini", "a php.ini value as key=value")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
 		body := map[string]any{}
+		if *command != "" {
+			body["command"] = *command
+		}
+		if given(fs, "install") {
+			body["installCommand"] = *install
+		}
 		if *image != "" {
 			body["imageId"] = *image
 		}
@@ -846,7 +881,7 @@ func (a *app) runtime(ctx context.Context, sub string, args []string) error {
 			body["phpIni"] = values
 		}
 		if len(body) == 0 {
-			return errors.New("give --image, --worker-mode, --extensions, --document-root or --ini")
+			return errors.New("give --image, --worker-mode, --extensions, --document-root, --command, --install or --ini")
 		}
 		return a.change(ctx, http.MethodPut, "/websites/"+w.ID+"/runtime", body)
 	}
