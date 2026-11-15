@@ -89,6 +89,8 @@ jobs:
           - { image: apache-php8.5, context: images/apache-php-fpm, file: images/apache-php-fpm/Containerfile, args: PHP_VERSION=8.5 }
           - { image: edge, context: images/edge, file: images/edge/Containerfile, args: '' }
           - { image: sftp, context: images/sftp, file: images/sftp/Containerfile, args: '' }
+          - { image: adminer, context: images/adminer, file: images/adminer/Containerfile, args: '' }
+          - { image: dns, context: images/dns, file: images/dns/Containerfile, args: '' }
           - { image: mariadb, context: images/mariadb, file: images/mariadb/Containerfile, args: '' }
           - { image: postgresql, context: images/postgresql, file: images/postgresql/Containerfile, args: '' }
           - { image: valkey, context: images/valkey, file: images/valkey/Containerfile, args: '' }

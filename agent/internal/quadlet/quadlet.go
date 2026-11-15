@@ -93,15 +93,30 @@ type Website struct {
 	DocumentRoot string
 	// ContainerPort is the HTTP port in the container. 0 means 8080. Only a custom image sets it.
 	ContainerPort int
-	// Command replaces the start command of a custom image. Empty means the command of the image.
+	// Command replaces the start command of a custom image or of a worker. Empty means the
+	// command of the image.
 	Command []string
+	// Worker is true for a background worker: the container serves no HTTP, so it has no
+	// port on ServiceAddress.
+	Worker bool
 	// Stopped is true when the owner stopped the website. Then systemd does not start it at boot.
 	Stopped bool
 	// DatabaseAddress is the address of the database servers of the customer of the website
 	// (DatabaseAddress). With no address, the container has no database host names: the agent
 	// has no record of the customer of the website.
 	DatabaseAddress string
+	// HostsFile is the path of the hosts file of the website on the host, or "". With a
+	// path, the container has this file as its /etc/hosts, and the file has the database
+	// host names.
+	HostsFile string
+	// LogFile is the file on the host that gets the output of the container, for the logs in
+	// the panel. Empty means that the output goes only to the journal.
+	LogFile string
 }
+
+// LogFileMax is the largest size of the log file of a website. Podman starts the file again
+// at this size.
+const LogFileMax = "10mb"
 
 // Database host names in each website container. They point to the address of the database
 // servers of the customer of the website. The first database server of an engine has the usual
@@ -232,9 +247,18 @@ func ContainerUnit(w Website) string {
 	if w.Runtime == "custom" && w.ContainerPort > 0 {
 		containerPort = w.ContainerPort
 	}
-	line("PublishPort", ServiceAddress+":"+strconv.Itoa(w.Port)+":"+strconv.Itoa(containerPort))
-	// The database servers of the customer publish their ports on this address.
-	if w.DatabaseAddress != "" {
+	if !w.Worker {
+		line("PublishPort", ServiceAddress+":"+strconv.Itoa(w.Port)+":"+strconv.Itoa(containerPort))
+	}
+	// The hosts file of the website has the names of the database servers of the customer
+	// and of the members of the networks of the website. The agent changes the file in
+	// place, so the container gets a new name with no restart. Podman makes no hosts file.
+	if w.HostsFile != "" {
+		line("PodmanArgs", "--no-hosts")
+		line("Volume", w.HostsFile+":/etc/hosts:ro")
+	} else if w.DatabaseAddress != "" {
+		// A website with no hosts file. The database servers of the customer publish their
+		// ports on this address.
 		line("AddHost", MariaDBHost+":"+w.DatabaseAddress)
 		line("AddHost", PostgreSQLHost+":"+w.DatabaseAddress)
 		line("AddHost", ValkeyHost+":"+w.DatabaseAddress)
@@ -262,8 +286,14 @@ func ContainerUnit(w Website) string {
 	line("ReadOnly", "true")
 	line("Tmpfs", "/tmp")
 	line("UserNS", "keep-id")
+	if w.LogFile != "" {
+		// Podman records the stream of each line (standard output or standard error) and its
+		// time in this format. Both containers of a runtime change write the same file.
+		line("LogDriver", "k8s-file")
+		line("PodmanArgs", "--log-opt=path="+w.LogFile+" --log-opt=max-size="+LogFileMax)
+	}
 
-	if w.Runtime == "custom" && len(w.Command) > 0 {
+	if (w.Runtime == "custom" || w.Worker) && len(w.Command) > 0 {
 		line("Exec", execLine(w.Command))
 	}
 
@@ -593,6 +623,63 @@ type Sftp struct {
 	Gvisor      Runtime
 }
 
+// Dns is the DNS server of a server with the role "dns": one container, cf-dns, with Knot DNS.
+type Dns struct {
+	Image string
+	// ConfigDir has knot.conf and the zone files. Root owns it, and the container reads it.
+	ConfigDir string
+	// DataDir has the journal, the timers and the DNSSEC keys of Knot. The DNS user owns it.
+	DataDir string
+	Gvisor  Runtime
+}
+
+// DnsPort is the port of the DNS server on the host, for UDP and TCP. A rootless container
+// cannot open port 53, so the firewall redirects port 53 to this port.
+const DnsPort = 8053
+
+// DnsUnitName is the Quadlet unit of the DNS server, in the unit directory of the DNS user.
+const DnsUnitName = "cf-dns.container"
+
+// DnsUnit gives the unit of the DNS server. The DNS user runs the container, in gVisor. The
+// container opens no connection: the panel sends each zone to each DNS server, so there are
+// no zone transfers.
+func DnsUnit(d Dns) string {
+	return Header + strings.Join([]string{
+		"[Unit]",
+		"Description=Cloudfactory DNS server",
+		"",
+		"[Container]",
+		"ContainerName=cf-dns",
+		"Image=" + d.Image,
+		"Pull=never",
+		"GlobalArgs=" + d.Gvisor.GlobalArgs(),
+		// Knot sees the real client address, which the rate limit of the answers uses.
+		"Network=" + PastaNetwork,
+		fmt.Sprintf("PublishPort=%d:%d/udp", DnsPort, DnsPort),
+		fmt.Sprintf("PublishPort=%d:%d/tcp", DnsPort, DnsPort),
+		// The container cannot change its configuration or a zone file.
+		"Volume=" + d.ConfigDir + ":/etc/knot:ro",
+		"Volume=" + d.DataDir + ":/var/lib/knot:Z",
+		"Label=io.cloudfactory.service=dns",
+		"NoNewPrivileges=true",
+		"DropCapability=all",
+		"ReadOnly=true",
+		"Tmpfs=/run/knot",
+		"Tmpfs=/tmp",
+		"",
+		"[Service]",
+		"Restart=always",
+		// The limits are on the cgroup of the service (Runtime.GlobalArgs).
+		"MemoryMax=1G",
+		"MemorySwapMax=0",
+		"TasksMax=1024",
+		"",
+		"[Install]",
+		"WantedBy=default.target",
+		"",
+	}, "\n")
+}
+
 // DefaultSftpPort is the public SFTP port of a server when the settings do not give one.
 // Port 22 stays for the SSH service of the host.
 const DefaultSftpPort = 2200
@@ -627,7 +714,10 @@ func SftpUnit(s Sftp) string {
 		"ContainerName=cf-sftp",
 		"Image=" + s.Image,
 		"Pull=never",
-		"GlobalArgs=" + s.Gvisor.GlobalArgs(),
+		// "dcache=0": gVisor keeps no file of a website open after a session closes it. With
+		// its usual cache, the server cannot unmount the disk image of a website that a
+		// session used, and the disk space of a removed file stays in use.
+		"GlobalArgs=" + s.Gvisor.GlobalArgs() + " --runtime-flag=dcache=0",
 		// Audit finding B3: Podman refuses the pasta network for a container that root runs
 		// ("pasta networking is only supported for rootless mode"), so the service did not
 		// start. The bridge network of Podman also gives the container its own network
@@ -640,7 +730,10 @@ func SftpUnit(s Sftp) string {
 		// No ":Z": a new SELinux label would change the label of the files of all websites.
 		// Only the website directories. The home directories (with the Podman storage of each
 		// user) are not in the container.
-		"Volume=" + s.SitesDir + ":/srv/cloudfactory/sites",
+		// "rslave": the container gets each file system that the server mounts or unmounts
+		// below the directory later, for example the disk image of a new website. gVisor
+		// refuses "rshared".
+		"Volume=" + s.SitesDir + ":/srv/cloudfactory/sites:rslave",
 		"Volume=" + s.KeysDir + ":/etc/cloudfactory/sftp:ro",
 		// libnss-extrausers reads the website users from this directory.
 		"Volume=" + s.UsersDir + ":/var/lib/extrausers:ro",

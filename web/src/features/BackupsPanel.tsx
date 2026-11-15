@@ -18,6 +18,14 @@ export function BackupsPanel({ websiteId }: { websiteId?: string }) {
   const backup = useAction(backupNow);
   const jobs = state.jobs.filter((j) => (j.title.startsWith("Back up") || j.title.startsWith("Restore")) && (!websiteId || j.websiteId === websiteId)).slice(0, 4);
   const siteName = (id: string) => state.websites.find((w) => w.id === id)?.name ?? "Removed website";
+  // A backup of a website with a database on a different server has a second snapshot, with
+  // only the databases on that server.
+  const contents = (s: Snapshot) => {
+    const count = `${s.databases.length} database${s.databases.length === 1 ? "" : "s"}`;
+    if (s.part !== "databases") return `Files${s.databases.length ? `, ${count}` : ""}`;
+    const server = state.servers.find((x) => x.id === s.serverId)?.name;
+    return `${count} on ${server ? `the server ${server}` : "a different server"}`;
+  };
   useEffect(() => {
     if (shownSite !== "all") showWebsite(shownSite);
   }, [shownSite]);
@@ -57,7 +65,7 @@ export function BackupsPanel({ websiteId }: { websiteId?: string }) {
                   {!websiteId && <td><Link to={`/websites/${s.websiteId}/backups`}>{siteName(s.websiteId)}</Link></td>}
                   <td>{s.kind === "nightly" ? "Nightly" : "Manual"}</td>
                   <td>{bytes(s.sizeBytes)}</td>
-                  <td className="small muted">Files{s.databases.length ? `, ${s.databases.length} database${s.databases.length > 1 ? "s" : ""}` : ""}</td>
+                  <td className="small muted">{contents(s)}</td>
                   <td className="cell-actions" style={{ width: 120 }}><button type="button" className="btn btn-sm" onClick={() => setRestoring(s)}>Restore…</button></td>
                 </tr>
               ))}
@@ -87,7 +95,9 @@ const RESTORE_NOTE: Record<RestoreScope["kind"], string> = {
 };
 
 function RestoreDialog({ snapshot, onClose }: { snapshot: Snapshot; onClose: () => void }) {
-  const [kind, setKind] = useState<RestoreScope["kind"]>("website");
+  // A snapshot with only databases has no files to restore.
+  const only = snapshot.part === "databases";
+  const [kind, setKind] = useState<RestoreScope["kind"]>(only ? "database" : "website");
   const [item, setItem] = useState("");
   const [removeNewFiles, setRemoveNewFiles] = useState(false);
   const action = useAction(restore);
@@ -122,7 +132,7 @@ function RestoreDialog({ snapshot, onClose }: { snapshot: Snapshot; onClose: () 
           ["website", "Full website", "All files of the website."],
           ["database", "One database", `${snapshot.databases.length} in this snapshot.`],
           ["file", "One file or folder", "Type the path."],
-        ] as const).map(([k, label, hint]) => (
+        ] as const).filter(([k]) => !only || k === "database").map(([k, label, hint]) => (
           <label key={k} className="radio-card">
             <input type="radio" name="scope" checked={kind === k} disabled={k === "database" && !snapshot.databases.length} onChange={() => { setKind(k); setItem(""); }} />
             <span><strong>{label}</strong><span>{hint}</span></span>

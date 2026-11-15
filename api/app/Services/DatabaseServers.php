@@ -151,11 +151,12 @@ class DatabaseServers
     /**
      * The database server that gets a new database of a website.
      *
-     * - With an ID, it is that database server. It must be a database server of the customer of
-     *   the website, on the server of the website, with the engine of the database.
-     * - With no ID, it is the first database server of the engine that has space.
-     * - When the customer has no database server of the engine on the server, the panel makes
-     *   one, if the plan of the customer permits.
+     * - With an ID, it is that database server. It must be a database server that the website
+     *   can use (forWebsite), with the engine of the database.
+     * - With no ID, it is the first database server of the engine that has space. The database
+     *   servers on the server of the website are first.
+     * - When the website can use no database server of the engine, the panel makes one on the
+     *   server of the website, if the plan of the customer permits.
      *
      * The second value is true for a database server that this call made.
      *
@@ -169,8 +170,9 @@ class DatabaseServers
         if ($id !== null) {
             $server = $servers->firstWhere('id', $id);
             if (! $server) {
-                throw ValidationException::withMessages(['databaseServerId' => 'Select a database server of the customer of this website, on the server of the website, with the engine of the database.']);
+                throw ValidationException::withMessages(['databaseServerId' => 'Select a database server of the customer of this website that the website can connect to, with the engine of the database.']);
             }
+            self::checkHost($server->server, $engine, 'databaseServerId');
 
             return [$server, false];
         }
@@ -183,22 +185,50 @@ class DatabaseServers
                 ? "The database server {$servers[0]->name} has {$servers[0]->databases_count} databases, and its plan ({$servers[0]->plan->name}) allows no more. Make a new database server, or give this one a larger plan."
                 : 'Each '.self::engineName($engine).' database server of this customer has the number of databases that its plan allows. Make a new database server, or give one a larger plan.']);
         }
+        self::checkHost($server->server, $engine);
 
         return [$server, false];
     }
 
     /**
-     * The database servers that a website can use: those of its customer on its server. A
-     * database server that the agent removes is not one of them.
+     * The database servers that a website can use: those of its customer on its server, then
+     * those of its customer on a different server that are in a network with the website
+     * (Networks::reaches). A database server that the agent removes is not one of them.
      *
      * @return Collection<int, DatabaseServer>
      */
     public static function forWebsite(Website $website)
     {
-        return DatabaseServer::with('plan')->withCount('databases')
-            ->where(['customer_id' => $website->customer_id, 'server_id' => $website->server_id])
+        $all = DatabaseServer::with(['plan', 'server'])->withCount('databases')
+            ->where('customer_id', $website->customer_id)
             ->where('status', '!=', DatabaseServer::REMOVING)
-            ->orderBy('port')->get();
+            ->orderBy('port')->orderBy('name')->get();
+        [$local, $remote] = $all->partition(fn (DatabaseServer $s) => $s->server_id === $website->server_id);
+
+        return $local->concat($remote->filter(fn (DatabaseServer $s) => Networks::reaches($website, $s))->sortBy('name'))->values();
+    }
+
+    /** True when the database server is on a different server from the website. */
+    public static function isRemote(Website $website, DatabaseServer $server): bool
+    {
+        return $server->server_id !== $website->server_id;
+    }
+
+    /**
+     * The host name and the port that the application of a website connects to. For a database
+     * server on the server of the website, they are the name of the engine and the port of the
+     * database server. For a database server on a different server, they are the name and the
+     * port of the network member.
+     *
+     * @return array{host: string, port: int}
+     */
+    public static function connection(Website $website, DatabaseServer $server): array
+    {
+        if (self::isRemote($website, $server)) {
+            return ['host' => (string) Networks::hostOf($server), 'port' => Networks::portOf($server->engine)];
+        }
+
+        return ['host' => DatabaseServer::HOSTS[$server->engine], 'port' => $server->port];
     }
 
     /**
@@ -213,12 +243,26 @@ class DatabaseServers
         if ($locked->status === DatabaseServer::REMOVING) {
             throw ValidationException::withMessages([$field => "The panel removes the database server {$locked->name}. Select a different database server."]);
         }
+        self::refuseMoving($locked, $field);
         $count = $locked->databases()->count();
         if ($count + $new > $locked->plan->databases) {
             throw ValidationException::withMessages([$field => "The {$locked->plan->name} plan allows {$locked->plan->databases} databases in a database server. The database server {$locked->name} has {$count}."]);
         }
 
         return $locked;
+    }
+
+    /**
+     * The data of a database server that moves goes to the new server. A change of its
+     * databases or its users in that time would be lost.
+     *
+     * @throws ValidationException
+     */
+    public static function refuseMoving(DatabaseServer $server, string $field = 'databaseServer'): void
+    {
+        if ($server->status === DatabaseServer::MOVING) {
+            throw ValidationException::withMessages([$field => "The database server {$server->name} moves to a different server now. Wait until the move is complete."]);
+        }
     }
 
     public static function engineName(string $engine): string

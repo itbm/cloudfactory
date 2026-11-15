@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\JobResource;
 use App\Models\AgentJob;
 use App\Models\DatabaseServer;
+use App\Models\DnsZone;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 
@@ -18,21 +19,23 @@ class JobController extends Controller
     {
         $user = $request->user();
 
-        // A user sees the jobs of the websites, of the database servers and of the email of
+        // A user sees the jobs of the websites, of the database servers, of the DNS zones and of the email of
         // its customers.
         return AgentJob::query()->when(! $user->isAdministrator(), fn ($q) => $q->where(fn ($q) => $q
             ->whereIn('website_id', $this->visibleWebsites($request)->select('id'))
             ->orWhereIn('database_server_id', DatabaseServer::whereIn('customer_id', $user->visibleCustomerIds())->select('id'))
+            ->orWhereIn('dns_zone_id', DnsZone::whereIn('customer_id', $user->visibleCustomerIds())->select('id'))
             ->orWhereIn('customer_id', $user->visibleCustomerIds())));
     }
 
     public function index(Request $request): AnonymousResourceCollection
     {
-        $request->validate(['websiteId' => ['nullable', 'string'], 'databaseServerId' => ['nullable', 'string'], 'state' => ['nullable', 'in:queued,running,succeeded,failed']]);
+        $request->validate(['websiteId' => ['nullable', 'string'], 'databaseServerId' => ['nullable', 'string'], 'dnsZoneId' => ['nullable', 'string'], 'state' => ['nullable', 'in:queued,running,succeeded,failed']]);
 
         return JobResource::collection($this->query($request)
             ->when($request->query('websiteId'), fn ($q, $id) => $q->where('website_id', $id))
             ->when($request->query('databaseServerId'), fn ($q, $id) => $q->where('database_server_id', $id))
+            ->when($request->query('dnsZoneId'), fn ($q, $id) => $q->where('dns_zone_id', $id))
             ->when($request->query('serverId'), fn ($q, $id) => $q->where('server_id', $id))
             ->when($request->query('state'), fn ($q, $s) => $q->where('state', $s))
             ->latest()

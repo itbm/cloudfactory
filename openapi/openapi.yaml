@@ -22,9 +22,20 @@ security:
 tags:
   - name: Auth
   - name: Websites
+  - name: Files
+    description: The file manager of a website.
+  - name: Cron jobs
+  - name: Deploys
+    description: Deploys of a website from a Git repository.
   - name: Databases
+  - name: DNS
+    description: DNS hosting. The zones of the customers and their records.
+  - name: Networks
+    description: The private networks of the customers, like a VPC.
   - name: Backups
   - name: Email
+  - name: Usage
+    description: The usage history for the graphs, and the alerts near the limits.
   - name: Jobs
   - name: Servers
     description: Administrators only.
@@ -34,6 +45,11 @@ tags:
   - name: Users
     description: The users who can sign in. These routes need the users scope.
   - name: Audit
+  - name: Notifications
+    description: >-
+      Email notifications. Each user chooses the events that give an email. An administrator sets
+      the SMTP server and the templates of the panel. A reseller can set its own SMTP server and
+      templates for the emails to its customers. These routes need the notifications scope.
   - name: Agent
     description: Only the agent on a server uses these routes. They use the agent token, not a user token.
 
@@ -64,6 +80,13 @@ paths:
                 email: { type: string, format: email }
                 password: { type: string }
                 totp: { type: string, pattern: '^[0-9]{6}$', description: Necessary when TOTP is on for the user. }
+                deviceId:
+                  type: string
+                  maxLength: 100
+                  description: >-
+                    A random ID that the client keeps, 16 to 100 letters, digits, "-" or "_". After the
+                    first sign-in of a user, a sign-in from a device that the panel does not know
+                    sends an email to the user. With no ID, the panel knows a device by its user agent.
       responses:
         '200':
           description: Signed in.
@@ -281,6 +304,14 @@ paths:
         does not get a website. A PHP website starts with the extensions opcache, intl, gd, zip,
         mysqli, pdo_mysql and pdo_pgsql when the plan has them. The edge proxy serves the primary
         domain only after it is verified (refer to "Add a redirect or an alias").
+
+
+        With `kind` "private" or "worker", the website has no domain and no public address. The
+        name in the request is a short name, and the panel makes the name of the website from
+        it: the network name, for example `orders-a1b2.internal`. A different website of the
+        customer connects to a private website by this name on port 80. A worker runs `command`
+        in its container and serves no HTTP. Each kind is a website of the plan of the
+        customer. The agent of the server must be from a release with these functions.
       requestBody:
         required: true
         content:
@@ -289,7 +320,9 @@ paths:
               type: object
               required: [name, imageId]
               properties:
-                name: { type: string, description: The primary domain. Lower case. }
+                name: { type: string, description: 'The primary domain, in lower case. For the kinds "private" and "worker": a short name of lower-case letters, digits and "-", for example "queue".' }
+                kind: { $ref: '#/components/schemas/WebsiteKind' }
+                command: { type: string, maxLength: 1000, description: 'Necessary for the kind "worker", and only for it: one command line for the shell of the container, for example "php artisan queue:work". It runs in the gVisor sandbox as the Unix user of the website, in the directory /app.' }
                 application: { type: string, maxLength: 100 }
                 imageId: { type: string }
                 planId: { type: string, description: The plan of the customer when you do not give it. Only an administrator or the reseller of the customer can give a different plan. }
@@ -346,6 +379,13 @@ paths:
     delete:
       tags: [Websites]
       summary: Remove a website
+      description: >-
+        The agent of the server of the website removes the website, with its databases and its
+        database users. For a website with a database in a database server on a different
+        server, the panel first sends a job for each such database and each such database user
+        to the agent of that server, and the response has the first of these jobs. The panel
+        removes the website when these jobs are complete. When one fails, the website stays:
+        remove it again.
       responses:
         '202': { $ref: '#/components/responses/JobOnly' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -405,7 +445,8 @@ paths:
         the copies in it. The data of a Valkey database is not copied: the copy gets a new, empty
         Valkey database, with its own user, for each Valkey database of the website. The response
         shows the passwords of the new users once. The response is 422 when a database server
-        has no space for the copies.
+        has no space for the copies, and when the website has a database in a database server
+        on a different server.
       responses:
         '202':
           description: The job makes the copy.
@@ -596,6 +637,7 @@ paths:
               properties:
                 imageId: { type: string }
                 workerMode: { type: boolean, description: Only for FrankenPHP. }
+                command: { type: string, maxLength: 1000, description: 'Only for a worker: the new start command. The agent starts a new container with it.' }
                 documentRoot: { type: string, maxLength: 200, description: 'Batch 1, finding 11. The directory in /app that the web server serves, for example "web". "." is /app. The default is "public".' }
                 extensions: { type: array, items: { type: string }, description: Only the extensions of the plan. }
                 phpIni:
@@ -622,6 +664,527 @@ paths:
         '202': { $ref: '#/components/responses/WebsiteJob' }
         '422': { $ref: '#/components/responses/Invalid' }
 
+  /v1/websites/{websiteId}/files:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+    get:
+      tags: [Files]
+      summary: List the files of a directory of a website
+      description: >-
+        The file manager. The agent does each request as the Unix user of the website, in the
+        directory of the website, and gives the answer at once: these routes make no job. A path
+        starts with `/`, which is the directory of the website. The container of the website has
+        that directory at `/app`. A path has no `.` part and no `..` part. A symbolic link that
+        goes out of the directory of the website gives status 403. The list has the directories
+        first, and at most 2,000 entries. The routes of the file manager refuse a website that
+        the panel could not make (422). When the panel cannot connect to the server, the status
+        is 503.
+      parameters:
+        - { name: path, in: query, schema: { type: string, default: / } }
+      responses:
+        '200':
+          description: The entries of the directory.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  path: { type: string }
+                  entries: { type: array, items: { $ref: '#/components/schemas/FileEntry' } }
+                  truncated: { type: boolean, description: True when the directory has more entries than the list. }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+        '503': { description: The panel cannot connect to the server of the website. }
+    delete:
+      tags: [Files]
+      summary: Delete a file or a directory of a website
+      description: A directory goes with all that it contains. You cannot delete `/`. A suspended customer cannot change files (409).
+      parameters:
+        - { name: path, in: query, required: true, schema: { type: string } }
+      responses:
+        '204': { description: Deleted. }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: The customer of the website is suspended. }
+        '422': { $ref: '#/components/responses/Invalid' }
+        '503': { description: The panel cannot connect to the server of the website. }
+
+  /v1/websites/{websiteId}/files/content:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+    get:
+      tags: [Files]
+      summary: Read a file of a website
+      description: >-
+        The file has at most 2 MB. Use SFTP for a larger file. A file that is UTF-8 text has the
+        encoding `utf8`. Each other file has the encoding `base64`.
+      parameters:
+        - { name: path, in: query, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: The file and its content.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  file: { $ref: '#/components/schemas/FileEntry' }
+                  encoding: { type: string, enum: [utf8, base64] }
+                  content: { type: string }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+        '503': { description: The panel cannot connect to the server of the website. }
+    put:
+      tags: [Files]
+      summary: Write a file of a website
+      description: >-
+        Makes the file, or replaces its content in one step. The file has at most 5 MB. Use SFTP
+        for a larger file. A file that exists keeps its permission bits. The directory of the
+        file must exist. With `createOnly`, a file that exists gives status 409.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [path, content]
+              properties:
+                path: { type: string, example: /public/index.php }
+                content: { type: string }
+                encoding: { type: string, enum: [utf8, base64], default: utf8 }
+                createOnly: { type: boolean, default: false }
+      responses:
+        '200':
+          description: The file.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  file: { $ref: '#/components/schemas/FileEntry' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'The file exists already, or the customer of the website is suspended.' }
+        '422': { $ref: '#/components/responses/Invalid' }
+        '503': { description: The panel cannot connect to the server of the website. }
+
+  /v1/websites/{websiteId}/files/directories:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+    post:
+      tags: [Files]
+      summary: Make a directory in the files of a website
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [path]
+              properties:
+                path: { type: string, example: /public/images }
+      responses:
+        '201':
+          description: The directory.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  file: { $ref: '#/components/schemas/FileEntry' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'A file or a directory with this name exists already, or the customer of the website is suspended.' }
+        '422': { $ref: '#/components/responses/Invalid' }
+        '503': { description: The panel cannot connect to the server of the website. }
+
+  /v1/websites/{websiteId}/files/move:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+    post:
+      tags: [Files]
+      summary: Move or rename a file or a directory of a website
+      description: The route does not replace a path that exists (409).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [from, to]
+              properties:
+                from: { type: string }
+                to: { type: string }
+      responses:
+        '200':
+          description: The file or the directory at its new path.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  file: { $ref: '#/components/schemas/FileEntry' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'A file or a directory with the new name exists already, or the customer of the website is suspended.' }
+        '422': { $ref: '#/components/responses/Invalid' }
+        '503': { description: The panel cannot connect to the server of the website. }
+
+  /v1/websites/{websiteId}/logs:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+    get:
+      tags: [Websites]
+      summary: Read the last log lines of a website
+      description: >-
+        The output of the container of the website, oldest line first. The stream `access` is
+        the standard output, which has the access log of the runtime images as JSON. The stream
+        `error` is the standard error, which has the errors of the web server and of PHP. The
+        server keeps the last 10 MB. A website gets its log file at its first start with an
+        agent that has this method: restart an older website one time.
+      parameters:
+        - { name: lines, in: query, schema: { type: integer, minimum: 1, maximum: 2000, default: 200 }, description: The number of lines that the agent reads from the end of the log. }
+        - { name: stream, in: query, schema: { type: string, enum: [access, error] }, description: Only the lines of this stream. }
+      responses:
+        '200':
+          description: The log lines.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  lines:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        at: { type: string, format: date-time }
+                        stream: { type: string, enum: [access, error] }
+                        text: { type: string }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+        '503': { description: The panel cannot connect to the server of the website. }
+
+  /v1/websites/{websiteId}/usage:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+    get:
+      tags: [Usage]
+      summary: Read the usage history of a website
+      description: >-
+        The resource use of the website for a graph. The agent reports each minute. The panel
+        keeps buckets of 5 minutes for 8 days, and buckets of 1 hour for 400 days. The range
+        `24h` has a point for each 5 minutes, `7d` for each hour, `30d` for each 3 hours, `90d`
+        for each 12 hours and `1y` for each 2 days. A point with no report has null values.
+        The bandwidth is the traffic of the domains of the website through the edge proxy in
+        the current calendar month (UTC).
+      parameters:
+        - { $ref: '#/components/parameters/UsageRange' }
+      responses:
+        '200':
+          description: The history.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/UsageHistory' }
+                  - type: object
+                    properties:
+                      limits: { $ref: '#/components/schemas/Limits' }
+                      bandwidth:
+                        type: object
+                        properties:
+                          month: { type: string, example: '2026-11' }
+                          bytes: { type: integer }
+                          limitBytes: { type: integer, description: 0 means no limit. }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/usage-alerts:
+    get:
+      tags: [Usage]
+      summary: List the usage alerts
+      description: >-
+        An alert opens when a resource of a website, a server or a database server reaches the
+        warning percent of its limit, and becomes critical at the critical percent. It closes
+        when the use goes 5 points below the warning percent. CPU and memory use the average of
+        the last 30 minutes. An administrator sees all alerts, also those of the servers. A
+        reseller sees the alerts of its customers, and an owner the alerts of their websites
+        and database servers. The panel does not stop a website at its limit because of an
+        alert. The panel fires the Laravel events `UsageAlertRaised` and `UsageAlertResolved`
+        for delivery, for example by email.
+      parameters:
+        - { name: state, in: query, schema: { type: string, enum: [open, resolved, all], default: open } }
+        - { name: subjectType, in: query, schema: { type: string, enum: [website, server, database_server] } }
+        - { name: subjectId, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: The alerts, open and critical first. At most 200.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/UsageAlert' } }
+                  settings: { $ref: '#/components/schemas/UsageAlertSettings' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/websites/{websiteId}/cron-jobs:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+    get:
+      tags: [Cron jobs]
+      summary: List the cron jobs of a website
+      responses:
+        '200':
+          description: The cron jobs.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/CronJob' } }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [Cron jobs]
+      summary: Add a cron job to a website
+      description: >-
+        The agent runs the command with `sh -c` in the directory `/app` of the container of the
+        website, as the Unix user of the website, with the limits of the website. The schedule
+        has the five fields of cron: minute, hour, day of the month, month and day of the week.
+        Its time is UTC. A command that still runs does not start again, and the agent stops a
+        command after 1 hour. A stopped website has no runs. A website can have 20 cron jobs.
+        The job sends all cron jobs of the website to the agent.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [schedule, command]
+              properties:
+                schedule: { type: string, example: '*/5 * * * *' }
+                command: { type: string, maxLength: 1000, example: php artisan schedule:run, description: One line. }
+                enabled: { type: boolean, default: true }
+      responses:
+        '202': { $ref: '#/components/responses/CronJobJob' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: The customer of the website is suspended. }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/websites/{websiteId}/cron-jobs/{cronJobId}:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+      - { name: cronJobId, in: path, required: true, schema: { type: string } }
+    patch:
+      tags: [Cron jobs]
+      summary: Change a cron job, or turn it on or off
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                schedule: { type: string }
+                command: { type: string, maxLength: 1000 }
+                enabled: { type: boolean }
+      responses:
+        '202': { $ref: '#/components/responses/CronJobJob' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: The customer of the website is suspended. }
+        '422': { $ref: '#/components/responses/Invalid' }
+    delete:
+      tags: [Cron jobs]
+      summary: Delete a cron job
+      responses:
+        '202': { $ref: '#/components/responses/JobOnly' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: The customer of the website is suspended. }
+
+  /v1/websites/{websiteId}/cron-jobs/{cronJobId}/run:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+      - { name: cronJobId, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [Cron jobs]
+      summary: Run the command of a cron job now
+      description: >-
+        The job fails when the command gives an exit code that is not 0. When the job is
+        complete, the cron job has the result in `lastRunAt`, `lastExitCode` and `lastOutput`.
+      responses:
+        '202': { $ref: '#/components/responses/JobOnly' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'The website does not run, or its customer is suspended.' }
+
+  /v1/websites/{websiteId}/deploy:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+    get:
+      tags: [Deploys]
+      summary: Show the Git repository and the releases of a website
+      responses:
+        '200':
+          description: The repository, or null when the website has none, and the last 20 releases.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Deploy' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Deploys]
+      summary: Connect a website to a Git repository, or change the deploy settings
+      description: >-
+        The repository is an `https://` address with no user name and no password, or an SSH
+        address such as `git@github.com:acme/shop.git`. For a private repository, use an SSH
+        address and add `deployKey` to the repository as a read-only deploy key. The panel makes
+        the key of the website at the first request. The route starts no deploy.
+
+
+        Each deploy makes a release: the directory `releases/<id>` in the files of the website.
+        The agent gets the code and runs the build commands in a build container: a container
+        from the image of the website, as the Unix user of the website, in a gVisor sandbox,
+        with the limits of the website. Thus the image must have `git`. The working directory of
+        the build commands is the release. The directory `/app/shared` is for the files that all
+        releases use, for example an `.env` file. The link `/app/current` points to the release
+        that the website serves.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [repository, branch]
+              properties:
+                repository: { type: string, example: 'git@github.com:acme/shop.git' }
+                branch: { type: string, example: main }
+                webDirectory: { type: string, default: public, description: 'The directory in the repository that the web server serves. "." is the repository itself.' }
+                trigger: { type: string, enum: [manual, webhook], default: manual, description: With "webhook", a request to `webhookUrl` starts a deploy. }
+                buildCommands: { type: array, maxItems: 10, items: { type: string, maxLength: 1000 }, example: ['composer install --no-dev', 'ln -s /app/shared/.env .env'] }
+      responses:
+        '200':
+          description: The repository and the releases.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Deploy' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+    delete:
+      tags: [Deploys]
+      summary: Disconnect the Git repository of a website
+      description: >-
+        The website continues to serve the release that it has, and its files stay on the
+        server. The panel removes the key, the webhook, the secrets and the list of releases.
+      responses:
+        '204': { description: Disconnected. }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: A deploy is in progress. }
+
+  /v1/websites/{websiteId}/deploy/secrets/{name}:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+      - { name: name, in: path, required: true, schema: { type: string, pattern: '^[A-Z_][A-Z0-9_]{0,63}$' } }
+    put:
+      tags: [Deploys]
+      summary: Set a secret of the build commands
+      description: >-
+        A secret is an environment variable of the build commands. The panel keeps the value
+        encrypted, and no route gives it. The agent gets the secrets with each deploy and does
+        not keep them. A website can have 50 secrets.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [value]
+              properties:
+                value: { type: string, maxLength: 4096, description: One line. }
+      responses:
+        '200':
+          description: The repository and the releases.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Deploy' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+    delete:
+      tags: [Deploys]
+      summary: Remove a secret of the build commands
+      responses:
+        '200':
+          description: The repository and the releases.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Deploy' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/websites/{websiteId}/deploy/releases:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+    post:
+      tags: [Deploys]
+      summary: Deploy the branch now
+      description: >-
+        The job gets the code, builds it, starts a new container from the new release, checks
+        it, and only then sends the traffic to it. If a step fails, the website continues from
+        the release that it had, and the release has the state `failed` with the error. The
+        server keeps the last 5 releases. A website has one deploy at a time (409).
+      responses:
+        '202': { $ref: '#/components/responses/ReleaseJob' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'A deploy is in progress, or the customer of the website is suspended.' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/websites/{websiteId}/deploy/releases/{releaseId}/activate:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+      - { name: releaseId, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [Deploys]
+      summary: Go back to a release that is on the server
+      description: >-
+        The job starts the website from the release with no stop, as a deploy does. The release
+        must have the state `ready`. The route runs no build command.
+      responses:
+        '202': { $ref: '#/components/responses/ReleaseJob' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'A deploy is in progress, or the customer of the website is suspended.' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/hooks/deploy/{token}:
+    parameters:
+      - { name: token, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [Deploys]
+      summary: Start a deploy from a webhook
+      description: >-
+        The address is `webhookUrl` of the deploy settings. The token in the address is the only
+        credential, so keep the address secret. The route operates only when the trigger of the
+        website is `webhook` (404). A Git host sends the branch of a push in `ref`, for example
+        `refs/heads/main`: a push to a different branch starts no deploy (`ignored`). A request
+        while a deploy is in progress starts no second deploy (`busy`). At most 30 requests in
+        one minute from one address.
+      security: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                ref: { type: string, example: refs/heads/main }
+      responses:
+        '200':
+          description: The push was to a different branch.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HookAnswer' }
+        '202':
+          description: 'The deploy started, or a deploy is in progress.'
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HookAnswer' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'The panel could not make the website, or its customer is suspended.' }
+
   /v1/websites/{websiteId}/databases:
     parameters:
       - { $ref: '#/components/parameters/WebsiteId' }
@@ -646,8 +1209,19 @@ paths:
                         engine: { $ref: '#/components/schemas/Engine' }
                         name: { type: string }
                         databaseServerId: { type: string, description: The database server that has the database. }
-                        host: { type: string, description: 'The host name that the application of the website connects to, for example `mariadb.internal`.' }
-                        port: { type: integer, description: The port of the database server. }
+                        host:
+                          type: string
+                          description: >-
+                            The host name that the application of the website connects to. It is
+                            the name of the engine, for example `mariadb.internal`, for a database
+                            server on the server of the website. It is the network name, for example
+                            `shop-db.internal`, for a database server on a different server.
+                        port:
+                          type: integer
+                          description: >-
+                            The port that the application connects to: the port of the database
+                            server on the server of the website, or the usual port of the engine
+                            for a database server on a different server.
                         sizeBytes: { type: integer, description: Not used for Valkey. }
                         number:
                           type: [integer, 'null']
@@ -661,7 +1235,9 @@ paths:
                     type: array
                     description: >-
                       The database servers that can get a database of this website: those of its
-                      customer on its server.
+                      customer on its server, then those of its customer on a different server
+                      that are in a network with the website. Each one also has `remote`: true
+                      for a database server on a different server.
                     items: { $ref: '#/components/schemas/DatabaseServer' }
     post:
       tags: [Databases]
@@ -678,10 +1254,14 @@ paths:
         cannot connect to the database servers of a different customer.
 
 
-        `databaseServerId` selects the database server. With none, the database goes into the
-        first database server of the engine that has space. When the customer has no database
-        server of the engine on the server of the website, the panel makes one with the plan of
-        the customer. The response is 422 when the database server has the number of databases
+        `databaseServerId` selects the database server. It can be a database server of the
+        customer on a different server that is in a network with the website: the website then
+        connects to the network name of the database server, for example `shop-db.internal`,
+        on the usual port of the engine. The job goes to the agent of the server of the
+        database server. With no `databaseServerId`, the database goes into the first database
+        server of the engine that has space, and the database servers on the server of the
+        website are first. When the website can use no database server of the engine, the
+        panel makes one on the server of the website with the plan of the customer. The response is 422 when the database server has the number of databases
         that its plan allows, and when the plan of the customer allows no more database servers.
 
 
@@ -739,6 +1319,75 @@ paths:
         stay. The user of a Valkey database goes with the database.
       responses:
         '202': { $ref: '#/components/responses/JobOnly' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/websites/{websiteId}/databases/{databaseId}/adminer:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+      - { name: databaseId, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [Databases]
+      summary: Open a database in Adminer
+      description: >-
+        Single sign-on for the database tool. The panel makes a temporary database user with
+        access to this one database, and gives its password in the response one time. The panel
+        does not keep the password. Send the fields of `form` to the sign-in form of Adminer at
+        `login.url`, as `auth[driver]`, `auth[server]`, `auth[username]`, `auth[password]` and
+        `auth[db]`, with a POST request. The web panel does this in a new window.
+
+
+        Each customer has one Adminer container on the panel server, in its own gVisor sandbox,
+        and it can connect only to the database servers of its customer. The first request
+        starts it. Wait until `GET /v1/adminer-logins/{id}` gives the status `ready`. The
+        temporary database user expires after 60 minutes, and the panel then removes it.
+        Adminer opens only MariaDB and PostgreSQL databases: the response is 422 for a Valkey
+        database. The response is 409 when the customer is suspended.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                privileges: { type: string, enum: [readonly, readwrite], default: readwrite }
+      responses:
+        '202':
+          description: The panel makes the temporary database user, and starts Adminer if necessary.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  login: { $ref: '#/components/schemas/AdminerLogin' }
+                  form:
+                    type: object
+                    description: The fields of the sign-in form of Adminer. Only this response has the password.
+                    properties:
+                      driver: { type: string, enum: [server, pgsql], description: '"server" is MariaDB.' }
+                      server: { type: string, description: 'The name of the database server for Adminer, for example "shop-db.internal" or "mariadb.internal:3307".' }
+                      username: { type: string }
+                      password: { type: string }
+                      db: { type: string }
+                  jobs: { type: array, items: { $ref: '#/components/schemas/Job' } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: The customer of the website is suspended. }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/adminer-logins/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [Databases]
+      summary: Get the state of an Adminer sign-in
+      description: Only the user who opened the database sees the sign-in. The response has no password.
+      responses:
+        '200':
+          description: The sign-in.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  login: { $ref: '#/components/schemas/AdminerLogin' }
         '404': { $ref: '#/components/responses/NotFound' }
 
   /v1/websites/{websiteId}/database-users:
@@ -967,6 +1616,366 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { description: The customer is suspended. }
         '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/database-servers/{id}/usage:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    get:
+      tags: [Usage]
+      summary: Read the usage history of a database server
+      description: Memory and disk of the database server. Refer to the usage history of a website for the ranges.
+      parameters:
+        - { $ref: '#/components/parameters/UsageRange' }
+      responses:
+        '200':
+          description: The history.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UsageHistory' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/database-servers/{id}/move:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [Databases]
+      summary: Move a database server to a different server
+      description: >-
+        Only an administrator. The database server keeps its ID, its name, its databases, its
+        users and its network name. Its data goes through the encrypted tunnel between the two
+        servers. The database server does not operate while the data moves. After the move, a
+        website on a different server connects through a network with the network name, for
+        example `shop-db.internal`. A website that uses the name of the engine, for example
+        `mariadb.internal`, connects only on the server of the database server.
+
+
+        The response is 422 when: the server is the same server, the server does not have the
+        web role, a server is not healthy, an agent cannot move database servers, a website
+        with a database in the database server is not on the new server and not in a network
+        with the database server, or the database server does not operate or changes now. When
+        the move fails, the database server stays on the old server and operates there.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [serverId]
+              properties:
+                serverId: { type: string, description: The server that gets the database server. }
+      responses:
+        '202':
+          description: >-
+            The new server receives the database server, and the old server sends it. The first
+            job is the job of the new server.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  databaseServer: { $ref: '#/components/schemas/DatabaseServer' }
+                  jobs:
+                    type: array
+                    items: { $ref: '#/components/schemas/Job' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/networks:
+    get:
+      tags: [Networks]
+      summary: List private networks
+      description: >-
+        The private networks of the customers that you can see. Each customer has the network
+        "default". The plan of the customer gives the number of named networks in addition to
+        it (`networks` of the plan). A website connects to each other member of each network
+        that it is in, by the name `<name>.internal`, on its own server and on a different
+        server.
+      parameters:
+        - { name: customerId, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: The networks.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/Network' } }
+    post:
+      tags: [Networks]
+      summary: Create a named network
+      description: >-
+        The response is 422 when the plan of the customer does not let the customer have one
+        more named network. For a reseller, the named networks of its customers count too.
+        Each member must be a website or a database server of the customer.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, pattern: '^[a-z0-9]([a-z0-9-]{0,38}[a-z0-9])?$', description: 'Not "default".' }
+                customerId: { type: [string, 'null'], description: Default is the customer of the user. }
+                websiteIds: { type: array, maxItems: 1000, items: { type: string } }
+                databaseServerIds: { type: array, maxItems: 1000, items: { type: string } }
+      responses:
+        '201':
+          description: The network.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Network' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/networks/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    get:
+      tags: [Networks]
+      summary: Get a private network
+      responses:
+        '200':
+          description: The network.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Network' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Networks]
+      summary: Rename a network or change its members
+      description: >-
+        A list of members replaces the members of that type. A request with no list keeps
+        the members of that type. The network "default" keeps its name. The response is 422
+        when a website with a database in a database server on a different server would have
+        no network with that database server.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, pattern: '^[a-z0-9]([a-z0-9-]{0,38}[a-z0-9])?$' }
+                websiteIds: { type: array, maxItems: 1000, items: { type: string } }
+                databaseServerIds: { type: array, maxItems: 1000, items: { type: string } }
+      responses:
+        '200':
+          description: The network.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Network' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+    delete:
+      tags: [Networks]
+      summary: Remove a named network
+      description: >-
+        The members stay. They lose the connections of this network. The network "default"
+        cannot be removed (422). The response is also 422 when a website with a database in a
+        database server on a different server would have no network with that database server.
+      responses:
+        '204': { description: The network is removed. }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/dns-zones:
+    get:
+      tags: [DNS]
+      summary: List DNS zones
+      description: >-
+        The DNS zones of the customers that you can see. A customer makes a zone for a domain,
+        and then gives the name servers of the panel (`nameServers`) to the registrar of the
+        domain. The servers with the role `dns` answer the queries for each zone.
+      parameters:
+        - { name: customerId, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: The zones, and the host names of the name servers of the panel.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/DnsZone' } }
+                  nameServers: { type: array, items: { type: string }, description: Empty when the panel has no DNS server. A zone cannot be made then. }
+    post:
+      tags: [DNS]
+      summary: Create a DNS zone
+      description: >-
+        The plan of the customer gives the number of zones that the customer can have
+        (`dnsZones` of the plan). For a reseller, the zones of its customers count too.
+
+
+        The new zone gets one NS record for each name server of the panel, and the A and AAAA
+        records of the domains of the websites of the customer that are in the zone.
+
+
+        The response is 422 when a different customer has a zone with this name, with a name
+        above it or with a name in it. The message then gives a TXT record. Add the record at
+        your current DNS provider to prove that you control the domain, and send the request
+        again. Only an administrator can make a zone for the domain of the panel or for the
+        host name of a server.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, description: 'The domain, for example example.com.' }
+                customerId: { type: [string, 'null'], description: Default is the customer of the user. }
+      responses:
+        '202': { $ref: '#/components/responses/DnsZoneJobs' }
+        '409': { description: The customer is suspended. }
+        '422': { $ref: '#/components/responses/Invalid' }
+        '429': { description: Too many DNS changes in one minute. }
+
+  /v1/dns-zones/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    get:
+      tags: [DNS]
+      summary: Get a DNS zone with its records
+      responses:
+        '200':
+          description: The zone.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DnsZone' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [DNS]
+      summary: Remove a DNS zone
+      description: >-
+        Each DNS server removes the zone with all its records and its DNSSEC key. The zone has
+        the status `removing` until each job is complete. Before you remove a zone, change the
+        name servers at the registrar of the domain: while the registrar sends the queries to
+        the panel, a different customer of the panel could make a zone with the same name.
+        `jobs` is empty when the panel has no DNS server.
+      responses:
+        '202': { $ref: '#/components/responses/DnsJobs' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/dns-zones/{id}/records:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [DNS]
+      summary: Add a record to a DNS zone
+      description: >-
+        The response is 422 when the record is not correct for its type, when the zone has an
+        equal record, when a CNAME record and a different record would have the same name, and
+        when the zone has 1000 records.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - { $ref: '#/components/schemas/DnsRecordInput' }
+                - { type: object, required: [type, value] }
+      responses:
+        '202': { $ref: '#/components/responses/DnsRecordJobs' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+        '429': { description: Too many DNS changes in one minute. }
+
+  /v1/dns-zones/{id}/records/{recordId}:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+      - { name: recordId, in: path, required: true, schema: { type: string } }
+    patch:
+      tags: [DNS]
+      summary: Change a record of a DNS zone
+      description: >-
+        Changes the name, the value, the TTL or the priority. The type of a record does not
+        change. A record that the panel made for a website (`managed` is `website`) becomes a
+        record of the user: the panel does not change it after that. The response is 422 for an
+        NS record of the zone itself (`managed` is `ns`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DnsRecordInput' }
+      responses:
+        '202': { $ref: '#/components/responses/DnsRecordJobs' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+        '429': { description: Too many DNS changes in one minute. }
+    delete:
+      tags: [DNS]
+      summary: Remove a record from a DNS zone
+      description: The response is 422 for an NS record of the zone itself.
+      responses:
+        '202': { $ref: '#/components/responses/DnsJobs' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+        '429': { description: Too many DNS changes in one minute. }
+
+  /v1/dns-zones/{id}/dnssec:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    put:
+      tags: [DNS]
+      summary: Turn DNSSEC on or off for a DNS zone
+      description: >-
+        When DNSSEC is turned on, the panel makes a key for the zone (ECDSA P-256, algorithm
+        13), and each DNS server signs the zone with it. The response has the DS record
+        (`dnssec.ds`). Give the DS record to the registrar of the domain.
+
+
+        Before you turn DNSSEC off, remove the DS record at the registrar and wait for one day.
+        A resolver that has the DS record refuses a zone that has no signatures. The panel
+        makes a new key each time DNSSEC is turned on. `jobs` is empty when the value did not
+        change.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled]
+              properties:
+                enabled: { type: boolean }
+      responses:
+        '202': { $ref: '#/components/responses/DnsZoneJobs' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+        '429': { description: Too many DNS changes in one minute. }
+
+  /v1/dns-zones/{id}/check:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [DNS]
+      summary: Ask the public DNS for the name servers of a zone again
+      description: >-
+        The panel also asks every 15 minutes. When the public DNS gives the name servers of
+        the panel (`delegation.state` is `here`), the customer controls the zone: the panel
+        then verifies the domains of the websites of the customer that are in the zone.
+      responses:
+        '200':
+          description: The zone, with the new `delegation`.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DnsZone' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { description: Too many checks in one minute. }
+
+  /v1/dns-zones/{id}/sync:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [DNS]
+      summary: Send a DNS zone to each DNS server again
+      description: For a zone with the status `failed`, where a DNS server did not take the last change.
+      responses:
+        '202': { $ref: '#/components/responses/DnsZoneJobs' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { description: Too many DNS changes in one minute. }
 
   /v1/mail/domains:
     get:
@@ -1327,6 +2336,13 @@ paths:
         Makes a manual backup. The panel keeps the newest manual backups of each website (the
         field "manual" of the backup policy). The retention policy of the scheduled backups does
         not remove the manual backups.
+
+
+        The agent of the server of the website makes the backup of the files and of the
+        databases on that server. The response has this job. For a website with a database in
+        a database server on a different server, the panel also sends a job to the agent of
+        that server. That job makes a snapshot with only those databases (`part` is
+        `databases`), in the repository of that server.
       responses:
         '202': { $ref: '#/components/responses/JobOnly' }
 
@@ -1340,6 +2356,8 @@ paths:
       description: >-
         FR-903. Restore the full website, one database or one file. A restore of the full
         website keeps the files that are not in the snapshot, unless removeNewFiles is true.
+        A snapshot with the part `databases` has only databases: the scope must be `database`,
+        and the agent of the server of the snapshot does the restore.
       requestBody:
         required: true
         content:
@@ -1577,6 +2595,12 @@ paths:
                 gvisorPlatform: { type: string, enum: [systrap, kvm], description: KVM needs a bare-metal server. }
                 updatePolicy: { type: string, enum: [security, all, manual] }
                 maintenanceWindow: { type: string, pattern: '^[0-2][0-9]:[0-5][0-9]-[0-2][0-9]:[0-5][0-9]$' }
+                dnsName:
+                  type: [string, 'null']
+                  description: >-
+                    The host name of the server as a name server. A change of this name, or of the
+                    role `dns`, changes the NS records of each zone: the panel sends all zones to
+                    the DNS servers again.
       responses:
         '200':
           description: >-
@@ -1671,6 +2695,182 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Server' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/mesh:
+    get:
+      tags: [Servers]
+      summary: Get the mesh
+      description: >-
+        The mesh is the set of encrypted tunnels between the servers of the panel. The traffic
+        between two servers goes through the public internet, and WireGuard encrypts it. The
+        answer never has a private key or the secret key of a pair of servers.
+      responses:
+        '200':
+          description: The settings, the servers and the tunnels of the mesh.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Mesh' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    patch:
+      tags: [Servers]
+      summary: Change the address range or the port of the mesh
+      description: >-
+        A change is possible only while the mesh has no tunnel. After a change of the range,
+        each server gets a new mesh address with its next tunnel.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                range: { type: string, description: 'A private IPv4 network with a prefix length from 12 to 22. The default is 10.207.0.0/16.' }
+                port: { type: integer, minimum: 1024, maximum: 65535, description: The UDP port of the tunnels on each server. The default is 51820. }
+      responses:
+        '200':
+          description: The mesh.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Mesh' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/servers/{id}/usage:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    get:
+      tags: [Usage]
+      summary: Read the usage history of a server
+      description: >-
+        CPU, memory and disk in percent of the server, and the traffic of its physical network
+        interfaces. Only for administrators. Refer to the usage history of a website for the
+        ranges.
+      parameters:
+        - { $ref: '#/components/parameters/UsageRange' }
+      responses:
+        '200':
+          description: The history.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UsageHistory' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/usage-alerts/settings:
+    put:
+      tags: [Usage]
+      summary: Change the thresholds of the usage alerts
+      description: Only for administrators. The thresholds are percents of each limit.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UsageAlertSettings' }
+      responses:
+        '200':
+          description: Changed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UsageAlertSettings' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/mesh/servers/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    patch:
+      tags: [Servers]
+      summary: Change the tunnel address of a server
+      description: >-
+        The tunnel address is the public IP address that the other servers send the tunnel
+        traffic to. With null, the panel finds the address from the address of the agent when
+        the server gets its next tunnel. The panel sends the new address to the peers of the server.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tunnelAddress]
+              properties:
+                tunnelAddress: { type: [string, 'null'], description: A public IPv4 or IPv6 address. }
+      responses:
+        '200':
+          description: The mesh, and one job for each peer of the server.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/Mesh' }
+                  - type: object
+                    properties:
+                      jobs: { type: array, items: { $ref: '#/components/schemas/Job' } }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/mesh/servers/{id}/rotate-key:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [Servers]
+      summary: Make a new tunnel key on a server
+      description: >-
+        The server makes a new key pair. The private key does not leave the server. When the job
+        is complete, the panel sends the new public key to the peers of the server. The tunnels
+        of the server do not operate between these two steps, usually for some seconds.
+      responses:
+        '202': { $ref: '#/components/responses/JobOnly' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/mesh/tunnels:
+    post:
+      tags: [Servers]
+      summary: Make a tunnel between two servers
+      description: >-
+        The agent of each server must be from a release that reports a tunnel key, and the panel
+        must know a public IP address of each server. The panel gives each server a mesh address,
+        makes the secret key of the pair, and sends the state to the two servers.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [servers]
+              properties:
+                servers: { type: array, minItems: 2, maxItems: 2, items: { type: string }, description: The IDs of the two servers. }
+      responses:
+        '201':
+          description: The tunnel, and one job for each of the two servers.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tunnel: { $ref: '#/components/schemas/MeshTunnel' }
+                  jobs: { type: array, items: { $ref: '#/components/schemas/Job' } }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/mesh/tunnels/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    delete:
+      tags: [Servers]
+      summary: Remove a tunnel
+      description: The panel sends the new state to the two servers. A server with no tunnel closes its tunnel port.
+      responses:
+        '202': { $ref: '#/components/responses/JobList' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/mesh/tunnels/{id}/repair:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [Servers]
+      summary: Test and repair a tunnel
+      description: >-
+        The panel sends the state to the two servers again. Each agent applies it, tests the
+        tunnel, and reports the result. The panel also does this without a request when a
+        server reports that it does not have the current state.
+      responses:
+        '202': { $ref: '#/components/responses/JobList' }
         '404': { $ref: '#/components/responses/NotFound' }
 
   /v1/servers/{id}/mail:
@@ -2125,6 +3325,51 @@ paths:
               schema: { $ref: '#/components/schemas/Customer' }
         '403': { $ref: '#/components/responses/Forbidden' }
 
+  /v1/brand:
+    get:
+      tags: [Customers]
+      summary: Get the brand of the sign-in page
+      description: >-
+        White label. The brand of the reseller whose panel domain is the host of the request, or
+        else the default brand of the panel. A person who has not signed in can read it.
+      security: []
+      responses:
+        '200':
+          description: The brand.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PublicBrand' }
+  /v1/brand/default:
+    get:
+      tags: [Customers]
+      summary: Get the default brand
+      description: Only an administrator. The administrators and the customers of the panel itself see this brand.
+      responses:
+        '200':
+          description: The default brand.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BrandInput' }
+    put:
+      tags: [Customers]
+      summary: Change the default brand
+      description: >-
+        Only an administrator. A null value removes the field, and the panel then uses its
+        built-in value. White text on the colour must have a contrast of 4.5:1 or more. The logo
+        is a data URL of a PNG, JPEG or WebP image of 256 KB or less and 2048 by 2048 pixels or
+        less. The panel checks the real type of the image.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BrandInput' }
+      responses:
+        '200':
+          description: The default brand.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BrandInput' }
+        '422': { $ref: '#/components/responses/ValidationError' }
   /v1/plans:
     get:
       tags: [Customers]
@@ -2338,9 +3583,12 @@ paths:
                     properties:
                       websites: { type: integer }
                       databases: { type: integer }
+                      dnsZones: { type: integer, description: The number of DNS zones. For a reseller, the zones of its customers count too. }
+                      networks: { type: integer, description: The number of named networks. For a reseller, the named networks of its customers count too. }
                       diskBytes: { type: integer }
                       mailboxes: { type: integer, description: The number of mailboxes of the customer. }
                       mailStorageBytes: { type: integer, description: The total of the sizes of the mailboxes. }
+                      bandwidthBytes: { type: integer, description: The traffic of the websites in the current calendar month (UTC). }
                       customers: { type: [integer, 'null'], description: Only for a reseller. The number of its customers. }
                   backups:
                     type: object
@@ -2350,6 +3598,254 @@ paths:
                   users:
                     type: array
                     items: { $ref: '#/components/schemas/User' }
+  /v1/me/notification-preferences:
+    get:
+      tags: [Notifications]
+      summary: Get the email notifications of the signed-in user
+      description: >-
+        The events that the role of the user can receive, and whether each event sends an email
+        to the user. A new user receives all events. The security events ("required") always send
+        an email.
+      responses:
+        '200':
+          description: The events.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/NotificationPreference' } }
+    put:
+      tags: [Notifications]
+      summary: Choose the email notifications of the signed-in user
+      description: Give only the events to change. A required event cannot be turned off.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [events]
+              properties:
+                events:
+                  type: object
+                  additionalProperties: { type: boolean }
+                  example: { job.failed: false, usage.alert: true }
+      responses:
+        '200':
+          description: The events, after the change.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/NotificationPreference' } }
+        '422': { $ref: '#/components/responses/Invalid' }
+  /v1/notifications:
+    get:
+      tags: [Notifications]
+      summary: List the emails that the panel sent
+      description: >-
+        An administrator sees all emails. A reseller sees the emails to its users and to the
+        users of its customers. A customer sees the emails to the users of its account. A sign-in
+        email has the IP address of the person who signed in, so only that user and the
+        administrators see it.
+      parameters:
+        - { name: state, in: query, schema: { type: string, enum: [queued, sent, failed, skipped] } }
+        - { name: event, in: query, schema: { $ref: '#/components/schemas/NotificationEvent' } }
+        - { name: perPage, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1 } }
+      responses:
+        '200':
+          description: One page of emails. The newest email is first.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/NotificationDelivery' } }
+                  meta:
+                    type: object
+                    properties:
+                      currentPage: { type: integer }
+                      lastPage: { type: integer }
+                      total: { type: integer }
+  /v1/notifications/{id}:
+    get:
+      tags: [Notifications]
+      summary: Get one email, with its text
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      responses:
+        '200':
+          description: The email.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/NotificationDelivery' }
+                  - { type: object, properties: { body: { type: string } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/notifications/{id}/retry:
+    post:
+      tags: [Notifications]
+      summary: Send a failed or skipped email again
+      description: >-
+        For example after a correction of the SMTP server. An administrator can send each email
+        again. A reseller can send again the emails to its customers.
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      responses:
+        '200':
+          description: The email is in the queue.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NotificationDelivery' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'The email is not failed or skipped, or no SMTP server is set.' }
+  /v1/mail-server:
+    get:
+      tags: [Notifications]
+      summary: Get the SMTP server
+      description: >-
+        An administrator gets the server of the panel. A reseller gets its own server. With no
+        server of its own, the emails to the customers of a reseller go through the server of
+        the panel (panelFallback), with the name of the reseller. Other users get status 403.
+      responses:
+        '200':
+          description: The server. "configured" is false when there is none.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MailServer' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    put:
+      tags: [Notifications]
+      summary: Set the SMTP server
+      description: >-
+        The panel connects only to the SMTP ports 25, 465, 587 and 2525. For a reseller, the host
+        must have a public address. The panel never shows the password again: leave out
+        "password" to keep it, or send an empty value to remove it. A change of the host, the
+        port, the encryption, the user or the password needs a new test.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MailServerInput' }
+      responses:
+        '200':
+          description: The server.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MailServer' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Invalid' }
+    delete:
+      tags: [Notifications]
+      summary: Remove the SMTP server
+      responses:
+        '204': { description: Removed. }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /v1/mail-server/test:
+    post:
+      tags: [Notifications]
+      summary: Send a test email
+      description: >-
+        The panel sends the email at once, and gives the answer of the SMTP server. An
+        administrator can send it to any address. A reseller sends it to its own address.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                to: { type: string, format: email, description: Administrators only. The default is the address of the user. }
+      responses:
+        '200':
+          description: The result. "sent" is false when the server did not accept the email.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sent: { type: boolean }
+                  to: { type: string }
+                  error: { type: [string, 'null'] }
+                  server: { $ref: '#/components/schemas/MailServer' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { description: No SMTP server is set. }
+  /v1/notification-templates:
+    get:
+      tags: [Notifications]
+      summary: List the email templates
+      description: >-
+        The subject and the text of the email of each event. In a template, {{name}} is a value,
+        for example {{website}}. "variables" gives the values of each event. A reseller gets only
+        the events of its customers, and starts from the templates of the panel.
+      responses:
+        '200':
+          description: The templates.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/NotificationTemplate' } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /v1/notification-templates/{event}:
+    put:
+      tags: [Notifications]
+      summary: Change an email template
+      parameters: [{ name: event, in: path, required: true, schema: { $ref: '#/components/schemas/NotificationEvent' } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NotificationTemplateInput' }
+      responses:
+        '200':
+          description: The template.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NotificationTemplate' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+    delete:
+      tags: [Notifications]
+      summary: Reset an email template
+      description: The template goes back to the template of the panel (for a reseller) or to the default.
+      parameters: [{ name: event, in: path, required: true, schema: { $ref: '#/components/schemas/NotificationEvent' } }]
+      responses:
+        '200':
+          description: The template, after the reset.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NotificationTemplate' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/notification-templates/{event}/preview:
+    post:
+      tags: [Notifications]
+      summary: Preview an email template with example values
+      parameters: [{ name: event, in: path, required: true, schema: { $ref: '#/components/schemas/NotificationEvent' } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NotificationTemplateInput' }
+      responses:
+        '200':
+          description: The email.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  subject: { type: string }
+                  text: { type: string }
+                  html: { type: string }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
   /v1/audit:
     get:
       tags: [Audit]
@@ -2501,6 +3997,10 @@ components:
       in: path
       required: true
       schema: { type: string }
+    UsageRange:
+      name: range
+      in: query
+      schema: { type: string, enum: ['24h', '7d', '30d', '90d', '1y'], default: '24h' }
 
   responses:
     DatabaseUserJob:
@@ -2513,6 +4013,32 @@ components:
               user: { $ref: '#/components/schemas/DatabaseUser' }
               password: { type: [string, 'null'] }
               job: { $ref: '#/components/schemas/Job' }
+    DnsJobs:
+      description: The jobs are in the queue, one for each DNS server.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              jobs: { type: array, items: { $ref: '#/components/schemas/Job' } }
+    DnsZoneJobs:
+      description: The panel recorded the change. The jobs are in the queue, one for each DNS server.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              zone: { $ref: '#/components/schemas/DnsZone' }
+              jobs: { type: array, items: { $ref: '#/components/schemas/Job' } }
+    DnsRecordJobs:
+      description: The panel recorded the record. The jobs are in the queue, one for each DNS server.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              record: { $ref: '#/components/schemas/DnsRecord' }
+              jobs: { type: array, items: { $ref: '#/components/schemas/Job' } }
     Unauthenticated:
       description: No token, or the token has expired.
       content:
@@ -2541,6 +4067,32 @@ components:
             type: object
             properties:
               job: { $ref: '#/components/schemas/Job' }
+    CronJobJob:
+      description: The cron job, and the job that sends the cron jobs of the website to the agent.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              cronJob: { $ref: '#/components/schemas/CronJob' }
+              job: { $ref: '#/components/schemas/Job' }
+    ReleaseJob:
+      description: The release and its job.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              release: { $ref: '#/components/schemas/Release' }
+              job: { $ref: '#/components/schemas/Job' }
+    JobList:
+      description: The jobs are in the queue.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              jobs: { type: array, items: { $ref: '#/components/schemas/Job' } }
     WebsiteJob:
       description: The panel recorded the change. The job is in the queue.
       content:
@@ -2565,7 +4117,7 @@ components:
           additionalProperties: { type: array, items: { type: string } }
     Scope:
       type: string
-      enum: [websites:read, websites:write, databases:read, databases:write, backups:read, backups:write, mail:read, mail:write, servers:read, servers:write, images:read, images:write, customers:read, customers:write, users:read, users:write, audit:read, tokens:read, tokens:write]
+      enum: [websites:read, websites:write, databases:read, databases:write, dns:read, dns:write, backups:read, backups:write, mail:read, mail:write, servers:read, servers:write, images:read, images:write, customers:read, customers:write, users:read, users:write, audit:read, tokens:read, tokens:write]
     User:
       type: object
       properties:
@@ -2592,6 +4144,7 @@ components:
                   target: { type: string, description: The email address of the administrator that changed. }
                   actor: { type: string }
                   at: { type: string, format: date-time }
+            brand: { $ref: '#/components/schemas/Brand', description: 'White label: the brand that the user sees. A customer of a reseller sees only the brand of the reseller.' }
     ManagedUser:
       allOf:
         - { $ref: '#/components/schemas/User' }
@@ -2625,6 +4178,74 @@ components:
         diskBytes: { type: integer }
         diskIoBytesPerSecond: { type: integer }
         processes: { type: integer }
+        bandwidthBytes:
+          type: integer
+          description: >-
+            The traffic of a website in a calendar month. 0 or none means no limit. The panel
+            shows alerts near the limit. It does not stop the website.
+    UsageHistory:
+      type: object
+      properties:
+        range: { type: string, enum: ['24h', '7d', '30d', '90d', '1y'] }
+        stepMinutes: { type: integer, description: The length of each point. }
+        from: { type: string, format: date-time }
+        to: { type: string, format: date-time }
+        points:
+          type: array
+          items:
+            type: object
+            description: >-
+              The values of one point. Each value is null when no report is in the point. CPU is
+              the percent of one CPU, and for a server the percent of the server. Memory is
+              the average and the largest value, in bytes or, for a server, in percent. Disk is
+              the last value. The traffic is the sum in the point. A database server has no CPU
+              and no traffic.
+            properties:
+              at: { type: string, format: date-time }
+              cpuPercent: { type: [number, 'null'] }
+              cpuMaxPercent: { type: [number, 'null'] }
+              memoryBytes: { type: [integer, 'null'] }
+              memoryMaxBytes: { type: [integer, 'null'] }
+              memoryPercent: { type: [number, 'null'] }
+              memoryMaxPercent: { type: [number, 'null'] }
+              diskBytes: { type: [integer, 'null'] }
+              diskPercent: { type: [number, 'null'] }
+              processes: { type: [integer, 'null'] }
+              bytesIn: { type: [integer, 'null'] }
+              bytesOut: { type: [integer, 'null'] }
+        alerts: { type: array, items: { $ref: '#/components/schemas/UsageAlert' }, description: The open alerts. }
+    UsageAlert:
+      type: object
+      properties:
+        id: { type: string }
+        subjectType: { type: string, enum: [website, server, database_server] }
+        subjectId: { type: string }
+        subjectName: { type: [string, 'null'], description: Null when the subject was removed. }
+        customerId: { type: [string, 'null'], description: Null for a server. }
+        serverId: { type: [string, 'null'] }
+        resource: { type: string, enum: [cpu, memory, disk, bandwidth, processes] }
+        level: { type: string, enum: [warning, critical] }
+        used: { type: number }
+        limit: { type: number }
+        percent: { type: number }
+        usedText: { type: string, example: 9.1 GB }
+        limitText: { type: string, example: 10 GB }
+        openedAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        resolvedAt: { type: [string, 'null'], format: date-time }
+    UsageAlertSettings:
+      type: object
+      required: [warningPercent, criticalPercent]
+      properties:
+        warningPercent: { type: integer, minimum: 1, maximum: 99, default: 80 }
+        criticalPercent: { type: integer, minimum: 2, maximum: 100, default: 95, description: Larger than warningPercent. }
+    WebsiteKind:
+      type: string
+      enum: [public, private, worker]
+      description: >-
+        "public": a website with domains, which the edge proxy serves. "private": a website with
+        no domain: only the websites of its networks connect to it. "worker": a background
+        worker that runs a command and serves no HTTP.
     Website:
       type: object
       properties:
@@ -2635,6 +4256,19 @@ components:
         serverId: { type: string }
         planId: { type: string }
         unixUser: { type: string }
+        networkHost:
+          type: string
+          nullable: true
+          description: The name of the website for a different website of the customer in a network with it, for example "shop-a1b2.internal". The name comes from the Unix user. It is the same on each server. Null for a worker.
+        networkPort:
+          type: integer
+          nullable: true
+          description: The port that the website answers on in its networks. It is 80, with HTTP. The tunnel between two servers encrypts the traffic. Null for a worker.
+        kind: { $ref: '#/components/schemas/WebsiteKind' }
+        command:
+          type: string
+          nullable: true
+          description: The start command of a worker. Null for the other kinds.
         status: { $ref: '#/components/schemas/WebsiteStatus' }
         runtime:
           type: object
@@ -2654,6 +4288,7 @@ components:
         updateReady: { type: boolean }
         limits: { $ref: '#/components/schemas/Limits' }
         usage: { type: [object, 'null'] }
+        bandwidthBytes: { type: integer, description: The traffic of the website in the current calendar month (UTC), in and out. }
         domains:
           type: array
           items: { $ref: '#/components/schemas/Domain' }
@@ -2662,9 +4297,11 @@ components:
         diskLimitApplied:
           type: [boolean, 'null']
           description: >-
-            False when the server of the website does not apply the disk limit of the website,
-            because the file system of the websites has no user quotas. True when it applies the
-            limit. Null when the agent of the server did not report it.
+            False when the server of the website does not apply the disk limit of each of its
+            websites: the file system of the websites has no user quotas, and a website with a
+            disk limit has no disk image. True when the server applies the limits, with user
+            quotas or with a disk image for each website. Null when the agent of the server did
+            not report it.
         managedByTerraform: { type: boolean }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
@@ -2676,6 +4313,63 @@ components:
         port: { type: integer, description: The SFTP port of the server of the website. The default is 2200. }
         username: { type: string }
         authorizedKeys: { type: array, items: { type: string } }
+    FileEntry:
+      type: object
+      properties:
+        name: { type: string }
+        path: { type: string, example: /public/index.php }
+        type: { type: string, enum: [file, directory, link, other] }
+        sizeBytes: { type: integer, description: 0 for a directory and for a link. }
+        modifiedAt: { type: [string, 'null'], format: date-time }
+        mode: { type: string, example: '0640', description: The permission bits. }
+        target: { type: [string, 'null'], description: The target of a link. }
+    CronJob:
+      type: object
+      properties:
+        id: { type: string }
+        schedule: { type: string, example: '*/5 * * * *', description: The five fields of cron. The time is UTC. }
+        command: { type: string }
+        enabled: { type: boolean }
+        lastRunAt: { type: [string, 'null'], format: date-time }
+        lastResult: { type: [string, 'null'], enum: [ok, failed, null] }
+        lastExitCode: { type: [integer, 'null'], description: -1 when the command did not start. }
+        lastOutput: { type: [string, 'null'], description: The end of the output of the last run. }
+    Deploy:
+      type: object
+      properties:
+        source:
+          type: [object, 'null']
+          description: The Git repository of the website. Null when the website has none.
+          properties:
+            repository: { type: string }
+            branch: { type: string }
+            webDirectory: { type: string }
+            trigger: { type: string, enum: [manual, webhook] }
+            buildCommands: { type: array, items: { type: string } }
+            deployKey: { type: string, description: The public SSH key of the website. Add it to a private repository as a read-only deploy key. }
+            webhookUrl: { type: string, description: A POST request to this address starts a deploy when the trigger is "webhook". }
+            secrets: { type: array, items: { type: string }, description: The names of the secrets. No route gives a value. }
+        releases: { type: array, items: { $ref: '#/components/schemas/Release' } }
+    Release:
+      type: object
+      properties:
+        id: { type: string }
+        branch: { type: string }
+        commit: { type: [string, 'null'] }
+        message: { type: string, description: The subject of the commit. }
+        state: { type: string, enum: [building, ready, failed, removed], description: '"ready": the release is on the server. "removed": the agent removed its directory.' }
+        live: { type: boolean, description: True for the release that the website serves. }
+        trigger: { type: string, enum: [manual, webhook] }
+        durationSeconds: { type: integer }
+        error: { type: [string, 'null'], description: 'The error of a deploy that failed, with the end of the output of Git or of the build command.' }
+        jobId: { type: [string, 'null'] }
+        createdAt: { type: string, format: date-time }
+    HookAnswer:
+      type: object
+      properties:
+        status: { type: string, enum: [started, busy, ignored] }
+        message: { type: string }
+        releaseId: { type: string }
     JobState:
       type: string
       enum: [queued, running, succeeded, failed]
@@ -2692,12 +4386,105 @@ components:
         error: { type: [string, 'null'], description: An administrator gets the full error of the agent. Other users get a short text. }
         websiteId: { type: [string, 'null'] }
         databaseServerId: { type: [string, 'null'], description: The database server of the job. A user sees the jobs of the websites and of the database servers of its customers. }
+        dnsZoneId: { type: [string, 'null'], description: The DNS zone of the job. A user sees the jobs of the DNS zones of its customers. }
         serverId: { type: string }
         createdAt: { type: string, format: date-time }
         finishedAt: { type: [string, 'null'], format: date-time }
     Engine:
       type: string
       enum: [mariadb, postgresql, valkey]
+    DnsRecordType:
+      type: string
+      enum: [A, AAAA, CNAME, MX, TXT, SRV, CAA, NS]
+    DnsRecordInput:
+      type: object
+      properties:
+        type: { $ref: '#/components/schemas/DnsRecordType' }
+        name:
+          type: [string, 'null']
+          description: >-
+            The name in the zone, for example `www` or `_dmarc`. `@` or no value is the zone
+            itself. A full name in the zone, for example `www.example.com`, is also correct. The
+            first label can be `*`.
+        value:
+          type: string
+          description: >-
+            A: an IPv4 address. AAAA: an IPv6 address. CNAME, MX and NS: a host name. TXT: the
+            text, at most 2048 printable ASCII characters, with no quotation marks around it.
+            SRV: `weight port target`, for example `5 5060 sip.example.com`. CAA: `flags tag
+            "value"`, for example `0 issue "letsencrypt.org"`.
+        ttl: { type: integer, minimum: 60, maximum: 604800, description: In seconds. The default is 3600. }
+        priority: { type: [integer, 'null'], minimum: 0, maximum: 65535, description: For MX and SRV records. The default is 10. }
+    DnsRecord:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string, description: '`@` for the zone itself.' }
+        type: { $ref: '#/components/schemas/DnsRecordType' }
+        value: { type: string }
+        ttl: { type: integer }
+        priority: { type: [integer, 'null'] }
+        managed:
+          type: [string, 'null']
+          enum: [ns, website, null]
+          description: >-
+            `ns`: an NS record of the zone itself. The panel keeps these records, and a user
+            cannot change them. `website`: an A or AAAA record that the panel made for a domain
+            of a website. The panel changes it when the server of the website gets a new
+            address, and removes it with the domain. Null: a record of the user.
+    DnsZone:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        customerId: { type: string }
+        status:
+          type: string
+          enum: [active, updating, failed, removing]
+          description: >-
+            `updating`: a DNS server does not have the last change yet. `failed`: a DNS server
+            did not take the last change. Send the zone again (`/sync`).
+        serial: { type: integer, description: The serial of the zone. It is the time of the last change, in seconds. A signed zone has a serial that the DNS server makes. }
+        recordCount: { type: integer }
+        nameServers: { type: array, items: { type: string }, description: The host names of the name servers of the panel. Give them to the registrar of the domain. }
+        delegation:
+          type: object
+          description: What the public DNS says about the zone.
+          properties:
+            state:
+              type: string
+              enum: [here, elsewhere, none, unknown]
+              description: >-
+                `here`: the public DNS gives the name servers of the panel. `elsewhere`: it
+                gives other name servers, so the zone on the panel has no effect yet. `none`:
+                it has no name servers for the domain. `unknown`: the panel did not ask yet.
+            nameServers: { type: array, items: { type: string }, description: The name servers that the public DNS gave. }
+            checkedAt: { type: [string, 'null'], format: date-time }
+        dnssec:
+          type: object
+          properties:
+            enabled: { type: boolean }
+            ds:
+              type: [object, 'null']
+              description: The DS record for the registrar of the domain. Null when DNSSEC is off.
+              properties:
+                keyTag: { type: integer }
+                algorithm: { type: integer, description: 13 (ECDSA P-256 with SHA-256). }
+                digestType: { type: integer, description: 2 (SHA-256). }
+                digest: { type: string }
+                record: { type: string, description: 'The full record, for example `example.com. IN DS 22976 13 2 3A81…`.' }
+            dnskey: { type: [string, 'null'], description: The DNSKEY record. Some registrars ask for it and not for the DS record. }
+        servers:
+          type: array
+          description: The state of the zone on each DNS server.
+          items:
+            type: object
+            properties:
+              nameServer: { type: string }
+              state: { type: string, enum: [ok, pending, failed, removed] }
+        websites: { type: integer, description: The number of websites of the customer that have a domain in the zone. }
+        createdAt: { type: string, format: date-time }
+        records: { type: array, items: { $ref: '#/components/schemas/DnsRecord' }, description: Only in the answer for one zone. }
     Snapshot:
       type: object
       properties:
@@ -2705,6 +4492,15 @@ components:
         kind: { type: string, enum: [scheduled, manual] }
         sizeBytes: { type: integer }
         databases: { type: array, items: { type: string }, description: For example "mariadb:shop". Use this value as the restore item. A snapshot has no Valkey data. }
+        part:
+          type: string
+          enum: [website, databases]
+          description: >-
+            `website`: the files of the website and the databases in the database servers on
+            the server of the website. `databases`: only the databases in the database servers
+            on one different server. A backup of a website with such databases has one snapshot
+            of each part.
+        serverId: { type: string, description: The server whose repository has the snapshot. }
         mailboxes: { type: array, items: { type: string } }
         createdAt: { type: string, format: date-time }
     BackupPolicy:
@@ -2741,6 +4537,54 @@ components:
               server: { type: string, description: The name of the server. }
               repository: { type: [string, 'null'], description: 'The restic repository of the server, for example s3:s3.amazonaws.com/bucket/servers/SERVER_ID. Limit the key of the server to this path. Null when no backup target is set.' }
               credentialNames: { type: array, items: { type: string }, description: The names of the credentials of the key of this server. Empty when the server uses the shared credentials. }
+    Mesh:
+      type: object
+      properties:
+        range: { type: string, description: 'The address range of the mesh, for example 10.207.0.0/16.' }
+        port: { type: integer, description: The UDP port of the tunnels on each server. }
+        servers:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              name: { type: string }
+              location: { type: string }
+              state: { type: string }
+              supported: { type: boolean, description: False when the agent of the server is from a release that cannot have tunnels. }
+              networks: { type: boolean, description: False when the agent of the server is from a release that cannot operate network members. A website on such a server cannot use the network name of a database server. }
+              publicKey: { type: [string, 'null'], description: The public tunnel key that the agent reported. }
+              address: { type: [string, 'null'], description: The mesh address of the server. }
+              tunnelAddress: { type: [string, 'null'], description: The public IP address for the tunnel traffic. Null until the panel finds it or an administrator sets it. }
+              tunnels: { type: integer, description: The number of tunnels of the server. }
+              current: { type: boolean, description: True when the server has the mesh state that the panel wants. }
+        tunnels: { type: array, items: { $ref: '#/components/schemas/MeshTunnel' } }
+    MeshTunnel:
+      type: object
+      properties:
+        id: { type: string }
+        state:
+          type: string
+          enum: [up, down, waiting]
+          description: >-
+            `up`: the two servers reach each other through the tunnel. `down`: one server reports
+            that the other does not answer. `waiting`: a server did not report the tunnel in the
+            last three minutes.
+        roundTripMs: { type: [number, 'null'], description: The larger of the two measured round-trip times, in milliseconds. }
+        pinned: { type: boolean, description: True for a tunnel that an administrator made. False for a tunnel that the panel made because a website on one server uses a database server on the other. }
+        inUse: { type: boolean, description: True when a website on one server uses a database server on the other. The panel keeps such a tunnel. }
+        sides:
+          type: array
+          description: What each of the two servers reported last.
+          items:
+            type: object
+            properties:
+              serverId: { type: string }
+              server: { type: [string, 'null'], description: The name of the server. }
+              reachable: { type: [boolean, 'null'] }
+              handshakeAt: { type: [string, 'null'], format: date-time, description: The time of the last WireGuard handshake. }
+              roundTripMs: { type: [number, 'null'] }
+        createdAt: { type: string, format: date-time }
     ServerRole:
       type: string
       enum: [web, database, email, dns, backup]
@@ -2830,6 +4674,15 @@ components:
             cpuPercent: { type: number, description: The load average of one minute for each CPU. }
             memoryPercent: { type: number }
             diskPercent: { type: number, description: The file system of the website files. }
+        dnsName:
+          type: [string, 'null']
+          description: >-
+            The host name of the server as a name server, for example `ns1.example.com`. A
+            server with the role `dns` answers DNS queries only when it has this name. The name
+            must have an A or AAAA record with the address of the server at the DNS provider of
+            its domain.
+        dns: { type: boolean, description: True when the agent of the server can operate DNS. An agent of an earlier release cannot. }
+        addresses: { type: array, items: { type: string }, description: The public IP addresses that the agent reported. The panel uses them for the A and AAAA records of the websites on the server. }
         websites: { type: [integer, 'null'] }
         lastSeenAt: { type: [string, 'null'], format: date-time }
     Image:
@@ -2886,11 +4739,43 @@ components:
         finishedAt: { type: string, format: date-time, nullable: true, description: The time when the rollout ended. Null while the rollout is in progress or paused. }
     Branding:
       type: object
+      description: >-
+        The brand of a reseller (white label). In a change, a null value removes the field. A new
+        panel domain, name server host name or mail host name needs a proof of control: a verified
+        domain of the reseller, a DNS zone of the reseller that is delegated to the panel, or the
+        TXT record that the error message gives.
+      properties:
+        name: { type: [string, 'null'], maxLength: 100 }
+        colour: { type: [string, 'null'], pattern: '^#[0-9a-fA-F]{6}$', description: White text on the colour must have a contrast of 4.5:1 or more. }
+        logo: { type: [string, 'null'], description: 'A data URL of a PNG, JPEG or WebP image: 256 KB or less, 2048 by 2048 pixels or less.' }
+        panelDomain: { type: [string, 'null'], description: The panel domain of the reseller. The edge proxy of the panel server gets a TLS certificate for it. }
+        supportEmail: { type: [string, 'null'], format: email }
+        nameServers: { type: [array, 'null'], items: { type: string }, description: One host name for each name server of the panel, in the order of brandStatus.panelNameServers. The zones of the reseller and of its customers get these names. }
+        mailHost: { type: [string, 'null'], description: The mail host name that the customers of the reseller see. }
+    BrandInput:
+      type: object
+      properties:
+        name: { type: [string, 'null'], maxLength: 100 }
+        colour: { type: [string, 'null'], pattern: '^#[0-9a-fA-F]{6}$' }
+        logo: { type: [string, 'null'] }
+        supportEmail: { type: [string, 'null'], format: email }
+    PublicBrand:
+      type: object
       properties:
         name: { type: string }
-        colour: { type: string, pattern: '^#[0-9a-fA-F]{6}$' }
-        panelDomain: { type: string }
-        supportEmail: { type: string, format: email }
+        colour: { type: string }
+        logo: { type: [string, 'null'] }
+        supportEmail: { type: [string, 'null'] }
+        builtIn: { type: boolean, description: True when the panel has the built-in brand. The web panel then shows the built-in logo. }
+    Brand:
+      allOf:
+        - { $ref: '#/components/schemas/PublicBrand' }
+        - type: object
+          properties:
+            source: { type: string, enum: [panel, reseller] }
+            panelDomain: { type: string }
+            nameServers: { type: array, items: { type: string }, description: The host names of the name servers that the user gives to a registrar. }
+            mailHost: { type: [string, 'null'] }
     Domain:
       type: object
       properties:
@@ -3044,16 +4929,29 @@ components:
         engine: { $ref: '#/components/schemas/Engine' }
         customerId: { type: string }
         serverId: { type: string, description: The server that has the container. }
+        movingToServerId:
+          type: string
+          nullable: true
+          description: The server that receives the database server, while its status is `moving`.
         planId: { type: string, description: The plan gives the limits and the number of databases. }
         status:
           type: string
-          enum: [starting, running, stopped, failed, removing]
+          enum: [starting, running, stopped, failed, moving, removing]
           description: >-
             "starting": the agent makes the database server. "stopped": the agent reports that the
             container does not operate. "failed": the agent could not make the database server.
+            "moving": the database server moves to a different server, and does not operate.
             "removing": the agent removes the database server.
         host: { type: string, description: 'The host name that a website container connects to: `mariadb.internal`, `postgres.internal` or `valkey.internal`.' }
         port: { type: integer, description: The port that a website container connects to. }
+        networkHost:
+          type: [string, 'null']
+          description: >-
+            The network name of the database server, for example `shop-db.internal`. Each website
+            that is in a network with the database server connects to this name and to
+            `networkPort`, on the same server and on a different server. Null for a database
+            server with a name that an engine uses (`mariadb`, `postgres` or `valkey`).
+        networkPort: { type: integer, description: 'The port for `networkHost`: the usual port of the engine (3306, 5432 or 6379).' }
         limits: { $ref: '#/components/schemas/DatabaseLimits' }
         usage:
           type: [object, 'null']
@@ -3074,6 +4972,18 @@ components:
         databaseServerId: { type: string, description: The database server of the user. }
         access: { type: string, enum: [website, anywhere], description: '"website": only the website container can connect. "anywhere": any address, with TLS.' }
         grants: { type: array, items: { $ref: '#/components/schemas/DatabaseGrant' } }
+    AdminerLogin:
+      type: object
+      properties:
+        id: { type: string }
+        status: { type: string, enum: [starting, ready, failed, expired], description: '"ready": Adminer can sign in with the temporary database user.' }
+        url: { type: string, description: 'The address of this sign-in in Adminer: the address of the Adminer of the customer and a random key. Adminer keeps the session of the sign-in on this address only.' }
+        websiteId: { type: [string, 'null'] }
+        databaseId: { type: [string, 'null'] }
+        databaseName: { type: string }
+        privileges: { type: string, enum: [readonly, readwrite] }
+        username: { type: string, description: The temporary database user. }
+        expiresAt: { type: string, format: date-time }
     DatabaseGrant:
       type: object
       properties:
@@ -3096,6 +5006,25 @@ components:
         planId: { type: string }
         resellerId: { type: [string, 'null'] }
         branding: { oneOf: [{ $ref: '#/components/schemas/Branding' }, { type: 'null' }] }
+        brandStatus:
+          type: [object, 'null']
+          description: For a reseller, the state of the certificate of its panel domain, and the host names of the name servers of the panel.
+          properties:
+            certificate:
+              type: [object, 'null']
+              properties:
+                domain: { type: string }
+                method: { type: string, enum: [letsencrypt, internal] }
+                state: { type: string, enum: [valid, pending, expired] }
+                expiresAt: { type: [string, 'null'], format: date-time }
+                error: { type: [string, 'null'] }
+                checkedAt: { type: [string, 'null'], format: date-time }
+            panelDomain: { type: string, description: The domain of the panel. A CNAME record of the reseller panel domain can point to it. }
+            panelNameServers: { type: array, items: { type: string } }
+            nameServerAddresses:
+              type: object
+              description: The public addresses of each name server of the panel. Each host name that the reseller gives to a name server needs the same A and AAAA records.
+              additionalProperties: { type: array, items: { type: string } }
         allowedPlanIds: { type: [array, 'null'], items: { type: string }, description: For a reseller, the plans that it can give to its customers. }
         suspended: { type: boolean }
         suspendedBy: { type: [string, 'null'], enum: [administrator, reseller, null] }
@@ -3128,6 +5057,20 @@ components:
           description: >-
             The number of database servers of a customer with the plan. A request with no value
             keeps the value of the plan. A new plan gets 3.
+        dnsZones:
+          type: integer
+          minimum: 0
+          description: >-
+            The number of DNS zones of a customer with the plan. A request with no value keeps
+            the value of the plan. A new plan gets 5.
+        networks:
+          type: integer
+          minimum: 0
+          maximum: 1000
+          description: >-
+            The number of named private networks of a customer with the plan, in addition to the
+            network "default". 0 turns named networks off. A request with no value keeps the
+            value of the plan. A new plan gets 0.
         databaseLimits:
           $ref: '#/components/schemas/DatabaseLimits'
           description: >-
@@ -3135,12 +5078,95 @@ components:
             limits of the plan. A new plan gets the vCPUs of a website, the half of its memory
             and the half of its disk space. A change gives the new limits to the database
             servers of the plan that have the limits of the plan.
+    Network:
+      type: object
+      required: [id, customerId, name, isDefault, websiteIds, databaseServerIds]
+      properties:
+        id: { type: string }
+        customerId: { type: string }
+        name: { type: string }
+        isDefault: { type: boolean, description: True for the network "default" of the customer. }
+        websiteIds: { type: array, items: { type: string } }
+        databaseServerIds: { type: array, items: { type: string } }
+        createdAt: { type: [string, 'null'], format: date-time }
     Plan:
       allOf:
         - { $ref: '#/components/schemas/PlanInput' }
         - type: object
           properties:
             id: { type: string }
+    NotificationEvent:
+      type: string
+      enum: [job.failed, backup.failed, certificate.expiring, account.suspended, account.restored, signin.new_device, usage.alert, server.offline]
+    NotificationPreference:
+      type: object
+      properties:
+        event: { $ref: '#/components/schemas/NotificationEvent' }
+        label: { type: string }
+        description: { type: string }
+        email: { type: boolean, description: True when the event sends an email to the user. }
+        required: { type: boolean, description: A security email. The user cannot turn it off. }
+    NotificationDelivery:
+      type: object
+      properties:
+        id: { type: string }
+        event: { $ref: '#/components/schemas/NotificationEvent' }
+        label: { type: string }
+        recipient: { type: string }
+        subject: { type: string }
+        state: { type: string, enum: [queued, sent, failed, skipped], description: '"skipped": no SMTP server was set. The panel tries 3 times before "failed".' }
+        error: { type: [string, 'null'] }
+        attempts: { type: integer }
+        sentBy: { type: string, enum: [panel, reseller], description: The SMTP server that sends the email. }
+        createdAt: { type: string, format: date-time }
+        sentAt: { type: [string, 'null'], format: date-time }
+    MailServer:
+      type: object
+      properties:
+        configured: { type: boolean }
+        enabled: { type: boolean }
+        host: { type: [string, 'null'] }
+        port: { type: [integer, 'null'] }
+        encryption: { type: [string, 'null'], enum: [tls, starttls, none, null] }
+        username: { type: [string, 'null'] }
+        hasPassword: { type: boolean }
+        fromAddress: { type: [string, 'null'] }
+        fromName: { type: [string, 'null'] }
+        replyTo: { type: [string, 'null'] }
+        testedAt: { type: [string, 'null'], format: date-time }
+        testError: { type: [string, 'null'] }
+        panelFallback: { type: [boolean, 'null'], description: For a reseller only. True when the server of the panel sends the emails while the reseller has none. }
+    MailServerInput:
+      type: object
+      required: [host, port, encryption, fromAddress]
+      properties:
+        enabled: { type: boolean, default: true }
+        host: { type: string, maxLength: 253 }
+        port: { type: integer, enum: [25, 465, 587, 2525] }
+        encryption: { type: string, enum: [tls, starttls, none], description: '"tls": TLS from the start (port 465). "starttls": the server must give STARTTLS. "none": no TLS.' }
+        username: { type: [string, 'null'], maxLength: 200 }
+        password: { type: [string, 'null'], maxLength: 500 }
+        fromAddress: { type: string, format: email }
+        fromName: { type: [string, 'null'], maxLength: 100 }
+        replyTo: { type: [string, 'null'], format: email }
+    NotificationTemplate:
+      type: object
+      properties:
+        event: { $ref: '#/components/schemas/NotificationEvent' }
+        label: { type: string }
+        description: { type: string }
+        subject: { type: string }
+        body: { type: string }
+        changed: { type: boolean, description: True when this scope changed the template. }
+        originalSubject: { type: string, description: The subject after a reset. }
+        originalBody: { type: string }
+        variables: { type: array, items: { type: string } }
+    NotificationTemplateInput:
+      type: object
+      required: [subject, body]
+      properties:
+        subject: { type: string, maxLength: 200 }
+        body: { type: string, maxLength: 10000 }
     PanelCertificate:
       type: object
       required: [domain, method, state, letsEncryptAvailable, serversWithoutCa]
@@ -3177,6 +5203,17 @@ components:
               containerTool: { type: boolean, description: A held container tool. The policy "tools" updates it (FR-1113). }
         rebootRequired: { type: boolean }
         lastUpdateAt: { type: string, format: date-time }
+        dns: { type: boolean, description: True when the agent can operate DNS. }
+        addresses: { type: array, maxItems: 16, items: { type: string }, description: The public IP addresses of the server. }
+        dnsZones:
+          type: [array, 'null']
+          description: The DNS zones of the server. The panel sends each zone that the server does not have with the last serial, and removes each zone that the server must not have. An agent that cannot operate DNS does not send the list.
+          items:
+            type: object
+            required: [name, serial]
+            properties:
+              name: { type: string, maxLength: 253 }
+              serial: { type: integer, minimum: 0, description: The serial of the zone that the DNS server loaded last. 0 when it loaded none. }
         services:
           type: array
           items:
@@ -3193,6 +5230,8 @@ components:
             cpuPercent: { type: number, description: The load average of one minute for each CPU. }
             memoryPercent: { type: number }
             diskPercent: { type: number, description: The file system of the website files. }
+            networkInBytes: { type: integer, description: The bytes that the physical network interfaces received since the last report. }
+            networkOutBytes: { type: integer, description: The bytes that the physical network interfaces sent since the last report. }
         websites:
           type: array
           items:
@@ -3203,6 +5242,8 @@ components:
               memoryBytes: { type: integer }
               diskBytes: { type: integer }
               processes: { type: integer }
+              bytesIn: { type: integer, description: The size of the requests to the domains of the website through the edge proxy since the last report. }
+              bytesOut: { type: integer, description: The size of the answers since the last report. }
         domains:
           type: [array, 'null']
           description: The DNS and the certificate of each domain of the websites on the server.
@@ -3224,6 +5265,18 @@ components:
               sizeBytes: { type: integer }
               number: { type: integer, minimum: 1, description: Valkey only. The database number. }
               keys: { type: integer, minimum: 0, description: Valkey only. The number of keys. }
+        cronRuns:
+          type: [array, 'null']
+          description: The results of the cron jobs that ran since the last reports. The agent sends each result in 3 reports.
+          items:
+            type: object
+            required: [websiteId, id, at, exitCode]
+            properties:
+              websiteId: { type: string }
+              id: { type: string, description: The ID of the cron job. }
+              at: { type: string, format: date-time }
+              exitCode: { type: integer, description: -1 when the command did not start. }
+              output: { type: string, description: The end of the output of the command. }
         databaseEngines:
           type: [array, 'null']
           description: The database engines that the agent can operate. An agent of an earlier release does not send the field.

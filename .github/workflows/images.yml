@@ -28,6 +28,8 @@ jobs:
           - { image: apache-php8.4, context: images/apache-php-fpm, file: images/apache-php-fpm/Containerfile, args: PHP_VERSION=8.4 }
           - { image: edge, context: images/edge, file: images/edge/Containerfile, args: '' }
           - { image: sftp, context: images/sftp, file: images/sftp/Containerfile, args: '' }
+          - { image: adminer, context: images/adminer, file: images/adminer/Containerfile, args: '' }
+          - { image: dns, context: images/dns, file: images/dns/Containerfile, args: '' }
           - { image: panel-api, context: ., file: images/panel-api/Containerfile, args: '' }
           - { image: panel-web, context: ., file: images/panel-web/Containerfile, args: '' }
           - { image: mariadb, context: images/mariadb, file: images/mariadb/Containerfile, args: '' }
@@ -137,6 +139,29 @@ jobs:
             sudo test -d "$data/appendonlydir"
             exit 0
           fi
+          if [ "$IMAGE" = dns ]; then
+            # The limits of quadlet.DnsUnit, with a configuration and a zone as the agent writes
+            # them. Knot loads the zone and answers a query for it.
+            mkdir -p "$RUNNER_TEMP/dns/etc/zones" "$RUNNER_TEMP/dns/db"
+            printf '%s\n' 'server:' '    rundir: "/run/knot"' '    listen: 0.0.0.0@8053' 'database:' '    storage: "/var/lib/knot"' \
+              'template:' '  - id: default' '    storage: "/etc/knot/zones"' '    file: "%s.zone"' '    zonefile-sync: -1' \
+              '    zonefile-load: whole' '    journal-content: none' 'zone:' '  - domain: example.com.' >"$RUNNER_TEMP/dns/etc/knot.conf"
+            printf '%s\n' '$ORIGIN example.com.' '$TTL 3600' '@ 3600 IN SOA ns1.example.com. hostmaster.example.com. 1 3600 900 1209600 300' \
+              '@ 3600 IN NS ns1.example.com.' 'ns1 3600 IN A 203.0.113.10' >"$RUNNER_TEMP/dns/etc/zones/example.com.zone"
+            sudo chown -R root:root "$RUNNER_TEMP/dns"
+            docker run -d --name smoke --cap-drop=all --security-opt no-new-privileges --read-only --tmpfs /run/knot --tmpfs /tmp \
+              -v "$RUNNER_TEMP/dns/etc:/etc/knot:ro" -v "$RUNNER_TEMP/dns/db:/var/lib/knot" dns:test
+            answer=""
+            for _ in $(seq 1 30); do
+              answer=$(docker exec smoke kdig @127.0.0.1 -p 8053 +short ns1.example.com A 2>/dev/null || true)
+              [ "$answer" = "203.0.113.10" ] && break
+              sleep 2
+            done
+            docker logs smoke
+            docker inspect -f '{{.State.Running}}' smoke | grep -q true
+            [ "$answer" = "203.0.113.10" ]
+            exit 0
+          fi
           if [ "$IMAGE" = sftp ]; then
             # The capabilities of quadlet.SftpUnit. sshd makes the host keys and answers with
             # its version line.
@@ -230,6 +255,8 @@ jobs:
           fi
           case "$IMAGE" in
             frankenphp-*|apache-*) args="--read-only --tmpfs /tmp --user 1001:1001" want=200 ;;
+            # Adminer answers only on the address of a sign-in: /<tool>/<32 hex digits>/.
+            adminer) args="--read-only --tmpfs /tmp --user 1001:1001" want=200 path=/test/0123456789abcdef0123456789abcdef/ ;;
             panel-web) args="--read-only --tmpfs /tmp" want=200 ;;
             edge) args="--read-only --tmpfs /data --tmpfs /run/caddy-admin" want=any ;;
           esac

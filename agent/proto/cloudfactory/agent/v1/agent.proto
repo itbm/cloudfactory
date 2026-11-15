@@ -34,6 +34,8 @@ service AgentService {
   rpc SetSftp(SetSftpRequest) returns (JobAccepted);
   rpc ConfigureHost(ConfigureHostRequest) returns (JobAccepted);
   rpc SetPanelCertificate(SetPanelCertificateRequest) returns (JobAccepted);
+  // Sets the panel domains of the resellers (white label). Only the panel server has them.
+  rpc SetPanelBrands(SetPanelBrandsRequest) returns (JobAccepted);
   rpc SetDatabaseServer(DatabaseServerRequest) returns (JobAccepted);
   rpc DeleteDatabaseServer(DeleteDatabaseServerRequest) returns (JobAccepted);
   rpc SetMailServer(SetMailServerRequest) returns (JobAccepted);
@@ -45,9 +47,30 @@ service AgentService {
   rpc DeleteMailbox(MailAddressRequest) returns (JobAccepted);
   rpc SetMailAlias(SetMailAliasRequest) returns (JobAccepted);
   rpc DeleteMailAlias(MailAddressRequest) returns (JobAccepted);
+  rpc SetDnsZones(SetDnsZonesRequest) returns (JobAccepted);
+  rpc DeleteDnsZones(DeleteDnsZonesRequest) returns (JobAccepted);
+  rpc SetCronJobs(SetCronJobsRequest) returns (JobAccepted);
+  rpc RunCronJob(RunCronJobRequest) returns (JobAccepted);
+  rpc Deploy(DeployRequest) returns (JobAccepted);
+  rpc ActivateRelease(ActivateReleaseRequest) returns (JobAccepted);
+  rpc SetMesh(SetMeshRequest) returns (JobAccepted);
+  rpc RotateMeshKey(RotateMeshKeyRequest) returns (JobAccepted);
+  rpc SendDatabaseServer(SendDatabaseServerRequest) returns (JobAccepted);
+  rpc ReceiveDatabaseServer(ReceiveDatabaseServerRequest) returns (JobAccepted);
 
   // Returns the actual state of the server at once. This method does not make a job.
   rpc GetStatus(GetStatusRequest) returns (HostStatus);
+
+  // The file manager and the logs of a website. These methods do not make a job: they give
+  // the result at once. The agent does each of them as the Unix user of the website, in the
+  // directory of the website.
+  rpc ListFiles(FileRequest) returns (FileList);
+  rpc ReadFile(FileRequest) returns (FileContent);
+  rpc WriteFile(WriteFileRequest) returns (FileEntry);
+  rpc MakeDirectory(FileRequest) returns (FileEntry);
+  rpc MoveFile(MoveFileRequest) returns (FileEntry);
+  rpc DeleteFile(FileRequest) returns (FileDeleted);
+  rpc GetLogs(GetLogsRequest) returns (Logs);
 }
 
 message JobAccepted {
@@ -98,6 +121,18 @@ message Website {
   // The agent records the value in CreateWebsite. After that, it keeps the value of the
   // website. SetRuntime records the value only for a website that has none.
   string database_instance = 15;
+  // True for a background worker: the container serves no HTTP. It has no port on the private
+  // service address, no route in the edge proxy, and it is not a network member that answers.
+  // It can connect to the members of its networks. "command" is its start command, for each
+  // runtime. The command runs in the gVisor sandbox as the Unix user of the website, with the
+  // limits of the website.
+  bool worker = 16;
+  // A path prefix for the route of the website in the edge proxy, for example "/01jbq3z5k8n6/".
+  // Empty for a usual website: its route has all paths of its domains. With a value, the
+  // route has only the paths that start with the prefix, so that more than one website can
+  // have the same domain. The panel uses it for the database tool of each customer
+  // (Adminer), which has one domain for all customers. The domain has no redirect.
+  string route_path = 17;
 }
 
 // A database server of a customer: one database container with one engine, in its own gVisor
@@ -355,6 +390,9 @@ message DeleteDatabaseRequest {
   repeated string users = 6;
   // The ID of the database server of the database.
   string database_server = 7;
+  // The ID of the customer of the website. It is necessary for a website of a different
+  // server, which connects through the network of the customer.
+  string customer = 8;
 }
 
 message DatabaseGrant {
@@ -392,6 +430,9 @@ message DeleteDatabaseUserRequest {
   repeated string website_databases = 6;
   // The ID of the database server of the user.
   string database_server = 7;
+  // The ID of the customer of the website. It is necessary for a website of a different
+  // server.
+  string customer = 8;
 }
 
 // A database or a database user of a website.
@@ -414,6 +455,13 @@ message BackupRequest {
   map<string, string> credentials = 7;
   // When set, the agent removes the snapshots of the website that the policy does not keep (FR-902).
   Retention retention = 8;
+  // True: the backup has only the dumps of the databases, not the files of the website. The
+  // panel sends such a backup to the server of a database server when the website is on a
+  // different server. The snapshot has the kind "<kind>-databases".
+  bool databases_only = 9;
+  // The ID of the customer of the website. It is necessary with databases_only: the agent
+  // has no record of a website of a different server.
+  string customer = 10;
 }
 
 // The snapshots of a website that the agent keeps. The policy applies to the snapshots of the
@@ -453,6 +501,9 @@ message RestoreRequest {
   bool delete_extra = 10;
   // Scope "database": the ID of the database server of the database.
   string database_server = 11;
+  // Scope "database": the ID of the customer of the website. It is necessary for a website
+  // of a different server.
+  string customer = 12;
 }
 
 // Sets the SFTP access of a website. The owner signs in as the Unix user of the website and sees
@@ -485,6 +536,131 @@ message SetPanelCertificateRequest {
   string method = 2;
 }
 
+// The panel domains of the resellers. The edge proxy sends each of them to the panel, as the
+// panel domain, and gets a TLS certificate for each of them: from Let's Encrypt for a public
+// name, else from the certificate authority of the panel. The list is the full list: a domain
+// that is not in it loses its route and its certificate policy.
+message SetPanelBrandsRequest {
+  string job_id = 1;
+  repeated string domains = 2;
+}
+
+// One other server that this server has an encrypted tunnel to.
+message MeshPeer {
+  // The ID of the other server in the panel.
+  string server = 1;
+  // The public key of the other server: 32 bytes in base64.
+  string public_key = 2;
+  // The secret key of this pair of servers: 32 bytes in base64. The panel makes it.
+  string preshared_key = 3;
+  // The public address and the UDP port of the other server, for example
+  // "203.0.113.2:51820" or "[2001:db8::2]:51820".
+  string endpoint = 4;
+  // The mesh address of the other server.
+  string address = 5;
+  // The addresses of the network members on the other server that a website of this server
+  // can connect to. The tunnel sends the traffic for these addresses to the other server.
+  repeated string members = 6;
+}
+
+// One network member on this server: a database server with a name ("<name>.internal") and
+// an address of the mesh range. The name and the address are the same on each server.
+message NetworkMember {
+  // The ID of the database server.
+  string id = 1;
+  // The member address.
+  string address = 2;
+  // The port that the member answers on: the usual port of its engine.
+  int32 port = 3;
+  // The mesh addresses of the other servers that have a website in a network of the member.
+  // Only these servers can connect to the member through a tunnel.
+  repeated string servers = 4;
+}
+
+// The name of one network member for a website.
+message NetworkName {
+  // The host name, for example "shop-db.internal".
+  string name = 1;
+  // The member address.
+  string address = 2;
+  // The port of the member.
+  int32 port = 3;
+}
+
+// One website of this server, with the network members that it can connect to. The agent
+// writes the names in the hosts file of the website container, and the firewall lets only
+// this website connect to these members.
+message NetworkWebsite {
+  // The ID of the website.
+  string id = 1;
+  repeated NetworkName names = 2;
+}
+
+// The full mesh state of one server: its tunnels to other servers. The traffic between the
+// servers goes through the public internet, and WireGuard encrypts it.
+message Mesh {
+  // The panel increases the version at each change. The agent reports the version that it has.
+  int64 version = 1;
+  // The address range of the mesh: a private IPv4 network, for example "10.207.0.0/16".
+  string range = 2;
+  // The mesh address of this server. An empty address with no peers takes the server out of
+  // the mesh.
+  string address = 3;
+  // The UDP port of the tunnels on this server.
+  int32 port = 4;
+  repeated MeshPeer peers = 5;
+  // The networks of the customers on this server. A server with no tunnel can have them:
+  // then the request has the range, and no address and no peers.
+  repeated NetworkMember members = 6;
+  repeated NetworkWebsite websites = 7;
+}
+
+// Sets the tunnels of this server. The request always has the full state, so the agent can
+// do the same job again. The agent refuses a key that is not 32 bytes, an address outside
+// the mesh range, and a peer address that is not a public address.
+message SetMeshRequest {
+  string job_id = 1;
+  Mesh mesh = 2;
+}
+
+// Makes a new tunnel key on this server. The result has the new public key ("publicKey").
+// The private key does not leave the server. The tunnels of the server stop until each peer
+// has the new public key (SetMesh).
+message RotateMeshKeyRequest {
+  string job_id = 1;
+}
+
+// The move of a database server to a different server, with the same ID, name and member
+// address. The panel sends ReceiveDatabaseServer to the new server and SendDatabaseServer to
+// the old server. The old server stops the database server and sends its data through the
+// tunnel between the two servers, to the transfer port of the new server. The new server then
+// starts the database server. The data of the old server stay until the panel sends
+// DeleteDatabaseServer to it.
+message SendDatabaseServerRequest {
+  string job_id = 1;
+  string database_server = 2;
+  // "mariadb", "postgresql" or "valkey".
+  string engine = 3;
+  // The mesh address of the new server. It must be the address of a peer of this server.
+  string to = 4;
+  // The secret of this move: 64 hexadecimal characters. The new server accepts only a
+  // connection that sends it first.
+  string token = 5;
+}
+
+message ReceiveDatabaseServerRequest {
+  string job_id = 1;
+  // The database server with its port and its limits on this server.
+  DatabaseServer database_server = 2;
+  // The mesh address of the old server. It must be the address of a peer of this server.
+  string from = 3;
+  string token = 4;
+  // The time that this server waits for the old server to connect, in seconds. 0 means 15
+  // minutes. The data has no time limit, but a connection that sends nothing for 2 minutes
+  // ends.
+  int32 timeout_seconds = 5;
+}
+
 message HostRequest {
   string job_id = 1;
   // InstallHostUpdates: "security", "all", "manual" or "tools". "tools" updates only the
@@ -514,6 +690,54 @@ message Service {
   string state = 2;
 }
 
+// One record of a DNS zone. The agent checks each field and writes the zone file itself: the
+// panel sends no text of a zone file.
+message DnsRecord {
+  // The name in the zone: "@" for the zone itself, or labels such as "www" and "_dmarc".
+  string name = 1;
+  // "A", "AAAA", "CNAME", "MX", "TXT", "SRV", "CAA" or "NS".
+  string type = 2;
+  // In seconds, from 60 to 604800.
+  int32 ttl = 3;
+  // A: an IPv4 address. AAAA: an IPv6 address. CNAME, MX and NS: a host name with no dot at
+  // the end. TXT: the text, with no quotation marks around it. SRV: "weight port target".
+  // CAA: 'flags tag "value"'.
+  string value = 4;
+  // MX and SRV only.
+  int32 priority = 5;
+}
+
+// A DNS zone with all its records. The zone has one or more NS records with the name "@": the
+// first one is the primary name server in the SOA record.
+message DnsZone {
+  string name = 1;
+  // The time of the last change, in seconds. The agent does not replace a zone with a zone
+  // that has a smaller serial.
+  int64 serial = 2;
+  repeated DnsRecord records = 3;
+  // The private DNSSEC key of the zone: an ECDSA P-256 key in the PKCS #8 PEM format. Empty
+  // when DNSSEC is off. The DNS server then removes the keys and the signatures of the zone.
+  string dnssec_key = 4;
+  // The key tag of the key. The agent imports the key only when the DNS server does not
+  // have a key with this tag.
+  int32 dnssec_key_tag = 5;
+}
+
+// Writes DNS zones on this server, and starts the DNS server (the container cf-dns) if it
+// does not operate. Each zone replaces the zone with the same name. The other zones stay.
+message SetDnsZonesRequest {
+  string job_id = 1;
+  // At most 100 zones.
+  repeated DnsZone zones = 2;
+}
+
+// Removes DNS zones from this server, with their DNSSEC keys. A zone that the server does
+// not have is not an error.
+message DeleteDnsZonesRequest {
+  string job_id = 1;
+  repeated string names = 2;
+}
+
 message HostStatus {
   string agent_version = 1;
   string kernel = 2;
@@ -522,4 +746,125 @@ message HostStatus {
   repeated PendingUpdate pending_updates = 5;
   bool reboot_required = 6;
   repeated Service services = 7;
+}
+
+// A cron job of a website: a command that the agent runs in the container of the website at
+// the times of the schedule.
+message CronJob {
+  string id = 1;
+  // Five fields: minute, hour, day of the month, month, day of the week. The time is UTC.
+  string schedule = 2;
+  // One line. The agent runs it with "sh -c" in the directory /app of the container.
+  string command = 3;
+  bool enabled = 4;
+}
+
+// SetCronJobs replaces all cron jobs of a website.
+message SetCronJobsRequest {
+  string job_id = 1;
+  string website_id = 2;
+  repeated CronJob cron_jobs = 3;
+}
+
+// RunCronJob runs the command of one cron job now.
+message RunCronJobRequest {
+  string job_id = 1;
+  string website_id = 2;
+  CronJob cron_job = 3;
+}
+
+// Deploy gets the code of a Git repository into a new release directory, runs the build
+// commands, and starts the website from the new release with no stop. If a step fails, the
+// website continues from the release that it had.
+message DeployRequest {
+  string job_id = 1;
+  // The website with the document root of the new release, for example
+  // "releases/<release_id>/public".
+  Website website = 2;
+  string release_id = 3;
+  string repository = 4;
+  string branch = 5;
+  repeated string build_commands = 6;
+  // The environment variables of the build commands. The agent does not keep them.
+  map<string, string> secrets = 7;
+  // The private SSH key for the repository, or empty. The agent does not keep it.
+  string deploy_key = 8;
+  HealthCheck health_check = 9;
+  // The IDs of the earlier releases that stay on the server. The agent removes all other
+  // release directories, but not the new release and not the release that the website had.
+  repeated string keep_releases = 10;
+}
+
+// ActivateRelease starts the website from a release that is on the server.
+message ActivateReleaseRequest {
+  string job_id = 1;
+  // The website with the document root of the release.
+  Website website = 2;
+  string release_id = 3;
+  HealthCheck health_check = 4;
+}
+
+// For ListFiles, ReadFile, MakeDirectory and DeleteFile. The path starts with "/", which is
+// the directory of the website, for example "/public/index.php".
+message FileRequest {
+  string website_id = 1;
+  string path = 2;
+}
+
+message FileEntry {
+  string name = 1;
+  // "file", "directory", "link" or "other".
+  string type = 2;
+  int64 size_bytes = 3;
+  // RFC 3339.
+  string modified = 4;
+  // The permission bits, for example "0640".
+  string mode = 5;
+  // The target of a link.
+  string target = 6;
+}
+
+message FileList {
+  repeated FileEntry entries = 1;
+  // True when the directory has more entries than the agent gives.
+  bool truncated = 2;
+}
+
+message FileContent {
+  FileEntry file = 1;
+  bytes content = 2;
+}
+
+message WriteFileRequest {
+  string website_id = 1;
+  string path = 2;
+  bytes content = 3;
+  // True refuses to replace a file.
+  bool create_only = 4;
+}
+
+message MoveFileRequest {
+  string website_id = 1;
+  string from = 2;
+  string to = 3;
+}
+
+message FileDeleted {}
+
+message GetLogsRequest {
+  string website_id = 1;
+  // The maximum number of lines of each stream. 0 means 200.
+  int32 lines = 2;
+}
+
+message LogLine {
+  // RFC 3339.
+  string at = 1;
+  // "access" (standard output of the container) or "error" (standard error).
+  string stream = 2;
+  string text = 3;
+}
+
+message Logs {
+  repeated LogLine lines = 1;
 }

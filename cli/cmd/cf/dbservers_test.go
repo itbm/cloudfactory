@@ -14,7 +14,7 @@ import (
 // query. With admin false, the panel refuses the list of servers.
 func databaseServerPanel(t *testing.T, admin bool) (*httptest.Server, *[]string) {
 	var calls []string
-	const reports = `{"id":"DS2","name":"mariadb-reports","engine":"mariadb","customerId":"C1","serverId":"S1","planId":"P1","status":"failed","host":"mariadb.internal","port":3307,` +
+	const reports = `{"id":"DS2","name":"mariadb-reports","engine":"mariadb","customerId":"C1","serverId":"S1","planId":"P1","status":"failed","host":"mariadb.internal","port":3307,"networkHost":"mariadb-reports.internal","networkPort":3306,` +
 		`"limits":{"vcpus":1,"memoryBytes":536870912,"diskBytes":5368709120},"usage":null,"databases":0,"maxDatabases":5}`
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -41,15 +41,19 @@ func databaseServerPanel(t *testing.T, admin bool) (*httptest.Server, *[]string)
 				w.Write([]byte(`{"message":"This action is unauthorized."}`))
 				return
 			}
-			w.Write([]byte(`{"data":[{"id":"S1","name":"web-1"}]}`))
+			w.Write([]byte(`{"data":[{"id":"S1","name":"web-1"},{"id":"S2","name":"web-2"}]}`))
 		case r.URL.Path == "/api/v1/plans":
-			w.Write([]byte(`{"data":[{"id":"P1","name":"Standard","websites":5,"mailboxes":10,"databaseServers":3,"databases":5,"databaseLimits":{"vcpus":1,"memoryBytes":536870912,"diskBytes":5368709120}},` +
-				`{"id":"P2","name":"Business","websites":20,"mailboxes":50,"databaseServers":6,"databases":10,"databaseLimits":{"vcpus":2,"memoryBytes":1073741824,"diskBytes":10737418240}}]}`))
+			w.Write([]byte(`{"data":[{"id":"P1","name":"Standard","websites":5,"mailboxes":10,"databaseServers":3,"databases":5,"dnsZones":2,"networks":0,"databaseLimits":{"vcpus":1,"memoryBytes":536870912,"diskBytes":5368709120}},` +
+				`{"id":"P2","name":"Business","websites":20,"mailboxes":50,"databaseServers":6,"databases":10,"dnsZones":10,"networks":3,"databaseLimits":{"vcpus":2,"memoryBytes":1073741824,"diskBytes":10737418240}}]}`))
 		case r.URL.Path == "/api/v1/database-servers" && r.Method == http.MethodPost:
 			w.WriteHeader(http.StatusAccepted)
 			w.Write([]byte(`{"databaseServer":{"id":"DS9","name":"valkey-sessions","engine":"valkey","host":"valkey.internal","port":6380},"job":null}`))
 		case r.URL.Path == "/api/v1/database-servers/DS2" && r.Method == http.MethodPatch:
 			w.Write([]byte(`{"databaseServer":` + reports + `,"job":null}`))
+		case r.URL.Path == "/api/v1/database-servers/DS2/move":
+			w.WriteHeader(http.StatusAccepted)
+			w.Write([]byte(`{"databaseServer":` + reports + `,"jobs":[{"id":"J1","title":"Receive database server mariadb-reports from web-1","state":"queued","steps":["Prepare database server","Receive data","Start database server"],"step":0},` +
+				`{"id":"J2","title":"Send database server mariadb-reports to web-2","state":"queued","steps":["Stop database server","Send data"],"step":0}]}`))
 		case r.URL.Path == "/api/v1/database-servers/DS2/retry":
 			w.WriteHeader(http.StatusAccepted)
 			w.Write([]byte(`{"databaseServer":` + reports + `,"job":null}`))
@@ -84,7 +88,7 @@ func TestDatabaseServersListAndGet(t *testing.T) {
 	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
 	if len(lines) != 4 || row(lines[0]) != "NAME ENGINE STATUS ADDRESS LIMITS DATABASES CUSTOMERID ID" ||
 		row(lines[1]) != "mariadb-1 mariadb running mariadb.internal:3306 2 vCPU, 1 GB memory, 10 GB disk 3 of 10 C1 DS1" ||
-		row(lines[2]) != "mariadb-reports mariadb failed mariadb.internal:3307 1 vCPU, 512 MB memory, 5 GB disk 0 of 5 C1 DS2" {
+		row(lines[2]) != "mariadb-reports mariadb failed mariadb-reports.internal:3306 1 vCPU, 512 MB memory, 5 GB disk 0 of 5 C1 DS2" {
 		t.Errorf("output:\n%s", out)
 	}
 
@@ -260,7 +264,7 @@ func TestPlansListShowsTheDatabaseServers(t *testing.T) {
 		t.Fatal(err)
 	}
 	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
-	if len(lines) != 3 || row(lines[0]) != "NAME WEBSITES MAILBOXES DATABASESERVERS DATABASES ID" || row(lines[1]) != "Standard 5 10 3 5 P1" || row(lines[2]) != "Business 20 50 6 10 P2" {
+	if len(lines) != 3 || row(lines[0]) != "NAME WEBSITES MAILBOXES DATABASESERVERS DATABASES DNSZONES NETWORKS ID" || row(lines[1]) != "Standard 5 10 3 5 2 0 P1" || row(lines[2]) != "Business 20 50 6 10 10 3 P2" {
 		t.Errorf("output:\n%s", out)
 	}
 }
@@ -308,5 +312,27 @@ func TestDatabaseUsersShowAndSelectTheDatabaseServer(t *testing.T) {
 	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
 	if len(lines) != 3 || row(lines[0]) != "NAME ENGINE DATABASESERVER GRANTS ACCESS ID" || row(lines[1]) != "u1a2_prod mariadb mariadb-1 u1a2_prod=readwrite website U1" || row(lines[2]) != "u1a2_old mariadb mariadb-reports website U2" {
 		t.Errorf("output:\n%s", out)
+	}
+}
+
+func TestDatabaseServersMove(t *testing.T) {
+	srv, calls := databaseServerPanel(t, true)
+	defer srv.Close()
+	a, out := testApp(srv)
+	a.noWait = true
+
+	if err := a.dispatch(context.Background(), []string{"database-servers", "move", "mariadb-reports"}); err == nil || !strings.Contains(err.Error(), "--server") {
+		t.Errorf("a move with no server: %v", err)
+	}
+	if err := a.dispatch(context.Background(), []string{"database-servers", "move", "mariadb-reports", "--server", "web-2"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(*calls, ", "); got != `POST /api/v1/database-servers/DS2/move {"serverId":"S2"}` {
+		t.Errorf("calls = %s", got)
+	}
+	for _, want := range []string{"Database server mariadb-reports moves to web-2.", "Job J1 is in the queue: Receive database server mariadb-reports from web-1", "Job J2 is in the queue: Send database server"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("the output has no %q:\n%s", want, out.String())
+		}
 	}
 }

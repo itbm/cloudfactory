@@ -81,11 +81,16 @@ func serve(ctx context.Context) error {
 	root.SavePanelCA = func(fingerprint string) error {
 		return changeConfig(func(c *config.Config) { c.PanelCASHA256 = fingerprint })
 	}
-	// The disk limit of a website needs user quotas on the file system of the websites. The
+	// The disk limit of a website is a user quota on the file system of the websites. The
 	// disk limit of a database server is a user quota also, when its file system has them.
+	// With no user quotas, the limit is the size of a disk image.
 	root.QuotaMount = root.Host.QuotaMount(ctx, cfg.SitesDir)
 	root.FindDatabaseQuotas(ctx)
 	srv := &gate.Server{Run: run, Allow: root.Allow, Ops: root.RootOps(), Dial: root.RootDial}
+	// The tunnels to other servers operate after a restart with no connection to the panel.
+	if err := root.RestoreMesh(ctx); err != nil {
+		slog.Error("start the tunnels of the mesh", "err", err)
+	}
 
 	if os.Getenv(oneProcessEnv) == "1" {
 		slog.Warn("the agent operates as one root process, because " + oneProcessEnv + " is set")
@@ -217,13 +222,17 @@ func newDeps(cfg config.Config, run execx.Runner) (*actions.Deps, error) {
 		// The images of the services have the version of the agent. The release signs them.
 		ServiceImage: func(name string) string { return cfg.Registry + "/" + name + ":" + version },
 		EdgeImage:    cfg.Registry + "/edge:" + version,
+		AgentBinary:  binaryPath,
 		SftpImage:    cfg.Registry + "/sftp:" + version,
 		MailImage:    cfg.Registry + "/mail:" + version,
 		// The database node of a mail cluster uses the MariaDB service image.
 		MailDBImage:   cfg.Registry + "/mariadb:" + version,
 		MailKeepImage: cfg.Registry + "/mail-keep:" + version,
 		WebmailImage:  cfg.Registry + "/webmail:" + version,
+		DnsImage:      cfg.Registry + "/dns:" + version,
 		SftpPort:      cfg.SftpPort,
+		// The panel uses these addresses for the DNS records of the websites on this server.
+		PublicAddresses: cfg.PublicAddresses,
 	}
 	// CF-13: the admin API of the edge proxy is a Unix socket.
 	if path, ok := strings.CutPrefix(cfg.CaddyAdmin, "unix://"); ok {
@@ -488,15 +497,19 @@ func work(ctx context.Context, cfg config.Config, g gate.Gate) error {
 	dialLocal(reporter, deps)
 
 	h := deps.Host
-	// FR-202: the disk I/O limit needs the disk of the websites, and the disk limit needs
-	// user quotas on its file system.
+	// FR-202: the disk I/O limit needs the disk of the websites. The disk limit is a user
+	// quota on its file system, or the size of a disk image.
 	if dev, err := h.BlockDevice(ctx, cfg.SitesDir); err == nil {
 		deps.BlockDevice = dev
 	} else {
 		slog.Warn("no disk I/O limits", "err", err)
 	}
 	if deps.QuotaMount = h.QuotaMount(ctx, cfg.SitesDir); deps.QuotaMount == "" {
-		slog.Warn("no disk limits: user quotas are off on the file system of the websites", "dir", cfg.SitesDir)
+		if deps.SiteDiskLimits() {
+			slog.Info("user quotas are off on the file system of the websites; a new website with a disk limit gets a disk image", "dir", cfg.SitesDir)
+		} else {
+			slog.Warn("no disk limits: user quotas are off on the file system of the websites, and the server has no loop devices", "dir", cfg.SitesDir)
+		}
 	} else if err := deps.ApplyDiskQuotas(ctx); err != nil {
 		// The websites that were there before the quotas were on get their limits now.
 		slog.Error("set the disk limits of the websites", "err", err)
@@ -529,6 +542,10 @@ func work(ctx context.Context, cfg config.Config, g gate.Gate) error {
 	if err := deps.EnsureSftp(ctx); err != nil {
 		slog.Error("start the SFTP container", "err", err)
 	}
+	// The DNS server, on a server that has DNS zones.
+	if err := deps.EnsureDns(ctx); err != nil {
+		slog.Error("start the DNS server", "err", err)
+	}
 	// The mail server, on a server that has one. The agent does not wait for it.
 	go func() {
 		if err := deps.RefreshMail(ctx); err != nil {
@@ -540,9 +557,11 @@ func work(ctx context.Context, cfg config.Config, g gate.Gate) error {
 	if job, ok := deps.ResumeReboot(); ok {
 		runner.Resume(job)
 	}
-	collector := status.Collector{Run: g, Apt: apt, AgentVersion: version, GVisorVersion: gv.Current, Services: []string{"cf-agent", "ssh", "cf-sftp"}, UserServices: []string{host.EdgeUser + ":cf-edge.service"}, DiskPath: cfg.SitesDir, Extra: deps.FillReport}
+	collector := status.Collector{Run: g, Apt: apt, AgentVersion: version, GVisorVersion: gv.Current, Services: []string{"cf-agent", "ssh", "cf-sftp"}, UserServices: []string{host.EdgeUser + ":cf-edge.service"}, DiskPath: cfg.SitesDir, Net: &status.NetCounter{}, Extra: deps.FillReport}
 
 	go reportLoop(ctx, reporter, collector, time.Duration(cfg.ReportSeconds)*time.Second, cfg.PanelServerCertificateSHA256 == "", deps.SavePanelCAPin)
+	// The cron jobs of the websites.
+	go deps.RunCron(ctx)
 	go func() {
 		for range time.Tick(24 * time.Hour) {
 			runner.Prune(time.Now().Add(-30 * 24 * time.Hour))

@@ -24,6 +24,8 @@ export function SettingsTab({ website }: { website: Website }) {
       diskBytes: Number(form.disk) * GB,
       diskIoBytesPerSecond: Number(form.io) * MB,
       processes: Number(form.processes),
+      // The form has no field for the bandwidth: the website keeps the limit of its plan.
+      ...(website.limits.bandwidthBytes ? { bandwidthBytes: website.limits.bandwidthBytes } : {}),
     };
     return setLimits(website.id, limits);
   });
@@ -81,6 +83,9 @@ export function SettingsTab({ website }: { website: Website }) {
               <tr><th scope="row">Sandbox</th><td>gVisor (runsc), rootless Podman</td></tr>
               {/* Audit item U3: this text agrees with the unit that the agent writes (agent/internal/quadlet). */}
               <tr><th scope="row">Network</th><td>Own network namespace (pasta). No host networking. The website cannot connect to the containers of a different customer.</td></tr>
+              {website.networkHost === null
+                ? <tr><th scope="row">Network name</th><td>None<span className="cell-sub">A background worker serves no HTTP, so no website can connect to it. The worker can connect to the websites and the databases of this customer by their network names.</span></td></tr>
+                : <tr><th scope="row">Network name</th><td><code className="nowrap">{website.networkHost}:{website.networkPort}</code><span className="cell-sub">A different website of this customer in a network with this website can connect to this name with HTTP. The connection is private: no other website and no address on the internet can connect to the name.</span></td></tr>}
               <tr><th scope="row">Security</th><td>No new privileges, no Linux capabilities, read-only image, own user namespace</td></tr>
               <tr><th scope="row">Files</th><td>The container of the website serves all files, also static files. It can write only to the directory of the website and to <code>/tmp</code>.</td></tr>
             </tbody>

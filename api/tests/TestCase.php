@@ -14,11 +14,16 @@ abstract class TestCase extends BaseTestCase
     /** The certificate fingerprint of the agent on the panel server in the tests. */
     protected const LOCAL_FINGERPRINT = 'f00df00df00df00df00df00df00df00df00df00df00df00df00df00df00df00d';
 
+    /** The NS records that the public DNS has in the tests: zone name => host names. */
+    protected array $nameServersSeen = [];
+
     protected function setUp(): void
     {
         parent::setUp();
         // The tests do not call real agents. They send job events to the panel instead.
         Queue::fake();
+        // The tests do not ask the public DNS for the name servers of a zone.
+        $this->fakeNameServers($this->nameServersSeen);
     }
 
     /**

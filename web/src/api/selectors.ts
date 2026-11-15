@@ -105,6 +105,7 @@ export function search(s: State, query: string): SearchResult[] {
     ...s.websites.map<SearchResult>((w) => ({ kind: "website", label: w.name, detail: w.application, href: `/websites/${w.id}` })),
     ...s.websites.flatMap((w) => w.domains.filter((d) => d.name !== w.name).map<SearchResult>((d) => ({ kind: "domain", label: d.name, detail: `Domain of ${w.name}`, href: `/websites/${w.id}/domains` }))),
     ...s.jobs.map<SearchResult>((j) => ({ kind: "job", label: j.ref ? `${j.title} ${j.ref}` : j.title, detail: `Job · ${j.state}`, href: j.websiteId ? `/websites/${j.websiteId}` : j.serverId ? `/servers/${j.serverId}` : "/jobs" })),
+    ...s.dnsZones.filter((z) => inContext(s, z.customerId)).map<SearchResult>((z) => ({ kind: "domain", label: z.name, detail: "DNS zone", href: `/dns/${z.id}` })),
     // Each console finds only what its pages show (lib/roles.ts).
     ...(role === "administrator" ? s.servers.map<SearchResult>((sv) => ({ kind: "server", label: sv.name, detail: `Server · ${sv.location}`, href: `/servers/${sv.id}` })) : []),
     ...(role === "administrator" ? s.images.map<SearchResult>((i) => ({ kind: "image", label: i.name, detail: `Runtime image · ${i.running}`, href: "/updates" })) : []),

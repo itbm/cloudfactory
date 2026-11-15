@@ -12,9 +12,13 @@ use App\Models\Plan;
 use App\Models\User;
 use App\Models\Website;
 use App\Services\Audit;
+use App\Services\Branding;
 use App\Services\DatabaseServers;
+use App\Services\Dns\Zones;
 use App\Services\DomainPolicy;
 use App\Services\JobDispatcher;
+use App\Services\Notifications\Notifier;
+use App\Services\PanelCertificate;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -87,12 +91,18 @@ class CustomerController extends Controller
             'planId' => ['sometimes', 'exists:plans,id'],
             'suspended' => ['sometimes', 'boolean'],
             'branding' => ['sometimes', 'array'],
-            'branding.name' => ['sometimes', 'string', 'max:100'],
-            'branding.colour' => ['sometimes', 'regex:/^#[0-9a-fA-F]{6}$/'],
-            'branding.panelDomain' => ['sometimes', 'regex:'.WebsiteController::DOMAIN],
-            'branding.supportEmail' => ['sometimes', 'email'],
+            ...Branding::rules('branding.'),
+            'branding.panelDomain' => ['sometimes', 'nullable', 'regex:'.WebsiteController::DOMAIN],
+            'branding.nameServers' => ['sometimes', 'nullable', 'array', 'max:10'],
+            'branding.nameServers.*' => ['distinct', 'regex:'.WebsiteController::DOMAIN],
+            'branding.mailHost' => ['sometimes', 'nullable', 'regex:'.WebsiteController::DOMAIN],
             'allowedPlanIds' => ['sometimes', 'array'],
             'allowedPlanIds.*' => ['distinct', 'exists:plans,id'],
+        ], [
+            'branding.panelDomain.regex' => 'Enter a domain in lower-case letters, for example panel.agency.example.',
+            'branding.nameServers.*.regex' => 'Enter a host name in lower-case letters, for example ns1.agency.example.',
+            'branding.nameServers.*.distinct' => 'Give a different host name to each name server.',
+            'branding.mailHost.regex' => 'Enter a host name in lower-case letters, for example mail.agency.example.',
         ]);
         $user = $request->user();
         if ($customer->id === $user->customer_id && (isset($data['planId']) || isset($data['suspended']))) {
@@ -115,18 +125,17 @@ class CustomerController extends Controller
             if ($customer->role !== 'reseller' || ! ($user->isAdministrator() || $customer->id === $user->customer_id)) {
                 return response()->json(['message' => 'Only a reseller has a brand.'], 403);
             }
-            if (isset($data['branding']['panelDomain']) && $data['branding']['panelDomain'] !== ($customer->branding['panelDomain'] ?? null)) {
-                $this->checkPanelDomain($data['branding']['panelDomain'], $customer, $user);
-            }
+            $data['branding'] = $this->checkBrand($data['branding'], $customer, $user);
         }
         $suspension = [];
         if (isset($data['suspended']) && $data['suspended'] !== $customer->suspended) {
             $suspension = ['suspended' => $data['suspended'], 'suspended_by' => $data['suspended'] ? ($user->isAdministrator() ? 'administrator' : 'reseller') : null];
         }
+        $brandBefore = $customer->branding ?? [];
         $customer->update(array_filter([
             'name' => $data['name'] ?? null,
             'plan_id' => $data['planId'] ?? null,
-            'branding' => isset($data['branding']) ? [...($customer->branding ?? []), ...$data['branding']] : null,
+            'branding' => isset($data['branding']) ? self::mergeBrand($customer->branding ?? [], $data['branding']) : null,
             'plan_ids' => isset($data['allowedPlanIds']) ? array_values($data['allowedPlanIds']) : null,
         ], fn ($v) => $v !== null) + $suspension);
         // CF-08: a suspension takes effect at once.
@@ -135,6 +144,10 @@ class CustomerController extends Controller
         }
         if ($suspension) {
             $this->applySuspension($customer->fresh());
+            app(Notifier::class)->suspension($customer->fresh(), $suspension['suspended']);
+        }
+        if (isset($data['branding'])) {
+            $this->brandChanged($brandBefore, $customer->fresh());
         }
         Audit::record($request, 'Changed customer', $customer->name, $customer->id);
 
@@ -180,6 +193,93 @@ class CustomerController extends Controller
                     $this->jobs->dispatch($website->server, AgentAction::SetSftp, ['enabled' => true] + $sftp, "Turn on SFTP access of {$website->name} (suspension ended)", $website);
                 }
             }
+        }
+    }
+
+    /**
+     * Checks the new fields of the brand of a reseller, and gives them in the form that the
+     * panel keeps. A null value removes the field.
+     *
+     * @param  array<string, mixed>  $brand
+     * @return array<string, mixed>
+     *
+     * @throws ValidationException
+     */
+    private function checkBrand(array $brand, Customer $reseller, User $user): array
+    {
+        $before = $reseller->branding ?? [];
+        $brand = array_intersect_key($brand, array_flip(['name', 'colour', 'logo', 'supportEmail', 'panelDomain', 'nameServers', 'mailHost']));
+        foreach (['panelDomain', 'mailHost'] as $field) {
+            if (isset($brand[$field])) {
+                $brand[$field] = strtolower($brand[$field]);
+            }
+        }
+        if (isset($brand['logo'])) {
+            $brand['logo'] = Branding::logo($brand['logo'], 'branding.logo');
+        }
+        if (isset($brand['panelDomain']) && $brand['panelDomain'] !== ($before['panelDomain'] ?? null)) {
+            $this->checkPanelDomain($brand['panelDomain'], $reseller, $user);
+        }
+        if (isset($brand['mailHost']) && $brand['mailHost'] !== ($before['mailHost'] ?? null)) {
+            $this->checkBrandHost($brand['mailHost'], 'branding.mailHost', $reseller, $user);
+        }
+        if (array_key_exists('nameServers', $brand)) {
+            $names = array_values(array_map('strtolower', $brand['nameServers'] ?? []));
+            $panel = Zones::nameServers();
+            if ($names !== [] && $panel === []) {
+                throw ValidationException::withMessages(['branding.nameServers' => 'The panel has no DNS server, so it has no name servers to give your names to.']);
+            }
+            if ($names !== [] && count($names) !== count($panel)) {
+                throw ValidationException::withMessages(['branding.nameServers' => 'Give '.count($panel).' host names: one for each name server of the panel.']);
+            }
+            foreach ($names as $i => $name) {
+                if (! in_array($name, $before['nameServers'] ?? [], true)) {
+                    $this->checkBrandHost($name, "branding.nameServers.{$i}", $reseller, $user);
+                }
+            }
+            $brand['nameServers'] = $names === [] ? null : $names;
+        }
+
+        return $brand;
+    }
+
+    /**
+     * Merges the new fields of a brand into the brand. A null value removes the field.
+     *
+     * @return array<string, mixed>
+     */
+    private static function mergeBrand(array $before, array $changes): array
+    {
+        return array_filter([...$before, ...$changes], fn ($v) => $v !== null && $v !== '');
+    }
+
+    /**
+     * After a change of a brand: the agent on the panel server gets the new panel domains, and
+     * the zones of the reseller and its customers get the new name servers.
+     */
+    private function brandChanged(array $before, Customer $reseller): void
+    {
+        $after = $reseller->branding ?? [];
+        if (($before['panelDomain'] ?? null) !== ($after['panelDomain'] ?? null)) {
+            Branding::syncPanelDomains($this->jobs);
+        }
+        if (($before['nameServers'] ?? null) !== ($after['nameServers'] ?? null)) {
+            app(Zones::class)->resellerNameServersChanged($reseller);
+        }
+    }
+
+    /**
+     * A host name of a brand, for example a name server or the mail host. It must not be
+     * reserved, and the reseller must prove that it controls the name, as for a panel domain.
+     */
+    private function checkBrandHost(string $name, string $field, Customer $reseller, User $user): void
+    {
+        $policy = app(DomainPolicy::class);
+        if ($policy->isReserved($name, $reseller->id)) {
+            throw ValidationException::withMessages([$field => 'This name is reserved or in use.']);
+        }
+        if (! $policy->preVerified($user, $reseller->id, $name) && ! $policy->proves($reseller->id, $name)) {
+            throw ValidationException::withMessages([$field => "Prove that you control {$name}. Add a TXT record _cloudfactory-challenge.{$name} with the value {$policy->claimToken($reseller->id, $name)}, and then save again. DNS changes can take some minutes."]);
         }
     }
 
@@ -259,6 +359,18 @@ class CustomerController extends Controller
             'planId' => $c->plan_id,
             'resellerId' => $c->reseller_id,
             'branding' => $c->branding,
+            // White label: the state of the certificate of the panel domain of a reseller, and
+            // the brand that the reseller and its customers see.
+            'brandStatus' => $c->role === 'reseller' ? [
+                'certificate' => Branding::certificateOf($c->branding['panelDomain'] ?? null),
+                // The domain of the panel: a CNAME record of the reseller panel domain can point to it.
+                'panelDomain' => PanelCertificate::domain(),
+                // The name servers of the panel and their addresses. Each host name of the
+                // reseller needs the same A and AAAA records.
+                'panelNameServers' => Zones::nameServers(),
+                'nameServerAddresses' => Zones::servers()->unique('dns_name')
+                    ->mapWithKeys(fn ($s) => [$s->dns_name => array_values($s->addresses ?? [])])->all(),
+            ] : null,
             'allowedPlanIds' => $c->role === 'reseller' ? $c->allowedPlanIds() : null,
             'suspended' => $c->suspended,
             'suspendedBy' => $c->suspended_by,

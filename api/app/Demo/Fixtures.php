@@ -2,6 +2,7 @@
 
 namespace App\Demo;
 
+use App\Models\DnsZone;
 use App\Models\User;
 use App\Models\Website;
 use Illuminate\Contracts\Http\Kernel;
@@ -20,7 +21,8 @@ class Fixtures
     /** The requests that the web panel sends when it loads (web/src/api/live.ts). */
     public const PATHS = [
         '/me', '/websites?perPage=100&page=1', '/jobs?perPage=50', '/customers', '/plans', '/tokens', '/backup-policy', '/servers', '/images',
-        '/rollouts', '/audit?perPage=100', '/users', '/panel-certificate', '/runtime-images', '/setup', '/account', '/database-servers',
+        '/rollouts', '/audit?perPage=100', '/users', '/panel-certificate', '/runtime-images', '/setup', '/account', '/database-servers', '/dns-zones', '/mesh', '/networks', '/usage-alerts',
+        '/me/notification-preferences', '/notifications?perPage=50', '/mail-server', '/notification-templates',
         '/mail/domains', '/mail/mailboxes', '/mail/aliases', '/mail-clusters',
     ];
 
@@ -33,8 +35,16 @@ class Fixtures
         $token = $user->createToken('Fixtures')->plainTextToken;
         $paths = self::PATHS;
         // The web panel reads the databases and the snapshots of each website that the user can see.
+        // It reads the cron jobs, the deploys, the files and the logs of a website when the
+        // user opens that part of the website.
         foreach (self::websites($user) as $id) {
-            array_push($paths, "/websites/{$id}/databases", "/websites/{$id}/snapshots");
+            array_push($paths, "/websites/{$id}/databases", "/websites/{$id}/snapshots", "/websites/{$id}/cron-jobs", "/websites/{$id}/deploy",
+                "/websites/{$id}/files?path=%2F", "/websites/{$id}/files?path=%2Fpublic", "/websites/{$id}/files/content?path=%2Fpublic%2Findex.php", "/websites/{$id}/logs?lines=200");
+        }
+        // The page of a DNS zone reads the zone with its records.
+        $visible = $user->visibleCustomerIds();
+        foreach (DnsZone::when($visible !== null, fn ($q) => $q->whereIn('customer_id', $visible))->orderBy('name')->pluck('id') as $id) {
+            $paths[] = "/dns-zones/{$id}";
         }
         $answers = [];
         foreach ($paths as $path) {

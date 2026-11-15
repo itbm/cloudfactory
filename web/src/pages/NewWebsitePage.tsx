@@ -3,13 +3,20 @@ import { Link, useNavigate } from "react-router-dom";
 import { useAction, useStore } from "../api/hooks";
 import { ApiError, createWebsite, makeCustomer } from "../api/store";
 import { contextCustomers } from "../api/selectors";
-import type { RuntimeImage } from "../api/types";
+import type { RuntimeImage, WebsiteKind } from "../api/types";
 import { Topbar } from "../components/Layout";
 import { Card, Field, FormError, PageHeader } from "../components/ui";
 import { bytes } from "../lib/format";
 
 /** The value of the customer field for a customer that does not exist yet. */
 const NEW_CUSTOMER = "new";
+
+/** The kinds of a website. A private website and a worker have no public address. */
+const KINDS: { id: WebsiteKind; title: string; text: string }[] = [
+  { id: "public", title: "Public website", text: "Visitors open it on its domain. The panel gets a TLS certificate." },
+  { id: "private", title: "Private website", text: "No domain and no public address. Only the other websites of the customer can connect to it, by its network name." },
+  { id: "worker", title: "Background worker", text: "Runs one command, for example a queue worker. It serves no HTTP. It can connect to the websites and the databases of the customer." },
+];
 
 const APPLICATIONS = ["WordPress", "WooCommerce", "Laravel", "Symfony", "Custom PHP", "Node.js app", "Static site"];
 
@@ -31,6 +38,8 @@ export function NewWebsitePage() {
   const runtimes = state.images.filter((i) => ["frankenphp", "apache-php-fpm", "node", "custom", "edge"].includes(i.family));
   const webServers = state.servers.filter((s) => s.roles.includes("web"));
   const [name, setName] = useState("");
+  const [kind, setKind] = useState<WebsiteKind>("public");
+  const [command, setCommand] = useState("");
   const [application, setApplication] = useState("WordPress");
   const platform = state.session.contextId === "platform";
   // CF-07: only an administrator can select the plan here. Other users get the plan of the account.
@@ -59,7 +68,7 @@ export function NewWebsitePage() {
       // If the website has an error, the next attempt uses this customer and does not make a second one.
       setCustomerId(owner);
     }
-    return createWebsite({ name, application, imageId, planId, serverId, customerId: owner });
+    return createWebsite({ name, application, imageId, planId, serverId, customerId: owner, kind, command });
   });
 
   const submit = async (e: React.FormEvent) => {
@@ -78,14 +87,38 @@ export function NewWebsitePage() {
           <li><Link to="/websites">Websites</Link></li>
           <li aria-current="page">New website</li>
         </ol>
-        <PageHeader title="New website" description="The panel makes a Unix user, a container network and a container in the gVisor sandbox. Then it gets a TLS certificate. This takes less than 60 seconds." />
+        <PageHeader title="New website" description={`The panel makes a Unix user, a container network and a container in the gVisor sandbox. ${kind === "public" ? "Then it gets a TLS certificate. " : ""}This takes less than 60 seconds.`} />
         <form onSubmit={submit} noValidate>
           <Card title="Website">
             <div className="card-body">
               <FormError error={action.error} />
-              <Field label="Primary domain" hint="You can add redirects and aliases later." error={err.name}>
-                {(p) => <input {...p} className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="example.com" autoComplete="off" autoCapitalize="none" spellCheck={false} />}
-              </Field>
+              <fieldset className="radio-cards" style={{ marginBottom: 14 }}>
+                <legend>Type</legend>
+                {KINDS.map((k) => (
+                  <label key={k.id} className="radio-card">
+                    <input type="radio" name="kind" value={k.id} checked={kind === k.id} onChange={() => setKind(k.id)} />
+                    <span>
+                      <strong>{k.title}</strong>
+                      <span>{k.text}</span>
+                    </span>
+                  </label>
+                ))}
+              </fieldset>
+              {err.kind && <p className="field-error" role="alert">{err.kind}</p>}
+              {kind === "public" ? (
+                <Field label="Primary domain" hint="You can add redirects and aliases later." error={err.name}>
+                  {(p) => <input {...p} className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="example.com" autoComplete="off" autoCapitalize="none" spellCheck={false} />}
+                </Field>
+              ) : (
+                <Field label="Name" hint={<>Lower-case letters, digits and <code>-</code>. The panel makes the network name from the first 8 characters and 4 random characters, for example <code>orders-a1b2.internal</code>.</>} error={err.name}>
+                  {(p) => <input {...p} className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder={kind === "worker" ? "queue" : "orders"} autoComplete="off" autoCapitalize="none" spellCheck={false} />}
+                </Field>
+              )}
+              {kind === "worker" && (
+                <Field label="Start command" hint={<>One command line. It runs in the container of the worker, in the gVisor sandbox, in the directory <code>/app</code>. When the command stops, the panel starts it again.</>} error={err.command}>
+                  {(p) => <input {...p} className="input mono" value={command} onChange={(e) => setCommand(e.target.value)} placeholder="php artisan queue:work" autoComplete="off" autoCapitalize="none" spellCheck={false} />}
+                </Field>
+              )}
               <Field label="Application">
                 {(p) => (
                   <select {...p} className="select" value={application} onChange={(e) => {
@@ -176,7 +209,7 @@ export function NewWebsitePage() {
           </Card>
           <div className="btn-group" style={{ marginTop: 24, justifyContent: "flex-end" }}>
             <Link className="btn" to="/websites">Cancel</Link>
-            <button type="submit" className="btn btn-primary" disabled={action.busy}>Create website</button>
+            <button type="submit" className="btn btn-primary" disabled={action.busy}>{kind === "worker" ? "Create worker" : "Create website"}</button>
           </div>
         </form>
       </main>

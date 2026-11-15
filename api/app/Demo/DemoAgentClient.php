@@ -18,6 +18,12 @@ class DemoAgentClient extends AgentClient
         RunDemoJob::dispatch($job->id);
     }
 
+    /** The file manager and the logs, with the sample files of the demonstration mode. */
+    public function call(Server $server, string $method, array $payload): array
+    {
+        return DemoSite::call($method, $payload);
+    }
+
     /** The demo agent always answers. */
     public function check(Server $server): ?string
     {

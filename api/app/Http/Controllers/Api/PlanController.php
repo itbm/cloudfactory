@@ -67,7 +67,7 @@ class PlanController extends Controller
         // The database servers that get the new limits: those with the limits of the plan. A
         // database server with limits that an administrator set for it keeps them.
         $databaseServers = isset($new['database_limits']) && $new['database_limits'] != $oldDatabaseLimits
-            ? $plan->databaseServers()->with('server')->where('status', '!=', DatabaseServer::REMOVING)->get()->filter(fn (DatabaseServer $s) => $s->limits == $oldDatabaseLimits)
+            ? $plan->databaseServers()->with('server')->whereNotIn('status', [DatabaseServer::REMOVING, DatabaseServer::MOVING])->get()->filter(fn (DatabaseServer $s) => $s->limits == $oldDatabaseLimits)
             : collect();
         // One change of the limits of a database server at a time (DatabaseServerController).
         $busy = AgentJob::whereIn('database_server_id', $databaseServers->pluck('id'))->where('action', AgentAction::SetDatabaseServer->value)
@@ -105,6 +105,9 @@ class PlanController extends Controller
             'limits.diskBytes' => ['required', 'integer', 'gt:0'],
             'limits.diskIoBytesPerSecond' => ['required', 'integer', 'gt:0'],
             'limits.processes' => ['required', 'integer', 'gt:0'],
+            // The traffic of each website in a calendar month. 0 or none is no limit. The panel
+            // shows the traffic and alerts near the limit. It does not stop the website.
+            'limits.bandwidthBytes' => ['sometimes', 'integer', 'min:0'],
             // The number of database servers of a customer with the plan, and the limits of
             // each database server with the plan. A request with none keeps the values of the
             // plan. A new plan gets 3 database servers, each with the vCPUs of a website, the
@@ -113,6 +116,11 @@ class PlanController extends Controller
             // The total size of the mailboxes of a customer with the plan. A request with
             // none keeps the value of the plan. A new plan gets 10 GB.
             'mailStorageBytes' => ['sometimes', 'integer', 'min:0', 'max:'.(1024 ** 5)],
+            // The number of DNS zones of a customer with the plan. A new plan gets 5.
+            'dnsZones' => ['sometimes', 'integer', 'min:0', 'max:1000000'],
+            // The number of named networks of a customer with the plan, in addition to the
+            // network "default". 0 turns named networks off. A new plan gets 0.
+            'networks' => ['sometimes', 'integer', 'min:0', 'max:1000'],
             'databaseLimits' => ['sometimes', 'array'],
             'databaseLimits.vcpus' => ['required_with:databaseLimits', 'numeric', 'gt:0', 'max:1024'],
             'databaseLimits.memoryBytes' => ['required_with:databaseLimits', 'integer', 'min:'.DatabaseServer::MIN_MEMORY],
@@ -131,6 +139,8 @@ class PlanController extends Controller
             'limits' => $d['limits'],
             ...(isset($d['databaseServers']) ? ['database_servers' => $d['databaseServers']] : []),
             ...(isset($d['mailStorageBytes']) ? ['mail_storage_bytes' => $d['mailStorageBytes']] : []),
+            ...(isset($d['dnsZones']) ? ['dns_zones' => $d['dnsZones']] : []),
+            ...(isset($d['networks']) ? ['networks' => $d['networks']] : []),
             ...(isset($d['databaseLimits']) ? ['database_limits' => [
                 'vcpus' => (float) $d['databaseLimits']['vcpus'],
                 'memoryBytes' => (int) $d['databaseLimits']['memoryBytes'],
@@ -192,6 +202,10 @@ class PlanController extends Controller
             'databaseServers' => $p->database_servers,
             // The limits of each database server with the plan.
             'databaseLimits' => $p->database_limits,
+            // The number of DNS zones of a customer with the plan.
+            'dnsZones' => $p->dns_zones,
+            // The number of named networks of a customer with the plan, in addition to "default".
+            'networks' => $p->networks ?? 0,
         ];
     }
 }

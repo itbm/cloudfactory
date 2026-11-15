@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Services\Mesh;
+use App\Services\Networks;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
@@ -16,7 +18,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * All websites of the customer on the same server can connect to the database server, on the
  * host name of the engine and the port of the database server.
  */
-#[Fillable(['customer_id', 'server_id', 'plan_id', 'engine', 'name', 'port', 'limits', 'status', 'usage'])]
+#[Fillable(['customer_id', 'server_id', 'plan_id', 'engine', 'name', 'port', 'limits', 'status', 'usage', 'moving_to_server_id'])]
 class DatabaseServer extends Model
 {
     use HasUlids;
@@ -31,6 +33,12 @@ class DatabaseServer extends Model
 
     /** The agent could not make the database server. */
     public const FAILED = 'failed';
+
+    /**
+     * The database server moves to a different server (moving_to_server_id). It gets no new
+     * database, and its limits do not change.
+     */
+    public const MOVING = 'moving';
 
     /** The agent removes the database server. It gets no new database. */
     public const REMOVING = 'removing';
@@ -57,6 +65,27 @@ class DatabaseServer extends Model
         return ['limits' => 'array', 'usage' => 'array', 'port' => 'integer'];
     }
 
+    /**
+     * A new database server is a member of the network "default" of its customer. The mesh
+     * state of the servers changes with the database servers (Mesh::refresh).
+     */
+    protected static function booted(): void
+    {
+        static::created(function (DatabaseServer $server) {
+            Networks::join($server);
+            Mesh::refreshLater();
+        });
+        static::updated(function (DatabaseServer $server) {
+            if ($server->wasChanged(['name', 'status', 'server_id'])) {
+                Mesh::refreshLater();
+            }
+        });
+        static::deleted(function (DatabaseServer $server) {
+            Networks::leave($server);
+            Mesh::refreshLater();
+        });
+    }
+
     public function customer(): BelongsTo
     {
         return $this->belongsTo(Customer::class);
@@ -66,6 +95,12 @@ class DatabaseServer extends Model
     public function server(): BelongsTo
     {
         return $this->belongsTo(Server::class);
+    }
+
+    /** The server that receives the database server while it moves. */
+    public function movingTo(): BelongsTo
+    {
+        return $this->belongsTo(Server::class, 'moving_to_server_id');
     }
 
     public function plan(): BelongsTo

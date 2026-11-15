@@ -280,11 +280,8 @@ func TestEachDatabaseServerHasItsOwnContainer(t *testing.T) {
 	}
 	// The database host names of each website point to the address of its customer.
 	for name, address := range map[string]string{"acme_x7k2": customerAddress, "bolt_k3m9": otherAddress} {
-		u := unitFile(t, d, name, "cf-"+name+".container")
-		for _, host := range []string{"mariadb.internal", "postgres.internal", "valkey.internal"} {
-			if want := "AddHost=" + host + ":" + address + "\n"; !strings.Contains(u, want) {
-				t.Errorf("the unit of %s has no %q:\n%s", name, want, u)
-			}
+		if hosts := websiteHostsFile(t, d, name); !hasDatabaseNames(hosts, address) {
+			t.Errorf("the hosts file of %s does not have the address %s:\n%s", name, address, hosts)
 		}
 	}
 	// The firewall lets each website connect only to the database servers of its customer.
@@ -499,7 +496,7 @@ func TestOnlyDeleteDatabaseServerRemovesADatabaseServer(t *testing.T) {
 	if err := run(t)(d.CreateDatabase(mariaRequest(websiteID, "acme_x7k2", "acme_x7k2_shop", databaseServer("mariadb")))); err != nil {
 		t.Fatal(err)
 	}
-	if u := unitFile(t, d, "acme_s1t2", "cf-acme_s1t2.container"); !strings.Contains(u, "AddHost=mariadb.internal:"+customerAddress+"\n") {
+	if u := websiteHostsFile(t, d, "acme_s1t2"); !hasDatabaseNames(u, customerAddress) {
 		t.Errorf("the second website of the customer has a different database address:\n%s", u)
 	}
 	// Each website of the customer can connect to the database server.
@@ -771,7 +768,7 @@ func TestAWebsiteOfAnEarlierReleaseGetsItsCustomer(t *testing.T) {
 	if err := run(t)(d.SetRuntime(&agentv1.WebsiteRequest{JobId: jobID2, Website: customerWebsite()})); err != nil {
 		t.Fatal(err)
 	}
-	if u := unitFile(t, d, "acme_x7k2", "cf-acme_x7k2-b.container"); !strings.Contains(u, "AddHost=mariadb.internal:"+customerAddress+"\n") {
+	if u := websiteHostsFile(t, d, "acme_x7k2"); !hasDatabaseNames(u, customerAddress) || !strings.Contains(unitFile(t, d, "acme_x7k2", "cf-acme_x7k2-b.container"), ":/etc/hosts:ro\n") {
 		t.Errorf("the website does not have the address of its customer:\n%s", u)
 	}
 	if err := run(t)(d.CreateDatabase(shop)); err != nil {

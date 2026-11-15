@@ -16,7 +16,7 @@ describe("the state from the panel API", () => {
     await signedIn("administrator");
     const s = getState();
     expect(s.session).toMatchObject({ signedIn: true, user: { name: "Alex Admin", role: "administrator" }, contextId: "platform" });
-    expect(s.websites).toHaveLength(10);
+    expect(s.websites).toHaveLength(12);
     expect(s.servers.map((x) => x.name)).toEqual(["mail-1", "web-1", "web-2", "web-3"]);
     expect(s.servers.find((x) => x.name === "web-3")).toMatchObject({ state: "degraded", agentUpdateAvailable: true, stateDetail: "Degraded: cf-sftp failed" });
     expect(s.images.find((i) => i.name === "FrankenPHP · PHP 8.4")).toMatchObject({ running: "0.1.9", available: "0.1.10" });
@@ -43,8 +43,8 @@ describe("the state from the panel API", () => {
   it("gives an owner only its own websites and its own customer", async () => {
     await signedIn("owner");
     const s = getState();
-    expect(visibleWebsites(s)).toHaveLength(5);
-    expect(visibleWebsites(s).every((w) => w.name.endsWith("acme.example.com"))).toBe(true);
+    expect(visibleWebsites(s)).toHaveLength(7);
+    expect(visibleWebsites(s).every((w) => w.name.endsWith("acme.example.com") || w.kind !== "public")).toBe(true);
     expect(s.customers.map((c) => c.name)).toEqual(["Acme Ltd"]);
     expect(s.servers).toEqual([]);
     expect(s.rollout).toBeUndefined();
@@ -69,7 +69,7 @@ describe("the state from the panel API", () => {
     resetState();
     start();
     expect(getState().session).toMatchObject({ signedIn: true, loading: true });
-    await expect.poll(() => getState().websites.length).toBe(5);
+    await expect.poll(() => getState().websites.length).toBe(7);
   });
 });
 

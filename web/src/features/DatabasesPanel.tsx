@@ -1,8 +1,8 @@
 import { useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { useAction, useStore } from "../api/hooks";
-import { createDatabase, createDatabaseUser, databaseServersFor, deleteDatabase, deleteDatabaseUser, partialDetails, setDatabaseUser, type GrantInput } from "../api/store";
-import type { DatabaseEngine, DatabasePrivileges, DatabaseUser } from "../api/types";
+import { createDatabase, createDatabaseUser, databaseServersFor, deleteDatabase, deleteDatabaseUser, openInAdminer, partialDetails, setDatabaseUser, type GrantInput } from "../api/store";
+import type { Database, DatabaseEngine, DatabasePrivileges, DatabaseServer, DatabaseUser } from "../api/types";
 import { Card, ConfirmButton, Field, FormError, Modal, RowMenu, TableWrap } from "../components/ui";
 import { bytes, count } from "../lib/format";
 import { DATABASE_HOST, DATABASE_PORT, ENGINE_NAME as ENGINE, jobActive } from "../lib/labels";
@@ -33,14 +33,24 @@ export function DatabasesPanel({ websiteId }: { websiteId?: string }) {
   const [password, setPassword] = useState<{ user: string; value: string; valkey?: boolean } | null>(null);
   // The action of a database user that waits for a confirmation.
   const [asking, setAsking] = useState<{ user: DatabaseUser; action: "password" | "remove" } | null>(null);
+  // The database that opens in Adminer now, or the error of the last attempt.
+  const [adminer, setAdminer] = useState<{ id: string; error?: string } | null>(null);
   const createDb = useAction(createDatabase);
   const createUser = useAction(createDatabaseUser);
   const changeUser = useAction(setDatabaseUser);
   const siteName = (id: string) => sites.find((w) => w.id === id)?.name ?? "Removed website";
   const serverName = (id?: string) => state.databaseServers.find((x) => x.id === id)?.name;
-  // The database servers that the selected website can use: those of its customer on its server.
+  // The database servers that the selected website can use: those of its customer on its server,
+  // and those on a different server that are in a network with the website.
   const website = sites.find((w) => w.id === site);
   const usable = databaseServersFor(state, website, engine);
+  // A database server on the server of the website shows its port. A database server on a
+  // different server shows that server, when the user can see the servers.
+  const where = (x: DatabaseServer) => {
+    if (x.serverId === website?.serverId) return `port ${x.port}`;
+    const server = state.servers.find((s) => s.id === x.serverId)?.name;
+    return server ? `on the server ${server}` : "on a different server";
+  };
   const prefix = (id: string) => `${sites.find((w) => w.id === id)?.unixUser ?? ""}_`;
   // The reason when a website cannot have a Valkey database: an agent of an earlier release
   // cannot operate Valkey. When the panel does not know the server, the API makes the check.
@@ -61,6 +71,27 @@ export function DatabasesPanel({ websiteId }: { websiteId?: string }) {
     createDb.clear();
     createUser.clear();
     changeUser.clear();
+  };
+  // Single sign-on: the window opens at the click, so that the browser does not block it. The
+  // panel then sends the sign-in form of Adminer to it.
+  const openAdminer = (d: Database) => {
+    const win = window.open("", "_blank");
+    if (!win) {
+      setAdminer({ id: d.id, error: "Your browser blocked the new window. Let this panel open windows, and try again." });
+      return;
+    }
+    // Adminer cannot change the page of the panel.
+    win.opener = null;
+    win.document.title = "Opening Adminer";
+    const note = win.document.createElement("p");
+    note.style.cssText = "font-family: system-ui, sans-serif; margin: 2rem";
+    note.textContent = `Opening ${d.name} in Adminer. The first time, the panel starts Adminer, which can take a minute.`;
+    win.document.body.appendChild(note);
+    setAdminer({ id: d.id });
+    openInAdminer(d.id, win).then(() => setAdminer(null)).catch((e: unknown) => {
+      win.close();
+      setAdminer({ id: d.id, error: e instanceof Error ? e.message : String(e) });
+    });
   };
   const edit = (u: DatabaseUser) => {
     setGrants(u.grants.map((g) => ({ databaseId: g.databaseId, privileges: g.privileges })));
@@ -97,8 +128,15 @@ export function DatabasesPanel({ websiteId }: { websiteId?: string }) {
                       <span className="cell-sub">{serverName(d.databaseServerId) ?? "Database server"}</span>
                       {d.engine === "valkey" && <span className="cell-sub">{d.number === undefined ? "The number comes when the job is complete" : <>Database number <strong>{d.number}</strong></>}</span>}
                     </td>
-                    <td className="cell-actions" style={{ width: 120 }}>
+                    <td className="cell-actions" style={{ width: 260 }}>
+                      <div className="cell-buttons">
+                      {d.engine !== "valkey" && (
+                        <button type="button" className="btn btn-sm" disabled={adminer?.id === d.id && !adminer.error} onClick={() => openAdminer(d)}>
+                          {adminer?.id === d.id && !adminer.error ? "Opening…" : "Open in Adminer"}
+                        </button>
+                      )}
                       <ConfirmButton className="btn btn-sm btn-danger" title={`Remove database ${d.name}?`} confirm="Remove database" message={d.engine === "valkey" ? <p>The data and the user of the database are removed now. A backup has no Valkey data, so you cannot restore it.</p> : <p>The data is removed now. The users of this database lose access to it. You can restore it from a backup for the retention period.</p>} onConfirm={() => deleteDatabase(d.id)}>Remove</ConfirmButton>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -111,6 +149,11 @@ export function DatabasesPanel({ websiteId }: { websiteId?: string }) {
           </table>
         </TableWrap>
         {!websiteId && partialDetails() && <p className="card-body muted small">There are many websites, so this list shows only the websites that you opened. Open a website to see its databases.</p>}
+        {dbs.some((d) => d.engine !== "valkey") && (
+          <p className="card-body muted small" style={{ paddingTop: 12 }}>
+            <strong>Open in Adminer</strong> opens the database in Adminer, a web tool for databases, in a new window. The panel signs you in with a temporary database user for that one database, so you type no password. The user stops after 60 minutes: then open the database again.
+          </p>
+        )}
         {dbs.some((d) => d.engine === "valkey") && (
           <p className="card-body muted small" style={{ paddingTop: 12 }}>
             To connect to a Valkey database, an app uses the host name and the port in the Host column, the user name, the password and the database number. Valkey is compatible with Redis: for PHP, turn on the extension <code>redis</code> on the Runtime tab. All the databases of a Valkey database server share its memory: when the memory is full, Valkey removes the keys that were not used for the longest time. A backup has no Valkey data.
@@ -161,7 +204,7 @@ export function DatabasesPanel({ websiteId }: { websiteId?: string }) {
             </tbody>
           </table>
         </TableWrap>
-        <p className="card-body muted small" style={{ paddingTop: 12 }}>Each customer has its own database servers. By default, only the websites of the customer on the same server can connect to them, and each connection needs a user name and a password. A user is in one database server, and can have access only to the databases of its website in that database server.{users.some((u) => u.engine === "valkey") && " The user of a Valkey database has access to that database only. To remove the user, remove the database."}</p>
+        <p className="card-body muted small" style={{ paddingTop: 12 }}>Each customer has its own database servers. By default, only the websites of the customer can connect to them, and each connection needs a user name and a password. A user is in one database server, and can have access only to the databases of its website in that database server.{users.some((u) => u.engine === "valkey") && " The user of a Valkey database has access to that database only. To remove the user, remove the database."}</p>
       </Card>
 
       {asking?.action === "password" && (
@@ -208,14 +251,14 @@ export function DatabasesPanel({ websiteId }: { websiteId?: string }) {
                 <Field
                   label="Database server"
                   hint={usable.length === 0
-                    ? <>The customer has no {ENGINE[engine]} database server on the server of this website. The panel makes one with the plan of the customer.</>
-                    : <>The websites of the customer on the same server can connect to it. {websiteId ? <>To make more database servers, go to the <Link to="/databases">Databases</Link> page.</> : "To make more database servers, select New database server on this page."}</>}
+                    ? <>The website can use no {ENGINE[engine]} database server of its customer. The panel makes one on the server of the website, with the plan of the customer.</>
+                    : <>The websites of the customer can connect to it. {websiteId ? <>To make more database servers, go to the <Link to="/databases">Databases</Link> page.</> : "To make more database servers, select New database server on this page."}</>}
                   error={createDb.error?.fields.databaseServerId}
                 >
                   {(p) => (
                     <select {...p} className="select" value={dbServer} onChange={(e) => setDbServer(e.target.value)}>
                       <option value="">{usable.length === 0 ? `New ${ENGINE[engine]} database server` : "Automatic: the first database server with space"}</option>
-                      {usable.map((x) => <option key={x.id} value={x.id} disabled={x.databases >= x.maxDatabases}>{x.name} · port {x.port} · {x.databases} of {x.maxDatabases} databases</option>)}
+                      {usable.map((x) => <option key={x.id} value={x.id} disabled={x.databases >= x.maxDatabases}>{x.name} · {where(x)} · {x.databases} of {x.maxDatabases} databases</option>)}
                     </select>
                   )}
                 </Field>
@@ -251,7 +294,7 @@ export function DatabasesPanel({ websiteId }: { websiteId?: string }) {
                   <Field label="Database server" hint="A user is in one database server. It can have access only to the databases in it." error={createUser.error?.fields.databaseServerId}>
                     {(p) => (
                       <select {...p} className="select" value={dbServer || usable[0].id} onChange={(e) => { setDbServer(e.target.value); setGrants([]); }}>
-                        {usable.map((x) => <option key={x.id} value={x.id}>{x.name} · port {x.port}</option>)}
+                        {usable.map((x) => <option key={x.id} value={x.id}>{x.name} · {where(x)}</option>)}
                       </select>
                     )}
                   </Field>
@@ -275,6 +318,11 @@ export function DatabasesPanel({ websiteId }: { websiteId?: string }) {
             <FormError error={changeUser.error} />
             <GrantEditor websiteId={dialog.websiteId} engine={dialog.engine} databaseServerId={dialog.databaseServerId} grants={grants} setGrants={setGrants} />
           </form>
+        </Modal>
+      )}
+      {adminer?.error && (
+        <Modal title="Adminer did not open" onClose={() => setAdminer(null)} footer={<button type="button" className="btn btn-primary" onClick={() => setAdminer(null)}>Close</button>}>
+          <p>{adminer.error}</p>
         </Modal>
       )}
       {password && (

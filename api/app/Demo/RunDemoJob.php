@@ -8,6 +8,7 @@ use App\Models\AgentJob;
 use App\Models\Database;
 use App\Models\Website;
 use App\Services\JobOutcome;
+use App\Services\Mesh;
 use App\Services\PanelCertificate;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -20,8 +21,11 @@ use Illuminate\Foundation\Queue\Queueable;
  * - a new website or a new domain with a name that starts with "fail.", for example
  *   "fail.example.com";
  * - a new database with a name that ends with "_fail";
- * - a new mailbox, alias or forwarder with the name "fail", for example "fail@example.com".
- * - a public key for a mailbox that has the text "FAIL".
+ * - a new mailbox, alias or forwarder with the name "fail", for example "fail@example.com";
+ * - a public key for a mailbox that has the text "FAIL";
+ * - a deploy from a repository with "fail" in its address;
+ * - a cron job with "fail" in its command;
+ * - a DNS zone with a name that starts with "fail.".
  */
 class RunDemoJob implements ShouldQueue
 {
@@ -90,6 +94,18 @@ class RunDemoJob implements ShouldQueue
                 'step' => 0,
                 'error' => 'The mail server refused the address fail@'.($p['domain'] ?? 'the domain').': it did not answer on 169.254.77.1:19025 in 30 seconds.',
             ],
+            $job->action === AgentAction::SetDnsZones && collect($p['zones'] ?? [])->contains(fn ($z) => str_starts_with((string) ($z['name'] ?? ''), 'fail.')) => [
+                'step' => 2,
+                'error' => 'knotc -b zone-reload '.collect($p['zones'])->pluck('name')->first(fn ($n) => str_starts_with((string) $n, 'fail.')).': exit status 1: error: (operation timed out)',
+            ],
+            $job->action === AgentAction::Deploy && str_contains((string) ($p['repository'] ?? ''), 'fail') => [
+                'step' => 1,
+                'error' => "a build command failed: exit status 2: Installing dependencies from lock file\nYour lock file does not contain a compatible set of packages. Please run composer update.",
+            ],
+            $job->action === AgentAction::RunCronJob && str_contains((string) ($p['cronJob']['command'] ?? ''), 'fail') => [
+                'step' => 0,
+                'error' => 'the command ended with exit code 1: PHP Fatal error:  Uncaught RuntimeException: The export did not complete in /app/src/export.php:18',
+            ],
             default => null,
         };
     }
@@ -118,7 +134,34 @@ class RunDemoJob implements ShouldQueue
             // The fingerprint of the demonstration is not the fingerprint of the key.
             AgentAction::SetMailbox => ($p['publicKey'] ?? '') !== '' ? ['encryption' => ['fingerprints' => [strtoupper(sha1($p['publicKey']))], 'type' => 'OpenPGP v4: X25519', 'expiresAt' => null, 'warnings' => []]] : [],
             AgentAction::SetMailDomain => ['records' => DemoMailDns::records((string) ($p['domain'] ?? ''), (string) $job->server->mail_hostname)],
+            AgentAction::RunCronJob => ['cronJobId' => $p['cronJob']['id'] ?? '', 'exitCode' => 0, 'output' => "Running scheduled tasks.\nDone in 0.4 s.", 'ranAt' => now()->toIso8601String()],
+            AgentAction::Deploy => [
+                'releaseId' => $p['releaseId'] ?? '',
+                'commit' => sha1((string) ($p['releaseId'] ?? '')),
+                'message' => 'Update the '.(['home page', 'checkout form', 'product list', 'contact page'][crc32((string) ($p['releaseId'] ?? '')) % 4]),
+                'removed' => [],
+                'documentRoot' => $p['website']['documentRoot'] ?? '',
+            ],
             AgentAction::UpdateAgent => ['version' => config('cloudfactory.agent.latest_version')],
+            // Each peer answers through its tunnel.
+            AgentAction::SetMesh => ['mesh' => [
+                'publicKey' => $job->server->mesh_public_key,
+                'version' => $job->server->mesh_wanted_version,
+                'address' => $job->server->mesh_address,
+                'networks' => true,
+                'websites' => true,
+                'moves' => true,
+                'tunnels' => array_map(fn (array $peer) => [
+                    'server' => $peer['server'], 'handshakeAt' => now()->getTimestamp(), 'reachable' => true, 'roundTripMicros' => random_int(4000, 24000),
+                ], Mesh::stateFor($job->server)['peers']),
+            ]],
+            AgentAction::RotateMeshKey => ['publicKey' => base64_encode(random_bytes(32))],
+            AgentAction::SetPanelBrands => ['panelBrands' => array_map(fn (string $d) => [
+                'domain' => $d,
+                'method' => PanelCertificate::publicName($d) ? 'letsencrypt' : 'internal',
+                'state' => 'valid',
+                'expiresAt' => now()->addDays(90)->toIso8601String(),
+            ], array_values(array_filter((array) ($p['domains'] ?? []), 'is_string')))],
             AgentAction::SetPanelCertificate => ['panelCertificate' => [
                 ...array_intersect_key(PanelCertificate::current(), array_flip(['domain', 'caCertificate'])),
                 'method' => $p['method'] ?? 'internal',

@@ -28,6 +28,7 @@ enum AgentAction: string
     case SetSftp = 'SetSftp';
     case ConfigureHost = 'ConfigureHost';
     case SetPanelCertificate = 'SetPanelCertificate';
+    case SetPanelBrands = 'SetPanelBrands';
     case SetDatabaseServer = 'SetDatabaseServer';
     case DeleteDatabaseServer = 'DeleteDatabaseServer';
     case SetMailServer = 'SetMailServer';
@@ -39,6 +40,16 @@ enum AgentAction: string
     case DeleteMailbox = 'DeleteMailbox';
     case SetMailAlias = 'SetMailAlias';
     case DeleteMailAlias = 'DeleteMailAlias';
+    case SetDnsZones = 'SetDnsZones';
+    case DeleteDnsZones = 'DeleteDnsZones';
+    case SetCronJobs = 'SetCronJobs';
+    case RunCronJob = 'RunCronJob';
+    case Deploy = 'Deploy';
+    case ActivateRelease = 'ActivateRelease';
+    case SetMesh = 'SetMesh';
+    case RotateMeshKey = 'RotateMeshKey';
+    case SendDatabaseServer = 'SendDatabaseServer';
+    case ReceiveDatabaseServer = 'ReceiveDatabaseServer';
 
     /** The steps that the agent reports for this action. */
     public function steps(): array
@@ -75,6 +86,19 @@ enum AgentAction: string
             self::DeleteMailbox => ['Remove mailbox and its messages'],
             self::SetMailAlias => ['Set address'],
             self::DeleteMailAlias => ['Remove address'],
+            self::SetPanelBrands => ['Set panel domains', 'Get TLS certificates'],
+            self::SetDnsZones => ['Start DNS server', 'Write zones', 'Load zones'],
+            self::DeleteDnsZones => ['Remove zones'],
+            self::SetCronJobs => ['Save the cron jobs'],
+            self::RunCronJob => ['Run the command'],
+            // The steps after "Build" are the steps of SetRuntime: the agent starts the website
+            // from the new release with no stop.
+            self::Deploy => ['Get the code', 'Build', ...self::SetRuntime->steps(), 'Remove old releases'],
+            self::ActivateRelease => ['Check the release', ...self::SetRuntime->steps()],
+            self::SetMesh => ['Set tunnels and firewall', 'Check tunnels'],
+            self::RotateMeshKey => ['Make new key'],
+            self::SendDatabaseServer => ['Stop database server', 'Send data'],
+            self::ReceiveDatabaseServer => ['Prepare database server', 'Receive data', 'Start database server'],
         };
     }
 

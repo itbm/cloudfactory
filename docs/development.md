@@ -54,9 +54,34 @@ server, a suspended customer, a domain that waits for its DNS record.
 The demo agent (`api/app/Demo`) fails these jobs, so that you can see a failure:
 
 - a new website or a new domain with a name that starts with `fail.`;
-- a new database with a name that ends with `_fail`.
+- a new database with a name that ends with `_fail`;
+- a deploy from a repository with `fail` in its address (the build step fails);
+- a cron job with `fail` in its command, when you select **Run now**;
+- a change of a DNS zone with a name that starts with `fail.`.
+
+In the demonstration mode, the file manager shows a small set of sample files for each
+website, and keeps your changes in the cache. The logs are sample lines.
+
+The demo mode does not ask the public DNS. For a DNS zone with a name that starts with
+`elsewhere.`, it answers that the domain uses the name servers of a registrar. For each other
+zone, it answers that the domain uses the name servers of the panel.
 
 The panel ignores `CF_DEMO` when `APP_ENV` is `production`. Do not set it on a server.
+To try **Open in Adminer** in the demonstration mode, start Adminer on your computer and set
+its address in `api/.env`, for example `CF_ADMINER_URL=http://127.0.0.1:8090`. The panel adds
+the path of the customer to this address:
+
+```sh
+mkdir -p /tmp/adminer && cp images/adminer/index.php /tmp/adminer/
+curl -fsSL -o /tmp/adminer/adminer.php \
+  https://github.com/vrana/adminer/releases/download/v5.5.1/adminer-5.5.1.php
+php -S 127.0.0.1:8090 -t /tmp/adminer /tmp/adminer/index.php
+```
+
+Adminer opens only server names that end in `.internal`. To connect to a local database,
+add the name of the database server to `/etc/hosts`, for example
+`127.0.0.1 shop-db.internal`.
+
 
 ### Consoles for each role
 
@@ -117,6 +142,15 @@ Refer to [`api/README.md`](../api/README.md).
 cd agent
 go test -race ./...
 go vet ./...
+```
+
+The tests use a fake for Knot DNS. One test starts a real Knot DNS server with the
+configuration and the zone files of the root helper, and asks it with `kdig`. It runs only
+when Knot DNS is installed and `CF_TEST_KNOT=1` is set:
+
+```sh
+sudo apt-get install knot knot-dnsutils
+CF_TEST_KNOT=1 go test ./internal/actions -run TestKnotServer
 ```
 
 After you change `agent.proto`, make the Go code again:

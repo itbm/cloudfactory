@@ -38,6 +38,12 @@ The product specification, section 6.4, gives the requirements.
   directories, and it stops if one of them is not a directory. The website user makes the
   directory `app/public`. Thus a symbolic link that a website puts in its own files cannot
   make root change the files of a different website.
+- The server applies the disk limit of a website with a user quota. On a file system with no
+  user quotas, a new website with a disk limit has its own file system: a disk image, which
+  the server mounts on the directory of the website with the options `nodev` and `nosuid`.
+  Thus a website that fills its disk cannot fill the disk of the server. Only root can open
+  the directory of the disk images (`/srv/cloudfactory/disks`). Refer to
+  [architecture.md](architecture.md#disk-limit-of-a-website).
 
 ## SFTP
 
@@ -52,7 +58,9 @@ The product specification, section 6.4, gives the requirements.
   cannot read the files of a different website. A bug in sshd after the sign-in has only the
   permissions of the website user.
 - The container sees only the website directories in `/srv/cloudfactory/sites`. It does not
-  see the home directories, with the Podman storage of each user.
+  see the home directories, with the Podman storage of each user, or the disk image files.
+  It gets the mounts of the host below `/srv/cloudfactory/sites` (`rslave`), and it cannot
+  give a mount to the host.
 - SFTP accepts SSH keys only. A key cannot open a shell, a terminal or a forwarded port.
 - Only a website user with at least one key is in the user list of the container. The agent
   never puts a user with a UID or GID below 1000 in the list.
@@ -66,6 +74,31 @@ The product specification, section 6.4, gives the requirements.
   The panel refuses to turn on SFTP for a suspended customer and for a website in the state
   `failed`.
 
+## Files, logs, cron jobs and deploys
+
+- The agent does each file operation, each read of the logs, each cron command and each
+  build as the Unix user of the website. The root helper has no new command and no new
+  operation for these functions.
+- The file manager opens the directory of the website as a root directory (`os.Root` in
+  Go). The kernel refuses a path that goes out of it, also through a symbolic link. The API
+  and the agent check each path with the same rule (`filePath` in `schema/input-rules.json`).
+- A cron command runs in the gVisor container of the website. A build runs in a second
+  gVisor container with all capabilities dropped, a read-only root file system and the
+  limits of a website. The firewall rules for the website user apply to both.
+- A customer controls the commands of its cron jobs and its builds. This gives the customer
+  no new rights: the customer can run the same code in its website.
+- The panel encrypts the private deploy key, the webhook token and the build secrets in its
+  database. The API gives the names of the secrets, not their values. The private key and
+  the secrets are in a job only when the panel sends it to the agent.
+- The address of a webhook has a random token. Each person who has the address can start a
+  deploy of the branch, but cannot change what the deploy does. The route accepts 30
+  requests each minute. The panel does not start a second deploy while one is in progress.
+- A user needs the token scope for websites to use these routes. An owner sees only its own
+  websites. For a suspended customer, the panel refuses each change of a file, a cron job and
+  a Git source, and each deploy.
+- The panel records each change of a file, a cron job and a Git source in the audit log.
+  It does not record the content of a file.
+
 ## Databases
 
 - Each customer has its own database servers on a server. A database server is one
@@ -74,9 +107,10 @@ The product specification, section 6.4, gives the requirements.
   disk space. A customer thus cannot read the data of a different customer through a fault
   of a database engine, and cannot use the CPU time, the memory, the disk space or the
   connections of the database server of a different customer.
-- The disk limit of a database server is a file system with the size of the limit (a disk
-  image on a loop device). A database server that fills its disk cannot fill the disk of the
-  server. Refer to [architecture.md](architecture.md#disk-limit).
+- The disk limit of a database server is a user quota of its Unix user. On a file system
+  with no user quotas, it is a file system with the size of the limit (a disk image on a
+  loop device). A database server that fills its disk cannot fill the disk of the server.
+  Refer to [architecture.md](architecture.md#disk-limit).
 - The firewall lets a website connect only to the database address of its customer, on the
   ports of the database servers of its customer (refer to [Firewall](#firewall)). A website
   cannot open a connection to the database servers of a different customer, also when it
@@ -189,6 +223,30 @@ The product specification, section 6.4, gives the requirements.
   the cluster. Only the members can connect to it, and only root and `cf-mail` can connect to
   the cluster ports on a member. The secrets of the cluster are encrypted in the database of
   the panel, and are not in the job records.
+### Adminer
+
+- Each customer has its own Adminer container, in gVisor, with its own Unix user and limits.
+  No two customers share an Adminer process.
+- The container is a member of the networks of its customer only. The firewall lets it
+  connect to the MariaDB and PostgreSQL database servers of that customer, and to nothing
+  else in the private networks.
+- Adminer opens only MariaDB and PostgreSQL, and only a server name that ends in `.internal`.
+  It refuses other names before it connects. This is a second check: the firewall is the
+  first.
+- The user types no password. The panel makes a temporary database user with access to one
+  database only, and gives the password to the browser one time. The panel does not keep the
+  password. The user is removed after 60 minutes, or when its database is removed.
+- A user who can manage the databases of a website (the scope `databases`) can open them in
+  Adminer. The panel refuses this for a suspended customer, and writes an audit event for each
+  sign-in.
+- Adminer has no permanent login, sends `Cache-Control: no-store`, and refuses frames from
+  other sites (`frame-ancestors 'none'` and `X-Frame-Options: DENY`).
+- Adminer does not ask `adminer.org` for a new version, and its content security policy lets
+  the browser connect only to Adminer (`connect-src 'self'`) and refuses workers
+  (`worker-src 'none'`).
+- Each sign-in has its own random address, which Adminer does not show on a different
+  sign-in. Adminer keeps its session cookie on that address only. The address stops working
+  when the temporary user expires.
 
 ## Domains
 
@@ -203,6 +261,29 @@ The product specification, section 6.4, gives the requirements.
 - A website has 50 domains at most (`CF_DOMAINS_PER_WEBSITE`), because each domain starts a
   certificate order. A customer can add 30 domains in one hour and start 10 domain checks in
   one minute. An administrator has no such limit.
+
+## DNS zones
+
+- A zone belongs to one customer. A user can see and change only the zones of the customers
+  that the user controls, and each DNS request needs the token scope `dns`.
+- A customer cannot make a zone for a name that is the same as, above or below a zone of a
+  different customer, unless the customer proves control of the domain. The proof is a DNS TXT
+  record at `_cloudfactory-challenge.<domain>`, as for the domain of a website. An
+  administrator needs no proof.
+- A customer cannot make a zone for the domain of the panel, the host name of a server or a
+  name server host name.
+- The plan of a customer gives the number of its zones. A zone has 1000 records at most. A
+  customer can make 60 DNS changes in one minute.
+- The panel and the root helper check each record with the same rules
+  (`schema/input-rules.json`): the type, the name, the TTL, and the value for the type. The
+  root helper writes the zone file from the checked records. A record cannot have a new line,
+  a `$` directive or an open quotation mark.
+- The container `cf-dns` runs in gVisor with a Unix user that has no other work. It can read
+  the zone files and cannot change them. It can write only its keys and signatures.
+- The private DNSSEC key of a zone is encrypted in the panel database. On a DNS server, only
+  the user `cf-dns` and root can read it.
+- The DNS server answers only for its zones. It has no recursion, and it limits the rate of
+  the answers to one network.
 
 ## The edge proxy
 
@@ -264,7 +345,7 @@ helper does only the work of three lists:
 | List | What the worker can ask for |
 | --- | --- |
 | Commands | A program as the Unix user of a website (`runuser -u <user>`). A command of a fixed form as the Unix user of a database server or as `cf-edge`, for example a database client in the container of that database server. Some root commands with fixed arguments: the commands of the status report, the updates of the operating system, the reboot, and restic with paths that the root helper examines. |
-| Operations | Root work that has a name, for example `user.ensure`, `unit.write`, `user.quota` and `db.prepare`. Each operation has typed values, and the root helper examines each value. |
+| Operations | Root work that has a name, for example `user.ensure`, `unit.write`, `user.quota`, `site.resize` and `db.prepare`. Each operation has typed values, and the root helper examines each value. |
 | Connections | The admin socket of the edge proxy, and some ports on the private service address and on the database network. One of these ports is the management API of the mail server. |
 
 These rules apply to the three lists:
@@ -279,6 +360,11 @@ These rules apply to the three lists:
 - The worker cannot give the text of a unit of a database server or of `cf-edge`, and it
   cannot run a program of its choice as these users. The root helper makes
   these units from its own settings.
+- The root helper makes, mounts and changes the disk image of a website and of a database
+  server. The worker gives only the Unix user of the website or the ID of the database
+  server, and the disk limit. The root helper makes the path of the image file, the mount
+  point and the mount unit from its own settings, and it runs `mkfs.ext4`, `resize2fs` and
+  `e2fsck` only on that image file. The worker cannot mount a file of its choice.
 - The root helper makes the Unix user of a database server (`db-<id>`) from the ID of the
   database server. It uses such a user only when the UID of the user is in the range from
   10000 to 19999. As that user, the worker can run only a database client in the container
@@ -317,8 +403,11 @@ A person who controls the worker cannot do these things:
   system.
 - On the panel server: read the files of the panel, for example `APP_KEY` and the private
   key of the panel, or connect to the database of the panel.
-- Change the firewall. The exceptions are the elements of the set `database_access` and the
-  database addresses, which the root helper examines.
+- Change the firewall. The exceptions are the elements of the set `database_access`, the
+  database addresses and the elements of the sets of the mesh and of the networks, which the
+  root helper examines.
+- Read the private tunnel key of the server, or the pre-shared keys after the root helper has
+  them. The worker sees a pre-shared key only in the job that brings it from the panel.
 - Install an agent binary that the release key did not sign.
 
 The boundary does not make the worker safe to lose. A person who controls the worker can
@@ -546,12 +635,161 @@ directory with mode 0700:
   to a server can delete the backups of that server. Versioning or an object lock in the
   bucket keeps deleted data for a set time.
 - A backup keeps the SHA-256 sum of each database dump (refer to [Databases](#databases)).
+- The backup of a database is in the repository of the server of its database server. For a
+  website with a database on a different server, the agent of that server makes the dump
+  and keeps it in its own repository. No dump and no repository password goes to a
+  different server, and no database user for backups is open to the network.
+
+## The mesh between servers
+
+The mesh is the set of encrypted tunnels between the servers of one panel (refer to
+[architecture.md](architecture.md#the-mesh-between-servers)). The traffic of a tunnel goes
+through the internet, so the design assumes that a person can read and change each packet.
+
+- **Encryption.** Each tunnel is a WireGuard tunnel. WireGuard encrypts each packet and
+  accepts a packet only from the key of the other server.
+- **Private keys.** The root helper of each server makes the key pair of the server. The
+  private key stays in a file of root on the server. The panel, the worker of the agent and
+  the other servers do not get it.
+- **Pre-shared keys.** Each tunnel also has a pre-shared key, which the panel makes. A person
+  who records the traffic now and breaks the key exchange later, for example with a quantum
+  computer, also needs this key. The panel keeps it encrypted in its database.
+- **The panel is the directory.** A server gets the public key of a different server only
+  from the panel, through the agent connection with mutual TLS. A person who controls the
+  panel can thus add a server to the mesh. That person can already run jobs on all servers.
+- **The addresses of each key.** A server accepts from a tunnel only the packets that have
+  the mesh address of the other server as their source, or the address of a network member
+  on the other server (`AllowedIPs`). A network member opens no connection, so a packet from
+  a member address is an answer. Thus the source address of a new connection identifies the
+  server that has the key. An address is the address of one server or of one member of one
+  server: the agent refuses a state that gives one address to two servers.
+- **The tunnel port.** The firewall accepts the UDP port of the tunnels only from the tunnel
+  addresses of the other servers of its tunnels. For all other addresses, the port is closed.
+- **Traffic that comes out of a tunnel.** The firewall has a chain for it. The chain accepts
+  an ICMP echo request, with a rate limit, and drops all other traffic. Thus a tunnel does not
+  open SSH, the agent port, a database or a website of a server to the other servers. The
+  one exception is a network member: refer to
+  [The networks of the customers](#the-networks-of-the-customers).
+- **Traffic into a tunnel.** Only root, and a website for the members of its networks, can
+  open a connection to an address of the mesh range. Each other website user, the worker of
+  the agent and the service users get a refusal. A server does not forward packets from or to
+  the interface of the mesh.
+- **Named networks.** A customer can separate its own websites and database servers with
+  named networks. The firewall then refuses a connection from a website to a member address
+  that is in none of its networks. This is a separation between the applications of one
+  customer. It does not replace the separation between customers, which does not depend on
+  the networks. The names of the engines stay open between a website and the database
+  servers of its customer on the same server.
+- **The move of a database server.** The data of a database server that moves goes through
+  the tunnel between its old server and its new server, never through the panel. Only the
+  root helpers send and receive it: the worker cannot connect to the mesh range and cannot
+  read the data. The new server opens TCP port 7445 on its mesh address only for the mesh
+  address of the old server, and only for the time of the move. It accepts a connection only
+  with the token of the move: 32 random bytes from the panel, which the panel removes from
+  the jobs when they end. The root helper refuses a peer that is not in its mesh state, a
+  path outside the data directory, a hard link, a device file and a secret that is not of
+  the engine. It writes each file with the owner of the database server, and it applies the
+  disk limit of the database server.
+- **Checks of the state.** The worker and the root helper examine each value of the state
+  from the panel: the range is a private IPv4 network, each mesh address is in the range,
+  each tunnel address is a public IP address, and each key has the correct form. The root
+  helper refuses a state with an older version, so a recorded job cannot bring an old key
+  back.
+- **A server that an attacker controls.** That server has its own private key and the
+  pre-shared keys of its tunnels. It can send packets with its own mesh address into its
+  tunnels, and the other servers drop all of them except the echo requests. It cannot read
+  the traffic of a tunnel between two other servers. Make a new key on the server after you
+  repair it, or remove the server from the panel. The panel then removes its key from the
+  other servers.
+
+## The networks of the customers
+
+A website connects to a database server of its networks by a name such as
+`shop-db.internal` (refer to
+[architecture.md](architecture.md#the-networks-of-the-customers)). The database server can be
+on a different server. A website also connects to a different website of its networks, by a
+name such as `shop-a1b2.internal` on port 80. These are the controls:
+
+- **The firewall decides, not the name.** The hosts file of a website has only the names of
+  the members of its networks. A website that writes an address in its own configuration gets
+  the same answer from the firewall as with a name.
+- **On the server of the website.** The firewall lets a connection to a member address pass
+  only for the Unix user of a website that is in a network with the member, and only on the
+  port of the member. pasta opens each connection of a container as the Unix user of the
+  container. Thus a website of a different customer on the same server gets a refusal.
+- **On the server of the member.** The firewall accepts a connection from a tunnel only when
+  three values agree: the mesh address of the server that sent it, the member address, and
+  the port of the member. The server that sent it must have a website in a network with the
+  member. The firewall compares the address and the port from before the address change, so
+  the port of the container on the server gives no access. All other traffic from a tunnel is
+  dropped, as before.
+- **What a server can do to a member of a different server.** A server whose root is in the
+  hands of an attacker can connect to each member that one of its websites can connect to. It
+  cannot connect to a member of a customer that has no website on it. Each connection also
+  needs the password of a database user. Put the websites of customers that must not share
+  this limit on different servers.
+- **The same client address.** A database server sees `169.254.80.1` as the client for each
+  website container, on its own server and on a different server. Thus a database user with
+  the access `website` can connect from each website that the firewall lets through, and from
+  no other address. A database server cannot find from the address which website connects. As
+  before, the password of the database user is the control between the websites of one
+  customer.
+- **A website that is a member has no password.** A database server asks for the password
+  of a database user. A website on port 80 does not: each website that is in a network with
+  it can send it requests, and the website sees the same client address for each of them.
+  Thus the members of one network trust each other. An application that must know which
+  website sent a request needs its own control, for example a token in the request. A server
+  whose root is in the hands of an attacker can send requests to each website member that
+  one of its websites can connect to.
+- **A website member and the edge proxy.** A connection to the network name does not go
+  through the edge proxy. It has no TLS, no access log of the edge and no stop page. Between
+  two servers, the WireGuard tunnel encrypts it. The port of the container on the private
+  service address stays closed for each website: the firewall accepts a connection of a
+  website only when the connection was to the member address and port 80 before the address
+  change, and the Unix user of the website has that member in its networks.
+- **A private website.** It has no route in the edge proxy, so no address on the internet
+  can send it a request. The port of its container on the private service address is closed
+  for each website, as for a public website. The only path is the member address on port 80.
+- **A worker with a command of the customer.** The command is one line with no control
+  characters (the rule `commandLine`, as for a cron job), and the agent checks each argument.
+  It runs only in the container of the worker: in the gVisor sandbox, as the Unix user of
+  the website, with no Linux capabilities, with a read-only image, and with the CPU, memory
+  and process limits of the plan. The firewall rules for the connections that a website
+  opens also apply. Thus the command can do what the PHP code of a website of the same
+  customer can do, and no more. A worker counts as a website of the plan, so a customer
+  cannot make more containers than the plan allows.
+- **Checks of the root helper.** The worker of the agent makes the rules, and the root helper
+  examines each one. A rule can open only an address of the mesh range that is not the
+  address of a server, only for a UID of a website user, and only on the usual port of an
+  engine or on port 80. The address change of a member can go only to a port of a database
+  server on the database network, or, for port 80, to a port of a website container on the
+  private service address (20000 to 29999). A name must end in `.internal`, and it can point only to an address of
+  the mesh range. Thus a worker that an attacker controls cannot use these operations to
+  open SSH, the agent port or a public address, or to give a website a false address for a
+  public name. It can give a website of its server access to a network member, as it can
+  give a website access to a database server of a different customer on its server. Each
+  connection also needs the password of a database user.
+- **The hosts file.** Root owns the file and its directory. The website container has the
+  file as a read-only mount.
+- **Database jobs for a website of a different server.** The agent of the server of a
+  database server runs the jobs for its databases and its database users. For a website of
+  a different server, the agent has no record of the website, so the job has the ID of the
+  customer. The agent does the job only when the database server is a database server of
+  that customer. For a website of its own server, the agent uses its record of the website:
+  a job with a different customer is refused. As before, each name of a database and of a
+  database user starts with the Unix user of the website, and the panel gives each website
+  a different Unix user.
+- **Tunnels that the panel makes.** The panel makes a tunnel between two servers only when a
+  website on one server is in a network with a database server on the other. It removes the
+  tunnel when this is no longer true.
 
 ## Firewall
 
 The installation script sets an nftables table. The table blocks all incoming traffic except
 SSH, SFTP (port 2200 by default), HTTP, HTTPS and the agent port. The agent changes only the
-SFTP rule, which has the comment `# cloudfactory-sftp`.
+SFTP rule, which has the comment `# cloudfactory-sftp`, and the rules of the DNS server,
+which have the comment `# cloudfactory-dns`. The DNS rules open port 53 (UDP and TCP) on a
+server that has DNS zones.
 
 The table also limits the outgoing connections:
 
@@ -584,6 +822,23 @@ The table also limits the outgoing connections:
   addresses. It refuses all other addresses of the server and the private networks.
 - On a member of a mail cluster, the file also accepts the private network (UDP port 51877)
   from the other members, and the cluster ports on the interface `cf-mail`.
+- The mesh has four sets: `mesh_port`, `mesh_range`, `mesh_endpoints4` and `mesh_endpoints6`.
+  The table accepts the UDP port in `mesh_port` only from the addresses in the two sets of
+  tunnel addresses. The chain `mesh_input` gets all traffic that comes out of a tunnel. It
+  accepts an ICMP echo request and drops the rest. Only root can open a connection to an
+  address in `mesh_range`. The chain `mesh_forward` drops each packet that a server would
+  forward from or to the interface `cf-mesh`. The agent writes the elements of the sets, and
+  nftables loads them from `/etc/cloudfactory/firewall/mesh.nft`. On a server from an earlier
+  release, the agent adds the sets and the rules to the file of the installer with the first
+  tunnel. Refer to [The mesh between servers](#the-mesh-between-servers).
+- The networks have two sets and one map: `network_access` (the UID of a website, a member
+  address and a port), `mesh_access` (the mesh address of a server, a member address and a
+  port) and `mesh_members` (a member address and a port give the address and the port of the
+  container). The NAT chains change the destination of a connection to a member of the
+  server, from a tunnel and from a website of the server. They also set the source address
+  `169.254.80.1` for such a connection. The agent writes the elements, and nftables loads
+  them from `/etc/cloudfactory/firewall/network.nft`. Refer to
+  [The networks of the customers](#the-networks-of-the-customers).
 - The options `--allow-website-smtp` and `--allow-website-network` of the installation script
   open port 25 or a private network for the websites. Refer to
   [installation.md](installation.md#connections-from-the-websites).
@@ -591,6 +846,24 @@ The table also limits the outgoing connections:
 ## Known limits
 
 These items stay open in release 0.1:
+
+- **A domain that points to the panel after its zone is removed.** When a customer removes a
+  zone, or an administrator removes a customer, the registrar of the domain can still have
+  the name servers of the panel. A different customer who makes a zone for the same domain
+  then controls the DNS of the domain. The panel asks for the TXT proof only while a
+  different customer has a zone for the name. Before you remove a zone, set other name
+  servers at the registrar.
+- **One origin for Adminer.** All customers use the same Adminer domain, so the browser puts
+  the Adminer pages of all customers in one origin. Each sign-in has its own random address,
+  `/<tool>/<random key>/`, and the session cookie of Adminer has this path only. Adminer
+  serves no other path, and keeps nothing in the storage of the browser. Thus a script on the
+  Adminer page of one sign-in does not get the cookie of a different sign-in, and cannot find
+  its address. The separation is the cookie path and a random address, not a separate origin.
+  Use one browser profile for each customer when you manage the databases of different
+  customers. A domain for each customer gives a separate origin.
+- **A server that had the role `dns`.** When you turn off DNS on a server, the panel removes
+  the zones from the server. The empty container `cf-dns` and the firewall rules for port 53
+  stay until you remove them.
 
 - **Image tags.** The signature policy accepts a signed image for each tag of its repository
   (`matchRepository`). A person who can write to the registry can thus give an old signed
@@ -632,12 +905,24 @@ These items stay open in release 0.1:
   proxy. Refer to [The root helper of the agent](#the-root-helper-of-the-agent). A possible
   correction for the edge proxy is a root helper that accepts only the route changes of a
   fixed form.
-- **Disk space of the databases.** A server with no user quotas and no loop devices (for
+- **Servers with no disk limits.** A server with no user quotas and no loop devices (for
   example a container of an LXC host with a file system that is not ext4 or XFS) cannot apply
-  the disk limit of a database server. On such a server, a customer that fills the disk of
-  the server with database data stops the database servers of all customers. The panel shows
-  `database-disk-limits` as a part of the server that is off.
+  the disk limit of a website or of a database server. On such a server, a customer that
+  fills the disk of the server stops the websites and the database servers of all customers.
+  The panel shows `disk-quotas` and `database-disk-limits` as parts of the server that are
+  off.
+- **Websites and database servers from before the disk images.** On a file system with no
+  user quotas, a website or a database server that has a directory keeps it, and has no disk
+  limit. Only a new website or a new database server gets a disk image. The panel shows
+  `disk-quotas` or `database-disk-limits` as a part of the server that is off, with the
+  number of these websites or database servers. To give them a limit, turn on the user
+  quotas.
+- **Home directory of a website with a disk image.** The disk image limits the files of the
+  website. It does not limit the home directory of the website user, which has the files of
+  Podman, the log file of the website (10 MB at most) and, for a custom image, the copy of
+  the image. A customer with a custom image can thus use disk space of the server with the
+  size of that image. A user quota counts these files.
 - **Sum of the disk limits.** A user quota and a disk image use only the disk space that
-  the database server uses, and the sum of the disk limits can be more than the disk of the
-  server. Monitor the free disk space of the server.
+  the website or the database server uses, and the sum of the disk limits can be more than
+  the disk of the server. Monitor the free disk space of the server.
 - **Base images.** The Containerfiles name the base images by tag, not by digest.

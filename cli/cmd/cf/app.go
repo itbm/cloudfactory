@@ -7,12 +7,14 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"html"
 	"io"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"text/tabwriter"
@@ -44,6 +46,31 @@ Usage:
   cf sftp get WEBSITE
   cf sftp set WEBSITE [--on|--off] [--key-file FILE]... [--no-keys]
   cf runtime revert WEBSITE
+  cf files list WEBSITE [PATH]                         The file manager. A PATH starts at the directory of the website,
+                                                       for example /public/index.php. Use SFTP for a file of more than 5 MB.
+  cf files get WEBSITE PATH [--output FILE]
+  cf files put WEBSITE PATH --from FILE [--create-only]   "--from -" reads the standard input.
+  cf files mkdir WEBSITE PATH
+  cf files move WEBSITE PATH NEW_PATH
+  cf files delete WEBSITE PATH                         A directory goes with all that it contains.
+  cf logs WEBSITE [--lines N] [--type access|error]    The last lines of the output of the container.
+  cf cron list WEBSITE
+  cf cron add WEBSITE --schedule "M H DOM MON DOW" --command COMMAND [--off]
+                                                       The command runs in the container of the website, in /app. The time is UTC.
+  cf cron set WEBSITE CRON_ID [--schedule SCHEDULE] [--command COMMAND] [--on | --off]
+  cf cron run WEBSITE CRON_ID                          Run the command now. The command fails when its exit code is not 0.
+  cf cron delete WEBSITE CRON_ID
+  cf deploys show WEBSITE                              The Git repository, the deploy key, the webhook and the releases.
+  cf deploys connect WEBSITE --repository URL --branch BRANCH [--web-directory DIR] [--trigger manual|webhook]
+                             [--build COMMAND]... [--no-build]
+                                                       Also changes the settings. For a private repository, add the deploy key
+                                                       that the command shows to the repository.
+  cf deploys secret set WEBSITE NAME                   An environment variable of the build commands. The value is read
+                                                       from CF_SECRET or stdin.
+  cf deploys secret remove WEBSITE NAME
+  cf deploys start WEBSITE                             Deploy the branch now. The website changes to the new release with no stop.
+  cf deploys activate WEBSITE RELEASE_ID               Go back to a release that is on the server.
+  cf deploys disconnect WEBSITE
   cf database-servers list [--customer ID] [--server SERVER] [--engine mariadb|postgresql|valkey]
   cf database-servers get DATABASE_SERVER
   cf database-servers create --engine mariadb|postgresql|valkey [--name NAME] [--customer ID] [--plan ID] [--server SERVER]
@@ -53,12 +80,19 @@ Usage:
   cf database-servers set DATABASE_SERVER [--name NAME] [--plan ID] [--vcpus N] [--memory-mb N] [--disk-gb N]
                                                        New limits restart the database server.
   cf database-servers retry DATABASE_SERVER            Make a database server again after the first job failed.
+  cf database-servers move DATABASE_SERVER --server SERVER
+                                                       Move a database server to a different server. Only an administrator.
+                                                       It keeps its name and its network name. It does not operate while its
+                                                       data moves through the tunnel between the two servers.
   cf database-servers delete DATABASE_SERVER           Remove a database server that has no databases.
   cf databases list WEBSITE
   cf databases create WEBSITE --engine mariadb|postgresql|valkey --name NAME [--no-user] [--database-server DATABASE_SERVER]
                                                        A Valkey database has a database number, and always a user with the same name.
                                                        With no database server, the panel uses the first one of the engine with space.
   cf databases delete WEBSITE DATABASE
+  cf databases adminer WEBSITE DATABASE [--read-only]  Open a MariaDB or PostgreSQL database in Adminer, with a temporary
+                                                       database user that expires after 60 minutes. The command writes an
+                                                       HTML file that signs you in: open it in your browser.
   cf database-users list WEBSITE
   cf database-users create WEBSITE --engine mariadb|postgresql --name NAME [--grant DATABASE=readonly|readwrite]...
                            [--database-server DATABASE_SERVER]
@@ -90,6 +124,39 @@ Usage:
                                            has all the mail. ADDRESS is the public address of the server.
   cf mail clusters get CLUSTER             Show the step of the setup, the members and the DNS records.
   cf mail clusters retry CLUSTER           Start a step that failed again.
+  cf dns list [--customer ID]                          The DNS zones, and the name servers of the panel.
+  cf dns create DOMAIN [--customer ID]                 Then give the name servers to the registrar of the domain.
+  cf dns get ZONE                                      The state of the zone, and the DS record when DNSSEC is on.
+  cf dns records ZONE [--type TYPE]
+  cf dns add ZONE TYPE NAME VALUE [--ttl SECONDS] [--priority N]
+                       TYPE is A, AAAA, CNAME, MX, TXT, SRV, CAA or NS. NAME is @ for the zone itself.
+                       For example: cf dns add example.com MX @ mail.example.com --priority 10
+  cf dns set ZONE RECORD_ID [--name NAME] [--value VALUE] [--ttl SECONDS] [--priority N]
+  cf dns remove ZONE RECORD_ID
+  cf dns dnssec ZONE on|off                            Before "off", remove the DS record at the registrar.
+  cf dns check ZONE                                    Ask the public DNS for the name servers of the zone again.
+  cf dns sync ZONE                                     Send the zone to each DNS server again.
+  cf dns delete ZONE
+  cf networks list [--customer ID]                     The private networks. Each customer has the network "default".
+  cf networks create NAME [--customer ID] [--website WEBSITE]... [--database-server DATABASE_SERVER]...
+                                                       The plan of the customer gives the number of named networks.
+  cf networks get NETWORK                              The members, with the name and the port that a website connects to.
+  cf networks add NETWORK [--website WEBSITE]... [--database-server DATABASE_SERVER]...
+  cf networks remove NETWORK [--website WEBSITE]... [--database-server DATABASE_SERVER]...
+  cf networks rename NETWORK NAME
+  cf networks delete NETWORK                           The members stay. The network "default" cannot be removed.
+  cf notifications list [--state STATE] [--event EVENT] [--limit N | --all]
+                                                       The emails that the panel sent. STATE is queued, sent, failed or skipped.
+  cf notifications get ID                              The text of one email.
+  cf notifications retry ID                            Send a failed or skipped email again.
+  cf notifications preferences                         The events that send an email to you.
+  cf notifications on|off EVENT...                     For example: cf notifications off job.failed usage.alert
+  cf mail-server get                                   The SMTP server (administrators: of the panel; resellers: their own).
+  cf mail-server set --host HOST --from ADDRESS [--port 587] [--encryption tls|starttls|none] [--user USER]
+                     [--from-name NAME] [--reply-to ADDRESS] [--keep-password] [--off]
+                                                       The password comes from CF_SMTP_PASSWORD, or the prompt.
+  cf mail-server test [--to ADDRESS]                   Send a test email at once.
+  cf mail-server remove
   cf backups list|create WEBSITE
   cf backups restore WEBSITE SNAPSHOT [--scope website|database|file] [--item ITEM] [--remove-new-files]
                        --remove-new-files is for a full website. It deletes the files that are not in the backup.
@@ -103,6 +170,8 @@ Usage:
   cf servers list
   cf servers get SERVER
   cf servers set SERVER [--update-policy security|all|manual] [--window HH:MM-HH:MM] [--gvisor-platform systrap|kvm]
+                        [--roles web,database,dns] [--dns-name HOST | --no-dns-name]
+                       A server with the role dns and a name server host name answers for all DNS zones.
   cf servers update SERVER [--policy security|all|tools]   "tools" updates the held container tools.
   cf servers mail SERVER --hostname NAME   Turn on email for a server, or change the host name of its mail server.
                                            The name needs an A or AAAA record with the address of the server.
@@ -111,6 +180,13 @@ Usage:
   cf servers join-token
   cf servers check SERVER                  Tests the connection from the panel to the server.
   cf servers remove SERVER                 Removes a server that has no websites from the panel.
+  cf mesh show                             The encrypted tunnels between the servers, with their state.
+  cf mesh connect SERVER SERVER            Makes a tunnel between two servers.
+  cf mesh repair SERVER SERVER             Sends the tunnel state to the two servers again and tests the tunnel.
+  cf mesh disconnect SERVER SERVER         Removes the tunnel between two servers.
+  cf mesh rotate-key SERVER                Makes a new tunnel key on a server. Its tunnels stop for a short time.
+  cf mesh set-address SERVER ADDRESS|auto  Sets the public IP address for the tunnel traffic of a server.
+  cf mesh set [--range CIDR] [--port N]    Possible only while the mesh has no tunnel.
   cf panel-certificate show
   cf panel-certificate set internal|letsencrypt
                        "internal": a certificate from the panel CA. "letsencrypt" needs a public domain.
@@ -287,12 +363,22 @@ func (a *app) dispatch(ctx context.Context, args []string) error {
 		return a.databases(ctx, sub, rest)
 	case "database-users", "database-user", "db-users":
 		return a.databaseUsers(ctx, sub, rest)
+	case "dns":
+		return a.dns(ctx, sub, rest)
+	case "networks", "network":
+		return a.networks(ctx, sub, rest)
+	case "notifications", "notification":
+		return a.notifications(ctx, sub, rest)
+	case "mail-server":
+		return a.mailServer(ctx, sub, rest)
 	case "backups", "backup":
 		return a.backups(ctx, sub, rest)
 	case "jobs", "job":
 		return a.jobs(ctx, sub, rest)
 	case "servers", "server":
 		return a.servers(ctx, sub, rest)
+	case "mesh":
+		return a.mesh(ctx, sub, rest)
 	case "panel-certificate":
 		return a.panelCertificate(ctx, sub, rest)
 	case "images", "image":
@@ -315,6 +401,15 @@ func (a *app) dispatch(ctx context.Context, args []string) error {
 		return a.rollouts(ctx, sub, rest)
 	case "tokens", "token":
 		return a.tokens(ctx, sub, rest)
+	case "files", "file":
+		return a.files(ctx, sub, rest)
+	case "logs":
+		// "cf logs WEBSITE": the command has no second word.
+		return a.logs(ctx, sub, rest)
+	case "cron":
+		return a.cron(ctx, sub, rest)
+	case "deploys", "deploy":
+		return a.deploys(ctx, sub, rest)
 	}
 	return fmt.Errorf("unknown command %q; see cf help", cmd)
 }
@@ -652,6 +747,16 @@ func (a *app) websites(ctx context.Context, sub string, args []string) error {
 			return a.printJSON(w)
 		}
 		fmt.Fprintf(a.out, "Name:     %s\nID:       %s\nStatus:   %s\nRuntime:  %s\nUser:     %s\n", w.Name, w.ID, w.Status, w.Runtime.Image, w.UnixUser)
+		// A different website in a network with this website connects to this name.
+		if w.Kind != "" && w.Kind != "public" {
+			fmt.Fprintf(a.out, "Kind:     %s\n", w.Kind)
+		}
+		if w.Command != "" {
+			fmt.Fprintf(a.out, "Command:  %s\n", w.Command)
+		}
+		if w.NetworkHost != "" {
+			fmt.Fprintf(a.out, "Network:  %s:%d\n", w.NetworkHost, w.NetworkPort)
+		}
 		for _, d := range w.Domains {
 			fmt.Fprintf(a.out, "Domain:   %s (%s)\n", d.Name, d.Kind)
 		}
@@ -669,11 +774,13 @@ func (a *app) websites(ctx context.Context, sub string, args []string) error {
 		customer := fs.String("customer", "", "the customer ID")
 		server := fs.String("server", "", "the server ID")
 		appName := fs.String("app", "", "the application, for example WordPress")
+		kind := fs.String("kind", "", "public (a website with a domain), private (no domain: only the websites of its networks connect to it) or worker (runs a command, no HTTP). For private and worker, the name is a short name, for example queue.")
+		command := fs.String("command", "", "the start command of a worker, for example \"php artisan queue:work\"")
 		if err := fs.Parse(args[1:]); err != nil {
 			return err
 		}
 		body := map[string]any{"name": args[0], "imageId": *image, "planId": *plan}
-		for k, v := range map[string]string{"customerId": *customer, "serverId": *server, "application": *appName} {
+		for k, v := range map[string]string{"customerId": *customer, "serverId": *server, "application": *appName, "kind": *kind, "command": *command} {
 			if v != "" {
 				body[k] = v
 			}
@@ -932,8 +1039,112 @@ func (a *app) databases(ctx context.Context, sub string, args []string) error {
 			return err
 		}
 		return a.change(ctx, http.MethodDelete, fmt.Sprintf("/websites/%s/databases/%v", w.ID, db["id"]), nil)
+	case "adminer":
+		if err := need(args, 2, "a website and a database"); err != nil {
+			return err
+		}
+		fs := flag.NewFlagSet("adminer", flag.ContinueOnError)
+		readOnly := fs.Bool("read-only", false, "the temporary database user can only read")
+		if err := fs.Parse(args[2:]); err != nil {
+			return err
+		}
+		l, err := a.dbList(ctx, w.ID)
+		if err != nil {
+			return err
+		}
+		db, err := l.find(l.Databases, args[1], "database")
+		if err != nil {
+			return err
+		}
+		privileges := "readwrite"
+		if *readOnly {
+			privileges = "readonly"
+		}
+		return a.adminer(ctx, w.ID, cell(db["id"]), privileges)
 	}
 	return fmt.Errorf("unknown command databases %s", sub)
+}
+
+// adminerLogin is a sign-in to Adminer (POST /websites/{id}/databases/{id}/adminer).
+type adminerLogin struct {
+	ID        string `json:"id"`
+	Status    string `json:"status"`
+	URL       string `json:"url"`
+	Username  string `json:"username"`
+	ExpiresAt string `json:"expiresAt"`
+}
+
+// adminer opens a database in Adminer. The panel makes a temporary database user for the
+// database. Adminer has no sign-in form for a password: the browser sends the user and its
+// password with a POST request. Thus the command writes a small HTML file that does this, and
+// the user opens the file in a browser.
+func (a *app) adminer(ctx context.Context, websiteID, databaseID, privileges string) error {
+	var out struct {
+		Login adminerLogin      `json:"login"`
+		Form  map[string]string `json:"form"`
+		Jobs  []client.Job      `json:"jobs"`
+	}
+	if err := a.api.Do(ctx, http.MethodPost, "/websites/"+websiteID+"/databases/"+databaseID+"/adminer", nil, map[string]any{"privileges": privileges}, &out); err != nil {
+		return err
+	}
+	if a.json {
+		return a.printJSON(out)
+	}
+	if a.noWait {
+		fmt.Fprintf(a.out, "Sign-in %s waits for its jobs. The password of the temporary database user is in the answer with --json only.\n", out.Login.ID)
+		return nil
+	}
+	for _, job := range out.Jobs {
+		if err := a.wait(ctx, job.ID); err != nil {
+			return err
+		}
+	}
+	var state struct {
+		Login adminerLogin `json:"login"`
+	}
+	if err := a.api.Do(ctx, http.MethodGet, "/adminer-logins/"+out.Login.ID, nil, nil, &state); err != nil {
+		return err
+	}
+	if state.Login.Status != "ready" {
+		return fmt.Errorf("adminer cannot sign in: the status of the sign-in is %s", state.Login.Status)
+	}
+	path, err := writeAdminerLauncher(out.Login.URL, out.Form)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(a.out, "Adminer: %s\nTemporary database user: %s (expires %s)\n", out.Login.URL, out.Login.Username, out.Login.ExpiresAt)
+	fmt.Fprintf(a.out, "Open this file in your browser to sign in: %s\nThe file has the password of the temporary database user. Remove it after you open it.\n", path)
+	return nil
+}
+
+// writeAdminerLauncher writes an HTML file that sends the sign-in form to Adminer. Only the
+// user can read the file.
+func writeAdminerLauncher(address string, form map[string]string) (string, error) {
+	var b strings.Builder
+	b.WriteString("<!doctype html>\n<html lang=\"en-GB\"><meta charset=\"utf-8\"><title>Open Adminer</title>\n")
+	b.WriteString("<body onload=\"document.forms[0].submit()\"><form method=\"post\" action=\"" + html.EscapeString(address) + "\">\n")
+	keys := make([]string, 0, len(form))
+	for k := range form {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		fmt.Fprintf(&b, "<input type=\"hidden\" name=\"auth[%s]\" value=\"%s\">\n", html.EscapeString(k), html.EscapeString(form[k]))
+	}
+	b.WriteString("<noscript><button>Open Adminer</button></noscript></form></body></html>\n")
+	f, err := os.CreateTemp("", "cf-adminer-*.html")
+	if err != nil {
+		return "", err
+	}
+	if err := f.Chmod(0o600); err != nil {
+		f.Close()
+		return "", err
+	}
+	if _, err := f.WriteString(b.String()); err != nil {
+		f.Close()
+		return "", err
+	}
+	return f.Name(), f.Close()
 }
 
 // valkeyConnection tells how an application connects to a new Valkey database. The agent gives

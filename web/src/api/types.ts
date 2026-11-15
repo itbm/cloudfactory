@@ -96,6 +96,8 @@ export interface Limits {
   diskBytes: number;
   diskIoBytesPerSecond: number;
   processes: number;
+  /** The traffic of a website in a calendar month. 0 or none: no limit. */
+  bandwidthBytes?: number;
 }
 
 export interface ResourceUse {
@@ -115,6 +117,8 @@ export interface SftpAccess {
   authorizedKeys: string[];
 }
 
+export type WebsiteKind = "public" | "private" | "worker";
+
 export interface Website {
   id: string;
   name: string;
@@ -122,17 +126,31 @@ export interface Website {
   customerId: string;
   serverId: string;
   unixUser: string;
+  /** The name of the website for a different website in a network with it, for example "shop-a1b2.internal". Null for a worker. */
+  networkHost: string | null;
+  /** The port that the website answers on in its networks. Null for a worker. */
+  networkPort: number | null;
+  /**
+   * "public": a website with domains. "private": a website with no domain, only for the
+   * websites of its networks. "worker": a background worker that serves no HTTP.
+   */
+  kind: WebsiteKind;
+  /** The start command of a worker. */
+  command: string | null;
   createdAt: string;
   status: WebsiteStatus;
   runtime: Runtime;
   planId: string;
   limits: Limits;
   /**
-   * False when the server of the website does not apply the disk limit, because its file
-   * system has no user quotas. No value when the server did not report it.
+   * False when the server of the website does not apply the disk limit of each website: its
+   * file system has no user quotas, and a website has no disk image. No value when the server
+   * did not report it.
    */
   diskLimitApplied?: boolean;
   use: ResourceUse;
+  /** The traffic of the website in the current calendar month (UTC), in and out. */
+  bandwidthBytes: number;
   domains: Domain[];
   /** The SFTP access from the panel API. */
   sftp?: SftpAccess;
@@ -165,6 +183,8 @@ export interface Job {
   serverId?: string;
   /** The database server that the job makes, changes or removes. */
   databaseServerId?: string;
+  /** The DNS zone that the job sends to a DNS server. */
+  dnsZoneId?: string;
 }
 
 export interface ActivityItem {
@@ -315,6 +335,61 @@ export interface Server {
   services: ServerService[];
   /** The port of the SFTP container of the websites (spec section 10). 22 for an agent of release 0.1. */
   sftpPort: number;
+  /** The host name of the server as a name server, for example ns1.example.com. */
+  dnsName?: string;
+  /** True when the agent of the server can operate the DNS server. */
+  dns: boolean;
+  /** The public IP addresses that the agent of the server reported. */
+  addresses: string[];
+}
+
+export type DnsRecordType = "A" | "AAAA" | "CNAME" | "MX" | "TXT" | "SRV" | "CAA" | "NS";
+
+export interface DnsRecord {
+  id: string;
+  /** The name in the zone: "@" for the zone itself, "www", "*.shop". */
+  name: string;
+  type: DnsRecordType;
+  value: string;
+  /** In seconds. */
+  ttl: number;
+  /** Only an MX or an SRV record has a priority. */
+  priority?: number;
+  /** A record that the panel made: a name server of the zone, or the address of a website. */
+  managed?: "ns" | "website";
+}
+
+/** updating: a DNS server does not have the last change yet. failed: a DNS server could not load the zone. */
+export type DnsZoneStatus = "active" | "updating" | "failed" | "removing";
+
+/**
+ * What the public DNS says about the zone. here: the registrar sends the queries to the name
+ * servers of the panel. elsewhere: to other name servers. none: the domain has no name servers.
+ */
+export type DnsDelegation = "here" | "elsewhere" | "none" | "unknown";
+
+export interface DnsZone {
+  id: string;
+  name: string;
+  customerId: string;
+  status: DnsZoneStatus;
+  serial: number;
+  recordCount: number;
+  nameServers: string[];
+  delegation: { state: DnsDelegation; nameServers: string[]; checkedAt?: string };
+  dnssec: {
+    enabled: boolean;
+    /** The DS record that the customer gives to the registrar of the domain. */
+    ds?: { keyTag: number; algorithm: number; digestType: number; digest: string; record: string };
+    dnskey?: string;
+  };
+  /** The state of the zone on each name server. */
+  servers: { nameServer: string; state: "ok" | "pending" | "failed" | "removed" }[];
+  /** The number of websites of the customer with a domain in the zone. */
+  websites: number;
+  createdAt: string;
+  /** Undefined until the panel has read the records of the zone. */
+  records?: DnsRecord[];
 }
 
 export type DatabaseEngine = "mariadb" | "postgresql" | "valkey";
@@ -326,10 +401,6 @@ export interface DatabaseLimits {
   diskBytes: number;
 }
 
-/**
- * starting: the panel makes the database server. failed: the panel could not make it.
- * removing: the panel removes it, and it gets no new database.
- */
 // Email
 //
 // A customer has mail domains. Each mail domain has mailboxes, and addresses that send their
@@ -447,7 +518,11 @@ export interface MailCluster {
   createdAt: string | null;
 }
 
-export type DatabaseServerStatus = "starting" | "running" | "stopped" | "failed" | "removing";
+/**
+ * starting: the panel makes the database server. failed: the panel could not make it.
+ * removing: the panel removes it, and it gets no new database.
+ */
+export type DatabaseServerStatus = "starting" | "running" | "stopped" | "failed" | "moving" | "removing";
 
 /**
  * A database server of a customer: one container with one engine and its own limits. All the
@@ -460,12 +535,21 @@ export interface DatabaseServer {
   customerId: string;
   /** The server that has the container. */
   serverId: string;
+  /** The server that receives the database server, while its status is "moving". */
+  movingToServerId?: string | null;
   /** The plan gives the limits and the number of databases. */
   planId: string;
   status: DatabaseServerStatus;
-  /** The host name and the port that a website container connects to. */
+  /** The host name and the port that a website container on the same server connects to. */
   host: string;
   port: number;
+  /**
+   * The network name and its port, for example "shop-db.internal" and 3306. Each website in a
+   * network with the database server connects to them, on the same server and on a different
+   * server. Null for a database server with a name that an engine uses.
+   */
+  networkHost: string | null;
+  networkPort: number;
   limits: DatabaseLimits;
   /** The last report of the server. diskSizeBytes is the size of the file system of the data. */
   usage?: { memoryBytes?: number; diskBytes?: number; diskSizeBytes?: number };
@@ -522,6 +606,14 @@ export interface Snapshot {
   sizeBytes: number;
   websiteId: string;
   databases: string[];
+  /**
+   * website: the files and the databases on the server of the website.
+   * databases: only the databases in the database servers on a different server. The backup
+   * is in the repository of that server.
+   */
+  part: "website" | "databases";
+  /** The server whose repository has the snapshot. */
+  serverId?: string;
 }
 
 export interface BackupPolicy {
@@ -595,6 +687,28 @@ export interface Plan {
   databaseServers: number;
   /** The limits of each database server with the plan. */
   databaseLimits: DatabaseLimits;
+  /** The number of DNS zones of a customer with the plan. */
+  dnsZones: number;
+  /**
+   * The number of named private networks of a customer with the plan, in addition to the
+   * network "default". 0: the customer has only the network "default". An earlier panel API
+   * does not give it.
+   */
+  networks?: number;
+}
+
+/**
+ * A private network of a customer, like a VPC. Each website in the network connects to each
+ * other member by its network name, on the same server and on a different server. Each
+ * customer has the network "default".
+ */
+export interface PrivateNetwork {
+  id: string;
+  customerId: string;
+  name: string;
+  isDefault: boolean;
+  websiteIds: string[];
+  databaseServerIds: string[];
 }
 
 export interface Customer {
@@ -606,6 +720,63 @@ export interface Customer {
   resellerId?: string;
   createdAt: string;
   suspended: boolean;
+  /** White label: the brand that a reseller set. Only a reseller has one. */
+  branding?: ResellerBranding;
+  brandStatus?: BrandStatus;
+}
+
+/**
+ * White label: the brand that a person sees. The administrator sets the default brand. The
+ * customers of a reseller see only the brand of the reseller.
+ */
+export interface Brand {
+  name: string;
+  /** The colour of the buttons and links. White text on it has a contrast of 4.5:1 or more. */
+  colour: string;
+  /** A data URL of a PNG, JPEG or WebP image, or null. */
+  logo: string | null;
+  supportEmail: string | null;
+  /** True when the panel has the built-in brand: the panel shows the built-in logo. */
+  builtIn: boolean;
+  source?: "panel" | "reseller";
+  panelDomain?: string;
+  nameServers?: string[];
+  mailHost?: string | null;
+}
+
+/** The fields of a brand that a person sets. A missing field has the built-in value. */
+export interface BrandFields {
+  name?: string;
+  colour?: string;
+  logo?: string;
+  supportEmail?: string;
+}
+
+export interface ResellerBranding extends BrandFields {
+  panelDomain?: string;
+  /** One host name for each name server of the panel, in the order of the panel host names. */
+  nameServers?: string[];
+  mailHost?: string;
+}
+
+export interface BrandCertificate {
+  domain: string;
+  method: "letsencrypt" | "internal";
+  state: "valid" | "pending" | "expired";
+  expiresAt: string | null;
+  error: string | null;
+  checkedAt: string | null;
+}
+
+export interface BrandStatus {
+  /** The TLS certificate of the panel domain of the reseller. Null with no panel domain. */
+  certificate: BrandCertificate | null;
+  /** The domain of the panel. A CNAME record of the reseller panel domain can point to it. */
+  panelDomain: string;
+  /** The host names of the name servers of the panel. */
+  panelNameServers: string[];
+  /** The addresses of each name server of the panel. */
+  nameServerAddresses: Record<string, string[]>;
 }
 
 export type TokenScope =
@@ -619,7 +790,8 @@ export type TokenScope =
   | "images:read" | "images:write"
   | "customers:read" | "customers:write"
   | "users:read" | "users:write"
-  | "audit:read";
+  | "audit:read"
+  | "notifications:read" | "notifications:write";
 
 export interface ApiToken {
   id: string;
@@ -672,7 +844,7 @@ export interface Account {
   /** The reseller that gives the service. Undefined: the operator of the panel gives it. */
   provider?: { name: string; email: string };
   plan?: Plan;
-  usage: { websites: number; databases: number; diskBytes: number; customers?: number };
+  usage: { websites: number; databases: number; diskBytes: number; customers?: number; dnsZones: number; networks: number; bandwidthBytes: number };
   /** False when the panel has no object storage for backups. A backup then fails. */
   backupsAvailable: boolean;
   users: ManagedUser[];
@@ -692,6 +864,59 @@ export interface Confirmation {
   totp: string;
 }
 
+/** One server in the list of the mesh. */
+export interface MeshServer {
+  id: string;
+  name: string;
+  location: string | null;
+  state: Server["state"];
+  /** False for an agent of an earlier release: the server cannot have tunnels. */
+  supported: boolean;
+  /** False for an agent from before the networks: it cannot operate network members. */
+  networks: boolean;
+  publicKey: string | null;
+  /** The address of the server in the mesh. A server gets it with its first tunnel. */
+  address: string | null;
+  /** The public IP address for the tunnel traffic. Null: the panel finds it. */
+  tunnelAddress: string | null;
+  tunnels: number;
+  /** True when the server has the mesh state that the panel wants. */
+  current: boolean;
+}
+
+/** What one server of a tunnel reported about the tunnel. */
+export interface MeshTunnelSide {
+  serverId: string;
+  server: string | null;
+  /** Null: the server did not report the tunnel in the last minutes. */
+  reachable: boolean | null;
+  handshakeAt: string | null;
+  roundTripMs: number | null;
+}
+
+/** An encrypted tunnel between two servers. */
+export interface MeshTunnel {
+  id: string;
+  state: "up" | "down" | "waiting";
+  roundTripMs: number | null;
+  /** True when an administrator made the tunnel. False when the panel made it for a network. */
+  pinned: boolean;
+  /** True when a website on one server uses a database server on the other. */
+  inUse: boolean;
+  sides: MeshTunnelSide[];
+  createdAt: string | null;
+}
+
+/** The mesh: the encrypted tunnels between the servers of the panel. */
+export interface Mesh {
+  /** The address range of the mesh, for example "10.207.0.0/16". */
+  range: string;
+  /** The UDP port of the tunnels. */
+  port: number;
+  servers: MeshServer[];
+  tunnels: MeshTunnel[];
+}
+
 export interface State {
   /**
    * loading: the panel has a session but has not loaded the data yet.
@@ -700,6 +925,8 @@ export interface State {
    * totpSetupRequired: the user is an administrator or a reseller with no TOTP. The panel
    * shows only the page that sets up TOTP (second audit, finding F09).
    */
+  /** White label: the brand that the signed-in user sees. */
+  brand?: Brand;
   session: {
     signedIn: boolean; loading?: boolean; mustChangePassword?: boolean; totpSetupRequired?: boolean; user: User; contextId: string;
     /** The error of the last load from the API. The panel then shows the data of the load before it. */
@@ -718,8 +945,25 @@ export interface State {
   mailClusters: MailCluster[];
   mailboxes: Mailbox[];
   mailAliases: MailAlias[];
+  /** The DNS zones of the customers that the user can see. */
+  dnsZones: DnsZone[];
+  /** The host names of the DNS servers of the panel. Empty: the panel has no DNS server. */
+  nameServers: string[];
+  /** The mesh. Only an administrator has it. */
+  mesh?: Mesh;
+  /** The private networks of the customers that the user can see. */
+  networks: PrivateNetwork[];
+  /** The open usage alerts that the user can see. */
+  usageAlerts: UsageAlert[];
+  /** The thresholds of the usage alerts, in percent of each limit. */
+  alertSettings: UsageAlertSettings;
   databases: Database[];
   databaseUsers: DatabaseUser[];
+  /**
+   * For each website, the IDs of the database servers on a different server that the website
+   * can use. The website connects to them by their network names.
+   */
+  remoteDatabaseServers: Record<string, string[]>;
   snapshots: Snapshot[];
   backupPolicy: BackupPolicy;
   plans: Plan[];
@@ -743,4 +987,139 @@ export interface State {
   joinCaSha256?: string;
   /** The installation script of the release of the panel, for the join command. */
   joinInstallUrl?: string;
+}
+
+// Files, logs, cron jobs and deploys of a website. The panel reads them when the user opens
+// their page. They are not in the state of the store.
+
+/** A file or a directory in the files of a website. A path starts with "/", the website directory. */
+export interface FileEntry {
+  name: string;
+  path: string;
+  type: "file" | "directory" | "link" | "other";
+  sizeBytes: number;
+  modifiedAt: string;
+  mode: string;
+  /** The target of a link. */
+  target?: string | null;
+}
+
+export interface FileList {
+  path: string;
+  entries: FileEntry[];
+  /** True when the directory has more entries than the panel shows. */
+  truncated: boolean;
+}
+
+export interface FileContent {
+  file: FileEntry;
+  encoding: "utf8" | "base64";
+  content: string;
+}
+
+export interface LogLine {
+  at: string;
+  stream: "access" | "error";
+  text: string;
+}
+
+export interface CronJob {
+  id: string;
+  schedule: string;
+  command: string;
+  enabled: boolean;
+  lastRunAt: string | null;
+  lastResult: "ok" | "failed" | null;
+  lastExitCode: number | null;
+  lastOutput: string | null;
+}
+
+export interface GitSource {
+  repository: string;
+  branch: string;
+  /** The directory in the repository that the web server serves. */
+  webDirectory: string;
+  trigger: "manual" | "webhook";
+  buildCommands: string[];
+  /** The public key that gives read access to the repository. */
+  deployKey: string;
+  webhookUrl: string;
+  /** The names of the secrets. The API does not give the values. */
+  secrets: string[];
+}
+
+export interface Release {
+  id: string;
+  branch: string;
+  commit: string | null;
+  message: string | null;
+  state: "building" | "ready" | "failed" | "removed";
+  live: boolean;
+  trigger: "manual" | "webhook";
+  durationSeconds: number | null;
+  error: string | null;
+  jobId: string | null;
+  createdAt: string;
+}
+
+export interface Deploy {
+  source: GitSource | null;
+  releases: Release[];
+}
+
+// Usage history and usage alerts. The panel reads the history when the user opens a graph.
+
+export type UsageRange = "24h" | "7d" | "30d" | "90d" | "1y";
+export type UsageSubject = "website" | "server" | "database_server";
+export type UsageResource = "cpu" | "memory" | "disk" | "bandwidth" | "processes";
+
+/** One point of a graph. A value is null when no report is in the point. */
+export interface UsagePoint {
+  at: string;
+  cpuPercent: number | null;
+  cpuMaxPercent: number | null;
+  memoryBytes?: number | null;
+  memoryMaxBytes?: number | null;
+  memoryPercent?: number | null;
+  memoryMaxPercent?: number | null;
+  diskBytes?: number | null;
+  diskPercent?: number | null;
+  processes?: number | null;
+  bytesIn?: number | null;
+  bytesOut?: number | null;
+}
+
+export interface UsageHistory {
+  range: UsageRange;
+  stepMinutes: number;
+  from: string;
+  to: string;
+  points: UsagePoint[];
+  limits?: Partial<Limits>;
+  bandwidth?: { month: string; bytes: number; limitBytes: number };
+  alerts: UsageAlert[];
+}
+
+export interface UsageAlert {
+  id: string;
+  subjectType: UsageSubject;
+  subjectId: string;
+  subjectName: string | null;
+  customerId: string | null;
+  serverId: string | null;
+  resource: UsageResource;
+  level: "warning" | "critical";
+  used: number;
+  limit: number;
+  percent: number;
+  usedText: string;
+  limitText: string;
+  openedAt: string;
+  updatedAt: string;
+  resolvedAt: string | null;
+}
+
+export interface UsageAlertSettings {
+  warningPercent: number;
+  criticalPercent: number;
 }

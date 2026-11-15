@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Enums\Role;
 use App\Http\Controllers\Controller;
+use App\Models\MailServer;
 use App\Models\Server;
 use App\Models\User;
 use App\Services\PanelCertificate;
@@ -26,7 +27,7 @@ class SetupController extends Controller
 
     public function show(Request $request): JsonResponse
     {
-        $items = [self::backups(), self::totp($request->user()), self::diskLimits(), self::panelCertificate()];
+        $items = [self::backups(), self::totp($request->user()), self::diskLimits(), self::panelCertificate(), self::email()];
         $open = count(array_filter($items, fn (array $item) => $item['state'] === self::OPEN));
 
         return response()->json(['complete' => $open === 0, 'open' => $open, 'items' => $items]);
@@ -77,16 +78,18 @@ class SetupController extends Controller
     private static function diskLimits(): array
     {
         $servers = Server::orderBy('name')->get();
-        // An agent that reports no state for the disk quotas is an agent of an earlier release.
+        // An agent that reports no state for the disk quotas is an agent of an earlier release. A
+        // server with no user quotas applies the limits when each website with a limit has a disk
+        // image: the agent then reports the part as running.
         $without = $servers->filter(fn (Server $server) => $server->appliesDiskLimits() === false)->values();
         $item = self::item(
             'disk-limits',
             'Turn on disk limits on each server',
             $without->isEmpty(),
-            'Without user quotas on the file system, a server does not apply the disk limit of a plan. One website can fill the disk, and then all websites on that server stop.',
+            'A server applies the disk limit of a plan with a user quota, or with a disk image for each new website. Without a disk limit, one website can fill the disk, and then all websites on that server stop.',
             $without->isEmpty()
                 ? 'All servers apply the disk limit of each website.'
-                : 'These servers do not apply disk limits: '.$without->pluck('name')->implode(', ').'. Run the installation script on the server again: it turns on the user quotas of an ext4 file system. For a different file system, refer to "Disk quotas" in the installation guide.',
+                : 'These servers do not apply the disk limit of each website: '.$without->pluck('name')->implode(', ').'. The status of the server gives the cause. Run the installation script on the server again: it turns on the user quotas of an ext4 file system. For a different file system, refer to "Disk quotas" in the installation guide.',
             'Open the server',
             $without->count() === 1 ? '/servers/'.$without[0]->id : '/servers',
         );
@@ -127,6 +130,29 @@ class SetupController extends Controller
         }
 
         return $item;
+    }
+
+    /** @return array<string, mixed> */
+    private static function email(): array
+    {
+        $server = MailServer::of(null);
+        $done = $server && $server->enabled && $server->tested_at && ! $server->test_error;
+
+        return self::item(
+            'email',
+            'Set up the SMTP server for email notifications',
+            (bool) $done,
+            'The panel sends no email. Nobody gets an email about a failed job or backup, a certificate that expires, or a sign-in from a new device.',
+            match (true) {
+                $done => "The SMTP server {$server->host} sends the emails.",
+                ! $server => 'No SMTP server is set.',
+                ! $server->enabled => "The SMTP server {$server->host} is turned off.",
+                (bool) $server->test_error => "The last test email failed: {$server->test_error}",
+                default => "Send a test email to make sure that {$server->host} accepts the emails of the panel.",
+            },
+            'Set up email',
+            '/settings/email',
+        );
     }
 
     /** @return array<string, mixed> */

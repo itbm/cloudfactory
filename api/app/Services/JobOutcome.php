@@ -7,16 +7,21 @@ use App\Enums\JobState;
 use App\Enums\WebsiteStatus;
 use App\Models\AgentJob;
 use App\Models\BackupRemoval;
+use App\Models\CronJob;
 use App\Models\Database;
 use App\Models\DatabaseServer;
 use App\Models\Domain;
 use App\Models\MailAlias;
 use App\Models\Mailbox;
 use App\Models\MailDomain;
+use App\Models\Release;
 use App\Models\Rollout;
 use App\Models\Snapshot;
 use App\Models\Website;
+use App\Services\Dns\Zones;
+use App\Services\Notifications\Notifier;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 /**
  * Spec section 6.3, step 7: the agent reports the result and the actual state.
@@ -92,9 +97,18 @@ class JobOutcome
         if (isset($job->payload['mailClusterId']) && in_array($job->action, [AgentAction::PrepareMailNode, AgentAction::SetMailNode, AgentAction::SetMailServer], true)) {
             app(MailClusters::class)->finished($job, $state === JobState::Succeeded, $result);
         }
+        // The container of Adminer and its temporary database users.
+        DatabaseTools::jobFinished($job, $state === JobState::Succeeded);
+        if (in_array($job->action, [AgentAction::SetDnsZones, AgentAction::DeleteDnsZones], true)) {
+            Zones::jobFinished($job, $state === JobState::Succeeded);
+        }
 
         if ($job->rollout_id && ($rollout = Rollout::find($job->rollout_id))) {
             $this->rollouts->jobFinished($rollout, $job);
+        }
+        // The users who want it get an email about the failure.
+        if ($state === JobState::Failed) {
+            app(Notifier::class)->jobFailed($job, $website);
         }
     }
 
@@ -151,7 +165,7 @@ class JobOutcome
             AgentAction::SetWebsitePower => $website?->moveTo(($p['power'] ?? '') === 'stop' ? WebsiteStatus::Stopped : WebsiteStatus::Running),
             AgentAction::DeleteWebsite => $website && $this->deleteWebsite($website),
             // Audit finding R8: the backups of these deleted websites are gone.
-            AgentAction::PruneBackups => BackupRemoval::whereIn('website_id', array_filter((array) ($p['forgetWebsiteIds'] ?? []), 'is_string'))->delete(),
+            AgentAction::PruneBackups => BackupRemoval::where('server_id', $job->server_id)->whereIn('website_id', array_filter((array) ($p['forgetWebsiteIds'] ?? []), 'is_string'))->delete(),
             AgentAction::SetSftp => $website?->update([
                 'sftp_enabled' => (bool) ($p['enabled'] ?? false),
                 'sftp_keys' => $p['authorizedKeys'] ?? [],
@@ -160,24 +174,37 @@ class JobOutcome
             // The agent gives the new state of the certificate. The panel does not wait for the next report.
             AgentAction::SetPanelCertificate => $job->server->local && is_array($result['panelCertificate'] ?? null)
                 && PanelCertificate::record($result['panelCertificate']),
+            // The state of the certificate of each reseller panel domain (white label).
+            AgentAction::SetPanelBrands => $job->server->local && is_array($result['panelBrands'] ?? null)
+                && Branding::recordCertificates($result['panelBrands']),
             AgentAction::AddDomain => Domain::where('name', $p['domain'] ?? '')->update([
                 'dns_points_here' => (bool) ($result['dnsPointsHere'] ?? true),
                 'certificate_state' => ($result['dnsPointsHere'] ?? true) ? 'valid' : 'pending',
                 'certificate_expires_at' => ($result['dnsPointsHere'] ?? true) ? now()->addDays(90) : null,
             ]),
-            AgentAction::Backup => $website && $this->recordSnapshot($website, $p, $result),
+            AgentAction::Backup => $website && $this->recordSnapshot($job, $website, $p, $result),
             // Batch 1, finding 4: the panel removes the row when the item is gone from the server.
             AgentAction::CreateDatabase => $website && $this->databaseMade($website, $p, $result),
-            AgentAction::DeleteDatabase => $website && $this->databaseRemoved($website, $p),
+            AgentAction::DeleteDatabase => $website && $this->databaseRemoved($website, $p) && $this->continueRemoval($website, $p),
             // The panel removes the record when the database server is gone from the server.
-            AgentAction::DeleteDatabaseServer => DatabaseServer::whereKey($job->database_server_id)->where('status', DatabaseServer::REMOVING)->delete(),
-            AgentAction::DeleteDatabaseUser => $website?->databaseUsers()->where(['engine' => $p['engine'] ?? '', 'name' => $p['name'] ?? ''])->delete(),
+            AgentAction::DeleteDatabaseServer => $this->databaseServerRemoved($job),
+            // The database server operates on the new server.
+            AgentAction::ReceiveDatabaseServer => $this->databaseServerMoved($job, $p),
+            AgentAction::DeleteDatabaseUser => $website && ($website->databaseUsers()->where(['engine' => $p['engine'] ?? '', 'name' => $p['name'] ?? ''])->delete() || true) && $this->continueRemoval($website, $p),
             AgentAction::InstallHostUpdates => $job->server->update([
                 'pending_updates' => self::updatesLeft($job->server->pending_updates ?? [], (string) ($p['policy'] ?? 'security')),
                 'last_update_at' => now(),
                 'reboot_required' => (bool) ($result['rebootRequired'] ?? $job->server->reboot_required),
             ]),
+            AgentAction::RunCronJob => self::cronRan($job, (int) ($result['exitCode'] ?? 0), (string) ($result['output'] ?? '')),
+            AgentAction::Deploy => $website && self::deployed($job, $website, $result),
+            AgentAction::ActivateRelease => $website && self::releaseLive($website, (string) ($p['releaseId'] ?? '')),
             AgentAction::Reboot => $job->server->update(['state' => 'healthy', 'reboot_required' => false]),
+            // The result has the state of each tunnel. The panel does not wait for the next report.
+            AgentAction::SetMesh => is_array($result['mesh'] ?? null) && app(Mesh::class)->reported($job->server, $result['mesh']),
+            // The peers of the server get its new public key.
+            AgentAction::RotateMeshKey => is_string($result['publicKey'] ?? null) && Mesh::validKey($result['publicKey'])
+                && app(Mesh::class)->keyOf($job->server, $result['publicKey']),
             AgentAction::UpdateAgent => $job->server->update([
                 'agent_version' => $result['version'] ?? config('cloudfactory.agent.latest_version'),
                 'state' => 'healthy',
@@ -214,10 +241,16 @@ class JobOutcome
             // The power change did not complete. The website has its old state.
             AgentAction::SetWebsitePower => $website?->moveTo(($p['power'] ?? '') === 'start' ? WebsiteStatus::Stopped : WebsiteStatus::Running),
             AgentAction::Reboot => $job->server->update(['state' => 'degraded']),
+            // The command failed, or it did not start. The error has the end of its output.
+            AgentAction::RunCronJob => self::cronRan($job, preg_match('/exit code (-?\d+)/', (string) $job->error, $m) ? (int) $m[1] : -1, (string) preg_replace('/^the command ended with exit code -?\d+: /', '', (string) $job->error)),
+            // The website continues from the release that it had.
+            AgentAction::Deploy => Release::whereKey($p['releaseId'] ?? '')->where('website_id', $job->website_id)->where('state', Release::BUILDING)
+                ->update(['state' => Release::FAILED, 'error' => $job->error, 'duration_seconds' => self::seconds($job)]),
             AgentAction::SetDatabaseServer => $this->databaseServerKept($job, $p),
             // The database server is on the server still.
-            AgentAction::DeleteDatabaseServer => DatabaseServer::whereKey($job->database_server_id)->where('status', DatabaseServer::REMOVING)
-                ->update(['status' => in_array($p['previousStatus'] ?? '', [DatabaseServer::RUNNING, DatabaseServer::STOPPED, DatabaseServer::FAILED], true) ? $p['previousStatus'] : DatabaseServer::RUNNING]),
+            AgentAction::DeleteDatabaseServer => $this->databaseServerStays($job, $p),
+            // The database server stays on the old server.
+            AgentAction::ReceiveDatabaseServer => $this->databaseServerNotMoved($job, $p),
             // A mail server that operated before the change operates with its old host name.
             AgentAction::SetMailServer => $job->server->update(($p['previous']['status'] ?? null) === 'running' && ! $job->server->mailDomains()->exists()
                 ? ['mail_hostname' => $p['previous']['hostname'] ?? $job->server->mail_hostname, 'mail_status' => 'running']
@@ -233,6 +266,71 @@ class JobOutcome
             AgentAction::DeleteMailAlias => MailAlias::whereKey($p['mailAliasId'] ?? '')->where('status', MailDomain::REMOVING)->update(['status' => self::mailStatus($p)]),
             default => null,
         };
+    }
+
+    /** The agent removed a database server. Its record goes, and the networks do not have it. */
+    private function databaseServerRemoved(AgentJob $job): void
+    {
+        DatabaseServer::whereKey($job->database_server_id)->where('status', DatabaseServer::REMOVING)->delete();
+        Mesh::refreshLater();
+    }
+
+    /**
+     * The new server received the data of a database server, and the database server operates
+     * there. The panel records the new server and the new port, and the old server removes its
+     * copy. The network address stays, so the tunnels now take the traffic to the new server.
+     *
+     * @param  array<string, mixed>  $p
+     */
+    private function databaseServerMoved(AgentJob $job, array $p): void
+    {
+        $server = DatabaseServer::whereKey($job->database_server_id)->where('status', DatabaseServer::MOVING)
+            ->where('moving_to_server_id', $job->server_id)->first();
+        if (! $server) {
+            return;
+        }
+        $from = $server->server;
+        $server->update([
+            'server_id' => $job->server_id,
+            'port' => (int) ($p['databaseServer']['port'] ?? $server->port),
+            'status' => DatabaseServer::RUNNING,
+            'moving_to_server_id' => null,
+        ]);
+        app(JobDispatcher::class)->dispatch($from, AgentAction::DeleteDatabaseServer, ['databaseServer' => $server->id, 'moved' => true],
+            "Remove the old copy of database server {$server->name}", databaseServer: $server);
+        Mesh::refreshLater();
+    }
+
+    /**
+     * The new server could not receive or start a database server. The database server
+     * operates on the old server: the old server starts it again when it could not send the
+     * data, and this job starts it when the data went to the new server. The new server
+     * removes what it received.
+     *
+     * @param  array<string, mixed>  $p
+     */
+    private function databaseServerNotMoved(AgentJob $job, array $p): void
+    {
+        $server = DatabaseServer::whereKey($job->database_server_id)->where('status', DatabaseServer::MOVING)
+            ->where('moving_to_server_id', $job->server_id)->first();
+        if (! $server) {
+            return;
+        }
+        $server->update(['status' => DatabaseServer::RUNNING, 'moving_to_server_id' => null]);
+        $jobs = app(JobDispatcher::class);
+        $jobs->dispatch($server->server, AgentAction::SetDatabaseServer, ['databaseServer' => $server->forAgent()],
+            "Start database server {$server->name} again", databaseServer: $server);
+        $jobs->dispatch($job->server, AgentAction::DeleteDatabaseServer, ['databaseServer' => $server->id, 'moved' => true],
+            "Remove the incomplete copy of database server {$server->name}", databaseServer: $server);
+        Mesh::refreshLater();
+    }
+
+    /** The agent could not remove a database server. It is a member of its networks again. */
+    private function databaseServerStays(AgentJob $job, array $p): void
+    {
+        DatabaseServer::whereKey($job->database_server_id)->where('status', DatabaseServer::REMOVING)
+            ->update(['status' => in_array($p['previousStatus'] ?? '', [DatabaseServer::RUNNING, DatabaseServer::STOPPED, DatabaseServer::FAILED], true) ? $p['previousStatus'] : DatabaseServer::RUNNING]);
+        Mesh::refreshLater();
     }
 
     /**
@@ -279,6 +377,57 @@ class JobOutcome
         ], fn ($v) => $v !== null));
     }
 
+    /** Records the result of a cron job that a user ran with "Run now". */
+    private static function cronRan(AgentJob $job, int $exitCode, string $output): bool
+    {
+        CronJob::whereKey($job->payload['cronJob']['id'] ?? '')->where('website_id', $job->website_id)
+            ->update(['last_run_at' => $job->started_at ?? now(), 'last_exit_code' => $exitCode, 'last_output' => Str::limit($output, 4000)]);
+
+        return true;
+    }
+
+    private static function seconds(AgentJob $job): int
+    {
+        return (int) max(0, ($job->started_at ?? $job->created_at)->diffInSeconds(now()));
+    }
+
+    /**
+     * The website serves the new release. The agent gives the commit of the release and the
+     * releases that it removed from the server.
+     *
+     * @param  array<string, mixed>  $result
+     */
+    private static function deployed(AgentJob $job, Website $website, array $result): bool
+    {
+        $id = (string) ($job->payload['releaseId'] ?? '');
+        Release::whereKey($id)->where('website_id', $website->id)->update([
+            'state' => Release::READY,
+            'commit' => is_string($result['commit'] ?? null) ? substr($result['commit'], 0, 64) : null,
+            'message' => is_string($result['message'] ?? null) ? Str::limit($result['message'], 200) : '',
+            'duration_seconds' => self::seconds($job),
+        ]);
+        $removed = array_filter((array) ($result['removed'] ?? []), 'is_string');
+        if ($removed) {
+            $website->releases()->whereIn('id', $removed)->update(['state' => Release::REMOVED]);
+        }
+
+        return self::releaseLive($website, $id);
+    }
+
+    /** Records the release that the website serves, and the document root of that release. */
+    private static function releaseLive(Website $website, string $releaseId): bool
+    {
+        $release = $website->releases()->whereKey($releaseId)->first();
+        if (! $release) {
+            return false;
+        }
+        $website->releases()->where('live', true)->update(['live' => false]);
+        $release->update(['live' => true]);
+        $website->update(['document_root' => $release->document_root]);
+
+        return true;
+    }
+
     /** Valkey: the agent gives the database number, which the application needs to connect. */
     private function databaseMade(Website $website, array $p, array $result): bool
     {
@@ -301,6 +450,19 @@ class JobOutcome
         return true;
     }
 
+    /**
+     * A job for a database or a database user on a different server can be a part of the
+     * removal of its website. The panel then continues with the removal (WebsiteRemoval).
+     */
+    private function continueRemoval(Website $website, array $p): bool
+    {
+        if ($p[WebsiteRemoval::THEN] ?? false) {
+            app(WebsiteRemoval::class)->continue($website);
+        }
+
+        return true;
+    }
+
     private function removeNewDatabase(?Website $website, array $p): void
     {
         if (! $website) {
@@ -318,24 +480,37 @@ class JobOutcome
      */
     private function deleteWebsite(Website $website): bool
     {
-        BackupRemoval::updateOrCreate(['website_id' => $website->id], [
-            'website_name' => $website->name,
-            'server_id' => $website->server_id,
-            'remove_after' => now()->addDays(max(0, (int) config('cloudfactory.deleted_website_backup_days', 30))),
-        ]);
+        // The DNS zones of the customer lose the records that the panel made for the website.
+        foreach ($website->domains()->pluck('name') as $name) {
+            app(Zones::class)->websiteDomainRemoved($website->customer_id, $name);
+        }
+        // The backups of the databases on a different server are in the repository of that
+        // server. Each server removes the backups in its own repository.
+        $servers = $website->snapshots()->reorder()->whereNotNull('server_id')->distinct()->pluck('server_id')->push($website->server_id)->unique();
+        foreach ($servers as $serverId) {
+            BackupRemoval::updateOrCreate(['website_id' => $website->id, 'server_id' => $serverId], [
+                'website_name' => $website->name,
+                'remove_after' => now()->addDays(max(0, (int) config('cloudfactory.deleted_website_backup_days', 30))),
+            ]);
+        }
 
         return (bool) $website->delete();
     }
 
-    private function recordSnapshot(Website $website, array $p, array $result): bool
+    private function recordSnapshot(AgentJob $job, Website $website, array $p, array $result): bool
     {
+        // A backup with only databases is in the repository of a different server.
+        $part = ($p['databasesOnly'] ?? false) ? Snapshot::DATABASES : Snapshot::WEBSITE;
         Snapshot::create([
             'website_id' => $website->id,
+            'server_id' => $job->server_id,
+            'part' => $part,
             'kind' => $p['kind'] ?? 'manual',
             'restic_id' => $result['snapshotId'] ?? null,
             'size_bytes' => (int) ($result['sizeBytes'] ?? 0),
             // The agent restores a database by "engine:name".
-            'databases' => $website->sqlDatabases()->get()->map(fn ($d) => "{$d->engine}:{$d->name}")->all(),
+            // The backup has the databases of the job, not the databases that the website has now.
+            'databases' => collect($p['databases'] ?? [])->map(fn ($d) => ($d['engine'] ?? '').':'.($d['name'] ?? ''))->values()->all(),
             'mailboxes' => [],
             // CF-06: the restore checks each dump against the hash from the backup.
             'dump_hashes' => self::dumpHashes($result['dumps'] ?? []),
@@ -343,7 +518,8 @@ class JobOutcome
         // FR-902: the agent removed the snapshots that the retention policy does not keep.
         $forgotten = array_filter((array) ($result['forgotten'] ?? []), 'is_string');
         if ($forgotten) {
-            $website->snapshots()->whereIn('restic_id', $forgotten)->delete();
+            // The IDs are from the repository of the server of the job.
+            $website->snapshots()->where('part', $part)->where(fn ($q) => $q->where('server_id', $job->server_id)->orWhereNull('server_id'))->whereIn('restic_id', $forgotten)->delete();
         }
 
         return true;
@@ -375,7 +551,11 @@ class JobOutcome
 
     private static function withoutPasswords(array $payload): array
     {
-        unset($payload['password'], $payload['passwordHash']);
+        unset($payload['password'], $payload['passwordHash'], $payload['token']);
+        // The DNS servers have the DNSSEC keys now. The zone keeps its key.
+        if (is_array($payload['zones'] ?? null)) {
+            $payload['zones'] = array_map(fn ($z) => is_array($z) ? array_diff_key($z, ['dnssecKey' => true]) : $z, $payload['zones']);
+        }
         if (isset($payload['copyUsers'])) {
             $payload['copyUsers'] = array_map(fn ($u) => array_diff_key($u, ['password' => true]), $payload['copyUsers']);
         }

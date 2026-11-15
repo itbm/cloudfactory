@@ -212,6 +212,14 @@ image, not 100.
 - In the container, the files of the image have the owner `nobody`. The website process runs
   as the website user and reads them as "other", the same as before.
 - A custom image stays in the storage of its website user, so other customers never see it.
+  The website user pulls it, and also pulls an image with no digest. This pull does not use
+  the shared stores: the agent gives Podman the storage option
+  `overlay.mount_program=/usr/bin/fuse-overlayfs` on the command line, and a storage option
+  there replaces all storage options of `website-storage.conf`. With the shared stores,
+  Podman finds a layer of the new image in a shared store, for example the empty layer that
+  most images have, and copies it. The copy fails with the error
+  `tar-split.gz: permission denied`, because a website user cannot read all files of a layer
+  that root pulled. Thus the user keeps a full copy of such an image.
 - After a runtime change, the agent removes the previous image from the storage of the website
   user, if it is there: a custom image, or a copy from before the shared store. Then it removes
   the shared images that no website uses, in two steps: first from `website-storage.conf`, then,
@@ -231,6 +239,88 @@ The container unit of a website sets these limits:
   `/sys/fs/cgroup/cgroup.subtree_control`, which a rootless user cannot do. A change of the
   limits in the panel uses `systemctl set-property` on the running service and also changes
   the unit.
+
+### Disk limit of a website
+
+The Unix user of a website owns the files of the website. The type of the disk limit comes
+from the file system of `/srv/cloudfactory/sites`. A database server has the same three
+types (refer to [Disk limit](#disk-limit)):
+
+| File system | Disk limit |
+| ----------- | ---------- |
+| User quotas are on | The user quota of the Unix user of the website |
+| No user quotas, and the server has loop devices | A disk image with the size of the limit, for each new website |
+| No user quotas and no loop devices | No limit |
+
+The installer turns on the user quotas of an ext4 or XFS file system. Refer to
+[installation.md](installation.md#disk-quotas).
+
+**User quota.** The hard limit of the quota is the disk limit, and the soft limit is 95% of
+it. The quota counts all files of the user on the file system: the files of the website, and
+the files in the home directory of the user. A website that is at its limit gets the error
+"disk quota exceeded" when it writes. A change of the limit applies immediately, and the
+website does not stop.
+
+**Disk image.** The website has its own file system:
+
+| Path | Content |
+| ---- | ------- |
+| `/srv/cloudfactory/sites/<user>` | The directory of the website user: the mount point of the disk image. Root owns it. |
+| `/srv/cloudfactory/sites/<user>/app` | The files of the website. The website user owns the directory. |
+| `/srv/cloudfactory/disks/<user>.img` | The disk image. Only root can open the directory `disks`. |
+
+1. The root helper makes the Unix user. Then it makes the file `<user>.img` with the size of
+   the disk limit, and makes an ext4 file system in it. The file is sparse: it uses only the
+   disk space that the website uses.
+2. A systemd mount unit (`srv-cloudfactory-sites-<user>.mount`) mounts the file as a loop
+   device on the directory of the website user, now and at each start of the server. The
+   mount is a part of `local-fs.target`, so it is there before the user manager of the
+   website starts the container. The mount has the options `nodev` and `nosuid`. With the
+   option `discard`, the file gives the disk space of removed files back to the server.
+3. The root helper makes the directory `app` in that file system.
+
+These rules apply to a website with a disk image:
+
+- A website that fills its disk gets the error "no space left on device". It cannot fill the
+  disk of the server, and the other websites continue to operate.
+- When the mount is not there, the directory `app` is not there, and Podman does not start
+  the container. Thus a website never starts with an empty directory in place of its files.
+- A larger limit makes the file system larger while the website operates.
+- For a smaller limit, the agent first compares the disk space that the website uses with the
+  new limit. If the files need more space, the job fails, the website does not stop, and the
+  disk keeps its size. If not, the agent stops the website, closes its SFTP sessions, makes
+  the file system smaller and starts the website again. A file system cannot become smaller
+  while a process uses it.
+- The limit applies to the directory of the website user only. The home directory of the
+  user is not on the disk image. It has the files of Podman, the log file of the website
+  (10 MB at most) and, for a custom image, the copy of the image. The website cannot write
+  there: its container, its cron jobs and the build container of a deploy write only in
+  `app` and in `/tmp`, which is in memory.
+- The file system has the directory `lost+found`. Only root can open it. An SFTP user sees
+  its name next to `app`.
+- The kernel counts the disk space of the file system. The status report of the agent gets
+  the use from the kernel, and does not read the files of the website. For a website with no
+  disk image, the agent measures the files.
+- When the agent removes the website, it closes the SFTP sessions of the website, removes
+  the Unix user, unmounts the file system, and removes the mount unit and the disk image.
+
+A website keeps the type of disk that it started with:
+
+- A website with a directory keeps the directory when the server has no user quotas. The
+  agent does not move the files of a website into a disk image. Such a website has no disk
+  limit.
+- A website with a disk image keeps the image when the file system gets user quotas later.
+- A website with no disk limit gets no disk image. When a website with a disk image loses its
+  limit, the image keeps its size, because a file system always has a size.
+
+The status report of the agent has the part `disk-quotas`. The part is on when the server
+applies the disk limit of each website: with user quotas, or when each website with a disk
+limit has a disk image. If not, the part is off, and its text gives the cause: no loop
+devices, or the number of websites with a disk limit and no disk image. The panel then shows
+"Not applied on this server" next to the disk limit of each website of that server.
+
+The disk images of the websites and of the database servers use the same code
+(`agent/internal/actions/loopdisk.go`).
 
 ## The edge proxy
 
@@ -281,11 +371,21 @@ the administrators. The image `sftp` has OpenSSH and `libnss-extrausers`.
 
   | Host directory | In the container | Access |
   | -------------- | ---------------- | ------ |
-  | `/srv/cloudfactory/sites` | `/srv/cloudfactory/sites` | Read and write |
+  | `/srv/cloudfactory/sites` | `/srv/cloudfactory/sites` | Read and write, with the later mounts of the host (`rslave`) |
   | `/etc/cloudfactory/sftp` (one `<user>.keys` file for each user) | `/etc/cloudfactory/sftp` | Read only |
   | `/etc/cloudfactory/sftp-users` (`passwd` and `group`) | `/var/lib/extrausers` | Read only |
   | `/var/lib/cloudfactory/sftp-host-keys` | `/etc/ssh/keys` | Read and write |
 
+- The disk image of a website is a mount below `/srv/cloudfactory/sites` (refer to
+  [Disk limit of a website](#disk-limit-of-a-website)). With `rslave`, the container gets each
+  mount and each unmount that the host makes there after the start of the container. gVisor
+  refuses a shared mount (`rshared`). The container does not need one, because it makes no
+  mounts.
+- The container starts with `--runtime-flag=dcache=0`. Without this flag, gVisor keeps files
+  of the host open in a cache after a session closes them. The host then cannot unmount the
+  disk image of a website ("target is busy"). The agent also closes the SFTP sessions of a
+  website before it unmounts the disk image, because an open session has its root directory
+  on that file system.
 - The agent writes the keys file of a website for each SFTP change. Then it writes `passwd` and
   `group` again, with each website user that has a key, and the UID and GID of the user on the
   host. sshd reads these files at each sign-in, so the container does not restart.
@@ -466,13 +566,197 @@ the mail jobs of that domain.
 The shared name of the cluster has an A or AAAA record for each member. The MX records of the
 mail domains use the shared name. Mail programs and the webmail use the host name of one
 member.
+## DNS hosting
+
+A server with the role `dns` and a name server host name is a DNS server. It has one
+container, `cf-dns`, with Knot DNS. The container answers the queries for the zones of all
+customers. It does not resolve other names.
+
+```text
+ resolver ──► port 53, UDP and TCP ──► nftables redirect ──► port 8053
+                                                               │
+                                          cf-dns (rootless Podman, gVisor, user cf-dns)
+                                                               │ reads
+                              /var/lib/cloudfactory/dns/etc    knot.conf and zones/<name>.zone
+                              /var/lib/cloudfactory/dns/db     keys and signatures (KASP, journal)
+```
+
+- The Unix user `cf-dns` runs the container. The installation script does not make the user.
+  The root helper makes it when the server gets its first zone.
+- Root owns `knot.conf` and the zone files, and the container reads them from a read-only
+  volume. The user `cf-dns` owns only the directory of the keys and the signatures.
+- The firewall redirects port 53 to port 8053, as it does for ports 80 and 443. The agent
+  adds the rules, which have the comment `# cloudfactory-dns`, when it starts the DNS server.
+  The installation script keeps the rules when you run it again.
+- The answers to one network have a rate limit (`mod-rrl`), so that an attacker cannot use
+  the server to send traffic to a different address. The server does not give its name or its
+  version.
+
+### The panel sends full zones
+
+The DNS servers do not use zone transfers between them. The panel has the records, and it
+sends each changed zone to each DNS server in a job:
+
+| Job | Work |
+| --- | ---- |
+| `SetDnsZones` | Start the DNS server if necessary, write the zone files, and load the zones. One job has 100 zones at most. |
+| `DeleteDnsZones` | Remove the zones, their files and their keys. |
+
+A zone in a job has its name, its serial and all its records. The root helper does not accept
+a zone file from the worker. It checks each record with the shared input rules and writes the
+zone file itself, so a person who controls the worker or the panel database cannot put a
+directive such as `$INCLUDE` in a zone file.
+
+Each change of a zone gives the zone a higher serial. The panel keeps, for each DNS server,
+the last serial that the server loaded. The state of a zone is `active` when each DNS server
+has the last serial, `updating` while a job runs, and `failed` when a server could not load
+the zone. A server that could not load a change continues to answer with the records that it
+had before.
+
+### A DNS server that does not have the last zones
+
+The panel corrects a DNS server by itself. The report of each agent, which the agent sends
+each minute and when it starts, has the list of the zones of the server with the serial that
+the DNS server loaded last. The panel compares the list with its zones:
+
+| The server reports | The panel does |
+| ------------------ | -------------- |
+| No zone, or a zone with a different serial | It sends the full zone again. |
+| The last serial, but the last job of the zone failed | It sends the full zone again. |
+| A zone that the panel does not have, or that the panel removes | It removes the zone from the server. |
+| Zones, and the server does not answer DNS queries now | It removes all zones from the server. |
+| A zone with a larger serial than the panel has | It gives the zone a larger serial and sends it to each DNS server. |
+
+Thus a server that was offline during a change, a server with a new disk and a server whose
+DNS server could not load a zone get the last zones with no work of an administrator. A
+server that starts with no data gets all zones.
+
+- The panel does nothing while a DNS job of the server is in the queue or runs.
+- After a try that did not correct the server, the panel waits 1 minute, then 2, then 4, up
+  to 60 minutes between two tries. A report that agrees with the panel ends the wait.
+- The agent records the serial of a zone only after the DNS server loaded the zone. A zone
+  file that the DNS server could not load does not count.
+- When the DNS container starts, Knot DNS loads the zone files from the disk. The server
+  thus answers with its last zones before the panel sends a correction.
+
+**Send again now** on the page of the zone, or `cf dns sync`, sends a zone again immediately.
+
+### Records that the panel makes
+
+- The panel makes the NS records of each zone from the name server host names of the DNS
+  servers. A user cannot change them. When the role `dns` or the name server host name of a
+  server changes, the panel sends all zones again.
+- When a website of the customer has a domain in a zone, the panel makes an A record, and an
+  AAAA record if the server has an IPv6 address, for the domain. The records point to the
+  public addresses that the agent of the server of the website reported. A user can change
+  such a record. Then the record belongs to the user, and the panel does not change it again.
+
+### The name servers of the domain
+
+A zone has an effect only when the registrar of the domain has the name servers of the
+panel. The panel asks the public DNS for the NS records of the domain and shows one of these
+states: the domain uses the name servers of the panel, it uses other name servers, it has no
+name servers, or the panel could not check. When the domain uses the name servers of the
+panel, the panel verifies the domains of the websites in the zone with no TXT record.
+
+### DNSSEC
+
+DNSSEC is off for a new zone. When a user turns it on, the panel makes one ECDSA P-256 key
+(algorithm 13) for the zone. The key signs the zone and its keys (a combined signing key).
+The panel keeps the private key encrypted, as it keeps the other secrets, and sends it to
+each DNS server with the zone, so all servers sign with the same key. The root helper gives
+the key to Knot DNS, and Knot DNS signs the zone with NSEC3 (no more iterations, no salt).
+The panel shows the DS record that the customer gives to the registrar.
+
+The panel does not change the key of a zone on a schedule. To change the key, remove the DS
+record at the registrar, turn DNSSEC off and on, and give the new DS record to the registrar.
+
+## Files, logs, cron jobs and deploys of a website
+
+The agent does all of this work as the Unix user of the website (`runuser -u <user>`). The
+root helper permits each program as a website user, so this work adds no operation to its
+lists.
+
+### File manager and logs
+
+The panel does not make a job for a file operation or for the logs. The API calls the agent
+and gives the answer in the same request.
+
+```text
+ web panel or cf ──► API ──► worker ──► runuser -u <user> -- cf-agent site-files <directory>
+```
+
+- The worker starts `cf-agent site-files` as the website user and sends one request as JSON
+  on standard input. The program opens the directory of the website as a root directory
+  (`os.Root`), so a path or a symbolic link cannot go out of that directory.
+- A path starts with `/`. `/` is the directory of the website, which is `/app` in the
+  container.
+- The limits are 2 MiB for a read, 5 MiB for a write and 2000 entries for a list.
+- The unit of a website container has the log driver `k8s-file`. The container writes its
+  standard output and its standard error to `website.log` in the home directory of the
+  website user. Podman starts a new file at 10 MB. For the logs, the agent reads the last
+  lines of this file as the website user. A line from standard output has the stream
+  `access`, and a line from standard error has the stream `error`.
+
+### Cron jobs
+
+- The panel keeps the cron jobs of a website and sends the full list to the agent with the
+  job `SetCronJobs`. The agent keeps the list in its state file.
+- Each minute, the worker starts the commands whose schedule agrees with the time in UTC. A
+  schedule has the 5 fields of cron. The agent does not start a command while the previous
+  run of that cron job continues.
+- The agent runs a command with `podman exec --workdir /app <container> sh -c <command>` as
+  the website user. Thus the command runs in the gVisor container of the website, with the
+  limits of the website. The agent stops a command after 1 hour.
+- The agent sends the exit code and the end of the output of each run in its status report.
+  The panel shows them for the last run.
+- **Run now** makes the job `RunCronJob`. The job fails when the exit code is not 0.
+
+### Deploys from Git
+
+A website can have one Git source: a repository, a branch, a web directory, build commands
+and secrets. The panel makes an Ed25519 deploy key for the source and shows the public key.
+
+The job `Deploy` has these steps:
+
+1. **Get the code.** The agent clones the branch into `releases/<release ID>` in the
+   directory of the website.
+2. **Build.** The agent runs the build commands in that directory.
+3. The steps of a runtime change (refer to
+   [Change of runtime without downtime](#change-of-runtime-without-downtime)): the agent
+   starts a second container with the document root `releases/<release ID>/<web directory>`,
+   does a health check, changes the route, and stops the old container.
+4. **Remove old releases.** The agent removes the release directories that the panel does
+   not keep. The panel keeps the live release and the last 4 releases before it.
+
+- Steps 1 and 2 run in a build container, not in the live container. The build container
+  uses the runtime image of the website and gVisor, has the same limits as a website, and
+  runs as the website user. It sees the directory of the website as `/app`.
+- The agent writes the deploy key and the secrets to files that only the website user can
+  read, for the time of the build, and then removes them. The secrets are environment
+  variables of the build commands. The panel adds the key and the secrets to the job when
+  it sends the job, so they are not in the `agent_jobs` table.
+- The link `current` in the directory of the website points to the live release. The
+  directory `shared` is for files that all releases use, for example `.env` and uploads.
+  A build command can make a link to it.
+- When a step fails, the old container continues, and the agent removes the new release
+  directory. The release has the state `failed` and shows the cause.
+- **Go back** makes the job `ActivateRelease`. It does step 3 with a release that the server
+  keeps.
+- A Git host starts a deploy with `POST /api/v1/hooks/deploy/<token>`. The request needs no
+  sign-in: the token in the address is the secret. The panel ignores a push to a different
+  branch.
+- While a website deploys from Git, the panel refuses a change of the document root on the
+  Runtime tab. Change the web directory of the Git source.
 
 ## Databases
 
 A customer makes database servers as it makes websites. A database server is one container
 with one database engine: MariaDB, PostgreSQL or Valkey. It has its own data, its own
 superuser, its own port and its own limits. Each database of a website is in one database
-server of the customer of the website, on the server of the website.
+server of the customer of the website. The database server is on the server of the website,
+or on a different server that is in a network with the website
+(refer to [The networks of the customers](#the-networks-of-the-customers)).
 
 - A customer cannot change the service of a different customer, because the customers do
   not use the same containers. Each database server has its own Unix user and its own gVisor
@@ -503,6 +787,10 @@ only a database server that has no databases and no database users.
 | `cf-mariadb-<id>` | MariaDB | 3306 to 3355 | `mariadb.internal` |
 | `cf-postgresql-<id>` | PostgreSQL | 5432 to 5481 | `postgres.internal` |
 | `cf-valkey-<id>` | Valkey | 6379 to 6428 | `valkey.internal` |
+
+A website can also connect to a database server by its network name, for example
+`shop-db.internal`, with the usual port of the engine. That name is the same on each server.
+Refer to [The networks of the customers](#the-networks-of-the-customers).
 
 `<id>` is the ID of the database server in the panel, in lower case. The first database
 server of an engine of a customer on a server has the usual port of the engine. The next one
@@ -620,8 +908,9 @@ uses. The panel shows them next to the limits.
 ### Disk limit
 
 The Unix user of a database server owns all files of the database server. Thus the disk
-limit of a database server is as the disk limit of a website. The type of the limit comes
-from the file system of `/var/lib/cf-db`:
+limit of a database server is as the disk limit of a website (refer to
+[Disk limit of a website](#disk-limit-of-a-website)). The type of the limit comes from the
+file system of `/var/lib/cf-db`:
 
 | File system | Disk limit |
 | ----------- | ---------- |
@@ -676,7 +965,14 @@ the server. The panel then shows `database-disk-limits` as an optional part of t
 that is off. This does not make the server degraded.
 
 A database server keeps the type of disk that it started with. A database server with a disk
-image keeps the image when the file system gets user quotas later.
+image keeps the image when the file system gets user quotas later. A database server with a
+directory keeps the directory when the file system has no user quotas, and then has no disk
+limit.
+
+The status report of the agent has the part `database-disk-limits`. The part is on when the
+server applies the disk limit of each database server. If not, the part is off, and its text
+gives the cause: no loop devices, or the number of database servers with a disk limit and no
+disk image. The part `disk-quotas` has the same rule for the websites.
 
 A database engine that cannot write does not lose data that it saved before, but it can stop:
 
@@ -689,7 +985,7 @@ A database engine that cannot write does not lose data that it saved before, but
 To correct this, make the disk limit of the database server larger. Then remove the data that
 is not necessary.
 
-The disk quota of a website does not include its databases.
+The disk limit of a website does not include its databases.
 
 ### Stop of a database server
 
@@ -762,6 +1058,378 @@ When the memory is full, Valkey removes the keys of that database server that we
 for the longest time. A customer that needs a separate limit for one website makes a second
 Valkey database server. Refer to [installation.md](installation.md#valkey).
 
+### Adminer
+
+Adminer is a web tool for MariaDB and PostgreSQL databases. Adminer has no driver for Valkey,
+so the panel does not open a Valkey database in Adminer.
+
+Each customer has one Adminer container (`images/adminer`). The container is on the panel
+server, in gVisor, with its own Unix user (`adminer_<random>`) and the limits of
+`DatabaseTools::LIMITS`. The panel makes it with the usual website jobs (`CreateWebsite` with
+the runtime `custom`, and `SetRuntime` when the release of the panel server changes). The
+panel makes the container when a user opens the first database of the customer.
+
+- **Address.** All customers use one Adminer domain, `adminer.<panel domain>` by default
+  (`CF_ADMINER_DOMAIN`). The edge proxy sends the path `/<id of the tool>/` of that domain to
+  the container of the customer. A website route has the field `routePath` for this. The
+  websites with the same domain and different paths share one TLS policy in the edge proxy.
+  Each sign-in adds a random key to the path: `/<id of the tool>/<key>/`. Adminer keeps its
+  session cookie on the path of the request, so each sign-in has its own cookie, and a page of
+  a different sign-in on the same domain does not get it. `index.php` refuses each other path.
+  The Adminer domain is a sub-domain of the panel domain, so no website can have it. The web
+  panel keeps its token in the session storage of the browser, which is separate for each
+  origin, so Adminer cannot read the token.
+- **Network.** The container is a member of the networks of its customer, like a website
+  that connects to each MariaDB and PostgreSQL database server of the customer
+  (`DatabaseTools::links()` in `Networks::links()`). The mesh, the firewall and the host file
+  thus let it connect only to the database servers of its customer. A database server on a
+  different server is reachable through the tunnel to that server.
+- **Sign-in.** The panel stores no database passwords. To open a database, the panel makes a
+  temporary database user, `<unix user of the website>_adminer_<random>`, with access to that
+  database only (`SetDatabaseUser`). The access is read and write, or read only. The API gives
+  the password one time, in the answer of
+  `POST /v1/websites/{websiteId}/databases/{databaseId}/adminer`, and does not keep it. The
+  web panel opens a new window, waits until `GET /v1/adminer-logins/{id}` gives `ready`, and
+  sends the sign-in form of Adminer with the user and the password. The command
+  `cf databases adminer` writes a local HTML file that sends the same form.
+- **Expiry.** A temporary user is valid for 60 minutes (`CF_ADMINER_MINUTES`). Each minute,
+  the command `cloudfactory:expire-adminer-logins` removes the users that are not valid
+  (`DeleteDatabaseUser`), and the users of a database that was removed.
+- **Checks in Adminer.** `images/adminer/index.php` shows no sign-in form. It refuses a
+  driver that is not MariaDB or PostgreSQL, and a server name that is not `<name>.internal`
+  with an optional port, before Adminer connects. It turns off the permanent login, shows only
+  the databases of the sign-in, and refuses frames from other sites.
+
+## The mesh between servers
+
+The mesh is the set of encrypted tunnels between the servers of one panel. A tunnel lets two
+servers send private traffic to each other through the internet. In this release, only root
+on a server can use a tunnel, and the only traffic is the test of the tunnel. A later release
+uses the tunnels for the private networks of the customers.
+
+Each server has one WireGuard interface with the name `cf-mesh`. The values of the mesh are
+in the panel (**Network**):
+
+| Value | Default | Function |
+| ----- | ------- | -------- |
+| Address range | `10.207.0.0/16` | Each server gets one address from the first 254 addresses of the range, with its first tunnel. |
+| UDP port | 51820 | The port of the tunnels on each server. |
+| Tunnel address | Automatic | The public IP address that the other servers send the tunnel traffic of a server to. The default is the address that the panel connects to the agent with. |
+
+You can change the address range and the port only while the mesh has no tunnel.
+
+### Keys
+
+- The root helper of the agent makes the key pair of its server. The private key is in
+  `/etc/cloudfactory/mesh/private.key`. Only root can read it, and it never leaves the
+  server. The agent sends the public key to the panel in each report.
+- The panel is the directory of the public keys. It gives a server the public keys of only
+  the servers that it has a tunnel to.
+- The panel makes one pre-shared key for each tunnel. It keeps the key encrypted in its
+  database, and it sends the key to the two servers of the tunnel through the agent
+  connection (mutual TLS).
+- **Make new key** (`cf mesh rotate-key SERVER`) makes a new key pair on a server. The tunnels
+  of the server do not operate until the panel sends the new public key to the other servers.
+  That occurs automatically when the job is complete.
+
+### The state of a server
+
+The panel sends a server the full state of its tunnels with the action `SetMesh`: the address
+range, the address of the server, the port, and each other server with its public key, its
+pre-shared key, its tunnel address and its mesh address. The state has a version number.
+
+1. The worker of the agent examines the state and sends it to the root helper.
+2. The root helper examines the state again. It refuses a state with an older version than
+   the one that it has.
+3. The root helper writes the state to `/etc/cloudfactory/mesh/mesh.json`, writes the
+   elements of the firewall sets, and applies the WireGuard configuration with
+   `wg syncconf`. A tunnel that did not change continues to operate.
+4. The agent sends one ICMP echo request to each other server through its tunnel. The result
+   of the job has the answer, the round-trip time and the time of the last handshake.
+
+When the root helper starts, for example after a reboot, it applies the state of the file
+again. A state with no address and no tunnels removes the interface.
+
+If the server has no `wg` command, the root helper installs the package `wireguard-tools`.
+The installer of this release installs it.
+
+### How the panel monitors the tunnels
+
+Each agent report has the public key of the server, the version of its state and the state
+of each tunnel. The agent sends a report each minute.
+
+- A tunnel is **up** when the two servers got an answer through it in the last three minutes.
+  It is **down** when one server got no answer. Before the first reports, the panel shows that
+  it waits for the servers.
+- When a server reports a different version than the panel wants, the panel sends the state
+  again. It does this one time in two minutes for a server at most.
+- When a server reports a new public key, the panel sends the key to the other servers of its
+  tunnels.
+- **Repair** (`cf mesh repair SERVER SERVER`) sends the state to the two servers of a tunnel
+  again and tests the tunnel. Use it after you correct a problem, for example a firewall of
+  your provider that does not let the UDP port through.
+- When you remove a server from the panel, the panel removes its tunnels from the other
+  servers.
+
+The panel makes a tunnel when a website on one server uses a database server on the other
+server (refer to [The networks of the customers](#the-networks-of-the-customers)). It removes
+that tunnel when no website needs it. An administrator can also make a tunnel
+(**Network > Make tunnel**, or `cf mesh connect SERVER SERVER`). The panel does not remove a
+tunnel of an administrator. A server with an agent from an earlier release cannot have
+tunnels until you update its agent.
+
+## The networks of the customers
+
+A network is a private network of one customer. Its members are websites and database
+servers of the customer. A website can connect to each database server and to each other
+website that is in a network with it. The member can be on the server of the website or on a
+different server.
+
+Each customer has the network `default`. Each new website and each new database server of
+the customer is a member of it.
+
+### Named networks
+
+A customer can make more networks, to keep some websites and database servers apart. A
+network of this type is a named network. For example, the network `backend` has a shop and
+its database server, and the blog of the same customer is not in it.
+
+- The plan of the customer gives the number of named networks (`networks` of the plan). The
+  network `default` is not one of them. With 0, the customer has only the network `default`.
+  A new plan gets 0. For a reseller, the named networks of its customers count too.
+- A network can have any number of websites and database servers of its customer. A website
+  or a database server can be in more than one network, or in none.
+- A website connects to a member only when one network has the two. To separate two
+  members, remove one of them from each network that has the two. Thus a member that must
+  be apart from the others must also leave the network `default`.
+- The name of a network has lower-case letters, digits and `-`, and a maximum of 40
+  characters. The names of the members do not change with the network: a database server has
+  the same network name in each network.
+- The network `default` keeps its name, and the panel does not remove it. When a named
+  network is removed, its members stay.
+- When a website has a database in a database server on a different server, the panel
+  refuses a change that leaves the two with no network. The website would lose its database.
+- The names `mariadb.internal`, `postgres.internal` and `valkey.internal` do not use the
+  networks. A website can always use them for the database servers of its customer on its
+  own server.
+
+The user changes the networks on the page **Private networks**, with `cf networks`, or with
+the paths `/v1/networks` of the API. A token needs the scope `websites:read` to read the networks and `websites:write` to change them. A change needs
+no new function of the agent: the panel sends the new list of connections to each server with
+the mesh state, and the agent changes the firewall elements and the hosts files. No
+container restarts.
+
+### Names and addresses
+
+A database server has one name for the websites: the name of the database server and
+`.internal`, for example `shop-db.internal`. It answers on the usual port of its engine:
+3306 for MariaDB, 5432 for PostgreSQL and 6379 for Valkey. The name and the port are the
+same for each website, on each server. Thus the configuration of an app does not change when
+the database server or the website is on a different server.
+
+A website has one name for the other websites of its networks: its Unix user with `-` in
+place of `_`, and `.internal`. For example, the website with the Unix user `shop_a1b2` has
+the name `shop-a1b2.internal`. It answers on port 80, with HTTP. The connection does not go
+through the edge proxy, so it has no TLS of its own: the tunnel between two servers encrypts
+it. The panel shows the name on the **Settings** tab of the website, and `cf website show`
+prints it. A database server cannot have the name of a website of its customer.
+
+The panel gives each member one address of the mesh range (the member address). The
+addresses of the servers are the first 254 addresses of the range, and the member addresses
+are after them. A database server gets its address when the panel makes it. A website gets
+its address when a different website is in a network with it. A member address does not
+change. The name points to the member address on each server.
+
+The names `mariadb.internal`, `postgres.internal` and `valkey.internal` stay. They point to
+the database servers of the customer on the server of the website, where each database
+server has its own port. A database server cannot have the name `mariadb`, `postgres`,
+`valkey` or `localhost`.
+
+### Move a database server
+
+An administrator can move a database server to a different server. The database server
+keeps its ID, its name, its databases, its users, its network name and its member address.
+Thus a website that uses the network name continues to connect to it after the move. The
+traffic of the websites goes to the new server through the tunnels.
+
+The data goes through the WireGuard tunnel between the two servers:
+
+1. The panel makes a token of 32 random bytes and the tunnel between the two servers. It
+   sends `ReceiveDatabaseServer` to the new server and then `SendDatabaseServer` to the old
+   server. The two jobs have the token.
+2. The new server makes the Unix user, the disk and the unit of the database server. It does
+   not start it. Its firewall lets the mesh address of the old server connect to TCP port
+   7445 on the mesh address of the new server, only for the time of the move (the set
+   `mesh_transfers`).
+3. The old server stops the database server. Its root helper connects from its mesh address
+   and sends the token, and then one tar stream: the secret of the superuser and the files of
+   the data directory.
+4. The root helper of the new server compares the token, writes the files with the owner of
+   the database server, and answers `ok`. Then the new server starts the database server.
+5. The panel records the new server and the new port for the engine name, and the old server
+   removes its copy. The member address is now on the new server, so the next mesh state
+   sends the traffic of the websites there.
+
+When the move fails, the database server stays on the old server. The old server starts it
+again, and the new server removes what it received. The old server keeps its data until the
+new server operates the database server.
+
+- The database server does not operate while the data moves. The time depends on the size of
+  the data and the speed of the connection between the servers.
+- A website on a different server connects only with the network name. So, before the move,
+  each website with a database in the database server must be on the new server, or in a
+  network with the database server. The panel refuses the move when this is not true.
+- The engine name (for example `mariadb.internal`) works only on the server of the database
+  server. An app that uses it on the old server loses the connection. The panel warns about
+  this before the move.
+- Both agents must report that they can move database servers (`moves` in the mesh part of
+  the status report, `servers.mesh_moves` in the panel).
+
+The administrator moves a database server in the list of the database servers (**Move to a
+different server**), with `cf database-servers move DATABASE_SERVER --server SERVER`, or with
+`POST /v1/database-servers/{id}/move`.
+
+### Reference size
+
+The test `api/tests/Feature/NetworkScaleTest.php` makes a panel with 20 servers, 100 websites
+and 20 database servers of one customer in the network `default`. That is 190 tunnels and
+120 members. The panel makes all states in less than 30 seconds, and the mesh state of one
+server is less than 256 KB. After one change, the panel makes the new states in less than 5
+seconds.
+
+### A website with no public address
+
+A website has one of three kinds. Each kind is a website of the plan of the customer.
+
+| Kind | Domains and edge route | Port 80 in its networks | Container |
+| --- | --- | --- | --- |
+| `public` | Yes | Yes | The web server of the image |
+| `private` | No | Yes | The web server of the image |
+| `worker` | No | No | The start command of the customer |
+
+- **A private website** has no domain, no TLS certificate and no route in the edge proxy. The
+  agent gets a website with no domains, which it could operate before: a new website has no
+  route until its domain is verified. Only a website that is in a network with it can
+  connect to it, by its network name on port 80.
+- **A background worker** (the kind `worker`) runs one command of the customer, for example `php artisan queue:work`. The
+  panel sends the command as `sh -c "<command>"`, as for a cron job. The command runs in the
+  container of the worker: the same gVisor sandbox, Unix user, limits and firewall rules as
+  for a website. The container has no port on the private service address, and the worker
+  is not a member that answers. It can connect to the members of its networks. systemd
+  starts the command again when it stops. After a start, the agent makes sure that the
+  service stays active for 5 seconds. Thus a command with a wrong name fails the job. The
+  owner changes the command on the **Runtime** tab. The agent then starts a second
+  container with the new command and stops the first one, as for a change of the runtime.
+  For a short time, the two containers operate together.
+
+The user types a short name for a private website or a worker, for example `queue`. The
+panel makes the Unix user from it (`queue_a1b2`), and the name of the website is the network
+name (`queue-a1b2.internal`). This name is not a name of the internet, and no two websites
+have the same one. The panel makes a private website or a worker only on a server whose
+agent reported the function (`websites` in its mesh report). The kind of a website does not
+change after the panel made it. A private website and a worker cannot have a domain or a
+staging copy.
+
+### What each server gets
+
+The panel sends the networks of a server with its mesh state (the action `SetMesh`):
+
+- The members on the server. Each member has its address, its port, and the mesh addresses
+  of the other servers that have a website in a network with it.
+- The websites on the server that are in a network with a member. Each website has the
+  name, the address and the port of each member that it can connect to.
+- For each tunnel, the addresses of the members on the other server that a website of this
+  server uses. WireGuard sends the traffic for these addresses into that tunnel.
+
+A server with no tunnel also gets its members and its websites, with the address range. A
+website then uses the same name for a database server on its own server.
+
+The agent does this with the networks:
+
+1. The worker keeps the networks in its state. From them and from its records of the
+   websites and the database servers, it makes the firewall rules and the names of each
+   website. It leaves out a member or a website that the server does not have yet.
+2. The root helper examines each rule and each name. Then it loads the firewall elements from
+   `/etc/cloudfactory/firewall/network.nft` and writes the hosts file of each website:
+   `/etc/cloudfactory/websites/<user>/hosts`.
+3. The worker does the two steps again after each change of the websites and the database
+   servers, and when the agent starts.
+
+The container of a website has the hosts file of the website as its `/etc/hosts`. The agent
+changes the file in place, so a container that operates gets a new name with no restart. A
+website from an earlier release has the three names of the engines in its unit. It gets the
+hosts file, and thus the network names, when the agent writes its unit again: at the next
+restart, deploy or change of the runtime.
+
+### The path of a connection
+
+A website connects to `shop-db.internal:3306`, which is the member address.
+
+- **The database server is on a different server.** The firewall of the server of the website
+  lets only the Unix user of that website connect to the member address and the port. The
+  tunnel carries the connection. On the server of the database server, the firewall accepts
+  the connection only from a server that has a website in a network with the member. Then it
+  changes the destination to the address and the port of the container.
+- **The database server is on the same server.** The firewall changes the destination to the
+  address and the port of the container. It lets only the Unix user of a website that is in
+  a network with the member do this.
+
+A website that is a member has the same path. The destination changes to the port of the
+container of the website on the private service address (`169.254.77.1`). The rule that
+lets a website connect to a member is the first rule of the chain `output`, before the rule
+that closes the ports of the private service address. It compares the member address and
+port 80 from before the change. Thus the port of the container itself stays closed for each
+website. When the runtime of a website changes, its container gets a new port, and the agent
+writes the rules again. A website that its owner stopped stays a member: a connection to it
+gets a refusal.
+
+An agent reports that a website on it can be a member (`websites` in its mesh report). The
+panel makes a website a member only when the agent of its server and the agent of the server
+of the client reported this. An agent from an earlier release gets no member on port 80.
+
+In the two cases, the database server sees the address `169.254.80.1` as the client. A
+website that is a member also sees this address. This is
+the address that it sees for each website container. Thus a database user that can connect
+from a website can connect from each website of the networks of the database server, with
+its password.
+
+The panel changes the mesh after each change of a website, a database server or a network.
+It makes the tunnels that the networks need, removes the tunnels that it made and that no
+network needs, and sends the new state only to the servers whose state is different.
+
+### A database on a different server
+
+A website can have a database in a database server of its customer on a different server,
+when the two are in one network. The user selects the database server for a new database.
+With no selection, the panel uses a database server on the server of the website first.
+
+- **The jobs.** The panel sends the job for a database or for a database user to the agent
+  of the server of the database server. That agent has no record of the website, so the
+  job has the ID of the customer. The agent does the job only when the database server is a
+  database server of that customer. For a website that the agent has, the record of the
+  agent decides, and a different customer in the job is refused.
+- **The connection.** The app connects to the network name of the database server, for
+  example `shop-db.internal:3306`. The database user is the same as for a website on the
+  server of the database server: the database server sees one address for each website.
+- **The size.** Each agent reports the size of each database in its database servers. The
+  panel accepts the size of a database from the agent of its database server.
+- **The removal of the website.** The agent of the server of the website cannot remove a
+  database on a different server. The panel first sends a job for each such database and
+  each such database user to the agent of that server. When these jobs are complete, the
+  panel sends the job that removes the website. When one fails, the website stays, and the
+  user removes it again.
+
+Limits of this release:
+
+- A backup of a website with a database on a different server has two snapshots, in two
+  repositories (refer to [Backups](#backups)). When one of the two jobs fails, the backup
+  has only the other part.
+- The panel cannot make a staging copy of a website that has a database on a different
+  server.
+
+In this release, a network member is a database server. A later release adds websites as
+members, private websites, and networks with a name.
+
 ## Change of runtime without downtime
 
 The agent uses a blue and green method:
@@ -817,15 +1485,52 @@ not keep them.
 - A backup has the files of the website and a dump of each MariaDB and PostgreSQL database.
   The panel keeps the SHA-256 sum of each dump, and the agent compares the dump with this sum
   before a restore. A backup has no Valkey data.
+- A website can have a database in a database server on a different server. The agent of
+  the server of the website cannot make a dump of it. Thus a backup of such a website has
+  two parts. The agent of the server of the website makes the snapshot of the files and of
+  the databases on that server. The agent of the server of the database server makes a
+  snapshot with only the dumps of the databases on that server, in the repository of that
+  server. The kind of that snapshot is `scheduled-databases` or `manual-databases`, and the
+  retention policy applies to each kind separately. The dump does not go to a different
+  server. A restore of such a database goes to the agent that has the snapshot.
 - Each snapshot has the tags `website=<website ID>` and `kind=scheduled` (a nightly backup) or
   `kind=manual` (a backup that a user starts). The retention policy removes only scheduled
   backups. The panel keeps the 10 newest manual backups of each website.
-- When a website is deleted, the panel records its server and the date after which its
-  backups can go (30 days by default).
+- When a website is deleted, the panel records each server that has a backup of it, and the
+  date after which its backups can go (30 days by default).
 - On Sunday, each healthy server removes the backups of those websites from its repository,
   and then the data that no snapshot uses.
 - A snapshot from the time when all servers used one repository has a mark. The panel
   restores it from the old repository with the old password.
+
+## White label
+
+The administrator sets the default brand in **Settings > Brand**: a name, a colour, a logo and
+a support email. Each reseller sets its own brand on the **Brand** page. The reseller and its
+customers see only the brand of the reseller. A field that the reseller did not set comes from
+the reseller (its name and its email) or from the built-in values. It never comes from the
+default brand, so a customer of a reseller does not see the name of the hosting company.
+
+- **Checks.** White text on the colour must have a contrast of 4.5:1 or more (WCAG 2.2 AA). A
+  logo is a PNG, JPEG or WebP image of 256 KB or less and 2048 by 2048 pixels or less. The
+  panel reads the real type of the image. SVG is not allowed, because an SVG file can hold a
+  script.
+- **Panel domain.** A reseller can set its own panel domain. It must prove control of the
+  domain, as for a website domain. The panel sends the full list of reseller panel domains to
+  the agent on the panel server (`SetPanelBrands`). The edge proxy adds the domains to the panel
+  route and gets a certificate for each one: from Let's Encrypt for a public name, else from the
+  panel CA. The sign-in page reads `GET /api/v1/brand`, which gives the brand of the domain of
+  the request.
+- **Name servers.** Where the panel has DNS hosting, a reseller can give one host name to each
+  name server of the panel, for example `ns1.agency.example`. The zones of the reseller and of
+  its customers then get these names in their NS records, and so in the SOA record. A
+  delegation to these names counts as a delegation to the panel. When the administrator adds or
+  removes a DNS server, the number of names does not agree, and the zones use the names of the
+  panel until the reseller gives a new list.
+- **Mail host.** A reseller can set a mail host name. The email hosting shows it to the customers
+  of the reseller.
+
+Refer to the [screenshots](screenshots/white-label).
 
 ## The panel on the first server
 

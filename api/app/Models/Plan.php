@@ -15,10 +15,12 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * - "database_limits" are the limits of each database server with the plan: "vcpus",
  *   "memoryBytes" and "diskBytes".
  * - "databases" is the number of databases of each database server with the plan.
- * - "websites" and "database_servers" are the numbers of websites and of database servers of a
- *   customer with the plan.
+ * - "websites", "database_servers" and "dns_zones" are the numbers of websites, of database
+ *   servers and of DNS zones of a customer with the plan.
+ * - "networks" is the number of named networks of a customer, in addition to the network
+ *   "default". 0 means that the customer has only "default".
  */
-#[Fillable(['name', 'limits', 'websites', 'mailboxes', 'databases', 'php_extensions', 'database_servers', 'database_limits', 'mail_storage_bytes'])]
+#[Fillable(['name', 'limits', 'websites', 'mailboxes', 'databases', 'php_extensions', 'database_servers', 'database_limits', 'dns_zones', 'networks', 'mail_storage_bytes'])]
 class Plan extends Model
 {
     use HasFactory, HasUlids;
@@ -26,12 +28,15 @@ class Plan extends Model
     /** The number of database servers of a customer, when a request for a new plan gives none. */
     public const DEFAULT_DATABASE_SERVERS = 3;
 
+    /** The number of DNS zones of a customer, when a request for a new plan gives none. */
+    public const DEFAULT_DNS_ZONES = 5;
+
     /** The total size of the mailboxes of a customer with a new plan: 10 GB. */
     public const DEFAULT_MAIL_STORAGE = 10 * 1024 ** 3;
 
     protected function casts(): array
     {
-        return ['limits' => 'array', 'php_extensions' => 'array', 'database_limits' => 'array', 'database_servers' => 'integer', 'mail_storage_bytes' => 'integer'];
+        return ['limits' => 'array', 'php_extensions' => 'array', 'database_limits' => 'array', 'database_servers' => 'integer', 'dns_zones' => 'integer', 'networks' => 'integer', 'mail_storage_bytes' => 'integer'];
     }
 
     /** Each plan has limits for its database servers, also a plan from a request with none. */
@@ -39,6 +44,8 @@ class Plan extends Model
     {
         static::saving(function (Plan $plan) {
             $plan->database_servers ??= self::DEFAULT_DATABASE_SERVERS;
+            $plan->dns_zones ??= self::DEFAULT_DNS_ZONES;
+            $plan->networks ??= 0;
             $plan->mail_storage_bytes ??= self::DEFAULT_MAIL_STORAGE;
             $plan->database_limits ??= self::defaultDatabaseLimits($plan->limits ?? []);
         });

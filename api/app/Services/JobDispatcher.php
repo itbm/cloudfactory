@@ -7,6 +7,7 @@ use App\Enums\JobState;
 use App\Jobs\SendJobToAgent;
 use App\Models\AgentJob;
 use App\Models\DatabaseServer;
+use App\Models\DnsZone;
 use App\Models\Server;
 use App\Models\Website;
 
@@ -22,6 +23,7 @@ class JobDispatcher
         ?string $ref = null,
         ?string $rolloutId = null,
         ?DatabaseServer $databaseServer = null,
+        ?DnsZone $dnsZone = null,
         ?string $customerId = null,
     ): AgentJob {
         // The members of a mail cluster share their data. A different member does the job of
@@ -33,6 +35,8 @@ class JobDispatcher
             // The job of a database server has no website. The owner of the database server
             // can see the job.
             'database_server_id' => $databaseServer?->id,
+            // The job of one DNS zone. The owner of the zone can see the job.
+            'dns_zone_id' => $dnsZone?->id,
             // A mail job: the users of this customer can see it.
             'customer_id' => $customerId,
             'rollout_id' => $rolloutId,
@@ -71,7 +75,12 @@ class JobDispatcher
                 'documentRoot' => $website->document_root ?? 'public',
                 // FR-307: the port and the start command of a custom image.
                 'containerPort' => $website->image->custom ? (int) $website->image->container_port : 0,
-                'command' => $website->image->custom ? ($website->image->command ?? []) : [],
+                // A worker runs the command of the customer in the shell of its container, as a
+                // cron job does. The container is the gVisor sandbox of the website.
+                'command' => $website->isWorker() && $website->command !== null
+                    ? ['sh', '-c', $website->command]
+                    : ($website->image->custom ? ($website->image->command ?? []) : []),
+                'worker' => $website->isWorker(),
                 // CF-03: the edge proxy serves only the domains that the customer verified.
                 'domains' => $website->domains->filter(fn ($d) => $d->verified())->map(fn ($d) => ['name' => $d->name, 'kind' => $d->kind->value])->values()->all(),
                 // The customer of the website. The website can use the database servers of this

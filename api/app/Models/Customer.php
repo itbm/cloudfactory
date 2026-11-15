@@ -34,6 +34,11 @@ class Customer extends Model
         return $this->hasMany(User::class);
     }
 
+    public function networks(): HasMany
+    {
+        return $this->hasMany(Network::class);
+    }
+
     public function databaseServers(): HasMany
     {
         return $this->hasMany(DatabaseServer::class);
@@ -47,6 +52,11 @@ class Customer extends Model
     public function mailboxes(): HasMany
     {
         return $this->hasMany(Mailbox::class);
+    }
+
+    public function dnsZones(): HasMany
+    {
+        return $this->hasMany(DnsZone::class);
     }
 
     public function reseller(): BelongsTo

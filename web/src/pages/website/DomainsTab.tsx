@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { useAction, useStore } from "../../api/hooks";
 import { addDomain, checkDns, makePrimary, removeDomain, verifyDomain } from "../../api/store";
 import type { DomainKind, Website } from "../../api/types";
@@ -126,6 +127,7 @@ export function DomainsTab({ website }: { website: Website }) {
             </div>
           </div>
           <p className="hint" style={{ marginTop: 10 }}>Before the edge proxy serves a new domain, you must prove that you control it with a DNS TXT record. A sub-domain of a verified domain does not need a new record. The edge proxy gets a TLS certificate through ACME when the DNS points to this server.</p>
+          {state.nameServers.length > 0 && <p className="hint" style={{ marginTop: 6 }}>When the domain is in one of your <Link to="/dns">DNS zones</Link>, the panel makes the address records of the domain. A domain that uses the name servers of this panel needs no TXT record.</p>}
         </form>
       </Card>
     </div>

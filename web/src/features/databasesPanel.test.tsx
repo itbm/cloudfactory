@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getState } from "../api/store";
 import { apiJob, reset, signedIn, website, type PanelApi } from "../test/panelApi";
 import { DatabasesPanel } from "./DatabasesPanel";
@@ -101,5 +101,57 @@ describe("Valkey in the databases panel", () => {
     const dialog = screen.getByRole("dialog");
     expect((within(dialog).getByRole("radio", { name: /Valkey/ }) as HTMLInputElement).disabled).toBe(true);
     expect(dialog.textContent).toContain("cannot operate Valkey. Update the agent of the server.");
+  });
+});
+
+describe("Open in Adminer", () => {
+  /** A window of the panel, as window.open gives it, with a document of its own. */
+  const fakeWindow = () => {
+    const doc = document.implementation.createHTMLDocument("");
+    const submitted: { action: string; fields: Record<string, string> }[] = [];
+    doc.createElement = ((create) => (tag: string) => {
+      const el = create(tag);
+      if (tag === "form") (el as HTMLFormElement).submit = () => submitted.push({ action: (el as HTMLFormElement).action, fields: Object.fromEntries([...el.querySelectorAll("input")].map((i) => [i.name, i.value])) });
+      return el;
+    })(doc.createElement.bind(doc));
+    return { win: { document: doc, opener: {} as unknown, close: vi.fn() }, submitted };
+  };
+
+  it("signs in to Adminer with a temporary user, and puts no password on the screen", async () => {
+    const { win, submitted } = fakeWindow();
+    vi.spyOn(window, "open").mockReturnValue(win as unknown as Window);
+    const db = database("shop");
+    let checks = 0;
+    const login = { id: "L1", url: "https://adminer.panel.example/01abc/", databaseName: db.name, username: `${prefix}adminer_k3x9q2mf`, expiresAt: "2026-11-15T03:00:00Z" };
+    api.on(`POST /websites/${db.websiteId}/databases/${db.id}/adminer`, () => [202, {
+      login: { ...login, status: "starting" },
+      form: { driver: "server", server: "mariadb.internal:3306", username: login.username, password: "Secret12345678", db: db.name },
+      jobs: [apiJob({ title: "Make Adminer user", action: "SetDatabaseUser" })],
+    }]);
+    api.on("GET /adminer-logins/L1", () => ({ login: { ...login, status: checks++ ? "ready" : "starting" } }));
+    panel();
+    fireEvent.click(within(row(`${prefix}shop`, 0)).getByRole("button", { name: "Open in Adminer" }));
+    // A Valkey database has no Adminer.
+    expect(within(row(`${prefix}cache`, 0)).queryByRole("button", { name: "Open in Adminer" })).toBeNull();
+    // Adminer cannot change the page of the panel.
+    expect(win.opener).toBeNull();
+    await waitFor(() => expect(submitted).toHaveLength(1), { timeout: 5000 });
+    expect(submitted[0]).toEqual({
+      action: login.url,
+      fields: { "auth[driver]": "server", "auth[server]": "mariadb.internal:3306", "auth[username]": login.username, "auth[password]": "Secret12345678", "auth[db]": db.name },
+    });
+    expect(document.body.textContent).not.toContain("Secret12345678");
+    expect(api.changes.at(-1)).toMatchObject({ method: "POST", body: { privileges: "readwrite" } });
+  });
+
+  it("closes the window and tells why when Adminer cannot open the database", async () => {
+    const { win } = fakeWindow();
+    vi.spyOn(window, "open").mockReturnValue(win as unknown as Window);
+    const db = database("shop");
+    api.on(`POST /websites/${db.websiteId}/databases/${db.id}/adminer`, () => [422, { message: "The database server shop-db does not operate now.", errors: { database: ["The database server shop-db does not operate now."] } }]);
+    panel();
+    fireEvent.click(within(row(`${prefix}shop`, 0)).getByRole("button", { name: "Open in Adminer" }));
+    await screen.findByText("Adminer did not open");
+    expect(win.close).toHaveBeenCalled();
   });
 });

@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -44,6 +45,15 @@ type fakeEdge struct {
 	panel, root string
 	// methods are the methods that SetPanelCertificate got, in order.
 	methods []string
+	// brands are the reseller panel domains that SetPanelBrands got last.
+	brands []string
+}
+
+func (f *fakeEdge) SetPanelBrands(_ context.Context, _ string, brands []string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.brands = brands
+	return nil
 }
 
 func (f *fakeEdge) PanelCertificate(context.Context, string) (string, error) {
@@ -121,13 +131,20 @@ func settings(dir string, run *execx.Fake, edge *fakeEdge) *Deps {
 		// A server with no loop devices: the disk of a database server is a directory, and
 		// the tests mount nothing.
 		LoopControl: filepath.Join(dir, "no-loop-control"),
+		// The tunnel key and the mesh state of the tests are never in /etc.
+		MeshDir:  filepath.Join(dir, "mesh"),
+		MeshWait: time.Millisecond,
 	}
 }
 
 // testUID gives the UID and the GID of each user in the tests. The user of a database server
 // has an ID in the range of these users: 10000 and the last digit of the ID of the database
-// server. Each other user has the ID of a website user.
+// server. A service user (mail, webmail) has a system ID. Each other user has the ID of a
+// website user.
 func testUID(name string) (int, error) {
+	if name == host.MailUser || name == host.WebmailUser {
+		return 988, nil
+	}
 	if id, ok := strings.CutPrefix(name, host.DatabaseUserPrefix); ok && id != "" {
 		return host.DatabaseIDMin + int(id[len(id)-1]-'0'), nil
 	}
@@ -218,6 +235,11 @@ func TestCheckWebsiteRefusesBadValues(t *testing.T) {
 			w.Domains = append(w.Domains, &agentv1.Domain{Name: "y.example", Kind: "primary"})
 		},
 		func(w *agentv1.Website) { w.Domains[0].Name = "acme.example\nevil" },
+		func(w *agentv1.Website) { w.RoutePath = "/../" },
+		func(w *agentv1.Website) {
+			w.RoutePath = "/t1/"
+			w.Domains = append(w.Domains, &agentv1.Domain{Name: "www.acme.example", Kind: "redirect"})
+		},
 	} {
 		w := website("ghcr.io/cloudfactory/frankenphp-php8.4:8.4.0-1")
 		change(w)
@@ -399,8 +421,38 @@ func TestACustomImageStaysWithTheWebsiteUser(t *testing.T) {
 	if err := run(t)(d.CreateWebsite(&agentv1.WebsiteRequest{JobId: jobID, Website: w})); err != nil {
 		t.Fatal(err)
 	}
-	if !f.Called("runuser -u acme_x7k2 -- env XDG_RUNTIME_DIR=/run/user/20001 podman pull --quiet registry.example/acme/app:1.0@"+sharedDigest) || f.Called("podman pull") {
+	// The pull of the website user does not use the shared stores (userPull).
+	if !f.Called(userPodman+"--storage-opt overlay.mount_program=/usr/bin/fuse-overlayfs pull --quiet registry.example/acme/app:1.0@"+sharedDigest) || f.Called("podman pull") {
 		t.Errorf("calls = %v", f.Calls)
+	}
+}
+
+// userPodman is the start of a Podman command of the website user of the tests.
+const userPodman = "runuser -u acme_x7k2 -- env XDG_RUNTIME_DIR=/run/user/20001 podman "
+
+// An image with no digest cannot go in the shared store, thus the website user pulls it. The
+// shared stores have layers that the user cannot copy, and the pull must not use them.
+func TestAnImageWithNoDigestIsAPullWithNoSharedStores(t *testing.T) {
+	d, f := sharedDeps(t)
+	w := website("ghcr.io/cloudfactory/frankenphp-php8.4:8.4.0-1")
+	if err := run(t)(d.CreateWebsite(&agentv1.WebsiteRequest{JobId: jobID, Website: w})); err != nil {
+		t.Fatal(err)
+	}
+	if !f.Called(userPodman + "--storage-opt overlay.mount_program=/usr/bin/fuse-overlayfs pull --quiet ghcr.io/cloudfactory/frankenphp-php8.4:8.4.0-1") {
+		t.Errorf("calls = %v", f.Calls)
+	}
+	// No pull with the storage settings of the user, and no pull by root.
+	if f.Called(userPodman+"pull") || f.Called("podman pull") {
+		t.Errorf("a pull used the shared stores: %v", f.Calls)
+	}
+}
+
+func TestAUserPullWithNoSharedStoreHasNoStorageOption(t *testing.T) {
+	if got := userPull(false, "registry.example/acme/app:1.0"); !slices.Equal(got, []string{"pull", "--quiet", "registry.example/acme/app:1.0"}) {
+		t.Errorf("arguments = %v", got)
+	}
+	if got := userPull(true, "registry.example/acme/app:1.0"); !slices.Equal(got, []string{"--storage-opt", "overlay.mount_program=" + images.FuseOverlayfs, "pull", "--quiet", "registry.example/acme/app:1.0"}) {
+		t.Errorf("arguments = %v", got)
 	}
 }
 

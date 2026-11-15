@@ -230,7 +230,7 @@ func (d *Deps) CreateDatabase(req *agentv1.CreateDatabaseRequest) (jobs.Job, err
 	if user != "" {
 		steps = append(steps,
 			jobs.Step{Name: "Create user", Do: func(ctx context.Context) error {
-				srv, err := d.server(req.GetWebsiteId(), req.GetDatabaseServer().GetId(), engine)
+				srv, err := d.serverFor(req.GetWebsiteId(), req.GetDatabaseServer().GetCustomer(), req.GetDatabaseServer().GetId(), engine)
 				if err != nil {
 					return err
 				}
@@ -241,7 +241,7 @@ func (d *Deps) CreateDatabase(req *agentv1.CreateDatabaseRequest) (jobs.Job, err
 				return d.createUser(ctx, srv, user, pass, host, req.GetAccess())
 			}},
 			jobs.Step{Name: "Allow the website container only", Do: func(ctx context.Context) error {
-				srv, err := d.server(req.GetWebsiteId(), req.GetDatabaseServer().GetId(), engine)
+				srv, err := d.serverFor(req.GetWebsiteId(), req.GetDatabaseServer().GetCustomer(), req.GetDatabaseServer().GetId(), engine)
 				if err != nil {
 					return err
 				}
@@ -484,7 +484,7 @@ func (d *Deps) DeleteDatabaseUser(req *agentv1.DeleteDatabaseUserRequest) (jobs.
 	}
 	return jobs.Job{ID: req.GetJobId(), Key: req.GetWebsiteId(), Steps: []jobs.Step{
 		{Name: "Remove user", Do: func(ctx context.Context) error {
-			srv, err := d.server(req.GetWebsiteId(), req.GetDatabaseServer(), engine)
+			srv, err := d.serverFor(req.GetWebsiteId(), req.GetCustomer(), req.GetDatabaseServer(), engine)
 			if err != nil {
 				return err
 			}
@@ -539,7 +539,7 @@ func (d *Deps) DeleteDatabase(req *agentv1.DeleteDatabaseRequest) (jobs.Job, err
 	if engine == "valkey" {
 		return jobs.Job{ID: req.GetJobId(), Key: req.GetWebsiteId(), Steps: []jobs.Step{
 			{Name: "Remove database and user", Do: func(ctx context.Context) error {
-				srv, err := d.server(req.GetWebsiteId(), req.GetDatabaseServer(), engine)
+				srv, err := d.serverFor(req.GetWebsiteId(), req.GetCustomer(), req.GetDatabaseServer(), engine)
 				if err != nil {
 					return err
 				}
@@ -549,7 +549,7 @@ func (d *Deps) DeleteDatabase(req *agentv1.DeleteDatabaseRequest) (jobs.Job, err
 	}
 	return jobs.Job{ID: req.GetJobId(), Key: req.GetWebsiteId(), Steps: []jobs.Step{
 		{Name: "Remove access of users", Do: func(ctx context.Context) error {
-			srv, err := d.server(req.GetWebsiteId(), req.GetDatabaseServer(), engine)
+			srv, err := d.serverFor(req.GetWebsiteId(), req.GetCustomer(), req.GetDatabaseServer(), engine)
 			if err != nil {
 				return err
 			}
@@ -568,7 +568,7 @@ func (d *Deps) DeleteDatabase(req *agentv1.DeleteDatabaseRequest) (jobs.Job, err
 			return err
 		}},
 		{Name: "Remove database", Do: func(ctx context.Context) error {
-			srv, err := d.server(req.GetWebsiteId(), req.GetDatabaseServer(), engine)
+			srv, err := d.serverFor(req.GetWebsiteId(), req.GetCustomer(), req.GetDatabaseServer(), engine)
 			if err != nil {
 				return err
 			}
@@ -842,6 +842,20 @@ func (d *Deps) Backup(req *agentv1.BackupRequest) (jobs.Job, error) {
 	if k := req.GetKind(); k != "manual" && k != "scheduled" {
 		return jobs.Job{}, fmt.Errorf("the backup kind %q is not valid", k)
 	}
+	// A backup of the databases only is for a website of a different server. Its snapshots
+	// have their own kind, so that the retention of this server keeps them apart from the
+	// backups of a website that this server has.
+	only := req.GetDatabasesOnly()
+	kind := req.GetKind()
+	if only {
+		if len(req.GetDatabases()) == 0 {
+			return jobs.Job{}, errors.New("a backup of the databases only needs a database")
+		}
+		if _, err := instanceKey(req.GetCustomer()); err != nil {
+			return jobs.Job{}, err
+		}
+		kind += "-databases"
+	}
 	unixUser := req.GetUnixUser()
 	app := d.Host.AppDir(unixUser)
 	dumps := d.dumpDir(unixUser)
@@ -854,6 +868,9 @@ func (d *Deps) Backup(req *agentv1.BackupRequest) (jobs.Job, error) {
 	forgotten := []string{}
 	return jobs.Job{ID: req.GetJobId(), Key: req.GetWebsiteId(), Long: true, Steps: []jobs.Step{
 		{Name: "Snapshot files", Do: func(ctx context.Context) error {
+			if only {
+				return nil
+			}
 			_, err := d.appExists(ctx, unixUser)
 			return err
 		}},
@@ -868,7 +885,7 @@ func (d *Deps) Backup(req *agentv1.BackupRequest) (jobs.Job, error) {
 				return err
 			}
 			for _, db := range req.GetDatabases() {
-				srv, err := d.server(req.GetWebsiteId(), db.GetDatabaseServer(), db.GetEngine())
+				srv, err := d.serverFor(req.GetWebsiteId(), req.GetCustomer(), db.GetDatabaseServer(), db.GetEngine())
 				if err != nil {
 					return err
 				}
@@ -890,7 +907,11 @@ func (d *Deps) Backup(req *agentv1.BackupRequest) (jobs.Job, error) {
 			if err := d.ensureRepo(ctx, r); err != nil {
 				return err
 			}
-			out, err := d.restic(ctx, r, "backup", app, dumps, "--tag", "website="+req.GetWebsiteId(), "--tag", "kind="+req.GetKind())
+			paths := []string{app, dumps}
+			if only {
+				paths = []string{dumps}
+			}
+			out, err := d.restic(ctx, r, append(append([]string{"backup"}, paths...), "--tag", "website="+req.GetWebsiteId(), "--tag", "kind="+kind)...)
 			if err != nil {
 				return err
 			}
@@ -904,7 +925,7 @@ func (d *Deps) Backup(req *agentv1.BackupRequest) (jobs.Job, error) {
 			if req.GetRetention() == nil {
 				return nil
 			}
-			ids, err := d.forget(ctx, r, req.GetWebsiteId(), req.GetKind(), req.GetRetention())
+			ids, err := d.forget(ctx, r, req.GetWebsiteId(), kind, req.GetRetention())
 			forgotten = ids
 			return err
 		}},
@@ -1096,7 +1117,7 @@ func (d *Deps) Restore(req *agentv1.RestoreRequest) (jobs.Job, error) {
 			if sum != req.GetDumpSha256() {
 				return errors.New("the dump does not agree with the hash from the backup")
 			}
-			srv, err := d.server(req.GetWebsiteId(), req.GetDatabaseServer(), dbEngine)
+			srv, err := d.serverFor(req.GetWebsiteId(), req.GetCustomer(), req.GetDatabaseServer(), dbEngine)
 			if err != nil {
 				return err
 			}
@@ -1115,7 +1136,7 @@ func (d *Deps) Restore(req *agentv1.RestoreRequest) (jobs.Job, error) {
 					return err
 				}
 			}
-			return d.waitReady(ctx, site.Port, primaryDomain(site.Website))
+			return d.waitSite(ctx, site.Website, site.Port, site.Suffix)
 		}},
 	}, OnFailure: cleanup}, nil
 }

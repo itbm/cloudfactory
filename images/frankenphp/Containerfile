@@ -33,6 +33,12 @@ RUN apt-get update \
  && test -z "$(getcap /usr/local/bin/frankenphp)" \
  && apt-get purge -y libcap2-bin \
  && rm -rf /var/lib/apt/lists/*
+# Deploys from Git: the agent gets the code and runs the build commands in a container of this
+# image, so the image has Git, an SSH client and Composer.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends git openssh-client unzip \
+ && rm -rf /var/lib/apt/lists/*
+COPY --from=docker.io/library/composer:2 /usr/bin/composer /usr/local/bin/composer
 # CVE scan, finding 3: take the Debian security fixes that are newer than the base image, so that
 # the daily rebuild gets them on the day that Debian ships them. This step is apart from the slow
 # steps above. The release workflow gives CF_REFRESH a new value for each build, so this step

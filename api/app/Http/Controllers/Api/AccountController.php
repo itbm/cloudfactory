@@ -8,6 +8,8 @@ use App\Models\Customer;
 use App\Models\Database;
 use App\Models\User;
 use App\Models\Website;
+use App\Services\Dns\Zones;
+use App\Services\Networks;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -26,7 +28,8 @@ class AccountController extends Controller
             // An administrator belongs to no customer.
             return response()->json(['customer' => null, 'provider' => null, 'plan' => null, 'usage' => null, 'backups' => self::backups(), 'users' => []]);
         }
-        $websites = Website::where('customer_id', $customer->id)->get(['id', 'usage']);
+        $websites = Website::where('customer_id', $customer->id)->get(['id', 'usage', 'bandwidth_month', 'bandwidth_bytes']);
+        $month = now()->utc()->format('Y-m');
         $reseller = $customer->reseller;
 
         return response()->json([
@@ -44,10 +47,16 @@ class AccountController extends Controller
             'usage' => [
                 'websites' => $websites->count(),
                 'databases' => Database::whereIn('website_id', $websites->pluck('id'))->count(),
+                // The DNS zones that count against the plan: for a reseller, also those of its customers.
+                'dnsZones' => Zones::countFor($customer),
+                // The named networks that count against the plan: for a reseller, also those of its customers.
+                'networks' => Networks::countFor($customer),
                 'diskBytes' => (int) $websites->sum(fn (Website $w) => $w->usage['diskBytes'] ?? 0),
                 // The mailboxes of the customer, and the total of their sizes.
                 'mailboxes' => $customer->mailboxes()->count(),
                 'mailStorageBytes' => (int) $customer->mailboxes()->sum('quota_bytes'),
+                // The traffic of the websites in the current calendar month.
+                'bandwidthBytes' => (int) $websites->sum(fn (Website $w) => $w->bandwidth_month === $month ? $w->bandwidth_bytes : 0),
                 // Only for a reseller: the number of its customers.
                 'customers' => $user->role === Role::Reseller ? Customer::where('reseller_id', $customer->id)->count() : null,
             ],

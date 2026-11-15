@@ -30,6 +30,8 @@ export function AccountPage() {
   const rows = plan ? [
     { label: "Websites", text: `${usage.websites} of ${plan.websites}`, value: ratio(usage.websites, plan.websites) },
     { label: "Database servers", text: `${databaseServers} of ${plan.databaseServers}`, value: ratio(databaseServers, plan.databaseServers) },
+    { label: "DNS zones", text: `${usage.dnsZones} of ${plan.dnsZones}`, value: ratio(usage.dnsZones, plan.dnsZones) },
+    ...(plan.networks ? [{ label: "Named networks", text: `${usage.networks} of ${plan.networks}`, value: ratio(usage.networks, plan.networks) }] : []),
   ] : [];
   return (
     <>
@@ -73,6 +75,7 @@ export function AccountPage() {
                       <tr><th scope="row">Memory</th><td>{bytes(plan.limits.memoryBytes)}</td></tr>
                       <tr><th scope="row">Disk</th><td>{bytes(plan.limits.diskBytes)}</td></tr>
                       <tr><th scope="row">Disk speed</th><td>{bytes(plan.limits.diskIoBytesPerSecond)} each second</td></tr>
+                      <tr><th scope="row">Bandwidth</th><td>{plan.limits.bandwidthBytes ? `${bytes(plan.limits.bandwidthBytes)} each month` : "No limit"}</td></tr>
                       <tr><th scope="row">Processes</th><td>{plan.limits.processes}</td></tr>
                       <tr><th scope="row">PHP extensions</th><td><ul className="tag-list">{plan.phpExtensions.map((e) => <li key={e}><span className="tag">{e}</span></li>)}</ul></td></tr>
                     </tbody>

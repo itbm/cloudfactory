@@ -5,8 +5,11 @@ namespace App\Http\Controllers\Api;
 use App\Enums\AgentAction;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\JobResource;
+use App\Models\AgentJob;
+use App\Models\Database;
 use App\Models\Server;
 use App\Models\Setting;
+use App\Models\Snapshot;
 use App\Models\Website;
 use App\Services\Audit;
 use App\Services\JobDispatcher;
@@ -14,6 +17,7 @@ use App\Validation\Input;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -34,6 +38,10 @@ class BackupController extends Controller
             'kind' => $s->kind,
             'sizeBytes' => $s->size_bytes,
             'databases' => $s->databases,
+            // "website": the files and the databases on the server of the website.
+            // "databases": only the databases in the database servers on a different server.
+            'part' => $s->part ?? Snapshot::WEBSITE,
+            'serverId' => $s->server_id ?? $website->server_id,
             'mailboxes' => $s->mailboxes,
             'createdAt' => $s->created_at?->toIso8601String(),
         ])]);
@@ -43,10 +51,49 @@ class BackupController extends Controller
     {
         $website = $this->findWebsite($request, $websiteId);
         self::requireTarget();
-        $job = $this->jobs->dispatch($website->server, AgentAction::Backup, self::backupPayload($website, 'manual'), "Back up {$website->name}", $website);
+        $job = self::start($this->jobs, $website, 'manual', "Back up {$website->name}");
         Audit::record($request, 'Backed up website', $website->name, $website->customer_id);
 
         return response()->json(['job' => new JobResource($job)], 202);
+    }
+
+    /**
+     * Starts a backup of a website. It gives the job of the server of the website.
+     *
+     * The agent of the server of the website makes the backup of the files and of the
+     * databases on that server. A website can also have databases in a database server on a
+     * different server. The agent of each such server makes a backup of these databases
+     * only, in the repository of its server.
+     */
+    public static function start(JobDispatcher $jobs, Website $website, string $kind, string $title): AgentJob
+    {
+        $job = $jobs->dispatch($website->server, AgentAction::Backup, self::backupPayload($website, $kind), $title, $website);
+        $remote = $website->sqlDatabases()->with('databaseServer.server')->orderBy('name')->get()
+            ->filter(fn ($d) => $d->databaseServer && $d->databaseServer->server_id !== $website->server_id)
+            ->groupBy(fn ($d) => $d->databaseServer->server_id);
+        foreach ($remote as $databases) {
+            $server = $databases[0]->databaseServer->server;
+            $jobs->dispatch($server, AgentAction::Backup, [
+                ...self::backupPayload($website, $kind),
+                'databases' => $databases->map(fn ($d) => ['engine' => $d->engine, 'name' => $d->name, 'databaseServer' => $d->database_server_id])->values()->all(),
+                'target' => self::repository($server),
+                'databasesOnly' => true,
+                // The agent of a different server has no record of the website.
+                'customer' => $website->customer_id,
+            ], "{$title}: databases on {$server->name}", $website);
+        }
+
+        return $job;
+    }
+
+    /**
+     * The SQL databases of a website in the database servers on the server of the website.
+     *
+     * @return Collection<int, Database>
+     */
+    public static function localDatabases(Website $website)
+    {
+        return $website->sqlDatabases()->whereHas('databaseServer', fn ($q) => $q->where('server_id', $website->server_id))->orderBy('name')->get()->values();
     }
 
     /**
@@ -66,8 +113,10 @@ class BackupController extends Controller
             'websiteId' => $website->id,
             'unixUser' => $website->unix_user,
             'kind' => $kind,
-            // Each database with the ID of its database server.
-            'databases' => $website->sqlDatabases()->orderBy('name')->get()->map(fn ($d) => ['engine' => $d->engine, 'name' => $d->name, 'databaseServer' => $d->database_server_id])->all(),
+            // Each database with the ID of its database server. The agent of the server of the
+            // website makes the backup, so the backup has only the databases in the database
+            // servers on that server.
+            'databases' => self::localDatabases($website)->map(fn ($d) => ['engine' => $d->engine, 'name' => $d->name, 'databaseServer' => $d->database_server_id])->all(),
             'target' => self::repository($website->server),
             'retention' => $retention,
         ];
@@ -135,6 +184,13 @@ class BackupController extends Controller
         ]);
         $removeNewFiles = (bool) ($data['removeNewFiles'] ?? false);
         $dumpHash = $databaseServer = null;
+        // A snapshot with only databases is in the repository of a different server. The
+        // agent of that server restores a database from it.
+        $partOnly = $snapshot->part === Snapshot::DATABASES;
+        $server = $partOnly ? Server::findOrFail($snapshot->server_id) : $website->server;
+        if ($partOnly && $data['scope'] !== 'database') {
+            throw ValidationException::withMessages(['scope' => 'This backup has only databases. Select a database to restore.']);
+        }
         if ($data['scope'] === 'database') {
             $request->validate(['item' => [Rule::in($snapshot->databases)]]);
             // CF-06: the agent restores a dump only when its hash agrees with the hash from the backup.
@@ -149,28 +205,33 @@ class BackupController extends Controller
                 throw ValidationException::withMessages(['item' => "This website does not have the database {$name} now. Make a database with this name, then restore the backup."]);
             }
             $databaseServer = $database->database_server_id;
+            // The agent that has the backup restores it. It can restore only into a database
+            // server on its own server.
+            if ($database->databaseServer->server_id !== $server->id) {
+                throw ValidationException::withMessages(['item' => "The database {$name} is now in a database server on a different server from this backup. The panel cannot restore it from this backup."]);
+            }
         }
         if ($data['scope'] === 'file') {
             $request->validate(['item' => [Input::rule('restorePath')]]);
         }
         self::requireTarget();
         // The key of a server has no access to the repository that all servers used.
-        if ($snapshot->shared_repository && self::credentials() === [] && $website->server->backupCredentials() !== []) {
+        if ($snapshot->shared_repository && self::credentials() === [] && $server->backupCredentials() !== []) {
             throw ValidationException::withMessages(['snapshot' => 'This backup is in the repository that all servers used in an earlier version. An administrator must set the shared credentials of the object storage in Backups to restore it.']);
         }
         $what = $data['scope'] === 'website' ? 'full website' : $data['item'];
-        $job = $this->jobs->dispatch($website->server, AgentAction::Restore, [
+        $job = $this->jobs->dispatch($server, AgentAction::Restore, [
             'websiteId' => $website->id,
             'unixUser' => $website->unix_user,
             'snapshotId' => $snapshot->restic_id ?? $snapshot->id,
             'scope' => $data['scope'],
             'item' => $data['item'] ?? null,
             'dumpSha256' => $dumpHash,
-            ...($databaseServer ? ['databaseServer' => $databaseServer] : []),
+            ...($databaseServer ? ['databaseServer' => $databaseServer, 'customer' => $website->customer_id] : []),
             'deleteExtra' => $removeNewFiles,
             // A snapshot from before the change to one repository for each server is in the
             // repository that all servers used. AgentClient then sends the old password.
-            'target' => $snapshot->shared_repository ? self::policy()['target'] : self::repository($website->server),
+            'target' => $snapshot->shared_repository ? self::policy()['target'] : self::repository($server),
             ...($snapshot->shared_repository ? ['sharedRepository' => true] : []),
         ], "Restore {$what}", $website);
         Audit::record($request, 'Restored from backup', "{$website->name} {$what}".($removeNewFiles ? ', new files removed' : ''), $website->customer_id);

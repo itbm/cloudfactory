@@ -20,7 +20,7 @@ export interface NavEntry {
   to: string;
   label: string;
   /** The name of the icon (components/Layout.tsx). */
-  icon: "overview" | "setup" | "servers" | "updates" | "customers" | "plans" | "websites" | "databases" | "email" | "backups" | "apps" | "jobs" | "account" | "settings";
+  icon: "overview" | "setup" | "servers" | "network" | "updates" | "customers" | "plans" | "websites" | "files" | "databases" | "email" | "dns" | "networks" | "backups" | "apps" | "jobs" | "alerts" | "account" | "brand" | "settings";
 }
 
 export interface NavSection {
@@ -31,11 +31,15 @@ export interface NavSection {
 
 const hosting = (websites: string, jobs: string): NavEntry[] => [
   { to: "/websites", label: websites, icon: "websites" },
+  { to: "/files", label: "Files", icon: "files" },
   { to: "/databases", label: "Databases", icon: "databases" },
   { to: "/email", label: "Email", icon: "email" },
+  { to: "/dns", label: "DNS", icon: "dns" },
+  { to: "/networks", label: "Private networks", icon: "networks" },
   { to: "/backups", label: "Backups", icon: "backups" },
   { to: "/apps", label: "Apps", icon: "apps" },
   { to: "/jobs", label: jobs, icon: "jobs" },
+  { to: "/alerts", label: "Usage alerts", icon: "alerts" },
 ];
 
 const account: NavSection = {
@@ -50,13 +54,13 @@ const account: NavSection = {
 export const NAVIGATION: Record<Role, NavSection[]> = {
   administrator: [
     { items: [{ to: "/overview", label: "Overview", icon: "overview" }, { to: "/setup", label: "Finish setup", icon: "setup" }] },
-    { title: "Platform", items: [{ to: "/servers", label: "Servers", icon: "servers" }, { to: "/updates", label: "Images and updates", icon: "updates" }] },
+    { title: "Platform", items: [{ to: "/servers", label: "Servers", icon: "servers" }, { to: "/network", label: "Network", icon: "network" }, { to: "/updates", label: "Images and updates", icon: "updates" }] },
     { title: "Customers", items: [{ to: "/customers", label: "Customers", icon: "customers" }, { to: "/plans", label: "Plans", icon: "plans" }] },
     { title: "Hosting", items: hosting("Websites", "Jobs and activity") },
     { title: "Panel", items: [{ to: "/settings", label: "Settings", icon: "settings" }] },
   ],
   reseller: [
-    { title: "Customers", items: [{ to: "/customers", label: "Customers", icon: "customers" }, { to: "/plans", label: "Plans", icon: "plans" }] },
+    { title: "Customers", items: [{ to: "/customers", label: "Customers", icon: "customers" }, { to: "/plans", label: "Plans", icon: "plans" }, { to: "/brand", label: "Brand", icon: "brand" }] },
     { title: "Hosting", items: hosting("Websites", "Jobs and activity") },
     account,
   ],
@@ -71,10 +75,13 @@ const ONLY: [prefix: string, roles: Role[]][] = [
   ["/overview", ["administrator"]],
   ["/setup", ["administrator"]],
   ["/servers", ["administrator"]],
+  ["/network", ["administrator"]],
   ["/updates", ["administrator"]],
   ["/customers", ["administrator", "reseller"]],
   ["/plans", ["administrator", "reseller"]],
   ["/account", ["reseller", "owner"]],
+  // White label: a reseller sets its brand. The administrator sets the default brand in Settings.
+  ["/brand", ["reseller"]],
 ];
 
 /** True when a user with the role can open the page. */

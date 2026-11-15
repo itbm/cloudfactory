@@ -84,7 +84,7 @@ The overview of a website. A failed job that a later job resolved shows as "Fail
 
 ### admin-12-website-databases
 
-The databases of a website, with a Valkey database. The actions of a database user are in one menu.
+The databases of a website, with a Valkey database. A MariaDB or PostgreSQL database has **Open in Adminer**. The actions of a database user are in one menu.
 
 ![admin-12-website-databases](admin-12-website-databases.png)
 
@@ -114,7 +114,7 @@ The certificate of the panel domain.
 
 ### admin-17-databases
 
-The database servers of each customer, with their plans, their use and their host names. Below them, the page shows the databases and the database users of all websites.
+The database servers of each customer, with their plans, their use and their names in the network of the customer. Below them, the page shows the databases and the database users of all websites.
 
 ![admin-17-databases](admin-17-databases.png)
 
@@ -129,6 +129,30 @@ A new database server for a customer. The plan gives its limits and the number o
 The values of a plan for websites and for database servers.
 
 ![admin-19-edit-plan](admin-19-edit-plan.png)
+
+### admin-20-network
+
+The encrypted tunnels between the servers. Each tunnel shows its state, the time of its last handshake and its round-trip time. The panel makes a tunnel when the network of a customer needs it. An administrator makes, repairs and removes tunnels, and makes a new key on a server.
+
+![admin-20-network](admin-20-network.png)
+
+### admin-21-dns
+
+The DNS zones of all customers.
+
+![admin-21-dns](admin-21-dns.png)
+
+### admin-22-dns-zone-failed
+
+A DNS zone that a name server did not load.
+
+![admin-22-dns-zone-failed](admin-22-dns-zone-failed.png)
+
+### admin-23-server-dns
+
+The DNS role and the name server name of a server.
+
+![admin-23-server-dns](admin-23-server-dns.png)
 
 ## Reseller console
 
@@ -157,6 +181,12 @@ The websites of the reseller and of its customers.
 The account of the reseller.
 
 ![reseller-04-account](reseller-04-account.png)
+
+### reseller-05-dns
+
+The DNS zones of the customers of a reseller.
+
+![reseller-05-dns](reseller-05-dns.png)
 
 ## Owner console
 
@@ -222,6 +252,60 @@ The start points for common applications.
 
 ![owner-10-apps](owner-10-apps.png)
 
+### owner-11-website-files
+
+The file manager of a website. The server does each operation as the Unix user of the website.
+
+![owner-11-website-files](owner-11-website-files.png)
+
+### owner-12-website-deploys
+
+The deploys of a website from a Git repository: the repository, the deploy key, the build secrets and the releases.
+
+![owner-12-website-deploys](owner-12-website-deploys.png)
+
+### owner-13-website-cron
+
+The cron jobs of a website, with the result of the last run of each one.
+
+![owner-13-website-cron](owner-13-website-cron.png)
+
+### owner-14-website-logs
+
+The last log lines of a website.
+
+![owner-14-website-logs](owner-14-website-logs.png)
+
+### owner-15-dns
+
+The DNS zones of an owner.
+
+![owner-15-dns](owner-15-dns.png)
+
+### owner-16-dns-zone
+
+A DNS zone with its name servers, DNSSEC and records.
+
+![owner-16-dns-zone](owner-16-dns-zone.png)
+
+### owner-17-dns-add-record
+
+The dialogue to add a DNS record.
+
+![owner-17-dns-add-record](owner-17-dns-add-record.png)
+
+### owner-18-website-databases
+
+The databases of a website. **Open in Adminer** opens a MariaDB or PostgreSQL database in Adminer in a new window.
+
+![owner-18-website-databases](owner-18-website-databases.png)
+
+### owner-19-adminer
+
+Adminer after **Open in Adminer**. The panel signed in with a temporary database user for this database only. The user typed no password.
+
+![owner-19-adminer](owner-19-adminer.png)
+
 ## Phone width (390 px)
 
 Under 640 px, each row of a table shows as a card, and the tab bar scrolls with a shadow at the edge that has more tabs.
@@ -279,3 +363,24 @@ The customers as cards.
 The database servers and the databases of an owner as cards.
 
 ![phone-09-owner-databases](phone-09-owner-databases.png)
+
+### phone-10-owner-dns-zone
+
+A DNS zone at phone width.
+
+![phone-10-owner-dns-zone](phone-10-owner-dns-zone.png)
+
+## White label
+
+The sample reseller Northwind Agency has the brand "Northwind Hosting", with its own logo,
+colour, panel domain, name servers and mail host. The files are in [white-label/](white-label).
+
+| File | Page |
+| ---- | ---- |
+| [01-reseller-sign-in.png](white-label/01-reseller-sign-in.png) | The sign-in page on the panel domain of the reseller. |
+| [02-customer-websites.png](white-label/02-customer-websites.png) | A customer of the reseller sees only the brand of the reseller. |
+| [03-customer-dns-zone.png](white-label/03-customer-dns-zone.png) | The DNS zone of a customer has the name servers of the reseller. |
+| [04-reseller-brand.png](white-label/04-reseller-brand.png) | The Brand page of the reseller. |
+| [05-reseller-panel-domain-proof.png](white-label/05-reseller-panel-domain-proof.png) | A new panel domain needs a TXT record that proves control. |
+| [06-administrator-default-brand.png](white-label/06-administrator-default-brand.png) | The administrator sets the default brand in Settings. |
+| [07-reseller-brand-phone.png](white-label/07-reseller-brand-phone.png) | The Brand page on a phone. |

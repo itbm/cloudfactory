@@ -4,6 +4,7 @@ namespace App\Http\Resources;
 
 use App\Models\Domain;
 use App\Models\Website;
+use App\Services\Networks;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -22,6 +23,14 @@ class WebsiteResource extends JsonResource
             'serverId' => $this->server_id,
             'planId' => $this->plan_id,
             'unixUser' => $this->unix_user,
+            // The name and the port for a different website in a network with this website.
+            // A worker serves no HTTP: it has no name and no port.
+            'networkHost' => $this->isWorker() ? null : Networks::hostOf($this->resource),
+            'networkPort' => $this->isWorker() ? null : Networks::WEBSITE_PORT,
+            // "public", "private" (no domain, only for the websites of its networks) or "worker".
+            'kind' => $this->kind ?? Website::PUBLIC,
+            // The start command of a worker.
+            'command' => $this->isWorker() ? $this->command : null,
             'status' => $this->status->value,
             'runtime' => [
                 'imageId' => $this->image_id,
@@ -39,10 +48,13 @@ class WebsiteResource extends JsonResource
             ],
             'updateReady' => $this->updateReady(),
             'limits' => $this->limits,
-            // Audit item U4: false when the server of the website does not apply the disk limit,
-            // because its file system has no user quotas. Null when the server did not report it.
+            // Audit item U4: false when the server of the website does not apply the disk limit of
+            // each website: its file system has no user quotas, and a website has no disk image.
+            // Null when the server did not report it.
             'diskLimitApplied' => $this->server?->appliesDiskLimits(),
             'usage' => $this->usage,
+            // The traffic of the website in the current calendar month, in bytes in and out.
+            'bandwidthBytes' => $this->bandwidth_month === now()->utc()->format('Y-m') ? (int) $this->bandwidth_bytes : 0,
             'domains' => $this->whenLoaded('domains', fn () => $this->domains->map(fn (Domain $d) => self::domain($d))),
             // Spec section 10: the owner signs in as the Unix user of the website, with an SSH key, to
             // the SFTP container of the server.

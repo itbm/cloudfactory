@@ -28,19 +28,20 @@ describe("the console of each role", () => {
   it("gives each role its own first page and its own menu", async () => {
     await open("administrator", "/");
     expect(heading()).toBe("Overview");
-    expect(menu()).toEqual(["Overview", "Finish setup", "Servers", "Images and updates", "Customers", "Plans", "Websites", "Databases", "Email", "Backups", "Apps", "Jobs and activity", "Settings"]);
+    expect(menu()).toEqual(["Overview", "Finish setup", "Servers", "Network", "Images and updates", "Customers", "Plans", "Websites", "Files", "Databases", "Email", "DNS", "Private networks", "Backups", "Apps", "Jobs and activity", "Usage alerts", "Settings"]);
     cleanup();
     reset();
 
     await open("reseller", "/");
     expect(heading()).toBe("Customers");
-    expect(menu()).toEqual(["Customers", "Plans", "Websites", "Databases", "Email", "Backups", "Apps", "Jobs and activity", "My account", "Settings"]);
+    // The sample reseller has a brand with a support email: the menu links to it.
+    expect(menu()).toEqual(["Customers", "Plans", "Brand", "Websites", "Files", "Databases", "Email", "DNS", "Private networks", "Backups", "Apps", "Jobs and activity", "Usage alerts", "My account", "Settings", "Get help by email"]);
     cleanup();
     reset();
 
     await open("owner", "/");
     expect(heading()).toBe("My websites");
-    expect(menu()).toEqual(["My websites", "Databases", "Email", "Backups", "Apps", "Activity", "My account", "Settings"]);
+    expect(menu()).toEqual(["My websites", "Files", "Databases", "Email", "DNS", "Private networks", "Backups", "Apps", "Activity", "Usage alerts", "My account", "Settings"]);
   });
 
   it("has no link from the menu of an owner or a reseller to a page that the role cannot open", () => {
@@ -68,7 +69,7 @@ describe("the console of each role", () => {
   });
 
   it("shows no administrator word on the pages of an owner", async () => {
-    for (const path of ["/websites", "/databases", "/backups", "/apps", "/jobs", "/account", "/settings", `/websites/SITE`, `/websites/SITE/settings`, `/websites/SITE/backups`]) {
+    for (const path of ["/websites", "/files", `/websites/SITE/files`, `/websites/SITE/cron`, `/websites/SITE/deploys`, `/websites/SITE/logs`, "/databases", "/backups", "/apps", "/jobs", "/alerts", `/websites/SITE/usage`, "/account", "/settings", `/websites/SITE`, `/websites/SITE/settings`, `/websites/SITE/backups`]) {
       await open("owner", "/");
       cleanup();
       render(<MemoryRouter initialEntries={[path.replace("SITE", website("shop.acme.example.com").id)]}><App /></MemoryRouter>);
@@ -86,7 +87,7 @@ describe("the account page (audit item U1)", () => {
     expect(heading()).toBe("My account");
     const main = screen.getByRole("main");
     expect(main.textContent).toContain("Plan: Business");
-    expect(main.textContent).toContain("5 of 10");
+    expect(main.textContent).toContain("7 of 10");
     expect(main.textContent).toContain("The operator of this panel");
     expect(within(main).getByText("owner@example.com")).toBeTruthy();
     expect(main.textContent).not.toContain("undefined");
@@ -102,15 +103,16 @@ describe("the setup checklist", () => {
   it("shows each open item with its effect and a link to the page that completes it", async () => {
     await open("administrator", "/setup");
     const main = screen.getByRole("main");
-    expect(main.textContent).toContain("1 of 4 items are done.");
+    expect(main.textContent).toContain("2 of 5 items are done.");
     const items = within(main).getAllByRole("listitem");
     expect(items.map((i) => within(i).getByRole("heading").textContent)).toEqual([
       "Turn on two-step sign-in for each administrator Open",
       "Turn on disk limits on each server Open",
       "Use a certificate that browsers trust for the panel Open",
       "Set the object storage for backups Done",
+      "Set up the SMTP server for email notifications Done",
     ]);
-    expect(items[1].textContent).toContain("While this is open: Without user quotas on the file system, a server does not apply the disk limit of a plan.");
+    expect(items[1].textContent).toContain("While this is open: A server applies the disk limit of a plan with a user quota, or with a disk image for each new website.");
     expect(within(items[1]).getByRole("link").getAttribute("href")).toBe(`/servers/${getState().servers.find((s) => s.name === "web-1")!.id}`);
     // A done item has no effect text and no action.
     expect(items[3].textContent).not.toContain("While this is open");
@@ -140,13 +142,15 @@ describe("the overview of the administrator", () => {
     const main = screen.getByRole("main");
     expect(main.textContent).toContain("3 setup items are open");
     expect(within(main).getByRole("link", { name: "Servers: 4. 1 needs attention" })).toBeTruthy();
-    expect(within(main).getByRole("link", { name: "Failed jobs: 1. Not resolved" })).toBeTruthy();
+    expect(within(main).getByRole("link", { name: "Failed jobs: 2. Not resolved" })).toBeTruthy();
     expect(main.textContent).toContain("web-3 is degraded: cf-sftp failed.");
     expect(main.textContent).toContain("Node.js app could not be checked for updates.");
     // The failure of the database job has a later successful job, so it is not in the list.
     const jobs = within(main).getByRole("heading", { name: "Jobs" }).closest("section")!;
-    expect(within(jobs).getAllByRole("listitem")).toHaveLength(1);
+    expect(within(jobs).getAllByRole("listitem")).toHaveLength(2);
     expect(jobs.textContent).toContain("Create website events.harbourbooks.example.net");
+    // One DNS server could not load a zone. The job of the other DNS server does not resolve it.
+    expect(jobs.textContent).toContain("Add TXT record to harbourbooks.example.net");
     expect(jobs.textContent).toContain("Details for administrators");
   });
 });
@@ -221,7 +225,7 @@ describe("the UI items of the audit", () => {
   it("says where the server does not apply the disk limit (U4)", async () => {
     // 4 of the 5 websites of the owner are on web-1, which has no user quotas.
     await open("owner", "/");
-    expect(screen.getByRole("region", { name: "Disk" }).textContent).toContain("The limit is not applied for 4 of 5 websites");
+    expect(screen.getByRole("region", { name: "Disk" }).textContent).toContain("The limit is not applied for 5 of 7 websites");
     expect(screen.getByRole("region", { name: "Memory" }).textContent).not.toContain("not applied");
     cleanup();
     reset();

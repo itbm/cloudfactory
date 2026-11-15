@@ -21,7 +21,7 @@ const (
 	mailKeepImage = "ghcr.io/itbm/mail-keep:0.2.0"
 	mailSecret    = "0123456789abcdef0123456789abcdef"
 	// mailPodmanPrefix is the start of each Podman command of the Unix user of the mail server.
-	mailPodmanPrefix = "runuser -u cf-mail -- env XDG_RUNTIME_DIR=/run/user/20001 podman "
+	mailPodmanPrefix = "runuser -u cf-mail -- env XDG_RUNTIME_DIR=/run/user/988 podman "
 )
 
 // mailNodeDeps gives a worker and a root helper of a server that can be a member of a mail

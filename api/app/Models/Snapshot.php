@@ -7,10 +7,16 @@ use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-#[Fillable(['website_id', 'kind', 'restic_id', 'size_bytes', 'databases', 'mailboxes', 'dump_hashes', 'shared_repository'])]
+#[Fillable(['website_id', 'kind', 'restic_id', 'size_bytes', 'databases', 'mailboxes', 'dump_hashes', 'shared_repository', 'server_id', 'part'])]
 class Snapshot extends Model
 {
     use HasUlids;
+
+    /** The files of the website and the databases on the server of the website. */
+    public const WEBSITE = 'website';
+
+    /** The databases of the website in the database servers on one different server. */
+    public const DATABASES = 'databases';
 
     protected function casts(): array
     {

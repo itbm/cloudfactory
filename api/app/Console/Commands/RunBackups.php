@@ -46,7 +46,7 @@ class RunBackups extends Command
         $count = 0;
         Website::with('server')->whereNull('staging_of')->where('status', '!=', WebsiteStatus::Failed->value)->orderBy('name')
             ->each(function (Website $website) use ($jobs, &$count) {
-                $jobs->dispatch($website->server, AgentAction::Backup, BackupController::backupPayload($website, 'scheduled'), "Nightly backup of {$website->name}", $website);
+                BackupController::start($jobs, $website, 'scheduled', "Nightly backup of {$website->name}");
                 $count++;
             });
         $this->line("Started {$count} backups.");

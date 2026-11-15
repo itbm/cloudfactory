@@ -15,6 +15,29 @@ var ruleCommandArgument = rule{
 // One argument of the start command of a custom image. It has no control characters.
 func CommandArgument(s string) error { return ruleCommandArgument.check(s) }
 
+var ruleCommandLine = rule{
+	what:      "command",
+	pattern:   regexp.MustCompile(`^[^\x00-\x1f\x7f]+$`),
+	maxLength: 1000,
+}
+
+// CommandLine checks a value with the rule "commandLine" of schema/input-rules.json.
+//
+// One command line for the shell of a website container: the command of a cron job or a build command of a deploy. It is on one line and has no control characters.
+func CommandLine(s string) error { return ruleCommandLine.check(s) }
+
+var ruleCronSchedule = rule{
+	what:      "cron schedule",
+	pattern:   regexp.MustCompile(`^(\*|[0-5]?[0-9](-[0-5]?[0-9])?)(/[1-9][0-9]?)?(,(\*|[0-5]?[0-9](-[0-5]?[0-9])?)(/[1-9][0-9]?)?)* (\*|([01]?[0-9]|2[0-3])(-([01]?[0-9]|2[0-3]))?)(/[1-9][0-9]?)?(,(\*|([01]?[0-9]|2[0-3])(-([01]?[0-9]|2[0-3]))?)(/[1-9][0-9]?)?)* (\*|(0?[1-9]|[12][0-9]|3[01])(-(0?[1-9]|[12][0-9]|3[01]))?)(/[1-9][0-9]?)?(,(\*|(0?[1-9]|[12][0-9]|3[01])(-(0?[1-9]|[12][0-9]|3[01]))?)(/[1-9][0-9]?)?)* (\*|(0?[1-9]|1[0-2])(-(0?[1-9]|1[0-2]))?)(/[1-9][0-9]?)?(,(\*|(0?[1-9]|1[0-2])(-(0?[1-9]|1[0-2]))?)(/[1-9][0-9]?)?)* (\*|[0-7](-[0-7])?)(/[1-9][0-9]?)?(,(\*|[0-7](-[0-7])?)(/[1-9][0-9]?)?)*$`),
+	maxLength: 200,
+	echo:      true,
+}
+
+// CronSchedule checks a value with the rule "cronSchedule" of schema/input-rules.json.
+//
+// The schedule of a cron job: minute, hour, day of the month, month and day of the week, with one space between them. Each field is "*", a number, a range or a list, with an optional step. The day of the week is 0 to 7, and 0 and 7 are Sunday.
+func CronSchedule(s string) error { return ruleCronSchedule.check(s) }
+
 var ruleDatabaseClientHost = rule{
 	what:    "database client host",
 	pattern: regexp.MustCompile(`^[A-Za-z0-9.:%/_-]{1,255}$`),
@@ -70,6 +93,77 @@ var ruleDigest = rule{
 // The digest of an image. An empty digest is permitted.
 func Digest(s string) error { return ruleDigest.check(s) }
 
+var ruleDNSCaa = rule{
+	what:    "CAA value",
+	pattern: regexp.MustCompile(`^(0|128) (issue|issuewild|iodef) "[ !#-\[\]-~]{0,255}"$`),
+	echo:    true,
+}
+
+// DNSCaa checks a value with the rule "dnsCaa" of schema/input-rules.json.
+//
+// The value of a CAA record: the flags (0 or 128), the tag and a text in quotation marks. The text has no quotation mark and no backslash.
+func DNSCaa(s string) error { return ruleDNSCaa.check(s) }
+
+var ruleDNSHost = rule{
+	what:      "DNS host name",
+	pattern:   regexp.MustCompile(`^((_[a-z0-9]([a-z0-9-]{0,60}[a-z0-9])?|[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)\.)+[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`),
+	not:       []*regexp.Regexp{regexp.MustCompile(`\.[0-9]+$`)},
+	maxLength: 253,
+	echo:      true,
+}
+
+// DNSHost checks a value with the rule "dnsHost" of schema/input-rules.json.
+//
+// The full host name in the value of a CNAME, NS, MX or SRV record, in lower case, with no dot at the end. A label can start with an underscore. The last label is not a number.
+func DNSHost(s string) error { return ruleDNSHost.check(s) }
+
+var ruleDNSRecordName = rule{
+	what:      "DNS record name",
+	pattern:   regexp.MustCompile(`^(@|\*|(\*\.)?(_[a-z0-9]([a-z0-9-]{0,60}[a-z0-9])?|[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)(\.(_[a-z0-9]([a-z0-9-]{0,60}[a-z0-9])?|[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?))*)$`),
+	maxLength: 200,
+	echo:      true,
+}
+
+// DNSRecordName checks a value with the rule "dnsRecordName" of schema/input-rules.json.
+//
+// The name of a DNS record in its zone, without the name of the zone: "@" for the zone itself, "*" for a wildcard, or labels such as "www", "_dmarc" and "*.dev". A label can start with an underscore.
+func DNSRecordName(s string) error { return ruleDNSRecordName.check(s) }
+
+var ruleDNSSrv = rule{
+	what:      "SRV value",
+	pattern:   regexp.MustCompile(`^(0|[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]) (0|[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]) ((_[a-z0-9]([a-z0-9-]{0,60}[a-z0-9])?|[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)\.)+[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`),
+	not:       []*regexp.Regexp{regexp.MustCompile(`\.[0-9]+$`)},
+	maxLength: 270,
+	echo:      true,
+}
+
+// DNSSrv checks a value with the rule "dnsSrv" of schema/input-rules.json.
+//
+// The value of an SRV record after the priority: the weight, the port and the host name of the target.
+func DNSSrv(s string) error { return ruleDNSSrv.check(s) }
+
+var ruleDNSTxt = rule{
+	what:      "TXT value",
+	pattern:   regexp.MustCompile(`^[ -~]+$`),
+	maxLength: 2048,
+}
+
+// DNSTxt checks a value with the rule "dnsTxt" of schema/input-rules.json.
+//
+// The text of a TXT record: printable ASCII characters. The agent adds the quotation marks and divides a long text into parts of 255 characters.
+func DNSTxt(s string) error { return ruleDNSTxt.check(s) }
+
+var ruleDNSSECKey = rule{
+	what:      "DNSSEC key",
+	pattern:   regexp.MustCompile(`^-----BEGIN PRIVATE KEY-----\n([A-Za-z0-9+/]{1,76}={0,2}\n){1,8}-----END PRIVATE KEY-----\n$`),
+	maxLength: 600,
+}
+
+// DNSSECKey checks a value with the rule "dnssecKey" of schema/input-rules.json.
+//
+// The private DNSSEC key of a zone: an ECDSA P-256 key in the PKCS #8 PEM format. The panel makes it.
+func DNSSECKey(s string) error { return ruleDNSSECKey.check(s) }
+
 var ruleDocumentRoot = rule{
 	what:      "document root",
 	pattern:   regexp.MustCompile(`^(\.|[A-Za-z0-9_-][A-Za-z0-9._-]{0,99}(/[A-Za-z0-9_-][A-Za-z0-9._-]{0,99}){0,7})$`),
@@ -95,6 +189,44 @@ var ruleDomain = rule{
 //
 // A domain name in lower case. Each label has 1 to 63 characters. The last label is not a number, so that the name is not an IP address (audit finding R5).
 func Domain(s string) error { return ruleDomain.check(s) }
+
+var ruleFilePath = rule{
+	what:      "path",
+	pattern:   regexp.MustCompile(`^(/|(/[^/\x00-\x1f\x7f]+)+)$`),
+	not:       []*regexp.Regexp{regexp.MustCompile(`/\.\.?(/|$)`)},
+	maxLength: 1024,
+	echo:      true,
+}
+
+// FilePath checks a value with the rule "filePath" of schema/input-rules.json.
+//
+// The path of a file or a directory in the files of a website, for the file manager. "/" is the directory of the website, which the container has at /app. The path has no empty part, no "." part, no ".." part, no control characters and no "/" at the end.
+func FilePath(s string) error { return ruleFilePath.check(s) }
+
+var ruleGitBranch = rule{
+	what:    "Git branch",
+	pattern: regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/-]{0,99}$`),
+	not:     []*regexp.Regexp{regexp.MustCompile(`\.\.`), regexp.MustCompile(`//`), regexp.MustCompile(`[/.]$`), regexp.MustCompile(`\.lock$`)},
+	echo:    true,
+}
+
+// GitBranch checks a value with the rule "gitBranch" of schema/input-rules.json.
+//
+// The name of a Git branch. It cannot start with "-".
+func GitBranch(s string) error { return ruleGitBranch.check(s) }
+
+var ruleGitRepository = rule{
+	what:      "Git repository",
+	pattern:   regexp.MustCompile(`^(https://[A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?(:[0-9]{1,5})?/[A-Za-z0-9_][A-Za-z0-9._~/-]{0,199}|ssh://[a-z0-9_][a-z0-9_-]{0,31}@[A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?(:[0-9]{1,5})?/[A-Za-z0-9_][A-Za-z0-9._~/-]{0,199}|[a-z0-9_][a-z0-9_-]{0,31}@[A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?:[A-Za-z0-9_][A-Za-z0-9._~/-]{0,199})$`),
+	not:       []*regexp.Regexp{regexp.MustCompile(`\.\.`), regexp.MustCompile(`//[^/]*//`)},
+	maxLength: 300,
+	echo:      true,
+}
+
+// GitRepository checks a value with the rule "gitRepository" of schema/input-rules.json.
+//
+// The address of a Git repository: HTTPS with no user name and no password, SSH as a URL, or the short SSH form "git@host:path". It cannot start with "-", and it cannot name a file or a helper program.
+func GitRepository(s string) error { return ruleGitRepository.check(s) }
 
 var ruleID = rule{
 	what:    "ID",
@@ -167,6 +299,28 @@ var ruleIniValue = rule{
 // A php.ini value. It is on one line and has no double quotes.
 func IniValue(s string) error { return ruleIniValue.check(s) }
 
+var ruleIPv4 = rule{
+	what:    "IPv4 address",
+	pattern: regexp.MustCompile(`^(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3}$`),
+	echo:    true,
+}
+
+// IPv4 checks a value with the rule "ipv4" of schema/input-rules.json.
+//
+// An IPv4 address in the usual form, for the value of an A record.
+func IPv4(s string) error { return ruleIPv4.check(s) }
+
+var ruleIPv6 = rule{
+	what:    "IPv6 address",
+	pattern: regexp.MustCompile(`^(([0-9a-f]{1,4}:){7}[0-9a-f]{1,4}|([0-9a-f]{1,4}:){1,7}:|([0-9a-f]{1,4}:){1,6}:[0-9a-f]{1,4}|([0-9a-f]{1,4}:){1,5}(:[0-9a-f]{1,4}){1,2}|([0-9a-f]{1,4}:){1,4}(:[0-9a-f]{1,4}){1,3}|([0-9a-f]{1,4}:){1,3}(:[0-9a-f]{1,4}){1,4}|([0-9a-f]{1,4}:){1,2}(:[0-9a-f]{1,4}){1,5}|[0-9a-f]{1,4}:(:[0-9a-f]{1,4}){1,6}|:(:[0-9a-f]{1,4}){1,7}|::)$`),
+	echo:    true,
+}
+
+// IPv6 checks a value with the rule "ipv6" of schema/input-rules.json.
+//
+// An IPv6 address in lower case, for the value of an AAAA record. It has only hexadecimal groups and colons: no IPv4 part and no zone.
+func IPv6(s string) error { return ruleIPv6.check(s) }
+
 var ruleMailAddress = rule{
 	what:      "mail address",
 	pattern:   regexp.MustCompile(`^[a-z0-9]([a-z0-9._+-]{0,62}[a-z0-9])?@([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`),
@@ -226,6 +380,39 @@ var ruleRestorePath = rule{
 // The path of a file or a directory in a website. It starts with "/". It has no empty part, no "." part, no ".." part and no "/" at the end.
 func RestorePath(s string) error { return ruleRestorePath.check(s) }
 
+var ruleRoutePath = rule{
+	what:    "route path",
+	pattern: regexp.MustCompile(`^/[a-z0-9]{1,40}/$`),
+	echo:    true,
+}
+
+// RoutePath checks a value with the rule "routePath" of schema/input-rules.json.
+//
+// The path prefix of the route of a website in the edge proxy, for example "/01jbq3z5k8n6/". It starts and ends with a slash, and has 1 to 40 lower-case letters and digits.
+func RoutePath(s string) error { return ruleRoutePath.check(s) }
+
+var ruleSecretName = rule{
+	what:    "name of a deploy secret",
+	pattern: regexp.MustCompile(`^[A-Z_][A-Z0-9_]{0,63}$`),
+	echo:    true,
+}
+
+// SecretName checks a value with the rule "secretName" of schema/input-rules.json.
+//
+// The name of an environment variable that a deploy gives to the build commands.
+func SecretName(s string) error { return ruleSecretName.check(s) }
+
+var ruleSecretValue = rule{
+	what:      "value of a deploy secret",
+	pattern:   regexp.MustCompile(`^[^\x00\n\r]+$`),
+	maxLength: 4096,
+}
+
+// SecretValue checks a value with the rule "secretValue" of schema/input-rules.json.
+//
+// The value of a deploy secret. It is on one line.
+func SecretValue(s string) error { return ruleSecretValue.check(s) }
+
 var ruleSHA256 = rule{
 	what:    "SHA-256 hash",
 	pattern: regexp.MustCompile(`^[0-9a-f]{64}$`),
@@ -274,29 +461,48 @@ func Version(s string) error { return ruleVersion.check(s) }
 // rules has each rule by its name in schema/input-rules.json.
 var rules = map[string]*rule{
 	"commandArgument":    &ruleCommandArgument,
+	"commandLine":        &ruleCommandLine,
+	"cronSchedule":       &ruleCronSchedule,
 	"databaseClientHost": &ruleDatabaseClientHost,
 	"databaseName":       &ruleDatabaseName,
 	"databaseNameSuffix": &ruleDatabaseNameSuffix,
 	"databasePassword":   &ruleDatabasePassword,
 	"digest":             &ruleDigest,
+	"dnsCaa":             &ruleDNSCaa,
+	"dnsHost":            &ruleDNSHost,
+	"dnsRecordName":      &ruleDNSRecordName,
+	"dnsSrv":             &ruleDNSSrv,
+	"dnsTxt":             &ruleDNSTxt,
+	"dnssecKey":          &ruleDNSSECKey,
 	"documentRoot":       &ruleDocumentRoot,
 	"domain":             &ruleDomain,
+	"filePath":           &ruleFilePath,
+	"gitBranch":          &ruleGitBranch,
+	"gitRepository":      &ruleGitRepository,
 	"id":                 &ruleID,
 	"image":              &ruleImage,
 	"imageReference":     &ruleImageReference,
 	"imageTag":           &ruleImageTag,
 	"iniKey":             &ruleIniKey,
 	"iniValue":           &ruleIniValue,
+	"ipv4":               &ruleIPv4,
+	"ipv6":               &ruleIPv6,
 	"mailAddress":        &ruleMailAddress,
 	"mailLocalPart":      &ruleMailLocalPart,
 	"mailPasswordHash":   &ruleMailPasswordHash,
 	"phpExtension":       &ruleExtension,
 	"restorePath":        &ruleRestorePath,
+	"routePath":          &ruleRoutePath,
+	"secretName":         &ruleSecretName,
+	"secretValue":        &ruleSecretValue,
 	"sha256":             &ruleSHA256,
 	"sshKey":             &ruleSSHKey,
 	"unixUser":           &ruleUnixUser,
 	"version":            &ruleVersion,
 }
+
+// The types of DNS record that a user can make.
+var dnsRecordTypes = []string{"A", "AAAA", "CNAME", "MX", "TXT", "SRV", "CAA", "NS"}
 
 // Names that the database servers use (CF-01).
 var reservedDatabaseNames = []string{"mysql", "sys", "information_schema", "performance_schema", "postgres", "template0", "template1", "root", "mariadb.sys", "healthcheck"}
@@ -304,5 +510,26 @@ var reservedDatabaseNames = []string{"mysql", "sys", "information_schema", "perf
 // A database name does not start with one of these (CF-01).
 var reservedDatabasePrefixes = []string{"pg_"}
 
+// MaxBuildCommands: The largest number of build commands of a deploy.
+const MaxBuildCommands = 10
+
 // MaxCommandArguments: The largest number of arguments of a start command.
 const MaxCommandArguments = 32
+
+// MaxCronJobs: The largest number of cron jobs of a website.
+const MaxCronJobs = 20
+
+// MaxDeploySecrets: The largest number of secrets of a deploy.
+const MaxDeploySecrets = 50
+
+// MaxDnsRecordsPerZone: The largest number of records in a DNS zone.
+const MaxDnsRecordsPerZone = 1000
+
+// MinDnsShortTtl: The smallest TTL of a DNS record, in seconds.
+const MinDnsShortTtl = 60
+
+// MaxDnsTtl: The largest TTL of a DNS record, in seconds.
+const MaxDnsTtl = 604800
+
+// MaxDnsZonesPerJob: The largest number of DNS zones in one job of the agent.
+const MaxDnsZonesPerJob = 100

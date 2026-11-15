@@ -136,3 +136,12 @@ func Port(p int32) error {
 	}
 	return nil
 }
+
+// DNSRecordType checks the type of a DNS record: one of the set "dnsRecordTypes" of
+// schema/input-rules.json.
+func DNSRecordType(s string) error {
+	if !slices.Contains(dnsRecordTypes, s) {
+		return fmt.Errorf("validate: %q is not a DNS record type that the agent can write", s)
+	}
+	return nil
+}

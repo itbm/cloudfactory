@@ -11,23 +11,39 @@ import * as live from "./live";
 import type {
   ApiToken,
   BackupPolicy,
+  BrandFields,
   Confirmation,
+  CronJob,
   Customer,
   DatabaseEngine,
   DatabaseLimits,
   DatabasePrivileges,
   DatabaseServer,
+  DnsRecordType,
+  Deploy,
   MailAlias,
   DomainKind,
+  FileContent,
+  FileEntry,
+  FileList,
   HostUpdatePolicy,
   Job,
+  LogLine,
+  Mesh,
   Plan,
+  ResellerBranding,
   ServerRole,
   State,
   PanelCertificateMethod,
   TokenScope,
   UpdatePolicy,
   Website,
+  WebsiteKind,
+  UsageAlert,
+  UsageAlertSettings,
+  UsageHistory,
+  UsageRange,
+  UsageSubject,
   MailCluster,
 } from "./types";
 
@@ -46,7 +62,7 @@ export function emptyState(): State {
   return {
     session: { signedIn: false, user: { id: "", name: "", email: "", role: "owner" }, contextId: "" },
     contexts: [], websites: [], jobs: [], activity: [], notifications: [], servers: [], images: [], rollout: undefined,
-    databaseServers: [], mailDomains: [], mailClusters: [], mailboxes: [], mailAliases: [], databases: [], databaseUsers: [], snapshots: [], plans: [], customers: [], users: [],
+    databaseServers: [], dnsZones: [], nameServers: [], networks: [], usageAlerts: [], alertSettings: { warningPercent: 80, criticalPercent: 95 }, mailDomains: [], mailClusters: [], mailboxes: [], mailAliases: [], databases: [], databaseUsers: [], remoteDatabaseServers: {}, snapshots: [], plans: [], customers: [], users: [],
     backupPolicy: { daily: 7, weekly: 4, monthly: 6, time: "03:00", target: "", credentialNames: [] },
     tokens: [], totpEnabled: false, securityNotices: [], audit: [], joinToken: "", joinCaSha256: undefined,
     panelDomain: "",
@@ -214,12 +230,17 @@ export interface NewWebsite {
   planId: string;
   serverId: string;
   customerId: string;
+  kind?: WebsiteKind;
+  /** The start command of a worker. */
+  command?: string;
 }
 
 export function createWebsite(input: NewWebsite): Promise<{ websiteId: string; job: Promise<Job> }> | { websiteId: string; job: Promise<Job> } {
   return call(async () => {
     const r = await live.request<{ website: live.ApiWebsite; job: live.ApiJob }>("POST", "/websites", {
       // CF-07: only an administrator selects the plan here. The panel uses the plan of the customer.
+      // A private website and a worker have no domain: the name is a short name.
+      kind: input.kind && input.kind !== "public" ? input.kind : undefined, command: input.kind === "worker" ? input.command?.trim() : undefined,
       name: input.name.trim().toLowerCase(), application: input.application, imageId: input.imageId, planId: state.session.contextId === "platform" || state.session.user.role === "administrator" ? input.planId : undefined,
       serverId: input.serverId || undefined, customerId: input.customerId && input.customerId !== "platform" ? input.customerId : undefined,
     });
@@ -325,6 +346,11 @@ export function revertRuntime(websiteId: string) {
   return call(() => live.request<JobAnswer>("POST", `/websites/${websiteId}/runtime/revert`)).then((r) => track(r.job));
 }
 
+/** The start command of a worker. The panel starts a new container with the command. */
+export function setCommand(websiteId: string, command: string) {
+  return call(() => live.request<JobAnswer>("PUT", `/websites/${websiteId}/runtime`, { command: command.trim() })).then((r) => track(r.job));
+}
+
 export function setWorkerMode(websiteId: string, on: boolean) {
   return call(() => live.request<JobAnswer>("PUT", `/websites/${websiteId}/runtime`, { workerMode: on })).then((r) => track(r.job));
 }
@@ -340,6 +366,133 @@ export function setDocumentRoot(websiteId: string, documentRoot: string) {
 
 export function setPhpSettings(websiteId: string, extensions: string[], phpIni: Record<string, string>) {
   return call(() => live.request<JobAnswer>("PUT", `/websites/${websiteId}/runtime`, { extensions, phpIni })).then((r) => track(r.job));
+}
+
+// Files, logs, cron jobs and deploys
+//
+// The panel reads these when the user opens their page, and does not keep them in the state.
+// The agent does each file operation as the Unix user of the website, in the website directory.
+
+const filesOf = (websiteId: string) => `/websites/${websiteId}/files`;
+
+export function listFiles(websiteId: string, path: string): Promise<FileList> {
+  return call(() => live.request<FileList>("GET", `${filesOf(websiteId)}?path=${q(path)}`));
+}
+
+export function readFile(websiteId: string, path: string): Promise<FileContent> {
+  return call(() => live.request<FileContent>("GET", `${filesOf(websiteId)}/content?path=${q(path)}`));
+}
+
+/** Writes a file. With createOnly, the API refuses a path that exists. */
+export function writeFile(websiteId: string, path: string, content: string, options: { encoding?: "utf8" | "base64"; createOnly?: boolean } = {}): Promise<FileEntry> {
+  return call(() => live.request<{ file: FileEntry }>("PUT", `${filesOf(websiteId)}/content`, { path, content, ...options })).then((r) => r.file);
+}
+
+export function makeDirectory(websiteId: string, path: string): Promise<FileEntry> {
+  return call(() => live.request<{ file: FileEntry }>("POST", `${filesOf(websiteId)}/directories`, { path })).then((r) => r.file);
+}
+
+export function moveFile(websiteId: string, from: string, to: string): Promise<FileEntry> {
+  return call(() => live.request<{ file: FileEntry }>("POST", `${filesOf(websiteId)}/move`, { from, to })).then((r) => r.file);
+}
+
+/** Removes a file, or a directory with all that is in it. */
+export function deleteFile(websiteId: string, path: string): Promise<void> {
+  return call(() => live.request<void>("DELETE", `${filesOf(websiteId)}?path=${q(path)}`));
+}
+
+/** The largest file that the panel sends in one request (FileController::MAX_WRITE). */
+export const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
+
+/** The usage history of a website, a server or a database server, for the graphs. */
+export function readUsage(subject: UsageSubject, id: string, range: UsageRange): Promise<UsageHistory> {
+  const base = subject === "website" ? `/websites/${id}` : subject === "server" ? `/servers/${id}` : `/database-servers/${id}`;
+  return call(() => live.request<UsageHistory>("GET", `${base}/usage?range=${range}`));
+}
+
+/** The usage alerts, also the closed ones with state "all". */
+export function listUsageAlerts(state: "open" | "resolved" | "all" = "open"): Promise<UsageAlert[]> {
+  return call(() => live.request<{ data: UsageAlert[] }>("GET", `/usage-alerts?state=${state}`)).then((r) => r.data);
+}
+
+/** An administrator changes the thresholds of the usage alerts. */
+export async function setAlertSettings(settings: UsageAlertSettings): Promise<void> {
+  await call(() => live.request("PUT", "/usage-alerts/settings", settings));
+  await refresh();
+}
+
+/** The last lines of the output of the website container. */
+export function readLogs(websiteId: string, stream: "all" | "access" | "error" = "all", lines = 200): Promise<LogLine[]> {
+  return call(() => live.request<{ lines: LogLine[] }>("GET", `/websites/${websiteId}/logs?lines=${lines}${stream === "all" ? "" : `&stream=${stream}`}`)).then((r) => r.lines);
+}
+
+export function listCronJobs(websiteId: string): Promise<CronJob[]> {
+  return call(() => live.request<{ data: CronJob[] }>("GET", `/websites/${websiteId}/cron-jobs`)).then((r) => r.data);
+}
+
+type CronAnswer = { cronJob: CronJob; job: live.ApiJob | null };
+
+export function addCronJob(websiteId: string, schedule: string, command: string): Promise<CronJob> {
+  return call(() => live.request<CronAnswer>("POST", `/websites/${websiteId}/cron-jobs`, { schedule: schedule.trim().replace(/\s+/g, " "), command: command.trim() })).then((r) => {
+    void track(r.job);
+    return r.cronJob;
+  });
+}
+
+export function setCronJob(websiteId: string, cronJobId: string, change: { schedule?: string; command?: string; enabled?: boolean }): Promise<CronJob> {
+  return call(() => live.request<CronAnswer>("PATCH", `/websites/${websiteId}/cron-jobs/${cronJobId}`, change)).then((r) => {
+    void track(r.job);
+    return r.cronJob;
+  });
+}
+
+export function removeCronJob(websiteId: string, cronJobId: string): Promise<void> {
+  return call(() => live.request<JobAnswer>("DELETE", `/websites/${websiteId}/cron-jobs/${cronJobId}`)).then((r) => void track(r.job));
+}
+
+/** Runs the command of a cron job now. The promise resolves when the command has finished. */
+export function runCronJob(websiteId: string, cronJobId: string): Promise<Job> {
+  return call(() => live.request<JobAnswer>("POST", `/websites/${websiteId}/cron-jobs/${cronJobId}/run`)).then((r) => track(r.job));
+}
+
+export function readDeploy(websiteId: string): Promise<Deploy> {
+  return call(() => live.request<Deploy>("GET", `/websites/${websiteId}/deploy`));
+}
+
+export interface GitSourceInput {
+  repository: string;
+  branch: string;
+  webDirectory: string;
+  trigger: "manual" | "webhook";
+  buildCommands: string[];
+}
+
+/** Connects a Git repository to the website, or changes the connection. */
+export function setGitSource(websiteId: string, input: GitSourceInput): Promise<Deploy> {
+  const body = { ...input, repository: input.repository.trim(), branch: input.branch.trim(), webDirectory: input.webDirectory.trim() || ".", buildCommands: input.buildCommands.map((c) => c.trim()).filter(Boolean) };
+  return call(() => live.request<Deploy>("PUT", `/websites/${websiteId}/deploy`, body));
+}
+
+export function removeGitSource(websiteId: string): Promise<void> {
+  return call(() => live.request<void>("DELETE", `/websites/${websiteId}/deploy`));
+}
+
+export function setDeploySecret(websiteId: string, name: string, value: string): Promise<Deploy> {
+  return call(() => live.request<Deploy>("PUT", `/websites/${websiteId}/deploy/secrets/${q(name.trim())}`, { value }));
+}
+
+export function removeDeploySecret(websiteId: string, name: string): Promise<Deploy> {
+  return call(() => live.request<Deploy>("DELETE", `/websites/${websiteId}/deploy/secrets/${q(name)}`));
+}
+
+/** Starts a deploy of the branch. The job promise resolves when the release is live or has failed. */
+export function startDeploy(websiteId: string): Promise<{ job: Promise<Job> }> {
+  return call(() => live.request<JobAnswer>("POST", `/websites/${websiteId}/deploy/releases`)).then((r) => ({ job: track(r.job) }));
+}
+
+/** Makes a release that the server keeps the live release again. */
+export function activateRelease(websiteId: string, releaseId: string): Promise<{ job: Promise<Job> }> {
+  return call(() => live.request<JobAnswer>("POST", `/websites/${websiteId}/deploy/releases/${releaseId}/activate`)).then((r) => ({ job: track(r.job) }));
 }
 
 // SFTP
@@ -415,12 +568,18 @@ export type GrantInput = { databaseId: string; privileges: DatabasePrivileges };
 // engine and its own limits. The plan of the customer gives the number of its database
 // servers. The plan of a database server gives its limits and the number of its databases.
 
-/** The database servers that a website can use: those of its customer on its server. */
-export function databaseServersFor(s: State, website: Pick<Website, "customerId" | "serverId"> | undefined, engine?: DatabaseEngine): DatabaseServer[] {
+/**
+ * The database servers that a website can use: those of its customer on its server, then those
+ * on a different server that are in a network with the website. The API gives the second group.
+ */
+export function databaseServersFor(s: State, website: Pick<Website, "id" | "customerId" | "serverId"> | undefined, engine?: DatabaseEngine): DatabaseServer[] {
   if (!website) return [];
-  return s.databaseServers
-    .filter((x) => x.customerId === website.customerId && x.serverId === website.serverId && x.status !== "removing" && (!engine || x.engine === engine))
-    .sort((a, b) => a.port - b.port);
+  const remote = s.remoteDatabaseServers[website.id] ?? [];
+  const usable = s.databaseServers.filter((x) => x.customerId === website.customerId && x.status !== "removing" && (!engine || x.engine === engine));
+  return [
+    ...usable.filter((x) => x.serverId === website.serverId).sort((a, b) => a.port - b.port),
+    ...usable.filter((x) => x.serverId !== website.serverId && remote.includes(x.id)).sort((a, b) => a.name.localeCompare(b.name)),
+  ];
 }
 
 function putDatabaseServer(server: live.ApiDatabaseServer) {
@@ -471,6 +630,18 @@ export function retryDatabaseServer(serverId: string): Promise<void> {
     const r = await live.request<{ databaseServer: live.ApiDatabaseServer; job: live.ApiJob }>("POST", `/database-servers/${serverId}/retry`);
     putDatabaseServer(r.databaseServer);
     void track(r.job).then(() => refresh());
+  });
+}
+
+/**
+ * Moves a database server to a different server. Only an administrator. The data goes through
+ * the tunnel between the two servers, and the database server keeps its name and its address.
+ */
+export function moveDatabaseServer(id: string, serverId: string): Promise<void> {
+  return call(async () => {
+    const r = await live.request<{ databaseServer: live.ApiDatabaseServer; jobs: live.ApiJob[] }>("POST", `/database-servers/${id}/move`, { serverId });
+    putDatabaseServer(r.databaseServer);
+    void Promise.all(r.jobs.map((j) => track(j))).then(() => refresh());
   });
 }
 
@@ -695,6 +866,71 @@ export function deleteDatabaseUser(userId: string) {
   return call(() => live.request<JobAnswer>("DELETE", `/websites/${user.websiteId}/database-users/${userId}`)).then((r) => track(r.job)).then(() => refresh());
 }
 
+/** The state of a sign-in to Adminer (GET /v1/adminer-logins/{id}). */
+export interface AdminerLogin {
+  id: string;
+  status: "starting" | "ready" | "failed" | "expired";
+  url: string;
+  databaseName: string;
+  username: string;
+  expiresAt: string;
+}
+
+/** The fields of the sign-in form of Adminer, with the password of the temporary database user. */
+export interface AdminerForm {
+  driver: string;
+  server: string;
+  username: string;
+  password: string;
+  db: string;
+}
+
+/** The time between two checks of a sign-in, and the longest wait for a new Adminer container. */
+export const ADMINER_POLL_MS = 1500;
+const ADMINER_WAIT_MS = 4 * 60 * 1000;
+
+/**
+ * Opens a database in Adminer, with single sign-on. The panel makes a temporary database user
+ * for the database, and starts the Adminer of the customer if necessary. When the two are
+ * ready, the sign-in form goes to Adminer in the window "target". The user types no password,
+ * and the password is never on the screen.
+ */
+export async function openInAdminer(databaseId: string, target: Window, privileges: DatabasePrivileges = "readwrite"): Promise<void> {
+  const db = state.databases.find((x) => x.id === databaseId);
+  if (!db) throw new ApiError("The database does not exist.");
+  const r = await call(() => live.request<{ login: AdminerLogin; form: AdminerForm; jobs: live.ApiJob[] }>("POST", `/websites/${db.websiteId}/databases/${databaseId}/adminer`, { privileges }));
+  for (const job of r.jobs) void track(job).catch(() => undefined);
+  let login = r.login;
+  const until = Date.now() + ADMINER_WAIT_MS;
+  while (login.status === "starting") {
+    if (Date.now() > until) throw new ApiError("Adminer did not start in time. Look at the job on the Jobs page, and try again.");
+    await new Promise((done) => setTimeout(done, ADMINER_POLL_MS));
+    login = (await call(() => live.request<{ login: AdminerLogin }>("GET", `/adminer-logins/${login.id}`))).login;
+  }
+  if (login.status !== "ready") throw new ApiError(login.status === "expired" ? "The sign-in expired. Open the database again." : "The panel could not start Adminer, or could not make the temporary database user. Look at the job on the Jobs page.");
+  postAdminerForm(target, login.url, r.form);
+}
+
+/**
+ * Sends the sign-in form to Adminer in a window of the panel. The form is a POST request, so
+ * the password is not in an address or in the history of the browser.
+ */
+export function postAdminerForm(target: Window, url: string, form: AdminerForm) {
+  const doc = target.document;
+  const el = doc.createElement("form");
+  el.method = "post";
+  el.action = url;
+  for (const [key, value] of Object.entries(form)) {
+    const input = doc.createElement("input");
+    input.type = "hidden";
+    input.name = `auth[${key}]`;
+    input.value = value;
+    el.appendChild(input);
+  }
+  doc.body.appendChild(el);
+  el.submit();
+}
+
 /** FR-307: adds a custom image. The API checks the reference, the tag and the port. */
 export function addImage(name: string, reference: string, tag: string, policy: UpdatePolicy, run: { containerPort?: string; command?: string } = {}) {
   const port = run.containerPort?.trim() ? Number(run.containerPort) : null;
@@ -738,9 +974,158 @@ export function rollBackAll() {
   return call(() => live.request("POST", `/rollouts/${r.id}/roll-back`)).then(() => refresh());
 }
 
+// Private networks
+
+/** The members of a network: the IDs of its websites and of its database servers. */
+export interface NetworkMembers { websiteIds: string[]; databaseServerIds: string[] }
+
+const networkName = (name: string) => name.trim().toLowerCase();
+
+/** Makes a named network for a customer. The plan of the customer gives the number of them. */
+export function createNetwork(name: string, customerId: string, members: NetworkMembers): Promise<void> {
+  return call(async () => {
+    await live.request("POST", "/networks", { name: networkName(name), customerId: customerId || undefined, ...members });
+    await refresh();
+  });
+}
+
+/** Changes the members of a network and, for a named network, its name. */
+export function saveNetwork(networkId: string, name: string | undefined, members: NetworkMembers): Promise<void> {
+  return call(async () => {
+    await live.request("PATCH", `/networks/${networkId}`, { name: name === undefined ? undefined : networkName(name), ...members });
+    await refresh();
+  });
+}
+
+/** Removes a named network. Its members stay. */
+export function deleteNetwork(networkId: string): Promise<void> {
+  return call(async () => {
+    await live.request("DELETE", `/networks/${networkId}`);
+    await refresh();
+  });
+}
+
+// DNS hosting
+
+type DnsJobs = { jobs: live.ApiJob[] };
+
+function putDnsZone(zone: live.ApiDnsZone) {
+  update((d) => {
+    const next = live.toDnsZone(zone);
+    d.dnsZones = d.dnsZones.some((x) => x.id === next.id) ? d.dnsZones.map((x) => (x.id === next.id ? next : x)) : [...d.dnsZones, next].sort((a, b) => a.name.localeCompare(b.name));
+  });
+}
+
+/** Follows the jobs of a change of a zone: one job for each DNS server. Then it reads the zone again. */
+function trackZone(zoneId: string, jobs: live.ApiJob[]) {
+  update((d) => {
+    const z = d.dnsZones.find((x) => x.id === zoneId);
+    if (z && jobs.length && z.status !== "removing") z.status = "updating";
+  });
+  void Promise.all(jobs.map((j) => track(j))).then(() => showDnsZone(zoneId)).catch(() => undefined);
+}
+
+/** Reads the records of a zone. The zone page calls it when it opens. */
+export async function showDnsZone(zoneId: string): Promise<void> {
+  try {
+    const zone = await live.dnsZone(zoneId);
+    update((d) => {
+      d.dnsZones = d.dnsZones.some((x) => x.id === zone.id) ? d.dnsZones.map((x) => (x.id === zone.id ? zone : x)) : [...d.dnsZones, zone];
+    });
+  } catch {
+    // The zone is removed, or the API does not answer. The page shows what the panel has.
+  }
+}
+
+/** Makes a zone for a domain of a customer. The promise gives the ID of the zone. */
+export function createDnsZone(name: string, customerId?: string): Promise<string> {
+  return call(async () => {
+    const r = await live.request<{ zone: live.ApiDnsZone } & DnsJobs>("POST", "/dns-zones", { name: name.trim().toLowerCase().replace(/\.$/, ""), customerId: customerId || undefined });
+    putDnsZone(r.zone);
+    trackZone(r.zone.id, r.jobs);
+    return r.zone.id;
+  });
+}
+
+/** Removes a zone and all its records from each DNS server. */
+export function deleteDnsZone(zoneId: string): Promise<void> {
+  return call(async () => {
+    const r = await live.request<DnsJobs>("DELETE", `/dns-zones/${zoneId}`);
+    update((d) => {
+      const z = d.dnsZones.find((x) => x.id === zoneId);
+      if (z) z.status = "removing";
+    });
+    void Promise.all(r.jobs.map((j) => track(j))).then(() => refresh()).catch(() => undefined);
+    if (r.jobs.length === 0) void refresh();
+  });
+}
+
+export interface DnsRecordInput {
+  type: DnsRecordType;
+  name: string;
+  value: string;
+  ttl: number;
+  /** Only for an MX or an SRV record. */
+  priority?: number;
+}
+
+/** Adds a record, or changes the record with the ID. The type of a record does not change. */
+export function saveDnsRecord(zoneId: string, input: DnsRecordInput, recordId?: string): Promise<void> {
+  return call(async () => {
+    const body = { type: recordId ? undefined : input.type, name: input.name.trim() || "@", value: input.value.trim(), ttl: input.ttl, priority: input.priority };
+    const r = await live.request<{ record: live.ApiDnsRecord } & DnsJobs>(recordId ? "PATCH" : "POST", `/dns-zones/${zoneId}/records${recordId ? `/${recordId}` : ""}`, body);
+    update((d) => {
+      const z = d.dnsZones.find((x) => x.id === zoneId);
+      if (!z?.records) return;
+      const next = live.toDnsRecord(r.record);
+      z.records = recordId ? z.records.map((x) => (x.id === recordId ? next : x)) : [...z.records, next];
+      z.recordCount = z.records.length;
+    });
+    trackZone(zoneId, r.jobs);
+  });
+}
+
+export function deleteDnsRecord(zoneId: string, recordId: string): Promise<void> {
+  return call(async () => {
+    const r = await live.request<DnsJobs>("DELETE", `/dns-zones/${zoneId}/records/${recordId}`);
+    update((d) => {
+      const z = d.dnsZones.find((x) => x.id === zoneId);
+      if (!z?.records) return;
+      z.records = z.records.filter((x) => x.id !== recordId);
+      z.recordCount = z.records.length;
+    });
+    trackZone(zoneId, r.jobs);
+  });
+}
+
+/** Turns DNSSEC on or off. With DNSSEC on, the zone then has the DS record for the registrar. */
+export function setDnssec(zoneId: string, enabled: boolean): Promise<void> {
+  return call(async () => {
+    const r = await live.request<{ zone: live.ApiDnsZone } & DnsJobs>("PUT", `/dns-zones/${zoneId}/dnssec`, { enabled });
+    putDnsZone(r.zone);
+    trackZone(zoneId, r.jobs);
+  });
+}
+
+/** Asks the public DNS again for the name servers of the domain. */
+export function checkDnsZone(zoneId: string): Promise<void> {
+  return call(async () => {
+    putDnsZone(await live.request<live.ApiDnsZone>("POST", `/dns-zones/${zoneId}/check`));
+  });
+}
+
+/** Sends the zone to each DNS server again, for example after a job failed. */
+export function syncDnsZone(zoneId: string): Promise<void> {
+  return call(async () => {
+    const r = await live.request<{ zone: live.ApiDnsZone } & DnsJobs>("POST", `/dns-zones/${zoneId}/sync`);
+    putDnsZone(r.zone);
+    trackZone(zoneId, r.jobs);
+  });
+}
+
 // Servers (FR-1112 to FR-1118, FR-1201)
 
-export function setServer(serverId: string, change: { updatePolicy?: HostUpdatePolicy; maintenanceWindow?: string; gvisorPlatform?: "systrap" | "kvm"; roles?: ServerRole[] }) {
+export function setServer(serverId: string, change: { updatePolicy?: HostUpdatePolicy; maintenanceWindow?: string; gvisorPlatform?: "systrap" | "kvm"; roles?: ServerRole[]; dnsName?: string | null }) {
   // A new gVisor platform makes a job that writes the units again (ConfigureHost).
   return call(() => live.request<JobAnswer>("PATCH", `/servers/${serverId}`, change)).then((r) => (r?.job ? track(r.job).then(() => undefined) : refresh()));
 }
@@ -805,6 +1190,57 @@ export function setPanelCertificate(method: PanelCertificateMethod) {
     update((d) => { d.panelCertificate = live.toPanelCertificate(r); });
     return track(r.job);
   });
+}
+
+// The mesh: the encrypted tunnels between the servers
+//
+// Each change gives the jobs that send the new state to the servers. The page shows the
+// result of each job, and the servers report the state of each tunnel each minute.
+
+type MeshJobs = { jobs?: live.ApiJob[] };
+
+/** Waits for the jobs of a change to the mesh, then reads the mesh again. */
+const trackAll = (jobs: live.ApiJob[] = []) => (jobs.length > 0 ? Promise.all(jobs.map((job) => track(job))).then(() => undefined) : refresh());
+
+/** Changes the address range or the UDP port of the mesh. Possible only while the mesh has no tunnel. */
+export function setMesh(change: { range?: string; port?: number }) {
+  return call(() => live.request<Mesh>("PATCH", "/mesh", change)).then((mesh) => update((d) => { d.mesh = mesh; }));
+}
+
+/**
+ * Makes a tunnel between two servers. The promise is complete when the API accepts the
+ * request, so that a dialog can show an error of the API. The jobs continue after that.
+ */
+export function makeTunnel(serverA: string, serverB: string) {
+  return call(() => live.request<MeshJobs>("POST", "/mesh/tunnels", { servers: [serverA, serverB] })).then((r) => { void trackAll(r.jobs); });
+}
+
+/** Sends the mesh state to the two servers of a tunnel again. Each server then tests the tunnel. */
+export function repairTunnel(tunnelId: string) {
+  return call(() => live.request<MeshJobs>("POST", `/mesh/tunnels/${tunnelId}/repair`)).then((r) => trackAll(r.jobs));
+}
+
+export function removeTunnel(tunnelId: string) {
+  return call(() => live.request<MeshJobs>("DELETE", `/mesh/tunnels/${tunnelId}`)).then((r) => trackAll(r.jobs));
+}
+
+/**
+ * Sets the public IP address for the tunnel traffic of a server. Null: the panel finds the
+ * address. The promise is complete when the API accepts the address.
+ */
+export function setTunnelAddress(serverId: string, tunnelAddress: string | null) {
+  return call(() => live.request<Mesh & MeshJobs>("PATCH", `/mesh/servers/${serverId}`, { tunnelAddress })).then(({ jobs, ...mesh }) => {
+    update((d) => { d.mesh = mesh; });
+    void trackAll(jobs);
+  });
+}
+
+/**
+ * Makes a new tunnel key on a server. The private key does not leave the server. The tunnels
+ * of the server do not operate until its peers have the new public key.
+ */
+export function rotateTunnelKey(serverId: string) {
+  return call(() => live.request<JobAnswer>("POST", `/mesh/servers/${serverId}/rotate-key`)).then((r) => track(r.job));
 }
 
 // Customers, plans and branding (FR-102, FR-106, FR-202)
@@ -879,9 +1315,33 @@ export function setCustomer(customerId: string, change: Partial<Pick<Customer, "
   return call(() => live.request("PATCH", `/customers/${customerId}`, change)).then(() => refresh());
 }
 
+// White label
+
+/** The default brand that the administrator sets. Only an administrator can read it. */
+export function defaultBrand(): Promise<BrandFields> {
+  return call(() => live.request<BrandFields & Record<string, unknown>>("GET", "/brand/default"));
+}
+
+/** Changes the default brand. A null value removes the field. */
+export function saveDefaultBrand(change: { [K in keyof BrandFields]?: BrandFields[K] | null }) {
+  return call(() => live.request<BrandFields>("PUT", "/brand/default", change)).then(async (r) => {
+    await refresh();
+    return r;
+  });
+}
+
+/**
+ * Changes the brand of a reseller. A null value removes the field. A new panel domain, name
+ * server host name or mail host name needs a proof of control: the error message gives the
+ * TXT record.
+ */
+export function saveResellerBrand(customerId: string, change: { [K in keyof ResellerBranding]?: ResellerBranding[K] | null }) {
+  return call(() => live.request("PATCH", `/customers/${customerId}`, { branding: change })).then(() => refresh());
+}
+
 export function savePlan(plan: Plan) {
   const exists = state.plans.some((p) => p.id === plan.id);
-  const body = { name: plan.name.trim(), websites: plan.websites, mailboxes: plan.mailboxes, mailStorageBytes: plan.mailStorageBytes, databases: plan.databases, phpExtensions: plan.phpExtensions, limits: plan.limits, databaseServers: plan.databaseServers, databaseLimits: plan.databaseLimits };
+  const body = { name: plan.name.trim(), websites: plan.websites, mailboxes: plan.mailboxes, mailStorageBytes: plan.mailStorageBytes, databases: plan.databases, phpExtensions: plan.phpExtensions, limits: plan.limits, databaseServers: plan.databaseServers, databaseLimits: plan.databaseLimits, dnsZones: plan.dnsZones, networks: plan.networks };
   return call(() => live.request(exists ? "PATCH" : "POST", exists ? `/plans/${plan.id}` : "/plans", body)).then(() => refresh());
 }
 

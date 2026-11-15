@@ -1,0 +1,170 @@
+package actions
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"time"
+
+	agentv1 "github.com/itbm/cloudfactory/agent/gen/cloudfactory/agent/v1"
+	"github.com/itbm/cloudfactory/agent/internal/sitefiles"
+	"github.com/itbm/cloudfactory/agent/internal/validate"
+)
+
+// The file manager and the logs of the panel. These functions do not make a job: the panel
+// waits for the answer. Each of them runs a command as the Unix user of the website, so the
+// kernel limits it to the files of that website. The agent never opens a file of a website
+// as root or as its own user.
+
+// ErrUnknownWebsite is the error for a website that the agent does not have.
+var ErrUnknownWebsite = errors.New("the agent does not know this website")
+
+// FileError is an error of a file operation with a code of the package sitefiles.
+type FileError struct {
+	Code string
+	Text string
+}
+
+func (e *FileError) Error() string { return e.Text }
+
+// agentBinary is the program of the agent. The website user can run it: the file manager
+// starts it as that user ("cf-agent site-files").
+func (d *Deps) agentBinary() string {
+	if d.AgentBinary != "" {
+		return d.AgentBinary
+	}
+	return "/usr/local/bin/cf-agent"
+}
+
+// knownSite gives a website of the state.
+func (d *Deps) knownSite(websiteID string) (*Site, error) {
+	if err := validate.ID(websiteID); err != nil {
+		return nil, &FileError{Code: sitefiles.CodeInvalid, Text: err.Error()}
+	}
+	site, err := d.State.Get(websiteID)
+	if err != nil {
+		return nil, err
+	}
+	if site == nil {
+		return nil, ErrUnknownWebsite
+	}
+	return site, nil
+}
+
+// Files does one file operation in the directory of a website, as the Unix user of the
+// website.
+func (d *Deps) Files(ctx context.Context, websiteID string, req sitefiles.Request) (sitefiles.Response, error) {
+	var resp sitefiles.Response
+	site, err := d.knownSite(websiteID)
+	if err != nil {
+		return resp, err
+	}
+	paths := []string{req.Path}
+	if req.Op == sitefiles.OpMove {
+		paths = append(paths, req.To)
+	}
+	for _, p := range paths {
+		if err := sitefiles.CheckPath(p); err != nil {
+			return resp, &FileError{Code: sitefiles.CodeInvalid, Text: err.Error()}
+		}
+	}
+	if len(req.Content) > sitefiles.MaxWrite {
+		return resp, &FileError{Code: sitefiles.CodeTooLarge, Text: "the file is too large for the file manager; use SFTP"}
+	}
+	in, err := json.Marshal(req)
+	if err != nil {
+		return resp, err
+	}
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+	out, err := d.Run.RunInput(ctx, string(in), "runuser", "-u", site.UnixUser, "--", d.agentBinary(), "site-files", d.Host.AppDir(site.UnixUser))
+	if err != nil {
+		return resp, fmt.Errorf("the file manager did not start: %w", err)
+	}
+	if err := json.Unmarshal([]byte(out), &resp); err != nil {
+		return resp, errors.New("the file manager gave no answer")
+	}
+	if resp.Code != "" {
+		return resp, &FileError{Code: resp.Code, Text: resp.Error}
+	}
+	return resp, nil
+}
+
+// FileEntry gives an entry of the file manager as a message for the panel.
+func FileEntry(e sitefiles.Entry) *agentv1.FileEntry {
+	return &agentv1.FileEntry{
+		Name: e.Name, Type: e.Type, SizeBytes: e.SizeBytes, Target: e.Target,
+		Modified: e.Modified.UTC().Format(time.RFC3339), Mode: fmt.Sprintf("%04o", e.Mode),
+	}
+}
+
+// logFile is the file that has the output of the containers of a website. Podman writes it
+// (quadlet.Website.LogFile), and the website user owns it.
+func (d *Deps) logFile(unixUser string) string {
+	return filepath.Join(d.Host.Home(unixUser), "website.log")
+}
+
+// The limits of GetLogs.
+const (
+	defaultLogLines = 200
+	maxLogLines     = 2000
+	maxLogLineBytes = 4000
+)
+
+// Logs gives the last lines of the output of the containers of a website. The standard
+// output has the access log, and the standard error has the errors.
+func (d *Deps) Logs(ctx context.Context, websiteID string, lines int) ([]*agentv1.LogLine, error) {
+	site, err := d.knownSite(websiteID)
+	if err != nil {
+		return nil, err
+	}
+	if lines <= 0 {
+		lines = defaultLogLines
+	}
+	lines = min(lines, maxLogLines)
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	out, err := d.Run.Run(ctx, "runuser", "-u", site.UnixUser, "--", "tail", "-n", strconv.Itoa(lines), d.logFile(site.UnixUser))
+	if err != nil {
+		// A website that did not start after this release has no log file yet.
+		return nil, nil
+	}
+	return parseLogs(out), nil
+}
+
+// parseLogs reads lines in the "k8s-file" format of Podman:
+// "<time> <stdout|stderr> <F|P> <text>". It ignores a line with a different format.
+func parseLogs(out string) []*agentv1.LogLine {
+	var lines []*agentv1.LogLine
+	for _, raw := range strings.Split(out, "\n") {
+		parts := strings.SplitN(raw, " ", 4)
+		if len(parts) < 3 {
+			continue
+		}
+		at, err := time.Parse(time.RFC3339Nano, parts[0])
+		if err != nil {
+			continue
+		}
+		stream := "access"
+		switch parts[1] {
+		case "stdout":
+		case "stderr":
+			stream = "error"
+		default:
+			continue
+		}
+		text := ""
+		if len(parts) == 4 {
+			text = strings.ToValidUTF8(parts[3], "�")
+		}
+		if len(text) > maxLogLineBytes {
+			text = strings.ToValidUTF8(text[:maxLogLineBytes], "") + "…"
+		}
+		lines = append(lines, &agentv1.LogLine{At: at.UTC().Format(time.RFC3339Nano), Stream: stream, Text: text})
+	}
+	return lines
+}

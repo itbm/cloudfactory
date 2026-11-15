@@ -58,6 +58,20 @@ func CheckWebsite(w *agentv1.Website) error {
 	if primary == 0 && len(w.GetDomains()) > 0 {
 		errs = append(errs, errors.New("a website with domains must have a primary domain"))
 	}
+	// A worker has no public address.
+	if w.GetWorker() && len(w.GetDomains()) > 0 {
+		errs = append(errs, errors.New("a worker cannot have domains"))
+	}
+	// A route with a path prefix shares its domain with other websites. A redirect domain
+	// would send all paths of the domain to one of them.
+	if w.GetRoutePath() != "" {
+		errs = append(errs, validate.RoutePath(w.GetRoutePath()))
+		for _, d := range w.GetDomains() {
+			if d.GetKind() == "redirect" {
+				errs = append(errs, errors.New("a website with a route path cannot have a redirect domain"))
+			}
+		}
+	}
 	_, err := instanceKey(w.GetDatabaseInstance())
 	return errors.Join(append(errs, err)...)
 }
@@ -83,8 +97,26 @@ func (d *Deps) pullImage(ctx context.Context, w *agentv1.Website) error {
 	if d.shared(w) {
 		return d.Images.Ensure(ctx, imageRef(w))
 	}
-	_, err := d.Host.Podman(ctx, w.GetUnixUser(), "pull", "--quiet", imageRef(w))
+	_, err := d.Host.Podman(ctx, w.GetUnixUser(), userPull(d.Images != nil, imageRef(w))...)
 	return err
+}
+
+// userPull gives the Podman arguments for a pull by a website user: a custom image, or an
+// image with no digest.
+//
+// With a shared image store, the storage settings of a website user have the shared stores.
+// Podman finds a layer of the new image there, for example the empty layer that most images
+// have, and copies it. The copy fails, because the user cannot read all files of a layer that
+// root pulled ("tar-split.gz: permission denied"). A storage option on the command line
+// replaces all storage options of the settings file. Thus this pull does not use the shared
+// stores, and the user gets a full copy of the image. The option is the mount program of the
+// settings file (images.Store).
+func userPull(sharedStore bool, ref string) []string {
+	args := []string{"pull", "--quiet", ref}
+	if sharedStore {
+		args = append([]string{"--storage-opt", "overlay.mount_program=" + images.FuseOverlayfs}, args...)
+	}
+	return args
 }
 
 // removeOldImage removes the previous image of a website from the storage of the website user,
@@ -215,16 +247,18 @@ func (d *Deps) unit(w *agentv1.Website, port int, suffix string) quadlet.Website
 		ID: w.GetId(), Name: primaryDomain(w), UnixUser: w.GetUnixUser(), Image: imageRef(w), Port: port,
 		SiteDir: d.Host.AppDir(w.GetUnixUser()), IniFile: d.iniPath(w.GetUnixUser(), suffix),
 		Runtime: w.GetRuntime(), WorkerMode: w.GetWorkerMode(), Gvisor: d.runtime(), Suffix: suffix,
-		DocumentRoot: documentRoot(w), ContainerPort: int(w.GetContainerPort()), Command: w.GetCommand(),
+		DocumentRoot: documentRoot(w), ContainerPort: int(w.GetContainerPort()), Command: w.GetCommand(), Worker: w.GetWorker(),
 		// The database host names of the container point to the database containers of the
 		// customer of the website.
 		DatabaseAddress: d.databaseAddress(w.GetId()),
+		HostsFile:       d.hostsFileOf(w.GetUnixUser()),
+		LogFile:         d.logFile(w.GetUnixUser()),
 		Limits:          quadlet.Limits{VCPUs: l.GetVcpus(), MemoryBytes: l.GetMemoryBytes(), Processes: l.GetProcesses(), DiskIOBytesPerSecond: l.GetDiskIoBytesPerSecond(), BlockDevice: d.BlockDevice},
 	}
 }
 
 func (d *Deps) site(w *agentv1.Website, port int) caddy.Site {
-	s := caddy.Site{WebsiteID: w.GetId(), Port: port, Primary: primaryDomain(w)}
+	s := caddy.Site{WebsiteID: w.GetId(), Port: port, Primary: primaryDomain(w), Path: w.GetRoutePath()}
 	for _, dom := range w.GetDomains() {
 		if dom.GetKind() == "redirect" {
 			s.Redirects = append(s.Redirects, dom.GetName())
@@ -301,6 +335,39 @@ func (d *Deps) waitReady(ctx context.Context, port int, hostname string) error {
 	}
 }
 
+// workerSettle is the time that the container of a worker must operate before the agent
+// reports that it started. A command that stops immediately, for example a command with a
+// wrong name, fails the job in this time.
+const workerSettle = 5 * time.Second
+
+// waitSite waits until the container of a website operates. A website must answer on its
+// port. A worker serves no HTTP: its service must be active, and stay active for a short time.
+func (d *Deps) waitSite(ctx context.Context, w *agentv1.Website, port int, suffix string) error {
+	if !w.GetWorker() {
+		return d.waitReady(ctx, port, primaryDomain(w))
+	}
+	settle := workerSettle
+	if d.ReadyTimeout > 0 && d.ReadyTimeout < settle {
+		settle = d.ReadyTimeout
+	}
+	service := quadlet.Website{UnixUser: w.GetUnixUser(), Suffix: suffix}.ServiceName()
+	for end := time.Now().Add(settle); ; {
+		// systemd starts a container again after it stops (Restart=always). Between two
+		// starts, the service is not active.
+		if _, err := d.Host.Systemctl(ctx, w.GetUnixUser(), "is-active", service); err != nil {
+			return fmt.Errorf("the container of the worker does not operate. Examine the start command and the logs: %w", err)
+		}
+		if !time.Now().Before(end) {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(min(time.Second, settle)):
+		}
+	}
+}
+
 // watch checks the website for some time after a change. A check passes when the website
 // gives the expected status, for example 200. The watch fails when the share of failed checks
 // is more than maxErrorRate (FR-1104, FR-1105).
@@ -369,7 +436,9 @@ func (d *Deps) CreateWebsite(req *agentv1.WebsiteRequest) (jobs.Job, error) {
 			if _, err := d.useDatabases(instance, w.GetId()); err != nil {
 				return err
 			}
-			if err := d.Host.EnsureUser(ctx, user); err != nil {
+			// On a server with no user quotas, the new user gets a disk image with the size
+			// of the disk limit (sitedisk.go).
+			if err := d.ensureWebsiteUser(ctx, user, max(w.GetLimits().GetDiskBytes(), 0)); err != nil {
 				return err
 			}
 			if err := d.applyDiskQuota(ctx, user, w.GetLimits()); err != nil {
@@ -409,7 +478,7 @@ func (d *Deps) CreateWebsite(req *agentv1.WebsiteRequest) (jobs.Job, error) {
 			if err := d.startContainer(ctx, w, port, ""); err != nil {
 				return err
 			}
-			return d.waitReady(ctx, port, primaryDomain(w))
+			return d.waitSite(ctx, w, port, "")
 		}},
 		{Name: "Configure edge proxy", Do: func(ctx context.Context) error {
 			if err := d.Edge.EnsureBase(ctx); err != nil {
@@ -667,7 +736,12 @@ func (d *Deps) SetRuntime(req *agentv1.WebsiteRequest) (jobs.Job, error) {
 				if _, err := d.Host.Systemctl(ctx, user, "daemon-reload"); err != nil {
 					return err
 				}
-				return d.State.Put(&Site{ID: w.GetId(), UnixUser: user, Port: newPort, Suffix: newSuffix, Website: w, Stopped: true})
+				if err := d.State.Put(&Site{ID: w.GetId(), UnixUser: user, Port: newPort, Suffix: newSuffix, Website: w, Stopped: true}); err != nil {
+					return err
+				}
+				// A website that is a network member answers on its new port.
+				d.syncNetworkLater(ctx)
+				return nil
 			}
 			newSuffix = "-b"
 			if old.Suffix == "-b" {
@@ -685,7 +759,7 @@ func (d *Deps) SetRuntime(req *agentv1.WebsiteRequest) (jobs.Job, error) {
 			if old.Stopped {
 				return nil
 			}
-			return d.waitReady(ctx, newPort, hostname)
+			return d.waitSite(ctx, w, newPort, newSuffix)
 		}},
 		{Name: "Switch traffic", Do: func(ctx context.Context) error {
 			if old.Stopped {
@@ -695,6 +769,10 @@ func (d *Deps) SetRuntime(req *agentv1.WebsiteRequest) (jobs.Job, error) {
 				return err
 			}
 			switched = true
+			// A worker serves no HTTP, so it has no health check after the switch.
+			if w.GetWorker() {
+				return nil
+			}
 			return d.watch(ctx, newPort, hostname, req.GetHealthCheck())
 		}},
 		{Name: "Stop old container", Do: func(ctx context.Context) error {
@@ -707,6 +785,8 @@ func (d *Deps) SetRuntime(req *agentv1.WebsiteRequest) (jobs.Job, error) {
 			// From here, the website uses the new container. If the old container does not
 			// stop, the job fails, but the new container continues.
 			committed = true
+			// A website that is a network member answers on its new port.
+			d.syncNetworkLater(ctx)
 			if err := d.stopContainer(ctx, user, old.Suffix); err != nil {
 				return err
 			}
@@ -802,7 +882,7 @@ func (d *Deps) DeleteWebsite(req *agentv1.DeleteWebsiteRequest) (jobs.Job, error
 			if err := d.removeSftpKeys(ctx, user); err != nil {
 				return err
 			}
-			if err := d.Host.RemoveUser(ctx, user); err != nil {
+			if err := d.removeWebsiteUser(ctx, user); err != nil {
 				return err
 			}
 			if err := d.State.Delete(req.GetWebsiteId()); err != nil {
@@ -819,6 +899,8 @@ func (d *Deps) DeleteWebsite(req *agentv1.DeleteWebsiteRequest) (jobs.Job, error
 				if err := d.syncDatabaseAccess(ctx); err != nil {
 					return err
 				}
+			} else {
+				d.syncNetworkLater(ctx)
 			}
 			d.PruneImages()
 			return nil
@@ -872,7 +954,7 @@ func (d *Deps) SetWebsitePower(req *agentv1.SetWebsitePowerRequest) (jobs.Job, e
 			if action == "stop" {
 				return nil
 			}
-			return d.waitReady(ctx, site.Port, primaryDomain(site.Website))
+			return d.waitSite(ctx, site.Website, site.Port, site.Suffix)
 		}},
 	}}, nil
 }
@@ -896,6 +978,11 @@ func (d *Deps) SetLimits(req *agentv1.SetLimitsRequest) (jobs.Job, error) {
 			if site == nil {
 				return errors.New("the agent does not know this website")
 			}
+			// The disk limit is first: a disk image that cannot become smaller stops the job
+			// before a different limit changes.
+			if err := d.changeDiskLimit(ctx, site, l.GetDiskBytes()); err != nil {
+				return err
+			}
 			w := proto.Clone(site.Website).(*agentv1.Website)
 			w.Limits = l
 			u := d.unit(w, site.Port, site.Suffix)
@@ -904,9 +991,6 @@ func (d *Deps) SetLimits(req *agentv1.SetLimitsRequest) (jobs.Job, error) {
 				return err
 			}
 			if _, err := d.Host.Systemctl(ctx, site.UnixUser, "daemon-reload"); err != nil {
-				return err
-			}
-			if err := d.applyDiskQuota(ctx, site.UnixUser, l); err != nil {
 				return err
 			}
 			// The limits are on the cgroup of the service (quadlet.Runtime.GlobalArgs). A
@@ -923,8 +1007,9 @@ func (d *Deps) SetLimits(req *agentv1.SetLimitsRequest) (jobs.Job, error) {
 	}}, nil
 }
 
-// applyDiskQuota sets the disk limit of a website user (FR-202), when the server has user
-// quotas. The status report tells the panel when it does not.
+// applyDiskQuota sets the user quota of a website user (FR-202), when the server has user
+// quotas. With no user quotas, a website has a disk image (sitedisk.go), or the status report
+// tells the panel that the server does not apply the disk limit.
 //
 // The function also sets the quota of a website with no disk limit, to remove a limit: the
 // website can have a limit from an earlier plan, and a new user can get the UID of a user

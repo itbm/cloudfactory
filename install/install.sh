@@ -84,6 +84,8 @@ DATABASE_UID_MAX=19999
 WEBSITE_SMTP=0
 WEBSITE_NETWORKS=""
 # The script turns on user quotas, which apply the disk limits, unless the operator refuses it.
+# Without user quotas, the agent makes a disk image for each new website and each new database
+# server that has a disk limit.
 DISK_QUOTAS=1
 
 usage() {
@@ -124,8 +126,9 @@ Options:
                        and link-local networks and the services of this server. You can
                        give this option more than one time.
   --no-disk-quotas     Do not turn on user quotas on the file systems of the websites and the
-                       database servers. The server then does not apply the disk limit of a
-                       website, unless you turn on the quotas yourself.
+                       database servers. Each new website and each new database server with
+                       a disk limit then gets a disk image, unless you turn on the quotas
+                       yourself.
   --check              Do only the checks. Do not change the system.
   --help               Show this help.
 USAGE
@@ -326,12 +329,31 @@ firewall_rules() {
 		website_networks="$website_networks    $family daddr $network accept
 "
 	done
+	# DNS hosting: on a server that has DNS zones, the agent adds two rules for the DNS server
+	# to the file of this script (setDnsRules in agent/internal/actions/dns.go). When the script
+	# runs again, it keeps them. A rootless container cannot open port 53, so the firewall
+	# redirects port 53 to port 8053 of the DNS container.
+	dns_accept=""
+	dns_redirect=""
+	if grep -q '# cloudfactory-dns$' "$ROOT/etc/nftables.d-cloudfactory.nft" 2>/dev/null; then
+		dns_accept="
+    meta l4proto { tcp, udp } th dport { 53, 8053 } accept # cloudfactory-dns"
+		dns_redirect="
+    meta l4proto { tcp, udp } th dport 53 redirect to :8053 # cloudfactory-dns"
+	fi
 	smtp_rule="tcp dport 25 jump refuse"
 	[ "$WEBSITE_SMTP" -eq 1 ] && smtp_rule="# The option --allow-website-smtp: the websites can connect to port 25."
 	cat <<NFT
 table inet cloudfactory
 delete table inet cloudfactory
 table inet cloudfactory {
+  # The move of a database server: the mesh address of the server that sends the data, the
+  # mesh address of this server and the transfer port. The root helper adds an element for
+  # one move only, with a time limit.
+  set mesh_transfers {
+    typeof ip saddr . ip daddr . tcp dport
+    flags timeout
+  }
   # Each customer has its own database servers on a server, on one address of the network
   # $DATABASE_NETWORK. Each database server has its own port on that address. Each element is
   # the UID of a website, the address of its customer, and the port of a database server of
@@ -340,12 +362,75 @@ table inet cloudfactory {
   set database_access {
     typeof meta skuid . ip daddr . tcp dport
   }
+  # The networks of the customers. A network member is a database server or a website with a
+  # name and an address of the mesh range. The agent writes the elements in its file network.nft.
+  # The UID of a website of this server, the address of a member, and the port of the member.
+  set network_access {
+    typeof meta skuid . ip daddr . tcp dport
+  }
+  # The mesh address of a different server, the address of a member of this server, and the
+  # port of the member.
+  set mesh_access {
+    typeof ip saddr . ip daddr . tcp dport
+  }
+  # The address and the port of a member of this server give the address and the port of
+  # its container on the database network.
+  map mesh_members {
+    typeof ip daddr . tcp dport : ip daddr . tcp dport
+  }
+  # A database server sees each website container as $DATABASE_CLIENT_ADDRESS. A connection from a
+  # tunnel to a member gets the same source address, so the users of the databases do not
+  # change when a website is on a different server.
+  chain mesh_input_nat {
+    type nat hook input priority 100;
+    iifname "cf-mesh" ct status dnat snat ip to $DATABASE_CLIENT_ADDRESS
+  }
+  # The mesh: the encrypted tunnels between the servers of one panel (the interface cf-mesh).
+  # The agent writes the elements of the four sets in its file mesh.nft: the UDP port of the
+  # tunnels, the address range of the mesh, and the public addresses of the peers.
+  set mesh_port {
+    typeof udp dport
+  }
+  set mesh_range {
+    typeof ip daddr
+    flags interval
+  }
+  set mesh_endpoints4 {
+    typeof ip saddr
+  }
+  set mesh_endpoints6 {
+    typeof ip6 saddr
+  }
+  # All traffic that comes out of a tunnel. A peer can measure the round-trip time. All other
+  # traffic is dropped: also the ports that are open for the internet, such as SSH.
+  chain mesh_input {
+    icmp type echo-request limit rate 50/second accept
+    # A server that has a website in a network of a member can connect to that member, on the
+    # port of the member. The rule compares the address and the port from before the address
+    # change (the chain prerouting).
+    ct state new ct status dnat ip saddr . ct original ip daddr . ct original proto-dst @mesh_access accept
+    # A server that sends a database server to this server connects to the transfer port.
+    ct state new ip saddr . ip daddr . tcp dport @mesh_transfers accept
+    drop
+  }
+  # This server never sends the traffic of a tunnel to a different server or network, and
+  # never sends the traffic of a different network into a tunnel.
+  chain mesh_forward {
+    type filter hook forward priority filter; policy accept;
+    iifname "cf-mesh" drop
+    oifname "cf-mesh" drop
+  }
   chain input {
     type filter hook input priority filter; policy drop;
     ct state established,related accept
     iif lo accept
+    # The mesh: only a peer can send to the tunnel port. The traffic that comes out of a
+    # tunnel has its own chain, before the rules of the public ports.
+    udp dport @mesh_port ip saddr @mesh_endpoints4 accept
+    udp dport @mesh_port ip6 saddr @mesh_endpoints6 accept
+    iifname "cf-mesh" jump mesh_input
     meta l4proto { icmp, ipv6-icmp } accept
-    tcp dport 22 accept
+    tcp dport 22 accept$dns_accept
     tcp dport $SFTP_PORT accept # cloudfactory-sftp
     tcp dport { 80, 443, 8080, 8443 } accept
     udp dport { 443, 8443 } accept
@@ -353,6 +438,11 @@ table inet cloudfactory {
   }
   chain output {
     type filter hook output priority filter; policy accept;
+    # The networks: a website can connect to the members of its networks. This rule is for a
+    # member on this server, after the address change (the chain output_nat). It compares the
+    # address and the port from before the change, so the address and the port of the
+    # container give no access.
+    ct state new meta l4proto tcp ct status dnat meta skuid . ct original ip daddr . ct original proto-dst @network_access accept
     # FR-1703: only root (the agent) and the edge proxy can connect to the website and panel
     # ports on the private service address. pasta opens each connection of a container as the
     # Unix user of the container, so a website cannot reach a different website. The rule
@@ -372,6 +462,12 @@ table inet cloudfactory {
     # to a private network or to a service of this server from it. The rule checks only new
     # connections, so it does not change the answers to the websites.
     ct state new meta skuid $DATABASE_UID_MIN-$DATABASE_UID_MAX jump refuse
+    # The networks: all other connections to a member on this server are refused. The last
+    # rule is for a member on a different server.
+    ct state new ct status dnat ct original ip daddr @mesh_range meta skuid != 0 jump refuse
+    ct state new meta skuid . ip daddr . tcp dport @network_access accept
+    # The mesh: only root (the agent) can connect to an address of the mesh.
+    ct state new ip daddr @mesh_range meta skuid != 0 jump refuse
     # Audit finding S1: the limits for the connections that a website container opens. The
     # agent makes each website user with a UID from $WEBSITE_UID_MIN to $WEBSITE_UID_MAX. The
     # rule checks only new connections, so it does not change the answers to the visitors.
@@ -402,7 +498,9 @@ ${website_networks}    # The edge proxy on the addresses of this server, so that
   }
   chain prerouting {
     type nat hook prerouting priority dstnat;
-    tcp dport 80 redirect to :8080
+    # A connection from a tunnel to a member of this server goes to the container of the member.
+    iifname "cf-mesh" dnat ip to ip daddr . tcp dport map @mesh_members
+    tcp dport 80 redirect to :8080$dns_redirect
     tcp dport 443 redirect to :8443
     udp dport 443 redirect to :8443
   }
@@ -412,6 +510,8 @@ ${website_networks}    # The edge proxy on the addresses of this server, so that
     # that calls the public address of this server, needs the same redirects here. The
     # output chain then sees port 8080 or 8443.
     type nat hook output priority -100;
+    # A website of this server uses the same member address as a website of a different server.
+    dnat ip to ip daddr . tcp dport map @mesh_members
     # pasta cannot send a connection from ::1 into gVisor (refer to postrouting_nat), and IPv6
     # has no private service address. Thus a connection from ::1 to port 80 or 443 is refused,
     # and the browser then uses 127.0.0.1.
@@ -427,6 +527,9 @@ ${website_networks}    # The edge proxy on the addresses of this server, so that
     # /etc/hosts gives as 127.0.1.1. Thus a redirected connection from a loopback address gets
     # the private service address as its source address. pasta then sends it to gVisor.
     type nat hook postrouting priority 100;
+    # A connection of this server to one of its own members gets the source address that a
+    # database server sees for each website container.
+    oif lo ct status dnat ct original ip daddr @mesh_range snat ip to $DATABASE_CLIENT_ADDRESS
     ip saddr 127.0.0.0/8 ct status dnat meta l4proto { tcp, udp } th dport { 8080, 8443 } snat ip to $SERVICE_ADDRESS
   }
 }
@@ -496,8 +599,9 @@ check_arch
 check_systemd
 check_tools
 # ---------------------------------------------------------------------------
-# Disk quotas. The disk limit of a website, and of a database server that has its own user ID,
-# is a user quota of the file system.
+# Disk quotas. The disk limit of a website, and of a database server, is a user quota of the
+# file system. On a file system with no user quotas, the agent makes a disk image for each new
+# website and each new database server that has a disk limit.
 # ---------------------------------------------------------------------------
 
 # The mount options of journaled user quotas for ext4. With them, the quota file is correct
@@ -525,9 +629,19 @@ quota_is_on() {
 	return 1
 }
 
+# without_quotas prints how the server applies the disk limits on a file system with no user
+# quotas. The agent uses a disk image, which needs loop devices. A container usually has none.
+without_quotas() {
+	if [ -e "$ROOT/dev/loop-control" ]; then
+		echo "Each new website and each new database server with a disk limit gets a disk image."
+	else
+		echo "The server has no loop devices (/dev/loop-control), so it does not apply the disk limits."
+	fi
+}
+
 # enable_quotas turns on user quotas on the file system that has a directory, and prints the
 # result. It does not change /etc/fstab. It never stops the installation: a server with no
-# quotas operates, and the panel shows that it does not apply the disk limits.
+# quotas operates, and the panel shows when it does not apply the disk limits.
 enable_quotas() {
 	target=$(findmnt --noheadings --output TARGET --target "$1" 2>/dev/null | head -n 1)
 	fstype=$(findmnt --noheadings --output FSTYPE --target "$1" 2>/dev/null | head -n 1)
@@ -554,7 +668,7 @@ enable_quotas() {
 		return 0
 		;;
 	*)
-		info "  $target ($fstype): the script cannot turn on user quotas on this type of file system. The server does not apply the disk limits."
+		info "  $target ($fstype): the script cannot turn on user quotas on this type of file system. $(without_quotas)"
 		return 0
 		;;
 	esac
@@ -563,12 +677,12 @@ enable_quotas() {
 	# and a quota file.
 	if ! quotaon --user "$target" 2>/dev/null || ! quota_is_on "$target"; then
 		if ! mount -o "remount,$QUOTA_OPTIONS" "$target" 2>/dev/null; then
-			info "  $target (ext4): the file system does not accept the quota options, for example in a container. The server does not apply the disk limits."
+			info "  $target (ext4): the file system does not accept the quota options, for example in a container. $(without_quotas)"
 			return 0
 		fi
 		# -c: make a new quota file. -u: for users. -m: do not mount the file system read-only.
 		if ! quotacheck -cum "$target" >/dev/null 2>&1 || ! quotaon --user "$target" 2>/dev/null || ! quota_is_on "$target"; then
-			info "  $target (ext4): the script cannot turn on the user quotas. The server does not apply the disk limits. Refer to \"Disk quotas\" in the installation guide."
+			info "  $target (ext4): the script cannot turn on the user quotas. $(without_quotas) Refer to \"Disk quotas\" in the installation guide."
 			return 0
 		fi
 	fi
@@ -600,7 +714,7 @@ while read -r mount; do
 		quotaon --user "\$mount"
 	fi
 	if ! is_on "\$mount"; then
-		echo "cloudfactory: cannot turn on the user quotas on \$mount. The server does not apply the disk limits." >&2
+		echo "cloudfactory: cannot turn on the user quotas on \$mount. A website or a database server with no disk image has no disk limit." >&2
 		status=1
 	fi
 done <$CF_ETC/quota-mounts
@@ -952,12 +1066,13 @@ install -d -o root -g cf-sites -m 0750 /var/lib/cloudfactory-images
 install -d -m 0755 "$CF_ETC/sftp" "$CF_ETC/sftp-users"
 
 step "Turn on the disk quotas"
-# The agent sets a user quota for each website, and for each database server that has its own
-# user ID. The quotas must be on before the first website gets its files.
+# The agent sets a user quota for each website and for each database server. The quotas must
+# be on before the first website gets its files: a website that starts with no user quotas
+# gets a disk image, and keeps it.
 if [ "$DISK_QUOTAS" -eq 1 ]; then
 	setup_quotas
 else
-	info "  --no-disk-quotas: the script does not turn on the user quotas."
+	info "  --no-disk-quotas: the script does not turn on the user quotas. $(without_quotas)"
 fi
 
 step "Set the firewall"

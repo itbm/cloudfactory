@@ -119,8 +119,26 @@ The reasons:
   includes the users of the websites.
 - Rootful containers give more access to an attacker who escapes from gVisor.
 
-Release 0.3 (email) and release 0.2 (DNS) will add redirects for ports 25 and 53 in the same
-method.
+The DNS server uses the same method: the agent adds redirects from port 53 (UDP and TCP) to
+port 8053 when a server gets its first zone. Release 0.3 (email) will add a redirect for
+port 25 in the same method.
+
+## Knot DNS, and zones from the panel
+
+The DNS server is Knot DNS in one container on each server with the role `dns`.
+
+- Knot DNS is only an authoritative server. It has no resolver, and it signs zones with
+  DNSSEC itself. PowerDNS needs a database on each server. BIND has a resolver and more code
+  than this work needs.
+- The panel sends each full zone to each DNS server in a job. The servers do not use zone
+  transfers (AXFR) or notifications between them. Thus there is no primary server that must
+  be in operation, no transfer key to keep, and no open port between the servers. The cost
+  is one job for each DNS server and each change.
+- The root helper writes the zone files from records that it checks. It does not accept the
+  text of a zone file.
+- The panel makes the DNSSEC key of a zone and gives it to each DNS server. With a key that
+  each server made itself, the servers would give different signatures and the registrar
+  would need one DS record for each server.
 
 ## Who checks the registry for new image tags
 
@@ -210,3 +228,24 @@ database servers. [security.md](security.md#the-root-helper-of-the-agent) gives 
 | Decryption in the webmail | A plugin of the webmail | Bulwark has no OpenPGP decryption. The plugin "PGP True End-to-End" (GPL-3.0) decrypts in the browser. |
 | Keys in the webmail | A file in the files of the mailbox, which a patch of the plugin reads | The user uploads no key. The mail server examines the password, so the panel needs no new sign-in and no new password check. The plugin has no access to the sign-in password of the webmail, so it asks for the password one time. |
 | Installation of the plugin | A pinned copy in the image, installed by the start script | Each server has the same reviewed release, with no person in the admin dashboard. The dashboard stays closed on the public host name. A new release of the plugin comes with a new image. |
+## WireGuard tunnels between the servers, with the panel as the directory of keys
+
+The websites of a customer must be able to use a database on a different server. The traffic
+between two servers goes through the internet.
+
+| Item | Decision | Reason |
+| ---- | -------- | ------ |
+| Protection of the traffic | One WireGuard tunnel for each pair of servers that needs one. | The kernel has WireGuard, it has a small configuration, and it protects all protocols. TLS for each database engine needs certificates and settings for each engine and each client. |
+| Who has the keys | Each server makes its own key pair. The panel has only the public keys and the pre-shared keys. | A copy of the database of the panel does not give the private keys of the servers. |
+| Who can add a tunnel | Only the panel, through the agent connection. | The panel already has mutual TLS with each agent, and it knows which servers need a tunnel. |
+| Commands from the panel to the agents | They stay on port 7443 with mutual TLS. They do not use the tunnels. | A fault in the mesh must not stop the panel from repairing the mesh. |
+| Where root is necessary | The root helper has four operations: apply a state, give the status, make a new key, and apply the rules and the names of the networks. The worker cannot run `wg`, `ip` or `nft`. | The same boundary as for the other work of the agent. |
+| What a tunnel permits | An echo request, and a connection to a network member from a server that has a website in a network with it. | A tunnel between two servers must not open the services of a server. Each function adds its own rule. |
+| The name of a database server | `<name>.internal`, with one address of the mesh range that does not change. The name and the address are the same on each server. | An app keeps its configuration when the database server or the website is on a different server. `mariadb.internal` says nothing about which database server it is. |
+| The port of a network name | The usual port of the engine. | Each database server has its own address, so each one can have the usual port. The port on the server stays for `mariadb.internal`. |
+| How a website finds a name | A hosts file for each website, which the agent changes in place. | A new name needs no restart of the container. A DNS server on each server is one more service to operate and to protect. |
+| How a connection gets to the container | The firewall changes the destination from the member address to the address of the container, on the server of the member. | The database containers do not change and do not start again. A website on the same server uses the same address as a website on a different server. |
+| The client address that a database server sees | `169.254.80.1` for each website, also on a different server. | The database users from before the networks continue to operate, and the three engines need no rule for each server. The firewall and the password do the control of access. |
+| Who makes the tunnels for a network | The panel, when a website on one server is in a network with a database server on the other. It removes them when no network needs them. | A customer does not know the servers. A tunnel that nobody needs is one more path to protect. |
+| The network `default` | Each customer has it, and each new website and database server joins it. | A customer with one network needs no decision. It gives the same access as before on one server. |
+| Test and repair | One action, **Repair**: the panel sends the state again, and each server tests the tunnel. The reports of the agents give the state of each tunnel each minute. | A test with no repair has no use for an administrator, and the state is on the page already. |

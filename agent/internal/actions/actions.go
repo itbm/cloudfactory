@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"sync"
@@ -19,6 +20,7 @@ import (
 	"github.com/itbm/cloudfactory/agent/internal/gate"
 	"github.com/itbm/cloudfactory/agent/internal/host"
 	"github.com/itbm/cloudfactory/agent/internal/hostupdate"
+	"github.com/itbm/cloudfactory/agent/internal/mesh"
 	"github.com/itbm/cloudfactory/agent/internal/quadlet"
 	"github.com/itbm/cloudfactory/agent/internal/selfupdate"
 )
@@ -31,6 +33,8 @@ type Edge interface {
 	// PanelCertificate gives the certificate method of the panel domain, or "" with no panel.
 	PanelCertificate(ctx context.Context, domain string) (string, error)
 	SetPanelCertificate(ctx context.Context, domain, method string) error
+	// SetPanelBrands sets the panel domains of the resellers (white label).
+	SetPanelBrands(ctx context.Context, domain string, brands []string) error
 	// PanelCARoot gives the root certificate of the CA of the panel in PEM format.
 	PanelCARoot(ctx context.Context) (string, error)
 }
@@ -149,6 +153,14 @@ type Deps struct {
 	MailCertificateWait time.Duration
 	// SftpPort is the public SFTP port of the server. 0 means quadlet.DefaultSftpPort.
 	SftpPort int
+	// DnsImage is the image of the DNS server of this agent version.
+	DnsImage string
+	// DnsTest lets a test run Knot on the host, with no container. Nil in the agent.
+	DnsTest *DnsTest
+	// PublicAddresses are the public IP addresses of the settings, for a server behind NAT.
+	PublicAddresses []string
+	// InterfaceAddrs gives the addresses of the network interfaces. Nil means net.InterfaceAddrs.
+	InterfaceAddrs func() ([]net.Addr, error)
 	// SftpReady checks that the SFTP container answers on a port. Nil means an SSH connection
 	// to quadlet.ServiceAddress. Tests replace it.
 	SftpReady func(ctx context.Context, port int) error
@@ -163,6 +175,15 @@ type Deps struct {
 	// AddressUnit is the systemd unit of the installer that adds the private addresses to
 	// "lo". The default is "/etc/systemd/system/cloudfactory-address.service".
 	AddressUnit string
+	// MeshDir holds the tunnel key and the mesh state of this server. Only root can read
+	// it. The default is "/etc/cloudfactory/mesh".
+	MeshDir string
+	// MeshPing sends one echo request from a mesh address to a mesh address and gives the
+	// round-trip time. Nil means mesh.Ping. Tests replace it.
+	MeshPing func(ctx context.Context, from, to netip.Addr, timeout time.Duration) (time.Duration, error)
+	// MeshWait is the maximum time that SetMesh waits for the answers of the peers. The
+	// default is 10 seconds.
+	MeshWait time.Duration
 	// HostSftpConfig is the SSH configuration of the host from release 0.1. The default is
 	// "/etc/ssh/sshd_config.d/50-cloudfactory-sftp.conf".
 	HostSftpConfig string
@@ -174,6 +195,14 @@ type Deps struct {
 	SavePanelCA func(fingerprint string) error
 	// EdgeImage is the image of the edge proxy of this agent version.
 	EdgeImage string
+	// AgentBinary is the path of the program of the agent. The file manager starts it as the
+	// Unix user of a website. The default is "/usr/local/bin/cf-agent".
+	AgentBinary string
+	// CronLimit is the time limit of the command of a cron job. The default is 1 hour.
+	CronLimit time.Duration
+	// BuildLimit is the time limit of each step of a deploy that runs commands. The default
+	// is 20 minutes.
+	BuildLimit time.Duration
 
 	// CgroupRoot is "/sys/fs/cgroup". Tests use a different directory.
 	CgroupRoot string
@@ -197,6 +226,7 @@ type Deps struct {
 	// valkeyMu makes the search for a free Valkey database number and its user one step.
 	valkeyMu sync.Mutex
 	sftpMu   sync.Mutex
+	dnsMu    sync.Mutex
 	// dbReady has the database servers that this agent process started and that answered.
 	dbReady map[dbServer]bool
 	// dbStart has one lock for each database server. The start and the removal of a database
@@ -211,10 +241,20 @@ type Deps struct {
 	// kernel has.
 	accessMu     sync.Mutex
 	accessLoaded string
+	// meshMu makes each change of the tunnels one step.
+	meshMu sync.Mutex
+	// networkMu makes each change of the networks one step in the worker.
+	networkMu sync.Mutex
+	// networkLoaded is the content of the firewall file of the networks that the kernel
+	// has. networkWarned is set after the warning for a server with no firewall file. meshMu
+	// protects the two.
+	networkLoaded string
+	networkWarned bool
 	// backupSlots limits the backups that operate at the same time (BackupSlots).
 	backupSlots chan struct{}
 	rtMu        sync.RWMutex
 	obs         observer
+	cron        cronRuns
 }
 
 // Images is the part of the shared image store that the actions use (images.Store).
@@ -295,6 +335,10 @@ type stateFile struct {
 	// Databases has the record of each customer that has a website or a database server on
 	// this server. The key is the ID of the customer in lower case.
 	Databases map[string]*DatabaseInstance `json:"databases,omitempty"`
+	// Network has the networks of the customers on this server, from the panel (network.go).
+	Network *mesh.Network `json:"network,omitempty"`
+	// Cron has the cron jobs of each website. The key is the ID of the website.
+	Cron map[string][]CronEntry `json:"cron,omitempty"`
 }
 
 // DatabaseInstance is what the agent knows about the database servers of one customer. The
@@ -403,6 +447,7 @@ func (s *State) Delete(id string) error {
 		return err
 	}
 	delete(f.Sites, id)
+	delete(f.Cron, id)
 	return s.write(f)
 }
 
@@ -484,7 +529,14 @@ func (s *State) ReleaseNext(id string) error {
 	return s.write(f)
 }
 
+// WebsitePortMin and WebsitePortMax are the limits of the host ports of the website
+// containers on the private service address.
+const (
+	WebsitePortMin = 20000
+	WebsitePortMax = 29999
+)
+
 // NewState gives a State in the data directory.
 func NewState(dataDir string) *State {
-	return &State{Path: filepath.Join(dataDir, "sites.json"), FirstPort: 20000, LastPort: 29999}
+	return &State{Path: filepath.Join(dataDir, "sites.json"), FirstPort: WebsitePortMin, LastPort: WebsitePortMax}
 }

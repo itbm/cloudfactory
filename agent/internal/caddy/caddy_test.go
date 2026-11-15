@@ -71,6 +71,21 @@ func (f *fakeCaddy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case r.URL.Path == "/config/apps/http/servers/edge/tls_connection_policies":
 		b, _ := io.ReadAll(r.Body)
 		f.policies = string(b)
+	case (r.Method == http.MethodPatch || r.Method == http.MethodGet) && strings.Count(r.URL.Path, "/") == 3 && strings.HasPrefix(r.URL.Path, "/id/"):
+		// A field of an object, for example /id/cf-panel/match.
+		id, field, _ := strings.Cut(strings.TrimPrefix(r.URL.Path, "/id/"), "/")
+		list, i := f.object(id)
+		if i < 0 {
+			http.Error(w, `{"error":"unknown object ID '`+id+`'"}`, http.StatusNotFound)
+			return
+		}
+		if r.Method == http.MethodGet {
+			json.NewEncoder(w).Encode(list[i][field])
+			return
+		}
+		var value any
+		readJSON(r, &value)
+		list[i][field] = value
 	case r.Method == http.MethodPatch && strings.HasPrefix(r.URL.Path, "/id/"):
 		id := strings.TrimPrefix(r.URL.Path, "/id/")
 		var object map[string]any
@@ -230,6 +245,18 @@ func TestSiteRouteSendsAllRequestsToTheContainer(t *testing.T) {
 	b, _ = json.Marshal(RedirectRoute(Site{WebsiteID: "W1", Redirects: []string{"www.acme.example"}, Primary: "acme.example"}))
 	if !strings.Contains(string(b), `"Location":["https://acme.example{http.request.uri}"]`) || !strings.Contains(string(b), `"status_code":308`) {
 		t.Errorf("redirect route: %s", b)
+	}
+}
+
+// A route with a path prefix has only the paths of the prefix on its host.
+func TestSiteRouteWithAPath(t *testing.T) {
+	b, _ := json.Marshal(SiteRoute(Site{WebsiteID: "T1", Port: 20002, Hosts: []string{"adminer.example.com"}, Path: "/t1/"}, "169.254.77.1"))
+	if !strings.Contains(string(b), `"match":[{"host":["adminer.example.com"],"path":["/t1/*"]}]`) {
+		t.Errorf("route: %s", b)
+	}
+	b, _ = json.Marshal(SiteRoute(Site{WebsiteID: "W1", Port: 20001, Hosts: []string{"acme.example"}}, "169.254.77.1"))
+	if strings.Contains(string(b), `"path"`) {
+		t.Errorf("a route with no path prefix has a path: %s", b)
 	}
 }
 

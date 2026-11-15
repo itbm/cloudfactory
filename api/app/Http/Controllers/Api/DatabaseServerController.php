@@ -16,6 +16,8 @@ use App\Models\Website;
 use App\Services\Audit;
 use App\Services\DatabaseServers;
 use App\Services\JobDispatcher;
+use App\Services\Mesh;
+use App\Services\Networks;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -71,12 +73,12 @@ class DatabaseServerController extends Controller
     {
         $data = $request->validate([
             'engine' => ['required', Rule::in(Database::ENGINES)],
-            'name' => ['sometimes', 'nullable', 'string', 'regex:'.DatabaseServers::NAME],
+            'name' => ['sometimes', 'nullable', 'string', 'regex:'.DatabaseServers::NAME, Rule::notIn(Networks::RESERVED)],
             'customerId' => ['nullable', 'exists:customers,id'],
             'planId' => ['nullable', 'exists:plans,id'],
             'serverId' => ['nullable', 'exists:servers,id'],
             ...self::limitRules(),
-        ], ['name.regex' => 'Use 1 to 40 lower-case letters, digits and hyphens. Start and end with a letter or a digit.']);
+        ], ['name.regex' => 'Use 1 to 40 lower-case letters, digits and hyphens. Start and end with a letter or a digit.', 'name.not_in' => 'Each website has this name for the database servers of its engine. Use a different name, for example :input-1.']);
         $user = $request->user();
         $customerId = $data['customerId'] ?? $user->customer_id;
         if (! $customerId || ! $user->canSeeCustomer($customerId)) {
@@ -96,6 +98,7 @@ class DatabaseServerController extends Controller
         if ($name !== null && $customer->databaseServers()->where('name', $name)->exists()) {
             throw ValidationException::withMessages(['name' => 'This customer has a database server with this name.']);
         }
+        self::refuseWebsiteName($customer, $name);
         $host = self::host($request, $customer, $data['serverId'] ?? null);
 
         $server = DatabaseServers::make($customer, $host, $data['engine'], Plan::findOrFail($planId), $name, $data['limits'] ?? null);
@@ -139,10 +142,10 @@ class DatabaseServerController extends Controller
     {
         $server = $this->find($request, $id);
         $data = $request->validate([
-            'name' => ['sometimes', 'string', 'regex:'.DatabaseServers::NAME],
+            'name' => ['sometimes', 'string', 'regex:'.DatabaseServers::NAME, Rule::notIn(Networks::RESERVED)],
             'planId' => ['sometimes', 'exists:plans,id'],
             ...self::limitRules(),
-        ], ['name.regex' => 'Use 1 to 40 lower-case letters, digits and hyphens. Start and end with a letter or a digit.']);
+        ], ['name.regex' => 'Use 1 to 40 lower-case letters, digits and hyphens. Start and end with a letter or a digit.', 'name.not_in' => 'Each website has this name for the database servers of its engine. Use a different name, for example :input-1.']);
         $user = $request->user();
         if (isset($data['limits']) && ! $user->isAdministrator()) {
             return response()->json(['message' => 'Only administrators can set resource limits.'], 403);
@@ -152,6 +155,9 @@ class DatabaseServerController extends Controller
         }
         if (isset($data['name']) && $data['name'] !== $server->name && $server->customer->databaseServers()->where('name', $data['name'])->exists()) {
             throw ValidationException::withMessages(['name' => 'This customer has a database server with this name.']);
+        }
+        if (isset($data['name']) && $data['name'] !== $server->name) {
+            self::refuseWebsiteName($server->customer, $data['name']);
         }
         self::refuseRemoved($server);
 
@@ -204,6 +210,85 @@ class DatabaseServerController extends Controller
         return response()->json(['databaseServer' => self::present($server), 'job' => new JobResource($job)], 202);
     }
 
+    /**
+     * Moves a database server to a different server. Only an administrator can do this. The
+     * database server keeps its ID, its name, its databases, its users and its network
+     * address: the websites that use the network name continue to connect to it.
+     *
+     * 1. The new server makes the database server, and waits for the data.
+     * 2. The old server stops the database server, and sends the data through the tunnel.
+     * 3. The new server starts the database server. Then the panel records the new server,
+     *    and the old server removes its copy (JobOutcome).
+     *
+     * The database server does not operate while its data goes to the new server.
+     */
+    public function move(Request $request, string $id): JsonResponse
+    {
+        abort_unless($request->user()->isAdministrator(), 403, 'Only an administrator can move a database server.');
+        $data = $request->validate(['serverId' => ['required', 'string', 'exists:servers,id']]);
+        $databaseServer = $this->find($request, $id);
+        $to = Server::findOrFail($data['serverId']);
+        $from = $databaseServer->server;
+        self::refuseRemoved($databaseServer);
+        if (! in_array($databaseServer->status, [DatabaseServer::RUNNING, DatabaseServer::STOPPED], true)) {
+            throw ValidationException::withMessages(['databaseServer' => 'Only a database server that the panel made can move. Make it again first.']);
+        }
+        if ($to->id === $from->id) {
+            throw ValidationException::withMessages(['serverId' => "The database server is on the server {$to->name}. Select a different server."]);
+        }
+        if (! in_array('web', $to->roles, true)) {
+            throw ValidationException::withMessages(['serverId' => 'Select a server with the web role.']);
+        }
+        if ($to->state !== 'healthy' || $from->state !== 'healthy') {
+            throw ValidationException::withMessages(['serverId' => 'The two servers must be healthy. Wait until the agents report again.']);
+        }
+        DatabaseServers::checkHost($to, $databaseServer->engine, 'serverId');
+        foreach ([$from, $to] as $server) {
+            if (! Networks::supports($server) || ! $server->mesh_moves || Mesh::tunnelAddress($server) === null) {
+                throw ValidationException::withMessages(['serverId' => "The agent on the server {$server->name} cannot move database servers. Update the agent of the server, then try again."]);
+            }
+        }
+        if (Networks::hostOf($databaseServer) === null) {
+            throw ValidationException::withMessages(['databaseServer' => "A database server with the name {$databaseServer->name} has no network name, so the websites on a different server cannot connect to it. Give it a different name first."]);
+        }
+        Networks::checkMove($databaseServer, $to);
+        self::refuseOpenChange($databaseServer);
+        $port = DatabaseServers::freePort($databaseServer->customer_id, $to->id, $databaseServer->engine);
+        if ($port === null) {
+            throw ValidationException::withMessages(['serverId' => "The customer has the maximum number of database servers of this engine on the server {$to->name}."]);
+        }
+
+        // The secret of this move. Only the two agents get it.
+        $token = bin2hex(random_bytes(32));
+        $databaseServer->update(['status' => DatabaseServer::MOVING, 'moving_to_server_id' => $to->id]);
+        // The tunnel between the two servers. A refresh starts the jobs that make it.
+        $fromAddress = Mesh::addressFor($from);
+        $toAddress = Mesh::addressFor($to);
+        Mesh::refreshLater();
+        $receive = $this->jobs->dispatch($to, AgentAction::ReceiveDatabaseServer, [
+            'databaseServer' => [...$databaseServer->forAgent(), 'port' => $port],
+            'from' => $fromAddress,
+            'token' => $token,
+            'timeoutSeconds' => self::MOVE_TIMEOUT,
+            'fromServerId' => $from->id,
+        ], "Receive database server {$databaseServer->name} from {$from->name}", databaseServer: $databaseServer);
+        $send = $this->jobs->dispatch($from, AgentAction::SendDatabaseServer, [
+            'databaseServer' => $databaseServer->id,
+            'engine' => $databaseServer->engine,
+            'to' => $toAddress,
+            'token' => $token,
+        ], "Send database server {$databaseServer->name} to {$to->name}", databaseServer: $databaseServer);
+        Audit::record($request, 'Moved database server', "{$databaseServer->customer->name} {$databaseServer->name} from {$from->name} to {$to->name}", $databaseServer->customer_id);
+
+        return response()->json([
+            'databaseServer' => self::present($databaseServer->fresh(['plan'])->loadCount('databases')),
+            'jobs' => [new JobResource($receive), new JobResource($send)],
+        ], 202);
+    }
+
+    /** The time in seconds in which the old server must connect to the new server. */
+    public const MOVE_TIMEOUT = 900;
+
     /** Removes a database server with no databases. The agent removes its data. */
     public function destroy(Request $request, string $id): JsonResponse
     {
@@ -232,6 +317,9 @@ class DatabaseServerController extends Controller
         if ($server->status === DatabaseServer::REMOVING) {
             throw ValidationException::withMessages(['databaseServer' => 'The panel removes this database server.']);
         }
+        if ($server->status === DatabaseServer::MOVING) {
+            throw ValidationException::withMessages(['databaseServer' => 'This database server moves to a different server now. Wait until the move is complete.']);
+        }
     }
 
     /**
@@ -241,7 +329,7 @@ class DatabaseServerController extends Controller
     private static function refuseOpenChange(DatabaseServer $server): void
     {
         $open = AgentJob::where('database_server_id', $server->id)
-            ->whereIn('action', [AgentAction::SetDatabaseServer->value, AgentAction::DeleteDatabaseServer->value])
+            ->whereIn('action', [AgentAction::SetDatabaseServer->value, AgentAction::DeleteDatabaseServer->value, AgentAction::SendDatabaseServer->value, AgentAction::ReceiveDatabaseServer->value])
             ->whereIn('state', [JobState::Queued->value, JobState::Running->value])->exists();
         if ($open) {
             throw ValidationException::withMessages(['databaseServer' => 'A change of this database server is in progress. Wait until it is complete.']);
@@ -267,12 +355,19 @@ class DatabaseServerController extends Controller
             'engine' => $s->engine,
             'customerId' => $s->customer_id,
             'serverId' => $s->server_id,
+            // The server that receives the database server while its status is "moving".
+            'movingToServerId' => $s->moving_to_server_id,
             'planId' => $s->plan_id,
             'status' => $s->status,
             // A website container of the customer on the same server connects to this host
             // name and this port.
             'host' => $s->host(),
             'port' => $s->port,
+            // Each website that is in a network with the database server connects to this
+            // host name and this port, on the same server and on a different server. Null for
+            // a database server with a name that an engine uses.
+            'networkHost' => Networks::hostOf($s),
+            'networkPort' => Networks::portOf($s->engine),
             'limits' => $s->limits,
             // The last report of the agent: "memoryBytes", "diskBytes" and "diskSizeBytes".
             'usage' => $s->usage,
@@ -281,5 +376,18 @@ class DatabaseServerController extends Controller
             'maxDatabases' => $s->plan->databases,
             'createdAt' => $s->created_at?->toIso8601String(),
         ];
+    }
+
+    /**
+     * A website of the customer is a network member with a name from its Unix user. A
+     * database server cannot have the same name.
+     *
+     * @throws ValidationException
+     */
+    private static function refuseWebsiteName(Customer $customer, ?string $name): void
+    {
+        if ($name !== null && $customer->websites()->where('unix_user', str_replace('-', '_', $name))->exists()) {
+            throw ValidationException::withMessages(['name' => "A website of this customer has the network name {$name}".Networks::DOMAIN.'. Use a different name.']);
+        }
     }
 }

@@ -7,6 +7,8 @@ import type {
   ApiToken,
   AuditEntry,
   BackupPolicy,
+  Brand,
+  BrandStatus,
   Customer,
   Database,
   DatabaseGrant,
@@ -15,12 +17,17 @@ import type {
   MailDomain,
   Mailbox,
   DatabaseUser,
+  DnsRecord,
+  DnsZone,
   DomainVerification,
   Job,
   Limits,
   ManagedUser,
+  Mesh,
   PanelCertificate,
   Plan,
+  PrivateNetwork,
+  ResellerBranding,
   Rollout,
   RuntimeImage,
   RuntimeKind,
@@ -28,6 +35,8 @@ import type {
   SetupChecklist,
   Snapshot,
   State,
+  UsageAlert,
+  UsageAlertSettings,
   User,
   Website,
   MailCluster,
@@ -125,21 +134,22 @@ const shown = new Set<string>();
 interface ApiMe {
   id: number; name: string; email: string; role: User["role"]; customerId: string | null; totpEnabled: boolean; mustChangePassword?: boolean;
   totpSetupRequired?: boolean; securityNotices?: { action: string; target: string; actor: string; at: string | null }[];
+  brand?: Brand;
 }
 interface ApiUser { id: number; name: string; email: string; role: User["role"]; customerId: string | null; totpEnabled: boolean; mustChangePassword: boolean; createdAt: string | null }
-interface ApiJob { id: string; title: string; ref: string | null; action?: string | null; state: Job["state"]; steps: string[]; step: number; error: string | null; websiteId: string | null; serverId: string | null; databaseServerId?: string | null; createdAt: string; finishedAt: string | null }
+interface ApiJob { id: string; title: string; ref: string | null; action?: string | null; state: Job["state"]; steps: string[]; step: number; error: string | null; websiteId: string | null; serverId: string | null; databaseServerId?: string | null; dnsZoneId?: string | null; createdAt: string; finishedAt: string | null }
 interface ApiWebsite {
-  id: string; name: string; application: string; customerId: string; serverId: string; planId: string; unixUser: string; status: Website["status"];
+  id: string; name: string; application: string; customerId: string; serverId: string; planId: string; unixUser: string; networkHost?: string | null; networkPort?: number | null; kind?: Website["kind"]; command?: string | null; status: Website["status"];
   runtime: { imageId: string; family: string; image: string; phpVersion: string | null; workerMode: boolean; extensions: string[]; phpIni: Record<string, string>; previousImageId: string | null; documentRoot?: string; digest?: string | null; signatureVerified?: boolean };
   sftp?: { enabled: boolean; host: string | null; port: number; username: string; authorizedKeys: string[] };
-  limits: Limits; diskLimitApplied?: boolean | null; usage: Partial<Website["use"]> | null;
+  limits: Limits; diskLimitApplied?: boolean | null; usage: Partial<Website["use"]> | null; bandwidthBytes?: number;
   domains?: { name: string; kind: Website["domains"][number]["kind"]; dnsPointsHere: boolean; certificate: { state: Website["domains"][number]["certificate"]["state"]; expiresAt: string | null }; verified?: boolean; verification?: DomainVerification | null }[];
   stagingOf: string | null; managedByTerraform: boolean; createdAt: string; updatedAt: string;
 }
 interface ApiServer {
   id: string; name: string; location: string; roles: Server["roles"]; state: Server["state"]; agentVersion: string | null; os: string | null; kernel: string | null; arch: string | null;
   podmanVersion: string | null; gvisorVersion: string | null; gvisorPlatform: Server["gvisorPlatform"]; bareMetal: boolean; updatePolicy: Server["updatePolicy"]; maintenanceWindow: string;
-  pendingUpdates: Server["pendingUpdates"]; lastUpdateAt: string | null; rebootRequired: boolean; agentUpdateAvailable?: boolean; agentAddress?: string | null; connectionError?: string | null; panel?: boolean; databaseEngines?: Database["engine"][]; databaseInstances?: boolean; services: Server["services"]; sftpPort?: number | null; mail?: Server["mail"] | null;
+  pendingUpdates: Server["pendingUpdates"]; lastUpdateAt: string | null; rebootRequired: boolean; agentUpdateAvailable?: boolean; agentAddress?: string | null; connectionError?: string | null; panel?: boolean; databaseEngines?: Database["engine"][]; databaseInstances?: boolean; services: Server["services"]; sftpPort?: number | null; dnsName?: string | null; dns?: boolean; addresses?: string[]; mail?: Server["mail"] | null;
   usage: { cpuPercent?: number; memoryPercent?: number; diskPercent?: number } | null;
 }
 interface ApiImage {
@@ -152,7 +162,7 @@ interface ApiRollout {
   id: string; imageId: string; title: string; fromTag: string; toTag: string; severity: Rollout["severity"]; state: Rollout["state"]; stages: Rollout["stages"];
   websites: number; healthy: number; rolledBack: number; running: number; rollbacks: Rollout["rollbacks"]; startedAt: string; finishedAt?: string | null;
 }
-interface ApiCustomer { id: string; name: string; email: string; role: Customer["role"]; planId: string; resellerId: string | null; suspended: boolean; createdAt: string }
+interface ApiCustomer { id: string; name: string; email: string; role: Customer["role"]; planId: string; resellerId: string | null; suspended: boolean; createdAt: string; branding?: ResellerBranding | [] | null; brandStatus?: BrandStatus | null }
 interface ApiToken_ { id: number; name: string; scopes: string[]; createdAt: string; expiresAt: string | null; lastUsedAt: string | null }
 interface ApiAudit { id: number; at: string; actor: string; ip: string | null; action: string; target: string }
 interface ApiPanelCertificate {
@@ -160,7 +170,14 @@ interface ApiPanelCertificate {
   reportedAt: string | null; letsEncryptAvailable: boolean; serversWithoutCa: string[]; job: ApiJob | null;
 }
 interface ApiDatabaseServer extends Omit<DatabaseServer, "usage" | "createdAt"> { usage: DatabaseServer["usage"] | null; createdAt: string | null }
-interface ApiSnapshot { id: string; kind: "scheduled" | "manual"; sizeBytes: number; databases: string[]; createdAt: string }
+interface ApiDnsRecord extends Omit<DnsRecord, "priority" | "managed"> { priority: number | null; managed: DnsRecord["managed"] | null }
+interface ApiDnsZone extends Omit<DnsZone, "delegation" | "dnssec" | "records" | "createdAt"> {
+  delegation: { state: DnsZone["delegation"]["state"]; nameServers: string[]; checkedAt: string | null };
+  dnssec: { enabled: boolean; ds: DnsZone["dnssec"]["ds"] | null; dnskey: string | null };
+  createdAt: string | null;
+  records?: ApiDnsRecord[];
+}
+interface ApiSnapshot { id: string; kind: "scheduled" | "manual"; sizeBytes: number; databases: string[]; part?: "website" | "databases"; serverId?: string; createdAt: string }
 
 // Mapping from the API shapes to the state of the UI.
 
@@ -176,7 +193,7 @@ export function toJob(j: ApiJob): Job {
   return {
     id: j.id, title: j.title, ref: j.ref ?? undefined, action: j.action ?? undefined, state: j.state, steps: j.steps ?? [], step: j.step ?? 0, error: j.error ?? undefined,
     createdAt: j.createdAt, finishedAt: j.finishedAt ?? undefined, websiteId: j.websiteId ?? undefined, serverId: j.serverId ?? undefined,
-    databaseServerId: j.databaseServerId ?? undefined,
+    databaseServerId: j.databaseServerId ?? undefined, dnsZoneId: j.dnsZoneId ?? undefined,
   };
 }
 
@@ -184,7 +201,7 @@ interface ApiAccount {
   customer: Account["customer"] | null;
   provider: { name: string; email: string } | null;
   plan: Plan | null;
-  usage: { websites: number; databases: number; diskBytes: number; customers: number | null } | null;
+  usage: { websites: number; databases: number; diskBytes: number; customers: number | null; dnsZones?: number; networks?: number; bandwidthBytes?: number } | null;
   backups?: { available: boolean };
   users: ApiUser[];
 }
@@ -193,7 +210,7 @@ export function toAccount(a: ApiAccount): Account {
   const usage = a.usage ?? { websites: 0, databases: 0, diskBytes: 0, customers: null };
   return {
     customer: a.customer!, provider: a.provider ?? undefined, plan: a.plan ?? undefined,
-    usage: { websites: usage.websites, databases: usage.databases, diskBytes: usage.diskBytes, customers: usage.customers ?? undefined },
+    usage: { websites: usage.websites, databases: usage.databases, diskBytes: usage.diskBytes, customers: usage.customers ?? undefined, dnsZones: usage.dnsZones ?? 0, networks: usage.networks ?? 0, bandwidthBytes: usage.bandwidthBytes ?? 0 },
     backupsAvailable: a.backups?.available ?? true,
     users: a.users.map(toUser),
   };
@@ -209,6 +226,9 @@ export function toPanelCertificate(c: ApiPanelCertificate): PanelCertificate {
 export function toWebsite(w: ApiWebsite): Website {
   return {
     id: w.id, name: w.name, application: w.application || "Website", customerId: w.customerId, serverId: w.serverId, unixUser: w.unixUser,
+    // An API from before the networks sends no name. The name comes from the Unix user.
+    networkHost: w.kind === "worker" ? null : w.networkHost ?? `${w.unixUser.replaceAll("_", "-")}.internal`, networkPort: w.kind === "worker" ? null : w.networkPort ?? 80,
+    kind: w.kind ?? "public", command: w.command ?? null,
     createdAt: w.createdAt, status: w.status, planId: w.planId, limits: w.limits, diskLimitApplied: w.diskLimitApplied ?? undefined,
     runtime: {
       kind: runtimeKind(w.runtime.family), imageId: w.runtime.imageId, phpVersion: (w.runtime.phpVersion ?? undefined) as Website["runtime"]["phpVersion"],
@@ -218,6 +238,7 @@ export function toWebsite(w: ApiWebsite): Website {
       digest: w.runtime.digest ?? undefined, signatureVerified: w.runtime.signatureVerified ?? undefined,
     },
     use: { cpuPercent: 0, memoryBytes: 0, diskBytes: 0, processes: 0, diskIoBytesPerSecond: 0, ...(w.usage ?? {}) },
+    bandwidthBytes: w.bandwidthBytes ?? 0,
     domains: (w.domains ?? []).map((d) => ({
       name: d.name, kind: d.kind, dnsPointsHere: d.dnsPointsHere, certificate: { state: d.certificate.state, expiresAt: d.certificate.expiresAt ?? undefined },
       ...(d.verified === false && d.verification ? { verification: d.verification } : {}),
@@ -241,6 +262,7 @@ export function toServer(s: ApiServer): Server {
     agentAddress: s.agentAddress ?? undefined, connectionError: s.connectionError ?? undefined, panel: s.panel ?? false,
     databaseEngines: s.databaseEngines ?? undefined,
     databaseInstances: s.databaseInstances ?? false,
+    dnsName: s.dnsName ?? undefined, dns: s.dns ?? false, addresses: s.addresses ?? [],
     mail: s.mail ?? undefined,
     stateDetail: s.state === "degraded" ? (s.connectionError ? "Degraded: the panel cannot connect" : degradedReason(s.services ?? [])) : undefined,
   };
@@ -280,7 +302,35 @@ export const toMailDomain = (d: ApiMailDomain): MailDomain => ({ ...d, records: 
 export const toMailbox = (m: ApiMailbox): Mailbox => ({ ...m, usedBytes: m.usedBytes ?? 0 });
 export const toDatabaseServer = (s: ApiDatabaseServer): DatabaseServer => ({ ...s, usage: s.usage ?? undefined, createdAt: s.createdAt ?? "" });
 
-const toCustomer = (c: ApiCustomer): Customer => ({ id: c.id, name: c.name, email: c.email, planId: c.planId, role: c.role, resellerId: c.resellerId ?? undefined, createdAt: c.createdAt, suspended: c.suspended });
+export const toDnsRecord = (r: ApiDnsRecord): DnsRecord => ({ id: r.id, name: r.name, type: r.type, value: r.value, ttl: r.ttl, priority: r.priority ?? undefined, managed: r.managed ?? undefined });
+
+export interface ApiNetwork extends PrivateNetwork { createdAt?: string | null }
+
+export const toNetwork = (n: ApiNetwork): PrivateNetwork => ({ id: n.id, customerId: n.customerId, name: n.name, isDefault: n.isDefault, websiteIds: n.websiteIds ?? [], databaseServerIds: n.databaseServerIds ?? [] });
+
+export const toDnsZone = (z: ApiDnsZone): DnsZone => ({
+  ...z,
+  delegation: { state: z.delegation.state, nameServers: z.delegation.nameServers ?? [], checkedAt: z.delegation.checkedAt ?? undefined },
+  dnssec: { enabled: z.dnssec.enabled, ds: z.dnssec.ds ?? undefined, dnskey: z.dnssec.dnskey ?? undefined },
+  createdAt: z.createdAt ?? "",
+  records: z.records?.map(toDnsRecord),
+});
+
+/** The zones that the user opened. Each load reads their records again. */
+const shownZones = new Set<string>();
+
+/** Reads one zone with its records. The next loads also read the records of the zone. */
+export async function dnsZone(id: string): Promise<DnsZone> {
+  shownZones.add(id);
+  return toDnsZone(await request<ApiDnsZone>("GET", `/dns-zones/${id}`));
+}
+
+const toCustomer = (c: ApiCustomer): Customer => ({
+  id: c.id, name: c.name, email: c.email, planId: c.planId, role: c.role, resellerId: c.resellerId ?? undefined, createdAt: c.createdAt, suspended: c.suspended,
+  // PHP gives an empty brand as an empty list.
+  branding: c.branding && !Array.isArray(c.branding) ? c.branding : undefined,
+  brandStatus: c.brandStatus ?? undefined,
+});
 
 export const toUser = (u: ApiUser): ManagedUser => ({
   id: String(u.id), name: u.name, email: u.email, role: u.role, customerId: u.customerId ?? undefined, totpEnabled: u.totpEnabled, mustChangePassword: u.mustChangePassword, createdAt: u.createdAt ?? "",
@@ -294,6 +344,11 @@ const toAudit = (a: ApiAudit): AuditEntry => ({ id: String(a.id), at: a.at, acto
 
 // Loading
 
+/** White label: the brand of the sign-in page, for the domain that the browser opened. */
+export async function signInBrand(): Promise<Brand> {
+  return request<Brand>("GET", "/brand");
+}
+
 /** Loads the full state for the signed-in user from the API. */
 export async function load(previous: State): Promise<State> {
   const me = await request<ApiMe>("GET", "/me");
@@ -301,17 +356,17 @@ export async function load(previous: State): Promise<State> {
   // Audit finding B5: with a temporary password, the API refuses each other request. The
   // panel shows only the form for a new password.
   if (me.mustChangePassword) {
-    return { ...previous, session: { signedIn: true, mustChangePassword: true, user, contextId: previous.session.contextId }, totpEnabled: me.totpEnabled };
+    return { ...previous, brand: me.brand ?? previous.brand, session: { signedIn: true, mustChangePassword: true, user, contextId: previous.session.contextId }, totpEnabled: me.totpEnabled };
   }
   // Second audit, finding F09: an administrator or a reseller must set up TOTP first. The API
   // refuses each other request until then.
   if (me.totpSetupRequired) {
-    return { ...previous, session: { signedIn: true, totpSetupRequired: true, user, contextId: previous.session.contextId }, totpEnabled: false };
+    return { ...previous, brand: me.brand ?? previous.brand, session: { signedIn: true, totpSetupRequired: true, user, contextId: previous.session.contextId }, totpEnabled: false };
   }
   const admin = me.role === "administrator";
   const optional = <T>(p: Promise<T>, fallback: T) => p.catch(() => fallback);
 
-  const [websites, jobs, customers, plans, tokens, policy, servers, images, rollouts, audit, users, certificate, setup, account, databaseServers, mailDomains, mailboxes, mailAliases, mailClusters] = await Promise.all([
+  const [websites, jobs, customers, plans, tokens, policy, servers, images, rollouts, audit, users, certificate, setup, account, databaseServers, dns, mesh, networks, alerts, mailDomains, mailboxes, mailAliases, mailClusters] = await Promise.all([
     all<ApiWebsite>("/websites"),
     request<{ data: ApiJob[] }>("GET", "/jobs?perPage=50").then((r) => r.data),
     optional(request<{ data: ApiCustomer[] }>("GET", "/customers").then((r) => r.data), []),
@@ -328,19 +383,34 @@ export async function load(previous: State): Promise<State> {
     admin ? Promise.resolve(null) : optional(request<ApiAccount>("GET", "/account"), null),
     // The database servers of the customers that the user can see.
     optional(request<{ data: ApiDatabaseServer[] }>("GET", "/database-servers").then((r) => r.data), []),
+    // The DNS zones, and the name servers that a customer gives to the registrar of a domain.
+    optional(request<{ data: ApiDnsZone[]; nameServers?: string[] }>("GET", "/dns-zones"), { data: [], nameServers: [] }),
+    // A panel API of an earlier release has no mesh.
+    admin ? optional(request<Mesh>("GET", "/mesh"), undefined) : Promise.resolve(undefined),
+    // A panel API of an earlier release has no private networks.
+    optional(request<{ data: ApiNetwork[] }>("GET", "/networks").then((r) => r.data.map(toNetwork)), []),
+    // A panel API of an earlier release has no usage alerts.
+    optional(request<{ data: UsageAlert[]; settings: UsageAlertSettings }>("GET", "/usage-alerts"), { data: [], settings: previous.alertSettings }),
     // Email. A panel of an earlier release, or a token with no mail scope, gives no lists.
     optional(request<{ data: ApiMailDomain[] }>("GET", "/mail/domains").then((r) => r.data), []),
     optional(request<{ data: ApiMailbox[] }>("GET", "/mail/mailboxes").then((r) => r.data), []),
     optional(request<{ data: MailAlias[] }>("GET", "/mail/aliases").then((r) => r.data), []),
     admin ? optional(request<{ data: MailCluster[] }>("GET", "/mail-clusters").then((r) => r.data), []) : Promise.resolve([] as MailCluster[]),
   ]);
+  // The list has no records. The panel reads the records of the zones that the user opened.
+  const zoneDetails = new Map<string, DnsZone>();
+  await Promise.all(dns.data.filter((z) => shownZones.has(z.id)).map(async (z) => {
+    const detail = await optional(dnsZone(z.id), null);
+    if (detail) zoneDetails.set(z.id, detail);
+  }));
   // A customer or a reseller cannot list all images. They get the images for a new website.
   const runtimes = admin ? images.map((i) => toImage(i, rollouts))
     : (await optional(request<{ data: ApiRuntimeImage[] }>("GET", "/runtime-images").then((r) => r.data), [])).map(toRuntimeImage);
 
   // Databases and snapshots belong to each website.
   const all_ = websites.length <= DETAIL_LIMIT;
-  const perSite = await Promise.all(websites.filter((w) => all_ || shown.has(w.id)).map((w) => websiteDetails(w)));
+  const detailed = websites.filter((w) => all_ || shown.has(w.id));
+  const perSite = await Promise.all(detailed.map((w) => websiteDetails(w)));
   // Keep the data of the other websites from the previous load.
   const fresh = new Set(all_ ? websites.map((w) => w.id) : [...shown]);
   const exists = new Set(websites.map((w) => w.id));
@@ -362,24 +432,32 @@ export async function load(previous: State): Promise<State> {
   return {
     ...previous,
     session: { signedIn: true, user, contextId },
+    brand: me.brand ?? previous.brand,
     contexts,
     websites: websites.map(toWebsite),
     jobs: mappedJobs,
     activity: done.map((j) => ({ id: `act_${j.id}`, text: j.title, ref: j.ref, at: j.finishedAt ?? j.createdAt })),
     notifications: failed.map((j) => {
       const known = previous.notifications.find((n) => n.id === `ntf_${j.id}`);
-      return { id: `ntf_${j.id}`, tone: "danger" as const, text: `${j.title}${j.ref ? ` ${j.ref}` : ""} failed. ${jobFailure(j, me.role).text} Reference ${jobFailure(j, me.role).reference}.`, at: j.finishedAt ?? j.createdAt, read: known?.read ?? false, href: j.websiteId ? `/websites/${j.websiteId}` : "/jobs" };
+      return { id: `ntf_${j.id}`, tone: "danger" as const, text: `${j.title}${j.ref ? ` ${j.ref}` : ""} failed. ${jobFailure(j, me.role).text} Reference ${jobFailure(j, me.role).reference}.`, at: j.finishedAt ?? j.createdAt, read: known?.read ?? false, href: j.websiteId ? `/websites/${j.websiteId}` : j.dnsZoneId ? `/dns/${j.dnsZoneId}` : "/jobs" };
     }),
     servers: servers.map(toServer),
     images: runtimes,
     rollout: current ? toRollout(current, servers.length) : undefined,
     databaseServers: databaseServers.map(toDatabaseServer),
+    dnsZones: dns.data.map((z) => zoneDetails.get(z.id) ?? { ...toDnsZone(z), records: previous.dnsZones.find((x) => x.id === z.id && x.serial === z.serial)?.records }),
+    nameServers: dns.nameServers ?? [],
+    mesh,
+    networks,
+    usageAlerts: alerts.data,
+    alertSettings: alerts.settings,
     mailDomains: mailDomains.map(toMailDomain),
     mailboxes: mailboxes.map(toMailbox),
     mailAliases,
     mailClusters,
     databases: [...kept(previous.databases), ...perSite.flatMap((s) => s.databases)],
     databaseUsers: [...kept(previous.databaseUsers), ...perSite.flatMap((s) => s.users)],
+    remoteDatabaseServers: { ...previous.remoteDatabaseServers, ...Object.fromEntries(perSite.map((s, i) => [detailed[i].id, s.remote])) },
     snapshots: [...kept(previous.snapshots), ...perSite.flatMap((s) => s.snapshots)].sort((a, b) => b.at.localeCompare(a.at)),
     backupPolicy: policy,
     plans,
@@ -400,13 +478,15 @@ export async function load(previous: State): Promise<State> {
 async function websiteDetails(w: { id: string; serverId: string }) {
   const optional = <T>(p: Promise<T>, fallback: T) => p.catch(() => fallback);
   const [db, snaps] = await Promise.all([
-    optional(request<{ databases: { id: string; engine: Database["engine"]; name: string; sizeBytes: number; number?: number | null; keys?: number | null; databaseServerId?: string | null; host?: string; port?: number }[]; users: { id: string; engine: Database["engine"]; name: string; grants: DatabaseGrant[]; access: DatabaseUser["access"]; databaseServerId?: string | null }[] }>("GET", `/websites/${w.id}/databases`), { databases: [], users: [] }),
+    optional(request<{ databases: { id: string; engine: Database["engine"]; name: string; sizeBytes: number; number?: number | null; keys?: number | null; databaseServerId?: string | null; host?: string; port?: number }[]; users: { id: string; engine: Database["engine"]; name: string; grants: DatabaseGrant[]; access: DatabaseUser["access"]; databaseServerId?: string | null }[]; servers?: { id: string; remote?: boolean }[] }>("GET", `/websites/${w.id}/databases`), { databases: [], users: [] }),
     optional(request<{ data: ApiSnapshot[] }>("GET", `/websites/${w.id}/snapshots`).then((r) => r.data), []),
   ]);
   return {
+    // The database servers on a different server that the website can use.
+    remote: (db.servers ?? []).filter((x) => x.remote).map((x) => x.id),
     databases: db.databases.map((d): Database => ({ id: d.id, name: d.name, engine: d.engine, websiteId: w.id, sizeBytes: d.sizeBytes ?? 0, serverId: w.serverId, number: d.number ?? undefined, keys: d.keys ?? undefined, databaseServerId: d.databaseServerId ?? undefined, host: d.host, port: d.port })),
     users: db.users.map((u): DatabaseUser => ({ id: u.id, name: u.name, engine: u.engine, websiteId: w.id, databaseServerId: u.databaseServerId ?? undefined, grants: u.grants ?? [], access: u.access })),
-    snapshots: snaps.map((s): Snapshot => ({ id: s.id, at: s.createdAt, kind: s.kind === "manual" ? "manual" : "nightly", sizeBytes: s.sizeBytes ?? 0, websiteId: w.id, databases: s.databases ?? [] })),
+    snapshots: snaps.map((s): Snapshot => ({ id: s.id, at: s.createdAt, kind: s.kind === "manual" ? "manual" : "nightly", sizeBytes: s.sizeBytes ?? 0, websiteId: w.id, databases: s.databases ?? [], part: s.part ?? "website", serverId: s.serverId })),
   };
 }
 
@@ -424,14 +504,35 @@ export async function showWebsite(previous: State, websiteId: string): Promise<(
     ...s,
     databases: [...s.databases.filter((x) => x.websiteId !== websiteId), ...d.databases],
     databaseUsers: [...s.databaseUsers.filter((x) => x.websiteId !== websiteId), ...d.users],
+    remoteDatabaseServers: { ...s.remoteDatabaseServers, [websiteId]: d.remote },
     snapshots: [...s.snapshots.filter((x) => x.websiteId !== websiteId), ...d.snapshots].sort((a, b) => b.at.localeCompare(a.at)),
   });
 }
 
 // Session
 
+const DEVICE_KEY = "cloudfactory.device";
+
+/**
+ * A random ID of this browser. The panel sends an email to the user after a sign-in from a
+ * browser that it does not know. The ID stays after a sign-out.
+ */
+export function deviceId(): string | undefined {
+  try {
+    let id = localStorage.getItem(DEVICE_KEY);
+    if (!id || !/^[A-Za-z0-9_-]{16,100}$/.test(id)) {
+      id = crypto.randomUUID();
+      localStorage.setItem(DEVICE_KEY, id);
+    }
+    return id;
+  } catch {
+    // The browser keeps no data. The panel then knows the browser by its user agent.
+    return undefined;
+  }
+}
+
 export async function signIn(email: string, password: string, totp: string): Promise<void> {
-  const res = await request<{ token: string }>("POST", "/auth/login", { email, password, totp: totp || undefined });
+  const res = await request<{ token: string }>("POST", "/auth/login", { email, password, totp: totp || undefined, deviceId: deviceId() });
   token = res.token;
   writeToken(token);
 }
@@ -473,4 +574,4 @@ export async function waitForJob(job: ApiJob | Job, onChange: (job: Job) => void
   return current;
 }
 
-export type { ApiDatabaseServer, ApiMailDomain, ApiMailbox, ApiJob, ApiPanelCertificate, ApiUser, ApiWebsite };
+export type { ApiDatabaseServer, ApiDnsRecord, ApiDnsZone, ApiMailDomain, ApiMailbox, ApiJob, ApiPanelCertificate, ApiUser, ApiWebsite };
