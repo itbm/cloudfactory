@@ -14,6 +14,7 @@ use App\Services\Audit;
 use App\Services\Dns\Zones;
 use App\Services\DomainPolicy;
 use App\Services\JobDispatcher;
+use App\Services\Plugins\Hooks;
 use App\Validation\Input;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -51,6 +52,9 @@ class DomainController extends Controller
             throw ValidationException::withMessages(['name' => "A website can have {$limit} domains."]);
         }
         $proved = self::checkName($this->policy, $data['name'], $website->customer_id, $request);
+        app(Hooks::class)->check('domain.adding', [
+            'name' => $data['name'], 'kind' => $data['kind'], 'websiteId' => $website->id, 'websiteName' => $website->name, 'customerId' => $website->customer_id,
+        ], $request->user());
         $domain = $website->domains()->create(self::newDomain($this->policy, $request, $website->customer_id, $data['name'], DomainKind::from($data['kind']), $proved));
         $job = $domain->verified() ? $this->addRoute($website, $domain) : null;
         // A DNS zone of the customer with the name in it gets the address records of the website.

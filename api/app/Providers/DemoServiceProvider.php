@@ -13,6 +13,7 @@ use App\Services\MailDns;
 use App\Services\Notifications\DemoMailTransport;
 use App\Services\Notifications\MailTransport;
 use App\Services\Notifications\SmtpMailTransport;
+use App\Services\Plugins\Outbound;
 use Database\Seeders\DemoSeeder;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\ServiceProvider;
@@ -37,6 +38,15 @@ class DemoServiceProvider extends ServiceProvider
         // The demonstration mode sends no email. It writes each email to the log.
         $this->app->singleton(MailTransport::class, fn () => self::enabled() ? new DemoMailTransport : new SmtpMailTransport);
         $this->app->bind(MailDns::class, fn () => self::enabled() ? new DemoMailDns : new MailDns);
+
+        // The sample plugin "Uptime monitor" is on the address of the demo API (127.0.0.1).
+        $this->app->bind(Outbound::class, fn () => self::enabled() ? new class extends Outbound
+        {
+            public function permitsLoopback(): bool
+            {
+                return true;
+            }
+        } : new Outbound);
     }
 
     public function boot(): void

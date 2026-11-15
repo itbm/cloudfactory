@@ -13,6 +13,7 @@ use App\Services\Audit;
 use App\Services\DatabaseNames;
 use App\Services\DatabaseServers;
 use App\Services\JobDispatcher;
+use App\Services\Plugins\Hooks;
 use App\Validation\Input;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -99,6 +100,10 @@ class DatabaseController extends Controller
         if ($withUser && DatabaseUser::where(['engine' => $data['engine'], 'name' => $name])->exists()) {
             throw ValidationException::withMessages(['name' => 'A database user with this name exists. Make the database with no user.']);
         }
+
+        app(Hooks::class)->check('database.creating', [
+            'name' => $name, 'engine' => $data['engine'], 'websiteId' => $website->id, 'websiteName' => $website->name, 'customerId' => $website->customer_id,
+        ], $request->user());
 
         // Audit finding R6: the count and the new row are in one transaction, with a lock
         // that stops two requests from passing the limit at the same time.

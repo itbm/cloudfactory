@@ -11,6 +11,7 @@ import { MailClustersCard } from "./MailClusters";
 import { Card, ConfirmButton, Empty, Field, FormError, JobRow, Meter, Modal, PageHeader, Status, TableWrap } from "../components/ui";
 import { relativeTime } from "../lib/format";
 import { HOST_POLICY_LABEL, jobActive, roleList, SERVER_ROLE, SERVER_STATE } from "../lib/labels";
+import { PluginActionsCard } from "../components/PluginActions";
 
 /** The command that shows why a service does not run. The edge proxy and the panel are services of their own users. */
 function serviceCommand(name: string): string {
@@ -398,6 +399,7 @@ function ServerDetail({ id }: { id: string }) {
               </div>
             </Card>
             <DnsCard server={server} />
+            <PluginActionsCard target="server" targetId={server.id} targetName={server.name} />
             {!server.panel && (
               <Card title="Remove this server">
                 <div className="card-body">

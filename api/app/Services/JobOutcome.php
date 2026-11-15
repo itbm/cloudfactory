@@ -20,6 +20,7 @@ use App\Models\Snapshot;
 use App\Models\Website;
 use App\Services\Dns\Zones;
 use App\Services\Notifications\Notifier;
+use App\Services\Plugins\Events;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -110,6 +111,17 @@ class JobOutcome
         if ($state === JobState::Failed) {
             app(Notifier::class)->jobFailed($job, $website);
         }
+
+        Events::emit(Events::JOB_FINISHED, [
+            'id' => $job->id,
+            'action' => $job->action->value,
+            'title' => $job->title,
+            'state' => $state->value,
+            'error' => $error,
+            'serverId' => $job->server_id,
+            'websiteId' => $job->website_id,
+            'customerId' => $website?->customer_id,
+        ]);
     }
 
     /**

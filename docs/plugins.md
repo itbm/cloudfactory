@@ -1,0 +1,415 @@
+# Plugins
+
+A plugin adds a function to the panel. A plugin is a program that you run outside the panel,
+on a host that you select. The panel never runs the code of a plugin.
+
+A plugin can do these things:
+
+- Use the public API with its own token. The token has only the scopes that the administrator
+  approves.
+- Receive the events of the panel with signed webhooks.
+- Add pages to the web panel. A page opens in a frame, with the origin of the plugin.
+- Add action buttons to the pages of websites, servers and customers. An action runs on the
+  server of the plugin, with a short token of the user who selects it.
+- Refuse some changes before the panel makes them, with before hooks.
+- Add commands to the `cf` CLI. `cf NAME` runs the program `cf-NAME`.
+
+A plugin cannot do these things:
+
+- Get root access to a server.
+- Connect to an agent or to the root helper of an agent.
+- Read the database of the panel, the secrets of the panel or the session of a user.
+- Get the scopes `tokens:read`, `tokens:write`, `users:write`, `plugins:read` or
+  `plugins:write`. With these scopes, a plugin could make tokens, take a user account or
+  change its own access.
+
+![The Plugins page with two signed plugins, their scopes and the trusted keys](screenshots/plugins/1-plugins.png)
+
+## Parts of a plugin
+
+| Part | What it is |
+| ---- | ---------- |
+| `plugin.json` | The manifest. It gives the name, the scopes, the events, the pages, the actions, the before hooks and the commands. |
+| `plugin.json.sig` | The signature of the manifest. The publisher makes it with an ECDSA P-256 key. |
+| A server | Your program. It receives the webhooks, serves the pages and calls the API. |
+| `cf-NAME` | Optional. A program for each command of the plugin. |
+
+[`plugins/example`](../plugins/example) has a complete example.
+
+## The manifest
+
+```json
+{
+  "schema": 1,
+  "slug": "uptime",
+  "name": "Uptime monitor",
+  "version": "1.4.0",
+  "publisher": "Example Plugins Ltd",
+  "description": "Checks each website every minute.",
+  "scopes": ["websites:read", "audit:read"],
+  "events": ["audit.recorded", "job.finished", "website.created"],
+  "webhook": "/hooks/cloudfactory",
+  "pages": [
+    { "id": "status", "title": "Uptime", "path": "/panel/status", "roles": ["administrator", "reseller", "owner"] }
+  ],
+  "actions": [
+    { "id": "check", "title": "Check uptime now", "target": "website", "path": "/actions/check", "roles": ["administrator", "reseller", "owner"] }
+  ],
+  "hooks": [
+    { "event": "website.removing", "path": "/hooks/before", "onError": "allow" }
+  ],
+  "commands": [
+    { "name": "uptime", "description": "Shows the uptime of each website." }
+  ]
+}
+```
+
+| Key | Rule |
+| --- | ---- |
+| `schema` | Always `1`. |
+| `slug` | Lower-case letters, digits and `-`. 1 to 40 characters. It must be unique on the panel. |
+| `version` | For example `1.4.0`. |
+| `scopes` | The scopes of the token. Use only the scopes that the plugin needs. |
+| `events` | The events of the table in [Events](#events). |
+| `webhook` | The path of the webhook. Necessary when `events` is not empty. |
+| `pages` | Up to 10 pages. `roles` gives the roles that see the page in the menu. |
+| `actions` | Up to 20 actions. `target` is `website`, `server` or `customer`. `roles` gives the roles that see the button. `confirm` is optional: a question that the panel asks before it runs the action. |
+| `hooks` | Up to 20 before hooks. `event` is a hook of the table in [Before hooks](#before-hooks). `onError` is `allow` (the default) or `refuse`. |
+| `commands` | Up to 20 commands. The panel shows them only as information. |
+
+Each path starts with `/`. A path cannot have `..`, a query or a fragment. The paths are
+relative to the address of the plugin. The administrator gives the address at the install,
+because the publisher does not know where you run the plugin.
+
+The manifest can have up to 32 KB. The panel keeps only the keys of this table.
+
+## Sign a manifest
+
+The publisher signs the exact bytes of `plugin.json`. Do not change the file after you sign
+it. A change of one byte makes the signature incorrect.
+
+To sign with cosign:
+
+```sh
+cosign generate-key-pair          # one time: makes cosign.key and cosign.pub
+cosign sign-blob --yes --key cosign.key --output-signature plugin.json.sig plugin.json
+```
+
+To sign with OpenSSL:
+
+```sh
+openssl ecparam -name prime256v1 -genkey -noout -out plugin.key    # one time
+openssl ec -in plugin.key -pubout -out plugin.pub                   # one time
+openssl dgst -sha256 -sign plugin.key plugin.json | base64 -w0 > plugin.json.sig
+```
+
+Give `plugin.pub` (or `cosign.pub`) to the administrators who install your plugins.
+
+## Install a plugin
+
+Only an administrator can install a plugin. Each step that gives access needs the password
+of the administrator, and the TOTP code when TOTP is on.
+
+1. Add the public key of the publisher: **Plugins > Trusted keys > Add key**, or
+   `cf plugins keys add --name NAME --file cosign.pub`.
+2. Start the server of the plugin on its own host name, for example
+   `https://uptime.example.net`. Do not use the host name of the panel. The panel refuses it.
+3. Select **Plugins > Install plugin**. Paste the manifest and the signature. Select
+   **Check the manifest**.
+4. Read the scopes, the events and the pages. Give the address of the plugin.
+5. Type your password, and the TOTP code when TOTP is on. Select **Install plugin**.
+6. Copy the token and the webhook secret. The panel shows them one time only. Give them to
+   the plugin, for example as `CF_TOKEN` and `CF_WEBHOOK_SECRET`.
+
+With the CLI:
+
+```sh
+cf plugins install --manifest plugin.json --address https://uptime.example.net
+```
+
+The CLI reads the signature from `plugin.json.sig`. It reads your password from `CF_PASSWORD`
+or stdin.
+
+![The review before an install: the scopes in plain words, the events, the pages and the signature](screenshots/plugins/3-install-review.png)
+
+### Manage a plugin
+
+| Action | Web panel | CLI |
+| ------ | --------- | --- |
+| Turn off | The switch on the card of the plugin | `cf plugins disable PLUGIN` |
+| Send a test event | **Send a test event** | `cf plugins test PLUGIN` |
+| See the deliveries | **Show deliveries** | `cf plugins deliveries PLUGIN` |
+| Install a new version | **Install a new version** | `cf plugins upgrade PLUGIN` |
+| Make a new token and secret | **Make new credentials** | `cf plugins credentials PLUGIN` |
+| Remove | **Remove plugin** | `cf plugins remove PLUGIN` |
+
+A plugin that is off has no access. Its token, its page tokens and its action tokens get status
+403. The panel sends it no events, shows none of its actions, and does not ask its before
+hooks. A new version keeps the token, and the token gets the scopes of the
+new manifest. The review shows the scopes that the new version adds.
+
+The token of a plugin expires after one year. Make new credentials before that date.
+
+### The developer mode
+
+The developer mode is for the development of a plugin. Do not turn it on for a production
+panel. In the developer mode, the panel accepts:
+
+- a manifest with no signature,
+- an address with `http://`,
+- a webhook on the loopback interface (`127.0.0.1` or `::1`).
+
+## The token of a plugin
+
+The panel makes one user for each plugin. The user has the name `Plugin: NAME` and the role
+"administrator". Nobody can sign in as this user. The user is not in the list of users.
+
+The token belongs to this user. The scopes of the token are the only limit. Thus a plugin
+with `websites:read` can read the websites of all customers.
+
+The audit log shows each change of a plugin with the actor `Plugin: NAME (token Plugin)`.
+
+## Events
+
+The panel sends each event to the webhook of each plugin that is on and wants the event.
+
+| Event | When | Data |
+| ----- | ---- | ---- |
+| `audit.recorded` | Each change in the audit log | `action`, `target`, `actor`, `customerId`, `pluginId`, `at` |
+| `job.finished` | A job of an agent succeeded or failed | `id`, `action`, `title`, `state`, `error`, `serverId`, `websiteId`, `customerId` |
+| `plugin.test` | An administrator sends a test event | `message`, `by` |
+
+The named events are changes of the audit log with one action. Use them when your plugin wants
+only some changes. Their data is the same as the data of `audit.recorded`.
+
+| Event | Audit action |
+| ----- | ------------ |
+| `website.created`, `website.changed`, `website.removed` | Created website, Changed website, Removed website |
+| `domain.added`, `domain.verified`, `domain.removed` | Added domain, Verified domain, Removed domain |
+| `database.created`, `database.removed` | Created database, Removed database |
+| `backup.started`, `restore.started` | Backed up website, Restored from backup |
+| `deploy.started` | Started deploy, Started deploy from webhook |
+| `customer.created`, `customer.changed` | Created customer, Changed customer |
+| `user.created` | Created user |
+
+`backup.started` and `restore.started` come when a user starts the work. To know when the
+work is complete, use `job.finished`.
+
+`pluginId` is the ID of the plugin that made the change, or `null`. Use it to ignore your own
+changes. If you do not ignore them, a plugin that makes a change for each event can make a
+loop.
+
+### The request
+
+The panel sends `POST` to the webhook with a JSON body:
+
+```json
+{
+  "id": "01jd2m4w3h6ya8c0vvv1q8x0zr",
+  "event": "job.finished",
+  "createdAt": "2026-11-15T10:42:07+00:00",
+  "data": { "title": "Create website shop.example.com", "state": "succeeded" }
+}
+```
+
+The headers:
+
+| Header | Value |
+| ------ | ----- |
+| `Cloudfactory-Event` | The name of the event |
+| `Cloudfactory-Delivery` | The ID of the delivery. It is the same for each attempt. |
+| `Cloudfactory-Signature` | `t=<Unix time>,v1=<HMAC-SHA256>` |
+
+### Check the signature
+
+Do these steps for each request. Refuse the request if a step fails.
+
+1. Read `t` and `v1` from `Cloudfactory-Signature`.
+2. Make sure that `t` is not older than 5 minutes.
+3. Calculate HMAC-SHA256 of `<t>.<body>` with the webhook secret. Use the body as bytes,
+   before you parse it.
+4. Compare the result with `v1` in constant time.
+
+```js
+import { createHmac, timingSafeEqual } from "node:crypto";
+
+function verify(secret, header, body) {
+  const { t, v1 } = Object.fromEntries(header.split(",").map((p) => p.split("=")));
+  if (Math.abs(Date.now() / 1000 - Number(t)) > 300) return false;
+  const want = createHmac("sha256", secret).update(`${t}.${body}`).digest("hex");
+  return want.length === v1.length && timingSafeEqual(Buffer.from(want), Buffer.from(v1));
+}
+```
+
+### Answers and attempts
+
+Answer with a status from 200 to 299 in 10 seconds. Do slow work after the answer.
+
+The panel does not follow a redirect. When a delivery fails, the panel tries again after 1
+minute, 5 minutes, 30 minutes, 2 hours and 6 hours. After 6 attempts, the delivery is
+"failed". An administrator can send it again. Use `Cloudfactory-Delivery` to ignore an event
+that you received before.
+
+### Addresses that the panel refuses
+
+These rules apply to each request to a plugin: the webhook, the actions and the before hooks.
+The panel resolves the host name one time, and connects to the address that it checked. It refuses these addresses:
+
+- the loopback interface, except in the developer mode,
+- link-local addresses, which include the private service address `169.254.77.1` and the
+  cloud metadata service,
+- multicast and unspecified addresses.
+
+Private addresses, for example `10.0.0.0/8`, are permitted. Thus you can run a plugin in a
+private network.
+
+## Pages
+
+A page opens in a frame in the web panel. The frame has the origin of the plugin, so the
+script of the page cannot read the panel, its storage or the session of the user. The frame
+cannot open a different page in the top window.
+
+The web panel gives the page a page token with `postMessage`:
+
+1. The page sends `{ "type": "cloudfactory:ready", "version": 1 }` to `window.parent`.
+2. The web panel asks the API for a page token
+   (`POST /v1/plugin-pages/{id}/{pageId}/session`). It sends the token only to the origin of
+   the page.
+3. The page receives this message:
+
+   ```json
+   {
+     "type": "cloudfactory:session",
+     "version": 1,
+     "token": "…",
+     "expiresAt": "2026-11-15T10:57:07+00:00",
+     "scopes": ["audit:read", "websites:read"],
+     "user": { "id": 3, "name": "Olivia Owner", "role": "owner", "customerId": "…" },
+     "page": { "pluginId": "…", "id": "status", "title": "Uptime", "url": "…", "origin": "…" },
+     "apiBase": "https://panel.example.com/api/v1",
+     "panelOrigin": "https://panel.example.com"
+   }
+   ```
+
+4. The page calls the API with `Authorization: Bearer <token>`.
+
+![The page of the example plugin for a website owner. It shows only the websites of the owner.](screenshots/plugins/5-plugin-page-owner.png)
+
+The page token:
+
+- belongs to the user who opened the page, so the rights of that user apply. An owner sees
+  only the websites of the owner.
+- has the scopes of the plugin.
+- expires after 15 minutes. The web panel sends a new one each 12 minutes.
+- cannot make a different token or a second page token.
+
+Check that a message comes from `window.parent`. Keep the page token in memory only.
+
+To set the height of the frame, send `{ "type": "cloudfactory:resize", "height": N }`.
+
+The API accepts calls from the browser (CORS) from the origin of each plugin that is on and
+has pages. Your page can also send the page token to the server of the plugin, which then
+calls the API.
+
+## Actions
+
+An action is a button on the page of a website, of a server or of a customer. The panel shows
+the actions of the plugins that are on, for the roles of the manifest. Servers are only for
+administrators.
+
+When a user selects an action, the panel:
+
+1. Asks the question of `confirm`, or "Run ... on ...?".
+2. Makes sure that the user can see the target. An owner cannot run an action on the website
+   of a different customer.
+3. Makes a token of the user for 15 minutes, with the scopes of the plugin.
+4. Sends `POST` to the path of the action, with the signed headers of a webhook
+   (`Cloudfactory-Event: plugin.action`):
+
+   ```json
+   {
+     "id": "01jd2m4w3h6ya8c0vvv1q8x0zr",
+     "action": { "id": "check", "title": "Check uptime now" },
+     "target": { "type": "website", "id": "01jd…", "name": "shop.example.com", "customerId": "01jc…" },
+     "user": { "id": 3, "name": "Olivia Owner", "role": "owner", "customerId": "01jc…" },
+     "token": "…",
+     "expiresAt": "2026-11-15T10:57:07+00:00",
+     "scopes": ["audit:read", "websites:read"],
+     "apiBase": "https://panel.example.com/api/v1",
+     "createdAt": "2026-11-15T10:42:07+00:00"
+   }
+   ```
+
+5. Waits 10 seconds or less for the answer.
+
+Check the signature as for a webhook. Then do the action with the token, so that the rights of
+the user apply. Answer with status 200 and JSON:
+
+```json
+{ "message": "shop.example.com answered 200 in 182 ms.", "url": "https://uptime.example.net/report/42" }
+```
+
+The panel shows `message` (up to 500 characters). It shows a link to `url` only when the URL
+starts with the address of the plugin. Both keys are optional. When the plugin does not answer
+with a status from 200 to 299, the panel shows an error, and the token stops at once.
+
+![The answer of the plugin to the action "Check uptime now" on a website](screenshots/plugins/6-plugin-action.png)
+
+Only a sign-in session of the web panel runs an action. An API token cannot. The audit log
+records each action as "Ran plugin action".
+
+## Before hooks
+
+A before hook lets a plugin refuse a change. The panel asks each plugin that is on and has the
+hook, before it makes the change.
+
+| Hook | Before | Data |
+| ---- | ------ | ---- |
+| `website.creating` | A user makes a website | `name`, `kind`, `customerId`, `customerName`, `planId`, `imageId`, `serverId` |
+| `website.removing` | A user deletes a website | `id`, `name`, `customerId` |
+| `domain.adding` | A user adds a domain to a website | `name`, `kind`, `websiteId`, `websiteName`, `customerId` |
+| `database.creating` | A user makes a database | `name`, `engine`, `websiteId`, `websiteName`, `customerId` |
+| `customer.creating` | A user adds a customer | `name`, `email`, `role`, `planId`, `resellerId` |
+
+The panel sends `POST` to the path of the hook, with the signed headers of a webhook. The header
+`Cloudfactory-Event` has the name of the hook. The body has `id`, `hook`, `createdAt`, `data`
+and `user`.
+
+Answer in 5 seconds with status 200 and one of these:
+
+```json
+{ "allow": true }
+```
+
+```json
+{ "allow": false, "message": "This website has an open invoice." }
+```
+
+When a plugin refuses, the panel does not make the change. The user sees "The plugin NAME
+refused this change:" and the message (up to 300 characters).
+
+When the plugin does not answer in 5 seconds, or answers with a different value, `onError`
+applies. With `allow`, the panel makes the change. With `refuse`, the panel refuses it. Use
+`refuse` only when the plugin must see each change, because a plugin that is down then stops
+these changes.
+
+A before hook cannot change the request. The panel does not ask a plugin about the changes
+that the plugin makes with its own token. Each hook makes the change slower, so answer fast.
+
+## Commands
+
+`cf NAME ARG...` runs the program `cf-NAME` from the `PATH` when `cf` has no command `NAME`.
+A plugin cannot replace a command of `cf`. The program gets the arguments and these
+environment variables:
+
+| Variable | Value |
+| -------- | ----- |
+| `CF_PANEL` | The address of the panel of your sign-in |
+| `CF_TOKEN` | Your token |
+
+The program runs as your user, with your token. Install only the programs of publishers that
+you trust.
+
+## Security
+
+Refer to [security.md](security.md#plugins).

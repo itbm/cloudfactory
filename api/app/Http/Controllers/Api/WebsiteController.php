@@ -25,6 +25,7 @@ use App\Services\Dns\Zones;
 use App\Services\DomainPolicy;
 use App\Services\JobDispatcher;
 use App\Services\Networks;
+use App\Services\Plugins\Hooks;
 use App\Services\WebsiteRemoval;
 use App\Validation\Input;
 use App\Validation\InputRules;
@@ -142,6 +143,11 @@ class WebsiteController extends Controller
         if (Website::where('name', $data['name'])->exists()) {
             throw ValidationException::withMessages(['name' => 'The name has already been taken.']);
         }
+        // The plugins with the before hook can refuse the new website.
+        app(Hooks::class)->check('website.creating', [
+            'name' => $data['name'], 'kind' => $kind, 'customerId' => $customer->id, 'customerName' => $customer->name,
+            'planId' => $plan->id, 'imageId' => $image->id, 'serverId' => $server->id,
+        ], $user);
 
         $website = DB::transaction(function () use ($data, $kind, $unixUser, $customer, $image, $plan, $server, $domain) {
             self::checkWebsiteLimit($customer);
@@ -237,6 +243,7 @@ class WebsiteController extends Controller
     public function destroy(Request $request, string $id): JsonResponse
     {
         $website = $this->findWebsite($request, $id);
+        app(Hooks::class)->check('website.removing', ['id' => $website->id, 'name' => $website->name, 'customerId' => $website->customer_id], $request->user());
         // A website with a database on a different server gets a job for that server first
         // (WebsiteRemoval).
         $job = app(WebsiteRemoval::class)->start($website);

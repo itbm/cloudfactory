@@ -27,7 +27,8 @@ class UserController extends Controller
     {
         $ids = $request->user()->visibleCustomerIds();
 
-        return response()->json(['data' => User::query()
+        // The users of plugins are on the Plugins page, not here.
+        return response()->json(['data' => User::query()->whereNull('plugin_id')
             ->when($ids !== null, fn ($q) => $q->whereIn('customer_id', $ids))
             ->orderBy('name')->orderBy('id')->get()->map(fn (User $u) => self::present($u))]);
     }
@@ -170,7 +171,7 @@ class UserController extends Controller
 
     private function find(Request $request, int $id): User
     {
-        $target = User::findOrFail($id);
+        $target = User::whereNull('plugin_id')->findOrFail($id);
         $ids = $request->user()->visibleCustomerIds();
         abort_unless($ids === null || in_array($target->customer_id, $ids, true), 404);
 

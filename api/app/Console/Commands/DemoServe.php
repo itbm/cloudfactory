@@ -36,7 +36,9 @@ class DemoServe extends Command
 
         $artisan = [PHP_BINARY, base_path('artisan')];
         $processes = [
-            new Process([...$artisan, 'serve', '--host='.$this->option('host'), '--port='.$this->option('port')], base_path(), null, null, null),
+            // Four workers: the sample plugin is on the demo API, and the API calls it during a
+            // request (an action or a before hook). With one worker, the request would wait for itself.
+            new Process([...$artisan, 'serve', '--no-reload', '--host='.$this->option('host'), '--port='.$this->option('port')], base_path(), ['PHP_CLI_SERVER_WORKERS' => '4'], null, null),
             new Process([...$artisan, 'queue:work', '--sleep=1', '--tries=1'], base_path(), null, null, null),
         ];
         foreach ($processes as $process) {

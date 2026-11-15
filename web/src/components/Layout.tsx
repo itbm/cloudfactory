@@ -11,6 +11,7 @@ import {
   History,
   Layers,
   ListChecks,
+  Puzzle,
   LogOut,
   Mail,
   Menu,
@@ -32,7 +33,7 @@ import { markNotificationsRead, setContext, signOut } from "../api/store";
 import type { AccountContext, Tone } from "../api/types";
 import { relativeTime } from "../lib/format";
 import { jobActive } from "../lib/labels";
-import { HOME, NAVIGATION, ROLE_LABEL, type NavEntry, type NavSection } from "../lib/roles";
+import { HOME, NAVIGATION, ROLE_LABEL, pluginPagePath, type NavEntry, type NavSection } from "../lib/roles";
 import { BrandMark, useBrand } from "./Brand";
 import { CommandPalette } from "./CommandPalette";
 import { SecurityNotices } from "./SecurityNotices";
@@ -193,6 +194,7 @@ const ICONS: Record<NavEntry["icon"], ReactNode> = {
   account: <CircleUser size={18} />,
   brand: <Palette size={18} />,
   settings: <Settings2 size={18} />,
+  plugins: <Puzzle size={18} />,
 };
 
 /** A count or a mark at the end of a link, for example the number of open setup items. */
@@ -234,6 +236,12 @@ function NavGroup({ section, index }: { section: NavSection; index: number }) {
   );
 }
 
+/** The pages of the plugins, in their own part of the menu. The API gives only the pages for the role. */
+function pluginSection(pages: { pluginId: string; id: string; title: string }[]): NavSection[] {
+  if (pages.length === 0) return [];
+  return [{ title: "Plugins", items: pages.map((p) => ({ to: pluginPagePath(p.pluginId, p.id), label: p.title, icon: "plugins" as const })) }];
+}
+
 export function Layout() {
   const [palette, setPalette] = useState<string | null>(null);
   const [navOpen, setNavOpen] = useState(false);
@@ -272,7 +280,7 @@ export function Layout() {
           </NavLink>
           <ContextSwitcher />
           {/* Each role has its own menu. A setup that is complete needs no link. */}
-          {NAVIGATION[user.role]
+          {[...NAVIGATION[user.role], ...pluginSection(state.pluginPages)]
             .map((section) => ({ ...section, items: section.items.filter((item) => item.to !== "/setup" || (state.setup ? !state.setup.complete : false)) }))
             .map((section, i) => <NavGroup key={section.title ?? i} section={section} index={i} />)}
           {/* White label: the customers of a reseller ask the reseller for help. */}

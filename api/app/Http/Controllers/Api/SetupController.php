@@ -59,7 +59,7 @@ class SetupController extends Controller
     /** @return array<string, mixed> */
     private static function totp(User $user): array
     {
-        $without = User::where('role', Role::Administrator->value)->whereNull('totp_secret')->orderBy('name')->get(['id', 'name', 'email']);
+        $without = User::where('role', Role::Administrator->value)->whereNull('plugin_id')->whereNull('totp_secret')->orderBy('name')->get(['id', 'name', 'email']);
         $own = $without->contains('id', $user->id);
         $names = $without->map(fn (User $u) => "{$u->name} ({$u->email})")->implode(', ');
 

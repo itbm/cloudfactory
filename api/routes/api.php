@@ -31,6 +31,7 @@ use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\NotificationTemplateController;
 use App\Http\Controllers\Api\PanelCertificateController;
 use App\Http\Controllers\Api\PlanController;
+use App\Http\Controllers\Api\PluginController;
 use App\Http\Controllers\Api\RolloutController;
 use App\Http\Controllers\Api\RuntimeController;
 use App\Http\Controllers\Api\ServerController;
@@ -262,6 +263,31 @@ Route::prefix('v1')->group(function () {
 
         Route::get('audit', [AuditController::class, 'index'])->middleware('scope:audit');
 
+        // Plugins: programs outside the panel with their own token (PluginController).
+        Route::middleware(['admin', 'scope:plugins'])->group(function () {
+            Route::get('plugins', [PluginController::class, 'index']);
+            Route::post('plugins/preview', [PluginController::class, 'preview']);
+            Route::post('plugins', [PluginController::class, 'store'])->middleware('throttle:10,1');
+            Route::get('plugin-keys', [PluginController::class, 'keys']);
+            Route::post('plugin-keys', [PluginController::class, 'storeKey'])->middleware('throttle:10,1');
+            Route::delete('plugin-keys/{id}', [PluginController::class, 'destroyKey']);
+            Route::get('plugin-settings', [PluginController::class, 'settings']);
+            Route::put('plugin-settings', [PluginController::class, 'updateSettings'])->middleware('throttle:10,1');
+            Route::get('plugins/{id}', [PluginController::class, 'show']);
+            Route::put('plugins/{id}', [PluginController::class, 'upgrade'])->middleware('throttle:10,1');
+            Route::patch('plugins/{id}', [PluginController::class, 'update']);
+            Route::delete('plugins/{id}', [PluginController::class, 'destroy']);
+            Route::post('plugins/{id}/credentials', [PluginController::class, 'rotate'])->middleware('throttle:10,1');
+            Route::post('plugins/{id}/test', [PluginController::class, 'test'])->middleware('throttle:30,1');
+            Route::get('plugins/{id}/deliveries', [PluginController::class, 'deliveries']);
+            Route::post('plugins/{id}/deliveries/{deliveryId}/retry', [PluginController::class, 'retry'])->middleware('throttle:30,1');
+        });
+        // The pages of the plugins for the menu, and a short token for a page. Each role.
+        Route::get('plugin-pages', [PluginController::class, 'pages']);
+        Route::post('plugin-pages/{id}/{pageId}/session', [PluginController::class, 'pageSession'])->middleware('throttle:60,1');
+        // The actions of the plugins (buttons on websites, servers and customers). Each role.
+        Route::get('plugin-actions', [PluginController::class, 'actions']);
+        Route::post('plugin-actions/{id}/{actionId}', [PluginController::class, 'runAction'])->middleware('throttle:30,1');
         // Email notifications: the events that each user receives, the emails that the panel
         // sent, and for administrators and resellers the SMTP server and the templates.
         Route::middleware('scope:notifications')->group(function () {

@@ -31,6 +31,13 @@ import type {
   LogLine,
   Mesh,
   Plan,
+  Plugin,
+  PluginCredentials,
+  PluginDelivery,
+  PluginKey,
+  PluginManifest,
+  PluginActionResult,
+  PluginPageSession,
   ResellerBranding,
   ServerRole,
   State,
@@ -62,7 +69,7 @@ export function emptyState(): State {
   return {
     session: { signedIn: false, user: { id: "", name: "", email: "", role: "owner" }, contextId: "" },
     contexts: [], websites: [], jobs: [], activity: [], notifications: [], servers: [], images: [], rollout: undefined,
-    databaseServers: [], dnsZones: [], nameServers: [], networks: [], usageAlerts: [], alertSettings: { warningPercent: 80, criticalPercent: 95 }, mailDomains: [], mailClusters: [], mailboxes: [], mailAliases: [], databases: [], databaseUsers: [], remoteDatabaseServers: {}, snapshots: [], plans: [], customers: [], users: [],
+    databaseServers: [], dnsZones: [], nameServers: [], networks: [], pluginPages: [], pluginActions: [], usageAlerts: [], alertSettings: { warningPercent: 80, criticalPercent: 95 }, mailDomains: [], mailClusters: [], mailboxes: [], mailAliases: [], databases: [], databaseUsers: [], remoteDatabaseServers: {}, snapshots: [], plans: [], customers: [], users: [],
     backupPolicy: { daily: 7, weekly: 4, monthly: 6, time: "03:00", target: "", credentialNames: [] },
     tokens: [], totpEnabled: false, securityNotices: [], audit: [], joinToken: "", joinCaSha256: undefined,
     panelDomain: "",
@@ -1396,3 +1403,104 @@ export function changePassword(current: string, next: string, confirm: string, t
     await reload();
   });
 }
+
+// Plugins (docs/plugins.md). Only an administrator manages them. Each role opens the pages.
+
+export interface PluginAdmin { plugins: Plugin[]; keys: PluginKey[]; developerMode: boolean }
+
+/** The plugins, the trusted keys and the developer mode, for the Plugins page. */
+export async function loadPlugins(): Promise<PluginAdmin> {
+  return call(async () => {
+    const [plugins, keys, settings] = await Promise.all([
+      live.request<{ data: Plugin[] }>("GET", "/plugins"),
+      live.request<{ data: PluginKey[] }>("GET", "/plugin-keys"),
+      live.request<{ developerMode: boolean }>("GET", "/plugin-settings"),
+    ]);
+    return { plugins: plugins.data, keys: keys.data, developerMode: settings.developerMode };
+  });
+}
+
+export function pluginDeliveries(pluginId: string): Promise<PluginDelivery[]> {
+  return call(() => live.request<{ data: PluginDelivery[] }>("GET", `/plugins/${pluginId}/deliveries`).then((r) => r.data));
+}
+
+export interface PluginPreview { manifest: PluginManifest; signedBy: PluginKey | null; installed: string | null; developerMode: boolean }
+
+/** Checks a manifest and gives what it asks for. It changes nothing. */
+export function previewPlugin(manifest: string, signature: string): Promise<PluginPreview> {
+  return call(() => live.request<PluginPreview>("POST", "/plugins/preview", { manifest, signature: signature.trim() || null }));
+}
+
+export function installPlugin(manifest: string, signature: string, baseUrl: string, confirm: Confirmation): Promise<PluginCredentials> {
+  return call(async () => {
+    const r = await live.request<PluginCredentials>("POST", "/plugins", { manifest, signature: signature.trim() || null, baseUrl: baseUrl.trim(), ...confirmation(confirm) });
+    await refresh();
+    return r;
+  });
+}
+
+export function upgradePlugin(pluginId: string, manifest: string, signature: string, confirm: Confirmation): Promise<Plugin> {
+  return call(async () => {
+    const r = await live.request<Plugin>("PUT", `/plugins/${pluginId}`, { manifest, signature: signature.trim() || null, ...confirmation(confirm) });
+    await refresh();
+    return r;
+  });
+}
+
+export function setPluginEnabled(pluginId: string, enabled: boolean): Promise<Plugin> {
+  return call(async () => {
+    const r = await live.request<Plugin>("PATCH", `/plugins/${pluginId}`, { enabled });
+    await refresh();
+    return r;
+  });
+}
+
+export function setPluginAddress(pluginId: string, baseUrl: string, confirm: Confirmation): Promise<Plugin> {
+  return call(async () => {
+    const r = await live.request<Plugin>("PATCH", `/plugins/${pluginId}`, { baseUrl: baseUrl.trim(), ...confirmation(confirm) });
+    await refresh();
+    return r;
+  });
+}
+
+export function removePlugin(pluginId: string): Promise<void> {
+  return call(async () => {
+    await live.request("DELETE", `/plugins/${pluginId}`);
+    await refresh();
+  });
+}
+
+export function rotatePluginCredentials(pluginId: string, confirm: Confirmation): Promise<PluginCredentials> {
+  return call(() => live.request<PluginCredentials>("POST", `/plugins/${pluginId}/credentials`, confirmation(confirm)));
+}
+
+export function testPlugin(pluginId: string): Promise<PluginDelivery> {
+  return call(() => live.request<PluginDelivery>("POST", `/plugins/${pluginId}/test`));
+}
+
+export function retryPluginDelivery(pluginId: string, deliveryId: string): Promise<PluginDelivery> {
+  return call(() => live.request<PluginDelivery>("POST", `/plugins/${pluginId}/deliveries/${deliveryId}/retry`));
+}
+
+export function addPluginKey(name: string, publicKey: string, confirm: Confirmation): Promise<PluginKey> {
+  return call(() => live.request<PluginKey>("POST", "/plugin-keys", { name: name.trim(), publicKey: publicKey.trim(), ...confirmation(confirm) }));
+}
+
+export function removePluginKey(keyId: string): Promise<void> {
+  return call(() => live.request("DELETE", `/plugin-keys/${keyId}`).then(() => undefined));
+}
+
+export function setPluginDeveloperMode(on: boolean, confirm: Confirmation): Promise<boolean> {
+  return call(() => live.request<{ developerMode: boolean }>("PUT", "/plugin-settings", { developerMode: on, ...(on ? confirmation(confirm) : {}) }).then((r) => r.developerMode));
+}
+
+/** A short token for a plugin page, for the signed-in user. */
+/** Runs an action of a plugin on a website, a server or a customer. */
+export function runPluginAction(pluginId: string, actionId: string, targetId: string): Promise<PluginActionResult> {
+  return call(() => live.request<PluginActionResult>("POST", `/plugin-actions/${pluginId}/${actionId}`, { targetId }));
+}
+
+export function pluginPageSession(pluginId: string, pageId: string): Promise<PluginPageSession> {
+  return call(() => live.request<PluginPageSession>("POST", `/plugin-pages/${pluginId}/${pageId}/session`));
+}
+

@@ -12,7 +12,7 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
 
-#[Fillable(['name', 'email', 'password', 'role', 'customer_id'])]
+#[Fillable(['name', 'email', 'password', 'role', 'customer_id', 'plugin_id'])]
 #[Hidden(['password', 'remember_token', 'totp_secret', 'totp_last_step'])]
 class User extends Authenticatable
 {
@@ -34,6 +34,12 @@ class User extends Authenticatable
     public function customer(): BelongsTo
     {
         return $this->belongsTo(Customer::class);
+    }
+
+    /** The user of a plugin. Nobody signs in as this user. Only the token of the plugin uses it. */
+    public function isPlugin(): bool
+    {
+        return $this->plugin_id !== null;
     }
 
     public function isAdministrator(): bool
