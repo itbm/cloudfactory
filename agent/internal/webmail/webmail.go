@@ -27,6 +27,15 @@ const DataDir = "/app/data"
 // contacts. The management API of the mail server (/api) is not in the list.
 var MailPaths = []string{"/.well-known/jmap", "/jmap", "/jmap/*", "/.well-known/caldav", "/.well-known/carddav", "/dav", "/dav/*"}
 
+// ClosedPaths are the paths of the admin dashboard and of the setup of the webmail. The edge
+// proxy refuses them. The webmail itself uses the admin dashboard only to install the PGP
+// plugin, on the address of its container. UserPaths are in the API of the dashboard, but
+// the users need them: the rules of the webmail for the users, the code of the plugins, the public settings of the plugins, the themes
+// and the images of the login page. The edge proxy lets GET requests for them through.
+var UserPaths = []string{"/api/admin/policy", "/api/admin/plugins/*/bundle", "/api/admin/plugins/*/config", "/api/admin/themes/*/css", "/api/admin/themes/*/skin", "/api/admin/branding/*"}
+
+var ClosedPaths = []string{"/admin", "/admin/*", "/api/admin", "/api/admin/*", "/setup", "/setup/*", "/api/setup", "/api/setup/*"}
+
 // Routes gives the routes of the edge proxy for the host name of the mail server: the paths of
 // the mail server go to mailPort, and all other paths to webmailPort.
 func Routes(hostname string, webmailPort, mailPort int) caddy.Site {
@@ -35,7 +44,11 @@ func Routes(hostname string, webmailPort, mailPort int) caddy.Site {
 		Hosts:     []string{hostname},
 		Primary:   hostname,
 		Port:      webmailPort,
-		Paths:     []caddy.PathRoute{{Paths: MailPaths, Port: mailPort}},
+		Paths: []caddy.PathRoute{
+			{Paths: MailPaths, Port: mailPort},
+			{Paths: UserPaths, Methods: []string{"GET", "HEAD"}, Port: webmailPort},
+			{Paths: ClosedPaths},
+		},
 	}
 }
 
@@ -43,12 +56,18 @@ func Routes(hostname string, webmailPort, mailPort int) caddy.Site {
 // of the users and of the sessions: 32 or more characters. extraCA is the file in the container
 // with an added certificate authority, for a host name that has a certificate of the panel CA.
 // It is empty for a certificate of a public CA.
-func Env(hostname, secret, extraCA string) (string, error) {
+//
+// adminPassword is the password of the admin dashboard of the webmail: 32 or more characters.
+// The start script of the image uses it to install the PGP plugin. No person uses it.
+func Env(hostname, secret, adminPassword, extraCA string) (string, error) {
 	if err := validate.Domain(hostname); err != nil {
 		return "", err
 	}
 	if len(secret) < 32 || strings.ContainsAny(secret, "\n\r") {
 		return "", fmt.Errorf("the secret of the webmail must have 32 or more characters")
+	}
+	if len(adminPassword) < 32 || strings.ContainsAny(adminPassword, "\n\r") || adminPassword == secret {
+		return "", fmt.Errorf("the admin password of the webmail must have 32 or more characters, and differ from the secret")
 	}
 	lines := []string{
 		"HOSTNAME=0.0.0.0",
@@ -68,6 +87,9 @@ func Env(hostname, secret, extraCA string) (string, error) {
 		// The administrator of the mail server is not a person: the agent uses it. Thus the
 		// rights of that account do not open the admin dashboard of the webmail.
 		"STALWART_ADMIN_ACCESS=off",
+		// The start script of the image signs in to the admin dashboard with this password and
+		// installs the PGP plugin. The edge proxy refuses the paths of the dashboard.
+		"ADMIN_PASSWORD=" + adminPassword,
 	}
 	if extraCA != "" {
 		lines = append(lines, "NODE_EXTRA_CA_CERTS="+extraCA)

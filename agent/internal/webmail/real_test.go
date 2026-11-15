@@ -216,14 +216,16 @@ func TestRealWebmail(t *testing.T) {
 		t.Fatalf("the edge proxy has no root certificate: %s", root)
 	}
 	write("webmail/ca.crt", root+"\n")
-	env, err := webmail.Env(hostname, "0123456789abcdef0123456789abcdef0123456789abcdef", "/etc/cf-webmail/ca.crt")
+	env, err := webmail.Env(hostname, "0123456789abcdef0123456789abcdef0123456789abcdef", "fedcba9876543210fedcba9876543210fedcba9876543210", "/etc/cf-webmail/ca.crt")
 	if err != nil {
 		t.Fatal(err)
 	}
 	write("webmail/webmail.env", env)
 	docker("run", "-d", "--name", "cfwm-webmail", "--network", "container:cfwm-mail",
 		"--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--read-only", "--tmpfs", "/tmp",
-		"--tmpfs", webmail.DataDir+":uid=1001",
+		// The data of the webmail stays when the container starts again, as in the directory
+		// of the data on a server.
+		"-v", webmail.DataDir,
 		"-v", filepath.Join(dir, "webmail", "ca.crt")+":/etc/cf-webmail/ca.crt:ro",
 		"--env-file", filepath.Join(dir, "webmail", "webmail.env"),
 		os.Getenv("CF_TEST_WEBMAIL_IMAGE"))
@@ -259,5 +261,40 @@ func TestRealWebmail(t *testing.T) {
 	if ready.StatusCode != http.StatusOK {
 		t.Errorf("the webmail is not ready: %d %s\n%s", ready.StatusCode, b, docker("logs", "--tail", "40", "cfwm-webmail"))
 	}
+	// The start script of the image installs the PGP plugin through the admin dashboard.
+	waitFor("the PGP plugin is installed", 2*time.Minute, func() bool {
+		return strings.Contains(docker("logs", "cfwm-webmail"), "cf-webmail: installed the PGP plugin")
+	})
+	// The edge proxy refuses the admin dashboard and the setup of the webmail.
+	for _, path := range []string{"/admin", "/admin/plugins", "/api/admin/auth", "/API/Admin/plugins", "/api/admin/plugins", "/setup", "/api/setup/finish", "/api/admin/plugin-approvals"} {
+		res, err := https.Get("https://" + hostname + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res.Body.Close()
+		if res.StatusCode != http.StatusNotFound {
+			t.Errorf("GET %s through the edge proxy: %d, not 404", path, res.StatusCode)
+		}
+	}
+	// The users get the code of the plugin. A request with a different method is refused.
+	bundle := "https://" + hostname + "/api/admin/plugins/pgp-true-end-to-end/bundle"
+	res, err = https.Get(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	if res.StatusCode == http.StatusNotFound {
+		t.Errorf("GET the code of the plugin through the edge proxy: %d", res.StatusCode)
+	}
+	if res, err = https.Post(bundle, "text/plain", strings.NewReader("x")); err != nil || res.StatusCode != http.StatusNotFound {
+		t.Errorf("POST to the code of the plugin through the edge proxy: %v %v", res.StatusCode, err)
+	} else {
+		res.Body.Close()
+	}
+	// A new start keeps the plugin, and does not install it again.
+	docker("restart", "cfwm-webmail")
+	waitFor("the webmail starts again", 2*time.Minute, func() bool {
+		return strings.Contains(docker("logs", "--since", "2m", "cfwm-webmail"), "cf-webmail: the PGP plugin 2.0.2 is installed")
+	})
 	fmt.Fprintln(os.Stderr, "webmail answers at https://"+hostname+" (127.0.0.1:18443)")
 }

@@ -77,13 +77,18 @@ func TestTheWebmailStartsWithItsOwnUserAndKeepsItsSecret(t *testing.T) {
 			t.Errorf("the unit does not have %q:\n%s", want, unit)
 		}
 	}
-	// The settings of the users are encrypted with the secret: it stays the same.
-	secret, _ := root.webmailSecret()
+	// The settings of the users are encrypted with the secret, and the webmail keeps a hash of
+	// the admin password: the two stay the same, and they are different.
+	secret, _ := root.webmailSecret("SESSION_SECRET")
+	password, _ := root.webmailSecret("ADMIN_PASSWORD")
 	if err := d.EnsureWebmail(ctx, mailHost); err != nil {
 		t.Fatal(err)
 	}
-	if again, _ := root.webmailSecret(); again != secret || len(secret) != 64 {
+	if again, _ := root.webmailSecret("SESSION_SECRET"); again != secret || len(secret) != 64 {
 		t.Errorf("the secret changed: %q, %q", secret, again)
+	}
+	if again, _ := root.webmailSecret("ADMIN_PASSWORD"); again != password || len(password) != 64 || password == secret {
+		t.Errorf("the admin password changed: %q, %q", password, again)
 	}
 
 	// The edge proxy sends the JMAP paths to the mail server and the rest to the webmail.
@@ -91,13 +96,18 @@ func TestTheWebmailStartsWithItsOwnUserAndKeepsItsSecret(t *testing.T) {
 		t.Fatal(err)
 	}
 	site := edge.sites[mailRoute]
-	if site.Page != "" || site.Port != quadlet.WebmailPort || len(site.Paths) != 1 || site.Paths[0].Port != quadlet.MailAdminPort {
+	if site.Page != "" || site.Port != quadlet.WebmailPort || len(site.Paths) != 3 || site.Paths[0].Port != quadlet.MailAdminPort {
 		t.Fatalf("the route: %+v", site)
 	}
 	for _, p := range site.Paths[0].Paths {
 		if strings.HasPrefix(p, "/api") {
 			t.Errorf("the management API is on the public host name: %s", p)
 		}
+	}
+	// The edge proxy refuses the admin dashboard and the setup of the webmail.
+	closed := strings.Join(site.Paths[2].Paths, " ")
+	if site.Paths[1].Port != quadlet.WebmailPort || strings.Join(site.Paths[1].Methods, " ") != "GET HEAD" || site.Paths[2].Port != 0 || !strings.Contains(closed, "/api/admin/*") || !strings.Contains(closed, "/admin/*") || !strings.Contains(closed, "/setup/*") {
+		t.Errorf("the closed paths: %+v", site.Paths[1:])
 	}
 }
 
@@ -139,10 +149,10 @@ func TestNoWebmailImageKeepsTheShortPage(t *testing.T) {
 }
 
 func TestTheWebmailSettings(t *testing.T) {
-	if _, err := webmail.Env("mail.example.net", "short", ""); err == nil {
+	if _, err := webmail.Env("mail.example.net", "short", strings.Repeat("b", 32), ""); err == nil {
 		t.Error("a short secret must fail")
 	}
-	if _, err := webmail.Env("mail.example.net\nX=1", strings.Repeat("a", 32), ""); err == nil {
+	if _, err := webmail.Env("mail.example.net\nX=1", strings.Repeat("a", 32), strings.Repeat("b", 32), ""); err == nil {
 		t.Error("a host name with a new line must fail")
 	}
 }

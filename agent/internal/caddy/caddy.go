@@ -74,9 +74,12 @@ type Site struct {
 }
 
 // PathRoute sends the requests for some paths to a port. A path that ends with "*" is a prefix.
+// With port 0, the edge proxy refuses the requests with status 404. With methods, the route is
+// only for requests with one of these methods.
 type PathRoute struct {
-	Paths []string
-	Port  int
+	Paths   []string
+	Methods []string
+	Port    int
 }
 
 // StoppedPage is the page of a stopped website. It has status 503. It does not tell a visitor
@@ -205,7 +208,15 @@ func SiteRoute(s Site, upstream string) map[string]any {
 	if len(s.Paths) > 0 {
 		routes := make([]any, 0, len(s.Paths)+1)
 		for _, p := range s.Paths {
-			routes = append(routes, map[string]any{"match": []any{map[string]any{"path": p.Paths}}, "handle": []any{proxy(p.Port)}, "terminal": true})
+			handle := proxy(p.Port)
+			if p.Port == 0 {
+				handle = map[string]any{"handler": "static_response", "status_code": 404}
+			}
+			match := map[string]any{"path": p.Paths}
+			if len(p.Methods) > 0 {
+				match["method"] = p.Methods
+			}
+			routes = append(routes, map[string]any{"match": []any{match}, "handle": []any{handle}, "terminal": true})
 		}
 		routes = append(routes, map[string]any{"handle": []any{handler}})
 		handler = map[string]any{"handler": "subroute", "routes": routes}

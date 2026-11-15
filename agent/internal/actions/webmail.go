@@ -110,11 +110,15 @@ func (d *Deps) prepareWebmail(ctx context.Context, in webmailIn) (out webmailPre
 			return out, err
 		}
 	}
-	secret, err := d.webmailSecret()
+	secret, err := d.webmailSecret("SESSION_SECRET")
 	if err != nil {
 		return out, err
 	}
-	env, err := webmail.Env(in.Hostname, secret, map[bool]string{true: quadlet.WebmailCAFile}[caFile != ""])
+	adminPassword, err := d.webmailSecret("ADMIN_PASSWORD")
+	if err != nil {
+		return out, err
+	}
+	env, err := webmail.Env(in.Hostname, secret, adminPassword, map[bool]string{true: quadlet.WebmailCAFile}[caFile != ""])
 	if err != nil {
 		return out, err
 	}
@@ -131,13 +135,14 @@ func (d *Deps) prepareWebmail(ctx context.Context, in webmailIn) (out webmailPre
 	return out, err
 }
 
-// webmailSecret gives the secret of the webmail. It keeps a secret that exists: the settings
-// of the users are encrypted with it.
-func (d *Deps) webmailSecret() (string, error) {
+// webmailSecret gives a secret of the webmail: the value of name in the settings. It keeps a
+// secret that exists: the settings of the users are encrypted with SESSION_SECRET, and the
+// webmail keeps a hash of ADMIN_PASSWORD after the first start. Each new secret is random.
+func (d *Deps) webmailSecret(name string) (string, error) {
 	b, err := os.ReadFile(d.webmailEnvFile())
 	if err == nil {
 		for _, line := range strings.Split(string(b), "\n") {
-			if value, ok := strings.CutPrefix(line, "SESSION_SECRET="); ok && len(value) >= 32 {
+			if value, ok := strings.CutPrefix(line, name+"="); ok && len(value) >= 32 {
 				return value, nil
 			}
 		}

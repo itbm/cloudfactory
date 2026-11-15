@@ -168,8 +168,15 @@ The product specification, section 6.4, gives the requirements.
   container.
 - The edge proxy sends only the JMAP and DAV paths of the mail host name to the mail server.
   The management API (`/api`) is not on the public host name.
-- The admin dashboard of the webmail is off. The account of the administrator of the mail
-  server does not open it.
+- The admin dashboard of the webmail has a random password of 64 characters, which no person
+  knows. Only the start script of the image uses it, on the address of the container, to
+  install the PGP plugin. The edge proxy refuses the paths of the dashboard and of the setup,
+  except `GET` requests for the paths that users need. The account of the administrator of
+  the mail server does not open the dashboard.
+- The PGP plugin is a pinned release. The build of the image stops when the package does not
+  have the expected SHA-256 hash. Users cannot upload plugins. The plugin runs in the
+  privileged sandbox of Bulwark: it has the same origin as the webmail. The private key stays
+  in the browser, encrypted with the password of the mailbox.
 - In a mail cluster, the database and the cluster store listen only on the private network of
   the cluster. Only the members can connect to it, and only root and `cf-mail` can connect to
   the cluster ports on a member. The secrets of the cluster are encrypted in the database of

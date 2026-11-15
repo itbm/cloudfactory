@@ -368,6 +368,7 @@ of the Unix user `cf-webmail`. The webmail is on the host name of the mail serve
 
 ```text
  browser ──► https://MAIL-HOST ──► edge proxy ─┬─► /.well-known/jmap, /jmap/*, /dav/* ──► 169.254.77.1:19025 (mail server)
+                                               ├─► /admin/*, /api/admin/*, /setup/* ──► 404 (refused)
                                                └─► all other paths ──► 169.254.77.1:19027 (cf-webmail)
  cf-webmail ──► https://MAIL-HOST (examines each sign-in through the edge proxy)
 ```
@@ -384,7 +385,35 @@ on the public host name. Mail programs use the same name for CalDAV and CardDAV
 | Root certificate of the panel CA | `/etc/cloudfactory/webmail/ca.crt` | Only for a host name that is not public, for example `mail.example.test`. |
 
 The webmail sends no telemetry and does not look for updates: the release of the agent sets
-the image. Its admin dashboard is off.
+the image.
+
+#### PGP plugin
+
+The image of the webmail has the plugin "PGP True End-to-End", release 2.0.2. The build gets
+the package from the extension directory of Bulwark, and stops when its SHA-256 hash is not
+the hash in `images/webmail/Containerfile`. To change the release, change the release and the
+hash together.
+
+The start script of the image (`images/webmail/start.mjs`) starts the webmail, and then:
+
+1. Signs in to the admin dashboard of the webmail on `127.0.0.1`, with `ADMIN_PASSWORD` from
+   the settings file. The agent makes this password and keeps it, as the secret.
+2. Turns on the plugins of the admin, and turns off the plugins that users upload.
+3. Installs the plugin when the installed release is different, and turns it on for all
+   users.
+
+When a step fails, the webmail operates without the plugin, and the log of the container
+tells why. The next start tries again.
+
+The edge proxy refuses the paths of the admin dashboard and of the setup. It lets `GET`
+requests through for the few paths of the dashboard API that users need: the rules of the
+webmail (`/api/admin/policy`), the code and the public settings of the plugins, the themes and
+the images of the login page.
+
+The user adds the private key to the plugin one time in each browser: **Settings** >
+**PGP True End-to-End** > **Upload Existing Key**, with the file from the panel and the
+password of the mailbox. The plugin keeps the key encrypted in the browser. It asks for the
+password again to unlock the key, and then decrypts the mail in the browser.
 
 ### Mail clusters
 
