@@ -5,6 +5,8 @@ namespace Tests\Feature;
 use App\Enums\Role;
 use App\Events\UsageAlertRaised;
 use App\Events\UsageAlertResolved;
+use App\Models\MailServer;
+use App\Models\NotificationDelivery;
 use App\Models\Server;
 use App\Models\UsageAlert;
 use App\Models\Website;
@@ -137,6 +139,21 @@ class UsageTest extends TestCase
         $this->report(['diskBytes' => (int) (7.4 * self::GB)]);
         $this->assertFalse($alert->fresh()->isOpen());
         Event::assertDispatched(UsageAlertResolved::class);
+    }
+
+    public function test_an_alert_sends_one_email_for_each_level_to_the_users_of_the_customer(): void
+    {
+        MailServer::create(['host' => 'smtp.example.com', 'port' => 587, 'encryption' => 'starttls', 'from_address' => 'panel@example.com']);
+        $owner = $this->user(Role::Owner, $this->site->customer);
+        $this->report(['diskBytes' => (int) (8.5 * self::GB)]);
+        $this->report(['diskBytes' => (int) (8.6 * self::GB)]);
+        $delivery = NotificationDelivery::where('event', 'usage.alert')->sole();
+        $this->assertSame($owner->email, $delivery->recipient);
+        $this->assertStringContainsString('85% of its Disk limit', $delivery->subject);
+        $this->assertSame('warning', UsageAlert::sole()->notified_level);
+        // Critical: one more email.
+        $this->report(['diskBytes' => (int) (9.6 * self::GB)]);
+        $this->assertSame(2, NotificationDelivery::where(['event' => 'usage.alert', 'recipient' => $owner->email])->count());
     }
 
     public function test_cpu_and_memory_alerts_use_the_average_of_30_minutes(): void

@@ -18,8 +18,11 @@ use App\Http\Controllers\Api\FileController;
 use App\Http\Controllers\Api\ImageController;
 use App\Http\Controllers\Api\JobController;
 use App\Http\Controllers\Api\LogController;
+use App\Http\Controllers\Api\MailServerController;
 use App\Http\Controllers\Api\MeshController;
 use App\Http\Controllers\Api\NetworkController;
+use App\Http\Controllers\Api\NotificationController;
+use App\Http\Controllers\Api\NotificationTemplateController;
 use App\Http\Controllers\Api\PanelCertificateController;
 use App\Http\Controllers\Api\PlanController;
 use App\Http\Controllers\Api\RolloutController;
@@ -219,6 +222,24 @@ Route::prefix('v1')->group(function () {
         });
 
         Route::get('audit', [AuditController::class, 'index'])->middleware('scope:audit');
+
+        // Email notifications: the events that each user receives, the emails that the panel
+        // sent, and for administrators and resellers the SMTP server and the templates.
+        Route::middleware('scope:notifications')->group(function () {
+            Route::get('me/notification-preferences', [NotificationController::class, 'preferences']);
+            Route::put('me/notification-preferences', [NotificationController::class, 'updatePreferences']);
+            Route::get('notifications', [NotificationController::class, 'index']);
+            Route::get('notifications/{id}', [NotificationController::class, 'show']);
+            Route::post('notifications/{id}/retry', [NotificationController::class, 'retry'])->middleware('throttle:30,1');
+            Route::get('mail-server', [MailServerController::class, 'show']);
+            Route::put('mail-server', [MailServerController::class, 'update']);
+            Route::delete('mail-server', [MailServerController::class, 'destroy']);
+            Route::post('mail-server/test', [MailServerController::class, 'test'])->middleware('throttle:10,1');
+            Route::get('notification-templates', [NotificationTemplateController::class, 'index']);
+            Route::put('notification-templates/{event}', [NotificationTemplateController::class, 'update']);
+            Route::delete('notification-templates/{event}', [NotificationTemplateController::class, 'destroy']);
+            Route::post('notification-templates/{event}/preview', [NotificationTemplateController::class, 'preview'])->middleware('throttle:60,1');
+        });
     });
 });
 

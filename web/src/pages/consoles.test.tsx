@@ -102,13 +102,14 @@ describe("the setup checklist", () => {
   it("shows each open item with its effect and a link to the page that completes it", async () => {
     await open("administrator", "/setup");
     const main = screen.getByRole("main");
-    expect(main.textContent).toContain("1 of 4 items are done.");
+    expect(main.textContent).toContain("2 of 5 items are done.");
     const items = within(main).getAllByRole("listitem");
     expect(items.map((i) => within(i).getByRole("heading").textContent)).toEqual([
       "Turn on two-step sign-in for each administrator Open",
       "Turn on disk limits on each server Open",
       "Use a certificate that browsers trust for the panel Open",
       "Set the object storage for backups Done",
+      "Set up the SMTP server for email notifications Done",
     ]);
     expect(items[1].textContent).toContain("While this is open: A server applies the disk limit of a plan with a user quota, or with a disk image for each new website.");
     expect(within(items[1]).getByRole("link").getAttribute("href")).toBe(`/servers/${getState().servers.find((s) => s.name === "web-1")!.id}`);

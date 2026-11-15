@@ -7,19 +7,23 @@ import { Topbar } from "../components/Layout";
 import { Card, ConfirmButton, Field, FormError, JobRow, Modal, PageHeader, Status, TableWrap, Tabs } from "../components/ui";
 import { auditCsv } from "../lib/csv";
 import { daysUntil, longDate, relativeTime, shortDate } from "../lib/format";
+import { EmailDelivery, NotificationSettings } from "../features/Notifications";
 import { CopyField } from "./website/AccessTab";
 
-// The API has no DNS or email scopes in release 0.1 (FR-104).
-const SCOPES: TokenScope[] = ["websites:read", "websites:write", "databases:read", "databases:write", "backups:read", "backups:write", "servers:read", "servers:write", "images:read", "images:write", "customers:read", "customers:write", "users:read", "users:write", "audit:read", "tokens:read", "tokens:write"];
+const SCOPES: TokenScope[] = ["websites:read", "websites:write", "databases:read", "databases:write", "backups:read", "backups:write", "servers:read", "servers:write", "images:read", "images:write", "customers:read", "customers:write", "users:read", "users:write", "audit:read", "notifications:read", "notifications:write", "tokens:read", "tokens:write"];
 
 export function SettingsPage() {
   const state = useStore();
   const { tab: asked } = useParams();
   const navigate = useNavigate();
   const isAdmin = state.session.user.role === "administrator";
+  // An administrator sets the SMTP server of the panel, and a reseller its own server.
+  const sendsEmail = isAdmin || state.session.user.role === "reseller";
   // Each section has its own address, so that the setup checklist can link to it.
   const tabs = [
     { id: "security", label: "Sign-in and security" },
+    { id: "notifications", label: "Notifications" },
+    ...(sendsEmail ? [{ id: "email", label: "Email delivery" }] : []),
     { id: "tokens", label: "API tokens" },
     { id: "audit", label: "Audit log" },
     ...(isAdmin ? [{ id: "panel", label: "Panel certificate" }] : []),
@@ -33,6 +37,8 @@ export function SettingsPage() {
         <PageHeader title="Settings" />
         <Tabs label="Settings sections" current={tab} onSelect={setTab} items={tabs} />
         {tab === "security" && <Security />}
+        {tab === "notifications" && <NotificationSettings />}
+        {tab === "email" && <EmailDelivery />}
         {tab === "tokens" && <Tokens />}
         {tab === "audit" && <Audit />}
         {tab === "panel" && <PanelCertificateSettings />}

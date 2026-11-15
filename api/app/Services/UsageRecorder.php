@@ -358,7 +358,7 @@ class UsageRecorder
             'website' => $website,
             'used' => self::amount($alert, $alert->used),
             'limit' => self::amount($alert, $alert->limit),
-            'percent' => round($alert->percent),
+            'percent' => (string) round($alert->percent),
             'level' => $alert->level,
         ];
     }

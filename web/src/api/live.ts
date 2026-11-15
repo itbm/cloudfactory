@@ -478,8 +478,28 @@ export async function showWebsite(previous: State, websiteId: string): Promise<(
 
 // Session
 
+const DEVICE_KEY = "cloudfactory.device";
+
+/**
+ * A random ID of this browser. The panel sends an email to the user after a sign-in from a
+ * browser that it does not know. The ID stays after a sign-out.
+ */
+export function deviceId(): string | undefined {
+  try {
+    let id = localStorage.getItem(DEVICE_KEY);
+    if (!id || !/^[A-Za-z0-9_-]{16,100}$/.test(id)) {
+      id = crypto.randomUUID();
+      localStorage.setItem(DEVICE_KEY, id);
+    }
+    return id;
+  } catch {
+    // The browser keeps no data. The panel then knows the browser by its user agent.
+    return undefined;
+  }
+}
+
 export async function signIn(email: string, password: string, totp: string): Promise<void> {
-  const res = await request<{ token: string }>("POST", "/auth/login", { email, password, totp: totp || undefined });
+  const res = await request<{ token: string }>("POST", "/auth/login", { email, password, totp: totp || undefined, deviceId: deviceId() });
   token = res.token;
   writeToken(token);
 }

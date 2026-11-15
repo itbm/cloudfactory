@@ -16,6 +16,7 @@ use App\Models\Rollout;
 use App\Models\Snapshot;
 use App\Models\Website;
 use App\Services\Dns\Zones;
+use App\Services\Notifications\Notifier;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -95,6 +96,10 @@ class JobOutcome
 
         if ($job->rollout_id && ($rollout = Rollout::find($job->rollout_id))) {
             $this->rollouts->jobFinished($rollout, $job);
+        }
+        // The users who want it get an email about the failure.
+        if ($state === JobState::Failed) {
+            app(Notifier::class)->jobFailed($job, $website);
         }
     }
 

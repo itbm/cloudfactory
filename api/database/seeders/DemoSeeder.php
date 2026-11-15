@@ -5,6 +5,7 @@ namespace Database\Seeders;
 use App\Enums\AgentAction;
 use App\Enums\DomainKind;
 use App\Enums\JobState;
+use App\Enums\NotificationEvent;
 use App\Enums\Role;
 use App\Models\AgentJob;
 use App\Models\AuditEntry;
@@ -14,9 +15,12 @@ use App\Models\DnsRecord;
 use App\Models\DnsZone;
 use App\Models\GitSource;
 use App\Models\Image;
+use App\Models\MailServer;
 use App\Models\MeshTunnel;
 use App\Models\Network;
 use App\Models\NetworkMember;
+use App\Models\NotificationDelivery;
+use App\Models\NotificationTemplate;
 use App\Models\Plan;
 use App\Models\Release;
 use App\Models\Rollout;
@@ -29,6 +33,7 @@ use App\Models\Website;
 use App\Services\Dns\Dnssec;
 use App\Services\Dns\Zones;
 use App\Services\Networks;
+use App\Services\Notifications\Notifier;
 use App\Services\PanelCertificate;
 use App\Services\SshKey;
 use App\Services\UsageRecorder;
@@ -92,6 +97,7 @@ class DemoSeeder extends Seeder
         $this->cronJobsAndDeploys();
         $this->jobsAndRollout();
         $this->settingsAndAudit();
+        $this->notifications();
     }
 
     private function plans(): void
@@ -702,6 +708,51 @@ class DemoSeeder extends Seeder
             $entry->created_at = now()->subMinutes($minutesAgo);
             $entry->save();
         }
+    }
+
+    /**
+     * Email notifications: the SMTP server of the panel and of the reseller, a changed template
+     * of the reseller, the choices of some users, and the emails of the sample events. The demo
+     * mode sends no email (DemoMailTransport).
+     */
+    private function notifications(): void
+    {
+        MailServer::create([
+            'host' => 'smtp.mail.example', 'port' => 587, 'encryption' => 'starttls', 'username' => 'panel@example.com', 'password' => 'demo',
+            'from_address' => 'panel@example.com', 'from_name' => 'CloudFactory', 'tested_at' => now()->subDays(3),
+        ]);
+        $northwind = $this->customers['northwind'];
+        MailServer::create([
+            'customer_id' => $northwind->id, 'host' => 'smtp.northwind.example.com', 'port' => 465, 'encryption' => 'tls', 'username' => 'noreply@northwind.example.com', 'password' => 'demo',
+            'from_address' => 'noreply@northwind.example.com', 'from_name' => 'Northwind Agency', 'reply_to' => 'support@northwind.example.com', 'tested_at' => now()->subDays(20),
+        ]);
+        NotificationTemplate::create([
+            'customer_id' => $northwind->id, 'event' => NotificationEvent::JobFailed->value, 'subject' => '[{{brand}}] A change to {{website}} failed',
+            'body' => "Hello {{name}},\n\nA change to your website {{website}} did not complete: {{job}}.\n\nThe error: {{error}}\n\nWe have the details too. Reply to this email if you need help.\n\nThe Northwind Agency team\n{{panelUrl}}",
+        ]);
+        User::where('email', 'finance@acme.example.com')->first()?->forceFill(['notification_preferences' => ['job.failed' => false, 'backup.failed' => false, 'certificate.expiring' => false]])->save();
+        User::where('email', 'operations@example.com')->first()?->forceFill(['notification_preferences' => ['job.failed' => false]])->save();
+
+        $notifier = app(Notifier::class);
+        $at = [];
+        foreach (AgentJob::where('state', JobState::Failed->value)->get() as $job) {
+            $notifier->jobFailed($job, $job->website_id ? Website::find($job->website_id) : null);
+            $at["job:{$job->id}"] = $job->finished_at;
+        }
+        $owner = User::where('email', 'owner@example.com')->first();
+        $notifier->newDevice($owner, 'Safari on iOS', '198.51.100.23');
+        $notifier->usageAlert($this->customers['acme'], ['resource' => 'Disk', 'website' => 'shop.acme.example.com', 'used' => '36.4 GB', 'limit' => '40 GB', 'percent' => 91, 'level' => 'warning'], 'usage:demo:disk');
+        $notifier->suspension($this->customers['lawson'], true);
+
+        $minutes = ['signin.new_device' => 2 * 24 * 60, 'usage.alert' => 8 * 60, 'account.suspended' => 2900];
+        foreach (NotificationDelivery::all() as $delivery) {
+            $created = isset($at[$delivery->dedupe_key]) ? $at[$delivery->dedupe_key] : now()->subMinutes($minutes[$delivery->event] ?? 60);
+            $delivery->forceFill(['state' => 'sent', 'attempts' => 1, 'sent_at' => $created->copy()->addSeconds(4), 'created_at' => $created, 'updated_at' => $created])->save();
+        }
+        // One email that the SMTP server refused 3 times.
+        NotificationDelivery::where('recipient', 'operations@example.com')->latest()->first()?->forceFill([
+            'state' => 'failed', 'attempts' => 3, 'sent_at' => null, 'error' => 'Expected response code "250" but got code "552", with message "552 5.2.2 Mailbox full".',
+        ])->save();
     }
 
     /** The Unix user of a website: letters from the name, and four characters that do not change. */
