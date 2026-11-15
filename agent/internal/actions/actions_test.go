@@ -240,17 +240,12 @@ func TestCheckWebsiteRefusesBadValues(t *testing.T) {
 			w.RoutePath = "/t1/"
 			w.Domains = append(w.Domains, &agentv1.Domain{Name: "www.acme.example", Kind: "redirect"})
 		},
-		// Only a custom image has environment variables, and each value goes in the unit with
-		// no quotes: no line break, space, "%" or "$".
+		// Only a plugin that the panel runs (runtime "custom") can have a name that starts with
+		// CF_. A value has no line break, because the agent writes one variable on each line.
 		func(w *agentv1.Website) { w.Environment = map[string]string{"CF_TOKEN": "1|abc"} },
 		func(w *agentv1.Website) {
 			w.Runtime = "custom"
 			w.Environment = map[string]string{"CF_TOKEN": "1|abc\nExecStartPre=/bin/evil"}
-		},
-		func(w *agentv1.Website) { w.Runtime = "custom"; w.Environment = map[string]string{"CF_TOKEN": "a b"} },
-		func(w *agentv1.Website) {
-			w.Runtime = "custom"
-			w.Environment = map[string]string{"CF_TOKEN": "%h$HOME"}
 		},
 		func(w *agentv1.Website) { w.Runtime = "custom"; w.Environment = map[string]string{"cf-token": "x"} },
 	} {

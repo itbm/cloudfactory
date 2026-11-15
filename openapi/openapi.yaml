@@ -324,7 +324,8 @@ paths:
               properties:
                 name: { type: string, description: 'The primary domain, in lower case. For the kinds "private" and "worker": a short name of lower-case letters, digits and "-", for example "queue".' }
                 kind: { $ref: '#/components/schemas/WebsiteKind' }
-                command: { type: string, maxLength: 1000, description: 'Necessary for the kind "worker", and only for it: one command line for the shell of the container, for example "php artisan queue:work". It runs in the gVisor sandbox as the Unix user of the website, in the directory /app.' }
+                command: { type: string, maxLength: 1000, description: 'Necessary for the kind "worker": one command line for the shell of the container, for example "php artisan queue:work". It runs in the gVisor sandbox as the Unix user of the website, in the directory /app. Also the start command of a Node.js or Python website, for example "npm start". The default for Node.js is "npm start", and for Python "python app.py". The application listens on the port in the variable PORT (8080). Not permitted for the other websites.' }
+                installCommand: { type: [string, 'null'], maxLength: 1000, description: 'Only for a Node.js or Python image: the command that installs the dependencies, for example "npm ci --omit=dev". The default for Node.js is "npm install --omit=dev", and for Python "python -m venv .venv && .venv/bin/pip install -r requirements.txt". An empty value or null means no install step.' }
                 application: { type: string, maxLength: 100 }
                 imageId: { type: string }
                 planId: { type: string, description: The plan of the customer when you do not give it. Only an administrator or the reseller of the customer can give a different plan. }
@@ -626,6 +627,10 @@ paths:
       summary: Change the runtime
       description: |
         FR-303 to FR-305. Change the image, the PHP extensions, php.ini values or worker mode.
+        For a Node.js or Python website: change the version (an image of the same family), the
+        start command or the install command. A change of the version of a Node.js or Python
+        website with an install command makes the job `InstallDependencies`: the dependencies
+        are for one version.
         The agent starts the new container, does a health check, and only then sends traffic to it.
         If the health check fails, the website stays on the previous image. For a website with the
         status `failed`, the panel makes the website again with the new settings: the job has the
@@ -639,7 +644,8 @@ paths:
               properties:
                 imageId: { type: string }
                 workerMode: { type: boolean, description: Only for FrankenPHP. }
-                command: { type: string, maxLength: 1000, description: 'Only for a worker: the new start command. The agent starts a new container with it.' }
+                command: { type: string, maxLength: 1000, description: 'Only for a worker, or a Node.js or Python website: the new start command. The agent starts a new container with it.' }
+                installCommand: { type: [string, 'null'], maxLength: 1000, description: 'Only for a Node.js or Python website: the new install command. It runs at the next install, deploy or change of the version. An empty value or null means no install step.' }
                 documentRoot: { type: string, maxLength: 200, description: 'Batch 1, finding 11. The directory in /app that the web server serves, for example "web". "." is /app. The default is "public".' }
                 extensions: { type: array, items: { type: string }, description: Only the extensions of the plan. }
                 phpIni:
@@ -664,6 +670,59 @@ paths:
       summary: Go back to the previous image
       responses:
         '202': { $ref: '#/components/responses/WebsiteJob' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/websites/{websiteId}/runtime/install:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+    post:
+      tags: [Websites]
+      summary: Install the dependencies of a Node.js or Python website
+      description: >-
+        The agent runs the install command of the website in a build container: the image of the
+        website, the gVisor sandbox, the Unix user and the limits of the website, with the
+        application directory as the working directory and the environment variables of the
+        website. Then it starts a new container and does a health check before it sends traffic
+        to it, as for a change of the runtime. If the command fails, the website continues with
+        the container that it had. The job has the action `InstallDependencies`.
+      responses:
+        '202': { $ref: '#/components/responses/JobOnly' }
+        '409': { description: The customer of the website is suspended. }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/websites/{websiteId}/environment:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+    patch:
+      tags: [Websites]
+      summary: Set or remove environment variables of a website
+      description: >-
+        Sets each variable with a value, and removes each variable with the value null. Each
+        website, of each runtime, has at most 50 variables. The names PORT, HOST, HOME, PATH, PWD
+        and the names that start with CF_ are not available. The panel keeps the values
+        encrypted, and the API never gives them: `environment` of the website has the names
+        only. The agent writes the variables to a file that only the Unix user of the website can
+        read, and starts a new container with them, with no stop (a job `SetRuntime`). The build
+        commands of a deploy and the install command also get them. If the health check of the
+        new container fails, the old container continues with the old values, and the website
+        gets the new values at its next start.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [variables]
+              properties:
+                variables:
+                  type: object
+                  maxProperties: 50
+                  additionalProperties: { type: [string, 'null'], maxLength: 4096 }
+                  example: { NODE_ENV: production, OLD_KEY: null }
+      responses:
+        '202': { $ref: '#/components/responses/WebsiteJob' }
+        '200': { description: Nothing changed. `job` is null. }
+        '409': { description: The customer of the website is suspended. }
         '422': { $ref: '#/components/responses/Invalid' }
 
   /v1/websites/{websiteId}/files:
@@ -3073,8 +3132,15 @@ paths:
                         family: { type: string }
                         tag: { type: string }
                         phpVersion: { type: [string, 'null'] }
+                        version: { type: [string, 'null'], description: 'The version of Node.js or Python, for example "24" or "3.14".' }
                         custom: { type: boolean }
                         supportEndsAt: { type: [string, 'null'], format: date-time }
+                        defaults:
+                          type: [object, 'null']
+                          description: The usual start command and install command of a Node.js or Python image. Null for the other images.
+                          properties:
+                            command: { type: string }
+                            install: { type: string }
 
   /v1/images:
     get:
@@ -4846,7 +4912,15 @@ components:
         command:
           type: string
           nullable: true
-          description: The start command of a worker. Null for the other kinds.
+          description: The start command of a worker, or of a Node.js or Python website. Null for the other websites.
+        installCommand:
+          type: string
+          nullable: true
+          description: The install command of a Node.js or Python website. Null for the other websites, and for no install step.
+        environment:
+          type: array
+          items: { type: string }
+          description: The names of the environment variables of the website. The API never gives the values.
         status: { $ref: '#/components/schemas/WebsiteStatus' }
         runtime:
           type: object
@@ -4857,11 +4931,12 @@ components:
             digest: { type: [string, 'null'] }
             signatureVerified: { type: boolean }
             phpVersion: { type: [string, 'null'] }
+            version: { type: [string, 'null'], description: 'The version of Node.js or Python, for example "24".' }
             workerMode: { type: boolean }
             extensions: { type: array, items: { type: string } }
             phpIni: { type: object, additionalProperties: { type: string } }
             previousImageId: { type: [string, 'null'] }
-            documentRoot: { type: string, description: 'The directory in /app that the web server serves. "." is /app.' }
+            documentRoot: { type: string, description: 'The directory in /app that the web server serves. "." is /app. For a Node.js or Python website, the application directory: the start command and the install command run in it.' }
             supportEndsAt: { type: [string, 'null'], format: date }
         updateReady: { type: boolean }
         limits: { $ref: '#/components/schemas/Limits' }
@@ -5275,6 +5350,7 @@ components:
         availableTag: { type: [string, 'null'] }
         availableDigest: { type: [string, 'null'] }
         phpVersion: { type: [string, 'null'] }
+        version: { type: [string, 'null'], description: 'The version of Node.js or Python of an official image, for example "24".' }
         supportEndsAt: { type: [string, 'null'], format: date }
         policy: { type: string, enum: [automatic, security_automatic, manual] }
         custom: { type: boolean }

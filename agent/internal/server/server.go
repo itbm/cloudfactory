@@ -211,6 +211,10 @@ func (s *Service) ActivateRelease(_ context.Context, r *connect.Request[agentv1.
 	return s.submit(s.Deps.ActivateRelease(r.Msg))
 }
 
+func (s *Service) InstallDependencies(_ context.Context, r *connect.Request[agentv1.InstallDependenciesRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.InstallDependencies(r.Msg))
+}
+
 // fileError gives the error of a file operation or of the logs its code for the panel.
 func fileError(err error) error {
 	var fe *actions.FileError

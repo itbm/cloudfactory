@@ -1,0 +1,21 @@
+#!/bin/sh
+# The start script of the Node.js image. It goes to the application directory, puts the
+# programs of the dependencies in the PATH, and runs the command.
+#
+# A new website has no application yet. Then the script serves the welcome page, so that the
+# health check of the agent passes. Upload a package.json to start your application.
+# SPDX-License-Identifier: AGPL-3.0-only
+set -e
+dir="${CF_APP_DIR:-/app}"
+if [ ! -d "$dir" ]; then
+	echo "cf-app: the application directory $dir does not exist" >&2
+	exit 1
+fi
+cd "$dir"
+PATH="$dir/node_modules/.bin:$PATH"
+export PATH
+if [ -n "$CF_WELCOME" ] || { [ ! -f package.json ] && [ "$*" = "sh -c npm start" ]; }; then
+	echo "cf-app: no package.json in $dir. Serving the welcome page." >&2
+	exec node /usr/local/share/cloudfactory/welcome.js
+fi
+exec "$@"

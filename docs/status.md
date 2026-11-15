@@ -39,7 +39,8 @@ shows what this repository has now.
 | `cf` CLI for all public API areas, with `--json` and `--no-wait`. Lists read all pages | `cli/` |
 | Installation script with checks before changes, for a panel and for a new server | `install/` |
 | Shared read-only runtime images: one copy of each image on a server for all websites, so a new website starts with no pull | `agent/internal/images` |
-| Images: FrankenPHP and Apache with PHP-FPM for PHP 8.4 and 8.5, the Caddy edge, the panel API and web, MariaDB, PostgreSQL, Valkey, SFTP and the mail server | `images/` |
+| Node.js (22, 24 and 26) and Python (3.13 and 3.14) websites: a start command, an install command that runs in a build container, a change of version with no stop, Git deploys, private websites and workers. Environment variables for each website, encrypted in the panel and written to a file that only the website user can read | `images/node`, `images/python`, `agent/internal/actions/deploy.go`, `api/app/Http/Controllers/Api/RuntimeController.php`, `web/src/pages/website/RuntimeTab.tsx` |
+| Images: FrankenPHP and Apache with PHP-FPM for PHP 8.4 and 8.5, Node.js and Python, the Caddy edge, the panel API and web, MariaDB, PostgreSQL, Valkey, SFTP and the mail server | `images/` |
 | CI, image scans, signed multi-arch releases with SBOMs, and a daily rebuild (the schedule is off, refer to [releasing.md](releasing.md#daily-image-rebuild)) | `.github/workflows/` |
 
 ## Not complete
@@ -49,7 +50,7 @@ shows what this repository has now.
 | Areas without an API | The API of release 0.1 has no SSH shell, passkeys or system settings. The web panel has no pages for these areas. |
 | File manager | The file manager reads files up to 2 MiB and writes files up to 5 MiB. It has no archive actions and no change of permissions. Use SFTP for large files. |
 | Logs | The panel shows the last lines that the container of a website wrote. A website that was made before this release writes its log file after its next start. The panel has no search in old log lines and no access log of the edge proxy. |
-| Deploys | A deploy starts by hand or with a webhook. The panel does not check the signature that a Git host puts on a webhook: the secret is the address. The panel has no deploy on a schedule, and does not go back automatically after the switch. The build runs in the runtime image of the website, which has Git and Composer but not Node.js. A website with a custom image cannot deploy from Git. |
+| Deploys | A deploy starts by hand or with a webhook. The panel does not check the signature that a Git host puts on a webhook: the secret is the address. The panel has no deploy on a schedule, and does not go back automatically after the switch. The build runs in the runtime image of the website. The PHP images have Git and Composer but not Node.js: to build front-end files with npm, use a Node.js website or build the files before the push. A website with a custom image cannot deploy from Git. |
 | Staging copy | A staging copy gets the files only. It keeps the database settings of the original website, so it uses the live databases. |
 | Restore of a full website | A restore of the full website restores the files only. Restore each database separately. |
 | Email from the panel | The panel sends no email. A new user gets a temporary password from the person who makes the user. |

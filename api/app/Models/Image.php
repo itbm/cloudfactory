@@ -12,7 +12,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 #[Fillable([
     'name', 'family', 'reference', 'tag', 'digest', 'available_tag', 'available_digest', 'php_version',
-    'support_ends_at', 'policy', 'custom', 'signature_verified', 'checked_at', 'check_error', 'container_port', 'command',
+    'support_ends_at', 'policy', 'custom', 'signature_verified', 'checked_at', 'check_error', 'container_port', 'command', 'runtime_version',
 ])]
 class Image extends Model
 {
@@ -55,8 +55,38 @@ class Image extends Model
         $this->update(['tag' => $tag, 'digest' => $digest, 'available_tag' => null, 'available_digest' => null]);
     }
 
+    /** The families of the official images that run an application of the customer. */
+    public const APP_FAMILIES = ['node', 'python'];
+
+    /**
+     * The usual start command and install command of each application family. The user can
+     * change them. The Node.js install command keeps the lock file when it is there. The
+     * Python install command makes a virtual environment in the application directory: the
+     * start script of the image uses it (images/python/cf-app).
+     */
+    public const APP_DEFAULTS = [
+        'node' => ['command' => 'npm start', 'install' => 'npm install --omit=dev'],
+        'python' => ['command' => 'python app.py', 'install' => 'python -m venv .venv && .venv/bin/pip install -r requirements.txt'],
+    ];
+
     public function isPhp(): bool
     {
         return in_array($this->family, ['frankenphp', 'apache-php-fpm'], true);
+    }
+
+    /** True for a Node.js or Python image: the container runs the start command of the website. */
+    public function isApp(): bool
+    {
+        return ! $this->custom && in_array($this->family, self::APP_FAMILIES, true);
+    }
+
+    /**
+     * The kind of the image for a change of the runtime: a website changes only to an image of
+     * the same kind. All PHP images are one kind, so that a website can change from FrankenPHP
+     * to Apache.
+     */
+    public function kind(): string
+    {
+        return $this->isPhp() ? 'php' : (string) $this->family;
     }
 }

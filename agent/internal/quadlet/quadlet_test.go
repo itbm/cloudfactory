@@ -429,16 +429,16 @@ func TestDatabaseAddress(t *testing.T) {
 	}
 }
 
-func TestOnlyACustomImageGetsItsEnvironment(t *testing.T) {
-	w := website()
-	w.Environment = map[string]string{"CF_TOKEN": "7|abc", "CF_PANEL": "https://panel.example"}
-	if u := ContainerUnit(w); strings.Contains(u, "CF_TOKEN") {
-		t.Errorf("a PHP website got the environment:\n%s", u)
+func TestTheEnvironmentIsInAFileNotInTheUnit(t *testing.T) {
+	for _, runtime := range []string{"frankenphp", "custom", "node"} {
+		w := website()
+		w.Runtime = runtime
+		w.EnvFile = "/home/acme/.config/cloudfactory/env"
+		if u := ContainerUnit(w); !strings.Contains(u, "\nEnvironmentFile=/home/acme/.config/cloudfactory/env\n") {
+			t.Errorf("%s: the unit has no EnvironmentFile:\n%s", runtime, u)
+		}
 	}
-	w.Runtime = "custom"
-	u := ContainerUnit(w)
-	// The names are in order, so that the unit is the same each time.
-	if !strings.Contains(u, "Environment=CF_PANEL=https://panel.example\nEnvironment=CF_TOKEN=7|abc\n") {
-		t.Errorf("unit does not have the environment:\n%s", u)
+	if u := ContainerUnit(website()); strings.Contains(u, "EnvironmentFile=") {
+		t.Errorf("a website with no variables has an EnvironmentFile:\n%s", u)
 	}
 }

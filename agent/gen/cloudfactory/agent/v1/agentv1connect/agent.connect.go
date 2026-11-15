@@ -146,6 +146,9 @@ const (
 	// AgentServiceActivateReleaseProcedure is the fully-qualified name of the AgentService's
 	// ActivateRelease RPC.
 	AgentServiceActivateReleaseProcedure = "/cloudfactory.agent.v1.AgentService/ActivateRelease"
+	// AgentServiceInstallDependenciesProcedure is the fully-qualified name of the AgentService's
+	// InstallDependencies RPC.
+	AgentServiceInstallDependenciesProcedure = "/cloudfactory.agent.v1.AgentService/InstallDependencies"
 	// AgentServiceSetMeshProcedure is the fully-qualified name of the AgentService's SetMesh RPC.
 	AgentServiceSetMeshProcedure = "/cloudfactory.agent.v1.AgentService/SetMesh"
 	// AgentServiceRotateMeshKeyProcedure is the fully-qualified name of the AgentService's
@@ -217,6 +220,7 @@ type AgentServiceClient interface {
 	RunCronJob(context.Context, *connect.Request[v1.RunCronJobRequest]) (*connect.Response[v1.JobAccepted], error)
 	Deploy(context.Context, *connect.Request[v1.DeployRequest]) (*connect.Response[v1.JobAccepted], error)
 	ActivateRelease(context.Context, *connect.Request[v1.ActivateReleaseRequest]) (*connect.Response[v1.JobAccepted], error)
+	InstallDependencies(context.Context, *connect.Request[v1.InstallDependenciesRequest]) (*connect.Response[v1.JobAccepted], error)
 	SetMesh(context.Context, *connect.Request[v1.SetMeshRequest]) (*connect.Response[v1.JobAccepted], error)
 	RotateMeshKey(context.Context, *connect.Request[v1.RotateMeshKeyRequest]) (*connect.Response[v1.JobAccepted], error)
 	SendDatabaseServer(context.Context, *connect.Request[v1.SendDatabaseServerRequest]) (*connect.Response[v1.JobAccepted], error)
@@ -474,6 +478,12 @@ func NewAgentServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(agentServiceMethods.ByName("ActivateRelease")),
 			connect.WithClientOptions(opts...),
 		),
+		installDependencies: connect.NewClient[v1.InstallDependenciesRequest, v1.JobAccepted](
+			httpClient,
+			baseURL+AgentServiceInstallDependenciesProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("InstallDependencies")),
+			connect.WithClientOptions(opts...),
+		),
 		setMesh: connect.NewClient[v1.SetMeshRequest, v1.JobAccepted](
 			httpClient,
 			baseURL+AgentServiceSetMeshProcedure,
@@ -589,6 +599,7 @@ type agentServiceClient struct {
 	runCronJob            *connect.Client[v1.RunCronJobRequest, v1.JobAccepted]
 	deploy                *connect.Client[v1.DeployRequest, v1.JobAccepted]
 	activateRelease       *connect.Client[v1.ActivateReleaseRequest, v1.JobAccepted]
+	installDependencies   *connect.Client[v1.InstallDependenciesRequest, v1.JobAccepted]
 	setMesh               *connect.Client[v1.SetMeshRequest, v1.JobAccepted]
 	rotateMeshKey         *connect.Client[v1.RotateMeshKeyRequest, v1.JobAccepted]
 	sendDatabaseServer    *connect.Client[v1.SendDatabaseServerRequest, v1.JobAccepted]
@@ -793,6 +804,11 @@ func (c *agentServiceClient) ActivateRelease(ctx context.Context, req *connect.R
 	return c.activateRelease.CallUnary(ctx, req)
 }
 
+// InstallDependencies calls cloudfactory.agent.v1.AgentService.InstallDependencies.
+func (c *agentServiceClient) InstallDependencies(ctx context.Context, req *connect.Request[v1.InstallDependenciesRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return c.installDependencies.CallUnary(ctx, req)
+}
+
 // SetMesh calls cloudfactory.agent.v1.AgentService.SetMesh.
 func (c *agentServiceClient) SetMesh(ctx context.Context, req *connect.Request[v1.SetMeshRequest]) (*connect.Response[v1.JobAccepted], error) {
 	return c.setMesh.CallUnary(ctx, req)
@@ -894,6 +910,7 @@ type AgentServiceHandler interface {
 	RunCronJob(context.Context, *connect.Request[v1.RunCronJobRequest]) (*connect.Response[v1.JobAccepted], error)
 	Deploy(context.Context, *connect.Request[v1.DeployRequest]) (*connect.Response[v1.JobAccepted], error)
 	ActivateRelease(context.Context, *connect.Request[v1.ActivateReleaseRequest]) (*connect.Response[v1.JobAccepted], error)
+	InstallDependencies(context.Context, *connect.Request[v1.InstallDependenciesRequest]) (*connect.Response[v1.JobAccepted], error)
 	SetMesh(context.Context, *connect.Request[v1.SetMeshRequest]) (*connect.Response[v1.JobAccepted], error)
 	RotateMeshKey(context.Context, *connect.Request[v1.RotateMeshKeyRequest]) (*connect.Response[v1.JobAccepted], error)
 	SendDatabaseServer(context.Context, *connect.Request[v1.SendDatabaseServerRequest]) (*connect.Response[v1.JobAccepted], error)
@@ -1147,6 +1164,12 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(agentServiceMethods.ByName("ActivateRelease")),
 		connect.WithHandlerOptions(opts...),
 	)
+	agentServiceInstallDependenciesHandler := connect.NewUnaryHandler(
+		AgentServiceInstallDependenciesProcedure,
+		svc.InstallDependencies,
+		connect.WithSchema(agentServiceMethods.ByName("InstallDependencies")),
+		connect.WithHandlerOptions(opts...),
+	)
 	agentServiceSetMeshHandler := connect.NewUnaryHandler(
 		AgentServiceSetMeshProcedure,
 		svc.SetMesh,
@@ -1297,6 +1320,8 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 			agentServiceDeployHandler.ServeHTTP(w, r)
 		case AgentServiceActivateReleaseProcedure:
 			agentServiceActivateReleaseHandler.ServeHTTP(w, r)
+		case AgentServiceInstallDependenciesProcedure:
+			agentServiceInstallDependenciesHandler.ServeHTTP(w, r)
 		case AgentServiceSetMeshProcedure:
 			agentServiceSetMeshHandler.ServeHTTP(w, r)
 		case AgentServiceRotateMeshKeyProcedure:
@@ -1480,6 +1505,10 @@ func (UnimplementedAgentServiceHandler) Deploy(context.Context, *connect.Request
 
 func (UnimplementedAgentServiceHandler) ActivateRelease(context.Context, *connect.Request[v1.ActivateReleaseRequest]) (*connect.Response[v1.JobAccepted], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.ActivateRelease is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) InstallDependencies(context.Context, *connect.Request[v1.InstallDependenciesRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.InstallDependencies is not implemented"))
 }
 
 func (UnimplementedAgentServiceHandler) SetMesh(context.Context, *connect.Request[v1.SetMeshRequest]) (*connect.Response[v1.JobAccepted], error) {

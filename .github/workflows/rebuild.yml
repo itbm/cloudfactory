@@ -26,14 +26,20 @@ jobs:
         run: |
           set -euo pipefail
           # R-11: read the base images from the Containerfiles, so that the list is always
-          # complete. ${PHP_VERSION} becomes each PHP version that the release workflow builds.
-          php_versions=$(grep -o 'PHP_VERSION=[0-9.]*' .github/workflows/release.yml | cut -d= -f2 | sort -u)
+          # complete. ${PHP_VERSION}, ${NODE_VERSION} and ${PYTHON_VERSION} become each version that
+          # the release workflow builds.
+          versions() { grep -o "$1=[0-9.]*" .github/workflows/release.yml | cut -d= -f2 | sort -u; }
+          php_versions=$(versions PHP_VERSION)
+          node_versions=$(versions NODE_VERSION)
+          python_versions=$(versions PYTHON_VERSION)
           {
             grep -h -E '^FROM ' images/*/Containerfile | sed -E 's/^FROM +(--[^ ]+ +)*//; s/ .*//'
             grep -h -o -E 'COPY --from=[^ ]+' images/*/Containerfile | sed 's/^COPY --from=//'
           } | grep / | while read -r ref; do
             case "$ref" in
               *'${PHP_VERSION}'*) for v in $php_versions; do printf '%s\n' "${ref//'${PHP_VERSION}'/$v}"; done ;;
+              *'${NODE_VERSION}'*) for v in $node_versions; do printf '%s\n' "${ref//'${NODE_VERSION}'/$v}"; done ;;
+              *'${PYTHON_VERSION}'*) for v in $python_versions; do printf '%s\n' "${ref//'${PYTHON_VERSION}'/$v}"; done ;;
               *) printf '%s\n' "$ref" ;;
             esac
           done | sort -u > refs.txt

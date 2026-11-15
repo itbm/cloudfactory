@@ -171,14 +171,18 @@ type Website struct {
 	UnixUser    string `json:"unixUser"`
 	NetworkHost string `json:"networkHost"`
 	NetworkPort int    `json:"networkPort"`
-	// Kind is "public", "private" or "worker". Command is the start command of a worker.
-	Kind        string `json:"kind"`
-	Command     string `json:"command"`
-	UpdateReady bool   `json:"updateReady"`
-	Runtime     struct {
+	// Kind is "public", "private" or "worker". Command is the start command of a worker or of
+	// a Node.js or Python website. Environment has the names of the variables, not the values.
+	Kind           string   `json:"kind"`
+	Command        string   `json:"command"`
+	InstallCommand string   `json:"installCommand"`
+	Environment    []string `json:"environment"`
+	UpdateReady    bool     `json:"updateReady"`
+	Runtime        struct {
 		ImageID    string   `json:"imageId"`
 		Image      string   `json:"image"`
 		PHPVersion *string  `json:"phpVersion"`
+		Version    *string  `json:"version"`
 		WorkerMode bool     `json:"workerMode"`
 		Extensions []string `json:"extensions"`
 	} `json:"runtime"`

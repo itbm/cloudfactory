@@ -190,6 +190,30 @@ var ruleDomain = rule{
 // A domain name in lower case. Each label has 1 to 63 characters. The last label is not a number, so that the name is not an IP address (audit finding R5).
 func Domain(s string) error { return ruleDomain.check(s) }
 
+var ruleEnvName = rule{
+	what:    "name of an environment variable",
+	pattern: regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]{0,63}$`),
+	not:     []*regexp.Regexp{regexp.MustCompile(`^(PORT|HOST|HOME|PATH|PWD)$`), regexp.MustCompile(`^CF_`)},
+	echo:    true,
+}
+
+// EnvName checks a value with the rule "envName" of schema/input-rules.json.
+//
+// The name of an environment variable of a website container. PORT, HOST, HOME, PATH, PWD and the names that start with CF_ are for the agent and the image.
+func EnvName(s string) error { return ruleEnvName.check(s) }
+
+var ruleEnvValue = rule{
+	what:      "value of an environment variable",
+	pattern:   regexp.MustCompile(`^[^\x00\n\r]*$`),
+	maxLength: 4096,
+	empty:     true,
+}
+
+// EnvValue checks a value with the rule "envValue" of schema/input-rules.json.
+//
+// The value of an environment variable of a website container. It is on one line. It can be empty.
+func EnvValue(s string) error { return ruleEnvValue.check(s) }
+
 var ruleEnvironmentValue = rule{
 	what:      "value of a container environment variable",
 	pattern:   regexp.MustCompile(`^[A-Za-z0-9_.,:/|@+=~-]+$`),
@@ -487,6 +511,8 @@ var rules = map[string]*rule{
 	"dnssecKey":          &ruleDNSSECKey,
 	"documentRoot":       &ruleDocumentRoot,
 	"domain":             &ruleDomain,
+	"envName":            &ruleEnvName,
+	"envValue":           &ruleEnvValue,
 	"environmentValue":   &ruleEnvironmentValue,
 	"filePath":           &ruleFilePath,
 	"gitBranch":          &ruleGitBranch,
@@ -548,3 +574,6 @@ const MaxDnsTtl = 604800
 
 // MaxDnsZonesPerJob: The largest number of DNS zones in one job of the agent.
 const MaxDnsZonesPerJob = 100
+
+// MaxEnvironmentVariables: The largest number of environment variables of a website.
+const MaxEnvironmentVariables = 50

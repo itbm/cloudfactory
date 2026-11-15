@@ -7,6 +7,7 @@ use App\Models\Concerns\GuardsState;
 use App\Services\Mesh;
 use App\Services\Networks;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -18,8 +19,11 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
     'name', 'application', 'customer_id', 'server_id', 'plan_id', 'image_id', 'image_tag', 'previous_image_id',
     'previous_image_tag', 'unix_user', 'status', 'worker_mode', 'extensions', 'php_ini', 'limits', 'usage',
     'staging_of', 'managed_by_terraform', 'document_root', 'sftp_enabled', 'sftp_keys',
-    'stopped_by_suspension', 'sftp_closed_by_suspension', 'kind', 'command', 'bandwidth_month', 'bandwidth_bytes',
+    'stopped_by_suspension', 'sftp_closed_by_suspension', 'kind', 'command', 'install_command', 'environment',
+    'bandwidth_month', 'bandwidth_bytes',
 ])]
+// The API never gives the values of the environment variables.
+#[Hidden(['environment'])]
 class Website extends Model
 {
     use GuardsState, HasFactory, HasUlids;
@@ -49,6 +53,24 @@ class Website extends Model
         return $this->kind === self::WORKER;
     }
 
+    /**
+     * True when the container runs a command of the customer: a worker, or a Node.js or
+     * Python website. The two have a start command.
+     */
+    public function hasStartCommand(): bool
+    {
+        return $this->isWorker() || (bool) $this->image?->isApp();
+    }
+
+    /** The environment variables of the website container, by name. */
+    public function variables(): array
+    {
+        $env = $this->environment ?? [];
+        ksort($env);
+
+        return $env;
+    }
+
     /** The table of the permitted changes is in App\Enums\WebsiteStatus. */
     public static function stateAttribute(): string
     {
@@ -69,6 +91,7 @@ class Website extends Model
             'sftp_keys' => 'array',
             'stopped_by_suspension' => 'boolean',
             'sftp_closed_by_suspension' => 'boolean',
+            'environment' => 'encrypted:array',
         ];
     }
 

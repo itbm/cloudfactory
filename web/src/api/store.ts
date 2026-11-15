@@ -239,8 +239,12 @@ export interface NewWebsite {
   serverId: string;
   customerId: string;
   kind?: WebsiteKind;
-  /** The start command of a worker. */
+  /** The start command of a worker, or of a Node.js or Python website. */
   command?: string;
+  /** The install command of a Node.js or Python website. Empty: no install step. */
+  installCommand?: string;
+  /** True for a Node.js or Python image. */
+  app?: boolean;
 }
 
 export function createWebsite(input: NewWebsite): Promise<{ websiteId: string; job: Promise<Job> }> | { websiteId: string; job: Promise<Job> } {
@@ -248,7 +252,9 @@ export function createWebsite(input: NewWebsite): Promise<{ websiteId: string; j
     const r = await live.request<{ website: live.ApiWebsite; job: live.ApiJob }>("POST", "/websites", {
       // CF-07: only an administrator selects the plan here. The panel uses the plan of the customer.
       // A private website and a worker have no domain: the name is a short name.
-      kind: input.kind && input.kind !== "public" ? input.kind : undefined, command: input.kind === "worker" ? input.command?.trim() : undefined,
+      kind: input.kind && input.kind !== "public" ? input.kind : undefined,
+      command: input.kind === "worker" || input.app ? input.command?.trim() || undefined : undefined,
+      installCommand: input.app && input.installCommand !== undefined ? input.installCommand.trim() : undefined,
       name: input.name.trim().toLowerCase(), application: input.application, imageId: input.imageId, planId: state.session.contextId === "platform" || state.session.user.role === "administrator" ? input.planId : undefined,
       serverId: input.serverId || undefined, customerId: input.customerId && input.customerId !== "platform" ? input.customerId : undefined,
     });
@@ -354,9 +360,35 @@ export function revertRuntime(websiteId: string) {
   return call(() => live.request<JobAnswer>("POST", `/websites/${websiteId}/runtime/revert`)).then((r) => track(r.job));
 }
 
-/** The start command of a worker. The panel starts a new container with the command. */
+/** The start command of a worker, or of a Node.js or Python website. The panel starts a new container with the command. */
 export function setCommand(websiteId: string, command: string) {
   return call(() => live.request<JobAnswer>("PUT", `/websites/${websiteId}/runtime`, { command: command.trim() })).then((r) => track(r.job));
+}
+
+/** The install command of a Node.js or Python website. Empty: no install step. */
+export function setInstallCommand(websiteId: string, installCommand: string) {
+  return call(() => live.request<Partial<JobAnswer>>("PUT", `/websites/${websiteId}/runtime`, { installCommand: installCommand.trim() })).then(async (r) => {
+    await refresh();
+    if (r.job) await track(r.job);
+  });
+}
+
+/** Runs the install command in a build container, then starts the website again with no stop. */
+export function installDependencies(websiteId: string) {
+  return call(() => live.request<JobAnswer>("POST", `/websites/${websiteId}/runtime/install`)).then((r) => track(r.job));
+}
+
+/**
+ * Sets and removes environment variables. A value of null removes the variable. The panel
+ * starts a new container with the variables, with no stop.
+ */
+export function setEnvironment(websiteId: string, variables: Record<string, string | null>) {
+  return call(() => live.request<{ website: live.ApiWebsite; job: live.ApiJob | null }>("PATCH", `/websites/${websiteId}/environment`, { variables })).then(async (r) => {
+    update((d) => {
+      d.websites = d.websites.map((w) => (w.id === websiteId ? live.toWebsite(r.website) : w));
+    });
+    if (r.job) await track(r.job);
+  });
 }
 
 export function setWorkerMode(websiteId: string, on: boolean) {

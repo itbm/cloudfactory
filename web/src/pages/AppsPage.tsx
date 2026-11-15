@@ -14,7 +14,8 @@ const CATALOGUE = [
   { name: "Laravel", family: "frankenphp", runtime: "FrankenPHP worker · PHP 8.5", text: "Upload the files with SFTP. Worker mode is available for Laravel Octane." },
   { name: "Symfony", family: "frankenphp", runtime: "FrankenPHP · PHP 8.5", text: "Upload the files with SFTP, with the vendor directory." },
   { name: "Static site", family: "edge", runtime: "Caddy · static files", text: "A small Caddy container serves the files. Upload them with SFTP." },
-  { name: "Node.js app", family: "node", runtime: "Node.js 24 · OCI image", text: "Runs your own OCI image. An administrator sets the port and the start command." },
+  { name: "Node.js", family: "node", runtime: "Node.js 22, 24 or 26", text: "Express, Next.js or any app with a package.json. The panel runs npm install, then npm start. Set the start command and the variables on the Runtime tab." },
+  { name: "Python", family: "python", runtime: "Python 3.13 or 3.14", text: "Flask, Django or FastAPI. The panel installs requirements.txt in a virtual environment, then runs the start command." },
 ];
 
 /** Apps and own OCI images (FR-307, FR-1110). */

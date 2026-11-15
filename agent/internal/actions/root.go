@@ -86,6 +86,7 @@ const (
 	opDBValkeySecret = "db.valkeySecret"
 
 	opSiteIni    = "site.ini"
+	opSiteEnv    = "site.env"
 	opSiteExists = "site.exists"
 	opSiteDisk   = "site.disk"
 	opSiteResize = "site.resize"
@@ -589,6 +590,18 @@ func (d *Deps) RootOps() map[string]gate.Handler {
 			}
 			return d.writeIni(ctx, in.User, in.Suffix, in.Content)
 		}),
+		opSiteEnv: none(func(ctx context.Context, in iniIn) error {
+			if err := d.websiteUser(in.User); err != nil {
+				return err
+			}
+			if !suffixRE.MatchString(in.Suffix) {
+				return fmt.Errorf("the suffix %q is not valid", in.Suffix)
+			}
+			if err := checkEnvFile(in.Content); err != nil {
+				return err
+			}
+			return d.writeEnv(ctx, in.User, in.Suffix, in.Content)
+		}),
 		opSiteExists: gate.Op(func(ctx context.Context, in userIn) (bool, error) {
 			if err := d.websiteUser(in.User); err != nil {
 				return false, err
@@ -906,6 +919,55 @@ func (d *Deps) writeIni(ctx context.Context, unixUser, suffix, content string) e
 	}
 	_, err := host.WriteFile(d.iniPath(unixUser, suffix), content, 0o644)
 	return err
+}
+
+// writeEnv writes the environment file of a container of a website (envFile). Only the Unix
+// user of the website can read it: Podman reads it as that user, and the variables can have
+// secrets, for example the password of a database.
+func (d *Deps) writeEnv(ctx context.Context, unixUser, suffix, content string) error {
+	if d.Gate != nil {
+		return d.Gate.Call(ctx, opSiteEnv, iniIn{User: unixUser, Suffix: suffix, Content: content}, nil)
+	}
+	path := d.envPath(unixUser, suffix)
+	if _, err := host.WriteFile(path, content, 0o600); err != nil {
+		return err
+	}
+	if os.Geteuid() != 0 {
+		// The tests do not run as root.
+		return nil
+	}
+	uid, err := d.Host.LookupUID(unixUser)
+	if err != nil {
+		return err
+	}
+	gid, err := d.Host.GID(unixUser)
+	if err != nil {
+		return err
+	}
+	return os.Lchown(path, uid, gid)
+}
+
+// checkEnvFile checks each line of an environment file with the input rules, so that the
+// root helper writes only variables of a customer.
+func checkEnvFile(content string) error {
+	lines := strings.Split(strings.TrimSuffix(content, "\n"), "\n")
+	if content == "" {
+		lines = nil
+	}
+	if len(lines) > validate.MaxEnvironmentVariables {
+		return fmt.Errorf("a website can have %d environment variables", validate.MaxEnvironmentVariables)
+	}
+	for _, l := range lines {
+		name, value, ok := strings.Cut(l, "=")
+		if !ok {
+			return errors.New("a line of the environment file has no \"=\"")
+		}
+		// A name that starts with CF_ is for a plugin that the panel runs (envNameOf).
+		if err := errors.Join(envNameOf("custom", name), validate.EnvValue(value)); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // appExists reports whether a website has its directory.

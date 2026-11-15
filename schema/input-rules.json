@@ -305,6 +305,22 @@
       "echo": false,
       "message": "Enter a value of 1 to 4096 characters on one line."
     },
+    "envName": {
+      "what": "name of an environment variable",
+      "doc": "The name of an environment variable of a website container. PORT, HOST, HOME, PATH, PWD and the names that start with CF_ are for the agent and the image.",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$",
+      "not": ["^(PORT|HOST|HOME|PATH|PWD)$", "^CF_"],
+      "message": "Use 1 to 64 letters, digits and underscores. Do not start with a digit. PORT, HOST, HOME, PATH, PWD and names that start with CF_ are not available."
+    },
+    "envValue": {
+      "what": "value of an environment variable",
+      "doc": "The value of an environment variable of a website container. It is on one line. It can be empty.",
+      "pattern": "^[^\\x00\\n\\r]*$",
+      "maxLength": 4096,
+      "empty": true,
+      "echo": false,
+      "message": "Enter a value of up to 4096 characters on one line."
+    },
     "environmentValue": {
       "what": "value of a container environment variable",
       "doc": "The value of an environment variable of a plugin container, for example its token. The agent writes it in the unit of the container, so it has no space, quote, \"%\", \"$\" or backslash.",
@@ -360,6 +376,10 @@
     },
     "deploySecrets": {
       "doc": "The largest number of secrets of a deploy.",
+      "value": 50
+    },
+    "environmentVariables": {
+      "doc": "The largest number of environment variables of a website.",
       "value": 50
     },
     "containerEnvironment": {

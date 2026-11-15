@@ -87,6 +87,11 @@ jobs:
           - { image: frankenphp-php8.5, context: images/frankenphp, file: images/frankenphp/Containerfile, args: PHP_VERSION=8.5 }
           - { image: apache-php8.4, context: images/apache-php-fpm, file: images/apache-php-fpm/Containerfile, args: PHP_VERSION=8.4 }
           - { image: apache-php8.5, context: images/apache-php-fpm, file: images/apache-php-fpm/Containerfile, args: PHP_VERSION=8.5 }
+          - { image: node22, context: images/node, file: images/node/Containerfile, args: NODE_VERSION=22 }
+          - { image: node24, context: images/node, file: images/node/Containerfile, args: NODE_VERSION=24 }
+          - { image: node26, context: images/node, file: images/node/Containerfile, args: NODE_VERSION=26 }
+          - { image: python3.13, context: images/python, file: images/python/Containerfile, args: PYTHON_VERSION=3.13 }
+          - { image: python3.14, context: images/python, file: images/python/Containerfile, args: PYTHON_VERSION=3.14 }
           - { image: edge, context: images/edge, file: images/edge/Containerfile, args: '' }
           - { image: sftp, context: images/sftp, file: images/sftp/Containerfile, args: '' }
           - { image: adminer, context: images/adminer, file: images/adminer/Containerfile, args: '' }

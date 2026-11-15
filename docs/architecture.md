@@ -240,6 +240,51 @@ The container unit of a website sets these limits:
   limits in the panel uses `systemctl set-property` on the running service and also changes
   the unit.
 
+### Node.js and Python websites
+
+A website can use a Node.js image (`node22`, `node24` or `node26`) or a Python image
+(`python3.13` or `python3.14`) in place of a PHP image. The container runs the start command of
+the website, in the same gVisor sandbox, with the same Unix user, network and limits as a PHP
+website.
+
+- The image has the entry point `/usr/local/bin/cf-app`. It changes to the application
+  directory (`CF_APP_DIR`, the document root of the website, `.` by default) and runs the
+  start command with `sh -c`. For Node.js, it adds `node_modules/.bin` to `PATH`. For Python,
+  it activates `.venv` when the directory has one.
+- The app must listen on the port in the variable `PORT` (8080) and on `HOST` (`0.0.0.0`). The
+  edge proxy sends the requests to this port, the same as for a PHP website.
+- When the directory has no `package.json` (Node.js) or no `app.py` (Python) and the website
+  uses the usual start command, `cf-app` serves a welcome page. Thus a new website passes its
+  first health check before the customer uploads the files.
+- The install command (for example `npm ci --omit=dev` or
+  `python -m venv .venv && .venv/bin/pip install -r requirements.txt`) runs in a build
+  container with the runtime image of the website, the same as a deploy from Git. The job
+  `Install dependencies` runs it, then does the steps of a runtime change: a new container on a
+  copy, a health check and the switch. If the command fails, the website does not change. A
+  change of the version with an install command also runs the install command first, with the
+  new version.
+- The build container has a read-only root, `HOME=/tmp`, and the same limits as the website. The
+  package managers keep their caches in `/tmp`.
+- When the start command stops, systemd starts the container again (`Restart=always`).
+
+#### Environment variables
+
+Each website can have up to 50 environment variables. A name has letters, digits and `_`, and
+does not start with a digit. The panel refuses `PORT`, `HOST`, `HOME`, `PATH`, `PWD` and the
+names that start with `CF_`. A value is on one line and has a maximum of 4096 characters.
+
+- The panel keeps the values encrypted in the column `websites.environment`. The API gives the
+  names only. The panel adds the values to the job when it sends the job, so they are not in
+  the `agent_jobs` table.
+- The agent writes the variables to the file `env` (or `env-b` for the second container of a
+  runtime change) in the configuration directory of the website. The file has the mode `0600`
+  and the website user is its owner. The container unit names it with `EnvironmentFile=`, so
+  the values are not in the unit and not in a command line.
+- A change starts a new container with the new variables, does a health check and then
+  switches. If the health check fails, the old container continues with the old values.
+- The install command and the build commands of a deploy also get the variables. The secrets of
+  the Git source replace a variable with the same name.
+
 ### Disk limit of a website
 
 The Unix user of a website owns the files of the website. The type of the disk limit comes
@@ -748,6 +793,8 @@ The job `Deploy` has these steps:
   branch.
 - While a website deploys from Git, the panel refuses a change of the document root on the
   Runtime tab. Change the web directory of the Git source.
+- For a Node.js or Python website, the install command is the first build command. It runs in
+  the web directory of the release. The default web directory is `.`.
 
 ## Databases
 
@@ -1120,8 +1167,9 @@ Adminer:
 - The route of the edge proxy has the host name of the plugin. The table `plugins` keeps the
   server, the host name, the Unix user, the state of the container and the token (encrypted).
 - The field `environment` of a website gives `CF_PANEL`, `CF_TOKEN` and `CF_WEBHOOK_SECRET`.
-  The agent accepts it only for the runtime `custom`, with up to 20 names (`secretName`) and
-  values (`environmentValue`), and writes it as `Environment=` lines in the rootless unit.
+  The agent writes it to the environment file of the website, the same as the variables of
+  a customer (refer to [Environment variables](#environment-variables)). Only the runtime
+  `custom` can have names that start with `CF_` (rule `secretName`).
   `JobOutcome::withoutPasswords` removes it from the payload when the job is complete.
 - The payload key `hostedPlugin` lets `Hosting::jobFinished` set the state of the container:
   `running`, `stopped` or `failed`.

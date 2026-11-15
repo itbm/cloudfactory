@@ -37,7 +37,8 @@ export interface Usage {
 
 export type WebsiteStatus = "running" | "stopped" | "starting" | "stopping" | "failed";
 
-export type RuntimeKind = "frankenphp" | "apache-php-fpm" | "oci" | "static";
+/** "node" and "python": the container runs the start command of the website. */
+export type RuntimeKind = "frankenphp" | "apache-php-fpm" | "node" | "python" | "oci" | "static";
 
 export type PhpVersion = "8.4" | "8.5";
 
@@ -45,6 +46,8 @@ export interface Runtime {
   kind: RuntimeKind;
   imageId: string;
   phpVersion?: PhpVersion;
+  /** The version of Node.js or Python, for example "24" or "3.14". */
+  version?: string;
   workerMode: boolean;
   extensions: string[];
   phpIni: Record<string, string>;
@@ -135,8 +138,12 @@ export interface Website {
    * websites of its networks. "worker": a background worker that serves no HTTP.
    */
   kind: WebsiteKind;
-  /** The start command of a worker. */
+  /** The start command of a worker, or of a Node.js or Python website. */
   command: string | null;
+  /** The install command of a Node.js or Python website, or null for no install step. */
+  installCommand: string | null;
+  /** The names of the environment variables. The API never gives the values. */
+  environment: string[];
   createdAt: string;
   status: WebsiteStatus;
   runtime: Runtime;
@@ -249,12 +256,16 @@ export type UpdatePolicy = "automatic" | "security_automatic" | "manual";
 export interface RuntimeImage {
   id: string;
   name: string;
-  family: "frankenphp" | "apache-php-fpm" | "node" | "static" | "edge" | "mail" | "dns" | "database" | "custom";
+  family: "frankenphp" | "apache-php-fpm" | "node" | "python" | "static" | "edge" | "mail" | "dns" | "database" | "custom";
   reference: string;
   running: string;
   available?: string;
   availableNote?: "rolling_out" | "queued";
   phpVersion?: PhpVersion;
+  /** The version of Node.js or Python of an official image, for example "24". */
+  version?: string;
+  /** The usual start command and install command of a Node.js or Python image. */
+  defaults?: { command: string; install: string };
   supportEndsAt?: string;
   websites: string;
   policy: UpdatePolicy;

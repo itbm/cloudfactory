@@ -660,8 +660,8 @@ agent or to the root helper.
   website with the runtime `custom`: its own Unix user, rootless Podman, gVisor and fixed
   limits. Its database instance is the plugin, so the firewall lets it connect to no database
   server. It gets no files of a customer, no socket of the agent and no root helper. The token
-  and the webhook secret go only to the container, as environment variables in a unit file
-  that only its Unix user can read (mode 0700). The job payload with them is encrypted at rest,
+  and the webhook secret go only to the container, as environment variables in a file that
+  only its Unix user can read (mode 0600, `EnvironmentFile=` in the unit). The job payload with them is encrypted at rest,
   and the panel removes the environment from the payload when the job is complete. The host
   name is on its own domain (`plugins.` and the panel domain by default), and the panel refuses
   a host name that a website, a domain or a plugin has.

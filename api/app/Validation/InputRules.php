@@ -57,6 +57,12 @@ final class InputRules
     /** A domain name in lower case. Each label has 1 to 63 characters. The last label is not a number, so that the name is not an IP address (audit finding R5). */
     public const DOMAIN = '/^(?=[\\s\\S]{0,253}\\z)(?![\\s\\S]*?(?:\\.[0-9]+$))(?:^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$)/D';
 
+    /** The name of an environment variable of a website container. PORT, HOST, HOME, PATH, PWD and the names that start with CF_ are for the agent and the image. */
+    public const ENV_NAME = '/^(?![\\s\\S]*?(?:^(PORT|HOST|HOME|PATH|PWD)$))(?![\\s\\S]*?(?:^CF_))(?:^[A-Za-z_][A-Za-z0-9_]{0,63}$)/D';
+
+    /** The value of an environment variable of a website container. It is on one line. It can be empty. */
+    public const ENV_VALUE = '/^(?:\\z|(?=[\\s\\S]{0,4096}\\z)(?:^[^\\x00\\n\\r]*$))/D';
+
     /** The value of an environment variable of a plugin container, for example its token. The agent writes it in the unit of the container, so it has no space, quote, "%", "$" or backslash. */
     public const ENVIRONMENT_VALUE = '/^(?=[\\s\\S]{0,1024}\\z)(?:^[A-Za-z0-9_.,:\\/|@+=~-]+$)/D';
 
@@ -147,6 +153,8 @@ final class InputRules
         'dnssecKey' => self::DNSSEC_KEY,
         'documentRoot' => self::DOCUMENT_ROOT,
         'domain' => self::DOMAIN,
+        'envName' => self::ENV_NAME,
+        'envValue' => self::ENV_VALUE,
         'environmentValue' => self::ENVIRONMENT_VALUE,
         'filePath' => self::FILE_PATH,
         'gitBranch' => self::GIT_BRANCH,
@@ -191,6 +199,8 @@ final class InputRules
         'dnssecKey' => 'Enter a private key in the PKCS #8 PEM format.',
         'documentRoot' => 'Enter a directory in /app, for example public or web/htdocs. Use letters, digits, dots, underscores and hyphens, and at most 8 parts.',
         'domain' => 'Enter a domain name in lower-case letters, for example shop.example.com.',
+        'envName' => 'Use 1 to 64 letters, digits and underscores. Do not start with a digit. PORT, HOST, HOME, PATH, PWD and names that start with CF_ are not available.',
+        'envValue' => 'Enter a value of up to 4096 characters on one line.',
         'environmentValue' => 'Use 1 to 1024 letters, digits and the characters _ . , : / | @ + = ~ -.',
         'filePath' => 'Enter a path that starts with /, for example /public/index.php. Do not use "//", "." or ".." parts, or a / at the end.',
         'gitBranch' => 'Enter the name of a branch, for example main. Use letters, digits, dots, underscores, hyphens and slashes.',
@@ -252,4 +262,7 @@ final class InputRules
 
     /** The largest number of DNS zones in one job of the agent. */
     public const MAX_DNS_ZONES_PER_JOB = 100;
+
+    /** The largest number of environment variables of a website. */
+    public const MAX_ENVIRONMENT_VARIABLES = 50;
 }

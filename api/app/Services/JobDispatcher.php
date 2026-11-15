@@ -71,15 +71,19 @@ class JobDispatcher
                 'extensions' => $website->extensions,
                 'phpIni' => (object) $website->php_ini,
                 'limits' => $website->limits,
-                // Batch 1, finding 11: the directory in /app that the web server serves.
-                'documentRoot' => $website->document_root ?? 'public',
+                // Batch 1, finding 11: the directory in /app that the web server serves. For a
+                // Node.js or Python website, the application directory.
+                'documentRoot' => $website->document_root ?? ($website->image->isApp() ? '.' : 'public'),
                 // FR-307: the port and the start command of a custom image.
                 'containerPort' => $website->image->custom ? (int) $website->image->container_port : 0,
-                // A worker runs the command of the customer in the shell of its container, as a
-                // cron job does. The container is the gVisor sandbox of the website.
-                'command' => $website->isWorker() && $website->command !== null
+                // A worker, and a Node.js or Python website, runs the command of the customer in
+                // the shell of its container, as a cron job does. The container is the gVisor
+                // sandbox of the website.
+                'command' => $website->hasStartCommand() && $website->command !== null
                     ? ['sh', '-c', $website->command]
                     : ($website->image->custom ? ($website->image->command ?? []) : []),
+                // The environment variables are not in the job: the panel adds the current
+                // values each time that it sends the job (AgentClient).
                 'worker' => $website->isWorker(),
                 // CF-03: the edge proxy serves only the domains that the customer verified.
                 'domains' => $website->domains->filter(fn ($d) => $d->verified())->map(fn ($d) => ['name' => $d->name, 'kind' => $d->kind->value])->values()->all(),

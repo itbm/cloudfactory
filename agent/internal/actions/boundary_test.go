@@ -483,6 +483,10 @@ func TestTheRootHelperRefusesValuesOutsideTheLimits(t *testing.T) {
 
 		"a php.ini with a path":              {opSiteIni, iniIn{User: "acme_x7k2", Suffix: "/../../x", Content: "a=b\n"}},
 		"a php.ini of root":                  {opSiteIni, iniIn{User: "root", Content: "a=b\n"}},
+		"variables with a path":              {opSiteEnv, iniIn{User: "acme_x7k2", Suffix: "/../../x", Content: "A=b\n"}},
+		"variables of root":                  {opSiteEnv, iniIn{User: "root", Content: "A=b\n"}},
+		"a variable of the agent":            {opSiteEnv, iniIn{User: "acme_x7k2", Content: "PORT=80\n"}},
+		"a line with no variable":            {opSiteEnv, iniIn{User: "acme_x7k2", Content: "#!/bin/sh\n"}},
 		"the disk of a website with a path":  {opSiteDisk, siteIn{User: "../..", Measure: true}},
 		"the disk of root":                   {opSiteDisk, siteIn{User: "root"}},
 		"a new size for the disk of root":    {opSiteResize, quotaIn{User: "root", Bytes: 1 << 30}},

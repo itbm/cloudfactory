@@ -46,6 +46,8 @@ export function roleList(roles: ServerRole[]): string {
 export const RUNTIME_KIND: Record<RuntimeKind, string> = {
   frankenphp: "FrankenPHP",
   "apache-php-fpm": "Apache + PHP-FPM",
+  node: "Node.js",
+  python: "Python",
   oci: "OCI image",
   static: "Static files",
 };

@@ -54,7 +54,8 @@ class DeployController extends Controller
             'buildCommands.*' => ['string', Input::rule('commandLine')],
         ]);
         $source = $website->gitSource;
-        $webDirectory = $data['webDirectory'] ?? $source?->web_directory ?? 'public';
+        // A Node.js or Python application is usually at the top of its repository.
+        $webDirectory = $data['webDirectory'] ?? $source?->web_directory ?? ($website->image->isApp() ? '.' : 'public');
         // The document root of a release has the directory of the release before this directory.
         if ($webDirectory !== '.' && ! Input::valid('documentRoot', 'releases/'.$website->id.'/'.$webDirectory)) {
             throw ValidationException::withMessages(['webDirectory' => 'Enter a directory with at most 6 parts, for example public.']);
@@ -206,13 +207,39 @@ class DeployController extends Controller
             'releaseId' => $release->id,
             'repository' => $source->repository,
             'branch' => $source->branch,
-            'buildCommands' => $source->build_commands ?? [],
+            // A Node.js or Python website installs its dependencies in the new release first.
+            'buildCommands' => self::buildCommands($website, $source),
             // The earlier releases that stay on the server, for "Go back".
             'keepReleases' => $website->releases()->where('state', Release::READY)->limit(Release::KEEP)->pluck('id')->all(),
         ], "Deploy {$source->branch}", $website);
         $release->update(['agent_job_id' => $job->id]);
 
         return [$release, $job];
+    }
+
+    /**
+     * The build commands of a deploy. The install command of a Node.js or Python website comes
+     * first, in the web directory of the release. The other commands run in the release.
+     *
+     * @return list<string>
+     */
+    public static function buildCommands(Website $website, GitSource $source): array
+    {
+        $commands = $source->build_commands ?? [];
+        if ($website->image->isApp() && $website->install_command && ! in_array($website->install_command, $commands, true)) {
+            $dir = $source->web_directory === '.' ? '' : 'cd '.escapeshellarg($source->web_directory).' && ';
+            // In a subshell, so that the next commands run in the release.
+            $install = '('.$dir.$website->install_command.')';
+            // The agent takes at most MAX_BUILD_COMMANDS lines. "&&" keeps the order and stops
+            // at the first error, as "set -e" of the build script does.
+            if (count($commands) >= InputRules::MAX_BUILD_COMMANDS) {
+                $commands[0] = $install.' && '.$commands[0];
+            } else {
+                array_unshift($commands, $install);
+            }
+        }
+
+        return $commands;
     }
 
     /** One deploy or one change of the release at a time. */

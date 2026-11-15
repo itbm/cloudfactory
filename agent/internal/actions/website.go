@@ -31,6 +31,11 @@ func CheckWebsite(w *agentv1.Website) error {
 		validate.DocumentRoot(w.GetDocumentRoot()), validate.Command(w.GetCommand()), validate.Port(w.GetContainerPort())}
 	switch w.GetRuntime() {
 	case "frankenphp", "apache-php-fpm", "custom":
+	case "node", "python":
+		// An application runtime runs the start command of the customer.
+		if len(w.GetCommand()) == 0 {
+			errs = append(errs, fmt.Errorf("a %s website needs a start command", w.GetRuntime()))
+		}
 	default:
 		errs = append(errs, fmt.Errorf("the runtime %q is not valid", w.GetRuntime()))
 	}
@@ -39,6 +44,12 @@ func CheckWebsite(w *agentv1.Website) error {
 	}
 	for k, v := range w.GetPhpIni() {
 		errs = append(errs, validate.IniKey(k), validate.IniValue(v))
+	}
+	if len(w.GetEnvironment()) > validate.MaxEnvironmentVariables {
+		errs = append(errs, fmt.Errorf("a website can have %d environment variables", validate.MaxEnvironmentVariables))
+	}
+	for k, v := range w.GetEnvironment() {
+		errs = append(errs, envNameOf(w.GetRuntime(), k), validate.EnvValue(v))
 	}
 	primary := 0
 	for _, d := range w.GetDomains() {
@@ -71,17 +82,6 @@ func CheckWebsite(w *agentv1.Website) error {
 				errs = append(errs, errors.New("a website with a route path cannot have a redirect domain"))
 			}
 		}
-	}
-	// Only a custom image gets environment variables: the panel gives a plugin that it runs
-	// its token and its webhook secret this way. The values go in the unit with no quotes.
-	if len(w.GetEnvironment()) > 0 && w.GetRuntime() != "custom" {
-		errs = append(errs, errors.New("only a website with the runtime \"custom\" can have environment variables"))
-	}
-	if len(w.GetEnvironment()) > validate.MaxContainerEnvironment {
-		errs = append(errs, fmt.Errorf("a website can have %d environment variables", validate.MaxContainerEnvironment))
-	}
-	for k, v := range w.GetEnvironment() {
-		errs = append(errs, validate.SecretName(k), validate.EnvironmentValue(v))
 	}
 	_, err := instanceKey(w.GetDatabaseInstance())
 	return errors.Join(append(errs, err)...)
@@ -248,6 +248,46 @@ func documentRoot(w *agentv1.Website) string {
 	return path.Join("/app", w.GetDocumentRoot())
 }
 
+// isPHP reports whether the runtime of a website is a PHP runtime, with a php.ini file.
+func isPHP(w *agentv1.Website) bool {
+	return w.GetRuntime() == "frankenphp" || w.GetRuntime() == "apache-php-fpm"
+}
+
+// envPath is the environment file of a container of a website (envFile).
+func (d *Deps) envPath(unixUser, suffix string) string {
+	return filepath.Join(d.Host.ConfigDir(unixUser), "env"+suffix)
+}
+
+// envFile gives the environment file of a website for Podman: one line "NAME=value" for each
+// variable, in the order of the names. Podman takes the rest of the line after "=" as the
+// value, with no quotes. The input rules refuse a line feed in a value.
+func envFile(env map[string]string) string {
+	names := make([]string, 0, len(env))
+	for k := range env {
+		names = append(names, k)
+	}
+	slices.Sort(names)
+	var b strings.Builder
+	for _, k := range names {
+		b.WriteString(k + "=" + env[k] + "\n")
+	}
+	return b.String()
+}
+
+// writeSiteFiles writes the files of a container of a website before the agent writes its
+// unit: the php.ini of a PHP runtime and the environment file.
+func (d *Deps) writeSiteFiles(ctx context.Context, w *agentv1.Website, suffix string) error {
+	if isPHP(w) {
+		if err := d.writeIni(ctx, w.GetUnixUser(), suffix, quadlet.PHPIni(w.GetPhpVersion(), w.GetExtensions(), w.GetPhpIni())); err != nil {
+			return err
+		}
+	}
+	if len(w.GetEnvironment()) > 0 {
+		return d.writeEnv(ctx, w.GetUnixUser(), suffix, envFile(w.GetEnvironment()))
+	}
+	return nil
+}
+
 func (d *Deps) iniPath(unixUser, suffix string) string {
 	return filepath.Join(d.Host.ConfigDir(unixUser), "php"+suffix+".ini")
 }
@@ -259,14 +299,22 @@ func (d *Deps) unit(w *agentv1.Website, port int, suffix string) quadlet.Website
 		SiteDir: d.Host.AppDir(w.GetUnixUser()), IniFile: d.iniPath(w.GetUnixUser(), suffix),
 		Runtime: w.GetRuntime(), WorkerMode: w.GetWorkerMode(), Gvisor: d.runtime(), Suffix: suffix,
 		DocumentRoot: documentRoot(w), ContainerPort: int(w.GetContainerPort()), Command: w.GetCommand(), Worker: w.GetWorker(),
+		EnvFile: envFileOf(d, w, suffix),
 		// The database host names of the container point to the database containers of the
 		// customer of the website.
 		DatabaseAddress: d.databaseAddress(w.GetId()),
 		HostsFile:       d.hostsFileOf(w.GetUnixUser()),
 		LogFile:         d.logFile(w.GetUnixUser()),
-		Environment:     w.GetEnvironment(),
 		Limits:          quadlet.Limits{VCPUs: l.GetVcpus(), MemoryBytes: l.GetMemoryBytes(), Processes: l.GetProcesses(), DiskIOBytesPerSecond: l.GetDiskIoBytesPerSecond(), BlockDevice: d.BlockDevice},
 	}
+}
+
+// envFileOf gives the environment file of the unit, or "" for a website with no variables.
+func envFileOf(d *Deps, w *agentv1.Website, suffix string) string {
+	if len(w.GetEnvironment()) == 0 {
+		return ""
+	}
+	return d.envPath(w.GetUnixUser(), suffix)
 }
 
 func (d *Deps) site(w *agentv1.Website, port int) caddy.Site {
@@ -284,10 +332,8 @@ func (d *Deps) site(w *agentv1.Website, port int) caddy.Site {
 // startContainer writes the php.ini and the unit, and starts the container.
 func (d *Deps) startContainer(ctx context.Context, w *agentv1.Website, port int, suffix string) error {
 	u := d.unit(w, port, suffix)
-	if w.GetRuntime() != "custom" {
-		if err := d.writeIni(ctx, w.GetUnixUser(), suffix, quadlet.PHPIni(w.GetPhpVersion(), w.GetExtensions(), w.GetPhpIni())); err != nil {
-			return err
-		}
+	if err := d.writeSiteFiles(ctx, w, suffix); err != nil {
+		return err
 	}
 	if _, err := d.Host.WriteUnit(w.GetUnixUser(), u.UnitName(), quadlet.ContainerUnit(u)); err != nil {
 		return err
@@ -537,7 +583,7 @@ header('Content-Type: text/html; charset=utf-8');
 // that a tenant controls (CF-05). A website can operate with no page, so an error is only in
 // the log.
 func (d *Deps) writeDefaultPage(ctx context.Context, w *agentv1.Website) {
-	if w.GetRuntime() == "custom" || (w.GetDocumentRoot() != "" && w.GetDocumentRoot() != "public") {
+	if !isPHP(w) || (w.GetDocumentRoot() != "" && w.GetDocumentRoot() != "public") {
 		return
 	}
 	dir := filepath.Join(d.Host.AppDir(w.GetUnixUser()), "public")
@@ -737,10 +783,8 @@ func (d *Deps) SetRuntime(req *agentv1.WebsiteRequest) (jobs.Job, error) {
 				newPort, newSuffix = old.Port, old.Suffix
 				u := d.unit(w, newPort, newSuffix)
 				u.Stopped = true
-				if w.GetRuntime() != "custom" {
-					if err := d.writeIni(ctx, user, newSuffix, quadlet.PHPIni(w.GetPhpVersion(), w.GetExtensions(), w.GetPhpIni())); err != nil {
-						return err
-					}
+				if err := d.writeSiteFiles(ctx, w, newSuffix); err != nil {
+					return err
 				}
 				if _, err := d.Host.WriteUnit(user, u.UnitName(), quadlet.ContainerUnit(u)); err != nil {
 					return err
@@ -1097,4 +1141,14 @@ func (d *Deps) changeDomain(req *agentv1.DomainRequest, add bool) (jobs.Job, err
 		// Caddy gets the certificate itself when the DNS points here (FR-404).
 		{Name: "Get TLS certificate", Do: func(context.Context) error { return nil }},
 	}, Result: func() map[string]any { return map[string]any{"dnsPointsHere": dnsHere} }}, nil
+}
+
+// envNameOf checks the name of an environment variable. A plugin that the panel runs (runtime
+// "custom") gets names that start with CF_, for example CF_TOKEN (docs/plugins.md). The other
+// websites cannot use these names, which are for the agent and the images.
+func envNameOf(runtime, name string) error {
+	if runtime == "custom" && strings.HasPrefix(name, "CF_") {
+		return validate.SecretName(name)
+	}
+	return validate.EnvName(name)
 }

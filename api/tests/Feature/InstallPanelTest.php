@@ -18,7 +18,11 @@ class InstallPanelTest extends TestCase
 
         $this->assertSame(20, strlen($out['password']));
         $this->assertStringStartsWith('cfj_', $out['joinToken']);
-        $this->assertSame(4, Image::count());
+        // FrankenPHP and Apache for two PHP versions, Node.js 22, 24 and 26, and Python 3.13 and 3.14.
+        $this->assertSame(9, Image::count());
+        $this->assertSame(['22', '24', '26'], Image::where('family', 'node')->orderBy('runtime_version')->pluck('runtime_version')->all());
+        $this->assertSame(['3.13', '3.14'], Image::where('family', 'python')->orderBy('runtime_version')->pluck('runtime_version')->all());
+        $this->assertTrue(Image::where('family', 'node')->get()->every(fn (Image $i) => $i->isApp() && ! $i->isPhp() && $i->signature_verified));
         $this->assertSame(3, Plan::count());
         $this->assertTrue(User::sole()->isAdministrator());
 
@@ -26,7 +30,7 @@ class InstallPanelTest extends TestCase
         Artisan::call('cloudfactory:install', ['email' => 'other@example.com']);
         $this->assertNull(json_decode(trim(Artisan::output()), true)['password']);
         $this->assertSame(1, User::count());
-        $this->assertSame(4, Image::count());
+        $this->assertSame(9, Image::count());
     }
 
     /** An update of the panel runs the command again with the tag of the new release. */
@@ -56,7 +60,7 @@ class InstallPanelTest extends TestCase
 
         // An installation of an older release does not put the images back.
         Artisan::call('cloudfactory:install', ['email' => 'admin@example.com', '--image-tag' => '0.1.8']);
-        $this->assertSame(2, Image::where('tag', '0.1.9')->count());
+        $this->assertSame(7, Image::where('tag', '0.1.9')->count());
         $this->assertSame('0.1.9', $used->fresh()->available_tag);
     }
 }
