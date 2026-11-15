@@ -1,8 +1,8 @@
 import { useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { useAction, useStore } from "../api/hooks";
-import { createDatabase, createDatabaseUser, databaseServersFor, deleteDatabase, deleteDatabaseUser, partialDetails, setDatabaseUser, type GrantInput } from "../api/store";
-import type { DatabaseEngine, DatabasePrivileges, DatabaseServer, DatabaseUser } from "../api/types";
+import { createDatabase, createDatabaseUser, databaseServersFor, deleteDatabase, deleteDatabaseUser, openInAdminer, partialDetails, setDatabaseUser, type GrantInput } from "../api/store";
+import type { Database, DatabaseEngine, DatabasePrivileges, DatabaseServer, DatabaseUser } from "../api/types";
 import { Card, ConfirmButton, Field, FormError, Modal, RowMenu, TableWrap } from "../components/ui";
 import { bytes, count } from "../lib/format";
 import { DATABASE_HOST, DATABASE_PORT, ENGINE_NAME as ENGINE, jobActive } from "../lib/labels";
@@ -33,6 +33,8 @@ export function DatabasesPanel({ websiteId }: { websiteId?: string }) {
   const [password, setPassword] = useState<{ user: string; value: string; valkey?: boolean } | null>(null);
   // The action of a database user that waits for a confirmation.
   const [asking, setAsking] = useState<{ user: DatabaseUser; action: "password" | "remove" } | null>(null);
+  // The database that opens in Adminer now, or the error of the last attempt.
+  const [adminer, setAdminer] = useState<{ id: string; error?: string } | null>(null);
   const createDb = useAction(createDatabase);
   const createUser = useAction(createDatabaseUser);
   const changeUser = useAction(setDatabaseUser);
@@ -70,6 +72,27 @@ export function DatabasesPanel({ websiteId }: { websiteId?: string }) {
     createUser.clear();
     changeUser.clear();
   };
+  // Single sign-on: the window opens at the click, so that the browser does not block it. The
+  // panel then sends the sign-in form of Adminer to it.
+  const openAdminer = (d: Database) => {
+    const win = window.open("", "_blank");
+    if (!win) {
+      setAdminer({ id: d.id, error: "Your browser blocked the new window. Let this panel open windows, and try again." });
+      return;
+    }
+    // Adminer cannot change the page of the panel.
+    win.opener = null;
+    win.document.title = "Opening Adminer";
+    const note = win.document.createElement("p");
+    note.style.cssText = "font-family: system-ui, sans-serif; margin: 2rem";
+    note.textContent = `Opening ${d.name} in Adminer. The first time, the panel starts Adminer, which can take a minute.`;
+    win.document.body.appendChild(note);
+    setAdminer({ id: d.id });
+    openInAdminer(d.id, win).then(() => setAdminer(null)).catch((e: unknown) => {
+      win.close();
+      setAdminer({ id: d.id, error: e instanceof Error ? e.message : String(e) });
+    });
+  };
   const edit = (u: DatabaseUser) => {
     setGrants(u.grants.map((g) => ({ databaseId: g.databaseId, privileges: g.privileges })));
     setDialog(u);
@@ -105,7 +128,12 @@ export function DatabasesPanel({ websiteId }: { websiteId?: string }) {
                       <span className="cell-sub">{serverName(d.databaseServerId) ?? "Database server"}</span>
                       {d.engine === "valkey" && <span className="cell-sub">{d.number === undefined ? "The number comes when the job is complete" : <>Database number <strong>{d.number}</strong></>}</span>}
                     </td>
-                    <td className="cell-actions" style={{ width: 120 }}>
+                    <td className="cell-actions" style={{ width: 240 }}>
+                      {d.engine !== "valkey" && (
+                        <button type="button" className="btn btn-sm" disabled={adminer?.id === d.id && !adminer.error} onClick={() => openAdminer(d)}>
+                          {adminer?.id === d.id && !adminer.error ? "Opening…" : "Open in Adminer"}
+                        </button>
+                      )}
                       <ConfirmButton className="btn btn-sm btn-danger" title={`Remove database ${d.name}?`} confirm="Remove database" message={d.engine === "valkey" ? <p>The data and the user of the database are removed now. A backup has no Valkey data, so you cannot restore it.</p> : <p>The data is removed now. The users of this database lose access to it. You can restore it from a backup for the retention period.</p>} onConfirm={() => deleteDatabase(d.id)}>Remove</ConfirmButton>
                     </td>
                   </tr>
@@ -119,6 +147,11 @@ export function DatabasesPanel({ websiteId }: { websiteId?: string }) {
           </table>
         </TableWrap>
         {!websiteId && partialDetails() && <p className="card-body muted small">There are many websites, so this list shows only the websites that you opened. Open a website to see its databases.</p>}
+        {dbs.some((d) => d.engine !== "valkey") && (
+          <p className="card-body muted small" style={{ paddingTop: 12 }}>
+            <strong>Open in Adminer</strong> opens the database in Adminer, a web tool for databases, in a new window. The panel signs you in with a temporary database user for that one database, so you type no password. The user stops after 60 minutes: then open the database again.
+          </p>
+        )}
         {dbs.some((d) => d.engine === "valkey") && (
           <p className="card-body muted small" style={{ paddingTop: 12 }}>
             To connect to a Valkey database, an app uses the host name and the port in the Host column, the user name, the password and the database number. Valkey is compatible with Redis: for PHP, turn on the extension <code>redis</code> on the Runtime tab. All the databases of a Valkey database server share its memory: when the memory is full, Valkey removes the keys that were not used for the longest time. A backup has no Valkey data.
@@ -283,6 +316,11 @@ export function DatabasesPanel({ websiteId }: { websiteId?: string }) {
             <FormError error={changeUser.error} />
             <GrantEditor websiteId={dialog.websiteId} engine={dialog.engine} databaseServerId={dialog.databaseServerId} grants={grants} setGrants={setGrants} />
           </form>
+        </Modal>
+      )}
+      {adminer?.error && (
+        <Modal title="Adminer did not open" onClose={() => setAdminer(null)} footer={<button type="button" className="btn btn-primary" onClick={() => setAdminer(null)}>Close</button>}>
+          <p>{adminer.error}</p>
         </Modal>
       )}
       {password && (

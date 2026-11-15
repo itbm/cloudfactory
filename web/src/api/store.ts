@@ -686,6 +686,71 @@ export function deleteDatabaseUser(userId: string) {
   return call(() => live.request<JobAnswer>("DELETE", `/websites/${user.websiteId}/database-users/${userId}`)).then((r) => track(r.job)).then(() => refresh());
 }
 
+/** The state of a sign-in to Adminer (GET /v1/adminer-logins/{id}). */
+export interface AdminerLogin {
+  id: string;
+  status: "starting" | "ready" | "failed" | "expired";
+  url: string;
+  databaseName: string;
+  username: string;
+  expiresAt: string;
+}
+
+/** The fields of the sign-in form of Adminer, with the password of the temporary database user. */
+export interface AdminerForm {
+  driver: string;
+  server: string;
+  username: string;
+  password: string;
+  db: string;
+}
+
+/** The time between two checks of a sign-in, and the longest wait for a new Adminer container. */
+export const ADMINER_POLL_MS = 1500;
+const ADMINER_WAIT_MS = 4 * 60 * 1000;
+
+/**
+ * Opens a database in Adminer, with single sign-on. The panel makes a temporary database user
+ * for the database, and starts the Adminer of the customer if necessary. When the two are
+ * ready, the sign-in form goes to Adminer in the window "target". The user types no password,
+ * and the password is never on the screen.
+ */
+export async function openInAdminer(databaseId: string, target: Window, privileges: DatabasePrivileges = "readwrite"): Promise<void> {
+  const db = state.databases.find((x) => x.id === databaseId);
+  if (!db) throw new ApiError("The database does not exist.");
+  const r = await call(() => live.request<{ login: AdminerLogin; form: AdminerForm; jobs: live.ApiJob[] }>("POST", `/websites/${db.websiteId}/databases/${databaseId}/adminer`, { privileges }));
+  for (const job of r.jobs) void track(job).catch(() => undefined);
+  let login = r.login;
+  const until = Date.now() + ADMINER_WAIT_MS;
+  while (login.status === "starting") {
+    if (Date.now() > until) throw new ApiError("Adminer did not start in time. Look at the job on the Jobs page, and try again.");
+    await new Promise((done) => setTimeout(done, ADMINER_POLL_MS));
+    login = (await call(() => live.request<{ login: AdminerLogin }>("GET", `/adminer-logins/${login.id}`))).login;
+  }
+  if (login.status !== "ready") throw new ApiError(login.status === "expired" ? "The sign-in expired. Open the database again." : "The panel could not start Adminer, or could not make the temporary database user. Look at the job on the Jobs page.");
+  postAdminerForm(target, login.url, r.form);
+}
+
+/**
+ * Sends the sign-in form to Adminer in a window of the panel. The form is a POST request, so
+ * the password is not in an address or in the history of the browser.
+ */
+export function postAdminerForm(target: Window, url: string, form: AdminerForm) {
+  const doc = target.document;
+  const el = doc.createElement("form");
+  el.method = "post";
+  el.action = url;
+  for (const [key, value] of Object.entries(form)) {
+    const input = doc.createElement("input");
+    input.type = "hidden";
+    input.name = `auth[${key}]`;
+    input.value = value;
+    el.appendChild(input);
+  }
+  doc.body.appendChild(el);
+  el.submit();
+}
+
 /** FR-307: adds a custom image. The API checks the reference, the tag and the port. */
 export function addImage(name: string, reference: string, tag: string, policy: UpdatePolicy, run: { containerPort?: string; command?: string } = {}) {
   const port = run.containerPort?.trim() ? Number(run.containerPort) : null;
