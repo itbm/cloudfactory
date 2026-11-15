@@ -108,6 +108,13 @@ class RunDemoJob implements ShouldQueue
             AgentAction::CreateDatabase => ($p['engine'] ?? '') === Database::VALKEY ? ['number' => self::freeValkeyNumber($job)] : [],
             AgentAction::Backup => ['snapshotId' => bin2hex(random_bytes(32)), 'sizeBytes' => random_int(40, 900) * 1024 ** 2, 'dumps' => [], 'forgotten' => []],
             AgentAction::InstallHostUpdates => ['rebootRequired' => false],
+            // Keys with the form of the keys of a real agent. They are not real keys.
+            AgentAction::PrepareMailNode => ['keys' => [
+                'wireguardKey' => base64_encode(hash('sha256', 'wg'.$job->server_id, true)),
+                'keepKey' => "-----BEGIN PUBLIC KEY-----\n".base64_encode(hex2bin('302a300506032b6570032100').hash('sha256', 'keep'.$job->server_id, true))."\n-----END PUBLIC KEY-----\n",
+                'nodeKey' => "-----BEGIN PUBLIC KEY-----\n".base64_encode(hex2bin('302a300506032b6570032100').hash('sha256', 'node'.$job->server_id, true))."\n-----END PUBLIC KEY-----\n",
+            ]],
+            AgentAction::SetMailNode => ['database' => ['size' => 3, 'state' => 'Synced']],
             // The fingerprint of the demonstration is not the fingerprint of the key.
             AgentAction::SetMailbox => ($p['publicKey'] ?? '') !== '' ? ['encryption' => ['fingerprints' => [strtoupper(sha1($p['publicKey']))], 'type' => 'OpenPGP v4: X25519', 'expiresAt' => null, 'warnings' => []]] : [],
             AgentAction::SetMailDomain => ['records' => DemoMailDns::records((string) ($p['domain'] ?? ''), (string) $job->server->mail_hostname)],

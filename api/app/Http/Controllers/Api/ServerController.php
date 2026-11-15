@@ -88,6 +88,9 @@ class ServerController extends Controller
         if (! in_array(ServerRole::Email->value, $server->roles ?? [], true)) {
             throw ValidationException::withMessages(['hostname' => 'Give the server the email role first.']);
         }
+        if ($server->mail_cluster_id !== null) {
+            throw ValidationException::withMessages(['hostname' => 'This server is a member of a mail cluster. The cluster controls its mail server.']);
+        }
         if ($data['hostname'] !== $server->mail_hostname && $server->mailDomains()->exists()) {
             throw ValidationException::withMessages(['hostname' => 'This server has mail domains. Their DNS records use the host name, thus it cannot change.']);
         }
@@ -223,6 +226,9 @@ class ServerController extends Controller
         if ($server->mailDomains()->exists()) {
             throw ValidationException::withMessages(['server' => 'This server has mail domains. Remove the mail domains first.']);
         }
+        if ($server->mail_cluster_id !== null) {
+            throw ValidationException::withMessages(['server' => 'This server is a member of a mail cluster. The panel cannot remove a member of a cluster.']);
+        }
         DB::transaction(function () use ($server) {
             // The jobs of the server go with it. The audit log keeps the record of the actions.
             AgentJob::where('server_id', $server->id)->delete();
@@ -301,6 +307,8 @@ class ServerController extends Controller
                 'hostname' => $s->mail_hostname,
                 'status' => $s->mail_status,
                 'domains' => $s->mailDomains()->count(),
+                // Not null: the server is a member of this mail cluster.
+                'clusterId' => $s->mail_cluster_id,
             ],
             'websites' => $s->websites_count ?? null,
             'lastSeenAt' => $s->last_seen_at?->toIso8601String(),

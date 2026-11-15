@@ -31,6 +31,8 @@ enum AgentAction: string
     case SetDatabaseServer = 'SetDatabaseServer';
     case DeleteDatabaseServer = 'DeleteDatabaseServer';
     case SetMailServer = 'SetMailServer';
+    case PrepareMailNode = 'PrepareMailNode';
+    case SetMailNode = 'SetMailNode';
     case SetMailDomain = 'SetMailDomain';
     case DeleteMailDomain = 'DeleteMailDomain';
     case SetMailbox = 'SetMailbox';
@@ -65,6 +67,8 @@ enum AgentAction: string
             self::ConfigureHost => ['Save settings', 'Restart websites', 'Restart services'],
             self::SetPanelCertificate => ['Change certificate method', 'Get TLS certificate'],
             self::SetMailServer => ['Start mail server', 'Open mail ports', 'Get TLS certificate'],
+            self::PrepareMailNode => ['Make keys'],
+            self::SetMailNode => ['Make private network', 'Start cluster store', 'Start database'],
             self::SetMailDomain => ['Add domain', 'Make DKIM keys'],
             self::DeleteMailDomain => ['Remove domain'],
             self::SetMailbox => ['Set mailbox'],

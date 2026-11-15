@@ -24,6 +24,9 @@ class JobDispatcher
         ?DatabaseServer $databaseServer = null,
         ?string $customerId = null,
     ): AgentJob {
+        // The members of a mail cluster share their data. A different member does the job of
+        // a member that is offline.
+        $server = MailClusters::target($server, $action);
         $job = AgentJob::create([
             'server_id' => $server->id,
             'website_id' => $website?->id,

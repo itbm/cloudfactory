@@ -88,6 +88,10 @@ class JobOutcome
             ? $this->applySuccess($job, $website, $result)
             : $this->applyFailure($job, $website);
         $this->databaseServersOf($job, $state === JobState::Succeeded);
+        // A job of the setup of a mail cluster: the next step starts when the step is complete.
+        if (isset($job->payload['mailClusterId']) && in_array($job->action, [AgentAction::PrepareMailNode, AgentAction::SetMailNode, AgentAction::SetMailServer], true)) {
+            app(MailClusters::class)->finished($job, $state === JobState::Succeeded, $result);
+        }
 
         if ($job->rollout_id && ($rollout = Rollout::find($job->rollout_id))) {
             $this->rollouts->jobFinished($rollout, $job);

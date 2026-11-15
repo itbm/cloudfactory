@@ -15,6 +15,7 @@ use App\Http\Controllers\Api\ImageController;
 use App\Http\Controllers\Api\JobController;
 use App\Http\Controllers\Api\MailAliasController;
 use App\Http\Controllers\Api\MailboxController;
+use App\Http\Controllers\Api\MailClusterController;
 use App\Http\Controllers\Api\MailDomainController;
 use App\Http\Controllers\Api\PanelCertificateController;
 use App\Http\Controllers\Api\PlanController;
@@ -131,6 +132,11 @@ Route::prefix('v1')->group(function () {
             Route::post('servers/{id}/check-connection', [ServerController::class, 'checkConnection']);
             // Turns on email for a server with the email role.
             Route::put('servers/{id}/mail', [ServerController::class, 'setMail']);
+            // Mail clusters: mail servers on three or five servers that share their data.
+            Route::get('mail-clusters', [MailClusterController::class, 'index']);
+            Route::post('mail-clusters', [MailClusterController::class, 'store']);
+            Route::get('mail-clusters/{id}', [MailClusterController::class, 'show']);
+            Route::post('mail-clusters/{id}/retry', [MailClusterController::class, 'retry']);
             Route::delete('servers/{id}', [ServerController::class, 'destroy']);
             // The TLS certificate of the panel domain: the CA of the panel or Let's Encrypt.
             Route::get('panel-certificate', [PanelCertificateController::class, 'show']);

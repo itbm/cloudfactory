@@ -1711,6 +1711,97 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/Invalid' }
 
+  /v1/mail-clusters:
+    get:
+      tags: [Servers]
+      summary: List the mail clusters
+      description: Only an administrator sees the mail clusters.
+      responses:
+        '200':
+          description: The mail clusters.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/MailCluster' } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Servers]
+      summary: Make a mail cluster
+      description: >-
+        A mail cluster has 3 or 5 servers with the role `email`. Each member has all the mail,
+        so the mail service continues when one server fails. The members can be in different
+        regions. They connect through a private network on UDP port 51877.
+
+
+        Each server must be online, and must not have a mail server. The panel makes the
+        cluster in steps: each server makes its keys, the first server starts the database
+        cluster, the other servers join it, then the mail servers start. Get the cluster to
+        see the step. Add the DNS records in `records`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, hostname, members]
+              properties:
+                name: { type: string, example: eu, description: 'Lower-case letters, digits and hyphens, 32 characters or fewer.' }
+                hostname: { type: string, example: mail.example.net, description: The shared name of the cluster. The MX records of the mail domains use it. }
+                members:
+                  type: array
+                  minItems: 3
+                  maxItems: 5
+                  items:
+                    type: object
+                    required: [serverId, hostname, endpoint]
+                    properties:
+                      serverId: { type: string }
+                      hostname: { type: string, example: m1.example.net, description: The name of this member. Mail programs connect to it. }
+                      endpoint: { type: string, example: 192.0.2.1, description: The public address of the server. }
+                      region: { type: integer, minimum: 0, maximum: 99, description: Servers with the same number are near to each other. }
+      responses:
+        '202':
+          description: The setup starts.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MailCluster' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/mail-clusters/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    get:
+      tags: [Servers]
+      summary: Get a mail cluster
+      responses:
+        '200':
+          description: The mail cluster.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MailCluster' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/mail-clusters/{id}/retry:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [Servers]
+      summary: Start a failed setup again
+      description: >-
+        Starts the step that failed again, on the members that did not complete it. The
+        response is 422 when the setup did not fail, or when a job of the setup is not complete.
+      responses:
+        '202':
+          description: The step starts again.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MailCluster' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
   /v1/panel-certificate:
     get:
       tags: [Servers]
@@ -2704,6 +2795,7 @@ components:
             hostname: { type: string, description: The host name that mail programs and other mail servers connect to. }
             status: { type: string, enum: [starting, running, stopped, failed] }
             domains: { type: integer, description: The number of mail domains on the server. A server with mail domains cannot be removed. }
+            clusterId: { type: [string, 'null'], description: Not null when the server is a member of this mail cluster. }
         os: { type: [string, 'null'] }
         kernel: { type: [string, 'null'] }
         arch: { type: [string, 'null'] }
@@ -2828,6 +2920,40 @@ components:
         vcpus: { type: number, exclusiveMinimum: 0 }
         memoryBytes: { type: integer, minimum: 536870912, description: 512 MB or more. }
         diskBytes: { type: integer, minimum: 1073741824, description: 1 GB or more. }
+    MailCluster:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        hostname: { type: string, description: The shared name of the cluster. }
+        status: { type: string, enum: [setting_up, running, failed] }
+        phase: { type: string, enum: [prepare, bootstrap, join, first, rest, done], description: The step of the setup. }
+        error: { type: [string, 'null'] }
+        members:
+          type: array
+          items:
+            type: object
+            properties:
+              serverId: { type: string }
+              serverName: { type: string }
+              serverState: { type: string }
+              number: { type: integer }
+              hostname: { type: string }
+              endpoint: { type: string }
+              address: { type: string, description: The address of the member in the private network. }
+              region: { type: integer }
+              step: { type: string, enum: [new, prepared, joined, running] }
+        records:
+          type: array
+          description: The DNS records to add. The shared name gives each member, and each member has its own name.
+          items:
+            type: object
+            properties:
+              type: { type: string, enum: [A, AAAA] }
+              name: { type: string }
+              value: { type: string }
+        domains: { type: integer, description: The number of mail domains on the members. }
+        createdAt: { type: string, format: date-time }
     MailDomain:
       type: object
       required: [id, name, customerId, serverId, status, records, dnsReady]
