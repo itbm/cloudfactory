@@ -28,24 +28,63 @@ const domain = (name: string) => getState().mailDomains.find((d) => d.name === n
 type List = { data: Record<string, unknown>[] };
 const apiDomain = (name: string, over: Record<string, unknown> = {}) => ({ ...domain(name), dnsCheckedAt: domain(name).dnsCheckedAt ?? null, ...over });
 
+const tab = (name: RegExp) => fireEvent.click(screen.getByRole("button", { name }));
+const boxes = () => screen.getAllByRole("row").filter((r) => r.querySelector(".mailbox-name")).map((r) => r.querySelector("strong")!.textContent);
+
 describe("the email page", () => {
-  it("shows the mail domains, the mailboxes and the addresses of the customer", async () => {
+  it("shows each mailbox with its aliases, and the forwarders and the domains in their own tabs", async () => {
     await open("owner");
-    const acme = row("acme.example.com");
-    expect(acme.textContent).toContain("Active");
-    expect(acme.textContent).toContain("Ready");
     const info = row("info@acme.example.com");
     expect(info.textContent).toContain("1.2 GB of 5 GB");
     expect(within(info).getByRole("meter", { name: "Storage: 1.2 GB of 5 GB" })).toBeTruthy();
-    expect(row("hello@acme.example.com").textContent).toContain("Alias");
-    expect(row("team@acme.example.com").textContent).toContain("morgan@partner.example.net");
     expect(screen.getByText(/Acme Ltd has \d+ of 100 mailboxes/)).toBeTruthy();
+    // The alias hello@ is an address of the mailbox info@: it is with that mailbox.
+    expect(screen.queryByText("hello@acme.example.com")).toBeNull();
+    fireEvent.click(within(info).getByRole("button", { name: /1 alias/ }));
+    expect(within(screen.getByRole("group", { name: "Aliases of info@acme.example.com" })).getByText("hello@acme.example.com")).toBeTruthy();
+    expect(row("olu@acme.example.com").textContent).toContain("Encrypted");
+
+    tab(/^Forwarders \(1\)/);
+    expect(row("team@acme.example.com").textContent).toContain("morgan@partner.example.net");
+    tab(/^Domains \(1\)/);
+    const acme = row("acme.example.com");
+    expect(acme.textContent).toContain("Active");
+    expect(acme.textContent).toContain("Ready");
     // An owner does not see the hint for the administrator.
     expect(screen.queryByText(/No server has email turned on/)).toBeNull();
   });
 
+  it("shows 25 mailboxes on a page, and finds a mailbox by its address or by an alias", async () => {
+    await open("administrator");
+    expect(boxes()).toHaveLength(25);
+    expect(screen.getByRole("navigation", { name: "Pages of mailboxes" }).textContent).toContain("1 to 25 of 187 mailboxes");
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    expect(screen.getByRole("navigation", { name: "Pages of mailboxes" }).textContent).toContain("Page 2 of 8");
+
+    const search = screen.getByRole("searchbox", { name: "Search mailboxes and aliases" });
+    fireEvent.change(search, { target: { value: "Okoro" } });
+    expect(boxes()).toHaveLength(12);
+    expect(screen.getByRole("navigation", { name: "Pages of mailboxes" }).textContent).toContain("12 mailboxes found in 187");
+    // The alias "support" is an address of ada.adams: the search shows that mailbox with its aliases.
+    fireEvent.change(search, { target: { value: "support" } });
+    expect(boxes()).toEqual(["ada.adams@northwind.example.com"]);
+    expect(screen.getByRole("group", { name: "Aliases of ada.adams@northwind.example.com" }).textContent).toContain("support@northwind.example.com");
+    fireEvent.change(search, { target: { value: "nobody-has-this" } });
+    expect(screen.getByText(/No mailbox and no alias has/)).toBeTruthy();
+
+    // The filter shows the mailboxes of one domain.
+    fireEvent.change(search, { target: { value: "" } });
+    fireEvent.change(screen.getByRole("combobox", { name: "Mail domain" }), { target: { value: domain("cornerbakery.example.org").id } });
+    expect(boxes()).toEqual(["hello@cornerbakery.example.org", "orders@cornerbakery.example.org"]);
+    // The number of mailboxes of a domain opens the mailboxes of that domain.
+    tab(/^Domains/);
+    fireEvent.click(screen.getByRole("button", { name: "Show the 4 mailboxes of acme.example.com" }));
+    expect(boxes()).toHaveLength(4);
+  });
+
   it("shows the DNS records of a domain and the settings for a mail program", async () => {
     const api = await open("administrator");
+    tab(/^Domains/);
     // The sample data has a domain with no DKIM record in the DNS.
     const bakery = row("cornerbakery.example.org");
     expect(bakery.textContent).toMatch(/\d of \d records found/);
@@ -62,6 +101,7 @@ describe("the email page", () => {
 
   it("adds a mail domain, and shows the DNS record that proves who controls the domain", async () => {
     const api = await open("owner");
+    tab(/^Domains/);
     fireEvent.click(screen.getByRole("button", { name: "Add mail domain" }));
     const dialog = screen.getByRole("dialog");
     api.on("POST /mail/domains", () => [422, { message: "Show that you control this domain.", errors: { name: ["Show that you control this domain."] }, verification: { type: "TXT", name: "_cloudfactory-challenge.shop.example.com", value: "cf-123" } }]);
@@ -112,11 +152,41 @@ describe("the email page", () => {
     api.on(`DELETE /mail/mailboxes/${info.id}`, () => [202, { job: apiJob({ id: "job-rm", action: "DeleteMailbox", state: "running", finishedAt: null }) }]);
     menu(row("info@acme.example.com"), "Remove");
     expect(screen.getByRole("dialog").textContent).toContain("all its messages");
+    // The aliases of the mailbox go with it.
+    expect(screen.getByRole("dialog").textContent).toContain("also removes the aliases of the mailbox: hello@acme.example.com");
     fireEvent.click(screen.getByRole("button", { name: "Remove mailbox" }));
     await waitFor(() => expect(row("info@acme.example.com").textContent).toContain("Removing"));
   });
 
-  it("makes an alias for mailboxes, and a forwarder for other addresses", async () => {
+  it("adds an alias to a mailbox, and removes an alias", async () => {
+    const api = await open("owner");
+    const alias = getState().mailAliases.find((a) => a.address === "hello@acme.example.com")!;
+    api.on("POST /mail/aliases", (body) => {
+      const input = body as { localPart: string };
+      const added = { ...alias, id: `new-${input.localPart}`, address: `${input.localPart}@acme.example.com`, ...input, status: "pending" };
+      api.change<List>("/mail/aliases", (b) => b.data.push(added));
+      return [202, { mailAlias: added, job: apiJob({ id: "job-al", action: "SetMailAlias", state: "running", finishedAt: null }) }];
+    });
+    menu(row("sales@acme.example.com"), "Add alias");
+    const panel = screen.getByRole("group", { name: "Aliases of sales@acme.example.com" });
+    // With no name, the form does not send.
+    expect((within(panel).getByRole("button", { name: "Add alias" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(within(panel).getByLabelText("New alias"), { target: { value: "Orders" } });
+    fireEvent.click(within(panel).getByRole("button", { name: "Add alias" }));
+    await waitFor(() => expect(panel.textContent).toContain("orders@acme.example.com"));
+    expect(api.changes.at(-1)).toMatchObject({ body: { domainId: domain("acme.example.com").id, localPart: "orders", kind: "alias", destinations: ["sales@acme.example.com"] } });
+    expect(row("sales@acme.example.com").textContent).toContain("1 alias");
+
+    api.on(`DELETE /mail/aliases/${alias.id}`, () => {
+      api.change<List>("/mail/aliases", (b) => { b.data = b.data.filter((a) => a.id !== alias.id); });
+      return [202, { job: apiJob({ id: "job-ar", action: "DeleteMailAlias" }) }];
+    });
+    fireEvent.click(within(row("info@acme.example.com")).getByRole("button", { name: /1 alias/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove the alias hello@acme.example.com" }));
+    await waitFor(() => expect(row("info@acme.example.com").textContent).toContain("No aliases"));
+  });
+
+  it("makes a forwarder for other addresses", async () => {
     const api = await open("owner");
     const alias = getState().mailAliases[0];
     api.on("POST /mail/aliases", (body) => {
@@ -125,29 +195,60 @@ describe("the email page", () => {
       api.change<List>("/mail/aliases", (b) => b.data.push(added));
       return [202, { mailAlias: added, job: apiJob({ id: "job-al", action: "SetMailAlias", state: "running", finishedAt: null }) }];
     });
-    fireEvent.click(screen.getByRole("button", { name: "New alias or forwarder" }));
-    let dialog = screen.getByRole("dialog");
+    tab(/^Forwarders/);
+    fireEvent.click(screen.getByRole("button", { name: "New forwarder" }));
+    const dialog = screen.getByRole("dialog");
     // With no destination, the form does not send.
-    expect((within(dialog).getByRole("button", { name: "Create address" }) as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.change(within(dialog).getByLabelText("Address"), { target: { value: "sales" } });
-    fireEvent.click(within(dialog).getByLabelText("info@acme.example.com"));
-    fireEvent.click(within(dialog).getByRole("button", { name: "Create address" }));
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    expect(api.changes.at(-1)).toMatchObject({ body: { localPart: "sales", kind: "alias", destinations: ["info@acme.example.com"] } });
-
-    fireEvent.click(screen.getByRole("button", { name: "New alias or forwarder" }));
-    dialog = screen.getByRole("dialog");
+    expect((within(dialog).getByRole("button", { name: "Create forwarder" }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.change(within(dialog).getByLabelText("Address"), { target: { value: "away" } });
-    fireEvent.click(within(dialog).getByLabelText(/Forwarder/));
     fireEvent.change(within(dialog).getByLabelText("Addresses that get the mail"), { target: { value: "Jo@Example.org\nsam@example.net" } });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Create address" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Create forwarder" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(api.changes.at(-1)).toMatchObject({ body: { localPart: "away", kind: "forwarder", destinations: ["jo@example.org", "sam@example.net"] } });
-    expect(row("away@acme.example.com").textContent).toContain("Forwarder");
+    expect(row("away@acme.example.com").textContent).toContain("sam@example.net");
+  });
+
+  it("turns on the encryption of a mailbox with a public key, and shows the fingerprint", async () => {
+    const api = await open("owner");
+    const info = getState().mailboxes.find((m) => m.address === "info@acme.example.com")!;
+    const key = "-----BEGIN PGP PUBLIC KEY BLOCK-----\n\nmDME\n-----END PGP PUBLIC KEY BLOCK-----";
+    const encryption = { fingerprints: ["9E1777E56AFB330404EC710E0868736DF95B6518"], keyType: "OpenPGP v4: X25519", expiresAt: null, warnings: ["addressMismatch"] };
+    menu(row("info@acme.example.com"), "Encryption");
+    let dialog = screen.getByRole("dialog");
+    expect(dialog.textContent).toContain("Only the private key can decrypt the message");
+    expect((within(dialog).getByRole("button", { name: "Turn on encryption" }) as HTMLButtonElement).disabled).toBe(true);
+
+    // The mail server refuses a key that cannot encrypt: the job fails, and the dialog tells why.
+    api.on(`PATCH /mail/mailboxes/${info.id}`, () => [202, { mailbox: info, password: null, job: apiJob({ id: "job-key", action: "SetMailbox", state: "failed", error: "Turn on encryption: the mail server refused the public key: The key contains no key usable for encryption." }) }]);
+    fireEvent.change(within(dialog).getByLabelText("OpenPGP public key"), { target: { value: key } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Turn on encryption" }));
+    await waitFor(() => expect(dialog.textContent).toContain("The mail server refused the key. The key contains no key usable for encryption."));
+
+    api.on(`PATCH /mail/mailboxes/${info.id}`, () => {
+      api.change<List>("/mail/mailboxes", (b) => { b.data.find((m) => m.id === info.id)!.encryption = encryption; });
+      return [202, { mailbox: info, password: null, job: apiJob({ id: "job-key2", action: "SetMailbox" }) }];
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Turn on encryption" }));
+    await waitFor(() => expect(screen.getByRole("dialog").textContent).toContain("9E17 77E5 6AFB 3304 04EC 710E 0868 736D F95B 6518"));
+    expect(api.changes.at(-1)).toMatchObject({ method: "PATCH", body: { publicKey: key } });
+    dialog = screen.getByRole("dialog");
+    expect(dialog.textContent).toContain("Encryption is on");
+    expect(dialog.textContent).toContain("The key does not name the address of this mailbox");
+    expect(row("info@acme.example.com").textContent).toContain("Encrypted");
+
+    api.on(`PATCH /mail/mailboxes/${info.id}`, () => {
+      api.change<List>("/mail/mailboxes", (b) => { b.data.find((m) => m.id === info.id)!.encryption = null; });
+      return [202, { mailbox: info, password: null, job: apiJob({ id: "job-key3", action: "SetMailbox" }) }];
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Turn off encryption" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(api.changes.at(-1)).toMatchObject({ method: "PATCH", body: { publicKey: null } });
+    expect(row("info@acme.example.com").textContent).not.toContain("Encrypted");
   });
 
   it("does not remove a mail domain that has mailboxes", async () => {
     const api = await open("owner");
+    tab(/^Domains/);
     menu(row("acme.example.com"), "Remove");
     expect(screen.getByRole("dialog").textContent).toContain("Remove them first");
     expect(api.changes.filter((c) => c.method === "DELETE")).toEqual([]);

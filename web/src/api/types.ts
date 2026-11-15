@@ -375,6 +375,18 @@ export interface Mailbox {
   quotaBytes: number;
   /** The size of the messages, from the last report of the server. */
   usedBytes: number;
+  /** Not null: the mail server encrypts each new message with the OpenPGP key of the owner. */
+  encryption?: MailEncryption | null;
+}
+
+/** What the mail server found in the OpenPGP public key of a mailbox. */
+export interface MailEncryption {
+  fingerprints: string[];
+  /** For example "OpenPGP v4: RSA-3072, X25519". */
+  keyType: string;
+  expiresAt: string | null;
+  /** For example "expiresSoon", "weakRsa" or "addressMismatch". */
+  warnings: string[];
 }
 
 export interface MailAlias {

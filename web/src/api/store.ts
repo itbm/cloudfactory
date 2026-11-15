@@ -563,6 +563,23 @@ export function setMailbox(mailboxId: string, change: { quotaBytes?: number; new
   });
 }
 
+/**
+ * Turns on the encryption of a mailbox with an OpenPGP public key, or turns it off with null.
+ * The mail server reads the key. The promise fails when the mail server refuses the key.
+ */
+export function setMailboxEncryption(mailboxId: string, publicKey: string | null): Promise<void> {
+  return call(async () => {
+    const r = await live.request<{ mailbox: live.ApiMailbox; job: live.ApiJob | null }>("PATCH", `/mail/mailboxes/${mailboxId}`, { publicKey });
+    update((d) => { d.mailboxes = d.mailboxes.map((x) => (x.id === mailboxId ? live.toMailbox(r.mailbox) : x)); });
+    if (!r.job) return;
+    const done = await track(r.job);
+    if (done.state === "failed") {
+      const reason = done.error?.replace(/^.*the mail server refused the public key: /, "") ?? "";
+      throw new ApiError(reason ? `The mail server refused the key. ${reason}` : "The mail server could not change the encryption. Try again.");
+    }
+  });
+}
+
 /** Removes a mailbox and its messages. */
 export function deleteMailbox(mailboxId: string): Promise<void> {
   return call(async () => removing("mailboxes", mailboxId, (await live.request<JobAnswer>("DELETE", `/mail/mailboxes/${mailboxId}`)).job));

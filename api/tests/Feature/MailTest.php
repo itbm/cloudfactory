@@ -389,6 +389,16 @@ class MailTest extends TestCase
         $this->assertSame(AgentAction::DeleteMailAlias, AgentJob::findOrFail($remove->json('job.id'))->action);
         $this->finish($remove->json('job.id'));
         $this->assertSame(1, MailAlias::count());
+
+        // The aliases of a mailbox go with the mailbox. The alias goes first.
+        $remove = $this->deleteJson('/api/v1/mail/mailboxes/'.Mailbox::firstOrFail()->id)->assertAccepted();
+        $this->assertSame(MailDomain::REMOVING, MailAlias::firstOrFail()->status);
+        $jobs = AgentJob::orderByDesc('id')->limit(2)->get();
+        $this->assertSame([AgentAction::DeleteMailbox, AgentAction::DeleteMailAlias], $jobs->map->action->all());
+        $this->assertSame('sales', $jobs[1]->payload['localPart']);
+        $this->finish($jobs[1]->id);
+        $this->finish($remove->json('job.id'));
+        $this->assertSame(0, MailAlias::count() + Mailbox::count());
     }
 
     public function test_an_empty_mail_domain_can_be_removed(): void

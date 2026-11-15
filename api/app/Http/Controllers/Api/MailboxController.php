@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Enums\AgentAction;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\JobResource;
+use App\Models\MailAlias;
 use App\Models\Mailbox;
 use App\Models\MailDomain;
 use App\Services\Audit;
@@ -120,12 +121,25 @@ class MailboxController extends Controller
         return response()->json(['mailbox' => self::present($mailbox), 'password' => $password, 'job' => new JobResource($job)], 202);
     }
 
-    /** Removes a mailbox and all its messages. */
+    /**
+     * Removes a mailbox and all its messages. The aliases of the mailbox go with it: an alias
+     * with no mailbox would refuse all its mail.
+     */
     public function destroy(Request $request, string $id): JsonResponse
     {
         $mailbox = $this->visible($request)->findOrFail($id);
         Mail::refuseRemoved($mailbox, 'mailboxId', 'mailbox');
         Mail::refuseOpenChange($mailbox, 'mailboxId', 'mailbox');
+        $aliases = MailAlias::with('domain.server')->where('customer_id', $mailbox->customer_id)->where('kind', MailAlias::ALIAS)->where('status', '!=', MailDomain::REMOVING)
+            ->get()->filter(fn (MailAlias $a) => $a->destinations === [$mailbox->address()]);
+        foreach ($aliases as $alias) {
+            Mail::refuseOpenChange($alias, 'mailAliasId', 'alias');
+        }
+        foreach ($aliases as $alias) {
+            $was = $alias->status;
+            $alias->update(['status' => MailDomain::REMOVING]);
+            $this->jobs->dispatch($alias->domain->server, AgentAction::DeleteMailAlias, ['mailAliasId' => $alias->id, 'domain' => $alias->domain->name, 'localPart' => $alias->local_part, 'previousStatus' => $was], "Remove alias {$alias->address()}", customerId: $alias->customer_id);
+        }
         $previous = $mailbox->status;
         $mailbox->update(['status' => MailDomain::REMOVING]);
         $job = $this->jobs->dispatch($mailbox->domain->server, AgentAction::DeleteMailbox, self::payload($mailbox) + ['previousStatus' => $previous], "Remove mailbox {$mailbox->address()}", customerId: $mailbox->customer_id);
