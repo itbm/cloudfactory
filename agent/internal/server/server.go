@@ -114,6 +114,14 @@ func (s *Service) SetMailServer(_ context.Context, r *connect.Request[agentv1.Se
 	return s.submit(s.Deps.SetMailServer(r.Msg))
 }
 
+func (s *Service) PrepareMailNode(_ context.Context, r *connect.Request[agentv1.PrepareMailNodeRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.PrepareMailNode(r.Msg))
+}
+
+func (s *Service) SetMailNode(_ context.Context, r *connect.Request[agentv1.SetMailNodeRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.SetMailNode(r.Msg))
+}
+
 func (s *Service) SetMailDomain(_ context.Context, r *connect.Request[agentv1.MailDomainRequest]) (*connect.Response[agentv1.JobAccepted], error) {
 	return s.submit(s.Deps.SetMailDomain(r.Msg))
 }

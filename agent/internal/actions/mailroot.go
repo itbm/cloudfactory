@@ -21,6 +21,7 @@ import (
 
 	"github.com/itbm/cloudfactory/agent/internal/gate"
 	"github.com/itbm/cloudfactory/agent/internal/host"
+	"github.com/itbm/cloudfactory/agent/internal/mailcluster"
 	"github.com/itbm/cloudfactory/agent/internal/quadlet"
 	"github.com/itbm/cloudfactory/agent/internal/safefs"
 	"github.com/itbm/cloudfactory/agent/internal/stalwart"
@@ -63,6 +64,8 @@ type (
 		Hostname string
 		// Password is the password of the administrator of the management API.
 		Password string
+		// Cluster is set on a member of a mail cluster. It has no secret.
+		Cluster *mailcluster.Cluster
 	}
 	mailCertificate struct {
 		// Found is true when the edge proxy has a certificate for the host name.
@@ -93,6 +96,14 @@ func (d *Deps) mailDoneFile() string { return filepath.Join(d.mailConfigDir(), "
 
 // mailRootOps are the operations of the root helper for the mail server (RootOps).
 func (d *Deps) mailRootOps() map[string]gate.Handler {
+	ops := d.mailNodeRootOps()
+	for name, op := range d.mailServerRootOps() {
+		ops[name] = op
+	}
+	return ops
+}
+
+func (d *Deps) mailServerRootOps() map[string]gate.Handler {
 	return map[string]gate.Handler{
 		opMailPrepare: gate.Op(func(ctx context.Context, in mailIn) (mailPrepared, error) {
 			return d.prepareMail(ctx, in.Hostname)
@@ -126,6 +137,15 @@ func (d *Deps) prepareMail(ctx context.Context, hostname string) (out mailPrepar
 	if err != nil {
 		return out, err
 	}
+	// A member of a mail cluster keeps its data in the database node of the same member.
+	cluster, err := d.mailCluster()
+	if err != nil {
+		return out, err
+	}
+	store, clusterDir := quadlet.MailConfig, ""
+	if cluster != nil {
+		store, clusterDir = mailcluster.DataStore(cluster.Me().Address), d.mailNodeDir()
+	}
 	config, data := d.mailConfigDir(), filepath.Join(home, "data")
 	if err := os.MkdirAll(d.mailCertDir(), 0o755); err != nil {
 		return out, err
@@ -133,7 +153,7 @@ func (d *Deps) prepareMail(ctx context.Context, hostname string) (out mailPrepar
 	if _, err := d.Run.Run(ctx, "install", "-d", "-o", host.MailUser, "-g", host.MailUser, "-m", "0700", data); err != nil {
 		return out, err
 	}
-	if _, err := host.WriteFile(filepath.Join(config, "config.json"), quadlet.MailConfig, 0o644); err != nil {
+	if _, err := host.WriteFile(filepath.Join(config, "config.json"), store, 0o644); err != nil {
 		return out, err
 	}
 	if _, err := host.WriteFile(d.mailHostFile(), hostname+"\n", 0o644); err != nil {
@@ -142,7 +162,8 @@ func (d *Deps) prepareMail(ctx context.Context, hostname string) (out mailPrepar
 	if _, err := os.Stat(d.mailDoneFile()); err != nil {
 		out.Setup = true
 	}
-	if err := d.writeMailEnv(out.Setup, gid); err != nil {
+	env, err := d.writeMailEnv(out.Setup, gid)
+	if err != nil {
 		return out, err
 	}
 	// The mail server needs a certificate to start. This one is in use until the edge proxy
@@ -156,19 +177,24 @@ func (d *Deps) prepareMail(ctx context.Context, hostname string) (out mailPrepar
 			return out, err
 		}
 	}
-	unit := quadlet.MailUnit(quadlet.Mail{Image: d.MailImage, Gvisor: d.runtime(), ConfigDir: config, CertDir: d.mailCertDir(), DataDir: data, EnvFile: d.mailEnvFile()})
+	unit := quadlet.MailUnit(quadlet.Mail{Image: d.MailImage, Gvisor: d.runtime(), ConfigDir: config, CertDir: d.mailCertDir(), DataDir: data, EnvFile: d.mailEnvFile(), ClusterDir: clusterDir})
 	out.Changed, err = d.Host.WriteUnit(host.MailUser, mailUnit, unit)
+	// The container reads the environment file only when it starts. On a server that becomes
+	// a member of a cluster, the file has new values.
+	out.Changed = out.Changed || env && !out.Setup
 	return out, err
 }
 
 // writeMailEnv writes the environment file of the container. It keeps a password that
-// exists. In the setup, the file also turns on the recovery mode of Stalwart.
-func (d *Deps) writeMailEnv(setup bool, gid int) error {
+// exists. In the setup, the file also turns on the recovery mode of Stalwart. On a member of
+// a mail cluster, the file also has the name of the member and the secrets of the cluster.
+// It reports true when the file changed.
+func (d *Deps) writeMailEnv(setup bool, gid int) (bool, error) {
 	password, _ := d.mailPassword()
 	if password == "" {
 		b := make([]byte, 24)
 		if _, err := rand.Read(b); err != nil {
-			return err
+			return false, err
 		}
 		password = hex.EncodeToString(b)
 	}
@@ -176,11 +202,26 @@ func (d *Deps) writeMailEnv(setup bool, gid int) error {
 	if setup {
 		content += "STALWART_RECOVERY_MODE=1\n"
 	}
-	file := d.mailEnvFile()
-	if _, err := host.WriteFile(file, content, 0o640); err != nil {
-		return err
+	cluster, err := d.mailCluster()
+	if err != nil {
+		return false, err
 	}
-	return chownRoot(file, gid)
+	if cluster != nil {
+		secrets, err := d.mailSecrets()
+		if err != nil {
+			return false, err
+		}
+		// Each mail server of a cluster has its own name: the cluster knows a server by it.
+		content += "STALWART_HOSTNAME=" + cluster.Me().Name + "\n" +
+			mailcluster.DBPasswordVariable + "=" + secrets.DBPassword + "\n" +
+			mailcluster.KeepSecretVariable + "=" + secrets.KeepSecret + "\n"
+	}
+	file := d.mailEnvFile()
+	changed, err := host.WriteFile(file, content, 0o640)
+	if err != nil {
+		return false, err
+	}
+	return changed, chownRoot(file, gid)
 }
 
 // chownRoot gives a file to root and a group. A process that is not root, for example a
@@ -223,7 +264,8 @@ func (d *Deps) finishMailSetup(ctx context.Context) (changed bool, err error) {
 	if _, err := host.WriteFile(d.mailDoneFile(), time.Now().UTC().Format(time.RFC3339)+"\n", 0o644); err != nil {
 		return false, err
 	}
-	return true, d.writeMailEnv(false, gid)
+	_, err = d.writeMailEnv(false, gid)
+	return true, err
 }
 
 // mailInfo gives the host name of the mail server and the password of its administrator. The
@@ -242,7 +284,10 @@ func (d *Deps) mailInfo(ctx context.Context) (info mailInfo, err error) {
 		return info, err
 	}
 	info.Hostname = strings.TrimSpace(string(b))
-	info.Password, err = d.mailPassword()
+	if info.Password, err = d.mailPassword(); err != nil {
+		return info, err
+	}
+	info.Cluster, err = d.mailCluster()
 	return info, err
 }
 
@@ -268,7 +313,11 @@ func (d *Deps) openMailPorts(ctx context.Context) error {
 	}
 	d.accessMu.Lock()
 	defer d.accessMu.Unlock()
-	changed, err := host.WriteFile(filepath.Join(d.firewallDir(), mailFirewallFile), MailFirewall(uid), 0o644)
+	cluster, err := d.mailCluster()
+	if err != nil {
+		return err
+	}
+	changed, err := host.WriteFile(filepath.Join(d.firewallDir(), mailFirewallFile), MailFirewall(uid, cluster), 0o644)
 	if err != nil {
 		return err
 	}
@@ -289,9 +338,16 @@ func (d *Deps) openMailPorts(ctx context.Context) error {
 }
 
 // MailFirewall gives the firewall rules of the mail server. uid is the UID of its Unix user:
-// pasta opens each connection of the container as that user.
-func MailFirewall(uid int) string {
+// pasta opens each connection of the container as that user. cluster is nil on a server that
+// is not a member of a mail cluster.
+func MailFirewall(uid int, cluster *mailcluster.Cluster) string {
 	var redirects, local, ports []string
+	var clusterInput, clusterOutput, clusterMail string
+	if cluster != nil {
+		indent := func(lines []string) string { return "    " + strings.Join(lines, "\n    ") + "\n" }
+		input, output, mail := cluster.Firewall(uid)
+		clusterInput, clusterOutput, clusterMail = indent(input), indent(output), indent(mail)
+	}
 	for _, p := range quadlet.MailPublicPorts() {
 		redirects = append(redirects, fmt.Sprintf("    tcp dport %d redirect to :%d", p[0], p[1]))
 		local = append(local, fmt.Sprintf("    fib daddr type local tcp dport %d redirect to :%d", p[0], p[1]))
@@ -303,7 +359,7 @@ func MailFirewall(uid int) string {
 		"table inet cloudfactory {",
 		"  chain input {",
 		"    tcp dport { " + list + " } accept",
-		"  }",
+		clusterInput + "  }",
 		"  chain prerouting {",
 		strings.Join(redirects, "\n"),
 		"  }",
@@ -316,7 +372,7 @@ func MailFirewall(uid int) string {
 		"  chain mail {",
 		"    # DNS. The resolver of the host can have a private or a link-local address.",
 		"    meta l4proto { tcp, udp } th dport 53 accept",
-		"    # No service of this server, no private network, and no metadata service of a cloud provider.",
+		clusterMail + "    # No service of this server, no private network, and no metadata service of a cloud provider.",
 		"    fib daddr type { local, broadcast, multicast } jump refuse",
 		"    ip daddr { 0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 168.63.129.16, 169.254.0.0/16, 172.16.0.0/12, 192.168.0.0/16, 224.0.0.0/3 } jump refuse",
 		"    ip6 daddr { ::1, fc00::/7, fe80::/10, ff00::/8 } jump refuse",
@@ -325,7 +381,7 @@ func MailFirewall(uid int) string {
 		"    jump refuse",
 		"  }",
 		"  chain output {",
-		"    ct state new meta skuid " + strconv.Itoa(uid) + " jump mail",
+		clusterOutput + "    ct state new meta skuid " + strconv.Itoa(uid) + " jump mail",
 		"  }",
 		"}",
 		"",

@@ -161,7 +161,7 @@ func TestTheMailServerGetsTheCertificateOfTheEdgeProxy(t *testing.T) {
 
 // The firewall rules of the mail server must load with the firewall file of the installer.
 func TestTheMailFirewallRulesAreValid(t *testing.T) {
-	rules := MailFirewall(985)
+	rules := MailFirewall(985, nil)
 	for _, want := range []string{"tcp dport 25 redirect to :2025", "tcp dport 993 redirect to :2993", "meta skuid 985 jump mail", "tcp dport 25 accept"} {
 		if !strings.Contains(rules, want) {
 			t.Errorf("the rules do not have %q", want)
@@ -171,6 +171,13 @@ func TestTheMailFirewallRulesAreValid(t *testing.T) {
 	if strings.Index(rules, "169.254.0.0/16") > strings.Index(rules, "    tcp dport 25 accept") {
 		t.Error("the rule for port 25 is before the rule for the private networks")
 	}
+	checkFirewall(t, rules)
+}
+
+// checkFirewall loads firewall rules of the agent with the chains of the installer, on a
+// computer that has nft.
+func checkFirewall(t *testing.T, rules string) {
+	t.Helper()
 	nft, err := exec.LookPath("nft")
 	if err != nil || os.Geteuid() != 0 {
 		t.Skip("no nft, or not root")

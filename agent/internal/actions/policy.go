@@ -104,7 +104,7 @@ func (d *Deps) allowRunuser(args []string) error {
 		if err != nil {
 			return err
 		}
-		return allowImage(podman, []string{d.MailImage})
+		return allowImage(podman, []string{d.MailImage, d.MailDBImage, d.MailKeepImage})
 	}
 	// The user of a website has only the rights of its website, so the worker can run each
 	// program as that user.

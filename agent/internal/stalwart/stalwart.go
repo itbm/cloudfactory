@@ -924,3 +924,79 @@ func (c *Client) Usage(ctx context.Context) (map[string]int64, error) {
 	}
 	return out, nil
 }
+
+// SetCluster makes the mail server one of the mail servers of a cluster: it sets the store for
+// the locks and the counters that all mail servers share, and it tells the mail servers to
+// send their notices to each other through that store. store is the setting of the store,
+// for example the result of mailcluster.Cluster.InMemoryStore.
+//
+// The settings are in the database, so one call is sufficient for all mail servers of the
+// cluster. It reports true when a setting changed: a mail server uses the settings after a
+// restart.
+func (c *Client) SetCluster(ctx context.Context, store map[string]any) (restart bool, err error) {
+	current, err := c.get(ctx, "x:InMemoryStore", []string{singleton})
+	if err != nil {
+		return false, err
+	}
+	// The server adds its default values to the setting, so compare only the given values.
+	same := len(current) == 1
+	for key, value := range store {
+		same = same && reflect.DeepEqual(jsonValue(current[0][key]), jsonValue(value))
+	}
+	if !same {
+		// The store goes before the coordinator: the server refuses a coordinator while the
+		// store is the local store of one server.
+		if err := c.update(ctx, "x:InMemoryStore", singleton, store); err != nil {
+			return false, err
+		}
+		restart = true
+	}
+	coordinator, err := c.get(ctx, "x:Coordinator", []string{singleton})
+	if err != nil {
+		return false, err
+	}
+	if len(coordinator) != 1 || coordinator[0]["@type"] != "Default" {
+		// "Default" uses the connection to the store.
+		if err := c.update(ctx, "x:Coordinator", singleton, object{"@type": "Default"}); err != nil {
+			return false, err
+		}
+		restart = true
+	}
+	return restart, nil
+}
+
+// jsonValue gives a value as the JSON decoder gives it, to compare a value of the program
+// with a value from the server.
+func jsonValue(v any) any {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return nil
+	}
+	var out any
+	_ = json.Unmarshal(b, &out)
+	return out
+}
+
+// Node is one mail server of a cluster, as the mail servers see each other.
+type Node struct {
+	Hostname string `json:"hostname"`
+	// "active", "stale" (no sign of life for one hour) or "inactive".
+	Status string `json:"status"`
+}
+
+// Nodes gives the mail servers that use the database of this mail server.
+func (c *Client) Nodes(ctx context.Context) ([]Node, error) {
+	list, err := c.get(ctx, "x:ClusterNode", nil)
+	if err != nil {
+		return nil, err
+	}
+	nodes := []Node{}
+	for _, o := range list {
+		n := Node{}
+		n.Hostname, _ = o["hostname"].(string)
+		n.Status, _ = o["status"].(string)
+		nodes = append(nodes, n)
+	}
+	sort.Slice(nodes, func(i, j int) bool { return nodes[i].Hostname < nodes[j].Hostname })
+	return nodes, nil
+}

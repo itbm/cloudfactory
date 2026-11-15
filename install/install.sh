@@ -716,12 +716,13 @@ GVISOR_ROOT=/usr/local/lib/cloudfactory/gvisor
 
 step "Install Podman and the system packages"
 apt-get update -q
-# FR-1805: Podman from the official repositories of the operating system.
+# FR-1805: Podman from the official repositories of the operating system. wireguard-tools is
+# for the private network of a mail cluster: it does nothing until the server is a member.
 apt-get install -y -q --no-install-recommends \
 	podman passt uidmap netavark aardvark-dns conmon crun fuse-overlayfs \
 	nftables unattended-upgrades needrestart restic apparmor apparmor-utils \
 	systemd-container dbus-user-session ca-certificates curl openssl bzip2 \
-	openssh-server quota iproute2
+	openssh-server quota iproute2 wireguard-tools
 
 # The website users mount the shared images with fuse-overlayfs (agent package images).
 modprobe fuse 2>/dev/null || true

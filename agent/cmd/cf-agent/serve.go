@@ -219,7 +219,10 @@ func newDeps(cfg config.Config, run execx.Runner) (*actions.Deps, error) {
 		EdgeImage:    cfg.Registry + "/edge:" + version,
 		SftpImage:    cfg.Registry + "/sftp:" + version,
 		MailImage:    cfg.Registry + "/mail:" + version,
-		SftpPort:     cfg.SftpPort,
+		// The database node of a mail cluster uses the MariaDB service image.
+		MailDBImage:   cfg.Registry + "/mariadb:" + version,
+		MailKeepImage: cfg.Registry + "/mail-keep:" + version,
+		SftpPort:      cfg.SftpPort,
 	}
 	// CF-13: the admin API of the edge proxy is a Unix socket.
 	if path, ok := strings.CutPrefix(cfg.CaddyAdmin, "unix://"); ok {

@@ -152,9 +152,22 @@ func (d *Deps) EnsureMail(ctx context.Context, hostname string) error {
 	if err := start(verb); err != nil {
 		return err
 	}
-	restart, err := client.Configure(ctx, mailSettings(hostname))
+	settings := mailSettings(hostname)
+	if info.Cluster != nil {
+		// All mail servers of a cluster have the same settings: they are in the database.
+		// The name in the settings is the name that the members share.
+		settings.Hostname = info.Cluster.Hostname
+	}
+	restart, err := client.Configure(ctx, settings)
 	if err != nil {
 		return err
+	}
+	if info.Cluster != nil {
+		changed, err := client.SetCluster(ctx, info.Cluster.InMemoryStore())
+		if err != nil {
+			return fmt.Errorf("connect the mail server to the cluster store: %w", err)
+		}
+		restart = restart || changed
 	}
 	if prepared.Setup {
 		// The environment file changes: the next start is not in the recovery mode.

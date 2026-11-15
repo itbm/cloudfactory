@@ -118,6 +118,17 @@ type Deps struct {
 	SftpImage string
 	// MailImage is the image of the mail server of this agent version.
 	MailImage string
+	// MailDBImage and MailKeepImage are the images of the database node and of the cluster
+	// store of a member of a mail cluster.
+	MailDBImage   string
+	MailKeepImage string
+	// WireGuardDir holds the settings of the private network of a mail cluster. The default
+	// is "/etc/wireguard". Tests replace it.
+	WireGuardDir string
+	// MailNodeWait is the maximum time that a job waits for the database node of a mail
+	// cluster. The default is 30 minutes. MailNodePoll is the time between two checks.
+	MailNodeWait time.Duration
+	MailNodePoll time.Duration
 	// MailHome is the home directory of the Unix user of the mail server. The default is
 	// "/var/lib/cf-mail". MailConfigDir holds the files of root for the mail server. The
 	// default is "/etc/cloudfactory/mail". Tests replace them.

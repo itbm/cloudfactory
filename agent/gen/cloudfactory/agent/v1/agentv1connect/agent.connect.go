@@ -104,6 +104,12 @@ const (
 	// AgentServiceSetMailServerProcedure is the fully-qualified name of the AgentService's
 	// SetMailServer RPC.
 	AgentServiceSetMailServerProcedure = "/cloudfactory.agent.v1.AgentService/SetMailServer"
+	// AgentServicePrepareMailNodeProcedure is the fully-qualified name of the AgentService's
+	// PrepareMailNode RPC.
+	AgentServicePrepareMailNodeProcedure = "/cloudfactory.agent.v1.AgentService/PrepareMailNode"
+	// AgentServiceSetMailNodeProcedure is the fully-qualified name of the AgentService's SetMailNode
+	// RPC.
+	AgentServiceSetMailNodeProcedure = "/cloudfactory.agent.v1.AgentService/SetMailNode"
 	// AgentServiceSetMailDomainProcedure is the fully-qualified name of the AgentService's
 	// SetMailDomain RPC.
 	AgentServiceSetMailDomainProcedure = "/cloudfactory.agent.v1.AgentService/SetMailDomain"
@@ -150,6 +156,8 @@ type AgentServiceClient interface {
 	SetDatabaseServer(context.Context, *connect.Request[v1.DatabaseServerRequest]) (*connect.Response[v1.JobAccepted], error)
 	DeleteDatabaseServer(context.Context, *connect.Request[v1.DeleteDatabaseServerRequest]) (*connect.Response[v1.JobAccepted], error)
 	SetMailServer(context.Context, *connect.Request[v1.SetMailServerRequest]) (*connect.Response[v1.JobAccepted], error)
+	PrepareMailNode(context.Context, *connect.Request[v1.PrepareMailNodeRequest]) (*connect.Response[v1.JobAccepted], error)
+	SetMailNode(context.Context, *connect.Request[v1.SetMailNodeRequest]) (*connect.Response[v1.JobAccepted], error)
 	SetMailDomain(context.Context, *connect.Request[v1.MailDomainRequest]) (*connect.Response[v1.JobAccepted], error)
 	DeleteMailDomain(context.Context, *connect.Request[v1.MailDomainRequest]) (*connect.Response[v1.JobAccepted], error)
 	SetMailbox(context.Context, *connect.Request[v1.SetMailboxRequest]) (*connect.Response[v1.JobAccepted], error)
@@ -309,6 +317,18 @@ func NewAgentServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(agentServiceMethods.ByName("SetMailServer")),
 			connect.WithClientOptions(opts...),
 		),
+		prepareMailNode: connect.NewClient[v1.PrepareMailNodeRequest, v1.JobAccepted](
+			httpClient,
+			baseURL+AgentServicePrepareMailNodeProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("PrepareMailNode")),
+			connect.WithClientOptions(opts...),
+		),
+		setMailNode: connect.NewClient[v1.SetMailNodeRequest, v1.JobAccepted](
+			httpClient,
+			baseURL+AgentServiceSetMailNodeProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("SetMailNode")),
+			connect.WithClientOptions(opts...),
+		),
 		setMailDomain: connect.NewClient[v1.MailDomainRequest, v1.JobAccepted](
 			httpClient,
 			baseURL+AgentServiceSetMailDomainProcedure,
@@ -379,6 +399,8 @@ type agentServiceClient struct {
 	setDatabaseServer    *connect.Client[v1.DatabaseServerRequest, v1.JobAccepted]
 	deleteDatabaseServer *connect.Client[v1.DeleteDatabaseServerRequest, v1.JobAccepted]
 	setMailServer        *connect.Client[v1.SetMailServerRequest, v1.JobAccepted]
+	prepareMailNode      *connect.Client[v1.PrepareMailNodeRequest, v1.JobAccepted]
+	setMailNode          *connect.Client[v1.SetMailNodeRequest, v1.JobAccepted]
 	setMailDomain        *connect.Client[v1.MailDomainRequest, v1.JobAccepted]
 	deleteMailDomain     *connect.Client[v1.MailDomainRequest, v1.JobAccepted]
 	setMailbox           *connect.Client[v1.SetMailboxRequest, v1.JobAccepted]
@@ -503,6 +525,16 @@ func (c *agentServiceClient) SetMailServer(ctx context.Context, req *connect.Req
 	return c.setMailServer.CallUnary(ctx, req)
 }
 
+// PrepareMailNode calls cloudfactory.agent.v1.AgentService.PrepareMailNode.
+func (c *agentServiceClient) PrepareMailNode(ctx context.Context, req *connect.Request[v1.PrepareMailNodeRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return c.prepareMailNode.CallUnary(ctx, req)
+}
+
+// SetMailNode calls cloudfactory.agent.v1.AgentService.SetMailNode.
+func (c *agentServiceClient) SetMailNode(ctx context.Context, req *connect.Request[v1.SetMailNodeRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return c.setMailNode.CallUnary(ctx, req)
+}
+
 // SetMailDomain calls cloudfactory.agent.v1.AgentService.SetMailDomain.
 func (c *agentServiceClient) SetMailDomain(ctx context.Context, req *connect.Request[v1.MailDomainRequest]) (*connect.Response[v1.JobAccepted], error) {
 	return c.setMailDomain.CallUnary(ctx, req)
@@ -563,6 +595,8 @@ type AgentServiceHandler interface {
 	SetDatabaseServer(context.Context, *connect.Request[v1.DatabaseServerRequest]) (*connect.Response[v1.JobAccepted], error)
 	DeleteDatabaseServer(context.Context, *connect.Request[v1.DeleteDatabaseServerRequest]) (*connect.Response[v1.JobAccepted], error)
 	SetMailServer(context.Context, *connect.Request[v1.SetMailServerRequest]) (*connect.Response[v1.JobAccepted], error)
+	PrepareMailNode(context.Context, *connect.Request[v1.PrepareMailNodeRequest]) (*connect.Response[v1.JobAccepted], error)
+	SetMailNode(context.Context, *connect.Request[v1.SetMailNodeRequest]) (*connect.Response[v1.JobAccepted], error)
 	SetMailDomain(context.Context, *connect.Request[v1.MailDomainRequest]) (*connect.Response[v1.JobAccepted], error)
 	DeleteMailDomain(context.Context, *connect.Request[v1.MailDomainRequest]) (*connect.Response[v1.JobAccepted], error)
 	SetMailbox(context.Context, *connect.Request[v1.SetMailboxRequest]) (*connect.Response[v1.JobAccepted], error)
@@ -718,6 +752,18 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(agentServiceMethods.ByName("SetMailServer")),
 		connect.WithHandlerOptions(opts...),
 	)
+	agentServicePrepareMailNodeHandler := connect.NewUnaryHandler(
+		AgentServicePrepareMailNodeProcedure,
+		svc.PrepareMailNode,
+		connect.WithSchema(agentServiceMethods.ByName("PrepareMailNode")),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentServiceSetMailNodeHandler := connect.NewUnaryHandler(
+		AgentServiceSetMailNodeProcedure,
+		svc.SetMailNode,
+		connect.WithSchema(agentServiceMethods.ByName("SetMailNode")),
+		connect.WithHandlerOptions(opts...),
+	)
 	agentServiceSetMailDomainHandler := connect.NewUnaryHandler(
 		AgentServiceSetMailDomainProcedure,
 		svc.SetMailDomain,
@@ -808,6 +854,10 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 			agentServiceDeleteDatabaseServerHandler.ServeHTTP(w, r)
 		case AgentServiceSetMailServerProcedure:
 			agentServiceSetMailServerHandler.ServeHTTP(w, r)
+		case AgentServicePrepareMailNodeProcedure:
+			agentServicePrepareMailNodeHandler.ServeHTTP(w, r)
+		case AgentServiceSetMailNodeProcedure:
+			agentServiceSetMailNodeHandler.ServeHTTP(w, r)
 		case AgentServiceSetMailDomainProcedure:
 			agentServiceSetMailDomainHandler.ServeHTTP(w, r)
 		case AgentServiceDeleteMailDomainProcedure:
@@ -921,6 +971,14 @@ func (UnimplementedAgentServiceHandler) DeleteDatabaseServer(context.Context, *c
 
 func (UnimplementedAgentServiceHandler) SetMailServer(context.Context, *connect.Request[v1.SetMailServerRequest]) (*connect.Response[v1.JobAccepted], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.SetMailServer is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) PrepareMailNode(context.Context, *connect.Request[v1.PrepareMailNodeRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.PrepareMailNode is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) SetMailNode(context.Context, *connect.Request[v1.SetMailNodeRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.SetMailNode is not implemented"))
 }
 
 func (UnimplementedAgentServiceHandler) SetMailDomain(context.Context, *connect.Request[v1.MailDomainRequest]) (*connect.Response[v1.JobAccepted], error) {

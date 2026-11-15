@@ -15,6 +15,7 @@ import (
 	"github.com/itbm/cloudfactory/agent/internal/gate"
 	"github.com/itbm/cloudfactory/agent/internal/host"
 	"github.com/itbm/cloudfactory/agent/internal/hostupdate"
+	"github.com/itbm/cloudfactory/agent/internal/mailcluster"
 	"github.com/itbm/cloudfactory/agent/internal/quadlet"
 	"github.com/itbm/cloudfactory/agent/internal/selfupdate"
 )
@@ -50,6 +51,7 @@ func boundary(t *testing.T) (*Deps, *execx.Fake) {
 		}
 		d.EdgeImage = "ghcr.io/itbm/edge:0.2.0"
 		d.MailImage = "ghcr.io/itbm/mail:0.2.0"
+		d.MailDBImage, d.MailKeepImage = mailDBImage, mailKeepImage
 		d.ResticPasswordFile = "/etc/cloudfactory/restic.key"
 	})
 	return d, f
@@ -89,6 +91,10 @@ func TestTheRootHelperRunsTheCommandsOfThePolicy(t *testing.T) {
 		// The service user of the mail server: the image of this agent version.
 		mailPodman + "image exists ghcr.io/itbm/mail:0.2.0",
 		mailPodman + "pull --quiet ghcr.io/itbm/mail:0.2.0",
+		// A member of a mail cluster: the images of the database node and of the cluster store.
+		mailPodman + "image exists " + mailDBImage,
+		mailPodman + "pull --quiet " + mailKeepImage,
+		"systemctl --user --machine=cf-mail@ restart cf-mail-db.service",
 		"systemctl --user --machine=cf-mail@ restart cf-mail.service",
 		// The user managers.
 		"systemctl --user --machine=acme_x7k2@ daemon-reload",
@@ -228,6 +234,11 @@ func TestTheRootHelperRefusesCommandsOutsideThePolicy(t *testing.T) {
 		mailPodman + "pull --quiet docker.io/library/alpine",
 		mailPodman + "pull --quiet ghcr.io/itbm/edge:0.2.0",
 		mailPodman + "exec cf-mail sh",
+		// Only the root helper asks the database node of a mail cluster for its state.
+		mailPodman + "exec cf-mail-db mariadb",
+		mailPodman + "exec cf-mail-db sh -c id",
+		"systemctl restart wg-quick@cf-mail.service",
+		"wg show cf-mail private-key",
 		mailPodman + "run --rm ghcr.io/itbm/mail:0.2.0",
 		mailPodman + "cp cf-mail:/var/lib/stalwart /tmp/mail",
 		"systemctl --user --machine=cf-mail@ set-property --runtime cf-mail.service MemoryMax=1",
@@ -417,6 +428,8 @@ func TestTheRootHelperRefusesValuesOutsideTheLimits(t *testing.T) {
 		"an SFTP key with two lines":      {opSftpSet, sftpIn{User: "acme_x7k2", Enabled: true, Keys: []string{"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGb9ECWmMtLzH8r1Fd1bAQJ5gN1nT3eb0v0f5c0pZzYp\nroot:x:0:0::/:/bin/sh"}}},
 		"a mail host name with a line":    {opMailPrepare, mailIn{Hostname: "mail.example.net\nSTALWART_RECOVERY_MODE=1"}},
 		"a mail host name that is a path": {opMailPrepare, mailIn{Hostname: "../../etc/cron.d"}},
+		"a mail cluster with no members":  {opMailNodeSet, mailNodeIn{Cluster: mailcluster.Cluster{Name: "mail-1", Hostname: "mail.example.net", Self: 1}, DBPassword: mailSecret, KeepSecret: mailSecret, PeerSecret: mailSecret}},
+		"a mail cluster name with a line": {opMailNodeSet, mailNodeIn{Cluster: mailcluster.Cluster{Name: "a\nwsrep_provider=/tmp/x.so", Hostname: "mail.example.net", Self: 1}}},
 		"remove the SFTP keys of a path":  {opSftpRemove, userIn{User: "../../etc/passwd"}},
 
 		"a database server with a path":          {opDBPrepare, prepare(func(in *serverIn) { in.Server.ID = "../../etc" })},
