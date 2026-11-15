@@ -28,6 +28,7 @@ enum AgentAction: string
     case SetSftp = 'SetSftp';
     case ConfigureHost = 'ConfigureHost';
     case SetPanelCertificate = 'SetPanelCertificate';
+    case SetPanelBrands = 'SetPanelBrands';
     case SetDatabaseServer = 'SetDatabaseServer';
     case DeleteDatabaseServer = 'DeleteDatabaseServer';
     case SetDnsZones = 'SetDnsZones';
@@ -67,6 +68,7 @@ enum AgentAction: string
             self::SetSftp => ['Set SFTP access'],
             self::ConfigureHost => ['Save settings', 'Restart websites', 'Restart services'],
             self::SetPanelCertificate => ['Change certificate method', 'Get TLS certificate'],
+            self::SetPanelBrands => ['Set panel domains', 'Get TLS certificates'],
             self::SetDnsZones => ['Start DNS server', 'Write zones', 'Load zones'],
             self::DeleteDnsZones => ['Remove zones'],
             self::SetCronJobs => ['Save the cron jobs'],

@@ -7,6 +7,7 @@ use App\Http\Middleware\EnsureActive;
 use App\Models\AuditEntry;
 use App\Models\User;
 use App\Services\Audit;
+use App\Services\Branding;
 use App\Services\LoginThrottle;
 use App\Services\Totp;
 use Illuminate\Http\JsonResponse;
@@ -300,6 +301,8 @@ class AuthController extends Controller
             // refuses all other work in a sign-in session until then (EnsureActive).
             'totpSetupRequired' => EnsureActive::totpSetupRequired($request),
             'securityNotices' => self::securityNotices($user),
+            // White label: the brand that this user sees.
+            'brand' => Branding::forUser($user),
         ]);
     }
 

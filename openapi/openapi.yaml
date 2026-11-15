@@ -2656,6 +2656,51 @@ paths:
               schema: { $ref: '#/components/schemas/Customer' }
         '403': { $ref: '#/components/responses/Forbidden' }
 
+  /v1/brand:
+    get:
+      tags: [Customers]
+      summary: Get the brand of the sign-in page
+      description: >-
+        White label. The brand of the reseller whose panel domain is the host of the request, or
+        else the default brand of the panel. A person who has not signed in can read it.
+      security: []
+      responses:
+        '200':
+          description: The brand.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PublicBrand' }
+  /v1/brand/default:
+    get:
+      tags: [Customers]
+      summary: Get the default brand
+      description: Only an administrator. The administrators and the customers of the panel itself see this brand.
+      responses:
+        '200':
+          description: The default brand.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BrandInput' }
+    put:
+      tags: [Customers]
+      summary: Change the default brand
+      description: >-
+        Only an administrator. A null value removes the field, and the panel then uses its
+        built-in value. White text on the colour must have a contrast of 4.5:1 or more. The logo
+        is a data URL of a PNG, JPEG or WebP image of 256 KB or less and 2048 by 2048 pixels or
+        less. The panel checks the real type of the image.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BrandInput' }
+      responses:
+        '200':
+          description: The default brand.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BrandInput' }
+        '422': { $ref: '#/components/responses/ValidationError' }
   /v1/plans:
     get:
       tags: [Customers]
@@ -3175,6 +3220,7 @@ components:
                   target: { type: string, description: The email address of the administrator that changed. }
                   actor: { type: string }
                   at: { type: string, format: date-time }
+            brand: { $ref: '#/components/schemas/Brand', description: 'White label: the brand that the user sees. A customer of a reseller sees only the brand of the reseller.' }
     ManagedUser:
       allOf:
         - { $ref: '#/components/schemas/User' }
@@ -3699,11 +3745,43 @@ components:
         finishedAt: { type: string, format: date-time, nullable: true, description: The time when the rollout ended. Null while the rollout is in progress or paused. }
     Branding:
       type: object
+      description: >-
+        The brand of a reseller (white label). In a change, a null value removes the field. A new
+        panel domain, name server host name or mail host name needs a proof of control: a verified
+        domain of the reseller, a DNS zone of the reseller that is delegated to the panel, or the
+        TXT record that the error message gives.
+      properties:
+        name: { type: [string, 'null'], maxLength: 100 }
+        colour: { type: [string, 'null'], pattern: '^#[0-9a-fA-F]{6}$', description: White text on the colour must have a contrast of 4.5:1 or more. }
+        logo: { type: [string, 'null'], description: 'A data URL of a PNG, JPEG or WebP image: 256 KB or less, 2048 by 2048 pixels or less.' }
+        panelDomain: { type: [string, 'null'], description: The panel domain of the reseller. The edge proxy of the panel server gets a TLS certificate for it. }
+        supportEmail: { type: [string, 'null'], format: email }
+        nameServers: { type: [array, 'null'], items: { type: string }, description: One host name for each name server of the panel, in the order of brandStatus.panelNameServers. The zones of the reseller and of its customers get these names. }
+        mailHost: { type: [string, 'null'], description: The mail host name that the customers of the reseller see. }
+    BrandInput:
+      type: object
+      properties:
+        name: { type: [string, 'null'], maxLength: 100 }
+        colour: { type: [string, 'null'], pattern: '^#[0-9a-fA-F]{6}$' }
+        logo: { type: [string, 'null'] }
+        supportEmail: { type: [string, 'null'], format: email }
+    PublicBrand:
+      type: object
       properties:
         name: { type: string }
-        colour: { type: string, pattern: '^#[0-9a-fA-F]{6}$' }
-        panelDomain: { type: string }
-        supportEmail: { type: string, format: email }
+        colour: { type: string }
+        logo: { type: [string, 'null'] }
+        supportEmail: { type: [string, 'null'] }
+        builtIn: { type: boolean, description: True when the panel has the built-in brand. The web panel then shows the built-in logo. }
+    Brand:
+      allOf:
+        - { $ref: '#/components/schemas/PublicBrand' }
+        - type: object
+          properties:
+            source: { type: string, enum: [panel, reseller] }
+            panelDomain: { type: string }
+            nameServers: { type: array, items: { type: string }, description: The host names of the name servers that the user gives to a registrar. }
+            mailHost: { type: [string, 'null'] }
     Domain:
       type: object
       properties:
@@ -3806,6 +3884,20 @@ components:
         planId: { type: string }
         resellerId: { type: [string, 'null'] }
         branding: { oneOf: [{ $ref: '#/components/schemas/Branding' }, { type: 'null' }] }
+        brandStatus:
+          type: [object, 'null']
+          description: For a reseller, the state of the certificate of its panel domain, and the host names of the name servers of the panel.
+          properties:
+            certificate:
+              type: [object, 'null']
+              properties:
+                domain: { type: string }
+                method: { type: string, enum: [letsencrypt, internal] }
+                state: { type: string, enum: [valid, pending, expired] }
+                expiresAt: { type: [string, 'null'], format: date-time }
+                error: { type: [string, 'null'] }
+                checkedAt: { type: [string, 'null'], format: date-time }
+            panelNameServers: { type: array, items: { type: string } }
         allowedPlanIds: { type: [array, 'null'], items: { type: string }, description: For a reseller, the plans that it can give to its customers. }
         suspended: { type: boolean }
         suspendedBy: { type: [string, 'null'], enum: [administrator, reseller, null] }

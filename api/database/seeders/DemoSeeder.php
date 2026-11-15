@@ -25,6 +25,7 @@ use App\Models\Setting;
 use App\Models\Snapshot;
 use App\Models\User;
 use App\Models\Website;
+use App\Services\Branding;
 use App\Services\Dns\Dnssec;
 use App\Services\Dns\Zones;
 use App\Services\Networks;
@@ -80,6 +81,7 @@ class DemoSeeder extends Seeder
         $this->images();
         $this->servers();
         $this->websites();
+        $this->brand();
         $this->dns();
         $this->databases();
         $this->settleMesh();
@@ -288,6 +290,28 @@ class DemoSeeder extends Seeder
     }
 
     /**
+     * White label: Northwind Agency has its own name, colour, logo, panel domain, name servers
+     * and mail host. The panel has the built-in brand.
+     */
+    private function brand(): void
+    {
+        $northwind = $this->customers['northwind'];
+        $northwind->update(['branding' => [
+            'name' => 'Northwind Hosting',
+            'colour' => '#0f766e',
+            'logo' => 'data:image/png;base64,'.base64_encode((string) file_get_contents(__DIR__.'/northwind-logo.png')),
+            'supportEmail' => 'support@northwind.example.com',
+            'panelDomain' => 'panel.northwind.example.com',
+            'nameServers' => array_map(fn (int $n) => "ns{$n}.northwind.example.com", range(1, count(Zones::nameServers()))),
+            'mailHost' => 'mail.northwind.example.com',
+        ]]);
+        Setting::put('brand_certificates', ['panel.northwind.example.com' => [
+            'domain' => 'panel.northwind.example.com', 'method' => 'letsencrypt', 'state' => 'valid',
+            'expiresAt' => now()->addDays(71)->toIso8601String(), 'error' => null, 'checkedAt' => now()->subMinutes(4)->toIso8601String(),
+        ]]);
+    }
+
+    /**
      * DNS hosting: a zone with DNSSEC, a zone that waits for the registrar, and a zone that
      * one DNS server did not take. Each zone has the records of the websites of its customer.
      */
@@ -310,15 +334,16 @@ class DemoSeeder extends Seeder
             $serial = now()->subHours(strlen($name))->timestamp;
             $zone = new DnsZone([
                 'customer_id' => $this->customers[$customer]->id, 'name' => $name, 'serial' => $serial, 'status' => DnsZone::ACTIVE,
-                'delegation' => $seen === null ? DnsZone::HERE : DnsZone::ELSEWHERE, 'delegation_name_servers' => $seen ?? $servers->pluck('dns_name')->all(),
+                'delegation' => $seen === null ? DnsZone::HERE : DnsZone::ELSEWHERE, 'delegation_name_servers' => $seen ?? Branding::nameServersFor($this->customers[$customer]),
                 'delegation_checked_at' => now()->subMinutes(9), 'dnssec' => $dnssec, 'dnssec_key' => $key['key'] ?? null,
                 'dnssec_public_key' => $key['publicKey'] ?? null, 'dnssec_key_tag' => $key['keyTag'] ?? null,
                 'sync' => $servers->mapWithKeys(fn (Server $s) => [$s->id => ['serial' => $serial, 'state' => $s->name === $failed ? 'failed' : 'ok']])->all(),
             ]);
             $zone->created_at = now()->subDays($days);
             $zone->save();
-            foreach ($servers as $server) {
-                $zone->records()->create(['name' => '@', 'type' => 'NS', 'ttl' => Zones::NS_TTL, 'value' => $server->dns_name, 'managed' => DnsRecord::NS]);
+            // The zones of Northwind Agency and of its customers have the name servers of its brand.
+            foreach (Branding::nameServersFor($this->customers[$customer]) as $host) {
+                $zone->records()->create(['name' => '@', 'type' => 'NS', 'ttl' => Zones::NS_TTL, 'value' => $host, 'managed' => DnsRecord::NS]);
             }
             // The A and AAAA records of the domains of the websites of the customer in the zone.
             foreach (Website::with(['domains', 'server'])->where('customer_id', $zone->customer_id)->get() as $website) {
