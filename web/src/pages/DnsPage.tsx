@@ -129,7 +129,7 @@ function ZoneList() {
                             <RowMenu label={`Actions for the zone ${z.name}`} actions={[
                               { label: "Open", onSelect: () => navigate(`/dns/${z.id}`) },
                               { label: "Check the name servers", onSelect: () => void check.run(z.id) },
-                              ...(z.status === "failed" ? [{ label: "Send again", onSelect: () => void sync.run(z.id) }] : []),
+                              ...(z.status === "failed" ? [{ label: "Send again now", onSelect: () => void sync.run(z.id) }] : []),
                               { label: "Remove", danger: true, onSelect: () => setRemoving(z) },
                             ]} />
                           )}
@@ -316,9 +316,9 @@ function ZonePage({ id }: { id: string }) {
 
         {zone.status === "failed" && (
           <div className="alert alert-danger alert-stack mt" role="alert">
-            <p><strong>A DNS server does not have the last change.</strong> The server continues to answer with the records that it had before. When you have corrected the cause, send the zone again.</p>
+            <p><strong>A DNS server does not have the last change.</strong> The server continues to answer with the records that it had before. The panel sends the zone again by itself: first after one minute, and then after a longer time for each try. You can also send it now.</p>
             {failed && <div className="cause"><JobError job={failed} /></div>}
-            <p><button type="button" className="btn" disabled={sync.busy} onClick={() => void sync.run(zone.id)}>{sync.busy ? "Sending…" : "Send again"}</button></p>
+            <p><button type="button" className="btn" disabled={sync.busy} onClick={() => void sync.run(zone.id)}>{sync.busy ? "Sending…" : "Send again now"}</button></p>
           </div>
         )}
         {!locked && zone.delegation.state !== "here" && (

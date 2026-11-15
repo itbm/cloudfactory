@@ -129,6 +129,10 @@ type Report struct {
 	// Addresses are the public IP addresses of this server. The panel uses them for the DNS
 	// records of the websites on this server.
 	Addresses []string `json:"addresses,omitempty"`
+	// DNSZones are the DNS zones of this server, with the serial that the DNS server loaded.
+	// The panel sends each zone that this server does not have, for example after the server
+	// was offline or lost its data. An agent that cannot operate DNS sends null.
+	DNSZones []DNSZoneState `json:"dnsZones"`
 	// SftpPort is the port that the website owners use for SFTP on this server.
 	SftpPort int `json:"sftpPort,omitempty"`
 	// PanelCertificate is the certificate of the panel domain. Only the panel server sends it.
@@ -151,6 +155,13 @@ type PanelCertificate struct {
 	// CACertificate is the root certificate of the panel CA in PEM format. Browsers and other
 	// servers trust the internal certificate when they trust this root.
 	CACertificate string `json:"caCertificate,omitempty"`
+}
+
+// DNSZoneState is one DNS zone of a server in a report. Serial is 0 when the DNS server has
+// the zone but did not load it.
+type DNSZoneState struct {
+	Name   string `json:"name"`
+	Serial int64  `json:"serial"`
 }
 
 // DomainState is what the agent sees for one domain (FR-402, FR-403).

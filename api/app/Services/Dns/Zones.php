@@ -3,6 +3,7 @@
 namespace App\Services\Dns;
 
 use App\Enums\AgentAction;
+use App\Enums\JobState;
 use App\Http\Controllers\Api\DomainController;
 use App\Models\AgentJob;
 use App\Models\Customer;
@@ -16,6 +17,7 @@ use App\Services\Audit;
 use App\Services\DomainPolicy;
 use App\Services\JobDispatcher;
 use App\Validation\InputRules;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -272,6 +274,99 @@ class Zones
         foreach (DnsZone::whereNotNull('sync')->get() as $zone) {
             $zone->update(['sync' => array_diff_key($zone->sync ?? [], [$server->id => true]) ?: null]);
         }
+    }
+
+    /** The longest time between two tries to send zones again to one server, in minutes. */
+    public const RESYNC_MAX_MINUTES = 60;
+
+    /**
+     * Compares the zones that a server reported with the zones of the panel, and corrects the
+     * server. The agent sends the report each minute and when it starts. Thus a DNS server
+     * that was offline, that lost its data or that could not load a zone gets the last zones
+     * with no work of an administrator.
+     *
+     * - A zone that the server does not have, or has with a different serial, goes to the
+     *   server again. So does a zone whose last job on the server failed.
+     * - A zone that the panel does not have, or that the panel removes, goes from the server.
+     * - A server that does not answer DNS queries now loses all its zones.
+     *
+     * The panel does nothing while a DNS job of the server is in the queue or runs. After a
+     * try with no result, it waits 1 minute, then 2, then 4, up to RESYNC_MAX_MINUTES.
+     *
+     * @param  list<array{name: string, serial: int}>  $reported
+     */
+    public function reconcile(Server $server, array $reported): void
+    {
+        $has = collect($reported)->mapWithKeys(fn (array $z) => [(string) $z['name'] => (int) $z['serial']]);
+        $answers = self::servers()->contains('id', $server->id);
+        $send = collect();
+        $healed = [];
+        if ($answers) {
+            foreach (DnsZone::where('status', DnsZone::ACTIVE)->orderBy('name')->get() as $zone) {
+                $sync = $zone->sync[$server->id] ?? null;
+                // The server has a newer zone than the panel, for example after a restore of
+                // the panel database. The server refuses an older zone, so the zone gets a
+                // larger serial. Each other DNS server gets it after its next report.
+                if ($has->get($zone->name, 0) > $zone->serial) {
+                    $zone->update(['serial' => max($has->get($zone->name) + 1, now()->timestamp)]);
+                }
+                $current = $has->get($zone->name) === $zone->serial;
+                if (! $current || ($sync['state'] ?? '') === 'failed') {
+                    $send->push($zone);
+                } elseif ($sync === null || ($sync['serial'] ?? 0) < $zone->serial || ($sync['state'] ?? '') !== 'ok') {
+                    // The server has the zone, but the panel did not get the result of its job.
+                    $healed[] = $zone;
+                }
+            }
+        }
+        $keep = $answers ? DnsZone::where('status', DnsZone::ACTIVE)->pluck('name')->flip() : collect();
+        $remove = $has->keys()->reject(fn (string $name) => $keep->has($name))->values();
+
+        if ($send->isEmpty() && $remove->isEmpty()) {
+            foreach ($healed as $zone) {
+                if (! self::busy($server)) {
+                    self::mark($zone, [$server->id], $zone->serial, 'ok');
+                }
+            }
+            if ($server->dns_resync !== null) {
+                $server->update(['dns_resync' => null]);
+            }
+
+            return;
+        }
+        if (self::busy($server)) {
+            return;
+        }
+        $tries = (int) ($server->dns_resync['tries'] ?? 0);
+        $last = $server->dns_resync['at'] ?? null;
+        $wait = $tries === 0 ? 0 : min(self::RESYNC_MAX_MINUTES, 2 ** ($tries - 1));
+        if ($last !== null && now()->lt(Carbon::parse($last)->addMinutes($wait))) {
+            return;
+        }
+        $server->update(['dns_resync' => ['at' => now()->toIso8601String(), 'tries' => $tries + 1]]);
+
+        foreach ($send->chunk(InputRules::MAX_DNS_ZONES_PER_JOB) as $zones) {
+            foreach ($zones as $zone) {
+                self::mark($zone, [$server->id], $zone->serial, 'pending');
+            }
+            $count = $zones->count();
+            $this->jobs->dispatch($server, AgentAction::SetDnsZones, ['zones' => $zones->map(fn (DnsZone $z) => self::forAgent($z))->values()->all()],
+                $count === 1 ? "Send DNS zone {$zones->first()->name} to {$server->name} again" : "Send {$count} DNS zones to {$server->name} again",
+                dnsZone: $count === 1 ? $zones->first() : null);
+        }
+        foreach ($remove->chunk(InputRules::MAX_DNS_ZONES_PER_JOB) as $names) {
+            $count = $names->count();
+            $this->jobs->dispatch($server, AgentAction::DeleteDnsZones, ['names' => $names->values()->all()],
+                $count === 1 ? "Remove DNS zone {$names->first()} from {$server->name}" : "Remove {$count} DNS zones from {$server->name}");
+        }
+    }
+
+    /** True while a DNS job of the server is in the queue or runs. */
+    private static function busy(Server $server): bool
+    {
+        return AgentJob::where('server_id', $server->id)
+            ->whereIn('action', [AgentAction::SetDnsZones->value, AgentAction::DeleteDnsZones->value])
+            ->whereIn('state', [JobState::Queued->value, JobState::Running->value])->exists();
     }
 
     /**

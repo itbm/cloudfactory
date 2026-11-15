@@ -550,6 +550,138 @@ class DnsTest extends TestCase
         $this->assertTrue($late->fresh()->dns);
     }
 
+    /** The agent of a DNS server sends a report with the zones that its DNS server loaded. */
+    private function report(Server $server, array $zones): void
+    {
+        $server->update(['agent_token_hash' => hash('sha256', "cfa_{$server->id}"), 'local' => true]);
+        config(['cloudfactory.agent.direct_addresses' => ['127.0.0.1']]);
+        $this->withToken("cfa_{$server->id}")->postJson('/api/agent/v1/report', [
+            'agentVersion' => '0.1.0', 'dns' => true,
+            'dnsZones' => collect($zones)->map(fn (int $serial, string $name) => ['name' => $name, 'serial' => $serial])->values()->all(),
+        ])->assertOk();
+    }
+
+    public function test_a_dns_server_that_was_offline_gets_the_zones_that_it_does_not_have(): void
+    {
+        $this->hosting();
+        $a = $this->zone('a.example');
+        $b = $this->zone('b.example');
+        [$first, $second] = $this->dns;
+        AgentJob::query()->delete();
+
+        // A report that agrees with the panel makes no job.
+        $this->report($first, ['a.example' => $a->serial, 'b.example' => $b->serial]);
+        $this->assertSame(0, AgentJob::count());
+
+        // The second server was offline during a change: its job failed.
+        $jobs = $this->record($a, ['type' => 'A', 'name' => 'www', 'value' => '203.0.113.7'])->assertAccepted()->json('jobs.*');
+        $old = $a->serial;
+        $a->refresh();
+        $this->finish(collect($jobs)->firstWhere('serverId', $first->id)['id']);
+        $this->finish(collect($jobs)->firstWhere('serverId', $second->id)['id'], JobState::Failed);
+        $this->getJson("/api/v1/dns-zones/{$a->id}")->assertJsonPath('status', 'failed');
+        AgentJob::query()->delete();
+
+        // The server is back, and reports the zone that it had before. The panel sends only
+        // the zone that changed, with all its records.
+        $this->report($second, ['a.example' => $old, 'b.example' => $b->serial]);
+        $job = AgentJob::sole();
+        $this->assertSame([$second->id, AgentAction::SetDnsZones, 'Send DNS zone a.example to '.$second->name.' again'], [$job->server_id, $job->action, $job->title]);
+        $this->assertSame(['a.example'], array_column($job->payload['zones'], 'name'));
+        $this->assertSame($a->serial, $job->payload['zones'][0]['serial']);
+        $this->assertContains('www', array_column($job->payload['zones'][0]['records'], 'name'));
+        $this->getJson("/api/v1/dns-zones/{$a->id}")->assertJsonPath('status', 'updating');
+
+        // While the job is in the queue, a new report makes no second job.
+        $this->report($second, ['a.example' => $old, 'b.example' => $b->serial]);
+        $this->assertSame(1, AgentJob::count());
+
+        $this->finish($job->id);
+        $this->report($second, ['a.example' => $a->serial, 'b.example' => $b->serial]);
+        $this->assertSame(1, AgentJob::count());
+        $this->getJson("/api/v1/dns-zones/{$a->id}")->assertJsonPath('status', 'active');
+        $this->assertNull($second->fresh()->dns_resync);
+    }
+
+    public function test_a_dns_server_that_lost_its_data_gets_all_zones_and_loses_zones_that_the_panel_does_not_have(): void
+    {
+        $this->hosting();
+        $a = $this->zone('a.example');
+        $b = $this->zone('b.example');
+        $second = $this->dns[1];
+        AgentJob::query()->delete();
+
+        // A new disk: the server has no zone. A zone of an earlier time is on the server only.
+        $this->report($second, ['gone.example' => 1700000000]);
+        $send = AgentJob::where('action', AgentAction::SetDnsZones->value)->sole();
+        $this->assertSame('Send 2 DNS zones to '.$second->name.' again', $send->title);
+        $this->assertSame(['a.example', 'b.example'], array_column($send->payload['zones'], 'name'));
+        $remove = AgentJob::where('action', AgentAction::DeleteDnsZones->value)->sole();
+        $this->assertSame(['names' => ['gone.example']], $remove->payload);
+        $this->assertSame($second->id, $remove->server_id);
+    }
+
+    public function test_the_panel_waits_longer_after_each_try_that_did_not_correct_a_dns_server(): void
+    {
+        $this->hosting();
+        $a = $this->zone('a.example');
+        $second = $this->dns[1];
+        AgentJob::query()->delete();
+        $tries = function () use ($second) {
+            $this->report($second, []);
+            $this->finish(AgentJob::where('state', JobState::Queued->value)->pluck('id')->all(), JobState::Failed);
+
+            return AgentJob::count();
+        };
+
+        $this->assertSame(1, $tries());
+        // The second try comes after 1 minute, the third after 2 more minutes.
+        $this->assertSame(1, $tries());
+        $this->travel(61)->seconds();
+        $this->assertSame(2, $tries());
+        $this->travel(61)->seconds();
+        $this->assertSame(2, $tries());
+        $this->travel(61)->seconds();
+        $this->assertSame(3, $tries());
+        // A report that agrees with the panel ends the wait.
+        $this->travel(5)->minutes();
+        $this->report($second, []);
+        $this->finish(AgentJob::where('state', JobState::Queued->value)->pluck('id')->all());
+        $this->report($second, ['a.example' => $a->serial]);
+        $this->assertNull($second->fresh()->dns_resync);
+    }
+
+    public function test_a_server_with_a_newer_zone_than_the_panel_gets_a_zone_with_a_larger_serial(): void
+    {
+        $this->hosting();
+        $a = $this->zone('a.example');
+        $second = $this->dns[1];
+        AgentJob::query()->delete();
+
+        // The panel database is from a backup: the server has a later change.
+        $this->report($second, ['a.example' => $a->serial + 500]);
+        $job = AgentJob::sole();
+        $this->assertGreaterThan($a->serial + 500, $job->payload['zones'][0]['serial']);
+        $this->assertSame($a->fresh()->serial, $job->payload['zones'][0]['serial']);
+    }
+
+    public function test_a_server_that_does_not_answer_dns_queries_now_loses_the_zones_that_it_reports(): void
+    {
+        $this->hosting();
+        $a = $this->zone('a.example');
+        $old = $this->server(['roles' => ['web']]);
+        AgentJob::query()->delete();
+
+        $this->report($old, ['a.example' => $a->serial]);
+        $job = AgentJob::sole();
+        $this->assertSame([$old->id, AgentAction::DeleteDnsZones, ['names' => ['a.example']]], [$job->server_id, $job->action, $job->payload]);
+        // An agent of an earlier release sends no list of zones. The panel changes nothing.
+        AgentJob::query()->delete();
+        $old->update(['dns_resync' => null]);
+        $this->withToken("cfa_{$old->id}")->postJson('/api/agent/v1/report', ['agentVersion' => '0.1.0'])->assertOk();
+        $this->assertSame(0, AgentJob::count());
+    }
+
     public function test_the_steps_of_the_dns_jobs(): void
     {
         $this->assertSame(['Start DNS server', 'Write zones', 'Load zones'], AgentAction::SetDnsZones->steps());

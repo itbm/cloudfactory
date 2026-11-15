@@ -522,7 +522,7 @@ func (d *Deps) RootOps() map[string]gate.Handler {
 		opDnsLoad:   none(func(ctx context.Context, in dnsNamesIn) error { return d.loadDnsZones(ctx, in.Names) }),
 		opDnsRemove: none(func(ctx context.Context, in dnsNamesIn) error { return d.removeDnsZones(ctx, in.Names) }),
 		opDnsStatus: gate.Op(func(ctx context.Context, _ gate.None) (dnsStatusOut, error) {
-			return dnsStatusOut{Enabled: d.DnsEnabled(ctx)}, nil
+			return d.dnsStatus(ctx), nil
 		}),
 
 		// The database containers: their directories, disks and secrets, and the firewall.

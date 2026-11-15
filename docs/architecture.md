@@ -343,7 +343,35 @@ Each change of a zone gives the zone a higher serial. The panel keeps, for each 
 the last serial that the server loaded. The state of a zone is `active` when each DNS server
 has the last serial, `updating` while a job runs, and `failed` when a server could not load
 the zone. A server that could not load a change continues to answer with the records that it
-had before. **Send again** on the page of the zone, or `cf dns sync`, sends the zone again.
+had before.
+
+### A DNS server that does not have the last zones
+
+The panel corrects a DNS server by itself. The report of each agent, which the agent sends
+each minute and when it starts, has the list of the zones of the server with the serial that
+the DNS server loaded last. The panel compares the list with its zones:
+
+| The server reports | The panel does |
+| ------------------ | -------------- |
+| No zone, or a zone with a different serial | It sends the full zone again. |
+| The last serial, but the last job of the zone failed | It sends the full zone again. |
+| A zone that the panel does not have, or that the panel removes | It removes the zone from the server. |
+| Zones, and the server does not answer DNS queries now | It removes all zones from the server. |
+| A zone with a larger serial than the panel has | It gives the zone a larger serial and sends it to each DNS server. |
+
+Thus a server that was offline during a change, a server with a new disk and a server whose
+DNS server could not load a zone get the last zones with no work of an administrator. A
+server that starts with no data gets all zones.
+
+- The panel does nothing while a DNS job of the server is in the queue or runs.
+- After a try that did not correct the server, the panel waits 1 minute, then 2, then 4, up
+  to 60 minutes between two tries. A report that agrees with the panel ends the wait.
+- The agent records the serial of a zone only after the DNS server loaded the zone. A zone
+  file that the DNS server could not load does not count.
+- When the DNS container starts, Knot DNS loads the zone files from the disk. The server
+  thus answers with its last zones before the panel sends a correction.
+
+**Send again now** on the page of the zone, or `cf dns sync`, sends a zone again immediately.
 
 ### Records that the panel makes
 

@@ -118,6 +118,11 @@ class AgentController extends Controller
             'dns' => ['boolean'],
             'addresses' => ['nullable', 'array', 'max:16'],
             'addresses.*' => ['string', 'ip'],
+            // The DNS zones of the server, with the serial that its DNS server loaded. An agent
+            // that cannot operate DNS does not send them.
+            'dnsZones' => ['nullable', 'array', 'max:100000'],
+            'dnsZones.*.name' => ['required', 'string', 'max:253'],
+            'dnsZones.*.serial' => ['required', 'integer', 'min:0'],
             // Spec section 10: the port of the SFTP container. An agent of release 0.1 does not send it.
             'sftpPort' => ['nullable', 'integer', 'between:1,65535'],
             // The certificate of the panel domain. Only the agent on the panel server sends it.
@@ -175,6 +180,11 @@ class AgentController extends Controller
         }
         if (($server->addresses ?? []) !== $addresses) {
             app(Zones::class)->serverAddressesChanged($server);
+        }
+        // The server gets the zones that it does not have, for example after it was offline,
+        // and loses the zones that it must not have.
+        if (is_array($data['dnsZones'] ?? null)) {
+            app(Zones::class)->reconcile($server->fresh(), $data['dnsZones']);
         }
         // FR-203: the current resource use of each website.
         foreach ($data['websites'] ?? [] as $use) {

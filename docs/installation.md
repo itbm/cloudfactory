@@ -762,9 +762,16 @@ answers for the domain.
 #### A zone that a DNS server could not load
 
 The page of the zone shows the state of the zone on each name server. When a server could
-not load a change, it continues to answer with the records that it had before. Correct the
-cause, and then select **Send again** or run `cf dns sync example.com`. To see the log of the
-DNS server, run on the server:
+not load a change, it continues to answer with the records that it had before.
+
+The panel sends the zone again by itself. Each agent reports the zones of its server each
+minute and when it starts, and the panel sends each zone that the server does not have with
+the last serial. So a DNS server that was offline, or that you installed again, needs no
+work: it gets its zones in the first minutes after its agent starts. After a try with no
+result, the panel waits 1 minute, then 2, then 4, up to 60 minutes.
+
+To send a zone immediately, select **Send again now** or run `cf dns sync example.com`. To
+see the log of the DNS server, run on the server:
 
 ```sh
 sudo -u cf-dns XDG_RUNTIME_DIR=/run/user/$(id -u cf-dns) journalctl --user -u cf-dns

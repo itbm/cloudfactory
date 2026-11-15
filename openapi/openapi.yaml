@@ -2920,6 +2920,15 @@ components:
         lastUpdateAt: { type: string, format: date-time }
         dns: { type: boolean, description: True when the agent can operate DNS. }
         addresses: { type: array, maxItems: 16, items: { type: string }, description: The public IP addresses of the server. }
+        dnsZones:
+          type: [array, 'null']
+          description: The DNS zones of the server. The panel sends each zone that the server does not have with the last serial, and removes each zone that the server must not have. An agent that cannot operate DNS does not send the list.
+          items:
+            type: object
+            required: [name, serial]
+            properties:
+              name: { type: string, maxLength: 253 }
+              serial: { type: integer, minimum: 0, description: The serial of the zone that the DNS server loaded last. 0 when it loaded none. }
         services:
           type: array
           items:

@@ -20,6 +20,7 @@ import (
 	agentv1 "github.com/itbm/cloudfactory/agent/gen/cloudfactory/agent/v1"
 	"github.com/itbm/cloudfactory/agent/internal/host"
 	"github.com/itbm/cloudfactory/agent/internal/jobs"
+	"github.com/itbm/cloudfactory/agent/internal/panel"
 	"github.com/itbm/cloudfactory/agent/internal/quadlet"
 	"github.com/itbm/cloudfactory/agent/internal/validate"
 )
@@ -77,6 +78,8 @@ type (
 		// Enabled is true when this server got a zone job. The agent then keeps the DNS server
 		// in operation.
 		Enabled bool
+		// Zones are the zones of this server, for the report to the panel.
+		Zones []panel.DNSZoneState
 	}
 )
 
@@ -323,6 +326,9 @@ type dnsState struct {
 
 type dnsZoneState struct {
 	Serial int64 `json:"serial"`
+	// Loaded is the serial of the zone that the DNS server loaded last. It is smaller than
+	// Serial when the server has the zone file but could not load it.
+	Loaded int64 `json:"loaded,omitempty"`
 	// Signed is true when the DNS server signs the zone (DNSSEC).
 	Signed bool `json:"signed,omitempty"`
 	KeyTag int  `json:"keyTag,omitempty"`
@@ -421,17 +427,35 @@ func (d *Deps) writeKnotConf(st dnsState) (bool, error) {
 
 // DnsEnabled reports whether this server has a DNS server: it got a zone job.
 func (d *Deps) DnsEnabled(ctx context.Context) bool {
+	return d.dnsStatus(ctx).Enabled
+}
+
+// DnsZones gives the zones of this server with the serial that the DNS server loaded, for
+// the report to the panel. The panel sends a zone again when this server does not have its
+// last serial, and removes a zone that this server must not have. The list is never nil.
+func (d *Deps) DnsZones(ctx context.Context) []panel.DNSZoneState {
+	if zones := d.dnsStatus(ctx).Zones; zones != nil {
+		return zones
+	}
+	return []panel.DNSZoneState{}
+}
+
+func (d *Deps) dnsStatus(ctx context.Context) dnsStatusOut {
 	if d.Gate != nil {
 		var out dnsStatusOut
 		if err := d.Gate.Call(ctx, opDnsStatus, nil, &out); err != nil {
-			return false
+			return dnsStatusOut{}
 		}
-		return out.Enabled
+		return out
 	}
 	d.dnsMu.Lock()
 	defer d.dnsMu.Unlock()
-	_, ok, _ := d.readDnsState()
-	return ok
+	st, ok, _ := d.readDnsState()
+	out := dnsStatusOut{Enabled: ok}
+	for _, name := range slices.Sorted(mapKeys(st.Zones)) {
+		out.Zones = append(out.Zones, panel.DNSZoneState{Name: name, Serial: st.Zones[name].Loaded})
+	}
+	return out
 }
 
 // EnsureDns starts the DNS server again when this server has one, for example with the image
@@ -594,7 +618,7 @@ func (d *Deps) writeDnsZones(ctx context.Context, zones []dnsZone) error {
 		if was.Signed && z.Key == "" {
 			unsigned = append(unsigned, z.Name)
 		}
-		st.Zones[z.Name] = dnsZoneState{Serial: z.Serial, Signed: z.Key != "", KeyTag: z.KeyTag}
+		st.Zones[z.Name] = dnsZoneState{Serial: z.Serial, Loaded: was.Loaded, Signed: z.Key != "", KeyTag: z.KeyTag}
 	}
 	// The configuration has each new zone before Knot gets its key.
 	if _, err := d.writeKnotConf(st); err != nil {
@@ -731,7 +755,8 @@ func (d *Deps) loadDnsZones(ctx context.Context, names []string) error {
 	}
 	var errs []error
 	for _, name := range names {
-		if _, ok := st.Zones[name]; !ok {
+		zone, ok := st.Zones[name]
+		if !ok {
 			continue
 		}
 		// "-b" waits until the zone is loaded, and until a signed zone has its signatures.
@@ -743,7 +768,14 @@ func (d *Deps) loadDnsZones(ctx context.Context, names []string) error {
 		out, err := d.knot(ctx, "knotc", "zone-status", name+".", "+serial")
 		if err != nil || !regexp.MustCompile(`serial: [0-9]+`).MatchString(out) {
 			errs = append(errs, fmt.Errorf("DNS zone %s: the DNS server did not load the zone: %s %v", name, strings.TrimSpace(out), err))
+			continue
 		}
+		zone.Loaded = zone.Serial
+		st.Zones[name] = zone
+	}
+	// The report to the panel has the serial that the DNS server loaded.
+	if err := d.writeDnsState(st); err != nil {
+		errs = append(errs, err)
 	}
 	return errors.Join(errs...)
 }

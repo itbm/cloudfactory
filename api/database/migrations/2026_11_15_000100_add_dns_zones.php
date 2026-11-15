@@ -28,6 +28,9 @@ return new class extends Migration
             $table->string('dns_name')->nullable();
             $table->boolean('dns')->default(false);
             $table->json('addresses')->nullable();
+            // The last time that the panel sent zones again to this server by itself, and
+            // the number of tries with no result.
+            $table->json('dns_resync')->nullable();
         });
         Schema::create('dns_zones', function (Blueprint $table) {
             $table->ulid('id')->primary();
@@ -79,7 +82,7 @@ return new class extends Migration
         Schema::table('agent_jobs', fn (Blueprint $table) => $table->dropColumn('dns_zone_id'));
         Schema::dropIfExists('dns_records');
         Schema::dropIfExists('dns_zones');
-        Schema::table('servers', fn (Blueprint $table) => $table->dropColumn(['dns_name', 'dns', 'addresses']));
+        Schema::table('servers', fn (Blueprint $table) => $table->dropColumn(['dns_name', 'dns', 'addresses', 'dns_resync']));
         Schema::table('plans', fn (Blueprint $table) => $table->dropColumn('dns_zones'));
     }
 };

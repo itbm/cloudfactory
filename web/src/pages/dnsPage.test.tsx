@@ -168,7 +168,7 @@ describe("the page of a DNS zone", () => {
     expect(main.textContent).toContain("A DNS server does not have the last change.");
     expect(main.textContent).toContain("Could not load the last change");
     api.on(`POST /dns-zones/${id}/sync`, () => [202, { zone: { ...(JSON.parse(JSON.stringify(zone("harbourbooks.example.net"))) as object), status: "updating", delegation: { state: "here", nameServers: [], checkedAt: null }, dnssec: { enabled: false, ds: null, dnskey: null } }, jobs: [] }]);
-    fireEvent.click(within(main).getByRole("button", { name: "Send again" }));
+    fireEvent.click(within(main).getByRole("button", { name: "Send again now" }));
     await waitFor(() => expect(main.textContent).not.toContain("A DNS server does not have the last change."));
     expect(api.changes.at(-1)).toMatchObject({ method: "POST", path: `/dns-zones/${id}/sync` });
   });

@@ -194,6 +194,10 @@ func TestSetDnsZonesStartsTheServerAndWritesTheZone(t *testing.T) {
 	if got := d.DnsEnabled(context.Background()); got {
 		t.Error("a server with no zone job has no DNS server")
 	}
+	// The report has a list, not null: the panel then knows that this server has no zone.
+	if zones := d.DnsZones(context.Background()); zones == nil || len(zones) != 0 {
+		t.Errorf("zones of a new server: %#v", zones)
+	}
 	if err := run(t)(d.SetDnsZones(&agentv1.SetDnsZonesRequest{JobId: jobID, Zones: []*agentv1.DnsZone{protoZone(exampleZone())}})); err != nil {
 		t.Fatal(err)
 	}
@@ -242,6 +246,11 @@ func TestSetDnsZonesStartsTheServerAndWritesTheZone(t *testing.T) {
 	}
 	if !d.DnsEnabled(context.Background()) {
 		t.Error("the server has a DNS server now")
+	}
+	// The report gives the serial that the DNS server loaded, so that the panel knows what
+	// this server answers with.
+	if zones := d.DnsZones(context.Background()); len(zones) != 1 || zones[0].Name != "example.com" || zones[0].Serial != exampleZone().Serial {
+		t.Errorf("zones in the report: %#v", zones)
 	}
 
 	// An older change that comes later does not replace the zone.
@@ -421,5 +430,34 @@ func TestReportAddresses(t *testing.T) {
 	d.PublicAddresses = []string{"198.51.100.4"}
 	if got := strings.Join(d.ReportAddresses(), " "); got != "198.51.100.4" {
 		t.Errorf("addresses: %q", got)
+	}
+}
+
+// A zone that the DNS server could not load stays in the report with the serial of the last
+// good load. The panel then sends the zone again.
+func TestTheReportHasTheSerialThatTheDnsServerLoaded(t *testing.T) {
+	d, f := dnsDeps(t)
+	os.WriteFile(d.FirewallFile, []byte(firewallWithEdge), 0o644)
+	status := execx.Rule{Prefix: knotInContainer + "knotc -c /etc/knot/knot.conf zone-status", Output: "[example.com.] serial: 1794000000\n"}
+	f.Rules = []execx.Rule{status}
+	if err := run(t)(d.SetDnsZones(&agentv1.SetDnsZonesRequest{JobId: jobID, Zones: []*agentv1.DnsZone{protoZone(exampleZone())}})); err != nil {
+		t.Fatal(err)
+	}
+	newer := exampleZone()
+	newer.Serial++
+	f.Rules = []execx.Rule{{Prefix: knotInContainer + "knotc -c /etc/knot/knot.conf -b zone-reload", Err: errors.New("operation timed out")}, status}
+	if err := run(t)(d.SetDnsZones(&agentv1.SetDnsZonesRequest{JobId: jobID, Zones: []*agentv1.DnsZone{protoZone(newer)}})); err == nil {
+		t.Fatal("the job must fail when the DNS server does not load the zone")
+	}
+	if zones := d.DnsZones(context.Background()); len(zones) != 1 || zones[0].Serial != exampleZone().Serial {
+		t.Errorf("the report must have the serial of the last good load: %#v", zones)
+	}
+	// The panel sends the same zone again, and the DNS server loads it.
+	f.Rules = []execx.Rule{status}
+	if err := run(t)(d.SetDnsZones(&agentv1.SetDnsZonesRequest{JobId: jobID, Zones: []*agentv1.DnsZone{protoZone(newer)}})); err != nil {
+		t.Fatal(err)
+	}
+	if zones := d.DnsZones(context.Background()); len(zones) != 1 || zones[0].Serial != newer.Serial {
+		t.Errorf("zones in the report: %#v", zones)
 	}
 }
