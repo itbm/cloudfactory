@@ -16,3 +16,6 @@ Schedule::command('cloudfactory:check-dns')->everyFifteenMinutes()->withoutOverl
 
 // Batch 1, finding 2: servers that do not report, and jobs with no result.
 Schedule::command('cloudfactory:check-jobs')->everyMinute()->withoutOverlapping();
+
+// The database tool: remove the temporary database users of Adminer that expired.
+Schedule::command('cloudfactory:expire-adminer-logins')->everyMinute()->withoutOverlapping();

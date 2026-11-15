@@ -89,6 +89,8 @@ class JobOutcome
             ? $this->applySuccess($job, $website, $result)
             : $this->applyFailure($job, $website);
         $this->databaseServersOf($job, $state === JobState::Succeeded);
+        // The container of Adminer and its temporary database users.
+        DatabaseTools::jobFinished($job, $state === JobState::Succeeded);
         if (in_array($job->action, [AgentAction::SetDnsZones, AgentAction::DeleteDnsZones], true)) {
             Zones::jobFinished($job, $state === JobState::Succeeded);
         }

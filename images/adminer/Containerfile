@@ -1,0 +1,53 @@
+# The database tool (Adminer). Each customer has one container of this image on the panel
+# server, with its own Unix user, in gVisor. The edge proxy sends the path of the customer on
+# the Adminer domain to it.
+#   podman build -t adminer images/adminer
+#
+# The panel signs the user in: it makes a temporary database user and the web panel sends it to
+# the sign-in form of Adminer (index.php). Adminer opens only MariaDB and PostgreSQL databases,
+# on the names of the database servers of the customer.
+# SPDX-License-Identifier: AGPL-3.0-only
+FROM docker.io/dunglas/frankenphp:1-php8.4-trixie
+
+ARG ADMINER_VERSION=5.5.1
+ARG ADMINER_SHA256=f2c70c6403a042d554be1dd8d69b6f6270a97e5b40d2fb7626f46aad821e9a18
+ARG DEBIAN_FRONTEND=noninteractive
+# MySQLi for MariaDB, and the PostgreSQL extension. The build cache keeps this slow step.
+RUN install-php-extensions mysqli pgsql \
+ && cp "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini"
+
+# Audit batch 2, finding 1: the base image gives frankenphp the file capability
+# cap_net_bind_service. The unit drops all capabilities, and Linux does not run a file with a
+# capability that the process cannot get. The server listens on 8080, so it does not need it.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends libcap2-bin \
+ && setcap -r /usr/local/bin/frankenphp \
+ && test -z "$(getcap /usr/local/bin/frankenphp)" \
+ && apt-get purge -y libcap2-bin \
+ && rm -rf /var/lib/apt/lists/*
+
+# Adminer is one PHP file. The build checks its SHA-256 sum.
+ADD --chmod=0644 https://github.com/vrana/adminer/releases/download/v${ADMINER_VERSION}/adminer-${ADMINER_VERSION}.php /srv/adminer/adminer.php
+RUN echo "${ADMINER_SHA256}  /srv/adminer/adminer.php" | sha256sum -c -
+
+# CVE scan, finding 3: take the Debian security fixes that are newer than the base image. The
+# release workflow gives CF_REFRESH a new value for each build, so this step never comes from
+# the build cache.
+ARG CF_REFRESH
+RUN apt-get update \
+ && apt-get upgrade -y --no-install-recommends \
+ && rm -rf /var/lib/apt/lists/*
+
+COPY --chmod=0644 Caddyfile /etc/frankenphp/Caddyfile
+COPY --chmod=0644 adminer.ini /usr/local/etc/php/conf.d/zz-adminer.ini
+COPY --chmod=0644 index.php /srv/adminer/index.php
+
+# The container root file system is read-only. Caddy, the PHP sessions and the uploads of an
+# import use /tmp, which is in memory.
+ENV XDG_CONFIG_HOME=/tmp/config \
+    XDG_DATA_HOME=/tmp/data
+
+EXPOSE 8080
+LABEL org.opencontainers.image.source="https://github.com/itbm/cloudfactory" \
+      org.opencontainers.image.licenses="AGPL-3.0-only" \
+      org.opencontainers.image.description="Cloudfactory database tool (Adminer)"

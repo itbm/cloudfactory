@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\CronJobController;
 use App\Http\Controllers\Api\CustomerController;
 use App\Http\Controllers\Api\DatabaseController;
 use App\Http\Controllers\Api\DatabaseServerController;
+use App\Http\Controllers\Api\DatabaseToolController;
 use App\Http\Controllers\Api\DatabaseUserController;
 use App\Http\Controllers\Api\DeployController;
 use App\Http\Controllers\Api\DnsZoneController;
@@ -113,6 +114,9 @@ Route::prefix('v1')->group(function () {
             Route::post('websites/{websiteId}/database-users', [DatabaseUserController::class, 'store']);
             Route::patch('websites/{websiteId}/database-users/{userId}', [DatabaseUserController::class, 'update']);
             Route::delete('websites/{websiteId}/database-users/{userId}', [DatabaseUserController::class, 'destroy']);
+            // The database tool (Adminer): open a database with a temporary database user.
+            Route::post('websites/{websiteId}/databases/{databaseId}/adminer', [DatabaseToolController::class, 'store'])->middleware('throttle:30,1');
+            Route::get('adminer-logins/{id}', [DatabaseToolController::class, 'show']);
             // The database servers of a customer: containers with their own limits, as websites.
             // The private networks of the customers (VPC).
             Route::get('networks', [NetworkController::class, 'index']);
