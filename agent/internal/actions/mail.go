@@ -361,9 +361,26 @@ func (d *Deps) SetMailbox(req *agentv1.SetMailboxRequest) (jobs.Job, error) {
 	if err := checkPublicKey(publicKey); err != nil {
 		return jobs.Job{}, err
 	}
+	privateKeys := req.GetPrivateKeys()
+	if !req.GetSetKeyFile() && privateKeys != "" {
+		return jobs.Job{}, errors.New("the job has private keys, but it does not set the key file")
+	}
+	if err := checkPrivateKeys(privateKeys); err != nil {
+		return jobs.Job{}, err
+	}
 	job := d.mailStep(req.GetJobId(), "Set mailbox", func(ctx context.Context, c *stalwart.Client) error {
 		return c.SetMailbox(ctx, domain, localPart, quota, hash)
 	})
+	if req.GetSetKeyFile() {
+		// The webmail gets the private keys from this file: the user does not upload them.
+		job.Steps = append(job.Steps, jobs.Step{Name: "Write the key file", Do: func(ctx context.Context) error {
+			c, err := d.mailClient(ctx)
+			if err != nil {
+				return err
+			}
+			return c.SetKeyFile(ctx, domain, localPart, privateKeys)
+		}})
+	}
 	if !req.GetSetEncryption() {
 		return job, nil
 	}
@@ -393,6 +410,26 @@ const (
 	pgpBegin = "-----BEGIN PGP PUBLIC KEY BLOCK-----"
 	pgpEnd   = "-----END PGP PUBLIC KEY BLOCK-----"
 )
+
+// mailMaxPrivateKeys is the largest text of private keys. The panel keeps the old keys of a
+// mailbox after a new key, so the text has some keys.
+const mailMaxPrivateKeys = 256 << 10
+
+const pgpPrivateBegin = "-----BEGIN PGP PRIVATE KEY BLOCK-----"
+
+// checkPrivateKeys accepts private key blocks in ASCII armour, and nothing else.
+func checkPrivateKeys(keys string) error {
+	if keys == "" {
+		return nil
+	}
+	if len(keys) > mailMaxPrivateKeys {
+		return fmt.Errorf("the private keys are larger than %d KB", mailMaxPrivateKeys>>10)
+	}
+	if !strings.HasPrefix(keys, pgpPrivateBegin) || !strings.HasSuffix(strings.TrimRight(keys, "\r\n"), "-----END PGP PRIVATE KEY BLOCK-----") {
+		return errors.New("the private keys are not OpenPGP private key blocks in ASCII armour")
+	}
+	return nil
+}
 
 // checkPublicKey accepts one OpenPGP public key block in ASCII armour. The mail server reads
 // the key and refuses a key that cannot encrypt: this check only keeps other data out.

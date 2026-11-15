@@ -168,6 +168,31 @@ func TestRealWebmail(t *testing.T) {
 		}
 	}
 
+	// The file with the private keys. With CF_TEST_WEBMAIL_PRIVATE_KEY, the file has this key,
+	// for the PGP plugin of the webmail.
+	keys := "-----BEGIN PGP PRIVATE KEY BLOCK-----\n\nold\n-----END PGP PRIVATE KEY BLOCK-----\n"
+	for _, k := range []string{keys, keys, ""} {
+		if err := client.SetKeyFile(ctx, domain, "info", k); err != nil {
+			t.Fatalf("the key file: %v", err)
+		}
+		if got := userKeyFile(t, client.URL, "info@"+domain, password); got != k {
+			t.Fatalf("the mailbox has the key file %q, not %q", got, k)
+		}
+	}
+	if file := os.Getenv("CF_TEST_WEBMAIL_PRIVATE_KEY"); file != "" {
+		b, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		keys = string(b)
+	}
+	if err := client.SetKeyFile(ctx, domain, "info", keys); err != nil {
+		t.Fatal(err)
+	}
+	if got := userKeyFile(t, client.URL, "info@"+domain, password); got != keys {
+		t.Fatalf("the mailbox has the key file %q", got)
+	}
+
 	// The routes of the host name. The edge proxy signs the certificate of a local name with
 	// its own CA.
 	if err := edge.Apply(ctx, webmail.Routes(hostname, webmail.ContainerPort, quadlet.MailHTTPPort)); err != nil {
@@ -297,4 +322,69 @@ func TestRealWebmail(t *testing.T) {
 		return strings.Contains(docker("logs", "--since", "2m", "cfwm-webmail"), "cf-webmail: the PGP plugin 2.0.2 is installed")
 	})
 	fmt.Fprintln(os.Stderr, "webmail answers at https://"+hostname+" (127.0.0.1:18443)")
+}
+
+// userKeyFile gives the content of the key file as the owner of the mailbox sees it with the
+// password of the mailbox, as the PGP plugin of the webmail reads it. It is empty when the
+// mailbox has no key file.
+func userKeyFile(t *testing.T, base, address, password string) string {
+	t.Helper()
+	call := func(body string) []json.RawMessage {
+		req, _ := http.NewRequest(http.MethodPost, base+"/jmap/", strings.NewReader(body))
+		req.SetBasicAuth(address, password)
+		req.Header.Set("Content-Type", "application/json")
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer res.Body.Close()
+		var out struct {
+			MethodResponses [][]json.RawMessage `json:"methodResponses"`
+		}
+		if err := json.NewDecoder(res.Body).Decode(&out); err != nil || len(out.MethodResponses) == 0 {
+			t.Fatalf("JMAP as the owner: %v %d", err, res.StatusCode)
+		}
+		return out.MethodResponses[len(out.MethodResponses)-1]
+	}
+	session, _ := http.NewRequest(http.MethodGet, base+"/jmap/session", nil)
+	session.SetBasicAuth(address, password)
+	res, err := http.DefaultClient.Do(session)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var s struct {
+		PrimaryAccounts map[string]string `json:"primaryAccounts"`
+	}
+	_ = json.NewDecoder(res.Body).Decode(&s)
+	res.Body.Close()
+	account := s.PrimaryAccounts["urn:ietf:params:jmap:core"]
+	if account == "" {
+		for _, a := range s.PrimaryAccounts {
+			account = a
+		}
+	}
+	got := call(fmt.Sprintf(`{"using":["urn:ietf:params:jmap:core","urn:ietf:params:jmap:filenode"],"methodCalls":[["FileNode/query",{"accountId":%q,"filter":{"name":%q}},"q"],["FileNode/get",{"accountId":%q,"#ids":{"resultOf":"q","name":"FileNode/query","path":"/ids"},"properties":["blobId","parentId"]},"g"]]}`, account, stalwart.KeyFile, account))
+	var list struct {
+		List []struct {
+			BlobID string `json:"blobId"`
+		} `json:"list"`
+	}
+	if len(got) < 2 || json.Unmarshal(got[1], &list) != nil {
+		t.Fatalf("FileNode/get as the owner: %s", got)
+	}
+	if len(list.List) == 0 {
+		return ""
+	}
+	if len(list.List) != 1 {
+		t.Fatalf("the mailbox has %d key files", len(list.List))
+	}
+	req, _ := http.NewRequest(http.MethodGet, base+"/jmap/download/"+account+"/"+list.List[0].BlobID+"/"+stalwart.KeyFile, nil)
+	req.SetBasicAuth(address, password)
+	res, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	b, _ := io.ReadAll(res.Body)
+	return string(b)
 }

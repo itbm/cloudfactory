@@ -25,6 +25,27 @@ use Illuminate\Validation\ValidationException;
  */
 class Mail
 {
+    /**
+     * The private keys of a mailbox for a SetMailbox job. The agent writes them to a file in
+     * the files of the mailbox, and the PGP plugin of the webmail reads that file with the
+     * password of the mailbox: the user does not upload the keys. The keys are not in the job
+     * record. The panel adds the current keys each time that it sends the job.
+     *
+     * @return array<string, bool|string>
+     */
+    public static function keyFileFor(AgentJob $job): array
+    {
+        if ($job->action !== AgentAction::SetMailbox) {
+            return [];
+        }
+        $mailbox = Mailbox::find($job->payload['mailboxId'] ?? '');
+        if ($mailbox === null || ($mailbox->private_key === null && ! ($job->payload['setEncryption'] ?? false))) {
+            return [];
+        }
+
+        return ['setKeyFile' => true, 'privateKeys' => (string) ($mailbox->private_key ?? '')];
+    }
+
     /** The purposes of the DNS records that the panel shows and checks. */
     public const PURPOSES = ['mx', 'spf', 'dkim', 'dmarc'];
 

@@ -208,4 +208,5 @@ database servers. [security.md](security.md#the-root-helper-of-the-agent) gives 
 | Who makes the keys | The panel, when the user asks | The user does not need a separate program. The user can still give a public key of their own. |
 | Protection of the private key | The password of the mailbox | The user has one password for the mail program, the webmail and the key. |
 | Decryption in the webmail | A plugin of the webmail | Bulwark has no OpenPGP decryption. The plugin "PGP True End-to-End" (GPL-3.0) decrypts in the browser. |
+| Keys in the webmail | A file in the files of the mailbox, which a patch of the plugin reads | The user uploads no key. The mail server examines the password, so the panel needs no new sign-in and no new password check. The plugin has no access to the sign-in password of the webmail, so it asks for the password one time. |
 | Installation of the plugin | A pinned copy in the image, installed by the start script | Each server has the same reviewed release, with no person in the admin dashboard. The dashboard stays closed on the public host name. A new release of the plugin comes with a new image. |

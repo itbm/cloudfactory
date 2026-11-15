@@ -78,7 +78,7 @@ func set(values ...string) object {
 // call sends one method call and gives its result.
 func (c *Client) call(ctx context.Context, method string, args object) (object, error) {
 	body, err := json.Marshal(object{
-		"using":       []string{"urn:ietf:params:jmap:core", "urn:stalwart:jmap"},
+		"using":       []string{"urn:ietf:params:jmap:core", "urn:stalwart:jmap", "urn:ietf:params:jmap:filenode"},
 		"methodCalls": []any{[]any{method, args, "0"}},
 	})
 	if err != nil {

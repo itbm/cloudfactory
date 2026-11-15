@@ -357,6 +357,12 @@ class MailTest extends TestCase
         $this->assertTrue($job->payload['setEncryption']);
         $this->assertStringStartsWith('-----BEGIN PGP PUBLIC KEY BLOCK-----', $job->payload['publicKey']);
         $this->assertStringNotContainsString('PRIVATE', json_encode($job->payload));
+        // The panel adds the protected private key when it sends the job. The agent writes it
+        // to the files of the mailbox, and the webmail reads it with the password.
+        $file = Mail::keyFileFor($job);
+        $this->assertTrue($file['setKeyFile']);
+        $this->assertStringStartsWith('-----BEGIN PGP PRIVATE KEY BLOCK-----', $file['privateKeys']);
+        $this->assertSame(1, OpenPgpKey::changePassword($file['privateKeys'], 'First-password-123', 'x')['changed']);
         $this->finish($job->id, result: ['encryption' => ['fingerprints' => ['9E1777E56AFB330404EC710E0868736DF95B6518'], 'type' => 'OpenPGP v4: X25519']]);
         $mailbox = Mailbox::firstOrFail();
         $this->assertSame($job->payload['publicKey'], $mailbox->public_key);

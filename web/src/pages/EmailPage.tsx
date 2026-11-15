@@ -636,7 +636,7 @@ function EncryptionDialog({ mailbox, onClose }: { mailbox: Mailbox; onClose: () 
       )}
       {!own && mailbox.privateKey && (
         <div style={{ marginTop: 14 }}>
-          <p>{e ? "The panel made the keys of this mailbox." : "The panel has the private key from the time when the encryption was on. It opens the messages of that time."} To read the encrypted mail, put the private key in a mail program, for example Thunderbird, and give the password of the mailbox.</p>
+          <p>{e ? "The panel made the keys of this mailbox." : "The panel has the private key from the time when the encryption was on. It opens the messages of that time."} The webmail gets the private key by itself: it asks one time for the password of the mailbox. To read the encrypted mail in a mail program, for example Thunderbird, download the private key and give the password of the mailbox.</p>
           {!mailbox.privateKey.passwordCurrent && <p className="text-warning" style={{ marginTop: 6 }}><strong>Warning:</strong> The mailbox got a new password after the panel made the key. The private key has an older password of the mailbox.</p>}
           <div style={{ marginTop: 10 }}><KeyDownload mailboxId={mailbox.id} address={mailbox.address} /></div>
         </div>

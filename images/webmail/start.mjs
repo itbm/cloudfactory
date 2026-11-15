@@ -7,11 +7,13 @@
 // without the plugin, and the log tells why. The next start tries again.
 // SPDX-License-Identifier: AGPL-3.0-only
 import { spawn } from "node:child_process";
-import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 
 const PLUGIN_ID = "pgp-true-end-to-end";
 const PLUGIN_FILE = "/opt/cf-webmail/plugins/pgp-true-end-to-end.zip";
+// The SHA-256 hash of the code of the plugin in the image. The webmail keeps the same hash of
+// the installed code (bundleHash): a different hash is a different plugin.
+const CODE_HASH_FILE = "/opt/cf-webmail/plugins/pgp-true-end-to-end.code.sha256";
 const BASE = `http://127.0.0.1:${process.env.PORT || 3000}`;
 
 const server = spawn(process.execPath, ["server.js"], { stdio: "inherit" });
@@ -75,11 +77,13 @@ async function install() {
   const installed = plugins.find((p) => p.id === PLUGIN_ID);
   // The image sets the version of the plugin that it has.
   const version = process.env.CF_PGP_PLUGIN_VERSION;
-  if (installed && installed.version === version && installed.enabled) {
+  const codeHash = (await readFile(CODE_HASH_FILE, "utf8")).trim();
+  const current = installed && installed.version === version && installed.bundleHash === codeHash;
+  if (current && installed.enabled) {
     log(`the PGP plugin ${installed.version} is installed`);
     return;
   }
-  if (!installed || installed.version !== version) {
+  if (!current) {
     const form = new FormData();
     form.append("file", new Blob([zip], { type: "application/zip" }), `${PLUGIN_ID}.zip`);
     const res = await fetch(`${BASE}/api/admin/plugins`, { method: "POST", headers, body: form });
@@ -92,8 +96,7 @@ async function install() {
     body: JSON.stringify({ id: PLUGIN_ID, enabled: true }),
   });
   if (!res.ok) throw new Error(`activation of the PGP plugin: status ${res.status}`);
-  const sha = createHash("sha256").update(zip).digest("hex");
-  log(`installed the PGP plugin ${version} (package sha256 ${sha})`);
+  log(`installed the PGP plugin ${version} (code sha256 ${codeHash})`);
 }
 
 install().catch((error) => log(`the PGP plugin is not installed: ${error.message}`));

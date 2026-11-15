@@ -348,7 +348,10 @@ There are two methods:
   `PATCH /v1/mail/mailboxes/{id}`). `App\Services\OpenPgpKey` makes an Ed25519 key for
   signatures and a Curve25519 key for encryption. The password of the mailbox protects the
   private key (S2K iterated and salted SHA-256, AES-256). The panel keeps the private key
-  encrypted with the key of the application, and sends only the public key to the agent.
+  encrypted with the key of the application. It sends the public key to the agent in the job.
+  It adds the protected private keys (`setKeyFile`, `privateKeys`) each time that it sends a
+  `SetMailbox` job, so that the job record does not have them. The agent writes them to the
+  file `OpenPGP/private-key.asc` in the files of the mailbox (JMAP `FileNode`).
 - The user gives a public key of their own (`publicKey`). The panel then has no private key.
 
 The user downloads the private key (`GET /v1/mail/mailboxes/{id}/private-key`, or
@@ -410,10 +413,22 @@ requests through for the few paths of the dashboard API that users need: the rul
 webmail (`/api/admin/policy`), the code and the public settings of the plugins, the themes and
 the images of the login page.
 
-The user adds the private key to the plugin one time in each browser: **Settings** >
-**PGP True End-to-End** > **Upload Existing Key**, with the file from the panel and the
-password of the mailbox. The plugin keeps the key encrypted in the browser. It asks for the
-password again to unlock the key, and then decrypts the mail in the browser.
+The build adds `images/webmail/pgp-plugin/provision.js` to the plugin
+(`images/webmail/pgp-plugin/patch.mjs`). The user does not upload a key:
+
+1. When the user signs in, the plugin looks for a public key with the description
+   `CloudFactory` on the mail server. This key tells that the panel made the keys of the
+   mailbox. Without it, the plugin asks nothing.
+2. When the browser has no key for the mailbox, the plugin asks one time for the password of
+   the mailbox.
+3. With that password, the plugin reads `OpenPGP/private-key.asc` through JMAP on the same
+   host name. The mail server examines the password.
+4. The plugin adds the keys that open with the password, keeps them encrypted in the browser,
+   and unlocks them. It then decrypts the mail in the browser.
+
+A key that has an older password of the mailbox does not open. The plugin then tells the user
+to download the key in the panel. In a new session, the plugin asks for the password again
+to unlock the keys, as it does for all keys.
 
 ### Mail clusters
 

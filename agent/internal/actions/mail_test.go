@@ -267,6 +267,26 @@ func TestTheMailJobsCheckTheirValues(t *testing.T) {
 			t.Errorf("%s: %d steps, err %v", name, len(job.Steps), err)
 		}
 	}
+	// The file with the private keys: only private key blocks, and only with set_key_file.
+	private := strings.ReplaceAll(block, "PUBLIC", "PRIVATE")
+	for name, req := range map[string]*agentv1.SetMailboxRequest{
+		"a public key":              {SetKeyFile: true, PrivateKeys: block},
+		"text that is not a key":    {SetKeyFile: true, PrivateKeys: "my key"},
+		"very large keys":           {SetKeyFile: true, PrivateKeys: strings.Repeat(private, mailMaxPrivateKeys/len(private)+1)},
+		"keys that the job drops":   {PrivateKeys: private},
+		"text after the last block": {SetKeyFile: true, PrivateKeys: private + "x"},
+	} {
+		req.Domain, req.LocalPart, req.QuotaBytes = "acme.example.com", "info", 1<<30
+		if _, err := d.SetMailbox(req); err == nil {
+			t.Errorf("SetMailbox accepted %s", name)
+		}
+	}
+	for name, keys := range map[string]string{"one key": private, "two keys": private + private, "no keys": ""} {
+		job, err := d.SetMailbox(&agentv1.SetMailboxRequest{Domain: "acme.example.com", LocalPart: "info", QuotaBytes: 1 << 30, SetKeyFile: true, PrivateKeys: keys})
+		if err != nil || len(job.Steps) != 2 || job.Steps[1].Name != "Write the key file" {
+			t.Errorf("%s: %+v, err %v", name, job.Steps, err)
+		}
+	}
 	many := make([]string, mailMaxDestinations+1)
 	for i := range many {
 		many[i] = "a@example.org"

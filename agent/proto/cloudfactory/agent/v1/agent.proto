@@ -215,6 +215,13 @@ message SetMailboxRequest {
   // encrypts each new message with it before it stores the message. Only the private key,
   // which the server never gets, can decrypt the message. Empty: the encryption is off.
   string public_key = 7;
+  // True: the job writes the file with the private keys to the files of the mailbox. The
+  // panel adds this field each time that it sends the job: the job record does not have it.
+  bool set_key_file = 8;
+  // The private keys that the panel made for the mailbox, in ASCII armour. Each key is
+  // protected with the password of the mailbox. The PGP plugin of the webmail reads the file
+  // with that password. Empty: the job removes the file.
+  string private_keys = 9;
 }
 
 // DeleteMailbox removes a mailbox and its messages. DeleteMailAlias removes an alias or a

@@ -175,8 +175,16 @@ The product specification, section 6.4, gives the requirements.
   the mail server does not open the dashboard.
 - The PGP plugin is a pinned release. The build of the image stops when the package does not
   have the expected SHA-256 hash. Users cannot upload plugins. The plugin runs in the
-  privileged sandbox of Bulwark: it has the same origin as the webmail. The private key stays
-  in the browser, encrypted with the password of the mailbox.
+  privileged sandbox of Bulwark: it has the same origin as the webmail. The build adds
+  `images/webmail/pgp-plugin/provision.js` to the plugin, and the image has no other change
+  to the plugin.
+- The files of each mailbox on the mail server have the private keys that the panel made,
+  each protected with the password of the mailbox. Only the owner of the mailbox and the
+  administrator of the mail server can read the file. A person who gets the data of the mail
+  server also needs the password to use the keys. The keys are not in the job records: the
+  panel adds them each time that it sends the job.
+- The plugin reads the key file with the password of the mailbox. It does not keep the
+  password. It keeps the keys in the browser, encrypted with that password.
 - In a mail cluster, the database and the cluster store listen only on the private network of
   the cluster. Only the members can connect to it, and only root and `cf-mail` can connect to
   the cluster ports on a member. The secrets of the cluster are encrypted in the database of

@@ -921,7 +921,14 @@ type SetMailboxRequest struct {
 	// The OpenPGP public key of the owner of the mailbox, in ASCII armour. The mail server
 	// encrypts each new message with it before it stores the message. Only the private key,
 	// which the server never gets, can decrypt the message. Empty: the encryption is off.
-	PublicKey     string `protobuf:"bytes,7,opt,name=public_key,json=publicKey,proto3" json:"public_key,omitempty"`
+	PublicKey string `protobuf:"bytes,7,opt,name=public_key,json=publicKey,proto3" json:"public_key,omitempty"`
+	// True: the job writes the file with the private keys to the files of the mailbox. The
+	// panel adds this field each time that it sends the job: the job record does not have it.
+	SetKeyFile bool `protobuf:"varint,8,opt,name=set_key_file,json=setKeyFile,proto3" json:"set_key_file,omitempty"`
+	// The private keys that the panel made for the mailbox, in ASCII armour. Each key is
+	// protected with the password of the mailbox. The PGP plugin of the webmail reads the file
+	// with that password. Empty: the job removes the file.
+	PrivateKeys   string `protobuf:"bytes,9,opt,name=private_keys,json=privateKeys,proto3" json:"private_keys,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1001,6 +1008,20 @@ func (x *SetMailboxRequest) GetSetEncryption() bool {
 func (x *SetMailboxRequest) GetPublicKey() string {
 	if x != nil {
 		return x.PublicKey
+	}
+	return ""
+}
+
+func (x *SetMailboxRequest) GetSetKeyFile() bool {
+	if x != nil {
+		return x.SetKeyFile
+	}
+	return false
+}
+
+func (x *SetMailboxRequest) GetPrivateKeys() string {
+	if x != nil {
+		return x.PrivateKeys
 	}
 	return ""
 }
@@ -3374,7 +3395,7 @@ const file_cloudfactory_agent_v1_agent_proto_rawDesc = "" +
 	"\tbootstrap\x18\t \x01(\bR\tbootstrap\"B\n" +
 	"\x11MailDomainRequest\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x16\n" +
-	"\x06domain\x18\x02 \x01(\tR\x06domain\"\xed\x01\n" +
+	"\x06domain\x18\x02 \x01(\tR\x06domain\"\xb2\x02\n" +
 	"\x11SetMailboxRequest\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x16\n" +
 	"\x06domain\x18\x02 \x01(\tR\x06domain\x12\x1d\n" +
@@ -3385,7 +3406,10 @@ const file_cloudfactory_agent_v1_agent_proto_rawDesc = "" +
 	"\rpassword_hash\x18\x05 \x01(\tR\fpasswordHash\x12%\n" +
 	"\x0eset_encryption\x18\x06 \x01(\bR\rsetEncryption\x12\x1d\n" +
 	"\n" +
-	"public_key\x18\a \x01(\tR\tpublicKey\"b\n" +
+	"public_key\x18\a \x01(\tR\tpublicKey\x12 \n" +
+	"\fset_key_file\x18\b \x01(\bR\n" +
+	"setKeyFile\x12!\n" +
+	"\fprivate_keys\x18\t \x01(\tR\vprivateKeys\"b\n" +
 	"\x12MailAddressRequest\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x16\n" +
 	"\x06domain\x18\x02 \x01(\tR\x06domain\x12\x1d\n" +
