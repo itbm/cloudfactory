@@ -211,4 +211,41 @@ describe("the database server of a new database", () => {
     fireEvent.click(screen.getByRole("button", { name: "New database" }));
     expect(within(screen.getByRole("dialog")).getByLabelText("Database server")).toBeTruthy();
   });
+  it("moves a database server to a different server for an administrator only", async () => {
+    await open("owner");
+    expect(actions(row("mariadb-reports")).map((b) => b.textContent)).not.toContain("Move to a different server");
+    cleanup();
+    reset();
+
+    const api = await open("administrator");
+    const id = server("mariadb-reports").id;
+    const web2 = getState().servers.find((s) => s.name === "web-2")!;
+    api.on(`POST /database-servers/${id}/move`, () => [202, {
+      databaseServer: answer("mariadb-reports", { status: "moving", movingToServerId: web2.id }),
+      jobs: [apiJob({ action: "ReceiveDatabaseServer", databaseServerId: id }), apiJob({ action: "SendDatabaseServer", databaseServerId: id })],
+    }]);
+    fireEvent.click(actions(row("mariadb-reports")).find((b) => b.textContent === "Move to a different server")!);
+    const dialog = screen.getByRole("dialog");
+    // The list has the other servers with the web role. A healthy server is first.
+    const options = within(dialog).getAllByRole("option").map((o) => o.textContent);
+    expect(options).not.toContain("web-1");
+    expect((within(dialog).getByLabelText("New server") as HTMLSelectElement).value).toBe(web2.id);
+    // The user reads that an app must use the network name.
+    expect(dialog.textContent).toContain("mariadb-reports.internal:3306");
+    expect(dialog.textContent).toContain("An app that uses mariadb.internal:3307 loses the connection.");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Move database server" }));
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(api.changes.at(-1)).toEqual({ method: "POST", path: `/database-servers/${id}/move`, body: { serverId: web2.id } });
+  });
+
+  it("shows a database server that moves, with no actions", async () => {
+    await signedIn("administrator");
+    const web2 = getState().servers.find((s) => s.name === "web-2")!;
+    Object.assign(server("mariadb-reports"), { status: "moving", movingToServerId: web2.id });
+    render(<MemoryRouter><DatabaseServersPanel /></MemoryRouter>);
+    expect(row("mariadb-reports").textContent).toContain("Moving");
+    expect(row("mariadb-reports").textContent).toContain("To web-2");
+    expect(within(row("mariadb-reports")).queryByRole("button", { name: /^Actions for/ })).toBeNull();
+  });
 });

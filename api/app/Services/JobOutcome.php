@@ -171,6 +171,8 @@ class JobOutcome
             AgentAction::DeleteDatabase => $website && $this->databaseRemoved($website, $p) && $this->continueRemoval($website, $p),
             // The panel removes the record when the database server is gone from the server.
             AgentAction::DeleteDatabaseServer => $this->databaseServerRemoved($job),
+            // The database server operates on the new server.
+            AgentAction::ReceiveDatabaseServer => $this->databaseServerMoved($job, $p),
             AgentAction::DeleteDatabaseUser => $website && ($website->databaseUsers()->where(['engine' => $p['engine'] ?? '', 'name' => $p['name'] ?? ''])->delete() || true) && $this->continueRemoval($website, $p),
             AgentAction::InstallHostUpdates => $job->server->update([
                 'pending_updates' => self::updatesLeft($job->server->pending_updates ?? [], (string) ($p['policy'] ?? 'security')),
@@ -221,6 +223,8 @@ class JobOutcome
             AgentAction::SetDatabaseServer => $this->databaseServerKept($job, $p),
             // The database server is on the server still.
             AgentAction::DeleteDatabaseServer => $this->databaseServerStays($job, $p),
+            // The database server stays on the old server.
+            AgentAction::ReceiveDatabaseServer => $this->databaseServerNotMoved($job, $p),
             default => null,
         };
     }
@@ -229,6 +233,56 @@ class JobOutcome
     private function databaseServerRemoved(AgentJob $job): void
     {
         DatabaseServer::whereKey($job->database_server_id)->where('status', DatabaseServer::REMOVING)->delete();
+        Mesh::refreshLater();
+    }
+
+    /**
+     * The new server received the data of a database server, and the database server operates
+     * there. The panel records the new server and the new port, and the old server removes its
+     * copy. The network address stays, so the tunnels now take the traffic to the new server.
+     *
+     * @param  array<string, mixed>  $p
+     */
+    private function databaseServerMoved(AgentJob $job, array $p): void
+    {
+        $server = DatabaseServer::whereKey($job->database_server_id)->where('status', DatabaseServer::MOVING)
+            ->where('moving_to_server_id', $job->server_id)->first();
+        if (! $server) {
+            return;
+        }
+        $from = $server->server;
+        $server->update([
+            'server_id' => $job->server_id,
+            'port' => (int) ($p['databaseServer']['port'] ?? $server->port),
+            'status' => DatabaseServer::RUNNING,
+            'moving_to_server_id' => null,
+        ]);
+        app(JobDispatcher::class)->dispatch($from, AgentAction::DeleteDatabaseServer, ['databaseServer' => $server->id, 'moved' => true],
+            "Remove the old copy of database server {$server->name}", databaseServer: $server);
+        Mesh::refreshLater();
+    }
+
+    /**
+     * The new server could not receive or start a database server. The database server
+     * operates on the old server: the old server starts it again when it could not send the
+     * data, and this job starts it when the data went to the new server. The new server
+     * removes what it received.
+     *
+     * @param  array<string, mixed>  $p
+     */
+    private function databaseServerNotMoved(AgentJob $job, array $p): void
+    {
+        $server = DatabaseServer::whereKey($job->database_server_id)->where('status', DatabaseServer::MOVING)
+            ->where('moving_to_server_id', $job->server_id)->first();
+        if (! $server) {
+            return;
+        }
+        $server->update(['status' => DatabaseServer::RUNNING, 'moving_to_server_id' => null]);
+        $jobs = app(JobDispatcher::class);
+        $jobs->dispatch($server->server, AgentAction::SetDatabaseServer, ['databaseServer' => $server->forAgent()],
+            "Start database server {$server->name} again", databaseServer: $server);
+        $jobs->dispatch($job->server, AgentAction::DeleteDatabaseServer, ['databaseServer' => $server->id, 'moved' => true],
+            "Remove the incomplete copy of database server {$server->name}", databaseServer: $server);
         Mesh::refreshLater();
     }
 
@@ -434,7 +488,7 @@ class JobOutcome
 
     private static function withoutPasswords(array $payload): array
     {
-        unset($payload['password']);
+        unset($payload['password'], $payload['token']);
         // The DNS servers have the DNSSEC keys now. The zone keeps its key.
         if (is_array($payload['zones'] ?? null)) {
             $payload['zones'] = array_map(fn ($z) => is_array($z) ? array_diff_key($z, ['dnssecKey' => true]) : $z, $payload['zones']);

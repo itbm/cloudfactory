@@ -607,6 +607,18 @@ export function retryDatabaseServer(serverId: string): Promise<void> {
   });
 }
 
+/**
+ * Moves a database server to a different server. Only an administrator. The data goes through
+ * the tunnel between the two servers, and the database server keeps its name and its address.
+ */
+export function moveDatabaseServer(id: string, serverId: string): Promise<void> {
+  return call(async () => {
+    const r = await live.request<{ databaseServer: live.ApiDatabaseServer; jobs: live.ApiJob[] }>("POST", `/database-servers/${id}/move`, { serverId });
+    putDatabaseServer(r.databaseServer);
+    void Promise.all(r.jobs.map((j) => track(j))).then(() => refresh());
+  });
+}
+
 /** Removes a database server that has no databases and no users. The server removes its data. */
 export function deleteDatabaseServer(serverId: string): Promise<void> {
   return call(async () => {

@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Customer;
+use App\Models\Database;
 use App\Models\DatabaseServer;
 use App\Models\Network;
 use App\Models\NetworkMember;
@@ -117,6 +118,25 @@ class Networks
                 ->where('w.website_id', $pair->website_id)->where('d.database_server_id', $pair->database_server_id)->exists();
             if (! $joined) {
                 throw ValidationException::withMessages(['network' => "The website {$pair->website} has a database in the database server {$pair->database_server} on a different server. Keep the two in one network, or remove the database first."]);
+            }
+        }
+    }
+
+    /**
+     * After a move, each website with a database in the database server that is not on the
+     * new server connects through a network. The two must be in one network before the move.
+     *
+     * @throws ValidationException
+     */
+    public static function checkMove(DatabaseServer $server, Server $to): void
+    {
+        $websites = Website::whereIn('id', Database::where('database_server_id', $server->id)->whereNotNull('website_id')->select('website_id'))
+            ->where('server_id', '!=', $to->id)->orderBy('name')->get(['id', 'name']);
+        $members = NetworkMember::whereIn('network_id', NetworkMember::where('database_server_id', $server->id)->select('network_id'))
+            ->whereNotNull('website_id')->pluck('website_id')->flip();
+        foreach ($websites as $website) {
+            if (! $members->has($website->id)) {
+                throw ValidationException::withMessages(['serverId' => "The website {$website->name} has a database in this database server, and it is not on the new server. Put the website and the database server in one network first."]);
             }
         }
     }
@@ -284,6 +304,33 @@ class Networks
     }
 
     /**
+     * The links of one server: the links of its websites and the links to its members, in the
+     * order of links(). Mesh::refresh calculates the states of all servers, so the panel
+     * groups the links one time for all servers.
+     *
+     * @return list<object>
+     */
+    private static function linksOf(string $serverId): array
+    {
+        $links = self::links();
+        if (self::$index === null || self::$index[0] !== $links) {
+            $map = [];
+            foreach ($links as $link) {
+                $map[$link->website_server_id][] = $link;
+                if ($link->server_id !== $link->website_server_id) {
+                    $map[$link->server_id][] = $link;
+                }
+            }
+            self::$index = [$links, $map];
+        }
+
+        return self::$index[1][$serverId] ?? [];
+    }
+
+    /** @var array{0: Collection, 1: array<string, list<object>>}|null The links of links() by server. */
+    private static ?array $index = null;
+
+    /**
      * True when a website can connect to a database server on a different server: the two are
      * in one network, and the agents of the two servers can operate network members.
      */
@@ -334,6 +381,13 @@ class Networks
                 $pairs[implode(' ', $pair)] = $pair;
             }
         }
+        // A database server that moves goes through the tunnel between its old server and its
+        // new server.
+        foreach (DatabaseServer::where('status', DatabaseServer::MOVING)->whereNotNull('moving_to_server_id')->get(['server_id', 'moving_to_server_id']) as $move) {
+            $pair = [$move->server_id, $move->moving_to_server_id];
+            sort($pair);
+            $pairs[implode(' ', $pair)] = $pair;
+        }
 
         return $pairs;
     }
@@ -368,7 +422,7 @@ class Networks
             return $addresses[$link->member_id] ??= $link->mesh_address
                 ?? self::addressFor($link->kind === 'website' ? Website::findOrFail($link->member_id) : DatabaseServer::findOrFail($link->member_id));
         };
-        foreach (self::links() as $link) {
+        foreach (self::linksOf($server->id) as $link) {
             $local = $link->server_id === $server->id;
             $here = $link->website_server_id === $server->id;
             if ((! $local && ! $here) || ! self::usable($link, $servers)) {

@@ -364,7 +364,8 @@ export function RowMenu({ label, actions }: { label: string; actions: RowAction[
     window.addEventListener("resize", away);
     window.addEventListener("scroll", away, true);
     // The first action gets the focus, so that the arrow keys and Tab work in the menu.
-    ref.current?.querySelector<HTMLButtonElement>('[role="menuitem"]:not(:disabled)')?.focus();
+    // With no scroll: the table frame would scroll to the menu, and a scroll closes the menu.
+    ref.current?.querySelector<HTMLButtonElement>('[role="menuitem"]:not(:disabled)')?.focus({ preventScroll: true });
     return () => {
       document.removeEventListener("mousedown", close);
       document.removeEventListener("keydown", esc);

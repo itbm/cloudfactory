@@ -595,6 +595,16 @@ through the internet, so the design assumes that a person can read and change ea
   customer. It does not replace the separation between customers, which does not depend on
   the networks. The names of the engines stay open between a website and the database
   servers of its customer on the same server.
+- **The move of a database server.** The data of a database server that moves goes through
+  the tunnel between its old server and its new server, never through the panel. Only the
+  root helpers send and receive it: the worker cannot connect to the mesh range and cannot
+  read the data. The new server opens TCP port 7445 on its mesh address only for the mesh
+  address of the old server, and only for the time of the move. It accepts a connection only
+  with the token of the move: 32 random bytes from the panel, which the panel removes from
+  the jobs when they end. The root helper refuses a peer that is not in its mesh state, a
+  path outside the data directory, a hard link, a device file and a secret that is not of
+  the engine. It writes each file with the owner of the database server, and it applies the
+  disk limit of the database server.
 - **Checks of the state.** The worker and the root helper examine each value of the state
   from the panel: the range is a private IPv4 network, each mesh address is in the range,
   each tunnel address is a public IP address, and each key has the correct form. The root

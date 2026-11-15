@@ -399,7 +399,7 @@ export interface DatabaseLimits {
  * starting: the panel makes the database server. failed: the panel could not make it.
  * removing: the panel removes it, and it gets no new database.
  */
-export type DatabaseServerStatus = "starting" | "running" | "stopped" | "failed" | "removing";
+export type DatabaseServerStatus = "starting" | "running" | "stopped" | "failed" | "moving" | "removing";
 
 /**
  * A database server of a customer: one container with one engine and its own limits. All the
@@ -412,6 +412,8 @@ export interface DatabaseServer {
   customerId: string;
   /** The server that has the container. */
   serverId: string;
+  /** The server that receives the database server, while its status is "moving". */
+  movingToServerId?: string | null;
   /** The plan gives the limits and the number of databases. */
   planId: string;
   status: DatabaseServerStatus;

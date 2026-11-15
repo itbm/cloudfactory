@@ -13,6 +13,7 @@ use App\Models\NetworkMember;
 use App\Models\Server;
 use App\Services\JobOutcome;
 use App\Services\Mesh;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
@@ -318,5 +319,26 @@ class NetworkTest extends TestCase
         $this->assertDatabaseHas('network_members', ['network_id' => $network->id, 'website_id' => $website->id]);
         $this->assertDatabaseHas('network_members', ['network_id' => $network->id, 'database_server_id' => $database->id]);
         $this->assertSame(0, Network::where('customer_id', $empty->id)->count());
+    }
+
+    public function test_a_rollback_does_not_stop_the_next_refresh(): void
+    {
+        $web = $this->networkServer('web-1', '203.0.113.1');
+        $db = $this->networkServer('db-1', '203.0.113.2');
+        $customer = $this->customer();
+        $local = $this->website($customer, $db, $this->image(), 'api.acme.example');
+        try {
+            DB::transaction(function () use ($customer, $web) {
+                $this->website($customer, $web, $this->image());
+                throw new \RuntimeException('stop');
+            });
+        } catch (\RuntimeException) {
+        }
+        $this->assertSame(0, MeshTunnel::count());
+
+        // The refresh of the rolled-back change did not happen. The next change gets its own.
+        $this->website($customer, $web, $this->image());
+        $this->databaseServerOf($local, 'mariadb', ['name' => 'orders']);
+        $this->assertSame(1, MeshTunnel::count());
     }
 }

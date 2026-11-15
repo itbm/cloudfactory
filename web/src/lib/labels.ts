@@ -131,6 +131,7 @@ export const DATABASE_SERVER_STATUS: Record<DatabaseServerStatus, { label: strin
   running: { label: "Running", tone: "success" },
   stopped: { label: "Stopped", tone: "neutral" },
   failed: { label: "Failed", tone: "danger" },
+  moving: { label: "Moving", tone: "info" },
   removing: { label: "Removing", tone: "info" },
 };
 

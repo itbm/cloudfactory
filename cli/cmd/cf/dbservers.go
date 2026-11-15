@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -92,6 +93,48 @@ func (a *app) serverID(ctx context.Context, ref string) (string, error) {
 		return "", err
 	}
 	return fmt.Sprint(s["id"]), nil
+}
+
+// moveDatabaseServer moves a database server to a different server. The new server receives
+// the data through the tunnel, and the old server sends it. The command waits for the job of
+// the new server: the move is complete when the database server operates there.
+func (a *app) moveDatabaseServer(ctx context.Context, s map[string]any, path string, args []string) error {
+	fs := flag.NewFlagSet("move", flag.ContinueOnError)
+	to := fs.String("server", "", "the server that gets the database server: a name or an ID")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *to == "" {
+		return errors.New("give the new server with --server SERVER")
+	}
+	id, err := a.serverID(ctx, *to)
+	if err != nil {
+		return err
+	}
+	var out struct {
+		Jobs []client.Job `json:"jobs"`
+	}
+	var raw map[string]json.RawMessage
+	if err := a.api.Do(ctx, http.MethodPost, path+"/move", nil, map[string]any{"serverId": id}, &raw); err != nil {
+		return err
+	}
+	if a.json {
+		return a.printJSON(raw)
+	}
+	json.Unmarshal(raw["jobs"], &out.Jobs)
+	fmt.Fprintf(a.out, "Database server %s moves to %s. It does not operate while its data moves.\n", cell(s["name"]), *to)
+	if len(out.Jobs) == 0 {
+		return nil
+	}
+	if a.noWait {
+		for _, j := range out.Jobs {
+			fmt.Fprintf(a.out, "Job %s is in the queue: %s\n", j.ID, j.Title)
+		}
+		return nil
+	}
+	// The first job is the job of the new server. It ends after the data arrived and the
+	// database server started.
+	return a.wait(ctx, out.Jobs[0].ID)
 }
 
 // databaseServerLimits reads --vcpus, --memory-mb and --disk-gb. The API needs the three
@@ -200,7 +243,7 @@ func (a *app) databaseServers(ctx context.Context, sub string, args []string) er
 			body["limits"] = limits
 		}
 		return a.change(ctx, http.MethodPost, "/database-servers", body)
-	case "get", "set", "retry", "delete", "rm":
+	case "get", "set", "retry", "move", "delete", "rm":
 		if err := need(args, 1, "a database server"); err != nil {
 			return err
 		}
@@ -226,6 +269,8 @@ func (a *app) databaseServers(ctx context.Context, sub string, args []string) er
 			return nil
 		case "retry":
 			return a.change(ctx, http.MethodPost, path+"/retry", nil)
+		case "move":
+			return a.moveDatabaseServer(ctx, s, path, args[1:])
 		case "delete", "rm":
 			return a.change(ctx, http.MethodDelete, path, nil)
 		}

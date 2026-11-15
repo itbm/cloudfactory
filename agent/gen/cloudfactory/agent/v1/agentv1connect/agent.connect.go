@@ -122,6 +122,12 @@ const (
 	// AgentServiceRotateMeshKeyProcedure is the fully-qualified name of the AgentService's
 	// RotateMeshKey RPC.
 	AgentServiceRotateMeshKeyProcedure = "/cloudfactory.agent.v1.AgentService/RotateMeshKey"
+	// AgentServiceSendDatabaseServerProcedure is the fully-qualified name of the AgentService's
+	// SendDatabaseServer RPC.
+	AgentServiceSendDatabaseServerProcedure = "/cloudfactory.agent.v1.AgentService/SendDatabaseServer"
+	// AgentServiceReceiveDatabaseServerProcedure is the fully-qualified name of the AgentService's
+	// ReceiveDatabaseServer RPC.
+	AgentServiceReceiveDatabaseServerProcedure = "/cloudfactory.agent.v1.AgentService/ReceiveDatabaseServer"
 	// AgentServiceGetStatusProcedure is the fully-qualified name of the AgentService's GetStatus RPC.
 	AgentServiceGetStatusProcedure = "/cloudfactory.agent.v1.AgentService/GetStatus"
 	// AgentServiceListFilesProcedure is the fully-qualified name of the AgentService's ListFiles RPC.
@@ -173,6 +179,8 @@ type AgentServiceClient interface {
 	ActivateRelease(context.Context, *connect.Request[v1.ActivateReleaseRequest]) (*connect.Response[v1.JobAccepted], error)
 	SetMesh(context.Context, *connect.Request[v1.SetMeshRequest]) (*connect.Response[v1.JobAccepted], error)
 	RotateMeshKey(context.Context, *connect.Request[v1.RotateMeshKeyRequest]) (*connect.Response[v1.JobAccepted], error)
+	SendDatabaseServer(context.Context, *connect.Request[v1.SendDatabaseServerRequest]) (*connect.Response[v1.JobAccepted], error)
+	ReceiveDatabaseServer(context.Context, *connect.Request[v1.ReceiveDatabaseServerRequest]) (*connect.Response[v1.JobAccepted], error)
 	// Returns the actual state of the server at once. This method does not make a job.
 	GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.HostStatus], error)
 	// The file manager and the logs of a website. These methods do not make a job: they give
@@ -378,6 +386,18 @@ func NewAgentServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(agentServiceMethods.ByName("RotateMeshKey")),
 			connect.WithClientOptions(opts...),
 		),
+		sendDatabaseServer: connect.NewClient[v1.SendDatabaseServerRequest, v1.JobAccepted](
+			httpClient,
+			baseURL+AgentServiceSendDatabaseServerProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("SendDatabaseServer")),
+			connect.WithClientOptions(opts...),
+		),
+		receiveDatabaseServer: connect.NewClient[v1.ReceiveDatabaseServerRequest, v1.JobAccepted](
+			httpClient,
+			baseURL+AgentServiceReceiveDatabaseServerProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("ReceiveDatabaseServer")),
+			connect.WithClientOptions(opts...),
+		),
 		getStatus: connect.NewClient[v1.GetStatusRequest, v1.HostStatus](
 			httpClient,
 			baseURL+AgentServiceGetStatusProcedure,
@@ -431,44 +451,46 @@ func NewAgentServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 
 // agentServiceClient implements AgentServiceClient.
 type agentServiceClient struct {
-	createWebsite        *connect.Client[v1.WebsiteRequest, v1.JobAccepted]
-	deleteWebsite        *connect.Client[v1.DeleteWebsiteRequest, v1.JobAccepted]
-	setWebsitePower      *connect.Client[v1.SetWebsitePowerRequest, v1.JobAccepted]
-	setLimits            *connect.Client[v1.SetLimitsRequest, v1.JobAccepted]
-	setRuntime           *connect.Client[v1.WebsiteRequest, v1.JobAccepted]
-	addDomain            *connect.Client[v1.DomainRequest, v1.JobAccepted]
-	removeDomain         *connect.Client[v1.DomainRequest, v1.JobAccepted]
-	createDatabase       *connect.Client[v1.CreateDatabaseRequest, v1.JobAccepted]
-	deleteDatabase       *connect.Client[v1.DeleteDatabaseRequest, v1.JobAccepted]
-	setDatabaseUser      *connect.Client[v1.SetDatabaseUserRequest, v1.JobAccepted]
-	deleteDatabaseUser   *connect.Client[v1.DeleteDatabaseUserRequest, v1.JobAccepted]
-	backup               *connect.Client[v1.BackupRequest, v1.JobAccepted]
-	restore              *connect.Client[v1.RestoreRequest, v1.JobAccepted]
-	installHostUpdates   *connect.Client[v1.HostRequest, v1.JobAccepted]
-	reboot               *connect.Client[v1.HostRequest, v1.JobAccepted]
-	updateAgent          *connect.Client[v1.UpdateAgentRequest, v1.JobAccepted]
-	pruneBackups         *connect.Client[v1.PruneBackupsRequest, v1.JobAccepted]
-	setSftp              *connect.Client[v1.SetSftpRequest, v1.JobAccepted]
-	configureHost        *connect.Client[v1.ConfigureHostRequest, v1.JobAccepted]
-	setPanelCertificate  *connect.Client[v1.SetPanelCertificateRequest, v1.JobAccepted]
-	setDatabaseServer    *connect.Client[v1.DatabaseServerRequest, v1.JobAccepted]
-	deleteDatabaseServer *connect.Client[v1.DeleteDatabaseServerRequest, v1.JobAccepted]
-	setDnsZones          *connect.Client[v1.SetDnsZonesRequest, v1.JobAccepted]
-	deleteDnsZones       *connect.Client[v1.DeleteDnsZonesRequest, v1.JobAccepted]
-	setCronJobs          *connect.Client[v1.SetCronJobsRequest, v1.JobAccepted]
-	runCronJob           *connect.Client[v1.RunCronJobRequest, v1.JobAccepted]
-	deploy               *connect.Client[v1.DeployRequest, v1.JobAccepted]
-	activateRelease      *connect.Client[v1.ActivateReleaseRequest, v1.JobAccepted]
-	setMesh              *connect.Client[v1.SetMeshRequest, v1.JobAccepted]
-	rotateMeshKey        *connect.Client[v1.RotateMeshKeyRequest, v1.JobAccepted]
-	getStatus            *connect.Client[v1.GetStatusRequest, v1.HostStatus]
-	listFiles            *connect.Client[v1.FileRequest, v1.FileList]
-	readFile             *connect.Client[v1.FileRequest, v1.FileContent]
-	writeFile            *connect.Client[v1.WriteFileRequest, v1.FileEntry]
-	makeDirectory        *connect.Client[v1.FileRequest, v1.FileEntry]
-	moveFile             *connect.Client[v1.MoveFileRequest, v1.FileEntry]
-	deleteFile           *connect.Client[v1.FileRequest, v1.FileDeleted]
-	getLogs              *connect.Client[v1.GetLogsRequest, v1.Logs]
+	createWebsite         *connect.Client[v1.WebsiteRequest, v1.JobAccepted]
+	deleteWebsite         *connect.Client[v1.DeleteWebsiteRequest, v1.JobAccepted]
+	setWebsitePower       *connect.Client[v1.SetWebsitePowerRequest, v1.JobAccepted]
+	setLimits             *connect.Client[v1.SetLimitsRequest, v1.JobAccepted]
+	setRuntime            *connect.Client[v1.WebsiteRequest, v1.JobAccepted]
+	addDomain             *connect.Client[v1.DomainRequest, v1.JobAccepted]
+	removeDomain          *connect.Client[v1.DomainRequest, v1.JobAccepted]
+	createDatabase        *connect.Client[v1.CreateDatabaseRequest, v1.JobAccepted]
+	deleteDatabase        *connect.Client[v1.DeleteDatabaseRequest, v1.JobAccepted]
+	setDatabaseUser       *connect.Client[v1.SetDatabaseUserRequest, v1.JobAccepted]
+	deleteDatabaseUser    *connect.Client[v1.DeleteDatabaseUserRequest, v1.JobAccepted]
+	backup                *connect.Client[v1.BackupRequest, v1.JobAccepted]
+	restore               *connect.Client[v1.RestoreRequest, v1.JobAccepted]
+	installHostUpdates    *connect.Client[v1.HostRequest, v1.JobAccepted]
+	reboot                *connect.Client[v1.HostRequest, v1.JobAccepted]
+	updateAgent           *connect.Client[v1.UpdateAgentRequest, v1.JobAccepted]
+	pruneBackups          *connect.Client[v1.PruneBackupsRequest, v1.JobAccepted]
+	setSftp               *connect.Client[v1.SetSftpRequest, v1.JobAccepted]
+	configureHost         *connect.Client[v1.ConfigureHostRequest, v1.JobAccepted]
+	setPanelCertificate   *connect.Client[v1.SetPanelCertificateRequest, v1.JobAccepted]
+	setDatabaseServer     *connect.Client[v1.DatabaseServerRequest, v1.JobAccepted]
+	deleteDatabaseServer  *connect.Client[v1.DeleteDatabaseServerRequest, v1.JobAccepted]
+	setDnsZones           *connect.Client[v1.SetDnsZonesRequest, v1.JobAccepted]
+	deleteDnsZones        *connect.Client[v1.DeleteDnsZonesRequest, v1.JobAccepted]
+	setCronJobs           *connect.Client[v1.SetCronJobsRequest, v1.JobAccepted]
+	runCronJob            *connect.Client[v1.RunCronJobRequest, v1.JobAccepted]
+	deploy                *connect.Client[v1.DeployRequest, v1.JobAccepted]
+	activateRelease       *connect.Client[v1.ActivateReleaseRequest, v1.JobAccepted]
+	setMesh               *connect.Client[v1.SetMeshRequest, v1.JobAccepted]
+	rotateMeshKey         *connect.Client[v1.RotateMeshKeyRequest, v1.JobAccepted]
+	sendDatabaseServer    *connect.Client[v1.SendDatabaseServerRequest, v1.JobAccepted]
+	receiveDatabaseServer *connect.Client[v1.ReceiveDatabaseServerRequest, v1.JobAccepted]
+	getStatus             *connect.Client[v1.GetStatusRequest, v1.HostStatus]
+	listFiles             *connect.Client[v1.FileRequest, v1.FileList]
+	readFile              *connect.Client[v1.FileRequest, v1.FileContent]
+	writeFile             *connect.Client[v1.WriteFileRequest, v1.FileEntry]
+	makeDirectory         *connect.Client[v1.FileRequest, v1.FileEntry]
+	moveFile              *connect.Client[v1.MoveFileRequest, v1.FileEntry]
+	deleteFile            *connect.Client[v1.FileRequest, v1.FileDeleted]
+	getLogs               *connect.Client[v1.GetLogsRequest, v1.Logs]
 }
 
 // CreateWebsite calls cloudfactory.agent.v1.AgentService.CreateWebsite.
@@ -621,6 +643,16 @@ func (c *agentServiceClient) RotateMeshKey(ctx context.Context, req *connect.Req
 	return c.rotateMeshKey.CallUnary(ctx, req)
 }
 
+// SendDatabaseServer calls cloudfactory.agent.v1.AgentService.SendDatabaseServer.
+func (c *agentServiceClient) SendDatabaseServer(ctx context.Context, req *connect.Request[v1.SendDatabaseServerRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return c.sendDatabaseServer.CallUnary(ctx, req)
+}
+
+// ReceiveDatabaseServer calls cloudfactory.agent.v1.AgentService.ReceiveDatabaseServer.
+func (c *agentServiceClient) ReceiveDatabaseServer(ctx context.Context, req *connect.Request[v1.ReceiveDatabaseServerRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return c.receiveDatabaseServer.CallUnary(ctx, req)
+}
+
 // GetStatus calls cloudfactory.agent.v1.AgentService.GetStatus.
 func (c *agentServiceClient) GetStatus(ctx context.Context, req *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.HostStatus], error) {
 	return c.getStatus.CallUnary(ctx, req)
@@ -693,6 +725,8 @@ type AgentServiceHandler interface {
 	ActivateRelease(context.Context, *connect.Request[v1.ActivateReleaseRequest]) (*connect.Response[v1.JobAccepted], error)
 	SetMesh(context.Context, *connect.Request[v1.SetMeshRequest]) (*connect.Response[v1.JobAccepted], error)
 	RotateMeshKey(context.Context, *connect.Request[v1.RotateMeshKeyRequest]) (*connect.Response[v1.JobAccepted], error)
+	SendDatabaseServer(context.Context, *connect.Request[v1.SendDatabaseServerRequest]) (*connect.Response[v1.JobAccepted], error)
+	ReceiveDatabaseServer(context.Context, *connect.Request[v1.ReceiveDatabaseServerRequest]) (*connect.Response[v1.JobAccepted], error)
 	// Returns the actual state of the server at once. This method does not make a job.
 	GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.HostStatus], error)
 	// The file manager and the logs of a website. These methods do not make a job: they give
@@ -894,6 +928,18 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(agentServiceMethods.ByName("RotateMeshKey")),
 		connect.WithHandlerOptions(opts...),
 	)
+	agentServiceSendDatabaseServerHandler := connect.NewUnaryHandler(
+		AgentServiceSendDatabaseServerProcedure,
+		svc.SendDatabaseServer,
+		connect.WithSchema(agentServiceMethods.ByName("SendDatabaseServer")),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentServiceReceiveDatabaseServerHandler := connect.NewUnaryHandler(
+		AgentServiceReceiveDatabaseServerProcedure,
+		svc.ReceiveDatabaseServer,
+		connect.WithSchema(agentServiceMethods.ByName("ReceiveDatabaseServer")),
+		connect.WithHandlerOptions(opts...),
+	)
 	agentServiceGetStatusHandler := connect.NewUnaryHandler(
 		AgentServiceGetStatusProcedure,
 		svc.GetStatus,
@@ -1004,6 +1050,10 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 			agentServiceSetMeshHandler.ServeHTTP(w, r)
 		case AgentServiceRotateMeshKeyProcedure:
 			agentServiceRotateMeshKeyHandler.ServeHTTP(w, r)
+		case AgentServiceSendDatabaseServerProcedure:
+			agentServiceSendDatabaseServerHandler.ServeHTTP(w, r)
+		case AgentServiceReceiveDatabaseServerProcedure:
+			agentServiceReceiveDatabaseServerHandler.ServeHTTP(w, r)
 		case AgentServiceGetStatusProcedure:
 			agentServiceGetStatusHandler.ServeHTTP(w, r)
 		case AgentServiceListFilesProcedure:
@@ -1147,6 +1197,14 @@ func (UnimplementedAgentServiceHandler) SetMesh(context.Context, *connect.Reques
 
 func (UnimplementedAgentServiceHandler) RotateMeshKey(context.Context, *connect.Request[v1.RotateMeshKeyRequest]) (*connect.Response[v1.JobAccepted], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.RotateMeshKey is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) SendDatabaseServer(context.Context, *connect.Request[v1.SendDatabaseServerRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.SendDatabaseServer is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) ReceiveDatabaseServer(context.Context, *connect.Request[v1.ReceiveDatabaseServerRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.ReceiveDatabaseServer is not implemented"))
 }
 
 func (UnimplementedAgentServiceHandler) GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.HostStatus], error) {

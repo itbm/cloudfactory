@@ -1035,6 +1035,58 @@ the database servers of the customer on the server of the website, where each da
 server has its own port. A database server cannot have the name `mariadb`, `postgres`,
 `valkey` or `localhost`.
 
+### Move a database server
+
+An administrator can move a database server to a different server. The database server
+keeps its ID, its name, its databases, its users, its network name and its member address.
+Thus a website that uses the network name continues to connect to it after the move. The
+traffic of the websites goes to the new server through the tunnels.
+
+The data goes through the WireGuard tunnel between the two servers:
+
+1. The panel makes a token of 32 random bytes and the tunnel between the two servers. It
+   sends `ReceiveDatabaseServer` to the new server and then `SendDatabaseServer` to the old
+   server. The two jobs have the token.
+2. The new server makes the Unix user, the disk and the unit of the database server. It does
+   not start it. Its firewall lets the mesh address of the old server connect to TCP port
+   7445 on the mesh address of the new server, only for the time of the move (the set
+   `mesh_transfers`).
+3. The old server stops the database server. Its root helper connects from its mesh address
+   and sends the token, and then one tar stream: the secret of the superuser and the files of
+   the data directory.
+4. The root helper of the new server compares the token, writes the files with the owner of
+   the database server, and answers `ok`. Then the new server starts the database server.
+5. The panel records the new server and the new port for the engine name, and the old server
+   removes its copy. The member address is now on the new server, so the next mesh state
+   sends the traffic of the websites there.
+
+When the move fails, the database server stays on the old server. The old server starts it
+again, and the new server removes what it received. The old server keeps its data until the
+new server operates the database server.
+
+- The database server does not operate while the data moves. The time depends on the size of
+  the data and the speed of the connection between the servers.
+- A website on a different server connects only with the network name. So, before the move,
+  each website with a database in the database server must be on the new server, or in a
+  network with the database server. The panel refuses the move when this is not true.
+- The engine name (for example `mariadb.internal`) works only on the server of the database
+  server. An app that uses it on the old server loses the connection. The panel warns about
+  this before the move.
+- Both agents must report that they can move database servers (`moves` in the mesh part of
+  the status report, `servers.mesh_moves` in the panel).
+
+The administrator moves a database server in the list of the database servers (**Move to a
+different server**), with `cf database-servers move DATABASE_SERVER --server SERVER`, or with
+`POST /v1/database-servers/{id}/move`.
+
+### Reference size
+
+The test `api/tests/Feature/NetworkScaleTest.php` makes a panel with 20 servers, 100 websites
+and 20 database servers of one customer in the network `default`. That is 190 tunnels and
+120 members. The panel makes all states in less than 30 seconds, and the mesh state of one
+server is less than 256 KB. After one change, the panel makes the new states in less than 5
+seconds.
+
 ### A website with no public address
 
 A website has one of three kinds. Each kind is a website of the plan of the customer.

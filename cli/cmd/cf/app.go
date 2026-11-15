@@ -78,6 +78,10 @@ Usage:
   cf database-servers set DATABASE_SERVER [--name NAME] [--plan ID] [--vcpus N] [--memory-mb N] [--disk-gb N]
                                                        New limits restart the database server.
   cf database-servers retry DATABASE_SERVER            Make a database server again after the first job failed.
+  cf database-servers move DATABASE_SERVER --server SERVER
+                                                       Move a database server to a different server. Only an administrator.
+                                                       It keeps its name and its network name. It does not operate while its
+                                                       data moves through the tunnel between the two servers.
   cf database-servers delete DATABASE_SERVER           Remove a database server that has no databases.
   cf databases list WEBSITE
   cf databases create WEBSITE --engine mariadb|postgresql|valkey --name NAME [--no-user] [--database-server DATABASE_SERVER]

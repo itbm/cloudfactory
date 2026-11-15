@@ -44,6 +44,8 @@ service AgentService {
   rpc ActivateRelease(ActivateReleaseRequest) returns (JobAccepted);
   rpc SetMesh(SetMeshRequest) returns (JobAccepted);
   rpc RotateMeshKey(RotateMeshKeyRequest) returns (JobAccepted);
+  rpc SendDatabaseServer(SendDatabaseServerRequest) returns (JobAccepted);
+  rpc ReceiveDatabaseServer(ReceiveDatabaseServerRequest) returns (JobAccepted);
 
   // Returns the actual state of the server at once. This method does not make a job.
   rpc GetStatus(GetStatusRequest) returns (HostStatus);
@@ -485,6 +487,37 @@ message SetMeshRequest {
 // has the new public key (SetMesh).
 message RotateMeshKeyRequest {
   string job_id = 1;
+}
+
+// The move of a database server to a different server, with the same ID, name and member
+// address. The panel sends ReceiveDatabaseServer to the new server and SendDatabaseServer to
+// the old server. The old server stops the database server and sends its data through the
+// tunnel between the two servers, to the transfer port of the new server. The new server then
+// starts the database server. The data of the old server stay until the panel sends
+// DeleteDatabaseServer to it.
+message SendDatabaseServerRequest {
+  string job_id = 1;
+  string database_server = 2;
+  // "mariadb", "postgresql" or "valkey".
+  string engine = 3;
+  // The mesh address of the new server. It must be the address of a peer of this server.
+  string to = 4;
+  // The secret of this move: 64 hexadecimal characters. The new server accepts only a
+  // connection that sends it first.
+  string token = 5;
+}
+
+message ReceiveDatabaseServerRequest {
+  string job_id = 1;
+  // The database server with its port and its limits on this server.
+  DatabaseServer database_server = 2;
+  // The mesh address of the old server. It must be the address of a peer of this server.
+  string from = 3;
+  string token = 4;
+  // The time that this server waits for the old server to connect, in seconds. 0 means 15
+  // minutes. The data has no time limit, but a connection that sends nothing for 2 minutes
+  // ends.
+  int32 timeout_seconds = 5;
 }
 
 message HostRequest {

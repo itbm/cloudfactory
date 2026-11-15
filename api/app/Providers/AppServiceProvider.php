@@ -2,8 +2,11 @@
 
 namespace App\Providers;
 
+use App\Services\Mesh;
 use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Database\Events\TransactionRolledBack;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 
@@ -32,6 +35,7 @@ class AppServiceProvider extends ServiceProvider
         // Each request of the file manager and of the logs starts a command on the server.
         RateLimiter::for('site-tools', fn (Request $request) => Limit::perMinute(300)->by('site-tools:'.($request->user()?->id ?? $request->ip())));
         RateLimiter::for('domain-checks', fn (Request $request) => self::forCustomer($request, Limit::perMinute(10), 'domain-checks'));
+        Event::listen(TransactionRolledBack::class, fn () => Mesh::forgetPendingRefresh());
     }
 
     private static function forCustomer(Request $request, Limit $limit, string $name): Limit

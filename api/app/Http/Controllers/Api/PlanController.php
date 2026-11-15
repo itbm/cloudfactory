@@ -67,7 +67,7 @@ class PlanController extends Controller
         // The database servers that get the new limits: those with the limits of the plan. A
         // database server with limits that an administrator set for it keeps them.
         $databaseServers = isset($new['database_limits']) && $new['database_limits'] != $oldDatabaseLimits
-            ? $plan->databaseServers()->with('server')->where('status', '!=', DatabaseServer::REMOVING)->get()->filter(fn (DatabaseServer $s) => $s->limits == $oldDatabaseLimits)
+            ? $plan->databaseServers()->with('server')->whereNotIn('status', [DatabaseServer::REMOVING, DatabaseServer::MOVING])->get()->filter(fn (DatabaseServer $s) => $s->limits == $oldDatabaseLimits)
             : collect();
         // One change of the limits of a database server at a time (DatabaseServerController).
         $busy = AgentJob::whereIn('database_server_id', $databaseServers->pluck('id'))->where('action', AgentAction::SetDatabaseServer->value)

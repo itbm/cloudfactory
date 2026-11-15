@@ -188,7 +188,14 @@ const (
 	// MapMembers has the container of each member of this server: the member address and
 	// the port of the member give the address and the port of the container on this server.
 	MapMembers = "mesh_members"
+	// SetTransfers has the moves of database servers to this server: the mesh address of the
+	// server that sends, the mesh address of this server and TransferPort.
+	SetTransfers = "mesh_transfers"
 )
+
+// TransferPort is the TCP port on the mesh address of a server that receives a database
+// server from a different server.
+const TransferPort = 7445
 
 // MemberRule is one member of this server for the firewall.
 type MemberRule struct {
