@@ -107,7 +107,7 @@ export function BrandForm({ saved, fallback, onSave, description }: {
                 </div>
               )}
             </Field>
-            <Field label="Support email" hint={fallback.supportEmail ? `Your customers see it on their account page. Empty: ${fallback.supportEmail}.` : "Your customers see it on their account page."} error={error?.fields.supportEmail ?? error?.fields["branding.supportEmail"]}>
+            <Field label="Support email" hint={fallback.supportEmail ? `Your customers see a help link to it in the menu. Empty: ${fallback.supportEmail}.` : "Your customers see a help link to it in the menu."} error={error?.fields.supportEmail ?? error?.fields["branding.supportEmail"]}>
               {(p) => <input {...p} className="input" type="email" value={email} placeholder={fallback.supportEmail ?? "support@example.com"} onChange={(e) => setEmail(e.target.value)} />}
             </Field>
           </div>

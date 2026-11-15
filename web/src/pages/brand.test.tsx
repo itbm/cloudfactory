@@ -43,7 +43,7 @@ describe("white label", () => {
     await signIn("owner@example.com", "password");
     render(<MemoryRouter initialEntries={["/websites"]}><App /></MemoryRouter>);
     expect(nav().getAllByText("Northwind Hosting").length).toBeGreaterThan(0);
-    expect(nav().getByRole("link", { name: "Help: support@northwind.example.com" }).getAttribute("href")).toBe("mailto:support@northwind.example.com");
+    expect(nav().getByRole("link", { name: "Get help by email" }).getAttribute("href")).toBe("mailto:support@northwind.example.com");
     expect(document.body.textContent).not.toMatch(/cloudfactory/i);
   });
 

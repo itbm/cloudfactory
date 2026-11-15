@@ -270,7 +270,7 @@ export function Layout() {
             .map((section, i) => <NavGroup key={section.title ?? i} section={section} index={i} />)}
           {/* White label: the customers of a reseller ask the reseller for help. */}
           {user.role !== "administrator" && brand.supportEmail && (
-            <a className="sidebar-help" href={`mailto:${brand.supportEmail}`}>Help: {brand.supportEmail}</a>
+            <a className="sidebar-help" href={`mailto:${brand.supportEmail}`} title={brand.supportEmail}>Get help by email</a>
           )}
           <div className="sidebar-user">
             <span className="avatar" aria-hidden="true">{initials}</span>

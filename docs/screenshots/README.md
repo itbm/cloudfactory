@@ -357,3 +357,18 @@ The database servers and the databases of an owner as cards.
 A DNS zone at phone width.
 
 ![phone-10-owner-dns-zone](phone-10-owner-dns-zone.png)
+
+## White label
+
+The sample reseller Northwind Agency has the brand "Northwind Hosting", with its own logo,
+colour, panel domain, name servers and mail host. The files are in [white-label/](white-label).
+
+| File | Page |
+| ---- | ---- |
+| [01-reseller-sign-in.png](white-label/01-reseller-sign-in.png) | The sign-in page on the panel domain of the reseller. |
+| [02-customer-websites.png](white-label/02-customer-websites.png) | A customer of the reseller sees only the brand of the reseller. |
+| [03-customer-dns-zone.png](white-label/03-customer-dns-zone.png) | The DNS zone of a customer has the name servers of the reseller. |
+| [04-reseller-brand.png](white-label/04-reseller-brand.png) | The Brand page of the reseller. |
+| [05-reseller-panel-domain-proof.png](white-label/05-reseller-panel-domain-proof.png) | A new panel domain needs a TXT record that proves control. |
+| [06-administrator-default-brand.png](white-label/06-administrator-default-brand.png) | The administrator sets the default brand in Settings. |
+| [07-reseller-brand-phone.png](white-label/07-reseller-brand-phone.png) | The Brand page on a phone. |
