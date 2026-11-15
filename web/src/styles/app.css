@@ -829,3 +829,14 @@ a.stat-link .stat-value { margin-bottom: 8px; }
 .sidebar .nav-link { min-height: 40px; }
 .sidebar .nav-section { margin: 10px 12px 6px; }
 .sidebar-user, .brand, .context-switcher { flex: none; }
+
+/* Plugins (docs/plugins.md). A plugin page is a frame with the origin of the plugin. */
+.plugin-frame { display: block; width: 100%; min-height: 240px; border: 1px solid var(--border); border-radius: var(--radius); background: #fff; }
+.plugin-card + .plugin-card { margin-top: 16px; }
+.plugin-head { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; }
+.plugin-head h3 { margin: 0; font-size: 16px; }
+.plugin-meta { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 4px; color: var(--text-muted); font-size: 13px; }
+.scope-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.scope-list li { display: flex; gap: 10px; align-items: baseline; }
+.scope-list code { flex: none; }
+.manifest-input { font-family: var(--font-mono); font-size: 12px; min-height: 160px; }

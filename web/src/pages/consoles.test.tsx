@@ -22,25 +22,25 @@ async function open(role: Role, path: string | (() => string)): Promise<PanelApi
 }
 const heading = () => screen.getByRole("heading", { level: 1 }).textContent;
 const menu = () => within(screen.getByRole("navigation", { name: "Main" })).getAllByRole("link").map((a) => a.textContent?.replace(/\d+ open$/, "").trim()).slice(1);
-const ADMIN_PAGES = ["/overview", "/setup", "/servers", "/updates"];
+const ADMIN_PAGES = ["/overview", "/setup", "/servers", "/updates", "/plugins"];
 
 describe("the console of each role", () => {
   it("gives each role its own first page and its own menu", async () => {
     await open("administrator", "/");
     expect(heading()).toBe("Overview");
-    expect(menu()).toEqual(["Overview", "Finish setup", "Servers", "Network", "Images and updates", "Customers", "Plans", "Websites", "Files", "Databases", "DNS", "Private networks", "Backups", "Apps", "Jobs and activity", "Settings"]);
+    expect(menu()).toEqual(["Overview", "Finish setup", "Servers", "Network", "Images and updates", "Customers", "Plans", "Websites", "Files", "Databases", "DNS", "Private networks", "Backups", "Apps", "Jobs and activity", "Plugins", "Settings", "Uptime"]);
     cleanup();
     reset();
 
     await open("reseller", "/");
     expect(heading()).toBe("Customers");
-    expect(menu()).toEqual(["Customers", "Plans", "Websites", "Files", "Databases", "DNS", "Private networks", "Backups", "Apps", "Jobs and activity", "My account", "Settings"]);
+    expect(menu()).toEqual(["Customers", "Plans", "Websites", "Files", "Databases", "DNS", "Private networks", "Backups", "Apps", "Jobs and activity", "My account", "Settings", "Uptime"]);
     cleanup();
     reset();
 
     await open("owner", "/");
     expect(heading()).toBe("My websites");
-    expect(menu()).toEqual(["My websites", "Files", "Databases", "DNS", "Private networks", "Backups", "Apps", "Activity", "My account", "Settings"]);
+    expect(menu()).toEqual(["My websites", "Files", "Databases", "DNS", "Private networks", "Backups", "Apps", "Activity", "My account", "Settings", "Uptime"]);
   });
 
   it("has no link from the menu of an owner or a reseller to a page that the role cannot open", () => {

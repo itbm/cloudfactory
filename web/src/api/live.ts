@@ -21,6 +21,7 @@ import type {
   Mesh,
   PanelCertificate,
   Plan,
+  PluginPage,
   PrivateNetwork,
   Rollout,
   RuntimeImage,
@@ -340,7 +341,7 @@ export async function load(previous: State): Promise<State> {
   const admin = me.role === "administrator";
   const optional = <T>(p: Promise<T>, fallback: T) => p.catch(() => fallback);
 
-  const [websites, jobs, customers, plans, tokens, policy, servers, images, rollouts, audit, users, certificate, setup, account, databaseServers, dns, mesh, networks] = await Promise.all([
+  const [websites, jobs, customers, plans, tokens, policy, servers, images, rollouts, audit, users, certificate, setup, account, databaseServers, dns, mesh, networks, pluginPages] = await Promise.all([
     all<ApiWebsite>("/websites"),
     request<{ data: ApiJob[] }>("GET", "/jobs?perPage=50").then((r) => r.data),
     optional(request<{ data: ApiCustomer[] }>("GET", "/customers").then((r) => r.data), []),
@@ -363,6 +364,8 @@ export async function load(previous: State): Promise<State> {
     admin ? optional(request<Mesh>("GET", "/mesh"), undefined) : Promise.resolve(undefined),
     // A panel API of an earlier release has no private networks.
     optional(request<{ data: ApiNetwork[] }>("GET", "/networks").then((r) => r.data.map(toNetwork)), []),
+    // The pages of the plugins for the menu. A panel API of an earlier release has no plugins.
+    optional(request<{ data: PluginPage[] }>("GET", "/plugin-pages").then((r) => r.data), []),
   ]);
   // The list has no records. The panel reads the records of the zones that the user opened.
   const zoneDetails = new Map<string, DnsZone>();
@@ -415,6 +418,7 @@ export async function load(previous: State): Promise<State> {
     nameServers: dns.nameServers ?? [],
     mesh,
     networks,
+    pluginPages,
     databases: [...kept(previous.databases), ...perSite.flatMap((s) => s.databases)],
     databaseUsers: [...kept(previous.databaseUsers), ...perSite.flatMap((s) => s.users)],
     remoteDatabaseServers: { ...previous.remoteDatabaseServers, ...Object.fromEntries(perSite.map((s, i) => [detailed[i].id, s.remote])) },

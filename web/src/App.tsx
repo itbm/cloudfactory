@@ -20,6 +20,8 @@ import { PlansPage } from "./pages/PlansPage";
 import { ServersPage } from "./pages/ServersPage";
 import { SetPasswordPage } from "./pages/SetPasswordPage";
 import { SetTotpPage } from "./pages/SetTotpPage";
+import { PluginFramePage } from "./pages/PluginFramePage";
+import { PluginsPage } from "./pages/PluginsPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { SetupPage } from "./pages/SetupPage";
 import { UpdatesPage } from "./pages/UpdatesPage";
@@ -97,6 +99,8 @@ export function App() {
           <Route path="account" element={<AccountPage />} />
           <Route path="settings" element={<SettingsPage />} />
           <Route path="settings/:tab" element={<SettingsPage />} />
+          <Route path="plugins" element={<PluginsPage />} />
+          <Route path="plugin/:pluginId/:pageId" element={<PluginFramePage />} />
           <Route path="*" element={<Home />} />
         </Route>
       </Route>

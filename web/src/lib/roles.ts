@@ -20,7 +20,7 @@ export interface NavEntry {
   to: string;
   label: string;
   /** The name of the icon (components/Layout.tsx). */
-  icon: "overview" | "setup" | "servers" | "network" | "updates" | "customers" | "plans" | "websites" | "files" | "databases" | "dns" | "networks" | "backups" | "apps" | "jobs" | "account" | "settings";
+  icon: "overview" | "setup" | "servers" | "network" | "updates" | "customers" | "plans" | "websites" | "files" | "databases" | "dns" | "networks" | "backups" | "apps" | "jobs" | "account" | "settings" | "plugins";
 }
 
 export interface NavSection {
@@ -55,7 +55,7 @@ export const NAVIGATION: Record<Role, NavSection[]> = {
     { title: "Platform", items: [{ to: "/servers", label: "Servers", icon: "servers" }, { to: "/network", label: "Network", icon: "network" }, { to: "/updates", label: "Images and updates", icon: "updates" }] },
     { title: "Customers", items: [{ to: "/customers", label: "Customers", icon: "customers" }, { to: "/plans", label: "Plans", icon: "plans" }] },
     { title: "Hosting", items: hosting("Websites", "Jobs and activity") },
-    { title: "Panel", items: [{ to: "/settings", label: "Settings", icon: "settings" }] },
+    { title: "Panel", items: [{ to: "/plugins", label: "Plugins", icon: "plugins" }, { to: "/settings", label: "Settings", icon: "settings" }] },
   ],
   reseller: [
     { title: "Customers", items: [{ to: "/customers", label: "Customers", icon: "customers" }, { to: "/plans", label: "Plans", icon: "plans" }] },
@@ -78,7 +78,11 @@ const ONLY: [prefix: string, roles: Role[]][] = [
   ["/customers", ["administrator", "reseller"]],
   ["/plans", ["administrator", "reseller"]],
   ["/account", ["reseller", "owner"]],
+  ["/plugins", ["administrator"]],
 ];
+
+/** The address of a plugin page in the web panel. Each role can open it, when the plugin gives it the page. */
+export const pluginPagePath = (pluginId: string, pageId: string) => `/plugin/${pluginId}/${pageId}`;
 
 /** True when a user with the role can open the page. */
 export function canOpen(role: Role, path: string): boolean {

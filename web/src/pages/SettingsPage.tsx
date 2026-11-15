@@ -10,7 +10,7 @@ import { daysUntil, longDate, relativeTime, shortDate } from "../lib/format";
 import { CopyField } from "./website/AccessTab";
 
 // The API has no DNS or email scopes in release 0.1 (FR-104).
-const SCOPES: TokenScope[] = ["websites:read", "websites:write", "databases:read", "databases:write", "backups:read", "backups:write", "servers:read", "servers:write", "images:read", "images:write", "customers:read", "customers:write", "users:read", "users:write", "audit:read", "tokens:read", "tokens:write"];
+const SCOPES: TokenScope[] = ["websites:read", "websites:write", "databases:read", "databases:write", "backups:read", "backups:write", "servers:read", "servers:write", "images:read", "images:write", "customers:read", "customers:write", "users:read", "users:write", "audit:read", "tokens:read", "tokens:write", "plugins:read", "plugins:write"];
 
 export function SettingsPage() {
   const state = useStore();
