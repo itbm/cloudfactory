@@ -259,3 +259,35 @@ func TestTheInstallerHasTheNetworkRules(t *testing.T) {
 	inOrder(t, text, []string{"chain output_nat {", "type nat hook output priority -100;"}, networkOutputNATRules, []string{"fib daddr type local tcp dport 80 redirect to :8080"})
 	inOrder(t, text, []string{"chain postrouting_nat {", "type nat hook postrouting priority 100;"}, networkPostroutingRules)
 }
+
+// A file with the rules of the networks gets the rules of the transfers, and the installer of
+// this release has the same rules.
+func TestTransferRules(t *testing.T) {
+	b, err := os.ReadFile("../../../install/install.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := strings.ReplaceAll(string(b), "$DATABASE_CLIENT_ADDRESS", quadlet.DatabaseClientAddress)
+	text = strings.ReplaceAll(text, "$dns_redirect", "")
+	inOrder(t, text, []string{"table inet cloudfactory {"}, transferTableRules)
+	inOrder(t, text, []string{"chain mesh_input {"}, networkMeshInputRules, transferMeshInputRules, []string{"drop", "}"})
+
+	// The file of the release before the moves: the rules of the networks, with no transfers.
+	earlier := strings.Replace(text, strings.Join(add(nil, "  ", transferTableRules), "\n")+"\n", "", 1)
+	earlier = strings.Replace(earlier, strings.Join(add(nil, "    ", transferMeshInputRules), "\n")+"\n", "", 1)
+	if strings.Contains(earlier, SetTransfers) {
+		t.Fatal("the test did not remove the rules of the transfers")
+	}
+	next, err := AddRules(earlier)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inOrder(t, next, []string{"table inet cloudfactory {"}, transferTableRules)
+	inOrder(t, next, []string{"chain mesh_input {"}, networkMeshInputRules, transferMeshInputRules, []string{"drop", "}"})
+	if again, err := AddRules(next); err != nil || again != next {
+		t.Errorf("a second call changes the file: %v", err)
+	}
+	if _, err := addTransferRules("table inet cloudfactory {\n}\n"); err == nil {
+		t.Error("addTransferRules accepts a file with no chain mesh_input")
+	}
+}

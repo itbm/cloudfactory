@@ -175,6 +175,9 @@ type Mesh struct {
 	// Websites is true: on this agent, a website can be a network member that answers on
 	// port 80.
 	Websites bool `json:"websites"`
+	// Moves is true: this agent can send a database server to a different server through
+	// the tunnel, and receive one (SendDatabaseServer and ReceiveDatabaseServer).
+	Moves bool `json:"moves"`
 }
 
 // Tunnel is the state of the tunnel to one other server.

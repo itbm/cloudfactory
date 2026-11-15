@@ -347,6 +347,13 @@ firewall_rules() {
 table inet cloudfactory
 delete table inet cloudfactory
 table inet cloudfactory {
+  # The move of a database server: the mesh address of the server that sends the data, the
+  # mesh address of this server and the transfer port. The root helper adds an element for
+  # one move only, with a time limit.
+  set mesh_transfers {
+    typeof ip saddr . ip daddr . tcp dport
+    flags timeout
+  }
   # Each customer has its own database servers on a server, on one address of the network
   # $DATABASE_NETWORK. Each database server has its own port on that address. Each element is
   # the UID of a website, the address of its customer, and the port of a database server of
@@ -402,6 +409,8 @@ table inet cloudfactory {
     # port of the member. The rule compares the address and the port from before the address
     # change (the chain prerouting).
     ct state new ct status dnat ip saddr . ct original ip daddr . ct original proto-dst @mesh_access accept
+    # A server that sends a database server to this server connects to the transfer port.
+    ct state new ip saddr . ip daddr . tcp dport @mesh_transfers accept
     drop
   }
   # This server never sends the traffic of a tunnel to a different server or network, and

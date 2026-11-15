@@ -130,6 +130,14 @@ func (s *Service) DeleteDatabaseServer(_ context.Context, r *connect.Request[age
 	return s.submit(s.Deps.DeleteDatabaseServer(r.Msg))
 }
 
+func (s *Service) SendDatabaseServer(_ context.Context, r *connect.Request[agentv1.SendDatabaseServerRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.SendDatabaseServer(r.Msg))
+}
+
+func (s *Service) ReceiveDatabaseServer(_ context.Context, r *connect.Request[agentv1.ReceiveDatabaseServerRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.ReceiveDatabaseServer(r.Msg))
+}
+
 func (s *Service) SetDnsZones(_ context.Context, r *connect.Request[agentv1.SetDnsZonesRequest]) (*connect.Response[agentv1.JobAccepted], error) {
 	return s.submit(s.Deps.SetDnsZones(r.Msg))
 }

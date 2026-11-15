@@ -567,6 +567,8 @@ func (d *Deps) RootOps() map[string]gate.Handler {
 		opDBAccess: none(func(ctx context.Context, in accessIn) error {
 			return d.loadDatabaseAccess(ctx, in.Elements)
 		}),
+		opDBSend:    none(func(ctx context.Context, in transferIn) error { return d.sendServer(ctx, in) }),
+		opDBReceive: none(func(ctx context.Context, in transferIn) error { return d.receiveServer(ctx, in) }),
 		opDBValkeySecret: gate.Op(func(ctx context.Context, in serverIn) (string, error) {
 			if err := checkServer(in.Server); err != nil {
 				return "", err

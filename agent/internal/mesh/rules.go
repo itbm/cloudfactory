@@ -207,7 +207,62 @@ func AddRules(content string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return addNetworkRules(next)
+	if next, err = addNetworkRules(next); err != nil {
+		return "", err
+	}
+	return addTransferRules(next)
+}
+
+// The rules of the transfers: the move of a database server to a different server. They are
+// a third group, because a server can have the rules of the networks from before the moves.
+
+// transferTableRules are the set of the transfers in the table.
+var transferTableRules = []string{
+	"# The move of a database server: the mesh address of the server that sends the data, the",
+	"# mesh address of this server and the transfer port. The root helper adds an element for",
+	"# one move only, with a time limit.",
+	"set " + SetTransfers + " {",
+	"  typeof ip saddr . ip daddr . tcp dport",
+	"  flags timeout",
+	"}",
+}
+
+// transferMeshInputRules go into the chain "mesh_input", before the rule "drop".
+var transferMeshInputRules = []string{
+	"# A server that sends a database server to this server connects to the transfer port.",
+	"ct state new ip saddr . ip daddr . tcp dport @" + SetTransfers + " accept",
+}
+
+// addTransferRules adds the rules of the transfers to a file that has the rules of the mesh.
+func addTransferRules(content string) (string, error) {
+	if strings.Contains(content, "set "+SetTransfers+" {") {
+		return content, nil
+	}
+	lines := strings.Split(strings.TrimRight(content, "\n"), "\n")
+	var out []string
+	var table, input bool
+	chain := ""
+	for _, l := range lines {
+		text := strings.TrimSpace(l)
+		if chain == "mesh_input" && text == "drop" && !input {
+			out = add(out, indentOf(l), transferMeshInputRules)
+			input = true
+		}
+		out = append(out, l)
+		switch {
+		case text == "table inet cloudfactory {" && !table:
+			out = add(out, indentOf(l)+"  ", transferTableRules)
+			table = true
+		case strings.HasPrefix(text, "chain ") && strings.HasSuffix(text, "{"):
+			chain = strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(text, "chain "), "{"))
+		case text == "}":
+			chain = ""
+		}
+	}
+	if !table || !input {
+		return "", errors.New("the file does not have the rules of the installer, so the agent cannot add the rules of the transfers")
+	}
+	return strings.Join(out, "\n") + "\n", nil
 }
 
 // addMeshRules adds the rules of the mesh.
