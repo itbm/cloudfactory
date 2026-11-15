@@ -329,3 +329,14 @@ func TestSiteRouteOfAStoppedWebsite(t *testing.T) {
 		t.Errorf("the route of a stopped website sends requests to the container:\n%s", got)
 	}
 }
+
+func TestSiteRouteSendsSomePathsToADifferentPort(t *testing.T) {
+	route := SiteRoute(Site{WebsiteID: "mail", Port: 19027, Hosts: []string{"mail.example.net"}, Paths: []PathRoute{{Paths: []string{"/jmap", "/jmap/*"}, Port: 19025}}}, "169.254.77.1")
+	b, _ := json.Marshal(route)
+	want := `{"@id":"cf-mail","handle":[{"handler":"subroute","routes":[` +
+		`{"handle":[{"handler":"reverse_proxy","upstreams":[{"dial":"169.254.77.1:19025"}]}],"match":[{"path":["/jmap","/jmap/*"]}],"terminal":true},` +
+		`{"handle":[{"handler":"reverse_proxy","upstreams":[{"dial":"169.254.77.1:19027"}]}]}]}],"match":[{"host":["mail.example.net"]}],"terminal":true}`
+	if string(b) != want {
+		t.Errorf("route:\n%s\nwant:\n%s", b, want)
+	}
+}

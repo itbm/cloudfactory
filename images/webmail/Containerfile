@@ -1,0 +1,21 @@
+# The webmail of a mail server (Bulwark). The agent starts one container on each server with a
+# mail server. The edge proxy sends the JMAP and DAV paths of the host name to the mail server,
+# and the other paths to this container. The release pipeline signs the image like all other
+# images (FR-1101).
+#   podman build -t webmail images/webmail
+# SPDX-License-Identifier: AGPL-3.0-only
+# Bulwark is AGPL-3.0-only: https://github.com/bulwarkmail/webmail
+FROM ghcr.io/bulwarkmail/webmail:1.21.2
+USER root
+# CVE scan, finding 3: take the security fixes that are newer than the base image. The release
+# workflow gives CF_REFRESH a new value for each build, so this step never comes from the build
+# cache.
+ARG CF_REFRESH
+RUN apk upgrade --no-cache
+# The agent starts the webmail as the user 1001 and the group 65533, which are the user nextjs
+# of the base image. A base image with different IDs stops the build.
+RUN test "$(id -u nextjs):$(id -g nextjs)" = 1001:65533
+USER nextjs
+EXPOSE 3000
+LABEL org.opencontainers.image.source="https://github.com/itbm/cloudfactory" \
+      org.opencontainers.image.description="Cloudfactory webmail"

@@ -23,9 +23,18 @@ const (
 	MailIMAPSPort = 2993
 	// MailHTTPPort is the management API in the container.
 	MailHTTPPort = 8080
-	// MailAdminPort is the port of the management API on ServiceAddress. Only root can
-	// connect to it: the root helper of the agent opens the connection for the worker.
+	// MailAdminPort is the port of the HTTP listener of the mail server on ServiceAddress.
+	// Only root and the edge proxy can connect to it. The root helper of the agent opens the
+	// connection for the worker. The edge proxy sends only the JMAP and DAV paths to it, not
+	// the management API.
 	MailAdminPort = 19025
+	// WebmailPort is the port of the webmail on ServiceAddress. Only root and the edge proxy
+	// can connect to it.
+	WebmailPort = 19027
+	// WebmailContainerUser is the user "nextjs" of the webmail image, and WebmailContainerGroup
+	// its group. The build of the image checks the IDs.
+	WebmailContainerUser  = "1001"
+	WebmailContainerGroup = "65533"
 
 	// MailCertFile and MailKeyFile are the certificate of the mail host name in the container.
 	MailCertFile = "/etc/stalwart-certs/tls.crt"
@@ -233,5 +242,63 @@ func MailKeepUnit(m MailKeep) string {
 		"WantedBy=default.target",
 		"",
 	}
+	return Header + strings.Join(lines, "\n")
+}
+
+// Webmail is the input for the unit of the webmail of a mail server.
+type Webmail struct {
+	Image  string
+	Gvisor Runtime
+	// EnvFile holds the settings and the secret of the webmail. Only root and the Unix user of
+	// the webmail can read it.
+	EnvFile string
+	// DataDir holds the settings of the users, encrypted with the secret.
+	DataDir string
+	// CAFile is set for a host name with a certificate of the panel CA: the root certificate
+	// of that CA. The webmail examines the sign-ins through the edge proxy.
+	CAFile string
+}
+
+// WebmailCAFile is the root certificate of the panel CA in the webmail container.
+const WebmailCAFile = "/etc/cf-webmail/ca.crt"
+
+// WebmailUnit gives the container unit of the webmail.
+func WebmailUnit(w Webmail) string {
+	lines := []string{
+		"[Unit]",
+		"Description=Cloudfactory webmail",
+		"Wants=cf-mail.service",
+		"After=cf-mail.service",
+		"",
+		"[Container]",
+		"ContainerName=cf-webmail",
+		"Image=" + w.Image,
+		"Pull=never",
+		"GlobalArgs=" + w.Gvisor.GlobalArgs(),
+		"Network=" + PastaNetwork,
+		// Only the edge proxy connects to the webmail.
+		fmt.Sprintf("PublishPort=%s:%d:3000", ServiceAddress, WebmailPort),
+		"Volume=" + w.DataDir + ":/app/data:Z",
+	}
+	if w.CAFile != "" {
+		lines = append(lines, "Volume="+w.CAFile+":"+WebmailCAFile+":ro,Z")
+	}
+	lines = append(lines,
+		"EnvironmentFile="+w.EnvFile,
+		"NoNewPrivileges=true",
+		"DropCapability=all",
+		"UserNS=keep-id:uid="+WebmailContainerUser+",gid="+WebmailContainerGroup,
+		"User="+WebmailContainerUser,
+		"Group="+WebmailContainerGroup,
+		"ReadOnly=true",
+		"Tmpfs=/tmp",
+		"",
+		"[Service]",
+		"Restart=always",
+		"",
+		"[Install]",
+		"WantedBy=default.target",
+		"",
+	)
 	return Header + strings.Join(lines, "\n")
 }

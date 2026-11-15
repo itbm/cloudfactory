@@ -93,6 +93,8 @@ describe("the email page", () => {
     expect(dialog.textContent).toContain("v=spf1 mx -all");
     expect(dialog.textContent).toContain("Missing");
     expect(dialog.textContent).toContain("IMAP, server mail-1.panel.example, port 993");
+    // The webmail is on the host name of the mail server.
+    expect(within(dialog).getByRole("link", { name: "https://mail-1.panel.example" }).getAttribute("href")).toBe("https://mail-1.panel.example/");
     api.on("POST /mail/domains/*/check", () => apiDomain("cornerbakery.example.org", { dnsReady: true, records: domain("cornerbakery.example.org").records.map((r) => ({ ...r, found: true })) }));
     fireEvent.click(within(dialog).getByRole("button", { name: "Check DNS now" }));
     await waitFor(() => expect(row("cornerbakery.example.org").textContent).toContain("Ready"));

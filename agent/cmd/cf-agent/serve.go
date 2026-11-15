@@ -222,6 +222,7 @@ func newDeps(cfg config.Config, run execx.Runner) (*actions.Deps, error) {
 		// The database node of a mail cluster uses the MariaDB service image.
 		MailDBImage:   cfg.Registry + "/mariadb:" + version,
 		MailKeepImage: cfg.Registry + "/mail-keep:" + version,
+		WebmailImage:  cfg.Registry + "/webmail:" + version,
 		SftpPort:      cfg.SftpPort,
 	}
 	// CF-13: the admin API of the edge proxy is a Unix socket.

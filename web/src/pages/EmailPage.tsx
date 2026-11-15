@@ -344,11 +344,13 @@ function RecordsDialog({ domain, checking, onCheck, onClose }: { domain: MailDom
           </section>
         ))}
       </div>
-      <h3 style={{ marginTop: 18 }}>Settings for a mail program</h3>
+      <h3 style={{ marginTop: 18 }}>Webmail and settings for a mail program</h3>
       <table className="kv">
         <tbody>
+          <tr><th scope="row">Webmail</th><td><a href={`https://${domain.mailHost}/`} target="_blank" rel="noreferrer">https://{domain.mailHost}</a>. Sign in with the full address and the password of the mailbox.</td></tr>
           <tr><th scope="row">Incoming mail</th><td>IMAP, server <code>{domain.mailHost}</code>, port <code>993</code>, SSL/TLS</td></tr>
           <tr><th scope="row">Outgoing mail</th><td>SMTP, server <code>{domain.mailHost}</code>, port <code>465</code> with SSL/TLS, or port <code>587</code> with STARTTLS</td></tr>
+          <tr><th scope="row">Calendars and contacts</th><td>CalDAV and CardDAV, server <code>https://{domain.mailHost}/dav</code></td></tr>
           <tr><th scope="row">User name</th><td>The full address of the mailbox, for example <code>info@{domain.name}</code></td></tr>
         </tbody>
       </table>

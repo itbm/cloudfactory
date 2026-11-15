@@ -12,7 +12,6 @@ import (
 	"time"
 
 	agentv1 "github.com/itbm/cloudfactory/agent/gen/cloudfactory/agent/v1"
-	"github.com/itbm/cloudfactory/agent/internal/caddy"
 	"github.com/itbm/cloudfactory/agent/internal/host"
 	"github.com/itbm/cloudfactory/agent/internal/jobs"
 	"github.com/itbm/cloudfactory/agent/internal/panel"
@@ -203,7 +202,7 @@ func (d *Deps) mailCertificateNow(ctx context.Context) (bool, error) {
 
 // mailRouteFor tells the edge proxy to get a certificate for the mail host name.
 func (d *Deps) mailRouteFor(ctx context.Context, hostname string) error {
-	return d.Edge.Apply(ctx, caddy.Site{WebsiteID: mailRoute, Hosts: []string{hostname}, Primary: hostname, Page: mailPage})
+	return d.Edge.Apply(ctx, d.mailSite(hostname))
 }
 
 // SetMailServer turns on email for this server, or changes the host name of the mail server.
@@ -214,6 +213,7 @@ func (d *Deps) SetMailServer(req *agentv1.SetMailServerRequest) (jobs.Job, error
 	}
 	return jobs.Job{ID: req.GetJobId(), Key: mailKey, Steps: []jobs.Step{
 		{Name: "Start mail server", Do: func(ctx context.Context) error { return d.EnsureMail(ctx, hostname) }},
+		{Name: "Start webmail", Do: func(ctx context.Context) error { return d.EnsureWebmail(ctx, hostname) }},
 		{Name: "Open mail ports", Do: d.openMailPorts},
 		{Name: "Get TLS certificate", Do: func(ctx context.Context) error {
 			if err := d.mailRouteFor(ctx, hostname); err != nil {
@@ -250,6 +250,9 @@ func (d *Deps) RefreshMail(ctx context.Context) error {
 		return err
 	}
 	if err := d.EnsureMail(ctx, info.Hostname); err != nil {
+		return err
+	}
+	if err := d.EnsureWebmail(ctx, info.Hostname); err != nil {
 		return err
 	}
 	if err := d.openMailPorts(ctx); err != nil {

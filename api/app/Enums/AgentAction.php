@@ -66,7 +66,7 @@ enum AgentAction: string
             self::SetSftp => ['Set SFTP access'],
             self::ConfigureHost => ['Save settings', 'Restart websites', 'Restart services'],
             self::SetPanelCertificate => ['Change certificate method', 'Get TLS certificate'],
-            self::SetMailServer => ['Start mail server', 'Open mail ports', 'Get TLS certificate'],
+            self::SetMailServer => ['Start mail server', 'Start webmail', 'Open mail ports', 'Get TLS certificate'],
             self::PrepareMailNode => ['Make keys'],
             self::SetMailNode => ['Make private network', 'Start cluster store', 'Start database'],
             self::SetMailDomain => ['Add domain', 'Make DKIM keys'],

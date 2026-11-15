@@ -100,6 +100,9 @@ func (d *Deps) mailRootOps() map[string]gate.Handler {
 	for name, op := range d.mailServerRootOps() {
 		ops[name] = op
 	}
+	for name, op := range d.webmailRootOps() {
+		ops[name] = op
+	}
 	return ops
 }
 
@@ -317,7 +320,14 @@ func (d *Deps) openMailPorts(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	changed, err := host.WriteFile(filepath.Join(d.firewallDir(), mailFirewallFile), MailFirewall(uid, cluster), 0o644)
+	webmailUID := 0
+	if d.WebmailImage != "" {
+		// The webmail starts before the mail ports open (SetMailServer): its user exists.
+		if webmailUID, err = d.Host.LookupUID(host.WebmailUser); err != nil {
+			return err
+		}
+	}
+	changed, err := host.WriteFile(filepath.Join(d.firewallDir(), mailFirewallFile), MailFirewall(uid, webmailUID, cluster), 0o644)
 	if err != nil {
 		return err
 	}
@@ -338,9 +348,10 @@ func (d *Deps) openMailPorts(ctx context.Context) error {
 }
 
 // MailFirewall gives the firewall rules of the mail server. uid is the UID of its Unix user:
-// pasta opens each connection of the container as that user. cluster is nil on a server that
-// is not a member of a mail cluster.
-func MailFirewall(uid int, cluster *mailcluster.Cluster) string {
+// pasta opens each connection of the container as that user. webmailUID is the UID of the
+// Unix user of the webmail, or 0 with no webmail. cluster is nil on a server that is not a
+// member of a mail cluster.
+func MailFirewall(uid, webmailUID int, cluster *mailcluster.Cluster) string {
 	var redirects, local, ports []string
 	var clusterInput, clusterOutput, clusterMail string
 	if cluster != nil {
@@ -380,12 +391,45 @@ func MailFirewall(uid int, cluster *mailcluster.Cluster) string {
 		"    tcp dport 25 accept",
 		"    jump refuse",
 		"  }",
-		"  chain output {",
+		webmailChain(webmailUID) + "  chain output {",
 		clusterOutput + "    ct state new meta skuid " + strconv.Itoa(uid) + " jump mail",
-		"  }",
+		webmailJump(webmailUID) + "  }",
 		"}",
 		"",
 	}, "\n")
+}
+
+// webmailChain gives the rules for the connections of the webmail:
+//
+//   - the DNS;
+//   - the edge proxy of this server: the webmail examines each sign-in on the mail server
+//     through the public host name. The firewall sends port 443 of a local address to 8443;
+//   - port 443 on the internet, for the extensions of the webmail and for public OpenPGP keys.
+//
+// The webmail cannot connect to a different service of this server or to a private network.
+func webmailChain(uid int) string {
+	if uid <= 0 {
+		return ""
+	}
+	return strings.Join([]string{
+		"  chain webmail {",
+		"    meta l4proto { tcp, udp } th dport 53 accept",
+		"    fib daddr type local tcp dport 8443 accept",
+		"    fib daddr type { local, broadcast, multicast } jump refuse",
+		"    ip daddr { 0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 168.63.129.16, 169.254.0.0/16, 172.16.0.0/12, 192.168.0.0/16, 224.0.0.0/3 } jump refuse",
+		"    ip6 daddr { ::1, fc00::/7, fe80::/10, ff00::/8 } jump refuse",
+		"    tcp dport 443 accept",
+		"    jump refuse",
+		"  }",
+		"",
+	}, "\n")
+}
+
+func webmailJump(uid int) string {
+	if uid <= 0 {
+		return ""
+	}
+	return "    ct state new meta skuid " + strconv.Itoa(uid) + " jump webmail\n"
 }
 
 // copyMailCertificate gives the mail server the certificate that the edge proxy has for the

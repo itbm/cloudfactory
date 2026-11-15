@@ -105,6 +105,13 @@ func (d *Deps) allowRunuser(args []string) error {
 			return err
 		}
 		return allowImage(podman, []string{d.MailImage, d.MailDBImage, d.MailKeepImage})
+	case user == host.WebmailUser:
+		// The root helper makes the user before the first command (webmail.prepare).
+		podman, err := d.podmanOf(user, command)
+		if err != nil {
+			return err
+		}
+		return allowImage(podman, []string{d.WebmailImage})
 	}
 	// The user of a website has only the rights of its website, so the worker can run each
 	// program as that user.

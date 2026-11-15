@@ -122,6 +122,13 @@ type Deps struct {
 	// store of a member of a mail cluster.
 	MailDBImage   string
 	MailKeepImage string
+	// WebmailImage is the image of the webmail (Bulwark) of a mail server. Empty means no
+	// webmail: the edge proxy then answers the host name of the mail server with a short page.
+	WebmailImage string
+	// WebmailHome and WebmailConfigDir are the directories of the webmail. The defaults are
+	// "/var/lib/cf-webmail" and "/etc/cloudfactory/webmail". Tests replace them.
+	WebmailHome      string
+	WebmailConfigDir string
 	// WireGuardDir holds the settings of the private network of a mail cluster. The default
 	// is "/etc/wireguard". Tests replace it.
 	WireGuardDir string

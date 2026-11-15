@@ -27,6 +27,11 @@ const EdgeUser = "cf-edge"
 // helper makes the user when an administrator turns on email.
 const MailUser = "cf-mail"
 
+// WebmailUser is the Unix user of the webmail of a mail server. The webmail has its own user:
+// it opens connections to the edge proxy of the server and to the internet, which the mail
+// server cannot do.
+const WebmailUser = "cf-webmail"
+
 // AgentUser is the Unix user of the worker of the agent. The worker has the connection to
 // the panel and the jobs. It is not root: the root helper of the agent does the work that
 // needs root (package gate).

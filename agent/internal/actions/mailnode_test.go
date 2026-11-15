@@ -339,7 +339,7 @@ func TestTheFirewallRulesOfAMember(t *testing.T) {
 	_, keys.KeepKey, _ = mailcluster.NewKey()
 	_, keys.NodeKey, _ = mailcluster.NewKey()
 	cluster := mailClusterOf(t, keys)
-	rules := MailFirewall(985, &cluster)
+	rules := MailFirewall(985, 0, &cluster)
 	accept, refuse := strings.Index(rules, "ip daddr 10.77.25.1 tcp dport 19026 accept"), strings.Index(rules, "fib daddr type { local, broadcast, multicast } jump refuse")
 	if accept < 0 || refuse < 0 || accept > refuse {
 		t.Errorf("the rules of the cluster are not before the rules that refuse:\n%s", rules)

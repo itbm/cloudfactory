@@ -35,6 +35,7 @@ jobs:
           - { image: valkey, context: images/valkey, file: images/valkey/Containerfile, args: '' }
           - { image: mail, context: images/mail, file: images/mail/Containerfile, args: '' }
           - { image: mail-keep, context: images/mail-keep, file: images/mail-keep/Containerfile, args: '' }
+          - { image: webmail, context: images/webmail, file: images/webmail/Containerfile, args: '' }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

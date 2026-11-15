@@ -68,6 +68,15 @@ type Site struct {
 	// a host name that has no website but needs a certificate: the host name of the mail
 	// server. The edge proxy gets the certificate, and the agent gives it to the mail server.
 	Page string
+	// Paths send some paths to a different port. The webmail is on the host name of the mail
+	// server, and the JMAP paths go to the mail server: the browser then uses one origin.
+	Paths []PathRoute
+}
+
+// PathRoute sends the requests for some paths to a port. A path that ends with "*" is a prefix.
+type PathRoute struct {
+	Paths []string
+	Port  int
 }
 
 // StoppedPage is the page of a stopped website. It has status 503. It does not tell a visitor
@@ -186,9 +195,20 @@ func unknownID(body []byte) bool { return bytes.Contains(body, []byte("unknown o
 // SiteRoute is the route of the primary domain and the aliases. The route of a stopped website
 // keeps the domains, so that the edge proxy keeps their certificates.
 func SiteRoute(s Site, upstream string) map[string]any {
-	handler := map[string]any{
-		"handler":   "reverse_proxy",
-		"upstreams": []any{map[string]any{"dial": upstream + ":" + strconv.Itoa(s.Port)}},
+	proxy := func(port int) map[string]any {
+		return map[string]any{
+			"handler":   "reverse_proxy",
+			"upstreams": []any{map[string]any{"dial": upstream + ":" + strconv.Itoa(port)}},
+		}
+	}
+	handler := proxy(s.Port)
+	if len(s.Paths) > 0 {
+		routes := make([]any, 0, len(s.Paths)+1)
+		for _, p := range s.Paths {
+			routes = append(routes, map[string]any{"match": []any{map[string]any{"path": p.Paths}}, "handle": []any{proxy(p.Port)}, "terminal": true})
+		}
+		routes = append(routes, map[string]any{"handle": []any{handler}})
+		handler = map[string]any{"handler": "subroute", "routes": routes}
 	}
 	if s.Stopped {
 		handler = map[string]any{

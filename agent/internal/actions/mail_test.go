@@ -161,7 +161,10 @@ func TestTheMailServerGetsTheCertificateOfTheEdgeProxy(t *testing.T) {
 
 // The firewall rules of the mail server must load with the firewall file of the installer.
 func TestTheMailFirewallRulesAreValid(t *testing.T) {
-	rules := MailFirewall(985, nil)
+	rules := MailFirewall(985, 0, nil)
+	if strings.Contains(rules, "webmail") {
+		t.Error("with no webmail, the rules have a chain for the webmail")
+	}
 	for _, want := range []string{"tcp dport 25 redirect to :2025", "tcp dport 993 redirect to :2993", "meta skuid 985 jump mail", "tcp dport 25 accept"} {
 		if !strings.Contains(rules, want) {
 			t.Errorf("the rules do not have %q", want)
@@ -170,6 +173,25 @@ func TestTheMailFirewallRulesAreValid(t *testing.T) {
 	// The mail server must not connect to a service of this server or to a private network.
 	if strings.Index(rules, "169.254.0.0/16") > strings.Index(rules, "    tcp dport 25 accept") {
 		t.Error("the rule for port 25 is before the rule for the private networks")
+	}
+	checkFirewall(t, rules)
+}
+
+// The webmail connects only to the DNS, to the edge proxy of this server and to port 443 on
+// the internet.
+func TestTheWebmailFirewallRules(t *testing.T) {
+	rules := MailFirewall(985, 986, nil)
+	for _, want := range []string{"meta skuid 985 jump mail", "meta skuid 986 jump webmail", "fib daddr type local tcp dport 8443 accept", "    tcp dport 443 accept"} {
+		if !strings.Contains(rules, want) {
+			t.Errorf("the rules do not have %q", want)
+		}
+	}
+	chain := rules[strings.Index(rules, "chain webmail"):]
+	chain = chain[:strings.Index(chain, "}")]
+	// The private networks are refused before port 443 is accepted, and the edge proxy is the
+	// only local service.
+	if strings.Index(chain, "169.254.0.0/16") > strings.Index(chain, "tcp dport 443 accept") || strings.Index(chain, "dport 8443 accept") > strings.Index(chain, "fib daddr type { local") {
+		t.Errorf("the order of the rules is wrong:\n%s", chain)
 	}
 	checkFirewall(t, rules)
 }

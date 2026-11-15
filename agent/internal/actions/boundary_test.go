@@ -30,7 +30,7 @@ func boundary(t *testing.T) (*Deps, *execx.Fake) {
 	t.Helper()
 	d, f, _ := deps(t)
 	ids := map[string]int{
-		"acme_x7k2": 20001, "bolt_k3m9": 20002, "cf-edge": 991, "cf-mail": 985,
+		"acme_x7k2": 20001, "bolt_k3m9": 20002, "cf-edge": 991, "cf-mail": 985, "cf-webmail": 984,
 		// The user of the shared database containers of an earlier release. A server from
 		// that release has it. The worker cannot use it.
 		oldDBUser: 990,
@@ -52,6 +52,7 @@ func boundary(t *testing.T) (*Deps, *execx.Fake) {
 		d.EdgeImage = "ghcr.io/itbm/edge:0.2.0"
 		d.MailImage = "ghcr.io/itbm/mail:0.2.0"
 		d.MailDBImage, d.MailKeepImage = mailDBImage, mailKeepImage
+		d.WebmailImage = webmailImage
 		d.ResticPasswordFile = "/etc/cloudfactory/restic.key"
 	})
 	return d, f
@@ -62,6 +63,7 @@ const (
 	dbPodman   = "runuser -u cf-db -- env XDG_RUNTIME_DIR=/run/user/990 podman "
 	edgePodman = "runuser -u cf-edge -- env XDG_RUNTIME_DIR=/run/user/991 podman "
 	mailPodman = "runuser -u cf-mail -- env XDG_RUNTIME_DIR=/run/user/985 podman "
+	webPodman  = "runuser -u cf-webmail -- env XDG_RUNTIME_DIR=/run/user/984 podman "
 	mariaName  = "cf-mariadb-" + mariaServerKey
 	// adminKey is the last part of the name of adminDBUser.
 	adminKey    = "01jbq3z5k8n6t4w2x9y7r5p3zz"
@@ -96,6 +98,10 @@ func TestTheRootHelperRunsTheCommandsOfThePolicy(t *testing.T) {
 		mailPodman + "pull --quiet " + mailKeepImage,
 		"systemctl --user --machine=cf-mail@ restart cf-mail-db.service",
 		"systemctl --user --machine=cf-mail@ restart cf-mail.service",
+		// The service user of the webmail: the image of this agent version.
+		webPodman + "image exists " + webmailImage,
+		webPodman + "pull --quiet " + webmailImage,
+		"systemctl --user --machine=cf-webmail@ restart cf-webmail.service",
 		// The user managers.
 		"systemctl --user --machine=acme_x7k2@ daemon-reload",
 		"systemctl --user --machine=acme_x7k2@ restart cf-acme_x7k2.service",
@@ -234,6 +240,13 @@ func TestTheRootHelperRefusesCommandsOutsideThePolicy(t *testing.T) {
 		mailPodman + "pull --quiet docker.io/library/alpine",
 		mailPodman + "pull --quiet ghcr.io/itbm/edge:0.2.0",
 		mailPodman + "exec cf-mail sh",
+		// The webmail keeps the settings of the users. The worker cannot run a program as its
+		// user or in its container, or use a different image.
+		"runuser -u cf-webmail -- sh -c id",
+		webPodman + "exec cf-webmail sh",
+		webPodman + "pull --quiet docker.io/library/alpine",
+		webPodman + "pull --quiet ghcr.io/itbm/mail:0.2.0",
+		webPodman + "run --rm " + webmailImage,
 		// Only the root helper asks the database node of a mail cluster for its state.
 		mailPodman + "exec cf-mail-db mariadb",
 		mailPodman + "exec cf-mail-db sh -c id",
