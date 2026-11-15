@@ -22,8 +22,38 @@ class Events
     /** A test event. The administrator sends it from the page of the plugin. */
     public const TEST = 'plugin.test';
 
+    /**
+     * Named events. Each one is a change of the audit log with one action. A plugin that wants
+     * only some changes gives these names, and does not need to read each change of the log.
+     * The data is the same as the data of "audit.recorded".
+     */
+    public const NAMED = [
+        'Created website' => 'website.created',
+        'Changed website' => 'website.changed',
+        'Removed website' => 'website.removed',
+        'Added domain' => 'domain.added',
+        'Verified domain' => 'domain.verified',
+        'Removed domain' => 'domain.removed',
+        'Created database' => 'database.created',
+        'Removed database' => 'database.removed',
+        'Backed up website' => 'backup.started',
+        'Restored from backup' => 'restore.started',
+        'Started deploy' => 'deploy.started',
+        'Started deploy from webhook' => 'deploy.started',
+        'Created customer' => 'customer.created',
+        'Changed customer' => 'customer.changed',
+        'Created user' => 'user.created',
+    ];
+
     /** The events that a manifest can give. */
-    public const NAMES = [self::AUDIT_RECORDED, self::JOB_FINISHED];
+    public const NAMES = [
+        self::AUDIT_RECORDED, self::JOB_FINISHED,
+        'website.created', 'website.changed', 'website.removed',
+        'domain.added', 'domain.verified', 'domain.removed',
+        'database.created', 'database.removed',
+        'backup.started', 'restore.started', 'deploy.started',
+        'customer.created', 'customer.changed', 'user.created',
+    ];
 
     /**
      * Records the event for each plugin that is on and wants it, and puts the deliveries in the

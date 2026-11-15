@@ -139,6 +139,18 @@ func (a *app) printPlugin(p map[string]any) error {
 			fmt.Fprintf(a.out, "Page:          %s (%s) %s\n", cell(pg["title"]), cell(pg["roles"]), cell(pg["url"]))
 		}
 	}
+	if actions, _ := p["actions"].([]any); len(actions) > 0 {
+		for _, x := range actions {
+			ac, _ := x.(map[string]any)
+			fmt.Fprintf(a.out, "Action:        %s (on each %s, for %s)\n", cell(ac["title"]), cell(ac["target"]), cell(ac["roles"]))
+		}
+	}
+	if hooks, _ := p["hooks"].([]any); len(hooks) > 0 {
+		for _, x := range hooks {
+			h, _ := x.(map[string]any)
+			fmt.Fprintf(a.out, "Before hook:   %s (when the plugin does not answer: %s)\n", cell(h["event"]), cell(h["onError"]))
+		}
+	}
 	if cmds, _ := p["commands"].([]any); len(cmds) > 0 {
 		for _, x := range cmds {
 			c, _ := x.(map[string]any)

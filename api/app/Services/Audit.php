@@ -35,18 +35,23 @@ class Audit
     }
 
     /**
-     * Sends the entry to the plugins that want the event "audit.recorded". "pluginId" names the
+     * Sends the entry to the plugins that want the event "audit.recorded", and to the plugins
+     * that want the named event of the action (Events::NAMED), for example "website.created". "pluginId" names the
      * plugin that made the change, so that a plugin can ignore its own changes.
      */
     private static function announce(AuditEntry $entry, ?string $pluginId): void
     {
-        Events::emit(Events::AUDIT_RECORDED, [
+        $data = [
             'action' => $entry->action,
             'target' => $entry->target,
             'actor' => $entry->actor,
             'customerId' => $entry->customer_id,
             'pluginId' => $pluginId,
             'at' => $entry->created_at?->toIso8601String(),
-        ]);
+        ];
+        Events::emit(Events::AUDIT_RECORDED, $data);
+        if ($named = Events::NAMED[$entry->action] ?? null) {
+            Events::emit($named, $data);
+        }
     }
 }

@@ -285,6 +285,9 @@ Route::prefix('v1')->group(function () {
         // The pages of the plugins for the menu, and a short token for a page. Each role.
         Route::get('plugin-pages', [PluginController::class, 'pages']);
         Route::post('plugin-pages/{id}/{pageId}/session', [PluginController::class, 'pageSession'])->middleware('throttle:60,1');
+        // The actions of the plugins (buttons on websites, servers and customers). Each role.
+        Route::get('plugin-actions', [PluginController::class, 'actions']);
+        Route::post('plugin-actions/{id}/{actionId}', [PluginController::class, 'runAction'])->middleware('throttle:30,1');
         // Email notifications: the events that each user receives, the emails that the panel
         // sent, and for administrators and resellers the SMTP server and the templates.
         Route::middleware('scope:notifications')->group(function () {

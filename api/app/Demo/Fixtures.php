@@ -24,7 +24,7 @@ class Fixtures
         '/rollouts', '/audit?perPage=100', '/users', '/panel-certificate', '/runtime-images', '/setup', '/account', '/database-servers', '/dns-zones', '/mesh', '/networks', '/usage-alerts',
         '/me/notification-preferences', '/notifications?perPage=50', '/mail-server', '/notification-templates',
         '/mail/domains', '/mail/mailboxes', '/mail/aliases', '/mail-clusters',
-        '/plugin-pages', '/plugins', '/plugin-keys', '/plugin-settings',
+        '/plugin-pages', '/plugin-actions', '/plugins', '/plugin-keys', '/plugin-settings',
     ];
 
     /**

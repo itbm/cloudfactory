@@ -34,7 +34,7 @@ describe("the Plugins page", () => {
 
   it("checks a manifest and shows what it asks for before the install", async () => {
     const api = await open("administrator", "/plugins");
-    const manifest = { schema: 1, slug: "backup-report", name: "Backup report", version: "1.0.0", publisher: "Example Plugins Ltd", description: "", scopes: ["backups:read"], events: [], webhook: null, pages: [], commands: [] };
+    const manifest = { schema: 1, slug: "backup-report", name: "Backup report", version: "1.0.0", publisher: "Example Plugins Ltd", description: "", scopes: ["backups:read"], events: ["backup.started"], webhook: "/hooks", pages: [], actions: [{ id: "report", title: "Send report", target: "website", path: "/report", roles: ["owner"], confirm: "" }], hooks: [{ event: "website.removing", path: "/before", onError: "refuse" }], commands: [] };
     api.on("POST /plugins/preview", () => ({ manifest, signedBy: null, installed: null, developerMode: false }));
     await waitFor(() => screen.getByText("Uptime monitor 1.4.0"));
     fireEvent.click(screen.getByRole("button", { name: "Install plugin" }));
@@ -44,7 +44,28 @@ describe("the Plugins page", () => {
     await waitFor(() => expect(dialog.textContent).toContain("Backup report 1.0.0"));
     expect(dialog.textContent).toContain("See the backups.");
     expect(dialog.textContent).toContain("No trusted signature. The panel refuses it.");
+    expect(dialog.textContent).toContain("A backup to /hooks");
+    expect(dialog.textContent).toContain("Send report on websites (Website owner)");
+    expect(dialog.textContent).toContain("Delete a website (refused when the plugin does not answer)");
     expect(api.changes.find((c) => c.path === "/plugins/preview")?.body).toEqual({ manifest: JSON.stringify(manifest), signature: null });
+  });
+});
+
+describe("a plugin action", () => {
+  it("is a button on the website, and shows the answer of the plugin", async () => {
+    const { pluginActions, websites } = (await signedIn("owner"), getState());
+    const action = pluginActions.find((a) => a.target === "website")!;
+    const site = websites[0];
+    reset();
+    const api = await open("owner", `/websites/${site.id}`);
+    api.on(`POST /plugin-actions/${action.pluginId}/${action.id}`, () => ({ message: "The website answered in 182 ms.", url: null }));
+    // The button also names the plugin, for a screen reader.
+    fireEvent.click(await screen.findByRole("button", { name: new RegExp(`^${action.title}.*${action.pluginName}`) }));
+    const dialog = screen.getByRole("dialog");
+    expect(dialog.textContent).toContain("It gets access with your rights and the scopes of the plugin, for 15 minutes.");
+    fireEvent.click(within(dialog).getByRole("button", { name: action.title }));
+    await waitFor(() => expect(dialog.textContent).toContain("The website answered in 182 ms."));
+    expect(api.changes.find((c) => c.path.startsWith("/plugin-actions/"))?.body).toEqual({ targetId: site.id });
   });
 });
 

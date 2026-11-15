@@ -9,6 +9,7 @@ use App\Models\AgentJob;
 use App\Models\Plugin;
 use App\Models\PluginDelivery;
 use App\Models\User;
+use App\Services\Audit;
 use App\Services\JobOutcome;
 use App\Services\Plugins\Events;
 use App\Services\Plugins\Outbound;
@@ -324,7 +325,7 @@ class PluginTest extends TestCase
             $outbound->map['uptime.example.net'] = ['198.51.100.7', $ip];
             $delivery = $this->postJson("/api/v1/plugins/{$id}/test")->json('id');
             (new DeliverPluginEvent($delivery))->handle($outbound);
-            $this->assertStringContainsString("does not send events to {$ip}", PluginDelivery::find($delivery)->error, $ip);
+            $this->assertStringContainsString("does not connect to {$ip}", PluginDelivery::find($delivery)->error, $ip);
         }
         Http::assertNothingSent();
         $this->assertNull(Outbound::refused('10.1.2.3', false));
@@ -347,6 +348,131 @@ class PluginTest extends TestCase
         $this->assertSame($customer->id, $d->payload['data']['customerId']);
         // The plugin wants no audit events.
         $this->assertSame(0, PluginDelivery::where('event', Events::AUDIT_RECORDED)->count());
+    }
+
+    public function test_a_plugin_can_receive_only_the_named_events_that_it_wants(): void
+    {
+        $this->admin();
+        $this->trustKey();
+        $this->install($this->manifest(['events' => ['website.removed']]));
+
+        Audit::system('Created website', 'acme.example');
+        Audit::system('Removed website', 'acme.example');
+
+        $d = PluginDelivery::sole();
+        $this->assertSame('website.removed', $d->event);
+        $this->assertSame('Removed website', $d->payload['data']['action']);
+        $this->assertSame('acme.example', $d->payload['data']['target']);
+
+        $this->postJson('/api/v1/plugins/preview', ['manifest' => $this->manifest(['events' => ['website.exploded']])])
+            ->assertUnprocessable()->assertJsonValidationErrors('events.0');
+    }
+
+    public function test_a_before_hook_can_refuse_a_change(): void
+    {
+        $admin = $this->admin();
+        $this->trustKey();
+        $out = $this->install($this->manifest(['hooks' => [['event' => 'website.removing', 'path' => '/hooks/before']]]));
+        $this->assertSame([['event' => 'website.removing', 'path' => '/hooks/before', 'onError' => 'allow']], $out['plugin']['hooks']);
+        $site = $this->website($this->customer(), $this->server(), $this->image());
+
+        // Http::fake keeps the first answer for a URL, so the test changes the answer itself.
+        $answer = ['allow' => false, 'message' => 'The website has an open invoice.'];
+        Http::fake(function () use (&$answer) {
+            return Http::response($answer);
+        });
+        $this->deleteJson("/api/v1/websites/{$site->id}")->assertUnprocessable()
+            ->assertJsonPath('errors.website.0', 'The plugin Uptime monitor refused this change: The website has an open invoice.');
+        $this->assertNotNull($site->fresh());
+        Http::assertSent(function (HttpRequest $r) use ($out, $site, $admin) {
+            [$t, $v1] = array_map(fn ($p) => explode('=', $p, 2)[1], explode(',', $r->header('Cloudfactory-Signature')[0]));
+
+            return $r->url() === 'https://uptime.example.net/hooks/before'
+                && $r->header('Cloudfactory-Event')[0] === 'website.removing'
+                && hash_equals(hash_hmac('sha256', "{$t}.{$r->body()}", $out['webhookSecret']), $v1)
+                && $r['data']['id'] === $site->id && $r['user']['id'] === $admin->id;
+        });
+
+        $answer = ['allow' => true];
+        $this->deleteJson("/api/v1/websites/{$site->id}")->assertAccepted();
+    }
+
+    public function test_a_before_hook_that_does_not_answer_allows_the_change_unless_its_manifest_says_refuse(): void
+    {
+        $this->admin();
+        $this->trustKey();
+        $id = $this->install($this->manifest(['hooks' => [['event' => 'customer.creating', 'path' => '/hooks/before']]]))['plugin']['id'];
+        $plan = $this->plan();
+        Http::fake(['*' => Http::response('down', 503)]);
+
+        $this->postJson('/api/v1/customers', ['name' => 'Acme', 'email' => 'acme@example.com', 'role' => 'owner', 'planId' => $plan->id])->assertCreated();
+
+        $manifest = $this->manifest(['version' => '1.1.0', 'hooks' => [['event' => 'customer.creating', 'path' => '/hooks/before', 'onError' => 'refuse']]]);
+        $this->putJson("/api/v1/plugins/{$id}", ['manifest' => $manifest, 'signature' => $this->sign($manifest), 'password' => 'password'])->assertOk();
+        $this->postJson('/api/v1/customers', ['name' => 'Beta', 'email' => 'beta@example.com', 'role' => 'owner', 'planId' => $plan->id])
+            ->assertUnprocessable()->assertJsonValidationErrors('name');
+
+        // A plugin that is off is not asked.
+        $this->patchJson("/api/v1/plugins/{$id}", ['enabled' => false])->assertOk();
+        $this->postJson('/api/v1/customers', ['name' => 'Beta', 'email' => 'beta@example.com', 'role' => 'owner', 'planId' => $plan->id])->assertCreated();
+    }
+
+    public function test_an_action_sends_the_plugin_a_token_with_the_rights_of_the_user(): void
+    {
+        $this->admin();
+        $this->trustKey();
+        $pluginId = $this->install($this->manifest(['actions' => [
+            ['id' => 'check', 'title' => 'Check now', 'target' => 'website', 'path' => '/actions/check', 'roles' => ['owner'], 'confirm' => 'Check the website now?'],
+        ]]))['plugin']['id'];
+        $customer = $this->customer();
+        $mine = $this->website($customer, $this->server(), $this->image());
+        $other = $this->website($this->customer(), $this->server(['name' => 'web-2']), $this->image(), 'other.example');
+        $owner = $this->user(Role::Owner, $customer);
+        $session = $owner->createToken('Web session', ['*'])->plainTextToken;
+        $this->app['auth']->forgetGuards();
+
+        $this->withToken($session)->getJson('/api/v1/plugin-actions')->assertOk()->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.title', 'Check now')->assertJsonPath('data.0.target', 'website')->assertJsonPath('data.0.confirm', 'Check the website now?');
+
+        $sent = null;
+        $answer = Http::response(['message' => 'The website answers in 120 ms.', 'url' => 'https://uptime.example.net/report/1']);
+        Http::fake(function (HttpRequest $r) use (&$sent, &$answer) {
+            $sent = $r;
+
+            return $answer;
+        });
+        $this->withToken($session)->postJson("/api/v1/plugin-actions/{$pluginId}/check", ['targetId' => $mine->id])->assertOk()
+            ->assertJsonPath('message', 'The website answers in 120 ms.')->assertJsonPath('url', 'https://uptime.example.net/report/1');
+        $this->assertSame('https://uptime.example.net/actions/check', $sent->url());
+        $this->assertSame(['type' => 'website', 'id' => $mine->id, 'name' => $mine->name, 'customerId' => $customer->id], $sent['target']);
+
+        // The token has the rights of the owner and the scopes of the plugin.
+        $this->app['auth']->forgetGuards();
+        $this->withToken($sent['token'])->getJson('/api/v1/websites')->assertOk()
+            ->assertJsonFragment(['id' => $mine->id])->assertJsonMissing(['id' => $other->id]);
+        $this->withToken($sent['token'])->deleteJson("/api/v1/websites/{$mine->id}")->assertForbidden();
+        // The token is not a session: it cannot run an action.
+        $this->withToken($sent['token'])->postJson("/api/v1/plugin-actions/{$pluginId}/check", ['targetId' => $mine->id])->assertForbidden();
+
+        // A website of a different customer is not found. A link to a different site is not given.
+        $this->app['auth']->forgetGuards();
+        $this->withToken($session)->postJson("/api/v1/plugin-actions/{$pluginId}/check", ['targetId' => $other->id])->assertNotFound();
+        $answer = Http::response(['message' => 'Done.', 'url' => 'https://evil.example/login']);
+        $this->withToken($session)->postJson("/api/v1/plugin-actions/{$pluginId}/check", ['targetId' => $mine->id])->assertOk()->assertJsonPath('url', null);
+
+        // A plugin that fails gives status 502, and its token stops.
+        $answer = Http::response('', 500);
+        $this->withToken($session)->postJson("/api/v1/plugin-actions/{$pluginId}/check", ['targetId' => $mine->id])->assertStatus(502);
+        $this->assertSame(0, PersonalAccessToken::where('name', "Plugin action {$pluginId}")->count());
+    }
+
+    public function test_a_manifest_gives_only_known_targets_and_hooks(): void
+    {
+        $this->admin();
+        $this->postJson('/api/v1/plugins/preview', ['manifest' => $this->manifest([
+            'actions' => [['id' => 'x', 'title' => 'X', 'target' => 'agent', 'path' => '/x', 'roles' => ['administrator']]],
+            'hooks' => [['event' => 'agent.connecting', 'path' => '/../x']],
+        ])])->assertUnprocessable()->assertJsonValidationErrors(['actions.0.target', 'hooks.0.event', 'hooks.0.path']);
     }
 
     public function test_only_an_administrator_manages_plugins(): void

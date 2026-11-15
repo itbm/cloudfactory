@@ -9,7 +9,7 @@ use Illuminate\Validation\ValidationException;
 
 /**
  * The manifest of a plugin (plugin.json). It gives the name of the plugin, the scopes that its
- * token gets, the events that it receives, and its pages. The paths are relative to the
+ * token gets, the events that it receives, its pages, its actions and its before hooks. The paths are relative to the
  * address where the administrator runs the plugin.
  *
  * The panel reads the manifest only as data. It never runs code from a plugin.
@@ -77,6 +77,18 @@ class Manifest
             'pages.*.path' => ['required', 'string', 'regex:'.self::PATH, 'not_regex:#\.\.#'],
             'pages.*.roles' => ['required', 'array', 'min:1'],
             'pages.*.roles.*' => ['string', 'distinct', Rule::in($roles)],
+            'actions' => ['sometimes', 'array', 'max:20'],
+            'actions.*.id' => ['required', 'string', 'regex:'.self::SLUG, 'distinct'],
+            'actions.*.title' => ['required', 'string', 'max:40'],
+            'actions.*.target' => ['required', 'string', Rule::in(Actions::TARGETS)],
+            'actions.*.path' => ['required', 'string', 'regex:'.self::PATH, 'not_regex:#\.\.#'],
+            'actions.*.roles' => ['required', 'array', 'min:1'],
+            'actions.*.roles.*' => ['string', 'distinct', Rule::in($roles)],
+            'actions.*.confirm' => ['nullable', 'string', 'max:200'],
+            'hooks' => ['sometimes', 'array', 'max:20'],
+            'hooks.*.event' => ['required', 'string', 'distinct', Rule::in(Hooks::NAMES)],
+            'hooks.*.path' => ['required', 'string', 'regex:'.self::PATH, 'not_regex:#\.\.#'],
+            'hooks.*.onError' => ['sometimes', 'string', Rule::in(['allow', 'refuse'])],
             'commands' => ['sometimes', 'array', 'max:20'],
             'commands.*.name' => ['required', 'string', 'regex:'.self::SLUG, 'distinct'],
             'commands.*.description' => ['nullable', 'string', 'max:200'],
@@ -90,6 +102,12 @@ class Manifest
             'webhook.not_regex' => 'A path cannot have "..".',
             'pages.*.path.regex' => 'Give a path that starts with "/", for example /panel/status.',
             'pages.*.path.not_regex' => 'A path cannot have "..".',
+            'actions.*.target.in' => 'The target of an action is one of: '.implode(', ', Actions::TARGETS).'.',
+            'actions.*.path.regex' => 'Give a path that starts with "/", for example /actions/check.',
+            'actions.*.path.not_regex' => 'A path cannot have "..".',
+            'hooks.*.event.in' => 'The hook ":input" is not known. Use one of: '.implode(', ', Hooks::NAMES).'.',
+            'hooks.*.path.regex' => 'Give a path that starts with "/", for example /hooks/before.',
+            'hooks.*.path.not_regex' => 'A path cannot have "..".',
         ]);
         $v->validate();
 
@@ -106,6 +124,13 @@ class Manifest
             'pages' => array_map(fn (array $p) => [
                 'id' => $p['id'], 'title' => $p['title'], 'path' => $p['path'], 'roles' => array_values($p['roles']),
             ], array_values($data['pages'] ?? [])),
+            'actions' => array_map(fn (array $a) => [
+                'id' => $a['id'], 'title' => $a['title'], 'target' => $a['target'], 'path' => $a['path'],
+                'roles' => array_values($a['roles']), 'confirm' => $a['confirm'] ?? '',
+            ], array_values($data['actions'] ?? [])),
+            'hooks' => array_map(fn (array $h) => [
+                'event' => $h['event'], 'path' => $h['path'], 'onError' => $h['onError'] ?? 'allow',
+            ], array_values($data['hooks'] ?? [])),
             'commands' => array_map(fn (array $c) => [
                 'name' => $c['name'], 'description' => $c['description'] ?? '',
             ], array_values($data['commands'] ?? [])),

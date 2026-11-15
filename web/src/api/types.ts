@@ -956,6 +956,8 @@ export interface State {
   networks: PrivateNetwork[];
   /** The pages of the plugins that are on, for the role of the user. */
   pluginPages: PluginPage[];
+  /** The actions of the plugins that are on, for the role of the user. */
+  pluginActions: PluginAction[];
   /** The open usage alerts that the user can see. */
   usageAlerts: UsageAlert[];
   /** The thresholds of the usage alerts, in percent of each limit. */
@@ -1073,7 +1075,43 @@ export interface Deploy {
 // Plugins: programs outside the panel with their own token (docs/plugins.md). The panel
 // reads the list of plugins when an administrator opens the Plugins page.
 
-export type PluginEvent = "audit.recorded" | "job.finished";
+export type PluginEvent =
+  | "audit.recorded" | "job.finished"
+  | "website.created" | "website.changed" | "website.removed"
+  | "domain.added" | "domain.verified" | "domain.removed"
+  | "database.created" | "database.removed"
+  | "backup.started" | "restore.started" | "deploy.started"
+  | "customer.created" | "customer.changed" | "user.created";
+
+/** A before hook: the panel asks the plugin before the change, and the plugin can refuse it. */
+export type PluginHookEvent = "website.creating" | "website.removing" | "domain.adding" | "database.creating" | "customer.creating";
+
+export interface PluginHook {
+  event: PluginHookEvent;
+  path: string;
+  /** What the panel does when the plugin does not answer in 5 seconds. */
+  onError: "allow" | "refuse";
+}
+
+export type PluginActionTarget = "website" | "server" | "customer";
+
+/** A button of a plugin on the page of a website, a server or a customer. */
+export interface PluginAction {
+  pluginId: string;
+  pluginName: string;
+  id: string;
+  title: string;
+  target: PluginActionTarget;
+  /** A question that the panel asks before it runs the action. */
+  confirm: string | null;
+  roles: Role[];
+}
+
+/** The answer of a plugin to an action. The URL is on the address of the plugin. */
+export interface PluginActionResult {
+  message: string;
+  url: string | null;
+}
 
 /** A page of a plugin. The panel opens it in a frame with the origin of the plugin. */
 export interface PluginPage {
@@ -1117,6 +1155,8 @@ export interface PluginManifest {
   events: PluginEvent[];
   webhook: string | null;
   pages: { id: string; title: string; path: string; roles: Role[] }[];
+  actions: { id: string; title: string; target: PluginActionTarget; path: string; roles: Role[]; confirm: string }[];
+  hooks: PluginHook[];
   commands: { name: string; description: string }[];
 }
 
@@ -1133,6 +1173,8 @@ export interface Plugin {
   scopes: string[];
   events: PluginEvent[];
   pages: PluginPage[];
+  actions: PluginAction[];
+  hooks: PluginHook[];
   commands: { name: string; description: string }[];
   signedBy: PluginKey | null;
   tokenExpiresAt: string | null;

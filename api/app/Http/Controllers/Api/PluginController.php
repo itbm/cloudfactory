@@ -5,12 +5,16 @@ namespace App\Http\Controllers\Api;
 use App\Enums\Role;
 use App\Http\Controllers\Controller;
 use App\Http\Middleware\AllowPluginOrigins;
+use App\Models\Customer;
 use App\Models\Plugin;
 use App\Models\PluginDelivery;
 use App\Models\PluginKey;
+use App\Models\Server;
 use App\Models\Setting;
 use App\Models\User;
 use App\Services\Audit;
+use App\Services\Plugins\Actions;
+use App\Services\Plugins\Caller;
 use App\Services\Plugins\Events;
 use App\Services\Plugins\Manifest;
 use App\Services\Plugins\Signatures;
@@ -30,12 +34,17 @@ use Illuminate\Validation\ValidationException;
  * - The panel sends the events of the manifest to the webhook of the plugin, with a signature.
  * - A page of the plugin opens in a frame with the origin of the plugin. The page gets a token
  *   of the user who opens it, with the scopes of the plugin and for 15 minutes.
+ * - An action of the plugin is a button on a website, a server or a customer. The plugin gets a
+ *   token of the user who selects it, with the scopes of the plugin and for 15 minutes.
+ * - A before hook lets the plugin refuse a change (App\Services\Plugins\Hooks).
  *
  * Only an administrator installs a plugin, with the password and the TOTP code. The panel
  * installs only a manifest that a trusted key signed, unless the developer mode is on.
  */
 class PluginController extends Controller
 {
+    use Concerns;
+
     /** A plugin token is valid for one year (FR-104: each token has an expiry date). */
     private const TOKEN_DAYS = 365;
 
@@ -326,13 +335,111 @@ class PluginController extends Controller
         ], 201);
     }
 
+    /** The actions of the plugins that the user can select, for the pages of the web panel. */
+    public function actions(Request $request): JsonResponse
+    {
+        $role = $request->user()->role->value;
+        $actions = [];
+        foreach (Plugin::where('enabled', true)->orderBy('name')->get() as $plugin) {
+            foreach ($plugin->actions() as $action) {
+                if (in_array($role, $action['roles'], true)) {
+                    $actions[] = self::presentAction($plugin, $action);
+                }
+            }
+        }
+
+        return response()->json(['data' => $actions]);
+    }
+
+    /**
+     * Runs an action of a plugin on a website, a server or a customer that the user can see. The
+     * panel sends the plugin a signed request with a token of the user for 15 minutes, with the
+     * scopes of the plugin. Only a sign-in session runs an action, so an API token cannot make
+     * tokens.
+     */
+    public function runAction(Request $request, Caller $caller, string $id, string $actionId): JsonResponse
+    {
+        abort_unless(AuthController::isSession($request), 403, 'Only a sign-in session can run the action of a plugin.');
+        $plugin = Plugin::where('enabled', true)->findOrFail($id);
+        $user = $request->user();
+        $action = collect($plugin->actions())->firstWhere('id', $actionId);
+        abort_unless($action && in_array($user->role->value, $action['roles'], true), 404);
+        $data = $request->validate(['targetId' => ['required', 'string', 'max:64']]);
+        [$targetName, $customerId] = $this->actionTarget($request, $action['target'], $data['targetId']);
+
+        $name = Actions::TOKEN_PREFIX.$plugin->id;
+        $user->tokens()->where('name', $name)->delete();
+        $token = $user->createToken($name, $plugin->scopes() ?: ['none'], now()->addMinutes(self::PAGE_TOKEN_MINUTES));
+        $requestId = strtolower((string) Str::ulid());
+        $result = $caller->post($plugin, $plugin->urlOf($action['path']), 'plugin.action', $requestId, [
+            'id' => $requestId,
+            'action' => ['id' => $action['id'], 'title' => $action['title']],
+            'target' => ['type' => $action['target'], 'id' => $data['targetId'], 'name' => $targetName, 'customerId' => $customerId],
+            'user' => ['id' => $user->id, 'name' => $user->name, 'role' => $user->role->value, 'customerId' => $user->customer_id],
+            'token' => $token->plainTextToken,
+            'expiresAt' => $token->accessToken->expires_at?->toIso8601String(),
+            'scopes' => $plugin->scopes(),
+            'apiBase' => rtrim((string) config('app.url'), '/').'/api/v1',
+            'createdAt' => now()->toIso8601String(),
+        ], Actions::TIMEOUT);
+        Audit::record($request, 'Ran plugin action', "{$plugin->name}: {$action['title']} ({$targetName})", $customerId);
+        if ($result['error'] !== null) {
+            $token->accessToken->delete();
+
+            return response()->json(['message' => "The plugin {$plugin->name} did not do the action. {$result['error']}"], 502);
+        }
+
+        $answer = $result['response']?->json();
+        $message = is_array($answer) && is_string($answer['message'] ?? null) && trim($answer['message']) !== ''
+            ? mb_substr(trim($answer['message']), 0, Actions::MESSAGE_LENGTH)
+            : "The plugin {$plugin->name} did the action.";
+        $url = is_array($answer) && is_string($answer['url'] ?? null) ? $answer['url'] : null;
+        // Only a link to the plugin itself, so that a plugin cannot show a link to a different site
+        // as a link of the panel.
+        $origin = self::presentPage($plugin, ['id' => '', 'title' => '', 'path' => '/', 'roles' => []])['origin'];
+        if ($url !== null && ! str_starts_with($url, $origin.'/')) {
+            $url = null;
+        }
+
+        return response()->json(['message' => $message, 'url' => $url]);
+    }
+
+    /**
+     * The name and the customer of the target of an action, when the user can see the target.
+     *
+     * @return array{0: string, 1: ?string}
+     */
+    private function actionTarget(Request $request, string $type, string $id): array
+    {
+        $user = $request->user();
+        if ($type === 'website') {
+            $website = $this->visibleWebsites($request)->findOrFail($id);
+
+            return [$website->name, $website->customer_id];
+        }
+        if ($type === 'server') {
+            abort_unless($user->isAdministrator(), 404);
+
+            return [Server::findOrFail($id)->name, null];
+        }
+        $customer = Customer::findOrFail($id);
+        abort_unless($user->canSeeCustomer($customer->id), 404);
+
+        return [$customer->name, $customer->id];
+    }
+
     /** True when the token of the request is from a plugin, or from a page of a plugin, that is off. */
     public static function refusesToken(Request $request): bool
     {
         $user = $request->user();
         $token = $user?->currentAccessToken();
         $name = $token && method_exists($token, 'getAttribute') ? (string) $token->getAttribute('name') : '';
-        $pluginId = $user?->plugin_id ?? (str_starts_with($name, self::PAGE_TOKEN_PREFIX) ? substr($name, strlen(self::PAGE_TOKEN_PREFIX)) : null);
+        $pluginId = $user?->plugin_id;
+        foreach ([self::PAGE_TOKEN_PREFIX, Actions::TOKEN_PREFIX] as $prefix) {
+            if ($pluginId === null && str_starts_with($name, $prefix)) {
+                $pluginId = substr($name, strlen($prefix));
+            }
+        }
 
         return $pluginId !== null && ! Plugin::where('id', $pluginId)->where('enabled', true)->exists();
     }
@@ -364,7 +471,7 @@ class PluginController extends Controller
 
     private static function revokePageTokens(Plugin $plugin): void
     {
-        DB::table('personal_access_tokens')->where('name', self::PAGE_TOKEN_PREFIX.$plugin->id)->delete();
+        DB::table('personal_access_tokens')->whereIn('name', [self::PAGE_TOKEN_PREFIX.$plugin->id, Actions::TOKEN_PREFIX.$plugin->id])->delete();
     }
 
     /** @return array<string, mixed> */
@@ -389,6 +496,8 @@ class PluginController extends Controller
             'scopes' => $p->scopes(),
             'events' => $p->events(),
             'pages' => array_map(fn (array $page) => self::presentPage($p, $page), $p->pages()),
+            'actions' => array_map(fn (array $a) => self::presentAction($p, $a), $p->actions()),
+            'hooks' => $p->hooks(),
             'commands' => $spec['commands'] ?? [],
             'signedBy' => $p->key ? self::presentKey($p->key) : null,
             'tokenExpiresAt' => $token?->expires_at?->toIso8601String(),
@@ -418,6 +527,20 @@ class PluginController extends Controller
             'url' => $url,
             'origin' => $parts['scheme'].'://'.$parts['host'].(isset($parts['port']) ? ':'.$parts['port'] : ''),
             'roles' => $page['roles'],
+        ];
+    }
+
+    /** @param array<string, mixed> $action */
+    private static function presentAction(Plugin $p, array $action): array
+    {
+        return [
+            'pluginId' => $p->id,
+            'pluginName' => $p->name,
+            'id' => $action['id'],
+            'title' => $action['title'],
+            'target' => $action['target'],
+            'confirm' => $action['confirm'] ?: null,
+            'roles' => $action['roles'],
         ];
     }
 

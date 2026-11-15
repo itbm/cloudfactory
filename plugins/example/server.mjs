@@ -2,8 +2,8 @@
 //
 //   CF_WEBHOOK_SECRET=whsec_... PORT=8090 node server.mjs
 //
-// It serves the page of plugin.json, and receives the events of the panel. Refer to
-// docs/plugins.md.
+// It serves the page of plugin.json, receives the events of the panel, runs the action
+// "Check uptime now", and answers the before hook "website.removing". Refer to docs/plugins.md.
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createServer } from "node:http";
@@ -22,7 +22,47 @@ function verify(header, body) {
   return want.length === got.length && timingSafeEqual(want, got);
 }
 
+/** Reads the body, and answers 401 when the signature is not correct. */
+function signedBody(req, res, then) {
+  const chunks = [];
+  req.on("data", (c) => chunks.push(c));
+  req.on("end", () => {
+    const body = Buffer.concat(chunks).toString("utf8");
+    if (!verify(req.headers["cloudfactory-signature"], body)) {
+      res.writeHead(401);
+      return res.end();
+    }
+    then(JSON.parse(body));
+  });
+}
+
+function json(res, value) {
+  res.writeHead(200, { "Content-Type": "application/json" });
+  res.end(JSON.stringify(value));
+}
+
 createServer((req, res) => {
+  if (req.method === "POST" && req.url === "/actions/check") {
+    // An action. The request has a token of the user for 15 minutes. Use it to call the API with
+    // the rights of that user. Answer in 10 seconds.
+    return signedBody(req, res, async (action) => {
+      const r = await fetch(`${action.apiBase}/websites/${action.target.id}`, { headers: { Authorization: `Bearer ${action.token}`, Accept: "application/json" } });
+      if (!r.ok) return json(res, { message: `The panel answered ${r.status}. The website was not checked.` });
+      const site = (await r.json()).data;
+      const started = Date.now();
+      const answer = await fetch(`https://${site.name}/`, { method: "HEAD", signal: AbortSignal.timeout(5000) }).catch(() => null);
+      json(res, { message: answer ? `${site.name} answered ${answer.status} in ${Date.now() - started} ms.` : `${site.name} did not answer in 5 seconds.` });
+    });
+  }
+  if (req.method === "POST" && req.url === "/hooks/before") {
+    // A before hook. Answer {"allow": true}, or {"allow": false, "message": "..."}, in 5 seconds.
+    return signedBody(req, res, (hook) => {
+      if (hook.hook === "website.removing" && process.env.PROTECTED_WEBSITES?.split(",").includes(hook.data.name)) {
+        return json(res, { allow: false, message: "This website is on the list of protected websites of the uptime monitor." });
+      }
+      json(res, { allow: true });
+    });
+  }
   if (req.method === "GET" && req.url === "/panel/status") {
     // Only the web panel can show the page in a frame. Put the address of your panel here.
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Content-Security-Policy": `frame-ancestors ${process.env.CF_PANEL ?? "'none'"}` });

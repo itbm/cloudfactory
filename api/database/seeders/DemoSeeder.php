@@ -135,14 +135,17 @@ class DemoSeeder extends Seeder
             [[
                 'schema' => 1, 'slug' => 'uptime', 'name' => 'Uptime monitor', 'version' => '1.4.0', 'publisher' => 'Example Plugins Ltd',
                 'description' => 'Checks each website every minute from three regions, and shows the uptime and the response time.',
-                'scopes' => ['websites:read', 'audit:read'], 'events' => ['audit.recorded', 'job.finished'], 'webhook' => '/hooks/cloudfactory',
+                'scopes' => ['websites:read', 'audit:read'], 'events' => ['audit.recorded', 'job.finished', 'website.created'], 'webhook' => '/hooks/cloudfactory',
                 'pages' => [['id' => 'status', 'title' => 'Uptime', 'path' => '/panel/status', 'roles' => ['administrator', 'reseller', 'owner']]],
+                'actions' => [['id' => 'check', 'title' => 'Check uptime now', 'target' => 'website', 'path' => '/actions/check', 'roles' => ['administrator', 'reseller', 'owner']]],
+                'hooks' => [['event' => 'website.removing', 'path' => '/hooks/before']],
                 'commands' => [['name' => 'uptime', 'description' => 'Shows the uptime of each website.']],
             ], rtrim((string) env('CF_DEMO_PLUGIN_URL', 'http://127.0.0.1:8000'), '/').'/demo-plugins/uptime', true],
             [[
                 'schema' => 1, 'slug' => 'chat-alerts', 'name' => 'Chat alerts', 'version' => '0.9.2', 'publisher' => 'Example Plugins Ltd',
                 'description' => 'Posts a message to a chat channel when a job fails.',
-                'scopes' => ['websites:read'], 'events' => ['job.finished'], 'webhook' => '/cloudfactory/events',
+                'scopes' => ['websites:read', 'customers:read'], 'events' => ['job.finished', 'customer.created'], 'webhook' => '/cloudfactory/events',
+                'actions' => [['id' => 'notify', 'title' => 'Send a test alert', 'target' => 'customer', 'path' => '/cloudfactory/actions/notify', 'roles' => ['administrator', 'reseller'], 'confirm' => 'Send a test alert to the chat channel of this customer?']],
             ], 'https://alerts.example.net', true],
         ];
         foreach ($plugins as [$manifest, $baseUrl, $enabled]) {

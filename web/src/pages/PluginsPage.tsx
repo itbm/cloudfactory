@@ -5,7 +5,7 @@ import {
   addPluginKey, installPlugin, loadPlugins, pluginDeliveries, previewPlugin, removePlugin, removePluginKey, retryPluginDelivery,
   rotatePluginCredentials, setPluginDeveloperMode, setPluginEnabled, testPlugin, upgradePlugin, type PluginPreview,
 } from "../api/store";
-import type { Confirmation, Plugin, PluginCredentials, PluginDelivery, PluginKey } from "../api/types";
+import type { Confirmation, Plugin, PluginActionTarget, PluginCredentials, PluginDelivery, PluginHook, PluginHookEvent, PluginKey } from "../api/types";
 import { ConfirmIdentityFields, NO_CONFIRMATION } from "../components/ConfirmIdentity";
 import { Topbar } from "../components/Layout";
 import { Card, ConfirmButton, Empty, Field, FormError, Modal, PageHeader, RowMenu, Status, TableWrap, Toggle } from "../components/ui";
@@ -37,7 +37,36 @@ const EVENT_TEXT: Record<string, string> = {
   "audit.recorded": "Each change in the audit log",
   "job.finished": "Each job that succeeds or fails",
   "plugin.test": "Test event",
+  "website.created": "A new website",
+  "website.changed": "A change of a website",
+  "website.removed": "A removed website",
+  "domain.added": "A new domain",
+  "domain.verified": "A verified domain",
+  "domain.removed": "A removed domain",
+  "database.created": "A new database",
+  "database.removed": "A removed database",
+  "backup.started": "A backup",
+  "restore.started": "A restore from a backup",
+  "deploy.started": "A deploy",
+  "customer.created": "A new customer",
+  "customer.changed": "A change of a customer",
+  "user.created": "A new user",
 };
+
+/** The before hooks in plain words: the plugin can refuse these changes. */
+const HOOK_TEXT: Record<PluginHookEvent, string> = {
+  "website.creating": "Make a website",
+  "website.removing": "Delete a website",
+  "domain.adding": "Add a domain",
+  "database.creating": "Make a database",
+  "customer.creating": "Add a customer",
+};
+
+const TARGET_TEXT: Record<PluginActionTarget, string> = { website: "websites", server: "servers", customer: "customers" };
+
+function hookList(hooks: PluginHook[]): string {
+  return hooks.map((h) => `${HOOK_TEXT[h.event] ?? h.event}${h.onError === "refuse" ? " (refused when the plugin does not answer)" : ""}`).join(", ");
+}
 
 const DELIVERY_TONE = { delivered: "success", pending: "warning", failed: "danger" } as const;
 const DELIVERY_LABEL = { delivered: "Delivered", pending: "Waiting to try again", failed: "Failed" } as const;
@@ -136,6 +165,10 @@ function PluginCard({ plugin: p, onChange, onCredentials }: { plugin: Plugin; on
               {p.pages.length > 0 && (
                 <tr><th scope="row">Pages</th><td>{p.pages.map((pg, i) => <span key={pg.id}>{i > 0 && ", "}{p.enabled ? <Link to={pluginPagePath(p.id, pg.id)}>{pg.title}</Link> : pg.title} <span className="muted">({pg.roles.map((r) => ROLE_LABEL[r]).join(", ")})</span></span>)}</td></tr>
               )}
+              {p.actions.length > 0 && (
+                <tr><th scope="row">Actions</th><td>{p.actions.map((a, i) => <span key={a.id}>{i > 0 && ", "}{a.title} <span className="muted">(on {TARGET_TEXT[a.target]}, for {a.roles.map((role) => ROLE_LABEL[role]).join(", ")})</span></span>)}</td></tr>
+              )}
+              {p.hooks.length > 0 && <tr><th scope="row">Can refuse</th><td>{hookList(p.hooks)}</td></tr>}
               {p.commands.length > 0 && <tr><th scope="row">Commands</th><td>{p.commands.map((c) => <code key={c.name} style={{ marginRight: 6 }}>cf {c.name}</code>)}</td></tr>}
             </tbody>
           </table>
@@ -271,6 +304,18 @@ function InstallDialog({ plugin, onClose, onInstalled }: { plugin?: Plugin; onCl
             <>
               <h4>Pages</h4>
               <p>{m.pages.map((pg) => `${pg.title} (${pg.roles.map((r) => ROLE_LABEL[r]).join(", ")})`).join("; ")}. A page opens in a frame. It gets a token of the user who opens it, with these scopes, for 15 minutes.</p>
+            </>
+          )}
+          {m.actions.length > 0 && (
+            <>
+              <h4>Actions</h4>
+              <p>{m.actions.map((a) => `${a.title} on ${TARGET_TEXT[a.target]} (${a.roles.map((r) => ROLE_LABEL[r]).join(", ")})`).join("; ")}. When a user selects an action, the plugin gets a token of that user, with these scopes, for 15 minutes.</p>
+            </>
+          )}
+          {m.hooks.length > 0 && (
+            <>
+              <h4>Changes that the plugin can refuse</h4>
+              <p>{hookList(m.hooks)}. The panel asks the plugin before each of these changes, and waits up to 5 seconds.</p>
             </>
           )}
           {!plugin && (

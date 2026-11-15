@@ -5,9 +5,9 @@ Refer to [docs/plugins.md](../../docs/plugins.md) for the full rules.
 
 | File | Function |
 | ---- | -------- |
-| `plugin.json` | The manifest: the scopes, the events, the page and the command. |
+| `plugin.json` | The manifest: the scopes, the events, the page, the action, the before hook and the command. |
 | `page.html` | The page. It asks the panel for a page token and reads the websites. |
-| `server.mjs` | The server. It serves the page and checks the signature of each event. |
+| `server.mjs` | The server. It serves the page, runs the action, answers the before hook and checks the signature of each request. |
 
 The uptime values on the page are examples. The plugin does not check the websites.
 
@@ -40,6 +40,13 @@ The uptime values on the page are examples. The plugin does not check the websit
 
 The page **Uptime** is now in the menu of each role. Select **Plugins > Send a test event** to
 test the webhook.
+
+The page of each website now has the button **Check uptime now**. To stop the deletion of some
+websites, give their names to the server in `PROTECTED_WEBSITES`, separated by commas:
+
+```sh
+PROTECTED_WEBSITES=shop.example.com,www.example.com CF_WEBHOOK_SECRET=whsec_... node server.mjs
+```
 
 In the demonstration mode of the API, the sample plugin "Uptime monitor" uses `page.html` from
 this directory.

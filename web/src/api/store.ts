@@ -36,6 +36,7 @@ import type {
   PluginDelivery,
   PluginKey,
   PluginManifest,
+  PluginActionResult,
   PluginPageSession,
   ResellerBranding,
   ServerRole,
@@ -68,7 +69,7 @@ export function emptyState(): State {
   return {
     session: { signedIn: false, user: { id: "", name: "", email: "", role: "owner" }, contextId: "" },
     contexts: [], websites: [], jobs: [], activity: [], notifications: [], servers: [], images: [], rollout: undefined,
-    databaseServers: [], dnsZones: [], nameServers: [], networks: [], pluginPages: [], usageAlerts: [], alertSettings: { warningPercent: 80, criticalPercent: 95 }, mailDomains: [], mailClusters: [], mailboxes: [], mailAliases: [], databases: [], databaseUsers: [], remoteDatabaseServers: {}, snapshots: [], plans: [], customers: [], users: [],
+    databaseServers: [], dnsZones: [], nameServers: [], networks: [], pluginPages: [], pluginActions: [], usageAlerts: [], alertSettings: { warningPercent: 80, criticalPercent: 95 }, mailDomains: [], mailClusters: [], mailboxes: [], mailAliases: [], databases: [], databaseUsers: [], remoteDatabaseServers: {}, snapshots: [], plans: [], customers: [], users: [],
     backupPolicy: { daily: 7, weekly: 4, monthly: 6, time: "03:00", target: "", credentialNames: [] },
     tokens: [], totpEnabled: false, securityNotices: [], audit: [], joinToken: "", joinCaSha256: undefined,
     panelDomain: "",
@@ -1494,6 +1495,11 @@ export function setPluginDeveloperMode(on: boolean, confirm: Confirmation): Prom
 }
 
 /** A short token for a plugin page, for the signed-in user. */
+/** Runs an action of a plugin on a website, a server or a customer. */
+export function runPluginAction(pluginId: string, actionId: string, targetId: string): Promise<PluginActionResult> {
+  return call(() => live.request<PluginActionResult>("POST", `/plugin-actions/${pluginId}/${actionId}`, { targetId }));
+}
+
 export function pluginPageSession(pluginId: string, pageId: string): Promise<PluginPageSession> {
   return call(() => live.request<PluginPageSession>("POST", `/plugin-pages/${pluginId}/${pageId}/session`));
 }

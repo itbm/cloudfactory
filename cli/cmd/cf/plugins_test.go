@@ -16,7 +16,7 @@ import (
 // "METHOD path body".
 func pluginPanel(t *testing.T) (*httptest.Server, *[]string) {
 	var calls []string
-	const uptime = `{"id":"P1","slug":"uptime","name":"Uptime monitor","version":"1.4.0","publisher":"Example Ltd","enabled":true,"baseUrl":"https://uptime.example.net","webhookUrl":"https://uptime.example.net/hooks","scopes":["audit:read","websites:read"],"events":["job.finished"],"pages":[{"title":"Uptime","roles":["owner"],"url":"https://uptime.example.net/panel"}],"commands":[{"name":"uptime","description":"Shows the uptime."}],"signedBy":{"name":"Example Ltd"},"tokenExpiresAt":"2027-11-15T00:00:00Z"}`
+	const uptime = `{"id":"P1","slug":"uptime","name":"Uptime monitor","version":"1.4.0","publisher":"Example Ltd","enabled":true,"baseUrl":"https://uptime.example.net","webhookUrl":"https://uptime.example.net/hooks","scopes":["audit:read","websites:read"],"events":["job.finished"],"pages":[{"title":"Uptime","roles":["owner"],"url":"https://uptime.example.net/panel"}],"actions":[{"title":"Check now","target":"website","roles":["owner"]}],"hooks":[{"event":"website.removing","onError":"allow"}],"commands":[{"name":"uptime","description":"Shows the uptime."}],"signedBy":{"name":"Example Ltd"},"tokenExpiresAt":"2027-11-15T00:00:00Z"}`
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		body, _ := io.ReadAll(r.Body)
@@ -72,7 +72,7 @@ func TestPluginsInstallAndChange(t *testing.T) {
 	if err := a.dispatch(ctx, []string{"plugins", "get", "Uptime"}); err != nil {
 		t.Fatal(err)
 	}
-	for _, s := range []string{"Uptime monitor 1.4.0 (uptime)", "signed by Example Ltd", "Scopes:        audit:read,websites:read", "Command:       cf uptime"} {
+	for _, s := range []string{"Uptime monitor 1.4.0 (uptime)", "signed by Example Ltd", "Scopes:        audit:read,websites:read", "Command:       cf uptime", "Action:        Check now (on each website, for owner)", "Before hook:   website.removing (when the plugin does not answer: allow)"} {
 		if !strings.Contains(out.String(), s) {
 			t.Errorf("no %q in:\n%s", s, out)
 		}

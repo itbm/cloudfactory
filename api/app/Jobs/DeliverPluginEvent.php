@@ -4,13 +4,11 @@ namespace App\Jobs;
 
 use App\Models\Plugin;
 use App\Models\PluginDelivery;
-use App\Models\Setting;
+use App\Services\Plugins\Caller;
 use App\Services\Plugins\Events;
 use App\Services\Plugins\Outbound;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
-use Illuminate\Support\Facades\Http;
-use Throwable;
 
 /**
  * Sends one event to the webhook of a plugin. The body is JSON. The header
@@ -68,42 +66,9 @@ class DeliverPluginEvent implements ShouldQueue
     /** @return array{0: ?int, 1: ?string} The HTTP status and the error, or null for no error. */
     private function send(Plugin $plugin, PluginDelivery $delivery, string $url, Outbound $outbound): array
     {
-        $developerMode = (bool) Setting::get('plugins.developer_mode', false) || $outbound->permitsLoopback();
-        $parts = parse_url($url);
-        $host = trim($parts['host'] ?? '', '[]');
-        $port = $parts['port'] ?? (($parts['scheme'] ?? '') === 'http' ? 80 : 443);
-        $addresses = $outbound->addresses($host);
-        if ($addresses === []) {
-            return [null, "The host name {$host} has no address."];
-        }
-        foreach ($addresses as $ip) {
-            if ($reason = Outbound::refused($ip, $developerMode)) {
-                return [null, "The panel does not send events to {$ip}: the address {$reason}."];
-            }
-        }
-        $ip = $addresses[0];
-        $body = json_encode($delivery->payload, JSON_UNESCAPED_SLASHES);
-        $time = now()->getTimestamp();
-        try {
-            $response = Http::withOptions([
-                'allow_redirects' => false,
-                'curl' => [CURLOPT_RESOLVE => ["{$host}:{$port}:".(str_contains($ip, ':') ? "[{$ip}]" : $ip)]],
-            ])->timeout(10)->connectTimeout(5)
-                ->withHeaders([
-                    'User-Agent' => 'Cloudfactory-Plugins/1',
-                    'Cloudfactory-Event' => $delivery->event,
-                    'Cloudfactory-Delivery' => $delivery->id,
-                    'Cloudfactory-Signature' => Events::signature($plugin->webhook_secret, $time, $body),
-                ])
-                ->withBody($body, 'application/json')
-                ->post($url);
-        } catch (Throwable $e) {
-            return [null, 'No connection: '.$e->getMessage()];
-        }
-        if ($response->successful()) {
-            return [$response->status(), null];
-        }
+        $result = (new Caller($outbound))->post($plugin, $url, $delivery->event, $delivery->id, $delivery->payload, 10);
+        $error = $result['error'] === null ? null : str_replace('The plugin answered', 'The webhook answered', $result['error']);
 
-        return [$response->status(), "The webhook answered with HTTP status {$response->status()}."];
+        return [$result['status'], $error];
     }
 }

@@ -647,6 +647,14 @@ to the root helper.
   origin. The rights of the user still apply. A page token cannot make a token. The frame has
   no permission to change the top window. The Content Security Policy of the web panel
   permits frames from `https:` only.
+- **Actions.** An action is a button of a plugin on a website, a server or a customer. Only a
+  sign-in session runs an action, and only on a target that the user can see. The plugin gets
+  a token of that user for 15 minutes, with the scopes of the plugin, so the rights of the user
+  still apply. The token of an action cannot make a token or run an action. The web panel shows
+  a link from the answer only when the link is on the address of the plugin.
+- **Before hooks.** A before hook lets a plugin refuse a change. It cannot change the request.
+  The panel waits 5 seconds or less for each plugin. The panel does not ask a plugin about its
+  own changes, so a plugin cannot block itself in a loop.
 - **CORS.** The API accepts browser calls from the origins of the plugins with pages. The API
   sends no cookies (`supports_credentials` is false), so a call needs a token.
 
@@ -659,6 +667,9 @@ What the boundary does not protect:
   token. Turn off the plugin, or make new credentials, at once.
 - A plugin can show false data on its page. The panel shows the origin of the page above the
   frame.
+- A plugin with a before hook can stop the changes of its hook, for all users. A plugin that is
+  slow makes each of these changes up to 5 seconds slower. A hook with `"onError": "refuse"`
+  stops the changes while the plugin is down. Turn off the plugin to remove its hooks.
 
 ## Backups
 

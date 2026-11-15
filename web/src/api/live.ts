@@ -26,6 +26,7 @@ import type {
   Mesh,
   PanelCertificate,
   Plan,
+  PluginAction,
   PluginPage,
   PrivateNetwork,
   ResellerBranding,
@@ -367,7 +368,7 @@ export async function load(previous: State): Promise<State> {
   const admin = me.role === "administrator";
   const optional = <T>(p: Promise<T>, fallback: T) => p.catch(() => fallback);
 
-  const [websites, jobs, customers, plans, tokens, policy, servers, images, rollouts, audit, users, certificate, setup, account, databaseServers, dns, mesh, networks, alerts, mailDomains, mailboxes, mailAliases, mailClusters, pluginPages] = await Promise.all([
+  const [websites, jobs, customers, plans, tokens, policy, servers, images, rollouts, audit, users, certificate, setup, account, databaseServers, dns, mesh, networks, alerts, mailDomains, mailboxes, mailAliases, mailClusters, pluginPages, pluginActions] = await Promise.all([
     all<ApiWebsite>("/websites"),
     request<{ data: ApiJob[] }>("GET", "/jobs?perPage=50").then((r) => r.data),
     optional(request<{ data: ApiCustomer[] }>("GET", "/customers").then((r) => r.data), []),
@@ -399,6 +400,7 @@ export async function load(previous: State): Promise<State> {
     admin ? optional(request<{ data: MailCluster[] }>("GET", "/mail-clusters").then((r) => r.data), []) : Promise.resolve([] as MailCluster[]),
     // The pages of the plugins for the menu. A panel API of an earlier release has no plugins.
     optional(request<{ data: PluginPage[] }>("GET", "/plugin-pages").then((r) => r.data), []),
+    optional(request<{ data: PluginAction[] }>("GET", "/plugin-actions").then((r) => r.data), []),
   ]);
   // The list has no records. The panel reads the records of the zones that the user opened.
   const zoneDetails = new Map<string, DnsZone>();
@@ -453,6 +455,7 @@ export async function load(previous: State): Promise<State> {
     mesh,
     networks,
     pluginPages,
+    pluginActions,
     usageAlerts: alerts.data,
     alertSettings: alerts.settings,
     mailDomains: mailDomains.map(toMailDomain),

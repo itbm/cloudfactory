@@ -5,13 +5,52 @@
   "version": "1.4.0",
   "publisher": "Example Plugins Ltd",
   "description": "Checks each website every minute from three regions, and shows the uptime and the response time.",
-  "scopes": ["websites:read", "audit:read"],
-  "events": ["audit.recorded", "job.finished"],
+  "scopes": [
+    "websites:read",
+    "audit:read"
+  ],
+  "events": [
+    "audit.recorded",
+    "job.finished",
+    "website.created"
+  ],
   "webhook": "/hooks/cloudfactory",
   "pages": [
-    { "id": "status", "title": "Uptime", "path": "/panel/status", "roles": ["administrator", "reseller", "owner"] }
+    {
+      "id": "status",
+      "title": "Uptime",
+      "path": "/panel/status",
+      "roles": [
+        "administrator",
+        "reseller",
+        "owner"
+      ]
+    }
+  ],
+  "actions": [
+    {
+      "id": "check",
+      "title": "Check uptime now",
+      "target": "website",
+      "path": "/actions/check",
+      "roles": [
+        "administrator",
+        "reseller",
+        "owner"
+      ]
+    }
+  ],
+  "hooks": [
+    {
+      "event": "website.removing",
+      "path": "/hooks/before",
+      "onError": "allow"
+    }
   ],
   "commands": [
-    { "name": "uptime", "description": "Shows the uptime of each website." }
+    {
+      "name": "uptime",
+      "description": "Shows the uptime of each website."
+    }
   ]
 }

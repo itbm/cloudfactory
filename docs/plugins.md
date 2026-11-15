@@ -9,6 +9,9 @@ A plugin can do these things:
   approves.
 - Receive the events of the panel with signed webhooks.
 - Add pages to the web panel. A page opens in a frame, with the origin of the plugin.
+- Add action buttons to the pages of websites, servers and customers. An action runs on the
+  server of the plugin, with a short token of the user who selects it.
+- Refuse some changes before the panel makes them, with before hooks.
 - Add commands to the `cf` CLI. `cf NAME` runs the program `cf-NAME`.
 
 A plugin cannot do these things:
@@ -26,7 +29,7 @@ A plugin cannot do these things:
 
 | Part | What it is |
 | ---- | ---------- |
-| `plugin.json` | The manifest. It gives the name, the scopes, the events, the pages and the commands. |
+| `plugin.json` | The manifest. It gives the name, the scopes, the events, the pages, the actions, the before hooks and the commands. |
 | `plugin.json.sig` | The signature of the manifest. The publisher makes it with an ECDSA P-256 key. |
 | A server | Your program. It receives the webhooks, serves the pages and calls the API. |
 | `cf-NAME` | Optional. A program for each command of the plugin. |
@@ -44,10 +47,16 @@ A plugin cannot do these things:
   "publisher": "Example Plugins Ltd",
   "description": "Checks each website every minute.",
   "scopes": ["websites:read", "audit:read"],
-  "events": ["audit.recorded", "job.finished"],
+  "events": ["audit.recorded", "job.finished", "website.created"],
   "webhook": "/hooks/cloudfactory",
   "pages": [
     { "id": "status", "title": "Uptime", "path": "/panel/status", "roles": ["administrator", "reseller", "owner"] }
+  ],
+  "actions": [
+    { "id": "check", "title": "Check uptime now", "target": "website", "path": "/actions/check", "roles": ["administrator", "reseller", "owner"] }
+  ],
+  "hooks": [
+    { "event": "website.removing", "path": "/hooks/before", "onError": "allow" }
   ],
   "commands": [
     { "name": "uptime", "description": "Shows the uptime of each website." }
@@ -61,9 +70,11 @@ A plugin cannot do these things:
 | `slug` | Lower-case letters, digits and `-`. 1 to 40 characters. It must be unique on the panel. |
 | `version` | For example `1.4.0`. |
 | `scopes` | The scopes of the token. Use only the scopes that the plugin needs. |
-| `events` | `audit.recorded`, `job.finished`, or both. |
+| `events` | The events of the table in [Events](#events). |
 | `webhook` | The path of the webhook. Necessary when `events` is not empty. |
 | `pages` | Up to 10 pages. `roles` gives the roles that see the page in the menu. |
+| `actions` | Up to 20 actions. `target` is `website`, `server` or `customer`. `roles` gives the roles that see the button. `confirm` is optional: a question that the panel asks before it runs the action. |
+| `hooks` | Up to 20 before hooks. `event` is a hook of the table in [Before hooks](#before-hooks). `onError` is `allow` (the default) or `refuse`. |
 | `commands` | Up to 20 commands. The panel shows them only as information. |
 
 Each path starts with `/`. A path cannot have `..`, a query or a fragment. The paths are
@@ -132,8 +143,9 @@ or stdin.
 | Make a new token and secret | **Make new credentials** | `cf plugins credentials PLUGIN` |
 | Remove | **Remove plugin** | `cf plugins remove PLUGIN` |
 
-A plugin that is off has no access. Its token and its page tokens get status 403, and the
-panel sends it no events. A new version keeps the token, and the token gets the scopes of the
+A plugin that is off has no access. Its token, its page tokens and its action tokens get status
+403. The panel sends it no events, shows none of its actions, and does not ask its before
+hooks. A new version keeps the token, and the token gets the scopes of the
 new manifest. The review shows the scopes that the new version adds.
 
 The token of a plugin expires after one year. Make new credentials before that date.
@@ -166,6 +178,22 @@ The panel sends each event to the webhook of each plugin that is on and wants th
 | `audit.recorded` | Each change in the audit log | `action`, `target`, `actor`, `customerId`, `pluginId`, `at` |
 | `job.finished` | A job of an agent succeeded or failed | `id`, `action`, `title`, `state`, `error`, `serverId`, `websiteId`, `customerId` |
 | `plugin.test` | An administrator sends a test event | `message`, `by` |
+
+The named events are changes of the audit log with one action. Use them when your plugin wants
+only some changes. Their data is the same as the data of `audit.recorded`.
+
+| Event | Audit action |
+| ----- | ------------ |
+| `website.created`, `website.changed`, `website.removed` | Created website, Changed website, Removed website |
+| `domain.added`, `domain.verified`, `domain.removed` | Added domain, Verified domain, Removed domain |
+| `database.created`, `database.removed` | Created database, Removed database |
+| `backup.started`, `restore.started` | Backed up website, Restored from backup |
+| `deploy.started` | Started deploy, Started deploy from webhook |
+| `customer.created`, `customer.changed` | Created customer, Changed customer |
+| `user.created` | Created user |
+
+`backup.started` and `restore.started` come when a user starts the work. To know when the
+work is complete, use `job.finished`.
 
 `pluginId` is the ID of the plugin that made the change, or `null`. Use it to ignore your own
 changes. If you do not ignore them, a plugin that makes a change for each event can make a
@@ -224,8 +252,8 @@ that you received before.
 
 ### Addresses that the panel refuses
 
-The panel resolves the host name of the webhook one time, and connects to the address that it
-checked. It refuses these addresses:
+These rules apply to each request to a plugin: the webhook, the actions and the before hooks.
+The panel resolves the host name one time, and connects to the address that it checked. It refuses these addresses:
 
 - the loopback interface, except in the developer mode,
 - link-local addresses, which include the private service address `169.254.77.1` and the
@@ -282,6 +310,91 @@ To set the height of the frame, send `{ "type": "cloudfactory:resize", "height":
 The API accepts calls from the browser (CORS) from the origin of each plugin that is on and
 has pages. Your page can also send the page token to the server of the plugin, which then
 calls the API.
+
+## Actions
+
+An action is a button on the page of a website, of a server or of a customer. The panel shows
+the actions of the plugins that are on, for the roles of the manifest. Servers are only for
+administrators.
+
+When a user selects an action, the panel:
+
+1. Asks the question of `confirm`, or "Run ... on ...?".
+2. Makes sure that the user can see the target. An owner cannot run an action on the website
+   of a different customer.
+3. Makes a token of the user for 15 minutes, with the scopes of the plugin.
+4. Sends `POST` to the path of the action, with the signed headers of a webhook
+   (`Cloudfactory-Event: plugin.action`):
+
+   ```json
+   {
+     "id": "01jd2m4w3h6ya8c0vvv1q8x0zr",
+     "action": { "id": "check", "title": "Check uptime now" },
+     "target": { "type": "website", "id": "01jd…", "name": "shop.example.com", "customerId": "01jc…" },
+     "user": { "id": 3, "name": "Olivia Owner", "role": "owner", "customerId": "01jc…" },
+     "token": "…",
+     "expiresAt": "2026-11-15T10:57:07+00:00",
+     "scopes": ["audit:read", "websites:read"],
+     "apiBase": "https://panel.example.com/api/v1",
+     "createdAt": "2026-11-15T10:42:07+00:00"
+   }
+   ```
+
+5. Waits 10 seconds or less for the answer.
+
+Check the signature as for a webhook. Then do the action with the token, so that the rights of
+the user apply. Answer with status 200 and JSON:
+
+```json
+{ "message": "shop.example.com answered 200 in 182 ms.", "url": "https://uptime.example.net/report/42" }
+```
+
+The panel shows `message` (up to 500 characters). It shows a link to `url` only when the URL
+starts with the address of the plugin. Both keys are optional. When the plugin does not answer
+with a status from 200 to 299, the panel shows an error, and the token stops at once.
+
+![The answer of the plugin to the action "Check uptime now" on a website](screenshots/plugins/6-plugin-action.png)
+
+Only a sign-in session of the web panel runs an action. An API token cannot. The audit log
+records each action as "Ran plugin action".
+
+## Before hooks
+
+A before hook lets a plugin refuse a change. The panel asks each plugin that is on and has the
+hook, before it makes the change.
+
+| Hook | Before | Data |
+| ---- | ------ | ---- |
+| `website.creating` | A user makes a website | `name`, `kind`, `customerId`, `customerName`, `planId`, `imageId`, `serverId` |
+| `website.removing` | A user deletes a website | `id`, `name`, `customerId` |
+| `domain.adding` | A user adds a domain to a website | `name`, `kind`, `websiteId`, `websiteName`, `customerId` |
+| `database.creating` | A user makes a database | `name`, `engine`, `websiteId`, `websiteName`, `customerId` |
+| `customer.creating` | A user adds a customer | `name`, `email`, `role`, `planId`, `resellerId` |
+
+The panel sends `POST` to the path of the hook, with the signed headers of a webhook. The header
+`Cloudfactory-Event` has the name of the hook. The body has `id`, `hook`, `createdAt`, `data`
+and `user`.
+
+Answer in 5 seconds with status 200 and one of these:
+
+```json
+{ "allow": true }
+```
+
+```json
+{ "allow": false, "message": "This website has an open invoice." }
+```
+
+When a plugin refuses, the panel does not make the change. The user sees "The plugin NAME
+refused this change:" and the message (up to 300 characters).
+
+When the plugin does not answer in 5 seconds, or answers with a different value, `onError`
+applies. With `allow`, the panel makes the change. With `refuse`, the panel refuses it. Use
+`refuse` only when the plugin must see each change, because a plugin that is down then stops
+these changes.
+
+A before hook cannot change the request. The panel does not ask a plugin about the changes
+that the plugin makes with its own token. Each hook makes the change slower, so answer fast.
 
 ## Commands
 

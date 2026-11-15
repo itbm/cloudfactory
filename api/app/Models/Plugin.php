@@ -51,6 +51,18 @@ class Plugin extends Model
         return $this->spec()['pages'] ?? [];
     }
 
+    /** @return list<array{id: string, title: string, target: string, path: string, roles: list<string>, confirm: string}> */
+    public function actions(): array
+    {
+        return $this->spec()['actions'] ?? [];
+    }
+
+    /** @return list<array{event: string, path: string, onError: string}> */
+    public function hooks(): array
+    {
+        return $this->spec()['hooks'] ?? [];
+    }
+
     /** The full address of a path of the manifest. */
     public function urlOf(string $path): string
     {

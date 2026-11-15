@@ -4228,6 +4228,60 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  /v1/plugin-actions:
+    get:
+      tags: [Plugins]
+      summary: List the plugin actions for your role
+      description: The actions of the plugins that are on, for the pages of websites, servers and customers. Each role.
+      responses:
+        '200':
+          description: The actions.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/PluginAction' } }
+
+  /v1/plugin-actions/{id}/{actionId}:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+      - { name: actionId, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [Plugins]
+      summary: Run a plugin action
+      description: >-
+        Only a sign-in session can make this request. The panel sends the plugin a signed request
+        with a token that belongs to you, has the scopes of the plugin and expires after 15
+        minutes. You must be able to see the target. The plugin has 10 seconds to answer.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [targetId]
+              properties:
+                targetId: { type: string, description: The ID of the website, the server or the customer. }
+      responses:
+        '200':
+          description: The answer of the plugin.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  url: { type: [string, 'null'], description: A link on the address of the plugin, or null. }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+        '502':
+          description: The plugin did not answer, or answered with an error.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
   /agent/v1/join:
     post:
       tags: [Agent]
@@ -4472,7 +4526,7 @@ components:
         publisher: { type: string }
         description: { type: string }
         scopes: { type: array, items: { $ref: '#/components/schemas/Scope' }, description: 'Not tokens:read, tokens:write, users:write, plugins:read or plugins:write.' }
-        events: { type: array, items: { type: string, enum: [audit.recorded, job.finished] } }
+        events: { type: array, items: { $ref: '#/components/schemas/PluginEvent' } }
         webhook: { type: [string, 'null'], description: A path, for example /hooks/cloudfactory. }
         pages:
           type: array
@@ -4483,6 +4537,22 @@ components:
               title: { type: string }
               path: { type: string }
               roles: { type: array, items: { type: string, enum: [administrator, reseller, owner] } }
+        actions:
+          type: array
+          description: Up to 20 buttons on websites, servers or customers.
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              title: { type: string }
+              target: { type: string, enum: [website, server, customer] }
+              path: { type: string }
+              roles: { type: array, items: { type: string, enum: [administrator, reseller, owner] } }
+              confirm: { type: string, description: A question that the web panel asks before it runs the action. Empty for no question. }
+        hooks:
+          type: array
+          description: Before hooks. The plugin can refuse the change.
+          items: { $ref: '#/components/schemas/PluginHook' }
         commands:
           type: array
           items:
@@ -4505,6 +4575,8 @@ components:
         scopes: { type: array, items: { $ref: '#/components/schemas/Scope' } }
         events: { type: array, items: { type: string } }
         pages: { type: array, items: { $ref: '#/components/schemas/PluginPage' } }
+        actions: { type: array, items: { $ref: '#/components/schemas/PluginAction' } }
+        hooks: { type: array, items: { $ref: '#/components/schemas/PluginHook' } }
         commands: { type: array, items: { type: object, properties: { name: { type: string }, description: { type: string } } } }
         signedBy: { oneOf: [{ $ref: '#/components/schemas/PluginKey' }, { type: 'null' }] }
         tokenExpiresAt: { type: [string, 'null'], format: date-time }
@@ -4529,6 +4601,26 @@ components:
         url: { type: string }
         origin: { type: string, description: The origin of the frame. The web panel sends the page token only to this origin. }
         roles: { type: array, items: { type: string } }
+    PluginEvent:
+      type: string
+      description: An event that a plugin can receive. The named events are changes of the audit log with one action.
+      enum: [audit.recorded, job.finished, website.created, website.changed, website.removed, domain.added, domain.verified, domain.removed, database.created, database.removed, backup.started, restore.started, deploy.started, customer.created, customer.changed, user.created]
+    PluginHook:
+      type: object
+      properties:
+        event: { type: string, enum: [website.creating, website.removing, domain.adding, database.creating, customer.creating] }
+        path: { type: string }
+        onError: { type: string, enum: [allow, refuse], description: What the panel does when the plugin does not answer in 5 seconds. }
+    PluginAction:
+      type: object
+      properties:
+        pluginId: { type: string }
+        pluginName: { type: string }
+        id: { type: string }
+        title: { type: string }
+        target: { type: string, enum: [website, server, customer] }
+        confirm: { type: [string, 'null'] }
+        roles: { type: array, items: { type: string } }
     PluginKey:
       type: object
       properties:
@@ -4541,7 +4633,7 @@ components:
       type: object
       properties:
         id: { type: string }
-        event: { type: string, enum: [audit.recorded, job.finished, plugin.test] }
+        event: { type: string, description: 'An event of PluginEvent, or plugin.test.' }
         state: { type: string, enum: [pending, delivered, failed] }
         attempts: { type: integer }
         responseStatus: { type: [integer, 'null'] }

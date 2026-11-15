@@ -2,7 +2,8 @@ import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useAction, useStore } from "../api/hooks";
 import { addCustomer, addUser, deleteUser, resetUserPassword, setCustomer, type NewAccess } from "../api/store";
-import type { Customer, ManagedUser } from "../api/types";
+import type { Customer, ManagedUser, PluginAction } from "../api/types";
+import { PluginActionDialog, pluginRowActions, usePluginActions } from "../components/PluginActions";
 import { ConfirmIdentityFields, NO_CONFIRMATION } from "../components/ConfirmIdentity";
 import { Topbar } from "../components/Layout";
 import { Card, Field, FormError, Modal, PageHeader, RowMenu, Status, TableWrap, Tabs, type RowAction } from "../components/ui";
@@ -51,11 +52,14 @@ function Customers() {
   const reseller = (c: Customer) => state.customers.find((r) => r.id === c.resellerId)?.name;
   // A reseller sees its customers. Its own account is on the page "My account".
   const customers = state.customers.filter((c) => !own(c));
+  const pluginActions = usePluginActions("customer");
+  const [pluginAction, setPluginAction] = useState<{ action: PluginAction; customer: Customer } | null>(null);
   const actions = (c: Customer): RowAction[] => [
     { label: "Change plan…", onSelect: () => setPlanFor(c) },
     c.suspended
       ? { label: "Lift the suspension", onSelect: () => void change.run(c.id, { suspended: false }), disabled: change.busy }
       : { label: "Suspend…", onSelect: () => setSuspending(c), danger: true },
+    ...pluginRowActions(pluginActions, (action) => setPluginAction({ action, customer: c })),
   ];
   return (
     <Card title="Customers" actions={<button type="button" className="btn btn-primary" onClick={() => setOpen(true)}>Add customer</button>}>
@@ -102,6 +106,7 @@ function Customers() {
           </form>
         </Modal>
       )}
+      {pluginAction && <PluginActionDialog action={pluginAction.action} targetId={pluginAction.customer.id} targetName={pluginAction.customer.name} onClose={() => setPluginAction(null)} />}
       {planFor && <PlanChangeDialog customer={planFor} onClose={() => { setPlanFor(null); change.clear(); }} />}
       {suspending && (
         <Modal
