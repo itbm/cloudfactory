@@ -233,6 +233,18 @@ func TestSiteRouteSendsAllRequestsToTheContainer(t *testing.T) {
 	}
 }
 
+// A route with a path prefix has only the paths of the prefix on its host.
+func TestSiteRouteWithAPath(t *testing.T) {
+	b, _ := json.Marshal(SiteRoute(Site{WebsiteID: "T1", Port: 20002, Hosts: []string{"adminer.example.com"}, Path: "/t1/"}, "169.254.77.1"))
+	if !strings.Contains(string(b), `"match":[{"host":["adminer.example.com"],"path":["/t1/*"]}]`) {
+		t.Errorf("route: %s", b)
+	}
+	b, _ = json.Marshal(SiteRoute(Site{WebsiteID: "W1", Port: 20001, Hosts: []string{"acme.example"}}, "169.254.77.1"))
+	if strings.Contains(string(b), `"path"`) {
+		t.Errorf("a route with no path prefix has a path: %s", b)
+	}
+}
+
 func TestPanelRouteSetsTheEdgeHeaders(t *testing.T) {
 	fake := &fakeCaddy{loaded: true}
 	srv := httptest.NewServer(fake)

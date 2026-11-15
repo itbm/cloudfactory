@@ -345,6 +345,17 @@ var ruleRestorePath = rule{
 // The path of a file or a directory in a website. It starts with "/". It has no empty part, no "." part, no ".." part and no "/" at the end.
 func RestorePath(s string) error { return ruleRestorePath.check(s) }
 
+var ruleRoutePath = rule{
+	what:    "route path",
+	pattern: regexp.MustCompile(`^/[a-z0-9]{1,40}/$`),
+	echo:    true,
+}
+
+// RoutePath checks a value with the rule "routePath" of schema/input-rules.json.
+//
+// The path prefix of the route of a website in the edge proxy, for example "/01jbq3z5k8n6/". It starts and ends with a slash, and has 1 to 40 lower-case letters and digits.
+func RoutePath(s string) error { return ruleRoutePath.check(s) }
+
 var ruleSecretName = rule{
 	what:    "name of a deploy secret",
 	pattern: regexp.MustCompile(`^[A-Z_][A-Z0-9_]{0,63}$`),
@@ -443,6 +454,7 @@ var rules = map[string]*rule{
 	"ipv6":               &ruleIPv6,
 	"phpExtension":       &ruleExtension,
 	"restorePath":        &ruleRestorePath,
+	"routePath":          &ruleRoutePath,
 	"secretName":         &ruleSecretName,
 	"secretValue":        &ruleSecretValue,
 	"sha256":             &ruleSHA256,
