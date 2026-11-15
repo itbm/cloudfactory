@@ -607,7 +607,8 @@ export type TokenScope =
   | "images:read" | "images:write"
   | "customers:read" | "customers:write"
   | "users:read" | "users:write"
-  | "audit:read";
+  | "audit:read"
+  | "notifications:read" | "notifications:write";
 
 export interface ApiToken {
   id: string;

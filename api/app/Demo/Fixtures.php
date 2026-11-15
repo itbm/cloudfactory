@@ -22,6 +22,7 @@ class Fixtures
     public const PATHS = [
         '/me', '/websites?perPage=100&page=1', '/jobs?perPage=50', '/customers', '/plans', '/tokens', '/backup-policy', '/servers', '/images',
         '/rollouts', '/audit?perPage=100', '/users', '/panel-certificate', '/runtime-images', '/setup', '/account', '/database-servers', '/dns-zones', '/mesh', '/networks',
+        '/me/notification-preferences', '/notifications?perPage=50', '/mail-server', '/notification-templates',
     ];
 
     /**
