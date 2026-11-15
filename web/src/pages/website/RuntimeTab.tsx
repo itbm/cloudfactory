@@ -56,7 +56,7 @@ export function RuntimeTab({ website }: { website: Website }) {
                   <span>
                     <strong>{i.name}</strong>
                     <span>
-                      {i.id === website.runtime.imageId ? "Current · " : ""}{isApp ? `Image ${i.running}` : i.running}
+                      {isApp ? (i.id === website.runtime.imageId ? "Current" : "") : `${i.id === website.runtime.imageId ? "Current · " : ""}${i.running}`}
                       {i.supportEndsAt && <span className="note-warning" style={{ display: "block" }}>Support ends {longDate(i.supportEndsAt)}</span>}
                     </span>
                   </span>

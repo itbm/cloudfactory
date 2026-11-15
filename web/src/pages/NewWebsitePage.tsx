@@ -39,6 +39,33 @@ const PRESETS: Record<string, { command?: string; install?: string }> = {
   FastAPI: { command: "uvicorn main:app --host 0.0.0.0 --port $PORT" },
 };
 
+/** The runtimes of one kind, for example all the versions of Node.js. An own image is a group of one. */
+interface RuntimeGroup { key: string; title: string; images: RuntimeImage[] }
+
+const GROUP_TITLE: Partial<Record<RuntimeImage["family"], string>> = {
+  frankenphp: "FrankenPHP", "apache-php-fpm": "Apache + PHP-FPM (.htaccess)", node: "Node.js", python: "Python", edge: "Static files",
+};
+
+/** The version of the language of an image, for example "PHP 8.5" or "24". */
+const versionOf = (i: RuntimeImage) => (i.phpVersion ? `PHP ${i.phpVersion}` : i.version ?? i.name);
+
+/** Puts the images in groups, so that the page shows one option for each runtime and then its versions. */
+export function runtimeGroups(images: RuntimeImage[]): RuntimeGroup[] {
+  const groups: RuntimeGroup[] = [];
+  for (const i of images) {
+    const key = i.custom || !GROUP_TITLE[i.family] ? i.id : i.family;
+    const group = groups.find((g) => g.key === key);
+    if (group) group.images.push(i);
+    else groups.push({ key, title: key === i.id ? i.name : GROUP_TITLE[i.family]!, images: [i] });
+  }
+  // The order of GROUP_TITLE, then the own images.
+  const order = Object.keys(GROUP_TITLE);
+  const rank = (g: RuntimeGroup) => (order.includes(g.key) ? order.indexOf(g.key) : order.length);
+  groups.sort((a, b) => rank(a) - rank(b));
+  for (const g of groups) g.images.sort((a, b) => versionOf(a).localeCompare(versionOf(b), undefined, { numeric: true }));
+  return groups;
+}
+
 /** True for an image that runs the start command of the website: Node.js or Python. */
 export const isAppImage = (i: RuntimeImage | undefined) => !!i && !i.custom && (i.family === "node" || i.family === "python");
 
@@ -65,6 +92,8 @@ export function NewWebsitePage() {
   const choosePlan = platform || state.session.user.role === "administrator";
   const [imageId, setImageId] = useState(() => defaultImage(runtimes, "frankenphp"));
   const image = runtimes.find((i) => i.id === imageId);
+  const groups = runtimeGroups(runtimes);
+  const group = groups.find((g) => g.images.some((i) => i.id === imageId));
   const app = isAppImage(image);
   // The commands of a Node.js or Python website. Null: the preset of the application or the default of the image.
   const [appCommand, setAppCommand] = useState<string | null>(null);
@@ -185,21 +214,29 @@ export function NewWebsitePage() {
           </Card>
           <Card title="Runtime">
             <div className="card-body">
-              <fieldset className="radio-cards">
-                <legend className="visually-hidden">Runtime image</legend>
-                {runtimes.map((i) => (
-                  <label key={i.id} className="radio-card">
-                    <input type="radio" name="runtime" value={i.id} checked={imageId === i.id} onChange={() => setImageId(i.id)} />
-                    <span>
-                      <strong>{i.name}</strong>
-                      <span>
-                        {i.family === "apache-php-fpm" ? "For websites that use .htaccess files." : i.family === "edge" ? "Static files. No container code." : i.custom ? "Your own OCI image." : isAppImage(i) ? `Runs your start command. Image ${i.running}.` : `Version ${i.running}.`}
-                        {i.supportEndsAt && <span className="note-warning" style={{ display: "block" }}>Support ends {new Date(i.supportEndsAt).toLocaleDateString("en-GB", { month: "short", year: "numeric" })}</span>}
-                      </span>
-                    </span>
-                  </label>
-                ))}
-              </fieldset>
+              <div className="runtime-picker">
+                <fieldset className="radio-cards radio-cards-compact">
+                  <legend className="visually-hidden">Runtime</legend>
+                  {groups.map((g) => (
+                    <label key={g.key} className="radio-card">
+                      <input type="radio" name="runtime" checked={g.key === group?.key} onChange={() => setImageId(defaultImage(g.images, g.images[0].family))} />
+                      <strong>{g.title}</strong>
+                    </label>
+                  ))}
+                </fieldset>
+                {group && group.images.length > 1 && (
+                  <fieldset className="radio-cards radio-cards-compact">
+                    <legend>Version</legend>
+                    {group.images.map((i) => (
+                      <label key={i.id} className="radio-card">
+                        <input type="radio" name="version" value={i.id} checked={imageId === i.id} onChange={() => setImageId(i.id)} aria-label={i.name} />
+                        <strong>{versionOf(i)}</strong>
+                      </label>
+                    ))}
+                  </fieldset>
+                )}
+              </div>
+              {image?.supportEndsAt && <p className="hint" style={{ marginTop: 10 }}>Security support for {image.name} ends in {new Date(image.supportEndsAt).toLocaleDateString("en-GB", { month: "long", year: "numeric" })}.</p>}
               {app && (
                 <div style={{ marginTop: 16 }}>
                   <Field label="Start command" hint={<>One command line. It runs in <code>/app</code>, in the gVisor sandbox. {kind === "worker" ? "" : <>The app must listen on the port in the variable <code>PORT</code> (8080). </>}When the command stops, the panel starts it again.</>} error={err.command}>
@@ -210,7 +247,7 @@ export function NewWebsitePage() {
                   </Field>
                 </div>
               )}
-              <p className="hint" style={{ marginTop: 10 }}>Each image is signed and scanned. The container runs in gVisor. There is no option for a different runtime.</p>
+              <p className="hint" style={{ marginTop: 10 }}>Each image is signed and scanned. The container runs in gVisor.</p>
             </div>
           </Card>
           <Card title="Plan and server">
