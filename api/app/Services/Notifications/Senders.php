@@ -5,6 +5,7 @@ namespace App\Services\Notifications;
 use App\Models\Customer;
 use App\Models\MailServer;
 use App\Models\User;
+use App\Services\Branding;
 
 /**
  * Who sends an email to a user. The customers of a reseller get emails with the brand of the
@@ -13,10 +14,6 @@ use App\Models\User;
  */
 class Senders
 {
-    public const DEFAULT_NAME = 'CloudFactory';
-
-    public const DEFAULT_COLOUR = '#1d5fd6';
-
     /** The reseller whose brand a user sees, or null for the panel. */
     public static function brandOwner(User $user): ?Customer
     {
@@ -32,13 +29,14 @@ class Senders
      */
     public static function brand(?Customer $reseller): array
     {
-        $branding = $reseller?->branding ?? [];
-        $domain = $branding['panelDomain'] ?? config('cloudfactory.panel_domain');
+        // The same brand as the panel: the brand of the reseller, else the default brand that
+        // the administrator sets.
+        $brand = Branding::forCustomer($reseller);
 
         return [
-            'name' => (string) ($branding['name'] ?? $reseller?->name ?? self::DEFAULT_NAME),
-            'colour' => preg_match('/^#[0-9a-fA-F]{6}$/', (string) ($branding['colour'] ?? '')) ? $branding['colour'] : self::DEFAULT_COLOUR,
-            'url' => $domain ? 'https://'.$domain : (string) config('app.url'),
+            'name' => (string) $brand['name'],
+            'colour' => (string) $brand['colour'],
+            'url' => $brand['panelDomain'] ? 'https://'.$brand['panelDomain'] : (string) config('app.url'),
         ];
     }
 

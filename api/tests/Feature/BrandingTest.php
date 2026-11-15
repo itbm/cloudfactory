@@ -8,8 +8,10 @@ use App\Enums\Role;
 use App\Models\AgentJob;
 use App\Models\Customer;
 use App\Models\DnsZone;
+use App\Services\Branding;
 use App\Services\Dns\Zones;
 use App\Services\JobOutcome;
+use App\Services\Notifications\Senders;
 use Tests\TestCase;
 
 /**
@@ -234,5 +236,19 @@ class BrandingTest extends TestCase
         $this->patchJson("/api/v1/customers/{$reseller->id}", ['branding' => ['mailHost' => 'mail.agency.example']])->assertOk();
         $this->actingWith($this->user(Role::Owner, $owner));
         $this->getJson('/api/v1/me')->assertJsonPath('brand.mailHost', 'mail.agency.example');
+    }
+
+    public function test_emails_have_the_same_brand_as_the_panel(): void
+    {
+        config(['cloudfactory.panel_domain' => 'panel.example.com']);
+        Branding::saveDefaults(['name' => 'Acme Cloud', 'colour' => '#0f766e']);
+        $this->assertSame(['name' => 'Acme Cloud', 'colour' => '#0f766e', 'url' => 'https://panel.example.com'], Senders::brand(null));
+
+        // A reseller with no brand of its own: its name and the built-in colour, not the default brand.
+        [$reseller] = $this->reseller();
+        $this->assertSame(['name' => 'Agency Ltd', 'colour' => Branding::COLOUR, 'url' => 'https://panel.example.com'], Senders::brand($reseller));
+
+        [$reseller] = $this->reseller(['name' => 'Agency Cloud', 'colour' => '#aa3300', 'panelDomain' => 'panel.agency.example']);
+        $this->assertSame(['name' => 'Agency Cloud', 'colour' => '#aa3300', 'url' => 'https://panel.agency.example'], Senders::brand($reseller));
     }
 }

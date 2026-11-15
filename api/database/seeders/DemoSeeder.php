@@ -744,7 +744,7 @@ class DemoSeeder extends Seeder
     {
         MailServer::create([
             'host' => 'smtp.mail.example', 'port' => 587, 'encryption' => 'starttls', 'username' => 'panel@example.com', 'password' => 'demo',
-            'from_address' => 'panel@example.com', 'from_name' => 'CloudFactory', 'tested_at' => now()->subDays(3),
+            'from_address' => 'panel@example.com', 'from_name' => 'Cloudfactory', 'tested_at' => now()->subDays(3),
         ]);
         $northwind = $this->customers['northwind'];
         MailServer::create([
