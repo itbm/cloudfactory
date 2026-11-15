@@ -309,3 +309,32 @@ func TestServedCertificateGivesTheChain(t *testing.T) {
 		t.Error("no error with no edge proxy")
 	}
 }
+
+// The database tools of the customers have one host, and each one has its own path. Caddy
+// refuses two policies with the same name, so the host has one policy for all of them.
+func TestWebsitesWithOneHostAndAPathEachHaveOnePolicy(t *testing.T) {
+	fake := &fakeCaddy{loaded: true}
+	srv := httptest.NewServer(fake)
+	defer srv.Close()
+	c := New(srv.URL)
+	ctx := context.Background()
+	if err := c.ApplyPanel(ctx, "panel.localhost", PanelInternal, 19080, 19081); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"T1", "T2"} {
+		site := Site{WebsiteID: id, Port: 20001, Hosts: []string{"adminer.panel.localhost"}, Primary: "adminer.panel.localhost", Path: "/" + strings.ToLower(id) + "/"}
+		if err := c.Apply(ctx, site); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(fake.tls) != 2 || fake.tls[1]["@id"] != "cf-host-adminer-panel-localhost-tls" {
+		t.Fatalf("policies = %v", fake.tls)
+	}
+	if len(fake.routes) != 3 {
+		t.Fatalf("routes = %v", fake.routes)
+	}
+	// The removal of one tool keeps the route of the other tool, and the policy of the host.
+	if err := c.Remove(ctx, "T1"); err != nil || len(fake.routes) != 2 || len(fake.tls) != 2 {
+		t.Errorf("Remove: %v, routes = %v, policies = %v", err, fake.routes, fake.tls)
+	}
+}

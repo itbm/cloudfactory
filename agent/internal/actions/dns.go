@@ -484,7 +484,7 @@ func (d *Deps) startDns(ctx context.Context) error {
 		if d.DnsImage == "" {
 			return errors.New("DNS: no image")
 		}
-		if err := d.Host.EnsureServiceUser(ctx, host.DnsUser); err != nil {
+		if err := d.Host.EnsureServiceUser(ctx, host.DnsUser, ""); err != nil {
 			return err
 		}
 	}

@@ -112,10 +112,26 @@ func LocalPolicy(websiteID string, names []string) map[string]any {
 	return map[string]any{"@id": localPolicyID(websiteID), "subjects": names, "issuers": []any{issuer}}
 }
 
+// hostPolicyID is the @id of the TLS automation policy of a host that more websites share
+// (Site.Path). Caddy refuses two policies with the same name, so these websites have one
+// policy for the host. The policy stays when the last of these websites goes: it only says
+// which CA signs a certificate for the host.
+func hostPolicyID(host string) string {
+	return "cf-host-" + strings.NewReplacer(".", "-").Replace(host) + "-tls"
+}
+
 // applyLocalPolicy sets or removes the policy for the local names of a website.
 func (c *Client) applyLocalPolicy(ctx context.Context, s Site) error {
 	id := localPolicyID(s.WebsiteID)
 	names := LocalNames(s)
+	if s.Path != "" {
+		if len(names) == 0 {
+			return nil
+		}
+		// The host of a website with a path prefix: one policy for all these websites.
+		id = hostPolicyID(names[0])
+		names = names[:1]
+	}
 	if len(names) == 0 {
 		return c.remove(ctx, id)
 	}
@@ -123,6 +139,7 @@ func (c *Client) applyLocalPolicy(ctx context.Context, s Site) error {
 		return err
 	}
 	policy := LocalPolicy(s.WebsiteID, names)
+	policy["@id"] = id
 	status, body, err := c.do(ctx, http.MethodPatch, "/id/"+id, policy)
 	if err != nil {
 		return err

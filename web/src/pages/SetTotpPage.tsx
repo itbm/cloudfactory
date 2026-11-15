@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAction, useStore } from "../api/hooks";
 import { setTotp, signOut, startTotpSetup } from "../api/store";
-import { Logo } from "../components/Layout";
+import { BrandMark, useBrand } from "../components/Brand";
 import { Field, FormError } from "../components/ui";
 import { CopyField } from "./website/AccessTab";
 
@@ -12,6 +12,7 @@ import { CopyField } from "./website/AccessTab";
  */
 export function SetTotpPage() {
   const state = useStore();
+  const brand = useBrand();
   const navigate = useNavigate();
   const [setup, setSetup] = useState<{ secret: string; uri: string } | null>(null);
   const [password, setPassword] = useState("");
@@ -35,8 +36,8 @@ export function SetTotpPage() {
     <main className="login" id="main">
       <div className="card">
         <div className="brand">
-          <span style={{ background: "#0f1b33", borderRadius: 8, padding: 4, display: "inline-flex" }}><Logo /></span>
-          <span style={{ color: "var(--text)" }}>cloudfactory<span>.io</span></span>
+          <BrandMark brand={brand} tone="light" />
+          <span className="visually-hidden">{brand.name}</span>
         </div>
         <h1 style={{ fontSize: 22, marginBottom: 6 }}>Set up an authenticator app</h1>
         <p className="muted" style={{ marginBottom: 18 }}>

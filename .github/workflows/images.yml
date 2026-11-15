@@ -28,12 +28,16 @@ jobs:
           - { image: apache-php8.4, context: images/apache-php-fpm, file: images/apache-php-fpm/Containerfile, args: PHP_VERSION=8.4 }
           - { image: edge, context: images/edge, file: images/edge/Containerfile, args: '' }
           - { image: sftp, context: images/sftp, file: images/sftp/Containerfile, args: '' }
+          - { image: adminer, context: images/adminer, file: images/adminer/Containerfile, args: '' }
           - { image: dns, context: images/dns, file: images/dns/Containerfile, args: '' }
           - { image: panel-api, context: ., file: images/panel-api/Containerfile, args: '' }
           - { image: panel-web, context: ., file: images/panel-web/Containerfile, args: '' }
           - { image: mariadb, context: images/mariadb, file: images/mariadb/Containerfile, args: '' }
           - { image: postgresql, context: images/postgresql, file: images/postgresql/Containerfile, args: '' }
           - { image: valkey, context: images/valkey, file: images/valkey/Containerfile, args: '' }
+          - { image: mail, context: images/mail, file: images/mail/Containerfile, args: '' }
+          - { image: mail-keep, context: images/mail-keep, file: images/mail-keep/Containerfile, args: '' }
+          - { image: webmail, context: images/webmail, file: images/webmail/Containerfile, args: '' }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -133,6 +137,53 @@ jobs:
             docker inspect -f '{{.State.Running}}' smoke | grep -q true
             # The data files are in the mount, not in a directory of the container.
             sudo test -d "$data/appendonlydir"
+            exit 0
+          fi
+          if [ "$IMAGE" = mail ]; then
+            # The limits of quadlet.MailUnit, with config.json as the agent writes it. Stalwart
+            # starts in the recovery mode and answers on its HTTP port.
+            mkdir -p "$RUNNER_TEMP/mail/etc" "$RUNNER_TEMP/mail/data"
+            printf '%s\n' '{"@type":"RocksDb","path":"/var/lib/stalwart/"}' >"$RUNNER_TEMP/mail/etc/config.json"
+            sudo chown 2000:2000 "$RUNNER_TEMP/mail/data"
+            docker run -d --name smoke --cap-drop=all --security-opt no-new-privileges --read-only --tmpfs /tmp \
+              -v "$RUNNER_TEMP/mail/etc/config.json:/etc/stalwart/config.json:ro" -v "$RUNNER_TEMP/mail/data:/var/lib/stalwart" \
+              -e STALWART_RECOVERY_MODE=1 -e "STALWART_RECOVERY_ADMIN=admin:$(openssl rand -hex 24)" \
+              -p 127.0.0.1:18080:8080 mail:test
+            code=000
+            for _ in $(seq 1 30); do
+              code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:18080/ || true)
+              [ "$code" != 000 ] && break
+              sleep 2
+            done
+            docker logs smoke
+            docker inspect -f '{{.State.Running}}' smoke | grep -q true
+            [ "$code" != 000 ]
+            exit 0
+          fi
+          if [ "$IMAGE" = mail-keep ]; then
+            # The limits of quadlet.MailKeepUnit. A member needs the keys of the other members,
+            # so this check starts the program only to print its options.
+            docker run --rm --cap-drop=all --security-opt no-new-privileges --read-only mail-keep:test --help
+            exit 0
+          fi
+          if [ "$IMAGE" = webmail ]; then
+            # The limits of quadlet.WebmailUnit. The start script installs the pinned PGP plugin,
+            # and the webmail answers.
+            printf '%s\n' HOSTNAME=0.0.0.0 PORT=3000 JMAP_SERVER_URL=https://mail.example.com STALWART_FEATURES=true \
+              "SESSION_SECRET=$(openssl rand -hex 32)" "ADMIN_PASSWORD=$(openssl rand -hex 32)" \
+              BULWARK_TELEMETRY=off BULWARK_UPDATE_CHECK=off STALWART_ADMIN_ACCESS=off >"$RUNNER_TEMP/webmail.env"
+            docker run -d --name smoke --cap-drop=all --security-opt no-new-privileges --read-only --tmpfs /tmp \
+              -v /app/data --env-file "$RUNNER_TEMP/webmail.env" -p 127.0.0.1:18080:3000 webmail:test
+            ok=""
+            for _ in $(seq 1 60); do
+              if docker logs smoke 2>&1 | grep -q 'cf-webmail: installed the PGP plugin'; then ok=1; break; fi
+              sleep 2
+            done
+            docker logs smoke
+            docker inspect -f '{{.State.Running}}' smoke | grep -q true
+            [ -n "$ok" ]
+            # /api/health/ready also needs the mail server, which this check does not start.
+            curl -sf -o /dev/null http://127.0.0.1:18080/api/health/live
             exit 0
           fi
           if [ "$IMAGE" = dns ]; then
@@ -251,6 +302,8 @@ jobs:
           fi
           case "$IMAGE" in
             frankenphp-*|apache-*) args="--read-only --tmpfs /tmp --user 1001:1001" want=200 ;;
+            # Adminer answers only on the address of a sign-in: /<tool>/<32 hex digits>/.
+            adminer) args="--read-only --tmpfs /tmp --user 1001:1001" want=200 path=/test/0123456789abcdef0123456789abcdef/ ;;
             panel-web) args="--read-only --tmpfs /tmp" want=200 ;;
             edge) args="--read-only --tmpfs /data --tmpfs /run/caddy-admin" want=any ;;
           esac

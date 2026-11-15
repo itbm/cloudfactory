@@ -21,6 +21,8 @@ use Illuminate\Foundation\Queue\Queueable;
  * - a new website or a new domain with a name that starts with "fail.", for example
  *   "fail.example.com";
  * - a new database with a name that ends with "_fail";
+ * - a new mailbox, alias or forwarder with the name "fail", for example "fail@example.com";
+ * - a public key for a mailbox that has the text "FAIL";
  * - a deploy from a repository with "fail" in its address;
  * - a cron job with "fail" in its command;
  * - a DNS zone with a name that starts with "fail.".
@@ -84,6 +86,14 @@ class RunDemoJob implements ShouldQueue
                 'step' => 0,
                 'error' => 'runuser -u cf-db -- podman exec cf-mariadb mariadb --execute "CREATE DATABASE": exit status 1: ERROR 2002 (HY000): Can\'t connect to local server through socket \'/run/mysqld/mysqld.sock\' (2)',
             ],
+            $job->action === AgentAction::SetMailbox && str_contains((string) ($p['publicKey'] ?? ''), 'FAIL') => [
+                'step' => 1,
+                'error' => 'the mail server refused the public key: The key contains no key usable for encryption.',
+            ],
+            in_array($job->action, [AgentAction::SetMailbox, AgentAction::SetMailAlias], true) && ($p['create'] ?? false) && ($p['localPart'] ?? '') === 'fail' => [
+                'step' => 0,
+                'error' => 'The mail server refused the address fail@'.($p['domain'] ?? 'the domain').': it did not answer on 169.254.77.1:19025 in 30 seconds.',
+            ],
             $job->action === AgentAction::SetDnsZones && collect($p['zones'] ?? [])->contains(fn ($z) => str_starts_with((string) ($z['name'] ?? ''), 'fail.')) => [
                 'step' => 2,
                 'error' => 'knotc -b zone-reload '.collect($p['zones'])->pluck('name')->first(fn ($n) => str_starts_with((string) $n, 'fail.')).': exit status 1: error: (operation timed out)',
@@ -114,6 +124,16 @@ class RunDemoJob implements ShouldQueue
             AgentAction::CreateDatabase => ($p['engine'] ?? '') === Database::VALKEY ? ['number' => self::freeValkeyNumber($job)] : [],
             AgentAction::Backup => ['snapshotId' => bin2hex(random_bytes(32)), 'sizeBytes' => random_int(40, 900) * 1024 ** 2, 'dumps' => [], 'forgotten' => []],
             AgentAction::InstallHostUpdates => ['rebootRequired' => false],
+            // Keys with the form of the keys of a real agent. They are not real keys.
+            AgentAction::PrepareMailNode => ['keys' => [
+                'wireguardKey' => base64_encode(hash('sha256', 'wg'.$job->server_id, true)),
+                'keepKey' => "-----BEGIN PUBLIC KEY-----\n".base64_encode(hex2bin('302a300506032b6570032100').hash('sha256', 'keep'.$job->server_id, true))."\n-----END PUBLIC KEY-----\n",
+                'nodeKey' => "-----BEGIN PUBLIC KEY-----\n".base64_encode(hex2bin('302a300506032b6570032100').hash('sha256', 'node'.$job->server_id, true))."\n-----END PUBLIC KEY-----\n",
+            ]],
+            AgentAction::SetMailNode => ['database' => ['size' => 3, 'state' => 'Synced']],
+            // The fingerprint of the demonstration is not the fingerprint of the key.
+            AgentAction::SetMailbox => ($p['publicKey'] ?? '') !== '' ? ['encryption' => ['fingerprints' => [strtoupper(sha1($p['publicKey']))], 'type' => 'OpenPGP v4: X25519', 'expiresAt' => null, 'warnings' => []]] : [],
+            AgentAction::SetMailDomain => ['records' => DemoMailDns::records((string) ($p['domain'] ?? ''), (string) $job->server->mail_hostname)],
             AgentAction::RunCronJob => ['cronJobId' => $p['cronJob']['id'] ?? '', 'exitCode' => 0, 'output' => "Running scheduled tasks.\nDone in 0.4 s.", 'ranAt' => now()->toIso8601String()],
             AgentAction::Deploy => [
                 'releaseId' => $p['releaseId'] ?? '',
@@ -136,6 +156,12 @@ class RunDemoJob implements ShouldQueue
                 ], Mesh::stateFor($job->server)['peers']),
             ]],
             AgentAction::RotateMeshKey => ['publicKey' => base64_encode(random_bytes(32))],
+            AgentAction::SetPanelBrands => ['panelBrands' => array_map(fn (string $d) => [
+                'domain' => $d,
+                'method' => PanelCertificate::publicName($d) ? 'letsencrypt' : 'internal',
+                'state' => 'valid',
+                'expiresAt' => now()->addDays(90)->toIso8601String(),
+            ], array_values(array_filter((array) ($p['domains'] ?? []), 'is_string')))],
             AgentAction::SetPanelCertificate => ['panelCertificate' => [
                 ...array_intersect_key(PanelCertificate::current(), array_flip(['domain', 'caCertificate'])),
                 'method' => $p['method'] ?? 'internal',

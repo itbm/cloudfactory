@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Enums\Role;
 use App\Http\Controllers\Controller;
+use App\Models\MailServer;
 use App\Models\Server;
 use App\Models\User;
 use App\Services\PanelCertificate;
@@ -26,7 +27,7 @@ class SetupController extends Controller
 
     public function show(Request $request): JsonResponse
     {
-        $items = [self::backups(), self::totp($request->user()), self::diskLimits(), self::panelCertificate()];
+        $items = [self::backups(), self::totp($request->user()), self::diskLimits(), self::panelCertificate(), self::email()];
         $open = count(array_filter($items, fn (array $item) => $item['state'] === self::OPEN));
 
         return response()->json(['complete' => $open === 0, 'open' => $open, 'items' => $items]);
@@ -129,6 +130,29 @@ class SetupController extends Controller
         }
 
         return $item;
+    }
+
+    /** @return array<string, mixed> */
+    private static function email(): array
+    {
+        $server = MailServer::of(null);
+        $done = $server && $server->enabled && $server->tested_at && ! $server->test_error;
+
+        return self::item(
+            'email',
+            'Set up the SMTP server for email notifications',
+            (bool) $done,
+            'The panel sends no email. Nobody gets an email about a failed job or backup, a certificate that expires, or a sign-in from a new device.',
+            match (true) {
+                $done => "The SMTP server {$server->host} sends the emails.",
+                ! $server => 'No SMTP server is set.',
+                ! $server->enabled => "The SMTP server {$server->host} is turned off.",
+                (bool) $server->test_error => "The last test email failed: {$server->test_error}",
+                default => "Send a test email to make sure that {$server->host} accepts the emails of the panel.",
+            },
+            'Set up email',
+            '/settings/email',
+        );
     }
 
     /** @return array<string, mixed> */

@@ -96,6 +96,8 @@ export interface Limits {
   diskBytes: number;
   diskIoBytesPerSecond: number;
   processes: number;
+  /** The traffic of a website in a calendar month. 0 or none: no limit. */
+  bandwidthBytes?: number;
 }
 
 export interface ResourceUse {
@@ -147,6 +149,8 @@ export interface Website {
    */
   diskLimitApplied?: boolean;
   use: ResourceUse;
+  /** The traffic of the website in the current calendar month (UTC), in and out. */
+  bandwidthBytes: number;
   domains: Domain[];
   /** The SFTP access from the panel API. */
   sftp?: SftpAccess;
@@ -316,6 +320,8 @@ export interface Server {
   rebootRequired: boolean;
   /** The panel has a newer agent for this server. */
   agentUpdateAvailable?: boolean;
+  /** The mail server of this server. Undefined when email is off. */
+  mail?: ServerMail;
   /** The host and the port that the panel uses to connect to the agent. */
   agentAddress?: string;
   /** The reason when the panel could not connect to the agent. The jobs of the server then fail. */
@@ -393,6 +399,123 @@ export interface DatabaseLimits {
   vcpus: number;
   memoryBytes: number;
   diskBytes: number;
+}
+
+// Email
+//
+// A customer has mail domains. Each mail domain has mailboxes, and addresses that send their
+// mail to other addresses: aliases and forwarders. The mail server of a server has the mail
+// of all customers on that server.
+
+export type MailStatus = "pending" | "active" | "failed" | "removing";
+
+/** A DNS record that the owner of a mail domain adds. */
+export interface MailRecord {
+  type: string;
+  name: string;
+  value: string;
+  /** "mx", "spf", "dkim" or "dmarc". */
+  purpose: string;
+  /** Null before the first check of the DNS. */
+  found: boolean | null;
+}
+
+export interface MailDomain {
+  id: string;
+  name: string;
+  customerId: string;
+  serverId: string;
+  status: MailStatus;
+  /** Mail programs connect to this host name: IMAP on port 993, SMTP on port 465 or 587. */
+  mailHost: string;
+  records: MailRecord[];
+  /** True when the last check found all records. */
+  dnsReady: boolean;
+  dnsCheckedAt?: string;
+  mailboxes: number;
+  aliases: number;
+}
+
+export interface Mailbox {
+  id: string;
+  address: string;
+  localPart: string;
+  domainId: string;
+  customerId: string;
+  status: MailStatus;
+  quotaBytes: number;
+  /** The size of the messages, from the last report of the server. */
+  usedBytes: number;
+  /** Not null: the mail server encrypts each new message with the OpenPGP key of the owner. */
+  encryption?: MailEncryption | null;
+  /**
+   * Not null: the panel made the OpenPGP keys of the mailbox and has the private key, in a form
+   * that only a password of the mailbox opens. "passwordCurrent" is false when the private key
+   * has an older password.
+   */
+  privateKey?: { passwordCurrent: boolean } | null;
+}
+
+/** What the mail server found in the OpenPGP public key of a mailbox. */
+export interface MailEncryption {
+  fingerprints: string[];
+  /** For example "OpenPGP v4: RSA-3072, X25519". */
+  keyType: string;
+  expiresAt: string | null;
+  /** For example "expiresSoon", "weakRsa" or "addressMismatch". */
+  warnings: string[];
+}
+
+export interface MailAlias {
+  id: string;
+  address: string;
+  localPart: string;
+  domainId: string;
+  customerId: string;
+  /** alias: the destinations are mailboxes of the customer. forwarder: they are other addresses. */
+  kind: "alias" | "forwarder";
+  destinations: string[];
+  status: MailStatus;
+}
+
+/** The mail server of a server. An administrator turns it on. */
+export interface ServerMail {
+  hostname: string;
+  status: "starting" | "running" | "failed";
+  domains: number;
+  /** Set when the server is a member of this mail cluster. The cluster controls its mail server. */
+  clusterId?: string | null;
+}
+
+/** The step of a member in the setup of its mail cluster. */
+export type MailClusterStep = "new" | "prepared" | "joined" | "running";
+
+/**
+ * A mail cluster: 3 or 5 servers with the email role. Each member has all the mail, so the
+ * mail service continues when one server fails. Only an administrator sees the clusters.
+ */
+export interface MailCluster {
+  id: string;
+  name: string;
+  /** The shared name. The MX records of the mail domains use it. */
+  hostname: string;
+  status: "setting_up" | "running" | "failed";
+  phase: "prepare" | "bootstrap" | "join" | "first" | "rest" | "done";
+  error: string | null;
+  members: {
+    serverId: string;
+    serverName: string;
+    serverState: string;
+    number: number;
+    hostname: string;
+    endpoint: string;
+    address: string;
+    region: number;
+    step: MailClusterStep;
+  }[];
+  records: { type: "A" | "AAAA"; name: string; value: string }[];
+  domains: number;
+  createdAt: string | null;
 }
 
 /**
@@ -553,7 +676,10 @@ export interface Plan {
   name: string;
   limits: Limits;
   websites: number;
+  /** The number of mailboxes of a customer with the plan. */
   mailboxes: number;
+  /** The total size of the mailboxes of a customer with the plan. */
+  mailStorageBytes: number;
   /** The number of databases of each database server with the plan. */
   databases: number;
   phpExtensions: string[];
@@ -594,6 +720,63 @@ export interface Customer {
   resellerId?: string;
   createdAt: string;
   suspended: boolean;
+  /** White label: the brand that a reseller set. Only a reseller has one. */
+  branding?: ResellerBranding;
+  brandStatus?: BrandStatus;
+}
+
+/**
+ * White label: the brand that a person sees. The administrator sets the default brand. The
+ * customers of a reseller see only the brand of the reseller.
+ */
+export interface Brand {
+  name: string;
+  /** The colour of the buttons and links. White text on it has a contrast of 4.5:1 or more. */
+  colour: string;
+  /** A data URL of a PNG, JPEG or WebP image, or null. */
+  logo: string | null;
+  supportEmail: string | null;
+  /** True when the panel has the built-in brand: the panel shows the built-in logo. */
+  builtIn: boolean;
+  source?: "panel" | "reseller";
+  panelDomain?: string;
+  nameServers?: string[];
+  mailHost?: string | null;
+}
+
+/** The fields of a brand that a person sets. A missing field has the built-in value. */
+export interface BrandFields {
+  name?: string;
+  colour?: string;
+  logo?: string;
+  supportEmail?: string;
+}
+
+export interface ResellerBranding extends BrandFields {
+  panelDomain?: string;
+  /** One host name for each name server of the panel, in the order of the panel host names. */
+  nameServers?: string[];
+  mailHost?: string;
+}
+
+export interface BrandCertificate {
+  domain: string;
+  method: "letsencrypt" | "internal";
+  state: "valid" | "pending" | "expired";
+  expiresAt: string | null;
+  error: string | null;
+  checkedAt: string | null;
+}
+
+export interface BrandStatus {
+  /** The TLS certificate of the panel domain of the reseller. Null with no panel domain. */
+  certificate: BrandCertificate | null;
+  /** The domain of the panel. A CNAME record of the reseller panel domain can point to it. */
+  panelDomain: string;
+  /** The host names of the name servers of the panel. */
+  panelNameServers: string[];
+  /** The addresses of each name server of the panel. */
+  nameServerAddresses: Record<string, string[]>;
 }
 
 export type TokenScope =
@@ -608,7 +791,8 @@ export type TokenScope =
   | "images:read" | "images:write"
   | "customers:read" | "customers:write"
   | "users:read" | "users:write"
-  | "audit:read";
+  | "audit:read"
+  | "notifications:read" | "notifications:write";
 
 export interface ApiToken {
   id: string;
@@ -661,7 +845,7 @@ export interface Account {
   /** The reseller that gives the service. Undefined: the operator of the panel gives it. */
   provider?: { name: string; email: string };
   plan?: Plan;
-  usage: { websites: number; databases: number; diskBytes: number; customers?: number; dnsZones: number; networks: number };
+  usage: { websites: number; databases: number; diskBytes: number; customers?: number; dnsZones: number; networks: number; bandwidthBytes: number };
   /** False when the panel has no object storage for backups. A backup then fails. */
   backupsAvailable: boolean;
   users: ManagedUser[];
@@ -742,6 +926,8 @@ export interface State {
    * totpSetupRequired: the user is an administrator or a reseller with no TOTP. The panel
    * shows only the page that sets up TOTP (second audit, finding F09).
    */
+  /** White label: the brand that the signed-in user sees. */
+  brand?: Brand;
   session: {
     signedIn: boolean; loading?: boolean; mustChangePassword?: boolean; totpSetupRequired?: boolean; user: User; contextId: string;
     /** The error of the last load from the API. The panel then shows the data of the load before it. */
@@ -756,6 +942,10 @@ export interface State {
   images: RuntimeImage[];
   rollout?: Rollout;
   databaseServers: DatabaseServer[];
+  mailDomains: MailDomain[];
+  mailClusters: MailCluster[];
+  mailboxes: Mailbox[];
+  mailAliases: MailAlias[];
   /** The DNS zones of the customers that the user can see. */
   dnsZones: DnsZone[];
   /** The host names of the DNS servers of the panel. Empty: the panel has no DNS server. */
@@ -766,6 +956,10 @@ export interface State {
   networks: PrivateNetwork[];
   /** The pages of the plugins that are on, for the role of the user. */
   pluginPages: PluginPage[];
+  /** The open usage alerts that the user can see. */
+  usageAlerts: UsageAlert[];
+  /** The thresholds of the usage alerts, in percent of each limit. */
+  alertSettings: UsageAlertSettings;
   databases: Database[];
   databaseUsers: DatabaseUser[];
   /**
@@ -962,4 +1156,61 @@ export interface PluginPageSession {
   scopes: string[];
   page: PluginPage;
   user: { id: number; name: string; role: Role; customerId: string | null };
+}
+
+// Usage history and usage alerts. The panel reads the history when the user opens a graph.
+
+export type UsageRange = "24h" | "7d" | "30d" | "90d" | "1y";
+export type UsageSubject = "website" | "server" | "database_server";
+export type UsageResource = "cpu" | "memory" | "disk" | "bandwidth" | "processes";
+
+/** One point of a graph. A value is null when no report is in the point. */
+export interface UsagePoint {
+  at: string;
+  cpuPercent: number | null;
+  cpuMaxPercent: number | null;
+  memoryBytes?: number | null;
+  memoryMaxBytes?: number | null;
+  memoryPercent?: number | null;
+  memoryMaxPercent?: number | null;
+  diskBytes?: number | null;
+  diskPercent?: number | null;
+  processes?: number | null;
+  bytesIn?: number | null;
+  bytesOut?: number | null;
+}
+
+export interface UsageHistory {
+  range: UsageRange;
+  stepMinutes: number;
+  from: string;
+  to: string;
+  points: UsagePoint[];
+  limits?: Partial<Limits>;
+  bandwidth?: { month: string; bytes: number; limitBytes: number };
+  alerts: UsageAlert[];
+}
+
+export interface UsageAlert {
+  id: string;
+  subjectType: UsageSubject;
+  subjectId: string;
+  subjectName: string | null;
+  customerId: string | null;
+  serverId: string | null;
+  resource: UsageResource;
+  level: "warning" | "critical";
+  used: number;
+  limit: number;
+  percent: number;
+  usedText: string;
+  limitText: string;
+  openedAt: string;
+  updatedAt: string;
+  resolvedAt: string | null;
+}
+
+export interface UsageAlertSettings {
+  warningPercent: number;
+  criticalPercent: number;
 }

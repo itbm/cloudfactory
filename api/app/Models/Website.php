@@ -18,7 +18,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
     'name', 'application', 'customer_id', 'server_id', 'plan_id', 'image_id', 'image_tag', 'previous_image_id',
     'previous_image_tag', 'unix_user', 'status', 'worker_mode', 'extensions', 'php_ini', 'limits', 'usage',
     'staging_of', 'managed_by_terraform', 'document_root', 'sftp_enabled', 'sftp_keys',
-    'stopped_by_suspension', 'sftp_closed_by_suspension', 'kind', 'command',
+    'stopped_by_suspension', 'sftp_closed_by_suspension', 'kind', 'command', 'bandwidth_month', 'bandwidth_bytes',
 ])]
 class Website extends Model
 {

@@ -300,7 +300,9 @@ class Networks
                 'port' => self::WEBSITE_PORT, 'mesh_address' => $row->mesh_address,
             ]);
 
-        return $databases->concat($websites)->values();
+        // The Adminer container of a customer connects to each database server of the
+        // customer. It is not a network member.
+        return $databases->concat($websites)->concat(DatabaseTools::links())->values();
     }
 
     /**

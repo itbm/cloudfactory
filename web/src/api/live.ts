@@ -7,10 +7,15 @@ import type {
   ApiToken,
   AuditEntry,
   BackupPolicy,
+  Brand,
+  BrandStatus,
   Customer,
   Database,
   DatabaseGrant,
   DatabaseServer,
+  MailAlias,
+  MailDomain,
+  Mailbox,
   DatabaseUser,
   DnsRecord,
   DnsZone,
@@ -23,6 +28,7 @@ import type {
   Plan,
   PluginPage,
   PrivateNetwork,
+  ResellerBranding,
   Rollout,
   RuntimeImage,
   RuntimeKind,
@@ -30,15 +36,18 @@ import type {
   SetupChecklist,
   Snapshot,
   State,
+  UsageAlert,
+  UsageAlertSettings,
   User,
   Website,
+  MailCluster,
 } from "./types";
 import { jobFailure, openFailures } from "../lib/jobFailure";
 import { degradedReason } from "./selectors";
 
 /** The error of a request. store.ts makes an ApiError from it. */
 export class LiveError extends Error {
-  constructor(message: string, readonly fields: Record<string, string> = {}, readonly status = 0) {
+  constructor(message: string, readonly fields: Record<string, string> = {}, readonly status = 0, /** The answer of the API. Some answers have more fields than the errors. */ readonly body?: unknown) {
     super(message);
     this.name = "LiveError";
   }
@@ -98,7 +107,7 @@ export async function request<T>(method: string, path: string, body?: unknown): 
   // With one error, the message says what to correct. Some forms do not show each field.
   const messages = Object.values(fields);
   const message = res.status === 422 ? (messages.length === 1 ? messages[0] : "Correct the errors and try again.") : (data as { message?: string }).message || `The panel API gave status ${res.status}.`;
-  throw new LiveError(message, fields, res.status);
+  throw new LiveError(message, fields, res.status, data);
 }
 
 /** Reads all pages of a paginated list. Batch 1, finding 9: it reads each page, with no limit. */
@@ -126,6 +135,7 @@ const shown = new Set<string>();
 interface ApiMe {
   id: number; name: string; email: string; role: User["role"]; customerId: string | null; totpEnabled: boolean; mustChangePassword?: boolean;
   totpSetupRequired?: boolean; securityNotices?: { action: string; target: string; actor: string; at: string | null }[];
+  brand?: Brand;
 }
 interface ApiUser { id: number; name: string; email: string; role: User["role"]; customerId: string | null; totpEnabled: boolean; mustChangePassword: boolean; createdAt: string | null }
 interface ApiJob { id: string; title: string; ref: string | null; action?: string | null; state: Job["state"]; steps: string[]; step: number; error: string | null; websiteId: string | null; serverId: string | null; databaseServerId?: string | null; dnsZoneId?: string | null; createdAt: string; finishedAt: string | null }
@@ -133,14 +143,14 @@ interface ApiWebsite {
   id: string; name: string; application: string; customerId: string; serverId: string; planId: string; unixUser: string; networkHost?: string | null; networkPort?: number | null; kind?: Website["kind"]; command?: string | null; status: Website["status"];
   runtime: { imageId: string; family: string; image: string; phpVersion: string | null; workerMode: boolean; extensions: string[]; phpIni: Record<string, string>; previousImageId: string | null; documentRoot?: string; digest?: string | null; signatureVerified?: boolean };
   sftp?: { enabled: boolean; host: string | null; port: number; username: string; authorizedKeys: string[] };
-  limits: Limits; diskLimitApplied?: boolean | null; usage: Partial<Website["use"]> | null;
+  limits: Limits; diskLimitApplied?: boolean | null; usage: Partial<Website["use"]> | null; bandwidthBytes?: number;
   domains?: { name: string; kind: Website["domains"][number]["kind"]; dnsPointsHere: boolean; certificate: { state: Website["domains"][number]["certificate"]["state"]; expiresAt: string | null }; verified?: boolean; verification?: DomainVerification | null }[];
   stagingOf: string | null; managedByTerraform: boolean; createdAt: string; updatedAt: string;
 }
 interface ApiServer {
   id: string; name: string; location: string; roles: Server["roles"]; state: Server["state"]; agentVersion: string | null; os: string | null; kernel: string | null; arch: string | null;
   podmanVersion: string | null; gvisorVersion: string | null; gvisorPlatform: Server["gvisorPlatform"]; bareMetal: boolean; updatePolicy: Server["updatePolicy"]; maintenanceWindow: string;
-  pendingUpdates: Server["pendingUpdates"]; lastUpdateAt: string | null; rebootRequired: boolean; agentUpdateAvailable?: boolean; agentAddress?: string | null; connectionError?: string | null; panel?: boolean; databaseEngines?: Database["engine"][]; databaseInstances?: boolean; services: Server["services"]; sftpPort?: number | null; dnsName?: string | null; dns?: boolean; addresses?: string[];
+  pendingUpdates: Server["pendingUpdates"]; lastUpdateAt: string | null; rebootRequired: boolean; agentUpdateAvailable?: boolean; agentAddress?: string | null; connectionError?: string | null; panel?: boolean; databaseEngines?: Database["engine"][]; databaseInstances?: boolean; services: Server["services"]; sftpPort?: number | null; dnsName?: string | null; dns?: boolean; addresses?: string[]; mail?: Server["mail"] | null;
   usage: { cpuPercent?: number; memoryPercent?: number; diskPercent?: number } | null;
 }
 interface ApiImage {
@@ -153,7 +163,7 @@ interface ApiRollout {
   id: string; imageId: string; title: string; fromTag: string; toTag: string; severity: Rollout["severity"]; state: Rollout["state"]; stages: Rollout["stages"];
   websites: number; healthy: number; rolledBack: number; running: number; rollbacks: Rollout["rollbacks"]; startedAt: string; finishedAt?: string | null;
 }
-interface ApiCustomer { id: string; name: string; email: string; role: Customer["role"]; planId: string; resellerId: string | null; suspended: boolean; createdAt: string }
+interface ApiCustomer { id: string; name: string; email: string; role: Customer["role"]; planId: string; resellerId: string | null; suspended: boolean; createdAt: string; branding?: ResellerBranding | [] | null; brandStatus?: BrandStatus | null }
 interface ApiToken_ { id: number; name: string; scopes: string[]; createdAt: string; expiresAt: string | null; lastUsedAt: string | null }
 interface ApiAudit { id: number; at: string; actor: string; ip: string | null; action: string; target: string }
 interface ApiPanelCertificate {
@@ -192,7 +202,7 @@ interface ApiAccount {
   customer: Account["customer"] | null;
   provider: { name: string; email: string } | null;
   plan: Plan | null;
-  usage: { websites: number; databases: number; diskBytes: number; customers: number | null; dnsZones?: number; networks?: number } | null;
+  usage: { websites: number; databases: number; diskBytes: number; customers: number | null; dnsZones?: number; networks?: number; bandwidthBytes?: number } | null;
   backups?: { available: boolean };
   users: ApiUser[];
 }
@@ -201,7 +211,7 @@ export function toAccount(a: ApiAccount): Account {
   const usage = a.usage ?? { websites: 0, databases: 0, diskBytes: 0, customers: null };
   return {
     customer: a.customer!, provider: a.provider ?? undefined, plan: a.plan ?? undefined,
-    usage: { websites: usage.websites, databases: usage.databases, diskBytes: usage.diskBytes, customers: usage.customers ?? undefined, dnsZones: usage.dnsZones ?? 0, networks: usage.networks ?? 0 },
+    usage: { websites: usage.websites, databases: usage.databases, diskBytes: usage.diskBytes, customers: usage.customers ?? undefined, dnsZones: usage.dnsZones ?? 0, networks: usage.networks ?? 0, bandwidthBytes: usage.bandwidthBytes ?? 0 },
     backupsAvailable: a.backups?.available ?? true,
     users: a.users.map(toUser),
   };
@@ -229,6 +239,7 @@ export function toWebsite(w: ApiWebsite): Website {
       digest: w.runtime.digest ?? undefined, signatureVerified: w.runtime.signatureVerified ?? undefined,
     },
     use: { cpuPercent: 0, memoryBytes: 0, diskBytes: 0, processes: 0, diskIoBytesPerSecond: 0, ...(w.usage ?? {}) },
+    bandwidthBytes: w.bandwidthBytes ?? 0,
     domains: (w.domains ?? []).map((d) => ({
       name: d.name, kind: d.kind, dnsPointsHere: d.dnsPointsHere, certificate: { state: d.certificate.state, expiresAt: d.certificate.expiresAt ?? undefined },
       ...(d.verified === false && d.verification ? { verification: d.verification } : {}),
@@ -253,6 +264,7 @@ export function toServer(s: ApiServer): Server {
     databaseEngines: s.databaseEngines ?? undefined,
     databaseInstances: s.databaseInstances ?? false,
     dnsName: s.dnsName ?? undefined, dns: s.dns ?? false, addresses: s.addresses ?? [],
+    mail: s.mail ?? undefined,
     stateDetail: s.state === "degraded" ? (s.connectionError ? "Degraded: the panel cannot connect" : degradedReason(s.services ?? [])) : undefined,
   };
 }
@@ -285,6 +297,10 @@ export function toRollout(r: ApiRollout, servers: number): Rollout {
   };
 }
 
+interface ApiMailDomain extends Omit<MailDomain, "dnsCheckedAt"> { dnsCheckedAt: string | null }
+interface ApiMailbox extends Omit<Mailbox, "usedBytes"> { usedBytes: number | null }
+export const toMailDomain = (d: ApiMailDomain): MailDomain => ({ ...d, records: d.records ?? [], dnsCheckedAt: d.dnsCheckedAt ?? undefined });
+export const toMailbox = (m: ApiMailbox): Mailbox => ({ ...m, usedBytes: m.usedBytes ?? 0 });
 export const toDatabaseServer = (s: ApiDatabaseServer): DatabaseServer => ({ ...s, usage: s.usage ?? undefined, createdAt: s.createdAt ?? "" });
 
 export const toDnsRecord = (r: ApiDnsRecord): DnsRecord => ({ id: r.id, name: r.name, type: r.type, value: r.value, ttl: r.ttl, priority: r.priority ?? undefined, managed: r.managed ?? undefined });
@@ -310,7 +326,12 @@ export async function dnsZone(id: string): Promise<DnsZone> {
   return toDnsZone(await request<ApiDnsZone>("GET", `/dns-zones/${id}`));
 }
 
-const toCustomer = (c: ApiCustomer): Customer => ({ id: c.id, name: c.name, email: c.email, planId: c.planId, role: c.role, resellerId: c.resellerId ?? undefined, createdAt: c.createdAt, suspended: c.suspended });
+const toCustomer = (c: ApiCustomer): Customer => ({
+  id: c.id, name: c.name, email: c.email, planId: c.planId, role: c.role, resellerId: c.resellerId ?? undefined, createdAt: c.createdAt, suspended: c.suspended,
+  // PHP gives an empty brand as an empty list.
+  branding: c.branding && !Array.isArray(c.branding) ? c.branding : undefined,
+  brandStatus: c.brandStatus ?? undefined,
+});
 
 export const toUser = (u: ApiUser): ManagedUser => ({
   id: String(u.id), name: u.name, email: u.email, role: u.role, customerId: u.customerId ?? undefined, totpEnabled: u.totpEnabled, mustChangePassword: u.mustChangePassword, createdAt: u.createdAt ?? "",
@@ -324,6 +345,11 @@ const toAudit = (a: ApiAudit): AuditEntry => ({ id: String(a.id), at: a.at, acto
 
 // Loading
 
+/** White label: the brand of the sign-in page, for the domain that the browser opened. */
+export async function signInBrand(): Promise<Brand> {
+  return request<Brand>("GET", "/brand");
+}
+
 /** Loads the full state for the signed-in user from the API. */
 export async function load(previous: State): Promise<State> {
   const me = await request<ApiMe>("GET", "/me");
@@ -331,17 +357,17 @@ export async function load(previous: State): Promise<State> {
   // Audit finding B5: with a temporary password, the API refuses each other request. The
   // panel shows only the form for a new password.
   if (me.mustChangePassword) {
-    return { ...previous, session: { signedIn: true, mustChangePassword: true, user, contextId: previous.session.contextId }, totpEnabled: me.totpEnabled };
+    return { ...previous, brand: me.brand ?? previous.brand, session: { signedIn: true, mustChangePassword: true, user, contextId: previous.session.contextId }, totpEnabled: me.totpEnabled };
   }
   // Second audit, finding F09: an administrator or a reseller must set up TOTP first. The API
   // refuses each other request until then.
   if (me.totpSetupRequired) {
-    return { ...previous, session: { signedIn: true, totpSetupRequired: true, user, contextId: previous.session.contextId }, totpEnabled: false };
+    return { ...previous, brand: me.brand ?? previous.brand, session: { signedIn: true, totpSetupRequired: true, user, contextId: previous.session.contextId }, totpEnabled: false };
   }
   const admin = me.role === "administrator";
   const optional = <T>(p: Promise<T>, fallback: T) => p.catch(() => fallback);
 
-  const [websites, jobs, customers, plans, tokens, policy, servers, images, rollouts, audit, users, certificate, setup, account, databaseServers, dns, mesh, networks, pluginPages] = await Promise.all([
+  const [websites, jobs, customers, plans, tokens, policy, servers, images, rollouts, audit, users, certificate, setup, account, databaseServers, dns, mesh, networks, alerts, mailDomains, mailboxes, mailAliases, mailClusters, pluginPages] = await Promise.all([
     all<ApiWebsite>("/websites"),
     request<{ data: ApiJob[] }>("GET", "/jobs?perPage=50").then((r) => r.data),
     optional(request<{ data: ApiCustomer[] }>("GET", "/customers").then((r) => r.data), []),
@@ -364,6 +390,13 @@ export async function load(previous: State): Promise<State> {
     admin ? optional(request<Mesh>("GET", "/mesh"), undefined) : Promise.resolve(undefined),
     // A panel API of an earlier release has no private networks.
     optional(request<{ data: ApiNetwork[] }>("GET", "/networks").then((r) => r.data.map(toNetwork)), []),
+    // A panel API of an earlier release has no usage alerts.
+    optional(request<{ data: UsageAlert[]; settings: UsageAlertSettings }>("GET", "/usage-alerts"), { data: [], settings: previous.alertSettings }),
+    // Email. A panel of an earlier release, or a token with no mail scope, gives no lists.
+    optional(request<{ data: ApiMailDomain[] }>("GET", "/mail/domains").then((r) => r.data), []),
+    optional(request<{ data: ApiMailbox[] }>("GET", "/mail/mailboxes").then((r) => r.data), []),
+    optional(request<{ data: MailAlias[] }>("GET", "/mail/aliases").then((r) => r.data), []),
+    admin ? optional(request<{ data: MailCluster[] }>("GET", "/mail-clusters").then((r) => r.data), []) : Promise.resolve([] as MailCluster[]),
     // The pages of the plugins for the menu. A panel API of an earlier release has no plugins.
     optional(request<{ data: PluginPage[] }>("GET", "/plugin-pages").then((r) => r.data), []),
   ]);
@@ -402,6 +435,7 @@ export async function load(previous: State): Promise<State> {
   return {
     ...previous,
     session: { signedIn: true, user, contextId },
+    brand: me.brand ?? previous.brand,
     contexts,
     websites: websites.map(toWebsite),
     jobs: mappedJobs,
@@ -419,6 +453,12 @@ export async function load(previous: State): Promise<State> {
     mesh,
     networks,
     pluginPages,
+    usageAlerts: alerts.data,
+    alertSettings: alerts.settings,
+    mailDomains: mailDomains.map(toMailDomain),
+    mailboxes: mailboxes.map(toMailbox),
+    mailAliases,
+    mailClusters,
     databases: [...kept(previous.databases), ...perSite.flatMap((s) => s.databases)],
     databaseUsers: [...kept(previous.databaseUsers), ...perSite.flatMap((s) => s.users)],
     remoteDatabaseServers: { ...previous.remoteDatabaseServers, ...Object.fromEntries(perSite.map((s, i) => [detailed[i].id, s.remote])) },
@@ -475,8 +515,28 @@ export async function showWebsite(previous: State, websiteId: string): Promise<(
 
 // Session
 
+const DEVICE_KEY = "cloudfactory.device";
+
+/**
+ * A random ID of this browser. The panel sends an email to the user after a sign-in from a
+ * browser that it does not know. The ID stays after a sign-out.
+ */
+export function deviceId(): string | undefined {
+  try {
+    let id = localStorage.getItem(DEVICE_KEY);
+    if (!id || !/^[A-Za-z0-9_-]{16,100}$/.test(id)) {
+      id = crypto.randomUUID();
+      localStorage.setItem(DEVICE_KEY, id);
+    }
+    return id;
+  } catch {
+    // The browser keeps no data. The panel then knows the browser by its user agent.
+    return undefined;
+  }
+}
+
 export async function signIn(email: string, password: string, totp: string): Promise<void> {
-  const res = await request<{ token: string }>("POST", "/auth/login", { email, password, totp: totp || undefined });
+  const res = await request<{ token: string }>("POST", "/auth/login", { email, password, totp: totp || undefined, deviceId: deviceId() });
   token = res.token;
   writeToken(token);
 }
@@ -518,4 +578,4 @@ export async function waitForJob(job: ApiJob | Job, onChange: (job: Job) => void
   return current;
 }
 
-export type { ApiDatabaseServer, ApiDnsRecord, ApiDnsZone, ApiJob, ApiPanelCertificate, ApiUser, ApiWebsite };
+export type { ApiDatabaseServer, ApiDnsRecord, ApiDnsZone, ApiMailDomain, ApiMailbox, ApiJob, ApiPanelCertificate, ApiUser, ApiWebsite };

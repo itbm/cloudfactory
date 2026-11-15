@@ -59,6 +59,13 @@ class NetworkScaleTest extends TestCase
                     'port' => DatabaseServer::FIRST_PORT[$engine] + intdiv($i, 3)]);
             }
         });
+        // The test data never commits, so autovacuum does not analyse it. PostgreSQL then plans
+        // the queries of the mesh with the statistics of earlier tests (the demo data, for
+        // example), and a bad plan can make one change take minutes. A server keeps its
+        // statistics current with autovacuum, so the test analyses the tables here.
+        if (DB::getDriverName() === 'pgsql') {
+            DB::statement('ANALYZE');
+        }
     }
 
     /** @return list<string> */

@@ -11,11 +11,13 @@ use App\Models\CronJob;
 use App\Models\Database;
 use App\Models\DatabaseServer;
 use App\Models\Domain;
+use App\Models\Mailbox;
 use App\Models\Server;
 use App\Services\Dns\Zones;
 use App\Services\JobOutcome;
 use App\Services\Mesh;
 use App\Services\PanelCertificate;
+use App\Services\UsageRecorder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -84,12 +86,16 @@ class AgentController extends Controller
             'usage.cpuPercent' => ['numeric', 'between:0,100'],
             'usage.memoryPercent' => ['numeric', 'between:0,100'],
             'usage.diskPercent' => ['numeric', 'between:0,100'],
+            'usage.networkInBytes' => ['integer', 'min:0'],
+            'usage.networkOutBytes' => ['integer', 'min:0'],
             'websites' => ['array'],
             'websites.*.id' => ['required', 'string'],
             'websites.*.cpuPercent' => ['numeric'],
             'websites.*.memoryBytes' => ['integer'],
             'websites.*.diskBytes' => ['integer'],
             'websites.*.processes' => ['integer'],
+            'websites.*.bytesIn' => ['integer', 'min:0'],
+            'websites.*.bytesOut' => ['integer', 'min:0'],
             // FR-402 and FR-403: the DNS and the certificate of each domain on the server.
             'domains' => ['nullable', 'array'],
             'domains.*.name' => ['required', 'string', 'max:253'],
@@ -135,6 +141,12 @@ class AgentController extends Controller
             'panelCertificate.state' => ['required_with:panelCertificate', Rule::in(['valid', 'pending', 'expired'])],
             'panelCertificate.expiresAt' => ['nullable', 'date'],
             'panelCertificate.caCertificate' => ['nullable', 'string', 'max:8000'],
+            // Email: the state of the mail server, and the use of each mailbox.
+            'mail' => ['nullable', 'array'],
+            'mail.state' => ['required_with:mail', Rule::in(['running', 'stopped'])],
+            'mail.mailboxes' => ['array', 'max:1000000'],
+            'mail.mailboxes.*.address' => ['required', 'string', 'max:320'],
+            'mail.mailboxes.*.usedBytes' => ['required', 'integer', 'min:0'],
             // The tunnel key of the server and the state of its tunnels to other servers. An
             // agent of an earlier release does not send it.
             'mesh' => ['nullable', 'array'],
@@ -216,8 +228,10 @@ class AgentController extends Controller
         }
         // FR-203: the current resource use of each website.
         foreach ($data['websites'] ?? [] as $use) {
-            $server->websites()->whereKey($use['id'])->update(['usage' => json_encode(collect($use)->except('id'))]);
+            $server->websites()->whereKey($use['id'])->update(['usage' => json_encode(collect($use)->except(['id', 'bytesIn', 'bytesOut']))]);
         }
+        // The usage history, and the alerts of the resources that are near their limits.
+        app(UsageRecorder::class)->record($server, $data);
         // An agent reports only the domains and databases of its own websites.
         $websiteIds = $server->websites()->pluck('id');
         foreach ($data['domains'] ?? [] as $d) {
@@ -268,6 +282,9 @@ class AgentController extends Controller
                 'diskSizeBytes' => (int) ($use['diskSizeBytes'] ?? 0),
             ]]);
         }
+        if (isset($data['mail']) && $server->mail_hostname !== null) {
+            self::recordMail($server, $data['mail']);
+        }
         // CF-10: only the panel server has the panel and its edge proxy.
         if ($server->local && isset($data['panelCertificate'])) {
             PanelCertificate::record($data['panelCertificate']);
@@ -276,5 +293,31 @@ class AgentController extends Controller
         // Each agent trusts the CA of the panel, also when the panel has a certificate from
         // Let's Encrypt now. Thus a later change to the CA of the panel does not stop the agents.
         return response()->json(['ok' => true, 'panelCaSha256' => PanelCertificate::current()['caSha256']]);
+    }
+
+    /**
+     * The mail report of an agent. A mail server that stopped changes only a mail server that
+     * operated: the job that starts the mail server gives its own result (JobOutcome). An
+     * agent reports only the mailboxes of the mail domains on its own server.
+     *
+     * @param  array<string, mixed>  $mail
+     */
+    private static function recordMail(Server $server, array $mail): void
+    {
+        if ($mail['state'] === 'running' && in_array($server->mail_status, ['failed', 'stopped'], true)) {
+            $server->update(['mail_status' => 'running']);
+        } elseif ($mail['state'] === 'stopped' && $server->mail_status === 'running') {
+            $server->update(['mail_status' => 'stopped']);
+        }
+        $used = collect($mail['mailboxes'] ?? [])->pluck('usedBytes', 'address');
+        if ($used->isEmpty()) {
+            return;
+        }
+        foreach (Mailbox::with('domain')->whereIn('mail_domain_id', $server->mailDomains()->select('id'))->get() as $mailbox) {
+            $bytes = $used->get($mailbox->address());
+            if ($bytes !== null && (int) $bytes !== $mailbox->used_bytes) {
+                $mailbox->update(['used_bytes' => (int) $bytes]);
+            }
+        }
     }
 }

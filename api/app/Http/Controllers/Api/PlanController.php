@@ -105,11 +105,17 @@ class PlanController extends Controller
             'limits.diskBytes' => ['required', 'integer', 'gt:0'],
             'limits.diskIoBytesPerSecond' => ['required', 'integer', 'gt:0'],
             'limits.processes' => ['required', 'integer', 'gt:0'],
+            // The traffic of each website in a calendar month. 0 or none is no limit. The panel
+            // shows the traffic and alerts near the limit. It does not stop the website.
+            'limits.bandwidthBytes' => ['sometimes', 'integer', 'min:0'],
             // The number of database servers of a customer with the plan, and the limits of
             // each database server with the plan. A request with none keeps the values of the
             // plan. A new plan gets 3 database servers, each with the vCPUs of a website, the
             // half of its memory and the half of its disk space.
             'databaseServers' => ['sometimes', 'integer', 'min:0', 'max:1000000'],
+            // The total size of the mailboxes of a customer with the plan. A request with
+            // none keeps the value of the plan. A new plan gets 10 GB.
+            'mailStorageBytes' => ['sometimes', 'integer', 'min:0', 'max:'.(1024 ** 5)],
             // The number of DNS zones of a customer with the plan. A new plan gets 5.
             'dnsZones' => ['sometimes', 'integer', 'min:0', 'max:1000000'],
             // The number of named networks of a customer with the plan, in addition to the
@@ -132,6 +138,7 @@ class PlanController extends Controller
             'php_extensions' => $d['phpExtensions'],
             'limits' => $d['limits'],
             ...(isset($d['databaseServers']) ? ['database_servers' => $d['databaseServers']] : []),
+            ...(isset($d['mailStorageBytes']) ? ['mail_storage_bytes' => $d['mailStorageBytes']] : []),
             ...(isset($d['dnsZones']) ? ['dns_zones' => $d['dnsZones']] : []),
             ...(isset($d['networks']) ? ['networks' => $d['networks']] : []),
             ...(isset($d['databaseLimits']) ? ['database_limits' => [
@@ -186,6 +193,8 @@ class PlanController extends Controller
             'limits' => $p->limits,
             'websites' => $p->websites,
             'mailboxes' => $p->mailboxes,
+            // The total size of the mailboxes of a customer with the plan.
+            'mailStorageBytes' => $p->mail_storage_bytes,
             // The number of databases of each database server with the plan.
             'databases' => $p->databases,
             'phpExtensions' => $p->php_extensions,

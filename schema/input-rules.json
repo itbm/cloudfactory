@@ -24,6 +24,12 @@
       "pattern": "^[a-z][a-z0-9]{0,15}_[a-z0-9]{4}$",
       "message": "Use a name such as acme_x7k2: a letter, at most 15 letters or digits, an underscore, and 4 letters or digits."
     },
+    "routePath": {
+      "what": "route path",
+      "doc": "The path prefix of the route of a website in the edge proxy, for example \"/01jbq3z5k8n6/\". It starts and ends with a slash, and has 1 to 40 lower-case letters and digits.",
+      "pattern": "^/[a-z0-9]{1,40}/$",
+      "message": "Use a path such as /01jbq3z5k8n6/: a slash, 1 to 40 lower-case letters and digits, and a slash."
+    },
     "domain": {
       "what": "domain",
       "doc": "A domain name in lower case. Each label has 1 to 63 characters. The last label is not a number, so that the name is not an IP address (audit finding R5).",
@@ -159,6 +165,28 @@
       "doc": "The host part of a MariaDB user: an address, a network, a host name or a pattern with a percent sign.",
       "pattern": "^[A-Za-z0-9.:%/_-]{1,255}$",
       "message": "Use an address, a network or a host name. Use only letters, digits and the characters . : % / _ -"
+    },
+    "mailLocalPart": {
+      "what": "mail address name",
+      "doc": "The part of a mail address before the @ sign, in lower case. It has no plus sign: the mail server uses the text after a plus sign as a tag of the same mailbox.",
+      "pattern": "^[a-z0-9]([a-z0-9._-]{0,62}[a-z0-9])?$",
+      "not": ["\\.\\."],
+      "message": "Use 1 to 64 lower-case letters, digits, dots, hyphens and underscores. Start and end with a letter or a digit."
+    },
+    "mailAddress": {
+      "what": "mail address",
+      "doc": "A mail address in lower case, for example the destination of a forwarder.",
+      "pattern": "^[a-z0-9]([a-z0-9._+-]{0,62}[a-z0-9])?@({label}\\.)+{label}$",
+      "not": ["\\.\\.", "\\.[0-9]+$"],
+      "maxLength": 254,
+      "message": "Enter a mail address in lower-case letters, for example sales@example.com."
+    },
+    "mailPasswordHash": {
+      "what": "password hash",
+      "doc": "The bcrypt hash of a mailbox password. The panel makes it, and the agent gives it to the mail server. The agent never gets the password.",
+      "pattern": "^\\$2y\\$1[0-9]\\$[./A-Za-z0-9]{53}$",
+      "echo": false,
+      "message": "Enter a bcrypt hash."
     },
     "dnsRecordName": {
       "what": "DNS record name",

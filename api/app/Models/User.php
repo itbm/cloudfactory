@@ -27,6 +27,7 @@ class User extends Authenticatable
             'role' => Role::class,
             'totp_secret' => 'encrypted',
             'must_change_password' => 'boolean',
+            'notification_preferences' => 'array',
         ];
     }
 

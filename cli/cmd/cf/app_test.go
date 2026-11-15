@@ -632,3 +632,60 @@ func TestPanelCertificate(t *testing.T) {
 		t.Errorf("set: %v, sent %v", err, sent)
 	}
 }
+
+// "cf databases adminer" waits for the jobs, and writes a file that sends the sign-in form of
+// Adminer. Only the user can read the file.
+func TestDatabaseOpensInAdminer(t *testing.T) {
+	var body map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		login := `{"id":"L1","status":"%s","url":"https://adminer.panel.example/01abc/","username":"u1a2_adminer_k3x9q2mf","expiresAt":"2026-11-15T03:00:00+00:00"}`
+		switch {
+		case r.URL.Path == "/api/v1/websites":
+			w.Write([]byte(`{"data":[{"id":"W1","name":"shop.example","status":"running"}]}`))
+		case r.URL.Path == "/api/v1/websites/W1/databases" && r.Method == http.MethodGet:
+			w.Write([]byte(`{"prefix":"u1a2_","databases":[{"id":"D1","engine":"mariadb","name":"u1a2_prod","databaseServerId":"DS1"}],"users":[],"servers":[]}`))
+		case r.URL.Path == "/api/v1/websites/W1/databases/D1/adminer":
+			json.NewDecoder(r.Body).Decode(&body)
+			w.WriteHeader(http.StatusAccepted)
+			fmt.Fprintf(w, `{"login":`+login+`,"form":{"driver":"server","server":"mariadb.internal:3306","username":"u1a2_adminer_k3x9q2mf","password":"pw\"<1","db":"u1a2_prod"},"jobs":[{"id":"J1","title":"Make Adminer user","state":"queued"}]}`, "starting")
+		case r.URL.Path == "/api/v1/jobs/J1":
+			w.Write([]byte(`{"data":{"id":"J1","title":"Make Adminer user","state":"succeeded","steps":["Set user and password"],"step":1,"error":null}}`))
+		case r.URL.Path == "/api/v1/adminer-logins/L1":
+			fmt.Fprintf(w, `{"login":`+login+`}`, "ready")
+		default:
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+	a, out := testApp(srv)
+	t.Setenv("TMPDIR", t.TempDir())
+	if err := a.dispatch(context.Background(), []string{"databases", "adminer", "shop.example", "prod", "--read-only"}); err != nil {
+		t.Fatal(err)
+	}
+	if body["privileges"] != "readonly" {
+		t.Errorf("request = %v", body)
+	}
+	var path string
+	for _, line := range strings.Split(out.String(), "\n") {
+		if p, ok := strings.CutPrefix(line, "Open this file in your browser to sign in: "); ok {
+			path = p
+		}
+	}
+	if path == "" {
+		t.Fatalf("output:\n%s", out)
+	}
+	fi, err := os.Stat(path)
+	if err != nil || fi.Mode().Perm() != 0o600 {
+		t.Fatalf("file %s: %v %v", path, fi, err)
+	}
+	b, _ := os.ReadFile(path)
+	for _, want := range []string{`action="https://adminer.panel.example/01abc/"`, `name="auth[password]" value="pw&#34;&lt;1"`, `name="auth[driver]" value="server"`, `name="auth[db]" value="u1a2_prod"`} {
+		if !strings.Contains(string(b), want) {
+			t.Errorf("file does not contain %s:\n%s", want, b)
+		}
+	}
+	if strings.Contains(out.String(), `pw"<1`) {
+		t.Errorf("the output shows the password:\n%s", out)
+	}
+}

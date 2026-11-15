@@ -71,6 +71,21 @@ func (f *fakeCaddy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case r.URL.Path == "/config/apps/http/servers/edge/tls_connection_policies":
 		b, _ := io.ReadAll(r.Body)
 		f.policies = string(b)
+	case (r.Method == http.MethodPatch || r.Method == http.MethodGet) && strings.Count(r.URL.Path, "/") == 3 && strings.HasPrefix(r.URL.Path, "/id/"):
+		// A field of an object, for example /id/cf-panel/match.
+		id, field, _ := strings.Cut(strings.TrimPrefix(r.URL.Path, "/id/"), "/")
+		list, i := f.object(id)
+		if i < 0 {
+			http.Error(w, `{"error":"unknown object ID '`+id+`'"}`, http.StatusNotFound)
+			return
+		}
+		if r.Method == http.MethodGet {
+			json.NewEncoder(w).Encode(list[i][field])
+			return
+		}
+		var value any
+		readJSON(r, &value)
+		list[i][field] = value
 	case r.Method == http.MethodPatch && strings.HasPrefix(r.URL.Path, "/id/"):
 		id := strings.TrimPrefix(r.URL.Path, "/id/")
 		var object map[string]any
@@ -233,6 +248,18 @@ func TestSiteRouteSendsAllRequestsToTheContainer(t *testing.T) {
 	}
 }
 
+// A route with a path prefix has only the paths of the prefix on its host.
+func TestSiteRouteWithAPath(t *testing.T) {
+	b, _ := json.Marshal(SiteRoute(Site{WebsiteID: "T1", Port: 20002, Hosts: []string{"adminer.example.com"}, Path: "/t1/"}, "169.254.77.1"))
+	if !strings.Contains(string(b), `"match":[{"host":["adminer.example.com"],"path":["/t1/*"]}]`) {
+		t.Errorf("route: %s", b)
+	}
+	b, _ = json.Marshal(SiteRoute(Site{WebsiteID: "W1", Port: 20001, Hosts: []string{"acme.example"}}, "169.254.77.1"))
+	if strings.Contains(string(b), `"path"`) {
+		t.Errorf("a route with no path prefix has a path: %s", b)
+	}
+}
+
 func TestPanelRouteSetsTheEdgeHeaders(t *testing.T) {
 	fake := &fakeCaddy{loaded: true}
 	srv := httptest.NewServer(fake)
@@ -327,5 +354,18 @@ func TestSiteRouteOfAStoppedWebsite(t *testing.T) {
 	}
 	if strings.Contains(got, "reverse_proxy") {
 		t.Errorf("the route of a stopped website sends requests to the container:\n%s", got)
+	}
+}
+
+func TestSiteRouteSendsSomePathsToADifferentPort(t *testing.T) {
+	route := SiteRoute(Site{WebsiteID: "mail", Port: 19027, Hosts: []string{"mail.example.net"}, Paths: []PathRoute{{Paths: []string{"/jmap", "/jmap/*"}, Port: 19025}, {Paths: []string{"/admin/*/css"}, Methods: []string{"GET"}, Port: 19027}, {Paths: []string{"/admin"}}}}, "169.254.77.1")
+	b, _ := json.Marshal(route)
+	want := `{"@id":"cf-mail","handle":[{"handler":"subroute","routes":[` +
+		`{"handle":[{"handler":"reverse_proxy","upstreams":[{"dial":"169.254.77.1:19025"}]}],"match":[{"path":["/jmap","/jmap/*"]}],"terminal":true},` +
+		`{"handle":[{"handler":"reverse_proxy","upstreams":[{"dial":"169.254.77.1:19027"}]}],"match":[{"method":["GET"],"path":["/admin/*/css"]}],"terminal":true},` +
+		`{"handle":[{"handler":"static_response","status_code":404}],"match":[{"path":["/admin"]}],"terminal":true},` +
+		`{"handle":[{"handler":"reverse_proxy","upstreams":[{"dial":"169.254.77.1:19027"}]}]}]}],"match":[{"host":["mail.example.net"]}],"terminal":true}`
+	if string(b) != want {
+		t.Errorf("route:\n%s\nwant:\n%s", b, want)
 	}
 }

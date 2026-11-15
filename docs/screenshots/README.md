@@ -84,7 +84,7 @@ The overview of a website. A failed job that a later job resolved shows as "Fail
 
 ### admin-12-website-databases
 
-The databases of a website, with a Valkey database. The actions of a database user are in one menu.
+The databases of a website, with a Valkey database. A MariaDB or PostgreSQL database has **Open in Adminer**. The actions of a database user are in one menu.
 
 ![admin-12-website-databases](admin-12-website-databases.png)
 
@@ -294,6 +294,18 @@ The dialogue to add a DNS record.
 
 ![owner-17-dns-add-record](owner-17-dns-add-record.png)
 
+### owner-18-website-databases
+
+The databases of a website. **Open in Adminer** opens a MariaDB or PostgreSQL database in Adminer in a new window.
+
+![owner-18-website-databases](owner-18-website-databases.png)
+
+### owner-19-adminer
+
+Adminer after **Open in Adminer**. The panel signed in with a temporary database user for this database only. The user typed no password.
+
+![owner-19-adminer](owner-19-adminer.png)
+
 ## Phone width (390 px)
 
 Under 640 px, each row of a table shows as a card, and the tab bar scrolls with a shadow at the edge that has more tabs.
@@ -357,3 +369,18 @@ The database servers and the databases of an owner as cards.
 A DNS zone at phone width.
 
 ![phone-10-owner-dns-zone](phone-10-owner-dns-zone.png)
+
+## White label
+
+The sample reseller Northwind Agency has the brand "Northwind Hosting", with its own logo,
+colour, panel domain, name servers and mail host. The files are in [white-label/](white-label).
+
+| File | Page |
+| ---- | ---- |
+| [01-reseller-sign-in.png](white-label/01-reseller-sign-in.png) | The sign-in page on the panel domain of the reseller. |
+| [02-customer-websites.png](white-label/02-customer-websites.png) | A customer of the reseller sees only the brand of the reseller. |
+| [03-customer-dns-zone.png](white-label/03-customer-dns-zone.png) | The DNS zone of a customer has the name servers of the reseller. |
+| [04-reseller-brand.png](white-label/04-reseller-brand.png) | The Brand page of the reseller. |
+| [05-reseller-panel-domain-proof.png](white-label/05-reseller-panel-domain-proof.png) | A new panel domain needs a TXT record that proves control. |
+| [06-administrator-default-brand.png](white-label/06-administrator-default-brand.png) | The administrator sets the default brand in Settings. |
+| [07-reseller-brand-phone.png](white-label/07-reseller-brand-phone.png) | The Brand page on a phone. |

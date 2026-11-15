@@ -196,6 +196,38 @@ agent into a worker with the user `cf-agent` and a root helper (refer to
 The boundary has limits: the worker can still act as each website user, and it manages the
 database servers. [security.md](security.md#the-root-helper-of-the-agent) gives the full list.
 
+## Stalwart for email, in one container for each server
+
+| Item | Decision | Reason |
+| ---- | -------- | ------ |
+| Mail server | Stalwart, release 1.1 or later | One program has SMTP, IMAP, DKIM, SPF, DMARC and the size limits of the mailboxes, and a management API for each change. Postfix with Dovecot and Rspamd is three services with configuration files and no API. |
+| Licence | AGPL-3.0, the licence of Cloudfactory | Cloudfactory uses the image of Stalwart with no change to the program. Mox (MIT) and Apache James (Apache-2.0) are alternatives with a different licence. A change to one of them replaces only the package `agent/internal/stalwart` and the image. |
+| Number of containers | One for each server, for all customers | A server has one port 25 and one reputation of its address. The panel keeps the customers apart. |
+| Ports | The mail server listens above 1024, and nftables redirects the public ports | The container has no capabilities and does not run as root. The edge proxy uses the same method. |
+| Certificate | The edge proxy gets it, and the root helper copies it | The server has one ACME client, and the mail server needs no port 80. |
+| Passwords | The panel makes a password and sends a bcrypt hash | The agent and the job records never have the password. |
+| Webmail | Bulwark, on the host name of the mail server | Bulwark has the AGPL-3.0 licence and uses JMAP, which Stalwart has. It has mail, calendars and contacts. Stalwart 1.1 has no webmail. |
+| Spam training | Not in this release | The first release has the parts that each mail program needs. |
+
+## Mail clusters with the database and the cluster store on each member
+
+| Item | Decision | Reason |
+| ---- | -------- | ------ |
+| Size | 3 or 5 servers | A cluster needs a majority after one failure. With an even number, the cluster stops when the network between the two halves fails. |
+| Data store | MariaDB Galera, one node on each member | Each member has all the mail. The panel needs no external database. |
+| Locks and counters | Stalwart Keep, one member on each server | Stalwart needs a shared in-memory store for a cluster. Keep replicates it with no external service. |
+| Network | WireGuard between the members | The members can be in different regions. The database and the cluster store are never on a public address. |
+| Host names | Each member has its own name and certificate. The cluster has a shared name for MX | Each member gets its certificate with the HTTP challenge, as a single mail server does. A certificate for the shared name needs a relay of the ACME challenge between the members, which this release does not have. |
+
+## Generated OpenPGP keys
+
+| Item | Decision | Reason |
+| ---- | -------- | ------ |
+| Who makes the keys | The panel, when the user asks | The user does not need a separate program. The user can still give a public key of their own. |
+| Protection of the private key | The password of the mailbox | The user has one password for the mail program, the webmail and the key. |
+| Decryption in the webmail | A plugin of the webmail | Bulwark has no OpenPGP decryption. The plugin "PGP True End-to-End" (GPL-3.0) decrypts in the browser. |
+| Keys in the webmail | A file in the files of the mailbox, which a patch of the plugin reads | The user uploads no key. The mail server examines the password, so the panel needs no new sign-in and no new password check. The plugin has no access to the sign-in password of the webmail, so it asks for the password one time. |
+| Installation of the plugin | A pinned copy in the image, installed by the start script | Each server has the same reviewed release, with no person in the admin dashboard. The dashboard stays closed on the public host name. A new release of the plugin comes with a new image. |
 ## WireGuard tunnels between the servers, with the panel as the directory of keys
 
 The websites of a customer must be able to use a database on a different server. The traffic

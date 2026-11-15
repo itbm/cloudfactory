@@ -11,6 +11,7 @@ import * as live from "./live";
 import type {
   ApiToken,
   BackupPolicy,
+  BrandFields,
   Confirmation,
   CronJob,
   Customer,
@@ -20,6 +21,7 @@ import type {
   DatabaseServer,
   DnsRecordType,
   Deploy,
+  MailAlias,
   DomainKind,
   FileContent,
   FileEntry,
@@ -35,6 +37,7 @@ import type {
   PluginKey,
   PluginManifest,
   PluginPageSession,
+  ResellerBranding,
   ServerRole,
   State,
   PanelCertificateMethod,
@@ -42,6 +45,12 @@ import type {
   UpdatePolicy,
   Website,
   WebsiteKind,
+  UsageAlert,
+  UsageAlertSettings,
+  UsageHistory,
+  UsageRange,
+  UsageSubject,
+  MailCluster,
 } from "./types";
 
 /** An error that the API returns for incorrect input. The UI shows it next to the field. */
@@ -59,7 +68,7 @@ export function emptyState(): State {
   return {
     session: { signedIn: false, user: { id: "", name: "", email: "", role: "owner" }, contextId: "" },
     contexts: [], websites: [], jobs: [], activity: [], notifications: [], servers: [], images: [], rollout: undefined,
-    databaseServers: [], dnsZones: [], nameServers: [], networks: [], pluginPages: [], databases: [], databaseUsers: [], remoteDatabaseServers: {}, snapshots: [], plans: [], customers: [], users: [],
+    databaseServers: [], dnsZones: [], nameServers: [], networks: [], pluginPages: [], usageAlerts: [], alertSettings: { warningPercent: 80, criticalPercent: 95 }, mailDomains: [], mailClusters: [], mailboxes: [], mailAliases: [], databases: [], databaseUsers: [], remoteDatabaseServers: {}, snapshots: [], plans: [], customers: [], users: [],
     backupPolicy: { daily: 7, weekly: 4, monthly: 6, time: "03:00", target: "", credentialNames: [] },
     tokens: [], totpEnabled: false, securityNotices: [], audit: [], joinToken: "", joinCaSha256: undefined,
     panelDomain: "",
@@ -401,6 +410,23 @@ export function deleteFile(websiteId: string, path: string): Promise<void> {
 /** The largest file that the panel sends in one request (FileController::MAX_WRITE). */
 export const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 
+/** The usage history of a website, a server or a database server, for the graphs. */
+export function readUsage(subject: UsageSubject, id: string, range: UsageRange): Promise<UsageHistory> {
+  const base = subject === "website" ? `/websites/${id}` : subject === "server" ? `/servers/${id}` : `/database-servers/${id}`;
+  return call(() => live.request<UsageHistory>("GET", `${base}/usage?range=${range}`));
+}
+
+/** The usage alerts, also the closed ones with state "all". */
+export function listUsageAlerts(state: "open" | "resolved" | "all" = "open"): Promise<UsageAlert[]> {
+  return call(() => live.request<{ data: UsageAlert[] }>("GET", `/usage-alerts?state=${state}`)).then((r) => r.data);
+}
+
+/** An administrator changes the thresholds of the usage alerts. */
+export async function setAlertSettings(settings: UsageAlertSettings): Promise<void> {
+  await call(() => live.request("PUT", "/usage-alerts/settings", settings));
+  await refresh();
+}
+
 /** The last lines of the output of the website container. */
 export function readLogs(websiteId: string, stream: "all" | "access" | "error" = "all", lines = 200): Promise<LogLine[]> {
   return call(() => live.request<{ lines: LogLine[] }>("GET", `/websites/${websiteId}/logs?lines=${lines}${stream === "all" ? "" : `&stream=${stream}`}`)).then((r) => r.lines);
@@ -637,6 +663,160 @@ export function deleteDatabaseServer(serverId: string): Promise<void> {
   });
 }
 
+// Email
+
+/** The DNS record that shows who controls a domain. The panel asks for it when a different customer can own the domain. */
+export interface MailVerification { type: string; name: string; value: string }
+
+/** The error of a new mail domain that needs a DNS record first. */
+export class MailVerificationError extends ApiError {
+  constructor(message: string, readonly verification: MailVerification) {
+    super(message, {});
+  }
+}
+
+/** Adds a mail domain. The job makes the DKIM keys, and then the domain has its DNS records. */
+export function createMailDomain(input: { name: string; customerId?: string; serverId?: string }): Promise<void> {
+  return call(async () => {
+    try {
+      const r = await live.request<{ mailDomain: live.ApiMailDomain; job: live.ApiJob }>("POST", "/mail/domains", { name: input.name.trim().toLowerCase(), customerId: input.customerId || undefined, serverId: input.serverId || undefined });
+      update((d) => { d.mailDomains = [...d.mailDomains.filter((x) => x.id !== r.mailDomain.id), live.toMailDomain(r.mailDomain)]; });
+      void track(r.job).then(() => refresh());
+    } catch (e) {
+      const verification = e instanceof live.LiveError ? (e.body as { verification?: MailVerification } | undefined)?.verification : undefined;
+      if (verification) throw new MailVerificationError((e as Error).message, verification);
+      throw e;
+    }
+  });
+}
+
+/** Reads the DNS records of a mail domain now. */
+export function checkMailDomain(domainId: string): Promise<void> {
+  return call(async () => {
+    const r = await live.request<live.ApiMailDomain>("POST", `/mail/domains/${domainId}/check`);
+    update((d) => { d.mailDomains = d.mailDomains.map((x) => (x.id === domainId ? live.toMailDomain(r) : x)); });
+  });
+}
+
+/** Adds a mail domain again after its first job failed. */
+export function retryMailDomain(domainId: string): Promise<void> {
+  return call(async () => {
+    const r = await live.request<{ mailDomain: live.ApiMailDomain; job: live.ApiJob }>("POST", `/mail/domains/${domainId}/retry`);
+    update((d) => { d.mailDomains = d.mailDomains.map((x) => (x.id === domainId ? live.toMailDomain(r.mailDomain) : x)); });
+    void track(r.job).then(() => refresh());
+  });
+}
+
+/** Marks a row "removing" until the job is complete. */
+function removing(list: "mailDomains" | "mailboxes" | "mailAliases", id: string, job: live.ApiJob | null) {
+  update((d) => {
+    const x = d[list].find((y) => y.id === id);
+    if (x) x.status = "removing";
+  });
+  void track(job).then(() => refresh());
+}
+
+/** Removes a mail domain that has no mailboxes and no addresses. */
+export function deleteMailDomain(domainId: string): Promise<void> {
+  return call(async () => removing("mailDomains", domainId, (await live.request<JobAnswer>("DELETE", `/mail/domains/${domainId}`)).job));
+}
+
+/** Makes a mailbox. The answer has the password: the panel shows it one time. */
+export function createMailbox(input: { domainId: string; localPart: string; quotaBytes: number; encrypt?: boolean }): Promise<string> {
+  return call(async () => {
+    const r = await live.request<{ mailbox: live.ApiMailbox; password: string; job: live.ApiJob }>("POST", "/mail/mailboxes", { ...input, localPart: input.localPart.trim().toLowerCase() });
+    update((d) => { d.mailboxes = [...d.mailboxes, live.toMailbox(r.mailbox)]; });
+    void track(r.job).then(() => refresh());
+    return r.password;
+  });
+}
+
+/** Changes the size of a mailbox, or gives it a new password. The answer is the new password, or "". */
+export function setMailbox(mailboxId: string, change: { quotaBytes?: number; newPassword?: boolean; currentPassword?: string }): Promise<string> {
+  return call(async () => {
+    const r = await live.request<{ mailbox: live.ApiMailbox; password: string | null; job: live.ApiJob | null }>("PATCH", `/mail/mailboxes/${mailboxId}`, change);
+    update((d) => { d.mailboxes = d.mailboxes.map((x) => (x.id === mailboxId ? live.toMailbox(r.mailbox) : x)); });
+    if (r.job) void track(r.job).then(() => refresh());
+    return r.password ?? "";
+  });
+}
+
+/**
+ * Turns on the encryption of a mailbox with an OpenPGP public key, or turns it off with null.
+ * The mail server reads the key. The promise fails when the mail server refuses the key.
+ */
+export function setMailboxEncryption(mailboxId: string, publicKey: string | null): Promise<void> {
+  return call(async () => {
+    const r = await live.request<{ mailbox: live.ApiMailbox; job: live.ApiJob | null }>("PATCH", `/mail/mailboxes/${mailboxId}`, { publicKey });
+    update((d) => { d.mailboxes = d.mailboxes.map((x) => (x.id === mailboxId ? live.toMailbox(r.mailbox) : x)); });
+    if (!r.job) return;
+    const done = await track(r.job);
+    if (done.state === "failed") {
+      const reason = done.error?.replace(/^.*the mail server refused the public key: /, "") ?? "";
+      throw new ApiError(reason ? `The mail server refused the key. ${reason}` : "The mail server could not change the encryption. Try again.");
+    }
+  });
+}
+
+/**
+ * Turns on the encryption of a mailbox with keys that the panel makes. The mailbox gets a new
+ * password, and the private key gets the same password. The answer is the new password.
+ */
+export function encryptMailbox(mailboxId: string): Promise<string> {
+  return call(async () => {
+    const r = await live.request<{ mailbox: live.ApiMailbox; password: string | null; job: live.ApiJob | null }>("PATCH", `/mail/mailboxes/${mailboxId}`, { encrypt: true, newPassword: true });
+    if (r.job && (await track(r.job)).state === "failed") {
+      throw new ApiError("The mail server could not turn on the encryption. Try again.");
+    }
+    await refresh();
+    return r.password ?? "";
+  });
+}
+
+/** Gets the private keys that the panel made for a mailbox. A key needs the password of the mailbox. */
+export function mailboxPrivateKey(mailboxId: string): Promise<string> {
+  return call(async () => (await live.request<{ privateKey: string }>("GET", `/mail/mailboxes/${mailboxId}/private-key`)).privateKey);
+}
+
+/** Removes a mailbox and its messages. */
+export function deleteMailbox(mailboxId: string): Promise<void> {
+  return call(async () => removing("mailboxes", mailboxId, (await live.request<JobAnswer>("DELETE", `/mail/mailboxes/${mailboxId}`)).job));
+}
+
+/** Makes an alias or a forwarder. */
+export function createMailAlias(input: { domainId: string; localPart: string; kind: MailAlias["kind"]; destinations: string[] }): Promise<void> {
+  return call(async () => {
+    const r = await live.request<{ mailAlias: MailAlias; job: live.ApiJob }>("POST", "/mail/aliases", { ...input, localPart: input.localPart.trim().toLowerCase() });
+    update((d) => { d.mailAliases = [...d.mailAliases, r.mailAlias]; });
+    void track(r.job).then(() => refresh());
+  });
+}
+
+export function deleteMailAlias(aliasId: string): Promise<void> {
+  return call(async () => removing("mailAliases", aliasId, (await live.request<JobAnswer>("DELETE", `/mail/aliases/${aliasId}`)).job));
+}
+
+/** Turns on email for a server, or changes the host name of its mail server. */
+/** A member of a new mail cluster. The endpoint is the public address of the server. */
+export interface NewClusterMember { serverId: string; hostname: string; endpoint: string; region: number }
+
+/** Makes a mail cluster. The panel makes it in steps, and the page shows each step. */
+export function createMailCluster(name: string, hostname: string, members: NewClusterMember[]) {
+  return call(() => live.request<MailCluster>("POST", "/mail-clusters", {
+    name: name.trim().toLowerCase(), hostname: hostname.trim().toLowerCase(),
+    members: members.map((m) => ({ serverId: m.serverId, hostname: m.hostname.trim().toLowerCase(), endpoint: m.endpoint.trim(), region: m.region })),
+  })).then(async (c) => { await refresh(); return c; });
+}
+
+/** Starts the step of a mail cluster that failed again. */
+export function retryMailCluster(clusterId: string) {
+  return call(() => live.request<MailCluster>("POST", `/mail-clusters/${clusterId}/retry`)).then(() => refresh());
+}
+
+export function setServerMail(serverId: string, hostname: string) {
+  return call(() => live.request<JobAnswer>("PUT", `/servers/${serverId}/mail`, { hostname: hostname.trim().toLowerCase() })).then((r) => track(r.job).then(() => refresh()));
+}
+
 /**
  * Makes a database. With createUser, it also makes a user with readwrite access, and gives its password.
  * A Valkey database always has a user with the same name: the user and the database number are the database.
@@ -690,6 +870,71 @@ export function deleteDatabaseUser(userId: string) {
   if (!user) throw new ApiError("The database user does not exist.");
   if (user.engine === "valkey") throw new ApiError("The user of a Valkey database goes with its database. Remove the database.");
   return call(() => live.request<JobAnswer>("DELETE", `/websites/${user.websiteId}/database-users/${userId}`)).then((r) => track(r.job)).then(() => refresh());
+}
+
+/** The state of a sign-in to Adminer (GET /v1/adminer-logins/{id}). */
+export interface AdminerLogin {
+  id: string;
+  status: "starting" | "ready" | "failed" | "expired";
+  url: string;
+  databaseName: string;
+  username: string;
+  expiresAt: string;
+}
+
+/** The fields of the sign-in form of Adminer, with the password of the temporary database user. */
+export interface AdminerForm {
+  driver: string;
+  server: string;
+  username: string;
+  password: string;
+  db: string;
+}
+
+/** The time between two checks of a sign-in, and the longest wait for a new Adminer container. */
+export const ADMINER_POLL_MS = 1500;
+const ADMINER_WAIT_MS = 4 * 60 * 1000;
+
+/**
+ * Opens a database in Adminer, with single sign-on. The panel makes a temporary database user
+ * for the database, and starts the Adminer of the customer if necessary. When the two are
+ * ready, the sign-in form goes to Adminer in the window "target". The user types no password,
+ * and the password is never on the screen.
+ */
+export async function openInAdminer(databaseId: string, target: Window, privileges: DatabasePrivileges = "readwrite"): Promise<void> {
+  const db = state.databases.find((x) => x.id === databaseId);
+  if (!db) throw new ApiError("The database does not exist.");
+  const r = await call(() => live.request<{ login: AdminerLogin; form: AdminerForm; jobs: live.ApiJob[] }>("POST", `/websites/${db.websiteId}/databases/${databaseId}/adminer`, { privileges }));
+  for (const job of r.jobs) void track(job).catch(() => undefined);
+  let login = r.login;
+  const until = Date.now() + ADMINER_WAIT_MS;
+  while (login.status === "starting") {
+    if (Date.now() > until) throw new ApiError("Adminer did not start in time. Look at the job on the Jobs page, and try again.");
+    await new Promise((done) => setTimeout(done, ADMINER_POLL_MS));
+    login = (await call(() => live.request<{ login: AdminerLogin }>("GET", `/adminer-logins/${login.id}`))).login;
+  }
+  if (login.status !== "ready") throw new ApiError(login.status === "expired" ? "The sign-in expired. Open the database again." : "The panel could not start Adminer, or could not make the temporary database user. Look at the job on the Jobs page.");
+  postAdminerForm(target, login.url, r.form);
+}
+
+/**
+ * Sends the sign-in form to Adminer in a window of the panel. The form is a POST request, so
+ * the password is not in an address or in the history of the browser.
+ */
+export function postAdminerForm(target: Window, url: string, form: AdminerForm) {
+  const doc = target.document;
+  const el = doc.createElement("form");
+  el.method = "post";
+  el.action = url;
+  for (const [key, value] of Object.entries(form)) {
+    const input = doc.createElement("input");
+    input.type = "hidden";
+    input.name = `auth[${key}]`;
+    input.value = value;
+    el.appendChild(input);
+  }
+  doc.body.appendChild(el);
+  el.submit();
 }
 
 /** FR-307: adds a custom image. The API checks the reference, the tag and the port. */
@@ -1076,9 +1321,33 @@ export function setCustomer(customerId: string, change: Partial<Pick<Customer, "
   return call(() => live.request("PATCH", `/customers/${customerId}`, change)).then(() => refresh());
 }
 
+// White label
+
+/** The default brand that the administrator sets. Only an administrator can read it. */
+export function defaultBrand(): Promise<BrandFields> {
+  return call(() => live.request<BrandFields & Record<string, unknown>>("GET", "/brand/default"));
+}
+
+/** Changes the default brand. A null value removes the field. */
+export function saveDefaultBrand(change: { [K in keyof BrandFields]?: BrandFields[K] | null }) {
+  return call(() => live.request<BrandFields>("PUT", "/brand/default", change)).then(async (r) => {
+    await refresh();
+    return r;
+  });
+}
+
+/**
+ * Changes the brand of a reseller. A null value removes the field. A new panel domain, name
+ * server host name or mail host name needs a proof of control: the error message gives the
+ * TXT record.
+ */
+export function saveResellerBrand(customerId: string, change: { [K in keyof ResellerBranding]?: ResellerBranding[K] | null }) {
+  return call(() => live.request("PATCH", `/customers/${customerId}`, { branding: change })).then(() => refresh());
+}
+
 export function savePlan(plan: Plan) {
   const exists = state.plans.some((p) => p.id === plan.id);
-  const body = { name: plan.name.trim(), websites: plan.websites, mailboxes: plan.mailboxes, databases: plan.databases, phpExtensions: plan.phpExtensions, limits: plan.limits, databaseServers: plan.databaseServers, databaseLimits: plan.databaseLimits, dnsZones: plan.dnsZones, networks: plan.networks };
+  const body = { name: plan.name.trim(), websites: plan.websites, mailboxes: plan.mailboxes, mailStorageBytes: plan.mailStorageBytes, databases: plan.databases, phpExtensions: plan.phpExtensions, limits: plan.limits, databaseServers: plan.databaseServers, databaseLimits: plan.databaseLimits, dnsZones: plan.dnsZones, networks: plan.networks };
   return call(() => live.request(exists ? "PATCH" : "POST", exists ? `/plans/${plan.id}` : "/plans", body)).then(() => refresh());
 }
 

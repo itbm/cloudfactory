@@ -6,10 +6,12 @@ use App\Http\Controllers\Api\AccountController;
 use App\Http\Controllers\Api\AuditController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BackupController;
+use App\Http\Controllers\Api\BrandController;
 use App\Http\Controllers\Api\CronJobController;
 use App\Http\Controllers\Api\CustomerController;
 use App\Http\Controllers\Api\DatabaseController;
 use App\Http\Controllers\Api\DatabaseServerController;
+use App\Http\Controllers\Api\DatabaseToolController;
 use App\Http\Controllers\Api\DatabaseUserController;
 use App\Http\Controllers\Api\DeployController;
 use App\Http\Controllers\Api\DnsZoneController;
@@ -18,8 +20,15 @@ use App\Http\Controllers\Api\FileController;
 use App\Http\Controllers\Api\ImageController;
 use App\Http\Controllers\Api\JobController;
 use App\Http\Controllers\Api\LogController;
+use App\Http\Controllers\Api\MailAliasController;
+use App\Http\Controllers\Api\MailboxController;
+use App\Http\Controllers\Api\MailClusterController;
+use App\Http\Controllers\Api\MailDomainController;
+use App\Http\Controllers\Api\MailServerController;
 use App\Http\Controllers\Api\MeshController;
 use App\Http\Controllers\Api\NetworkController;
+use App\Http\Controllers\Api\NotificationController;
+use App\Http\Controllers\Api\NotificationTemplateController;
 use App\Http\Controllers\Api\PanelCertificateController;
 use App\Http\Controllers\Api\PlanController;
 use App\Http\Controllers\Api\PluginController;
@@ -28,6 +37,7 @@ use App\Http\Controllers\Api\RuntimeController;
 use App\Http\Controllers\Api\ServerController;
 use App\Http\Controllers\Api\SetupController;
 use App\Http\Controllers\Api\SftpController;
+use App\Http\Controllers\Api\UsageController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\WebsiteController;
 use Illuminate\Support\Facades\Route;
@@ -39,6 +49,8 @@ use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->group(function () {
     Route::post('auth/login', [AuthController::class, 'login'])->middleware('throttle:10,1');
+    // White label: the brand of the sign-in page, for the domain of the request.
+    Route::get('brand', [BrandController::class, 'show'])->middleware('throttle:60,1');
     // The webhook of a website: a Git host calls it after a push. The token in the address is
     // the only credential.
     Route::post('hooks/deploy/{token}', [DeployController::class, 'hook'])->middleware('throttle:30,1');
@@ -87,6 +99,8 @@ Route::prefix('v1')->group(function () {
             Route::post('websites/{websiteId}/files/directories', [FileController::class, 'makeDirectory'])->middleware('throttle:site-tools');
             Route::post('websites/{websiteId}/files/move', [FileController::class, 'move'])->middleware('throttle:site-tools');
             Route::get('websites/{websiteId}/logs', [LogController::class, 'index'])->middleware('throttle:site-tools');
+            Route::get('websites/{websiteId}/usage', [UsageController::class, 'website']);
+            Route::get('usage-alerts', [UsageController::class, 'alerts']);
 
             Route::get('websites/{websiteId}/cron-jobs', [CronJobController::class, 'index']);
             Route::post('websites/{websiteId}/cron-jobs', [CronJobController::class, 'store']);
@@ -114,6 +128,9 @@ Route::prefix('v1')->group(function () {
             Route::post('websites/{websiteId}/database-users', [DatabaseUserController::class, 'store']);
             Route::patch('websites/{websiteId}/database-users/{userId}', [DatabaseUserController::class, 'update']);
             Route::delete('websites/{websiteId}/database-users/{userId}', [DatabaseUserController::class, 'destroy']);
+            // The database tool (Adminer): open a database with a temporary database user.
+            Route::post('websites/{websiteId}/databases/{databaseId}/adminer', [DatabaseToolController::class, 'store'])->middleware('throttle:30,1');
+            Route::get('adminer-logins/{id}', [DatabaseToolController::class, 'show']);
             // The database servers of a customer: containers with their own limits, as websites.
             // The private networks of the customers (VPC).
             Route::get('networks', [NetworkController::class, 'index']);
@@ -128,6 +145,7 @@ Route::prefix('v1')->group(function () {
             Route::delete('database-servers/{id}', [DatabaseServerController::class, 'destroy']);
             Route::post('database-servers/{id}/retry', [DatabaseServerController::class, 'retry']);
             Route::post('database-servers/{id}/move', [DatabaseServerController::class, 'move']);
+            Route::get('database-servers/{id}/usage', [UsageController::class, 'databaseServer']);
         });
 
         // DNS hosting: the zones of a customer and their records.
@@ -142,6 +160,24 @@ Route::prefix('v1')->group(function () {
             Route::put('dns-zones/{id}/dnssec', [DnsZoneController::class, 'dnssec'])->middleware('throttle:dns-changes');
             Route::post('dns-zones/{id}/check', [DnsZoneController::class, 'check'])->middleware('throttle:domain-checks');
             Route::post('dns-zones/{id}/sync', [DnsZoneController::class, 'sync'])->middleware('throttle:dns-changes');
+        });
+
+        // Email: the mail domains of a customer, with their mailboxes, aliases and forwarders.
+        Route::middleware('scope:mail')->group(function () {
+            Route::get('mail/domains', [MailDomainController::class, 'index']);
+            Route::post('mail/domains', [MailDomainController::class, 'store'])->middleware('throttle:domain-changes');
+            Route::get('mail/domains/{id}', [MailDomainController::class, 'show']);
+            Route::post('mail/domains/{id}/check', [MailDomainController::class, 'check'])->middleware('throttle:domain-checks');
+            Route::post('mail/domains/{id}/retry', [MailDomainController::class, 'retry']);
+            Route::delete('mail/domains/{id}', [MailDomainController::class, 'destroy']);
+            Route::get('mail/mailboxes', [MailboxController::class, 'index']);
+            Route::post('mail/mailboxes', [MailboxController::class, 'store']);
+            Route::patch('mail/mailboxes/{id}', [MailboxController::class, 'update']);
+            Route::get('mail/mailboxes/{id}/private-key', [MailboxController::class, 'privateKey']);
+            Route::delete('mail/mailboxes/{id}', [MailboxController::class, 'destroy']);
+            Route::get('mail/aliases', [MailAliasController::class, 'index']);
+            Route::post('mail/aliases', [MailAliasController::class, 'store']);
+            Route::delete('mail/aliases/{id}', [MailAliasController::class, 'destroy']);
         });
 
         Route::middleware('scope:backups')->group(function () {
@@ -165,7 +201,16 @@ Route::prefix('v1')->group(function () {
             Route::post('servers/{id}/reboot', [ServerController::class, 'reboot']);
             Route::post('servers/{id}/update-agent', [ServerController::class, 'updateAgent']);
             Route::post('servers/{id}/check-connection', [ServerController::class, 'checkConnection']);
+            // Turns on email for a server with the email role.
+            Route::put('servers/{id}/mail', [ServerController::class, 'setMail']);
+            // Mail clusters: mail servers on three or five servers that share their data.
+            Route::get('mail-clusters', [MailClusterController::class, 'index']);
+            Route::post('mail-clusters', [MailClusterController::class, 'store']);
+            Route::get('mail-clusters/{id}', [MailClusterController::class, 'show']);
+            Route::post('mail-clusters/{id}/retry', [MailClusterController::class, 'retry']);
             Route::delete('servers/{id}', [ServerController::class, 'destroy']);
+            Route::get('servers/{id}/usage', [UsageController::class, 'server']);
+            Route::put('usage-alerts/settings', [UsageController::class, 'updateSettings']);
             // The mesh: the encrypted tunnels between the servers.
             Route::get('mesh', [MeshController::class, 'show']);
             Route::patch('mesh', [MeshController::class, 'update']);
@@ -202,6 +247,9 @@ Route::prefix('v1')->group(function () {
             Route::patch('customers/{id}', [CustomerController::class, 'update']);
             Route::get('plans', [PlanController::class, 'index']);
             Route::post('plans', [PlanController::class, 'store'])->middleware('admin');
+            // White label: the default brand of the panel.
+            Route::get('brand/default', [BrandController::class, 'showDefault'])->middleware('admin');
+            Route::put('brand/default', [BrandController::class, 'updateDefault'])->middleware('admin');
             Route::patch('plans/{id}', [PlanController::class, 'update'])->middleware('admin');
         });
 
@@ -237,6 +285,23 @@ Route::prefix('v1')->group(function () {
         // The pages of the plugins for the menu, and a short token for a page. Each role.
         Route::get('plugin-pages', [PluginController::class, 'pages']);
         Route::post('plugin-pages/{id}/{pageId}/session', [PluginController::class, 'pageSession'])->middleware('throttle:60,1');
+        // Email notifications: the events that each user receives, the emails that the panel
+        // sent, and for administrators and resellers the SMTP server and the templates.
+        Route::middleware('scope:notifications')->group(function () {
+            Route::get('me/notification-preferences', [NotificationController::class, 'preferences']);
+            Route::put('me/notification-preferences', [NotificationController::class, 'updatePreferences']);
+            Route::get('notifications', [NotificationController::class, 'index']);
+            Route::get('notifications/{id}', [NotificationController::class, 'show']);
+            Route::post('notifications/{id}/retry', [NotificationController::class, 'retry'])->middleware('throttle:30,1');
+            Route::get('mail-server', [MailServerController::class, 'show']);
+            Route::put('mail-server', [MailServerController::class, 'update']);
+            Route::delete('mail-server', [MailServerController::class, 'destroy']);
+            Route::post('mail-server/test', [MailServerController::class, 'test'])->middleware('throttle:10,1');
+            Route::get('notification-templates', [NotificationTemplateController::class, 'index']);
+            Route::put('notification-templates/{event}', [NotificationTemplateController::class, 'update']);
+            Route::delete('notification-templates/{event}', [NotificationTemplateController::class, 'destroy']);
+            Route::post('notification-templates/{event}/preview', [NotificationTemplateController::class, 'preview'])->middleware('throttle:60,1');
+        });
     });
 });
 

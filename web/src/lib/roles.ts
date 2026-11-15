@@ -20,7 +20,7 @@ export interface NavEntry {
   to: string;
   label: string;
   /** The name of the icon (components/Layout.tsx). */
-  icon: "overview" | "setup" | "servers" | "network" | "updates" | "customers" | "plans" | "websites" | "files" | "databases" | "dns" | "networks" | "backups" | "apps" | "jobs" | "account" | "settings" | "plugins";
+  icon: "overview" | "setup" | "servers" | "network" | "updates" | "customers" | "plans" | "websites" | "files" | "databases" | "email" | "dns" | "networks" | "backups" | "apps" | "jobs" | "alerts" | "account" | "brand" | "settings" | "plugins";
 }
 
 export interface NavSection {
@@ -33,11 +33,13 @@ const hosting = (websites: string, jobs: string): NavEntry[] => [
   { to: "/websites", label: websites, icon: "websites" },
   { to: "/files", label: "Files", icon: "files" },
   { to: "/databases", label: "Databases", icon: "databases" },
+  { to: "/email", label: "Email", icon: "email" },
   { to: "/dns", label: "DNS", icon: "dns" },
   { to: "/networks", label: "Private networks", icon: "networks" },
   { to: "/backups", label: "Backups", icon: "backups" },
   { to: "/apps", label: "Apps", icon: "apps" },
   { to: "/jobs", label: jobs, icon: "jobs" },
+  { to: "/alerts", label: "Usage alerts", icon: "alerts" },
 ];
 
 const account: NavSection = {
@@ -58,7 +60,7 @@ export const NAVIGATION: Record<Role, NavSection[]> = {
     { title: "Panel", items: [{ to: "/plugins", label: "Plugins", icon: "plugins" }, { to: "/settings", label: "Settings", icon: "settings" }] },
   ],
   reseller: [
-    { title: "Customers", items: [{ to: "/customers", label: "Customers", icon: "customers" }, { to: "/plans", label: "Plans", icon: "plans" }] },
+    { title: "Customers", items: [{ to: "/customers", label: "Customers", icon: "customers" }, { to: "/plans", label: "Plans", icon: "plans" }, { to: "/brand", label: "Brand", icon: "brand" }] },
     { title: "Hosting", items: hosting("Websites", "Jobs and activity") },
     account,
   ],
@@ -79,6 +81,8 @@ const ONLY: [prefix: string, roles: Role[]][] = [
   ["/plans", ["administrator", "reseller"]],
   ["/account", ["reseller", "owner"]],
   ["/plugins", ["administrator"]],
+  // White label: a reseller sets its brand. The administrator sets the default brand in Settings.
+  ["/brand", ["reseller"]],
 ];
 
 /** The address of a plugin page in the web panel. Each role can open it, when the plugin gives it the page. */

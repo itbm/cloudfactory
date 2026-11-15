@@ -24,7 +24,11 @@ class JobDispatcher
         ?string $rolloutId = null,
         ?DatabaseServer $databaseServer = null,
         ?DnsZone $dnsZone = null,
+        ?string $customerId = null,
     ): AgentJob {
+        // The members of a mail cluster share their data. A different member does the job of
+        // a member that is offline.
+        $server = MailClusters::target($server, $action);
         $job = AgentJob::create([
             'server_id' => $server->id,
             'website_id' => $website?->id,
@@ -33,6 +37,8 @@ class JobDispatcher
             'database_server_id' => $databaseServer?->id,
             // The job of one DNS zone. The owner of the zone can see the job.
             'dns_zone_id' => $dnsZone?->id,
+            // A mail job: the users of this customer can see it.
+            'customer_id' => $customerId,
             'rollout_id' => $rolloutId,
             'action' => $action,
             'title' => $title,

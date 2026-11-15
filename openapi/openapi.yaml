@@ -33,6 +33,9 @@ tags:
   - name: Networks
     description: The private networks of the customers, like a VPC.
   - name: Backups
+  - name: Email
+  - name: Usage
+    description: The usage history for the graphs, and the alerts near the limits.
   - name: Jobs
   - name: Servers
     description: Administrators only.
@@ -44,6 +47,11 @@ tags:
   - name: Audit
   - name: Plugins
     description: Programs outside the panel with their own token. Refer to docs/plugins.md.
+  - name: Notifications
+    description: >-
+      Email notifications. Each user chooses the events that give an email. An administrator sets
+      the SMTP server and the templates of the panel. A reseller can set its own SMTP server and
+      templates for the emails to its customers. These routes need the notifications scope.
   - name: Agent
     description: Only the agent on a server uses these routes. They use the agent token, not a user token.
 
@@ -74,6 +82,13 @@ paths:
                 email: { type: string, format: email }
                 password: { type: string }
                 totp: { type: string, pattern: '^[0-9]{6}$', description: Necessary when TOTP is on for the user. }
+                deviceId:
+                  type: string
+                  maxLength: 100
+                  description: >-
+                    A random ID that the client keeps, 16 to 100 letters, digits, "-" or "_". After the
+                    first sign-in of a user, a sign-in from a device that the panel does not know
+                    sends an email to the user. With no ID, the panel knows a device by its user agent.
       responses:
         '200':
           description: Signed in.
@@ -849,6 +864,70 @@ paths:
         '422': { $ref: '#/components/responses/Invalid' }
         '503': { description: The panel cannot connect to the server of the website. }
 
+  /v1/websites/{websiteId}/usage:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+    get:
+      tags: [Usage]
+      summary: Read the usage history of a website
+      description: >-
+        The resource use of the website for a graph. The agent reports each minute. The panel
+        keeps buckets of 5 minutes for 8 days, and buckets of 1 hour for 400 days. The range
+        `24h` has a point for each 5 minutes, `7d` for each hour, `30d` for each 3 hours, `90d`
+        for each 12 hours and `1y` for each 2 days. A point with no report has null values.
+        The bandwidth is the traffic of the domains of the website through the edge proxy in
+        the current calendar month (UTC).
+      parameters:
+        - { $ref: '#/components/parameters/UsageRange' }
+      responses:
+        '200':
+          description: The history.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/UsageHistory' }
+                  - type: object
+                    properties:
+                      limits: { $ref: '#/components/schemas/Limits' }
+                      bandwidth:
+                        type: object
+                        properties:
+                          month: { type: string, example: '2026-11' }
+                          bytes: { type: integer }
+                          limitBytes: { type: integer, description: 0 means no limit. }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/usage-alerts:
+    get:
+      tags: [Usage]
+      summary: List the usage alerts
+      description: >-
+        An alert opens when a resource of a website, a server or a database server reaches the
+        warning percent of its limit, and becomes critical at the critical percent. It closes
+        when the use goes 5 points below the warning percent. CPU and memory use the average of
+        the last 30 minutes. An administrator sees all alerts, also those of the servers. A
+        reseller sees the alerts of its customers, and an owner the alerts of their websites
+        and database servers. The panel does not stop a website at its limit because of an
+        alert. The panel fires the Laravel events `UsageAlertRaised` and `UsageAlertResolved`
+        for delivery, for example by email.
+      parameters:
+        - { name: state, in: query, schema: { type: string, enum: [open, resolved, all], default: open } }
+        - { name: subjectType, in: query, schema: { type: string, enum: [website, server, database_server] } }
+        - { name: subjectId, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: The alerts, open and critical first. At most 200.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/UsageAlert' } }
+                  settings: { $ref: '#/components/schemas/UsageAlertSettings' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
   /v1/websites/{websiteId}/cron-jobs:
     parameters:
       - { $ref: '#/components/parameters/WebsiteId' }
@@ -1244,6 +1323,75 @@ paths:
         '202': { $ref: '#/components/responses/JobOnly' }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  /v1/websites/{websiteId}/databases/{databaseId}/adminer:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+      - { name: databaseId, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [Databases]
+      summary: Open a database in Adminer
+      description: >-
+        Single sign-on for the database tool. The panel makes a temporary database user with
+        access to this one database, and gives its password in the response one time. The panel
+        does not keep the password. Send the fields of `form` to the sign-in form of Adminer at
+        `login.url`, as `auth[driver]`, `auth[server]`, `auth[username]`, `auth[password]` and
+        `auth[db]`, with a POST request. The web panel does this in a new window.
+
+
+        Each customer has one Adminer container on the panel server, in its own gVisor sandbox,
+        and it can connect only to the database servers of its customer. The first request
+        starts it. Wait until `GET /v1/adminer-logins/{id}` gives the status `ready`. The
+        temporary database user expires after 60 minutes, and the panel then removes it.
+        Adminer opens only MariaDB and PostgreSQL databases: the response is 422 for a Valkey
+        database. The response is 409 when the customer is suspended.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                privileges: { type: string, enum: [readonly, readwrite], default: readwrite }
+      responses:
+        '202':
+          description: The panel makes the temporary database user, and starts Adminer if necessary.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  login: { $ref: '#/components/schemas/AdminerLogin' }
+                  form:
+                    type: object
+                    description: The fields of the sign-in form of Adminer. Only this response has the password.
+                    properties:
+                      driver: { type: string, enum: [server, pgsql], description: '"server" is MariaDB.' }
+                      server: { type: string, description: 'The name of the database server for Adminer, for example "shop-db.internal" or "mariadb.internal:3307".' }
+                      username: { type: string }
+                      password: { type: string }
+                      db: { type: string }
+                  jobs: { type: array, items: { $ref: '#/components/schemas/Job' } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: The customer of the website is suspended. }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/adminer-logins/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [Databases]
+      summary: Get the state of an Adminer sign-in
+      description: Only the user who opened the database sees the sign-in. The response has no password.
+      responses:
+        '200':
+          description: The sign-in.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  login: { $ref: '#/components/schemas/AdminerLogin' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   /v1/websites/{websiteId}/database-users:
     parameters:
       - { $ref: '#/components/parameters/WebsiteId' }
@@ -1470,6 +1618,23 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { description: The customer is suspended. }
         '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/database-servers/{id}/usage:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    get:
+      tags: [Usage]
+      summary: Read the usage history of a database server
+      description: Memory and disk of the database server. Refer to the usage history of a website for the ranges.
+      parameters:
+        - { $ref: '#/components/parameters/UsageRange' }
+      responses:
+        '200':
+          description: The history.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UsageHistory' }
+        '404': { $ref: '#/components/responses/NotFound' }
 
   /v1/database-servers/{id}/move:
     parameters:
@@ -1813,6 +1978,343 @@ paths:
         '202': { $ref: '#/components/responses/DnsZoneJobs' }
         '404': { $ref: '#/components/responses/NotFound' }
         '429': { description: Too many DNS changes in one minute. }
+
+  /v1/mail/domains:
+    get:
+      tags: [Email]
+      summary: List mail domains
+      description: >-
+        The mail domains of the customers that you can see. A mail domain is a domain that
+        receives and sends email on the mail server of one server. All customers of a server
+        use one mail server, and the panel keeps them apart.
+      parameters:
+        - { name: customerId, in: query, schema: { type: string } }
+        - { name: serverId, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: The mail domains.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/MailDomain' } }
+    post:
+      tags: [Email]
+      summary: Add a mail domain
+      description: >-
+        The customer must control the domain. A verified domain of a website of the customer,
+        and each sub-domain of one, needs no proof. An administrator needs no proof. For each
+        other domain, the response is 422 with `verification`: add that DNS TXT record and send
+        the request again.
+
+
+        A customer has all its mail domains on one server. By default, that is the first
+        server with email turned on. Only an administrator can set `serverId`. The mail server
+        makes the DKIM keys of the domain. When the job is complete, `records` of the mail
+        domain has the DNS records to add.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, example: example.com }
+                customerId: { type: string, description: Necessary for an administrator and a reseller. }
+                serverId: { type: string }
+      responses:
+        '202':
+          description: The job adds the domain to the mail server.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mailDomain: { $ref: '#/components/schemas/MailDomain' }
+                  job: { $ref: '#/components/schemas/Job' }
+        '409': { description: The customer is suspended. }
+        '422':
+          description: >-
+            The request is not valid, or the customer must show that it controls the domain.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  errors: { type: object, additionalProperties: { type: array, items: { type: string } } }
+                  verification:
+                    type: object
+                    description: The DNS TXT record that shows that the customer controls the domain.
+                    properties:
+                      type: { type: string, enum: [TXT] }
+                      name: { type: string }
+                      value: { type: string }
+
+  /v1/mail/domains/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    get:
+      tags: [Email]
+      summary: Get a mail domain
+      responses:
+        '200':
+          description: The mail domain.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MailDomain' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Email]
+      summary: Remove a mail domain
+      description: The response is 422 when the mail domain has mailboxes, aliases or forwarders.
+      responses:
+        '202': { $ref: '#/components/responses/JobOnly' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/mail/domains/{id}/check:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [Email]
+      summary: Check the DNS records of a mail domain
+      description: >-
+        The panel looks up each record of `records` and sets `found`. The MX record must name
+        the mail server. The SPF record can be longer than the value that the panel shows. The
+        DKIM records must have the same key.
+      responses:
+        '200':
+          description: The mail domain, with the result of the check.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MailDomain' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/mail/domains/{id}/retry:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [Email]
+      summary: Add a failed mail domain again
+      description: For a mail domain with the status `failed`. The response is 422 for each other status.
+      responses:
+        '202':
+          description: The job adds the domain to the mail server.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mailDomain: { $ref: '#/components/schemas/MailDomain' }
+                  job: { $ref: '#/components/schemas/Job' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/mail/mailboxes:
+    get:
+      tags: [Email]
+      summary: List mailboxes
+      parameters:
+        - { name: customerId, in: query, schema: { type: string } }
+        - { name: domainId, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: The mailboxes.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/Mailbox' } }
+    post:
+      tags: [Email]
+      summary: Create a mailbox
+      description: >-
+        The plan of the customer gives the number of mailboxes (`mailboxes`) and their total
+        size (`mailStorageBytes`). The response has the password of the mailbox. The panel
+        makes a password when the request has none. The panel shows the password only in this
+        response: it sends a hash to the mail server and keeps no password.
+
+
+        With `encrypt: true`, the panel makes the OpenPGP keys of the mailbox. The mail server
+        gets the public key and encrypts each new message with it before it stores the
+        message. The panel keeps the private key in a form that only the password of the
+        mailbox opens (refer to `GET /v1/mail/mailboxes/{id}/private-key`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [domainId, localPart, quotaBytes]
+              properties:
+                domainId: { type: string }
+                localPart: { type: string, pattern: '^[a-z0-9]([a-z0-9._-]{0,62}[a-z0-9])?$', example: info }
+                quotaBytes: { type: integer, minimum: 104857600 }
+                password: { type: string, minLength: 12, maxLength: 128 }
+                encrypt: { type: boolean, description: The panel makes OpenPGP keys for the mailbox. }
+      responses:
+        '202':
+          description: The job makes the mailbox.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mailbox: { $ref: '#/components/schemas/Mailbox' }
+                  password: { type: string }
+                  job: { $ref: '#/components/schemas/Job' }
+        '409': { description: The customer is suspended. }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/mail/mailboxes/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    patch:
+      tags: [Email]
+      summary: Change the size, the password or the encryption of a mailbox
+      description: >-
+        `newPassword: true` asks the panel for a new password. The response has the new
+        password one time. A larger mailbox must be in the limit of the plan.
+
+
+        `publicKey` is one OpenPGP public key block in ASCII armour. The mail server then
+        encrypts each new message with the key before it stores the message, and only the
+        private key can decrypt the message. Messages that the mailbox has do not change. The
+        job fails when the mail server refuses the key, for example a key that cannot encrypt.
+        `publicKey: null` turns off the encryption.
+
+
+        `encrypt: true` is the easy procedure: the panel makes the keys. The request must also
+        have `password` or `newPassword`, because the private key gets that password and the
+        panel keeps no password. `encrypt: false` turns off the encryption. The panel keeps
+        the private keys that it made, because they open the messages from before the change.
+
+
+        A new password with `currentPassword` also gives the new password to the private keys
+        that the panel made. Without `currentPassword`, the private keys keep the old
+        password, and `privateKey.passwordCurrent` of the mailbox is false.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                quotaBytes: { type: integer, minimum: 104857600 }
+                password: { type: string, minLength: 12, maxLength: 128 }
+                newPassword: { type: boolean }
+                currentPassword: { type: string, maxLength: 128, description: The password that opens the private keys of the panel. }
+                encrypt: { type: boolean, description: 'True: the panel makes OpenPGP keys. False: the encryption is off. Not with `publicKey`.' }
+                publicKey: { type: [string, 'null'], maxLength: 65536 }
+      responses:
+        '200':
+          description: The request changed nothing. `job` is null.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MailboxChange' }
+        '202':
+          description: The job changes the mailbox.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MailboxChange' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+    delete:
+      tags: [Email]
+      summary: Remove a mailbox and its messages
+      responses:
+        '202': { $ref: '#/components/responses/JobOnly' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/mail/mailboxes/{id}/private-key:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    get:
+      tags: [Email]
+      summary: Get the private keys that the panel made for a mailbox
+      description: >-
+        The private keys are in ASCII armour, the newest first. Each key is protected with the
+        password that the mailbox had when the panel made the key, or with a later password
+        (refer to `currentPassword`). A mail program needs the file and that password to read
+        the encrypted messages. The panel records each request in the audit log.
+      responses:
+        '200':
+          description: The private keys.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [address, privateKey, passwordCurrent]
+                properties:
+                  address: { type: string }
+                  privateKey: { type: string, description: One or more OpenPGP private key blocks. }
+                  publicKey: { type: [string, 'null'], description: The public key that the mail server uses now. }
+                  passwordCurrent: { type: boolean, description: False when the private keys have an older password of the mailbox. }
+        '404': { description: The mailbox is not there, or the panel made no keys for it. }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/mail/aliases:
+    get:
+      tags: [Email]
+      summary: List aliases and forwarders
+      parameters:
+        - { name: customerId, in: query, schema: { type: string } }
+        - { name: domainId, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: The aliases and the forwarders.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/MailAlias' } }
+    post:
+      tags: [Email]
+      summary: Create an alias or a forwarder
+      description: >-
+        An alias is a second address of one mailbox of the same customer: `destinations` has
+        the address of that mailbox. A forwarder sends each message to 1 to 50 addresses, which
+        can be on other mail servers.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [domainId, localPart, kind, destinations]
+              properties:
+                domainId: { type: string }
+                localPart: { type: string, pattern: '^[a-z0-9]([a-z0-9._-]{0,62}[a-z0-9])?$' }
+                kind: { type: string, enum: [alias, forwarder] }
+                destinations: { type: array, minItems: 1, maxItems: 50, items: { type: string } }
+      responses:
+        '202':
+          description: The job makes the address.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mailAlias: { $ref: '#/components/schemas/MailAlias' }
+                  job: { $ref: '#/components/schemas/Job' }
+        '409': { description: The customer is suspended. }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/mail/aliases/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    delete:
+      tags: [Email]
+      summary: Remove an alias or a forwarder
+      responses:
+        '202': { $ref: '#/components/responses/JobOnly' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
 
   /v1/websites/{websiteId}/snapshots:
     parameters:
@@ -2235,6 +2737,44 @@ paths:
               schema: { $ref: '#/components/schemas/Mesh' }
         '422': { $ref: '#/components/responses/Invalid' }
 
+  /v1/servers/{id}/usage:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    get:
+      tags: [Usage]
+      summary: Read the usage history of a server
+      description: >-
+        CPU, memory and disk in percent of the server, and the traffic of its physical network
+        interfaces. Only for administrators. Refer to the usage history of a website for the
+        ranges.
+      parameters:
+        - { $ref: '#/components/parameters/UsageRange' }
+      responses:
+        '200':
+          description: The history.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UsageHistory' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/usage-alerts/settings:
+    put:
+      tags: [Usage]
+      summary: Change the thresholds of the usage alerts
+      description: Only for administrators. The thresholds are percents of each limit.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UsageAlertSettings' }
+      responses:
+        '200':
+          description: Changed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UsageAlertSettings' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
   /v1/mesh/servers/{id}:
     parameters:
       - { $ref: '#/components/parameters/Id' }
@@ -2334,6 +2874,135 @@ paths:
       responses:
         '202': { $ref: '#/components/responses/JobList' }
         '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/servers/{id}/mail:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    put:
+      tags: [Servers]
+      summary: Turn on email for a server
+      description: >-
+        For a server with the role `email`. The agent starts the mail server (Stalwart) in a
+        container, opens the ports 25, 465, 587 and 993, and gets a TLS certificate for the host
+        name. The host name must point to the server in the DNS, and the reverse DNS of the
+        server must give the host name.
+
+
+        The same request starts a mail server again when its job failed. The response is 422
+        when the server does not have the role, when a change is in progress, and when the
+        host name changes while the server has mail domains.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [hostname]
+              properties:
+                hostname: { type: string, example: mail.example.net }
+      responses:
+        '202':
+          description: The job starts the mail server.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  server: { $ref: '#/components/schemas/Server' }
+                  job: { $ref: '#/components/schemas/Job' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/mail-clusters:
+    get:
+      tags: [Servers]
+      summary: List the mail clusters
+      description: Only an administrator sees the mail clusters.
+      responses:
+        '200':
+          description: The mail clusters.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/MailCluster' } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Servers]
+      summary: Make a mail cluster
+      description: >-
+        A mail cluster has 3 or 5 servers with the role `email`. Each member has all the mail,
+        so the mail service continues when one server fails. The members can be in different
+        regions. They connect through a private network on UDP port 51877.
+
+
+        Each server must be online, and must not have a mail server. The panel makes the
+        cluster in steps: each server makes its keys, the first server starts the database
+        cluster, the other servers join it, then the mail servers start. Get the cluster to
+        see the step. Add the DNS records in `records`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, hostname, members]
+              properties:
+                name: { type: string, example: eu, description: 'Lower-case letters, digits and hyphens, 32 characters or fewer.' }
+                hostname: { type: string, example: mail.example.net, description: The shared name of the cluster. The MX records of the mail domains use it. }
+                members:
+                  type: array
+                  minItems: 3
+                  maxItems: 5
+                  items:
+                    type: object
+                    required: [serverId, hostname, endpoint]
+                    properties:
+                      serverId: { type: string }
+                      hostname: { type: string, example: m1.example.net, description: The name of this member. Mail programs connect to it. }
+                      endpoint: { type: string, example: 192.0.2.1, description: The public address of the server. }
+                      region: { type: integer, minimum: 0, maximum: 99, description: Servers with the same number are near to each other. }
+      responses:
+        '202':
+          description: The setup starts.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MailCluster' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/mail-clusters/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    get:
+      tags: [Servers]
+      summary: Get a mail cluster
+      responses:
+        '200':
+          description: The mail cluster.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MailCluster' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/mail-clusters/{id}/retry:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [Servers]
+      summary: Start a failed setup again
+      description: >-
+        Starts the step that failed again, on the members that did not complete it. The
+        response is 422 when the setup did not fail, or when a job of the setup is not complete.
+      responses:
+        '202':
+          description: The step starts again.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MailCluster' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
 
   /v1/panel-certificate:
     get:
@@ -2658,6 +3327,51 @@ paths:
               schema: { $ref: '#/components/schemas/Customer' }
         '403': { $ref: '#/components/responses/Forbidden' }
 
+  /v1/brand:
+    get:
+      tags: [Customers]
+      summary: Get the brand of the sign-in page
+      description: >-
+        White label. The brand of the reseller whose panel domain is the host of the request, or
+        else the default brand of the panel. A person who has not signed in can read it.
+      security: []
+      responses:
+        '200':
+          description: The brand.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PublicBrand' }
+  /v1/brand/default:
+    get:
+      tags: [Customers]
+      summary: Get the default brand
+      description: Only an administrator. The administrators and the customers of the panel itself see this brand.
+      responses:
+        '200':
+          description: The default brand.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BrandInput' }
+    put:
+      tags: [Customers]
+      summary: Change the default brand
+      description: >-
+        Only an administrator. A null value removes the field, and the panel then uses its
+        built-in value. White text on the colour must have a contrast of 4.5:1 or more. The logo
+        is a data URL of a PNG, JPEG or WebP image of 256 KB or less and 2048 by 2048 pixels or
+        less. The panel checks the real type of the image.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BrandInput' }
+      responses:
+        '200':
+          description: The default brand.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BrandInput' }
+        '422': { $ref: '#/components/responses/ValidationError' }
   /v1/plans:
     get:
       tags: [Customers]
@@ -2874,6 +3588,9 @@ paths:
                       dnsZones: { type: integer, description: The number of DNS zones. For a reseller, the zones of its customers count too. }
                       networks: { type: integer, description: The number of named networks. For a reseller, the named networks of its customers count too. }
                       diskBytes: { type: integer }
+                      mailboxes: { type: integer, description: The number of mailboxes of the customer. }
+                      mailStorageBytes: { type: integer, description: The total of the sizes of the mailboxes. }
+                      bandwidthBytes: { type: integer, description: The traffic of the websites in the current calendar month (UTC). }
                       customers: { type: [integer, 'null'], description: Only for a reseller. The number of its customers. }
                   backups:
                     type: object
@@ -2883,6 +3600,254 @@ paths:
                   users:
                     type: array
                     items: { $ref: '#/components/schemas/User' }
+  /v1/me/notification-preferences:
+    get:
+      tags: [Notifications]
+      summary: Get the email notifications of the signed-in user
+      description: >-
+        The events that the role of the user can receive, and whether each event sends an email
+        to the user. A new user receives all events. The security events ("required") always send
+        an email.
+      responses:
+        '200':
+          description: The events.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/NotificationPreference' } }
+    put:
+      tags: [Notifications]
+      summary: Choose the email notifications of the signed-in user
+      description: Give only the events to change. A required event cannot be turned off.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [events]
+              properties:
+                events:
+                  type: object
+                  additionalProperties: { type: boolean }
+                  example: { job.failed: false, usage.alert: true }
+      responses:
+        '200':
+          description: The events, after the change.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/NotificationPreference' } }
+        '422': { $ref: '#/components/responses/Invalid' }
+  /v1/notifications:
+    get:
+      tags: [Notifications]
+      summary: List the emails that the panel sent
+      description: >-
+        An administrator sees all emails. A reseller sees the emails to its users and to the
+        users of its customers. A customer sees the emails to the users of its account. A sign-in
+        email has the IP address of the person who signed in, so only that user and the
+        administrators see it.
+      parameters:
+        - { name: state, in: query, schema: { type: string, enum: [queued, sent, failed, skipped] } }
+        - { name: event, in: query, schema: { $ref: '#/components/schemas/NotificationEvent' } }
+        - { name: perPage, in: query, schema: { type: integer, minimum: 1, maximum: 200, default: 50 } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1 } }
+      responses:
+        '200':
+          description: One page of emails. The newest email is first.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/NotificationDelivery' } }
+                  meta:
+                    type: object
+                    properties:
+                      currentPage: { type: integer }
+                      lastPage: { type: integer }
+                      total: { type: integer }
+  /v1/notifications/{id}:
+    get:
+      tags: [Notifications]
+      summary: Get one email, with its text
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      responses:
+        '200':
+          description: The email.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/NotificationDelivery' }
+                  - { type: object, properties: { body: { type: string } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/notifications/{id}/retry:
+    post:
+      tags: [Notifications]
+      summary: Send a failed or skipped email again
+      description: >-
+        For example after a correction of the SMTP server. An administrator can send each email
+        again. A reseller can send again the emails to its customers.
+      parameters: [{ $ref: '#/components/parameters/Id' }]
+      responses:
+        '200':
+          description: The email is in the queue.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NotificationDelivery' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: 'The email is not failed or skipped, or no SMTP server is set.' }
+  /v1/mail-server:
+    get:
+      tags: [Notifications]
+      summary: Get the SMTP server
+      description: >-
+        An administrator gets the server of the panel. A reseller gets its own server. With no
+        server of its own, the emails to the customers of a reseller go through the server of
+        the panel (panelFallback), with the name of the reseller. Other users get status 403.
+      responses:
+        '200':
+          description: The server. "configured" is false when there is none.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MailServer' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    put:
+      tags: [Notifications]
+      summary: Set the SMTP server
+      description: >-
+        The panel connects only to the SMTP ports 25, 465, 587 and 2525. For a reseller, the host
+        must have a public address. The panel never shows the password again: leave out
+        "password" to keep it, or send an empty value to remove it. A change of the host, the
+        port, the encryption, the user or the password needs a new test.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MailServerInput' }
+      responses:
+        '200':
+          description: The server.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MailServer' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Invalid' }
+    delete:
+      tags: [Notifications]
+      summary: Remove the SMTP server
+      responses:
+        '204': { description: Removed. }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /v1/mail-server/test:
+    post:
+      tags: [Notifications]
+      summary: Send a test email
+      description: >-
+        The panel sends the email at once, and gives the answer of the SMTP server. An
+        administrator can send it to any address. A reseller sends it to its own address.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                to: { type: string, format: email, description: Administrators only. The default is the address of the user. }
+      responses:
+        '200':
+          description: The result. "sent" is false when the server did not accept the email.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sent: { type: boolean }
+                  to: { type: string }
+                  error: { type: [string, 'null'] }
+                  server: { $ref: '#/components/schemas/MailServer' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { description: No SMTP server is set. }
+  /v1/notification-templates:
+    get:
+      tags: [Notifications]
+      summary: List the email templates
+      description: >-
+        The subject and the text of the email of each event. In a template, {{name}} is a value,
+        for example {{website}}. "variables" gives the values of each event. A reseller gets only
+        the events of its customers, and starts from the templates of the panel.
+      responses:
+        '200':
+          description: The templates.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/NotificationTemplate' } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /v1/notification-templates/{event}:
+    put:
+      tags: [Notifications]
+      summary: Change an email template
+      parameters: [{ name: event, in: path, required: true, schema: { $ref: '#/components/schemas/NotificationEvent' } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NotificationTemplateInput' }
+      responses:
+        '200':
+          description: The template.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NotificationTemplate' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+    delete:
+      tags: [Notifications]
+      summary: Reset an email template
+      description: The template goes back to the template of the panel (for a reseller) or to the default.
+      parameters: [{ name: event, in: path, required: true, schema: { $ref: '#/components/schemas/NotificationEvent' } }]
+      responses:
+        '200':
+          description: The template, after the reset.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NotificationTemplate' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /v1/notification-templates/{event}/preview:
+    post:
+      tags: [Notifications]
+      summary: Preview an email template with example values
+      parameters: [{ name: event, in: path, required: true, schema: { $ref: '#/components/schemas/NotificationEvent' } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NotificationTemplateInput' }
+      responses:
+        '200':
+          description: The email.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  subject: { type: string }
+                  text: { type: string }
+                  html: { type: string }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
   /v1/audit:
     get:
       tags: [Audit]
@@ -3379,6 +4344,10 @@ components:
       in: path
       required: true
       schema: { type: string }
+    UsageRange:
+      name: range
+      in: query
+      schema: { type: string, enum: ['24h', '7d', '30d', '90d', '1y'], default: '24h' }
 
   responses:
     DatabaseUserJob:
@@ -3597,7 +4566,7 @@ components:
           additionalProperties: { type: array, items: { type: string } }
     Scope:
       type: string
-      enum: [websites:read, websites:write, databases:read, databases:write, dns:read, dns:write, backups:read, backups:write, servers:read, servers:write, images:read, images:write, customers:read, customers:write, users:read, users:write, audit:read, tokens:read, tokens:write, plugins:read, plugins:write]
+      enum: [websites:read, websites:write, databases:read, databases:write, dns:read, dns:write, backups:read, backups:write, mail:read, mail:write, servers:read, servers:write, images:read, images:write, customers:read, customers:write, users:read, users:write, audit:read, tokens:read, tokens:write, plugins:read, plugins:write]
     User:
       type: object
       properties:
@@ -3624,6 +4593,7 @@ components:
                   target: { type: string, description: The email address of the administrator that changed. }
                   actor: { type: string }
                   at: { type: string, format: date-time }
+            brand: { $ref: '#/components/schemas/Brand', description: 'White label: the brand that the user sees. A customer of a reseller sees only the brand of the reseller.' }
     ManagedUser:
       allOf:
         - { $ref: '#/components/schemas/User' }
@@ -3657,6 +4627,67 @@ components:
         diskBytes: { type: integer }
         diskIoBytesPerSecond: { type: integer }
         processes: { type: integer }
+        bandwidthBytes:
+          type: integer
+          description: >-
+            The traffic of a website in a calendar month. 0 or none means no limit. The panel
+            shows alerts near the limit. It does not stop the website.
+    UsageHistory:
+      type: object
+      properties:
+        range: { type: string, enum: ['24h', '7d', '30d', '90d', '1y'] }
+        stepMinutes: { type: integer, description: The length of each point. }
+        from: { type: string, format: date-time }
+        to: { type: string, format: date-time }
+        points:
+          type: array
+          items:
+            type: object
+            description: >-
+              The values of one point. Each value is null when no report is in the point. CPU is
+              the percent of one CPU, and for a server the percent of the server. Memory is
+              the average and the largest value, in bytes or, for a server, in percent. Disk is
+              the last value. The traffic is the sum in the point. A database server has no CPU
+              and no traffic.
+            properties:
+              at: { type: string, format: date-time }
+              cpuPercent: { type: [number, 'null'] }
+              cpuMaxPercent: { type: [number, 'null'] }
+              memoryBytes: { type: [integer, 'null'] }
+              memoryMaxBytes: { type: [integer, 'null'] }
+              memoryPercent: { type: [number, 'null'] }
+              memoryMaxPercent: { type: [number, 'null'] }
+              diskBytes: { type: [integer, 'null'] }
+              diskPercent: { type: [number, 'null'] }
+              processes: { type: [integer, 'null'] }
+              bytesIn: { type: [integer, 'null'] }
+              bytesOut: { type: [integer, 'null'] }
+        alerts: { type: array, items: { $ref: '#/components/schemas/UsageAlert' }, description: The open alerts. }
+    UsageAlert:
+      type: object
+      properties:
+        id: { type: string }
+        subjectType: { type: string, enum: [website, server, database_server] }
+        subjectId: { type: string }
+        subjectName: { type: [string, 'null'], description: Null when the subject was removed. }
+        customerId: { type: [string, 'null'], description: Null for a server. }
+        serverId: { type: [string, 'null'] }
+        resource: { type: string, enum: [cpu, memory, disk, bandwidth, processes] }
+        level: { type: string, enum: [warning, critical] }
+        used: { type: number }
+        limit: { type: number }
+        percent: { type: number }
+        usedText: { type: string, example: 9.1 GB }
+        limitText: { type: string, example: 10 GB }
+        openedAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        resolvedAt: { type: [string, 'null'], format: date-time }
+    UsageAlertSettings:
+      type: object
+      required: [warningPercent, criticalPercent]
+      properties:
+        warningPercent: { type: integer, minimum: 1, maximum: 99, default: 80 }
+        criticalPercent: { type: integer, minimum: 2, maximum: 100, default: 95, description: Larger than warningPercent. }
     WebsiteKind:
       type: string
       enum: [public, private, worker]
@@ -3706,6 +4737,7 @@ components:
         updateReady: { type: boolean }
         limits: { $ref: '#/components/schemas/Limits' }
         usage: { type: [object, 'null'] }
+        bandwidthBytes: { type: integer, description: The traffic of the website in the current calendar month (UTC), in and out. }
         domains:
           type: array
           items: { $ref: '#/components/schemas/Domain' }
@@ -4049,6 +5081,14 @@ components:
             With an agent of an earlier release, the websites of the server cannot have a
             database. Update the agent of the server.
         databaseServers: { type: [integer, 'null'], description: The number of database servers of customers on the server. A server with database servers cannot be removed. }
+        mail:
+          type: [object, 'null']
+          description: The mail server of the server. Null until an administrator turns on email.
+          properties:
+            hostname: { type: string, description: The host name that mail programs and other mail servers connect to. }
+            status: { type: string, enum: [starting, running, stopped, failed] }
+            domains: { type: integer, description: The number of mail domains on the server. A server with mail domains cannot be removed. }
+            clusterId: { type: [string, 'null'], description: Not null when the server is a member of this mail cluster. }
         os: { type: [string, 'null'] }
         kernel: { type: [string, 'null'] }
         arch: { type: [string, 'null'] }
@@ -4148,11 +5188,43 @@ components:
         finishedAt: { type: string, format: date-time, nullable: true, description: The time when the rollout ended. Null while the rollout is in progress or paused. }
     Branding:
       type: object
+      description: >-
+        The brand of a reseller (white label). In a change, a null value removes the field. A new
+        panel domain, name server host name or mail host name needs a proof of control: a verified
+        domain of the reseller, a DNS zone of the reseller that is delegated to the panel, or the
+        TXT record that the error message gives.
+      properties:
+        name: { type: [string, 'null'], maxLength: 100 }
+        colour: { type: [string, 'null'], pattern: '^#[0-9a-fA-F]{6}$', description: White text on the colour must have a contrast of 4.5:1 or more. }
+        logo: { type: [string, 'null'], description: 'A data URL of a PNG, JPEG or WebP image: 256 KB or less, 2048 by 2048 pixels or less.' }
+        panelDomain: { type: [string, 'null'], description: The panel domain of the reseller. The edge proxy of the panel server gets a TLS certificate for it. }
+        supportEmail: { type: [string, 'null'], format: email }
+        nameServers: { type: [array, 'null'], items: { type: string }, description: One host name for each name server of the panel, in the order of brandStatus.panelNameServers. The zones of the reseller and of its customers get these names. }
+        mailHost: { type: [string, 'null'], description: The mail host name that the customers of the reseller see. }
+    BrandInput:
+      type: object
+      properties:
+        name: { type: [string, 'null'], maxLength: 100 }
+        colour: { type: [string, 'null'], pattern: '^#[0-9a-fA-F]{6}$' }
+        logo: { type: [string, 'null'] }
+        supportEmail: { type: [string, 'null'], format: email }
+    PublicBrand:
+      type: object
       properties:
         name: { type: string }
-        colour: { type: string, pattern: '^#[0-9a-fA-F]{6}$' }
-        panelDomain: { type: string }
-        supportEmail: { type: string, format: email }
+        colour: { type: string }
+        logo: { type: [string, 'null'] }
+        supportEmail: { type: [string, 'null'] }
+        builtIn: { type: boolean, description: True when the panel has the built-in brand. The web panel then shows the built-in logo. }
+    Brand:
+      allOf:
+        - { $ref: '#/components/schemas/PublicBrand' }
+        - type: object
+          properties:
+            source: { type: string, enum: [panel, reseller] }
+            panelDomain: { type: string }
+            nameServers: { type: array, items: { type: string }, description: The host names of the name servers that the user gives to a registrar. }
+            mailHost: { type: [string, 'null'] }
     Domain:
       type: object
       properties:
@@ -4182,6 +5254,122 @@ components:
         vcpus: { type: number, exclusiveMinimum: 0 }
         memoryBytes: { type: integer, minimum: 536870912, description: 512 MB or more. }
         diskBytes: { type: integer, minimum: 1073741824, description: 1 GB or more. }
+    MailCluster:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        hostname: { type: string, description: The shared name of the cluster. }
+        status: { type: string, enum: [setting_up, running, failed] }
+        phase: { type: string, enum: [prepare, bootstrap, join, first, rest, done], description: The step of the setup. }
+        error: { type: [string, 'null'] }
+        members:
+          type: array
+          items:
+            type: object
+            properties:
+              serverId: { type: string }
+              serverName: { type: string }
+              serverState: { type: string }
+              number: { type: integer }
+              hostname: { type: string }
+              endpoint: { type: string }
+              address: { type: string, description: The address of the member in the private network. }
+              region: { type: integer }
+              step: { type: string, enum: [new, prepared, joined, running] }
+        records:
+          type: array
+          description: The DNS records to add. The shared name gives each member, and each member has its own name.
+          items:
+            type: object
+            properties:
+              type: { type: string, enum: [A, AAAA] }
+              name: { type: string }
+              value: { type: string }
+        domains: { type: integer, description: The number of mail domains on the members. }
+        createdAt: { type: string, format: date-time }
+    MailDomain:
+      type: object
+      required: [id, name, customerId, serverId, status, records, dnsReady]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        customerId: { type: string }
+        serverId: { type: string }
+        status: { $ref: '#/components/schemas/MailStatus' }
+        mailHost: { type: string, description: 'Mail programs connect to this host name: IMAP on port 993, SMTP on port 465 or 587.' }
+        records:
+          type: array
+          description: The DNS records that the customer adds for the domain. Empty until the mail server has the domain.
+          items:
+            type: object
+            required: [type, name, value, purpose]
+            properties:
+              type: { type: string, enum: [MX, TXT] }
+              name: { type: string }
+              value: { type: string }
+              purpose: { type: string, enum: [mx, spf, dkim, dmarc] }
+              found: { type: [boolean, 'null'], description: The result of the last DNS check. Null before the first check. }
+        dnsReady: { type: boolean, description: True when the last check found all records. }
+        dnsCheckedAt: { type: [string, 'null'], format: date-time }
+        mailboxes: { type: integer }
+        aliases: { type: integer, description: The number of aliases and forwarders. }
+        createdAt: { type: string, format: date-time }
+    MailStatus:
+      type: string
+      enum: [pending, active, failed, removing]
+      description: >-
+        `pending`: the job that adds the record is not complete. `failed`: the agent could not
+        add the record. `removing`: the job that removes the record is not complete.
+    MailboxChange:
+      type: object
+      properties:
+        mailbox: { $ref: '#/components/schemas/Mailbox' }
+        password: { type: [string, 'null'], description: The new password. Null when the password did not change. }
+        job: { oneOf: [{ $ref: '#/components/schemas/Job' }, { type: 'null' }] }
+    Mailbox:
+      type: object
+      required: [id, address, localPart, domainId, customerId, status, quotaBytes, usedBytes]
+      properties:
+        id: { type: string }
+        address: { type: string }
+        localPart: { type: string }
+        domainId: { type: string }
+        customerId: { type: string }
+        status: { $ref: '#/components/schemas/MailStatus' }
+        quotaBytes: { type: integer, description: The size of the mailbox. }
+        usedBytes: { type: integer, description: The size of the messages, from the last report of the agent. }
+        encryption:
+          type: [object, 'null']
+          description: >-
+            Not null when the mail server encrypts each new message of the mailbox with an
+            OpenPGP public key. The values are what the mail server found in the key.
+          required: [fingerprints, keyType, expiresAt, warnings]
+          properties:
+            fingerprints: { type: array, items: { type: string }, description: The fingerprints of the keys in the block. }
+            keyType: { type: string, example: 'OpenPGP v4: RSA-3072, X25519' }
+            expiresAt: { type: [string, 'null'], format: date-time }
+            warnings: { type: array, items: { type: string }, description: 'For example `expiresSoon`, `weakRsa` or `addressMismatch`.' }
+        privateKey:
+          type: [object, 'null']
+          description: Not null when the panel made the keys of the mailbox and has the protected private key.
+          required: [passwordCurrent]
+          properties:
+            passwordCurrent: { type: boolean, description: False when the private key has an older password of the mailbox. }
+        createdAt: { type: string, format: date-time }
+    MailAlias:
+      type: object
+      required: [id, address, localPart, domainId, customerId, kind, destinations, status]
+      properties:
+        id: { type: string }
+        address: { type: string }
+        localPart: { type: string }
+        domainId: { type: string }
+        customerId: { type: string }
+        kind: { type: string, enum: [alias, forwarder] }
+        destinations: { type: array, items: { type: string } }
+        status: { $ref: '#/components/schemas/MailStatus' }
+        createdAt: { type: string, format: date-time }
     DatabaseServer:
       type: object
       properties:
@@ -4233,6 +5421,18 @@ components:
         databaseServerId: { type: string, description: The database server of the user. }
         access: { type: string, enum: [website, anywhere], description: '"website": only the website container can connect. "anywhere": any address, with TLS.' }
         grants: { type: array, items: { $ref: '#/components/schemas/DatabaseGrant' } }
+    AdminerLogin:
+      type: object
+      properties:
+        id: { type: string }
+        status: { type: string, enum: [starting, ready, failed, expired], description: '"ready": Adminer can sign in with the temporary database user.' }
+        url: { type: string, description: 'The address of this sign-in in Adminer: the address of the Adminer of the customer and a random key. Adminer keeps the session of the sign-in on this address only.' }
+        websiteId: { type: [string, 'null'] }
+        databaseId: { type: [string, 'null'] }
+        databaseName: { type: string }
+        privileges: { type: string, enum: [readonly, readwrite] }
+        username: { type: string, description: The temporary database user. }
+        expiresAt: { type: string, format: date-time }
     DatabaseGrant:
       type: object
       properties:
@@ -4255,6 +5455,25 @@ components:
         planId: { type: string }
         resellerId: { type: [string, 'null'] }
         branding: { oneOf: [{ $ref: '#/components/schemas/Branding' }, { type: 'null' }] }
+        brandStatus:
+          type: [object, 'null']
+          description: For a reseller, the state of the certificate of its panel domain, and the host names of the name servers of the panel.
+          properties:
+            certificate:
+              type: [object, 'null']
+              properties:
+                domain: { type: string }
+                method: { type: string, enum: [letsencrypt, internal] }
+                state: { type: string, enum: [valid, pending, expired] }
+                expiresAt: { type: [string, 'null'], format: date-time }
+                error: { type: [string, 'null'] }
+                checkedAt: { type: [string, 'null'], format: date-time }
+            panelDomain: { type: string, description: The domain of the panel. A CNAME record of the reseller panel domain can point to it. }
+            panelNameServers: { type: array, items: { type: string } }
+            nameServerAddresses:
+              type: object
+              description: The public addresses of each name server of the panel. Each host name that the reseller gives to a name server needs the same A and AAAA records.
+              additionalProperties: { type: array, items: { type: string } }
         allowedPlanIds: { type: [array, 'null'], items: { type: string }, description: For a reseller, the plans that it can give to its customers. }
         suspended: { type: boolean }
         suspendedBy: { type: [string, 'null'], enum: [administrator, reseller, null] }
@@ -4267,7 +5486,13 @@ components:
       properties:
         name: { type: string }
         websites: { type: integer, minimum: 1 }
-        mailboxes: { type: integer, minimum: 0 }
+        mailboxes: { type: integer, minimum: 0, description: The number of mailboxes of a customer with the plan. }
+        mailStorageBytes:
+          type: integer
+          minimum: 0
+          description: >-
+            The total size of the mailboxes of a customer with the plan. A request with no value
+            keeps the value of the plan. A new plan gets 10 GB.
         databases:
           type: integer
           minimum: 0
@@ -4319,6 +5544,78 @@ components:
         - type: object
           properties:
             id: { type: string }
+    NotificationEvent:
+      type: string
+      enum: [job.failed, backup.failed, certificate.expiring, account.suspended, account.restored, signin.new_device, usage.alert, server.offline]
+    NotificationPreference:
+      type: object
+      properties:
+        event: { $ref: '#/components/schemas/NotificationEvent' }
+        label: { type: string }
+        description: { type: string }
+        email: { type: boolean, description: True when the event sends an email to the user. }
+        required: { type: boolean, description: A security email. The user cannot turn it off. }
+    NotificationDelivery:
+      type: object
+      properties:
+        id: { type: string }
+        event: { $ref: '#/components/schemas/NotificationEvent' }
+        label: { type: string }
+        recipient: { type: string }
+        subject: { type: string }
+        state: { type: string, enum: [queued, sent, failed, skipped], description: '"skipped": no SMTP server was set. The panel tries 3 times before "failed".' }
+        error: { type: [string, 'null'] }
+        attempts: { type: integer }
+        sentBy: { type: string, enum: [panel, reseller], description: The SMTP server that sends the email. }
+        createdAt: { type: string, format: date-time }
+        sentAt: { type: [string, 'null'], format: date-time }
+    MailServer:
+      type: object
+      properties:
+        configured: { type: boolean }
+        enabled: { type: boolean }
+        host: { type: [string, 'null'] }
+        port: { type: [integer, 'null'] }
+        encryption: { type: [string, 'null'], enum: [tls, starttls, none, null] }
+        username: { type: [string, 'null'] }
+        hasPassword: { type: boolean }
+        fromAddress: { type: [string, 'null'] }
+        fromName: { type: [string, 'null'] }
+        replyTo: { type: [string, 'null'] }
+        testedAt: { type: [string, 'null'], format: date-time }
+        testError: { type: [string, 'null'] }
+        panelFallback: { type: [boolean, 'null'], description: For a reseller only. True when the server of the panel sends the emails while the reseller has none. }
+    MailServerInput:
+      type: object
+      required: [host, port, encryption, fromAddress]
+      properties:
+        enabled: { type: boolean, default: true }
+        host: { type: string, maxLength: 253 }
+        port: { type: integer, enum: [25, 465, 587, 2525] }
+        encryption: { type: string, enum: [tls, starttls, none], description: '"tls": TLS from the start (port 465). "starttls": the server must give STARTTLS. "none": no TLS.' }
+        username: { type: [string, 'null'], maxLength: 200 }
+        password: { type: [string, 'null'], maxLength: 500 }
+        fromAddress: { type: string, format: email }
+        fromName: { type: [string, 'null'], maxLength: 100 }
+        replyTo: { type: [string, 'null'], format: email }
+    NotificationTemplate:
+      type: object
+      properties:
+        event: { $ref: '#/components/schemas/NotificationEvent' }
+        label: { type: string }
+        description: { type: string }
+        subject: { type: string }
+        body: { type: string }
+        changed: { type: boolean, description: True when this scope changed the template. }
+        originalSubject: { type: string, description: The subject after a reset. }
+        originalBody: { type: string }
+        variables: { type: array, items: { type: string } }
+    NotificationTemplateInput:
+      type: object
+      required: [subject, body]
+      properties:
+        subject: { type: string, maxLength: 200 }
+        body: { type: string, maxLength: 10000 }
     PanelCertificate:
       type: object
       required: [domain, method, state, letsEncryptAvailable, serversWithoutCa]
@@ -4382,6 +5679,8 @@ components:
             cpuPercent: { type: number, description: The load average of one minute for each CPU. }
             memoryPercent: { type: number }
             diskPercent: { type: number, description: The file system of the website files. }
+            networkInBytes: { type: integer, description: The bytes that the physical network interfaces received since the last report. }
+            networkOutBytes: { type: integer, description: The bytes that the physical network interfaces sent since the last report. }
         websites:
           type: array
           items:
@@ -4392,6 +5691,8 @@ components:
               memoryBytes: { type: integer }
               diskBytes: { type: integer }
               processes: { type: integer }
+              bytesIn: { type: integer, description: The size of the requests to the domains of the website through the edge proxy since the last report. }
+              bytesOut: { type: integer, description: The size of the answers since the last report. }
         domains:
           type: [array, 'null']
           description: The DNS and the certificate of each domain of the websites on the server.
@@ -4432,6 +5733,20 @@ components:
         databaseInstances:
           type: boolean
           description: True when the agent can operate the database servers of customers. An agent of an earlier release does not send the field.
+        mail:
+          type: [object, 'null']
+          description: The mail server of the server. An agent sends it when the mail server is installed.
+          required: [state]
+          properties:
+            state: { type: string, enum: [running, stopped] }
+            mailboxes:
+              type: array
+              items:
+                type: object
+                required: [address, usedBytes]
+                properties:
+                  address: { type: string }
+                  usedBytes: { type: integer }
         databaseServers:
           type: [array, 'null']
           description: The state and the resource use of each database server on the server.
