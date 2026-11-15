@@ -1,0 +1,9 @@
+# The image of the example plugin, so that the panel can run it in a container.
+# Build and push it, then add its digest to "image" in plugin.json before you sign the manifest.
+FROM docker.io/library/node:22-alpine
+WORKDIR /plugin
+COPY server.mjs page.html ./
+ENV PORT=8080
+USER node
+EXPOSE 8080
+CMD ["node", "server.mjs"]

@@ -190,6 +190,17 @@ var ruleDomain = rule{
 // A domain name in lower case. Each label has 1 to 63 characters. The last label is not a number, so that the name is not an IP address (audit finding R5).
 func Domain(s string) error { return ruleDomain.check(s) }
 
+var ruleEnvironmentValue = rule{
+	what:      "value of a container environment variable",
+	pattern:   regexp.MustCompile(`^[A-Za-z0-9_.,:/|@+=~-]+$`),
+	maxLength: 1024,
+}
+
+// EnvironmentValue checks a value with the rule "environmentValue" of schema/input-rules.json.
+//
+// The value of an environment variable of a plugin container, for example its token. The agent writes it in the unit of the container, so it has no space, quote, "%", "$" or backslash.
+func EnvironmentValue(s string) error { return ruleEnvironmentValue.check(s) }
+
 var ruleFilePath = rule{
 	what:      "path",
 	pattern:   regexp.MustCompile(`^(/|(/[^/\x00-\x1f\x7f]+)+)$`),
@@ -476,6 +487,7 @@ var rules = map[string]*rule{
 	"dnssecKey":          &ruleDNSSECKey,
 	"documentRoot":       &ruleDocumentRoot,
 	"domain":             &ruleDomain,
+	"environmentValue":   &ruleEnvironmentValue,
 	"filePath":           &ruleFilePath,
 	"gitBranch":          &ruleGitBranch,
 	"gitRepository":      &ruleGitRepository,
@@ -515,6 +527,9 @@ const MaxBuildCommands = 10
 
 // MaxCommandArguments: The largest number of arguments of a start command.
 const MaxCommandArguments = 32
+
+// MaxContainerEnvironment: The largest number of environment variables of a container.
+const MaxContainerEnvironment = 20
 
 // MaxCronJobs: The largest number of cron jobs of a website.
 const MaxCronJobs = 20

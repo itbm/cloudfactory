@@ -133,6 +133,10 @@ func (a *app) printPlugin(p map[string]any) error {
 	fmt.Fprintf(a.out, "Name:          %s %s (%s)\nID:            %s\nPublisher:     %s, %s\nState:         %s\nAddress:       %s\nScopes:        %s\nEvents:        %s\nWebhook:       %s\nToken expires: %s\n",
 		cell(p["name"]), cell(p["version"]), cell(p["slug"]), cell(p["id"]), cell(p["publisher"]), signed, state, cell(p["baseUrl"]),
 		cell(p["scopes"]), cell(p["events"]), cell(p["webhookUrl"]), cell(p["tokenExpiresAt"]))
+	if h, ok := p["hosting"].(map[string]any); ok {
+		image, _ := p["image"].(map[string]any)
+		fmt.Fprintf(a.out, "Container:     %s on %s (%s)\n", cell(image["ref"]), cell(h["serverName"]), cell(h["status"]))
+	}
 	if pages, _ := p["pages"].([]any); len(pages) > 0 {
 		for _, x := range pages {
 			pg, _ := x.(map[string]any)
@@ -166,6 +170,10 @@ func (a *app) printCredentials(out map[string]any) {
 		return
 	}
 	p, _ := out["plugin"].(map[string]any)
+	if out["token"] == nil {
+		fmt.Fprintf(a.out, "Plugin %s is ready. The panel gives the new token and webhook secret to its container.\n", cell(p["name"]))
+		return
+	}
 	fmt.Fprintf(a.out, "Plugin %s is ready.\nCF_TOKEN=%s\nCF_WEBHOOK_SECRET=%s\nGive these values to the plugin now. The panel does not show them again.\n",
 		cell(p["name"]), cell(out["token"]), cell(out["webhookSecret"]))
 }
@@ -195,18 +203,27 @@ func (a *app) plugins(ctx context.Context, sub string, args []string) error {
 		manifest := fs.String("manifest", "plugin.json", "the manifest file")
 		signature := fs.String("signature", "", "the signature file. Default: the manifest file with .sig")
 		address := fs.String("address", "", "where you run the plugin, for example https://uptime.example.net")
+		hosted := fs.Bool("hosted", false, "the panel runs the image of the plugin in a gVisor container")
+		server := fs.String("server", "", "with --hosted: the ID of the server. Default: the panel server")
+		host := fs.String("host", "", "with --hosted: the host name. Default: SLUG.plugins and the panel domain")
 		totp := fs.String("totp", "", "the code from your authenticator app")
 		if err := fs.Parse(args); err != nil {
 			return err
 		}
-		if *address == "" {
-			return errors.New("give --address, the address where you run the plugin")
+		if *hosted == (*address != "") {
+			return errors.New("give --address, the address where you run the plugin, or --hosted")
+		}
+		if !*hosted && (*server != "" || *host != "") {
+			return errors.New("--server and --host need --hosted")
 		}
 		m, s, err := readManifest(*manifest, *signature)
 		if err != nil {
 			return err
 		}
 		body := map[string]any{"manifest": m, "baseUrl": *address}
+		if *hosted {
+			body = map[string]any{"manifest": m, "hosted": true, "serverId": nullable(*server), "host": nullable(*host)}
+		}
 		if s != "" {
 			body["signature"] = s
 		}
@@ -307,6 +324,12 @@ func (a *app) plugins(ctx context.Context, sub string, args []string) error {
 		}
 		a.printCredentials(out)
 		return nil
+	case "restart":
+		if err := a.api.Do(ctx, http.MethodPost, path+"/container", nil, nil, nil); err != nil {
+			return err
+		}
+		fmt.Fprintf(a.out, "The panel starts the container of %s again.\n", cell(p["slug"]))
+		return nil
 	case "test":
 		var out map[string]any
 		if err := a.api.Do(ctx, http.MethodPost, path+"/test", nil, nil, &out); err != nil {
@@ -394,4 +417,12 @@ func (a *app) pluginKeys(ctx context.Context, args []string) error {
 		return nil
 	}
 	return fmt.Errorf("unknown command plugins keys %s", args[0])
+}
+
+// nullable gives nil for an empty flag, so that the panel uses its default.
+func nullable(v string) any {
+	if v == "" {
+		return nil
+	}
+	return v
 }

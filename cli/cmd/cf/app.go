@@ -219,9 +219,11 @@ Usage:
   cf account totp setup
   cf account totp enable|disable --totp CODE
   cf plugins list
-  cf plugins get|enable|disable|test|deliveries|remove PLUGIN    A PLUGIN is a slug (for example uptime) or an ID.
+  cf plugins get|enable|disable|test|deliveries|restart|remove PLUGIN    A PLUGIN is a slug (for example uptime) or an ID.
   cf plugins install --address URL [--manifest plugin.json] [--signature plugin.json.sig] [--totp CODE]
                        Shows the token and the webhook secret of the plugin one time.
+  cf plugins install --hosted [--server ID] [--host NAME] [--manifest plugin.json] [--signature plugin.json.sig] [--totp CODE]
+                       The panel runs the signed image of the plugin in a gVisor container.
   cf plugins upgrade PLUGIN [--manifest plugin.json] [--signature plugin.json.sig] [--totp CODE]
   cf plugins credentials PLUGIN [--totp CODE]    A new token and a new webhook secret. The old ones stop.
   cf plugins keys list

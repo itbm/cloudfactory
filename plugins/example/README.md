@@ -50,3 +50,27 @@ PROTECTED_WEBSITES=shop.example.com,www.example.com CF_WEBHOOK_SECRET=whsec_... 
 
 In the demonstration mode of the API, the sample plugin "Uptime monitor" uses `page.html` from
 this directory.
+
+## Run it in the panel
+
+1. Build and push the image:
+
+   ```sh
+   podman build -t ghcr.io/example/uptime:1.4.0 -f Containerfile .
+   podman push --digestfile digest ghcr.io/example/uptime:1.4.0
+   ```
+
+2. Add the image to `plugin.json`, with the digest from the file `digest`:
+
+   ```json
+   "image": { "ref": "ghcr.io/example/uptime:1.4.0", "digest": "sha256:...", "port": 8080 }
+   ```
+
+3. Sign the manifest again, and add `cosign.pub` in **Plugins > Trusted keys**.
+4. Install the plugin in the panel:
+
+   ```sh
+   cf plugins install --hosted --manifest plugin.json
+   ```
+
+The panel gives `CF_PANEL`, `CF_TOKEN` and `CF_WEBHOOK_SECRET` to the container.

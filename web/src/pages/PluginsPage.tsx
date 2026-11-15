@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { useAction, useLoad } from "../api/hooks";
+import { useAction, useLoad, useStore } from "../api/hooks";
 import {
-  addPluginKey, installPlugin, loadPlugins, pluginDeliveries, previewPlugin, removePlugin, removePluginKey, retryPluginDelivery,
+  addPluginKey, installPlugin, restartPluginContainer, loadPlugins, pluginDeliveries, previewPlugin, removePlugin, removePluginKey, retryPluginDelivery,
   rotatePluginCredentials, setPluginDeveloperMode, setPluginEnabled, testPlugin, upgradePlugin, type PluginPreview,
 } from "../api/store";
 import type { Confirmation, Plugin, PluginActionTarget, PluginCredentials, PluginDelivery, PluginHook, PluginHookEvent, PluginKey } from "../api/types";
@@ -62,6 +62,9 @@ const HOOK_TEXT: Record<PluginHookEvent, string> = {
   "customer.creating": "Add a customer",
 };
 
+const CONTAINER_TEXT = { starting: "Starting", running: "Running", stopped: "Stopped", failed: "Failed", removing: "Removing" } as const;
+const CONTAINER_TONE = { starting: "warning", running: "success", stopped: "neutral", failed: "danger", removing: "warning" } as const;
+
 const TARGET_TEXT: Record<PluginActionTarget, string> = { website: "websites", server: "servers", customer: "customers" };
 
 function hookList(hooks: PluginHook[]): string {
@@ -111,14 +114,14 @@ export function PluginsPage() {
           {data.data && <TrustedKeys keys={data.data.keys} onChange={reload} />}
           {data.data && <DeveloperMode on={data.data.developerMode} onChange={reload} />}
         </div>
-        {installing && <InstallDialog onClose={() => setInstalling(false)} onInstalled={(c) => { setInstalling(false); setCredentials(c); reload(); }} />}
+        {installing && <InstallDialog onClose={() => setInstalling(false)} onInstalled={(c) => { setInstalling(false); setCredentials(c.token ? c : null); reload(); }} />}
         {credentials && <CredentialsDialog credentials={credentials} onClose={() => setCredentials(null)} />}
       </main>
     </>
   );
 }
 
-function PluginCard({ plugin: p, onChange, onCredentials }: { plugin: Plugin; onChange: () => void; onCredentials: (c: PluginCredentials) => void }) {
+function PluginCard({ plugin: p, onChange, onCredentials }: { plugin: Plugin; onChange: () => void; onCredentials: (c: PluginCredentials | null) => void }) {
   const [showDeliveries, setShowDeliveries] = useState(false);
   const [rotating, setRotating] = useState(false);
   const [upgrading, setUpgrading] = useState(false);
@@ -126,6 +129,7 @@ function PluginCard({ plugin: p, onChange, onCredentials }: { plugin: Plugin; on
   const toggle = useAction(async (on: boolean) => { await setPluginEnabled(p.id, on); onChange(); });
   const test = useAction(async () => { await testPlugin(p.id); setShowDeliveries(true); onChange(); });
   const remove = useAction(async () => { await removePlugin(p.id); onChange(); });
+  const restart = useAction(async () => { await restartPluginContainer(p.id); onChange(); });
   const expires = p.tokenExpiresAt ? Math.floor((new Date(p.tokenExpiresAt).getTime() - Date.now()) / 86400000) : null;
 
   return (
@@ -145,13 +149,26 @@ function PluginCard({ plugin: p, onChange, onCredentials }: { plugin: Plugin; on
     }>
       <div className="card-body">
         <p style={{ marginTop: 0 }}>{p.description}</p>
-        <FormError error={toggle.error ?? test.error ?? remove.error} />
+        <FormError error={toggle.error ?? test.error ?? remove.error ?? restart.error} />
         <div className="two-col">
           <table className="kv">
             <tbody>
               <tr><th scope="row">Publisher</th><td>{p.publisher}</td></tr>
               <tr><th scope="row">Signature</th><td>{p.signedBy ? <Status tone="success">Signed by {p.signedBy.name}</Status> : <Status tone="warning">No signature (developer mode)</Status>}</td></tr>
               <tr><th scope="row">Address</th><td><code>{p.baseUrl}</code></td></tr>
+              {p.hosting && (
+                <tr>
+                  <th scope="row">Runs on</th>
+                  <td>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                      {p.hosting.serverName ?? "A removed server"}
+                      <Status tone={CONTAINER_TONE[p.hosting.status]}>{CONTAINER_TEXT[p.hosting.status]}</Status>
+                      {p.hosting.status === "failed" && p.enabled && <button type="button" className="btn btn-sm" disabled={restart.busy} onClick={() => void restart.run()}>Start again</button>}
+                    </span>
+                    {p.image && <span className="cell-sub">Container of <code>{p.image.ref}</code> in a gVisor sandbox</span>}
+                  </td>
+                </tr>
+              )}
               <tr><th scope="row">Token</th><td>{p.tokenExpiresAt ? <>Expires {longDate(p.tokenExpiresAt)}{expires !== null && expires <= 30 && <span className="cell-sub note-warning">Make new credentials soon</span>}</> : "No token"}{p.tokenLastUsedAt && <span className="cell-sub">Last used {relativeTime(p.tokenLastUsedAt)}</span>}</td></tr>
               <tr>
                 <th scope="row">Events</th>
@@ -184,7 +201,7 @@ function PluginCard({ plugin: p, onChange, onCredentials }: { plugin: Plugin; on
         )}
       </div>
       {showDeliveries && <Deliveries plugin={p} onClose={() => setShowDeliveries(false)} />}
-      {rotating && <RotateDialog plugin={p} onClose={() => setRotating(false)} onDone={(c) => { setRotating(false); onCredentials(c); onChange(); }} />}
+      {rotating && <RotateDialog plugin={p} onClose={() => setRotating(false)} onDone={(c) => { setRotating(false); onCredentials(c.token ? c : null); onChange(); }} />}
       {removing && (
         <Modal title={`Remove ${p.name}?`} onClose={() => setRemoving(false)} footer={<><button type="button" className="btn" onClick={() => setRemoving(false)}>Cancel</button><button type="button" className="btn btn-danger-solid" disabled={remove.busy} onClick={() => { setRemoving(false); void remove.run(); }}>Remove plugin</button></>}>
           <p style={{ marginTop: 0 }}>The token of the plugin and its page tokens stop at once. The panel sends it no more events, and its pages leave the menu.</p>
@@ -245,6 +262,10 @@ function InstallDialog({ plugin, onClose, onInstalled }: { plugin?: Plugin; onCl
   const [manifest, setManifest] = useState("");
   const [signature, setSignature] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
+  const [hosted, setHosted] = useState(true);
+  const [serverId, setServerId] = useState("");
+  const [host, setHost] = useState("");
+  const servers = useStore().servers.filter((s) => s.panel || s.roles.includes("web"));
   const [confirmation, setConfirmation] = useState<Confirmation>(NO_CONFIRMATION);
   const [preview, setPreview] = useState<PluginPreview | null>(null);
   const check = useAction(async () => setPreview(await previewPlugin(manifest, signature)));
@@ -253,7 +274,10 @@ function InstallDialog({ plugin, onClose, onInstalled }: { plugin?: Plugin; onCl
       const updated = await upgradePlugin(plugin.id, manifest, signature, confirmation);
       onInstalled({ plugin: updated, token: "", webhookSecret: "" });
     } else {
-      onInstalled(await installPlugin(manifest, signature, baseUrl, confirmation));
+      const placement = preview?.manifest.image && hosted
+        ? { hosted: true as const, serverId: serverId || null, host }
+        : { hosted: false as const, baseUrl };
+      onInstalled(await installPlugin(manifest, signature, placement, confirmation));
     }
   });
   const error = install.error ?? check.error;
@@ -283,7 +307,7 @@ function InstallDialog({ plugin, onClose, onInstalled }: { plugin?: Plugin; onCl
       )}
       {preview && m && (
         <form id="plugin-install" noValidate onSubmit={(e) => { e.preventDefault(); void install.run(); }}>
-          <FormError error={error} shown={["baseUrl", "password", "totp"]} />
+          <FormError error={error} shown={["baseUrl", "serverId", "host", "password", "totp"]} />
           <div className="plugin-head">
             <div>
               <h3>{m.name} {m.version}</h3>
@@ -318,7 +342,41 @@ function InstallDialog({ plugin, onClose, onInstalled }: { plugin?: Plugin; onCl
               <p>{hookList(m.hooks)}. The panel asks the plugin before each of these changes, and waits up to 5 seconds.</p>
             </>
           )}
-          {!plugin && (
+          {m.image && (
+            <>
+              <h4>Image</h4>
+              <p><code>{m.image.ref}</code> <span className="muted">({m.image.digest.slice(0, 19)}…)</span>. The signature covers the digest, so the panel runs only this image.</p>
+            </>
+          )}
+          {!plugin && m.image && (
+            <fieldset className="radio-cards" style={{ marginBottom: 14 }}>
+              <legend>Where the plugin runs</legend>
+              <label className="radio-card">
+                <input type="radio" name="plugin-place" checked={hosted} onChange={() => setHosted(true)} />
+                <span><strong>In a container of the panel</strong><span>A gVisor sandbox with its own Unix user, 1 vCPU and 512 MB of memory. No root access, no files of a customer and no database server.</span></span>
+              </label>
+              <label className="radio-card">
+                <input type="radio" name="plugin-place" checked={!hosted} onChange={() => setHosted(false)} />
+                <span><strong>On my own host</strong><span>You run the plugin and give it its token and webhook secret.</span></span>
+              </label>
+            </fieldset>
+          )}
+          {!plugin && m.image && hosted && (
+            <div className="form-row">
+              <Field label="Server" error={error?.fields.serverId}>
+                {(p) => (
+                  <select {...p} className="select" value={serverId} onChange={(e) => setServerId(e.target.value)}>
+                    <option value="">The panel server</option>
+                    {servers.filter((s) => !s.panel).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
+                )}
+              </Field>
+              <Field label="Host name" hint={`Empty for ${m.slug}.plugins and the panel domain. Its DNS must point to the server.`} error={error?.fields.host}>
+                {(p) => <input {...p} className="input" value={host} onChange={(e) => setHost(e.target.value)} placeholder={`${m.slug}.plugins.example.com`} />}
+              </Field>
+            </div>
+          )}
+          {!plugin && (!m.image || !hosted) && (
             <Field label="Address of the plugin" hint="Where you run the plugin, for example https://uptime.example.net. Use HTTPS and a host name that is not the panel." error={error?.fields.baseUrl}>
               {(p) => <input {...p} className="input" inputMode="url" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://uptime.example.net" />}
             </Field>
@@ -331,12 +389,13 @@ function InstallDialog({ plugin, onClose, onInstalled }: { plugin?: Plugin; onCl
 }
 
 function CredentialsDialog({ credentials, onClose }: { credentials: PluginCredentials; onClose: () => void }) {
-  if (!credentials.token) return null;
+  const { token, webhookSecret } = credentials;
+  if (!token || !webhookSecret) return null;
   return (
     <Modal title={`Credentials of ${credentials.plugin.name}`} onClose={onClose} footer={<button type="button" className="btn btn-primary" onClick={onClose}>I copied the credentials</button>}>
       <p style={{ marginTop: 0 }}>Give these values to the plugin, for example as environment variables. The panel shows them one time only.</p>
-      <Field label="API token (CF_TOKEN)">{() => <CopyField value={credentials.token} label="API token" />}</Field>
-      <Field label="Webhook secret (CF_WEBHOOK_SECRET)" hint="The plugin uses it to check the signature of each event.">{() => <CopyField value={credentials.webhookSecret} label="Webhook secret" />}</Field>
+      <Field label="API token (CF_TOKEN)">{() => <CopyField value={token} label="API token" />}</Field>
+      <Field label="Webhook secret (CF_WEBHOOK_SECRET)" hint="The plugin uses it to check the signature of each event.">{() => <CopyField value={webhookSecret} label="Webhook secret" />}</Field>
     </Modal>
   );
 }
@@ -348,7 +407,9 @@ function RotateDialog({ plugin, onClose, onDone }: { plugin: Plugin; onClose: ()
     <Modal title={`New credentials for ${plugin.name}`} onClose={onClose} footer={<><button type="button" className="btn" onClick={onClose}>Cancel</button><button type="submit" form="plugin-rotate" className="btn btn-primary" disabled={rotate.busy}>Make new credentials</button></>}>
       <form id="plugin-rotate" noValidate onSubmit={(e) => { e.preventDefault(); void rotate.run(); }}>
         <FormError error={rotate.error} shown={["password", "totp"]} />
-        <p style={{ marginTop: 0 }}>The panel makes a new token and a new webhook secret. The old ones stop at once, so give the new values to the plugin immediately.</p>
+        <p style={{ marginTop: 0 }}>{plugin.hosting
+          ? "The panel makes a new token and a new webhook secret, and starts a new container with them. The old ones stop at once."
+          : "The panel makes a new token and a new webhook secret. The old ones stop at once, so give the new values to the plugin immediately."}</p>
         <ConfirmIdentityFields value={confirmation} onChange={setConfirmation} error={rotate.error} reason="New credentials give access to the panel." />
       </form>
     </Modal>

@@ -112,6 +112,10 @@ type Website struct {
 	// LogFile is the file on the host that gets the output of the container, for the logs in
 	// the panel. Empty means that the output goes only to the journal.
 	LogFile string
+	// Environment has the environment variables of a custom image, for example the token of
+	// a plugin. The agent checked the names and the values (validate.SecretName and
+	// validate.EnvironmentValue), so they need no quotes.
+	Environment map[string]string
 }
 
 // LogFileMax is the largest size of the log file of a website. Podman starts the file again
@@ -275,6 +279,11 @@ func ContainerUnit(w Website) string {
 	}
 	if w.Runtime != "custom" {
 		line("Environment", "CF_DOCUMENT_ROOT="+root)
+	}
+	if w.Runtime == "custom" {
+		for _, k := range slices.Sorted(maps.Keys(w.Environment)) {
+			line("Environment", k+"="+w.Environment[k])
+		}
 	}
 	if w.Runtime == "frankenphp" && w.WorkerMode {
 		// The value has a space, so it is in quotes. systemd splits Environment at spaces.

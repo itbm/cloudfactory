@@ -37,6 +37,7 @@ import type {
   PluginKey,
   PluginManifest,
   PluginActionResult,
+  PluginPlacement,
   PluginPageSession,
   ResellerBranding,
   ServerRole,
@@ -1431,9 +1432,12 @@ export function previewPlugin(manifest: string, signature: string): Promise<Plug
   return call(() => live.request<PluginPreview>("POST", "/plugins/preview", { manifest, signature: signature.trim() || null }));
 }
 
-export function installPlugin(manifest: string, signature: string, baseUrl: string, confirm: Confirmation): Promise<PluginCredentials> {
+export function installPlugin(manifest: string, signature: string, placement: PluginPlacement, confirm: Confirmation): Promise<PluginCredentials> {
+  const where = placement.hosted
+    ? { hosted: true, serverId: placement.serverId, host: placement.host.trim() || null }
+    : { baseUrl: placement.baseUrl.trim() };
   return call(async () => {
-    const r = await live.request<PluginCredentials>("POST", "/plugins", { manifest, signature: signature.trim() || null, baseUrl: baseUrl.trim(), ...confirmation(confirm) });
+    const r = await live.request<PluginCredentials>("POST", "/plugins", { manifest, signature: signature.trim() || null, ...where, ...confirmation(confirm) });
     await refresh();
     return r;
   });
@@ -1472,6 +1476,11 @@ export function removePlugin(pluginId: string): Promise<void> {
 
 export function rotatePluginCredentials(pluginId: string, confirm: Confirmation): Promise<PluginCredentials> {
   return call(() => live.request<PluginCredentials>("POST", `/plugins/${pluginId}/credentials`, confirmation(confirm)));
+}
+
+/** Makes the container of a plugin that the panel runs again, for example after a failure. */
+export function restartPluginContainer(pluginId: string): Promise<Plugin> {
+  return call(() => live.request<Plugin>("POST", `/plugins/${pluginId}/container`));
 }
 
 export function testPlugin(pluginId: string): Promise<PluginDelivery> {

@@ -133,6 +133,12 @@ message Website {
   // have the same domain. The panel uses it for the database tool of each customer
   // (Adminer), which has one domain for all customers. The domain has no redirect.
   string route_path = 17;
+  // Runtime "custom": environment variables of the container, for example the token of a
+  // plugin that the panel runs (docs/plugins.md). The names are the rule "secretName" and the
+  // values the rule "environmentValue" of schema/input-rules.json, so that the agent writes
+  // them in the unit with no quotes. Up to 20. The unit is in the home directory of the Unix
+  // user of the website, which only that user and root can read.
+  map<string, string> environment = 18;
 }
 
 // A database server of a customer: one database container with one engine, in its own gVisor

@@ -103,6 +103,66 @@ func TestPluginsInstallNeedsAnAddress(t *testing.T) {
 	}
 }
 
+func TestPluginsInstallHosted(t *testing.T) {
+	var calls []string
+	const feed = `{"id":"P2","slug":"feed","name":"Audit feed","version":"1.0.0","enabled":true,"image":{"ref":"ghcr.io/example/feed:1.0.0"},"hosting":{"serverName":"panel","status":"running"}}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		body, _ := io.ReadAll(r.Body)
+		if r.Method != http.MethodGet {
+			calls = append(calls, strings.TrimSpace(r.Method+" "+r.URL.Path+" "+string(body)))
+		}
+		switch path := strings.TrimPrefix(r.URL.Path, "/api/v1"); {
+		case path == "/plugins" && r.Method == http.MethodGet:
+			w.Write([]byte(`{"data":[` + feed + `]}`))
+		case path == "/plugins" && r.Method == http.MethodPost:
+			w.WriteHeader(http.StatusCreated)
+			w.Write([]byte(`{"plugin":` + feed + `,"token":null,"webhookSecret":null}`))
+		case path == "/plugins/P2/container":
+			w.WriteHeader(http.StatusAccepted)
+			w.Write([]byte(`{}`))
+		default:
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+	a, out := testApp(srv)
+	ctx := context.Background()
+	t.Setenv("CF_PASSWORD", "secret")
+	manifest := filepath.Join(t.TempDir(), "plugin.json")
+	os.WriteFile(manifest, []byte(`{"schema":1}`), 0o600)
+
+	if err := a.dispatch(ctx, []string{"plugins", "install", "--manifest", manifest, "--hosted", "--host", "feed.plugins.example.com"}); err != nil {
+		t.Fatal(err)
+	}
+	want := `POST /api/v1/plugins {"host":"feed.plugins.example.com","hosted":true,"manifest":"{\"schema\":1}","password":"secret","serverId":null}`
+	if len(calls) != 1 || calls[0] != want {
+		t.Errorf("calls: %v", calls)
+	}
+	if strings.Contains(out.String(), "CF_TOKEN") || !strings.Contains(out.String(), "gives the new token and webhook secret to its container") {
+		t.Errorf("output:\n%s", out)
+	}
+	out.Reset()
+	if err := a.dispatch(ctx, []string{"plugins", "get", "feed"}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "Container:     ghcr.io/example/feed:1.0.0 on panel (running)") {
+		t.Errorf("output:\n%s", out)
+	}
+	if err := a.dispatch(ctx, []string{"plugins", "restart", "feed"}); err != nil {
+		t.Fatal(err)
+	}
+	if calls[len(calls)-1] != "POST /api/v1/plugins/P2/container" {
+		t.Errorf("calls: %v", calls)
+	}
+	for _, bad := range [][]string{{"--hosted", "--address", "https://x.example"}, {"--server", "S1", "--address", "https://x.example"}} {
+		if err := a.dispatch(ctx, append([]string{"plugins", "install", "--manifest", manifest}, bad...)); err == nil {
+			t.Errorf("%v: no error", bad)
+		}
+	}
+}
+
 // "cf NAME" runs cf-NAME from the PATH, with the sign-in in CF_PANEL and CF_TOKEN. A plugin
 // cannot replace a command of cf.
 func TestExternalCommand(t *testing.T) {
