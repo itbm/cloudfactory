@@ -55,6 +55,8 @@ export function panelApi(role: Role): PanelApi {
     }
     if (key === "POST /auth/login") return respond({ status: 200, body: { token: "1|test" } });
     if (key === "POST /auth/logout") return respond({ status: 204, body: null });
+    // The brand of the sign-in page: the built-in brand, unless a test gives a different one.
+    if (key === "GET /brand") return respond({ status: 200, body: { name: "Cloudfactory", colour: "#1d5fd6", logo: null, supportEmail: null, builtIn: true } });
     if (answers[key]) return respond(answers[key]);
     // A test must give the answer to each change that it makes.
     return respond({ status: 500, body: { message: `The test has no answer for "${key}".` } });

@@ -7,6 +7,7 @@ import { Topbar } from "../components/Layout";
 import { Card, ConfirmButton, Field, FormError, JobRow, Modal, PageHeader, Status, TableWrap, Tabs } from "../components/ui";
 import { auditCsv } from "../lib/csv";
 import { daysUntil, longDate, relativeTime, shortDate } from "../lib/format";
+import { DefaultBrandSettings } from "./BrandPage";
 import { CopyField } from "./website/AccessTab";
 
 // The API has no DNS or email scopes in release 0.1 (FR-104).
@@ -22,7 +23,7 @@ export function SettingsPage() {
     { id: "security", label: "Sign-in and security" },
     { id: "tokens", label: "API tokens" },
     { id: "audit", label: "Audit log" },
-    ...(isAdmin ? [{ id: "panel", label: "Panel certificate" }] : []),
+    ...(isAdmin ? [{ id: "panel", label: "Panel certificate" }, { id: "brand", label: "Brand" }] : []),
   ];
   const tab = tabs.some((t) => t.id === asked) ? asked! : "security";
   const setTab = (id: string) => navigate(id === "security" ? "/settings" : `/settings/${id}`);
@@ -36,6 +37,7 @@ export function SettingsPage() {
         {tab === "tokens" && <Tokens />}
         {tab === "audit" && <Audit />}
         {tab === "panel" && <PanelCertificateSettings />}
+        {tab === "brand" && <DefaultBrandSettings />}
       </main>
     </>
   );

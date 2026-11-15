@@ -34,7 +34,8 @@ describe("the console of each role", () => {
 
     await open("reseller", "/");
     expect(heading()).toBe("Customers");
-    expect(menu()).toEqual(["Customers", "Plans", "Websites", "Files", "Databases", "DNS", "Private networks", "Backups", "Apps", "Jobs and activity", "My account", "Settings"]);
+    // The sample reseller has a brand with a support email: the menu links to it.
+    expect(menu()).toEqual(["Customers", "Plans", "Brand", "Websites", "Files", "Databases", "DNS", "Private networks", "Backups", "Apps", "Jobs and activity", "My account", "Settings", "Help: support@northwind.example.com"]);
     cleanup();
     reset();
 

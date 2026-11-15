@@ -17,6 +17,7 @@ use App\Services\DatabaseServers;
 use App\Services\Dns\Zones;
 use App\Services\DomainPolicy;
 use App\Services\JobDispatcher;
+use App\Services\PanelCertificate;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -352,7 +353,13 @@ class CustomerController extends Controller
             // the brand that the reseller and its customers see.
             'brandStatus' => $c->role === 'reseller' ? [
                 'certificate' => Branding::certificateOf($c->branding['panelDomain'] ?? null),
+                // The domain of the panel: a CNAME record of the reseller panel domain can point to it.
+                'panelDomain' => PanelCertificate::domain(),
+                // The name servers of the panel and their addresses. Each host name of the
+                // reseller needs the same A and AAAA records.
                 'panelNameServers' => Zones::nameServers(),
+                'nameServerAddresses' => Zones::servers()->unique('dns_name')
+                    ->mapWithKeys(fn ($s) => [$s->dns_name => array_values($s->addresses ?? [])])->all(),
             ] : null,
             'allowedPlanIds' => $c->role === 'reseller' ? $c->allowedPlanIds() : null,
             'suspended' => $c->suspended,

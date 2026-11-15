@@ -3897,7 +3897,12 @@ components:
                 expiresAt: { type: [string, 'null'], format: date-time }
                 error: { type: [string, 'null'] }
                 checkedAt: { type: [string, 'null'], format: date-time }
+            panelDomain: { type: string, description: The domain of the panel. A CNAME record of the reseller panel domain can point to it. }
             panelNameServers: { type: array, items: { type: string } }
+            nameServerAddresses:
+              type: object
+              description: The public addresses of each name server of the panel. Each host name that the reseller gives to a name server needs the same A and AAAA records.
+              additionalProperties: { type: array, items: { type: string } }
         allowedPlanIds: { type: [array, 'null'], items: { type: string }, description: For a reseller, the plans that it can give to its customers. }
         suspended: { type: boolean }
         suspendedBy: { type: [string, 'null'], enum: [administrator, reseller, null] }

@@ -20,7 +20,7 @@ export interface NavEntry {
   to: string;
   label: string;
   /** The name of the icon (components/Layout.tsx). */
-  icon: "overview" | "setup" | "servers" | "network" | "updates" | "customers" | "plans" | "websites" | "files" | "databases" | "dns" | "networks" | "backups" | "apps" | "jobs" | "account" | "settings";
+  icon: "overview" | "setup" | "servers" | "network" | "updates" | "customers" | "plans" | "websites" | "files" | "databases" | "dns" | "networks" | "backups" | "apps" | "jobs" | "account" | "brand" | "settings";
 }
 
 export interface NavSection {
@@ -58,7 +58,7 @@ export const NAVIGATION: Record<Role, NavSection[]> = {
     { title: "Panel", items: [{ to: "/settings", label: "Settings", icon: "settings" }] },
   ],
   reseller: [
-    { title: "Customers", items: [{ to: "/customers", label: "Customers", icon: "customers" }, { to: "/plans", label: "Plans", icon: "plans" }] },
+    { title: "Customers", items: [{ to: "/customers", label: "Customers", icon: "customers" }, { to: "/plans", label: "Plans", icon: "plans" }, { to: "/brand", label: "Brand", icon: "brand" }] },
     { title: "Hosting", items: hosting("Websites", "Jobs and activity") },
     account,
   ],
@@ -78,6 +78,8 @@ const ONLY: [prefix: string, roles: Role[]][] = [
   ["/customers", ["administrator", "reseller"]],
   ["/plans", ["administrator", "reseller"]],
   ["/account", ["reseller", "owner"]],
+  // White label: a reseller sets its brand. The administrator sets the default brand in Settings.
+  ["/brand", ["reseller"]],
 ];
 
 /** True when a user with the role can open the page. */

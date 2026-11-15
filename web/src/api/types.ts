@@ -594,6 +594,63 @@ export interface Customer {
   resellerId?: string;
   createdAt: string;
   suspended: boolean;
+  /** White label: the brand that a reseller set. Only a reseller has one. */
+  branding?: ResellerBranding;
+  brandStatus?: BrandStatus;
+}
+
+/**
+ * White label: the brand that a person sees. The administrator sets the default brand. The
+ * customers of a reseller see only the brand of the reseller.
+ */
+export interface Brand {
+  name: string;
+  /** The colour of the buttons and links. White text on it has a contrast of 4.5:1 or more. */
+  colour: string;
+  /** A data URL of a PNG, JPEG or WebP image, or null. */
+  logo: string | null;
+  supportEmail: string | null;
+  /** True when the panel has the built-in brand: the panel shows the built-in logo. */
+  builtIn: boolean;
+  source?: "panel" | "reseller";
+  panelDomain?: string;
+  nameServers?: string[];
+  mailHost?: string | null;
+}
+
+/** The fields of a brand that a person sets. A missing field has the built-in value. */
+export interface BrandFields {
+  name?: string;
+  colour?: string;
+  logo?: string;
+  supportEmail?: string;
+}
+
+export interface ResellerBranding extends BrandFields {
+  panelDomain?: string;
+  /** One host name for each name server of the panel, in the order of the panel host names. */
+  nameServers?: string[];
+  mailHost?: string;
+}
+
+export interface BrandCertificate {
+  domain: string;
+  method: "letsencrypt" | "internal";
+  state: "valid" | "pending" | "expired";
+  expiresAt: string | null;
+  error: string | null;
+  checkedAt: string | null;
+}
+
+export interface BrandStatus {
+  /** The TLS certificate of the panel domain of the reseller. Null with no panel domain. */
+  certificate: BrandCertificate | null;
+  /** The domain of the panel. A CNAME record of the reseller panel domain can point to it. */
+  panelDomain: string;
+  /** The host names of the name servers of the panel. */
+  panelNameServers: string[];
+  /** The addresses of each name server of the panel. */
+  nameServerAddresses: Record<string, string[]>;
 }
 
 export type TokenScope =
@@ -741,6 +798,8 @@ export interface State {
    * totpSetupRequired: the user is an administrator or a reseller with no TOTP. The panel
    * shows only the page that sets up TOTP (second audit, finding F09).
    */
+  /** White label: the brand that the signed-in user sees. */
+  brand?: Brand;
   session: {
     signedIn: boolean; loading?: boolean; mustChangePassword?: boolean; totpSetupRequired?: boolean; user: User; contextId: string;
     /** The error of the last load from the API. The panel then shows the data of the load before it. */
