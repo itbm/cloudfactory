@@ -122,6 +122,8 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends knot knot-dnsutils
+          # Knot DNS 3.5 and later have keymgr in a different package.
+          command -v keymgr >/dev/null || sudo apt-get install -y --no-install-recommends knot-keymgr
           sudo systemctl stop knot.service || true
           CF_TEST_KNOT=1 go test ./internal/actions -run '^TestKnotServer' -count=1
       - name: Build for x86-64 and ARM64

@@ -6,9 +6,12 @@ FROM docker.io/library/debian:13-slim
 
 ARG DEBIAN_FRONTEND=noninteractive
 # knot has the server (knotd) and the tools that the agent runs in the container: knotc and
-# keymgr. knot-dnsutils has kdig, with which an administrator can examine an answer.
+# keymgr. knot-dnsutils has kdig, with which an administrator can examine an answer. Knot DNS
+# 3.5 and later have keymgr in the package knot-keymgr. The build stops if a tool is absent.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends knot knot-dnsutils \
+ && { command -v keymgr >/dev/null || apt-get install -y --no-install-recommends knot-keymgr; } \
+ && command -v knotd knotc keymgr >/dev/null \
  && rm -rf /var/lib/apt/lists/* /etc/knot/* \
  && mkdir -p /etc/knot/zones /var/lib/knot /run/knot
 
