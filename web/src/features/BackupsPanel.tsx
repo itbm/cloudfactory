@@ -114,13 +114,13 @@ function RestoreDialog({ snapshot, onClose }: { snapshot: Snapshot; onClose: () 
           <button
             type="button"
             className="btn btn-primary"
-            disabled={kind !== "website" && !item}
+            disabled={action.busy || (kind !== "website" && !item)}
             onClick={async () => {
               const result = await action.run(snapshot.id, scope(), kind === "website" && removeNewFiles);
               if (result.ok) onClose();
             }}
           >
-            Restore
+            {action.busy ? "Restoring…" : "Restore"}
           </button>
         </>
       }

@@ -24,9 +24,16 @@ type Client struct {
 	HTTP    *http.Client
 }
 
+// maxAnswer is the largest answer that the client reads.
+const maxAnswer = 16 << 20
+
 // New gives a client for a panel, for example "https://panel.example.com".
 func New(baseURL, token string) *Client {
-	return &Client{BaseURL: strings.TrimRight(baseURL, "/"), Token: token, HTTP: &http.Client{Timeout: 60 * time.Second, Transport: transport()}}
+	return &Client{BaseURL: strings.TrimRight(baseURL, "/"), Token: token, HTTP: &http.Client{Timeout: 60 * time.Second, Transport: transport(),
+		// Adversarial review, finding C1-07: the API gives no redirect. A redirect could send the
+		// token to a different host, or with no encryption.
+		CheckRedirect: func(req *http.Request, via []*http.Request) error { return http.ErrUseLastResponse },
+	}}
 }
 
 // transport is the default transport with one change: a name in "localhost", for example
@@ -120,9 +127,15 @@ func (c *Client) Do(ctx context.Context, method, path string, query url.Values, 
 		return err
 	}
 	defer resp.Body.Close()
-	data, err := io.ReadAll(io.LimitReader(resp.Body, 16<<20))
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxAnswer+1))
 	if err != nil {
 		return err
+	}
+	if len(data) > maxAnswer {
+		return errors.New("the answer of the panel is larger than 16 MiB")
+	}
+	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+		return fmt.Errorf("the panel answered with a redirect to %s. Sign in with the correct address of the panel", resp.Header.Get("Location"))
 	}
 	if resp.StatusCode >= 400 {
 		e := &Error{Status: resp.StatusCode, Body: data}
@@ -215,11 +228,28 @@ func (c *Client) Job(ctx context.Context, id string) (Job, error) {
 // WaitJob gets the job until it is finished. progress is called when the step changes.
 func (c *Client) WaitJob(ctx context.Context, id string, every time.Duration, progress func(Job)) (Job, error) {
 	last := -1
+	failures := 0
+	var job Job
 	for {
-		job, err := c.Job(ctx, id)
+		next, err := c.Job(ctx, id)
 		if err != nil {
-			return job, err
+			// Adversarial review, finding C1-13: one failed request does not end the wait. The
+			// job continues in the panel. An answer such as 401 or 404 ends it at once.
+			var apiErr *Error
+			final := errors.As(err, &apiErr) && apiErr.Status < 500 && apiErr.Status != 429
+			if failures++; final || failures > 5 || ctx.Err() != nil {
+				job.ID = id
+				return job, fmt.Errorf("%w. The job continues in the panel: cf jobs show %s", err, id)
+			}
+			select {
+			case <-ctx.Done():
+				return job, ctx.Err()
+			case <-time.After(every):
+			}
+			continue
 		}
+		failures = 0
+		job = next
 		if job.Step != last && progress != nil {
 			progress(job)
 			last = job.Step
@@ -269,7 +299,9 @@ func Pages[T any](ctx context.Context, c *Client, path string, query url.Values,
 			} `json:"links"`
 			Meta *struct {
 				LastPage int `json:"last_page"`
-				Total    int `json:"total"`
+				// The audit log and the notifications give this name.
+				LastPageCamel int `json:"lastPage"`
+				Total         int `json:"total"`
 			} `json:"meta"`
 		}
 		if err := c.Do(ctx, http.MethodGet, path, q, nil, &out); err != nil {
@@ -282,7 +314,7 @@ func Pages[T any](ctx context.Context, c *Client, path string, query url.Values,
 		}
 		more := out.Links != nil && out.Links.Next != nil && *out.Links.Next != ""
 		if out.Links == nil && out.Meta != nil {
-			more = page < out.Meta.LastPage
+			more = page < max(out.Meta.LastPage, out.Meta.LastPageCamel)
 		}
 		if limit > 0 && len(rows) >= limit {
 			return rows[:limit], total, nil

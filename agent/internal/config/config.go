@@ -142,14 +142,23 @@ func Save(path string, c Config) error {
 	if err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	// A temporary file from an earlier save that did not complete can have a different mode.
-	if err := os.Remove(tmp); err != nil && !os.IsNotExist(err) {
+	// Each save has its own temporary file (mode 0600). With one fixed name, two saves at
+	// the same time could leave a part of a file as the settings (adversarial review,
+	// finding G1-09).
+	f, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".*.tmp")
+	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(tmp, append(b, '\n'), 0o600); err != nil {
+	tmp := f.Name()
+	_, err = f.Write(append(b, '\n'))
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		os.Remove(tmp)
 		return err
 	}
+	defer os.Remove(tmp)
 	if old, err := os.Lstat(path); err == nil && old.Mode().IsRegular() {
 		if st, ok := old.Sys().(*syscall.Stat_t); ok && os.Geteuid() == 0 {
 			if err := os.Chown(tmp, int(st.Uid), int(st.Gid)); err != nil {

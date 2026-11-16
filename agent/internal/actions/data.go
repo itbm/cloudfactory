@@ -9,11 +9,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"maps"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 
 	agentv1 "github.com/itbm/cloudfactory/agent/gen/cloudfactory/agent/v1"
@@ -100,6 +103,9 @@ func (d *Deps) sqlNow(ctx context.Context, s dbServer, statements string) (strin
 	} else {
 		args = append(args, "psql", "--username=postgres", "--set=ON_ERROR_STOP=1", "--tuples-only", "--no-align")
 	}
+	if engine == "postgresql" {
+		statements = pgSafe(statements)
+	}
 	return d.Run.RunInput(ctx, statements, args[0], args[1:]...)
 }
 
@@ -147,7 +153,16 @@ func mariaRequire(access string) string {
 // and read the names of all databases and all users there. The users of the websites get no
 // access to these two databases. A user connects only to its own databases
 // (pgCreateDatabase). The superuser of the agent can always connect.
-const pgHarden = "REVOKE CONNECT ON DATABASE postgres, template1 FROM PUBLIC;\n"
+//
+// It also removes the users of restores that did not end, for example because the agent
+// stopped. A restore that runs now has a session, and keeps its user (adversarial review,
+// finding G3-09).
+const pgHarden = "REVOKE CONNECT ON DATABASE postgres, template1 FROM PUBLIC;\n" + `DO $$DECLARE r name; BEGIN
+  FOR r IN SELECT rolname FROM pg_roles WHERE rolname LIKE 'cfrestore\_%' AND NOT EXISTS (SELECT FROM pg_stat_activity WHERE usename = rolname) LOOP
+    EXECUTE format('DROP ROLE IF EXISTS %I', r);
+  END LOOP;
+END$$;
+`
 
 // mariaPrivileges gives the MariaDB privileges for "readonly" and "readwrite".
 func mariaPrivileges(p string) (string, error) {
@@ -183,6 +198,9 @@ func (d *Deps) exists(ctx context.Context, s dbServer, query string) (bool, erro
 func (d *Deps) CreateDatabase(req *agentv1.CreateDatabaseRequest) (jobs.Job, error) {
 	unixUser, name, user, pass, engine := req.GetUnixUser(), req.GetName(), req.GetUser(), req.GetPassword(), req.GetEngine()
 	if err := errors.Join(validate.ID(req.GetWebsiteId()), validate.TenantDatabaseName(unixUser, name)); err != nil {
+		return jobs.Job{}, err
+	}
+	if err := d.checkOwner(req.GetWebsiteId(), unixUser); err != nil {
 		return jobs.Job{}, err
 	}
 	if err := checkEngine(engine); err != nil {
@@ -464,9 +482,39 @@ func (d *Deps) SetDatabaseUser(req *agentv1.SetDatabaseUserRequest) (jobs.Job, e
 			for _, g := range req.GetGrants() {
 				b.WriteString(grantSQL(engine, user, host, g.GetDatabase(), g.GetPrivileges()))
 			}
-			_, err = d.sql(ctx, srv, b.String())
-			return err
+			if !maria {
+				// The objects and the direct privileges of the user in each database that it
+				// loses (finding G3-03). The memberships above come first: the script stops
+				// at the first error.
+				keeps := map[string]bool{}
+				for _, g := range req.GetGrants() {
+					keeps[g.GetDatabase()] = true
+				}
+				for _, db := range req.GetWebsiteDatabases() {
+					if !keeps[db] {
+						b.WriteString(pgDisownSQL(user, db))
+					}
+				}
+			}
+			if _, err = d.sql(ctx, srv, b.String()); err != nil {
+				return err
+			}
+			if !req.GetCreate() {
+				d.closeSessions(ctx, srv, user)
+			}
+			return nil
 		}},
+	}, OnFailure: func(ctx context.Context) {
+		// A new user with no access does not stay when the second step fails: the panel
+		// then has no record of it (adversarial review, finding G3-09).
+		if !req.GetCreate() {
+			return
+		}
+		if srv, _, err := server(ctx); err == nil {
+			if err := d.dropUser(ctx, srv, user); err != nil {
+				slog.Warn("remove the database user of a job that failed", "user", user, "err", err)
+			}
+		}
 	}}, nil
 }
 
@@ -514,12 +562,31 @@ func (d *Deps) dropUser(ctx context.Context, s dbServer, user string) error {
 		if b.Len() == 0 {
 			return nil
 		}
-		_, err = d.sql(ctx, s, b.String())
+		if _, err = d.sql(ctx, s, b.String()); err != nil {
+			return err
+		}
+		d.closeSessions(ctx, s, user)
+		return nil
+	}
+	found, err := d.exists(ctx, s, fmt.Sprintf("SELECT 1 FROM pg_roles WHERE rolname = '%s';\n", user))
+	if err != nil || !found {
 		return err
 	}
-	// The group roles own all objects, so the user owns nothing. DROP ROLE also removes the
+	// The user can own objects and can have direct privileges, in each database of the
+	// server. DROP ROLE fails while it has them (finding G3-03). DROP ROLE also removes the
 	// memberships and the settings of the user.
-	_, err := d.sql(ctx, s, fmt.Sprintf("DROP ROLE IF EXISTS \"%s\";\n", user))
+	databases, err := d.pgDatabases(ctx, s)
+	if err != nil {
+		return err
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "ALTER ROLE \"%s\" NOLOGIN;\n", user)
+	b.WriteString(pgCloseSQL(user))
+	for _, db := range databases {
+		b.WriteString(pgDisownSQL(user, db))
+	}
+	fmt.Fprintf(&b, "DROP ROLE IF EXISTS \"%s\";\n", user)
+	_, err = d.sql(ctx, s, b.String())
 	return err
 }
 
@@ -595,10 +662,27 @@ func (d *Deps) dropDatabase(ctx context.Context, s dbServer, name string) error 
 		return d.valkeyDelete(ctx, s, name)
 	}
 	if s.Engine == "mariadb" {
-		_, err := d.sql(ctx, s, fmt.Sprintf("DROP DATABASE IF EXISTS `%s`;\n", name))
+		_, err := d.sql(ctx, s, fmt.Sprintf("DROP DATABASE IF EXISTS `%s`;\nDROP USER IF EXISTS '%s'@'localhost';\n", name, mariaDefiner(name)))
 		return err
 	}
-	_, err := d.sql(ctx, s, fmt.Sprintf("DROP DATABASE IF EXISTS \"%[1]s\" WITH (FORCE);\nDROP ROLE IF EXISTS \"%[1]s:rw\";\nDROP ROLE IF EXISTS \"%[1]s:ro\";\n", name))
+	// The group roles of the database can own objects in the other databases of the website,
+	// and DROP ROLE then fails (finding G3-05).
+	databases, err := d.pgDatabases(ctx, s)
+	if err != nil {
+		return err
+	}
+	var disown strings.Builder
+	if found, err := d.exists(ctx, s, fmt.Sprintf("SELECT 1 FROM pg_roles WHERE rolname = '%s:rw';\n", name)); err != nil {
+		return err
+	} else if found {
+		for _, other := range databases {
+			if other != name {
+				fmt.Fprintf(&disown, "\\connect \"%[1]s\"\nREASSIGN OWNED BY \"%[2]s:rw\", \"%[2]s:ro\" TO \"%[1]s:rw\";\nDROP OWNED BY \"%[2]s:rw\", \"%[2]s:ro\";\n", other, name)
+			}
+		}
+		disown.WriteString("\\connect postgres\n")
+	}
+	_, err = d.sql(ctx, s, pgUnlockDatabaseSQL(name)+disown.String()+fmt.Sprintf("DROP DATABASE IF EXISTS \"%[1]s\" WITH (FORCE);\nDROP ROLE IF EXISTS \"%[1]s:rw\";\nDROP ROLE IF EXISTS \"%[1]s:ro\";\n", name))
 	return err
 }
 
@@ -643,6 +727,13 @@ func newRepo(target string, creds map[string]string) (repo, error) {
 	}
 	if !targetRE.MatchString(target) {
 		return repo{}, errors.New("no valid backup target is set; an administrator sets it in Backups")
+	}
+	// The target is in the errors of restic and in the log. A name and a password are not
+	// part of it: the credentials have their own fields (adversarial review, finding G4-13).
+	if strings.Contains(target, "@") && strings.Contains(target, "://") {
+		if u, err := url.Parse(target[strings.Index(target, ":")+1:]); err == nil && u.User != nil {
+			return repo{}, errors.New("the backup target must not have a user name or a password in its address; set the access key in Backups")
+		}
 	}
 	if err := checkCredentials(creds); err != nil {
 		return repo{}, err
@@ -845,6 +936,14 @@ func (d *Deps) Backup(req *agentv1.BackupRequest) (jobs.Job, error) {
 	if err := errors.Join(validate.ID(req.GetWebsiteId()), validate.UnixUser(req.GetUnixUser())); err != nil {
 		return jobs.Job{}, err
 	}
+	// Adversarial review, finding X2-01: the Unix user of the request is the Unix user of
+	// this website in the state of the agent.
+	if err := d.checkOwner(req.GetWebsiteId(), req.GetUnixUser()); err != nil {
+		return jobs.Job{}, err
+	}
+	if k := req.GetRetention(); k.GetLast() < 0 || k.GetDaily() < 0 || k.GetWeekly() < 0 || k.GetMonthly() < 0 {
+		return jobs.Job{}, errors.New("a retention value must not be negative")
+	}
 	r, err := newRepo(req.GetTarget(), req.GetCredentials())
 	if err != nil {
 		return jobs.Job{}, err
@@ -933,7 +1032,18 @@ func (d *Deps) Backup(req *agentv1.BackupRequest) (jobs.Job, error) {
 			if only {
 				paths = []string{dumps}
 			}
-			out, err := d.restic(ctx, r, append(append([]string{"backup"}, paths...), "--tag", "website="+req.GetWebsiteId(), "--tag", "kind="+kind)...)
+			args := append(append([]string{"backup"}, paths...), "--tag", "website="+req.GetWebsiteId(), "--tag", "kind="+kind)
+			// A file that is larger than the disk limit of the website is a sparse file: the
+			// length of a file is not a part of the disk limit. restic reads each byte of it,
+			// so one file of many terabytes held a backup slot for the full time limit, and
+			// the backups of the other websites did not run (adversarial review, G4-04).
+			// The backup does not have such a file.
+			if site, err := d.State.Get(req.GetWebsiteId()); err == nil && site != nil && !only {
+				if limit := site.Website.GetLimits().GetDiskBytes(); limit > 0 {
+					args = append(args, "--exclude-larger-than", strconv.FormatInt(limit, 10))
+				}
+			}
+			out, err := d.restic(ctx, r, args...)
 			if err != nil {
 				return err
 			}
@@ -968,7 +1078,7 @@ func (d *Deps) dumpCommand(ctx context.Context, s dbServer, name string) ([]stri
 		return nil, err
 	}
 	if s.Engine == "mariadb" {
-		args = append(args, "mariadb-dump", "--user=root", "--single-transaction", "--routines", name)
+		args = append(args, "mariadb-dump", "--user=root", "--single-transaction", "--routines", "--events", name)
 	} else {
 		args = append(args, "pg_dump", "--username=postgres", "--format=custom", "--no-owner", "--no-privileges", name)
 	}
@@ -1069,6 +1179,9 @@ func (d *Deps) Restore(req *agentv1.RestoreRequest) (jobs.Job, error) {
 	if err := errors.Join(validate.ID(req.GetJobId()), validate.ID(req.GetWebsiteId()), validate.UnixUser(unixUser)); err != nil {
 		return jobs.Job{}, err
 	}
+	if err := d.checkOwner(req.GetWebsiteId(), unixUser); err != nil {
+		return jobs.Job{}, err
+	}
 	if !snapshotID.MatchString(req.GetSnapshotId()) {
 		return jobs.Job{}, errors.New("the snapshot ID is not valid")
 	}
@@ -1087,7 +1200,13 @@ func (d *Deps) Restore(req *agentv1.RestoreRequest) (jobs.Job, error) {
 		if err := validate.RestorePath(req.GetItem()); err != nil {
 			return jobs.Job{}, err
 		}
-		include, rel = app+req.GetItem(), strings.TrimPrefix(req.GetItem(), "/")
+		if req.GetItem() == "/" || strings.ContainsFunc(req.GetItem(), func(r rune) bool { return r < 0x20 || r == 0x7f }) {
+			return jobs.Job{}, errors.New("the path of the file is not valid; to restore all files, restore the website")
+		}
+		// restic reads the value of --include as a pattern. With no escape, the file
+		// "a[1].txt" was not restored, and "/*" was all the website (adversarial review,
+		// findings A4-12, G4-08 and X2-04).
+		include, rel = app+resticLiteral.Replace(req.GetItem()), strings.TrimPrefix(req.GetItem(), "/")
 	case "database":
 		engine, name, ok := strings.Cut(req.GetItem(), ":")
 		if !ok {
@@ -1112,10 +1231,32 @@ func (d *Deps) Restore(req *agentv1.RestoreRequest) (jobs.Job, error) {
 	cleanup := func(ctx context.Context) { _ = d.removeStage(context.WithoutCancel(ctx), req.GetJobId()) }
 	return jobs.Job{ID: req.GetJobId(), Key: req.GetWebsiteId(), Long: true, Steps: []jobs.Step{
 		{Name: "Download snapshot", Do: func(ctx context.Context) error {
-			_, err := d.restic(ctx, r, "snapshots", req.GetSnapshotId())
-			return err
+			out, err := d.restic(ctx, r, "snapshots", req.GetSnapshotId())
+			if err != nil {
+				return err
+			}
+			// The snapshot is a snapshot of this website. The panel checks this too
+			// (adversarial review, findings G4-10 and X2-02).
+			var found []struct {
+				Tags []string `json:"tags"`
+			}
+			if err := json.Unmarshal([]byte(lastJSONLine(out)), &found); err != nil || len(found) != 1 {
+				return errors.New("the agent cannot read the snapshot from the backup storage")
+			}
+			if !slices.Contains(found[0].Tags, "website="+req.GetWebsiteId()) {
+				return errors.New("the snapshot is not a snapshot of this website")
+			}
+			return nil
 		}},
 		{Name: "Restore", Do: func(ctx context.Context) error {
+			// A restore makes a copy of the website on the file system of the agent. It takes
+			// a backup slot, so only a small number of copies are there at the same time
+			// (adversarial review, finding G4-09).
+			release, err := d.backupSlot(ctx)
+			if err != nil {
+				return err
+			}
+			defer release()
 			defer cleanup(ctx)
 			if err := d.makeStage(ctx, req.GetJobId()); err != nil {
 				return err
@@ -1152,6 +1293,12 @@ func (d *Deps) Restore(req *agentv1.RestoreRequest) (jobs.Job, error) {
 			if err != nil || site == nil {
 				return err
 			}
+			// A stopped website stays stopped: a restore does not start the website of a
+			// suspended customer, and there is no answer to wait for (adversarial review,
+			// finding A4-08).
+			if site.Stopped {
+				return nil
+			}
 			if req.GetScope() == "website" {
 				u := quadlet.Website{UnixUser: site.UnixUser, Suffix: site.Suffix}
 				if _, err := d.Host.Systemctl(ctx, site.UnixUser, "restart", u.ServiceName()); err != nil {
@@ -1162,6 +1309,9 @@ func (d *Deps) Restore(req *agentv1.RestoreRequest) (jobs.Job, error) {
 		}},
 	}, OnFailure: cleanup}, nil
 }
+
+// resticLiteral makes a path a pattern of restic that agrees only with that path.
+var resticLiteral = strings.NewReplacer(`\`, `\\`, `*`, `\*`, `?`, `\?`, `[`, `\[`)
 
 // stageDir is the directory of one restore job. restic restores a snapshot into it. Only
 // root can read it.
@@ -1259,7 +1409,11 @@ func (d *Deps) loadStagedDump(ctx context.Context, jobID, unixUser, engine, name
 		return err
 	}
 	defer f.Close()
-	return d.Run.Stream(ctx, f, nil, client[0], client[1:]...)
+	var dump io.Reader = f
+	if engine == "mariadb" {
+		dump = withoutDefiners(f)
+	}
+	return d.Run.Stream(ctx, dump, nil, client[0], client[1:]...)
 }
 
 // copyAsUser copies rel from the directory src (that only root can read) into dst, as the
@@ -1298,8 +1452,11 @@ func (d *Deps) restoreDump(ctx context.Context, s dbServer, name string, feed fu
 	maria := engine == "mariadb"
 	var create, drop string
 	if maria {
-		create = fmt.Sprintf("CREATE USER '%[1]s'@'localhost' IDENTIFIED BY '%[2]s';\nGRANT ALL PRIVILEGES ON %[3]s.* TO '%[1]s'@'localhost';\n", tmpUser, pass, mariaDB(name))
-		drop = fmt.Sprintf("DROP USER IF EXISTS '%s'@'localhost';\n", tmpUser)
+		// The user of the restore is the definer account of the database (mariaDefiner). It
+		// stays after the restore, locked.
+		tmpUser = mariaDefiner(name)
+		create = fmt.Sprintf("CREATE USER IF NOT EXISTS '%[1]s'@'localhost' IDENTIFIED BY '%[2]s';\nALTER USER '%[1]s'@'localhost' IDENTIFIED BY '%[2]s' ACCOUNT UNLOCK;\nGRANT ALL PRIVILEGES ON %[3]s.* TO '%[1]s'@'localhost';\n", tmpUser, pass, mariaDB(name))
+		drop = fmt.Sprintf("ALTER USER IF EXISTS '%[1]s'@'localhost' IDENTIFIED BY '%[2]s' ACCOUNT LOCK;\n", tmpUser, randomHex(24))
 	} else {
 		create = fmt.Sprintf("CREATE ROLE \"%[1]s\" LOGIN PASSWORD '%[2]s';\nGRANT \"%[3]s\" TO \"%[1]s\";\n", tmpUser, pass, pgRole(name, "readwrite"))
 		drop = fmt.Sprintf("DROP ROLE IF EXISTS \"%s\";\n", tmpUser)

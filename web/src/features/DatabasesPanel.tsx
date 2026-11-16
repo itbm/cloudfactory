@@ -185,7 +185,7 @@ export function DatabasesPanel({ websiteId }: { websiteId?: string }) {
                         <label className="visually-hidden" htmlFor={`access-${u.id}`}>Can connect from</label>
                         <select id={`access-${u.id}`} className="select" style={{ maxWidth: 210 }} value={u.access} onChange={(e) => void changeUser.run(u.id, { access: e.target.value as "website" | "anywhere" })}>
                           <option value="website">Website container only</option>
-                          <option value="anywhere">Anywhere, with TLS</option>
+                          {(u.engine !== "postgresql" || u.access === "anywhere") && <option value="anywhere">{u.engine === "postgresql" ? "Anywhere" : "Anywhere, with TLS"}</option>}
                         </select>
                       </>
                     )}

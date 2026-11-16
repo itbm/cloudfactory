@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -149,7 +151,7 @@ func TestCronRunsInTheContainerOfTheWebsite(t *testing.T) {
 		t.Fatalf("runs = %+v", runs)
 	}
 	call, _ := called(f, asSite+"env")
-	if !strings.HasSuffix(call, " sh 3600 cf-acme_x7k2 php artisan schedule:run") || !strings.Contains(call, `podman exec --workdir /app "$2" sh -c "$3"`) {
+	if !strings.HasSuffix(call, " sh 3600 cf-acme_x7k2 php artisan schedule:run") || !strings.Contains(call, `podman exec --workdir /app "$2" sh -c '`) || !strings.Contains(call, `exec timeout -k 10 "$0" sh -c "$1"`) {
 		t.Errorf("call = %q", call)
 	}
 	// The result is in three reports, and then no more.
@@ -186,6 +188,59 @@ func TestCronRunsInTheContainerOfTheWebsite(t *testing.T) {
 	if sites, err := d.State.cronSites(); err != nil || len(sites) != 0 {
 		t.Errorf("cron jobs after the removal = %v, %v", sites, err)
 	}
+}
+
+// One website runs two scheduled cron jobs at the same time. The other jobs of the website
+// wait, and do not hold a slot of the server (adversarial review, findings A2-02 and G5-04).
+func TestCronLimitsTheRunsOfOneWebsite(t *testing.T) {
+	d, f, _ := withSite(t)
+	var jobsOfSite []*agentv1.CronJob
+	for i := range 5 {
+		jobsOfSite = append(jobsOfSite, &agentv1.CronJob{Id: cronID[:len(cronID)-1] + strconv.Itoa(i), Schedule: "* * * * *", Command: "sleep 1", Enabled: true})
+	}
+	if err := run(t)(d.SetCronJobs(&agentv1.SetCronJobsRequest{JobId: jobID2, WebsiteId: websiteID, CronJobs: jobsOfSite})); err != nil {
+		t.Fatal(err)
+	}
+	var mu sync.Mutex
+	now, most := 0, 0
+	release := make(chan struct{})
+	f.Rules = append(f.Rules, execx.Rule{Prefix: asSite + "env XDG_RUNTIME_DIR=/run/user/20001 sh -c ", Output: "cf-exit:0\n", Do: func() error { return nil }})
+	d.Run = slowRunner{Runner: d.Run, prefix: "runuser", before: func() {
+		mu.Lock()
+		now++
+		most = max(most, now)
+		mu.Unlock()
+		<-release
+		mu.Lock()
+		now--
+		mu.Unlock()
+	}}
+	d.CronTick(context.Background(), time.Date(2026, 11, 14, 10, 5, 0, 0, time.UTC))
+	time.Sleep(200 * time.Millisecond)
+	mu.Lock()
+	got := now
+	mu.Unlock()
+	close(release)
+	if got != cronSiteSlots {
+		t.Fatalf("%d cron jobs of one website ran at the same time; want %d", got, cronSiteSlots)
+	}
+	if len(d.cron.slots) > cronSiteSlots {
+		t.Errorf("the website held %d slots of the server", len(d.cron.slots))
+	}
+}
+
+// slowRunner calls before for each command that starts with prefix.
+type slowRunner struct {
+	execx.Runner
+	prefix string
+	before func()
+}
+
+func (s slowRunner) Run(ctx context.Context, name string, args ...string) (string, error) {
+	if name == s.prefix {
+		s.before()
+	}
+	return s.Runner.Run(ctx, name, args...)
 }
 
 // waitCron waits a short time for the results of n runs and gives them.
@@ -268,7 +323,7 @@ func TestDeployBuildsInAContainerAndSwitchesWithNoStop(t *testing.T) {
 	app := d.Host.AppDir("acme_x7k2")
 	home := d.Host.Home("acme_x7k2")
 	f.Rules = append(f.Rules,
-		execx.Rule{Prefix: buildStart, Input: "", Output: "cf-commit:4f9a1c2d fix: the checkout page\n"},
+		execx.Rule{Prefix: buildStart, Input: "", Output: "cf-commit:4f9a1c2d4f9a1c2d4f9a1c2d4f9a1c2d4f9a1c2d fix: the checkout page\n"},
 		execx.Rule{Prefix: asSite + "ls -1 -- " + app + "/releases", Output: releaseID + "\n" + oldID + "\n01JBQ3Z5K8N6T4W2X9Y7R5P3Q9\nnotes.txt\n"},
 	)
 	req := deployRequest()
@@ -340,7 +395,7 @@ func TestDeployBuildsInAContainerAndSwitchesWithNoStop(t *testing.T) {
 		t.Errorf("calls = %v", f.Calls)
 	}
 	r := job.Result()
-	if r["commit"] != "4f9a1c2d" || r["message"] != "fix: the checkout page" || r["releaseId"] != releaseID || len(r["removed"].([]string)) != 1 {
+	if r["commit"] != "4f9a1c2d4f9a1c2d4f9a1c2d4f9a1c2d4f9a1c2d" || r["message"] != "fix: the checkout page" || r["releaseId"] != releaseID || len(r["removed"].([]string)) != 1 {
 		t.Errorf("result = %v", r)
 	}
 }

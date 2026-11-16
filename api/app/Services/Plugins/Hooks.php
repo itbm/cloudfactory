@@ -53,7 +53,7 @@ class Hooks
                 continue;
             }
             $spec = collect($plugin->hooks())->firstWhere('event', $hook);
-            if (! $spec) {
+            if (! $spec || ! Manifest::permits($plugin->scopes(), $hook)) {
                 continue;
             }
             [$allow, $message] = $this->ask($plugin, $spec, $hook, $data, $user);

@@ -522,7 +522,7 @@ func TestSetDatabaseQuota(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []string{
-		"setquota --user " + databaseUser + " 4980736 5242880 0 0 /var/lib",
+		"setquota --user " + databaseUser + " 4980736 5242880 1245184 1310720 /var/lib",
 		"setquota --user " + databaseUser + " 0 0 0 0 /var/lib",
 	}
 	if !slices.Equal(f.Calls, want) {

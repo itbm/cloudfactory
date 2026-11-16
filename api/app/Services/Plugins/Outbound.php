@@ -49,6 +49,14 @@ class Outbound
         if (strlen($bin) === 16 && str_starts_with($bin, str_repeat("\0", 10)."\xff\xff")) {
             $bin = substr($bin, 12);
         }
+        // Adversarial review, finding A7-03: so has an IPv4 address behind NAT64 (64:ff9b::/96).
+        // The old form ::a.b.c.d has no use, apart from the loopback address ::1.
+        if (strlen($bin) === 16 && str_starts_with($bin, "\x00\x64\xff\x9b".str_repeat("\0", 8))) {
+            $bin = substr($bin, 12);
+        }
+        if (strlen($bin) === 16 && str_starts_with($bin, str_repeat("\0", 12)) && ! in_array(substr($bin, 12), ["\0\0\0\0", "\0\0\0\1"], true)) {
+            return 'is an IPv4 address in an old IPv6 form';
+        }
         if (strlen($bin) === 4) {
             $a = ord($bin[0]);
             $b = ord($bin[1]);

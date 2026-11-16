@@ -48,18 +48,20 @@ use Illuminate\Support\Facades\Route;
 */
 
 Route::prefix('v1')->group(function () {
-    Route::post('auth/login', [AuthController::class, 'login'])->middleware('throttle:10,1');
+    // Adversarial review, finding A1-07: the third value of a throttle is the name of its
+    // counter. Without a name, all limits of one client would share one counter.
+    Route::post('auth/login', [AuthController::class, 'login'])->middleware('throttle:10,1,post-auth-login');
     // White label: the brand of the sign-in page, for the domain of the request.
-    Route::get('brand', [BrandController::class, 'show'])->middleware('throttle:60,1');
+    Route::get('brand', [BrandController::class, 'show'])->middleware('throttle:60,1,get-brand');
     // The webhook of a website: a Git host calls it after a push. The token in the address is
     // the only credential.
-    Route::post('hooks/deploy/{token}', [DeployController::class, 'hook'])->middleware('throttle:30,1');
+    Route::post('hooks/deploy/{token}', [DeployController::class, 'hook'])->middleware('throttle:30,1,post-hooks-deploy-x');
 
     Route::middleware(['auth:sanctum', 'active'])->group(function () {
         Route::post('auth/logout', [AuthController::class, 'logout']);
         Route::get('me', [AuthController::class, 'me']);
         // R-01: the user changes the password and turns TOTP on or off. Only a sign-in session can.
-        Route::middleware('throttle:10,1')->group(function () {
+        Route::middleware('throttle:10,1,auth-changes')->group(function () {
             Route::put('me/password', [AuthController::class, 'changePassword']);
             Route::post('me/totp/setup', [AuthController::class, 'setupTotp']);
             Route::post('me/totp/enable', [AuthController::class, 'enableTotp']);
@@ -67,9 +69,14 @@ Route::prefix('v1')->group(function () {
         });
         Route::middleware('scope:tokens')->group(function () {
             Route::get('tokens', [AuthController::class, 'tokens']);
-            Route::post('tokens', [AuthController::class, 'createToken'])->middleware('throttle:10,1');
+            Route::post('tokens', [AuthController::class, 'createToken'])->middleware('throttle:10,1,post-tokens');
             Route::delete('tokens/{id}', [AuthController::class, 'revokeToken'])->whereNumber('id');
         });
+
+        // Adversarial review, finding A2-06: the jobs have no scope of their own. The controller
+        // gives each kind of job only to a token with the scope of that kind.
+        Route::get('jobs', [JobController::class, 'index']);
+        Route::get('jobs/{id}', [JobController::class, 'show']);
 
         Route::middleware('scope:websites')->group(function () {
             Route::get('websites', [WebsiteController::class, 'index']);
@@ -108,7 +115,7 @@ Route::prefix('v1')->group(function () {
             Route::post('websites/{websiteId}/cron-jobs', [CronJobController::class, 'store']);
             Route::patch('websites/{websiteId}/cron-jobs/{cronJobId}', [CronJobController::class, 'update']);
             Route::delete('websites/{websiteId}/cron-jobs/{cronJobId}', [CronJobController::class, 'destroy']);
-            Route::post('websites/{websiteId}/cron-jobs/{cronJobId}/run', [CronJobController::class, 'run'])->middleware('throttle:30,1');
+            Route::post('websites/{websiteId}/cron-jobs/{cronJobId}/run', [CronJobController::class, 'run'])->middleware('throttle:30,1,post-websites-x-cron-jobs-x-run');
 
             // Deploys from a Git repository.
             Route::get('websites/{websiteId}/deploy', [DeployController::class, 'show']);
@@ -116,11 +123,9 @@ Route::prefix('v1')->group(function () {
             Route::delete('websites/{websiteId}/deploy', [DeployController::class, 'destroy']);
             Route::put('websites/{websiteId}/deploy/secrets/{name}', [DeployController::class, 'setSecret']);
             Route::delete('websites/{websiteId}/deploy/secrets/{name}', [DeployController::class, 'removeSecret']);
-            Route::post('websites/{websiteId}/deploy/releases', [DeployController::class, 'start'])->middleware('throttle:30,1');
-            Route::post('websites/{websiteId}/deploy/releases/{releaseId}/activate', [DeployController::class, 'activate'])->middleware('throttle:30,1');
+            Route::post('websites/{websiteId}/deploy/releases', [DeployController::class, 'start'])->middleware('throttle:30,1,post-websites-x-deploy-releases');
+            Route::post('websites/{websiteId}/deploy/releases/{releaseId}/activate', [DeployController::class, 'activate'])->middleware('throttle:30,1,post-websites-x-deploy-releases-x-activate');
             Route::get('runtime-images', [ImageController::class, 'runtimes']);
-            Route::get('jobs', [JobController::class, 'index']);
-            Route::get('jobs/{id}', [JobController::class, 'show']);
         });
 
         Route::middleware('scope:databases')->group(function () {
@@ -131,7 +136,7 @@ Route::prefix('v1')->group(function () {
             Route::patch('websites/{websiteId}/database-users/{userId}', [DatabaseUserController::class, 'update']);
             Route::delete('websites/{websiteId}/database-users/{userId}', [DatabaseUserController::class, 'destroy']);
             // The database tool (Adminer): open a database with a temporary database user.
-            Route::post('websites/{websiteId}/databases/{databaseId}/adminer', [DatabaseToolController::class, 'store'])->middleware('throttle:30,1');
+            Route::post('websites/{websiteId}/databases/{databaseId}/adminer', [DatabaseToolController::class, 'store'])->middleware('throttle:30,1,post-websites-x-databases-x-adminer');
             Route::get('adminer-logins/{id}', [DatabaseToolController::class, 'show']);
             // The database servers of a customer: containers with their own limits, as websites.
             // The private networks of the customers (VPC).
@@ -155,7 +160,7 @@ Route::prefix('v1')->group(function () {
             Route::get('dns-zones', [DnsZoneController::class, 'index']);
             Route::post('dns-zones', [DnsZoneController::class, 'store'])->middleware('throttle:dns-changes');
             Route::get('dns-zones/{id}', [DnsZoneController::class, 'show']);
-            Route::delete('dns-zones/{id}', [DnsZoneController::class, 'destroy']);
+            Route::delete('dns-zones/{id}', [DnsZoneController::class, 'destroy'])->middleware('throttle:dns-changes');
             Route::post('dns-zones/{id}/records', [DnsZoneController::class, 'storeRecord'])->middleware('throttle:dns-changes');
             Route::patch('dns-zones/{id}/records/{recordId}', [DnsZoneController::class, 'updateRecord'])->middleware('throttle:dns-changes');
             Route::delete('dns-zones/{id}/records/{recordId}', [DnsZoneController::class, 'destroyRecord'])->middleware('throttle:dns-changes');
@@ -170,25 +175,25 @@ Route::prefix('v1')->group(function () {
             Route::post('mail/domains', [MailDomainController::class, 'store'])->middleware('throttle:domain-changes');
             Route::get('mail/domains/{id}', [MailDomainController::class, 'show']);
             Route::post('mail/domains/{id}/check', [MailDomainController::class, 'check'])->middleware('throttle:domain-checks');
-            Route::post('mail/domains/{id}/retry', [MailDomainController::class, 'retry']);
-            Route::delete('mail/domains/{id}', [MailDomainController::class, 'destroy']);
+            Route::post('mail/domains/{id}/retry', [MailDomainController::class, 'retry'])->middleware('throttle:mail-changes');
+            Route::delete('mail/domains/{id}', [MailDomainController::class, 'destroy'])->middleware('throttle:mail-changes');
             Route::get('mail/mailboxes', [MailboxController::class, 'index']);
-            Route::post('mail/mailboxes', [MailboxController::class, 'store']);
-            Route::patch('mail/mailboxes/{id}', [MailboxController::class, 'update']);
+            Route::post('mail/mailboxes', [MailboxController::class, 'store'])->middleware('throttle:mail-changes');
+            Route::patch('mail/mailboxes/{id}', [MailboxController::class, 'update'])->middleware('throttle:mail-changes');
             Route::get('mail/mailboxes/{id}/private-key', [MailboxController::class, 'privateKey']);
-            Route::delete('mail/mailboxes/{id}', [MailboxController::class, 'destroy']);
+            Route::delete('mail/mailboxes/{id}', [MailboxController::class, 'destroy'])->middleware('throttle:mail-changes');
             Route::get('mail/aliases', [MailAliasController::class, 'index']);
-            Route::post('mail/aliases', [MailAliasController::class, 'store']);
-            Route::delete('mail/aliases/{id}', [MailAliasController::class, 'destroy']);
+            Route::post('mail/aliases', [MailAliasController::class, 'store'])->middleware('throttle:mail-changes');
+            Route::delete('mail/aliases/{id}', [MailAliasController::class, 'destroy'])->middleware('throttle:mail-changes');
         });
 
         Route::middleware('scope:backups')->group(function () {
             Route::get('websites/{websiteId}/snapshots', [BackupController::class, 'index']);
-            Route::post('websites/{websiteId}/snapshots', [BackupController::class, 'store']);
-            Route::post('websites/{websiteId}/snapshots/{snapshotId}/restore', [BackupController::class, 'restore']);
+            Route::post('websites/{websiteId}/snapshots', [BackupController::class, 'store'])->middleware('throttle:20,1,post-snapshots');
+            Route::post('websites/{websiteId}/snapshots/{snapshotId}/restore', [BackupController::class, 'restore'])->middleware('throttle:20,1,post-restore');
             Route::get('backup-policy', [BackupController::class, 'showPolicy']);
             Route::put('backup-policy', [BackupController::class, 'updatePolicy'])->middleware('admin');
-            Route::get('backup-policy/repository-password', [BackupController::class, 'showRepositoryPassword'])->middleware('admin');
+            Route::get('backup-policy/repository-password', [BackupController::class, 'showRepositoryPassword'])->middleware(['admin', 'throttle:10,1,get-repository-password']);
             // Second audit, finding F08: the key of one server for the object storage.
             Route::put('backup-policy/servers/{serverId}/credentials', [BackupController::class, 'updateServerCredentials'])->middleware('admin');
             Route::delete('backup-policy/servers/{serverId}/credentials', [BackupController::class, 'destroyServerCredentials'])->middleware('admin');
@@ -223,7 +228,7 @@ Route::prefix('v1')->group(function () {
             Route::delete('mesh/tunnels/{id}', [MeshController::class, 'destroyTunnel']);
             // The TLS certificate of the panel domain: the CA of the panel or Let's Encrypt.
             Route::get('panel-certificate', [PanelCertificateController::class, 'show']);
-            Route::put('panel-certificate', [PanelCertificateController::class, 'update'])->middleware('throttle:10,1');
+            Route::put('panel-certificate', [PanelCertificateController::class, 'update'])->middleware('throttle:10,1,put-panel-certificate');
             // The setup checklist of the panel, with the effect of each open item.
             Route::get('setup', [SetupController::class, 'show']);
         });
@@ -246,7 +251,7 @@ Route::prefix('v1')->group(function () {
             Route::get('account', [AccountController::class, 'show']);
             Route::get('customers', [CustomerController::class, 'index']);
             Route::post('customers', [CustomerController::class, 'store']);
-            Route::patch('customers/{id}', [CustomerController::class, 'update']);
+            Route::patch('customers/{id}', [CustomerController::class, 'update'])->middleware('throttle:customer-changes');
             Route::get('plans', [PlanController::class, 'index']);
             Route::post('plans', [PlanController::class, 'store'])->middleware('admin');
             // White label: the default brand of the panel.
@@ -258,8 +263,8 @@ Route::prefix('v1')->group(function () {
         // Audit finding B5: the users who can sign in.
         Route::middleware('scope:users')->group(function () {
             Route::get('users', [UserController::class, 'index']);
-            Route::post('users', [UserController::class, 'store'])->middleware('throttle:30,1');
-            Route::post('users/{id}/reset-password', [UserController::class, 'resetPassword'])->whereNumber('id')->middleware('throttle:30,1');
+            Route::post('users', [UserController::class, 'store'])->middleware('throttle:30,1,post-users');
+            Route::post('users/{id}/reset-password', [UserController::class, 'resetPassword'])->whereNumber('id')->middleware('throttle:30,1,post-users-x-reset-password');
             Route::delete('users/{id}', [UserController::class, 'destroy'])->whereNumber('id');
         });
 
@@ -269,28 +274,28 @@ Route::prefix('v1')->group(function () {
         Route::middleware(['admin', 'scope:plugins'])->group(function () {
             Route::get('plugins', [PluginController::class, 'index']);
             Route::post('plugins/preview', [PluginController::class, 'preview']);
-            Route::post('plugins', [PluginController::class, 'store'])->middleware('throttle:10,1');
+            Route::post('plugins', [PluginController::class, 'store'])->middleware('throttle:10,1,post-plugins');
             Route::get('plugin-keys', [PluginController::class, 'keys']);
-            Route::post('plugin-keys', [PluginController::class, 'storeKey'])->middleware('throttle:10,1');
+            Route::post('plugin-keys', [PluginController::class, 'storeKey'])->middleware('throttle:10,1,post-plugin-keys');
             Route::delete('plugin-keys/{id}', [PluginController::class, 'destroyKey']);
             Route::get('plugin-settings', [PluginController::class, 'settings']);
-            Route::put('plugin-settings', [PluginController::class, 'updateSettings'])->middleware('throttle:10,1');
+            Route::put('plugin-settings', [PluginController::class, 'updateSettings'])->middleware('throttle:10,1,put-plugin-settings');
             Route::get('plugins/{id}', [PluginController::class, 'show']);
-            Route::put('plugins/{id}', [PluginController::class, 'upgrade'])->middleware('throttle:10,1');
+            Route::put('plugins/{id}', [PluginController::class, 'upgrade'])->middleware('throttle:10,1,put-plugins-x');
             Route::patch('plugins/{id}', [PluginController::class, 'update']);
             Route::delete('plugins/{id}', [PluginController::class, 'destroy']);
-            Route::post('plugins/{id}/credentials', [PluginController::class, 'rotate'])->middleware('throttle:10,1');
-            Route::post('plugins/{id}/container', [PluginController::class, 'restart'])->middleware('throttle:10,1');
-            Route::post('plugins/{id}/test', [PluginController::class, 'test'])->middleware('throttle:30,1');
+            Route::post('plugins/{id}/credentials', [PluginController::class, 'rotate'])->middleware('throttle:10,1,post-plugins-x-credentials');
+            Route::post('plugins/{id}/container', [PluginController::class, 'restart'])->middleware('throttle:10,1,post-plugins-x-container');
+            Route::post('plugins/{id}/test', [PluginController::class, 'test'])->middleware('throttle:30,1,post-plugins-x-test');
             Route::get('plugins/{id}/deliveries', [PluginController::class, 'deliveries']);
-            Route::post('plugins/{id}/deliveries/{deliveryId}/retry', [PluginController::class, 'retry'])->middleware('throttle:30,1');
+            Route::post('plugins/{id}/deliveries/{deliveryId}/retry', [PluginController::class, 'retry'])->middleware('throttle:30,1,post-plugins-x-deliveries-x-retry');
         });
         // The pages of the plugins for the menu, and a short token for a page. Each role.
         Route::get('plugin-pages', [PluginController::class, 'pages']);
-        Route::post('plugin-pages/{id}/{pageId}/session', [PluginController::class, 'pageSession'])->middleware('throttle:60,1');
+        Route::post('plugin-pages/{id}/{pageId}/session', [PluginController::class, 'pageSession'])->middleware('throttle:60,1,post-plugin-pages-x-x-session');
         // The actions of the plugins (buttons on websites, servers and customers). Each role.
         Route::get('plugin-actions', [PluginController::class, 'actions']);
-        Route::post('plugin-actions/{id}/{actionId}', [PluginController::class, 'runAction'])->middleware('throttle:30,1');
+        Route::post('plugin-actions/{id}/{actionId}', [PluginController::class, 'runAction'])->middleware('throttle:30,1,post-plugin-actions-x-x');
         // Email notifications: the events that each user receives, the emails that the panel
         // sent, and for administrators and resellers the SMTP server and the templates.
         Route::middleware('scope:notifications')->group(function () {
@@ -298,15 +303,15 @@ Route::prefix('v1')->group(function () {
             Route::put('me/notification-preferences', [NotificationController::class, 'updatePreferences']);
             Route::get('notifications', [NotificationController::class, 'index']);
             Route::get('notifications/{id}', [NotificationController::class, 'show']);
-            Route::post('notifications/{id}/retry', [NotificationController::class, 'retry'])->middleware('throttle:30,1');
+            Route::post('notifications/{id}/retry', [NotificationController::class, 'retry'])->middleware('throttle:30,1,post-notifications-x-retry');
             Route::get('mail-server', [MailServerController::class, 'show']);
             Route::put('mail-server', [MailServerController::class, 'update']);
             Route::delete('mail-server', [MailServerController::class, 'destroy']);
-            Route::post('mail-server/test', [MailServerController::class, 'test'])->middleware('throttle:10,1');
+            Route::post('mail-server/test', [MailServerController::class, 'test'])->middleware('throttle:10,1,post-mail-server-test');
             Route::get('notification-templates', [NotificationTemplateController::class, 'index']);
             Route::put('notification-templates/{event}', [NotificationTemplateController::class, 'update']);
             Route::delete('notification-templates/{event}', [NotificationTemplateController::class, 'destroy']);
-            Route::post('notification-templates/{event}/preview', [NotificationTemplateController::class, 'preview'])->middleware('throttle:60,1');
+            Route::post('notification-templates/{event}/preview', [NotificationTemplateController::class, 'preview'])->middleware('throttle:60,1,post-notification-templates-x-preview');
         });
     });
 });
@@ -315,7 +320,7 @@ Route::prefix('v1')->group(function () {
 | Routes for agents (spec section 6.4). The agent uses its own token, not a user token.
 */
 Route::prefix('agent/v1')->group(function () {
-    Route::post('join', JoinController::class)->middleware('throttle:20,1');
+    Route::post('join', JoinController::class)->middleware('throttle:20,1,post-join');
 
     Route::middleware('agent')->group(function () {
         Route::post('jobs/{id}/events', [AgentController::class, 'jobEvent']);

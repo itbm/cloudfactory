@@ -6,6 +6,7 @@ use App\Models\Plugin;
 use App\Models\Setting;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
+use RuntimeException;
 use Throwable;
 
 /**
@@ -17,6 +18,9 @@ use Throwable;
 class Caller
 {
     public function __construct(private Outbound $outbound) {}
+
+    /** The largest answer of a plugin that the panel reads. */
+    public const MAX_ANSWER_BYTES = 262144;
 
     /**
      * @param  array<string, mixed>  $payload
@@ -44,6 +48,12 @@ class Caller
         try {
             $response = Http::withOptions([
                 'allow_redirects' => false,
+                // Adversarial review, finding A7-04: a very large answer stops here.
+                'progress' => function ($total, $now) {
+                    if ($now > self::MAX_ANSWER_BYTES) {
+                        throw new RuntimeException('the answer is larger than '.intdiv(self::MAX_ANSWER_BYTES, 1024).' KB');
+                    }
+                },
                 'curl' => [CURLOPT_RESOLVE => ["{$host}:{$port}:".(str_contains($ip, ':') ? "[{$ip}]" : $ip)]],
             ])->timeout($timeout)->connectTimeout(min(5, $timeout))
                 ->withHeaders([

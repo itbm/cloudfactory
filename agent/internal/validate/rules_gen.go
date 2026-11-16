@@ -193,13 +193,13 @@ func Domain(s string) error { return ruleDomain.check(s) }
 var ruleEnvName = rule{
 	what:    "name of an environment variable",
 	pattern: regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]{0,63}$`),
-	not:     []*regexp.Regexp{regexp.MustCompile(`^(PORT|HOST|HOME|PATH|PWD)$`), regexp.MustCompile(`^CF_`)},
+	not:     []*regexp.Regexp{regexp.MustCompile(`^(PORT|HOST|HOME|PATH|PWD|SERVER_NAME)$`), regexp.MustCompile(`^(CF|FRANKENPHP|CADDY|XDG|APACHE)_`)},
 	echo:    true,
 }
 
 // EnvName checks a value with the rule "envName" of schema/input-rules.json.
 //
-// The name of an environment variable of a website container. PORT, HOST, HOME, PATH, PWD and the names that start with CF_ are for the agent and the image.
+// The name of an environment variable of a website container. PORT, HOST, HOME, PATH, PWD, SERVER_NAME and the names that start with CF_, FRANKENPHP_, CADDY_, XDG_ or APACHE_ are for the agent and the image: they change the web server of the container.
 func EnvName(s string) error { return ruleEnvName.check(s) }
 
 var ruleEnvValue = rule{
@@ -325,13 +325,14 @@ func IniKey(s string) error { return ruleIniKey.check(s) }
 var ruleIniValue = rule{
 	what:      "php.ini value",
 	pattern:   regexp.MustCompile(`^[^"\n\r\x00]*$`),
+	not:       []*regexp.Regexp{regexp.MustCompile(`\\$`)},
 	maxLength: 200,
 	echo:      true,
 }
 
 // IniValue checks a value with the rule "iniValue" of schema/input-rules.json.
 //
-// A php.ini value. It is on one line and has no double quotes.
+// A php.ini value. It is on one line, has no double quotes and does not end with a backslash.
 func IniValue(s string) error { return ruleIniValue.check(s) }
 
 var ruleIPv4 = rule{

@@ -22,6 +22,7 @@ use App\Services\Plugins\Signatures;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
@@ -178,9 +179,11 @@ class PluginController extends Controller
             $plugin->user?->update(['name' => "Plugin: {$spec['name']}"]);
         });
         // A new image, or a new port: the agent starts the new container, then stops the old one.
-        if ($plugin->hosted() && $oldImage !== $spec['image']) {
+        if ($plugin->hosted() && $oldImage !== $spec['image'] && self::canStart($plugin)) {
             $this->hosting->start($plugin->fresh(), $plugin->container_status !== Hosting::FAILED);
         }
+        // The tokens of pages and actions had the scopes of the old manifest.
+        self::revokePageTokens($plugin);
         AllowPluginOrigins::forget();
         Audit::record($request, 'Updated plugin', "{$spec['name']} {$old} to {$spec['version']}");
 
@@ -200,7 +203,14 @@ class PluginController extends Controller
             }
             // A new address sends the events and the page tokens to a different host.
             AuthController::confirmIdentity($request);
-            $plugin->base_url = Manifest::checkBaseUrl($data['baseUrl'], self::developerMode());
+            $newUrl = Manifest::checkBaseUrl($data['baseUrl'], self::developerMode());
+            // Adversarial review, finding A7-10: the old host must not keep tokens of users,
+            // or the secret that signs the requests to the new host.
+            if ($newUrl !== $plugin->base_url) {
+                $plugin->webhook_secret = $newSecret = 'whsec_'.Str::random(40);
+                self::revokePageTokens($plugin);
+            }
+            $plugin->base_url = $newUrl;
         }
         $power = array_key_exists('enabled', $data) && $plugin->hosted() && $plugin->enabled !== $data['enabled'];
         if (array_key_exists('enabled', $data)) {
@@ -221,7 +231,7 @@ class PluginController extends Controller
             default => 'Turned off plugin',
         }, $plugin->name);
 
-        return response()->json(self::present($plugin->fresh(['key', 'user'])));
+        return response()->json(self::present($plugin->fresh(['key', 'user'])) + (isset($newSecret) ? ['webhookSecret' => $newSecret] : []));
     }
 
     public function destroy(Request $request, string $id): JsonResponse
@@ -255,11 +265,12 @@ class PluginController extends Controller
             if ($plugin->hosted()) {
                 $plugin->update(['hosted_token' => $token]);
             }
+            self::revokePageTokens($plugin);
 
             return $token;
         });
         // The container gets the new values: the agent starts a new container, then stops the old one.
-        if ($plugin->hosted()) {
+        if ($plugin->hosted() && self::canStart($plugin)) {
             $this->hosting->start($plugin, $plugin->container_status !== Hosting::FAILED);
         }
         Audit::record($request, 'Made new credentials for plugin', $plugin->name);
@@ -365,6 +376,10 @@ class PluginController extends Controller
     /** The pages of the plugins that the user can open, for the menu of the web panel. */
     public function pages(Request $request): JsonResponse
     {
+        // Adversarial review, finding X1-08: only a sign-in session can open a page.
+        if (! AuthController::isSession($request) && ! $request->user()->tokenCan('plugins:read')) {
+            return response()->json(['data' => []]);
+        }
         $role = $request->user()->role->value;
         $pages = [];
         foreach (Plugin::where('enabled', true)->orderBy('name')->get() as $plugin) {
@@ -407,6 +422,9 @@ class PluginController extends Controller
     /** The actions of the plugins that the user can select, for the pages of the web panel. */
     public function actions(Request $request): JsonResponse
     {
+        if (! AuthController::isSession($request) && ! $request->user()->tokenCan('plugins:read')) {
+            return response()->json(['data' => []]);
+        }
         $role = $request->user()->role->value;
         $actions = [];
         foreach (Plugin::where('enabled', true)->orderBy('name')->get() as $plugin) {
@@ -455,7 +473,12 @@ class PluginController extends Controller
         if ($result['error'] !== null) {
             $token->accessToken->delete();
 
-            return response()->json(['message' => "The plugin {$plugin->name} did not do the action. {$result['error']}"], 502);
+            // Adversarial review, finding A7-12: the error has the address of the plugin. Only
+            // an administrator gets it.
+            Log::warning("The action {$action['id']} of the plugin {$plugin->slug} failed: {$result['error']}");
+            $detail = $user->isAdministrator() ? $result['error'] : 'Speak to your provider if this continues.';
+
+            return response()->json(['message' => "The plugin {$plugin->name} did not do the action. {$detail}"], 502);
         }
 
         $answer = $result['response']?->json();
@@ -536,6 +559,17 @@ class PluginController extends Controller
         $user->tokens()->where('name', self::TOKEN_NAME)->delete();
 
         return $user->createToken(self::TOKEN_NAME, $plugin->scopes() ?: ['none'], now()->addDays(self::TOKEN_DAYS))->plainTextToken;
+    }
+
+    /**
+     * Adversarial review, finding A7-09: a plugin that is off does not start. The agent keeps
+     * a stopped container stopped when it gets new values, and the container uses them at its
+     * next start. Only a container that failed is made again, and that starts it. Thus a plugin
+     * that is off and failed gets nothing: the administrator turns it on and starts it again.
+     */
+    private static function canStart(Plugin $plugin): bool
+    {
+        return $plugin->enabled || $plugin->container_status !== Hosting::FAILED;
     }
 
     private static function revokePageTokens(Plugin $plugin): void

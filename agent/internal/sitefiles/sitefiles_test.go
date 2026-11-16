@@ -7,7 +7,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 )
 
 func code(err error) string {
@@ -171,5 +173,31 @@ func TestMainAnswers(t *testing.T) {
 func TestIsText(t *testing.T) {
 	if !IsText([]byte("héllo\n")) || IsText([]byte{0xff, 0xfe}) || IsText([]byte("a\x00b")) {
 		t.Error("IsText is not correct")
+	}
+}
+
+// The read of a FIFO fails at once. It did not return before (adversarial review, findings
+// A2-03 and G5-03).
+func TestReadOfAFifoDoesNotBlock(t *testing.T) {
+	dir := t.TempDir()
+	if err := syscall.Mkfifo(dir+"/p", 0o600); err != nil {
+		t.Skip(err)
+	}
+	done := make(chan error, 2)
+	for _, op := range []string{OpRead, OpList} {
+		go func() {
+			_, err := Do(dir, Request{Op: op, Path: "/p"})
+			done <- err
+		}()
+	}
+	for range 2 {
+		select {
+		case err := <-done:
+			if code(err) != CodeInvalid {
+				t.Errorf("error = %v; want the code %q", err, CodeInvalid)
+			}
+		case <-time.After(3 * time.Second):
+			t.Fatal("the operation waits for a writer of the FIFO")
+		}
 	}
 }

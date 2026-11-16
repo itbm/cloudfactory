@@ -46,6 +46,13 @@ class RunBackups extends Command
         $count = 0;
         Website::with('server')->whereNull('staging_of')->where('status', '!=', WebsiteStatus::Failed->value)->orderBy('name')
             ->each(function (Website $website) use ($jobs, &$count) {
+                // A backup would start a database server that moves to a different server
+                // (adversarial review, finding A4-01). The website has its backup the next night.
+                if ($moving = BackupController::movingServerOf($website)) {
+                    $this->line("No backup of {$website->name}: the database server {$moving->name} moves to a different server.");
+
+                    return;
+                }
                 BackupController::start($jobs, $website, 'scheduled', "Nightly backup of {$website->name}");
                 $count++;
             });

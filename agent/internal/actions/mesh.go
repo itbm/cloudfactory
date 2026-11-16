@@ -216,7 +216,18 @@ func (d *Deps) applyMesh(ctx context.Context, s mesh.State) error {
 	if err := d.writeMeshFile(meshStateFile, string(b)+"\n"); err != nil {
 		return err
 	}
-	return d.loadMesh(ctx, s, previous, true)
+	if err := d.loadMesh(ctx, s, previous, true); err != nil {
+		// The file has the state that the server applied. After a failed change, it has the
+		// state from before again. Thus the next attempt still knows the old address and
+		// removes it (adversarial review, finding G7-06).
+		if old, jsonErr := json.MarshalIndent(previous, "", "  "); had && jsonErr == nil {
+			_ = d.writeMeshFile(meshStateFile, string(old)+"\n")
+		} else if !had {
+			_ = os.Remove(filepath.Join(d.meshDir(), meshStateFile))
+		}
+		return err
+	}
+	return nil
 }
 
 // RestoreMesh applies the saved mesh state when the root helper starts. After a restart of
@@ -345,6 +356,8 @@ func (d *Deps) addMeshRules(ctx context.Context, files map[string]string) (manag
 	if err := d.openDatabaseNetwork(ctx); err != nil {
 		return false, err
 	}
+	d.firewallMu.Lock()
+	defer d.firewallMu.Unlock()
 	if b, err = os.ReadFile(path); err != nil {
 		return false, err
 	}

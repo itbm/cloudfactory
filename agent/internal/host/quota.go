@@ -20,11 +20,28 @@ func (h *Host) SetDatabaseQuota(ctx context.Context, unixUser, mount string, byt
 	return h.setQuota(ctx, unixUser, mount, bytes)
 }
 
+// minInodes is the smallest inode limit of a user quota.
+const minInodes = 65536
+
+// InodeLimit gives the largest number of files of a user with a disk limit of bytes: one file
+// for each 4 KiB, and not less than minInodes. 0 bytes gives 0, which is no limit. Without an
+// inode limit, one user with many empty files uses all inodes of the file system of all
+// users (adversarial review, finding G2-02).
+func InodeLimit(bytes int64) int64 {
+	if bytes <= 0 {
+		return 0
+	}
+	return max(bytes/4096, minInodes)
+}
+
 // setQuota sets the user quota of a user. The hard limit is bytes. The soft limit is 95% of it.
+// The quota also limits the number of files (InodeLimit).
 func (h *Host) setQuota(ctx context.Context, unixUser, mount string, bytes int64) error {
 	hard := bytes / 1024
 	soft := hard * 95 / 100
-	_, err := h.Run.Run(ctx, "setquota", "--user", unixUser, strconv.FormatInt(soft, 10), strconv.FormatInt(hard, 10), "0", "0", mount)
+	inodes := InodeLimit(bytes)
+	_, err := h.Run.Run(ctx, "setquota", "--user", unixUser, strconv.FormatInt(soft, 10), strconv.FormatInt(hard, 10),
+		strconv.FormatInt(inodes*95/100, 10), strconv.FormatInt(inodes, 10), mount)
 	return err
 }
 

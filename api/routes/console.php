@@ -23,5 +23,8 @@ Schedule::command('cloudfactory:expire-adminer-logins')->everyMinute()->withoutO
 // Usage history: the panel keeps the buckets of 5 minutes for 8 days and of 1 hour for 400 days.
 Schedule::command('cloudfactory:prune-usage')->daily()->withoutOverlapping();
 
+// Plugins: the panel keeps the deliveries of events for 30 days.
+Schedule::command('cloudfactory:prune-plugin-deliveries')->daily()->withoutOverlapping();
+
 // Email notifications: the TLS certificates that expire soon. One email for each certificate.
 Schedule::command('cloudfactory:check-certificates')->dailyAt('08:00')->withoutOverlapping();

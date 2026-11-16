@@ -2,8 +2,10 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Enums\JobState;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\JobResource;
+use App\Models\AgentJob;
 use App\Models\Customer;
 use App\Models\DnsRecord;
 use App\Models\DnsZone;
@@ -19,6 +21,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -100,6 +103,11 @@ class DnsZoneController extends Controller
     public function destroy(Request $request, string $id): JsonResponse
     {
         $zone = $this->find($request, $id);
+        // Adversarial review, finding A6-06: each removal makes one job for each DNS server.
+        if ($zone->status === DnsZone::REMOVING && AgentJob::where('dns_zone_id', $zone->id)
+            ->whereIn('state', [JobState::Queued->value, JobState::Running->value])->exists()) {
+            throw ValidationException::withMessages(['zone' => 'The panel removes this zone. Wait until the jobs are complete.']);
+        }
         $jobs = $this->zones->remove($zone);
         Audit::record($request, 'Removed DNS zone', $zone->name, $zone->customer_id);
 
@@ -109,7 +117,14 @@ class DnsZoneController extends Controller
     public function storeRecord(Request $request, string $id): JsonResponse
     {
         $zone = $this->findActive($request, $id);
-        $record = $zone->records()->create(Records::check($zone, self::recordInput($request)));
+        // The checks and the new record are in one transaction, with a lock on the zone: two
+        // requests at the same time cannot go above the limit, or make a CNAME record and a
+        // different record for one name.
+        $record = DB::transaction(function () use ($zone, $request) {
+            DnsZone::whereKey($zone->id)->lockForUpdate()->first();
+
+            return $zone->records()->create(Records::check($zone, self::recordInput($request)));
+        });
         $jobs = $this->zones->changed($zone, "Add {$record->type} record to {$zone->name}");
         Audit::record($request, 'Added DNS record', "{$zone->name} {$record->type} {$record->name}", $zone->customer_id);
 
@@ -191,13 +206,22 @@ class DnsZoneController extends Controller
     /** @return array<string, mixed> */
     private static function recordInput(Request $request): array
     {
-        return $request->validate([
+        $data = $request->validate([
             'type' => ['sometimes', 'string', 'max:10'],
             'name' => ['sometimes', 'nullable', 'string', 'max:255'],
             'value' => ['sometimes', 'string', 'max:4096'],
             'ttl' => ['sometimes', 'integer'],
             'priority' => ['sometimes', 'nullable', 'integer'],
         ]);
+        // A form sends a number as text. The rule "integer" accepts it, thus the value becomes
+        // a number here.
+        foreach (['ttl', 'priority'] as $field) {
+            if (is_string($data[$field] ?? null) && preg_match('/^-?\d{1,10}$/D', $data[$field])) {
+                $data[$field] = (int) $data[$field];
+            }
+        }
+
+        return $data;
     }
 
     /** The jobs of the last change of a zone, one for each DNS server. */

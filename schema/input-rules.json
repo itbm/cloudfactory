@@ -101,10 +101,11 @@
     },
     "iniValue": {
       "what": "php.ini value",
-      "doc": "A php.ini value. It is on one line and has no double quotes.",
+      "doc": "A php.ini value. It is on one line, has no double quotes and does not end with a backslash.",
       "pattern": "^[^\"\\n\\r\\x00]*$",
+      "not": ["\\\\$"],
       "maxLength": 200,
-      "message": "Use at most 200 characters on one line, with no double quotes."
+      "message": "Use at most 200 characters on one line, with no double quotes and no backslash at the end."
     },
     "sha256": {
       "what": "SHA-256 hash",
@@ -307,10 +308,10 @@
     },
     "envName": {
       "what": "name of an environment variable",
-      "doc": "The name of an environment variable of a website container. PORT, HOST, HOME, PATH, PWD and the names that start with CF_ are for the agent and the image.",
+      "doc": "The name of an environment variable of a website container. PORT, HOST, HOME, PATH, PWD, SERVER_NAME and the names that start with CF_, FRANKENPHP_, CADDY_, XDG_ or APACHE_ are for the agent and the image: they change the web server of the container.",
       "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,63}$",
-      "not": ["^(PORT|HOST|HOME|PATH|PWD)$", "^CF_"],
-      "message": "Use 1 to 64 letters, digits and underscores. Do not start with a digit. PORT, HOST, HOME, PATH, PWD and names that start with CF_ are not available."
+      "not": ["^(PORT|HOST|HOME|PATH|PWD|SERVER_NAME)$", "^(CF|FRANKENPHP|CADDY|XDG|APACHE)_"],
+      "message": "Use 1 to 64 letters, digits and underscores. Do not start with a digit. PORT, HOST, HOME, PATH, PWD, SERVER_NAME and names that start with CF_, FRANKENPHP_, CADDY_, XDG_ or APACHE_ are not available."
     },
     "envValue": {
       "what": "value of an environment variable",

@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"syscall"
 
 	"github.com/itbm/cloudfactory/agent/internal/gate"
 	"github.com/itbm/cloudfactory/agent/internal/host"
@@ -499,7 +500,15 @@ func (d *Deps) RootOps() map[string]gate.Handler {
 			if selfupdate.ParseManifest(in.Release.Manifest)[selfupdate.ManifestRootHelper] != "1" {
 				return errors.New("the release has no root helper, so the root helper does not install it; an administrator can install it by hand")
 			}
-			return d.replaceAgent(in.Release, in.AllowDowngrade)
+			// The worker cannot allow an older version: a signed old release can have a
+			// fault in its root helper that a newer release repaired. Only an administrator
+			// on the server allows it, with the file DowngradeFile, for one update
+			// (adversarial review, finding G1-02).
+			allow := in.AllowDowngrade && d.takeDowngradePermit()
+			if in.AllowDowngrade && !allow && d.Updater.CheckVersion(in.Release.Version, false) != nil {
+				return fmt.Errorf("the version %s is older than the version of this agent. To allow it for one update, an administrator makes the file %s on the server (as root) and starts the update again", strings.TrimPrefix(in.Release.Version, "v"), d.DowngradeFile)
+			}
+			return d.replaceAgent(in.Release, allow)
 		}),
 		opPlatform: none(func(_ context.Context, in platformIn) error { return d.savePlatform(in.Platform) }),
 		opPanelCA:  none(func(_ context.Context, in pinIn) error { return d.SavePanelCAPin(in.Fingerprint) }),
@@ -854,6 +863,22 @@ func (d *Deps) keepAgent() error {
 		return d.Gate.Call(context.Background(), opAgentKeep, nil, nil)
 	}
 	return d.Updater.KeepPrevious()
+}
+
+// takeDowngradePermit reports whether an administrator allowed one update to an older
+// version, and removes the permission. The permission is a file that only root can make.
+func (d *Deps) takeDowngradePermit() bool {
+	if d.DowngradeFile == "" {
+		return false
+	}
+	fi, err := os.Lstat(d.DowngradeFile)
+	if err != nil || !fi.Mode().IsRegular() {
+		return false
+	}
+	if st, ok := fi.Sys().(*syscall.Stat_t); ok && st.Uid != uint32(os.Geteuid()) {
+		return false
+	}
+	return os.Remove(d.DowngradeFile) == nil
 }
 
 // replaceAgent puts a new agent binary in place. The root helper checks the version and the

@@ -21,11 +21,23 @@ class JobController extends Controller
 
         // A user sees the jobs of the websites, of the database servers, of the DNS zones and of the email of
         // its customers.
-        return AgentJob::query()->when(! $user->isAdministrator(), fn ($q) => $q->where(fn ($q) => $q
-            ->whereIn('website_id', $this->visibleWebsites($request)->select('id'))
-            ->orWhereIn('database_server_id', DatabaseServer::whereIn('customer_id', $user->visibleCustomerIds())->select('id'))
-            ->orWhereIn('dns_zone_id', DnsZone::whereIn('customer_id', $user->visibleCustomerIds())->select('id'))
-            ->orWhereIn('customer_id', $user->visibleCustomerIds())));
+        $token = $user->currentAccessToken();
+        $can = fn (string $area): bool => (bool) ($token?->can("{$area}:read") || $token?->can("{$area}:write"));
+
+        return AgentJob::query()
+            // A job of a website needs the scope of the websites, and so on. A job with a
+            // customer only is a job of the email. A job with none of them is a job of a server.
+            ->where(fn ($q) => $q->whereRaw('1 = 0')
+                ->when($can('websites') || $can('backups') || $can('databases'), fn ($q) => $q->orWhereNotNull('website_id'))
+                ->when($can('databases'), fn ($q) => $q->orWhereNotNull('database_server_id'))
+                ->when($can('dns'), fn ($q) => $q->orWhereNotNull('dns_zone_id'))
+                ->when($can('mail'), fn ($q) => $q->orWhere(fn ($q) => $q->whereNotNull('customer_id')->whereNull('website_id')->whereNull('database_server_id')->whereNull('dns_zone_id')))
+                ->when($can('servers'), fn ($q) => $q->orWhere(fn ($q) => $q->whereNull('customer_id')->whereNull('website_id')->whereNull('database_server_id')->whereNull('dns_zone_id'))))
+            ->when(! $user->isAdministrator(), fn ($q) => $q->where(fn ($q) => $q
+                ->whereIn('website_id', $this->visibleWebsites($request)->select('id'))
+                ->orWhereIn('database_server_id', DatabaseServer::whereIn('customer_id', $user->visibleCustomerIds())->select('id'))
+                ->orWhereIn('dns_zone_id', DnsZone::whereIn('customer_id', $user->visibleCustomerIds())->select('id'))
+                ->orWhereIn('customer_id', $user->visibleCustomerIds())));
     }
 
     public function index(Request $request): AnonymousResourceCollection

@@ -34,6 +34,8 @@ class RuntimeController extends Controller
     public function update(Request $request, string $websiteId): JsonResponse
     {
         $website = $this->findWebsite($request, $websiteId);
+        // Adversarial review, finding X1-04: a new runtime starts the container.
+        $this->refuseSuspended($website->customer);
         $data = $request->validate([
             'imageId' => ['sometimes', 'exists:images,id'],
             'workerMode' => ['sometimes', 'boolean'],
@@ -173,6 +175,7 @@ class RuntimeController extends Controller
     public function revert(Request $request, string $websiteId): JsonResponse
     {
         $website = $this->findWebsite($request, $websiteId);
+        $this->refuseSuspended($website->customer);
         if (! $website->previous_image_id) {
             throw ValidationException::withMessages(['imageId' => 'There is no previous image.']);
         }

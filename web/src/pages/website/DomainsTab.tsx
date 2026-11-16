@@ -13,7 +13,8 @@ export function DomainsTab({ website }: { website: Website }) {
   const [name, setName] = useState("");
   const [kind, setKind] = useState<DomainKind>("alias");
   const add = useAction(async (n: string, k: DomainKind) => {
-    const job = addDomain(website.id, n, k);
+    // The name stays in the field when the panel refuses it.
+    const job = await addDomain(website.id, n, k);
     setName("");
     return job;
   });
@@ -123,7 +124,7 @@ export function DomainsTab({ website }: { website: Website }) {
             </Field>
             <div className="field">
               <span className="label" aria-hidden="true">&nbsp;</span>
-              <button type="submit" className="btn btn-primary">Add domain</button>
+              <button type="submit" className="btn btn-primary" disabled={add.busy}>Add domain</button>
             </div>
           </div>
           <p className="hint" style={{ marginTop: 10 }}>Before the edge proxy serves a new domain, you must prove that you control it with a DNS TXT record. A sub-domain of a verified domain does not need a new record. The edge proxy gets a TLS certificate through ACME when the DNS points to this server.</p>

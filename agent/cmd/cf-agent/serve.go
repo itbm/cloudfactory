@@ -16,6 +16,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -118,10 +119,13 @@ func serve(ctx context.Context) error {
 		}
 	}()
 	go func() {
+		// The window starts at the first start of this binary and does not start again at
+		// each start of the service. A worker that stops before the end of the window thus
+		// cannot keep the old binary (adversarial review, finding G1-04).
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(rollbackWindow):
+		case <-time.After(rollbackWindowLeft(root.Updater.Previous(), time.Now())):
 		}
 		if removed, err := dropOldPrevious(root.Updater.Previous()); err != nil {
 			slog.Warn("examine the previous agent binary", "err", err)
@@ -138,6 +142,28 @@ const helperMark = "cloudfactory-agent:has-root-helper"
 // rollbackWindow is the time in which a new agent can go back to the binary of a release
 // with no root helper.
 const rollbackWindow = 10 * time.Minute
+
+// rollbackWindowLeft gives the rest of rollbackWindow for the previous binary. The first
+// start with a previous binary writes the time in the file "<previous>.since".
+func rollbackWindowLeft(previous string, now time.Time) time.Duration {
+	fi, err := os.Stat(previous)
+	if err != nil {
+		return 0
+	}
+	stamp := previous + ".since"
+	since, err := os.Stat(stamp)
+	// A stamp that is older than the previous binary is from an earlier update.
+	if err != nil || since.ModTime().Before(fi.ModTime()) {
+		if err := os.WriteFile(stamp, nil, 0o600); err != nil {
+			return rollbackWindow
+		}
+		if err := os.Chtimes(stamp, now, now); err != nil {
+			return rollbackWindow
+		}
+		return rollbackWindow
+	}
+	return max(rollbackWindow-now.Sub(since.ModTime()), 0)
+}
 
 // dropOldPrevious removes the binary that "cf-agent rollback" puts back, when that binary
 // is from a release with no root helper.
@@ -163,8 +189,14 @@ func dropOldPrevious(path string) (removed bool, err error) {
 	return true, os.Remove(path)
 }
 
+// configMu makes the changes of the settings file run one after the other. The root helper
+// runs each operation in its own goroutine.
+var configMu sync.Mutex
+
 // changeConfig changes the settings file of the agent.
 func changeConfig(change func(c *config.Config)) error {
+	configMu.Lock()
+	defer configMu.Unlock()
 	c, err := config.Load(config.DefaultPath)
 	if err != nil {
 		return err
@@ -214,6 +246,7 @@ func newDeps(cfg config.Config, run execx.Runner) (*actions.Deps, error) {
 	d := &actions.Deps{
 		Host: h, Run: run, Apt: hostupdate.New(run), Images: images.New(run, host.SitesGroup),
 		Updater:            &selfupdate.Updater{ReleaseURL: cfg.ReleaseURL, Binary: binaryPath, Key: key, Current: version},
+		DowngradeFile:      filepath.Join(filepath.Dir(config.DefaultPath), "allow-agent-downgrade"),
 		Gvisor:             quadlet.Runtime{RunscPath: gv.Link(), Platform: cfg.GVisorPlatform},
 		State:              actions.NewState(cfg.DataDir),
 		Arch:               runtime.GOARCH,
@@ -554,6 +587,7 @@ func work(ctx context.Context, cfg config.Config, g gate.Gate) error {
 	}()
 	runner := &jobs.Runner{Dir: filepath.Join(cfg.DataDir, "jobs"), Reporter: reporter,
 		Timeout: time.Duration(cfg.JobTimeoutMinutes) * time.Minute, LongTimeout: time.Duration(cfg.LongJobTimeoutMinutes) * time.Minute}
+	deps.OtherJobs = runner.Running
 	if job, ok := deps.ResumeReboot(); ok {
 		runner.Resume(job)
 	}

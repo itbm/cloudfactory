@@ -11,6 +11,8 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"syscall"
+	"time"
 )
 
 // Runner runs one command and returns its standard output.
@@ -47,7 +49,41 @@ func (h Host) command(ctx context.Context, env []string, name string, args ...st
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = Dir
 	cmd.Env = append(append(serviceEnviron(cmd.Environ()), h.Env...), env...)
+	stopWithGroup(cmd)
 	return cmd
+}
+
+// stopDelay is the time between the two signals of a command that the agent stops, and
+// the time that the agent then waits for the output of the command.
+const stopDelay = 5 * time.Second
+
+// stopWithGroup makes the end of the context stop the command and each program that the
+// command started. Without it, Go stops only the first program: runuser stopped, the
+// command of the website user continued, and the agent waited for the output of that command
+// with no limit (adversarial review, finding G5-02).
+//
+// The command gets a process group of its own. When the context ends, the group gets SIGTERM
+// and, after stopDelay, SIGKILL. After one more stopDelay, the agent closes the output of the
+// command and does not wait for a program that left the group.
+func stopWithGroup(cmd *exec.Cmd) {
+	if cmd.SysProcAttr == nil {
+		cmd.SysProcAttr = &syscall.SysProcAttr{}
+	}
+	cmd.SysProcAttr.Setpgid = true
+	cmd.Cancel = func() error {
+		pid := cmd.Process.Pid
+		err := syscall.Kill(-pid, syscall.SIGTERM)
+		if errors.Is(err, syscall.ESRCH) {
+			return os.ErrProcessDone
+		}
+		time.AfterFunc(stopDelay, func() {
+			// The group has the ID of the first program. The ID stays reserved while a
+			// program of the group runs, so this signal cannot go to a new command.
+			_ = syscall.Kill(-pid, syscall.SIGKILL)
+		})
+		return err
+	}
+	cmd.WaitDelay = 2 * stopDelay
 }
 
 // serviceEnviron removes the variables of a login session from environ. An administrator who

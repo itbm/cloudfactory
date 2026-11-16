@@ -11,6 +11,8 @@ import { createServer } from "node:http";
 const secret = process.env.CF_WEBHOOK_SECRET ?? "";
 const page = readFileSync(new URL("./page.html", import.meta.url));
 const seen = new Set();
+const MAX_BODY = 65536;
+const MAX_SEEN = 10000;
 
 /** Checks the header "Cloudfactory-Signature": t=<Unix time>,v1=<HMAC-SHA256 of "<t>.<body>">. */
 function verify(header, body) {
@@ -25,14 +27,27 @@ function verify(header, body) {
 /** Reads the body, and answers 401 when the signature is not correct. */
 function signedBody(req, res, then) {
   const chunks = [];
-  req.on("data", (c) => chunks.push(c));
-  req.on("end", () => {
+  let size = 0;
+  req.on("data", (c) => {
+    size += c.length;
+    // The panel sends small bodies. A larger body is not from the panel.
+    if (size > MAX_BODY) return req.destroy();
+    chunks.push(c);
+  });
+  req.on("end", async () => {
     const body = Buffer.concat(chunks).toString("utf8");
     if (!verify(req.headers["cloudfactory-signature"], body)) {
       res.writeHead(401);
       return res.end();
     }
-    then(JSON.parse(body));
+    // An error in the handler must not stop the program.
+    try {
+      await then(JSON.parse(body), body);
+    } catch (error) {
+      console.error(error);
+      if (!res.headersSent) res.writeHead(500);
+      res.end();
+    }
   });
 }
 
@@ -82,6 +97,7 @@ createServer((req, res) => {
       res.end();
       const id = req.headers["cloudfactory-delivery"];
       if (seen.has(id)) return; // The panel sent this event before.
+      if (seen.size >= MAX_SEEN) seen.clear();
       seen.add(id);
       const event = JSON.parse(body);
       console.log(`${event.createdAt} ${event.event}`, JSON.stringify(event.data));

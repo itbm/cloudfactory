@@ -67,7 +67,31 @@ func Older(a, b string) bool {
 	case sb == "":
 		return true
 	}
-	return sa < sb
+	return olderSuffix(sa, sb)
+}
+
+// olderSuffix compares two pre-release suffixes as Semantic Versioning does: part by part,
+// a number as a number, a number before a text, and fewer parts before more parts. As text,
+// "rc.10" was older than "rc.9" (adversarial review, finding G1-11).
+func olderSuffix(a, b string) bool {
+	pa, pb := strings.Split(a, "."), strings.Split(b, ".")
+	for i := 0; i < len(pa) && i < len(pb); i++ {
+		if pa[i] == pb[i] {
+			continue
+		}
+		na, errA := strconv.Atoi(pa[i])
+		nb, errB := strconv.Atoi(pb[i])
+		switch {
+		case errA == nil && errB == nil:
+			return na < nb
+		case errA == nil:
+			return true
+		case errB == nil:
+			return false
+		}
+		return pa[i] < pb[i]
+	}
+	return len(pa) < len(pb)
 }
 
 func parseVersion(v string) (nums [3]int, suffix string, ok bool) {
@@ -234,7 +258,13 @@ func (u Updater) Rollback() error {
 	if err := copyFile(u.Previous(), tmp); err != nil {
 		return err
 	}
-	return os.Rename(tmp, u.Binary)
+	if err := os.Rename(tmp, u.Binary); err != nil {
+		return err
+	}
+	// One rollback for each update. When the previous binary does not start either, the
+	// next rollback has no binary and the service stays stopped. Before, the two units
+	// started each other with no end (adversarial review, finding G1-04).
+	return os.Rename(u.Previous(), u.Previous()+".used")
 }
 
 func (u Updater) get(ctx context.Context, url string, limit int64) ([]byte, error) {

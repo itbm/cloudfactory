@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -251,7 +252,7 @@ func TestSiteRouteSendsAllRequestsToTheContainer(t *testing.T) {
 // A route with a path prefix has only the paths of the prefix on its host.
 func TestSiteRouteWithAPath(t *testing.T) {
 	b, _ := json.Marshal(SiteRoute(Site{WebsiteID: "T1", Port: 20002, Hosts: []string{"adminer.example.com"}, Path: "/t1/"}, "169.254.77.1"))
-	if !strings.Contains(string(b), `"match":[{"host":["adminer.example.com"],"path":["/t1/*"]}]`) {
+	if !strings.Contains(string(b), `"match":[{`+plainHostJSON+`"host":["adminer.example.com"],"path":["/t1/*"]}]`) {
 		t.Errorf("route: %s", b)
 	}
 	b, _ = json.Marshal(SiteRoute(Site{WebsiteID: "W1", Port: 20001, Hosts: []string{"acme.example"}}, "169.254.77.1"))
@@ -364,8 +365,25 @@ func TestSiteRouteSendsSomePathsToADifferentPort(t *testing.T) {
 		`{"handle":[{"handler":"reverse_proxy","upstreams":[{"dial":"169.254.77.1:19025"}]}],"match":[{"path":["/jmap","/jmap/*"]}],"terminal":true},` +
 		`{"handle":[{"handler":"reverse_proxy","upstreams":[{"dial":"169.254.77.1:19027"}]}],"match":[{"method":["GET"],"path":["/admin/*/css"]}],"terminal":true},` +
 		`{"handle":[{"handler":"static_response","status_code":404}],"match":[{"path":["/admin"]}],"terminal":true},` +
-		`{"handle":[{"handler":"reverse_proxy","upstreams":[{"dial":"169.254.77.1:19027"}]}]}]}],"match":[{"host":["mail.example.net"]}],"terminal":true}`
+		`{"handle":[{"handler":"reverse_proxy","upstreams":[{"dial":"169.254.77.1:19027"}]}]}]}],"match":[{` + plainHostJSON + `"host":["mail.example.net"]}],"terminal":true}`
 	if string(b) != want {
 		t.Errorf("route:\n%s\nwant:\n%s", b, want)
+	}
+}
+
+// plainHostJSON is the matcher for the Host header in the JSON of a route (hostMatch).
+const plainHostJSON = `"header_regexp":{"Host":{"pattern":"^([^:\\[\\]]+|\\[[^\\]]+\\])(:(443|8443))?$"}},`
+
+// Adversarial review, finding G6-02: a route accepts a Host header with no port or with the
+// HTTPS port only.
+func TestRoutesAcceptOnlyAPlainHost(t *testing.T) {
+	re := regexp.MustCompile(plainHost)
+	for host, want := range map[string]bool{
+		"example.com": true, "example.com:443": true, "example.com:8443": true, "[2001:db8::1]": true, "[2001:db8::1]:443": true,
+		"example.com:1": false, "example.com:abc": false, "example.com:x:443": false, "example.com:": false, "": false,
+	} {
+		if got := re.MatchString(host); got != want {
+			t.Errorf("%q: %v, want %v", host, got, want)
+		}
 	}
 }

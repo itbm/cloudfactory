@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"strings"
@@ -249,7 +250,14 @@ func (d *Deps) resizeImage(ctx context.Context, k loopDisk, bytes int64) error {
 		if err == nil {
 			// resize2fs needs a check of the file system first. It fails, and changes nothing,
 			// when the data and the tables of the file system need more space than the new size.
-			if _, err = d.Run.Run(ctx, "e2fsck", "-f", "-p", k.Image); err == nil {
+			// e2fsck gives the status 1 when it repaired the file system, and the file
+			// system is then correct (adversarial review, finding G4-12).
+			_, err = d.Run.Run(ctx, "e2fsck", "-f", "-p", k.Image)
+			var exit *exec.ExitError
+			if errors.As(err, &exit) && exit.ExitCode() == 1 {
+				err = nil
+			}
+			if err == nil {
 				_, err = d.Run.Run(ctx, "resize2fs", k.Image, fmt.Sprintf("%dK", want/1024))
 			}
 			if err == nil {

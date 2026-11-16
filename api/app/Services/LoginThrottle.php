@@ -99,8 +99,10 @@ class LoginThrottle
     private static function count(string $email, string $network, int $free, \DateTimeInterface $keep): bool
     {
         $key = self::key($email, $network, 'failures');
-        $failures = (int) Cache::get($key, 0) + 1;
-        Cache::put($key, $failures, $keep);
+        // One step in the cache store, so that two attempts at the same time are two failures
+        // (adversarial review, finding A1-04).
+        Cache::add($key, 0, $keep);
+        $failures = (int) Cache::increment($key);
         if ($failures < $free) {
             return false;
         }

@@ -772,7 +772,7 @@ func TestAFullRestoreCanRemoveTheOtherFiles(t *testing.T) {
 	run(t)(d.CreateWebsite(&agentv1.WebsiteRequest{JobId: jobID, Website: website("ghcr.io/cloudfactory/frankenphp-php8.4:8.4.0-1")}))
 	app := d.Host.AppDir("acme_x7k2")
 	req := &agentv1.RestoreRequest{JobId: jobID2, WebsiteId: websiteID, UnixUser: "acme_x7k2", SnapshotId: "1a2b3c4d", Scope: "website", Target: "s3:b/c", DeleteExtra: true}
-	f.Rules = []execx.Rule{staged(d, jobID2, "acme_x7k2", "public/index.php")}
+	f.Rules = []execx.Rule{ownSnapshot, staged(d, jobID2, "acme_x7k2", "public/index.php")}
 	f.Calls = nil
 	if err := run(t)(d.Restore(req)); err != nil {
 		t.Fatal(err)
@@ -808,6 +808,23 @@ func TestAFullRestoreCanRemoveTheOtherFiles(t *testing.T) {
 	}
 }
 
+// ownSnapshot is the answer of the fake restic for the snapshot of the tests: a snapshot of
+// the website of the tests.
+var ownSnapshot = execx.Rule{Prefix: "restic --repo s3:b/c --password-file  --json --retry-lock 30m snapshots 1a2b3c4d", Output: `[{"id":"1a2b3c4d","tags":["website=` + websiteID + `","kind=manual"]}]`}
+
+// A restore refuses a snapshot of a different website (adversarial review, G4-10).
+func TestRestoreRefusesTheSnapshotOfADifferentWebsite(t *testing.T) {
+	d, f, _ := deps(t)
+	f.Rules = []execx.Rule{{Prefix: ownSnapshot.Prefix, Output: `[{"id":"1a2b3c4d","tags":["website=01JBQ3Z5K8N6T4W2X9Y7R5P3ZZ"]}]`}, staged(d, jobID, "acme_x7k2", "public/index.php")}
+	err := run(t)(d.Restore(&agentv1.RestoreRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", SnapshotId: "1a2b3c4d", Scope: "file", Item: "/public/index.php", Target: "s3:b/c"}))
+	if err == nil || !strings.Contains(err.Error(), "not a snapshot of this website") {
+		t.Fatalf("err = %v", err)
+	}
+	if f.Called("restic --repo s3:b/c --password-file  --json --retry-lock 30m restore") {
+		t.Error("the agent restored the snapshot")
+	}
+}
+
 // staged gives a rule for the fake restic: it "restores" one file of the website of the user
 // into the staging directory of the job.
 func staged(d *Deps, job, user, rel string) execx.Rule {
@@ -819,7 +836,7 @@ func staged(d *Deps, job, user, rel string) execx.Rule {
 // CF-05: restic restores into an empty directory of root, and the website user copies the files.
 func TestRestoreCopiesFilesAsTheWebsiteUser(t *testing.T) {
 	d, f, _ := deps(t)
-	f.Rules = []execx.Rule{staged(d, jobID, "acme_x7k2", "public/index.php")}
+	f.Rules = []execx.Rule{ownSnapshot, staged(d, jobID, "acme_x7k2", "public/index.php")}
 	err := run(t)(d.Restore(&agentv1.RestoreRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", SnapshotId: "1a2b3c4d", Scope: "file", Item: "/public/index.php", Target: "s3:b/c"}))
 	if err != nil {
 		t.Fatal(err)
@@ -853,7 +870,7 @@ func TestRestoreDatabaseChecksTheHashAndUsesATemporaryUser(t *testing.T) {
 	staging := filepath.Join(d.DataDir, "restore", jobID)
 	file := filepath.Join(staging, d.DataDir, "dumps", "acme_x7k2", "mariadb-acme_x7k2_shop.dump")
 	// The fake restic "restores" the dump.
-	f.Rules = []execx.Rule{{Prefix: "restic --repo s3:b/c --password-file  --json --retry-lock 30m restore", Do: func() error { return writeFile(file, dump) }}}
+	f.Rules = []execx.Rule{ownSnapshot, {Prefix: "restic --repo s3:b/c --password-file  --json --retry-lock 30m restore", Do: func() error { return writeFile(file, dump) }}}
 	req := &agentv1.RestoreRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", SnapshotId: "1a2b3c4d", Scope: "database", Item: "mariadb:acme_x7k2_shop", Target: "s3:b/c", DumpSha256: hex.EncodeToString(sum[:]), DatabaseServer: mariaServerID}
 	if err := run(t)(d.Restore(req)); err != nil {
 		t.Fatal(err)
@@ -864,11 +881,11 @@ func TestRestoreDatabaseChecksTheHashAndUsesATemporaryUser(t *testing.T) {
 			restore = c
 		}
 	}
-	if !strings.Contains(restore, "mariadb --sandbox --user=cfrestore_") || strings.Contains(restore, "--user=root") || !strings.HasSuffix(restore, "--batch acme_x7k2_shop") {
+	if !strings.Contains(restore, "mariadb --sandbox --user=cfdefiner_") || strings.Contains(restore, "--user=root") || !strings.HasSuffix(restore, "--batch acme_x7k2_shop") {
 		t.Errorf("restore command = %q", restore)
 	}
 	in := strings.Join(f.Inputs, "")
-	if !strings.Contains(in, "GRANT ALL PRIVILEGES ON `acme\\_x7k2\\_shop`.* TO 'cfrestore_") || !strings.Contains(in, "DROP USER IF EXISTS 'cfrestore_") {
+	if !strings.Contains(in, "GRANT ALL PRIVILEGES ON `acme\\_x7k2\\_shop`.* TO 'cfdefiner_") || !strings.Contains(in, "' ACCOUNT LOCK;") {
 		t.Errorf("inputs = %s", in)
 	}
 	if entries, _ := os.ReadDir(d.SecretsDir); len(entries) != 0 {
@@ -876,7 +893,7 @@ func TestRestoreDatabaseChecksTheHashAndUsesATemporaryUser(t *testing.T) {
 	}
 
 	// A dump that the hash does not agree with is not restored.
-	f.Rules = []execx.Rule{{Prefix: "restic --repo s3:b/c --password-file  --json --retry-lock 30m restore", Do: func() error { return writeFile(file, []byte("DROP DATABASE mysql;\n")) }}}
+	f.Rules = []execx.Rule{ownSnapshot, {Prefix: "restic --repo s3:b/c --password-file  --json --retry-lock 30m restore", Do: func() error { return writeFile(file, []byte("DROP DATABASE mysql;\n")) }}}
 	f.Calls, f.Inputs = nil, nil
 	if err := run(t)(d.Restore(req)); err == nil || !strings.Contains(err.Error(), "hash") {
 		t.Fatalf("err = %v", err)
@@ -920,6 +937,10 @@ func TestDeleteWebsiteRemovesItsDatabases(t *testing.T) {
 	if err := d.EnsureDatabaseService(context.Background(), dbServer{ID: pgServerKey, Engine: "postgresql"}); err != nil {
 		t.Fatal(err)
 	}
+	// The server has the user and two databases.
+	f.Rules = append(f.Rules,
+		execx.Rule{Prefix: "runuser", Input: "SELECT 1 FROM pg_roles WHERE rolname = 'acme_x7k2_sync'", Output: "1\n"},
+		execx.Rule{Prefix: "runuser", Input: "SELECT datname FROM pg_database", Output: "acme_x7k2_shop\nacme_x7k2_old\n"})
 	req := &agentv1.DeleteWebsiteRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2",
 		Databases:     []*agentv1.DatabaseRef{{Engine: "postgresql", Name: "acme_x7k2_shop", DatabaseServer: pgServerID}, {Engine: "mariadb", Name: "acme_x7k2_blog", DatabaseServer: mariaServerID}},
 		DatabaseUsers: []*agentv1.DatabaseRef{{Engine: "postgresql", Name: "acme_x7k2_sync", DatabaseServer: pgServerID}}}
@@ -934,6 +955,17 @@ func TestDeleteWebsiteRemovesItsDatabases(t *testing.T) {
 	in := strings.Join(f.Inputs, "")
 	if !strings.Contains(in, `DROP ROLE IF EXISTS "acme_x7k2_sync";`) || !strings.Contains(in, `DROP DATABASE IF EXISTS "acme_x7k2_shop" WITH (FORCE);`) {
 		t.Errorf("inputs = %s", in)
+	}
+	// A user can own objects in each database. They go to the group role of the database
+	// before DROP ROLE, with a safe search path after each change of the database
+	// (adversarial review, findings G3-01 and G3-03).
+	for _, want := range []string{
+		"\\connect \"acme_x7k2_old\"\n" + pgSafePath + `REASSIGN OWNED BY "acme_x7k2_sync" TO "acme_x7k2_old:rw";` + "\n" + `DROP OWNED BY "acme_x7k2_sync";`,
+		`ALTER DATABASE "acme_x7k2_shop" IS_TEMPLATE false`,
+	} {
+		if !strings.Contains(in, want) {
+			t.Errorf("no %q in the inputs:\n%s", want, in)
+		}
 	}
 	req.Databases[0].Name = "mysql"
 	if _, err := d.DeleteWebsite(req); err == nil {

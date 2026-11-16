@@ -5,6 +5,7 @@ namespace App\Services\Notifications;
 use App\Enums\AgentAction;
 use App\Enums\NotificationEvent;
 use App\Enums\Role;
+use App\Http\Resources\JobResource;
 use App\Jobs\SendEmailNotification;
 use App\Models\AgentJob;
 use App\Models\Customer;
@@ -18,6 +19,7 @@ use App\Models\Website;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use Throwable;
 
 /**
@@ -28,6 +30,9 @@ use Throwable;
  */
 class Notifier
 {
+    /** The emails of one event that one user gets in one hour. */
+    public const MAX_PER_HOUR = 20;
+
     /**
      * @param  iterable<User>  $users
      * @param  array<string, scalar|null>  $values
@@ -56,6 +61,11 @@ class Notifier
     private function queue(NotificationEvent $event, User $user, array $values, ?string $dedupeKey): bool
     {
         if ($dedupeKey !== null && NotificationDelivery::where('user_id', $user->id)->where('dedupe_key', $dedupeKey)->exists()) {
+            return false;
+        }
+        // Adversarial review, finding A8-03: a customer can make many jobs fail. Each user gets
+        // a limited number of emails of one event in one hour.
+        if (NotificationDelivery::where('user_id', $user->id)->where('event', $event->value)->where('created_at', '>=', now()->subHour())->count() >= self::MAX_PER_HOUR) {
             return false;
         }
         $reseller = Senders::brandOwner($user);
@@ -102,7 +112,8 @@ class Notifier
 
     public static function administrators(): Collection
     {
-        return User::where('role', Role::Administrator->value)->get();
+        // The user of a plugin has the role, but it is not a person and has no mailbox.
+        return User::where('role', Role::Administrator->value)->whereNull('plugin_id')->get();
     }
 
     /**
@@ -114,19 +125,24 @@ class Notifier
         $customer = $website?->customer
             ?? ($job->database_server_id ? DatabaseServer::find($job->database_server_id)?->customer : null)
             ?? ($job->dns_zone_id ? DnsZone::find($job->dns_zone_id)?->customer : null);
-        $users = self::usersOf($customer)->concat(self::administrators());
         $server = $job->server?->name ?? '';
         $time = ($job->finished_at ?? now())->format('j M Y H:i T');
-        if ($job->action === AgentAction::Backup) {
-            $this->send(NotificationEvent::BackupFailed, $users, [
-                'website' => $website?->name ?? '', 'server' => $server, 'error' => $job->error ?? '', 'time' => $time,
-            ], "job:{$job->id}");
+        // Adversarial review, finding A3-05: the error text comes from the agent. A customer
+        // gets the text that the panel shows to the customer. An administrator gets one line
+        // of the full text. The administrators are first: an administrator gets one email.
+        $forAdministrators = $job->error === null ? null : Str::limit(trim((string) strtok($job->error, "\r\n")), 300);
+        foreach ([[self::administrators(), $forAdministrators], [self::usersOf($customer), JobResource::publicError($job)]] as [$users, $error]) {
+            if ($job->action === AgentAction::Backup) {
+                $this->send(NotificationEvent::BackupFailed, $users, [
+                    'website' => $website?->name ?? '', 'server' => $server, 'error' => $error ?? '', 'time' => $time,
+                ], "job:{$job->id}");
 
-            return;
+                continue;
+            }
+            $this->send(NotificationEvent::JobFailed, $users, [
+                'job' => $job->title, 'website' => $website?->name ?? '-', 'server' => $server, 'error' => $error ?? 'No error message.', 'time' => $time,
+            ], "job:{$job->id}");
         }
-        $this->send(NotificationEvent::JobFailed, $users, [
-            'job' => $job->title, 'website' => $website?->name ?? '-', 'server' => $server, 'error' => $job->error ?? 'No error message.', 'time' => $time,
-        ], "job:{$job->id}");
     }
 
     /**

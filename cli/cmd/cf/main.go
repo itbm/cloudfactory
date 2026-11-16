@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -17,7 +18,11 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 	if err := run(ctx, os.Args[1:], os.Stdout, os.Stderr); err != nil {
-		fmt.Fprintln(os.Stderr, "cf:", err)
+		fmt.Fprintln(os.Stderr, "cf:", clean(err.Error()))
+		var exit *exitError
+		if errors.As(err, &exit) && exit.code > 0 {
+			os.Exit(exit.code)
+		}
 		os.Exit(1)
 	}
 }

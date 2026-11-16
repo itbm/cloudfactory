@@ -6,6 +6,7 @@ use App\Enums\Role;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Foundation\Auth\User as Authenticatable;
@@ -27,8 +28,25 @@ class User extends Authenticatable
             'role' => Role::class,
             'totp_secret' => 'encrypted',
             'must_change_password' => 'boolean',
+            'temporary_password_at' => 'datetime',
             'notification_preferences' => 'array',
         ];
+    }
+
+    /**
+     * The form of an email in the panel: lower case, with no space at the start or the end.
+     * With one form, "Ann@example.com" and "ann@example.com" are one account with one sign-in
+     * lock (adversarial review, finding A1-02).
+     */
+    public static function normalEmail(string $email): string
+    {
+        return mb_strtolower(trim($email));
+    }
+
+    /** The panel keeps each email in its normal form. */
+    protected function email(): Attribute
+    {
+        return Attribute::make(set: fn (?string $value) => $value === null ? null : self::normalEmail($value));
     }
 
     public function customer(): BelongsTo

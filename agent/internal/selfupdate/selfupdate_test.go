@@ -129,7 +129,7 @@ func TestAnOlderVersionNeedsADowngradeOnPurpose(t *testing.T) {
 			t.Errorf("%s: %v", v, err)
 		}
 	}
-	for a, b := range map[string]string{"0.2.0-rc.1": "0.2.0", "0.9.9": "0.10.0", "0.2.0-rc.1x": "0.2.0-rc.2"} {
+	for a, b := range map[string]string{"0.2.0-rc.1": "0.2.0", "0.9.9": "0.10.0", "0.2.0-rc.9": "0.2.0-rc.10", "0.2.0-alpha.10": "0.2.0-beta.2", "0.2.0-rc": "0.2.0-rc.1"} {
 		if !Older(a, b) || Older(b, a) {
 			t.Errorf("Older(%s, %s) is wrong", a, b)
 		}

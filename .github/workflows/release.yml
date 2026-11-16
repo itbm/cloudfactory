@@ -419,8 +419,14 @@ jobs:
         run: |
           set -eu
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            # The release was made on the website. Add the files to it.
-            gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+            # The release was made on the website. Add the files to it. Adversarial review,
+            # finding I1-02: a release is not changed after it has its files. One version must
+            # not have two different signed agents. Make a new version to correct a release.
+            if [ "$(gh release view "$GITHUB_REF_NAME" --json assets --jq '.assets | length')" -gt 0 ]; then
+              echo "::error::The release $GITHUB_REF_NAME has files already. The workflow does not replace the files of a release. Make a new version."
+              exit 1
+            fi
+            gh release upload "$GITHUB_REF_NAME" dist/*
           else
             gh release create "$GITHUB_REF_NAME" dist/* --title "$GITHUB_REF_NAME" --generate-notes --verify-tag
           fi

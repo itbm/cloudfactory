@@ -329,7 +329,7 @@ const shownZones = new Set<string>();
 /** Reads one zone with its records. The next loads also read the records of the zone. */
 export async function dnsZone(id: string): Promise<DnsZone> {
   shownZones.add(id);
-  return toDnsZone(await request<ApiDnsZone>("GET", `/dns-zones/${id}`));
+  return toDnsZone(await request<ApiDnsZone>("GET", `/dns-zones/${encodeURIComponent(id)}`));
 }
 
 const toCustomer = (c: ApiCustomer): Customer => ({

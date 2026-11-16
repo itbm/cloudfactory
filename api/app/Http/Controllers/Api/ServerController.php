@@ -9,6 +9,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\JobResource;
 use App\Models\AgentJob;
 use App\Models\Database;
+use App\Models\DatabaseServer;
 use App\Models\JoinToken;
 use App\Models\MailDomain;
 use App\Models\Server;
@@ -128,6 +129,7 @@ class ServerController extends Controller
     /** FR-1201: a token for "install.sh --join". It works for one server, for 24 hours. */
     public function joinToken(Request $request): JsonResponse
     {
+        AuthController::refusePlugin($request);
         $token = 'cfj_'.Str::random(32);
         JoinToken::create(['token_hash' => hash('sha256', $token), 'expires_at' => now()->addDay()]);
         Audit::record($request, 'Made server join token');
@@ -175,6 +177,7 @@ class ServerController extends Controller
                 throw ValidationException::withMessages(['policy' => 'The container tools are being updated on a different server. Wait until that update is complete.']);
             }
         }
+        self::refuseOpenJob($server, AgentAction::InstallHostUpdates);
         $job = $this->jobs->dispatch($server, AgentAction::InstallHostUpdates, ['policy' => $policy], $policy === 'tools' ? "Update container tools on {$server->name}" : "Install updates on {$server->name}");
         Audit::record($request, $policy === 'tools' ? 'Updated container tools' : 'Installed host updates', $server->name);
 
@@ -190,6 +193,7 @@ class ServerController extends Controller
         if ($busy) {
             throw ValidationException::withMessages(['server' => "{$busy->name} has the same role and is rebooting. Wait until it is healthy."]);
         }
+        self::refuseOpenJob($server, AgentAction::Reboot);
         $server->update(['state' => 'rebooting']);
         $job = $this->jobs->dispatch($server, AgentAction::Reboot, ['now' => true], "Reboot {$server->name}");
         Audit::record($request, 'Rebooted server', $server->name);
@@ -203,6 +207,7 @@ class ServerController extends Controller
         $version = config('cloudfactory.agent.latest_version');
         // CF-16: the agent refuses an older version unless an administrator allows it.
         $allowDowngrade = $request->validate(['allowDowngrade' => ['sometimes', 'boolean']])['allowDowngrade'] ?? false;
+        self::refuseOpenJob($server, AgentAction::UpdateAgent);
         $job = $this->jobs->dispatch($server, AgentAction::UpdateAgent, ['version' => $version, 'allowDowngrade' => $allowDowngrade], "Update agent on {$server->name}", ref: $version);
         Audit::record($request, 'Updated agent', "{$server->name} {$version}");
 
@@ -237,6 +242,11 @@ class ServerController extends Controller
         }
         if ($server->database_servers_count > 0) {
             throw ValidationException::withMessages(['server' => "This server has {$server->database_servers_count} ".($server->database_servers_count === 1 ? 'database server' : 'database servers').'. Remove the database servers first.']);
+        }
+        // Adversarial review, finding A9-11: a database server that moves to this server would
+        // stay in the state "moving".
+        if (DatabaseServer::where('moving_to_server_id', $server->id)->exists()) {
+            throw ValidationException::withMessages(['server' => 'A database server moves to this server. Wait until the move is complete.']);
         }
         if ($server->mailDomains()->exists()) {
             throw ValidationException::withMessages(['server' => 'This server has mail domains. Remove the mail domains first.']);
@@ -341,5 +351,18 @@ class ServerController extends Controller
             'websites' => $s->websites_count ?? null,
             'lastSeenAt' => $s->last_seen_at?->toIso8601String(),
         ];
+    }
+
+    /**
+     * Adversarial review, finding A3-12: a server has one reboot, one update of the agent and
+     * one installation of updates at a time.
+     */
+    private static function refuseOpenJob(Server $server, AgentAction $action): void
+    {
+        $open = AgentJob::where('server_id', $server->id)->where('action', $action->value)
+            ->whereIn('state', [JobState::Queued->value, JobState::Running->value])->exists();
+        if ($open) {
+            throw ValidationException::withMessages(['server' => "{$server->name} has a job of this type that is not complete. Wait until that job is complete."]);
+        }
     }
 }

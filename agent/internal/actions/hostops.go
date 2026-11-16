@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -91,8 +92,15 @@ func (d *Deps) checkAllWebsites(ctx context.Context) error {
 // then ends the job with no result (jobs.ErrInterrupted). After the reboot, the agent
 // continues the job (ResumeReboot), and only that part sends the result.
 func (d *Deps) rebootAndWait(ctx context.Context) error {
+	// The websites are stopped. If the server does not reboot, they start again.
+	restart := func() {
+		if err := d.allServices(context.WithoutCancel(ctx), "start"); err != nil {
+			slog.Error("start the containers after a reboot that did not occur", "err", err)
+		}
+	}
 	if err := d.Reboot(ctx); err != nil {
 		d.clearRebootMark(ctx)
+		restart()
 		return err
 	}
 	wait := d.RebootWait
@@ -105,6 +113,7 @@ func (d *Deps) rebootAndWait(ctx context.Context) error {
 	case <-time.After(wait):
 		// The server did not shut down. The job must not continue after a later restart.
 		d.clearRebootMark(ctx)
+		restart()
 		return fmt.Errorf("the server did not shut down in %s after the reboot command", wait)
 	}
 }
@@ -113,7 +122,14 @@ func (d *Deps) rebootSteps() []jobs.Step {
 	return []jobs.Step{
 		// Caddy finishes the open requests when its container stops.
 		{Name: "Drain the edge proxy", Do: func(context.Context) error { return nil }},
-		{Name: "Stop containers", Do: func(ctx context.Context) error { return d.allServices(ctx, "stop") }},
+		{Name: "Stop containers", Do: func(ctx context.Context) error {
+			// The reboot stops each container. A container that does not stop here must not
+			// end the job with all other websites stopped (adversarial review, finding G6-05).
+			if err := d.allServices(ctx, "stop"); err != nil {
+				slog.Warn("stop the containers before the reboot", "err", err)
+			}
+			return nil
+		}},
 		{Name: "Reboot", Do: d.rebootAndWait},
 		{Name: "Start containers", Do: func(ctx context.Context) error { return d.allServices(ctx, "start") }},
 		// FR-1117: after a reboot, all containers and services must operate.
@@ -155,6 +171,12 @@ func (d *Deps) UpdateAgent(req *agentv1.UpdateAgentRequest) (jobs.Job, error) {
 	var rel selfupdate.Release
 	return jobs.Job{ID: req.GetJobId(), Key: "agent", Steps: []jobs.Step{
 		{Name: "Download agent binary", Do: func(ctx context.Context) (err error) {
+			// The restart waits for all jobs, and the agent port is closed in that time. A
+			// backup can take hours, and the server then had no agent for hours
+			// (adversarial review, finding G1-06).
+			if d.OtherJobs != nil && d.OtherJobs() > 1 {
+				return errors.New("the server runs other jobs now, for example a backup. Update the agent when they are complete")
+			}
 			rel, err = d.Updater.Fetch(ctx, req.GetVersion(), d.Arch)
 			return err
 		}},
@@ -258,6 +280,9 @@ func (d *Deps) ConfigureHost(req *agentv1.ConfigureHostRequest) (jobs.Job, error
 				errs = append(errs, d.EnsureSftp(ctx))
 			}
 			errs = append(errs, d.EnsureDns(ctx))
+			// The mail server and the webmail also get the new settings (adversarial review,
+			// finding G6-10). A server with no mail does nothing here.
+			errs = append(errs, d.RefreshMail(ctx))
 			return errors.Join(errs...)
 		}},
 	}}, nil

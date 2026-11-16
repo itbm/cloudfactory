@@ -411,6 +411,9 @@ class SecurityTest extends TestCase
         $this->assertFalse(AgentJob::sole()->payload['allowDowngrade']);
 
         $this->postJson("/api/v1/servers/{$server->id}/update-agent", ['allowDowngrade' => 'yes'])->assertJsonValidationErrors('allowDowngrade');
+        // Adversarial review, finding A3-12: one update of the agent at a time on a server.
+        $this->postJson("/api/v1/servers/{$server->id}/update-agent", ['allowDowngrade' => true])->assertJsonValidationErrors('server');
+        AgentJob::sole()->update(['state' => 'succeeded']);
         $this->postJson("/api/v1/servers/{$server->id}/update-agent", ['allowDowngrade' => true])->assertAccepted();
         $this->assertSame([false, true], AgentJob::all()->map(fn ($job) => $job->payload['allowDowngrade'])->sort()->values()->all());
     }

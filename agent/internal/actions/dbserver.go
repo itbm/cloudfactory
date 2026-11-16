@@ -21,6 +21,11 @@ func (d *Deps) SetDatabaseServer(req *agentv1.DatabaseServerRequest) (jobs.Job, 
 	key, _ := serverKey(s.GetId())
 	return jobs.Job{ID: req.GetJobId(), Key: key, Steps: []jobs.Step{
 		{Name: "Start database server", Do: func(ctx context.Context) error {
+			// The panel sends this job for a database server that does not move, also to
+			// start it again on the old server after a move that failed.
+			if err := d.State.HoldDatabaseServer(key, false); err != nil {
+				return err
+			}
 			_, err := d.ensureServer(ctx, s, true)
 			return err
 		}},

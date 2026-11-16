@@ -285,11 +285,18 @@ func writeInPlace(path, content string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC|syscall.O_NOFOLLOW, 0o644)
+	// One write puts the new content at the start, and then the file gets its new length. A
+	// reader in the container thus never sees an empty file (adversarial review, finding
+	// G7-09).
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|syscall.O_NOFOLLOW, 0o644)
 	if err != nil {
 		return err
 	}
-	if _, err := f.WriteString(content); err != nil {
+	if _, err := f.WriteAt([]byte(content), 0); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Truncate(int64(len(content))); err != nil {
 		f.Close()
 		return err
 	}

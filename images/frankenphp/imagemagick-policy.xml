@@ -23,8 +23,12 @@
   <policy domain="resource" name="disk" value="1GiB"/>
   <!-- No external programs, for example Ghostscript. -->
   <policy domain="delegate" rights="none" pattern="*"/>
+  <policy domain="resource" name="time" value="120"/>
   <!-- OpenEXR, PostScript, PDF, XPS, the internal SVG renderer, and reads from URLs. -->
   <policy domain="coder" rights="none" pattern="{EXR,PS,PS2,PS3,EPS,EPI,EPSF,EPSI,EPT,PDF,PDFA,XPS,MSVG,MVG,URL,HTTP,HTTPS,FTP}"/>
+  <!-- Adversarial review, finding I1-15: MSL is a script that reads and writes files.
+       EPHEMERAL deletes the file that it reads. The others open a window, a scanner or a printer. -->
+  <policy domain="coder" rights="none" pattern="{MSL,EPHEMERAL,SHOW,WIN,X,PLT,SCAN,SCANX,PRINT}"/>
   <!-- No file names from "@file" lists. -->
   <policy domain="path" rights="none" pattern="@*"/>
 </policymap>

@@ -163,7 +163,7 @@ class PluginTest extends TestCase
             ->assertJsonValidationErrors('signature');
         $this->trustKey();
         // A change after the signature.
-        $this->postJson('/api/v1/plugins', ['manifest' => $this->manifest(['scopes' => ['websites:write']]), 'signature' => $this->sign($manifest), 'baseUrl' => 'https://uptime.example.net', 'password' => 'password'])
+        $this->postJson('/api/v1/plugins', ['manifest' => $this->manifest(['scopes' => ['websites:write', 'audit:read']]), 'signature' => $this->sign($manifest), 'baseUrl' => 'https://uptime.example.net', 'password' => 'password'])
             ->assertJsonValidationErrors('signature');
         // No signature.
         $this->postJson('/api/v1/plugins', ['manifest' => $manifest, 'baseUrl' => 'https://uptime.example.net', 'password' => 'password'])
@@ -257,7 +257,7 @@ class PluginTest extends TestCase
         $this->trustKey();
         $out = $this->install();
         $id = $out['plugin']['id'];
-        $next = $this->manifest(['version' => '1.1.0', 'scopes' => ['websites:read']]);
+        $next = $this->manifest(['version' => '1.1.0', 'scopes' => ['websites:read'], 'events' => []]);
         $this->putJson("/api/v1/plugins/{$id}", ['manifest' => $next, 'signature' => $this->sign($next), 'password' => 'password'])
             ->assertOk()->assertJsonPath('version', '1.1.0');
         $this->assertSame(['websites:read'], PersonalAccessToken::findToken($out['token'])->abilities);
@@ -402,13 +402,13 @@ class PluginTest extends TestCase
     {
         $this->admin();
         $this->trustKey();
-        $id = $this->install($this->manifest(['hooks' => [['event' => 'customer.creating', 'path' => '/hooks/before']]]))['plugin']['id'];
+        $id = $this->install($this->manifest(['scopes' => ['customers:read'], 'events' => [], 'hooks' => [['event' => 'customer.creating', 'path' => '/hooks/before']]]))['plugin']['id'];
         $plan = $this->plan();
         Http::fake(['*' => Http::response('down', 503)]);
 
         $this->postJson('/api/v1/customers', ['name' => 'Acme', 'email' => 'acme@example.com', 'role' => 'owner', 'planId' => $plan->id])->assertCreated();
 
-        $manifest = $this->manifest(['version' => '1.1.0', 'hooks' => [['event' => 'customer.creating', 'path' => '/hooks/before', 'onError' => 'refuse']]]);
+        $manifest = $this->manifest(['version' => '1.1.0', 'scopes' => ['customers:read'], 'events' => [], 'hooks' => [['event' => 'customer.creating', 'path' => '/hooks/before', 'onError' => 'refuse']]]);
         $this->putJson("/api/v1/plugins/{$id}", ['manifest' => $manifest, 'signature' => $this->sign($manifest), 'password' => 'password'])->assertOk();
         $this->postJson('/api/v1/customers', ['name' => 'Beta', 'email' => 'beta@example.com', 'role' => 'owner', 'planId' => $plan->id])
             ->assertUnprocessable()->assertJsonValidationErrors('name');

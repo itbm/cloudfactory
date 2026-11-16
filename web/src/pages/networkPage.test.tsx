@@ -43,6 +43,9 @@ describe("the network page", () => {
     expect(NAVIGATION.administrator.flatMap((s) => s.items).map((i) => i.to)).toContain("/network");
     expect(canOpen("administrator", "/network")).toBe(true);
     expect(canOpen("reseller", "/network")).toBe(false);
+    // The router ignores the case of the letters and reads "%73" as "s".
+    expect(canOpen("owner", "/Servers")).toBe(false);
+    expect(canOpen("owner", "/%73ervers/")).toBe(false);
     expect(canOpen("owner", "/network")).toBe(false);
   });
 

@@ -88,13 +88,9 @@ func (c *Client) SetPanelBrands(ctx context.Context, domain string, brands []str
 	}
 	const path = "/config/apps/tls/automation/policies"
 	for _, policy := range BrandPolicies(brands) {
-		status, body, err := c.do(ctx, http.MethodGet, path, nil)
+		policies, err := c.tlsPolicies(ctx)
 		if err != nil {
 			return err
-		}
-		var policies []any
-		if status == http.StatusOK {
-			_ = json.Unmarshal(body, &policies)
 		}
 		if len(policies) == 0 {
 			if err := c.putOrPatch(ctx, path, []any{policy}); err != nil {
@@ -108,7 +104,7 @@ func (c *Client) SetPanelBrands(ctx context.Context, domain string, brands []str
 			return err
 		}
 	}
-	status, body, err := c.do(ctx, http.MethodPatch, "/id/cf-panel/match", []any{map[string]any{"host": hosts}})
+	status, body, err := c.do(ctx, http.MethodPatch, "/id/cf-panel/match", []any{hostMatch(hosts)})
 	if err != nil {
 		return err
 	}

@@ -335,8 +335,8 @@ func TestStagingCopyCopiesTheDatabases(t *testing.T) {
 	}
 	// The dump goes from one client to the other, not through the memory of the agent.
 	client := podmanOf(mariaServerKey) + "exec"
-	if !f.Called(client+" cf-mariadb-"+mariaServerKey+" mariadb-dump --user=root --single-transaction --routines acme_x7k2_shop | "+client) ||
-		!strings.Contains(strings.Join(f.Calls, "\n"), "mariadb --sandbox --user=cfrestore_") {
+	if !f.Called(client+" cf-mariadb-"+mariaServerKey+" mariadb-dump --user=root --single-transaction --routines --events acme_x7k2_shop") ||
+		!strings.Contains(strings.Join(f.Calls, "\n"), "mariadb --sandbox --user=cfdefiner_") {
 		t.Errorf("no copy of the source: %v", f.Calls)
 	}
 	// A copy needs the database server of each database and of each user.
@@ -410,7 +410,7 @@ func TestLimitsSetTheQuotaAndTheIOLimit(t *testing.T) {
 	if err := run(t)(d.SetLimits(&agentv1.SetLimitsRequest{JobId: jobID2, WebsiteId: websiteID, Limits: l})); err != nil {
 		t.Fatal(err)
 	}
-	if !f.Called("setquota --user acme_x7k2 9961472 10485760 0 0 /srv") {
+	if !f.Called("setquota --user acme_x7k2 9961472 10485760 2490368 2621440 /srv") {
 		t.Errorf("no quota: %v", f.Calls)
 	}
 	if !f.Called("systemctl --user --machine=acme_x7k2@ set-property --runtime cf-acme_x7k2.service CPUQuota=200% MemoryMax=1073741824 MemorySwapMax=0 TasksMax=50 IOReadBandwidthMax=/dev/vda 52428800 IOWriteBandwidthMax=/dev/vda 52428800") {
@@ -460,7 +460,7 @@ func TestTheAgentSetsTheQuotaOfEachWebsiteAtItsStart(t *testing.T) {
 	if err := d.ApplyDiskQuotas(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if !f.Called("setquota --user acme_x7k2 9961472 10485760 0 0 /") {
+	if !f.Called("setquota --user acme_x7k2 9961472 10485760 2490368 2621440 /") {
 		t.Errorf("no quota: %v", f.Calls)
 	}
 }
@@ -484,7 +484,7 @@ func TestTheReportHasWebsiteUseAndCertificates(t *testing.T) {
 
 	var r panel.Report
 	d.FillReport(context.Background(), &r)
-	if len(r.Websites) != 1 || r.Websites[0].MemoryBytes != 104857600 || r.Websites[0].Processes != 12 || r.Websites[0].DiskBytes != 13 {
+	if len(r.Websites) != 1 || r.Websites[0].MemoryBytes != 104857600 || r.Websites[0].Processes != 12 || r.Websites[0].DiskBytes < 13 || r.Websites[0].DiskBytes > 64<<10 {
 		t.Errorf("websites = %+v", r.Websites)
 	}
 	// A valid certificate means that the domain points here, also behind NAT.
@@ -780,7 +780,7 @@ func TestPostgreSQLRefusesWebsiteUsersInItsOwnDatabases(t *testing.T) {
 	if err := run(t)(d.CreateDatabase(req)); err != nil {
 		t.Fatal(err)
 	}
-	const revoke = "REVOKE CONNECT ON DATABASE postgres, template1 FROM PUBLIC;\n"
+	revoke := pgSafe(pgHarden)
 	first, create := index(f.Inputs, revoke), -1
 	for i, in := range f.Inputs {
 		if strings.Contains(in, `CREATE DATABASE "acme_x7k2_shop"`) {

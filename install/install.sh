@@ -16,11 +16,18 @@
 #
 # Check the script before you run it. Each release has install.sh.sha256 and install.sh.sig:
 #   sha256sum -c install.sh.sha256
-#   cosign verify-blob --key cosign.pub --signature install.sh.sig install.sh
+#   cosign verify-blob --key cosign.pub --insecure-ignore-tlog=true --signature install.sh.sig install.sh
 #
 # SPDX-License-Identifier: AGPL-3.0-only
 
 set -eu
+# Adversarial review, finding I1-09: the files of the system are for all users to read, also
+# when root has a different umask. The script sets a different mode for each secret file.
+umask 022
+
+# Adversarial review, finding I1-05: the full script is in one function, and the last line
+# starts it. Thus a download that stops before the end runs nothing.
+main() {
 
 # The release pipeline replaces these values.
 CF_VERSION="${CF_VERSION:-__CF_VERSION__}"
@@ -41,7 +48,11 @@ OS_RELEASE="$ROOT/etc/os-release"
 COSIGN_PUBLIC_KEY='__COSIGN_PUBLIC_KEY__'
 
 MODE=panel
+# Adversarial review, finding I1-11: the token can come from the environment, so that it is
+# not in the list of processes: CF_JOIN_TOKEN=... sh install.sh --join - --panel ...
 JOIN_TOKEN=""
+# The ports of SSH that the firewall keeps open (finding I1-08).
+SSH_PORTS=""
 PANEL_URL=""
 PANEL_PIN=""
 # The SHA-256 fingerprint of the root certificate of the panel CA, for a panel that has a
@@ -109,6 +120,8 @@ Options:
                        The default is "web" for --join, and all roles for a new panel.
   --address HOST       The host name or IP address that the panel uses to reach this server.
   --panel-ip IP        Accept the agent port only from this IP address (the panel).
+  --ssh-port PORT      Keep this SSH port open in the firewall. Give the option for each port.
+                       The default is the ports of the SSH service of this server, or 22.
   --sftp-port PORT     The SFTP port of the websites. The default is 2200. Port 22 stays
                        for the SSH service of this server.
   --registry URL       Use a different image registry, for example a mirror (FR-1813).
@@ -151,7 +164,11 @@ value() {
 
 while [ $# -gt 0 ]; do
 	case "$1" in
-	--join) MODE="join"; JOIN_TOKEN=$(value "$@"); shift ;;
+	--join)
+		MODE="join"; JOIN_TOKEN=$(value "$@"); shift
+		[ "$JOIN_TOKEN" = "-" ] && JOIN_TOKEN="${CF_JOIN_TOKEN:-}"
+		;;
+	--ssh-port) SSH_PORTS="$SSH_PORTS $(value "$@")"; shift ;;
 	--panel) PANEL_URL=$(value "$@"); shift ;;
 	--panel-ca-sha256) PANEL_CA_PIN=$(value "$@"); shift ;;
 	--certificate) CERTIFICATE=$(value "$@"); shift ;;
@@ -293,6 +310,32 @@ check_arguments() {
 		fi
 		;;
 	esac
+	# Adversarial review, finding I1-07: these values go into the firewall and into files of
+	# root. A wrong value must not make a file that the system cannot read.
+	case "$PANEL_IP" in
+	"") ;;
+	*[!0-9a-fA-F.:]* | *.*:* | *:*.*) problem "--panel-ip $PANEL_IP is not an IP address." ;;
+	*.*.*.* | *:*:*) ;;
+	*) problem "--panel-ip $PANEL_IP is not an IP address." ;;
+	esac
+	case "$DOMAIN" in
+	*[!A-Za-z0-9.-]* | .* | *. | -* | *..*) problem "--domain $DOMAIN is not a host name." ;;
+	esac
+	case "$REGISTRY" in
+	"" | *[!A-Za-z0-9.:/_-]* | /* | */) problem "--registry $REGISTRY is not the address of a registry." ;;
+	esac
+	if [ -z "$SSH_PORTS" ]; then
+		# The ports of the SSH service of this server. A server with SSH on a different port
+		# must not lose its access (finding I1-08).
+		SSH_PORTS=$(sshd -T 2>/dev/null | awk '$1 == "port" { print $2 }' | sort -un | tr '\n' ' ' || true)
+		[ -n "$(printf '%s' "$SSH_PORTS" | tr -d ' ')" ] || SSH_PORTS="22"
+	fi
+	for port in $SSH_PORTS; do
+		case "$port" in
+		"" | *[!0-9]*) problem "--ssh-port $port is not a port number." ;;
+		*) [ "$port" -ge 1 ] && [ "$port" -le 65535 ] || problem "--ssh-port $port is not a port number." ;;
+		esac
+	done
 	for registry in $UNSIGNED_REGISTRIES; do
 		case "$registry" in
 		*[!A-Za-z0-9.:/_-]* | "$REGISTRY" | "$REGISTRY"/*) problem "--allow-unsigned $registry is not permitted." ;;
@@ -317,7 +360,18 @@ check_arguments() {
 # not change (FR-1707).
 firewall_rules() {
 	agent_rule="tcp dport 7443 accept"
-	[ -n "$PANEL_IP" ] && agent_rule="ip saddr $PANEL_IP tcp dport 7443 accept"
+	case "$PANEL_IP" in
+	"") ;;
+	*:*) agent_rule="ip6 saddr $PANEL_IP tcp dport 7443 accept" ;;
+	*) agent_rule="ip saddr $PANEL_IP tcp dport 7443 accept" ;;
+	esac
+	# The rule of port 22 stays as it is: the agent finds its place in the file by this line.
+	# Each other port of SSH gets its own line before it.
+	ssh_extra=""
+	for port in $SSH_PORTS; do
+		[ "$port" = "22" ] || ssh_extra="${ssh_extra}tcp dport $port accept # cloudfactory-ssh
+    "
+	done
 	edge_uid=$(id -u cf-edge)
 	panel_uid=$(id -u cf-panel)
 	website_networks=""
@@ -430,7 +484,7 @@ table inet cloudfactory {
     udp dport @mesh_port ip6 saddr @mesh_endpoints6 accept
     iifname "cf-mesh" jump mesh_input
     meta l4proto { icmp, ipv6-icmp } accept
-    tcp dport 22 accept$dns_accept
+    ${ssh_extra}tcp dport 22 accept$dns_accept
     tcp dport $SFTP_PORT accept # cloudfactory-sftp
     tcp dport { 80, 443, 8080, 8443 } accept
     udp dport { 443, 8443 } accept
@@ -1078,7 +1132,12 @@ fi
 step "Set the firewall"
 # The agent writes the database access of each website in this directory (firewall_rules).
 install -d -m 0755 "$CF_ETC/firewall"
-firewall_rules >/etc/nftables.d-cloudfactory.nft
+# Adversarial review, finding I1-07: a firewall file with an error would be refused at the next
+# start of the server, and the server would then have no firewall. The script checks the new
+# rules before it puts the file in place.
+firewall_rules >/etc/nftables.d-cloudfactory.nft.new
+nft -c -f /etc/nftables.d-cloudfactory.nft.new || fail "the new firewall rules have an error. The firewall did not change."
+mv /etc/nftables.d-cloudfactory.nft.new /etc/nftables.d-cloudfactory.nft
 grep -q 'nftables.d-cloudfactory.nft' /etc/nftables.conf 2>/dev/null || printf 'include "/etc/nftables.d-cloudfactory.nft"\n' >>/etc/nftables.conf
 nft -f /etc/nftables.d-cloudfactory.nft
 systemctl enable --quiet nftables
@@ -1154,7 +1213,7 @@ if [ "$MODE" = panel ]; then
 		openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 3650 \
 			-subj "/CN=$DOMAIN/O=Cloudfactory panel" \
 			-keyout "$CF_DATA/panel/pki/panel.key" -out "$CF_DATA/panel/pki/panel.crt" 2>/dev/null
-		chown cf-panel:cf-panel "$CF_DATA/panel/pki/panel.key" "$CF_DATA/panel/pki/panel.crt"
+		chown -h cf-panel:cf-panel "$CF_DATA/panel/pki/panel.key" "$CF_DATA/panel/pki/panel.crt"
 		chmod 0600 "$CF_DATA/panel/pki/panel.key"
 	fi
 	if [ ! -f "$CF_DATA/panel/panel.env" ]; then
@@ -1167,7 +1226,7 @@ CF_AGENT_CLIENT_KEY=/data/pki/panel.key
 CF_AGENT_CERTIFICATES=/data/pki/agents
 CF_AGENT_LATEST=$CF_VERSION
 ENV
-		chown cf-panel:cf-panel "$CF_DATA/panel/panel.env"
+		chown -h cf-panel:cf-panel "$CF_DATA/panel/panel.env"
 		umask 022
 	fi
 	# FR-1808: the agent pulls the panel images and starts them in gVisor.
@@ -1205,12 +1264,14 @@ fi
 
 step "Join the panel and start the agent"
 if [ ! -f "$CF_ETC/agent.json" ]; then
-	set -- --panel "$PANEL_URL" --token "$JOIN_TOKEN" --roles "${ROLES:-web}" --registry "$REGISTRY" --sftp-port "$SFTP_PORT"
+	# The token goes in the environment, not in the arguments: each user can read the
+	# arguments of a process (finding I1-11).
+	set -- --panel "$PANEL_URL" --roles "${ROLES:-web}" --registry "$REGISTRY" --sftp-port "$SFTP_PORT"
 	[ -n "$NAME" ] && set -- "$@" --name "$NAME"
 	[ -n "$ADDRESS" ] && set -- "$@" --address "$ADDRESS"
 	[ -n "$PANEL_PIN" ] && set -- "$@" --panel-certificate-sha256 "$PANEL_PIN"
 	[ -n "$PANEL_CA_PIN" ] && set -- "$@" --panel-ca-sha256 "$PANEL_CA_PIN"
-	/usr/local/bin/cf-agent join "$@"
+	CF_JOIN_TOKEN="$JOIN_TOKEN" /usr/local/bin/cf-agent join "$@"
 fi
 if { [ "$AGENT_CHANGED" -eq 1 ] || [ "$QUOTAS_CHANGED" -eq 1 ]; } && systemctl is-active --quiet cf-agent.service; then
 	# An update: the service still has the old binary. New quotas: the agent that operates
@@ -1235,3 +1296,6 @@ else
 	info "This server joined the panel. It shows in the panel under Servers."
 fi
 info "The website owners use SFTP on port $SFTP_PORT. If this server has a firewall at your provider, open this port there."
+}
+
+main "$@"

@@ -19,7 +19,10 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
+	"sync/atomic"
+	"time"
 
 	"golang.org/x/sys/unix"
 )
@@ -64,24 +67,39 @@ func clean(rel string) (string, error) {
 }
 
 // noOpenat2 is true after the kernel said that it has no openat2 (Linux before 5.6).
-var noOpenat2 bool
+var noOpenat2 atomic.Bool
+
+// maxDepth is the largest number of directory levels that a tree function goes into. Each
+// level has an open directory, so a tree with no limit used all the file descriptors of the
+// root helper (adversarial review, finding G5-06).
+const maxDepth = 4096
+
+// errTooDeep is the error of a tree with more than maxDepth levels.
+var errTooDeep = errors.New("the directory tree has too many levels")
+
+// maxReadFile is the largest file that ReadFile reads.
+const maxReadFile = 64 << 20
 
 // openBeneath opens rel below the directory dirfd. No part of rel can be a symbolic link.
 func openBeneath(dirfd int, rel string, flags int, mode uint32) (int, error) {
 	flags |= unix.O_CLOEXEC | unix.O_NOFOLLOW
-	if !noOpenat2 {
+	if !noOpenat2.Load() {
 		how := unix.OpenHow{Flags: uint64(flags), Resolve: unix.RESOLVE_BENEATH | unix.RESOLVE_NO_SYMLINKS}
 		if flags&unix.O_CREAT != 0 {
 			how.Mode = uint64(mode)
 		}
-		for {
+		for try := 0; ; try++ {
 			fd, err := unix.Openat2(dirfd, rel, &how)
 			switch {
-			case err == unix.EINTR || err == unix.EAGAIN:
-				// EAGAIN: a rename in the path while the kernel read it. Try again.
+			case err == unix.EINTR:
+				continue
+			case err == unix.EAGAIN && try < 200:
+				// EAGAIN: a rename in the path while the kernel read it, or a lease on the
+				// file. Try again, but not with no limit and not with a full processor.
+				time.Sleep(time.Duration(min(try, 20)) * time.Millisecond)
 				continue
 			case err == unix.ENOSYS:
-				noOpenat2 = true
+				noOpenat2.Store(true)
 			default:
 				return fd, err
 			}
@@ -167,7 +185,11 @@ func (d *Dir) ReadFile(rel string) ([]byte, error) {
 	} else if !fi.Mode().IsRegular() {
 		return nil, &fs.PathError{Op: "read", Path: f.Name(), Err: errors.New("not a regular file")}
 	}
-	return io.ReadAll(f)
+	b, err := io.ReadAll(io.LimitReader(f, maxReadFile+1))
+	if err == nil && len(b) > maxReadFile {
+		return nil, &fs.PathError{Op: "read", Path: f.Name(), Err: errors.New("the file is too large")}
+	}
+	return b, err
 }
 
 // Lstat gives the properties of a path. It does not follow a link at the last part.
@@ -383,7 +405,9 @@ func (d *Dir) RemoveAll(rel string) error {
 	return nil
 }
 
-func removeAllAt(pfd int, name string) error {
+func removeAllAt(pfd int, name string) error { return removeAllDepth(pfd, name, 0) }
+
+func removeAllDepth(pfd int, name string, depth int) error {
 	err := unix.Unlinkat(pfd, name, 0)
 	if err == nil || err == unix.ENOENT {
 		return nil
@@ -391,34 +415,45 @@ func removeAllAt(pfd int, name string) error {
 	if err != unix.EISDIR && err != unix.EPERM {
 		return err
 	}
-	fd, err := unix.Openat(pfd, name, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
-	if err == unix.ENOENT {
-		return nil
+	if depth > maxDepth {
+		return errTooDeep
 	}
-	if err != nil {
-		return err
-	}
-	f := os.NewFile(uintptr(fd), name)
-	defer f.Close()
-	for {
-		names, rerr := f.Readdirnames(256)
-		for _, n := range names {
-			if err := removeAllAt(fd, n); err != nil {
-				return err
+	// A file system can skip entries when entries go away during the read of the directory.
+	// Read the directory again until it is empty.
+	for pass := 0; ; pass++ {
+		fd, err := unix.Openat(pfd, name, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+		if err == unix.ENOENT {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		f := os.NewFile(uintptr(fd), name)
+		for {
+			names, rerr := f.Readdirnames(256)
+			for _, n := range names {
+				if err := removeAllDepth(fd, n, depth+1); err != nil {
+					f.Close()
+					return err
+				}
+			}
+			if rerr == io.EOF {
+				break
+			}
+			if rerr != nil {
+				f.Close()
+				return rerr
 			}
 		}
-		if rerr == io.EOF {
-			break
+		f.Close()
+		err = unix.Unlinkat(pfd, name, unix.AT_REMOVEDIR)
+		if err == unix.ENOENT {
+			return nil
 		}
-		if rerr != nil {
-			return rerr
+		if err != unix.ENOTEMPTY || pass >= 100 {
+			return err
 		}
 	}
-	err = unix.Unlinkat(pfd, name, unix.AT_REMOVEDIR)
-	if err == unix.ENOENT {
-		return nil
-	}
-	return err
 }
 
 // Rename gives a path a new name in one step. Both paths are below the directory.
@@ -490,6 +525,13 @@ func (d *Dir) ChownTree(rel string, uid, gid int) error {
 }
 
 func chownTreeAt(pfd int, name string, uid, gid int) error {
+	return chownTreeDepth(pfd, name, uid, gid, 0)
+}
+
+func chownTreeDepth(pfd int, name string, uid, gid, depth int) error {
+	if depth > maxDepth {
+		return errTooDeep
+	}
 	if err := unix.Fchownat(pfd, name, uid, gid, unix.AT_SYMLINK_NOFOLLOW); err != nil {
 		return err
 	}
@@ -505,7 +547,7 @@ func chownTreeAt(pfd int, name string, uid, gid int) error {
 	for {
 		names, rerr := f.Readdirnames(256)
 		for _, n := range names {
-			if err := chownTreeAt(fd, n, uid, gid); err != nil {
+			if err := chownTreeDepth(fd, n, uid, gid, depth+1); err != nil {
 				return err
 			}
 		}
@@ -530,11 +572,27 @@ func (d *Dir) ReadDir(rel string) ([]fs.DirEntry, error) {
 	}
 	f := os.NewFile(uintptr(fd), filepath.Join(d.base, c))
 	defer f.Close()
-	return f.ReadDir(-1)
+	entries, err := f.ReadDir(-1)
+	slices.SortFunc(entries, func(a, b fs.DirEntry) int { return strings.Compare(a.Name(), b.Name()) })
+	return entries, err
 }
 
-// Size gives the size of the regular files in a path and in all that is in it. It does not
-// follow links. A part that it cannot read counts as 0.
+// The limits of Size. The owner of a website controls the tree that the agent measures.
+const (
+	// MaxSizeEntries is the largest number of entries that Size reads.
+	MaxSizeEntries = 5_000_000
+	// MaxSizeTime is the longest time of one Size.
+	MaxSizeTime = 2 * time.Minute
+)
+
+// Size gives the disk space of the regular files in a path and in all that is in it. It does
+// not follow links, and it never leaves the directory tree. A part that it cannot read counts
+// as 0.
+//
+// The size is the space that the files use (blocks), not their length: a sparse file of many
+// terabytes uses no space. Size stops at MaxSizeEntries entries, at MaxSizeTime and at
+// maxDepth levels, and then gives the sum up to that point (adversarial review, finding
+// G5-08).
 func (d *Dir) Size(rel string) int64 {
 	c, err := clean(rel)
 	if err != nil {
@@ -546,33 +604,60 @@ func (d *Dir) Size(rel string) int64 {
 	}
 	f := os.NewFile(uintptr(fd), c)
 	defer f.Close()
-	return sizeOf(f)
+	w := sizeWalk{end: time.Now().Add(MaxSizeTime)}
+	w.dir(f, 0)
+	return w.total
 }
 
-func sizeOf(dir *os.File) int64 {
-	var total int64
-	for {
+// TreeSize gives the Size of the directory dir.
+func TreeSize(dir string) int64 {
+	d, err := Open(dir)
+	if err != nil {
+		return 0
+	}
+	defer d.Close()
+	return d.Size(".")
+}
+
+type sizeWalk struct {
+	total   int64
+	entries int
+	end     time.Time
+	stopped bool
+}
+
+func (w *sizeWalk) dir(dir *os.File, depth int) {
+	if depth > maxDepth {
+		return
+	}
+	for !w.stopped {
 		names, rerr := dir.Readdirnames(256)
 		for _, n := range names {
+			if w.entries++; w.entries > MaxSizeEntries || w.entries%4096 == 0 && time.Now().After(w.end) {
+				w.stopped = true
+				return
+			}
 			var st unix.Stat_t
 			if unix.Fstatat(int(dir.Fd()), n, &st, unix.AT_SYMLINK_NOFOLLOW) != nil {
 				continue
 			}
 			switch st.Mode & unix.S_IFMT {
 			case unix.S_IFREG:
-				total += st.Size
+				if used := st.Blocks * 512; used > 0 && w.total+used > w.total {
+					w.total += used
+				}
 			case unix.S_IFDIR:
 				fd, err := unix.Openat(int(dir.Fd()), n, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
 				if err != nil {
 					continue
 				}
 				sub := os.NewFile(uintptr(fd), n)
-				total += sizeOf(sub)
+				w.dir(sub, depth+1)
 				sub.Close()
 			}
 		}
 		if rerr != nil {
-			return total
+			return
 		}
 	}
 }

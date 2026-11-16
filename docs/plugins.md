@@ -29,6 +29,11 @@ A plugin cannot do these things:
 - Get the scopes `tokens:read`, `tokens:write`, `users:write`, `plugins:read` or
   `plugins:write`. With these scopes, a plugin could make tokens, take a user account or
   change its own access.
+- Read the password of the backup repository or the private key of a mailbox, make a join
+  token for a server, make a tunnel, or change the tunnel key of a server. The panel refuses
+  these requests from the token of a plugin, with all scopes.
+- Get an event or a before hook when it does not have the scope to read that data. See
+  [Events](#events) and [Before hooks](#before-hooks).
 
 ![The Plugins page with two signed plugins, their scopes and the trusted keys](screenshots/plugins/1-plugins.png)
 
@@ -83,7 +88,7 @@ A plugin cannot do these things:
 | `slug` | Lower-case letters, digits and `-`. 1 to 40 characters. It must be unique on the panel. |
 | `version` | For example `1.4.0`. |
 | `scopes` | The scopes of the token. Use only the scopes that the plugin needs. |
-| `events` | The events of the table in [Events](#events). |
+| `events` | The events of the table in [Events](#events). Each event needs a scope. |
 | `webhook` | The path of the webhook. Necessary when `events` is not empty. |
 | `pages` | Up to 10 pages. `roles` gives the roles that see the page in the menu. |
 | `actions` | Up to 20 actions. `target` is `website`, `server` or `customer`. `roles` gives the roles that see the button. `confirm` is optional: a question that the panel asks before it runs the action. |
@@ -240,6 +245,20 @@ The audit log shows each change of a plugin with the actor `Plugin: NAME (token 
 ## Events
 
 The panel sends each event to the webhook of each plugin that is on and wants the event.
+
+An event has data of all customers. Thus a plugin gets an event only when its manifest has
+the scope to read that data. The panel refuses a manifest that does not have the scope.
+
+| Event | Necessary scope |
+| ----- | --------------- |
+| `audit.recorded` | `audit:read` |
+| `job.finished`, `website.*`, `domain.*`, `deploy.started` | `websites:read` |
+| `database.*` | `databases:read` |
+| `backup.started`, `restore.started` | `backups:read` |
+| `customer.*` | `customers:read` |
+| `user.created` | `users:read` |
+
+The scope to change data (for example `websites:write`) is also sufficient.
 
 | Event | When | Data |
 | ----- | ---- | ---- |
@@ -430,6 +449,10 @@ records each action as "Ran plugin action".
 
 A before hook lets a plugin refuse a change. The panel asks each plugin that is on and has the
 hook, before it makes the change.
+
+A before hook needs a scope, as an event does: `websites:read` for `website.*` and
+`domain.adding`, `databases:read` for `database.creating`, and `customers:read` for
+`customer.creating`.
 
 | Hook | Before | Data |
 | ---- | ------ | ---- |

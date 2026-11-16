@@ -57,8 +57,8 @@ final class InputRules
     /** A domain name in lower case. Each label has 1 to 63 characters. The last label is not a number, so that the name is not an IP address (audit finding R5). */
     public const DOMAIN = '/^(?=[\\s\\S]{0,253}\\z)(?![\\s\\S]*?(?:\\.[0-9]+$))(?:^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$)/D';
 
-    /** The name of an environment variable of a website container. PORT, HOST, HOME, PATH, PWD and the names that start with CF_ are for the agent and the image. */
-    public const ENV_NAME = '/^(?![\\s\\S]*?(?:^(PORT|HOST|HOME|PATH|PWD)$))(?![\\s\\S]*?(?:^CF_))(?:^[A-Za-z_][A-Za-z0-9_]{0,63}$)/D';
+    /** The name of an environment variable of a website container. PORT, HOST, HOME, PATH, PWD, SERVER_NAME and the names that start with CF_, FRANKENPHP_, CADDY_, XDG_ or APACHE_ are for the agent and the image: they change the web server of the container. */
+    public const ENV_NAME = '/^(?![\\s\\S]*?(?:^(PORT|HOST|HOME|PATH|PWD|SERVER_NAME)$))(?![\\s\\S]*?(?:^(CF|FRANKENPHP|CADDY|XDG|APACHE)_))(?:^[A-Za-z_][A-Za-z0-9_]{0,63}$)/D';
 
     /** The value of an environment variable of a website container. It is on one line. It can be empty. */
     public const ENV_VALUE = '/^(?:\\z|(?=[\\s\\S]{0,4096}\\z)(?:^[^\\x00\\n\\r]*$))/D';
@@ -90,8 +90,8 @@ final class InputRules
     /** The name of a php.ini setting. */
     public const INI_KEY = '/^(?:^[a-z_.]{1,64}$)/D';
 
-    /** A php.ini value. It is on one line and has no double quotes. */
-    public const INI_VALUE = '/^(?=[\\s\\S]{0,200}\\z)(?:^[^"\\n\\r\\x00]*$)/D';
+    /** A php.ini value. It is on one line, has no double quotes and does not end with a backslash. */
+    public const INI_VALUE = '/^(?=[\\s\\S]{0,200}\\z)(?![\\s\\S]*?(?:\\\\$))(?:^[^"\\n\\r\\x00]*$)/D';
 
     /** An IPv4 address in the usual form, for the value of an A record. */
     public const IPV4 = '/^(?:^(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(\\.(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])){3}$)/D';
@@ -199,7 +199,7 @@ final class InputRules
         'dnssecKey' => 'Enter a private key in the PKCS #8 PEM format.',
         'documentRoot' => 'Enter a directory in /app, for example public or web/htdocs. Use letters, digits, dots, underscores and hyphens, and at most 8 parts.',
         'domain' => 'Enter a domain name in lower-case letters, for example shop.example.com.',
-        'envName' => 'Use 1 to 64 letters, digits and underscores. Do not start with a digit. PORT, HOST, HOME, PATH, PWD and names that start with CF_ are not available.',
+        'envName' => 'Use 1 to 64 letters, digits and underscores. Do not start with a digit. PORT, HOST, HOME, PATH, PWD, SERVER_NAME and names that start with CF_, FRANKENPHP_, CADDY_, XDG_ or APACHE_ are not available.',
         'envValue' => 'Enter a value of up to 4096 characters on one line.',
         'environmentValue' => 'Use 1 to 1024 letters, digits and the characters _ . , : / | @ + = ~ -.',
         'filePath' => 'Enter a path that starts with /, for example /public/index.php. Do not use "//", "." or ".." parts, or a / at the end.',
@@ -210,7 +210,7 @@ final class InputRules
         'imageReference' => 'Enter an image reference with its registry and no tag, for example ghcr.io/team/app.',
         'imageTag' => 'Use 1 to 128 letters, digits, underscores, dots and hyphens. Do not start with a dot or a hyphen.',
         'iniKey' => 'Use 1 to 64 lower-case letters, underscores and dots.',
-        'iniValue' => 'Use at most 200 characters on one line, with no double quotes.',
+        'iniValue' => 'Use at most 200 characters on one line, with no double quotes and no backslash at the end.',
         'ipv4' => 'Enter an IPv4 address, for example 203.0.113.10.',
         'ipv6' => 'Enter an IPv6 address in lower-case letters, for example 2001:db8::10.',
         'mailAddress' => 'Enter a mail address in lower-case letters, for example sales@example.com.',

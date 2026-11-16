@@ -18,6 +18,7 @@ use App\Services\Branding;
 use App\Services\DomainPolicy;
 use App\Services\JobDispatcher;
 use App\Validation\InputRules;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -96,14 +97,23 @@ class Zones
                 ? 'The panel has no DNS server. Give a server the role "DNS" and a name server host name on the page of the server.'
                 : 'DNS hosting is not available. Ask your provider.']);
         }
-        $taken = $this->checkName($name, $customer, $user);
-        $zone = DB::transaction(function () use ($customer, $name) {
-            // The count and the new zone are in one transaction, with a lock on the customer.
-            $customer = Customer::with('plan')->lockForUpdate()->findOrFail($customer->id);
-            self::checkLimit($customer);
+        $other = $this->checkName($name, $customer, $user);
+        try {
+            $zone = DB::transaction(function () use ($customer, $name, $other) {
+                // The count and the new zone are in one transaction, with a lock on the customer.
+                $customer = Customer::with('plan')->lockForUpdate()->findOrFail($customer->id);
+                self::checkLimit($customer);
+                // Adversarial review, finding A6-08: the zone of the other customer goes only
+                // when the new zone comes. The DNS servers get the new zone with the same
+                // name, so the panel removes only its record.
+                $other?->delete();
 
-            return DnsZone::create(['customer_id' => $customer->id, 'name' => $name, 'serial' => now()->timestamp, 'status' => DnsZone::ACTIVE]);
-        });
+                return DnsZone::create(['customer_id' => $customer->id, 'name' => $name, 'serial' => now()->timestamp, 'status' => DnsZone::ACTIVE]);
+            });
+        } catch (UniqueConstraintViolationException) {
+            throw ValidationException::withMessages(['name' => 'A zone with this name was made at the same time. Try again.']);
+        }
+        $taken = $other !== null;
         if ($taken) {
             Audit::system('Removed DNS zone, because a different customer proved control of the name', $name);
         }
@@ -118,8 +128,9 @@ class Zones
     }
 
     /**
-     * Refuses a zone name that the customer must not use. It returns true when the zone of a
-     * different customer was removed, because this customer proved control of the name.
+     * Refuses a zone name that the customer must not use. It returns the zone of a different
+     * customer that has the same name, when this customer proved control of the name. The
+     * caller removes that zone when it makes the new zone.
      *
      * - Only an administrator makes a zone for the domain of the panel, the host name of a
      *   server or of a name server, or for a name above one of them.
@@ -136,7 +147,7 @@ class Zones
      *
      * @throws ValidationException
      */
-    public function checkName(string $name, Customer $customer, User $user): bool
+    public function checkName(string $name, Customer $customer, User $user): ?DnsZone
     {
         if (! $user->isAdministrator()) {
             foreach ([...$this->policy->reserved(), ...self::nameServers()] as $reserved) {
@@ -145,7 +156,7 @@ class Zones
                 }
             }
         }
-        $taken = false;
+        $taken = null;
         // The zones with this name, with a name above it, or with a name in it.
         $labels = explode('.', $name);
         $above = array_map(fn (int $i) => implode('.', array_slice($labels, $i)), array_keys($labels));
@@ -173,18 +184,16 @@ class Zones
         foreach ($overlap as $other) {
             $proved = $administrator || $txt || (! $other->delegatedHere() && $this->policy->preVerified($user, $customer->id, $name));
             if (! $proved) {
-                $same = $other->name === $name;
-                throw ValidationException::withMessages(['name' => ($same ? 'A different customer has this zone.' : 'This name overlaps with a zone of a different customer.')
-                    .' If you control the domain,'.$challenge]);
+                // Adversarial review, finding A6-12: the text does not tell which names
+                // other customers have.
+                throw ValidationException::withMessages(['name' => 'Prove that you control this domain. To do that,'.$challenge
+                    .' If the domain uses the name servers of this panel already, speak to your provider.']);
             }
             if ($other->name === $name) {
                 if ($other->status === DnsZone::REMOVING) {
                     throw ValidationException::withMessages(['name' => 'The panel removes a zone with this name. Try again in one minute.']);
                 }
-                // The zone of the other customer goes. The DNS servers get the new zone with
-                // the same name, so the panel removes only its record.
-                $other->delete();
-                $taken = true;
+                $taken = $other;
             }
         }
 
@@ -255,10 +264,16 @@ class Zones
         return $this->push($zone, $title);
     }
 
+    /** The largest serial of a DNS zone: 32 bits. */
+    public const MAX_SERIAL = 4294967295;
+
+    /** The panel follows a serial from a server only when it is not more than this in the future, in seconds. */
+    public const SERIAL_MARGIN = 86400;
+
     /** Gives a zone a larger serial. The serial is the time of the change, in seconds. */
     private static function bump(DnsZone $zone): void
     {
-        $zone->update(['serial' => max($zone->serial + 1, now()->timestamp)]);
+        $zone->update(['serial' => min(self::MAX_SERIAL, max($zone->serial + 1, now()->timestamp))]);
     }
 
     /**
@@ -357,8 +372,12 @@ class Zones
                 // The server has a newer zone than the panel, for example after a restore of
                 // the panel database. The server refuses an older zone, so the zone gets a
                 // larger serial. Each other DNS server gets it after its next report.
-                if ($has->get($zone->name, 0) > $zone->serial) {
-                    $zone->update(['serial' => max($has->get($zone->name) + 1, now()->timestamp)]);
+                // Adversarial review, finding A3-01: the panel makes serials from the clock. It
+                // does not follow a serial that is far in the future: a server could send
+                // such a serial for each zone and stop the DNS changes of all customers.
+                $reportedSerial = (int) $has->get($zone->name, 0);
+                if ($reportedSerial > $zone->serial && $reportedSerial <= now()->timestamp + self::SERIAL_MARGIN) {
+                    $zone->update(['serial' => min(self::MAX_SERIAL, max($reportedSerial + 1, now()->timestamp))]);
                 }
                 $current = $has->get($zone->name) === $zone->serial;
                 if (! $current || ($sync['state'] ?? '') === 'failed') {
@@ -571,7 +590,14 @@ class Zones
             return false;
         }
         $made = false;
+        // Adversarial review, finding A6-05: the agent refuses a zone with too many records, or
+        // with an IPv6 address that has an IPv4 part. Such a zone stops the jobs of other zones.
+        $free = InputRules::MAX_DNS_RECORDS_PER_ZONE - $zone->records()->count();
         foreach ($website->server->addresses ?? [] as $address) {
+            if ($free < 1 || (str_contains($address, ':') && str_contains($address, '.'))) {
+                continue;
+            }
+            $free--;
             $type = filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) ? 'A' : (filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) ? 'AAAA' : null);
             if ($type !== null) {
                 $zone->records()->create(['name' => $name, 'type' => $type, 'ttl' => self::WEBSITE_TTL, 'value' => strtolower($address), 'managed' => DnsRecord::WEBSITE]);
@@ -608,9 +634,37 @@ class Zones
             'name' => $zone->name,
             'serial' => $zone->serial,
             'records' => $zone->records()->orderBy('name')->orderBy('type')->orderBy('id')->get()->map(fn (DnsRecord $r) => $r->forAgent())->all(),
-            'dnssecKey' => $zone->dnssec ? (string) $zone->dnssec_key : '',
+            // Adversarial review, finding A6-13: the DNSSEC key is not in the job record. The
+            // panel adds it each time that it sends the job (keysFor).
+            'dnssecKey' => '',
             'dnssecKeyTag' => $zone->dnssec ? (int) $zone->dnssec_key_tag : 0,
         ];
+    }
+
+    /**
+     * The zones of a SetDnsZones job, with the DNSSEC key of each signed zone. A zone that has
+     * a different key now, or no key, goes with no key: a later job has its new state.
+     *
+     * @return array<string, mixed>
+     */
+    public static function keysFor(AgentJob $job): array
+    {
+        if ($job->action !== AgentAction::SetDnsZones || ! is_array($job->payload['zones'] ?? null)) {
+            return [];
+        }
+        $zones = $job->payload['zones'];
+        $signed = DnsZone::whereIn('name', array_column($zones, 'name'))->where('dnssec', true)->get()->keyBy('name');
+        foreach ($zones as &$zone) {
+            $tag = (int) ($zone['dnssecKeyTag'] ?? 0);
+            $now = $signed->get($zone['name'] ?? '');
+            if ($tag > 0 && $now && (int) $now->dnssec_key_tag === $tag) {
+                $zone['dnssecKey'] = (string) $now->dnssec_key;
+            } elseif ($tag > 0) {
+                $zone['dnssecKeyTag'] = 0;
+            }
+        }
+
+        return ['zones' => $zones];
     }
 
     /**

@@ -2,7 +2,8 @@
   "admin": { "listen": "unix//run/caddy-admin/admin.sock" },
   "logging": {
     "logs": {
-      "access": { "encoder": { "format": "json" }, "include": ["http.log.access"] }
+      "access": { "encoder": { "format": "json" }, "include": ["http.log.access"] },
+      "default": { "exclude": ["http.log.access"] }
     }
   },
   "apps": {

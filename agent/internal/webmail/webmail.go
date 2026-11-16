@@ -24,7 +24,8 @@ const DataDir = "/app/data"
 
 // MailPaths are the paths that the edge proxy sends to the mail server. They are the JMAP API
 // that the webmail and mail programs use, and CalDAV and CardDAV for the calendars and the
-// contacts. The management API of the mail server (/api) is not in the list.
+// contacts. The management API of the mail server is also JMAP: the edge proxy refuses the
+// sign-in of its administrator (NoAdminSignIn).
 var MailPaths = []string{"/.well-known/jmap", "/jmap", "/jmap/*", "/.well-known/caldav", "/.well-known/carddav", "/dav", "/dav/*"}
 
 // ClosedPaths are the paths of the admin dashboard and of the setup of the webmail. The edge
@@ -36,6 +37,10 @@ var UserPaths = []string{"/api/admin/policy", "/api/admin/plugins/*/bundle", "/a
 
 var ClosedPaths = []string{"/admin", "/admin/*", "/api/admin", "/api/admin/*", "/setup", "/setup/*", "/api/setup", "/api/setup/*"}
 
+// NoAdminSignIn is the pattern of an Authorization header with the user "admin", the recovery
+// administrator of the mail server. A mailbox user signs in with an email address.
+const NoAdminSignIn = `^\s*(?i:basic)\s+YWRtaW46`
+
 // Routes gives the routes of the edge proxy for the host name of the mail server: the paths of
 // the mail server go to mailPort, and all other paths to webmailPort.
 func Routes(hostname string, webmailPort, mailPort int) caddy.Site {
@@ -44,6 +49,11 @@ func Routes(hostname string, webmailPort, mailPort int) caddy.Site {
 		Hosts:     []string{hostname},
 		Primary:   hostname,
 		Port:      webmailPort,
+		// The management API of the mail server is JMAP, on the same paths as the mail of
+		// the users. Its administrator "admin" signs in with Basic. The edge proxy refuses
+		// this sign-in, so the administrator password is of no use from the internet
+		// (adversarial review, finding G8-01). "YWRtaW46" is "admin:" in Base64.
+		NoAuthorization: NoAdminSignIn,
 		Paths: []caddy.PathRoute{
 			{Paths: MailPaths, Port: mailPort},
 			{Paths: UserPaths, Methods: []string{"GET", "HEAD"}, Port: webmailPort},

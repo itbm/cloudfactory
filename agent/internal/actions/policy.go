@@ -3,6 +3,7 @@ package actions
 import (
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -152,6 +153,9 @@ func allowImage(podman, images []string) error {
 }
 
 // databaseClients are the programs that the worker can run in a database container.
+// sizeArg is a number of bytes in a command.
+var sizeArg = regexp.MustCompile(`^[1-9][0-9]{0,17}$`)
+
 var databaseClients = []string{"mariadb", "mariadb-admin", "mariadb-dump", "psql", "pg_isready", "pg_dump", "pg_restore"}
 
 // allowDatabasePodman checks a Podman command as the Unix user of a database container: the
@@ -368,7 +372,11 @@ func (d *Deps) resticArgs(args, env []string, c *resticCommand) error {
 			c.paths = []string{args[0]}
 			return nil
 		}
-		// The directory of a website and its dump directory.
+		// The directory of a website and its dump directory. The backup can leave out the
+		// files that are larger than the disk limit of the website (sparse files).
+		if len(args) == 8 && args[6] == "--exclude-larger-than" && sizeArg.MatchString(args[7]) {
+			args = args[:6]
+		}
 		if len(args) != 6 || args[2] != "--tag" || !resticTagRE.MatchString(args[3]) || args[4] != "--tag" || (args[5] != "kind=manual" && args[5] != "kind=scheduled") {
 			break
 		}
@@ -389,6 +397,11 @@ func (d *Deps) resticArgs(args, env []string, c *resticCommand) error {
 		job := filepath.Base(args[2])
 		if validate.ID(job) != nil || args[2] != d.stageDir(job) {
 			return errors.New("restic can restore only into the directory of a restore job")
+		}
+		// One restore for each new directory. A second restore into the same directory
+		// could write through a link of the first restore (adversarial review, G1-14).
+		if entries, err := os.ReadDir(args[2]); err != nil || len(entries) != 0 {
+			return errors.New("restic can restore only into a new, empty directory of a restore job")
 		}
 		include := args[4]
 		if filepath.Clean(include) != include || !(strings.HasPrefix(include, d.Host.SitesDir+"/") || strings.HasPrefix(include, filepath.Join(d.DataDir, "dumps")+"/")) {

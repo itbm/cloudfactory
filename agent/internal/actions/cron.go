@@ -38,6 +38,8 @@ type cronRuns struct {
 	last    map[string]*cronResult
 	// slots limits the commands that run at the same time on the server.
 	slots chan struct{}
+	// site limits the commands of each website that run at the same time.
+	site map[string]chan struct{}
 }
 
 type cronResult struct {
@@ -47,8 +49,15 @@ type cronResult struct {
 }
 
 const (
-	// cronSlots is the number of cron commands that run at the same time on a server.
-	cronSlots = 8
+	// cronSlots is the number of scheduled cron commands that run at the same time on a server.
+	cronSlots = 32
+	// cronSiteSlots is the number of scheduled cron commands of one website that run at the
+	// same time. Without this limit, the 20 cron jobs of one website held all the slots of
+	// the server for an hour (adversarial review, findings A2-02 and G5-04).
+	cronSiteSlots = 2
+	// cronWait is the longest time that a scheduled run waits for a slot. A run that waits
+	// longer does not start: the schedule did not ask for a run at the later time.
+	cronWait = time.Minute
 	// cronReports is the number of status reports that have the result of a run. The panel
 	// can miss a report.
 	cronReports = 3
@@ -150,6 +159,12 @@ func (d *Deps) RunCronJob(req *agentv1.RunCronJobRequest) (jobs.Job, error) {
 			if site.Stopped {
 				return errors.New("the website is stopped; start it first")
 			}
+			// A manual run does not start next to a scheduled run of the same cron job.
+			key := site.ID + "/" + c.GetId()
+			if !d.cron.start(key) {
+				return errors.New("this cron job runs now; try again when the run ends")
+			}
+			defer d.cron.end(key)
 			run = d.runCron(ctx, site, CronEntry{ID: c.GetId(), Command: c.GetCommand()})
 			if run.ExitCode != 0 {
 				return fmt.Errorf("the command ended with exit code %d: %s", run.ExitCode, lastLines(run.Output, 600))
@@ -168,7 +183,11 @@ var cronExit = regexp.MustCompile(`(?s)^(.*)cf-exit:(\d+)\n?$`)
 // that does not end. "tail" reads all the output and gives only the end of it to the agent,
 // so a command that writes much output continues and uses no memory of the agent
 // (adversarial review, finding G5-01). The agent keeps cronOutputMax bytes of that end.
-const cronScript = `{ timeout -k 10 "$1" podman exec --workdir /app "$2" sh -c "$3" 2>&1; echo "cf-exit:$?"; } | tail -c 16384`
+//
+// The first "timeout" is in the container, where it stops the command. The second "timeout"
+// is on the host and stops only "podman exec": the command of an exec session continues in
+// the container when its client stops (finding G5-13). It is for an image with no "timeout".
+const cronScript = `{ timeout -k 10 "$(($1 + 30))" podman exec --workdir /app "$2" sh -c 'if command -v timeout >/dev/null 2>&1; then exec timeout -k 10 "$0" sh -c "$1"; fi; exec sh -c "$1"' "$1" "$3" 2>&1; echo "cf-exit:$?"; } | tail -c 16384`
 
 // runCron runs the command of a cron job in the container of the website and gives the result.
 func (d *Deps) runCron(ctx context.Context, site *Site, e CronEntry) panel.CronRun {
@@ -197,7 +216,7 @@ func (d *Deps) runCron(ctx context.Context, site *Site, e CronEntry) panel.CronR
 	default:
 		run.Output = out
 	}
-	run.Output = lastLines(strings.ToValidUTF8(run.Output, "�"), cronOutputMax)
+	run.Output = lastLines(cleanText(run.Output), cronOutputMax)
 	return run
 }
 
@@ -235,11 +254,7 @@ func (d *Deps) CronTick(ctx context.Context, now time.Time) {
 		return
 	}
 	c := &d.cron
-	c.mu.Lock()
-	if c.running == nil {
-		c.running, c.last, c.slots = map[string]bool{}, map[string]*cronResult{}, make(chan struct{}, cronSlots)
-	}
-	c.mu.Unlock()
+	c.init()
 	for site, entries := range sites {
 		if site.Stopped {
 			continue
@@ -250,23 +265,28 @@ func (d *Deps) CronTick(ctx context.Context, now time.Time) {
 				continue
 			}
 			key := site.ID + "/" + e.ID
-			c.mu.Lock()
-			busy := c.running[key]
-			c.running[key] = true
-			c.mu.Unlock()
-			if busy {
+			if !c.start(key) {
 				continue
 			}
 			go func() {
-				defer func() {
-					c.mu.Lock()
-					delete(c.running, key)
-					c.mu.Unlock()
-				}()
+				defer c.end(key)
+				wait, cancel := context.WithTimeout(ctx, cronWait)
+				defer cancel()
+				// The slot of the website comes first: a website that waits for its own
+				// runs holds no slot of the server.
+				own := c.siteSlots(site.ID)
+				select {
+				case own <- struct{}{}:
+					defer func() { <-own }()
+				case <-wait.Done():
+					c.skipped(ctx, site.ID, e.ID, key, now)
+					return
+				}
 				select {
 				case c.slots <- struct{}{}:
 					defer func() { <-c.slots }()
-				case <-ctx.Done():
+				case <-wait.Done():
+					c.skipped(ctx, site.ID, e.ID, key, now)
 					return
 				}
 				run := d.runCron(ctx, site, e)
@@ -279,6 +299,54 @@ func (d *Deps) CronTick(ctx context.Context, now time.Time) {
 			}()
 		}
 	}
+}
+
+func (c *cronRuns) init() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.running == nil {
+		c.running, c.last, c.slots = map[string]bool{}, map[string]*cronResult{}, make(chan struct{}, cronSlots)
+		c.site = map[string]chan struct{}{}
+	}
+}
+
+// start records that a cron job runs. It gives false when the cron job runs already.
+func (c *cronRuns) start(key string) bool {
+	c.init()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.running[key] {
+		return false
+	}
+	c.running[key] = true
+	return true
+}
+
+func (c *cronRuns) end(key string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	delete(c.running, key)
+}
+
+// siteSlots gives the slots of one website.
+func (c *cronRuns) siteSlots(websiteID string) chan struct{} {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.site[websiteID] == nil {
+		c.site[websiteID] = make(chan struct{}, cronSiteSlots)
+	}
+	return c.site[websiteID]
+}
+
+// skipped records a run that did not start because no slot became free.
+func (c *cronRuns) skipped(ctx context.Context, websiteID, id, key string, at time.Time) {
+	if ctx.Err() != nil {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.last[key] = &cronResult{run: panel.CronRun{WebsiteID: websiteID, ID: id, At: at.UTC().Format(time.RFC3339), ExitCode: -1,
+		Output: "The run did not start: too many cron jobs ran at this time. Earlier runs of this website or of the server were not complete."}}
 }
 
 // cronReport gives the results of the cron jobs that the panel does not have yet. Each

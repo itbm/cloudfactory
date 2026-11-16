@@ -90,6 +90,15 @@ export const pluginPagePath = (pluginId: string, pageId: string) => `/plugin/${p
 
 /** True when a user with the role can open the page. */
 export function canOpen(role: Role, path: string): boolean {
-  const rule = ONLY.find(([prefix]) => path === prefix || path.startsWith(`${prefix}/`));
+  // Adversarial review, finding W1-03: the router ignores the case of the letters and reads
+  // "%73" as "s". The check uses the same form of the path.
+  let clean = path;
+  try {
+    clean = decodeURIComponent(path);
+  } catch {
+    // The path stays as it is.
+  }
+  clean = clean.toLowerCase().replace(/\/+$/, "") || "/";
+  const rule = ONLY.find(([prefix]) => clean === prefix || clean.startsWith(`${prefix}/`));
   return !rule || rule[1].includes(role);
 }

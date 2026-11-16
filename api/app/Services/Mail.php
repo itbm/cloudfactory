@@ -13,6 +13,7 @@ use App\Models\Server;
 use App\Models\User;
 use App\Validation\Input;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
@@ -94,6 +95,31 @@ class Mail
         if ($quotaBytes > $free) {
             throw ValidationException::withMessages(['quotaBytes' => 'The '.$plan->name.' plan allows '.self::size($plan->mail_storage_bytes).' for all mailboxes. '.self::size(max(0, $free)).' is free.']);
         }
+    }
+
+    /** The number of private keys that a mailbox keeps: the current key and the keys before it. */
+    public const MAX_KEYS = 8;
+
+    /**
+     * Runs the checks and the creation of an address in one transaction, with a lock on the
+     * customer. The function gets the customer with its plan.
+     *
+     * @template T
+     *
+     * @param  callable(Customer): T  $make
+     * @return T
+     */
+    public static function locked(Customer $customer, callable $make): mixed
+    {
+        return DB::transaction(fn () => $make(Customer::with('plan')->lockForUpdate()->findOrFail($customer->id)));
+    }
+
+    /** The newest private keys of a text of private key blocks. The newest block is first. */
+    public static function newestKeys(string $keys): string
+    {
+        $blocks = preg_split('/(?=-----BEGIN PGP PRIVATE KEY BLOCK-----)/', $keys, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+
+        return implode('', array_slice($blocks, 0, self::MAX_KEYS));
     }
 
     /** A new mailbox password with letters and digits. */

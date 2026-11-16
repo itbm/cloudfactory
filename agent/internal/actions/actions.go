@@ -46,8 +46,14 @@ type Deps struct {
 	Edge    Edge
 	Apt     hostupdate.Apt
 	Updater *selfupdate.Updater
-	Gvisor  quadlet.Runtime
-	State   *State
+	// OtherJobs gives the number of jobs that run or wait now, with the job that asks.
+	OtherJobs func() int
+	// DowngradeFile is the file with which an administrator allows one update of the agent
+	// to an older version, for example "/etc/cloudfactory/allow-agent-downgrade". Only the
+	// root helper reads it. Empty: the root helper refuses each older version.
+	DowngradeFile string
+	Gvisor        quadlet.Runtime
+	State         *State
 	// Images is the shared read-only store of the runtime images. Nil means that each website
 	// user pulls its own copy, as for a custom image.
 	Images Images
@@ -241,6 +247,10 @@ type Deps struct {
 	// kernel has.
 	accessMu     sync.Mutex
 	accessLoaded string
+	// firewallMu makes each change of the firewall file of the installer one step. The mesh,
+	// the networks, the database servers, the DNS server, the SFTP port and the mail server
+	// all change this file (adversarial review, finding G7-04).
+	firewallMu sync.Mutex
 	// meshMu makes each change of the tunnels one step.
 	meshMu sync.Mutex
 	// networkMu makes each change of the networks one step in the worker.
@@ -363,6 +373,12 @@ type DatabaseServer struct {
 	VCPUs       float64 `json:"vcpus,omitempty"`
 	MemoryBytes int64   `json:"memoryBytes,omitempty"`
 	DiskBytes   int64   `json:"diskBytes,omitempty"`
+	// Held is true while the database server moves to or from this server. The agent does
+	// not start a held database server: not for a job of a website, not for a backup and
+	// not after a restart. Before, such a start gave a copy of files that changed, or
+	// writes on the old server that the move lost (adversarial review, findings A4-01,
+	// G4-02 and G4-07). Only the jobs of the move and SetDatabaseServer change it.
+	Held bool `json:"held,omitempty"`
 }
 
 func (s *State) read() (stateFile, error) {

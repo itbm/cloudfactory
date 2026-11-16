@@ -322,7 +322,7 @@ func (d *Deps) setMailNode(ctx context.Context, in mailNodeIn) (out mailNodeSet,
 
 	// The database node.
 	data := filepath.Join(d.mailHome(), "db")
-	if _, err := d.Run.Run(ctx, "install", "-d", "-o", host.MailUser, "-g", host.MailUser, "-m", "0700", data); err != nil {
+	if err := d.serviceDir(ctx, host.MailUser, data); err != nil {
 		return out, err
 	}
 	config := filepath.Join(d.mailClusterDir(), "db.cnf")

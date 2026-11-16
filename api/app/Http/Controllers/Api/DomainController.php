@@ -130,7 +130,7 @@ class DomainController extends Controller
         }
         $domain->delete();
         $job = $domain->verified()
-            ? $this->jobs->dispatch($website->server, AgentAction::RemoveDomain, ['websiteId' => $website->id, 'domain' => $name], "Remove domain {$name}", $website)
+            ? $this->jobs->dispatch($website->server, AgentAction::RemoveDomain, ['websiteId' => $website->id, 'domain' => $domain->name], "Remove domain {$domain->name}", $website)
             : null;
         $this->zones->websiteDomainRemoved($website->customer_id, $name);
         Audit::record($request, 'Removed domain', "{$website->name} {$name}", $website->customer_id);
@@ -160,7 +160,9 @@ class DomainController extends Controller
      */
     public static function checkName(DomainPolicy $policy, string $name, string $customerId, Request $request, string $field = 'name'): bool
     {
-        if ($policy->isReserved($name)) {
+        // Adversarial review, finding A2-01: the panel gives a name that ends with ".invalid" to
+        // a website that lost its domain. A user cannot use such a name.
+        if ($policy->isReserved($name) || str_ends_with($name, '.invalid')) {
             throw ValidationException::withMessages([$field => 'This domain is reserved for the panel or a server.']);
         }
         $existing = Domain::with('website.server')->where('name', $name)->first();
@@ -193,7 +195,9 @@ class DomainController extends Controller
         $name = $domain->name;
         $served = $domain->verified();
         if ($domain->kind === DomainKind::Primary) {
-            $parked = 'parked-'.strtolower($website->id).'.invalid';
+            do {
+                $parked = 'parked-'.strtolower($website->id).'-'.bin2hex(random_bytes(4)).'.invalid';
+            } while (Website::where('name', $parked)->exists() || Domain::where('name', $parked)->exists());
             $domain->update(['name' => $parked, 'verified_at' => null]);
             $website->update(['name' => $parked]);
             Audit::record($request, 'Parked website, because a different customer proved control of its domain', "{$name} → {$parked}", $website->customer_id);

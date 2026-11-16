@@ -8,14 +8,33 @@
 	encode zstd gzip
 	header {
 		# The pages of plugins open in a frame with the origin of the plugin (docs/plugins.md).
-		Content-Security-Policy "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; frame-src https:; frame-ancestors 'none'"
+		# "Open in Adminer" sends a form to the Adminer host of the server.
+		Content-Security-Policy "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; frame-src https:; frame-ancestors 'none'; base-uri 'none'; object-src 'none'; form-action 'self' https:"
 		# R-17: the edge proxy serves the panel only over HTTPS.
 		Strict-Transport-Security "max-age=31536000"
 		X-Content-Type-Options nosniff
 		Referrer-Policy strict-origin-when-cross-origin
+		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
 	}
-	header /assets/* Cache-Control "public, max-age=31536000, immutable"
-	# The web panel is a single-page application.
-	try_files {path} /index.html
-	file_server
+	# A file of a release has a hash in its name, so a browser can keep it. An asset that does
+	# not exist is "not found": the page of the panel with a long cache time would break the
+	# panel after an update.
+	@asset {
+		path /assets/*
+		file
+	}
+	handle @asset {
+		header Cache-Control "public, max-age=31536000, immutable"
+		file_server
+	}
+	handle /assets/* {
+		respond 404
+	}
+	# The web panel is a single-page application. The browser asks for the page again each time,
+	# so that it gets the new release.
+	handle {
+		header Cache-Control "no-cache"
+		try_files {path} /index.html
+		file_server
+	}
 }

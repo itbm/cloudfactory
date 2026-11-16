@@ -17,6 +17,9 @@ class Lookup
     public function nameServers(string $zone): array
     {
         $records = @dns_get_record($zone, DNS_NS) ?: [];
+        // Adversarial review, finding A6-11: an answer can have the NS records of a different
+        // name, for example after a CNAME record. Only the records of the zone itself count.
+        $records = array_filter($records, fn ($r) => strtolower(rtrim((string) ($r['host'] ?? ''), '.')) === strtolower($zone));
         $hosts = array_map(fn ($r) => strtolower(rtrim((string) ($r['target'] ?? ''), '.')), $records);
 
         return array_values(array_unique(array_filter($hosts)));

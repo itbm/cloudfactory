@@ -6,8 +6,8 @@ return [
     | no real server: a demo agent in the API completes each job (app/Demo). The demo seeder
     | (database/seeders/DemoSeeder.php) makes the sample data.
     |
-    | Never set CF_DEMO on a server with customers. The panel ignores it when APP_ENV is
-    | "production".
+    | Never set CF_DEMO on a server with customers. The panel uses it only when APP_ENV is
+    | "local", "testing", "demo" or "development".
     */
     'enabled' => (bool) env('CF_DEMO', false),
 

@@ -174,10 +174,10 @@ The product specification, section 6.4, gives the requirements.
   customer, to the reseller of that customer and to an administrator.
 - The container `cf-mail` runs in gVisor as the Unix user `cf-mail`, not as root. It has no
   capabilities, cannot get new privileges, and has a read-only root file system.
-- The management API of the mail server has all rights on the mail. It is only on the
-  private service address `169.254.77.1:19025`, which the firewall keeps for root and the edge
-  proxy. Each request also needs the password of the administrator. The worker of the agent
-  connects through the root helper.
+- The management API of the mail server has all rights on the mail. It is a part of the JMAP
+  API, on the private service address `169.254.77.1:19025`, which the firewall keeps for root
+  and the edge proxy. Each request also needs the password of the administrator. The worker of
+  the agent connects through the root helper.
 - The worker cannot run a program as `cf-mail`, and cannot run a program in the container.
   The root helper lets it only pull the image of this agent version, and start and stop the
   service.
@@ -205,7 +205,9 @@ The product specification, section 6.4, gives the requirements.
   read-only root file system. The worker cannot run a program as `cf-webmail` or in its
   container.
 - The edge proxy sends only the JMAP and DAV paths of the mail host name to the mail server.
-  The management API (`/api`) is not on the public host name.
+  The JMAP path is also the path of the management API. Thus the edge proxy refuses a
+  request that signs in as the administrator of the mail server (`admin`), with status 403.
+  The administrator can sign in only on the private service address.
 - The admin dashboard of the webmail has a random password of 64 characters, which no person
   knows. Only the start script of the image uses it, on the address of the container, to
   install the PGP plugin. The edge proxy refuses the paths of the dashboard and of the setup,
@@ -316,8 +318,12 @@ The product specification, section 6.4, gives the requirements.
 - The installation script can limit port 7443 to the IP address of the panel (`--panel-ip`).
 - The agent installs only gVisor archives with a SHA-512 sum that is in the agent or in the
   `--sha512` option. It does not download the sum from the archive server.
-- The agent refuses to update to an older version. An administrator can allow it for one update
-  (`allowDowngrade`). Each agent release has a signed manifest that names the version, the file
+- The agent refuses to update to an older version. An administrator can allow it for one
+  update: make the file `/etc/cloudfactory/allow-agent-downgrade` on the server as root, and
+  then start the update with `allowDowngrade` (`cf servers update-agent --allow-downgrade`).
+  The root helper removes the file when it uses it. The option of the panel alone is not
+  sufficient, because the worker of the agent sends it, and the root helper does not trust
+  the worker. Each agent release has a signed manifest that names the version, the file
   and the SHA-256 hash of the binary. The agent and the installation script refuse a binary
   that does not agree with the manifest of the version that they asked for.
 - The agent checks the panel certificate on each connection, also for a resumed TLS session.

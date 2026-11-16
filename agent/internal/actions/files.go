@@ -159,7 +159,7 @@ func parseLogs(out string) []*agentv1.LogLine {
 		}
 		text := ""
 		if len(parts) == 4 {
-			text = strings.ToValidUTF8(parts[3], "�")
+			text = cleanText(parts[3])
 		}
 		if len(text) > maxLogLineBytes {
 			text = strings.ToValidUTF8(text[:maxLogLineBytes], "") + "…"
@@ -167,4 +167,22 @@ func parseLogs(out string) []*agentv1.LogLine {
 		lines = append(lines, &agentv1.LogLine{At: at.UTC().Format(time.RFC3339Nano), Stream: stream, Text: text})
 	}
 	return lines
+}
+
+// cleanText gives a text of a website with no control character and no invalid UTF-8. The
+// owner of a website controls the log lines, the output of a cron job, the output of a build
+// and the subject of a commit. A person with more rights reads them, also in a terminal,
+// where a control character can change earlier lines (adversarial review, finding G5-09).
+// Tabs and line ends stay.
+func cleanText(s string) string {
+	s = strings.ToValidUTF8(s, "�")
+	return strings.Map(func(r rune) rune {
+		switch {
+		case r == '\t' || r == '\n':
+			return r
+		case r < 0x20 || r == 0x7f || r >= 0x80 && r < 0xa0 || r == 0x2028 || r == 0x2029:
+			return '�'
+		}
+		return r
+	}, s)
 }

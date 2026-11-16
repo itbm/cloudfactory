@@ -3,15 +3,18 @@
 namespace App\Http\Controllers\Api;
 
 use App\Enums\AgentAction;
+use App\Enums\JobState;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\JobResource;
 use App\Models\AgentJob;
 use App\Models\Database;
+use App\Models\DatabaseServer;
 use App\Models\Server;
 use App\Models\Setting;
 use App\Models\Snapshot;
 use App\Models\Website;
 use App\Services\Audit;
+use App\Services\DatabaseServers;
 use App\Services\JobDispatcher;
 use App\Validation\Input;
 use Illuminate\Database\Eloquent\Builder;
@@ -51,10 +54,36 @@ class BackupController extends Controller
     {
         $website = $this->findWebsite($request, $websiteId);
         self::requireTarget();
+        self::refuseBusy($website);
         $job = self::start($this->jobs, $website, 'manual', "Back up {$website->name}");
         Audit::record($request, 'Backed up website', $website->name, $website->customer_id);
 
         return response()->json(['job' => new JobResource($job)], 202);
+    }
+
+    /**
+     * Adversarial review, findings A4-01 and A4-03: a website has one backup or restore at a
+     * time, and none while one of its database servers moves to a different server.
+     *
+     * @throws ValidationException
+     */
+    public static function refuseBusy(Website $website): void
+    {
+        if ($moving = self::movingServerOf($website)) {
+            DatabaseServers::refuseMoving($moving, 'website');
+        }
+        $open = AgentJob::where('website_id', $website->id)->whereIn('action', [AgentAction::Backup->value, AgentAction::Restore->value])
+            ->whereIn('state', [JobState::Queued->value, JobState::Running->value])->exists();
+        if ($open) {
+            throw ValidationException::withMessages(['website' => 'A backup or a restore of this website is in progress. Wait until it is complete.']);
+        }
+    }
+
+    /** A database server of the website that moves to a different server now, or null. */
+    public static function movingServerOf(Website $website): ?DatabaseServer
+    {
+        return DatabaseServer::where('status', DatabaseServer::MOVING)
+            ->whereIn('id', $website->databases()->whereNotNull('database_server_id')->select('database_server_id'))->first();
     }
 
     /**
@@ -182,6 +211,11 @@ class BackupController extends Controller
             // for example the files that an attacker added.
             'removeNewFiles' => ['sometimes', 'boolean', 'prohibited_unless:scope,website'],
         ]);
+        // Adversarial review, finding X1-03: a restore changes the databases or the files.
+        $needs = $data['scope'] === 'database' ? ['databases:write'] : ($data['scope'] === 'file' ? ['websites:write'] : ['websites:write', 'databases:write']);
+        foreach ($needs as $scope) {
+            abort_unless($request->user()->tokenCan($scope), 403, "This restore needs a token with the scope {$scope}.");
+        }
         $removeNewFiles = (bool) ($data['removeNewFiles'] ?? false);
         $dumpHash = $databaseServer = null;
         // A snapshot with only databases is in the repository of a different server. The
@@ -220,6 +254,7 @@ class BackupController extends Controller
             throw ValidationException::withMessages(['snapshot' => 'This backup is in the repository that all servers used in an earlier version. An administrator must set the shared credentials of the object storage in Backups to restore it.']);
         }
         $what = $data['scope'] === 'website' ? 'full website' : $data['item'];
+        self::refuseBusy($website);
         $job = $this->jobs->dispatch($server, AgentAction::Restore, [
             'websiteId' => $website->id,
             'unixUser' => $website->unix_user,
@@ -332,6 +367,10 @@ class BackupController extends Controller
      */
     public function showRepositoryPassword(Request $request): JsonResponse
     {
+        AuthController::refusePlugin($request);
+        // Adversarial review, finding A9-02: the password opens the backups of all customers.
+        // A token that can only read backups does not get it.
+        abort_unless($request->user()->tokenCan('backups:write'), 403, 'This request needs a token with the scope backups:write.');
         Audit::record($request, 'Viewed backup repository passwords', 'restic repositories');
         $hasTarget = (bool) preg_match(self::TARGET, (string) (self::policy()['target'] ?? ''));
         $shared = self::sharedRepositoryPassword();

@@ -301,7 +301,7 @@ class DnsTest extends TestCase
         }
         // A zone above the zone of the other customer.
         $this->postJson('/api/v1/dns-zones', ['name' => 'sub.example.net'])->assertUnprocessable()
-            ->assertJsonPath('errors.name.0', fn (string $m) => str_starts_with($m, 'This name overlaps with a zone of a different customer.'));
+            ->assertJsonPath('errors.name.0', fn (string $m) => str_starts_with($m, 'Prove that you control this domain.'));
         // The own zones of a customer can be one in the other. The first zone needs the proof.
         $txt['_cloudfactory-challenge.mine.example'] = [$policy->claimToken($this->customer->id, 'mine.example')];
         $this->postJson('/api/v1/dns-zones', ['name' => 'mine.example'])->assertAccepted();
@@ -354,7 +354,7 @@ class DnsTest extends TestCase
         // The other customer cannot take a name below the zone.
         $this->actingWith($squatter);
         $this->postJson('/api/v1/dns-zones', ['name' => 'mail.victim.example'])->assertUnprocessable()
-            ->assertJsonPath('errors.name.0', fn (string $m) => str_starts_with($m, 'This name overlaps with a zone of a different customer.'));
+            ->assertJsonPath('errors.name.0', fn (string $m) => str_starts_with($m, 'Prove that you control this domain.'));
     }
 
     /** A verified domain of a website of the customer is a proof that the customer gave before. */
@@ -430,7 +430,9 @@ class DnsTest extends TestCase
 
         $jobs = AgentJob::whereIn('id', $response->json('jobs.*.id'))->get();
         foreach ($jobs as $job) {
-            $this->assertSame($zone->dnssec_key, $job->payload['zones'][0]['dnssecKey']);
+            // The job record has no key. The panel adds the key when it sends the job.
+            $this->assertSame('', $job->payload['zones'][0]['dnssecKey']);
+            $this->assertSame($zone->dnssec_key, Zones::keysFor($job)['zones'][0]['dnssecKey']);
             $this->assertSame($zone->dnssec_key_tag, $job->payload['zones'][0]['dnssecKeyTag']);
         }
         // The DNS servers have the key. The record of the job does not keep it.

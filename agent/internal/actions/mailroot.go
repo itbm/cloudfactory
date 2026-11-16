@@ -153,7 +153,7 @@ func (d *Deps) prepareMail(ctx context.Context, hostname string) (out mailPrepar
 	if err := os.MkdirAll(d.mailCertDir(), 0o755); err != nil {
 		return out, err
 	}
-	if _, err := d.Run.Run(ctx, "install", "-d", "-o", host.MailUser, "-g", host.MailUser, "-m", "0700", data); err != nil {
+	if err := d.serviceDir(ctx, host.MailUser, data); err != nil {
 		return out, err
 	}
 	if _, err := host.WriteFile(filepath.Join(config, "config.json"), store, 0o644); err != nil {
@@ -306,6 +306,8 @@ func (d *Deps) openMailPorts(ctx context.Context) error {
 	if d.Gate != nil {
 		return d.Gate.Call(ctx, opMailFirewall, nil, nil)
 	}
+	d.firewallMu.Lock()
+	defer d.firewallMu.Unlock()
 	main := d.firewallFile()
 	if _, err := os.Stat(main); os.IsNotExist(err) {
 		return nil
@@ -580,4 +582,16 @@ func selfSigned(hostname string) (certificate, key []byte, err error) {
 		return nil, nil, err
 	}
 	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER}), nil
+}
+
+// serviceDir makes a directory for a service user in the home directory of that user, with
+// mode 0700. The service user can write its home directory, so it can put a symbolic link
+// there. Root refuses a path that is not a directory: "install -d" would follow the link and
+// give its target to the service user (adversarial review, finding G8-05).
+func (d *Deps) serviceDir(ctx context.Context, user, dir string) error {
+	if info, err := os.Lstat(dir); err == nil && !info.IsDir() {
+		return fmt.Errorf("%s is not a directory; remove it", dir)
+	}
+	_, err := d.Run.Run(ctx, "install", "-d", "-o", user, "-g", user, "-m", "0700", dir)
+	return err
 }

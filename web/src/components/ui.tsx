@@ -229,6 +229,20 @@ export function ConfirmButton({ children, title, message, confirm, onConfirm, cl
   disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  // Adversarial review, findings W1-12 and W2-07: the user sees when the change failed. Before,
+  // the dialog closed and the error went nowhere, for example for a token that stays valid.
+  const [failure, setFailure] = useState<string | null>(null);
+  const run = () => {
+    setOpen(false);
+    setFailure(null);
+    let result: unknown;
+    try {
+      result = onConfirm();
+    } catch (e) {
+      result = Promise.reject(e);
+    }
+    void Promise.resolve(result).catch((e: unknown) => setFailure(e instanceof Error && e.message ? e.message : "The change failed. Try again."));
+  };
   return (
     <>
       <button type="button" className={className} disabled={disabled} onClick={() => setOpen(true)}>{children}</button>
@@ -239,20 +253,20 @@ export function ConfirmButton({ children, title, message, confirm, onConfirm, cl
           footer={
             <>
               <button type="button" className="btn" onClick={() => setOpen(false)}>Cancel</button>
-              <button
-                type="button"
-                className={danger ? "btn btn-danger-solid" : "btn btn-primary"}
-                onClick={() => {
-                  setOpen(false);
-                  onConfirm();
-                }}
-              >
+              <button type="button" className={danger ? "btn btn-danger-solid" : "btn btn-primary"} onClick={run}>
                 {confirm}
               </button>
             </>
           }
         >
           {message}
+        </Modal>
+      )}
+      {failure && (
+        <Modal title="The change failed" onClose={() => setFailure(null)} footer={<button type="button" className="btn btn-primary" onClick={() => setFailure(null)}>Close</button>}>
+          <div className="alert alert-danger" role="alert">
+            <p>{failure}</p>
+          </div>
         </Modal>
       )}
     </>

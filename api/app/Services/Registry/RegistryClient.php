@@ -155,7 +155,9 @@ class RegistryClient
         if (! isset($params['realm']) || ! str_starts_with($params['realm'], 'https://')) {
             throw new RuntimeException('The registry gave a sign-in address that is not HTTPS.');
         }
-        $response = Http::timeout(15)->get($params['realm'], array_filter([
+        // Adversarial review, finding I1-12: the address comes from the registry. The panel
+        // follows no redirect from it.
+        $response = Http::timeout(15)->withOptions(['allow_redirects' => false])->get($params['realm'], array_filter([
             'service' => $params['service'] ?? null,
             'scope' => "repository:{$repository}:pull",
         ]));

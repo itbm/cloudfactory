@@ -37,6 +37,7 @@ use App\Models\Snapshot;
 use App\Models\UsageAlert;
 use App\Models\User;
 use App\Models\Website;
+use App\Providers\DemoServiceProvider;
 use App\Services\Branding;
 use App\Services\Dns\Dnssec;
 use App\Services\Dns\Zones;
@@ -54,6 +55,7 @@ use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
+use RuntimeException;
 
 /**
  * The sample data of the demonstration mode (config/demo.php). The web panel uses this data
@@ -95,6 +97,11 @@ class DemoSeeder extends Seeder
 
     public function run(): void
     {
+        // Adversarial review, finding A8-10: the sample data has administrators with a known
+        // password. A panel with real data does not get it.
+        if (! DemoServiceProvider::enabled() && ! app()->environment('local', 'testing')) {
+            throw new RuntimeException('The sample data is only for the demonstration mode. This panel is not in the demonstration mode.');
+        }
         $this->plans();
         $this->customersAndUsers();
         $this->images();

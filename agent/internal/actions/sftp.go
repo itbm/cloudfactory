@@ -119,6 +119,9 @@ func (d *Deps) SetSftp(req *agentv1.SetSftpRequest) (jobs.Job, error) {
 	if err := errors.Join(errs...); err != nil {
 		return jobs.Job{}, err
 	}
+	if err := d.checkOwner(req.GetWebsiteId(), user); err != nil {
+		return jobs.Job{}, err
+	}
 	return jobs.Job{ID: req.GetJobId(), Key: req.GetWebsiteId(), Steps: []jobs.Step{
 		{Name: "Set SFTP access", Do: func(ctx context.Context) error {
 			return d.setSftpKeys(ctx, user, req.GetEnabled(), req.GetAuthorizedKeys())
@@ -141,7 +144,18 @@ func (d *Deps) setSftpKeys(ctx context.Context, user string, enabled bool, autho
 		}
 	}
 	// sshd reads the file as the user, so the user can read it but not change it.
-	if _, err := host.WriteFile(filepath.Join(d.sftpKeysDir(), user+".keys"), keys.String(), 0o644); err != nil {
+	keysFile := filepath.Join(d.sftpKeysDir(), user+".keys")
+	// A key that goes away: sshd checks the keys only at the sign-in, so a session of that
+	// key continued (adversarial review, finding G5-12).
+	lostKey := false
+	if old, err := os.ReadFile(keysFile); err == nil {
+		for _, line := range strings.Split(string(old), "\n") {
+			if k, ok := strings.CutPrefix(line, "restrict "); ok && !(enabled && slices.Contains(authorized, k)) {
+				lostKey = true
+			}
+		}
+	}
+	if _, err := host.WriteFile(keysFile, keys.String(), 0o644); err != nil {
 		return err
 	}
 	// "!" locks the password, also a password from an earlier version, so that the
@@ -153,7 +167,7 @@ func (d *Deps) setSftpKeys(ctx context.Context, user string, enabled bool, autho
 	if err := d.SyncSftpUsers(); err != nil {
 		return err
 	}
-	if !enabled || len(authorized) == 0 {
+	if !enabled || len(authorized) == 0 || lostKey {
 		d.closeSftpSessions(ctx, user)
 	}
 	return nil
@@ -392,6 +406,8 @@ func (d *Deps) sshBanner(ctx context.Context, port int) error {
 // has no rule for it: the agent adds the rule after the rule of port 22. If the port changes,
 // the agent changes the rule. With no file, the administrator manages the firewall.
 func (d *Deps) openSftpPort(ctx context.Context, port int) error {
+	d.firewallMu.Lock()
+	defer d.firewallMu.Unlock()
 	path := d.firewallFile()
 	b, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
@@ -408,10 +424,25 @@ func (d *Deps) openSftpPort(ctx context.Context, port int) error {
 	if next == string(b) {
 		return nil
 	}
+	return d.replaceFirewall(ctx, path, next)
+}
+
+// replaceFirewall gives the firewall file of the installer a new content and loads it.
+// nftables checks the new rules before they replace the file: a file with an error would
+// stop the firewall at the next start of the server. The caller holds firewallMu.
+func (d *Deps) replaceFirewall(ctx context.Context, path, next string) error {
+	check := path + ".new"
+	if _, err := host.WriteFile(check, next, 0o644); err != nil {
+		return err
+	}
+	defer os.Remove(check)
+	if _, err := d.Run.Run(ctx, "nft", "-c", "-f", check); err != nil {
+		return fmt.Errorf("nftables refuses the new rules for %s: %w", path, err)
+	}
 	if _, err := host.WriteFile(path, next, 0o644); err != nil {
 		return err
 	}
-	_, err = d.Run.Run(ctx, "nft", "-f", path)
+	_, err := d.Run.Run(ctx, "nft", "-f", path)
 	return err
 }
 

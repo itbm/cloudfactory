@@ -120,7 +120,7 @@ class ReassessmentTest extends TestCase
         $txt['_cloudfactory-challenge.bakery-second-shop.example'] = [$policy->claimToken($owner->id, 'bakery-second-shop.example')];
         $this->postJson('/api/v1/websites', ['name' => 'bakery-second-shop.example', 'imageId' => $image->id])
             ->assertAccepted()->assertJsonPath('website.domains.0.verified', true);
-        $this->assertSame('parked-'.strtolower($squat->id).'.invalid', $squat->fresh()->name);
+        $this->assertMatchesRegularExpression('/^parked-'.strtolower($squat->id).'-[0-9a-f]{8}\.invalid$/', $squat->fresh()->name);
         $this->assertSame($owner->id, Domain::where('name', 'bakery-second-shop.example')->sole()->website->customer_id);
 
         // The squatter cannot take it back: the domain is verified now.

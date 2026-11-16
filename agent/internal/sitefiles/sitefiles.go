@@ -19,12 +19,15 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"os/signal"
 	"path"
 	"sort"
 	"strings"
 	"syscall"
 	"time"
 	"unicode/utf8"
+
+	"golang.org/x/sys/unix"
 )
 
 // The operations of a request.
@@ -272,7 +275,11 @@ func entryOf(root *os.Root, p string) (Response, error) {
 
 // list gives the entries of a directory: the directories first, then the files, each by name.
 func list(root *os.Root, p string) (Response, error) {
-	f, err := root.Open(local(p))
+	// O_DIRECTORY: the open of a FIFO fails, and does not wait for a writer.
+	f, err := root.OpenFile(local(p), os.O_RDONLY|syscall.O_DIRECTORY|syscall.O_NONBLOCK, 0)
+	if errors.Is(err, syscall.ENOTDIR) {
+		return Response{}, fail(CodeInvalid, "the path is not a directory")
+	}
 	if err != nil {
 		return Response{}, err
 	}
@@ -304,7 +311,15 @@ func list(root *os.Root, p string) (Response, error) {
 }
 
 func read(root *os.Root, p string) (Response, error) {
-	f, err := root.Open(local(p))
+	// The type check comes before the open, and the open does not block. The open of a FIFO
+	// waited for a writer with no limit (adversarial review, findings A2-03 and G5-03). The
+	// website can change the path between the two calls, so the check after the open stays.
+	if fi, err := root.Stat(local(p)); err != nil {
+		return Response{}, err
+	} else if !fi.Mode().IsRegular() {
+		return Response{}, fail(CodeInvalid, "the path is not a file")
+	}
+	f, err := root.OpenFile(local(p), os.O_RDONLY|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		return Response{}, err
 	}
@@ -358,6 +373,16 @@ func write(root *os.Root, req Request) (Response, error) {
 	if err != nil {
 		return Response{}, err
 	}
+	// The agent stops this program at its time limit. The temporary file does not stay.
+	stopped := make(chan os.Signal, 1)
+	signal.Notify(stopped, syscall.SIGTERM, syscall.SIGINT)
+	defer signal.Stop(stopped)
+	go func() {
+		if _, ok := <-stopped; ok {
+			_ = root.Remove(tmp)
+			os.Exit(1)
+		}
+	}()
 	_, err = f.Write(req.Content)
 	if cerr := f.Close(); err == nil {
 		err = cerr
@@ -365,7 +390,15 @@ func write(root *os.Root, req Request) (Response, error) {
 	if err == nil {
 		err = root.Chmod(tmp, mode)
 	}
-	if err == nil {
+	switch {
+	case err != nil:
+	case req.CreateOnly:
+		// A link does not replace a file that appeared after the check above.
+		if err = root.Link(tmp, name); errors.Is(err, fs.ErrExist) {
+			err = fail(CodeExists, "a file or a directory with this name exists already")
+		}
+		_ = root.Remove(tmp)
+	default:
 		err = root.Rename(tmp, name)
 	}
 	if err != nil {
@@ -394,10 +427,34 @@ func move(root *os.Root, req Request) (Response, error) {
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		return Response{}, err
 	}
-	if err := root.Rename(local(req.Path), local(req.To)); err != nil {
+	if err := renameNoReplace(root, local(req.Path), local(req.To)); err != nil {
 		return Response{}, err
 	}
 	return entryOf(root, req.To)
+}
+
+// renameNoReplace gives a path a new name, and fails when the new name exists. The check and
+// the change are one step, so a file that appears between them is not replaced.
+func renameNoReplace(root *os.Root, from, to string) error {
+	fromDir, err := root.OpenFile(path.Dir(from), os.O_RDONLY|syscall.O_DIRECTORY, 0)
+	if err != nil {
+		return err
+	}
+	defer fromDir.Close()
+	toDir, err := root.OpenFile(path.Dir(to), os.O_RDONLY|syscall.O_DIRECTORY, 0)
+	if err != nil {
+		return err
+	}
+	defer toDir.Close()
+	err = unix.Renameat2(int(fromDir.Fd()), path.Base(from), int(toDir.Fd()), path.Base(to), unix.RENAME_NOREPLACE)
+	switch {
+	case errors.Is(err, syscall.EEXIST):
+		return fail(CodeExists, "a file or a directory with this name exists already")
+	case errors.Is(err, syscall.EINVAL), errors.Is(err, syscall.ENOSYS):
+		// The file system has no RENAME_NOREPLACE.
+		return root.Rename(from, to)
+	}
+	return err
 }
 
 // IsText reports whether the content of a file is text: valid UTF-8 with no NUL byte.

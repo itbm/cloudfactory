@@ -107,7 +107,7 @@ func (a *app) files(ctx context.Context, sub string, args []string) error {
 			}
 		}
 		if *output == "" {
-			_, err = a.out.Write(content)
+			_, err = a.raw.Write(content)
 			return err
 		}
 		if err := os.WriteFile(*output, content, 0o600); err != nil {
@@ -133,7 +133,7 @@ func (a *app) files(ctx context.Context, sub string, args []string) error {
 			}
 			content, err = io.ReadAll(io.LimitReader(in, maxFileBytes+1))
 		default:
-			content, err = os.ReadFile(*from)
+			content, err = readLimited(*from, maxFileBytes)
 		}
 		if err != nil {
 			return err
@@ -425,7 +425,16 @@ func (a *app) deploys(ctx context.Context, sub string, args []string) error {
 		fmt.Fprintf(a.out, "Secrets: %s\n", cell(strings.Join(names, ", ")))
 		return nil
 	case "start", "now":
-		return a.change(ctx, http.MethodPost, base+"/releases", nil)
+		fs := flag.NewFlagSet("start", flag.ContinueOnError)
+		forget := fs.Bool("forget-host-key", false, "forget the SSH host key of the Git server, after the server got a new key")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		var body any
+		if *forget {
+			body = map[string]any{"forgetHostKey": true}
+		}
+		return a.change(ctx, http.MethodPost, base+"/releases", body)
 	case "activate", "go-back":
 		if err := need(args, 2, "a website and the ID of a release (cf deploys show WEBSITE)"); err != nil {
 			return err
@@ -433,4 +442,21 @@ func (a *app) deploys(ctx context.Context, sub string, args []string) error {
 		return a.change(ctx, http.MethodPost, base+"/releases/"+url.PathEscape(args[1])+"/activate", nil)
 	}
 	return fmt.Errorf("unknown command deploys %s", sub)
+}
+
+// readLimited reads a regular file of at most limit bytes. Adversarial review, finding C1-14:
+// cf does not read a very large file, a pipe or a device into the memory.
+func readLimited(name string, limit int) ([]byte, error) {
+	f, err := os.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	if info, err := f.Stat(); err != nil {
+		return nil, err
+	} else if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("%s is not a regular file", name)
+	}
+	// One more byte shows that the file is too large. The caller gives the error text.
+	return io.ReadAll(io.LimitReader(f, int64(limit)+1))
 }

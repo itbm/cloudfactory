@@ -203,7 +203,6 @@ func TestSetDnsZonesStartsTheServerAndWritesTheZone(t *testing.T) {
 	}
 	for _, want := range []string{
 		"runuser -u cf-dns -- env XDG_RUNTIME_DIR=/run/user/987 podman pull --quiet ghcr.io/cloudfactory/dns:0.2.0",
-		"install -d -o cf-dns -g cf-dns -m 0700 " + root.dnsDataDir(),
 		"systemctl --user --machine=cf-dns@ daemon-reload",
 		"systemctl --user --machine=cf-dns@ restart cf-dns.service",
 		"nft -f " + d.FirewallFile,
@@ -213,6 +212,9 @@ func TestSetDnsZonesStartsTheServerAndWritesTheZone(t *testing.T) {
 		if !f.Called(want) {
 			t.Errorf("no call %q: %v", want, f.Calls)
 		}
+	}
+	if info, err := os.Lstat(root.dnsImportDir()); err != nil || !info.IsDir() || info.Mode().Perm() != 0o700 {
+		t.Errorf("the import directory of the DNS server: %v, %v", info, err)
 	}
 	if f.Called(knotInContainer + "keymgr") {
 		t.Errorf("a zone with no DNSSEC needs no key: %v", f.Calls)
@@ -459,5 +461,28 @@ func TestTheReportHasTheSerialThatTheDnsServerLoaded(t *testing.T) {
 	}
 	if zones := d.DnsZones(context.Background()); len(zones) != 1 || zones[0].Serial != newer.Serial {
 		t.Errorf("zones in the report: %#v", zones)
+	}
+}
+
+// Adversarial review, finding G7-01: the DNS container can write its data directory. Root does
+// not follow a symbolic link there.
+func TestDnsDirsRefuseASymbolicLinkOfTheContainer(t *testing.T) {
+	d, _ := dnsDeps(t)
+	root := rootOf(d)
+	target := t.TempDir()
+	if err := os.Chmod(target, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(root.dnsDataDir(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, root.dnsImportDir()); err != nil {
+		t.Fatal(err)
+	}
+	if err := root.makeDnsDirs(context.Background()); err == nil {
+		t.Error("the agent used a symbolic link as the import directory")
+	}
+	if info, err := os.Stat(target); err != nil || info.Mode().Perm() != 0o755 {
+		t.Errorf("the target of the link changed: %v, %v", info, err)
 	}
 }
