@@ -801,6 +801,10 @@ message DeployRequest {
   // The IDs of the earlier releases that stay on the server. The agent removes all other
   // release directories, but not the new release and not the release that the website had.
   repeated string keep_releases = 10;
+  // The agent keeps the SSH key of the Git host from the first deploy of the website, and
+  // refuses a host with a different key. True removes the stored keys before this deploy,
+  // for a Git host that changed its key.
+  bool forget_host_key = 11;
 }
 
 // ActivateRelease starts the website from a release that is on the server.

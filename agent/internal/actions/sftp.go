@@ -141,7 +141,18 @@ func (d *Deps) setSftpKeys(ctx context.Context, user string, enabled bool, autho
 		}
 	}
 	// sshd reads the file as the user, so the user can read it but not change it.
-	if _, err := host.WriteFile(filepath.Join(d.sftpKeysDir(), user+".keys"), keys.String(), 0o644); err != nil {
+	keysFile := filepath.Join(d.sftpKeysDir(), user+".keys")
+	// A key that goes away: sshd checks the keys only at the sign-in, so a session of that
+	// key continued (adversarial review, finding G5-12).
+	lostKey := false
+	if old, err := os.ReadFile(keysFile); err == nil {
+		for _, line := range strings.Split(string(old), "\n") {
+			if k, ok := strings.CutPrefix(line, "restrict "); ok && !(enabled && slices.Contains(authorized, k)) {
+				lostKey = true
+			}
+		}
+	}
+	if _, err := host.WriteFile(keysFile, keys.String(), 0o644); err != nil {
 		return err
 	}
 	// "!" locks the password, also a password from an earlier version, so that the
@@ -153,7 +164,7 @@ func (d *Deps) setSftpKeys(ctx context.Context, user string, enabled bool, autho
 	if err := d.SyncSftpUsers(); err != nil {
 		return err
 	}
-	if !enabled || len(authorized) == 0 {
+	if !enabled || len(authorized) == 0 || lostKey {
 		d.closeSftpSessions(ctx, user)
 	}
 	return nil

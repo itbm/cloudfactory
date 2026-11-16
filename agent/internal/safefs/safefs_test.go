@@ -67,8 +67,8 @@ func TestALinkInThePathIsRefused(t *testing.T) { linkIsRefused(t) }
 
 // A kernel before Linux 5.6 has no openat2. The package then opens each part of a path.
 func TestALinkInThePathIsRefusedWithNoOpenat2(t *testing.T) {
-	noOpenat2 = true
-	defer func() { noOpenat2 = false }()
+	noOpenat2.Store(true)
+	defer noOpenat2.Store(false)
 	linkIsRefused(t)
 }
 
@@ -207,8 +207,9 @@ func TestSymlinkRenameAndSize(t *testing.T) {
 	if err := os.Symlink("/etc/passwd", filepath.Join(base, "data/sub/link")); err != nil {
 		t.Fatal(err)
 	}
-	if got := d.Size("data"); got != 150 {
-		t.Fatalf("Size = %d, want 150", got)
+	// The size is the disk space of the two files (blocks), not the target of the link.
+	if got := d.Size("data"); got < 150 || got > 2*64<<10 {
+		t.Fatalf("Size = %d, want the disk space of two small files", got)
 	}
 	if err := d.Rename("data", "moved"); err != nil {
 		t.Fatal(err)

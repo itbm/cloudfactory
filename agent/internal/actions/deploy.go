@@ -8,6 +8,7 @@ import (
 	"maps"
 	"path"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -52,9 +53,15 @@ rm -rf .git`
 // deployKeyPath is the place of the private SSH key in the build container.
 const deployKeyPath = "/run/cf-deploy-key"
 
-// gitSSH is the SSH command of Git in the build container. The container has no list of known
-// hosts, so SSH accepts the key of the host at the first connection of each deploy.
-const gitSSH = "ssh -i " + deployKeyPath + " -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/tmp/known_hosts"
+// knownHostsDir is the place of the list of known hosts in the build container.
+const knownHostsDir = "/run/cf-ssh"
+
+// gitSSH is the SSH command of Git in the build container. SSH accepts the key of a Git host
+// at the first deploy of the website and keeps it in the list of known hosts of the website
+// (Deps.knownHosts). At each later deploy, SSH refuses a host with a different key. Before,
+// each deploy had a new list, so each deploy accepted each key, and an attacker in the
+// network could give the website different code (adversarial review, finding G5-05).
+const gitSSH = "ssh -i " + deployKeyPath + " -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=" + knownHostsDir + "/known_hosts"
 
 // releaseRoot checks that the document root of the website is in the release.
 func releaseRoot(w *agentv1.Website, releaseID string) error {
@@ -125,8 +132,11 @@ func commandError(what string, err error) error {
 	} else if errors.Is(err, context.DeadlineExceeded) || strings.Contains(text, "signal: killed") {
 		text = "the time limit ended"
 	}
-	return fmt.Errorf("%s: %s", what, text)
+	return fmt.Errorf("%s: %s", what, cleanText(text))
 }
+
+// commitID is the ID of a Git commit: SHA-1 or SHA-256.
+var commitID = regexp.MustCompile(`^[0-9a-f]{40}([0-9a-f]{24})?$`)
 
 // build runs a script in a build container of the website: a container from the image of the
 // website with the directory of the website at /app, which stops when the script ends. The
@@ -145,7 +155,11 @@ func (d *Deps) buildIn(ctx context.Context, w *agentv1.Website, workdir string, 
 		return "", err
 	}
 	u := d.unit(w, 0, "")
-	argv := []string{"env", "XDG_RUNTIME_DIR=/run/user/" + strconv.Itoa(uid), "systemd-run", "--user", "--wait", "--collect", "--pipe", "--quiet"}
+	limit := orDefault(d.BuildLimit, 20*time.Minute)
+	// systemd stops the unit, and thus the build container, at the time limit. The unit does
+	// not stop when the agent stops systemd-run (adversarial review, finding G5-02).
+	argv := []string{"env", "XDG_RUNTIME_DIR=/run/user/" + strconv.Itoa(uid), "systemd-run", "--user", "--wait", "--collect", "--pipe", "--quiet",
+		"-p", "RuntimeMaxSec=" + strconv.Itoa(int(limit.Seconds())), "-p", "KillMode=control-group", "-p", "TimeoutStopSec=15"}
 	for _, p := range quadlet.LimitProperties(u.Limits) {
 		argv = append(argv, "-p", p)
 	}
@@ -169,9 +183,16 @@ func (d *Deps) buildIn(ctx context.Context, w *agentv1.Website, workdir string, 
 	argv = append(argv, options...)
 	argv = append(argv, u.Image, "sh", "-c", script, "sh")
 	argv = append(argv, args...)
-	ctx, cancel := context.WithTimeout(ctx, orDefault(d.BuildLimit, 20*time.Minute))
+	ctx, cancel := context.WithTimeout(ctx, limit+30*time.Second)
 	defer cancel()
 	return d.asUser(ctx, user, "", argv...)
+}
+
+// knownHosts is the directory on the host with the list of known SSH hosts of a website. It
+// is in the home directory of the website user and not in the directory of the website, so
+// the website and SFTP cannot change it. Only the step "Get the code" mounts it.
+func (d *Deps) knownHosts(unixUser string) string {
+	return filepath.Join(d.Host.Home(unixUser), ".cf-ssh")
 }
 
 // deployFiles is the directory of the short-lived files of a deploy: the private SSH key and
@@ -238,12 +259,24 @@ func (d *Deps) Deploy(req *agentv1.DeployRequest) (jobs.Job, error) {
 				if err != nil {
 					return err
 				}
-				options = append(options, "--volume="+file+":"+deployKeyPath+":ro,Z", "--env=GIT_SSH_COMMAND="+gitSSH)
+				hosts := d.knownHosts(user)
+				if req.GetForgetHostKey() {
+					if _, err := d.asUser(ctx, user, "", "rm", "-rf", "--", hosts); err != nil {
+						return err
+					}
+				}
+				if _, err := d.asUser(ctx, user, "", "mkdir", "-p", "-m", "0700", "--", hosts); err != nil {
+					return err
+				}
+				options = append(options, "--volume="+file+":"+deployKeyPath+":ro,Z", "--volume="+hosts+":"+knownHostsDir+":Z", "--env=GIT_SSH_COMMAND="+gitSSH)
 			}
 			// Git never asks for a name or a password: the job has no terminal.
 			options = append(options, "--env=GIT_TERMINAL_PROMPT=0")
 			out, err := d.build(ctx, w, id, options, fetchScript, req.GetBranch(), req.GetRepository())
 			if err != nil {
+				if strings.Contains(err.Error(), "HOST IDENTIFICATION HAS CHANGED") || strings.Contains(err.Error(), "Host key verification failed") {
+					return errors.New("the agent cannot get the code: the SSH key of the Git host is not the key of the first deploy. If the Git host has a new key, start the deploy again and select to forget the key of the Git host")
+				}
 				return commandError("the agent cannot get the code", err)
 			}
 			for _, line := range strings.Split(out, "\n") {
@@ -251,9 +284,15 @@ func (d *Deps) Deploy(req *agentv1.DeployRequest) (jobs.Job, error) {
 					commit, message, _ = strings.Cut(strings.TrimSpace(rest), " ")
 				}
 			}
-			if len(message) > 200 {
-				message = strings.ToValidUTF8(message[:200], "")
+			// The website can write in the release during the clone, so the two values are
+			// text of the website.
+			if !commitID.MatchString(commit) {
+				commit = ""
 			}
+			if len(message) > 200 {
+				message = message[:200]
+			}
+			message = strings.ReplaceAll(cleanText(strings.ToValidUTF8(message, "")), "\n", " ")
 			return nil
 		}},
 		{Name: "Build", Do: func(ctx context.Context) error {

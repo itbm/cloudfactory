@@ -4612,7 +4612,11 @@ type DeployRequest struct {
 	HealthCheck *HealthCheck `protobuf:"bytes,9,opt,name=health_check,json=healthCheck,proto3" json:"health_check,omitempty"`
 	// The IDs of the earlier releases that stay on the server. The agent removes all other
 	// release directories, but not the new release and not the release that the website had.
-	KeepReleases  []string `protobuf:"bytes,10,rep,name=keep_releases,json=keepReleases,proto3" json:"keep_releases,omitempty"`
+	KeepReleases []string `protobuf:"bytes,10,rep,name=keep_releases,json=keepReleases,proto3" json:"keep_releases,omitempty"`
+	// The agent keeps the SSH key of the Git host from the first deploy of the website, and
+	// refuses a host with a different key. True removes the stored keys before this deploy,
+	// for a Git host that changed its key.
+	ForgetHostKey bool `protobuf:"varint,11,opt,name=forget_host_key,json=forgetHostKey,proto3" json:"forget_host_key,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -4715,6 +4719,13 @@ func (x *DeployRequest) GetKeepReleases() []string {
 		return x.KeepReleases
 	}
 	return nil
+}
+
+func (x *DeployRequest) GetForgetHostKey() bool {
+	if x != nil {
+		return x.ForgetHostKey
+	}
+	return false
 }
 
 // ActivateRelease starts the website from a release that is on the server.
@@ -5825,7 +5836,7 @@ const file_cloudfactory_agent_v1_agent_proto_rawDesc = "" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x1d\n" +
 	"\n" +
 	"website_id\x18\x02 \x01(\tR\twebsiteId\x129\n" +
-	"\bcron_job\x18\x03 \x01(\v2\x1e.cloudfactory.agent.v1.CronJobR\acronJob\"\xf2\x03\n" +
+	"\bcron_job\x18\x03 \x01(\v2\x1e.cloudfactory.agent.v1.CronJobR\acronJob\"\x9a\x04\n" +
 	"\rDeployRequest\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x128\n" +
 	"\awebsite\x18\x02 \x01(\v2\x1e.cloudfactory.agent.v1.WebsiteR\awebsite\x12\x1d\n" +
@@ -5841,7 +5852,8 @@ const file_cloudfactory_agent_v1_agent_proto_rawDesc = "" +
 	"deploy_key\x18\b \x01(\tR\tdeployKey\x12E\n" +
 	"\fhealth_check\x18\t \x01(\v2\".cloudfactory.agent.v1.HealthCheckR\vhealthCheck\x12#\n" +
 	"\rkeep_releases\x18\n" +
-	" \x03(\tR\fkeepReleases\x1a:\n" +
+	" \x03(\tR\fkeepReleases\x12&\n" +
+	"\x0fforget_host_key\x18\v \x01(\bR\rforgetHostKey\x1a:\n" +
 	"\fSecretsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xcf\x01\n" +

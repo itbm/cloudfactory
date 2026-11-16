@@ -484,7 +484,7 @@ func TestTheReportHasWebsiteUseAndCertificates(t *testing.T) {
 
 	var r panel.Report
 	d.FillReport(context.Background(), &r)
-	if len(r.Websites) != 1 || r.Websites[0].MemoryBytes != 104857600 || r.Websites[0].Processes != 12 || r.Websites[0].DiskBytes != 13 {
+	if len(r.Websites) != 1 || r.Websites[0].MemoryBytes != 104857600 || r.Websites[0].Processes != 12 || r.Websites[0].DiskBytes < 13 || r.Websites[0].DiskBytes > 64<<10 {
 		t.Errorf("websites = %+v", r.Websites)
 	}
 	// A valid certificate means that the domain points here, also behind NAT.

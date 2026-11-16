@@ -6,8 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 )
 
 // The commands do not start in the working directory of the agent. A website user cannot
@@ -113,4 +116,33 @@ func TestOutputKeepsItsStartAndItsEnd(t *testing.T) {
 	if got := int64(10) + o.removed + int64(len(o.end)); got != 1000*1000+3 {
 		t.Fatalf("the parts have %d bytes", got)
 	}
+}
+
+// The end of the context stops the programs that a command started, and the agent does not
+// wait for them (adversarial review, finding G5-02). "sh" stands for runuser: it starts a
+// second program that keeps the output of the command open.
+func TestHostStopsTheProgramsOfACommandAtTheTimeLimit(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	mark := t.TempDir() + "/pid"
+	start := time.Now()
+	_, err := Host{}.Run(ctx, "sh", "-c", "sleep 60 & echo $! >"+mark+"; wait")
+	if err == nil {
+		t.Fatal("the command ended with no error")
+	}
+	if took := time.Since(start); took > 4*time.Second {
+		t.Fatalf("the agent waited %s for the command", took)
+	}
+	raw, rerr := os.ReadFile(mark)
+	if rerr != nil {
+		t.Fatal(rerr)
+	}
+	pid, _ := strconv.Atoi(strings.TrimSpace(string(raw)))
+	for range 40 {
+		if syscall.Kill(pid, 0) != nil {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatalf("the program %d of the command still runs", pid)
 }

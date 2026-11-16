@@ -20,6 +20,7 @@ import (
 	"github.com/itbm/cloudfactory/agent/internal/caddy"
 	"github.com/itbm/cloudfactory/agent/internal/panel"
 	"github.com/itbm/cloudfactory/agent/internal/quadlet"
+	"github.com/itbm/cloudfactory/agent/internal/safefs"
 )
 
 // observer keeps the values of the status report that take time to read, so that each report
@@ -391,22 +392,9 @@ func readInt(path string) int64 {
 	return v
 }
 
-// dirSize gives the size of the files in dir. It does not follow links.
-func dirSize(dir string) int64 {
-	var total int64
-	filepath.WalkDir(dir, func(_ string, e os.DirEntry, err error) error {
-		if err != nil {
-			return nil
-		}
-		if e.Type().IsRegular() {
-			if fi, err := e.Info(); err == nil {
-				total += fi.Size()
-			}
-		}
-		return nil
-	})
-	return total
-}
+// dirSize gives the disk space of the files in dir. It does not follow links, and it has a
+// limit of entries and of time (safefs.Size).
+func dirSize(dir string) int64 { return safefs.TreeSize(dir) }
 
 // checkDomains checks all domains and keeps the result for the subsequent reports.
 func (d *Deps) checkDomains(sites []*Site, done chan struct{}) {

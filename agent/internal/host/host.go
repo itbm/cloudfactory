@@ -351,8 +351,11 @@ func (h *Host) RemoveDatabaseUser(ctx context.Context, unixUser string) error {
 
 // LinkStorageConfig makes ~/.config/containers/storage.conf of a website user a link to
 // StorageConfig, so that each Podman command of the user, also the ones that systemd starts,
-// uses the shared image store. Root owns ~/.config/containers, so the user cannot change the
-// link (R-16).
+// uses the shared image store. Root owns ~/.config/containers, so a process of the user
+// cannot change the link in that directory (R-16). The user owns ~/.config and can thus give
+// the directory a different name. This does not matter while no code of the customer runs
+// as the website user on the host: the code of the customer runs only in containers, which
+// have only the directory of the website (adversarial review, finding G5-14).
 //
 // Second audit, the privilege boundary: the website user owns its home directory, and can put
 // a link in place of each path in it. Thus root opens these paths with no symbolic links
