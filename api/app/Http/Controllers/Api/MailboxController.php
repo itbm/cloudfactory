@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Enums\AgentAction;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\JobResource;
+use App\Models\Customer;
 use App\Models\MailAlias;
 use App\Models\Mailbox;
 use App\Models\MailDomain;
@@ -68,10 +69,21 @@ class MailboxController extends Controller
 
         $password = $data['password'] ?? Mail::password();
         $keys = ($data['encrypt'] ?? false) ? OpenPgpKey::generate($data['localPart'].'@'.$domain->name, $password) : null;
-        $mailbox = Mailbox::create([
-            'customer_id' => $customer->id, 'mail_domain_id' => $domain->id, 'local_part' => $data['localPart'],
-            'quota_bytes' => $data['quotaBytes'], 'status' => MailDomain::PENDING, 'private_key' => $keys['privateKey'] ?? null,
-        ])->setRelation('domain', $domain);
+        // Adversarial review, finding A6-09: the checks and the new mailbox are in one
+        // transaction, with a lock on the customer. Two requests at the same time cannot go
+        // above the plan, or make one address two times.
+        $mailbox = Mail::locked($customer, function (Customer $customer) use ($domain, $data, $keys) {
+            if (! Mail::addressFree($domain, $data['localPart'])) {
+                throw ValidationException::withMessages(['localPart' => 'This address is in use.']);
+            }
+            Mail::refuseRemoved($domain->refresh(), 'domainId', 'mail domain');
+            Mail::checkPlan($customer, $data['quotaBytes']);
+
+            return Mailbox::create([
+                'customer_id' => $customer->id, 'mail_domain_id' => $domain->id, 'local_part' => $data['localPart'],
+                'quota_bytes' => $data['quotaBytes'], 'status' => MailDomain::PENDING, 'private_key' => $keys['privateKey'] ?? null,
+            ]);
+        })->setRelation('domain', $domain);
         $job = $this->jobs->dispatch($domain->server, AgentAction::SetMailbox, self::payload($mailbox) + ['passwordHash' => Mail::hash($password), 'create' => true]
             + ($keys ? ['setEncryption' => true, 'publicKey' => $keys['publicKey']] : []), "Create mailbox {$mailbox->address()}", customerId: $customer->id);
         Audit::record($request, 'Created mailbox', $mailbox->address(), $customer->id);
@@ -156,7 +168,8 @@ class MailboxController extends Controller
             $key = $keys['publicKey'];
             // The old private keys stay: they open the messages from before this change.
             $old = $changes['private_key'] ?? $mailbox->private_key;
-            $changes['private_key'] = $keys['privateKey'].($old ?? '');
+            // Adversarial review, finding A6-10: the mailbox keeps a small number of old keys.
+            $changes['private_key'] = Mail::newestKeys($keys['privateKey'].($old ?? ''));
             $changes['key_password_current'] = $old === null ? true : ($changes['key_password_current'] ?? false);
         }
         $previous = $mailbox->quota_bytes;
@@ -250,7 +263,7 @@ class MailboxController extends Controller
     /** The user types a password, or the panel makes one. */
     private static function passwordRule(): array
     {
-        return ['password' => ['sometimes', 'string', 'min:12', 'max:128', 'regex:/^[\x20-\x7e]+$/']];
+        return ['password' => ['sometimes', 'string', 'min:12', 'max:128', 'regex:/^[\x20-\x7e]+$/D']];
     }
 
     private const MESSAGES = [

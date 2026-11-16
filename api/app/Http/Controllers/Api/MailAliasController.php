@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Enums\AgentAction;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\JobResource;
+use App\Models\Customer;
 use App\Models\MailAlias;
 use App\Models\Mailbox;
 use App\Models\MailDomain;
@@ -73,10 +74,18 @@ class MailAliasController extends Controller
             }
         }
 
-        $alias = MailAlias::create([
-            'customer_id' => $customer->id, 'mail_domain_id' => $domain->id, 'local_part' => $data['localPart'],
-            'kind' => $data['kind'], 'destinations' => array_values($data['destinations']), 'status' => MailDomain::PENDING,
-        ])->setRelation('domain', $domain);
+        $alias = Mail::locked($customer, function (Customer $customer) use ($domain, $data, $address) {
+            if (! Mail::addressFree($domain, $data['localPart'])) {
+                throw ValidationException::withMessages(['localPart' => 'This address is in use.']);
+            }
+            Mail::refuseRemoved($domain->refresh(), 'domainId', 'mail domain');
+            self::checkLimits($customer, $data, $address);
+
+            return MailAlias::create([
+                'customer_id' => $customer->id, 'mail_domain_id' => $domain->id, 'local_part' => $data['localPart'],
+                'kind' => $data['kind'], 'destinations' => array_values($data['destinations']), 'status' => MailDomain::PENDING,
+            ]);
+        })->setRelation('domain', $domain);
         $job = $this->jobs->dispatch($domain->server, AgentAction::SetMailAlias, self::payload($alias) + ['destinations' => $alias->destinations, 'create' => true], "Create {$alias->kind} {$address}", customerId: $customer->id);
         Audit::record($request, "Created {$alias->kind}", $address, $customer->id);
 
@@ -94,6 +103,36 @@ class MailAliasController extends Controller
         Audit::record($request, "Removed {$alias->kind}", $alias->address(), $alias->customer_id);
 
         return response()->json(['job' => new JobResource($job)], 202);
+    }
+
+    /**
+     * Adversarial review, finding A6-07: a customer has a limited number of aliases and
+     * forwarders, and a limited number of destinations. A forwarder does not send to a
+     * forwarder: a chain multiplies each message, and a loop has no end.
+     *
+     * @throws ValidationException
+     */
+    private static function checkLimits(Customer $customer, array $data, string $address): void
+    {
+        $own = MailAlias::where('customer_id', $customer->id)->get();
+        if ($own->count() >= MailAlias::MAX_PER_CUSTOMER) {
+            throw ValidationException::withMessages(['localPart' => 'A customer can have '.MailAlias::MAX_PER_CUSTOMER.' aliases and forwarders. Remove one first.']);
+        }
+        if ($data['kind'] !== MailAlias::FORWARDER) {
+            return;
+        }
+        $used = $own->where('kind', MailAlias::FORWARDER)->sum(fn (MailAlias $a) => count($a->destinations ?? []));
+        if ($used + count($data['destinations']) > MailAlias::MAX_FORWARD_DESTINATIONS) {
+            throw ValidationException::withMessages(['destinations' => 'The forwarders of a customer can have '.MailAlias::MAX_FORWARD_DESTINATIONS.' destinations in total. '.max(0, MailAlias::MAX_FORWARD_DESTINATIONS - $used).' are free.']);
+        }
+        $forwarders = MailAlias::with('domain')->where('kind', MailAlias::FORWARDER)->get();
+        $addresses = $forwarders->map(fn (MailAlias $a) => $a->address())->all();
+        if (array_intersect($data['destinations'], $addresses) !== []) {
+            throw ValidationException::withMessages(['destinations' => 'A forwarder cannot send to a forwarder. Give the final addresses.']);
+        }
+        if ($forwarders->contains(fn (MailAlias $a) => in_array($address, $a->destinations ?? [], true))) {
+            throw ValidationException::withMessages(['localPart' => 'A forwarder sends to this address. A forwarder cannot send to a forwarder.']);
+        }
     }
 
     private static function payload(MailAlias $a): array

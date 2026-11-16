@@ -160,7 +160,7 @@ Route::prefix('v1')->group(function () {
             Route::get('dns-zones', [DnsZoneController::class, 'index']);
             Route::post('dns-zones', [DnsZoneController::class, 'store'])->middleware('throttle:dns-changes');
             Route::get('dns-zones/{id}', [DnsZoneController::class, 'show']);
-            Route::delete('dns-zones/{id}', [DnsZoneController::class, 'destroy']);
+            Route::delete('dns-zones/{id}', [DnsZoneController::class, 'destroy'])->middleware('throttle:dns-changes');
             Route::post('dns-zones/{id}/records', [DnsZoneController::class, 'storeRecord'])->middleware('throttle:dns-changes');
             Route::patch('dns-zones/{id}/records/{recordId}', [DnsZoneController::class, 'updateRecord'])->middleware('throttle:dns-changes');
             Route::delete('dns-zones/{id}/records/{recordId}', [DnsZoneController::class, 'destroyRecord'])->middleware('throttle:dns-changes');
@@ -175,16 +175,16 @@ Route::prefix('v1')->group(function () {
             Route::post('mail/domains', [MailDomainController::class, 'store'])->middleware('throttle:domain-changes');
             Route::get('mail/domains/{id}', [MailDomainController::class, 'show']);
             Route::post('mail/domains/{id}/check', [MailDomainController::class, 'check'])->middleware('throttle:domain-checks');
-            Route::post('mail/domains/{id}/retry', [MailDomainController::class, 'retry']);
-            Route::delete('mail/domains/{id}', [MailDomainController::class, 'destroy']);
+            Route::post('mail/domains/{id}/retry', [MailDomainController::class, 'retry'])->middleware('throttle:mail-changes');
+            Route::delete('mail/domains/{id}', [MailDomainController::class, 'destroy'])->middleware('throttle:mail-changes');
             Route::get('mail/mailboxes', [MailboxController::class, 'index']);
-            Route::post('mail/mailboxes', [MailboxController::class, 'store']);
-            Route::patch('mail/mailboxes/{id}', [MailboxController::class, 'update']);
+            Route::post('mail/mailboxes', [MailboxController::class, 'store'])->middleware('throttle:mail-changes');
+            Route::patch('mail/mailboxes/{id}', [MailboxController::class, 'update'])->middleware('throttle:mail-changes');
             Route::get('mail/mailboxes/{id}/private-key', [MailboxController::class, 'privateKey']);
-            Route::delete('mail/mailboxes/{id}', [MailboxController::class, 'destroy']);
+            Route::delete('mail/mailboxes/{id}', [MailboxController::class, 'destroy'])->middleware('throttle:mail-changes');
             Route::get('mail/aliases', [MailAliasController::class, 'index']);
-            Route::post('mail/aliases', [MailAliasController::class, 'store']);
-            Route::delete('mail/aliases/{id}', [MailAliasController::class, 'destroy']);
+            Route::post('mail/aliases', [MailAliasController::class, 'store'])->middleware('throttle:mail-changes');
+            Route::delete('mail/aliases/{id}', [MailAliasController::class, 'destroy'])->middleware('throttle:mail-changes');
         });
 
         Route::middleware('scope:backups')->group(function () {

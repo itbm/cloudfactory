@@ -22,6 +22,12 @@ class MailAlias extends Model
 
     public const MAX_DESTINATIONS = 50;
 
+    /** The aliases and forwarders of one customer. */
+    public const MAX_PER_CUSTOMER = 500;
+
+    /** The destinations of all forwarders of one customer. */
+    public const MAX_FORWARD_DESTINATIONS = 500;
+
     protected function casts(): array
     {
         return ['destinations' => 'array'];
