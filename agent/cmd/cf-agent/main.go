@@ -123,7 +123,7 @@ func main() {
 func join(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("join", flag.ContinueOnError)
 	panelURL := fs.String("panel", "", "the address of the panel, for example https://panel.example.com")
-	token := fs.String("token", "", "the join token from the panel")
+	token := fs.String("token", "", "the join token from the panel; the default is the value of CF_JOIN_TOKEN")
 	hostname, _ := os.Hostname()
 	name := fs.String("name", strings.Split(hostname, ".")[0], "the name of this server in the panel")
 	roles := fs.String("roles", "web", "the roles of this server, separated by commas")
@@ -136,6 +136,11 @@ func join(ctx context.Context, args []string) error {
 	caPin := fs.String("panel-ca-sha256", "", "the SHA-256 fingerprint of the root certificate of the panel CA, when the panel has a certificate from its own CA")
 	if err := fs.Parse(args); err != nil {
 		return err
+	}
+	// The installation script gives the token in the environment, so that it is not in the
+	// list of processes.
+	if *token == "" {
+		*token = os.Getenv("CF_JOIN_TOKEN")
 	}
 	if *panelURL == "" || *token == "" {
 		return errors.New("join needs --panel and --token")

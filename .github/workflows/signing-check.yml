@@ -9,11 +9,8 @@ name: Signing check
 
 on:
   workflow_dispatch:
-  # Pull requests from forks do not get the secrets, so the check fails for them.
-  pull_request:
-    paths:
-      - cosign.pub
-      - .github/workflows/signing-check.yml
+  # Adversarial review, finding I1-01: no run for a pull request. A pull request can change
+  # this file, and the run would then use the signing key with the changed steps.
   push:
     branches: [main]
     paths:

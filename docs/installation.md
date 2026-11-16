@@ -21,7 +21,23 @@ curl -fsSLO https://github.com/itbm/cloudfactory/releases/latest/download/instal
 curl -fsSLO https://github.com/itbm/cloudfactory/releases/latest/download/install.sh.sig
 curl -fsSLO https://github.com/itbm/cloudfactory/releases/latest/download/cosign.pub
 sha256sum -c install.sh.sha256
-cosign verify-blob --key cosign.pub --signature install.sh.sig install.sh
+cosign verify-blob --key cosign.pub --insecure-ignore-tlog=true --signature install.sh.sig install.sh
+```
+
+The option `--insecure-ignore-tlog=true` is necessary, because the signature of the script is
+not in the public transparency log. The check is as good as your copy of `cosign.pub`. The file
+of the release comes from the same place as the script. To be sure, compare it with the file
+`cosign.pub` in the Git repository:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/itbm/cloudfactory/main/cosign.pub | cmp - cosign.pub
+```
+
+If you do not have cosign, OpenSSL can do the same check:
+
+```sh
+base64 -d install.sh.sig > install.sh.sig.der
+openssl dgst -sha256 -verify cosign.pub -signature install.sh.sig.der install.sh
 ```
 
 GitHub has the address `releases/latest` only for a release that is not a pre-release. If `curl`
@@ -180,13 +196,14 @@ The backups of the websites that the server had stay in the object storage, in t
 | `--domain DOMAIN`  | The domain of the panel.                                                 |
 | `--email EMAIL`    | The email address of the first administrator.                            |
 | `--certificate METHOD` | The TLS certificate of the panel domain: `internal` (from the panel CA) or `letsencrypt`. A new panel uses `internal`. A panel that operates keeps its method. |
-| `--join TOKEN`     | Add this server to a panel with this join token.                         |
+| `--join TOKEN`     | Add this server to a panel with this join token. With `--join -`, the script reads the token from the variable `CF_JOIN_TOKEN`, so that other users of the server cannot see it in the list of processes. |
 | `--panel URL`      | The `https://` address of the panel. Use it with `--join`.               |
 | `--panel-ca-sha256 SHA256` | The SHA-256 fingerprint of the root certificate of the panel CA. Use it with `--join`. |
 | `--name NAME`      | The name of the server in the panel. The default is the host name.       |
 | `--roles ROLES`    | The roles of the server: `web`, `database`, `email`, `dns`, `backup`.    |
 | `--address HOST`   | The host name or IP address that the panel uses to reach the server. The default is the full host name, for example `web2.example.com`, when the server finds an address for it. In other cases, the default is the IP address that the server uses for its connection to the panel. |
 | `--panel-ip IP`    | Accept the agent port only from this IP address.                         |
+| `--ssh-port PORT`  | Keep this SSH port open in the firewall. Give the option for each port. The default is the ports of the SSH service of the server, or 22. |
 | `--sftp-port PORT` | The SFTP port of the websites. The default is `2200`. You cannot use port 22. |
 | `--registry URL`   | Use a different image registry, for example a mirror.                    |
 | `--allow-unsigned REGISTRY` | Let Podman pull unsigned images from this registry. You can use this option more than one time. |

@@ -33,8 +33,9 @@ images and the files of a release.
 5. Keep a copy of `cosign.key` and its password in a safe place offline, for example in your
    password manager. Then delete `cosign.key` from your computer.
 
-The workflow [`signing-check.yml`](../.github/workflows/signing-check.yml) runs on the pull
-request that changes `cosign.pub`. It signs a test file with the key in the secrets and
+The workflow [`signing-check.yml`](../.github/workflows/signing-check.yml) runs when a change
+of `cosign.pub` comes to the branch `main`. It does not run for a pull request, because a pull
+request could change the steps that use the signing key. It signs a test file with the key in the secrets and
 verifies the signature with `cosign.pub`. If it passes, the key is ready. You can also start
 it from the Actions tab at any time. It publishes nothing.
 
@@ -108,7 +109,12 @@ The workflow [`release.yml`](../.github/workflows/release.yml) then does these s
 
 If a build fails, the workflow does not tag an image and does not add a file to the release.
 Fix the problem, then run the failed jobs again from the **Actions** tab. If the fix needs a
-new commit, delete the release and the tag, then make the release again.
+new commit, and the release has no files, delete the release and the tag, then make the release
+again.
+
+A release that has its files does not change. The workflow stops when the release has files
+already. One version must not have two different signed agents or images. To correct such a
+release, make a new version.
 
 ## Package visibility
 
