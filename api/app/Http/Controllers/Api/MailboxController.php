@@ -195,6 +195,8 @@ class MailboxController extends Controller
     public function privateKey(Request $request, string $id): JsonResponse
     {
         AuthController::refusePlugin($request);
+        // Adversarial review, finding X1-07: a token that can only read does not get a key.
+        abort_unless($request->user()->tokenCan('mail:write'), 403, 'This request needs a token with the scope mail:write.');
         $mailbox = $this->visible($request)->findOrFail($id);
         abort_if($mailbox->private_key === null, 404, 'The panel made no keys for this mailbox.');
         Audit::record($request, 'Downloaded mailbox private key', $mailbox->address(), $mailbox->customer_id);

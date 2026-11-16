@@ -38,7 +38,10 @@ class JobDispatcher
             // The job of one DNS zone. The owner of the zone can see the job.
             'dns_zone_id' => $dnsZone?->id,
             // A mail job: the users of this customer can see it.
-            'customer_id' => $customerId,
+            // Adversarial review, finding A9-10: each job of a customer has the customer. The
+            // owner can then read the job after the website, the database server or the zone
+            // is removed.
+            'customer_id' => $customerId ?? $website?->customer_id ?? $databaseServer?->customer_id ?? $dnsZone?->customer_id,
             'rollout_id' => $rolloutId,
             'action' => $action,
             'title' => $title,

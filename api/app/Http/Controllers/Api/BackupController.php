@@ -211,6 +211,11 @@ class BackupController extends Controller
             // for example the files that an attacker added.
             'removeNewFiles' => ['sometimes', 'boolean', 'prohibited_unless:scope,website'],
         ]);
+        // Adversarial review, finding X1-03: a restore changes the databases or the files.
+        $needs = $data['scope'] === 'database' ? ['databases:write'] : ($data['scope'] === 'file' ? ['websites:write'] : ['websites:write', 'databases:write']);
+        foreach ($needs as $scope) {
+            abort_unless($request->user()->tokenCan($scope), 403, "This restore needs a token with the scope {$scope}.");
+        }
         $removeNewFiles = (bool) ($data['removeNewFiles'] ?? false);
         $dumpHash = $databaseServer = null;
         // A snapshot with only databases is in the repository of a different server. The
@@ -363,6 +368,9 @@ class BackupController extends Controller
     public function showRepositoryPassword(Request $request): JsonResponse
     {
         AuthController::refusePlugin($request);
+        // Adversarial review, finding A9-02: the password opens the backups of all customers.
+        // A token that can only read backups does not get it.
+        abort_unless($request->user()->tokenCan('backups:write'), 403, 'This request needs a token with the scope backups:write.');
         Audit::record($request, 'Viewed backup repository passwords', 'restic repositories');
         $hasTarget = (bool) preg_match(self::TARGET, (string) (self::policy()['target'] ?? ''));
         $shared = self::sharedRepositoryPassword();

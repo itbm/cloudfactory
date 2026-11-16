@@ -343,7 +343,9 @@ class AuthController extends Controller
             // Audit finding F09: an administrator or a reseller must turn on TOTP. The API
             // refuses all other work in a sign-in session until then (EnsureActive).
             'totpSetupRequired' => EnsureActive::totpSetupRequired($request),
-            'securityNotices' => self::securityNotices($user),
+            // Adversarial review, finding X1-08: the notices are audit data. A token with a
+            // small scope does not get them.
+            'securityNotices' => self::isSession($request) || $user->tokenCan('audit:read') ? self::securityNotices($user) : [],
             // White label: the brand that this user sees.
             'brand' => Branding::forUser($user),
         ]);

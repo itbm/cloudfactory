@@ -376,6 +376,10 @@ class PluginController extends Controller
     /** The pages of the plugins that the user can open, for the menu of the web panel. */
     public function pages(Request $request): JsonResponse
     {
+        // Adversarial review, finding X1-08: only a sign-in session can open a page.
+        if (! AuthController::isSession($request) && ! $request->user()->tokenCan('plugins:read')) {
+            return response()->json(['data' => []]);
+        }
         $role = $request->user()->role->value;
         $pages = [];
         foreach (Plugin::where('enabled', true)->orderBy('name')->get() as $plugin) {
@@ -418,6 +422,9 @@ class PluginController extends Controller
     /** The actions of the plugins that the user can select, for the pages of the web panel. */
     public function actions(Request $request): JsonResponse
     {
+        if (! AuthController::isSession($request) && ! $request->user()->tokenCan('plugins:read')) {
+            return response()->json(['data' => []]);
+        }
         $role = $request->user()->role->value;
         $actions = [];
         foreach (Plugin::where('enabled', true)->orderBy('name')->get() as $plugin) {

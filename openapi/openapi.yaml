@@ -2522,7 +2522,8 @@ paths:
       tags: [Backups]
       summary: Get the backup repository and the repository password of each server
       description: >-
-        Administrators only. Each server that has websites has its own restic repository below
+        Administrators only. A token needs the scope backups:write, and the token of a plugin
+        cannot make this request. Each server that has websites has its own restic repository below
         the backup target, and its own repository password. The panel sends a password only to
         its server. Keep a copy of all passwords in a safe place: without the password of a
         server, you cannot restore the websites of that server with restic directly. Get the

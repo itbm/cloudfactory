@@ -78,6 +78,8 @@ class DatabaseController extends Controller
     public function store(Request $request, string $websiteId): JsonResponse
     {
         $website = $this->findWebsite($request, $websiteId);
+        // Adversarial review, finding X1-04: a new database can start a database server.
+        abort_if($website->customer?->isSuspended() ?? false, 409, 'This customer is suspended. Lift the suspension before you make a database.');
         $data = $request->validate([
             'engine' => ['required', Rule::in(Database::ENGINES)],
             'name' => ['required', 'string', 'max:64'],

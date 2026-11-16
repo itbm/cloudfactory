@@ -115,6 +115,10 @@ class WebsiteController extends Controller
         }
 
         $image = Image::findOrFail($data['imageId']);
+        // Adversarial review, finding X1-12: the images of the panel itself are not for websites.
+        if ($image->family === 'edge') {
+            throw ValidationException::withMessages(['imageId' => 'Select an image for websites.']);
+        }
         if (! $user->isAdministrator() && ($image->custom || isset($data['serverId']))) {
             throw ValidationException::withMessages($image->custom
                 ? ['imageId' => 'Select an official image.']
@@ -335,6 +339,10 @@ class WebsiteController extends Controller
         if (! $source->isPublic()) {
             throw ValidationException::withMessages(['website' => 'The panel makes a staging copy only of a website with a domain.']);
         }
+        // Adversarial review, finding X1-03: the copy has new databases, and the answer has
+        // their passwords.
+        abort_if($source->databases()->exists() && ! $request->user()->tokenCan('databases:write'), 403,
+            'This website has databases. A staging copy needs a token with the scope databases:write.');
         if ($source->status === WebsiteStatus::Failed) {
             throw ValidationException::withMessages(['website' => 'This website failed. Repair the website before you make a staging copy.']);
         }

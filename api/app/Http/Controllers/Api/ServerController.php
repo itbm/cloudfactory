@@ -9,6 +9,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\JobResource;
 use App\Models\AgentJob;
 use App\Models\Database;
+use App\Models\DatabaseServer;
 use App\Models\JoinToken;
 use App\Models\MailDomain;
 use App\Models\Server;
@@ -241,6 +242,11 @@ class ServerController extends Controller
         }
         if ($server->database_servers_count > 0) {
             throw ValidationException::withMessages(['server' => "This server has {$server->database_servers_count} ".($server->database_servers_count === 1 ? 'database server' : 'database servers').'. Remove the database servers first.']);
+        }
+        // Adversarial review, finding A9-11: a database server that moves to this server would
+        // stay in the state "moving".
+        if (DatabaseServer::where('moving_to_server_id', $server->id)->exists()) {
+            throw ValidationException::withMessages(['server' => 'A database server moves to this server. Wait until the move is complete.']);
         }
         if ($server->mailDomains()->exists()) {
             throw ValidationException::withMessages(['server' => 'This server has mail domains. Remove the mail domains first.']);
