@@ -155,6 +155,12 @@ func (d *Deps) UpdateAgent(req *agentv1.UpdateAgentRequest) (jobs.Job, error) {
 	var rel selfupdate.Release
 	return jobs.Job{ID: req.GetJobId(), Key: "agent", Steps: []jobs.Step{
 		{Name: "Download agent binary", Do: func(ctx context.Context) (err error) {
+			// The restart waits for all jobs, and the agent port is closed in that time. A
+			// backup can take hours, and the server then had no agent for hours
+			// (adversarial review, finding G1-06).
+			if d.OtherJobs != nil && d.OtherJobs() > 1 {
+				return errors.New("the server runs other jobs now, for example a backup. Update the agent when they are complete")
+			}
 			rel, err = d.Updater.Fetch(ctx, req.GetVersion(), d.Arch)
 			return err
 		}},

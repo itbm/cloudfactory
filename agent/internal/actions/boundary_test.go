@@ -77,6 +77,10 @@ func TestTheRootHelperRunsTheCommandsOfThePolicy(t *testing.T) {
 	d, f := boundary(t)
 	root := rootOf(d)
 	app, dumps, stage := root.Host.AppDir("acme_x7k2"), root.dumpDir("acme_x7k2"), root.stageDir(jobID)
+	// restic restores only into a new, empty directory of a restore job.
+	if err := os.MkdirAll(stage, 0o700); err != nil {
+		t.Fatal(err)
+	}
 	serverPodman := podmanOf(mariaServerKey)
 	for _, command := range []string{
 		// A website user can run each program.

@@ -316,8 +316,12 @@ The product specification, section 6.4, gives the requirements.
 - The installation script can limit port 7443 to the IP address of the panel (`--panel-ip`).
 - The agent installs only gVisor archives with a SHA-512 sum that is in the agent or in the
   `--sha512` option. It does not download the sum from the archive server.
-- The agent refuses to update to an older version. An administrator can allow it for one update
-  (`allowDowngrade`). Each agent release has a signed manifest that names the version, the file
+- The agent refuses to update to an older version. An administrator can allow it for one
+  update: make the file `/etc/cloudfactory/allow-agent-downgrade` on the server as root, and
+  then start the update with `allowDowngrade` (`cf servers update-agent --allow-downgrade`).
+  The root helper removes the file when it uses it. The option of the panel alone is not
+  sufficient, because the worker of the agent sends it, and the root helper does not trust
+  the worker. Each agent release has a signed manifest that names the version, the file
   and the SHA-256 hash of the binary. The agent and the installation script refuse a binary
   that does not agree with the manifest of the version that they asked for.
 - The agent checks the panel certificate on each connection, also for a resumed TLS session.

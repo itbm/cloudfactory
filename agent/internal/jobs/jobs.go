@@ -12,6 +12,8 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime/debug"
+	"strings"
 	"sync"
 	"time"
 
@@ -121,6 +123,9 @@ func (r *Runner) Submit(job Job) (duplicate bool, err error) {
 	r.mu.Unlock()
 
 	if err := r.save(Record{ID: job.ID, State: "queued"}); err != nil {
+		// The job does not run. Without this, the mark stayed, and the agent answered
+		// "duplicate" for each later try of the job (adversarial review, finding G1-07).
+		r.forget(job.ID)
 		return false, err
 	}
 	r.start(job, lock)
@@ -139,6 +144,20 @@ func (r *Runner) Resume(job Job) {
 	r.start(job, &sync.Mutex{})
 }
 
+// forget removes the mark of a job that does not run.
+func (r *Runner) forget(id string) {
+	r.mu.Lock()
+	delete(r.known, id)
+	r.mu.Unlock()
+}
+
+// Running gives the number of jobs that run or wait now.
+func (r *Runner) Running() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return len(r.known)
+}
+
 func (r *Runner) start(job Job, lock *sync.Mutex) {
 	r.wg.Add(1)
 	go func() {
@@ -155,10 +174,12 @@ func (r *Runner) Wait() { r.wg.Wait() }
 // saveOrLog saves the record of a job. A record that the agent cannot save does not stop the
 // job: the panel still gets the events. After a restart, the job can run again (audit batch 2,
 // finding 14).
-func (r *Runner) saveOrLog(log *slog.Logger, rec Record) {
+func (r *Runner) saveOrLog(log *slog.Logger, rec Record) bool {
 	if err := r.save(rec); err != nil {
 		log.Error("save job record", "state", rec.State, "err", err)
+		return false
 	}
+	return true
 }
 
 func (r *Runner) run(job Job) {
@@ -167,6 +188,27 @@ func (r *Runner) run(job Job) {
 	log := r.logger().With("job", job.ID)
 
 	rec := Record{ID: job.ID, State: "running"}
+	// A panic in a step fails the job. Without this, the panic stopped the worker and all
+	// other jobs, and the same job stopped the worker again at each try (adversarial review,
+	// finding G1-08).
+	defer func() {
+		p := recover()
+		if p == nil {
+			return
+		}
+		log.Error("a step of the job stopped with a panic", "panic", p, "stack", string(debug.Stack()))
+		if job.OnFailure != nil {
+			func() {
+				defer func() { _ = recover() }()
+				job.OnFailure(context.WithoutCancel(ctx))
+			}()
+		}
+		rec.State, rec.Error, rec.Finished = "failed", "the agent has an internal error in this job; the log of the agent has the details", time.Now()
+		if r.saveOrLog(log, rec) {
+			r.forget(job.ID)
+		}
+		r.report(context.WithoutCancel(ctx), job.ID, panel.Event{State: "failed", Step: rec.Step, Error: rec.Error})
+	}()
 	for i, step := range job.Steps {
 		if i < job.StartAt {
 			continue
@@ -188,7 +230,11 @@ func (r *Runner) run(job Job) {
 				job.OnFailure(context.WithoutCancel(ctx))
 			}
 			rec.State, rec.Error, rec.Finished = "failed", cutError(fmt.Sprintf("%s: %v", step.Name, err)), time.Now()
-			r.saveOrLog(log, rec)
+			// The record on disk answers a second try of a finished job. The mark in memory
+			// stays only when the record is not on disk.
+			if r.saveOrLog(log, rec) {
+				r.forget(job.ID)
+			}
 			r.report(context.WithoutCancel(ctx), job.ID, panel.Event{State: "failed", Step: i, Error: rec.Error})
 			return
 		}
@@ -197,7 +243,9 @@ func (r *Runner) run(job Job) {
 	if job.Result != nil {
 		rec.Result = job.Result()
 	}
-	r.saveOrLog(log, rec)
+	if r.saveOrLog(log, rec) {
+		r.forget(job.ID)
+	}
 	r.report(ctx, job.ID, panel.Event{State: "succeeded", Step: rec.Step, Result: rec.Result})
 	if job.After != nil {
 		job.After()
@@ -276,8 +324,19 @@ func (r *Runner) Prune(before time.Time) error {
 	}
 	for _, e := range entries {
 		id := e.Name()[:len(e.Name())-len(filepath.Ext(e.Name()))]
-		if rec, err := r.load(id); err == nil && !rec.Finished.IsZero() && rec.Finished.Before(before) {
-			os.Remove(r.path(id))
+		if rec, err := r.load(id); err == nil && !rec.Finished.IsZero() {
+			if rec.Finished.Before(before) {
+				os.Remove(r.path(id))
+			}
+			continue
+		}
+		// A record that never finished, a record that the agent cannot read and a temporary
+		// file: remove it by the time of the file, when no job with that ID runs.
+		r.mu.Lock()
+		runs := r.known[strings.TrimSuffix(id, ".json")] || r.known[id]
+		r.mu.Unlock()
+		if fi, err := e.Info(); err == nil && !runs && fi.ModTime().Before(before) {
+			os.Remove(filepath.Join(r.Dir, e.Name()))
 		}
 	}
 	return nil

@@ -3,6 +3,7 @@ package actions
 import (
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -389,6 +390,11 @@ func (d *Deps) resticArgs(args, env []string, c *resticCommand) error {
 		job := filepath.Base(args[2])
 		if validate.ID(job) != nil || args[2] != d.stageDir(job) {
 			return errors.New("restic can restore only into the directory of a restore job")
+		}
+		// One restore for each new directory. A second restore into the same directory
+		// could write through a link of the first restore (adversarial review, G1-14).
+		if entries, err := os.ReadDir(args[2]); err != nil || len(entries) != 0 {
+			return errors.New("restic can restore only into a new, empty directory of a restore job")
 		}
 		include := args[4]
 		if filepath.Clean(include) != include || !(strings.HasPrefix(include, d.Host.SitesDir+"/") || strings.HasPrefix(include, filepath.Join(d.DataDir, "dumps")+"/")) {

@@ -46,8 +46,14 @@ type Deps struct {
 	Edge    Edge
 	Apt     hostupdate.Apt
 	Updater *selfupdate.Updater
-	Gvisor  quadlet.Runtime
-	State   *State
+	// OtherJobs gives the number of jobs that run or wait now, with the job that asks.
+	OtherJobs func() int
+	// DowngradeFile is the file with which an administrator allows one update of the agent
+	// to an older version, for example "/etc/cloudfactory/allow-agent-downgrade". Only the
+	// root helper reads it. Empty: the root helper refuses each older version.
+	DowngradeFile string
+	Gvisor        quadlet.Runtime
+	State         *State
 	// Images is the shared read-only store of the runtime images. Nil means that each website
 	// user pulls its own copy, as for a custom image.
 	Images Images
