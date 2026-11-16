@@ -247,6 +247,10 @@ type Deps struct {
 	// kernel has.
 	accessMu     sync.Mutex
 	accessLoaded string
+	// firewallMu makes each change of the firewall file of the installer one step. The mesh,
+	// the networks, the database servers, the DNS server, the SFTP port and the mail server
+	// all change this file (adversarial review, finding G7-04).
+	firewallMu sync.Mutex
 	// meshMu makes each change of the tunnels one step.
 	meshMu sync.Mutex
 	// networkMu makes each change of the networks one step in the worker.

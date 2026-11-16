@@ -101,7 +101,7 @@ func (d *Deps) prepareWebmail(ctx context.Context, in webmailIn) (out webmailPre
 	if err := os.MkdirAll(d.webmailConfigDir(), 0o755); err != nil {
 		return out, err
 	}
-	if _, err := d.Run.Run(ctx, "install", "-d", "-o", host.WebmailUser, "-g", host.WebmailUser, "-m", "0700", data); err != nil {
+	if err := d.serviceDir(ctx, host.WebmailUser, data); err != nil {
 		return out, err
 	}
 	changed := false

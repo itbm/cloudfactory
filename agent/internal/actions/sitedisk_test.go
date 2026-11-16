@@ -186,7 +186,7 @@ func TestAWebsiteWithAUserQuotaGetsNoDiskImage(t *testing.T) {
 	if _, err := os.Stat(d.siteDisk(siteUser).Image); !os.IsNotExist(err) || f.Called("mkfs.ext4") || f.Called("systemctl enable --now") {
 		t.Errorf("a disk image on a server with user quotas: %v %q", err, f.Calls)
 	}
-	if !f.Called("setquota --user acme_x7k2 9961472 10485760 0 0 /srv") {
+	if !f.Called("setquota --user acme_x7k2 9961472 10485760 2490368 2621440 /srv") {
 		t.Errorf("no quota: %q", f.Calls)
 	}
 	// A new limit changes only the quota.
@@ -194,7 +194,7 @@ func TestAWebsiteWithAUserQuotaGetsNoDiskImage(t *testing.T) {
 	if err := setDisk(d, t, jobID2, 5<<30); err != nil {
 		t.Fatal(err)
 	}
-	if !f.Called("setquota --user acme_x7k2 4980736 5242880 0 0 /srv") || f.Called("resize2fs") || f.Called(siteService+"stop") {
+	if !f.Called("setquota --user acme_x7k2 4980736 5242880 1245184 1310720 /srv") || f.Called("resize2fs") || f.Called(siteService+"stop") {
 		t.Errorf("calls = %q", f.Calls)
 	}
 }
@@ -473,7 +473,7 @@ func TestAWebsiteWithADiskImageKeepsItWithUserQuotas(t *testing.T) {
 	if err := setDisk(d, t, jobID2, 10<<30); err != nil {
 		t.Fatal(err)
 	}
-	if got := sizeOf(t, k.Image); got != 10<<30 || !f.Called("resize2fs /dev/loop7") || !f.Called("setquota --user acme_x7k2 9961472 10485760 0 0 /srv") {
+	if got := sizeOf(t, k.Image); got != 10<<30 || !f.Called("resize2fs /dev/loop7") || !f.Called("setquota --user acme_x7k2 9961472 10485760 2490368 2621440 /srv") {
 		t.Errorf("size = %d, calls = %q", got, f.Calls)
 	}
 	if part := quotaPart(t, d); part.State != "running" {

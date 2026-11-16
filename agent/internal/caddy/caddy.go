@@ -71,6 +71,10 @@ type Site struct {
 	// Paths send some paths to a different port. The webmail is on the host name of the mail
 	// server, and the JMAP paths go to the mail server: the browser then uses one origin.
 	Paths []PathRoute
+	// NoAuthorization is a pattern for the Authorization header, or "". The edge proxy refuses
+	// a request whose header agrees with the pattern. The mail server uses it: its
+	// administrator must not sign in from the internet.
+	NoAuthorization string
 	// Path is a path prefix such as "/01jbq3z5k8n6/", or "". With a prefix, the route has only
 	// the paths that start with it, so that more websites can have the same host. The database
 	// tool of each customer uses this (Adminer): all customers have one host.
@@ -121,6 +125,8 @@ func BaseConfig() map[string]any {
 		"admin": map[string]any{"listen": "unix/" + AdminSocket},
 		"logging": map[string]any{"logs": map[string]any{
 			"access": map[string]any{"encoder": map[string]any{"format": "json"}, "include": []string{"http.log.access"}},
+			// The access log has each request one time: not also in the default log.
+			"default": map[string]any{"exclude": []string{"http.log.access"}},
 		}},
 		"apps": map[string]any{"http": map[string]any{
 			// The host firewall redirects 80 and 443 to these ports. The "edge" server listens
@@ -213,7 +219,14 @@ func SiteRoute(s Site, upstream string) map[string]any {
 	}
 	handler := proxy(s.Port)
 	if len(s.Paths) > 0 {
-		routes := make([]any, 0, len(s.Paths)+1)
+		routes := make([]any, 0, len(s.Paths)+2)
+		if s.NoAuthorization != "" {
+			routes = append(routes, map[string]any{
+				"match":    []any{map[string]any{"header_regexp": map[string]any{"Authorization": map[string]any{"pattern": s.NoAuthorization}}}},
+				"handle":   []any{map[string]any{"handler": "static_response", "status_code": 403}},
+				"terminal": true,
+			})
+		}
 		for _, p := range s.Paths {
 			handle := proxy(p.Port)
 			if p.Port == 0 {
@@ -247,7 +260,7 @@ func SiteRoute(s Site, upstream string) map[string]any {
 			"body":        s.Page,
 		}
 	}
-	match := map[string]any{"host": s.Hosts}
+	match := hostMatch(s.Hosts)
 	if s.Path != "" {
 		match["path"] = []string{s.Path + "*"}
 	}
@@ -259,11 +272,28 @@ func SiteRoute(s Site, upstream string) map[string]any {
 	}
 }
 
+// plainHost is the pattern of a Host header that the routes accept: a name or an address, with
+// no port or with the HTTPS port.
+const plainHost = `^([^:\[\]]+|\[[^\]]+\])(:(443|8443))?$`
+
+// hostMatch gives the matcher of a route for its hosts. The host matcher of Caddy ignores the
+// port of the Host header, and the metrics of Caddy keep one set of counters for each Host
+// header of a request that a route accepts. Thus a visitor could make a new set of counters
+// with each request ("name:1", "name:2", ...) until the edge proxy has no memory left
+// (adversarial review, finding G6-02). With this matcher, no route accepts such a request, and
+// Caddy counts nothing for it.
+func hostMatch(hosts []string) map[string]any {
+	return map[string]any{
+		"host":          hosts,
+		"header_regexp": map[string]any{"Host": map[string]any{"pattern": plainHost}},
+	}
+}
+
 // RedirectRoute sends the redirect domains to the primary domain.
 func RedirectRoute(s Site) map[string]any {
 	return map[string]any{
 		"@id":   "cf-" + s.WebsiteID + "-redirect",
-		"match": []any{map[string]any{"host": s.Redirects}},
+		"match": []any{hostMatch(s.Redirects)},
 		"handle": []any{map[string]any{
 			"handler":     "static_response",
 			"status_code": 308,
@@ -336,7 +366,7 @@ func (c *Client) ApplyPanel(ctx context.Context, domain, method string, apiPort,
 	}
 	route := map[string]any{
 		"@id":   "cf-panel",
-		"match": []any{map[string]any{"host": PanelHosts(domain, brands)}},
+		"match": []any{hostMatch(PanelHosts(domain, brands))},
 		"handle": []any{map[string]any{"handler": "subroute", "routes": []any{
 			// R-17: browsers use only HTTPS for the panel domain after the first visit.
 			map[string]any{"handle": []any{map[string]any{"handler": "headers", "response": map[string]any{"set": map[string]any{

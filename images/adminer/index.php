@@ -75,7 +75,25 @@ function adminer_object()
 
         public function login($login, $password)
         {
+            // Only a temporary database user of the panel can sign in. A permanent database
+            // user of a website cannot: its access is for the website containers. The panel
+            // gives no permanent user a name with this end.
+            if (! preg_match('~(^|_)adminer_[a-z0-9]{8}$~', (string) $login)) {
+                return 'Open the database from your hosting panel.';
+            }
+
             return self::refusal() ?? ($password !== '' ? true : 'Open the database from your hosting panel.');
+        }
+
+        public function bruteForceKey(): string
+        {
+            // The edge proxy is the only client of this container, so REMOTE_ADDR is the same
+            // for each visitor. The proxy writes the address of the visitor at the end of
+            // X-Forwarded-For. Without this, 30 failed sign-ins of one visitor stop all users.
+            $forwarded = explode(',', $_SERVER['HTTP_X_FORWARDED_FOR'] ?? '');
+            $address = trim((string) end($forwarded));
+
+            return filter_var($address, FILTER_VALIDATE_IP) ? $address : ($_SERVER['REMOTE_ADDR'] ?? '');
         }
 
         public function loginForm()

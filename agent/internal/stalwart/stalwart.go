@@ -532,7 +532,36 @@ func (c *Client) domainID(ctx context.Context, name string) (string, error) {
 	if err != nil || len(ids) == 0 {
 		return "", err
 	}
-	return ids[0], nil
+	return c.exact(ctx, "x:Domain", ids, object{"name": name})
+}
+
+// exact gives the ID of the one object in ids that has each value of want. The agent does not
+// trust that a filter of the server is an exact comparison: a change of the wrong domain or
+// the wrong mailbox would be a change for a different customer (adversarial review, finding
+// G8-03). No object gives "". More than one object is an error.
+func (c *Client) exact(ctx context.Context, kind string, ids []string, want object) (string, error) {
+	fields := make([]string, 0, len(want))
+	for k := range want {
+		fields = append(fields, k)
+	}
+	found, err := c.get(ctx, kind, ids, fields...)
+	if err != nil {
+		return "", err
+	}
+	id := ""
+next:
+	for _, o := range found {
+		for k, v := range want {
+			if o[k] != v {
+				continue next
+			}
+		}
+		if id != "" {
+			return "", fmt.Errorf("the mail server has more than one %s with %v", kind, want)
+		}
+		id, _ = o["id"].(string)
+	}
+	return id, nil
 }
 
 func (c *Client) createDomain(ctx context.Context, name string) (string, error) {
@@ -664,7 +693,7 @@ func (c *Client) accountID(ctx context.Context, domainID, localPart string) (str
 	if err != nil || len(ids) == 0 {
 		return "", err
 	}
-	return ids[0], nil
+	return c.exact(ctx, "x:Account", ids, object{"name": localPart, "domainId": domainID})
 }
 
 // SetMailbox makes a mailbox, or changes its size. passwordHash is a bcrypt hash: the agent

@@ -3,6 +3,7 @@
 package validate
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"net/url"
@@ -104,6 +105,10 @@ func Command(args []string) error {
 	for _, a := range args {
 		if err := CommandArgument(a); err != nil {
 			return err
+		}
+		// systemd reads an argument that is only ";" as the end of the command.
+		if a == ";" {
+			return errors.New(`an argument of the start command cannot be only ";"`)
 		}
 	}
 	return nil

@@ -428,6 +428,12 @@ func checkPrivateKeys(keys string) error {
 	if !strings.HasPrefix(keys, pgpPrivateBegin) || !strings.HasSuffix(strings.TrimRight(keys, "\r\n"), "-----END PGP PRIVATE KEY BLOCK-----") {
 		return errors.New("the private keys are not OpenPGP private key blocks in ASCII armour")
 	}
+	// ASCII armour has only printable ASCII characters and ends of lines.
+	for _, c := range []byte(keys) {
+		if (c < 0x20 || c > 0x7e) && c != '\n' && c != '\r' && c != '\t' {
+			return errors.New("the private keys are not OpenPGP private key blocks in ASCII armour")
+		}
+	}
 	return nil
 }
 

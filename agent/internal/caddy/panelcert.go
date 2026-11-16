@@ -1,6 +1,7 @@
 package caddy
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -151,13 +152,9 @@ func (c *Client) applyLocalPolicy(ctx context.Context, s Site) error {
 		return fmt.Errorf("caddy: patch %s: status %d: %s", id, status, body)
 	}
 	const path = "/config/apps/tls/automation/policies"
-	status, body, err = c.do(ctx, http.MethodGet, path, nil)
+	policies, err := c.tlsPolicies(ctx)
 	if err != nil {
 		return err
-	}
-	var policies []any
-	if status == http.StatusOK {
-		_ = json.Unmarshal(body, &policies)
 	}
 	if len(policies) == 0 {
 		// PUT makes the objects in the path that do not exist (apps/tls/automation).
@@ -193,13 +190,9 @@ func (c *Client) SetPanelCertificate(ctx context.Context, domain, method string)
 	// The first policy that agrees with a name applies to it. Thus the policy of the panel is
 	// the first policy, before a policy for all names.
 	const path = "/config/apps/tls/automation/policies"
-	status, body, err = c.do(ctx, http.MethodGet, path, nil)
+	policies, err := c.tlsPolicies(ctx)
 	if err != nil {
 		return err
-	}
-	var policies []any
-	if status == http.StatusOK {
-		_ = json.Unmarshal(body, &policies)
 	}
 	if len(policies) == 0 {
 		// PUT makes the objects in the path that do not exist (apps/tls/automation).
@@ -207,6 +200,28 @@ func (c *Client) SetPanelCertificate(ctx context.Context, domain, method string)
 	}
 	// A PUT on an index of a list puts the value at that index.
 	return c.expect(ctx, http.MethodPut, path+"/0", policy, http.StatusOK)
+}
+
+// tlsPolicies reads the list of the TLS policies of the edge proxy. A list that is not there
+// is an empty list. A read that fails or that gives a part of the list is an error: the caller
+// would then replace the full list with one policy (adversarial review, finding G6-06).
+func (c *Client) tlsPolicies(ctx context.Context) ([]any, error) {
+	const path = "/config/apps/tls/automation/policies"
+	status, body, err := c.do(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return nil, err
+	}
+	switch {
+	case status == http.StatusOK:
+		var policies []any
+		if err := json.Unmarshal(body, &policies); err != nil {
+			return nil, fmt.Errorf("caddy: read the TLS policies: %w", err)
+		}
+		return policies, nil
+	case status == http.StatusNotFound, status == http.StatusBadRequest && bytes.Contains(body, []byte("invalid traversal path")):
+		return nil, nil
+	}
+	return nil, fmt.Errorf("caddy: read the TLS policies: status %d: %s", status, body)
 }
 
 // setPanelCA adds PanelCA to the PKI app, or changes its configuration.

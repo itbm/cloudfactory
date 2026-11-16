@@ -22,6 +22,7 @@ import (
 	"github.com/itbm/cloudfactory/agent/internal/jobs"
 	"github.com/itbm/cloudfactory/agent/internal/panel"
 	"github.com/itbm/cloudfactory/agent/internal/quadlet"
+	"github.com/itbm/cloudfactory/agent/internal/safefs"
 	"github.com/itbm/cloudfactory/agent/internal/validate"
 )
 
@@ -551,12 +552,41 @@ func (d *Deps) makeDnsDirs(ctx context.Context) error {
 	if d.DnsTest != nil {
 		return errors.Join(os.MkdirAll(d.dnsImportDir(), 0o700), os.MkdirAll(d.dnsLayout().Run, 0o700))
 	}
-	for _, dir := range []string{d.dnsDataDir(), d.dnsImportDir()} {
-		if _, err := d.Run.Run(ctx, "install", "-d", "-o", host.DnsUser, "-g", host.DnsUser, "-m", "0700", dir); err != nil {
+	// The DNS container can write its data directory, so it can put a symbolic link there.
+	// Root does not follow a link in this directory: it would give a directory of the host
+	// to the DNS user (adversarial review, finding G7-01).
+	uid, gid, err := d.dnsOwner()
+	if err != nil {
+		return err
+	}
+	dir, err := safefs.Open(d.dnsDir())
+	if err != nil {
+		return err
+	}
+	defer dir.Close()
+	for _, rel := range []string{"db", filepath.Join("db", "import")} {
+		if err := dir.MkdirAll(rel, 0o700, uid, gid); err != nil {
+			return err
+		}
+		if err := dir.SetDir(rel, 0o700, uid, gid); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// dnsOwner gives the user ID and the group ID of the DNS user.
+func (d *Deps) dnsOwner() (uid, gid int, err error) {
+	// Only root can give a file to a different user. The root helper is always root. A test
+	// is not.
+	if os.Geteuid() != 0 {
+		return os.Getuid(), os.Getgid(), nil
+	}
+	if uid, err = d.Host.LookupUID(host.DnsUser); err != nil {
+		return 0, 0, err
+	}
+	gid, err = d.Host.GID(host.DnsUser)
+	return uid, gid, err
 }
 
 // waitDns waits until the control socket of Knot answers.
@@ -698,23 +728,23 @@ func (d *Deps) importDnsKey(ctx context.Context, z dnsZone) error {
 	}
 	if !have {
 		// The key is in a file for a moment, in a directory that only the DNS user can open.
-		path := filepath.Join(d.dnsImportDir(), z.Name+".pem")
-		defer os.Remove(path)
-		if _, err := host.WriteFile(path, z.Key, 0o600); err != nil {
+		// Root does not follow a symbolic link in the data directory of the DNS container
+		// (adversarial review, finding G7-01).
+		uid, gid := os.Getuid(), os.Getgid()
+		if d.DnsTest == nil {
+			if uid, gid, err = d.dnsOwner(); err != nil {
+				return err
+			}
+		}
+		dir, err := safefs.Open(d.dnsDir())
+		if err != nil {
 			return err
 		}
-		if d.DnsTest == nil {
-			uid, err := d.Host.LookupUID(host.DnsUser)
-			if err != nil {
-				return err
-			}
-			gid, err := d.Host.GID(host.DnsUser)
-			if err != nil {
-				return err
-			}
-			if err := os.Lchown(path, uid, gid); err != nil {
-				return err
-			}
+		defer dir.Close()
+		rel := filepath.Join("db", "import", z.Name+".pem")
+		defer dir.Remove(rel)
+		if _, err := dir.WriteFile(rel, []byte(z.Key), 0o600, uid, gid); err != nil {
+			return err
 		}
 		seen := filepath.Join(d.dnsLayout().Storage, "import", z.Name+".pem")
 		if _, err := d.knot(ctx, "keymgr", z.Name+".", "import-pem", seen, "ksk=yes", "zsk=yes", "algorithm=13"); err != nil {
@@ -839,6 +869,8 @@ func (d *Deps) removeDnsZones(ctx context.Context, names []string) error {
 // openDnsPort opens port 53 in the firewall of the installer, and redirects it to the port
 // of the DNS container. With no file, the administrator manages the firewall.
 func (d *Deps) openDnsPort(ctx context.Context) error {
+	d.firewallMu.Lock()
+	defer d.firewallMu.Unlock()
 	path := d.firewallFile()
 	b, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
@@ -855,11 +887,7 @@ func (d *Deps) openDnsPort(ctx context.Context) error {
 	if next == string(b) {
 		return nil
 	}
-	if _, err := host.WriteFile(path, next, 0o644); err != nil {
-		return err
-	}
-	_, err = d.Run.Run(ctx, "nft", "-f", path)
-	return err
+	return d.replaceFirewall(ctx, path, next)
 }
 
 // setDnsRules gives the firewall file with the two rules of the DNS server: the input chain

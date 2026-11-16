@@ -540,10 +540,9 @@ func (d *Deps) localCertificate(ctx context.Context, domain string) (time.Time, 
 	return chain[0].NotAfter, nil
 }
 
-// RestoreLocalNames sets the routes of the websites that have a local name again, so that a
-// website from an earlier agent version gets the certificate policy of its local names. It
-// also sets the route of each stopped website, so that a website that an earlier agent version
-// stopped gets the page of a stopped website.
+// RestoreLocalNames sets the routes of the websites again, so that a website from an earlier
+// agent version gets the certificate policy of its local names, and a website that an earlier
+// agent version stopped gets the page of a stopped website.
 func (d *Deps) RestoreLocalNames(ctx context.Context) error {
 	sites, err := d.State.All()
 	if err != nil {
@@ -554,10 +553,11 @@ func (d *Deps) RestoreLocalNames(ctx context.Context) error {
 		if s.Website == nil || s.Port == 0 {
 			continue
 		}
-		site := d.edgeSite(s, s.Website)
-		if len(caddy.LocalNames(site)) > 0 || s.Stopped {
-			errs = append(errs, d.Edge.Apply(ctx, site))
-		}
+		// Each website gets its route again: an edge proxy that lost its configuration has
+		// all routes again after a start of the agent, and a route from an earlier agent
+		// version gets the matcher of this version (adversarial review, findings G6-07 and
+		// G6-02). Caddy does nothing for a route that did not change.
+		errs = append(errs, d.Edge.Apply(ctx, d.edgeSite(s, s.Website)))
 	}
 	return errors.Join(errs...)
 }

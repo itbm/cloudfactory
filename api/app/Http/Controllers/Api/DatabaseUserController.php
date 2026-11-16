@@ -9,6 +9,7 @@ use App\Models\Database;
 use App\Models\DatabaseServer;
 use App\Models\DatabaseUser;
 use App\Models\Website;
+use App\Services\DatabaseTools;
 use App\Services\Audit;
 use App\Services\DatabaseNames;
 use App\Services\DatabaseServers;
@@ -30,6 +31,12 @@ use Illuminate\Validation\ValidationException;
  */
 class DatabaseUserController extends Controller
 {
+    /**
+     * Adversarial review, finding G3-08: the PostgreSQL servers have no TLS and no host rule
+     * for each role. Thus the panel does not promise the access "anywhere" for PostgreSQL.
+     */
+    private const NO_POSTGRESQL_ANYWHERE = 'A PostgreSQL user can connect from the containers of the website only. The access "anywhere" is for MariaDB users.';
+
     use Concerns;
 
     public const PRIVILEGES = ['readonly', 'readwrite'];
@@ -51,7 +58,14 @@ class DatabaseUserController extends Controller
             'databaseServerId' => ['sometimes', 'nullable', 'string'],
             ...self::grantRules(),
         ]);
+        if ($data['engine'] === 'postgresql' && ($data['access'] ?? 'website') === 'anywhere') {
+            throw ValidationException::withMessages(['access' => self::NO_POSTGRESQL_ANYWHERE]);
+        }
         $name = DatabaseNames::full($website, 'name', $data['name']);
+        // Adminer accepts only the temporary users of the panel, which have this name part.
+        if (str_starts_with($name, DatabaseNames::prefix($website).DatabaseTools::USER_PART)) {
+            throw ValidationException::withMessages(['name' => 'A name cannot start with "'.DatabaseTools::USER_PART.'". The panel uses these names for temporary users.']);
+        }
         if (DatabaseUser::where(['engine' => $data['engine'], 'name' => $name])->exists()) {
             throw ValidationException::withMessages(['name' => 'This user exists.']);
         }
@@ -83,6 +97,9 @@ class DatabaseUserController extends Controller
         ]);
         if ($user->engine === Database::VALKEY && (isset($data['access']) || array_key_exists('grants', $data) || ! ($data['resetPassword'] ?? false))) {
             throw ValidationException::withMessages(['user' => 'A Valkey user has access to its own database only, from the container of the website only. You can only make a new password.']);
+        }
+        if ($user->engine === 'postgresql' && ($data['access'] ?? 'website') === 'anywhere' && $user->access !== 'anywhere') {
+            throw ValidationException::withMessages(['access' => self::NO_POSTGRESQL_ANYWHERE]);
         }
         $grants = null;
         if (array_key_exists('grants', $data)) {

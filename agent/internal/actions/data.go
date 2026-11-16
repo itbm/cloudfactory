@@ -200,6 +200,9 @@ func (d *Deps) CreateDatabase(req *agentv1.CreateDatabaseRequest) (jobs.Job, err
 	if err := errors.Join(validate.ID(req.GetWebsiteId()), validate.TenantDatabaseName(unixUser, name)); err != nil {
 		return jobs.Job{}, err
 	}
+	if err := d.checkOwner(req.GetWebsiteId(), unixUser); err != nil {
+		return jobs.Job{}, err
+	}
 	if err := checkEngine(engine); err != nil {
 		return jobs.Job{}, err
 	}
@@ -933,6 +936,14 @@ func (d *Deps) Backup(req *agentv1.BackupRequest) (jobs.Job, error) {
 	if err := errors.Join(validate.ID(req.GetWebsiteId()), validate.UnixUser(req.GetUnixUser())); err != nil {
 		return jobs.Job{}, err
 	}
+	// Adversarial review, finding X2-01: the Unix user of the request is the Unix user of
+	// this website in the state of the agent.
+	if err := d.checkOwner(req.GetWebsiteId(), req.GetUnixUser()); err != nil {
+		return jobs.Job{}, err
+	}
+	if k := req.GetRetention(); k.GetLast() < 0 || k.GetDaily() < 0 || k.GetWeekly() < 0 || k.GetMonthly() < 0 {
+		return jobs.Job{}, errors.New("a retention value must not be negative")
+	}
 	r, err := newRepo(req.GetTarget(), req.GetCredentials())
 	if err != nil {
 		return jobs.Job{}, err
@@ -1168,6 +1179,9 @@ func (d *Deps) Restore(req *agentv1.RestoreRequest) (jobs.Job, error) {
 	if err := errors.Join(validate.ID(req.GetJobId()), validate.ID(req.GetWebsiteId()), validate.UnixUser(unixUser)); err != nil {
 		return jobs.Job{}, err
 	}
+	if err := d.checkOwner(req.GetWebsiteId(), unixUser); err != nil {
+		return jobs.Job{}, err
+	}
 	if !snapshotID.MatchString(req.GetSnapshotId()) {
 		return jobs.Job{}, errors.New("the snapshot ID is not valid")
 	}
@@ -1235,6 +1249,14 @@ func (d *Deps) Restore(req *agentv1.RestoreRequest) (jobs.Job, error) {
 			return nil
 		}},
 		{Name: "Restore", Do: func(ctx context.Context) error {
+			// A restore makes a copy of the website on the file system of the agent. It takes
+			// a backup slot, so only a small number of copies are there at the same time
+			// (adversarial review, finding G4-09).
+			release, err := d.backupSlot(ctx)
+			if err != nil {
+				return err
+			}
+			defer release()
 			defer cleanup(ctx)
 			if err := d.makeStage(ctx, req.GetJobId()); err != nil {
 				return err

@@ -84,8 +84,48 @@ func CheckWebsite(w *agentv1.Website) error {
 			}
 		}
 	}
+	errs = append(errs, checkLimits(w.GetLimits()))
 	_, err := instanceKey(w.GetDatabaseInstance())
 	return errors.Join(append(errs, err)...)
+}
+
+// The largest limits that the agent accepts. They are far above each real server.
+const (
+	maxVCPUs       = 1024
+	maxMemoryBytes = 1 << 50
+	maxProcesses   = 1 << 22
+)
+
+// checkLimits makes sure that a website has limits. A website with no CPU, memory or process
+// limit could use the full server (adversarial review, finding G2-04).
+func checkLimits(l *agentv1.Limits) error {
+	v := l.GetVcpus()
+	if !(v > 0 && v <= maxVCPUs) || l.GetMemoryBytes() <= 0 || l.GetMemoryBytes() > maxMemoryBytes || l.GetProcesses() <= 0 || l.GetProcesses() > maxProcesses {
+		return errors.New("the limits of CPU, memory and processes must be more than zero")
+	}
+	if l.GetDiskBytes() < 0 || l.GetDiskIoBytesPerSecond() < 0 {
+		return errors.New("the limits of the disk must not be negative")
+	}
+	return nil
+}
+
+// checkOwner makes sure that a request for a website has the Unix user that the agent recorded
+// for the website, and that no other website has this Unix user (adversarial review, finding
+// G2-05). The panel sends the two values, and the agent does not trust that they agree.
+func (d *Deps) checkOwner(websiteID, unixUser string) error {
+	sites, err := d.State.All()
+	if err != nil {
+		return err
+	}
+	for _, site := range sites {
+		if site.ID == websiteID && site.UnixUser != "" && site.UnixUser != unixUser {
+			return errors.New("the Unix user of the request is not the Unix user of this website")
+		}
+		if site.ID != websiteID && site.UnixUser == unixUser {
+			return errors.New("a different website has this Unix user")
+		}
+	}
+	return nil
 }
 
 func imageRef(w *agentv1.Website) string {
@@ -286,6 +326,11 @@ func (d *Deps) writeSiteFiles(ctx context.Context, w *agentv1.Website, suffix st
 	if len(w.GetEnvironment()) > 0 {
 		return d.writeEnv(ctx, w.GetUnixUser(), suffix, envFile(w.GetEnvironment()))
 	}
+	// A website that had variables keeps no file with their old values (adversarial review,
+	// finding G2-11).
+	if _, err := os.Lstat(d.envPath(w.GetUnixUser(), suffix)); err == nil {
+		return d.writeEnv(ctx, w.GetUnixUser(), suffix, "")
+	}
 	return nil
 }
 
@@ -481,6 +526,9 @@ func (d *Deps) CreateWebsite(req *agentv1.WebsiteRequest) (jobs.Job, error) {
 		}
 	}
 	if err := checkCopies(req); err != nil {
+		return jobs.Job{}, err
+	}
+	if err := d.checkOwner(w.GetId(), w.GetUnixUser()); err != nil {
 		return jobs.Job{}, err
 	}
 	user := w.GetUnixUser()
@@ -760,6 +808,9 @@ func (d *Deps) SetRuntime(req *agentv1.WebsiteRequest) (jobs.Job, error) {
 	if err := CheckWebsite(w); err != nil {
 		return jobs.Job{}, err
 	}
+	if err := d.checkOwner(w.GetId(), w.GetUnixUser()); err != nil {
+		return jobs.Job{}, err
+	}
 	user := w.GetUnixUser()
 	// The customer of the website. The value was checked in CheckWebsite.
 	instance, _ := instanceKey(w.GetDatabaseInstance())
@@ -900,6 +951,9 @@ func (d *Deps) DeleteWebsite(req *agentv1.DeleteWebsiteRequest) (jobs.Job, error
 	if err := errors.Join(errs...); err != nil {
 		return jobs.Job{}, err
 	}
+	if err := d.checkOwner(req.GetWebsiteId(), req.GetUnixUser()); err != nil {
+		return jobs.Job{}, err
+	}
 	user := req.GetUnixUser()
 	return jobs.Job{ID: req.GetJobId(), Key: req.GetWebsiteId(), Steps: []jobs.Step{
 		{Name: "Stop container", Do: func(ctx context.Context) error {
@@ -912,7 +966,13 @@ func (d *Deps) DeleteWebsite(req *agentv1.DeleteWebsiteRequest) (jobs.Job, error
 			if _, err := d.Host.LookupUID(user); err != nil {
 				return nil
 			}
-			return d.stopContainer(ctx, user, site.Suffix)
+			// A website whose unit is not there cannot stop. The removal of the Unix user
+			// stops all its services, so the job continues (adversarial review, finding
+			// G2-03).
+			if err := d.stopContainer(ctx, user, site.Suffix); err != nil {
+				slog.Warn("stop the container of a website that the agent removes", "website", req.GetWebsiteId(), "err", err)
+			}
+			return nil
 		}},
 		{Name: "Remove edge proxy route", Do: func(ctx context.Context) error {
 			return d.Edge.Remove(ctx, req.GetWebsiteId())
@@ -973,8 +1033,11 @@ func (d *Deps) DeleteWebsite(req *agentv1.DeleteWebsiteRequest) (jobs.Job, error
 				if err := d.syncDatabaseAccess(ctx); err != nil {
 					return err
 				}
-			} else {
-				d.syncNetworkLater(ctx)
+			} else if err := d.syncNetwork(ctx); err != nil {
+				// The job fails and the panel tries again: the firewall must not keep the
+				// access of a UID that a later website can get (adversarial review, finding
+				// G2-06).
+				return err
 			}
 			d.PruneImages()
 			return nil
@@ -1040,8 +1103,8 @@ func (d *Deps) SetLimits(req *agentv1.SetLimitsRequest) (jobs.Job, error) {
 		return jobs.Job{}, err
 	}
 	l := req.GetLimits()
-	if l.GetVcpus() <= 0 || l.GetMemoryBytes() <= 0 || l.GetProcesses() <= 0 {
-		return jobs.Job{}, errors.New("the limits must be more than zero")
+	if err := checkLimits(l); err != nil {
+		return jobs.Job{}, err
 	}
 	return jobs.Job{ID: req.GetJobId(), Key: req.GetWebsiteId(), Steps: []jobs.Step{
 		{Name: "Update cgroup limits", Do: func(ctx context.Context) error {

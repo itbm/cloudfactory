@@ -835,6 +835,8 @@ func addDatabaseRules(content, dir string) (string, error) {
 // openDatabaseNetwork makes sure that the firewall of the installer has the rules of the
 // database servers of the customers. With no file, the administrator manages the firewall.
 func (d *Deps) openDatabaseNetwork(ctx context.Context) error {
+	d.firewallMu.Lock()
+	defer d.firewallMu.Unlock()
 	path := d.firewallFile()
 	b, err := os.ReadFile(path)
 	if os.IsNotExist(err) {

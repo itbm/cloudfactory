@@ -2,11 +2,14 @@ package actions
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"regexp"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/itbm/cloudfactory/agent/internal/host"
@@ -80,13 +83,28 @@ func (d *Deps) InstallPanel(ctx context.Context, p quadlet.Panel) error {
 	return nil
 }
 
+// readNoFollow reads a file of the panel data directory. The containers of the panel can write
+// this directory, so root does not follow a symbolic link there (adversarial review, finding
+// G6-01).
+func readNoFollow(path string) ([]byte, error) {
+	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	if info, err := f.Stat(); err != nil || !info.Mode().IsRegular() {
+		return nil, errors.Join(err, fmt.Errorf("%s is not a regular file", path))
+	}
+	return io.ReadAll(io.LimitReader(f, 1<<20))
+}
+
 var panelLatestRE = regexp.MustCompile(`(?m)^CF_AGENT_LATEST=.*$`)
 
 // setPanelVersion writes the version of this release in the settings of the panel. The panel
 // offers this version of the agent to the other servers (audit finding S7). The installer
 // makes the file. Without the file, the function does nothing.
 func (d *Deps) setPanelVersion(ctx context.Context, envFile, version string) error {
-	b, err := os.ReadFile(envFile)
+	b, err := readNoFollow(envFile)
 	if os.IsNotExist(err) {
 		return nil
 	} else if err != nil {
@@ -103,7 +121,7 @@ func (d *Deps) setPanelVersion(ctx context.Context, envFile, version string) err
 	if err != nil || !changed {
 		return err
 	}
-	_, err = d.Run.Run(ctx, "chown", PanelUser+":"+PanelUser, envFile)
+	_, err = d.Run.Run(ctx, "chown", "--no-dereference", PanelUser+":"+PanelUser, envFile)
 	return err
 }
 
@@ -178,7 +196,7 @@ var panelPasswordRE = regexp.MustCompile(`(?m)^DB_PASSWORD=([0-9a-f]{32,})$`)
 // has the password two times: POSTGRES_PASSWORD for the entry point of the database image, and
 // DB_PASSWORD for the API.
 func (d *Deps) panelDatabasePassword(ctx context.Context, path string) (string, error) {
-	if b, err := os.ReadFile(path); err == nil {
+	if b, err := readNoFollow(path); err == nil {
 		m := panelPasswordRE.FindSubmatch(b)
 		if m == nil {
 			return "", fmt.Errorf("%s has no DB_PASSWORD; remove the file to make a new password", path)
@@ -193,7 +211,7 @@ func (d *Deps) panelDatabasePassword(ctx context.Context, path string) (string, 
 	if _, err := host.WriteFile(path, content, 0o600); err != nil {
 		return "", err
 	}
-	if _, err := d.Run.Run(ctx, "chown", PanelUser+":"+PanelUser, path); err != nil {
+	if _, err := d.Run.Run(ctx, "chown", "--no-dereference", PanelUser+":"+PanelUser, path); err != nil {
 		return "", err
 	}
 	return password, nil

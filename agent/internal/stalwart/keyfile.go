@@ -56,16 +56,23 @@ func (c *Client) SetKeyFile(ctx context.Context, domain, localPart, privateKeys 
 				return nil
 			}
 		}
+	}
+	// The new text goes to the server before the old file goes. If the upload fails, the
+	// mailbox keeps its old key file (adversarial review, finding G8-10).
+	blobID := ""
+	if privateKeys != "" {
+		var err error
+		if blobID, err = c.upload(ctx, account, privateKeys); err != nil {
+			return err
+		}
+	}
+	if file != nil {
 		if _, err := c.fileSet(ctx, account, object{"destroy": []string{file["id"].(string)}}); err != nil {
 			return err
 		}
 	}
 	if privateKeys == "" {
 		return nil
-	}
-	blobID, err := c.upload(ctx, account, privateKeys)
-	if err != nil {
-		return err
 	}
 	create := object{}
 	parent := ""

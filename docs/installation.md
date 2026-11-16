@@ -1248,8 +1248,10 @@ zones also accepts port 53 (UDP and TCP). The database servers
 publish their ports only on the database network `169.254.80.0/20` of the loopback interface,
 so the databases are not open to the internet.
 
-A database user with the access "anywhere" is not limited to the address of the website
-containers, and its connections must use TLS. A different computer can connect only after you
+A MariaDB user with the access "anywhere" is not limited to the address of the website
+containers, and its connections must use TLS. A PostgreSQL user cannot get the access
+"anywhere": the PostgreSQL servers have no TLS. Do not send a PostgreSQL port to a different
+computer. A different computer can connect only after you
 send a port of the server to the database address of the customer with your own firewall
 rules. Cloudfactory does not make such rules. Give only the addresses that need it. A Valkey
 user cannot have the access "anywhere".

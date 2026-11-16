@@ -410,7 +410,7 @@ func TestLimitsSetTheQuotaAndTheIOLimit(t *testing.T) {
 	if err := run(t)(d.SetLimits(&agentv1.SetLimitsRequest{JobId: jobID2, WebsiteId: websiteID, Limits: l})); err != nil {
 		t.Fatal(err)
 	}
-	if !f.Called("setquota --user acme_x7k2 9961472 10485760 0 0 /srv") {
+	if !f.Called("setquota --user acme_x7k2 9961472 10485760 2490368 2621440 /srv") {
 		t.Errorf("no quota: %v", f.Calls)
 	}
 	if !f.Called("systemctl --user --machine=acme_x7k2@ set-property --runtime cf-acme_x7k2.service CPUQuota=200% MemoryMax=1073741824 MemorySwapMax=0 TasksMax=50 IOReadBandwidthMax=/dev/vda 52428800 IOWriteBandwidthMax=/dev/vda 52428800") {
@@ -460,7 +460,7 @@ func TestTheAgentSetsTheQuotaOfEachWebsiteAtItsStart(t *testing.T) {
 	if err := d.ApplyDiskQuotas(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if !f.Called("setquota --user acme_x7k2 9961472 10485760 0 0 /") {
+	if !f.Called("setquota --user acme_x7k2 9961472 10485760 2490368 2621440 /") {
 		t.Errorf("no quota: %v", f.Calls)
 	}
 }

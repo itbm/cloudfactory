@@ -37,7 +37,7 @@ func TestInstallPanelStartsTheDatabaseFirst(t *testing.T) {
 		asPanel + "pull --quiet ghcr.io/cloudfactory/panel-api:0.2.0",
 		asPanel + "pull --quiet ghcr.io/cloudfactory/panel-web:0.2.0",
 		"install -d -o cf-panel -g cf-panel -m 0700 " + p.PanelDatabaseDir(),
-		"chown cf-panel:cf-panel " + p.PanelDatabaseEnv(),
+		"chown --no-dereference cf-panel:cf-panel " + p.PanelDatabaseEnv(),
 		"systemctl --user --machine=cf-panel@ daemon-reload",
 		"systemctl --user --machine=cf-panel@ restart cf-panel-db.service",
 		asPanel + "exec -i cf-panel-db pg_isready --quiet --host=127.0.0.1 --username=cloudfactory --dbname=cloudfactory",
@@ -190,7 +190,7 @@ func TestInstallPanelSetsTheVersionInTheSettings(t *testing.T) {
 	if info, _ := os.Stat(env); info.Mode().Perm() != 0o600 {
 		t.Errorf("mode = %o", info.Mode().Perm())
 	}
-	if !f.Called("chown cf-panel:cf-panel " + env) {
+	if !f.Called("chown --no-dereference cf-panel:cf-panel " + env) {
 		t.Errorf("the user of the panel does not own the settings: %v", f.Calls)
 	}
 	if domain, err := PanelDomain(env); err != nil || domain != "panel.example.com" {

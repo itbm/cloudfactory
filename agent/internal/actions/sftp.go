@@ -119,6 +119,9 @@ func (d *Deps) SetSftp(req *agentv1.SetSftpRequest) (jobs.Job, error) {
 	if err := errors.Join(errs...); err != nil {
 		return jobs.Job{}, err
 	}
+	if err := d.checkOwner(req.GetWebsiteId(), user); err != nil {
+		return jobs.Job{}, err
+	}
 	return jobs.Job{ID: req.GetJobId(), Key: req.GetWebsiteId(), Steps: []jobs.Step{
 		{Name: "Set SFTP access", Do: func(ctx context.Context) error {
 			return d.setSftpKeys(ctx, user, req.GetEnabled(), req.GetAuthorizedKeys())
@@ -403,6 +406,8 @@ func (d *Deps) sshBanner(ctx context.Context, port int) error {
 // has no rule for it: the agent adds the rule after the rule of port 22. If the port changes,
 // the agent changes the rule. With no file, the administrator manages the firewall.
 func (d *Deps) openSftpPort(ctx context.Context, port int) error {
+	d.firewallMu.Lock()
+	defer d.firewallMu.Unlock()
 	path := d.firewallFile()
 	b, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
@@ -419,10 +424,25 @@ func (d *Deps) openSftpPort(ctx context.Context, port int) error {
 	if next == string(b) {
 		return nil
 	}
+	return d.replaceFirewall(ctx, path, next)
+}
+
+// replaceFirewall gives the firewall file of the installer a new content and loads it.
+// nftables checks the new rules before they replace the file: a file with an error would
+// stop the firewall at the next start of the server. The caller holds firewallMu.
+func (d *Deps) replaceFirewall(ctx context.Context, path, next string) error {
+	check := path + ".new"
+	if _, err := host.WriteFile(check, next, 0o644); err != nil {
+		return err
+	}
+	defer os.Remove(check)
+	if _, err := d.Run.Run(ctx, "nft", "-c", "-f", check); err != nil {
+		return fmt.Errorf("nftables refuses the new rules for %s: %w", path, err)
+	}
 	if _, err := host.WriteFile(path, next, 0o644); err != nil {
 		return err
 	}
-	_, err = d.Run.Run(ctx, "nft", "-f", path)
+	_, err := d.Run.Run(ctx, "nft", "-f", path)
 	return err
 }
 

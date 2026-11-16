@@ -1154,7 +1154,7 @@ if [ "$MODE" = panel ]; then
 		openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 3650 \
 			-subj "/CN=$DOMAIN/O=Cloudfactory panel" \
 			-keyout "$CF_DATA/panel/pki/panel.key" -out "$CF_DATA/panel/pki/panel.crt" 2>/dev/null
-		chown cf-panel:cf-panel "$CF_DATA/panel/pki/panel.key" "$CF_DATA/panel/pki/panel.crt"
+		chown -h cf-panel:cf-panel "$CF_DATA/panel/pki/panel.key" "$CF_DATA/panel/pki/panel.crt"
 		chmod 0600 "$CF_DATA/panel/pki/panel.key"
 	fi
 	if [ ! -f "$CF_DATA/panel/panel.env" ]; then
@@ -1167,7 +1167,7 @@ CF_AGENT_CLIENT_KEY=/data/pki/panel.key
 CF_AGENT_CERTIFICATES=/data/pki/agents
 CF_AGENT_LATEST=$CF_VERSION
 ENV
-		chown cf-panel:cf-panel "$CF_DATA/panel/panel.env"
+		chown -h cf-panel:cf-panel "$CF_DATA/panel/panel.env"
 		umask 022
 	fi
 	# FR-1808: the agent pulls the panel images and starts them in gVisor.

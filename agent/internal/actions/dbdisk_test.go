@@ -5,11 +5,13 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
 	agentv1 "github.com/itbm/cloudfactory/agent/gen/cloudfactory/agent/v1"
 	"github.com/itbm/cloudfactory/agent/internal/execx"
+	"github.com/itbm/cloudfactory/agent/internal/host"
 	"github.com/itbm/cloudfactory/agent/internal/panel"
 )
 
@@ -415,7 +417,9 @@ func quotas(d *Deps) quotaState {
 // setquota gives the command that sets the user quota of the MariaDB database server of the
 // tests. The limits are in units of 1024 bytes.
 func setquota(soft, hard string) string {
-	return "setquota --user db-" + mariaServerKey + " " + soft + " " + hard + " 0 0 /var/lib"
+	kib, _ := strconv.ParseInt(hard, 10, 64)
+	inodes := host.InodeLimit(kib * 1024)
+	return "setquota --user db-" + mariaServerKey + " " + soft + " " + hard + " " + strconv.FormatInt(inodes*95/100, 10) + " " + strconv.FormatInt(inodes, 10) + " /var/lib"
 }
 
 // On a file system with user quotas, the disk limit of a database server is the user quota

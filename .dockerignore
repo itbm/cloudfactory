@@ -1,0 +1,15 @@
+# The files that an image build does not get. Podman and Docker read this file for a build
+# with the repository as the context (adversarial review, finding G6-11).
+.git
+**/node_modules
+api/.env
+api/.env.*
+!api/.env.example
+api/vendor
+api/storage/logs/*.log
+api/storage/framework/cache/data/*
+api/storage/framework/sessions/*
+api/storage/framework/views/*.php
+api/database/*.sqlite
+api/.phpunit.cache
+web/dist
