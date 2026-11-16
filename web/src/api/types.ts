@@ -793,7 +793,7 @@ export interface BrandStatus {
 export type TokenScope =
   | "websites:read" | "websites:write"
   | "dns:read" | "dns:write"
-  | "email:read" | "email:write"
+  | "mail:read" | "mail:write"
   | "databases:read" | "databases:write"
   | "backups:read" | "backups:write"
   | "tokens:read" | "tokens:write"

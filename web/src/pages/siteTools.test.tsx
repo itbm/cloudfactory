@@ -44,7 +44,7 @@ describe("the file manager", () => {
     fireEvent.change(editor, { target: { value: "<?php" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(screen.queryByLabelText("Content of index.php")).toBeNull());
-    expect(api.changes.at(-1)).toEqual({ method: "PUT", path: `/websites/${id}/files/content`, body: { path: "/public/index.php", content: "<?php" } });
+    expect(api.changes.at(-1)).toEqual({ method: "PUT", path: `/websites/${id}/files/content`, body: { path: "/public/index.php", content: btoa("<?php"), encoding: "base64" } });
   });
 
   it("makes a folder in the open folder and shows the error of the API", async () => {

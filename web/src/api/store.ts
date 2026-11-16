@@ -120,14 +120,24 @@ async function call<T>(fn: () => Promise<T>): Promise<T> {
 
 let loading: Promise<void> | null = null;
 
+/**
+ * Adversarial review, finding W1-01: the number of the sign-in session. A sign-in, a sign-out
+ * and an answer "not signed in" change it. A load that started in a different session does
+ * not change the state: its data is of the user who signed out.
+ */
+let session = 0;
+
 /** Loads the state from the API again. Calls at the same time share one load. */
 export function refresh(): Promise<void> {
   if (!live.hasSession()) return Promise.resolve();
-  loading ??= live.load(state).then(replace)
+  const started = session;
+  loading ??= live.load(state).then((next) => {
+    if (started === session) replace(next);
+  })
     .catch((e: unknown) => {
       // Keep the data that the panel has, and tell the user. Before, a failed first load
       // showed an empty panel with no message.
-      if (!state.session.signedIn) return;
+      if (!state.session.signedIn || started !== session) return;
       const loadError = e instanceof Error && e.message ? e.message : "The panel API does not answer.";
       if (state.session.loading || state.session.loadError !== loadError) replace({ ...state, session: { ...state.session, loading: false, loadError } });
     })
@@ -169,7 +179,8 @@ function track(job: live.ApiJob | null | undefined): Promise<Job> {
 
 /** Batch 1, finding 9: with many websites, reads the databases and snapshots of a website when the user opens it. */
 export function showWebsite(websiteId: string) {
-  void live.showWebsite(state, websiteId).then((apply) => apply && replace(apply(state))).catch(() => {});
+  const started = session;
+  void live.showWebsite(state, websiteId).then((apply) => apply && started === session && replace(apply(state))).catch(() => {});
 }
 
 /** True when the panel reads the databases and snapshots only of the websites that the user opened. */
@@ -178,7 +189,11 @@ export const partialDetails = () => state.websites.length > live.DETAIL_LIMIT;
 const q = (s: string) => encodeURIComponent(s);
 type JobAnswer = { job: live.ApiJob | null };
 
-live.setUnauthorisedHandler(() => replace(emptyState()));
+live.setUnauthorisedHandler(() => {
+  session++;
+  loading = null;
+  replace(emptyState());
+});
 
 /**
  * Starts the panel in the browser (main.tsx): it uses the session of an earlier page load, and
@@ -209,6 +224,8 @@ function site(websiteId: string): Website {
 export function signIn(email: string, password: string, totp = "") {
   return call(async () => {
     await live.signIn(email, password, totp);
+    session++;
+    loading = null;
     replace({ ...state, session: { ...state.session, signedIn: true, loading: true } });
     await refresh();
   });
@@ -216,6 +233,8 @@ export function signIn(email: string, password: string, totp = "") {
 
 export function signOut() {
   live.signOut();
+  session++;
+  loading = null;
   replace(emptyState());
 }
 
@@ -425,7 +444,17 @@ export function readFile(websiteId: string, path: string): Promise<FileContent> 
 
 /** Writes a file. With createOnly, the API refuses a path that exists. */
 export function writeFile(websiteId: string, path: string, content: string, options: { encoding?: "utf8" | "base64"; createOnly?: boolean } = {}): Promise<FileEntry> {
-  return call(() => live.request<{ file: FileEntry }>("PUT", `${filesOf(websiteId)}/content`, { path, content, ...options })).then((r) => r.file);
+  // Adversarial review, finding W2-01: the API removes the white space at the start and at the
+  // end of each text value. Thus the text of a file goes as base64, and the file stays as the
+  // user wrote it, with its last new line.
+  const body = options.encoding === "base64" ? { path, content, ...options } : { path, content: toBase64(content), ...options, encoding: "base64" as const };
+  return call(() => live.request<{ file: FileEntry }>("PUT", `${filesOf(websiteId)}/content`, body)).then((r) => r.file);
+}
+
+function toBase64(text: string): string {
+  let binary = "";
+  for (const byte of new TextEncoder().encode(text)) binary += String.fromCharCode(byte);
+  return btoa(binary);
 }
 
 export function makeDirectory(websiteId: string, path: string): Promise<FileEntry> {
@@ -446,7 +475,8 @@ export const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 
 /** The usage history of a website, a server or a database server, for the graphs. */
 export function readUsage(subject: UsageSubject, id: string, range: UsageRange): Promise<UsageHistory> {
-  const base = subject === "website" ? `/websites/${id}` : subject === "server" ? `/servers/${id}` : `/database-servers/${id}`;
+  // The ID can come from the address of the page (finding W1-13).
+  const base = subject === "website" ? `/websites/${q(id)}` : subject === "server" ? `/servers/${q(id)}` : `/database-servers/${q(id)}`;
   return call(() => live.request<UsageHistory>("GET", `${base}/usage?range=${range}`));
 }
 

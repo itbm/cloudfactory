@@ -177,6 +177,8 @@ function EnvironmentCard({ website, busy }: { website: Website; busy: boolean })
         )}
         <form noValidate style={{ marginTop: 14 }} onSubmit={async (e) => {
           e.preventDefault();
+          // The API reads an empty value as "remove the variable" (finding W2-05).
+          if (!name.trim() || value === "") return;
           if ((await save.run(website.id, { [name.trim()]: value })).ok) {
             setName("");
             setValue("");

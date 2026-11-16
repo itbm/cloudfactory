@@ -57,7 +57,15 @@ const INSTALL_URL = "https://github.com/itbm/cloudfactory/releases/latest/downlo
  * of its own release. The new server trusts the panel CA by the fingerprint of its root certificate.
  */
 export function joinCommand(p: { installUrl?: string; token: string; panelHost: string; caSha256?: string; name: string; roles: string[] }): string {
-  return `curl -fsSL ${p.installUrl ?? INSTALL_URL} | sh -s -- --join ${p.token} --panel https://${p.panelHost}${p.caSha256 ? ` --panel-ca-sha256 ${p.caSha256}` : ""}${p.name ? ` --name ${p.name}` : ""} --roles ${p.roles.join(",") || "web"}`;
+  // Adversarial review, finding W2-14: the administrator puts this line in a root shell. Each
+  // value has quotation marks, and a name has only the characters of a host name.
+  const name = p.name.replace(/[^a-z0-9.-]/g, "");
+  return `curl -fsSL ${quote(p.installUrl ?? INSTALL_URL)} | sh -s -- --join ${quote(p.token)} --panel ${quote(`https://${p.panelHost}`)}${p.caSha256 ? ` --panel-ca-sha256 ${quote(p.caSha256)}` : ""}${name ? ` --name ${quote(name)}` : ""} --roles ${quote(p.roles.join(",") || "web")}`;
+}
+
+/** A value for a shell. A value with only safe characters stays as it is. */
+function quote(value: string): string {
+  return /^[A-Za-z0-9_.,:/@=+-]+$/.test(value) ? value : `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
 const ROLES: ServerRole[] = ["web", "database", "email", "dns", "backup"];
@@ -175,7 +183,7 @@ function DnsCard({ server }: { server: Server }) {
           <Field label="Name server host name" hint={<>For example <code>ns1.example.net</code>. The host name must have an A record{server.addresses.length > 1 ? " and an AAAA record" : ""} for this server at the DNS provider of its own domain.</>} error={save.error?.fields.dnsName}>
             {(p) => <input {...p} className="input mono" value={name} onChange={(e) => setName(e.target.value)} placeholder="ns1.example.net" autoCapitalize="none" spellCheck={false} disabled={!server.dns} />}
           </Field>
-          <div className="field"><span className="label" aria-hidden="true">&nbsp;</span><button type="submit" className="btn" disabled={!server.dns || save.busy}>{on ? "Save" : "Turn on DNS"}</button></div>
+          <div className="field"><span className="label" aria-hidden="true">&nbsp;</span><button type="submit" className="btn" disabled={!server.dns || save.busy || !name.trim()}>{on ? "Save" : "Turn on DNS"}</button></div>
         </form>
         <table className="kv" style={{ marginTop: 14 }}>
           <tbody>
