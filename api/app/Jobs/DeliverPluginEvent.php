@@ -47,7 +47,10 @@ class DeliverPluginEvent implements ShouldQueue
             return;
         }
 
+        // The count is in the database before the request. A request that stops the worker
+        // then leaves a delivery that the command "cloudfactory:prune-plugin-deliveries" ends.
         $delivery->attempts++;
+        $delivery->save();
         [$status, $error] = $this->send($plugin, $delivery, $url, $outbound);
         if ($error === null) {
             $delivery->fill(['state' => PluginDelivery::DELIVERED, 'response_status' => $status, 'error' => null, 'delivered_at' => now()])->save();

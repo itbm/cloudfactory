@@ -362,6 +362,7 @@ class BackupController extends Controller
      */
     public function showRepositoryPassword(Request $request): JsonResponse
     {
+        AuthController::refusePlugin($request);
         Audit::record($request, 'Viewed backup repository passwords', 'restic repositories');
         $hasTarget = (bool) preg_match(self::TARGET, (string) (self::policy()['target'] ?? ''));
         $shared = self::sharedRepositoryPassword();

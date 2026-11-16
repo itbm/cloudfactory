@@ -104,7 +104,8 @@ class Notifier
 
     public static function administrators(): Collection
     {
-        return User::where('role', Role::Administrator->value)->get();
+        // The user of a plugin has the role, but it is not a person and has no mailbox.
+        return User::where('role', Role::Administrator->value)->whereNull('plugin_id')->get();
     }
 
     /**

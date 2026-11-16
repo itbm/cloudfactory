@@ -9,6 +9,7 @@ use App\Models\Domain;
 use App\Models\Plugin;
 use App\Models\Server;
 use App\Models\Website;
+use App\Services\DomainPolicy;
 use App\Services\JobDispatcher;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -79,6 +80,10 @@ class Hosting
         $host = strtolower(trim($host ?? '') ?: $manifest['slug'].'.'.self::domain());
         if (! preg_match('/^(?=.{4,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/', $host)) {
             throw ValidationException::withMessages(['host' => 'Give a host name such as uptime.plugins.example.com.']);
+        }
+        $policy = new DomainPolicy;
+        if ($host === strtolower((string) config('cloudfactory.panel_domain')) || in_array($host, $policy->brandDomains(), true) || Server::where('mail_hostname', $host)->exists()) {
+            throw ValidationException::withMessages(['host' => 'The panel or a server uses this host name.']);
         }
         if (Website::where('name', $host)->exists() || Domain::where('name', $host)->exists() || Plugin::where('host', $host)->exists()) {
             throw ValidationException::withMessages(['host' => 'A website or a plugin has this host name.']);

@@ -53,6 +53,9 @@
   window.addEventListener("message", (e) => {
     // Only the window that opened the frame can give a session.
     if (e.source !== window.parent || !e.data || e.data.type !== "cloudfactory:session") return;
+    // The session comes from the panel. When the browser gives the address of the page that
+    // opened the frame, the origin of the message must be the same.
+    if (document.referrer && e.origin !== new URL(document.referrer).origin) return;
     const first = session === null;
     session = e.data;
     el("who").textContent = `Signed in as ${session.user.name} (${session.user.role}). The page token expires at ${new Date(session.expiresAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}.`;

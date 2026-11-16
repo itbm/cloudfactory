@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Customer;
 use App\Models\Domain;
+use App\Models\Plugin;
 use App\Models\Server;
 use App\Models\User;
 use App\Services\Dns\Zones;
@@ -29,6 +30,12 @@ class DomainPolicy
             if (is_string($host) && str_contains($host, '.') && ! filter_var($host, FILTER_VALIDATE_IP)) {
                 $domains[] = $host;
             }
+        }
+
+        // Adversarial review, finding A7-11: the panel sends tokens of users to the pages of a
+        // plugin that it runs. A website must not get the host name of such a plugin.
+        foreach (Plugin::whereNotNull('host')->pluck('host') as $host) {
+            $domains[] = $host;
         }
 
         return self::normalise($domains);

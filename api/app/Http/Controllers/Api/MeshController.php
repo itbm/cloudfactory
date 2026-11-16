@@ -87,6 +87,7 @@ class MeshController extends Controller
     /** Makes a tunnel between two servers by hand. */
     public function storeTunnel(Request $request): JsonResponse
     {
+        AuthController::refusePlugin($request);
         $data = $request->validate([
             'servers' => ['required', 'array', 'size:2'],
             'servers.*' => ['required', 'string', 'distinct', 'exists:servers,id'],
@@ -130,6 +131,7 @@ class MeshController extends Controller
      */
     public function rotateKey(Request $request, string $id): JsonResponse
     {
+        AuthController::refusePlugin($request);
         $server = Server::findOrFail($id);
         if (! Mesh::supports($server)) {
             throw ValidationException::withMessages(['server' => "The agent on the server {$server->name} did not report a tunnel key. Update the agent of the server, then try again."]);

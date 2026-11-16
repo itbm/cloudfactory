@@ -128,6 +128,7 @@ class ServerController extends Controller
     /** FR-1201: a token for "install.sh --join". It works for one server, for 24 hours. */
     public function joinToken(Request $request): JsonResponse
     {
+        AuthController::refusePlugin($request);
         $token = 'cfj_'.Str::random(32);
         JoinToken::create(['token_hash' => hash('sha256', $token), 'expires_at' => now()->addDay()]);
         Audit::record($request, 'Made server join token');

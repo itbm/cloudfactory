@@ -23,12 +23,12 @@ class Manifest
     public const SCHEMA = 1;
 
     /** A slug: lower-case letters, digits and "-", 1 to 40 characters. */
-    public const SLUG = '/^[a-z0-9]([a-z0-9-]{0,38}[a-z0-9])?$/';
+    public const SLUG = '/^[a-z0-9]([a-z0-9-]{0,38}[a-z0-9])?$/D';
 
     /** A path of the plugin: it starts with "/" and has no "..", no query and no fragment. */
-    public const PATH = '#^/[A-Za-z0-9._~/-]{0,199}$#';
+    public const PATH = '#^/[A-Za-z0-9._~/-]{0,199}$#D';
 
-    public const VERSION = '/^\d{1,6}\.\d{1,6}\.\d{1,6}([-+][0-9A-Za-z.-]{1,30})?$/';
+    public const VERSION = '/^\d{1,6}\.\d{1,6}\.\d{1,6}([-+][0-9A-Za-z.-]{1,30})?$/D';
 
     /**
      * The scopes that a plugin cannot have. With "tokens", a plugin can make a token with more
@@ -36,6 +36,35 @@ class Manifest
      * With "plugins", it can change its own scopes or install a different plugin.
      */
     public const FORBIDDEN_SCOPES = ['tokens:read', 'tokens:write', 'users:write', 'plugins:read', 'plugins:write'];
+
+    /**
+     * Adversarial review, finding A7-02: the scope that a plugin must have to get an event or
+     * a before hook. An event has data of all customers, thus a plugin gets it only when it
+     * can read that data with its token.
+     */
+    public const SCOPE_OF = [
+        'audit.recorded' => 'audit:read', 'job.finished' => 'websites:read',
+        'website.created' => 'websites:read', 'website.changed' => 'websites:read', 'website.removed' => 'websites:read',
+        'domain.added' => 'websites:read', 'domain.verified' => 'websites:read', 'domain.removed' => 'websites:read',
+        'database.created' => 'databases:read', 'database.removed' => 'databases:read',
+        'backup.started' => 'backups:read', 'restore.started' => 'backups:read', 'deploy.started' => 'websites:read',
+        'customer.created' => 'customers:read', 'customer.changed' => 'customers:read', 'user.created' => 'users:read',
+        'website.creating' => 'websites:read', 'website.removing' => 'websites:read', 'domain.adding' => 'websites:read',
+        'database.creating' => 'databases:read', 'customer.creating' => 'customers:read',
+    ];
+
+    /**
+     * True when the scopes permit the event or the hook. A scope to change data includes the
+     * scope to read it.
+     *
+     * @param  list<string>  $scopes
+     */
+    public static function permits(array $scopes, string $event): bool
+    {
+        $scope = self::SCOPE_OF[$event] ?? null;
+
+        return $scope === null || in_array($scope, $scopes, true) || in_array(str_replace(':read', ':write', $scope), $scopes, true);
+    }
 
     /** @return list<string> */
     public static function allowedScopes(): array
@@ -94,7 +123,7 @@ class Manifest
             'hooks.*.onError' => ['sometimes', 'string', Rule::in(['allow', 'refuse'])],
             'image' => ['sometimes', 'nullable', 'array:ref,digest,port'],
             'image.ref' => ['required_with:image', 'string', Input::rule('image')],
-            'image.digest' => ['required_with:image', 'string', 'regex:/^sha256:[0-9a-f]{64}$/'],
+            'image.digest' => ['required_with:image', 'string', 'regex:/^sha256:[0-9a-f]{64}$/D'],
             'image.port' => ['sometimes', 'integer', 'between:1024,65535'],
             'commands' => ['sometimes', 'array', 'max:20'],
             'commands.*.name' => ['required', 'string', 'regex:'.self::SLUG, 'distinct'],
@@ -119,6 +148,11 @@ class Manifest
             'image.port.between' => 'The port of the image is from 1024 to 65535.',
         ]);
         $v->validate();
+        foreach ([...array_map(fn ($e) => ['events', $e], $data['events'] ?? []), ...array_map(fn ($h) => ['hooks', $h['event']], $data['hooks'] ?? [])] as [$field, $event]) {
+            if (! self::permits($data['scopes'], $event)) {
+                throw ValidationException::withMessages([$field => "A plugin that gets \"{$event}\" must have the scope ".self::SCOPE_OF[$event].'.']);
+            }
+        }
 
         $out = [
             'schema' => self::SCHEMA,
@@ -176,6 +210,12 @@ class Manifest
             $fail('A plugin cannot use the address of the panel. Run it on a different host name, so that its pages stay separate from the panel.');
         }
 
-        return rtrim($url, '/');
+        // Adversarial review, finding A7-08: the panel compares this address with the origin that
+        // a browser gives: lower-case letters, and no port when the port is the default port.
+        $port = $parts['port'] ?? null;
+        $default = $scheme === 'https' ? 443 : 80;
+        $bracket = str_contains($host, ':') && ! str_starts_with($host, '[') ? "[{$host}]" : $host;
+
+        return $scheme.'://'.$bracket.($port !== null && $port !== $default ? ":{$port}" : '').rtrim($parts['path'] ?? '', '/');
     }
 }

@@ -227,6 +227,16 @@ class AuthController extends Controller
     }
 
     /** True when the request has the token of a sign-in, and not an API token. */
+    /**
+     * Adversarial review, finding A7-01: the user of a plugin is an administrator, and the
+     * scopes of its token are its only limit. Some requests give a secret or make a path to a
+     * server, and a scope to read does not show that. No plugin can make these requests.
+     */
+    public static function refusePlugin(Request $request): void
+    {
+        abort_if($request->user()?->plugin_id !== null, 403, 'A plugin cannot make this request.');
+    }
+
     public static function isSession(Request $request): bool
     {
         $token = $request->user()?->currentAccessToken();

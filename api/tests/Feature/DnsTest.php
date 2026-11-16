@@ -432,7 +432,7 @@ class DnsTest extends TestCase
         foreach ($jobs as $job) {
             // The job record has no key. The panel adds the key when it sends the job.
             $this->assertSame('', $job->payload['zones'][0]['dnssecKey']);
-            $this->assertSame($zone->dnssec_key, \App\Services\Dns\Zones::keysFor($job)['zones'][0]['dnssecKey']);
+            $this->assertSame($zone->dnssec_key, Zones::keysFor($job)['zones'][0]['dnssecKey']);
             $this->assertSame($zone->dnssec_key_tag, $job->payload['zones'][0]['dnssecKeyTag']);
         }
         // The DNS servers have the key. The record of the job does not keep it.

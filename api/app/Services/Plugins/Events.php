@@ -63,7 +63,8 @@ class Events
      */
     public static function emit(string $event, array $data): void
     {
-        $plugins = Plugin::where('enabled', true)->get()->filter(fn (Plugin $p) => in_array($event, $p->events(), true));
+        $plugins = Plugin::where('enabled', true)->get()
+            ->filter(fn (Plugin $p) => in_array($event, $p->events(), true) && Manifest::permits($p->scopes(), $event));
         foreach ($plugins as $plugin) {
             self::deliver($plugin, $event, $data);
         }
@@ -73,14 +74,15 @@ class Events
     public static function deliver(Plugin $plugin, string $event, array $data): PluginDelivery
     {
         $id = strtolower((string) Str::ulid());
-        $delivery = PluginDelivery::create([
-            'id' => $id,
+        // Adversarial review, finding A7-06: the ID in the body is the ID of the delivery.
+        $delivery = (new PluginDelivery)->forceFill(['id' => $id])->fill([
             'plugin_id' => $plugin->id,
             'event' => $event,
             'state' => PluginDelivery::PENDING,
             'attempts' => 0,
             'payload' => ['id' => $id, 'event' => $event, 'createdAt' => now()->toIso8601String(), 'data' => $data],
         ]);
+        $delivery->save();
         DeliverPluginEvent::dispatch($delivery->id)->afterCommit();
 
         return $delivery;
