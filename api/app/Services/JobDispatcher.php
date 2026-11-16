@@ -49,7 +49,7 @@ class JobDispatcher
             'state' => JobState::Queued,
         ]);
 
-        SendJobToAgent::dispatch($job->id);
+        SendJobToAgent::dispatch($job->id)->afterCommit();
 
         return $job;
     }
@@ -86,11 +86,34 @@ class JobDispatcher
                 // values each time that it sends the job (AgentClient).
                 'worker' => $website->isWorker(),
                 // CF-03: the edge proxy serves only the domains that the customer verified.
-                'domains' => $website->domains->filter(fn ($d) => $d->verified())->map(fn ($d) => ['name' => $d->name, 'kind' => $d->kind->value])->values()->all(),
+                'domains' => self::servedDomains($website),
                 // The customer of the website. The website can use the database servers of this
                 // customer on its server.
                 'databaseInstance' => $website->customer_id,
             ],
         ];
+    }
+
+    /**
+     * The domains of a website that the edge proxy serves: the verified domains (CF-03). The
+     * agent needs a primary domain when there are domains. When the primary domain is not
+     * verified, the first verified alias is the primary domain for the agent (adversarial
+     * review, finding A2-08). Without this, such a website could not change its runtime.
+     *
+     * @return list<array{name: string, kind: string}>
+     */
+    public static function servedDomains(Website $website): array
+    {
+        $domains = $website->domains->filter(fn ($d) => $d->verified())->map(fn ($d) => ['name' => $d->name, 'kind' => $d->kind->value])->values()->all();
+        if ($domains && ! in_array('primary', array_column($domains, 'kind'), true)) {
+            foreach ($domains as $i => $domain) {
+                if ($domain['kind'] === 'alias') {
+                    $domains[$i]['kind'] = 'primary';
+                    break;
+                }
+            }
+        }
+
+        return $domains;
     }
 }

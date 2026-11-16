@@ -13,8 +13,10 @@ use App\Models\AgentJob;
 use App\Models\Customer;
 use App\Models\Database;
 use App\Models\DatabaseServer;
+use App\Models\DatabaseTool;
 use App\Models\Image;
 use App\Models\Plan;
+use App\Models\Plugin;
 use App\Models\Server;
 use App\Models\User;
 use App\Models\Website;
@@ -84,7 +86,7 @@ class WebsiteController extends Controller
     {
         $kind = $request->input('kind', Website::PUBLIC);
         // A Node.js or Python website runs a start command, as a worker does.
-        $app = (bool) Image::find($request->input('imageId'))?->isApp();
+        $app = is_string($request->input('imageId')) && Image::find($request->input('imageId'))?->isApp();
         $data = $request->validate([
             'kind' => ['sometimes', Rule::in(Website::KINDS)],
             // A website has the name of its first domain. A private website and a worker have
@@ -333,7 +335,13 @@ class WebsiteController extends Controller
         if (! $source->isPublic()) {
             throw ValidationException::withMessages(['website' => 'The panel makes a staging copy only of a website with a domain.']);
         }
+        if ($source->status === WebsiteStatus::Failed) {
+            throw ValidationException::withMessages(['website' => 'This website failed. Repair the website before you make a staging copy.']);
+        }
         $name = 'staging.'.preg_replace('/^www\./', '', $source->name);
+        if (! preg_match(self::DOMAIN, $name)) {
+            throw ValidationException::withMessages(['name' => "The name {$name} of the staging copy is not a valid domain."]);
+        }
         if (Website::where('name', $name)->exists()) {
             throw ValidationException::withMessages(['name' => "{$name} exists."]);
         }
@@ -355,7 +363,10 @@ class WebsiteController extends Controller
             // of the source, the agent got the copy with the names of the live website: the edge
             // proxy made a route for the live names to the copy, and it refused the certificate
             // rule of a copy with a local name. Thus the copy starts with no relations.
-            $copy = $source->replicate(['usage', 'managed_by_terraform', 'sftp_enabled', 'sftp_keys'])->withoutRelations();
+            // Adversarial review, finding A2-11: the copy does not get the counters and the
+            // flags of the source.
+            $copy = $source->replicate(['usage', 'managed_by_terraform', 'sftp_enabled', 'sftp_keys', 'bandwidth_month', 'bandwidth_bytes',
+                'stopped_by_suspension', 'sftp_closed_by_suspension', 'previous_image_id', 'previous_image_tag'])->withoutRelations();
             $copy->fill([
                 'name' => $name,
                 'application' => "Staging copy of {$source->name}",
@@ -496,7 +507,15 @@ class WebsiteController extends Controller
         if (ctype_digit($base[0])) {
             $base = 's'.$base;
         }
+        // Adversarial review, finding X2-03: the names that start with "adminer_" and
+        // "plugin_" are for the containers of the panel. No two containers have one Unix user.
+        if (in_array($base, ['adminer', 'plugin', 'cf', 'db', 'root'], true)) {
+            $base = 's'.substr($base, 0, 7);
+        }
+        do {
+            $name = $base.'_'.strtolower(Str::random(4));
+        } while (Website::where('unix_user', $name)->exists() || DatabaseTool::where('unix_user', $name)->exists() || Plugin::where('unix_user', $name)->exists());
 
-        return $base.'_'.strtolower(Str::random(4));
+        return $name;
     }
 }

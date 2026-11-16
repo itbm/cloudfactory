@@ -225,6 +225,8 @@ class RemoteDatabaseTest extends TestCase
 
         // The restore of the database goes to the agent that has the backup.
         $snapshot = $this->website->snapshots()->where('restic_id', '9c9c9c9c')->firstOrFail();
+        // A website has one backup or restore at a time, so the jobs from before are complete.
+        AgentJob::whereIn('state', ['queued', 'running'])->update(['state' => 'succeeded']);
         $restore = $this->postJson("/api/v1/websites/{$this->website->id}/snapshots/{$snapshot->id}/restore", ['scope' => 'database', 'item' => "mariadb:{$remote->name}"])->assertStatus(202);
         $job = AgentJob::findOrFail($restore->json('job.id'));
         $this->assertSame($this->data->id, $job->server_id);

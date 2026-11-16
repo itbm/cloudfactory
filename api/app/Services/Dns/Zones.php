@@ -255,10 +255,16 @@ class Zones
         return $this->push($zone, $title);
     }
 
+    /** The largest serial of a DNS zone: 32 bits. */
+    public const MAX_SERIAL = 4294967295;
+
+    /** The panel follows a serial from a server only when it is not more than this in the future, in seconds. */
+    public const SERIAL_MARGIN = 86400;
+
     /** Gives a zone a larger serial. The serial is the time of the change, in seconds. */
     private static function bump(DnsZone $zone): void
     {
-        $zone->update(['serial' => max($zone->serial + 1, now()->timestamp)]);
+        $zone->update(['serial' => min(self::MAX_SERIAL, max($zone->serial + 1, now()->timestamp))]);
     }
 
     /**
@@ -357,8 +363,12 @@ class Zones
                 // The server has a newer zone than the panel, for example after a restore of
                 // the panel database. The server refuses an older zone, so the zone gets a
                 // larger serial. Each other DNS server gets it after its next report.
-                if ($has->get($zone->name, 0) > $zone->serial) {
-                    $zone->update(['serial' => max($has->get($zone->name) + 1, now()->timestamp)]);
+                // Adversarial review, finding A3-01: the panel makes serials from the clock. It
+                // does not follow a serial that is far in the future: a server could send
+                // such a serial for each zone and stop the DNS changes of all customers.
+                $reportedSerial = (int) $has->get($zone->name, 0);
+                if ($reportedSerial > $zone->serial && $reportedSerial <= now()->timestamp + self::SERIAL_MARGIN) {
+                    $zone->update(['serial' => min(self::MAX_SERIAL, max($reportedSerial + 1, now()->timestamp))]);
                 }
                 $current = $has->get($zone->name) === $zone->serial;
                 if (! $current || ($sync['state'] ?? '') === 'failed') {

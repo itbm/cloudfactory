@@ -117,6 +117,8 @@ class CompletenessTest extends TestCase
         Http::assertSent(fn ($r) => str_contains($r->url(), 'Restore') && $r->data()['snapshotId'] === 'abc12345' && $r->data()['target'] === self::POLICY['target']
             && $r->data()['credentials']->RESTIC_PASSWORD === 'the-old-password' && ! array_key_exists('sharedRepository', $r->data()));
 
+        // A website has one backup or restore at a time, so the jobs from before are complete.
+        AgentJob::whereIn('state', ['queued', 'running'])->update(['state' => 'succeeded']);
         $id = $this->postJson("/api/v1/websites/{$website->id}/snapshots/{$new->id}/restore", ['scope' => 'website'])->assertAccepted()->json('job.id');
         app(AgentClient::class)->send(AgentJob::with('server')->findOrFail($id));
         Http::assertSent(fn ($r) => str_contains($r->url(), 'Restore') && $r->data()['snapshotId'] === 'def67890' && $r->data()['target'] === self::POLICY['target'].'/servers/'.$website->server_id

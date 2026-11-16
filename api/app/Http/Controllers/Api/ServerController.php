@@ -175,6 +175,7 @@ class ServerController extends Controller
                 throw ValidationException::withMessages(['policy' => 'The container tools are being updated on a different server. Wait until that update is complete.']);
             }
         }
+        self::refuseOpenJob($server, AgentAction::InstallHostUpdates);
         $job = $this->jobs->dispatch($server, AgentAction::InstallHostUpdates, ['policy' => $policy], $policy === 'tools' ? "Update container tools on {$server->name}" : "Install updates on {$server->name}");
         Audit::record($request, $policy === 'tools' ? 'Updated container tools' : 'Installed host updates', $server->name);
 
@@ -190,6 +191,7 @@ class ServerController extends Controller
         if ($busy) {
             throw ValidationException::withMessages(['server' => "{$busy->name} has the same role and is rebooting. Wait until it is healthy."]);
         }
+        self::refuseOpenJob($server, AgentAction::Reboot);
         $server->update(['state' => 'rebooting']);
         $job = $this->jobs->dispatch($server, AgentAction::Reboot, ['now' => true], "Reboot {$server->name}");
         Audit::record($request, 'Rebooted server', $server->name);
@@ -203,6 +205,7 @@ class ServerController extends Controller
         $version = config('cloudfactory.agent.latest_version');
         // CF-16: the agent refuses an older version unless an administrator allows it.
         $allowDowngrade = $request->validate(['allowDowngrade' => ['sometimes', 'boolean']])['allowDowngrade'] ?? false;
+        self::refuseOpenJob($server, AgentAction::UpdateAgent);
         $job = $this->jobs->dispatch($server, AgentAction::UpdateAgent, ['version' => $version, 'allowDowngrade' => $allowDowngrade], "Update agent on {$server->name}", ref: $version);
         Audit::record($request, 'Updated agent', "{$server->name} {$version}");
 
@@ -341,5 +344,18 @@ class ServerController extends Controller
             'websites' => $s->websites_count ?? null,
             'lastSeenAt' => $s->last_seen_at?->toIso8601String(),
         ];
+    }
+
+    /**
+     * Adversarial review, finding A3-12: a server has one reboot, one update of the agent and
+     * one installation of updates at a time.
+     */
+    private static function refuseOpenJob(Server $server, AgentAction $action): void
+    {
+        $open = AgentJob::where('server_id', $server->id)->where('action', $action->value)
+            ->whereIn('state', [JobState::Queued->value, JobState::Running->value])->exists();
+        if ($open) {
+            throw ValidationException::withMessages(['server' => "{$server->name} has a job of this type that is not complete. Wait until that job is complete."]);
+        }
     }
 }

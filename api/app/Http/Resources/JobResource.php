@@ -30,6 +30,20 @@ class JobResource extends JsonResource
         if ($error === null || $request->user()?->isAdministrator()) {
             return $error;
         }
+
+        return self::publicError($job);
+    }
+
+    /**
+     * The error text of a job for a person who is not an administrator: one line, with no
+     * internal details of the server. The emails use it too (adversarial review, finding A3-05).
+     */
+    public static function publicError(AgentJob $job): ?string
+    {
+        $error = $job->error;
+        if ($error === null) {
+            return null;
+        }
         if (preg_match(self::INTERNAL, $error)) {
             $step = $job->steps[$job->step] ?? null;
 

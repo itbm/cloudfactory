@@ -28,6 +28,8 @@ class AccountController extends Controller
             // An administrator belongs to no customer.
             return response()->json(['customer' => null, 'provider' => null, 'plan' => null, 'usage' => null, 'backups' => self::backups(), 'users' => []]);
         }
+        $token = $user->currentAccessToken();
+        $seesUsers = $token && ($token->can('users:read') || $token->can('users:write'));
         $websites = Website::where('customer_id', $customer->id)->get(['id', 'usage', 'bandwidth_month', 'bandwidth_bytes']);
         $month = now()->utc()->format('Y-m');
         $reseller = $customer->reseller;
@@ -61,7 +63,9 @@ class AccountController extends Controller
                 'customers' => $user->role === Role::Reseller ? Customer::where('reseller_id', $customer->id)->count() : null,
             ],
             'backups' => self::backups(),
-            'users' => User::where('customer_id', $customer->id)->orderBy('name')->get()->map(fn (User $u) => UserController::present($u)),
+            // Adversarial review, finding A1-09: the list of the users is for a token with the
+            // scope of the users.
+            'users' => $seesUsers ? User::where('customer_id', $customer->id)->orderBy('name')->get()->map(fn (User $u) => UserController::present($u)) : [],
         ]);
     }
 

@@ -78,37 +78,48 @@ class JobOutcome
     /** @param array<string, mixed> $result */
     public function finish(AgentJob $job, JobState $state, ?string $error = null, array $result = []): void
     {
-        $changed = self::changeOpen($job, fn (AgentJob $j) => [
-            'state' => $state,
-            // The agent has the passwords now. The panel does not keep them.
-            'payload' => self::withoutPasswords($j->payload),
-            'step' => $state === JobState::Succeeded ? count($j->steps) : $j->step,
-            'error' => $error,
-            'finished_at' => now(),
-        ]);
-        if (! $changed) {
+        // Adversarial review, finding A3-02: the change of the state and the effects of the
+        // result are one transaction. If an effect fails, the job stays open, and the next
+        // report of the agent applies the result again. Before, the result was lost.
+        $website = null;
+        $applied = DB::transaction(function () use ($job, $state, $error, $result, &$website) {
+            $changed = self::changeOpen($job, fn (AgentJob $j) => [
+                'state' => $state,
+                // The agent has the passwords now. The panel does not keep them.
+                'payload' => self::withoutPasswords($j->payload),
+                'step' => $state === JobState::Succeeded ? count($j->steps) : $j->step,
+                'error' => $error,
+                'finished_at' => now(),
+            ]);
+            if (! $changed) {
+                return false;
+            }
+
+            $website = $job->website_id ? Website::find($job->website_id) : null;
+            $state === JobState::Succeeded
+                ? $this->applySuccess($job, $website, $result)
+                : $this->applyFailure($job, $website);
+            $this->databaseServersOf($job, $state === JobState::Succeeded);
+            // A job of the setup of a mail cluster: the next step starts when the step is complete.
+            if (isset($job->payload['mailClusterId']) && in_array($job->action, [AgentAction::PrepareMailNode, AgentAction::SetMailNode, AgentAction::SetMailServer], true)) {
+                app(MailClusters::class)->finished($job, $state === JobState::Succeeded, $result);
+            }
+            // The container of Adminer and its temporary database users.
+            DatabaseTools::jobFinished($job, $state === JobState::Succeeded);
+            // The container of a plugin that the panel runs.
+            Hosting::jobFinished($job, $state === JobState::Succeeded);
+            if (in_array($job->action, [AgentAction::SetDnsZones, AgentAction::DeleteDnsZones], true)) {
+                Zones::jobFinished($job, $state === JobState::Succeeded);
+            }
+
+            if ($job->rollout_id && ($rollout = Rollout::find($job->rollout_id))) {
+                $this->rollouts->jobFinished($rollout, $job);
+            }
+
+            return true;
+        });
+        if (! $applied) {
             return;
-        }
-
-        $website = $job->website_id ? Website::find($job->website_id) : null;
-        $state === JobState::Succeeded
-            ? $this->applySuccess($job, $website, $result)
-            : $this->applyFailure($job, $website);
-        $this->databaseServersOf($job, $state === JobState::Succeeded);
-        // A job of the setup of a mail cluster: the next step starts when the step is complete.
-        if (isset($job->payload['mailClusterId']) && in_array($job->action, [AgentAction::PrepareMailNode, AgentAction::SetMailNode, AgentAction::SetMailServer], true)) {
-            app(MailClusters::class)->finished($job, $state === JobState::Succeeded, $result);
-        }
-        // The container of Adminer and its temporary database users.
-        DatabaseTools::jobFinished($job, $state === JobState::Succeeded);
-        // The container of a plugin that the panel runs.
-        Hosting::jobFinished($job, $state === JobState::Succeeded);
-        if (in_array($job->action, [AgentAction::SetDnsZones, AgentAction::DeleteDnsZones], true)) {
-            Zones::jobFinished($job, $state === JobState::Succeeded);
-        }
-
-        if ($job->rollout_id && ($rollout = Rollout::find($job->rollout_id))) {
-            $this->rollouts->jobFinished($rollout, $job);
         }
         // The users who want it get an email about the failure.
         if ($state === JobState::Failed) {

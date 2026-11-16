@@ -122,7 +122,29 @@ class CronJobController extends Controller
     /** One space between the fields. */
     private static function schedule(string $schedule): string
     {
-        return trim((string) preg_replace('/ +/', ' ', $schedule));
+        $schedule = trim((string) preg_replace('/ +/', ' ', $schedule));
+        // Adversarial review, finding A2-07: the agent refuses a range that goes down or that
+        // is not in the limits of its field, and then refuses each later change of the cron
+        // jobs of the website. The panel refuses such a schedule first.
+        $limits = [[0, 59], [0, 23], [1, 31], [1, 12], [0, 7]];
+        foreach (explode(' ', $schedule) as $i => $field) {
+            [$min, $max] = $limits[$i] ?? [0, 0];
+            foreach (explode(',', $field) as $part) {
+                [$spec, $step] = array_pad(explode('/', $part, 2), 2, null);
+                $from = $min;
+                $to = $max;
+                if ($spec !== '*') {
+                    [$a, $b] = array_pad(explode('-', $spec, 2), 2, null);
+                    $from = (int) $a;
+                    $to = $b !== null ? (int) $b : ($step !== null ? $max : $from);
+                }
+                if (! isset($limits[$i]) || ($step !== null && (int) $step < 1) || $from < $min || $to > $max || $from > $to) {
+                    throw ValidationException::withMessages(['schedule' => "The part \"{$part}\" of the schedule is not valid. Use values from {$min} to {$max}, and write a range from the small value to the large value."]);
+                }
+            }
+        }
+
+        return $schedule;
     }
 
     /** @return array<string, mixed> */

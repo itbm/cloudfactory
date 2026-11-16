@@ -10,6 +10,7 @@ use App\Models\Server;
 use App\Models\Setting;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -116,6 +117,7 @@ class Mesh
         $addresses = filter_var($host, FILTER_VALIDATE_IP) ? [$host] : self::resolve($host);
         foreach ($addresses as $address) {
             if (self::publicAddress($address)) {
+                $address = self::canonical($address);
                 $server->update(['mesh_endpoint' => $address]);
 
                 return $address;
@@ -123,6 +125,17 @@ class Mesh
         }
 
         return null;
+    }
+
+    /**
+     * The one text form of an IP address. The agents compare addresses as text, so a different
+     * form of the same IPv6 address would not agree (adversarial review, finding A5-05).
+     */
+    public static function canonical(string $address): string
+    {
+        $packed = @inet_pton($address);
+
+        return $packed === false ? $address : (string) inet_ntop($packed);
     }
 
     /** @return list<string> The IPv4 addresses of a host name, then its IPv6 addresses. */
@@ -468,6 +481,15 @@ class Mesh
     public function keyOf(Server $server, string $key): void
     {
         if ($server->mesh_public_key === $key) {
+            return;
+        }
+        // Adversarial review, finding A5-02: two servers cannot have one tunnel key. A server
+        // that reports the key of a different server keeps its old key in the panel: with the
+        // same key two times, each common peer would refuse its full mesh state.
+        if (Server::where('id', '!=', $server->id)->where('mesh_public_key', $key)->exists()) {
+            Log::warning("The server {$server->name} reported the tunnel key of a different server. The panel did not record the key.");
+            Audit::system('Refused a tunnel key that a different server has', $server->name);
+
             return;
         }
         $server->update(['mesh_public_key' => $key]);

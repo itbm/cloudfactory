@@ -35,9 +35,10 @@ class UserController extends Controller
 
     public function store(Request $request): JsonResponse
     {
+        self::normalEmail($request);
         $data = $request->validate([
             'name' => ['required', 'string', 'max:200'],
-            'email' => ['required', 'email', 'max:255', Rule::unique('users', 'email')],
+            'email' => ['required', 'string', 'email', 'max:255', Rule::unique('users', 'email')],
             // Null makes an administrator.
             'customerId' => ['present', 'nullable', 'string', 'max:26'],
         ]);
@@ -100,6 +101,17 @@ class UserController extends Controller
         return response()->json(null, 204);
     }
 
+    /** The time for which a temporary password is valid (adversarial review, finding A1-10). */
+    public const TEMPORARY_PASSWORD_HOURS = 72;
+
+    /** Puts the email of the request in the form that the panel keeps (User::normalEmail). */
+    public static function normalEmail(Request $request): void
+    {
+        if (is_string($request->input('email'))) {
+            $request->merge(['email' => User::normalEmail($request->input('email'))]);
+        }
+    }
+
     /**
      * Makes a user with a temporary password. The role comes from the customer: a user of a
      * reseller is a reseller, and a user with no customer is an administrator.
@@ -114,6 +126,7 @@ class UserController extends Controller
             'role' => $customer === null ? Role::Administrator : ($customer->role === 'reseller' ? Role::Reseller : Role::Owner),
             'customer_id' => $customer?->id,
             'must_change_password' => true,
+            'temporary_password_at' => now(),
         ])->save();
 
         return [$user, $password];
@@ -123,7 +136,7 @@ class UserController extends Controller
     public static function reset(User $user, bool $removeTotp): string
     {
         $password = self::temporaryPassword();
-        $user->forceFill(['password' => $password, 'must_change_password' => true] + ($removeTotp ? ['totp_secret' => null, 'totp_last_step' => null] : []))->save();
+        $user->forceFill(['password' => $password, 'must_change_password' => true, 'temporary_password_at' => now()] + ($removeTotp ? ['totp_secret' => null, 'totp_last_step' => null] : []))->save();
         $user->tokens()->delete();
         LoginThrottle::unlock($user->email);
 

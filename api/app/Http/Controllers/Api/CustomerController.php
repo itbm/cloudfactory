@@ -46,12 +46,13 @@ class CustomerController extends Controller
         if ($user->role === Role::Owner) {
             return response()->json(['message' => 'Website owners cannot add customers.'], 403);
         }
+        UserController::normalEmail($request);
         $data = $request->validate([
             'name' => ['required', 'string', 'max:200'],
-            'email' => ['required', 'email'],
+            'email' => ['required', 'string', 'email', 'max:255'],
             // A reseller can add website owners only.
             'role' => ['required', Rule::in($user->isAdministrator() ? ['reseller', 'owner'] : ['owner'])],
-            'planId' => ['required', 'exists:plans,id'],
+            'planId' => ['required', 'string', 'exists:plans,id'],
             // Audit finding B5: also make the first user of the customer, with the email of
             // the customer. The answer then has the temporary password of that user.
             'createUser' => ['sometimes', 'boolean'],
@@ -93,7 +94,7 @@ class CustomerController extends Controller
         $customer = $this->find($request, $id);
         $data = $request->validate([
             'name' => ['sometimes', 'string', 'max:200'],
-            'planId' => ['sometimes', 'exists:plans,id'],
+            'planId' => ['sometimes', 'string', 'exists:plans,id'],
             'suspended' => ['sometimes', 'boolean'],
             'branding' => ['sometimes', 'array'],
             ...Branding::rules('branding.'),
@@ -102,7 +103,7 @@ class CustomerController extends Controller
             'branding.nameServers.*' => ['distinct', 'regex:'.WebsiteController::DOMAIN],
             'branding.mailHost' => ['sometimes', 'nullable', 'regex:'.WebsiteController::DOMAIN],
             'allowedPlanIds' => ['sometimes', 'array'],
-            'allowedPlanIds.*' => ['distinct', 'exists:plans,id'],
+            'allowedPlanIds.*' => ['string', 'distinct', 'exists:plans,id'],
         ], [
             'branding.panelDomain.regex' => 'Enter a domain in lower-case letters, for example panel.agency.example.',
             'branding.nameServers.*.regex' => 'Enter a host name in lower-case letters, for example ns1.agency.example.',
@@ -110,8 +111,18 @@ class CustomerController extends Controller
             'branding.mailHost.regex' => 'Enter a host name in lower-case letters, for example mail.agency.example.',
         ]);
         $user = $request->user();
-        if ($customer->id === $user->customer_id && (isset($data['planId']) || isset($data['suspended']))) {
-            return response()->json(['message' => 'You cannot change your own plan or status.'], 403);
+        // Adversarial review, finding A1-01: the rule "boolean" also accepts 0, "0", 1 and
+        // "1". The code below uses one real boolean value.
+        if (array_key_exists('suspended', $data)) {
+            $data['suspended'] = filter_var($data['suspended'], FILTER_VALIDATE_BOOLEAN);
+        }
+        // Adversarial review, finding A1-08: a website owner cannot change a customer, and a
+        // customer cannot change its own record. A reseller can change only its own brand.
+        if ($user->role === Role::Owner) {
+            return response()->json(['message' => 'Website owners cannot change customers.'], 403);
+        }
+        if ($customer->id === $user->customer_id && array_diff(array_keys($data), ['branding'])) {
+            return response()->json(['message' => 'You cannot change your own name, plan or status.'], 403);
         }
         // R-07: only an administrator sets the plans of a reseller.
         if (isset($data['allowedPlanIds']) && (! $user->isAdministrator() || $customer->role !== 'reseller')) {
@@ -133,8 +144,12 @@ class CustomerController extends Controller
             $data['branding'] = $this->checkBrand($data['branding'], $customer, $user);
         }
         $suspension = [];
-        if (isset($data['suspended']) && $data['suspended'] !== $customer->suspended) {
+        if (isset($data['suspended']) && $data['suspended'] !== (bool) $customer->suspended) {
             $suspension = ['suspended' => $data['suspended'], 'suspended_by' => $data['suspended'] ? ($user->isAdministrator() ? 'administrator' : 'reseller') : null];
+        } elseif (($data['suspended'] ?? false) && $user->isAdministrator() && $customer->suspended_by !== 'administrator') {
+            // An administrator suspends a customer that its reseller suspended before: the
+            // reseller can then no longer lift the suspension.
+            $customer->update(['suspended_by' => 'administrator']);
         }
         $brandBefore = $customer->branding ?? [];
         $customer->update(array_filter([

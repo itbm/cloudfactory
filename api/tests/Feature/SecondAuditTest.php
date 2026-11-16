@@ -307,7 +307,12 @@ class SecondAuditTest extends TestCase
         $this->assertStringNotContainsString('web-1-secret', (string) DB::table('servers')->where('id', $one->id)->value('backup_credentials'));
         $this->getJson("/api/v1/servers/{$one->id}")->assertOk()->assertDontSee('AKIAWEB1')->assertJsonMissingPath('data.backupCredentials');
 
-        $backup = fn ($website) => $this->postJson("/api/v1/websites/{$website->id}/snapshots")->assertAccepted()->json('job.id');
+        $backup = function ($website) {
+            // A website has one backup or restore at a time, so the jobs from before are complete.
+            AgentJob::whereIn('state', ['queued', 'running'])->update(['state' => 'succeeded']);
+
+            return $this->postJson("/api/v1/websites/{$website->id}/snapshots")->assertAccepted()->json('job.id');
+        };
         $this->assertSame(self::OWN, $this->sentCredentials($backup($first)));
         $this->assertSame(self::SHARED, $this->sentCredentials($backup($second)));
 
@@ -315,6 +320,8 @@ class SecondAuditTest extends TestCase
         Setting::put('backup_repository_password', Crypt::encryptString('the-old-password'));
         $old = Snapshot::create(['website_id' => $first->id, 'kind' => 'scheduled', 'restic_id' => 'abc12345', 'databases' => [], 'mailboxes' => [], 'shared_repository' => true]);
         $restore = "/api/v1/websites/{$first->id}/snapshots/{$old->id}/restore";
+        // A website has one backup or restore at a time, so the jobs from before are complete.
+        AgentJob::whereIn('state', ['queued', 'running'])->update(['state' => 'succeeded']);
         $this->assertSame(self::SHARED, $this->sentCredentials($this->postJson($restore, ['scope' => 'website'])->assertAccepted()->json('job.id')));
 
         // With no shared key, the server still gets its own key. The other server gets no key.

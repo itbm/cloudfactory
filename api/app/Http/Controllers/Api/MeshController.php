@@ -71,6 +71,8 @@ class MeshController extends Controller
         if ($address !== null && ! Mesh::publicAddress($address)) {
             throw ValidationException::withMessages(['tunnelAddress' => 'The tunnel address must be a public IP address.']);
         }
+        // One text form for each address (adversarial review, finding A5-05).
+        $address = $address === null ? null : Mesh::canonical($address);
         $jobs = [];
         if ($address !== $server->mesh_endpoint) {
             $server->update(['mesh_endpoint' => $address]);

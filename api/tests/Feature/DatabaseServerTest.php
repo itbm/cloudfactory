@@ -660,6 +660,8 @@ class DatabaseServerTest extends TestCase
         $jobId = $this->postJson("/api/v1/websites/{$this->website->id}/snapshots/{$snapshot->id}/restore", ['scope' => 'database', 'item' => "mariadb:{$name}"])->assertAccepted()->json('job.id');
         $this->assertSame($serverId, AgentJob::findOrFail($jobId)->payload['databaseServer']);
         // A full restore has no database.
+        // A website has one backup or restore at a time, so the jobs from before are complete.
+        AgentJob::whereIn('state', ['queued', 'running'])->update(['state' => 'succeeded']);
         $jobId = $this->postJson("/api/v1/websites/{$this->website->id}/snapshots/{$snapshot->id}/restore", ['scope' => 'website'])->assertAccepted()->json('job.id');
         $this->assertArrayNotHasKey('databaseServer', AgentJob::findOrFail($jobId)->payload);
 

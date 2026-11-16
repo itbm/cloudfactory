@@ -3,15 +3,18 @@
 namespace App\Http\Controllers\Api;
 
 use App\Enums\AgentAction;
+use App\Enums\JobState;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\JobResource;
 use App\Models\AgentJob;
 use App\Models\Database;
+use App\Models\DatabaseServer;
 use App\Models\Server;
 use App\Models\Setting;
 use App\Models\Snapshot;
 use App\Models\Website;
 use App\Services\Audit;
+use App\Services\DatabaseServers;
 use App\Services\JobDispatcher;
 use App\Validation\Input;
 use Illuminate\Database\Eloquent\Builder;
@@ -51,10 +54,36 @@ class BackupController extends Controller
     {
         $website = $this->findWebsite($request, $websiteId);
         self::requireTarget();
+        self::refuseBusy($website);
         $job = self::start($this->jobs, $website, 'manual', "Back up {$website->name}");
         Audit::record($request, 'Backed up website', $website->name, $website->customer_id);
 
         return response()->json(['job' => new JobResource($job)], 202);
+    }
+
+    /**
+     * Adversarial review, findings A4-01 and A4-03: a website has one backup or restore at a
+     * time, and none while one of its database servers moves to a different server.
+     *
+     * @throws ValidationException
+     */
+    public static function refuseBusy(Website $website): void
+    {
+        if ($moving = self::movingServerOf($website)) {
+            DatabaseServers::refuseMoving($moving, 'website');
+        }
+        $open = AgentJob::where('website_id', $website->id)->whereIn('action', [AgentAction::Backup->value, AgentAction::Restore->value])
+            ->whereIn('state', [JobState::Queued->value, JobState::Running->value])->exists();
+        if ($open) {
+            throw ValidationException::withMessages(['website' => 'A backup or a restore of this website is in progress. Wait until it is complete.']);
+        }
+    }
+
+    /** A database server of the website that moves to a different server now, or null. */
+    public static function movingServerOf(Website $website): ?DatabaseServer
+    {
+        return DatabaseServer::where('status', DatabaseServer::MOVING)
+            ->whereIn('id', $website->databases()->whereNotNull('database_server_id')->select('database_server_id'))->first();
     }
 
     /**
@@ -220,6 +249,7 @@ class BackupController extends Controller
             throw ValidationException::withMessages(['snapshot' => 'This backup is in the repository that all servers used in an earlier version. An administrator must set the shared credentials of the object storage in Backups to restore it.']);
         }
         $what = $data['scope'] === 'website' ? 'full website' : $data['item'];
+        self::refuseBusy($website);
         $job = $this->jobs->dispatch($server, AgentAction::Restore, [
             'websiteId' => $website->id,
             'unixUser' => $website->unix_user,

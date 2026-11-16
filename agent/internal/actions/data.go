@@ -1293,6 +1293,12 @@ func (d *Deps) Restore(req *agentv1.RestoreRequest) (jobs.Job, error) {
 			if err != nil || site == nil {
 				return err
 			}
+			// A stopped website stays stopped: a restore does not start the website of a
+			// suspended customer, and there is no answer to wait for (adversarial review,
+			// finding A4-08).
+			if site.Stopped {
+				return nil
+			}
 			if req.GetScope() == "website" {
 				u := quadlet.Website{UnixUser: site.UnixUser, Suffix: site.Suffix}
 				if _, err := d.Host.Systemctl(ctx, site.UnixUser, "restart", u.ServiceName()); err != nil {

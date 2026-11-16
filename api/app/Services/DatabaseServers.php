@@ -2,6 +2,9 @@
 
 namespace App\Services;
 
+use App\Enums\AgentAction;
+use App\Enums\JobState;
+use App\Models\AgentJob;
 use App\Models\Customer;
 use App\Models\Database;
 use App\Models\DatabaseServer;
@@ -127,6 +130,15 @@ class DatabaseServers
     public static function freePort(string $customerId, string $serverId, string $engine): ?int
     {
         $used = DatabaseServer::where(['customer_id' => $customerId, 'server_id' => $serverId, 'engine' => $engine])->pluck('port')->all();
+        // Adversarial review, finding A4-09: a database server that moves to this server has
+        // its new port in the job of the move. That port is not free.
+        $moving = DatabaseServer::where(['customer_id' => $customerId, 'moving_to_server_id' => $serverId, 'engine' => $engine])->pluck('id');
+        if ($moving->isNotEmpty()) {
+            $reserved = AgentJob::whereIn('database_server_id', $moving)->where('action', AgentAction::ReceiveDatabaseServer->value)
+                ->whereIn('state', [JobState::Queued->value, JobState::Running->value])->get()
+                ->map(fn (AgentJob $job) => $job->payload['databaseServer']['port'] ?? null)->filter()->all();
+            $used = array_merge($used, array_map('intval', $reserved));
+        }
         $first = DatabaseServer::FIRST_PORT[$engine];
         for ($port = $first; $port < $first + DatabaseServer::PORTS; $port++) {
             if (! in_array($port, $used, true)) {

@@ -139,8 +139,13 @@ class DeployController extends Controller
     {
         $website = $this->changeable($request, $websiteId);
         $this->refuseSuspended($website->customer);
-        [$release, $job] = self::deploy($this->jobs, $website, $this->source($website), GitSource::MANUAL);
-        Audit::record($request, 'Started deploy', $website->name, $website->customer_id);
+        // The agent keeps the SSH host key of the Git server from the first deploy, and refuses
+        // a different key. After a real change of the key, the user tells the agent to forget
+        // the old key (adversarial review, finding A2-04).
+        $data = $request->validate(['forgetHostKey' => ['sometimes', 'boolean']]);
+        $forget = filter_var($data['forgetHostKey'] ?? false, FILTER_VALIDATE_BOOLEAN);
+        [$release, $job] = self::deploy($this->jobs, $website, $this->source($website), GitSource::MANUAL, $forget);
+        Audit::record($request, $forget ? 'Started deploy and removed the SSH host key of the Git server' : 'Started deploy', $website->name, $website->customer_id);
 
         return response()->json(['release' => self::release($request, $release), 'job' => new JobResource($job)], 202);
     }
@@ -193,7 +198,7 @@ class DeployController extends Controller
      *
      * @return array{Release, AgentJob}
      */
-    public static function deploy(JobDispatcher $jobs, Website $website, GitSource $source, string $trigger): array
+    public static function deploy(JobDispatcher $jobs, Website $website, GitSource $source, string $trigger, bool $forgetHostKey = false): array
     {
         self::refuseBusy($website);
         $release = new Release(['website_id' => $website->id, 'ref' => $source->branch, 'state' => Release::BUILDING, 'trigger' => $trigger]);
@@ -211,7 +216,7 @@ class DeployController extends Controller
             'buildCommands' => self::buildCommands($website, $source),
             // The earlier releases that stay on the server, for "Go back".
             'keepReleases' => $website->releases()->where('state', Release::READY)->limit(Release::KEEP)->pluck('id')->all(),
-        ], "Deploy {$source->branch}", $website);
+        ] + ($forgetHostKey ? ['forgetHostKey' => true] : []), "Deploy {$source->branch}", $website);
         $release->update(['agent_job_id' => $job->id]);
 
         return [$release, $job];
@@ -236,6 +241,13 @@ class DeployController extends Controller
                 $commands[0] = $install.' && '.$commands[0];
             } else {
                 array_unshift($commands, $install);
+            }
+        }
+        // Adversarial review, finding X2-05: the panel made a command after the check of the
+        // request. The agent refuses a command that is too long, so the panel checks it here.
+        foreach ($commands as $command) {
+            if (! Input::valid('commandLine', $command)) {
+                throw ValidationException::withMessages(['buildCommands' => 'The install command and the first build command are too long together. Make one of them shorter.']);
             }
         }
 
@@ -283,7 +295,9 @@ class DeployController extends Controller
                 'buildCommands' => $source->build_commands ?? [],
                 // The owner adds this key to the repository as a read-only deploy key.
                 'deployKey' => $source->public_key,
-                'webhookUrl' => url('/api/v1/hooks/deploy/'.$source->webhook_token),
+                // Adversarial review, finding A2-05: the address starts a deploy, so only a
+                // token that can change websites gets it.
+                'webhookUrl' => self::canWrite($request) ? url('/api/v1/hooks/deploy/'.$source->webhook_token) : null,
                 // The names only. The API never gives the value of a secret.
                 'secrets' => array_keys($source->secrets ?? []),
             ] : null,
@@ -328,5 +342,13 @@ class DeployController extends Controller
         }
 
         return Str::limit(trim((string) strtok($error, "\r\n")), 300);
+    }
+
+    /** True for a token with the scope to change websites. */
+    private static function canWrite(Request $request): bool
+    {
+        $token = $request->user()?->currentAccessToken();
+
+        return (bool) $token?->can('websites:write');
     }
 }

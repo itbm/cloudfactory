@@ -124,7 +124,7 @@ class AuditFixesTest extends TestCase
         // The primary domain of a website: the website gets an internal name.
         $txt['_cloudfactory-challenge.old.example'] = [$policy->claimToken($second->id, 'old.example')];
         $this->postJson("/api/v1/websites/{$new->id}/domains", ['name' => 'old.example', 'kind' => 'alias'])->assertAccepted();
-        $this->assertSame('parked-'.strtolower($old->id).'.invalid', $old->fresh()->name);
+        $this->assertMatchesRegularExpression('/^parked-'.strtolower($old->id).'-[0-9a-f]{8}\.invalid$/', $old->fresh()->name);
         $this->assertFalse($old->domains()->sole()->verified());
         $this->assertSame(2, AgentJob::where('action', AgentAction::RemoveDomain->value)->where('website_id', $old->id)->count());
     }
@@ -401,6 +401,8 @@ class AuditFixesTest extends TestCase
         $this->assertDatabaseHas('audit_entries', ['action' => 'Restored from backup', 'target' => 'acme.example full website, new files removed']);
 
         // The default keeps the files, and the option is only for the full website.
+        // A website has one backup or restore at a time, so the jobs from before are complete.
+        AgentJob::whereIn('state', ['queued', 'running'])->update(['state' => 'succeeded']);
         $id = $this->postJson($url, ['scope' => 'website'])->assertAccepted()->json('job.id');
         $this->assertFalse(AgentJob::findOrFail($id)->payload['deleteExtra']);
         $this->postJson($url, ['scope' => 'file', 'item' => '/public/index.php', 'removeNewFiles' => true])->assertJsonValidationErrors('removeNewFiles');

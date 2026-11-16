@@ -68,16 +68,16 @@ class AgentController extends Controller
             'kernel' => ['nullable', 'string', 'max:100'],
             'podmanVersion' => ['nullable', 'string', 'max:32'],
             'gvisorVersion' => ['nullable', 'string', 'max:64'],
-            'pendingUpdates' => ['array'],
-            'pendingUpdates.*.name' => ['required', 'string'],
-            'pendingUpdates.*.from' => ['nullable', 'string'],
-            'pendingUpdates.*.to' => ['required', 'string'],
+            'pendingUpdates' => ['array', 'max:20000'],
+            'pendingUpdates.*.name' => ['required', 'string', 'max:255'],
+            'pendingUpdates.*.from' => ['nullable', 'string', 'max:255'],
+            'pendingUpdates.*.to' => ['required', 'string', 'max:255'],
             'pendingUpdates.*.security' => ['boolean'],
             'pendingUpdates.*.containerTool' => ['boolean'],
             'rebootRequired' => ['boolean'],
             'lastUpdateAt' => ['nullable', 'date'],
-            'services' => ['array'],
-            'services.*.name' => ['required', 'string'],
+            'services' => ['array', 'max:1000'],
+            'services.*.name' => ['required', 'string', 'max:255'],
             'services.*.state' => ['required', Rule::in(['running', 'stopped', 'failed'])],
             // The reason for a service that does not run, and a part that the server can operate without.
             'services.*.detail' => ['nullable', 'string', 'max:1000'],
@@ -88,22 +88,23 @@ class AgentController extends Controller
             'usage.diskPercent' => ['numeric', 'between:0,100'],
             'usage.networkInBytes' => ['integer', 'min:0'],
             'usage.networkOutBytes' => ['integer', 'min:0'],
-            'websites' => ['array'],
-            'websites.*.id' => ['required', 'string'],
-            'websites.*.cpuPercent' => ['numeric'],
-            'websites.*.memoryBytes' => ['integer'],
-            'websites.*.diskBytes' => ['integer'],
-            'websites.*.processes' => ['integer'],
-            'websites.*.bytesIn' => ['integer', 'min:0'],
-            'websites.*.bytesOut' => ['integer', 'min:0'],
+            // Adversarial review, findings A3-08 and A5-08: each list and each value has a limit.
+            'websites' => ['array', 'max:100000'],
+            'websites.*.id' => ['required', 'string', 'max:64'],
+            'websites.*.cpuPercent' => ['numeric', 'between:0,102400'],
+            'websites.*.memoryBytes' => ['integer', 'between:0,1125899906842624'],
+            'websites.*.diskBytes' => ['integer', 'between:0,1152921504606846976'],
+            'websites.*.processes' => ['integer', 'between:0,4194304'],
+            'websites.*.bytesIn' => ['integer', 'between:0,1125899906842624'],
+            'websites.*.bytesOut' => ['integer', 'between:0,1125899906842624'],
             // FR-402 and FR-403: the DNS and the certificate of each domain on the server.
-            'domains' => ['nullable', 'array'],
+            'domains' => ['nullable', 'array', 'max:1000000'],
             'domains.*.name' => ['required', 'string', 'max:253'],
             'domains.*.dnsPointsHere' => ['boolean'],
             'domains.*.certificate' => [Rule::in(['pending', 'valid', 'expired', 'failed'])],
             'domains.*.expiresAt' => ['nullable', 'date'],
             // Batch 1, finding 12: the size of each database.
-            'databases' => ['nullable', 'array'],
+            'databases' => ['nullable', 'array', 'max:1000000'],
             'databases.*.engine' => ['required', Rule::in(Database::ENGINES)],
             'databases.*.name' => ['required', 'string', 'max:64'],
             'databases.*.sizeBytes' => ['integer', 'min:0'],
@@ -131,7 +132,7 @@ class AgentController extends Controller
             // that cannot operate DNS does not send them.
             'dnsZones' => ['nullable', 'array', 'max:100000'],
             'dnsZones.*.name' => ['required', 'string', 'max:253'],
-            'dnsZones.*.serial' => ['required', 'integer', 'min:0'],
+            'dnsZones.*.serial' => ['required', 'integer', 'min:0', 'max:4294967295'],
             // Spec section 10: the port of the SFTP container. An agent of release 0.1 does not send it.
             'sftpPort' => ['nullable', 'integer', 'between:1,65535'],
             // The certificate of the panel domain. Only the agent on the panel server sends it.
@@ -151,7 +152,7 @@ class AgentController extends Controller
             // agent of an earlier release does not send it.
             'mesh' => ['nullable', 'array'],
             'mesh.publicKey' => ['required_with:mesh', 'string', 'max:64'],
-            'mesh.version' => ['integer', 'min:0'],
+            'mesh.version' => ['integer', 'between:0,9007199254740991'],
             'mesh.address' => ['nullable', 'string', 'max:45'],
             // True when the agent can operate the members of the networks of the customers.
             'mesh.networks' => ['boolean'],
@@ -169,7 +170,7 @@ class AgentController extends Controller
             'cronRuns.*.id' => ['required', 'string', 'max:64'],
             'cronRuns.*.at' => ['required', 'date'],
             'cronRuns.*.exitCode' => ['required', 'integer'],
-            'cronRuns.*.output' => ['nullable', 'string'],
+            'cronRuns.*.output' => ['nullable', 'string', 'max:100000'],
         ]);
 
         // A server is degraded when a necessary service does not run. An optional part, for

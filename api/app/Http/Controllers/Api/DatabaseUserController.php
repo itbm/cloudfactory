@@ -9,10 +9,10 @@ use App\Models\Database;
 use App\Models\DatabaseServer;
 use App\Models\DatabaseUser;
 use App\Models\Website;
-use App\Services\DatabaseTools;
 use App\Services\Audit;
 use App\Services\DatabaseNames;
 use App\Services\DatabaseServers;
+use App\Services\DatabaseTools;
 use App\Services\JobDispatcher;
 use App\Validation\Input;
 use Illuminate\Http\JsonResponse;
@@ -72,6 +72,8 @@ class DatabaseUserController extends Controller
         [$grants, $grantServers] = $this->grants($website, $data['engine'], $data['grants'] ?? []);
         $server = self::serverOfNewUser($website, $data['engine'], $grantServers, $data['databaseServerId'] ?? null);
 
+        // Adversarial review, finding A4-10: the refusal comes before the panel changes its records.
+        DatabaseServers::refuseMoving($server, 'user');
         $user = DB::transaction(function () use ($website, $data, $name, $grants, $server) {
             $user = $website->databaseUsers()->create(['engine' => $data['engine'], 'name' => $name, 'access' => $data['access'] ?? 'website', 'database_server_id' => $server->id]);
             $user->databases()->attach($grants);
@@ -110,6 +112,7 @@ class DatabaseUserController extends Controller
                 }
             }
         }
+        DatabaseServers::refuseMoving($user->databaseServer, 'user');
         DB::transaction(function () use ($user, $data, $grants) {
             if (isset($data['access'])) {
                 $user->update(['access' => $data['access']]);

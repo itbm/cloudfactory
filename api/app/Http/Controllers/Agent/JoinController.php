@@ -24,7 +24,9 @@ class JoinController extends Controller
     {
         $data = $request->validate([
             'token' => ['required', 'string', 'max:200'],
-            'name' => ['required', 'regex:/^[a-z][a-z0-9-]{1,30}$/', 'unique:servers,name'],
+            // Adversarial review, finding A3-13: the panel checks that the name is free only
+            // after the token is correct, so the answer tells an unknown caller nothing.
+            'name' => ['required', 'string', 'regex:/^[a-z][a-z0-9-]{1,30}$/'],
             'agentUrl' => ['required', 'url:https', 'max:255'],
             'certificateSha256' => ['required', Input::rule('sha256')],
             'certificatePem' => ['required', 'string', 'max:8000'],
@@ -57,6 +59,9 @@ class JoinController extends Controller
                 ->whereNull('used_at')->where('expires_at', '>', now())->lockForUpdate()->first();
             if (! $join) {
                 return response()->json(['message' => 'The join token is not valid or has expired.'], 401);
+            }
+            if (Server::where('name', $data['name'])->exists()) {
+                return response()->json(['message' => 'The name has already been taken.', 'errors' => ['name' => ['The name has already been taken.']]], 422);
             }
             $join->update(['used_at' => now()]);
 

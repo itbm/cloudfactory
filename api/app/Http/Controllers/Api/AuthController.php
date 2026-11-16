@@ -44,13 +44,15 @@ class AuthController extends Controller
     public function login(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'email' => ['required', 'email'],
-            'password' => ['required', 'string'],
+            'email' => ['required', 'string', 'email', 'max:255'],
+            'password' => ['required', 'string', 'max:1000'],
             'totp' => ['nullable', 'digits:6'],
             // A random ID that the web panel keeps in the browser. A sign-in from a different
             // device gives an email to the user.
             'deviceId' => ['nullable', 'string', 'max:100'],
         ]);
+        // The panel keeps each email in lower case (adversarial review, finding A1-02).
+        $data['email'] = User::normalEmail($data['email']);
         $ip = (string) $request->ip();
         if ($seconds = LoginThrottle::lockedFor($data['email'], $ip)) {
             return response()->json(['message' => "Too many failed attempts. Try again in {$seconds} seconds."], 429)
@@ -79,6 +81,11 @@ class AuthController extends Controller
         if (! Totp::consume($user, $code)) {
             self::failed($data['email'], $ip);
             throw ValidationException::withMessages(['totp' => 'The code is not correct. A code works one time only.']);
+        }
+        // Adversarial review, finding A1-10: a temporary password stops after some time. The
+        // user has shown the correct password, so the answer can give the reason.
+        if ($user->must_change_password && $user->temporary_password_at && $user->temporary_password_at->lt(now()->subHours(UserController::TEMPORARY_PASSWORD_HOURS))) {
+            return response()->json(['message' => 'This temporary password is too old. Ask your provider for a new temporary password.'], 403);
         }
         if ($user->isSuspended()) {
             // A user who gave a correct code has shown more than the password, and gets the reason.
@@ -135,8 +142,8 @@ class AuthController extends Controller
             'totp' => ['nullable', 'digits:6'],
         ]);
         $user = self::sessionUser($request);
-        self::checkSecondFactor($user, $data['currentPassword'], $data['totp'] ?? '', 'currentPassword');
-        $user->forceFill(['password' => $data['password'], 'must_change_password' => false])->save();
+        self::withIdentityLock($user, fn () => self::checkSecondFactor($user, $data['currentPassword'], $data['totp'] ?? '', 'currentPassword'));
+        $user->forceFill(['password' => $data['password'], 'must_change_password' => false, 'temporary_password_at' => null])->save();
         $current = $user->currentAccessToken();
         $user->tokens()->when($current?->id, fn ($q, $id) => $q->where('id', '!=', $id))->delete();
         Audit::record($request, 'Changed password', $user->email);
@@ -172,9 +179,11 @@ class AuthController extends Controller
         if ($user->totp_secret) {
             return response()->json(['message' => 'TOTP is already on. Turn it off first.'], 409);
         }
-        if (! Hash::check($data['password'], $user->password)) {
-            throw ValidationException::withMessages(['password' => 'The password is not correct.']);
-        }
+        self::withIdentityLock($user, function () use ($data, $user) {
+            if (! Hash::check($data['password'], $user->password)) {
+                throw ValidationException::withMessages(['password' => 'The password is not correct.']);
+            }
+        });
         $pending = Cache::get(self::pendingTotpKey($user));
         if (! $pending) {
             throw ValidationException::withMessages(['code' => 'Start the setup again. The key is valid for 10 minutes.']);
@@ -199,7 +208,7 @@ class AuthController extends Controller
         if (! $user->totp_secret) {
             return response()->json(null, 204);
         }
-        self::checkSecondFactor($user, $data['password'], $data['code'], 'password', 'code');
+        self::withIdentityLock($user, fn () => self::checkSecondFactor($user, $data['password'], $data['code'], 'password', 'code'));
         $user->forceFill(['totp_secret' => null, 'totp_last_step' => null])->save();
         Audit::record($request, 'Removed TOTP', $user->email);
 
@@ -240,15 +249,30 @@ class AuthController extends Controller
             'totp' => ['nullable', 'digits:6'],
         ], ['password.required' => 'Type your password to confirm this change.']);
         $user = $request->user();
+        self::withIdentityLock($user, fn () => self::checkSecondFactor($user, $data['password'], $data['totp'] ?? '', 'password'));
+    }
+
+    /**
+     * Runs a check of the password or of a TOTP code of a signed-in user. After 5 failed
+     * checks, the user cannot do a new check for 15 minutes. Without this lock, a person with
+     * a stolen token could try passwords and codes with only the rate limit of the route
+     * (adversarial review, finding A1-03).
+     *
+     * @throws ValidationException
+     */
+    private static function withIdentityLock(User $user, \Closure $check): void
+    {
         $key = "confirm-identity:{$user->id}";
         if (RateLimiter::tooManyAttempts($key, 5)) {
             $seconds = RateLimiter::availableIn($key);
             abort(response()->json(['message' => "Too many failed attempts. Try again in {$seconds} seconds."], 429)->header('Retry-After', (string) $seconds));
         }
         try {
-            self::checkSecondFactor($user, $data['password'], $data['totp'] ?? '', 'password');
+            $check();
         } catch (ValidationException $e) {
-            RateLimiter::hit($key, 15 * 60);
+            if (RateLimiter::hit($key, 15 * 60) === 5) {
+                Audit::system('Locked password and code checks after failed attempts', $user->email);
+            }
             throw $e;
         }
         RateLimiter::clear($key);
@@ -375,13 +399,17 @@ class AuthController extends Controller
         if ($wider) {
             return response()->json(['message' => 'A new token cannot have scopes that this token does not have: '.implode(', ', $wider).'.'], 403);
         }
-        if (! Hash::check($data['password'], $user->password)) {
-            throw ValidationException::withMessages(['password' => 'The password is not correct.']);
+        self::withIdentityLock($user, fn () => self::checkSecondFactor($user, $data['password'], $data['totp'] ?? '', 'password'));
+        // Adversarial review, finding A1-13: the name of a sign-in session is not available
+        // for an API token, and a new token does not live longer than the token that makes it.
+        if (strcasecmp(trim($data['name']), self::SESSION) === 0) {
+            throw ValidationException::withMessages(['name' => 'This name is reserved. Give a different name.']);
         }
-        if (! Totp::consume($user, $data['totp'] ?? '')) {
-            throw ValidationException::withMessages(['totp' => 'The code is not correct.']);
+        $expires = now()->addDays($data['expiresInDays']);
+        if ($current?->name !== self::SESSION && $current?->expires_at && $expires->gt($current->expires_at)) {
+            $expires = $current->expires_at;
         }
-        $token = $user->createToken($data['name'], $data['scopes'], now()->addDays($data['expiresInDays']));
+        $token = $user->createToken($data['name'], $data['scopes'], $expires);
         Audit::record($request, 'Created API token', $data['name']);
 
         return response()->json([

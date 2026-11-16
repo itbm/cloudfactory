@@ -144,6 +144,9 @@ class AgentClient
                 'ssl_key' => $config['client_key'],
                 // Trust only the certificate that this agent sent when it joined.
                 'verify' => self::trustFile($server),
+                // Adversarial review, finding A3-07: the panel does not follow a redirect
+                // from an agent to a different address.
+                'allow_redirects' => false,
             ]);
     }
 

@@ -409,7 +409,8 @@ Delete the old repository in the object storage when you do not need its snapsho
 
 The panel does not send email. A new user gets a temporary password, which the panel shows
 one time. Give it to the user in a safe way. At the first sign-in, the user must set a new
-password.
+password. A temporary password is valid for 72 hours. After that time, give the user a new
+temporary password.
 
 - To add a customer with its first user, go to **Customers > Add customer** and keep
   **Make a user who can sign in** selected. With the CLI:
