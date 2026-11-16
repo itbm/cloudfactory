@@ -27,6 +27,8 @@ func init() {
 		"network", "backups", "backup", "jobs", "job", "servers", "server", "mesh", "panel-certificate", "images", "image", "sftp",
 		"customers", "customer", "users", "user", "plans", "plan", "audit", "account", "rollouts", "rollout", "tokens", "token",
 		"files", "file", "logs", "cron", "deploys", "deploy", "plugins", "plugin",
+		// Adversarial review, finding C1-02: these commands were not in the list.
+		"env", "mail", "email", "mail-server", "notifications", "notification",
 	} {
 		builtin[c] = true
 	}
@@ -45,7 +47,7 @@ func (a *app) runExternal(ctx context.Context, args []string) (found bool, err e
 		return false, nil
 	}
 	cmd := exec.CommandContext(ctx, path, args[1:]...)
-	cmd.Stdout, cmd.Stderr = a.out, a.err
+	cmd.Stdout, cmd.Stderr = a.raw, a.rawErr
 	cmd.Stdin = a.in
 	if cmd.Stdin == nil {
 		cmd.Stdin = os.Stdin
@@ -58,12 +60,21 @@ func (a *app) runExternal(ctx context.Context, args []string) (found bool, err e
 	if err := cmd.Run(); err != nil {
 		var exit *exec.ExitError
 		if errors.As(err, &exit) {
-			return true, fmt.Errorf("cf-%s stopped with exit code %d", args[0], exit.ExitCode())
+			// The exit status of the program becomes the exit status of cf.
+			return true, &exitError{code: exit.ExitCode(), text: fmt.Sprintf("cf-%s stopped with exit code %d", args[0], exit.ExitCode())}
 		}
 		return true, err
 	}
 	return true, nil
 }
+
+// exitError is an error with the exit status that cf gives.
+type exitError struct {
+	code int
+	text string
+}
+
+func (e *exitError) Error() string { return e.text }
 
 // findPlugin gets an installed plugin by its slug or its ID.
 func (a *app) findPlugin(ctx context.Context, ref string) (map[string]any, error) {

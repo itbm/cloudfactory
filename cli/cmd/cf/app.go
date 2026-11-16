@@ -78,7 +78,8 @@ Usage:
   cf deploys secret set WEBSITE NAME                   An environment variable of the build commands. The value is read
                                                        from CF_SECRET or stdin.
   cf deploys secret remove WEBSITE NAME
-  cf deploys start WEBSITE                             Deploy the branch now. The website changes to the new release with no stop.
+  cf deploys start WEBSITE [--forget-host-key]         Deploy the branch now. The website changes to the new release with no stop.
+                                                       --forget-host-key: after the Git server got a new SSH host key.
   cf deploys activate WEBSITE RELEASE_ID               Go back to a release that is on the server.
   cf deploys disconnect WEBSITE
   cf database-servers list [--customer ID] [--server SERVER] [--engine mariadb|postgresql|valkey]
@@ -254,6 +255,8 @@ The panel address must start with https://. An address with http:// is accepted 
 
 type app struct {
 	out, err io.Writer
+	// raw is the output with no change: for the content of a file and for a plugin command.
+	raw, rawErr io.Writer
 	// in gives the password when CF_PASSWORD is not set.
 	in      io.Reader
 	lines   *bufio.Reader
@@ -321,14 +324,35 @@ func saveSettings(s settings) error {
 		return err
 	}
 	b, _ := json.MarshalIndent(s, "", "  ")
-	// The file holds a token, so only the user can read it.
-	return os.WriteFile(p, b, 0o600)
+	// The file holds a token, so only the user can read it. Adversarial review, finding C1-10:
+	// an old file can have a different mode, thus cf writes a new file and puts it in place.
+	tmp, err := os.CreateTemp(filepath.Dir(p), ".cli-*.json")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name())
+	if err := tmp.Chmod(0o600); err != nil {
+		tmp.Close()
+		return err
+	}
+	if _, err := tmp.Write(b); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), p)
 }
 
 // globalFlags removes --json and --no-wait from the arguments.
 func (a *app) globalFlags(args []string) []string {
 	var rest []string
-	for _, arg := range args {
+	for i, arg := range args {
+		// Adversarial review, finding C1-11: the words after "--" are not options of cf.
+		if arg == "--" {
+			return append(rest, args[i:]...)
+		}
 		switch arg {
 		case "--json":
 			a.json = true
@@ -342,6 +366,10 @@ func (a *app) globalFlags(args []string) []string {
 }
 
 func (a *app) dispatch(ctx context.Context, args []string) error {
+	if a.raw == nil {
+		a.raw, a.rawErr = a.out, a.err
+		a.out, a.err = &cleanWriter{a.out}, &cleanWriter{a.err}
+	}
 	args = a.globalFlags(args)
 	if len(args) == 0 || args[0] == "help" || args[0] == "--help" || args[0] == "-h" {
 		fmt.Fprint(a.out, usage)
@@ -692,7 +720,7 @@ func cell(v any) string {
 	case nil:
 		return "-"
 	case string:
-		return x
+		return oneLine(x)
 	case float64:
 		return strconv.FormatFloat(x, 'f', -1, 64)
 	case bool:
@@ -996,12 +1024,32 @@ func (a *app) dbList(ctx context.Context, websiteID string) (dbList, error) {
 
 // find gives the ID of a database or a user. The name can have the prefix of the website or not.
 func (l dbList) find(rows []map[string]any, ref, what string) (map[string]any, error) {
+	// Adversarial review, finding C1-03: a MariaDB database and a PostgreSQL database of one
+	// website can have the same name. An ID, or ENGINE:NAME, selects one of them.
+	engine, name := "", ref
+	if e, n, ok := strings.Cut(ref, ":"); ok && (e == "mariadb" || e == "postgresql" || e == "valkey") {
+		engine, name = e, n
+	}
+	var found []map[string]any
 	for _, r := range rows {
-		if r["id"] == ref || r["name"] == ref || r["name"] == l.Prefix+ref {
+		if r["id"] == ref {
 			return r, nil
 		}
+		if (r["name"] == name || r["name"] == l.Prefix+name) && (engine == "" || r["engine"] == engine) {
+			found = append(found, r)
+		}
 	}
-	return nil, fmt.Errorf("the website has no %s %q", what, ref)
+	switch len(found) {
+	case 0:
+		return nil, fmt.Errorf("the website has no %s %q", what, ref)
+	case 1:
+		return found[0], nil
+	}
+	var choices []string
+	for _, r := range found {
+		choices = append(choices, fmt.Sprintf("%v:%s", r["engine"], name))
+	}
+	return nil, fmt.Errorf("the website has more than one %s %q. Give one of: %s", what, ref, strings.Join(choices, ", "))
 }
 
 // grants reads --grant DATABASE=readonly|readwrite values.

@@ -310,7 +310,11 @@ func (a *app) mailboxes(ctx context.Context, verb string, args []string) error {
 			var key []byte
 			var err error
 			if *keyFile == "-" {
-				key, err = io.ReadAll(io.LimitReader(a.in, 1<<20))
+				in := a.in
+				if in == nil {
+					in = os.Stdin
+				}
+				key, err = io.ReadAll(io.LimitReader(in, 1<<20))
 			} else {
 				key, err = os.ReadFile(*keyFile)
 			}
