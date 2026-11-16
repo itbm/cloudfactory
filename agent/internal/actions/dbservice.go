@@ -205,6 +205,9 @@ func (d *Deps) EnsureDatabaseService(ctx context.Context, s dbServer) error {
 	if err != nil {
 		return err
 	}
+	if record.Held {
+		return fmt.Errorf("%s: %w", s, errServerMoves)
+	}
 	// The address of the container must be on "lo" before Podman publishes the port. The
 	// firewall lets the websites of the customer connect to the port.
 	if err := d.syncDatabaseAccess(ctx); err != nil {
@@ -292,7 +295,8 @@ func (d *Deps) RefreshDatabaseServices(ctx context.Context) error {
 		errs = append(errs, d.syncDatabaseAccess(ctx))
 	}
 	for _, s := range servers {
-		if err := d.EnsureDatabaseService(ctx, s); err != nil {
+		// A database server that moves stays stopped after a restart of the agent.
+		if err := d.EnsureDatabaseService(ctx, s); err != nil && !errors.Is(err, errServerMoves) {
 			errs = append(errs, fmt.Errorf("%s: %w", s, err))
 		}
 	}

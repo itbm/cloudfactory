@@ -420,6 +420,8 @@ func (s *State) PutDatabaseServer(customer, key string, record DatabaseServer, u
 		return false, err
 	}
 	if old := inst.Servers[key]; old != nil {
+		// Only HoldDatabaseServer changes the hold of a move.
+		record.Held = old.Held
 		switch {
 		case old.Engine != record.Engine:
 			return false, fmt.Errorf("the database server %s has the engine %s, not %s", key, old.Engine, record.Engine)
@@ -441,6 +443,30 @@ func (s *State) PutDatabaseServer(customer, key string, record DatabaseServer, u
 	inst.Servers[key] = &record
 	return true, s.write(f)
 }
+
+// HoldDatabaseServer sets or removes the hold of a move on a database server (see
+// DatabaseServer.Held). It does nothing when the state has no record of the database server.
+func (s *State) HoldDatabaseServer(key string, held bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	f, err := s.read()
+	if err != nil {
+		return err
+	}
+	for _, inst := range f.Databases {
+		if srv := inst.Servers[key]; srv != nil {
+			if srv.Held == held {
+				return nil
+			}
+			srv.Held = held
+			return s.write(f)
+		}
+	}
+	return nil
+}
+
+// errServerMoves is the error of a job that needs a database server that moves.
+var errServerMoves = errors.New("the database server moves to a different server now; try again when the move is complete")
 
 // DeleteDatabaseServer removes the record of a database server. The record of a customer with
 // no website and no database server goes too.

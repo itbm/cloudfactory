@@ -335,8 +335,8 @@ func TestStagingCopyCopiesTheDatabases(t *testing.T) {
 	}
 	// The dump goes from one client to the other, not through the memory of the agent.
 	client := podmanOf(mariaServerKey) + "exec"
-	if !f.Called(client+" cf-mariadb-"+mariaServerKey+" mariadb-dump --user=root --single-transaction --routines acme_x7k2_shop | "+client) ||
-		!strings.Contains(strings.Join(f.Calls, "\n"), "mariadb --sandbox --user=cfrestore_") {
+	if !f.Called(client+" cf-mariadb-"+mariaServerKey+" mariadb-dump --user=root --single-transaction --routines --events acme_x7k2_shop") ||
+		!strings.Contains(strings.Join(f.Calls, "\n"), "mariadb --sandbox --user=cfdefiner_") {
 		t.Errorf("no copy of the source: %v", f.Calls)
 	}
 	// A copy needs the database server of each database and of each user.
@@ -780,7 +780,7 @@ func TestPostgreSQLRefusesWebsiteUsersInItsOwnDatabases(t *testing.T) {
 	if err := run(t)(d.CreateDatabase(req)); err != nil {
 		t.Fatal(err)
 	}
-	const revoke = "REVOKE CONNECT ON DATABASE postgres, template1 FROM PUBLIC;\n"
+	revoke := pgSafe(pgHarden)
 	first, create := index(f.Inputs, revoke), -1
 	for i, in := range f.Inputs {
 		if strings.Contains(in, `CREATE DATABASE "acme_x7k2_shop"`) {

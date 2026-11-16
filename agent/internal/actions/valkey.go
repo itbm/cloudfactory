@@ -269,8 +269,44 @@ func valkeyRules(prefix string, number int) []string {
 		"+@all", "-@admin", "-@dangerous",
 		"+info", "+keys", "+flushdb", "+sort", "+sort_ro",
 		"+client|setname", "+client|setinfo", "+client|id", "+client|getname", "+client|info", "+client|reply",
-		"+client|tracking", "+client|trackinginfo", "+client|caching", "+client|getredir", "+client|no-touch",
+		"+client|no-touch",
 		"-function", "-fcall", "-fcall_ro", "-script|flush", "-script|kill", "-pubsub", "-move",
+		valkeyNoTracking[0], valkeyNoTracking[1], valkeyNoTracking[2], valkeyNoTracking[3],
+	}
+}
+
+// valkeyNoTracking refuses the client-side caching commands. The messages of CLIENT TRACKING
+// are for all databases of the server together: with the broadcast mode, a website got the
+// name of each key that a different website of the customer changed, for example the IDs of
+// sessions (adversarial review, finding G3-04).
+var valkeyNoTracking = []string{"-client|tracking", "-client|trackinginfo", "-client|caching", "-client|getredir"}
+
+// valkeyTighten gives the rules of valkeyNoTracking to each user from an earlier release of
+// the agent, and closes the connections of that user, which can have tracking on.
+func valkeyTighten(v *valkeyConn) {
+	res, err := v.do("ACL", "LIST")
+	if err != nil {
+		return
+	}
+	lines, _ := res.([]any)
+	changed := false
+	for _, l := range lines {
+		line, _ := l.(string)
+		name, _ := parseValkeyUser(line)
+		if name == "" || name == valkeyAdmin || strings.Contains(line, valkeyNoTracking[0]) {
+			continue
+		}
+		if _, err := v.do(append([]string{"ACL", "SETUSER", name}, valkeyNoTracking...)...); err != nil {
+			slog.Warn("Valkey: the user did not get the rules against client tracking", "user", name, "err", err)
+			continue
+		}
+		_, _ = v.do("CLIENT", "KILL", "USER", name)
+		changed = true
+	}
+	if changed {
+		if _, err := v.do("ACL", "SAVE"); err != nil {
+			slog.Warn("Valkey: save the users", "err", err)
+		}
 	}
 }
 
@@ -464,9 +500,18 @@ func (d *Deps) valkeySizes(ctx context.Context, s dbServer) ([]panel.DatabaseSiz
 	}
 	defer v.Close()
 	users, err := valkeyUsers(v)
+	if err != nil && strings.Contains(err.Error(), "BUSY") {
+		// A script of a website that does not end stops the server for all websites of the
+		// customer. A website cannot stop a script (adversarial review, finding G3-10).
+		slog.Warn("Valkey: a script does not end; the agent stops it", "server", s.ID)
+		_, _ = v.do("SCRIPT", "KILL")
+		_, _ = v.do("FUNCTION", "KILL")
+		users, err = valkeyUsers(v)
+	}
 	if err != nil {
 		return nil, err
 	}
+	valkeyTighten(v)
 	info, err := v.do("INFO", "keyspace")
 	if err != nil {
 		return nil, err

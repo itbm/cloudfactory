@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path"
@@ -660,7 +661,24 @@ func (d *Deps) copyDatabase(ctx context.Context, from dbServer, fromName string,
 		if err != nil {
 			return err
 		}
-		return d.Run.Pipe(ctx, dump, client)
+		if to.Engine != "mariadb" {
+			return d.Run.Pipe(ctx, dump, client)
+		}
+		// The dump goes through withoutDefiners, as a stream: the user of the restore
+		// cannot make an object for the definer of the source (finding G3-02).
+		pr, pw := io.Pipe()
+		dumped := make(chan error, 1)
+		go func() {
+			err := d.Run.Stream(ctx, nil, pw, dump[0], dump[1:]...)
+			pw.CloseWithError(err)
+			dumped <- err
+		}()
+		err = d.Run.Stream(ctx, withoutDefiners(pr), nil, client[0], client[1:]...)
+		pr.CloseWithError(err)
+		if derr := <-dumped; derr != nil && err == nil {
+			err = derr
+		}
+		return err
 	})
 	if err != nil {
 		return fmt.Errorf("copy %s to %s: %w", fromName, toName, err)

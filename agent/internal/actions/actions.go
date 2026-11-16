@@ -369,6 +369,12 @@ type DatabaseServer struct {
 	VCPUs       float64 `json:"vcpus,omitempty"`
 	MemoryBytes int64   `json:"memoryBytes,omitempty"`
 	DiskBytes   int64   `json:"diskBytes,omitempty"`
+	// Held is true while the database server moves to or from this server. The agent does
+	// not start a held database server: not for a job of a website, not for a backup and
+	// not after a restart. Before, such a start gave a copy of files that changed, or
+	// writes on the old server that the move lost (adversarial review, findings A4-01,
+	// G4-02 and G4-07). Only the jobs of the move and SetDatabaseServer change it.
+	Held bool `json:"held,omitempty"`
 }
 
 func (s *State) read() (stateFile, error) {

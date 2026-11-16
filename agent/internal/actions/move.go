@@ -101,7 +101,15 @@ func (d *Deps) SendDatabaseServer(req *agentv1.SendDatabaseServerRequest) (jobs.
 		return jobs.Job{}, err
 	}
 	s := in.Server
-	return jobs.Job{ID: req.GetJobId(), Key: key, Steps: []jobs.Step{
+	// start starts the database server on this server again, after a move that failed.
+	start := func(ctx context.Context) error {
+		if err := d.State.HoldDatabaseServer(key, false); err != nil {
+			return err
+		}
+		return d.EnsureDatabaseService(ctx, s)
+	}
+	// The data can take hours (Long).
+	return jobs.Job{ID: req.GetJobId(), Key: key, Long: true, Steps: []jobs.Step{
 		{Name: "Stop database server", Do: func(ctx context.Context) error {
 			if _, ok := d.existingServer(s.ID, s.Engine); !ok {
 				return fmt.Errorf("this server does not have %s", s)
@@ -109,7 +117,15 @@ func (d *Deps) SendDatabaseServer(req *agentv1.SendDatabaseServerRequest) (jobs.
 			lock := d.instanceLock(key)
 			lock.Lock()
 			defer lock.Unlock()
-			return d.stopServer(ctx, s)
+			// The hold comes first: no other job starts the database server again while
+			// its data goes to the new server.
+			if err := d.State.HoldDatabaseServer(key, true); err != nil {
+				return err
+			}
+			if err := d.stopServer(ctx, s); err != nil {
+				return errors.Join(err, d.State.HoldDatabaseServer(key, false))
+			}
+			return nil
 		}},
 		{Name: "Send data", Do: func(ctx context.Context) error {
 			lock := d.instanceLock(key)
@@ -117,14 +133,26 @@ func (d *Deps) SendDatabaseServer(req *agentv1.SendDatabaseServerRequest) (jobs.
 			err := d.sendServer(ctx, in)
 			lock.Unlock()
 			if err == nil {
+				// The database server stays held on this server. The panel removes it.
 				return nil
+			}
+			if strings.Contains(err.Error(), sentNoAnswer) {
+				// The new server possibly has all the data and starts the database server.
+				// A start on this server then gave two copies that operate, and the panel
+				// removed this copy with its new data (adversarial review, finding G4-03).
+				// The database server stays stopped. The panel knows the result of the new
+				// server: it removes this copy, or it starts it again (SetDatabaseServer).
+				return fmt.Errorf("%w. The database server stays stopped on this server until the panel has the result of the new server", err)
 			}
 			// The database server operates on this server again. The panel removes it from
 			// the new server.
-			return errors.Join(err, d.EnsureDatabaseService(ctx, s))
+			return errors.Join(err, start(ctx))
 		}},
 	}}, nil
 }
+
+// sentNoAnswer is in the error of a send that wrote all the data and got no answer.
+const sentNoAnswer = "sent all the data, and the new server did not answer"
 
 // ReceiveDatabaseServer makes a database server that moves to this server, receives its data
 // from the old server, and starts it.
@@ -147,12 +175,17 @@ func (d *Deps) ReceiveDatabaseServer(req *agentv1.ReceiveDatabaseServerRequest) 
 	if err := checkTransfer(in); err != nil {
 		return jobs.Job{}, err
 	}
-	return jobs.Job{ID: req.GetJobId(), Key: key, Steps: []jobs.Step{
+	return jobs.Job{ID: req.GetJobId(), Key: key, Long: true, Steps: []jobs.Step{
 		{Name: "Prepare database server", Do: func(ctx context.Context) error {
 			lock := d.instanceLock(key)
 			lock.Lock()
 			defer lock.Unlock()
 			if _, err := d.putServer(customer, key, recordOf(s), true); err != nil {
+				return err
+			}
+			// The database server does not start before it has all its data: not for a
+			// different job, and not after a restart of the agent or a receive that failed.
+			if err := d.State.HoldDatabaseServer(key, true); err != nil {
 				return err
 			}
 			// A job that runs again finds a database server that can operate. It must not
@@ -179,6 +212,9 @@ func (d *Deps) ReceiveDatabaseServer(req *agentv1.ReceiveDatabaseServerRequest) 
 		{Name: "Start database server", Do: func(ctx context.Context) error {
 			// The first step wrote the unit. systemd makes the service from it now.
 			if _, err := d.Host.Systemctl(ctx, dbUser(srv), "daemon-reload"); err != nil {
+				return err
+			}
+			if err := d.State.HoldDatabaseServer(key, false); err != nil {
 				return err
 			}
 			return d.EnsureDatabaseService(ctx, srv)
@@ -275,7 +311,14 @@ func (d *Deps) sendServer(ctx context.Context, in transferIn) error {
 	if err != nil {
 		return fmt.Errorf("read the secret of %s: %w", s, err)
 	}
-	if err := d.mountDisk(ctx, s); err != nil {
+	// Only a database server with a disk image has a disk to mount. A database server with a
+	// user quota or with no disk limit has a directory. Before, the mount of an image that
+	// did not exist failed each such move (adversarial review, finding G4-01).
+	if _, err := os.Lstat(d.diskImage(s)); err == nil {
+		if err := d.mountDisk(ctx, s); err != nil {
+			return err
+		}
+	} else if !os.IsNotExist(err) {
 		return err
 	}
 	disk, err := safefs.Open(d.diskDir(s))
@@ -303,8 +346,8 @@ func (d *Deps) sendServer(ctx context.Context, in transferIn) error {
 	}
 	_ = conn.SetReadDeadline(time.Now().Add(transferAnswer))
 	answer, err := io.ReadAll(io.LimitReader(conn, 64))
-	if err != nil {
-		return fmt.Errorf("the server that receives %s did not answer: %w", s, err)
+	if err != nil || len(answer) == 0 {
+		return fmt.Errorf("this server %s of %s: %v", sentNoAnswer, s, err)
 	}
 	if string(answer) != transferOK {
 		return fmt.Errorf("the server that receives %s did not accept the data: %q", s, strings.TrimSpace(string(answer)))
@@ -485,7 +528,10 @@ func (d *Deps) receiveServer(ctx context.Context, in transferIn) error {
 			conn.Close()
 			continue
 		}
+		// The end of the job also ends a transfer that runs (finding G4-05).
+		stopConn := context.AfterFunc(ctx, func() { conn.Close() })
 		ok, err := d.receiveFrom(conn, in, uid, gid, record.DiskBytes)
+		stopConn()
 		if !ok {
 			// A connection with a wrong token does not stop the move.
 			conn.Close()
@@ -495,7 +541,13 @@ func (d *Deps) receiveServer(ctx context.Context, in transferIn) error {
 			_, err = host.WriteFile(marker, in.Token+"\n", 0o600)
 		}
 		if err == nil {
-			_, _ = io.WriteString(conn, transferOK)
+			// The old server starts its copy again when it does not get this answer in an
+			// error case, so this server does not start its copy when the answer did not
+			// go out.
+			if _, werr := io.WriteString(conn, transferOK); werr != nil {
+				_ = os.Remove(marker)
+				err = fmt.Errorf("the answer to the old server did not go out: %w", werr)
+			}
 		} else {
 			_, _ = io.WriteString(conn, "error: "+err.Error()+"\n")
 		}
@@ -564,7 +616,16 @@ func (r *idleReader) Read(p []byte) (int, error) {
 // database server. It gives the secret of the superuser. limit is the disk limit of the
 // database server, or 0 for no limit: root does not have the quota of the user.
 func receiveTree(disk *safefs.Dir, tr *tar.Reader, uid, gid int, limit int64) (secret []byte, err error) {
-	var total int64
+	var total, entries int64
+	// A database server with no disk limit can use the free space of the file system, less a
+	// reserve for the other database servers. root writes the files, and a user quota does
+	// not hold root (adversarial review, finding G4-06).
+	if limit <= 0 {
+		var st unix.Statfs_t
+		if err := unix.Statfs(disk.Base(), &st); err == nil {
+			limit = max(int64(st.Bavail)*st.Bsize-receiveReserve, 1)
+		}
+	}
 	for {
 		h, err := tr.Next()
 		if err == io.EOF {
@@ -572,6 +633,15 @@ func receiveTree(disk *safefs.Dir, tr *tar.Reader, uid, gid int, limit int64) (s
 		}
 		if err != nil {
 			return nil, err
+		}
+		// Each entry counts: a directory, a link and an empty file use an inode and a block.
+		entries++
+		total += 4096
+		if entries > maxReceiveEntries {
+			return nil, fmt.Errorf("the data has more than %d files", maxReceiveEntries)
+		}
+		if limit > 0 && total > limit {
+			return nil, fmt.Errorf("the data is larger than the space of %d bytes for this database server", limit)
 		}
 		if h.Name == transferSecret && h.Typeflag == tar.TypeReg {
 			if h.Size > maxSecret {
@@ -620,6 +690,15 @@ func receiveTree(disk *safefs.Dir, tr *tar.Reader, uid, gid int, limit int64) (s
 	}
 	return secret, nil
 }
+
+const (
+	// maxReceiveEntries is the largest number of files, directories and links of a database
+	// server that moves.
+	maxReceiveEntries = 5_000_000
+	// receiveReserve is the free space that a move of a database server with no disk limit
+	// leaves on the file system.
+	receiveReserve = 1 << 30
+)
 
 // receiveFile writes one regular file that does not exist.
 func receiveFile(disk *safefs.Dir, r io.Reader, rel string, size int64, mode os.FileMode, uid, gid int) error {

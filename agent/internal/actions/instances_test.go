@@ -1027,6 +1027,7 @@ func TestBackupAndRestoreUseTheDatabaseServerOfADatabase(t *testing.T) {
 	f.Rules = []execx.Rule{
 		{Prefix: "/usr/local/bin/cf-agent jail --ro ", Output: `{"message_type":"summary","snapshot_id":"1a2b3c4d","total_bytes_processed":2048}`},
 		{Prefix: "restic --repo s3:b/c --password-file  --json --retry-lock 30m restore", Do: func() error { return writeFile(file, dump) }},
+		ownSnapshot,
 	}
 	f.Calls, f.Inputs = nil, nil
 	backup := &agentv1.BackupRequest{JobId: jobID, WebsiteId: websiteID, UnixUser: "acme_x7k2", Kind: "manual", Target: "s3:b/c", Databases: []*agentv1.DatabaseRef{
@@ -1055,7 +1056,7 @@ func TestBackupAndRestoreUseTheDatabaseServerOfADatabase(t *testing.T) {
 			t.Errorf("the restore used a different database server: %s", c)
 		}
 	}
-	if in := inputsOf(f, podmanOf(secondServerKey)+"exec -i cf-mariadb-"+secondServerKey+" "); !strings.Contains(in, "GRANT ALL PRIVILEGES ON `acme\\_x7k2\\_blog`.* TO 'cfrestore_") {
+	if in := inputsOf(f, podmanOf(secondServerKey)+"exec -i cf-mariadb-"+secondServerKey+" "); !strings.Contains(in, "GRANT ALL PRIVILEGES ON `acme\\_x7k2\\_blog`.* TO 'cfdefiner_") {
 		t.Errorf("the database server of the database got no restore:\n%s", in)
 	}
 	// A database server that is not an ID of the panel stops each request.
