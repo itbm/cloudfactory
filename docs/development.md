@@ -66,7 +66,8 @@ The demo mode does not ask the public DNS. For a DNS zone with a name that start
 `elsewhere.`, it answers that the domain uses the name servers of a registrar. For each other
 zone, it answers that the domain uses the name servers of the panel.
 
-The panel ignores `CF_DEMO` when `APP_ENV` is `production`. Do not set it on a server.
+The panel uses `CF_DEMO` only when `APP_ENV` is `local`, `testing`, `demo` or `development`.
+Do not set it on a server.
 To try **Open in Adminer** in the demonstration mode, start Adminer on your computer and set
 its address in `api/.env`, for example `CF_ADMINER_URL=http://127.0.0.1:8090`. The panel adds
 the path of the customer to this address:

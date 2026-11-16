@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Enums\NotificationEvent;
+use App\Enums\Role;
 use App\Http\Controllers\Controller;
 use App\Jobs\SendEmailNotification;
 use App\Models\NotificationDelivery;
@@ -67,7 +68,7 @@ class NotificationController extends Controller
             ->paginate(self::perPage($request, 50, 200));
 
         return response()->json([
-            'data' => collect($page->items())->map(fn (NotificationDelivery $d) => self::present($d)),
+            'data' => collect($page->items())->map(fn (NotificationDelivery $d) => self::present($d, $request->user())),
             'meta' => ['currentPage' => $page->currentPage(), 'lastPage' => $page->lastPage(), 'total' => $page->total()],
         ]);
     }
@@ -76,7 +77,7 @@ class NotificationController extends Controller
     {
         $delivery = self::visible($request)->findOrFail($id);
 
-        return response()->json(self::present($delivery) + ['body' => $delivery->body]);
+        return response()->json(self::present($delivery, $request->user()) + ['body' => $delivery->body]);
     }
 
     /**
@@ -102,7 +103,7 @@ class NotificationController extends Controller
         SendEmailNotification::dispatch($delivery->id);
         Audit::record($request, 'Sent email again', $delivery->subject, $scope?->id);
 
-        return response()->json(self::present($delivery->fresh()));
+        return response()->json(self::present($delivery->fresh(), $request->user()));
     }
 
     /**
@@ -124,7 +125,7 @@ class NotificationController extends Controller
     }
 
     /** @return array<string, mixed> */
-    private static function present(NotificationDelivery $d): array
+    private static function present(NotificationDelivery $d, User $viewer): array
     {
         $event = NotificationEvent::tryFrom($d->event);
 
@@ -135,12 +136,20 @@ class NotificationController extends Controller
             'recipient' => $d->recipient,
             'subject' => $d->subject,
             'state' => $d->state,
-            'error' => $d->error,
+            // Adversarial review, finding A8-05: the error can have the host and the user name
+            // of the SMTP server. Only the owner of that server gets it.
+            'error' => $d->error === null ? null : (self::seesError($d, $viewer) ? $d->error : 'The email was not sent. Speak to your provider if this continues.'),
             'attempts' => $d->attempts,
             // Null: the server of the panel. Else the reseller whose server sent it.
             'sentBy' => $d->sender_id ? 'reseller' : 'panel',
             'createdAt' => $d->created_at?->toIso8601String(),
             'sentAt' => $d->sent_at?->toIso8601String(),
         ];
+    }
+
+    private static function seesError(NotificationDelivery $d, User $viewer): bool
+    {
+        return $viewer->isAdministrator() || $d->state === 'skipped'
+            || ($d->sender_id !== null && $viewer->role === Role::Reseller && $viewer->customer_id === $d->sender_id);
     }
 }

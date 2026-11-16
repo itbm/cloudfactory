@@ -24,10 +24,15 @@ use Illuminate\Support\ServiceProvider;
  */
 class DemoServiceProvider extends ServiceProvider
 {
+    /** The values of APP_ENV that permit the demonstration mode. */
+    public const ENVIRONMENTS = ['local', 'testing', 'demo', 'development'];
+
     /** True when the demonstration mode is on. A production panel never uses it. */
     public static function enabled(): bool
     {
-        return (bool) config('demo.enabled') && ! app()->environment('production');
+        // Adversarial review, finding A8-11: only these environments. A wrong word in APP_ENV
+        // on a server with customers does not start the mode.
+        return (bool) config('demo.enabled') && app()->environment(self::ENVIRONMENTS);
     }
 
     public function register(): void

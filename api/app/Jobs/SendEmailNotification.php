@@ -7,10 +7,10 @@ use App\Models\NotificationDelivery;
 use App\Services\Notifications\MailFailed;
 use App\Services\Notifications\MailTransport;
 use App\Services\Notifications\Senders;
-use App\Services\Notifications\SmtpHost;
 use App\Services\Notifications\Templates;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Throwable;
 
 /**
  * Sends one email notification. When the SMTP server does not accept the email, the queue
@@ -58,14 +58,13 @@ class SendEmailNotification implements ShouldQueue
         }
         $attempt = $delivery->attempts + 1;
         try {
-            // The address of the host can change after the check when the reseller saved it.
-            if ($server->customer_id && ($refusal = SmtpHost::refusalForReseller($server->host))) {
-                throw new MailFailed($refusal);
-            }
             $transport->send($server, $delivery->recipient, $delivery->subject, $delivery->body, Templates::html($delivery->body, $brand));
-        } catch (MailFailed $e) {
+        } catch (Throwable $e) {
             $last = $attempt >= self::ATTEMPTS;
-            $delivery->update(['attempts' => $attempt, 'error' => $e->getMessage(), 'state' => $last ? 'failed' : 'queued']);
+            $delivery->update(['attempts' => $attempt, 'error' => $e instanceof MailFailed ? $e->getMessage() : 'The panel could not send the email.', 'state' => $last ? 'failed' : 'queued']);
+            if (! $e instanceof MailFailed) {
+                report($e);
+            }
             if (! $last) {
                 $this->release($this->backoff()[$attempt - 1] ?? 300);
             }
@@ -73,5 +72,12 @@ class SendEmailNotification implements ShouldQueue
             return;
         }
         $delivery->update(['attempts' => $attempt, 'state' => 'sent', 'error' => null, 'sent_at' => now()]);
+    }
+
+    /** Adversarial review, finding A8-06: a delivery does not stay in the queue with no result. */
+    public function failed(?Throwable $e): void
+    {
+        NotificationDelivery::where('id', $this->deliveryId)->where('state', 'queued')
+            ->update(['state' => 'failed', 'error' => 'The panel could not send the email.']);
     }
 }

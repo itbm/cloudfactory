@@ -77,7 +77,10 @@ class Templates
     {
         $brand = Senders::brand(Senders::brandOwner($user));
 
-        return array_map(fn ($v) => (string) $v, ['name' => $user->name, 'brand' => $brand['name'], 'panelUrl' => $brand['url']] + $values);
+        // The name of a user is one line: a user cannot write the first lines of an email.
+        $name = mb_substr(trim((string) preg_replace('/\s+/u', ' ', $user->name)), 0, 100);
+
+        return array_map(fn ($v) => (string) $v, ['name' => $name, 'brand' => $brand['name'], 'panelUrl' => $brand['url']] + $values);
     }
 
     /**
@@ -92,7 +95,12 @@ class Templates
         $body = '';
         foreach ($paragraphs as $p) {
             $escaped = nl2br(htmlspecialchars($p, ENT_QUOTES | ENT_HTML5, 'UTF-8'), false);
-            $escaped = (string) preg_replace('#\bhttps?://[^\s<]+#', '<a href="$0" style="color:'.$brand['colour'].'">$0</a>', $escaped);
+            // Adversarial review, findings A8-02 and A8-04: a value of an email can have an
+            // address that a customer wrote. Only an address of the panel becomes a link.
+            $panel = rtrim(htmlspecialchars((string) ($brand['url'] ?? ''), ENT_QUOTES | ENT_HTML5, 'UTF-8'), '/');
+            $escaped = (string) preg_replace_callback('#\bhttps?://[^\s<]+#', fn (array $m) => $panel !== '' && ($m[0] === $panel || str_starts_with($m[0], $panel.'/'))
+                ? '<a href="'.$m[0].'" style="color:'.$brand['colour'].'">'.$m[0].'</a>'
+                : $m[0], $escaped);
             $body .= '<p style="margin:0 0 14px">'.$escaped."</p>\n";
         }
         $name = htmlspecialchars($brand['name'], ENT_QUOTES | ENT_HTML5, 'UTF-8');

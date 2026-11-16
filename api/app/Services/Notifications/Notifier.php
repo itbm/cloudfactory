@@ -30,6 +30,9 @@ use Throwable;
  */
 class Notifier
 {
+    /** The emails of one event that one user gets in one hour. */
+    public const MAX_PER_HOUR = 20;
+
     /**
      * @param  iterable<User>  $users
      * @param  array<string, scalar|null>  $values
@@ -58,6 +61,11 @@ class Notifier
     private function queue(NotificationEvent $event, User $user, array $values, ?string $dedupeKey): bool
     {
         if ($dedupeKey !== null && NotificationDelivery::where('user_id', $user->id)->where('dedupe_key', $dedupeKey)->exists()) {
+            return false;
+        }
+        // Adversarial review, finding A8-03: a customer can make many jobs fail. Each user gets
+        // a limited number of emails of one event in one hour.
+        if (NotificationDelivery::where('user_id', $user->id)->where('event', $event->value)->where('created_at', '>=', now()->subHour())->count() >= self::MAX_PER_HOUR) {
             return false;
         }
         $reseller = Senders::brandOwner($user);

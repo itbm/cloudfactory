@@ -251,7 +251,7 @@ Route::prefix('v1')->group(function () {
             Route::get('account', [AccountController::class, 'show']);
             Route::get('customers', [CustomerController::class, 'index']);
             Route::post('customers', [CustomerController::class, 'store']);
-            Route::patch('customers/{id}', [CustomerController::class, 'update']);
+            Route::patch('customers/{id}', [CustomerController::class, 'update'])->middleware('throttle:customer-changes');
             Route::get('plans', [PlanController::class, 'index']);
             Route::post('plans', [PlanController::class, 'store'])->middleware('admin');
             // White label: the default brand of the panel.
