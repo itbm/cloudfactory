@@ -273,9 +273,9 @@ func ContainerUnit(w Website) string {
 	} else if w.DatabaseAddress != "" {
 		// A website with no hosts file. The database servers of the customer publish their
 		// ports on this address.
-		line("AddHost", MariaDBHost+":"+w.DatabaseAddress)
-		line("AddHost", PostgreSQLHost+":"+w.DatabaseAddress)
-		line("AddHost", ValkeyHost+":"+w.DatabaseAddress)
+		for _, e := range engineSpecs {
+			line("AddHost", e.Host+":"+w.DatabaseAddress)
+		}
 	}
 	line("Volume", w.SiteDir+":/app:Z")
 	if w.IniFile != "" && IsPHP(w.Runtime) {
@@ -480,13 +480,11 @@ func DatabaseContainer(engine, id string) string {
 // and the port of the first database server of the engine on the address of a customer. The
 // website containers connect through the host names MariaDBHost, PostgreSQLHost and ValkeyHost.
 func DatabasePort(engine string) int {
-	switch engine {
-	case "postgresql":
-		return 5432
-	case "valkey":
-		return 6379
+	if e, ok := Engine(engine); ok {
+		return e.Port
 	}
-	return 3306
+	// The first engine. The agent checks each engine name before it gets here.
+	return engineSpecs[0].Port
 }
 
 // DatabasePorts is the number of ports of each engine on the address of a customer: the usual
@@ -519,7 +517,7 @@ func ValkeyArgs(d Database) []string {
 	}
 	return []string{
 		"--bind", "0.0.0.0",
-		"--port", strconv.Itoa(DatabasePort("valkey")),
+		"--port", strconv.Itoa(ValkeyPort),
 		"--databases", strconv.Itoa(ValkeyDatabases),
 		// The users and the database number of each user. Each connection needs a user and a
 		// password: the user "default" has the password of the administrator.
@@ -547,7 +545,8 @@ func DatabaseUnit(d Database) string {
 	if d.Port > 0 {
 		published = strconv.Itoa(d.Port)
 	}
-	description := "Cloudfactory " + map[string]string{"mariadb": "MariaDB", "postgresql": "PostgreSQL", "valkey": "Valkey"}[d.Engine] + " database server " + d.ID
+	spec, _ := Engine(d.Engine)
+	description := "Cloudfactory " + spec.Label + " database server " + d.ID
 	// A database server has its own Unix user on the host, and that user owns the data
 	// files. In the container, that user is the database user of the image. Thus the
 	// database server starts as the database user, with no capability, and each file that
@@ -576,39 +575,8 @@ func DatabaseUnit(d Database) string {
 		"ReadOnly=true",
 		"Tmpfs=/tmp",
 	}
-	switch d.Engine {
-	case "valkey":
-		lines = append(lines,
-			// The data and the user file. The files belong to the Unix user of the database
-			// server, which is the user valkey of the container.
-			"Volume="+d.DataDir+":/data:Z",
-			"Exec=valkey-server "+strings.Join(ValkeyArgs(d), " "),
-		)
-	case "mariadb":
-		lines = append(lines,
-			"Volume="+d.DataDir+":/var/lib/mysql:Z",
-			"Tmpfs=/run/mysqld",
-			// Audit batch 2, finding 4: the image does not let root use the socket with no
-			// password. The env file gives the root password to the server at the first start,
-			// and to the client (MYSQL_PWD) in each "podman exec". No root user can use TCP.
-			"EnvironmentFile="+d.EnvFile,
-			"Environment=MARIADB_ROOT_HOST=localhost",
-			"Environment=MARIADB_AUTO_UPGRADE=1",
-		)
-	default:
-		lines = append(lines,
-			// PGDATA is the mount itself (images/postgresql/Containerfile).
-			"Volume="+d.DataDir+":/var/lib/postgresql/data:Z",
-			"Tmpfs=/var/run/postgresql",
-			"ShmSize=256m",
-			"EnvironmentFile="+d.EnvFile,
-			`Environment="POSTGRES_INITDB_ARGS=--auth-host=scram-sha-256 --auth-local=trust"`,
-		)
-		if wal := PostgresWALMB(d.DiskBytes); wal > 0 {
-			// The write-ahead log does not fill a small disk. The smallest size that
-			// PostgreSQL keeps is two log files of 16 MB.
-			lines = append(lines, fmt.Sprintf("Exec=postgres -c max_wal_size=%dMB -c min_wal_size=32MB", wal))
-		}
+	if spec.Lines != nil {
+		lines = append(lines, spec.Lines(d)...)
 	}
 	lines = append(lines, "Label=io.cloudfactory.database-server="+d.ID, "Label=io.cloudfactory.customer="+d.Customer,
 		// The database server writes its data to the disk before it stops. The time must be

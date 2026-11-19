@@ -176,8 +176,8 @@ func (d *Deps) buildIn(ctx context.Context, w *agentv1.Website, workdir string, 
 	if u.DatabaseAddress != "" {
 		// A build command, for example a database migration, can connect to the database
 		// servers of the customer, as the website can.
-		for _, name := range []string{quadlet.MariaDBHost, quadlet.PostgreSQLHost, quadlet.ValkeyHost} {
-			argv = append(argv, "--add-host="+name+":"+u.DatabaseAddress)
+		for _, e := range quadlet.Engines() {
+			argv = append(argv, "--add-host="+e.Host+":"+u.DatabaseAddress)
 		}
 	}
 	argv = append(argv, options...)

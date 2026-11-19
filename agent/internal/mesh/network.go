@@ -78,7 +78,13 @@ var nameRE = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.internal$`
 
 // engineNames are the names that each website has for the database servers of its customer
 // on its own server. A member cannot have one of them.
-var engineNames = []string{quadlet.MariaDBHost, quadlet.PostgreSQLHost, quadlet.ValkeyHost}
+var engineNames = func() []string {
+	var out []string
+	for _, e := range quadlet.Engines() {
+		out = append(out, e.Host)
+	}
+	return out
+}()
 
 // CheckName checks the name of a member.
 func CheckName(name string) error {
@@ -95,7 +101,13 @@ const WebsitePort = 80
 
 // MemberPorts are the ports that a member can answer on: the usual ports of the engines for
 // a database server, and WebsitePort for a website.
-var MemberPorts = []int{quadlet.DatabasePort("mariadb"), quadlet.DatabasePort("postgresql"), quadlet.DatabasePort("valkey"), WebsitePort}
+var MemberPorts = func() []int {
+	var out []int
+	for _, e := range quadlet.Engines() {
+		out = append(out, e.Port)
+	}
+	return append(out, WebsitePort)
+}()
 
 func checkMemberPort(port int) error {
 	if !slices.Contains(MemberPorts, port) {
@@ -271,7 +283,7 @@ func (r Rules) Check(meshRange string, servers []string, uidMin, uidMax, portMin
 			}
 		} else if _, err := quadlet.DatabaseNumber(m.Local); err != nil {
 			return fmt.Errorf("the member %s: %w", m.Address, err)
-		} else if !slices.ContainsFunc([]string{"mariadb", "postgresql", "valkey"}, func(engine string) bool {
+		} else if !slices.ContainsFunc(quadlet.EngineNames(), func(engine string) bool {
 			return quadlet.DatabasePort(engine) == m.Port && quadlet.CheckDatabasePort(engine, m.LocalPort) == nil
 		}) {
 			return fmt.Errorf("the member %s: %d is not a port of a database server for the port %d", m.Address, m.LocalPort, m.Port)
