@@ -115,7 +115,7 @@ describe("the email page", () => {
     const added = apiDomain("acme.example.com", { id: "new-domain", name: "shop.example.com", status: "pending", records: [], dnsReady: false, mailboxes: 0, aliases: 0 });
     // The panel loads its lists again after each change.
     api.change<List>("/mail/domains", (b) => b.data.push(added));
-    api.on("POST /mail/domains", () => [202, { mailDomain: added, job: apiJob({ id: "job-md", action: "SetMailDomain", state: "running", finishedAt: null }) }]);
+    api.on("POST /mail/domains", () => [202, { mailDomain: added, job: apiJob({ id: "job-md", action: "SetMailDomain" }) }]);
     fireEvent.click(within(dialog).getByRole("button", { name: "Add domain again" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(api.changes.at(-1)).toMatchObject({ method: "POST", path: "/mail/domains", body: { name: "shop.example.com" } });
@@ -127,7 +127,7 @@ describe("the email page", () => {
     const box = getState().mailboxes[0];
     const added = { ...box, id: "new-box", address: "jo@acme.example.com", localPart: "jo", status: "pending", usedBytes: null, quotaBytes: 2147483648 };
     api.change<List>("/mail/mailboxes", (b) => b.data.push(added));
-    api.on("POST /mail/mailboxes", () => [202, { mailbox: added, password: "tidy-lamp-river-42", job: apiJob({ id: "job-mb", action: "SetMailbox", state: "running", finishedAt: null }) }]);
+    api.on("POST /mail/mailboxes", () => [202, { mailbox: added, password: "tidy-lamp-river-42", job: apiJob({ id: "job-mb", action: "SetMailbox" }) }]);
     fireEvent.click(screen.getByRole("button", { name: "New mailbox" }));
     const dialog = screen.getByRole("dialog");
     fireEvent.change(within(dialog).getByLabelText("Address"), { target: { value: "Jo" } });
