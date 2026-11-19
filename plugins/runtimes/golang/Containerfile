@@ -1,0 +1,39 @@
+# Go runtime image: an example of a runtime from a manifest (runtime.json), with no new agent
+# code. Build it with:
+#   podman build --build-arg GO_VERSION=1.25 -t golang1.25 plugins/runtimes/golang
+#
+# The image follows the contract of the kind "app" (agent/internal/quadlet/runtimes.go): it
+# has /usr/local/bin/cf-app, which starts the start command of the website in CF_APP_DIR.
+# The application listens on the port in the variable PORT (8080).
+# SPDX-License-Identifier: AGPL-3.0-only
+ARG GO_VERSION=1.25
+FROM docker.io/library/golang:${GO_VERSION}-trixie AS welcome
+WORKDIR /src
+COPY welcome.go .
+RUN CGO_ENABLED=0 go build -trimpath -o /cf-welcome welcome.go
+
+FROM docker.io/library/golang:${GO_VERSION}-trixie
+ARG DEBIAN_FRONTEND=noninteractive
+ARG CF_REFRESH
+RUN apt-get update \
+ && apt-get upgrade -y --no-install-recommends \
+ && rm -rf /var/lib/apt/lists/*
+COPY --chmod=0755 cf-app /usr/local/bin/cf-app
+COPY --from=welcome /cf-welcome /usr/local/bin/cf-welcome
+
+# The container root file system is read-only. Go keeps its caches in /tmp.
+ENV HOME=/tmp \
+    GOCACHE=/tmp/.cache/go-build \
+    GOMODCACHE=/tmp/go/pkg/mod \
+    GOFLAGS=-mod=mod \
+    PORT=8080 \
+    HOST=0.0.0.0 \
+    CF_APP_DIR=/app
+
+WORKDIR /app
+EXPOSE 8080
+ENTRYPOINT ["/usr/local/bin/cf-app"]
+CMD ["sh", "-c", "./server"]
+LABEL org.opencontainers.image.source="https://github.com/itbm/cloudfactory" \
+      org.opencontainers.image.licenses="AGPL-3.0-only" \
+      org.opencontainers.image.description="Cloudfactory Go runtime (example of a runtime manifest)"

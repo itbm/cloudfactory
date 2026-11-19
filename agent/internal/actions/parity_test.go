@@ -28,6 +28,7 @@ import (
 	agentv1 "github.com/itbm/cloudfactory/agent/gen/cloudfactory/agent/v1"
 	"github.com/itbm/cloudfactory/agent/internal/execx"
 	"github.com/itbm/cloudfactory/agent/internal/jobs"
+	"github.com/itbm/cloudfactory/agent/internal/quadlet"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -447,4 +448,50 @@ func TestParityOfACopyWithValkey(t *testing.T) {
 	fv.mu.Unlock()
 	p.files()
 	p.check("copy-valkey")
+}
+
+// A runtime from a manifest (plugins/runtimes/golang) runs as Node.js and Python run: the
+// start command of the customer through cf-app. With no manifest, the agent refuses it
+// (runtime-unknown-runtime).
+func TestARuntimeFromAManifest(t *testing.T) {
+	manifests := t.TempDir()
+	b, err := os.ReadFile("../../../plugins/runtimes/golang/runtime.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(manifests, "golang.json"), b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := quadlet.LoadRuntimeManifests(manifests); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { quadlet.LoadRuntimeManifests("") })
+
+	d, f, _ := deps(t)
+	users(d)
+	p := newParityRecord(t, d)
+	w := customerWebsite()
+	w.Runtime, w.Image, w.Extensions, w.PhpIni = "golang", "ghcr.io/cloudfactory/golang1.25:1.25.0-1", nil, nil
+	w.Command, w.DocumentRoot = []string{"./server"}, "."
+	if err := os.MkdirAll(d.Host.AppDir("acme_x7k2"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	p.job(f, "CreateWebsite")(d.CreateWebsite(&agentv1.WebsiteRequest{JobId: jobID, Website: w}))
+	p.files()
+	p.check("runtime-golang-from-a-manifest")
+
+	unit := p.text()
+	for _, want := range []string{"Environment=CF_APP_DIR=/app", "Environment=PORT=8080", `Exec="./server"`} {
+		if !strings.Contains(unit, want) {
+			t.Errorf("the unit of the Go website has no %q", want)
+		}
+	}
+	if strings.Contains(unit, "CF_DOCUMENT_ROOT") || strings.Contains(unit, "zz-cloudfactory.ini") {
+		t.Error("the Go website has the lines of a PHP runtime")
+	}
+
+	w.Command = nil
+	if err := CheckWebsite(w); err == nil || !strings.Contains(err.Error(), "a golang website needs a start command") {
+		t.Errorf("CheckWebsite with no start command = %v", err)
+	}
 }

@@ -30,15 +30,11 @@ func CheckWebsite(w *agentv1.Website) error {
 	}
 	errs := []error{validate.ID(w.GetId()), validate.UnixUser(w.GetUnixUser()), validate.Image(w.GetImage()), validate.Digest(w.GetImageDigest()),
 		validate.DocumentRoot(w.GetDocumentRoot()), validate.Command(w.GetCommand()), validate.Port(w.GetContainerPort())}
-	switch w.GetRuntime() {
-	case "frankenphp", "apache-php-fpm", "custom":
-	case "node", "python":
-		// An application runtime runs the start command of the customer.
-		if len(w.GetCommand()) == 0 {
-			errs = append(errs, fmt.Errorf("a %s website needs a start command", w.GetRuntime()))
-		}
-	default:
+	if spec, ok := quadlet.RuntimeOf(w.GetRuntime()); !ok {
 		errs = append(errs, fmt.Errorf("the runtime %q is not valid", w.GetRuntime()))
+	} else if spec.App() && len(w.GetCommand()) == 0 {
+		// An application runtime runs the start command of the customer.
+		errs = append(errs, fmt.Errorf("a %s website needs a start command", w.GetRuntime()))
 	}
 	for _, e := range w.GetExtensions() {
 		errs = append(errs, validate.Extension(e))
@@ -138,7 +134,7 @@ func imageRef(w *agentv1.Website) string {
 // shared reports whether the website uses the shared image store. A custom image stays in the
 // storage of the website user, so that other customers never see it.
 func (d *Deps) shared(w *agentv1.Website) bool {
-	return d.Images != nil && w.GetRuntime() != "custom" && images.Shareable(imageRef(w))
+	return d.Images != nil && !quadlet.IsCustom(w.GetRuntime()) && images.Shareable(imageRef(w))
 }
 
 // pullImage pulls the image of a website. The signature policy of Podman
@@ -214,7 +210,7 @@ func (d *Deps) PruneImages() {
 	}
 	var refs []string
 	for _, s := range sites {
-		if s.Website != nil && s.Website.GetRuntime() != "custom" {
+		if s.Website != nil && !quadlet.IsCustom(s.Website.GetRuntime()) {
 			refs = append(refs, imageRef(s.Website))
 		}
 	}
@@ -291,7 +287,7 @@ func documentRoot(w *agentv1.Website) string {
 
 // isPHP reports whether the runtime of a website is a PHP runtime, with a php.ini file.
 func isPHP(w *agentv1.Website) bool {
-	return w.GetRuntime() == "frankenphp" || w.GetRuntime() == "apache-php-fpm"
+	return quadlet.IsPHP(w.GetRuntime())
 }
 
 // envPath is the environment file of a container of a website (envFile).
@@ -1218,7 +1214,7 @@ func (d *Deps) changeDomain(req *agentv1.DomainRequest, add bool) (jobs.Job, err
 // "custom") gets names that start with CF_, for example CF_TOKEN (docs/plugins.md). The other
 // websites cannot use these names, which are for the agent and the images.
 func envNameOf(runtime, name string) error {
-	if runtime == "custom" && strings.HasPrefix(name, "CF_") {
+	if quadlet.IsCustom(runtime) && strings.HasPrefix(name, "CF_") {
 		return validate.SecretName(name)
 	}
 	return validate.EnvName(name)

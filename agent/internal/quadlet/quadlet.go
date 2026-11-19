@@ -83,7 +83,7 @@ type Website struct {
 	Port       int    // the host port on ServiceAddress that the edge proxy uses
 	SiteDir    string // the files of the website on the host
 	IniFile    string // the generated php.ini on the host
-	Runtime    string // "frankenphp", "apache-php-fpm", "node", "python" or "custom"
+	Runtime    string // a name of Runtimes, for example "frankenphp", "node" or "custom"
 	WorkerMode bool
 	Limits     Limits
 	Gvisor     Runtime
@@ -133,13 +133,6 @@ const (
 // AppPort is the port in the container of a Node.js or Python website. The application
 // listens on the port in the variable PORT.
 const AppPort = 8080
-
-// IsApp reports whether the runtime runs an application of the customer with its start
-// command: Node.js or Python.
-func IsApp(runtime string) bool { return runtime == "node" || runtime == "python" }
-
-// IsPHP reports whether the runtime is a PHP runtime with a php.ini file.
-func IsPHP(runtime string) bool { return runtime == "frankenphp" || runtime == "apache-php-fpm" }
 
 // ContainerName is the name of the Podman container.
 func (w Website) ContainerName() string { return "cf-" + w.UnixUser + w.Suffix }
@@ -258,7 +251,7 @@ func ContainerUnit(w Website) string {
 	// websites only on ServiceAddress, and the host firewall refuses that (install.sh).
 	line("Network", "pasta")
 	containerPort := 8080
-	if w.Runtime == "custom" && w.ContainerPort > 0 {
+	if IsCustom(w.Runtime) && w.ContainerPort > 0 {
 		containerPort = w.ContainerPort
 	}
 	if !w.Worker {
@@ -302,7 +295,7 @@ func ContainerUnit(w Website) string {
 		// The variables of the customer. Podman reads the file as the Unix user of the website.
 		line("EnvironmentFile", w.EnvFile)
 	}
-	if w.Runtime == "frankenphp" && w.WorkerMode {
+	if spec, _ := RuntimeOf(w.Runtime); spec.FrankenPHPWorkerMode && w.WorkerMode {
 		// The value has a space, so it is in quotes. systemd splits Environment at spaces.
 		line("Environment", `"FRANKENPHP_CONFIG=worker `+path.Join(root, "index.php")+`"`)
 	}
@@ -319,7 +312,7 @@ func ContainerUnit(w Website) string {
 		line("PodmanArgs", "--log-opt=path="+w.LogFile+" --log-opt=max-size="+LogFileMax)
 	}
 
-	if (w.Runtime == "custom" || w.Worker || IsApp(w.Runtime)) && len(w.Command) > 0 {
+	if (IsCustom(w.Runtime) || w.Worker || IsApp(w.Runtime)) && len(w.Command) > 0 {
 		line("Exec", execLine(w.Command))
 	}
 
