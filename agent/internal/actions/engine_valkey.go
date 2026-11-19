@@ -24,7 +24,9 @@ func (valkeyDriver) prepareSecret(_ context.Context, d *Deps, s dbServer, u quad
 	return d.writeValkeyUsers(s, u.DataDir)
 }
 
-func (valkeyDriver) ready(ctx context.Context, d *Deps, s dbServer) error { return d.valkeyReady(ctx, s) }
+func (valkeyDriver) ready(ctx context.Context, d *Deps, s dbServer) error {
+	return d.valkeyReady(ctx, s)
+}
 
 func (valkeyDriver) started(context.Context, *Deps, dbServer) error { return nil }
 

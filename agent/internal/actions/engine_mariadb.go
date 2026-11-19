@@ -143,7 +143,9 @@ func (m mariaDriver) accessSQL(user, host string, _ []string, grants []grant) st
 	return b.String()
 }
 
-func (mariaDriver) revokeDatabaseSQL(name string, _ []string) string { return mariaRevokeDatabase(name) }
+func (mariaDriver) revokeDatabaseSQL(name string, _ []string) string {
+	return mariaRevokeDatabase(name)
+}
 
 func (mariaDriver) removeSQL(name string) string { return mariaRevokeDatabase(name) }
 
