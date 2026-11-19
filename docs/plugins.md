@@ -504,3 +504,74 @@ you trust.
 ## Security
 
 Refer to [security.md](security.md#plugins).
+
+## Runtimes and database engines (stage 1)
+
+The runtimes and the database engines of the agent are becoming packs that a publisher can
+add. Stage 1 gives the contracts in the agent and three switches. All switches are off by
+default. With no switch, the agent operates as in the previous release.
+
+| Setting in `/etc/cloudfactory/agent.json` | Effect |
+| --- | --- |
+| `"runtimeManifests": "/etc/cloudfactory/runtimes"` | The agent reads each runtime manifest (`*.json`) in the directory. |
+| `"valkeyBackups": true` | The backups of the websites include their Valkey databases. |
+| `"manageTrial": true` | The agent asks the MariaDB image for the sizes of its databases with `/cf/manage`. |
+
+After you change a setting, restart the agent: `systemctl restart cf-agent`. The agent
+reports its runtimes and the switches that are on (`runtimes` and `features` in the report).
+
+### Runtime manifests
+
+A runtime manifest adds a website runtime with no new agent code. A manifest is one JSON
+object:
+
+```json
+{"name": "golang", "label": "Go", "kind": "app"}
+```
+
+- `name` is the name of the runtime in the requests of the panel: 2 to 31 lower-case
+  letters, digits and hyphens. It cannot be the name of a built-in runtime.
+- `label` is the name for people.
+- `kind` must be `app`. The agent runs the runtime as it runs Node.js and Python, with the
+  same isolation. A manifest cannot change the unit in other ways.
+
+The image of an `app` runtime must have `/usr/local/bin/cf-app`. The script goes to
+`CF_APP_DIR` and runs the start command of the website. The application listens on the
+port in `PORT`. Refer to the example in
+[plugins/runtimes/golang](../plugins/runtimes/golang/README.md).
+
+When a manifest is not valid, the agent writes an error in its log and uses only the
+built-in runtimes. The agent continues to operate.
+
+The panel does not show the runtimes from manifests yet.
+
+### Valkey backups
+
+With `valkeyBackups`, root dumps each Valkey database of a website with `SCAN`, `DUMP` and
+`PEXPIRETIME`. A restore empties the database number, then loads each key with
+`RESTORE ... ABSTTL`. The other database numbers do not change. The panel puts a Valkey
+database in a backup only when the agent of its server reports `valkey-backups`.
+
+`SCAN` is not one point in time. A key that the website changes during the dump has the
+value from before or after the change. This is correct for caches, sessions and queues.
+
+### The management contract cf-database/1 (trial)
+
+An engine image can have the program `/cf/manage`. The agent runs:
+
+```sh
+podman exec -i <container> /cf/manage <operation>
+```
+
+The operation reads one JSON object on stdin and writes one JSON object on stdout. An exit
+code that is not 0 is an error. The MariaDB image has these operations:
+
+| Operation | Answer |
+| --- | --- |
+| `describe` | `{"contract":"cf-database/1","engine":"mariadb","version":"...","operations":[...]}` |
+| `ready` | `{"ready":true}` when the server accepts TCP connections |
+| `sizes` | `{"sizes":[{"name":"...","bytes":N}]}` |
+
+In the trial, the agent uses only `sizes`. When the answer is not valid, the agent uses its
+own query. Later stages add the operations for databases, users, dumps and restores, so
+that an engine from a different publisher needs no agent code.
