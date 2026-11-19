@@ -119,6 +119,11 @@ type Report struct {
 	// DatabaseEngines are the database engines that this agent can operate. An agent of an
 	// earlier release does not send them: it has MariaDB and PostgreSQL only.
 	DatabaseEngines []string `json:"databaseEngines,omitempty"`
+	// Runtimes are the website runtimes that this agent can run: the built-in runtimes and
+	// the runtimes from manifest files.
+	Runtimes []string `json:"runtimes,omitempty"`
+	// Features are the optional features that are on, for example "valkey-backups".
+	Features []string `json:"features,omitempty"`
 	// DatabaseInstances is true when this agent gives each customer its own database servers
 	// (DatabaseServer, Website.database_instance). An agent of an earlier release does not
 	// send it.

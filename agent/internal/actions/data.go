@@ -810,7 +810,7 @@ func (d *Deps) Backup(req *agentv1.BackupRequest) (jobs.Job, error) {
 		return jobs.Job{}, err
 	}
 	for _, db := range req.GetDatabases() {
-		if err := sqlEngine(db.GetEngine()); err != nil {
+		if err := d.backupEngine(db.GetEngine()); err != nil {
 			return jobs.Job{}, err
 		}
 		if err := validate.TenantDatabaseName(req.GetUnixUser(), db.GetName()); err != nil {
@@ -871,7 +871,11 @@ func (d *Deps) Backup(req *agentv1.BackupRequest) (jobs.Job, error) {
 				if err != nil {
 					return err
 				}
-				sum, err := d.dumpToFile(ctx, srv, unixUser, db.GetName())
+				dump := d.dumpToFile
+				if isNumbered(srv.Engine) {
+					dump = d.valkeyDumpToFile
+				}
+				sum, err := dump(ctx, srv, unixUser, db.GetName())
 				if err != nil {
 					return err
 				}
@@ -1072,7 +1076,7 @@ func (d *Deps) Restore(req *agentv1.RestoreRequest) (jobs.Job, error) {
 		if !ok {
 			return jobs.Job{}, errors.New(`the database must be "engine:name"`)
 		}
-		if err := sqlEngine(engine); err != nil {
+		if err := d.backupEngine(engine); err != nil {
 			return jobs.Job{}, err
 		}
 		_, serverErr := serverKey(req.GetDatabaseServer())
@@ -1143,6 +1147,9 @@ func (d *Deps) Restore(req *agentv1.RestoreRequest) (jobs.Job, error) {
 			srv, err := d.serverFor(req.GetWebsiteId(), req.GetCustomer(), req.GetDatabaseServer(), dbEngine)
 			if err != nil {
 				return err
+			}
+			if isNumbered(dbEngine) {
+				return d.valkeyRestoreStaged(ctx, req.GetJobId(), unixUser, srv, dbName)
 			}
 			return d.restoreDump(ctx, srv, dbName, func(ctx context.Context, client []string) error {
 				return d.loadStagedDump(ctx, req.GetJobId(), unixUser, dbEngine, dbName, client)

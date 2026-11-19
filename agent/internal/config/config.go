@@ -72,6 +72,9 @@ type Config struct {
 	// (quadlet.LoadRuntimeManifests). Empty means only the built-in runtimes. After a
 	// change, restart cf-agent.
 	RuntimeManifests string `json:"runtimeManifests,omitempty"`
+	// ValkeyBackups puts the Valkey databases in the backups of the websites. It is off by
+	// default. After a change, restart cf-agent.
+	ValkeyBackups bool `json:"valkeyBackups,omitempty"`
 }
 
 // Defaults gives the values for the settings that the file does not set.

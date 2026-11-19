@@ -155,10 +155,22 @@ class Website extends Model
         return $this->hasMany(Database::class);
     }
 
-    /** The databases that a backup and a staging copy include: not the Valkey databases. */
+    /** The databases that a staging copy includes: not the Valkey databases. */
     public function sqlDatabases(): HasMany
     {
         return $this->databases()->whereIn('engine', Database::SQL_ENGINES);
+    }
+
+    /**
+     * The databases that a backup includes: the SQL databases, and the Valkey databases in a
+     * database server on a server whose agent has the feature "valkey-backups" on. The
+     * feature is off by default, so a backup has the SQL databases only, as before.
+     */
+    public function backupDatabases(): HasMany
+    {
+        return $this->databases()->where(fn ($q) => $q->whereIn('engine', Database::SQL_ENGINES)
+            ->orWhere(fn ($q) => $q->where('engine', Database::VALKEY)
+                ->whereHas('databaseServer.server', fn ($q) => $q->whereJsonContains('agent_features', 'valkey-backups'))));
     }
 
     public function databaseUsers(): HasMany

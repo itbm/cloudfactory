@@ -92,16 +92,18 @@ const (
 	opSiteDisk   = "site.disk"
 	opSiteResize = "site.resize"
 
-	opDumpsReset   = "dumps.reset"
-	opDumpsRemove  = "dumps.remove"
-	opDumpsWrite   = "dumps.write"
-	opRestoreStage = "restore.stage"
-	opRestoreClean = "restore.clean"
-	opRestoreCopy  = "restore.copy"
-	opRestoreHash  = "restore.hash"
-	opRestoreLoad  = "restore.load"
-	opSecretMake   = "secret.make"
-	opSecretRemove = "secret.remove"
+	opDumpsReset    = "dumps.reset"
+	opDumpsRemove   = "dumps.remove"
+	opDumpsWrite    = "dumps.write"
+	opValkeyDump    = "valkey.dump"
+	opValkeyRestore = "valkey.restore"
+	opRestoreStage  = "restore.stage"
+	opRestoreClean  = "restore.clean"
+	opRestoreCopy   = "restore.copy"
+	opRestoreHash   = "restore.hash"
+	opRestoreLoad   = "restore.load"
+	opSecretMake    = "secret.make"
+	opSecretRemove  = "secret.remove"
 
 	opPanelDomain = "panel.domain"
 
@@ -654,6 +656,24 @@ func (d *Deps) RootOps() map[string]gate.Handler {
 			}
 			return d.writeDump(ctx, in.User, in.Engine, in.Name, in.Argv)
 		}),
+		opValkeyDump: gate.Op(func(ctx context.Context, in valkeyBackupIn) (string, error) {
+			if err := errors.Join(d.websiteUser(in.User), checkServer(in.Server), validate.TenantDatabaseName(in.User, in.Name)); err != nil {
+				return "", err
+			}
+			if !isNumbered(in.Server.Engine) {
+				return "", errors.New("the database server is not a Valkey database server")
+			}
+			return d.valkeyDumpToFile(ctx, in.Server, in.User, in.Name)
+		}),
+		opValkeyRestore: none(func(ctx context.Context, in valkeyBackupIn) error {
+			if err := errors.Join(validate.ID(in.Job), d.websiteUser(in.User), checkServer(in.Server), validate.TenantDatabaseName(in.User, in.Name)); err != nil {
+				return err
+			}
+			if !isNumbered(in.Server.Engine) {
+				return errors.New("the database server is not a Valkey database server")
+			}
+			return d.valkeyRestoreStaged(ctx, in.Job, in.User, in.Server, in.Name)
+		}),
 		opRestoreStage: none(func(ctx context.Context, in jobIn) error {
 			if err := validate.ID(in.Job); err != nil {
 				return err
@@ -676,7 +696,7 @@ func (d *Deps) RootOps() map[string]gate.Handler {
 			return d.copyStaged(ctx, in.Job, in.User, in.Rel)
 		}),
 		opRestoreHash: gate.Op(func(ctx context.Context, in restoreIn) (string, error) {
-			if err := errors.Join(validate.ID(in.Job), d.websiteUser(in.User), sqlEngine(in.Engine), validate.TenantDatabaseName(in.User, in.Name)); err != nil {
+			if err := errors.Join(validate.ID(in.Job), d.websiteUser(in.User), d.backupEngine(in.Engine), validate.TenantDatabaseName(in.User, in.Name)); err != nil {
 				return "", err
 			}
 			return d.stagedDumpHash(ctx, in.Job, in.User, in.Engine, in.Name)

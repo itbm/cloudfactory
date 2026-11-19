@@ -114,6 +114,12 @@ class AgentController extends Controller
             // The engines that the agent can operate. An agent of an earlier release does not send them.
             'databaseEngines' => ['nullable', 'array', 'max:20'],
             'databaseEngines.*' => ['string', 'max:32'],
+            // The website runtimes and the optional features of the agent. An agent of an
+            // earlier release does not send them.
+            'runtimes' => ['nullable', 'array', 'max:100'],
+            'runtimes.*' => ['string', 'max:32'],
+            'features' => ['nullable', 'array', 'max:50'],
+            'features.*' => ['string', 'max:64'],
             // True when the agent can operate the database servers of customers.
             'databaseInstances' => ['boolean'],
             // The state and the resource use of each database server on the server.
@@ -192,6 +198,8 @@ class AgentController extends Controller
             'sftp_port' => $data['sftpPort'] ?? $server->sftp_port,
             'panel_ca_sha256' => $data['panelCaSha256'] ?? null,
             'database_engines' => $data['databaseEngines'] ?? null,
+            'agent_runtimes' => $data['runtimes'] ?? null,
+            'agent_features' => $data['features'] ?? null,
             'database_instances' => $data['databaseInstances'] ?? false,
             'dns' => $data['dns'] ?? false,
             'addresses' => $data['addresses'] ?? $server->addresses,

@@ -183,6 +183,12 @@ func (d *Deps) FillReport(ctx context.Context, r *panel.Report) {
 	r.Databases = o.dbSizes
 	r.DatabaseServers = d.databaseServerUse(ctx, walk)
 	r.DatabaseEngines = Engines
+	for _, rt := range quadlet.Runtimes() {
+		r.Runtimes = append(r.Runtimes, rt.Name)
+	}
+	if d.ValkeyBackups {
+		r.Features = append(r.Features, "valkey-backups")
+	}
 	r.DatabaseInstances = true
 	r.Services = append(r.Services, d.firewallService(ctx), d.helperService(), d.quotaService(sites), d.diskService())
 	r.Mail = d.mailReport(ctx)
