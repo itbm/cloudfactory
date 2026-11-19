@@ -682,38 +682,26 @@ func checkCopies(req *agentv1.WebsiteRequest) error {
 // through the agent, and it loads as a temporary user with access to the new database only
 // (CF-06).
 func (d *Deps) copyDatabase(ctx context.Context, from dbServer, fromName string, to dbServer, toName string) error {
-	if to.Engine == "mariadb" {
-		found, err := d.exists(ctx, to, fmt.Sprintf("SHOW DATABASES LIKE '%s';\n", strings.ReplaceAll(toName, "_", `\\_`)))
-		if err != nil {
-			return err
-		}
-		// A job that runs again after a restart finds the database of its first run.
-		if !found {
-			if _, err := d.sql(ctx, to, fmt.Sprintf("CREATE DATABASE `%s` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;\n", toName)); err != nil {
-				return err
-			}
-		}
-	} else {
-		found, err := d.exists(ctx, to, fmt.Sprintf("SELECT 1 FROM pg_database WHERE datname = '%s';\n", toName))
-		if err != nil {
-			return err
-		}
-		if !found {
-			if _, err := d.sql(ctx, to, pgCreateDatabase(toName)); err != nil {
-				return err
-			}
-		}
+	drv, err := sqlOf(to.Engine)
+	if err != nil {
+		return err
 	}
-	err := d.restoreDump(ctx, to, toName, func(ctx context.Context, client []string) error {
+	// A job that runs again after a restart finds the database of its first run.
+	if err := drv.ensureDatabase(ctx, d, to, toName); err != nil {
+		return err
+	}
+	err = d.restoreDump(ctx, to, toName, func(ctx context.Context, client []string) error {
 		dump, err := d.dumpCommand(ctx, from, fromName)
 		if err != nil {
 			return err
 		}
-		if to.Engine != "mariadb" {
+		filter := drv.dumpFilter()
+		if filter == nil {
 			return d.Run.Pipe(ctx, dump, client)
 		}
-		// The dump goes through withoutDefiners, as a stream: the user of the restore
-		// cannot make an object for the definer of the source (finding G3-02).
+		// The dump goes through the filter, as a stream. For MariaDB it is withoutDefiners:
+		// the user of the restore cannot make an object for the definer of the source
+		// (finding G3-02).
 		pr, pw := io.Pipe()
 		dumped := make(chan error, 1)
 		go func() {
@@ -721,7 +709,7 @@ func (d *Deps) copyDatabase(ctx context.Context, from dbServer, fromName string,
 			pw.CloseWithError(err)
 			dumped <- err
 		}()
-		err = d.Run.Stream(ctx, withoutDefiners(pr), nil, client[0], client[1:]...)
+		err = d.Run.Stream(ctx, filter(pr), nil, client[0], client[1:]...)
 		pr.CloseWithError(err)
 		if derr := <-dumped; derr != nil && err == nil {
 			err = derr
@@ -767,7 +755,7 @@ func (d *Deps) copyDatabases(ctx context.Context, req *agentv1.WebsiteRequest, v
 			return err
 		}
 		engine := u.GetEngine()
-		if engine == "valkey" {
+		if isNumbered(engine) {
 			number, err := d.valkeyCreate(ctx, srv, u.GetName(), req.GetWebsite().GetUnixUser()+"_", u.GetPassword())
 			if err != nil {
 				return err
@@ -1001,9 +989,11 @@ func (d *Deps) DeleteWebsite(req *agentv1.DeleteWebsiteRequest) (jobs.Job, error
 				if !ok {
 					continue
 				}
-				if srv.Engine == "mariadb" {
-					if _, err := d.sql(ctx, srv, mariaRevokeDatabase(db.GetName())); err != nil {
-						return err
+				if drv, ok := sqlDriverOf(srv.Engine); ok {
+					if q := drv.removeSQL(db.GetName()); q != "" {
+						if _, err := d.sql(ctx, srv, q); err != nil {
+							return err
+						}
 					}
 				}
 				if err := d.dropDatabase(ctx, srv, db.GetName()); err != nil {

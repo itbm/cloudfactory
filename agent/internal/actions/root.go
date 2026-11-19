@@ -583,7 +583,7 @@ func (d *Deps) RootOps() map[string]gate.Handler {
 			if err := checkServer(in.Server); err != nil {
 				return "", err
 			}
-			if in.Server.Engine != "valkey" {
+			if !isNumbered(in.Server.Engine) {
 				return "", errors.New("the database server is not a Valkey database server")
 			}
 			return d.valkeySecret(ctx, in.Server)
