@@ -1,0 +1,151 @@
+
+== CreateWebsite
+steps: Create Unix user | Copy databases | Pull and check image signature | Start container in gVisor | Configure edge proxy | Get TLS certificate
+long: false
+$ install -d -m 0711 $DIR/homes $DIR/sites
+$ install -d -m 0711 $DIR/homes $DIR/sites
+$ chmod 0700 $DIR/homes/acme_x7k2
+$ install -d -o root -g acme_x7k2 -m 0750 $DIR/sites/acme_x7k2
+$ install -d -o acme_x7k2 -g acme_x7k2 -m 0750 $DIR/sites/acme_x7k2/app
+$ loginctl enable-linger acme_x7k2
+$ runuser -u acme_x7k2 -- mkdir -p -m 0750 $DIR/sites/acme_x7k2/app/public
+$ systemctl start user@20001.service
+$ runuser -u acme_x7k2 -- sh -c [ -n "$(ls -A "$1" 2>/dev/null)" ] || cat >"$1/index.php" sh $DIR/sites/acme_x7k2/app/public
+  | <?php
+  | // The default page of a new website. Upload your files to replace it.
+  | header('Content-Type: text/html; charset=utf-8');
+  | ?><!doctype html>
+  | <html lang="en-GB">
+  | <meta charset="utf-8">
+  | <meta name="viewport" content="width=device-width, initial-scale=1">
+  | <title>Website is ready</title>
+  | <body style="font-family: system-ui, sans-serif; max-width: 40rem; margin: 4rem auto; padding: 0 1rem">
+  | <h1>This website is ready</h1>
+  | <p>Cloudfactory made this page. Upload your files with SFTP to replace it.</p>
+  | <p>PHP <?= htmlspecialchars(PHP_VERSION) ?></p>
+  | </body>
+  | </html>
+$ runuser -u acme_x7k2 -- env XDG_RUNTIME_DIR=/run/user/20001 podman pull --quiet ghcr.io/cloudfactory/apache-php8.4:8.4.0-1
+$ ip address replace 169.254.80.1/20 dev lo
+$ systemctl daemon-reload
+$ systemctl --user --machine=acme_x7k2@ daemon-reload
+$ systemctl --user --machine=acme_x7k2@ restart cf-acme_x7k2.service
+result dnsPointsHere: true
+result port: 20000
+
+== SetRuntime
+steps: Check image signature | Start new container on a copy | Health check | Switch traffic | Stop old container
+long: false
+$ runuser -u acme_x7k2 -- env XDG_RUNTIME_DIR=/run/user/20001 podman pull --quiet ghcr.io/cloudfactory/apache-php8.4:8.4.0-1
+$ systemctl --user --machine=acme_x7k2@ daemon-reload
+$ systemctl --user --machine=acme_x7k2@ restart cf-acme_x7k2-b.service
+$ systemctl --user --machine=acme_x7k2@ stop cf-acme_x7k2.service
+$ systemctl --user --machine=acme_x7k2@ daemon-reload
+
+== files
+--- $DIR/config/acme_x7k2/env (-rw-------)
+  APP_ENV=production
+--- $DIR/config/acme_x7k2/env-b (-rw-------)
+  APP_ENV=production
+--- $DIR/config/acme_x7k2/hosts (-rw-r--r--)
+  # Managed by the Cloudfactory agent. The agent replaces changes to this file.
+  127.0.0.1 localhost
+  ::1 localhost
+  # The database servers of the customer on this server. Each one has its own port.
+  169.254.80.2 mariadb.internal postgres.internal valkey.internal
+--- $DIR/config/acme_x7k2/php-b.ini (-rw-r--r--)
+  ; Managed by the Cloudfactory agent. Change these values in the panel.
+  zend_extension=opcache
+  memory_limit = "256M"
+--- $DIR/config/acme_x7k2/php.ini (-rw-r--r--)
+  ; Managed by the Cloudfactory agent. Change these values in the panel.
+  zend_extension=opcache
+  memory_limit = "256M"
+--- $DIR/sites.json (-rw-------)
+  {
+    "sites": {
+      "01JBQ3Z5K8N6T4W2X9Y7R5P3M1": {
+        "id": "01JBQ3Z5K8N6T4W2X9Y7R5P3M1",
+        "unixUser": "acme_x7k2",
+        "port": 20001,
+        "suffix": "-b",
+        "website": {
+          "id": "01JBQ3Z5K8N6T4W2X9Y7R5P3M1",
+          "unixUser": "acme_x7k2",
+          "image": "ghcr.io/cloudfactory/apache-php8.4:8.4.0-1",
+          "runtime": "apache-php-fpm",
+          "extensions": [
+            "opcache"
+          ],
+          "phpIni": {
+            "memory_limit": "256M"
+          },
+          "limits": {
+            "vcpus": 1,
+            "memoryBytes": "2147483648",
+            "processes": "100"
+          },
+          "domains": [
+            {
+              "name": "acme.example",
+              "kind": "primary"
+            }
+          ],
+          "databaseInstance": "01JBQ3Z5K8N6T4W2X9Y7R5P3C1",
+          "environment": {
+            "APP_ENV": "production"
+          }
+        }
+      }
+    },
+    "databases": {
+      "01jbq3z5k8n6t4w2x9y7r5p3c1": {
+        "number": 1,
+        "websites": [
+          "01JBQ3Z5K8N6T4W2X9Y7R5P3M1"
+        ]
+      }
+    }
+  }
+--- $DIR/units/20001/cf-acme_x7k2-b.container (-rw-r--r--)
+  # Managed by the Cloudfactory agent. The agent replaces changes to this file.
+  [Unit]
+  Description=Website acme.example
+  
+  [Container]
+  ContainerName=cf-acme_x7k2-b
+  Image=ghcr.io/cloudfactory/apache-php8.4:8.4.0-1
+  Pull=never
+  GlobalArgs=--runtime=/usr/local/bin/runsc --runtime-flag=platform=systrap --runtime-flag=network=sandbox --runtime-flag=ignore-cgroups
+  Network=pasta
+  PublishPort=169.254.77.1:20001:8080
+  PodmanArgs=--no-hosts
+  Volume=$DIR/config/acme_x7k2/hosts:/etc/hosts:ro
+  Volume=$DIR/sites/acme_x7k2/app:/app:Z
+  Volume=$DIR/config/acme_x7k2/php-b.ini:/usr/local/etc/php/conf.d/zz-cloudfactory.ini:ro,Z
+  Label=io.cloudfactory.website=01JBQ3Z5K8N6T4W2X9Y7R5P3M1
+  Environment=SERVER_NAME=:8080
+  Environment=CF_DOCUMENT_ROOT=/app/public
+  EnvironmentFile=$DIR/config/acme_x7k2/env-b
+  NoNewPrivileges=true
+  DropCapability=all
+  ReadOnly=true
+  Tmpfs=/tmp
+  UserNS=keep-id
+  LogDriver=k8s-file
+  PodmanArgs=--log-opt=path=$DIR/homes/acme_x7k2/website.log --log-opt=max-size=10mb
+  
+  [Service]
+  Restart=always
+  TimeoutStartSec=300
+  CPUQuota=100%
+  MemoryMax=2147483648
+  MemorySwapMax=0
+  TasksMax=100
+  
+  [Install]
+  WantedBy=default.target
+--- $DIR/user@.service.d/zz-cloudfactory-stop.conf (-rw-r--r--)
+  # Managed by the Cloudfactory agent. The agent replaces changes to this file.
+  [Service]
+  TimeoutStopSec=120

@@ -1,0 +1,186 @@
+
+== CreateWebsite with a copy
+steps: Create Unix user | Copy databases | Pull and check image signature | Start container in gVisor | Configure edge proxy | Get TLS certificate
+long: true
+$ install -d -m 0711 $DIR/homes $DIR/sites
+$ install -d -m 0711 $DIR/homes $DIR/sites
+$ chmod 0700 $DIR/homes/staging_ab12
+$ install -d -o root -g staging_ab12 -m 0750 $DIR/sites/staging_ab12
+$ install -d -o staging_ab12 -g staging_ab12 -m 0750 $DIR/sites/staging_ab12/app
+$ loginctl enable-linger staging_ab12
+$ runuser -u staging_ab12 -- mkdir -p -m 0750 $DIR/sites/staging_ab12/app/public
+$ systemctl start user@20001.service
+$ runuser -u acme_x7k2 -- tar --create --file=- --directory=$DIR/sites/acme_x7k2/app -- . | runuser -u staging_ab12 -- tar --extract --file=- --directory=$DIR/sites/staging_ab12/app --no-same-owner --preserve-permissions
+$ ip address replace 169.254.80.1/20 dev lo
+$ systemctl daemon-reload
+$ install -d -o root -g root -m 0711 $DIR/cf-db $DIR/cf-db/servers $DIR/cf-db/homes
+$ chmod 0700 $DIR/cf-db/homes/db-01jbq3z5k8n6t4w2x9y7r5p3d3
+$ loginctl enable-linger db-01jbq3z5k8n6t4w2x9y7r5p3d3
+$ systemctl start user@10003.service
+$ install -d -o root -g db-01jbq3z5k8n6t4w2x9y7r5p3d3 -m 0750 $DIR/cf-db/servers/01jbq3z5k8n6t4w2x9y7r5p3d3
+$ install -d -o root -g db-01jbq3z5k8n6t4w2x9y7r5p3d3 -m 0750 $DIR/cf-db/servers/01jbq3z5k8n6t4w2x9y7r5p3d3/disk
+$ install -d -o db-01jbq3z5k8n6t4w2x9y7r5p3d3 -g db-01jbq3z5k8n6t4w2x9y7r5p3d3 -m 0700 $DIR/cf-db/servers/01jbq3z5k8n6t4w2x9y7r5p3d3/disk/data
+$ runuser -u db-01jbq3z5k8n6t4w2x9y7r5p3d3 -- env XDG_RUNTIME_DIR=/run/user/10003 podman image exists ghcr.io/cloudfactory/valkey:latest
+$ systemctl --user --machine=db-01jbq3z5k8n6t4w2x9y7r5p3d3@ daemon-reload
+$ systemctl --user --machine=db-01jbq3z5k8n6t4w2x9y7r5p3d3@ restart cf-valkey-01jbq3z5k8n6t4w2x9y7r5p3d3.service
+$ runuser -u staging_ab12 -- env XDG_RUNTIME_DIR=/run/user/20001 podman pull --quiet ghcr.io/cloudfactory/frankenphp-php8.4:8.4.0-1
+$ systemctl --user --machine=staging_ab12@ daemon-reload
+$ systemctl --user --machine=staging_ab12@ restart cf-staging_ab12.service
+result dnsPointsHere: true
+result port: 20000
+result valkey: map[staging_ab12_cache:1]
+
+== CreateWebsite with a copy of a Valkey database
+refused: a backup and a staging copy do not include Valkey databases
+valkey> AUTH default
+valkey> INFO server
+valkey> AUTH default
+valkey> ACL LIST
+valkey> SELECT 1
+valkey> FLUSHDB
+valkey> ACL SETUSER staging_ab12_cache reset on >PASSWORD resetkeys ~* resetchannels &staging_ab12_* db=1 +@all -@admin -@dangerous +info +keys +flushdb +sort +sort_ro +client|setname +client|setinfo +client|id +client|getname +client|info +client|reply +client|no-touch -function -fcall -fcall_ro -script|flush -script|kill -pubsub -move -client|tracking -client|trackinginfo -client|caching -client|getredir
+valkey> ACL SAVE
+
+== files
+--- $DIR/cf-db/servers/01jbq3z5k8n6t4w2x9y7r5p3d3/disk/data/users.acl (-rw-------)
+  user default on #HEX64 ~* &* +@all
+--- $DIR/cf-db/servers/01jbq3z5k8n6t4w2x9y7r5p3d3/valkey.secret (-rw-------)
+  HEX48
+--- $DIR/config/staging_ab12/hosts (-rw-r--r--)
+  # Managed by the Cloudfactory agent. The agent replaces changes to this file.
+  127.0.0.1 localhost
+  ::1 localhost
+  # The database servers of the customer on this server. Each one has its own port.
+  169.254.80.2 mariadb.internal postgres.internal valkey.internal
+--- $DIR/config/staging_ab12/php.ini (-rw-r--r--)
+  ; Managed by the Cloudfactory agent. Change these values in the panel.
+  zend_extension=opcache
+  memory_limit = "256M"
+--- $DIR/sites.json (-rw-------)
+  {
+    "sites": {
+      "01JBQ3Z5K8N6T4W2X9Y7R5P3M1": {
+        "id": "01JBQ3Z5K8N6T4W2X9Y7R5P3M1",
+        "unixUser": "staging_ab12",
+        "port": 20000,
+        "suffix": "",
+        "website": {
+          "id": "01JBQ3Z5K8N6T4W2X9Y7R5P3M1",
+          "unixUser": "staging_ab12",
+          "image": "ghcr.io/cloudfactory/frankenphp-php8.4:8.4.0-1",
+          "runtime": "frankenphp",
+          "extensions": [
+            "opcache"
+          ],
+          "phpIni": {
+            "memory_limit": "256M"
+          },
+          "limits": {
+            "vcpus": 1,
+            "memoryBytes": "1073741824",
+            "processes": "100"
+          },
+          "domains": [
+            {
+              "name": "acme.example",
+              "kind": "primary"
+            }
+          ],
+          "databaseInstance": "01JBQ3Z5K8N6T4W2X9Y7R5P3C1"
+        }
+      }
+    },
+    "databases": {
+      "01jbq3z5k8n6t4w2x9y7r5p3c1": {
+        "number": 1,
+        "websites": [
+          "01JBQ3Z5K8N6T4W2X9Y7R5P3M1",
+          "01JBQ3Z5K8N6T4W2X9Y7R5P3M9"
+        ],
+        "servers": {
+          "01jbq3z5k8n6t4w2x9y7r5p3d3": {
+            "engine": "valkey",
+            "port": 6379,
+            "vcpus": 1,
+            "memoryBytes": 1073741824,
+            "diskBytes": 5368709120
+          }
+        }
+      }
+    }
+  }
+--- $DIR/units/10003/cf-valkey-01jbq3z5k8n6t4w2x9y7r5p3d3.container (-rw-r--r--)
+  # Managed by the Cloudfactory agent. The agent replaces changes to this file.
+  [Unit]
+  Description=Cloudfactory Valkey database server 01jbq3z5k8n6t4w2x9y7r5p3d3
+  
+  [Container]
+  ContainerName=cf-valkey-01jbq3z5k8n6t4w2x9y7r5p3d3
+  Image=ghcr.io/cloudfactory/valkey:latest
+  Pull=never
+  GlobalArgs=--runtime=/usr/local/bin/runsc --runtime-flag=platform=systrap --runtime-flag=network=sandbox --runtime-flag=ignore-cgroups
+  PublishPort=169.254.80.2:6379:6379
+  Label=io.cloudfactory.service=valkey
+  NoNewPrivileges=true
+  DropCapability=all
+  UserNS=keep-id:uid=999,gid=999
+  User=999
+  Group=999
+  ReadOnly=true
+  Tmpfs=/tmp
+  Volume=$DIR/cf-db/servers/01jbq3z5k8n6t4w2x9y7r5p3d3/disk/data:/data:Z
+  Exec=valkey-server --bind 0.0.0.0 --port 6379 --databases 1024 --aclfile /data/users.acl --appendonly yes --save "" --maxmemory 448mb --maxmemory-policy allkeys-lru
+  Label=io.cloudfactory.database-server=01jbq3z5k8n6t4w2x9y7r5p3d3
+  Label=io.cloudfactory.customer=01jbq3z5k8n6t4w2x9y7r5p3c1
+  StopTimeout=60
+  
+  [Service]
+  Restart=always
+  TimeoutStartSec=900
+  CPUQuota=100%
+  MemoryMax=1073741824
+  MemorySwapMax=0
+  
+  [Install]
+  WantedBy=default.target
+--- $DIR/units/20001/cf-staging_ab12.container (-rw-r--r--)
+  # Managed by the Cloudfactory agent. The agent replaces changes to this file.
+  [Unit]
+  Description=Website acme.example
+  
+  [Container]
+  ContainerName=cf-staging_ab12
+  Image=ghcr.io/cloudfactory/frankenphp-php8.4:8.4.0-1
+  Pull=never
+  GlobalArgs=--runtime=/usr/local/bin/runsc --runtime-flag=platform=systrap --runtime-flag=network=sandbox --runtime-flag=ignore-cgroups
+  Network=pasta
+  PublishPort=169.254.77.1:20000:8080
+  PodmanArgs=--no-hosts
+  Volume=$DIR/config/staging_ab12/hosts:/etc/hosts:ro
+  Volume=$DIR/sites/staging_ab12/app:/app:Z
+  Volume=$DIR/config/staging_ab12/php.ini:/usr/local/etc/php/conf.d/zz-cloudfactory.ini:ro,Z
+  Label=io.cloudfactory.website=01JBQ3Z5K8N6T4W2X9Y7R5P3M1
+  Environment=SERVER_NAME=:8080
+  Environment=CF_DOCUMENT_ROOT=/app/public
+  NoNewPrivileges=true
+  DropCapability=all
+  ReadOnly=true
+  Tmpfs=/tmp
+  UserNS=keep-id
+  LogDriver=k8s-file
+  PodmanArgs=--log-opt=path=$DIR/homes/staging_ab12/website.log --log-opt=max-size=10mb
+  
+  [Service]
+  Restart=always
+  TimeoutStartSec=300
+  CPUQuota=100%
+  MemoryMax=1073741824
+  MemorySwapMax=0
+  TasksMax=100
+  
+  [Install]
+  WantedBy=default.target
+--- $DIR/user@.service.d/zz-cloudfactory-stop.conf (-rw-r--r--)
+  # Managed by the Cloudfactory agent. The agent replaces changes to this file.
+  [Service]
+  TimeoutStopSec=120
