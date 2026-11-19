@@ -75,6 +75,10 @@ type Config struct {
 	// ValkeyBackups puts the Valkey databases in the backups of the websites. It is off by
 	// default. After a change, restart cf-agent.
 	ValkeyBackups bool `json:"valkeyBackups,omitempty"`
+	// ManageTrial lets the agent use the management program /cf/manage of an engine image,
+	// the trial of the contract cf-database/1. It is off by default. After a change, restart
+	// cf-agent.
+	ManageTrial bool `json:"manageTrial,omitempty"`
 }
 
 // Defaults gives the values for the settings that the file does not set.

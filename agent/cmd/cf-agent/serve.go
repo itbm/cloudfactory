@@ -262,6 +262,7 @@ func newDeps(cfg config.Config, run execx.Runner) (*actions.Deps, error) {
 		Arch:               runtime.GOARCH,
 		ResticPasswordFile: resticKey,
 		ValkeyBackups:      cfg.ValkeyBackups,
+		ManageTrial:        cfg.ManageTrial,
 		DataDir:            cfg.DataDir,
 		// The images of the services have the version of the agent. The release signs them.
 		ServiceImage: func(name string) string { return cfg.Registry + "/" + name + ":" + version },

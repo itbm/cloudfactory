@@ -189,6 +189,9 @@ func (d *Deps) FillReport(ctx context.Context, r *panel.Report) {
 	if d.ValkeyBackups {
 		r.Features = append(r.Features, "valkey-backups")
 	}
+	if d.ManageTrial {
+		r.Features = append(r.Features, "manage-trial")
+	}
 	r.DatabaseInstances = true
 	r.Services = append(r.Services, d.firewallService(ctx), d.helperService(), d.quotaService(sites), d.diskService())
 	r.Mail = d.mailReport(ctx)

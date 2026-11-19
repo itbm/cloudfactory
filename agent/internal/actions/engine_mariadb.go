@@ -39,6 +39,10 @@ func (mariaDriver) writeSecret(d *Deps, s dbServer, secret []byte) error {
 }
 
 func (mariaDriver) sizes(ctx context.Context, d *Deps, s dbServer) ([]panel.DatabaseSize, error) {
+	// The trial of the management contract (manage.go).
+	if sizes, ok := d.manageSizes(ctx, s); ok {
+		return sizes, nil
+	}
 	return sqlSizes(ctx, d, s, "SELECT table_schema, COALESCE(SUM(data_length + index_length), 0) FROM information_schema.tables GROUP BY table_schema;\n")
 }
 
