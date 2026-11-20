@@ -505,7 +505,7 @@ you trust.
 
 Refer to [security.md](security.md#plugins).
 
-## Runtimes and database engines (stage 1)
+## Runtimes and database engines
 
 The runtimes and the database engines of the agent are becoming packs that a publisher can
 add. Stage 1 gives the contracts in the agent and three switches. All switches are off by
@@ -543,7 +543,37 @@ port in `PORT`. Refer to the example in
 When a manifest is not valid, the agent writes an error in its log and uses only the
 built-in runtimes. The agent continues to operate.
 
-The panel does not show the runtimes from manifests yet.
+### Runtime images in the panel
+
+To let customers use a runtime from a manifest, an administrator adds an image for it:
+
+1. Go to **Apps** and select **Add your own image**.
+2. Select **Runtime from an agent manifest**.
+3. Type the name, the image reference and the tag of the image.
+4. In **Runtime name**, type the `name` of the manifest, for example `golang`.
+5. Type the usual start command, for example `./server`. You can also type the usual install
+   command, for example `go build -o server .`.
+6. Select **Add image**.
+
+The API request is `POST /api/v1/images` with `runtime`, `defaultCommand` and
+`defaultInstall`. An image of a runtime has no port and no command of its own: the website
+gives the start command, and the application listens on `PORT`.
+
+Then:
+
+- Customers see the runtime on the **New website** page, with one choice for each version
+  of the image. The usual commands of the image fill the form. Each website can change them.
+- The panel puts a website of the runtime only on a server whose agent reports the runtime.
+  An agent from an earlier release reports no runtimes, so it gets no website of a runtime
+  from a manifest. When no server has the runtime, the panel refuses the website and tells
+  the user why.
+- The **Runtime** tab of the website shows the start command, the install command and the
+  application directory, as for Node.js and Python.
+- The panel checks the registry for updates of the image, as for an own image.
+
+The images that you have do not change. The migration adds the columns `app_runtime`,
+`default_command` and `default_install` to the table `images`, with values that keep each
+image as before.
 
 ### Valkey backups
 

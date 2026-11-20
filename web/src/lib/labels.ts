@@ -50,6 +50,7 @@ export const RUNTIME_KIND: Record<RuntimeKind, string> = {
   python: "Python",
   oci: "OCI image",
   static: "Static files",
+  app: "Runtime",
 };
 
 /**

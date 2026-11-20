@@ -1001,11 +1001,20 @@ export function postAdminerForm(target: Window, url: string, form: AdminerForm) 
   el.submit();
 }
 
-/** FR-307: adds a custom image. The API checks the reference, the tag and the port. */
-export function addImage(name: string, reference: string, tag: string, policy: UpdatePolicy, run: { containerPort?: string; command?: string } = {}) {
-  const port = run.containerPort?.trim() ? Number(run.containerPort) : null;
-  const command = run.command?.trim() ? splitCommand(run.command) : null;
-  return call(() => live.request("POST", "/images", { name: name.trim(), reference: reference.trim(), tag: tag.trim(), policy, containerPort: port, command })).then(() => refresh()).then(() => undefined);
+/**
+ * FR-307: adds a custom image. The API checks the reference, the tag and the port. With
+ * `runtime`, the image is for a runtime from a manifest of the agent, for example Go: its
+ * websites run their start command, and customers can select it.
+ */
+export function addImage(
+  name: string, reference: string, tag: string, policy: UpdatePolicy,
+  run: { containerPort?: string; command?: string; runtime?: string; defaultCommand?: string; defaultInstall?: string } = {},
+) {
+  const image = { name: name.trim(), reference: reference.trim(), tag: tag.trim(), policy };
+  const body = run.runtime?.trim()
+    ? { ...image, runtime: run.runtime.trim(), defaultCommand: run.defaultCommand?.trim() ?? "", defaultInstall: run.defaultInstall?.trim() || null }
+    : { ...image, containerPort: run.containerPort?.trim() ? Number(run.containerPort) : null, command: run.command?.trim() ? splitCommand(run.command) : null };
+  return call(() => live.request("POST", "/images", body)).then(() => refresh()).then(() => undefined);
 }
 
 export function setImagePolicy(imageId: string, policy: UpdatePolicy) {

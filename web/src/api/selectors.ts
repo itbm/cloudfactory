@@ -35,6 +35,8 @@ export function runtimeLabel(s: State, w: Website): string {
       return "Caddy · static files";
     case "oci":
       return `${image?.name.replace(/\.js/, "") ?? "Own image"} · OCI image`;
+    case "app":
+      return image?.name ?? "Runtime";
   }
 }
 

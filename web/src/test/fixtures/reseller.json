@@ -942,7 +942,8 @@
                     "version": null,
                     "custom": false,
                     "supportEndsAt": "2027-01-13T00:00:00+00:00",
-                    "defaults": null
+                    "defaults": null,
+                    "appRuntime": false
                 },
                 {
                     "id": "01m7fxb5nf7nhrzkj1b0p47bzv",
@@ -953,7 +954,8 @@
                     "version": null,
                     "custom": false,
                     "supportEndsAt": "2029-12-31T00:00:00+00:00",
-                    "defaults": null
+                    "defaults": null,
+                    "appRuntime": false
                 },
                 {
                     "id": "01m7fxb5nda29m8ffy0mkpc9py",
@@ -964,7 +966,8 @@
                     "version": null,
                     "custom": false,
                     "supportEndsAt": "2028-12-31T00:00:00+00:00",
-                    "defaults": null
+                    "defaults": null,
+                    "appRuntime": false
                 },
                 {
                     "id": "01m7fxb5neyr6c95v1xbtkd6ra",
@@ -975,7 +978,8 @@
                     "version": null,
                     "custom": false,
                     "supportEndsAt": "2029-12-31T00:00:00+00:00",
-                    "defaults": null
+                    "defaults": null,
+                    "appRuntime": false
                 },
                 {
                     "id": "01m7fxb5nf7nhrzkj1b0p47bzw",
@@ -989,7 +993,8 @@
                     "defaults": {
                         "command": "npm start",
                         "install": "npm install --omit=dev"
-                    }
+                    },
+                    "appRuntime": false
                 },
                 {
                     "id": "01m7fxb5nf7nhrzkj1b0p47bzx",
@@ -1003,7 +1008,8 @@
                     "defaults": {
                         "command": "npm start",
                         "install": "npm install --omit=dev"
-                    }
+                    },
+                    "appRuntime": false
                 },
                 {
                     "id": "01m7fxb5ngd5fkw20abrk99cy4",
@@ -1017,7 +1023,8 @@
                     "defaults": {
                         "command": "npm start",
                         "install": "npm install --omit=dev"
-                    }
+                    },
+                    "appRuntime": false
                 },
                 {
                     "id": "01m7fxb5ngd5fkw20abrk99cy5",
@@ -1031,7 +1038,8 @@
                     "defaults": {
                         "command": "python app.py",
                         "install": "python -m venv .venv && .venv/bin/pip install -r requirements.txt"
-                    }
+                    },
+                    "appRuntime": false
                 },
                 {
                     "id": "01m7fxb5ngd5fkw20abrk99cy6",
@@ -1045,7 +1053,8 @@
                     "defaults": {
                         "command": "python app.py",
                         "install": "python -m venv .venv && .venv/bin/pip install -r requirements.txt"
-                    }
+                    },
+                    "appRuntime": false
                 }
             ]
         }

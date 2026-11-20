@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 #[Fillable([
     'name', 'family', 'reference', 'tag', 'digest', 'available_tag', 'available_digest', 'php_version',
     'support_ends_at', 'policy', 'custom', 'signature_verified', 'checked_at', 'check_error', 'container_port', 'command', 'runtime_version',
+    'app_runtime', 'default_command', 'default_install',
 ])]
 class Image extends Model
 {
@@ -24,6 +25,7 @@ class Image extends Model
             'policy' => UpdatePolicy::class,
             'support_ends_at' => 'date',
             'custom' => 'boolean',
+            'app_runtime' => 'boolean',
             'signature_verified' => 'boolean',
             'checked_at' => 'datetime',
             'container_port' => 'integer',
@@ -59,6 +61,12 @@ class Image extends Model
     public const APP_FAMILIES = ['node', 'python'];
 
     /**
+     * The families that the panel and the agent have built in. A runtime from a manifest of
+     * the agent cannot have one of these names.
+     */
+    public const BUILT_IN_FAMILIES = ['frankenphp', 'apache-php-fpm', 'node', 'python', 'custom', 'static', 'edge', 'mail', 'dns', 'database'];
+
+    /**
      * The usual start command and install command of each application family. The user can
      * change them. The Node.js install command keeps the lock file when it is there. The
      * Python install command makes a virtual environment in the application directory: the
@@ -74,10 +82,28 @@ class Image extends Model
         return in_array($this->family, ['frankenphp', 'apache-php-fpm'], true);
     }
 
-    /** True for a Node.js or Python image: the container runs the start command of the website. */
+    /**
+     * True for a Node.js or Python image, or an image of a runtime from a manifest: the
+     * container runs the start command of the website.
+     */
     public function isApp(): bool
     {
-        return ! $this->custom && in_array($this->family, self::APP_FAMILIES, true);
+        return ! $this->custom && ($this->app_runtime || in_array($this->family, self::APP_FAMILIES, true));
+    }
+
+    /**
+     * The usual start command and install command of an application image, or null for an
+     * image that is not an application image.
+     *
+     * @return array{command: string, install: string}|null
+     */
+    public function appDefaults(): ?array
+    {
+        if ($this->app_runtime && ! $this->custom) {
+            return ['command' => (string) $this->default_command, 'install' => (string) $this->default_install];
+        }
+
+        return self::APP_DEFAULTS[$this->family] ?? null;
     }
 
     /**

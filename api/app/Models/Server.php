@@ -123,6 +123,15 @@ class Server extends Model
         return in_array($feature, $this->agent_features ?? [], true);
     }
 
+    /**
+     * True when the agent of the server can run the website runtime. An agent of an earlier
+     * release does not report its runtimes: it has the built-in runtimes only.
+     */
+    public function hasRuntime(string $runtime): bool
+    {
+        return in_array($runtime, $this->agent_runtimes ?? ['frankenphp', 'apache-php-fpm', 'node', 'python', 'custom'], true);
+    }
+
     public function websites(): HasMany
     {
         return $this->hasMany(Website::class);

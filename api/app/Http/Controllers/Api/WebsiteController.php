@@ -130,10 +130,15 @@ class WebsiteController extends Controller
             // A healthy server first. A degraded server can also get a website: its agent answers.
             // A server that the panel cannot connect to comes last: its jobs fail.
             : Server::whereJsonContains('roles', 'web')->whereIn('state', Server::WORKING)->withCount('websites')
+                ->when($image->app_runtime, fn ($q) => $q->whereJsonContains('agent_runtimes', $image->family))
                 ->orderByRaw('case when connection_error is null then 0 else 1 end')
                 ->orderByRaw("case when state = 'healthy' then 0 else 1 end")->orderBy('websites_count')->first();
         if (! $server || ! in_array('web', $server->roles, true)) {
             throw ValidationException::withMessages(['serverId' => 'Select a server with the web role.']);
+        }
+        // A runtime from a manifest operates only on a server whose agent reports it.
+        if ($image->app_runtime && ! $server->hasRuntime($image->family)) {
+            throw ValidationException::withMessages([(isset($data['serverId']) ? 'serverId' : 'imageId') => "The agent on the server {$server->name} does not have the runtime {$image->family}. Add its manifest to the agent (runtimeManifests in agent.json), or select a different server."]);
         }
         $unixUser = self::unixUser($data['name']);
         $domain = null;
@@ -162,7 +167,7 @@ class WebsiteController extends Controller
         $website = DB::transaction(function () use ($data, $kind, $unixUser, $customer, $image, $plan, $server, $domain) {
             self::checkWebsiteLimit($customer);
             // The usual commands of the family, when the user gave none.
-            $defaults = Image::APP_DEFAULTS[$image->family] ?? null;
+            $defaults = $image->appDefaults();
             $install = array_key_exists('installCommand', $data) ? trim((string) $data['installCommand']) : ($defaults['install'] ?? '');
             $website = Website::create([
                 'name' => $data['name'],

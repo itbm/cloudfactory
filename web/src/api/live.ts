@@ -157,11 +157,11 @@ interface ApiServer {
 interface ApiImage {
   id: string; name: string; family: RuntimeImage["family"]; reference: string; tag: string; digest: string | null; availableTag: string | null; phpVersion: RuntimeImage["phpVersion"] | null; version?: string | null;
   supportEndsAt: string | null; policy: RuntimeImage["policy"]; custom: boolean; signatureVerified: boolean; websites: number | null; checkedAt?: string | null; checkError?: string | null;
-  containerPort?: number; command?: string[] | null;
+  containerPort?: number; command?: string[] | null; appRuntime?: boolean; defaults?: RuntimeImage["defaults"] | null;
 }
 interface ApiRuntimeImage {
   id: string; name: string; family: RuntimeImage["family"]; tag: string; phpVersion?: RuntimeImage["phpVersion"] | null; version?: string | null; custom: boolean; supportEndsAt: string | null;
-  defaults?: RuntimeImage["defaults"] | null;
+  defaults?: RuntimeImage["defaults"] | null; appRuntime?: boolean;
 }
 interface ApiRollout {
   id: string; imageId: string; title: string; fromTag: string; toTag: string; severity: Rollout["severity"]; state: Rollout["state"]; stages: Rollout["stages"];
@@ -186,8 +186,12 @@ interface ApiSnapshot { id: string; kind: "scheduled" | "manual"; sizeBytes: num
 
 // Mapping from the API shapes to the state of the UI.
 
+// A family that the panel does not have built in is a runtime from a manifest of the agent. The
+// family of an own image is "custom".
+const BUILT_IN_FAMILIES = ["frankenphp", "apache-php-fpm", "node", "python", "custom", "static", "edge", "mail", "dns", "database"];
 const runtimeKind = (family: string): RuntimeKind =>
-  family === "frankenphp" || family === "apache-php-fpm" || family === "node" || family === "python" ? family : family === "static" || family === "edge" ? "static" : "oci";
+  family === "frankenphp" || family === "apache-php-fpm" || family === "node" || family === "python" ? family
+    : family === "static" || family === "edge" ? "static" : BUILT_IN_FAMILIES.includes(family) ? "oci" : "app";
 
 const tagOfReference = (ref: string) => {
   const at = ref.lastIndexOf(":");
@@ -240,7 +244,7 @@ export function toWebsite(w: ApiWebsite): Website {
       version: w.runtime.version ?? undefined,
       workerMode: w.runtime.workerMode, extensions: w.runtime.extensions ?? [], phpIni: w.runtime.phpIni ?? {},
       previous: w.runtime.previousImageId ? { imageId: w.runtime.previousImageId, tag: "" } : undefined,
-      documentRoot: w.runtime.documentRoot ?? (w.runtime.family === "node" || w.runtime.family === "python" ? "." : "public"),
+      documentRoot: w.runtime.documentRoot ?? (w.runtime.family === "node" || w.runtime.family === "python" || runtimeKind(w.runtime.family) === "app" ? "." : "public"),
       digest: w.runtime.digest ?? undefined, signatureVerified: w.runtime.signatureVerified ?? undefined,
     },
     use: { cpuPercent: 0, memoryBytes: 0, diskBytes: 0, processes: 0, diskIoBytesPerSecond: 0, ...(w.usage ?? {}) },
@@ -281,6 +285,7 @@ export function toImage(i: ApiImage, rollouts: ApiRollout[]): RuntimeImage {
     availableNote: i.availableTag && rolling ? "rolling_out" : undefined, phpVersion: i.phpVersion ?? undefined, version: i.version ?? undefined, supportEndsAt: i.supportEndsAt ?? undefined,
     websites: String(i.websites ?? 0), policy: i.policy, checkError: i.checkError ?? undefined,
     custom: i.custom, signatureVerified: i.signatureVerified, digest: i.digest ?? "", containerPort: i.containerPort, command: i.command ?? undefined,
+    defaults: i.defaults ?? undefined, appRuntime: i.appRuntime || undefined,
   };
 }
 
@@ -288,7 +293,7 @@ export function toRuntimeImage(i: ApiRuntimeImage): RuntimeImage {
   return {
     id: i.id, name: i.name, family: i.family, reference: "", running: i.tag, phpVersion: i.phpVersion ?? undefined, version: i.version ?? undefined,
     defaults: i.defaults ?? undefined, supportEndsAt: i.supportEndsAt ?? undefined,
-    websites: "", policy: "manual", custom: i.custom, signatureVerified: !i.custom, digest: "",
+    websites: "", policy: "manual", custom: i.custom, signatureVerified: !i.custom, digest: "", appRuntime: i.appRuntime || undefined,
   };
 }
 

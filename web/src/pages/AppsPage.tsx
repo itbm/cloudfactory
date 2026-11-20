@@ -22,9 +22,14 @@ const CATALOGUE = [
 export function AppsPage() {
   const state = useStore();
   const isAdmin = state.session.user.role === "administrator";
-  const custom = state.images.filter((i) => i.custom);
+  // The own images, and the images of the runtimes from the manifests of the agents.
+  const custom = state.images.filter((i) => i.custom || i.appRuntime);
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ name: "", reference: "", tag: "latest", policy: "manual" as UpdatePolicy, containerPort: "", command: "" });
+  const [form, setForm] = useState({
+    name: "", reference: "", tag: "latest", policy: "manual" as UpdatePolicy, containerPort: "", command: "",
+    type: "image" as "image" | "runtime", runtime: "", defaultCommand: "", defaultInstall: "",
+  });
+  const runtime = form.type === "runtime";
   const add = useAction(addImage);
   const pending = state.jobs.filter((j) => jobActive(j) && j.title.startsWith("Add image"));
   return (
@@ -53,7 +58,11 @@ export function AppsPage() {
                     <td><strong>{i.name}</strong></td>
                     <td><code>{i.reference}</code></td>
                     <td><code>{i.running}</code></td>
-                    <td><code>{i.containerPort ?? 8080}</code><span className="cell-sub">{i.command?.length ? <code>{i.command.join(" ")}</code> : "Command of the image"}</span></td>
+                    {i.appRuntime ? (
+                      <td>Runtime <code>{i.family}</code><span className="cell-sub">{i.defaults?.command ? <code>{i.defaults.command}</code> : null} Each website can change the command.</span></td>
+                    ) : (
+                      <td><code>{i.containerPort ?? 8080}</code><span className="cell-sub">{i.command?.length ? <code>{i.command.join(" ")}</code> : "Command of the image"}</span></td>
+                    )}
                     <td>{i.signatureVerified ? <Status tone="success">Verified</Status> : <Status tone="warning">No signature</Status>}</td>
                     <td>{POLICY_LABEL[i.policy]}<span className="cell-sub">The panel checks the registry each hour for a new digest of the same tag.</span></td>
                   </tr>
@@ -66,15 +75,30 @@ export function AppsPage() {
       </main>
       {open && (
         <Modal title="Add your own image" onClose={() => { setOpen(false); add.clear(); }} footer={<><button type="button" className="btn" onClick={() => setOpen(false)}>Cancel</button><button type="submit" form="img" className="btn btn-primary">Add image</button></>}>
-          <form id="img" noValidate onSubmit={async (e) => { e.preventDefault(); if ((await add.run(form.name, form.reference, form.tag, form.policy, { containerPort: form.containerPort, command: form.command })).ok) setOpen(false); }}>
+          <form id="img" noValidate onSubmit={async (e) => { e.preventDefault(); if ((await add.run(form.name, form.reference, form.tag, form.policy, runtime ? { runtime: form.runtime, defaultCommand: form.defaultCommand, defaultInstall: form.defaultInstall } : { containerPort: form.containerPort, command: form.command })).ok) setOpen(false); }}>
             <FormError error={add.error} />
+            <fieldset className="radio-cards radio-cards-compact">
+              <legend>Type</legend>
+              <label className="radio-card"><input type="radio" name="type" checked={!runtime} onChange={() => setForm({ ...form, type: "image" })} /><strong>Own image</strong></label>
+              <label className="radio-card"><input type="radio" name="type" checked={runtime} onChange={() => setForm({ ...form, type: "runtime" })} /><strong>Runtime from an agent manifest</strong></label>
+            </fieldset>
             <Field label="Name" error={add.error?.fields.name}>{(p) => <input {...p} className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Python 3.14" />}</Field>
             <Field label="Image reference" error={add.error?.fields.reference}>{(p) => <input {...p} className="input mono" value={form.reference} onChange={(e) => setForm({ ...form, reference: e.target.value })} placeholder="docker.io/library/python" spellCheck={false} />}</Field>
             <Field label="Tag" error={add.error?.fields.tag}>{(p) => <input {...p} className="input mono" value={form.tag} onChange={(e) => setForm({ ...form, tag: e.target.value })} spellCheck={false} />}</Field>
-            <div className="form-row">
-              <Field label="HTTP port" hint="The port in the container. The default is 8080." error={add.error?.fields.containerPort}>{(p) => <input {...p} className="input mono" inputMode="numeric" value={form.containerPort} onChange={(e) => setForm({ ...form, containerPort: e.target.value })} placeholder="8080" />}</Field>
-              <Field label="Start command (optional)" hint="Leave empty to use the command of the image. Quotes keep spaces." error={add.error?.fields.command}>{(p) => <input {...p} className="input mono" value={form.command} onChange={(e) => setForm({ ...form, command: e.target.value })} placeholder="node server.js" spellCheck={false} />}</Field>
-            </div>
+            {runtime ? (
+              <>
+                <Field label="Runtime name" hint={<>The name in the runtime manifest of the agent (<code>runtimeManifests</code> in agent.json), for example <code>golang</code>. Websites with this image go only to servers whose agent has the manifest.</>} error={add.error?.fields.runtime}>{(p) => <input {...p} className="input mono" value={form.runtime} onChange={(e) => setForm({ ...form, runtime: e.target.value })} placeholder="golang" spellCheck={false} autoCapitalize="none" />}</Field>
+                <div className="form-row">
+                  <Field label="Usual start command" hint={<>The app listens on the port in the variable <code>PORT</code> (8080). Each website can change it.</>} error={add.error?.fields.defaultCommand}>{(p) => <input {...p} className="input mono" value={form.defaultCommand} onChange={(e) => setForm({ ...form, defaultCommand: e.target.value })} placeholder="./server" spellCheck={false} autoCapitalize="none" />}</Field>
+                  <Field label="Usual install command (optional)" hint="Runs in a build container before the app starts." error={add.error?.fields.defaultInstall}>{(p) => <input {...p} className="input mono" value={form.defaultInstall} onChange={(e) => setForm({ ...form, defaultInstall: e.target.value })} placeholder="go build -o server ." spellCheck={false} autoCapitalize="none" />}</Field>
+                </div>
+              </>
+            ) : (
+              <div className="form-row">
+                <Field label="HTTP port" hint="The port in the container. The default is 8080." error={add.error?.fields.containerPort}>{(p) => <input {...p} className="input mono" inputMode="numeric" value={form.containerPort} onChange={(e) => setForm({ ...form, containerPort: e.target.value })} placeholder="8080" />}</Field>
+                <Field label="Start command (optional)" hint="Leave empty to use the command of the image. Quotes keep spaces." error={add.error?.fields.command}>{(p) => <input {...p} className="input mono" value={form.command} onChange={(e) => setForm({ ...form, command: e.target.value })} placeholder="node server.js" spellCheck={false} />}</Field>
+              </div>
+            )}
             <Field label="Updates" hint="When the registry has a new digest for the tag.">
               {(p) => (
                 <select {...p} className="select" value={form.policy} onChange={(e) => setForm({ ...form, policy: e.target.value as UpdatePolicy })}>
@@ -83,7 +107,7 @@ export function AppsPage() {
                 </select>
               )}
             </Field>
-            <p className="muted small">The image runs in gVisor like all containers. The agent checks the signature when the image has one.</p>
+            <p className="muted small">{runtime ? "Customers can select a runtime image for a new website. " : ""}The image runs in gVisor like all containers. The agent checks the signature when the image has one.</p>
           </form>
         </Modal>
       )}

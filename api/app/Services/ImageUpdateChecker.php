@@ -37,7 +37,8 @@ class ImageUpdateChecker
     public function check(Image $image): string
     {
         try {
-            $result = $image->custom ? $this->checkCustom($image) : $this->checkOfficial($image);
+            // An image of a runtime from a manifest comes from its own publisher, as a custom image does.
+            $result = $image->custom || $image->app_runtime ? $this->checkCustom($image) : $this->checkOfficial($image);
             $image->update(['checked_at' => now(), 'check_error' => null]);
         } catch (Throwable $e) {
             $image->update(['checked_at' => now(), 'check_error' => mb_substr($e->getMessage(), 0, 250)]);
