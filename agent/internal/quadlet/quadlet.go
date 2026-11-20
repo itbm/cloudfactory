@@ -83,7 +83,7 @@ type Website struct {
 	Port       int    // the host port on ServiceAddress that the edge proxy uses
 	SiteDir    string // the files of the website on the host
 	IniFile    string // the generated php.ini on the host
-	Runtime    string // "frankenphp", "apache-php-fpm", "node", "python" or "custom"
+	Runtime    string // a name of Runtimes, for example "frankenphp", "node" or "custom"
 	WorkerMode bool
 	Limits     Limits
 	Gvisor     Runtime
@@ -133,13 +133,6 @@ const (
 // AppPort is the port in the container of a Node.js or Python website. The application
 // listens on the port in the variable PORT.
 const AppPort = 8080
-
-// IsApp reports whether the runtime runs an application of the customer with its start
-// command: Node.js or Python.
-func IsApp(runtime string) bool { return runtime == "node" || runtime == "python" }
-
-// IsPHP reports whether the runtime is a PHP runtime with a php.ini file.
-func IsPHP(runtime string) bool { return runtime == "frankenphp" || runtime == "apache-php-fpm" }
 
 // ContainerName is the name of the Podman container.
 func (w Website) ContainerName() string { return "cf-" + w.UnixUser + w.Suffix }
@@ -258,7 +251,7 @@ func ContainerUnit(w Website) string {
 	// websites only on ServiceAddress, and the host firewall refuses that (install.sh).
 	line("Network", "pasta")
 	containerPort := 8080
-	if w.Runtime == "custom" && w.ContainerPort > 0 {
+	if IsCustom(w.Runtime) && w.ContainerPort > 0 {
 		containerPort = w.ContainerPort
 	}
 	if !w.Worker {
@@ -273,9 +266,9 @@ func ContainerUnit(w Website) string {
 	} else if w.DatabaseAddress != "" {
 		// A website with no hosts file. The database servers of the customer publish their
 		// ports on this address.
-		line("AddHost", MariaDBHost+":"+w.DatabaseAddress)
-		line("AddHost", PostgreSQLHost+":"+w.DatabaseAddress)
-		line("AddHost", ValkeyHost+":"+w.DatabaseAddress)
+		for _, e := range engineSpecs {
+			line("AddHost", e.Host+":"+w.DatabaseAddress)
+		}
 	}
 	line("Volume", w.SiteDir+":/app:Z")
 	if w.IniFile != "" && IsPHP(w.Runtime) {
@@ -302,7 +295,7 @@ func ContainerUnit(w Website) string {
 		// The variables of the customer. Podman reads the file as the Unix user of the website.
 		line("EnvironmentFile", w.EnvFile)
 	}
-	if w.Runtime == "frankenphp" && w.WorkerMode {
+	if spec, _ := RuntimeOf(w.Runtime); spec.FrankenPHPWorkerMode && w.WorkerMode {
 		// The value has a space, so it is in quotes. systemd splits Environment at spaces.
 		line("Environment", `"FRANKENPHP_CONFIG=worker `+path.Join(root, "index.php")+`"`)
 	}
@@ -319,7 +312,7 @@ func ContainerUnit(w Website) string {
 		line("PodmanArgs", "--log-opt=path="+w.LogFile+" --log-opt=max-size="+LogFileMax)
 	}
 
-	if (w.Runtime == "custom" || w.Worker || IsApp(w.Runtime)) && len(w.Command) > 0 {
+	if (IsCustom(w.Runtime) || w.Worker || IsApp(w.Runtime)) && len(w.Command) > 0 {
 		line("Exec", execLine(w.Command))
 	}
 
@@ -480,13 +473,11 @@ func DatabaseContainer(engine, id string) string {
 // and the port of the first database server of the engine on the address of a customer. The
 // website containers connect through the host names MariaDBHost, PostgreSQLHost and ValkeyHost.
 func DatabasePort(engine string) int {
-	switch engine {
-	case "postgresql":
-		return 5432
-	case "valkey":
-		return 6379
+	if e, ok := Engine(engine); ok {
+		return e.Port
 	}
-	return 3306
+	// The first engine. The agent checks each engine name before it gets here.
+	return engineSpecs[0].Port
 }
 
 // DatabasePorts is the number of ports of each engine on the address of a customer: the usual
@@ -519,7 +510,7 @@ func ValkeyArgs(d Database) []string {
 	}
 	return []string{
 		"--bind", "0.0.0.0",
-		"--port", strconv.Itoa(DatabasePort("valkey")),
+		"--port", strconv.Itoa(ValkeyPort),
 		"--databases", strconv.Itoa(ValkeyDatabases),
 		// The users and the database number of each user. Each connection needs a user and a
 		// password: the user "default" has the password of the administrator.
@@ -547,7 +538,8 @@ func DatabaseUnit(d Database) string {
 	if d.Port > 0 {
 		published = strconv.Itoa(d.Port)
 	}
-	description := "Cloudfactory " + map[string]string{"mariadb": "MariaDB", "postgresql": "PostgreSQL", "valkey": "Valkey"}[d.Engine] + " database server " + d.ID
+	spec, _ := Engine(d.Engine)
+	description := "Cloudfactory " + spec.Label + " database server " + d.ID
 	// A database server has its own Unix user on the host, and that user owns the data
 	// files. In the container, that user is the database user of the image. Thus the
 	// database server starts as the database user, with no capability, and each file that
@@ -576,39 +568,8 @@ func DatabaseUnit(d Database) string {
 		"ReadOnly=true",
 		"Tmpfs=/tmp",
 	}
-	switch d.Engine {
-	case "valkey":
-		lines = append(lines,
-			// The data and the user file. The files belong to the Unix user of the database
-			// server, which is the user valkey of the container.
-			"Volume="+d.DataDir+":/data:Z",
-			"Exec=valkey-server "+strings.Join(ValkeyArgs(d), " "),
-		)
-	case "mariadb":
-		lines = append(lines,
-			"Volume="+d.DataDir+":/var/lib/mysql:Z",
-			"Tmpfs=/run/mysqld",
-			// Audit batch 2, finding 4: the image does not let root use the socket with no
-			// password. The env file gives the root password to the server at the first start,
-			// and to the client (MYSQL_PWD) in each "podman exec". No root user can use TCP.
-			"EnvironmentFile="+d.EnvFile,
-			"Environment=MARIADB_ROOT_HOST=localhost",
-			"Environment=MARIADB_AUTO_UPGRADE=1",
-		)
-	default:
-		lines = append(lines,
-			// PGDATA is the mount itself (images/postgresql/Containerfile).
-			"Volume="+d.DataDir+":/var/lib/postgresql/data:Z",
-			"Tmpfs=/var/run/postgresql",
-			"ShmSize=256m",
-			"EnvironmentFile="+d.EnvFile,
-			`Environment="POSTGRES_INITDB_ARGS=--auth-host=scram-sha-256 --auth-local=trust"`,
-		)
-		if wal := PostgresWALMB(d.DiskBytes); wal > 0 {
-			// The write-ahead log does not fill a small disk. The smallest size that
-			// PostgreSQL keeps is two log files of 16 MB.
-			lines = append(lines, fmt.Sprintf("Exec=postgres -c max_wal_size=%dMB -c min_wal_size=32MB", wal))
-		}
+	if spec.Lines != nil {
+		lines = append(lines, spec.Lines(d)...)
 	}
 	lines = append(lines, "Label=io.cloudfactory.database-server="+d.ID, "Label=io.cloudfactory.customer="+d.Customer,
 		// The database server writes its data to the disk before it stops. The time must be

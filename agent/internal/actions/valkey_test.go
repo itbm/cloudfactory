@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net"
 	"os"
 	"path/filepath"
@@ -34,6 +35,8 @@ type fakeValkey struct {
 	passwords map[string]string
 	rules     map[string][]string
 	keys      map[int]int
+	// data has the keys of each database number for the backup tests (valkey_backup.go).
+	data map[int]map[string]fakeKey
 	// commands has each command with its arguments, without the passwords.
 	commands []string
 	saves    int
@@ -230,11 +233,64 @@ func (f *fakeValkey) answer(args []string, user *string, db *int) string {
 		return "+OK\r\n"
 	case "FLUSHDB":
 		f.keys[*db] = 0
+		delete(f.data, *db)
+		return "+OK\r\n"
+	case "SCAN":
+		names := slices.Sorted(maps.Keys(f.data[*db]))
+		out := fmt.Sprintf("*2\r\n%s*%d\r\n", bulk("0"), len(names))
+		for _, n := range names {
+			out += bulk(n)
+		}
+		return out
+	case "DUMP":
+		k, ok := f.data[*db][args[1]]
+		if !ok {
+			return "$-1\r\n"
+		}
+		return bulk("DUMP\x00" + k.value)
+	case "PEXPIRETIME":
+		k, ok := f.data[*db][args[1]]
+		if !ok {
+			return ":-2\r\n"
+		}
+		if k.expireAt == 0 {
+			return ":-1\r\n"
+		}
+		return fmt.Sprintf(":%d\r\n", k.expireAt)
+	case "RESTORE":
+		value, ok := strings.CutPrefix(args[3], "DUMP\x00")
+		if !ok {
+			return "-ERR DUMP payload version or checksum are wrong\r\n"
+		}
+		at, _ := strconv.ParseInt(args[2], 10, 64)
+		if at > 0 && !slices.Contains(args, "ABSTTL") {
+			return "-ERR the agent must send ABSTTL\r\n"
+		}
+		f.set(*db, args[1], value, at)
 		return "+OK\r\n"
 	case "PING":
 		return "+PONG\r\n"
 	}
 	return "-ERR unknown command\r\n"
+}
+
+// fakeKey is one key of the fake Valkey server.
+type fakeKey struct {
+	value    string
+	expireAt int64
+}
+
+// set puts a key into a database number of the fake Valkey server. The caller holds f.mu
+// or the server has no connection.
+func (f *fakeValkey) set(db int, key, value string, expireAt int64) {
+	if f.data == nil {
+		f.data = map[int]map[string]fakeKey{}
+	}
+	if f.data[db] == nil {
+		f.data[db] = map[string]fakeKey{}
+	}
+	f.data[db][key] = fakeKey{value: value, expireAt: expireAt}
+	f.keys[db] = len(f.data[db])
 }
 
 func mapKeysOf(m map[string][]string) func(func(string) bool) {

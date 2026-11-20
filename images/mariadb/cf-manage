@@ -1,0 +1,54 @@
+#!/bin/sh
+# /cf/manage: the management contract cf-database/1 of the MariaDB service image (trial).
+#
+# The agent runs "podman exec -i <container> /cf/manage <operation>". The operation reads a
+# JSON object on stdin (it can be empty) and writes one JSON object on stdout. An exit code
+# that is not 0 is an error, and stderr has its text. The agent uses this program only when
+# the switch manageTrial in agent.json is on, and then only for the operations below. With an
+# error, the agent uses its own commands, as before.
+#
+# Operations:
+#   describe  {"contract":"cf-database/1","engine":"mariadb","version":"...","operations":[...]}
+#   ready     {"ready":true} when the server accepts TCP connections
+#   sizes     {"sizes":[{"name":"...","bytes":N},...]}
+#
+# The client gets the password of root in MYSQL_PWD from the environment of the container.
+# SPDX-License-Identifier: AGPL-3.0-only
+set -eu
+
+# json_string writes its argument as a JSON string.
+json_string() {
+	printf '"%s"' "$(printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | tr -d '\000-\037')"
+}
+
+case "${1:-}" in
+describe)
+	version=$(mariadb --version 2>/dev/null | head -n 1)
+	printf '{"contract":"cf-database/1","engine":"mariadb","version":%s,"operations":["describe","ready","sizes"]}\n' "$(json_string "$version")"
+	;;
+ready)
+	mariadb-admin --protocol=tcp --host=127.0.0.1 --port=3306 --connect-timeout=5 ping >/dev/null 2>&1 || {
+		echo "cf-manage: the server does not answer" >&2
+		exit 1
+	}
+	printf '{"ready":true}\n'
+	;;
+sizes)
+	rows=$(printf 'SELECT table_schema, COALESCE(SUM(data_length + index_length), 0) FROM information_schema.tables GROUP BY table_schema;\n' |
+		mariadb --user=root --batch --skip-column-names)
+	printf '{"sizes":['
+	first=1
+	printf '%s\n' "$rows" | while IFS="$(printf '\t')" read -r name bytes; do
+		[ -n "$name" ] || continue
+		case "$bytes" in '' | *[!0-9]*) continue ;; esac
+		[ "$first" = 1 ] || printf ','
+		first=0
+		printf '{"name":%s,"bytes":%s}' "$(json_string "$name")" "$bytes"
+	done
+	printf ']}\n'
+	;;
+*)
+	echo "cf-manage: the operation \"${1:-}\" is not known; the operations are describe, ready and sizes" >&2
+	exit 2
+	;;
+esac

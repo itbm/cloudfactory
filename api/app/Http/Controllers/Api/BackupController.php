@@ -97,7 +97,7 @@ class BackupController extends Controller
     public static function start(JobDispatcher $jobs, Website $website, string $kind, string $title): AgentJob
     {
         $job = $jobs->dispatch($website->server, AgentAction::Backup, self::backupPayload($website, $kind), $title, $website);
-        $remote = $website->sqlDatabases()->with('databaseServer.server')->orderBy('name')->get()
+        $remote = $website->backupDatabases()->with('databaseServer.server')->orderBy('name')->get()
             ->filter(fn ($d) => $d->databaseServer && $d->databaseServer->server_id !== $website->server_id)
             ->groupBy(fn ($d) => $d->databaseServer->server_id);
         foreach ($remote as $databases) {
@@ -116,13 +116,14 @@ class BackupController extends Controller
     }
 
     /**
-     * The SQL databases of a website in the database servers on the server of the website.
+     * The databases of a website in a backup (Website::backupDatabases), in the database
+     * servers on the server of the website.
      *
      * @return Collection<int, Database>
      */
     public static function localDatabases(Website $website)
     {
-        return $website->sqlDatabases()->whereHas('databaseServer', fn ($q) => $q->where('server_id', $website->server_id))->orderBy('name')->get()->values();
+        return $website->backupDatabases()->whereHas('databaseServer', fn ($q) => $q->where('server_id', $website->server_id))->orderBy('name')->get()->values();
     }
 
     /**

@@ -30,15 +30,11 @@ func CheckWebsite(w *agentv1.Website) error {
 	}
 	errs := []error{validate.ID(w.GetId()), validate.UnixUser(w.GetUnixUser()), validate.Image(w.GetImage()), validate.Digest(w.GetImageDigest()),
 		validate.DocumentRoot(w.GetDocumentRoot()), validate.Command(w.GetCommand()), validate.Port(w.GetContainerPort())}
-	switch w.GetRuntime() {
-	case "frankenphp", "apache-php-fpm", "custom":
-	case "node", "python":
-		// An application runtime runs the start command of the customer.
-		if len(w.GetCommand()) == 0 {
-			errs = append(errs, fmt.Errorf("a %s website needs a start command", w.GetRuntime()))
-		}
-	default:
+	if spec, ok := quadlet.RuntimeOf(w.GetRuntime()); !ok {
 		errs = append(errs, fmt.Errorf("the runtime %q is not valid", w.GetRuntime()))
+	} else if spec.App() && len(w.GetCommand()) == 0 {
+		// An application runtime runs the start command of the customer.
+		errs = append(errs, fmt.Errorf("a %s website needs a start command", w.GetRuntime()))
 	}
 	for _, e := range w.GetExtensions() {
 		errs = append(errs, validate.Extension(e))
@@ -138,7 +134,7 @@ func imageRef(w *agentv1.Website) string {
 // shared reports whether the website uses the shared image store. A custom image stays in the
 // storage of the website user, so that other customers never see it.
 func (d *Deps) shared(w *agentv1.Website) bool {
-	return d.Images != nil && w.GetRuntime() != "custom" && images.Shareable(imageRef(w))
+	return d.Images != nil && !quadlet.IsCustom(w.GetRuntime()) && images.Shareable(imageRef(w))
 }
 
 // pullImage pulls the image of a website. The signature policy of Podman
@@ -214,7 +210,7 @@ func (d *Deps) PruneImages() {
 	}
 	var refs []string
 	for _, s := range sites {
-		if s.Website != nil && s.Website.GetRuntime() != "custom" {
+		if s.Website != nil && !quadlet.IsCustom(s.Website.GetRuntime()) {
 			refs = append(refs, imageRef(s.Website))
 		}
 	}
@@ -291,7 +287,7 @@ func documentRoot(w *agentv1.Website) string {
 
 // isPHP reports whether the runtime of a website is a PHP runtime, with a php.ini file.
 func isPHP(w *agentv1.Website) bool {
-	return w.GetRuntime() == "frankenphp" || w.GetRuntime() == "apache-php-fpm"
+	return quadlet.IsPHP(w.GetRuntime())
 }
 
 // envPath is the environment file of a container of a website (envFile).
@@ -682,38 +678,26 @@ func checkCopies(req *agentv1.WebsiteRequest) error {
 // through the agent, and it loads as a temporary user with access to the new database only
 // (CF-06).
 func (d *Deps) copyDatabase(ctx context.Context, from dbServer, fromName string, to dbServer, toName string) error {
-	if to.Engine == "mariadb" {
-		found, err := d.exists(ctx, to, fmt.Sprintf("SHOW DATABASES LIKE '%s';\n", strings.ReplaceAll(toName, "_", `\\_`)))
-		if err != nil {
-			return err
-		}
-		// A job that runs again after a restart finds the database of its first run.
-		if !found {
-			if _, err := d.sql(ctx, to, fmt.Sprintf("CREATE DATABASE `%s` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;\n", toName)); err != nil {
-				return err
-			}
-		}
-	} else {
-		found, err := d.exists(ctx, to, fmt.Sprintf("SELECT 1 FROM pg_database WHERE datname = '%s';\n", toName))
-		if err != nil {
-			return err
-		}
-		if !found {
-			if _, err := d.sql(ctx, to, pgCreateDatabase(toName)); err != nil {
-				return err
-			}
-		}
+	drv, err := sqlOf(to.Engine)
+	if err != nil {
+		return err
 	}
-	err := d.restoreDump(ctx, to, toName, func(ctx context.Context, client []string) error {
+	// A job that runs again after a restart finds the database of its first run.
+	if err := drv.ensureDatabase(ctx, d, to, toName); err != nil {
+		return err
+	}
+	err = d.restoreDump(ctx, to, toName, func(ctx context.Context, client []string) error {
 		dump, err := d.dumpCommand(ctx, from, fromName)
 		if err != nil {
 			return err
 		}
-		if to.Engine != "mariadb" {
+		filter := drv.dumpFilter()
+		if filter == nil {
 			return d.Run.Pipe(ctx, dump, client)
 		}
-		// The dump goes through withoutDefiners, as a stream: the user of the restore
-		// cannot make an object for the definer of the source (finding G3-02).
+		// The dump goes through the filter, as a stream. For MariaDB it is withoutDefiners:
+		// the user of the restore cannot make an object for the definer of the source
+		// (finding G3-02).
 		pr, pw := io.Pipe()
 		dumped := make(chan error, 1)
 		go func() {
@@ -721,7 +705,7 @@ func (d *Deps) copyDatabase(ctx context.Context, from dbServer, fromName string,
 			pw.CloseWithError(err)
 			dumped <- err
 		}()
-		err = d.Run.Stream(ctx, withoutDefiners(pr), nil, client[0], client[1:]...)
+		err = d.Run.Stream(ctx, filter(pr), nil, client[0], client[1:]...)
 		pr.CloseWithError(err)
 		if derr := <-dumped; derr != nil && err == nil {
 			err = derr
@@ -767,7 +751,7 @@ func (d *Deps) copyDatabases(ctx context.Context, req *agentv1.WebsiteRequest, v
 			return err
 		}
 		engine := u.GetEngine()
-		if engine == "valkey" {
+		if isNumbered(engine) {
 			number, err := d.valkeyCreate(ctx, srv, u.GetName(), req.GetWebsite().GetUnixUser()+"_", u.GetPassword())
 			if err != nil {
 				return err
@@ -1001,9 +985,11 @@ func (d *Deps) DeleteWebsite(req *agentv1.DeleteWebsiteRequest) (jobs.Job, error
 				if !ok {
 					continue
 				}
-				if srv.Engine == "mariadb" {
-					if _, err := d.sql(ctx, srv, mariaRevokeDatabase(db.GetName())); err != nil {
-						return err
+				if drv, ok := sqlDriverOf(srv.Engine); ok {
+					if q := drv.removeSQL(db.GetName()); q != "" {
+						if _, err := d.sql(ctx, srv, q); err != nil {
+							return err
+						}
 					}
 				}
 				if err := d.dropDatabase(ctx, srv, db.GetName()); err != nil {
@@ -1228,7 +1214,7 @@ func (d *Deps) changeDomain(req *agentv1.DomainRequest, add bool) (jobs.Job, err
 // "custom") gets names that start with CF_, for example CF_TOKEN (docs/plugins.md). The other
 // websites cannot use these names, which are for the agent and the images.
 func envNameOf(runtime, name string) error {
-	if runtime == "custom" && strings.HasPrefix(name, "CF_") {
+	if quadlet.IsCustom(runtime) && strings.HasPrefix(name, "CF_") {
 		return validate.SecretName(name)
 	}
 	return validate.EnvName(name)

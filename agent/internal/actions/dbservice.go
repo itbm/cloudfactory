@@ -14,8 +14,9 @@ import (
 	"github.com/itbm/cloudfactory/agent/internal/quadlet"
 )
 
-// Engines are the database engines of the database containers.
-var Engines = []string{"mariadb", "postgresql", "valkey"}
+// Engines are the database engines of the database containers (quadlet.Engines). Each one
+// has a driver in engineDrivers.
+var Engines = quadlet.EngineNames()
 
 // dbHome holds the data of the database servers. Root owns it.
 //
@@ -93,8 +94,8 @@ func (d *Deps) databaseUnit(s dbServer, customer, address string, record Databas
 		Limits:    quadlet.Limits{VCPUs: record.VCPUs, MemoryBytes: record.MemoryBytes},
 		DiskBytes: record.DiskBytes,
 	}
-	if s.Engine == "valkey" {
-		u.MemoryMB = valkeyDataMB(record.MemoryBytes)
+	if drv, err := driverOf(s.Engine); err == nil {
+		drv.adjustUnit(&u, record)
 	}
 	return u
 }
@@ -137,12 +138,11 @@ func (d *Deps) prepareServer(ctx context.Context, s dbServer, customer, address 
 	if err := d.makeDataDir(ctx, u.DataDir, user); err != nil {
 		return false, err
 	}
-	if s.Engine == "valkey" {
-		// Valkey has a user file, not an environment file.
-		if err := d.writeValkeyUsers(s, u.DataDir); err != nil {
-			return false, err
-		}
-	} else if err := d.writeSuperuserSecret(ctx, s, u.EnvFile); err != nil {
+	drv, err := driverOf(s.Engine)
+	if err != nil {
+		return false, err
+	}
+	if err := drv.prepareSecret(ctx, d, s, u); err != nil {
 		return false, err
 	}
 	if d.Images != nil {
@@ -248,11 +248,10 @@ func (d *Deps) EnsureDatabaseService(ctx context.Context, s dbServer) error {
 	if err := d.waitDatabase(ctx, s); err != nil {
 		return err
 	}
-	if s.Engine == "postgresql" {
-		// The users of the websites cannot connect to the databases of the server itself.
-		if _, err := d.sqlNow(ctx, s, pgHarden); err != nil {
-			return err
-		}
+	if drv, err := driverOf(s.Engine); err != nil {
+		return err
+	} else if err := drv.started(ctx, d, s); err != nil {
+		return err
 	}
 	d.dbMu.Lock()
 	if d.dbReady == nil {
@@ -321,11 +320,11 @@ func (d *Deps) writeSuperuserSecret(ctx context.Context, s dbServer, path string
 		_, err := d.Run.Run(ctx, "chown", owner, path)
 		return err
 	}
-	pass := randomHex(48)
-	content := "POSTGRES_PASSWORD=" + pass + "\n"
-	if s.Engine == "mariadb" {
-		content = "MARIADB_ROOT_PASSWORD=" + pass + "\nMYSQL_PWD=" + pass + "\n"
+	drv, err := sqlOf(s.Engine)
+	if err != nil {
+		return err
 	}
+	content := drv.superuserSecret(randomHex(48))
 	// The file has its final mode only after it has its owner.
 	if _, err := host.WriteFile(path, content, 0o600); err != nil {
 		return err
@@ -338,17 +337,15 @@ func (d *Deps) writeSuperuserSecret(ctx context.Context, s dbServer, path string
 
 // databaseListens checks that the SQL server of a container accepts TCP connections.
 func (d *Deps) databaseListens(ctx context.Context, s dbServer) error {
+	drv, err := sqlOf(s.Engine)
+	if err != nil {
+		return err
+	}
 	args, err := d.dbExec(s, "-i")
 	if err != nil {
 		return err
 	}
-	if s.Engine == "mariadb" {
-		// "ping" is successful when the server answers, also when the server refuses the user.
-		// The server refuses the user here, and writes one warning for that in its log.
-		args = append(args, "mariadb-admin", "--protocol=tcp", "--host=127.0.0.1", "--port=3306", "--connect-timeout=5", "ping")
-	} else {
-		args = append(args, "pg_isready", "--quiet", "--host=127.0.0.1", "--port=5432", "--timeout=5")
-	}
+	args = append(args, drv.listensArgs()...)
 	_, err = d.Run.Run(ctx, args[0], args[1:]...)
 	return err
 }
@@ -369,13 +366,11 @@ func (d *Deps) waitDatabase(ctx context.Context, s dbServer) error {
 	}
 	deadline := time.Now().Add(timeout)
 	for {
-		var err error
-		if s.Engine == "valkey" {
-			err = d.valkeyReady(ctx, s)
-		} else if err = d.databaseListens(ctx, s); err == nil {
-			_, err = d.sqlNow(ctx, s, "SELECT 1;\n")
+		drv, err := driverOf(s.Engine)
+		if err != nil {
+			return err
 		}
-		if err == nil {
+		if err = drv.ready(ctx, d, s); err == nil {
 			return nil
 		}
 		if time.Now().After(deadline) {

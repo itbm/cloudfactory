@@ -290,8 +290,8 @@ func (d *Deps) waitTransferAddresses(ctx context.Context, in transferIn) (own, p
 
 // secretPath gives the file with the secret of the superuser of a database server.
 func (d *Deps) secretPath(s dbServer) string {
-	if s.Engine == "valkey" {
-		return d.valkeySecretFile(s)
+	if drv, err := driverOf(s.Engine); err == nil {
+		return drv.secretPath(d, s)
 	}
 	return filepath.Join(d.dbDir(s), s.Engine+".env")
 }
@@ -722,16 +722,16 @@ func receiveFile(disk *safefs.Dir, r io.Reader, rel string, size int64, mode os.
 // checkSecret checks the secret of the superuser from the old server. The entry point of
 // the image reads the environment file, so it can have only the names that the agent writes.
 func checkSecret(engine string, secret []byte) error {
-	text := string(secret)
-	if engine == "valkey" {
-		if !regexp.MustCompile(`^[0-9a-f]{32,128}\n?$`).MatchString(text) {
-			return errors.New("the secret of the Valkey administrator is not valid")
-		}
-		return nil
+	if drv, err := driverOf(engine); err == nil {
+		return drv.checkSecret(secret)
 	}
-	names := map[string]bool{"POSTGRES_PASSWORD": engine == "postgresql", "MARIADB_ROOT_PASSWORD": engine == "mariadb", "MYSQL_PWD": engine == "mariadb"}
+	return checkEnvSecret(engine, nil, secret)
+}
+
+// checkEnvSecret checks an environment file with the names of an engine.
+func checkEnvSecret(engine string, names map[string]bool, secret []byte) error {
 	value := regexp.MustCompile(`^[0-9a-f]{16,256}$`)
-	for i, l := range strings.Split(strings.TrimSuffix(text, "\n"), "\n") {
+	for i, l := range strings.Split(strings.TrimSuffix(string(secret), "\n"), "\n") {
 		name, v, ok := strings.Cut(l, "=")
 		if !ok || !names[name] || !value.MatchString(v) {
 			return fmt.Errorf("line %d of the secret of the %s superuser is not valid", i+1, engine)
@@ -743,12 +743,17 @@ func checkSecret(engine string, secret []byte) error {
 // writeSecret replaces the secret of the superuser with the secret from the old server. The
 // secret agrees with the data.
 func (d *Deps) writeSecret(s dbServer, secret []byte) error {
-	p := d.secretPath(s)
-	if s.Engine == "valkey" {
-		_, err := host.WriteFile(p, string(secret), 0o600)
+	drv, err := driverOf(s.Engine)
+	if err != nil {
 		return err
 	}
-	// As writeSuperuserSecret: root owns the file, and the group of the user can read it.
+	return drv.writeSecret(d, s, secret)
+}
+
+// writeEnvSecret writes the environment file of the superuser. As writeSuperuserSecret: root
+// owns the file, and the group of the user can read it.
+func (d *Deps) writeEnvSecret(s dbServer, secret []byte) error {
+	p := d.secretPath(s)
 	if _, err := host.WriteFile(p, string(secret), 0o600); err != nil {
 		return err
 	}

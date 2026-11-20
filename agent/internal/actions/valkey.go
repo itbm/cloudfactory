@@ -2,6 +2,7 @@ package actions
 
 import (
 	"bufio"
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -60,6 +61,8 @@ func (e valkeyError) Error() string { return "valkey: " + string(e) }
 type valkeyConn struct {
 	c net.Conn
 	r *bufio.Reader
+	// maxBulk is the maximum size of one string of an answer. 0 means maxValkeyAnswer.
+	maxBulk int
 }
 
 func (v *valkeyConn) Close() error { return v.c.Close() }
@@ -101,7 +104,7 @@ func (v *valkeyConn) read(depth int) (any, error) {
 		return strconv.ParseInt(rest, 10, 64)
 	case '$':
 		n, err := strconv.Atoi(rest)
-		if err != nil || n > maxValkeyAnswer {
+		if err != nil || n > cmp.Or(v.maxBulk, maxValkeyAnswer) {
 			return nil, fmt.Errorf("valkey: unexpected answer %q", line)
 		}
 		if n < 0 {

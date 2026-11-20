@@ -156,7 +156,7 @@ func allowImage(podman, images []string) error {
 // sizeArg is a number of bytes in a command.
 var sizeArg = regexp.MustCompile(`^[1-9][0-9]{0,17}$`)
 
-var databaseClients = []string{"mariadb", "mariadb-admin", "mariadb-dump", "psql", "pg_isready", "pg_dump", "pg_restore"}
+var databaseClients = []string{"mariadb", "mariadb-admin", "mariadb-dump", "psql", "pg_isready", "pg_dump", "pg_restore", manageProgram}
 
 // allowDatabasePodman checks a Podman command as the Unix user of a database container: the
 // image of a database engine, or a database client in a database container of that user. The

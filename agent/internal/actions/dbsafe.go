@@ -67,11 +67,9 @@ func pgCloseSQL(user string) string {
 // closeSessions closes the open sessions of a database user after a change of its password
 // or of its access. An error is only in the log: the change is complete.
 func (d *Deps) closeSessions(ctx context.Context, s dbServer, user string) {
-	var err error
-	if s.Engine == "mariadb" {
-		_, err = d.sql(ctx, s, fmt.Sprintf("KILL USER '%s';\n", user))
-	} else {
-		_, err = d.sql(ctx, s, pgCloseSQL(user))
+	drv, err := sqlOf(s.Engine)
+	if err == nil {
+		_, err = d.sql(ctx, s, drv.closeSQL(user))
 	}
 	if err != nil {
 		slog.Warn("close the sessions of a database user", "user", user, "err", err)

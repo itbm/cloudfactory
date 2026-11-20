@@ -119,6 +119,12 @@ type Deps struct {
 	// ValkeyDial opens a connection to a Valkey database server on an address and a port
 	// ("address:port"). Nil means a TCP connection. Tests replace it.
 	ValkeyDial func(ctx context.Context, address string) (net.Conn, error)
+	// ValkeyBackups puts the Valkey databases in the backups (valkey_backup.go). It is off by
+	// default: then a backup or a restore of a Valkey database fails, as before.
+	ValkeyBackups bool
+	// ManageTrial lets the agent use the management program /cf/manage of an engine image
+	// (manage.go). It is off by default.
+	ManageTrial bool
 	// SftpKeysDir holds the SSH keys of each website user. The default is "/etc/cloudfactory/sftp".
 	SftpKeysDir string
 	// SftpUsersDir holds the user list of the SFTP container. The default is

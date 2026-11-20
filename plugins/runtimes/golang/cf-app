@@ -1,0 +1,20 @@
+#!/bin/sh
+# The start script of the Go image. It goes to the application directory and runs the start
+# command of the website, for example "./server". The agent runs the build command, for
+# example "go build -o server .", in a build container of this image.
+#
+# A new website has no application yet. Then the script serves a short page, so that the
+# health check of the agent passes.
+# SPDX-License-Identifier: AGPL-3.0-only
+set -e
+dir="${CF_APP_DIR:-/app}"
+if [ ! -d "$dir" ]; then
+	echo "cf-app: the application directory $dir does not exist" >&2
+	exit 1
+fi
+cd "$dir"
+if [ -n "$CF_WELCOME" ] || { [ ! -f go.mod ] && [ "$*" = "sh -c ./server" ]; }; then
+	echo "cf-app: no go.mod in $dir. Serving the welcome page." >&2
+	exec /usr/local/bin/cf-welcome
+fi
+exec "$@"

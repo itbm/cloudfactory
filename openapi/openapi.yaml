@@ -5936,6 +5936,20 @@ components:
           type: [array, 'null']
           description: The database engines that the agent can operate. An agent of an earlier release does not send the field.
           items: { $ref: '#/components/schemas/Engine' }
+        runtimes:
+          type: [array, 'null']
+          description: >-
+            The website runtimes that the agent can run: the built-in runtimes and the runtimes
+            from manifest files (runtimeManifests in agent.json). An agent of an earlier release
+            does not send the field.
+          items: { type: string, maxLength: 32 }
+        features:
+          type: [array, 'null']
+          description: >-
+            The optional features of the agent that are on, for example `valkey-backups`. With
+            `valkey-backups`, the backups of the websites include their Valkey databases. An
+            agent of an earlier release does not send the field.
+          items: { type: string, maxLength: 64 }
         databaseInstances:
           type: boolean
           description: True when the agent can operate the database servers of customers. An agent of an earlier release does not send the field.

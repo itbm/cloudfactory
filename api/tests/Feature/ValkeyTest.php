@@ -187,6 +187,40 @@ class ValkeyTest extends TestCase
         $this->getJson("/api/v1/websites/{$website->id}/snapshots")->assertJsonPath('data.0.databases', ["mariadb:{$website->unix_user}_shop"]);
     }
 
+    public function test_a_backup_has_the_valkey_data_when_the_agent_has_the_feature_on(): void
+    {
+        $website = $this->site(['agent_features' => ['valkey-backups']]);
+        $cache = $this->cache($website);
+        $maria = $this->databaseServerOf($website);
+        $website->databases()->create(['engine' => 'mariadb', 'name' => $website->unix_user.'_shop', 'database_server_id' => $maria->id]);
+        $this->putJson('/api/v1/backup-policy', ['daily' => 7, 'weekly' => 4, 'monthly' => 6, 'time' => '03:00', 'target' => 's3:s3.amazonaws.com/backups'])->assertOk();
+
+        $jobId = $this->postJson("/api/v1/websites/{$website->id}/snapshots")->assertAccepted()->json('job.id');
+        $this->assertSame([
+            ['engine' => 'valkey', 'name' => $cache->name, 'databaseServer' => $cache->database_server_id],
+            ['engine' => 'mariadb', 'name' => $website->unix_user.'_shop', 'databaseServer' => $maria->id],
+        ], AgentJob::findOrFail($jobId)->payload['databases']);
+        $this->finish($jobId, result: ['snapshotId' => 'abc123', 'sizeBytes' => 1024, 'dumps' => ["valkey:{$cache->name}" => str_repeat('a', 64)]]);
+
+        $snapshot = $website->snapshots()->sole();
+        $this->postJson("/api/v1/websites/{$website->id}/snapshots/{$snapshot->id}/restore", ['scope' => 'database', 'item' => "valkey:{$cache->name}"])->assertAccepted();
+    }
+
+    public function test_the_report_of_the_agent_gives_the_runtimes_and_the_features(): void
+    {
+        $server = $this->server(['local' => true, 'agent_token_hash' => hash('sha256', 'cfa_features'), 'certificate_fingerprint' => self::LOCAL_FINGERPRINT, 'connection_checked_at' => now()]);
+        $this->assertFalse($server->hasAgentFeature('valkey-backups'));
+
+        $this->asLocalAgent('cfa_features')->postJson('/api/agent/v1/report', ['agentVersion' => '0.1.9', 'runtimes' => ['frankenphp', 'node', 'golang'], 'features' => ['valkey-backups']])->assertOk();
+        $server = Server::findOrFail($server->id);
+        $this->assertTrue($server->hasAgentFeature('valkey-backups'));
+        $this->assertSame(['frankenphp', 'node', 'golang'], $server->agent_runtimes);
+
+        // An agent of an earlier release does not send them.
+        $this->asLocalAgent('cfa_features')->postJson('/api/agent/v1/report', ['agentVersion' => '0.1.9'])->assertOk();
+        $this->assertFalse(Server::findOrFail($server->id)->hasAgentFeature('valkey-backups'));
+    }
+
     public function test_a_staging_copy_gets_a_new_empty_valkey_database(): void
     {
         $website = $this->site();

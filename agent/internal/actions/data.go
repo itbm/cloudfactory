@@ -58,7 +58,7 @@ func checkEngine(engine string) error {
 
 // sqlEngine is checkEngine for the actions that use SQL or a dump. Valkey has neither.
 func sqlEngine(engine string) error {
-	if engine == "valkey" {
+	if isNumbered(engine) {
 		return errValkeyNoCopy
 	}
 	return checkEngine(engine)
@@ -87,26 +87,16 @@ func (d *Deps) sql(ctx context.Context, s dbServer, statements string) (string, 
 
 // sqlNow is sql with no start of the container.
 func (d *Deps) sqlNow(ctx context.Context, s dbServer, statements string) (string, error) {
-	engine := s.Engine
-	if engine == "valkey" {
-		return "", errors.New("Valkey has no SQL")
-	}
-	if err := checkEngine(engine); err != nil {
+	drv, err := sqlOf(s.Engine)
+	if err != nil {
 		return "", err
 	}
 	args, err := d.dbExec(s, "-i")
 	if err != nil {
 		return "", err
 	}
-	if engine == "mariadb" {
-		args = append(args, "mariadb", "--user=root", "--batch", "--skip-column-names")
-	} else {
-		args = append(args, "psql", "--username=postgres", "--set=ON_ERROR_STOP=1", "--tuples-only", "--no-align")
-	}
-	if engine == "postgresql" {
-		statements = pgSafe(statements)
-	}
-	return d.Run.RunInput(ctx, statements, args[0], args[1:]...)
+	args = append(args, drv.client()...)
+	return d.Run.RunInput(ctx, drv.prepareSQL(statements), args[0], args[1:]...)
 }
 
 // mariaHost is the host part of a MariaDB user (CF-19). "website" users can connect only from
@@ -220,30 +210,17 @@ func (d *Deps) CreateDatabase(req *agentv1.CreateDatabaseRequest) (jobs.Job, err
 	if err := checkWebsiteServer(req.GetDatabaseServer(), engine); err != nil {
 		return jobs.Job{}, err
 	}
-	if engine == "valkey" {
+	drv, ok := sqlDriverOf(engine)
+	if !ok {
 		return d.createValkeyDatabase(req)
 	}
-	maria := engine == "mariadb"
 	steps := []jobs.Step{
 		{Name: "Create database", Do: func(ctx context.Context) error {
 			srv, err := d.websiteServer(ctx, req.GetWebsiteId(), req.GetDatabaseServer(), engine)
 			if err != nil {
 				return err
 			}
-			if maria {
-				// No "IF NOT EXISTS": the job fails when the database exists.
-				_, err := d.sql(ctx, srv, fmt.Sprintf("CREATE DATABASE `%s` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;\n", name))
-				return err
-			}
-			found, err := d.exists(ctx, srv, fmt.Sprintf("SELECT 1 FROM pg_database WHERE datname = '%[1]s' UNION ALL SELECT 1 FROM pg_roles WHERE rolname IN ('%[1]s:rw', '%[1]s:ro');\n", name))
-			if err != nil {
-				return err
-			}
-			if found {
-				return fmt.Errorf("the database %s exists", name)
-			}
-			_, err = d.sql(ctx, srv, pgCreateDatabase(name))
-			return err
+			return drv.createDatabase(ctx, d, srv, name)
 		}},
 	}
 	if user != "" {
@@ -319,38 +296,33 @@ ALTER DEFAULT PRIVILEGES FOR ROLE "%[1]s:rw" IN SCHEMA public GRANT SELECT ON SE
 
 // createUser makes a user. It fails when a user with the name exists, with any host.
 func (d *Deps) createUser(ctx context.Context, s dbServer, user, pass, host, access string) error {
-	if s.Engine == "mariadb" {
-		found, err := d.exists(ctx, s, fmt.Sprintf("SELECT 1 FROM mysql.user WHERE User = '%s';\n", user))
-		if err != nil {
-			return err
-		}
-		if found {
-			return fmt.Errorf("the database user %s exists", user)
-		}
-		_, err = d.sql(ctx, s, fmt.Sprintf("CREATE USER '%s'@'%s' IDENTIFIED BY '%s' %s;\n", user, host, pass, mariaRequire(access)))
-		return err
-	}
-	found, err := d.exists(ctx, s, fmt.Sprintf("SELECT 1 FROM pg_roles WHERE rolname = '%s';\n", user))
+	drv, err := sqlOf(s.Engine)
 	if err != nil {
 		return err
 	}
-	if found {
-		return fmt.Errorf("the database user %s exists", user)
-	}
-	_, err = d.sql(ctx, s, fmt.Sprintf("CREATE ROLE \"%s\" LOGIN CONNECTION LIMIT %d PASSWORD '%s';\n", user, pgUserConnections, pass))
-	return err
+	return drv.createUser(ctx, d, s, user, pass, host, access)
 }
 
-// grantSQL gives one database to a user with "readonly" or "readwrite" privileges.
+// grantSQL gives one database to a user with "readonly" or "readwrite" privileges. The
+// engine has SQL: the callers check it first.
 func grantSQL(engine, user, host, database, privileges string) string {
-	if engine == "mariadb" {
-		p, _ := mariaPrivileges(privileges)
-		return fmt.Sprintf("GRANT %s ON %s.* TO '%s'@'%s';\n", p, mariaDB(database), user, host)
+	drv, ok := sqlDriverOf(engine)
+	if !ok {
+		return ""
 	}
-	if privileges == "readwrite" {
-		return fmt.Sprintf("GRANT \"%[1]s\" TO \"%[2]s\";\nALTER ROLE \"%[2]s\" IN DATABASE \"%[3]s\" SET role = '%[1]s';\n", pgRole(database, privileges), user, database)
+	return drv.grantSQL(user, host, database, privileges)
+}
+
+// sqlOf gives the driver of an engine with SQL, or the error of sqlNow.
+func sqlOf(engine string) (sqlDriver, error) {
+	if _, err := driverOf(engine); err != nil {
+		return nil, err
 	}
-	return fmt.Sprintf("GRANT \"%[1]s\" TO \"%[2]s\";\n", pgRole(database, privileges), user)
+	drv, ok := sqlDriverOf(engine)
+	if !ok {
+		return nil, fmt.Errorf("%s has no SQL", engineLabel(engine))
+	}
+	return drv, nil
 }
 
 // pgRevokeSQL removes the access of a PostgreSQL user to one database.
@@ -412,7 +384,8 @@ func (d *Deps) SetDatabaseUser(req *agentv1.SetDatabaseUserRequest) (jobs.Job, e
 		host, err := mariaHost(req.GetAccess())
 		return srv, host, err
 	}
-	if engine == "valkey" {
+	drv, ok := sqlDriverOf(engine)
+	if !ok {
 		// The user of a Valkey database comes and goes with its database, and has access to
 		// that database only. Thus only its password can change.
 		if req.GetCreate() || (req.GetAccess() != "" && req.GetAccess() != "website") {
@@ -431,7 +404,10 @@ func (d *Deps) SetDatabaseUser(req *agentv1.SetDatabaseUserRequest) (jobs.Job, e
 			}},
 		}}, nil
 	}
-	maria := engine == "mariadb"
+	var grants []grant
+	for _, g := range req.GetGrants() {
+		grants = append(grants, grant{database: g.GetDatabase(), privileges: g.GetPrivileges()})
+	}
 	return jobs.Job{ID: req.GetJobId(), Key: req.GetWebsiteId(), Steps: []jobs.Step{
 		{Name: "Set user and password", Do: func(ctx context.Context) error {
 			srv, host, err := server(ctx)
@@ -441,62 +417,14 @@ func (d *Deps) SetDatabaseUser(req *agentv1.SetDatabaseUserRequest) (jobs.Job, e
 			if req.GetCreate() {
 				return d.createUser(ctx, srv, user, pass, host, req.GetAccess())
 			}
-			if !maria {
-				// A user from before the connection limit gets the limit with each change.
-				statement := fmt.Sprintf("ALTER ROLE \"%s\" WITH LOGIN CONNECTION LIMIT %d", user, pgUserConnections)
-				if pass != "" {
-					statement += fmt.Sprintf(" PASSWORD '%s'", pass)
-				}
-				_, err := d.sql(ctx, srv, statement+";\n")
-				return err
-			}
-			old, err := d.mariaCurrentHost(ctx, srv, user)
-			if err != nil {
-				return err
-			}
-			var b strings.Builder
-			if old != host {
-				fmt.Fprintf(&b, "RENAME USER '%s'@'%s' TO '%s'@'%s';\n", user, old, user, host)
-			}
-			fmt.Fprintf(&b, "ALTER USER '%s'@'%s' %s;\n", user, host, mariaRequire(req.GetAccess()))
-			if pass != "" {
-				fmt.Fprintf(&b, "ALTER USER '%s'@'%s' IDENTIFIED BY '%s';\n", user, host, pass)
-			}
-			_, err = d.sql(ctx, srv, b.String())
-			return err
+			return drv.setUser(ctx, d, srv, user, pass, host, req.GetAccess())
 		}},
 		{Name: "Set access to databases", Do: func(ctx context.Context) error {
 			srv, host, err := server(ctx)
 			if err != nil {
 				return err
 			}
-			var b strings.Builder
-			if maria {
-				// Remove all grants, then give the grants of the request.
-				fmt.Fprintf(&b, "REVOKE ALL PRIVILEGES, GRANT OPTION FROM '%s'@'%s';\n", user, host)
-			} else {
-				for _, db := range req.GetWebsiteDatabases() {
-					b.WriteString(pgRevokeSQL(user, db))
-				}
-			}
-			for _, g := range req.GetGrants() {
-				b.WriteString(grantSQL(engine, user, host, g.GetDatabase(), g.GetPrivileges()))
-			}
-			if !maria {
-				// The objects and the direct privileges of the user in each database that it
-				// loses (finding G3-03). The memberships above come first: the script stops
-				// at the first error.
-				keeps := map[string]bool{}
-				for _, g := range req.GetGrants() {
-					keeps[g.GetDatabase()] = true
-				}
-				for _, db := range req.GetWebsiteDatabases() {
-					if !keeps[db] {
-						b.WriteString(pgDisownSQL(user, db))
-					}
-				}
-			}
-			if _, err = d.sql(ctx, srv, b.String()); err != nil {
+			if _, err = d.sql(ctx, srv, drv.accessSQL(user, host, req.GetWebsiteDatabases(), grants)); err != nil {
 				return err
 			}
 			if !req.GetCreate() {
@@ -528,7 +456,7 @@ func (d *Deps) DeleteDatabaseUser(req *agentv1.DeleteDatabaseUserRequest) (jobs.
 	if err := checkEngine(engine); err != nil {
 		return jobs.Job{}, err
 	}
-	if engine == "valkey" {
+	if isNumbered(engine) {
 		return jobs.Job{}, errors.New("the user of a Valkey database goes with its database; remove the database")
 	}
 	return jobs.Job{ID: req.GetJobId(), Key: req.GetWebsiteId(), Steps: []jobs.Step{
@@ -543,51 +471,11 @@ func (d *Deps) DeleteDatabaseUser(req *agentv1.DeleteDatabaseUserRequest) (jobs.
 }
 
 func (d *Deps) dropUser(ctx context.Context, s dbServer, user string) error {
-	engine := s.Engine
-	if engine == "valkey" {
-		// dropDatabase removes the user of a Valkey database.
-		return nil
-	}
-	if engine == "mariadb" {
-		out, err := d.sql(ctx, s, fmt.Sprintf("SELECT Host FROM mysql.user WHERE User = '%s';\n", user))
-		if err != nil {
-			return err
-		}
-		var b strings.Builder
-		for _, h := range strings.Fields(out) {
-			if validate.DatabaseClientHost(h) == nil {
-				fmt.Fprintf(&b, "DROP USER IF EXISTS '%s'@'%s';\n", user, h)
-			}
-		}
-		if b.Len() == 0 {
-			return nil
-		}
-		if _, err = d.sql(ctx, s, b.String()); err != nil {
-			return err
-		}
-		d.closeSessions(ctx, s, user)
-		return nil
-	}
-	found, err := d.exists(ctx, s, fmt.Sprintf("SELECT 1 FROM pg_roles WHERE rolname = '%s';\n", user))
-	if err != nil || !found {
-		return err
-	}
-	// The user can own objects and can have direct privileges, in each database of the
-	// server. DROP ROLE fails while it has them (finding G3-03). DROP ROLE also removes the
-	// memberships and the settings of the user.
-	databases, err := d.pgDatabases(ctx, s)
+	drv, err := driverOf(s.Engine)
 	if err != nil {
 		return err
 	}
-	var b strings.Builder
-	fmt.Fprintf(&b, "ALTER ROLE \"%s\" NOLOGIN;\n", user)
-	b.WriteString(pgCloseSQL(user))
-	for _, db := range databases {
-		b.WriteString(pgDisownSQL(user, db))
-	}
-	fmt.Fprintf(&b, "DROP ROLE IF EXISTS \"%s\";\n", user)
-	_, err = d.sql(ctx, s, b.String())
-	return err
+	return drv.dropUser(ctx, d, s, user)
 }
 
 // DeleteDatabase removes the access of all users to a database, then the database.
@@ -604,7 +492,8 @@ func (d *Deps) DeleteDatabase(req *agentv1.DeleteDatabaseRequest) (jobs.Job, err
 	if err := errors.Join(errs...); err != nil {
 		return jobs.Job{}, err
 	}
-	if engine == "valkey" {
+	drv, ok := sqlDriverOf(engine)
+	if !ok {
 		return jobs.Job{ID: req.GetJobId(), Key: req.GetWebsiteId(), Steps: []jobs.Step{
 			{Name: "Remove database and user", Do: func(ctx context.Context) error {
 				srv, err := d.serverFor(req.GetWebsiteId(), req.GetCustomer(), req.GetDatabaseServer(), engine)
@@ -621,18 +510,11 @@ func (d *Deps) DeleteDatabase(req *agentv1.DeleteDatabaseRequest) (jobs.Job, err
 			if err != nil {
 				return err
 			}
-			if engine == "mariadb" {
-				_, err := d.sql(ctx, srv, mariaRevokeDatabase(name))
-				return err
-			}
-			var b strings.Builder
-			for _, u := range req.GetUsers() {
-				b.WriteString(pgRevokeSQL(u, name))
-			}
-			if b.Len() == 0 {
+			revoke := drv.revokeDatabaseSQL(name, req.GetUsers())
+			if revoke == "" {
 				return nil
 			}
-			_, err = d.sql(ctx, srv, b.String())
+			_, err = d.sql(ctx, srv, revoke)
 			return err
 		}},
 		{Name: "Remove database", Do: func(ctx context.Context) error {
@@ -658,32 +540,11 @@ func mariaRevokeDatabase(name string) string {
 }
 
 func (d *Deps) dropDatabase(ctx context.Context, s dbServer, name string) error {
-	if s.Engine == "valkey" {
-		return d.valkeyDelete(ctx, s, name)
-	}
-	if s.Engine == "mariadb" {
-		_, err := d.sql(ctx, s, fmt.Sprintf("DROP DATABASE IF EXISTS `%s`;\nDROP USER IF EXISTS '%s'@'localhost';\n", name, mariaDefiner(name)))
-		return err
-	}
-	// The group roles of the database can own objects in the other databases of the website,
-	// and DROP ROLE then fails (finding G3-05).
-	databases, err := d.pgDatabases(ctx, s)
+	drv, err := driverOf(s.Engine)
 	if err != nil {
 		return err
 	}
-	var disown strings.Builder
-	if found, err := d.exists(ctx, s, fmt.Sprintf("SELECT 1 FROM pg_roles WHERE rolname = '%s:rw';\n", name)); err != nil {
-		return err
-	} else if found {
-		for _, other := range databases {
-			if other != name {
-				fmt.Fprintf(&disown, "\\connect \"%[1]s\"\nREASSIGN OWNED BY \"%[2]s:rw\", \"%[2]s:ro\" TO \"%[1]s:rw\";\nDROP OWNED BY \"%[2]s:rw\", \"%[2]s:ro\";\n", other, name)
-			}
-		}
-		disown.WriteString("\\connect postgres\n")
-	}
-	_, err = d.sql(ctx, s, pgUnlockDatabaseSQL(name)+disown.String()+fmt.Sprintf("DROP DATABASE IF EXISTS \"%[1]s\" WITH (FORCE);\nDROP ROLE IF EXISTS \"%[1]s:rw\";\nDROP ROLE IF EXISTS \"%[1]s:ro\";\n", name))
-	return err
+	return drv.dropDatabase(ctx, d, s, name)
 }
 
 var targetRE = regexp.MustCompile(`^(s3|b2|azure|gs):\S+$`)
@@ -949,7 +810,7 @@ func (d *Deps) Backup(req *agentv1.BackupRequest) (jobs.Job, error) {
 		return jobs.Job{}, err
 	}
 	for _, db := range req.GetDatabases() {
-		if err := sqlEngine(db.GetEngine()); err != nil {
+		if err := d.backupEngine(db.GetEngine()); err != nil {
 			return jobs.Job{}, err
 		}
 		if err := validate.TenantDatabaseName(req.GetUnixUser(), db.GetName()); err != nil {
@@ -1010,7 +871,11 @@ func (d *Deps) Backup(req *agentv1.BackupRequest) (jobs.Job, error) {
 				if err != nil {
 					return err
 				}
-				sum, err := d.dumpToFile(ctx, srv, unixUser, db.GetName())
+				dump := d.dumpToFile
+				if isNumbered(srv.Engine) {
+					dump = d.valkeyDumpToFile
+				}
+				sum, err := dump(ctx, srv, unixUser, db.GetName())
 				if err != nil {
 					return err
 				}
@@ -1077,12 +942,11 @@ func (d *Deps) dumpCommand(ctx context.Context, s dbServer, name string) ([]stri
 	if err != nil {
 		return nil, err
 	}
-	if s.Engine == "mariadb" {
-		args = append(args, "mariadb-dump", "--user=root", "--single-transaction", "--routines", "--events", name)
-	} else {
-		args = append(args, "pg_dump", "--username=postgres", "--format=custom", "--no-owner", "--no-privileges", name)
+	drv, err := sqlOf(s.Engine)
+	if err != nil {
+		return nil, err
 	}
-	return args, nil
+	return append(args, drv.dumpArgs(name)...), nil
 }
 
 // dumpToFile writes the dump of a database of a website to its file in the dump directory of
@@ -1212,7 +1076,7 @@ func (d *Deps) Restore(req *agentv1.RestoreRequest) (jobs.Job, error) {
 		if !ok {
 			return jobs.Job{}, errors.New(`the database must be "engine:name"`)
 		}
-		if err := sqlEngine(engine); err != nil {
+		if err := d.backupEngine(engine); err != nil {
 			return jobs.Job{}, err
 		}
 		_, serverErr := serverKey(req.GetDatabaseServer())
@@ -1283,6 +1147,9 @@ func (d *Deps) Restore(req *agentv1.RestoreRequest) (jobs.Job, error) {
 			srv, err := d.serverFor(req.GetWebsiteId(), req.GetCustomer(), req.GetDatabaseServer(), dbEngine)
 			if err != nil {
 				return err
+			}
+			if isNumbered(dbEngine) {
+				return d.valkeyRestoreStaged(ctx, req.GetJobId(), unixUser, srv, dbName)
 			}
 			return d.restoreDump(ctx, srv, dbName, func(ctx context.Context, client []string) error {
 				return d.loadStagedDump(ctx, req.GetJobId(), unixUser, dbEngine, dbName, client)
@@ -1410,8 +1277,8 @@ func (d *Deps) loadStagedDump(ctx context.Context, jobID, unixUser, engine, name
 	}
 	defer f.Close()
 	var dump io.Reader = f
-	if engine == "mariadb" {
-		dump = withoutDefiners(f)
+	if drv, ok := sqlDriverOf(engine); ok && drv.dumpFilter() != nil {
+		dump = drv.dumpFilter()(f)
 	}
 	return d.Run.Stream(ctx, dump, nil, client[0], client[1:]...)
 }
@@ -1446,27 +1313,18 @@ func (d *Deps) emptyAsUser(ctx context.Context, unixUser, dir string) error {
 // Audit batch 2, finding 5: the database is empty before the restore, so that the result is
 // the database of the backup, with no tables that the website made later.
 func (d *Deps) restoreDump(ctx context.Context, s dbServer, name string, feed func(ctx context.Context, client []string) error) error {
-	engine := s.Engine
-	tmpUser := "cfrestore_" + randomHex(8)
-	pass := randomHex(24)
-	maria := engine == "mariadb"
-	var create, drop string
-	if maria {
-		// The user of the restore is the definer account of the database (mariaDefiner). It
-		// stays after the restore, locked.
-		tmpUser = mariaDefiner(name)
-		create = fmt.Sprintf("CREATE USER IF NOT EXISTS '%[1]s'@'localhost' IDENTIFIED BY '%[2]s';\nALTER USER '%[1]s'@'localhost' IDENTIFIED BY '%[2]s' ACCOUNT UNLOCK;\nGRANT ALL PRIVILEGES ON %[3]s.* TO '%[1]s'@'localhost';\n", tmpUser, pass, mariaDB(name))
-		drop = fmt.Sprintf("ALTER USER IF EXISTS '%[1]s'@'localhost' IDENTIFIED BY '%[2]s' ACCOUNT LOCK;\n", tmpUser, randomHex(24))
-	} else {
-		create = fmt.Sprintf("CREATE ROLE \"%[1]s\" LOGIN PASSWORD '%[2]s';\nGRANT \"%[3]s\" TO \"%[1]s\";\n", tmpUser, pass, pgRole(name, "readwrite"))
-		drop = fmt.Sprintf("DROP ROLE IF EXISTS \"%s\";\n", tmpUser)
+	drv, err := sqlOf(s.Engine)
+	if err != nil {
+		return err
 	}
+	pass := randomHex(24)
+	tmpUser, create, drop, passwordEnv := drv.restoreAccount(name, pass)
 	if _, err := d.sql(ctx, s, create); err != nil {
 		return err
 	}
 	defer d.sql(context.WithoutCancel(ctx), s, drop)
 
-	envFile, err := d.secretFile(ctx, s, map[bool]string{true: "MYSQL_PWD", false: "PGPASSWORD"}[maria]+"="+pass+"\n")
+	envFile, err := d.secretFile(ctx, s, passwordEnv+"="+pass+"\n")
 	if err != nil {
 		return err
 	}
@@ -1475,46 +1333,17 @@ func (d *Deps) restoreDump(ctx context.Context, s dbServer, name string, feed fu
 	if err != nil {
 		return err
 	}
-	// --sandbox refuses client commands such as "system" and "source".
-	client := []string{"mariadb", "--sandbox", "--user=" + tmpUser, "--batch", name}
-	check := client
-	if !maria {
-		client = []string{"pg_restore", "--host=127.0.0.1", "--username=" + tmpUser, "--role=" + pgRole(name, "readwrite"), "--dbname=" + name, "--no-owner", "--no-privileges", "--clean", "--if-exists", "--exit-on-error"}
-		check = []string{"psql", "--host=127.0.0.1", "--username=" + tmpUser, "--dbname=" + name, "--no-psqlrc", "--quiet", "--set=ON_ERROR_STOP=1"}
-	}
+	client, check := drv.restoreClients(tmpUser, name)
 	// The temporary user signs in before the database loses its data. A fault of the server,
 	// for example a secret file that the database user cannot read, then stops the restore
 	// while the database still has its data.
 	if _, err := d.Run.RunInput(ctx, "SELECT 1;\n", base[0], slices.Concat(base[1:], check)...); err != nil {
 		return fmt.Errorf("the restore did not start, and the database keeps its data: %w", err)
 	}
-	if _, err := d.sql(ctx, s, emptyDatabaseSQL(engine, name)); err != nil {
+	if _, err := d.sql(ctx, s, drv.emptySQL(name)); err != nil {
 		return err
 	}
 	return feed(ctx, slices.Concat(base, client))
-}
-
-// emptyDatabaseSQL removes all data of a database, and keeps the database, its users and their
-// privileges. MariaDB keeps the privileges on a database when the database is dropped. In
-// PostgreSQL, the schemas of the website and the schema public go, and public comes back with
-// the privileges of pgCreateDatabase.
-func emptyDatabaseSQL(engine, name string) string {
-	if engine == "mariadb" {
-		return fmt.Sprintf("DROP DATABASE IF EXISTS `%[1]s`;\nCREATE DATABASE `%[1]s` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;\n", name)
-	}
-	return fmt.Sprintf(`\connect "%[1]s"
-DO $$DECLARE s name; BEGIN
-  FOR s IN SELECT nspname FROM pg_namespace WHERE nspowner = '"%[1]s:rw"'::regrole AND nspname <> 'public' LOOP
-    EXECUTE format('DROP SCHEMA %%I CASCADE', s);
-  END LOOP;
-END$$;
-DROP SCHEMA IF EXISTS public CASCADE;
-CREATE SCHEMA public AUTHORIZATION pg_database_owner;
-REVOKE ALL ON SCHEMA public FROM PUBLIC;
-GRANT USAGE ON SCHEMA public TO "%[1]s:ro";
-ALTER DEFAULT PRIVILEGES FOR ROLE "%[1]s:rw" IN SCHEMA public GRANT SELECT ON TABLES TO "%[1]s:ro";
-ALTER DEFAULT PRIVILEGES FOR ROLE "%[1]s:rw" IN SCHEMA public GRANT SELECT ON SEQUENCES TO "%[1]s:ro";
-`, name)
 }
 
 // secretsDir holds short-lived files with passwords for the database clients.

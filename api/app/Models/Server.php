@@ -19,7 +19,7 @@ use Illuminate\Support\Facades\DB;
     'sftp_port', 'panel_ca_sha256', 'connection_error', 'connection_checked_at', 'database_engines', 'database_instances', 'dns_name', 'dns', 'addresses', 'dns_resync',
     'mesh_public_key', 'mesh_address', 'mesh_endpoint', 'mesh_version', 'mesh_wanted_version', 'mesh_networks', 'mesh_websites', 'mesh_moves', 'mesh_state_hash',
     'sftp_port', 'panel_ca_sha256', 'connection_error', 'connection_checked_at', 'database_engines', 'database_instances', 'mail_hostname', 'mail_status',
-    'mail_cluster_id', 'mail_cluster_member',
+    'mail_cluster_id', 'mail_cluster_member', 'agent_runtimes', 'agent_features',
 ])]
 #[Hidden(['agent_token_hash', 'backup_password', 'backup_credentials'])]
 class Server extends Model
@@ -84,6 +84,8 @@ class Server extends Model
             'services' => 'array',
             'usage' => 'array',
             'database_engines' => 'array',
+            'agent_runtimes' => 'array',
+            'agent_features' => 'array',
             'database_instances' => 'boolean',
             'dns' => 'boolean',
             'addresses' => 'array',
@@ -110,6 +112,15 @@ class Server extends Model
     public function hasDatabaseEngine(string $engine): bool
     {
         return in_array($engine, $this->database_engines ?? Database::SQL_ENGINES, true);
+    }
+
+    /**
+     * True when the agent of the server reports an optional feature that is on, for example
+     * "valkey-backups". An agent of an earlier release has no optional features.
+     */
+    public function hasAgentFeature(string $feature): bool
+    {
+        return in_array($feature, $this->agent_features ?? [], true);
     }
 
     public function websites(): HasMany

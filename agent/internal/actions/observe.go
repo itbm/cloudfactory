@@ -183,6 +183,15 @@ func (d *Deps) FillReport(ctx context.Context, r *panel.Report) {
 	r.Databases = o.dbSizes
 	r.DatabaseServers = d.databaseServerUse(ctx, walk)
 	r.DatabaseEngines = Engines
+	for _, rt := range quadlet.Runtimes() {
+		r.Runtimes = append(r.Runtimes, rt.Name)
+	}
+	if d.ValkeyBackups {
+		r.Features = append(r.Features, "valkey-backups")
+	}
+	if d.ManageTrial {
+		r.Features = append(r.Features, "manage-trial")
+	}
 	r.DatabaseInstances = true
 	r.Services = append(r.Services, d.firewallService(ctx), d.helperService(), d.quotaService(sites), d.diskService())
 	r.Mail = d.mailReport(ctx)
@@ -572,29 +581,13 @@ func (d *Deps) databaseSizes(ctx context.Context) []panel.DatabaseSize {
 	slices.SortFunc(servers, func(a, b dbServer) int {
 		return cmp.Or(cmp.Compare(a.ID, b.ID), cmp.Compare(a.Engine, b.Engine))
 	})
-	queries := map[string]string{
-		"mariadb":    "SELECT table_schema, COALESCE(SUM(data_length + index_length), 0) FROM information_schema.tables GROUP BY table_schema;\n",
-		"postgresql": "SELECT datname || '|' || pg_database_size(datname) FROM pg_database WHERE NOT datistemplate;\n",
-	}
 	for _, s := range servers {
-		if s.Engine == "valkey" {
-			if sizes, err := d.valkeySizes(ctx, s); err == nil {
-				out = append(out, sizes...)
-			}
-			continue
-		}
-		res, err := d.sqlNow(ctx, s, queries[s.Engine])
+		drv, err := driverOf(s.Engine)
 		if err != nil {
 			continue
 		}
-		for _, line := range strings.Split(res, "\n") {
-			f := strings.FieldsFunc(line, func(r rune) bool { return r == '\t' || r == '|' })
-			if len(f) != 2 {
-				continue
-			}
-			if n, err := strconv.ParseInt(strings.TrimSpace(f[1]), 10, 64); err == nil {
-				out = append(out, panel.DatabaseSize{Engine: s.Engine, Name: strings.TrimSpace(f[0]), SizeBytes: n})
-			}
+		if sizes, err := drv.sizes(ctx, d, s); err == nil {
+			out = append(out, sizes...)
 		}
 	}
 	return out

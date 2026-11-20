@@ -1,0 +1,244 @@
+
+== CreateWebsite with a copy
+steps: Create Unix user | Copy databases | Pull and check image signature | Start container in gVisor | Configure edge proxy | Get TLS certificate
+long: true
+$ install -d -m 0711 $DIR/homes $DIR/sites
+$ install -d -m 0711 $DIR/homes $DIR/sites
+$ chmod 0700 $DIR/homes/staging_ab12
+$ install -d -o root -g staging_ab12 -m 0750 $DIR/sites/staging_ab12
+$ install -d -o staging_ab12 -g staging_ab12 -m 0750 $DIR/sites/staging_ab12/app
+$ loginctl enable-linger staging_ab12
+$ runuser -u staging_ab12 -- mkdir -p -m 0750 $DIR/sites/staging_ab12/app/public
+$ systemctl start user@20001.service
+$ runuser -u acme_x7k2 -- tar --create --file=- --directory=$DIR/sites/acme_x7k2/app -- . | runuser -u staging_ab12 -- tar --extract --file=- --directory=$DIR/sites/staging_ab12/app --no-same-owner --preserve-permissions
+$ ip address replace 169.254.80.1/20 dev lo
+$ systemctl daemon-reload
+$ install -d -o root -g root -m 0711 $DIR/cf-db $DIR/cf-db/servers $DIR/cf-db/homes
+$ chmod 0700 $DIR/cf-db/homes/db-01jbq3z5k8n6t4w2x9y7r5p3d2
+$ loginctl enable-linger db-01jbq3z5k8n6t4w2x9y7r5p3d2
+$ systemctl start user@10002.service
+$ install -d -o root -g db-01jbq3z5k8n6t4w2x9y7r5p3d2 -m 0750 $DIR/cf-db/servers/01jbq3z5k8n6t4w2x9y7r5p3d2
+$ install -d -o root -g db-01jbq3z5k8n6t4w2x9y7r5p3d2 -m 0750 $DIR/cf-db/servers/01jbq3z5k8n6t4w2x9y7r5p3d2/disk
+$ install -d -o db-01jbq3z5k8n6t4w2x9y7r5p3d2 -g db-01jbq3z5k8n6t4w2x9y7r5p3d2 -m 0700 $DIR/cf-db/servers/01jbq3z5k8n6t4w2x9y7r5p3d2/disk/data
+$ chown root:db-01jbq3z5k8n6t4w2x9y7r5p3d2 $DIR/cf-db/servers/01jbq3z5k8n6t4w2x9y7r5p3d2/postgresql.env
+$ runuser -u db-01jbq3z5k8n6t4w2x9y7r5p3d2 -- env XDG_RUNTIME_DIR=/run/user/10002 podman image exists ghcr.io/cloudfactory/postgresql:latest
+$ systemctl --user --machine=db-01jbq3z5k8n6t4w2x9y7r5p3d2@ daemon-reload
+$ systemctl --user --machine=db-01jbq3z5k8n6t4w2x9y7r5p3d2@ restart cf-postgresql-01jbq3z5k8n6t4w2x9y7r5p3d2.service
+$ runuser -u db-01jbq3z5k8n6t4w2x9y7r5p3d2 -- env XDG_RUNTIME_DIR=/run/user/10002 podman exec -i cf-postgresql-01jbq3z5k8n6t4w2x9y7r5p3d2 pg_isready --quiet --host=127.0.0.1 --port=5432 --timeout=5
+$ runuser -u db-01jbq3z5k8n6t4w2x9y7r5p3d2 -- env XDG_RUNTIME_DIR=/run/user/10002 podman exec -i cf-postgresql-01jbq3z5k8n6t4w2x9y7r5p3d2 psql --username=postgres --set=ON_ERROR_STOP=1 --tuples-only --no-align
+  | SET search_path = pg_catalog, pg_temp;
+  | SELECT 1;
+$ runuser -u db-01jbq3z5k8n6t4w2x9y7r5p3d2 -- env XDG_RUNTIME_DIR=/run/user/10002 podman exec -i cf-postgresql-01jbq3z5k8n6t4w2x9y7r5p3d2 psql --username=postgres --set=ON_ERROR_STOP=1 --tuples-only --no-align
+  | SET search_path = pg_catalog, pg_temp;
+  | REVOKE CONNECT ON DATABASE postgres, template1 FROM PUBLIC;
+  | DO $$DECLARE r name; BEGIN
+  |   FOR r IN SELECT rolname FROM pg_roles WHERE rolname LIKE 'cfrestore\_%' AND NOT EXISTS (SELECT FROM pg_stat_activity WHERE usename = rolname) LOOP
+  |     EXECUTE format('DROP ROLE IF EXISTS %I', r);
+  |   END LOOP;
+  | END$$;
+$ runuser -u db-01jbq3z5k8n6t4w2x9y7r5p3d2 -- env XDG_RUNTIME_DIR=/run/user/10002 podman exec -i cf-postgresql-01jbq3z5k8n6t4w2x9y7r5p3d2 psql --username=postgres --set=ON_ERROR_STOP=1 --tuples-only --no-align
+  | SET search_path = pg_catalog, pg_temp;
+  | SELECT 1 FROM pg_database WHERE datname = 'staging_ab12_shop';
+$ runuser -u db-01jbq3z5k8n6t4w2x9y7r5p3d2 -- env XDG_RUNTIME_DIR=/run/user/10002 podman exec -i cf-postgresql-01jbq3z5k8n6t4w2x9y7r5p3d2 psql --username=postgres --set=ON_ERROR_STOP=1 --tuples-only --no-align
+  | SET search_path = pg_catalog, pg_temp;
+  | CREATE ROLE "staging_ab12_shop:rw" NOLOGIN;
+  | CREATE ROLE "staging_ab12_shop:ro" NOLOGIN;
+  | CREATE DATABASE "staging_ab12_shop" OWNER "staging_ab12_shop:rw";
+  | REVOKE ALL ON DATABASE "staging_ab12_shop" FROM PUBLIC;
+  | GRANT CONNECT, TEMPORARY ON DATABASE "staging_ab12_shop" TO "staging_ab12_shop:ro";
+  | \connect "staging_ab12_shop"
+  | SET search_path = pg_catalog, pg_temp;
+  | REVOKE ALL ON SCHEMA public FROM PUBLIC;
+  | GRANT USAGE ON SCHEMA public TO "staging_ab12_shop:ro";
+  | ALTER DEFAULT PRIVILEGES FOR ROLE "staging_ab12_shop:rw" IN SCHEMA public GRANT SELECT ON TABLES TO "staging_ab12_shop:ro";
+  | ALTER DEFAULT PRIVILEGES FOR ROLE "staging_ab12_shop:rw" IN SCHEMA public GRANT SELECT ON SEQUENCES TO "staging_ab12_shop:ro";
+$ runuser -u db-01jbq3z5k8n6t4w2x9y7r5p3d2 -- env XDG_RUNTIME_DIR=/run/user/10002 podman exec -i cf-postgresql-01jbq3z5k8n6t4w2x9y7r5p3d2 psql --username=postgres --set=ON_ERROR_STOP=1 --tuples-only --no-align
+  | SET search_path = pg_catalog, pg_temp;
+  | CREATE ROLE "cfrestore_RANDOM" LOGIN PASSWORD 'HEX24';
+  | GRANT "staging_ab12_shop:rw" TO "cfrestore_RANDOM";
+$ chown db-01jbq3z5k8n6t4w2x9y7r5p3d2 $DIR/secrets/env-RANDOM
+$ runuser -u db-01jbq3z5k8n6t4w2x9y7r5p3d2 -- env XDG_RUNTIME_DIR=/run/user/10002 podman exec -i --env-file $DIR/secrets/env-RANDOM cf-postgresql-01jbq3z5k8n6t4w2x9y7r5p3d2 psql --host=127.0.0.1 --username=cfrestore_RANDOM --dbname=staging_ab12_shop --no-psqlrc --quiet --set=ON_ERROR_STOP=1
+  | SELECT 1;
+$ runuser -u db-01jbq3z5k8n6t4w2x9y7r5p3d2 -- env XDG_RUNTIME_DIR=/run/user/10002 podman exec -i cf-postgresql-01jbq3z5k8n6t4w2x9y7r5p3d2 psql --username=postgres --set=ON_ERROR_STOP=1 --tuples-only --no-align
+  | SET search_path = pg_catalog, pg_temp;
+  | \connect "staging_ab12_shop"
+  | SET search_path = pg_catalog, pg_temp;
+  | DO $$DECLARE s name; BEGIN
+  |   FOR s IN SELECT nspname FROM pg_namespace WHERE nspowner = '"staging_ab12_shop:rw"'::regrole AND nspname <> 'public' LOOP
+  |     EXECUTE format('DROP SCHEMA %I CASCADE', s);
+  |   END LOOP;
+  | END$$;
+  | DROP SCHEMA IF EXISTS public CASCADE;
+  | CREATE SCHEMA public AUTHORIZATION pg_database_owner;
+  | REVOKE ALL ON SCHEMA public FROM PUBLIC;
+  | GRANT USAGE ON SCHEMA public TO "staging_ab12_shop:ro";
+  | ALTER DEFAULT PRIVILEGES FOR ROLE "staging_ab12_shop:rw" IN SCHEMA public GRANT SELECT ON TABLES TO "staging_ab12_shop:ro";
+  | ALTER DEFAULT PRIVILEGES FOR ROLE "staging_ab12_shop:rw" IN SCHEMA public GRANT SELECT ON SEQUENCES TO "staging_ab12_shop:ro";
+$ runuser -u db-01jbq3z5k8n6t4w2x9y7r5p3d2 -- env XDG_RUNTIME_DIR=/run/user/10002 podman exec cf-postgresql-01jbq3z5k8n6t4w2x9y7r5p3d2 pg_dump --username=postgres --format=custom --no-owner --no-privileges acme_x7k2_shop | runuser -u db-01jbq3z5k8n6t4w2x9y7r5p3d2 -- env XDG_RUNTIME_DIR=/run/user/10002 podman exec -i --env-file $DIR/secrets/env-RANDOM cf-postgresql-01jbq3z5k8n6t4w2x9y7r5p3d2 pg_restore --host=127.0.0.1 --username=cfrestore_RANDOM --role=staging_ab12_shop:rw --dbname=staging_ab12_shop --no-owner --no-privileges --clean --if-exists --exit-on-error
+$ runuser -u db-01jbq3z5k8n6t4w2x9y7r5p3d2 -- env XDG_RUNTIME_DIR=/run/user/10002 podman exec -i cf-postgresql-01jbq3z5k8n6t4w2x9y7r5p3d2 psql --username=postgres --set=ON_ERROR_STOP=1 --tuples-only --no-align
+  | SET search_path = pg_catalog, pg_temp;
+  | DROP ROLE IF EXISTS "cfrestore_RANDOM";
+$ runuser -u db-01jbq3z5k8n6t4w2x9y7r5p3d2 -- env XDG_RUNTIME_DIR=/run/user/10002 podman exec -i cf-postgresql-01jbq3z5k8n6t4w2x9y7r5p3d2 psql --username=postgres --set=ON_ERROR_STOP=1 --tuples-only --no-align
+  | SET search_path = pg_catalog, pg_temp;
+  | SELECT 1 FROM pg_roles WHERE rolname = 'staging_ab12_app';
+$ runuser -u db-01jbq3z5k8n6t4w2x9y7r5p3d2 -- env XDG_RUNTIME_DIR=/run/user/10002 podman exec -i cf-postgresql-01jbq3z5k8n6t4w2x9y7r5p3d2 psql --username=postgres --set=ON_ERROR_STOP=1 --tuples-only --no-align
+  | SET search_path = pg_catalog, pg_temp;
+  | SELECT 1 FROM pg_roles WHERE rolname = 'staging_ab12_app';
+$ runuser -u db-01jbq3z5k8n6t4w2x9y7r5p3d2 -- env XDG_RUNTIME_DIR=/run/user/10002 podman exec -i cf-postgresql-01jbq3z5k8n6t4w2x9y7r5p3d2 psql --username=postgres --set=ON_ERROR_STOP=1 --tuples-only --no-align
+  | SET search_path = pg_catalog, pg_temp;
+  | CREATE ROLE "staging_ab12_app" LOGIN CONNECTION LIMIT 80 PASSWORD 'Abcdefgh12345678';
+$ runuser -u db-01jbq3z5k8n6t4w2x9y7r5p3d2 -- env XDG_RUNTIME_DIR=/run/user/10002 podman exec -i cf-postgresql-01jbq3z5k8n6t4w2x9y7r5p3d2 psql --username=postgres --set=ON_ERROR_STOP=1 --tuples-only --no-align
+  | SET search_path = pg_catalog, pg_temp;
+  | GRANT "staging_ab12_shop:rw" TO "staging_ab12_app";
+  | ALTER ROLE "staging_ab12_app" IN DATABASE "staging_ab12_shop" SET role = 'staging_ab12_shop:rw';
+$ runuser -u staging_ab12 -- env XDG_RUNTIME_DIR=/run/user/20001 podman pull --quiet ghcr.io/cloudfactory/frankenphp-php8.4:8.4.0-1
+$ systemctl --user --machine=staging_ab12@ daemon-reload
+$ systemctl --user --machine=staging_ab12@ restart cf-staging_ab12.service
+result dnsPointsHere: true
+result port: 20000
+
+== files
+--- $DIR/cf-db/servers/01jbq3z5k8n6t4w2x9y7r5p3d2/postgresql.env (-rw-r-----)
+  POSTGRES_PASSWORD=HEX48
+--- $DIR/config/staging_ab12/hosts (-rw-r--r--)
+  # Managed by the Cloudfactory agent. The agent replaces changes to this file.
+  127.0.0.1 localhost
+  ::1 localhost
+  # The database servers of the customer on this server. Each one has its own port.
+  169.254.80.2 mariadb.internal postgres.internal valkey.internal
+--- $DIR/config/staging_ab12/php.ini (-rw-r--r--)
+  ; Managed by the Cloudfactory agent. Change these values in the panel.
+  zend_extension=opcache
+  memory_limit = "256M"
+--- $DIR/sites.json (-rw-------)
+  {
+    "sites": {
+      "01JBQ3Z5K8N6T4W2X9Y7R5P3M1": {
+        "id": "01JBQ3Z5K8N6T4W2X9Y7R5P3M1",
+        "unixUser": "staging_ab12",
+        "port": 20000,
+        "suffix": "",
+        "website": {
+          "id": "01JBQ3Z5K8N6T4W2X9Y7R5P3M1",
+          "unixUser": "staging_ab12",
+          "image": "ghcr.io/cloudfactory/frankenphp-php8.4:8.4.0-1",
+          "runtime": "frankenphp",
+          "extensions": [
+            "opcache"
+          ],
+          "phpIni": {
+            "memory_limit": "256M"
+          },
+          "limits": {
+            "vcpus": 1,
+            "memoryBytes": "1073741824",
+            "processes": "100"
+          },
+          "domains": [
+            {
+              "name": "acme.example",
+              "kind": "primary"
+            }
+          ],
+          "databaseInstance": "01JBQ3Z5K8N6T4W2X9Y7R5P3C1"
+        }
+      }
+    },
+    "databases": {
+      "01jbq3z5k8n6t4w2x9y7r5p3c1": {
+        "number": 1,
+        "websites": [
+          "01JBQ3Z5K8N6T4W2X9Y7R5P3M9",
+          "01JBQ3Z5K8N6T4W2X9Y7R5P3M1"
+        ],
+        "servers": {
+          "01jbq3z5k8n6t4w2x9y7r5p3d2": {
+            "engine": "postgresql",
+            "port": 5432,
+            "vcpus": 1,
+            "memoryBytes": 1073741824,
+            "diskBytes": 5368709120
+          }
+        }
+      }
+    }
+  }
+--- $DIR/units/10002/cf-postgresql-01jbq3z5k8n6t4w2x9y7r5p3d2.container (-rw-r--r--)
+  # Managed by the Cloudfactory agent. The agent replaces changes to this file.
+  [Unit]
+  Description=Cloudfactory PostgreSQL database server 01jbq3z5k8n6t4w2x9y7r5p3d2
+  
+  [Container]
+  ContainerName=cf-postgresql-01jbq3z5k8n6t4w2x9y7r5p3d2
+  Image=ghcr.io/cloudfactory/postgresql:latest
+  Pull=never
+  GlobalArgs=--runtime=/usr/local/bin/runsc --runtime-flag=platform=systrap --runtime-flag=network=sandbox --runtime-flag=ignore-cgroups
+  PublishPort=169.254.80.2:5432:5432
+  Label=io.cloudfactory.service=postgresql
+  NoNewPrivileges=true
+  DropCapability=all
+  UserNS=keep-id:uid=999,gid=999
+  User=999
+  Group=999
+  ReadOnly=true
+  Tmpfs=/tmp
+  Volume=$DIR/cf-db/servers/01jbq3z5k8n6t4w2x9y7r5p3d2/disk/data:/var/lib/postgresql/data:Z
+  Tmpfs=/var/run/postgresql
+  ShmSize=256m
+  EnvironmentFile=$DIR/cf-db/servers/01jbq3z5k8n6t4w2x9y7r5p3d2/postgresql.env
+  Environment="POSTGRES_INITDB_ARGS=--auth-host=scram-sha-256 --auth-local=trust"
+  Exec=postgres -c max_wal_size=640MB -c min_wal_size=32MB
+  Label=io.cloudfactory.database-server=01jbq3z5k8n6t4w2x9y7r5p3d2
+  Label=io.cloudfactory.customer=01jbq3z5k8n6t4w2x9y7r5p3c1
+  StopTimeout=60
+  
+  [Service]
+  Restart=always
+  TimeoutStartSec=900
+  CPUQuota=100%
+  MemoryMax=1073741824
+  MemorySwapMax=0
+  
+  [Install]
+  WantedBy=default.target
+--- $DIR/units/20001/cf-staging_ab12.container (-rw-r--r--)
+  # Managed by the Cloudfactory agent. The agent replaces changes to this file.
+  [Unit]
+  Description=Website acme.example
+  
+  [Container]
+  ContainerName=cf-staging_ab12
+  Image=ghcr.io/cloudfactory/frankenphp-php8.4:8.4.0-1
+  Pull=never
+  GlobalArgs=--runtime=/usr/local/bin/runsc --runtime-flag=platform=systrap --runtime-flag=network=sandbox --runtime-flag=ignore-cgroups
+  Network=pasta
+  PublishPort=169.254.77.1:20000:8080
+  PodmanArgs=--no-hosts
+  Volume=$DIR/config/staging_ab12/hosts:/etc/hosts:ro
+  Volume=$DIR/sites/staging_ab12/app:/app:Z
+  Volume=$DIR/config/staging_ab12/php.ini:/usr/local/etc/php/conf.d/zz-cloudfactory.ini:ro,Z
+  Label=io.cloudfactory.website=01JBQ3Z5K8N6T4W2X9Y7R5P3M1
+  Environment=SERVER_NAME=:8080
+  Environment=CF_DOCUMENT_ROOT=/app/public
+  NoNewPrivileges=true
+  DropCapability=all
+  ReadOnly=true
+  Tmpfs=/tmp
+  UserNS=keep-id
+  LogDriver=k8s-file
+  PodmanArgs=--log-opt=path=$DIR/homes/staging_ab12/website.log --log-opt=max-size=10mb
+  
+  [Service]
+  Restart=always
+  TimeoutStartSec=300
+  CPUQuota=100%
+  MemoryMax=1073741824
+  MemorySwapMax=0
+  TasksMax=100
+  
+  [Install]
+  WantedBy=default.target
+--- $DIR/user@.service.d/zz-cloudfactory-stop.conf (-rw-r--r--)
+  # Managed by the Cloudfactory agent. The agent replaces changes to this file.
+  [Service]
+  TimeoutStopSec=120
