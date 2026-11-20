@@ -39,6 +39,10 @@ before.
 2. Add `"runtimeManifests": "/etc/cloudfactory/runtimes"` to
    `/etc/cloudfactory/agent.json`.
 3. Restart the agent: `systemctl restart cf-agent`.
-4. Build the image, sign it, and add it to the panel as an image with the runtime `golang`.
+4. Build the image, sign it, and add it to the panel: on the **Apps** page, select **Add your
+   own image**, then **Runtime from an agent manifest**. The runtime name is `golang`, and
+   the usual start command can be `./server` with the install command
+   `go build -o server .`. Refer to [plugins.md](../../../docs/plugins.md#runtime-images-in-the-panel).
 
-The panel does not show runtimes from manifests yet. That is the next stage of the plan.
+Customers can then select Go on the **New website** page. The panel puts these websites only
+on the servers whose agent has the manifest.

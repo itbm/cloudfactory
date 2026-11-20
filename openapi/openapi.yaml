@@ -3136,9 +3136,10 @@ paths:
                         version: { type: [string, 'null'], description: 'The version of Node.js or Python, for example "24" or "3.14".' }
                         custom: { type: boolean }
                         supportEndsAt: { type: [string, 'null'], format: date-time }
+                        appRuntime: { type: boolean, description: True for an image of a runtime from a manifest of the agent. }
                         defaults:
                           type: [object, 'null']
-                          description: The usual start command and install command of a Node.js or Python image. Null for the other images.
+                          description: The usual start command and install command of an application image: Node.js, Python or a runtime from a manifest of the agent. Null for the other images.
                           properties:
                             command: { type: string }
                             install: { type: string }
@@ -3174,6 +3175,18 @@ paths:
                 policy: { type: string, enum: [automatic, manual] }
                 containerPort: { type: [integer, 'null'], minimum: 1, maximum: 65535, description: FR-307. The HTTP port in the container. The default is 8080. }
                 command: { type: [array, 'null'], maxItems: 32, items: { type: string, maxLength: 1024 }, description: The start command as a list of arguments. Null uses the command of the image. }
+                runtime:
+                  type: [string, 'null']
+                  pattern: '^[a-z][a-z0-9-]{1,30}$'
+                  description: >-
+                    The name of a runtime from a manifest of the agent (runtimeManifests in
+                    agent.json), for example "golang". The image then runs the start command of
+                    each website, as a Node.js image does, and customers can select it. The
+                    names of the built-in runtimes are not available. Not with containerPort or
+                    command. A website with the image goes only to a server whose agent reports
+                    the runtime.
+                defaultCommand: { type: string, maxLength: 1000, description: 'With runtime only, and necessary with it. The usual start command of a website, for example "./server".' }
+                defaultInstall: { type: [string, 'null'], maxLength: 1000, description: 'With runtime only. The usual install command of a website, for example "go build -o server .".' }
       responses:
         '201':
           description: Added.
@@ -5355,6 +5368,13 @@ components:
         supportEndsAt: { type: [string, 'null'], format: date }
         policy: { type: string, enum: [automatic, security_automatic, manual] }
         custom: { type: boolean }
+        appRuntime: { type: boolean, description: True for an image of a runtime from a manifest of the agent. }
+        defaults:
+          type: [object, 'null']
+          description: The usual start command and install command of an application image.
+          properties:
+            command: { type: string }
+            install: { type: string }
         signatureVerified: { type: boolean }
         checkedAt: { type: [string, 'null'], format: date-time, description: The time of the last registry check. }
         checkError: { type: [string, 'null'], description: Why the last registry check failed. }

@@ -11,9 +11,12 @@ export function RuntimeTab({ website }: { website: Website }) {
   const state = useStore();
   const current = imageOf(state, website);
   const isPhp = website.runtime.kind === "frankenphp" || website.runtime.kind === "apache-php-fpm";
-  // A Node.js or Python website runs its start command.
-  const isApp = website.runtime.kind === "node" || website.runtime.kind === "python";
-  const language = website.runtime.kind === "node" ? "Node.js" : "Python";
+  // A Node.js or Python website runs its start command, as does a website of a runtime from a
+  // manifest of the agent, for example Go.
+  const manifest = website.runtime.kind === "app";
+  const isApp = website.runtime.kind === "node" || website.runtime.kind === "python" || manifest;
+  const language = website.runtime.kind === "node" ? "Node.js" : website.runtime.kind === "python" ? "Python" : (current?.name.replace(/\s+v?\d[\w.-]*$/, "") || current?.family || "Runtime");
+  const installExample = website.runtime.kind === "node" ? "npm ci --omit=dev" : website.runtime.kind === "python" ? "pip install -r requirements.txt" : undefined;
   const choices = state.images.filter((i) => (isPhp ? i.family === "frankenphp" || i.family === "apache-php-fpm" : i.family === current?.family));
   const [imageId, setImageId] = useState(website.runtime.imageId);
   const plan = state.plans.find((p) => p.id === website.planId);
@@ -85,7 +88,7 @@ export function RuntimeTab({ website }: { website: Website }) {
           <Card title="Dependencies">
             <form className="card-body" noValidate onSubmit={(e) => { e.preventDefault(); void saveInstall.run(website.id, install); }}>
               <FormError error={saveInstall.error ?? runInstall.error} />
-              <Field label="Install command" hint={<>Runs in a build container with the files of the website, for example <code>{website.runtime.kind === "node" ? "npm ci --omit=dev" : "pip install -r requirements.txt"}</code>. Each Git deploy runs it before the build commands. Leave it empty for no install step.</>} error={saveInstall.error?.fields.installCommand ?? runInstall.error?.fields.installCommand}>
+              <Field label="Install command" hint={<>Runs in a build container with the files of the website{installExample ? <>, for example <code>{installExample}</code></> : ""}. Each Git deploy runs it before the build commands. Leave it empty for no install step.</>} error={saveInstall.error?.fields.installCommand ?? runInstall.error?.fields.installCommand}>
                 {(p) => <input {...p} className="input mono" value={install} onChange={(e) => setInstallText(e.target.value)} spellCheck={false} autoCapitalize="none" />}
               </Field>
               <p className="hint" style={{ marginTop: 10 }}>After you upload new files with SFTP, select <strong>Install dependencies</strong>. The panel runs the install command, starts the app on a copy, does a health check, and then switches. If the command fails, the website does not change.</p>
@@ -100,7 +103,7 @@ export function RuntimeTab({ website }: { website: Website }) {
           <Card title={isApp ? "Application directory" : "Document root"}>
             <form className="card-body" noValidate onSubmit={(e) => { e.preventDefault(); void docRoot.run(website.id, root); }}>
               <FormError error={docRoot.error} />
-              <Field label={isApp ? "Directory in which the commands run" : "Directory that the web server serves"} hint={isApp ? <>A directory in the files of the website, with the <code>{website.runtime.kind === "node" ? "package.json" : "requirements.txt"}</code> file. Type <code>.</code> for the top directory.</> : <>A directory in the files of the website, for example <code>public</code> for Laravel or <code>web</code>. Type <code>.</code> for the top directory, for example for WordPress.</>} error={docRoot.error?.fields.documentRoot}>
+              <Field label={isApp ? "Directory in which the commands run" : "Directory that the web server serves"} hint={isApp ? <>A directory in the files of the website{manifest ? ", with the files of the application" : <>, with the <code>{website.runtime.kind === "node" ? "package.json" : "requirements.txt"}</code> file</>}. Type <code>.</code> for the top directory.</> : <>A directory in the files of the website, for example <code>public</code> for Laravel or <code>web</code>. Type <code>.</code> for the top directory, for example for WordPress.</>} error={docRoot.error?.fields.documentRoot}>
                 {(p) => <input {...p} className="input mono" value={root} onChange={(e) => setRoot(e.target.value)} spellCheck={false} autoCapitalize="none" />}
               </Field>
               <button type="submit" className="btn" style={{ marginTop: 12 }} disabled={docRoot.busy || busy || root.trim() === (website.runtime.documentRoot ?? "public")}>{isApp ? "Save application directory" : "Save document root"}</button>

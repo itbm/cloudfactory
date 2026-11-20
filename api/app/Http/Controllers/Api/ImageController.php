@@ -15,6 +15,7 @@ use App\Validation\InputRules;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 /** FR-307 and FR-1106 to FR-1110: runtime images and their update policy. */
 class ImageController extends Controller
@@ -37,8 +38,9 @@ class ImageController extends Controller
         return response()->json(['data' => $images->map(fn (Image $i) => [
             'id' => $i->id, 'name' => $i->name, 'family' => $i->family, 'tag' => $i->tag,
             'phpVersion' => $i->php_version, 'version' => $i->runtime_version, 'custom' => $i->custom, 'supportEndsAt' => $i->support_ends_at?->toIso8601String(),
-            // The usual commands of a Node.js or Python image, for the form of a new website.
-            'defaults' => Image::APP_DEFAULTS[$i->family] ?? null,
+            // The usual commands of an application image, for the form of a new website.
+            'defaults' => $i->appDefaults(),
+            'appRuntime' => (bool) $i->app_runtime,
         ])]);
     }
 
@@ -53,10 +55,24 @@ class ImageController extends Controller
             'tag' => ['required', Input::rule('imageTag')],
             // FR-1110: automatic or manual updates for each image.
             'policy' => ['required', Rule::in([UpdatePolicy::Automatic->value, UpdatePolicy::Manual->value])],
+            // The name of a runtime from a manifest of the agent, for example "golang". The image
+            // then runs the start command of each website, as a Node.js image does.
+            'runtime' => ['sometimes', 'nullable', 'string', 'regex:/^[a-z][a-z0-9-]{1,30}$/', Rule::notIn(Image::BUILT_IN_FAMILIES)],
+            // The usual start command of a website with the image. The user can change it.
+            'defaultCommand' => ['required_with:runtime', Rule::prohibitedIf(! $request->filled('runtime')), 'string', Input::rule('commandLine')],
+            'defaultInstall' => ['sometimes', 'nullable', Rule::prohibitedIf(! $request->filled('runtime')), 'string', Input::rule('commandLine')],
             ...self::runRules(),
         ]);
-        $image = Image::create([...self::fields($data), 'family' => 'custom', 'custom' => true]);
-        Audit::record($request, 'Added image', "{$data['reference']}:{$data['tag']}");
+        $runtime = $data['runtime'] ?? null;
+        if ($runtime !== null && (isset($data['containerPort']) || ! empty($data['command']))) {
+            throw ValidationException::withMessages(['runtime' => 'An image of a runtime uses port 8080 and the start command of each website. Remove the port and the command.']);
+        }
+        $fields = self::fields(array_diff_key($data, array_flip(['runtime', 'defaultCommand', 'defaultInstall'])));
+        $image = Image::create($runtime === null
+            ? [...$fields, 'family' => 'custom', 'custom' => true]
+            : [...$fields, 'family' => $runtime, 'custom' => false, 'app_runtime' => true,
+                'default_command' => $data['defaultCommand'] ?? null, 'default_install' => $data['defaultInstall'] ?? null]);
+        Audit::record($request, 'Added image', "{$data['reference']}:{$data['tag']}".($runtime ? " (runtime {$runtime})" : ''));
 
         return response()->json(self::present($image), 201);
     }
@@ -121,6 +137,8 @@ class ImageController extends Controller
             'supportEndsAt' => $i->support_ends_at?->toDateString(),
             'policy' => $i->policy->value,
             'custom' => $i->custom,
+            'appRuntime' => (bool) $i->app_runtime,
+            'defaults' => $i->appDefaults(),
             'signatureVerified' => $i->signature_verified,
             'checkedAt' => $i->checked_at?->toIso8601String(),
             'checkError' => $i->check_error,

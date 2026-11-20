@@ -38,7 +38,8 @@ export interface Usage {
 export type WebsiteStatus = "running" | "stopped" | "starting" | "stopping" | "failed";
 
 /** "node" and "python": the container runs the start command of the website. */
-export type RuntimeKind = "frankenphp" | "apache-php-fpm" | "node" | "python" | "oci" | "static";
+/** "app" is a runtime from a manifest of the agent, for example Go. It runs the start command of the website. */
+export type RuntimeKind = "frankenphp" | "apache-php-fpm" | "node" | "python" | "oci" | "static" | "app";
 
 export type PhpVersion = "8.4" | "8.5";
 
@@ -256,7 +257,8 @@ export type UpdatePolicy = "automatic" | "security_automatic" | "manual";
 export interface RuntimeImage {
   id: string;
   name: string;
-  family: "frankenphp" | "apache-php-fpm" | "node" | "python" | "static" | "edge" | "mail" | "dns" | "database" | "custom";
+  /** A built-in family, or the name of a runtime from a manifest of the agent, for example "golang". */
+  family: "frankenphp" | "apache-php-fpm" | "node" | "python" | "static" | "edge" | "mail" | "dns" | "database" | "custom" | (string & {});
   reference: string;
   running: string;
   available?: string;
@@ -264,8 +266,13 @@ export interface RuntimeImage {
   phpVersion?: PhpVersion;
   /** The version of Node.js or Python of an official image, for example "24". */
   version?: string;
-  /** The usual start command and install command of a Node.js or Python image. */
+  /** The usual start command and install command of an application image. */
   defaults?: { command: string; install: string };
+  /**
+   * True for an image of a runtime from a manifest of the agent, for example Go. Its websites
+   * run their start command, as Node.js websites do.
+   */
+  appRuntime?: boolean;
   supportEndsAt?: string;
   websites: string;
   policy: UpdatePolicy;

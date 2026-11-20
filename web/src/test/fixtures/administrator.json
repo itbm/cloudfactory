@@ -2155,6 +2155,8 @@
                     "supportEndsAt": "2027-01-13",
                     "policy": "manual",
                     "custom": false,
+                    "appRuntime": false,
+                    "defaults": null,
                     "signatureVerified": true,
                     "checkedAt": "2026-11-14T09:40:00+00:00",
                     "checkError": null,
@@ -2176,6 +2178,8 @@
                     "supportEndsAt": "2029-12-31",
                     "policy": "security_automatic",
                     "custom": false,
+                    "appRuntime": false,
+                    "defaults": null,
                     "signatureVerified": true,
                     "checkedAt": "2026-11-14T09:40:00+00:00",
                     "checkError": null,
@@ -2197,6 +2201,8 @@
                     "supportEndsAt": "2028-12-31",
                     "policy": "security_automatic",
                     "custom": false,
+                    "appRuntime": false,
+                    "defaults": null,
                     "signatureVerified": true,
                     "checkedAt": "2026-11-14T09:40:00+00:00",
                     "checkError": null,
@@ -2218,6 +2224,8 @@
                     "supportEndsAt": "2029-12-31",
                     "policy": "security_automatic",
                     "custom": false,
+                    "appRuntime": false,
+                    "defaults": null,
                     "signatureVerified": true,
                     "checkedAt": "2026-11-14T09:40:00+00:00",
                     "checkError": null,
@@ -2239,6 +2247,11 @@
                     "supportEndsAt": "2027-04-30",
                     "policy": "security_automatic",
                     "custom": false,
+                    "appRuntime": false,
+                    "defaults": {
+                        "command": "npm start",
+                        "install": "npm install --omit=dev"
+                    },
                     "signatureVerified": true,
                     "checkedAt": "2026-11-14T09:40:00+00:00",
                     "checkError": null,
@@ -2260,6 +2273,11 @@
                     "supportEndsAt": "2028-04-30",
                     "policy": "security_automatic",
                     "custom": false,
+                    "appRuntime": false,
+                    "defaults": {
+                        "command": "npm start",
+                        "install": "npm install --omit=dev"
+                    },
                     "signatureVerified": true,
                     "checkedAt": "2026-11-14T09:40:00+00:00",
                     "checkError": null,
@@ -2281,6 +2299,11 @@
                     "supportEndsAt": "2029-04-30",
                     "policy": "security_automatic",
                     "custom": false,
+                    "appRuntime": false,
+                    "defaults": {
+                        "command": "npm start",
+                        "install": "npm install --omit=dev"
+                    },
                     "signatureVerified": true,
                     "checkedAt": "2026-11-14T09:40:00+00:00",
                     "checkError": null,
@@ -2302,6 +2325,8 @@
                     "supportEndsAt": null,
                     "policy": "manual",
                     "custom": true,
+                    "appRuntime": false,
+                    "defaults": null,
                     "signatureVerified": false,
                     "checkedAt": "2026-11-14T09:40:00+00:00",
                     "checkError": "The registry registry.example refused the request: 401 Unauthorized.",
@@ -2326,6 +2351,11 @@
                     "supportEndsAt": "2029-10-31",
                     "policy": "security_automatic",
                     "custom": false,
+                    "appRuntime": false,
+                    "defaults": {
+                        "command": "python app.py",
+                        "install": "python -m venv .venv && .venv/bin/pip install -r requirements.txt"
+                    },
                     "signatureVerified": true,
                     "checkedAt": "2026-11-14T09:40:00+00:00",
                     "checkError": null,
@@ -2347,6 +2377,11 @@
                     "supportEndsAt": "2030-10-31",
                     "policy": "security_automatic",
                     "custom": false,
+                    "appRuntime": false,
+                    "defaults": {
+                        "command": "python app.py",
+                        "install": "python -m venv .venv && .venv/bin/pip install -r requirements.txt"
+                    },
                     "signatureVerified": true,
                     "checkedAt": "2026-11-14T09:40:00+00:00",
                     "checkError": null,
@@ -2618,7 +2653,8 @@
                     "version": null,
                     "custom": false,
                     "supportEndsAt": "2027-01-13T00:00:00+00:00",
-                    "defaults": null
+                    "defaults": null,
+                    "appRuntime": false
                 },
                 {
                     "id": "01m7fxb5nf7nhrzkj1b0p47bzv",
@@ -2629,7 +2665,8 @@
                     "version": null,
                     "custom": false,
                     "supportEndsAt": "2029-12-31T00:00:00+00:00",
-                    "defaults": null
+                    "defaults": null,
+                    "appRuntime": false
                 },
                 {
                     "id": "01m7fxb5nda29m8ffy0mkpc9py",
@@ -2640,7 +2677,8 @@
                     "version": null,
                     "custom": false,
                     "supportEndsAt": "2028-12-31T00:00:00+00:00",
-                    "defaults": null
+                    "defaults": null,
+                    "appRuntime": false
                 },
                 {
                     "id": "01m7fxb5neyr6c95v1xbtkd6ra",
@@ -2651,7 +2689,8 @@
                     "version": null,
                     "custom": false,
                     "supportEndsAt": "2029-12-31T00:00:00+00:00",
-                    "defaults": null
+                    "defaults": null,
+                    "appRuntime": false
                 },
                 {
                     "id": "01m7fxb5nf7nhrzkj1b0p47bzw",
@@ -2665,7 +2704,8 @@
                     "defaults": {
                         "command": "npm start",
                         "install": "npm install --omit=dev"
-                    }
+                    },
+                    "appRuntime": false
                 },
                 {
                     "id": "01m7fxb5nf7nhrzkj1b0p47bzx",
@@ -2679,7 +2719,8 @@
                     "defaults": {
                         "command": "npm start",
                         "install": "npm install --omit=dev"
-                    }
+                    },
+                    "appRuntime": false
                 },
                 {
                     "id": "01m7fxb5ngd5fkw20abrk99cy4",
@@ -2693,7 +2734,8 @@
                     "defaults": {
                         "command": "npm start",
                         "install": "npm install --omit=dev"
-                    }
+                    },
+                    "appRuntime": false
                 },
                 {
                     "id": "01m7fxb5nh8w8g0bzkman3392t",
@@ -2704,7 +2746,8 @@
                     "version": null,
                     "custom": true,
                     "supportEndsAt": null,
-                    "defaults": null
+                    "defaults": null,
+                    "appRuntime": false
                 },
                 {
                     "id": "01m7fxb5ngd5fkw20abrk99cy5",
@@ -2718,7 +2761,8 @@
                     "defaults": {
                         "command": "python app.py",
                         "install": "python -m venv .venv && .venv/bin/pip install -r requirements.txt"
-                    }
+                    },
+                    "appRuntime": false
                 },
                 {
                     "id": "01m7fxb5ngd5fkw20abrk99cy6",
@@ -2732,7 +2776,8 @@
                     "defaults": {
                         "command": "python app.py",
                         "install": "python -m venv .venv && .venv/bin/pip install -r requirements.txt"
-                    }
+                    },
+                    "appRuntime": false
                 }
             ]
         }
