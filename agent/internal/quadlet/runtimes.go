@@ -1,14 +1,9 @@
 package quadlet
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
-	"regexp"
 	"slices"
-	"strings"
 	"sync"
 )
 
@@ -27,8 +22,8 @@ const (
 )
 
 // RuntimeSpec is what the agent needs to know about one website runtime. The image of the
-// runtime does the rest. A runtime of the kind "app" can come from a manifest file
-// (LoadRuntimeManifests), with no new agent code.
+// runtime does the rest. A runtime of the kind "app" can come from a pack (SetPackRuntimes),
+// with no new agent code.
 type RuntimeSpec struct {
 	// Name is the name of the runtime in the requests of the panel, for example "node".
 	Name string `json:"name"`
@@ -38,8 +33,9 @@ type RuntimeSpec struct {
 	Kind RuntimeKind `json:"kind"`
 	// FrankenPHPWorkerMode is true when the runtime can run in FrankenPHP worker mode.
 	FrankenPHPWorkerMode bool `json:"-"`
-	// Manifest is the manifest file of a runtime that is not built in.
-	Manifest string `json:"-"`
+	// Pack is the name and the version of the pack of a runtime that is not built in, for
+	// example "golang 1.0.0".
+	Pack string `json:"-"`
 }
 
 // PHP reports whether the runtime is a PHP runtime with a php.ini file.
@@ -62,12 +58,12 @@ var builtinRuntimes = []RuntimeSpec{
 
 var (
 	runtimesMu sync.RWMutex
-	// extraRuntimes are the runtimes from manifest files. They come after the built-in
-	// runtimes, and cannot replace one.
+	// extraRuntimes are the runtimes of packs. They come after the built-in runtimes, and
+	// cannot replace one.
 	extraRuntimes []RuntimeSpec
 )
 
-// Runtimes gives the built-in runtimes, then the runtimes from manifest files.
+// Runtimes gives the built-in runtimes, then the runtimes of packs.
 func Runtimes() []RuntimeSpec {
 	runtimesMu.RLock()
 	defer runtimesMu.RUnlock()
@@ -85,7 +81,7 @@ func RuntimeOf(name string) (RuntimeSpec, bool) {
 }
 
 // IsApp reports whether the runtime runs an application of the customer with its start
-// command: Node.js, Python, or a runtime of the kind "app" from a manifest.
+// command: Node.js, Python, or the runtime of a pack.
 func IsApp(runtime string) bool {
 	r, _ := RuntimeOf(runtime)
 	return r.App()
@@ -103,70 +99,28 @@ func IsCustom(runtime string) bool {
 	return r.Custom()
 }
 
-var runtimeNameRE = regexp.MustCompile(`^[a-z][a-z0-9-]{1,30}$`)
-
-// checkRuntimeManifest checks a runtime from a manifest file. Only the kind "app" is
-// possible: the agent runs it as it runs Node.js and Python, with the same isolation. A
-// manifest cannot change the unit in other ways.
-func checkRuntimeManifest(r RuntimeSpec, have []RuntimeSpec) error {
-	if !runtimeNameRE.MatchString(r.Name) {
-		return fmt.Errorf("the runtime name %q is not valid", r.Name)
-	}
-	if r.Label == "" || len(r.Label) > 60 || strings.ContainsAny(r.Label, "\n\r\x00") {
-		return fmt.Errorf("the runtime %q needs a label of 1 to 60 characters", r.Name)
-	}
-	if r.Kind != KindApp {
-		return fmt.Errorf("the runtime %q has the kind %q; a manifest can give only the kind %q", r.Name, r.Kind, KindApp)
-	}
-	for _, h := range have {
-		if h.Name == r.Name {
-			return fmt.Errorf("the runtime %q is already a runtime", r.Name)
+// SetPackRuntimes replaces the runtimes of packs. A pack gives only the kind "app": the agent
+// runs it as it runs Node.js and Python, with the same isolation, and a pack cannot change the
+// unit in other ways. The package packs checks the manifests; this function checks again that
+// no pack takes the name of a built-in runtime or of a different pack. An error changes nothing.
+func SetPackRuntimes(list []RuntimeSpec) error {
+	have := slices.Clone(builtinRuntimes)
+	for _, r := range list {
+		if r.Kind != KindApp {
+			return fmt.Errorf("the runtime %q has the kind %q; a pack can give only the kind %q", r.Name, r.Kind, KindApp)
 		}
-	}
-	return nil
-}
-
-// LoadRuntimeManifests reads the runtime manifests (*.json) in dir, and replaces the runtimes
-// from manifest files with them. An empty dir removes them. The agent reads the directory
-// only when its settings name it (config.RuntimeManifests), so a server with no setting has
-// only the built-in runtimes.
-//
-// A manifest is one JSON object, for example:
-//
-//	{"name": "golang", "label": "Go", "kind": "app"}
-//
-// A manifest that is not valid stops the load, and no runtime from a manifest changes.
-func LoadRuntimeManifests(dir string) ([]RuntimeSpec, error) {
-	var loaded []RuntimeSpec
-	if dir != "" {
-		files, err := filepath.Glob(filepath.Join(dir, "*.json"))
-		if err != nil {
-			return nil, err
+		if r.Name == "" || r.Label == "" {
+			return errors.New("a runtime of a pack needs a name and a label")
 		}
-		slices.Sort(files)
-		for _, f := range files {
-			b, err := os.ReadFile(f)
-			if err != nil {
-				return nil, err
+		for _, h := range have {
+			if h.Name == r.Name {
+				return fmt.Errorf("the runtime %q is already a runtime", r.Name)
 			}
-			var r RuntimeSpec
-			dec := json.NewDecoder(strings.NewReader(string(b)))
-			dec.DisallowUnknownFields()
-			if err := dec.Decode(&r); err != nil {
-				return nil, fmt.Errorf("%s: %w", f, err)
-			}
-			if dec.More() {
-				return nil, fmt.Errorf("%s: %w", f, errors.New("the file has more than one object"))
-			}
-			if err := checkRuntimeManifest(r, slices.Concat(builtinRuntimes, loaded)); err != nil {
-				return nil, fmt.Errorf("%s: %w", f, err)
-			}
-			r.Manifest = f
-			loaded = append(loaded, r)
 		}
+		have = append(have, r)
 	}
 	runtimesMu.Lock()
-	extraRuntimes = loaded
+	extraRuntimes = slices.Clone(list)
 	runtimesMu.Unlock()
-	return loaded, nil
+	return nil
 }

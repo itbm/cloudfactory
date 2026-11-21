@@ -731,6 +731,10 @@ func (d *Deps) RootOps() map[string]gate.Handler {
 
 		opPanelDomain: gate.Op(func(ctx context.Context, _ gate.None) (string, error) { return d.panelDomain(ctx) }),
 
+		// The packs and the image policy of Podman. The helper checks each pack and each
+		// signature again (packs.go), and makes each path from its own settings.
+		opPacksSet: none(func(ctx context.Context, in packsIn) error { return d.savePacks(ctx, in.Packs) }),
+
 		// The mark of a reboot job, and the state of the worker. The files stay where an
 		// earlier release has them, so that "cf-agent rollback" finds them.
 		opRebootMark: none(func(ctx context.Context, in jobIn) error {

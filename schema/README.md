@@ -6,6 +6,7 @@ This directory has the input rules that the panel API (PHP) and the agent (Go) s
 | -------------------- | -------------------------------------------------------------- |
 | `input-rules.json`   | The rules. This file is the only source of the rules.          |
 | `input-vectors.json` | Valid and invalid examples for each rule. The tests of the two components run them. |
+| `pack-vectors.json`  | Valid and invalid changes to the example pack manifest. The tests of the two components run them. Refer to [docs/packs.md](../docs/packs.md#test-cases). |
 
 Do not change the generated files by hand. Refer to
 [docs/development.md](../docs/development.md#input-rules) for the procedure to change a rule.

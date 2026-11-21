@@ -329,6 +329,24 @@
       "maxLength": 1024,
       "echo": false,
       "message": "Use 1 to 1024 letters, digits and the characters _ . , : / | @ + = ~ -."
+    },
+    "packSlug": {
+      "what": "pack name",
+      "doc": "The name of a pack, for example \"golang\". It is also the name of the runtime of the pack in the jobs of the agent.",
+      "pattern": "^[a-z][a-z0-9-]{1,30}$",
+      "message": "Use 2 to 31 lower-case letters, digits and \"-\". The first character is a letter."
+    },
+    "packVersion": {
+      "what": "pack version",
+      "doc": "The version of a pack, for example \"1.2.0\".",
+      "pattern": "^[0-9]{1,6}\\.[0-9]{1,6}\\.[0-9]{1,6}([-+][0-9A-Za-z.-]{1,30})?$",
+      "message": "Use a version such as 1.2.0."
+    },
+    "packImageVersion": {
+      "what": "version of a pack image",
+      "doc": "The version of the runtime in one image of a pack, for example \"1.25\". Customers select it.",
+      "pattern": "^[0-9A-Za-z][0-9A-Za-z.+_-]{0,15}$",
+      "message": "Use up to 16 letters, digits and the characters . + _ -, for example 1.25."
     }
   },
   "sets": {
@@ -343,6 +361,10 @@
     "dnsRecordTypes": {
       "doc": "The types of DNS record that a user can make.",
       "values": ["A", "AAAA", "CNAME", "MX", "TXT", "SRV", "CAA", "NS"]
+    },
+    "reservedRuntimeNames": {
+      "doc": "The names of the built-in runtimes, the image families and the database engines. A pack cannot have one of these names.",
+      "values": ["frankenphp", "apache-php-fpm", "node", "python", "custom", "static", "edge", "mail", "dns", "database", "mariadb", "postgresql", "valkey"]
     }
   },
   "limits": {
@@ -386,6 +408,18 @@
     "containerEnvironment": {
       "doc": "The largest number of environment variables of a container.",
       "value": 20
+    },
+    "packImages": {
+      "doc": "The largest number of images in one pack.",
+      "value": 10
+    },
+    "packs": {
+      "doc": "The largest number of packs on a panel.",
+      "value": 50
+    },
+    "packManifestBytes": {
+      "doc": "The largest size of a pack manifest, in bytes.",
+      "value": 32768
     }
   }
 }

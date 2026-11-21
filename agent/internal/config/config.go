@@ -67,11 +67,6 @@ type Config struct {
 	// or an installation of host updates. The default is 170 minutes. The panel fails a job
 	// that has no result after 3 hours, so a larger value has no effect.
 	LongJobTimeoutMinutes int `json:"longJobTimeoutMinutes,omitempty"`
-	// RuntimeManifests is a directory of runtime manifests (*.json), for example
-	// "/etc/cloudfactory/runtimes". Each manifest adds a website runtime of the kind "app"
-	// (quadlet.LoadRuntimeManifests). Empty means only the built-in runtimes. After a
-	// change, restart cf-agent.
-	RuntimeManifests string `json:"runtimeManifests,omitempty"`
 	// ValkeyBackups puts the Valkey databases in the backups of the websites. It is off by
 	// default. After a change, restart cf-agent.
 	ValkeyBackups bool `json:"valkeyBackups,omitempty"`
@@ -139,9 +134,6 @@ func (c Config) Check() error {
 	}
 	if c.JobTimeoutMinutes < 0 || c.LongJobTimeoutMinutes < 0 {
 		errs = append(errs, errors.New("jobTimeoutMinutes and longJobTimeoutMinutes must not be negative"))
-	}
-	if c.RuntimeManifests != "" && (!filepath.IsAbs(c.RuntimeManifests) || filepath.Clean(c.RuntimeManifests) != c.RuntimeManifests) {
-		errs = append(errs, fmt.Errorf("runtimeManifests must be a clean absolute path, not %q", c.RuntimeManifests))
 	}
 	return errors.Join(errs...)
 }

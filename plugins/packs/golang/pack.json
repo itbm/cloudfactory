@@ -1,0 +1,30 @@
+{
+  "contract": "cf-pack/1",
+  "kind": "runtime",
+  "slug": "golang",
+  "name": "Go",
+  "version": "1.0.0",
+  "publisher": "Example Packs Ltd",
+  "description": "Go applications. The panel builds the application with the install command, then runs the start command.",
+  "runtime": {
+    "contract": "cf-runtime/1",
+    "type": "app",
+    "defaultCommand": "./server",
+    "defaultInstall": "go build -o server ."
+  },
+  "images": [
+    {
+      "version": "1.27",
+      "ref": "ghcr.io/example/cf-golang:1.27",
+      "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000127",
+      "supportEndsAt": "2027-08-31"
+    },
+    {
+      "version": "1.26",
+      "ref": "ghcr.io/example/cf-golang:1.26",
+      "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000126",
+      "supportEndsAt": "2027-02-28"
+    }
+  ],
+  "x-source": "https://github.com/itbm/cloudfactory/tree/main/plugins/packs/golang"
+}

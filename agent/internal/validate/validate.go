@@ -97,6 +97,19 @@ func TenantDatabaseName(unixUser, s string) error {
 	return nil
 }
 
+// PackName checks the name of a pack: the rule "packSlug", and not a name of the set
+// "reservedRuntimeNames". The name of a pack is also the name of its runtime, so a pack
+// cannot take the name of a built-in runtime.
+func PackName(s string) error {
+	if err := PackSlug(s); err != nil {
+		return err
+	}
+	if slices.Contains(reservedRuntimeNames, s) {
+		return fmt.Errorf("the pack name %q is the name of a built-in runtime", s)
+	}
+	return nil
+}
+
 // Command checks the start command of a custom image.
 func Command(args []string) error {
 	if len(args) > MaxCommandArguments {

@@ -21,6 +21,7 @@ import (
 	"github.com/itbm/cloudfactory/agent/internal/host"
 	"github.com/itbm/cloudfactory/agent/internal/hostupdate"
 	"github.com/itbm/cloudfactory/agent/internal/mesh"
+	"github.com/itbm/cloudfactory/agent/internal/packs"
 	"github.com/itbm/cloudfactory/agent/internal/quadlet"
 	"github.com/itbm/cloudfactory/agent/internal/selfupdate"
 )
@@ -125,6 +126,12 @@ type Deps struct {
 	// ManageTrial lets the agent use the management program /cf/manage of an engine image
 	// (manage.go). It is off by default.
 	ManageTrial bool
+	// PacksDir holds the packs of the server (packs.go). The default is DefaultPacksDir.
+	// ImagePolicy and PackRegistries are the signature policy of Podman and the file of the
+	// agent in registries.d. Tests replace them.
+	PacksDir       string
+	ImagePolicy    string
+	PackRegistries string
 	// SftpKeysDir holds the SSH keys of each website user. The default is "/etc/cloudfactory/sftp".
 	SftpKeysDir string
 	// SftpUsersDir holds the user list of the SFTP container. The default is
@@ -268,9 +275,12 @@ type Deps struct {
 	networkWarned bool
 	// backupSlots limits the backups that operate at the same time (BackupSlots).
 	backupSlots chan struct{}
-	rtMu        sync.RWMutex
-	obs         observer
-	cron        cronRuns
+	// packsMu protects packs: the packs whose runtimes the agent has loaded.
+	packsMu sync.Mutex
+	packs   []packs.Pack
+	rtMu    sync.RWMutex
+	obs     observer
+	cron    cronRuns
 }
 
 // Images is the part of the shared image store that the actions use (images.Store).
