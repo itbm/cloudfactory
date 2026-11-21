@@ -279,7 +279,7 @@ class PluginTest extends TestCase
         Http::fake(['uptime.example.net/*' => Http::response('', 204)]);
 
         $this->postJson('/api/v1/trusted-keys', ['name' => 'Second', 'publicKey' => openssl_pkey_get_details(openssl_pkey_new(['private_key_type' => OPENSSL_KEYTYPE_EC, 'curve_name' => 'prime256v1']))['key'], 'password' => 'password'])->assertCreated();
-        $delivery = PluginDelivery::where('event', Events::AUDIT_RECORDED)->get()->sole(fn (PluginDelivery $d) => $d->payload['data']['action'] === 'Trusted plugin key');
+        $delivery = PluginDelivery::where('event', Events::AUDIT_RECORDED)->get()->sole(fn (PluginDelivery $d) => $d->payload['data']['action'] === 'Trusted publisher key');
         Queue::assertPushed(DeliverPluginEvent::class, fn (DeliverPluginEvent $j) => $j->deliveryId === $delivery->id);
 
         (new DeliverPluginEvent($delivery->id))->handle(app(Outbound::class));
