@@ -47,10 +47,10 @@ Refer to [docs/screenshots](docs/screenshots/README.md) for screenshots of all p
 | [`api/`](api)          | The panel API. Laravel 13 and PHP 8.4 or later.                           |
 | [`openapi/`](openapi)  | The OpenAPI 3.1 document of the panel API.                                |
 | [`agent/`](agent)      | The agent `cf-agent`. Go. A worker with few rights and a root helper on each server. |
-| [`schema/`](schema)    | The input rules that the panel API and the agent share, and their examples. |
+| [`schema/`](schema)    | The input rules that the panel API and the agent share, their examples, and the test cases of the pack contract. |
 | [`cli/`](cli)          | The command line tool `cf`. Go. It uses only the public API.              |
 | [`install/`](install)  | The installation script and its tests.                                    |
-| [`plugins/`](plugins)  | An example plugin. Refer to [docs/plugins.md](docs/plugins.md).           |
+| [`plugins/`](plugins)  | An example plugin and an example pack. Refer to [docs/plugins.md](docs/plugins.md) and [docs/packs.md](docs/packs.md). |
 | [`images/`](images)    | The Containerfiles of the runtime, edge, panel, database, DNS and Adminer images. |
 | [`.github/workflows/`](.github/workflows) | CI, image scans, releases and the daily image rebuild. |
 | [`docs/`](docs)        | The documentation.                                                        |
@@ -90,6 +90,7 @@ the script before you run it.
 
 - [Architecture](docs/architecture.md)
 - [Security model](docs/security.md)
+- [Packs: runtimes from publishers](docs/packs.md)
 - [Installation](docs/installation.md)
 - [Private networks: a guide for customers](docs/private-networks.md)
 - [Email notifications](docs/email-notifications.md)

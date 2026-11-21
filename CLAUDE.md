@@ -1,0 +1,33 @@
+# Notes for coding agents
+
+## Compatibility while the version is 0.x
+
+While the version of Cloudfactory is 0.x, treat the project as new development with no
+installations to keep. Backwards compatibility is not necessary:
+
+- Do not write migrations that move old data, shims, fallbacks or compatibility layers.
+- Change the migration that made a table, or add a migration that makes the new form
+  directly. Remove the old code, fields, routes and commands in the same change.
+- Change the tests, the web fixtures, `openapi/openapi.yaml` and the documentation in the same
+  change.
+
+The exception is the pack contract (`cf-pack/1` and `cf-runtime/1`). It is stable, because
+publishers outside the project depend on it. Refer to
+[docs/packs.md](docs/packs.md#the-stable-contract).
+
+The full rule is in
+[docs/development.md](docs/development.md#compatibility-while-the-version-is-0x).
+
+## Rules that the tests enforce
+
+- The panel API and the agent share the input rules in `schema/input-rules.json`. After a
+  change, run `cd agent && go run ./cmd/cf-rules`. Do not change the generated files by hand.
+- The panel API and the agent share the pack manifest cases in `schema/pack-vectors.json`.
+- Each API route must be in `openapi/openapi.yaml` (`api/tests/Feature/OpenApiTest.php`).
+- The web tests use the API answers in `web/src/test/fixtures`. After a change to the API or
+  to `DemoSeeder`, run `php artisan demo:fixtures` in `api/` (with `APP_ENV=local`).
+
+## Writing
+
+Use British English. Write the documentation in ASD-STE100 Simplified Technical English:
+short sentences, the active voice, and one instruction in each step.

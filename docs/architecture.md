@@ -285,6 +285,34 @@ names that start with `CF_`. A value is on one line and has a maximum of 4096 ch
 - The install command and the build commands of a deploy also get the variables. The secrets of
   the Git source replace a variable with the same name.
 
+### Runtimes from packs
+
+A [pack](packs.md) adds a runtime of the type `app`, for example Go. The agent runs it as it
+runs Node.js and Python, with the same unit and the same isolation. The pack gives only data:
+names, usual commands, and images with digests.
+
+```text
+ publisher ── pack.json + pack.json.sig + signed images
+                 │
+ administrator ──► panel API: checks the manifest and the signature (trusted keys, release key)
+                 │   keeps the exact bytes, adds one runtime image for each version
+                 ▼
+ job SetPacks to each web server ──► worker checks again ──► root helper checks again, writes
+                 /etc/cloudfactory/packs/SLUG/, a rule for each repository in
+                 /etc/containers/policy.json, and registries.d/cloudfactory-packs.yaml
+                 ▼
+ report of the agent: packs and runtimes ──► panel sends the packs again when they differ
+```
+
+- The panel and the agent check each manifest with the same rules. The shared test cases in
+  `schema/pack-vectors.json` keep them the same.
+- The job has the packs only when the panel sends it. The panel does not keep a copy of the
+  packs in the job, so a job that waits in the queue sends the current packs.
+- The panel puts a website of a pack runtime only on a server that reports the runtime.
+- A rule of a pack in `policy.json` names one repository and the key of its pack. The agent
+  never changes a rule of the installer, and adds no rule for a repository that a rule of the
+  installer covers.
+
 ### Disk limit of a website
 
 The Unix user of a website owns the files of the website. The type of the disk limit comes
