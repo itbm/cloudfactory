@@ -47,6 +47,8 @@ tags:
   - name: Audit
   - name: Plugins
     description: Programs outside the panel with their own token. Refer to docs/plugins.md.
+  - name: Packs
+    description: Signed manifests that add a website runtime, for example Go. Only an administrator. Refer to docs/packs.md.
   - name: Notifications
     description: >-
       Email notifications. Each user chooses the events that give an email. An administrator sets
@@ -3133,13 +3135,13 @@ paths:
                         family: { type: string }
                         tag: { type: string }
                         phpVersion: { type: [string, 'null'] }
-                        version: { type: [string, 'null'], description: 'The version of Node.js or Python, for example "24" or "3.14".' }
+                        version: { type: [string, 'null'], description: 'The version of Node.js, of Python or of the runtime of a pack, for example "24", "3.14" or "1.27".' }
                         custom: { type: boolean }
                         supportEndsAt: { type: [string, 'null'], format: date-time }
-                        appRuntime: { type: boolean, description: True for an image of a runtime from a manifest of the agent. }
+                        pack: { oneOf: [{ $ref: '#/components/schemas/PackRef' }, { type: 'null' }], description: The pack that gives the image. Null for the other images. }
                         defaults:
                           type: [object, 'null']
-                          description: The usual start command and install command of an application image: Node.js, Python or a runtime from a manifest of the agent. Null for the other images.
+                          description: 'The usual start command and install command of an application image: Node.js, Python or the runtime of a pack. Null for the other images.'
                           properties:
                             command: { type: string }
                             install: { type: string }
@@ -3175,18 +3177,6 @@ paths:
                 policy: { type: string, enum: [automatic, manual] }
                 containerPort: { type: [integer, 'null'], minimum: 1, maximum: 65535, description: FR-307. The HTTP port in the container. The default is 8080. }
                 command: { type: [array, 'null'], maxItems: 32, items: { type: string, maxLength: 1024 }, description: The start command as a list of arguments. Null uses the command of the image. }
-                runtime:
-                  type: [string, 'null']
-                  pattern: '^[a-z][a-z0-9-]{1,30}$'
-                  description: >-
-                    The name of a runtime from a manifest of the agent (runtimeManifests in
-                    agent.json), for example "golang". The image then runs the start command of
-                    each website, as a Node.js image does, and customers can select it. The
-                    names of the built-in runtimes are not available. Not with containerPort or
-                    command. A website with the image goes only to a server whose agent reports
-                    the runtime.
-                defaultCommand: { type: string, maxLength: 1000, description: 'With runtime only, and necessary with it. The usual start command of a website, for example "./server".' }
-                defaultInstall: { type: [string, 'null'], maxLength: 1000, description: 'With runtime only. The usual install command of a website, for example "go build -o server .".' }
       responses:
         '201':
           description: Added.
@@ -3985,7 +3975,7 @@ paths:
         Give the manifest as the exact text of `plugin.json`, and its signature: the base64
         text of an ECDSA P-256 signature over the SHA-256 of the manifest, for example from
         `cosign sign-blob --key cosign.key plugin.json`. A trusted key must have made the
-        signature (`/v1/plugin-keys`). Only the developer mode accepts no signature. Give
+        signature (`/v1/trusted-keys`). Only the developer mode accepts no signature. Give
         your password, and your TOTP code when TOTP is on. The response has the token of the
         plugin and the secret of its webhook. The panel shows them only one time.
       requestBody:
@@ -4035,7 +4025,7 @@ paths:
                 type: object
                 properties:
                   manifest: { $ref: '#/components/schemas/PluginManifest' }
-                  signedBy: { oneOf: [{ $ref: '#/components/schemas/PluginKey' }, { type: 'null' }] }
+                  signedBy: { oneOf: [{ $ref: '#/components/schemas/TrustedKey' }, { type: 'null' }] }
                   installed: { type: [string, 'null'], description: The ID of the installed plugin with the same slug. }
                   developerMode: { type: boolean }
         '422': { $ref: '#/components/responses/Invalid' }
@@ -4194,21 +4184,22 @@ paths:
               schema: { $ref: '#/components/schemas/PluginDelivery' }
         '404': { $ref: '#/components/responses/NotFound' }
 
-  /v1/plugin-keys:
+  /v1/trusted-keys:
     get:
-      tags: [Plugins]
+      tags: [Plugins, Packs]
       summary: List the trusted keys
+      description: The keys of the publishers that the panel trusts. Plugins and packs use the same keys. A token needs the scope plugins:read or packs:read.
       responses:
         '200':
-          description: The keys that the panel trusts for plugin manifests.
+          description: The keys that the panel trusts for plugin manifests and pack manifests.
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  data: { type: array, items: { $ref: '#/components/schemas/PluginKey' } }
+                  data: { type: array, items: { $ref: '#/components/schemas/TrustedKey' } }
     post:
-      tags: [Plugins]
+      tags: [Plugins, Packs]
       summary: Trust a key
       description: An ECDSA P-256 public key in PEM format, for example cosign.pub. Give your password, and your TOTP code when TOTP is on.
       requestBody:
@@ -4228,19 +4219,23 @@ paths:
           description: The key.
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/PluginKey' }
+              schema: { $ref: '#/components/schemas/TrustedKey' }
         '422': { $ref: '#/components/responses/Invalid' }
 
-  /v1/plugin-keys/{id}:
+  /v1/trusted-keys/{id}:
     parameters:
       - { $ref: '#/components/parameters/Id' }
     delete:
-      tags: [Plugins]
+      tags: [Plugins, Packs]
       summary: Stop trusting a key
-      description: The installed plugins stay. A new install or update needs a different trusted key.
+      description: >-
+        The installed plugins stay. A new install or update needs a different trusted key. The
+        panel refuses to remove a key that signed an installed pack, because each web server
+        checks the images of the pack with that key.
       responses:
         '204': { description: The key is removed. }
         '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
 
   /v1/plugin-settings:
     get:
@@ -4276,6 +4271,174 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/PluginSettings' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/packs:
+    get:
+      tags: [Packs]
+      summary: List the packs
+      responses:
+        '200':
+          description: The installed packs, by name.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/Pack' } }
+    post:
+      tags: [Packs]
+      summary: Install a pack
+      description: >-
+        Give the manifest as the exact text of `pack.json`, and its signature: the base64 text
+        of an ECDSA P-256 signature over the SHA-256 of the manifest, for example from
+        `cosign sign-blob --key cosign.key pack.json`. A trusted key (`/v1/trusted-keys`) or the
+        Cloudfactory release key must have made the signature. Only the developer mode for
+        packs accepts no signature. Give your password, and your TOTP code when TOTP is on. The
+        panel then sends the pack to each web server. Refer to docs/packs.md.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [manifest, password]
+              properties:
+                manifest: { type: string, maxLength: 32768, description: The exact text of pack.json. The panel keeps the bytes with no change. }
+                signature: { type: [string, 'null'], maxLength: 512, description: The base64 text of the signature from cosign sign-blob. }
+                password: { type: string }
+                totp: { type: [string, 'null'] }
+      responses:
+        '201':
+          description: The pack.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Pack' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/packs/preview:
+    post:
+      tags: [Packs]
+      summary: Check a pack manifest
+      description: Reads the manifest and the signature, and gives what the pack adds. It changes nothing and needs no password.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [manifest]
+              properties:
+                manifest: { type: string, maxLength: 32768 }
+                signature: { type: [string, 'null'], maxLength: 512 }
+      responses:
+        '200':
+          description: What the pack adds.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PackPreview' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/packs/sync:
+    post:
+      tags: [Packs]
+      summary: Send the packs to the servers again
+      description: Sends all packs to each web server in a new job, for example after a failed job. The panel also does this itself, with a longer wait after each failure, when a server reports different packs.
+      responses:
+        '202':
+          description: The jobs are in the queue.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  servers: { type: integer, description: The number of web servers. }
+
+  /v1/pack-settings:
+    get:
+      tags: [Packs]
+      summary: Get the pack settings
+      responses:
+        '200':
+          description: The settings.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PackSettings' }
+    put:
+      tags: [Packs]
+      summary: Turn the developer mode for packs on or off
+      description: >-
+        The developer mode accepts packs with no signature. The servers then run the images of
+        such a pack with no signature check. Do not use it on a production panel. To turn it
+        on, give your password, and your TOTP code when TOTP is on. The developer mode for
+        plugins is a different setting.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [developerMode]
+              properties:
+                developerMode: { type: boolean }
+                password: { type: string }
+                totp: { type: [string, 'null'] }
+      responses:
+        '200':
+          description: The settings.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PackSettings' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/packs/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    get:
+      tags: [Packs]
+      summary: Get a pack
+      responses:
+        '200':
+          description: The pack.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Pack' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Packs]
+      summary: Install a new version of a pack
+      description: >-
+        The same input as an install. The slug must be the same and the version must be
+        different. For an image that websites use, the new digest becomes the available digest
+        and waits for a rollout (`/v1/rollouts`). The panel refuses a manifest that removes a
+        version that websites use.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [manifest, password]
+              properties:
+                manifest: { type: string, maxLength: 32768, description: The exact text of pack.json. The panel keeps the bytes with no change. }
+                signature: { type: [string, 'null'], maxLength: 512, description: The base64 text of the signature from cosign sign-blob. }
+                password: { type: string }
+                totp: { type: [string, 'null'] }
+      responses:
+        '200':
+          description: The pack.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Pack' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+    delete:
+      tags: [Packs]
+      summary: Remove a pack
+      description: Removes the pack and its images, and removes the pack from each web server. The panel refuses when websites use the pack.
+      responses:
+        '204': { description: The pack is removed. }
+        '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/Invalid' }
 
   /v1/plugin-pages:
@@ -4623,7 +4786,7 @@ components:
         version: { type: string }
         publisher: { type: string }
         description: { type: string }
-        scopes: { type: array, items: { $ref: '#/components/schemas/Scope' }, description: 'Not tokens:read, tokens:write, users:write, plugins:read or plugins:write.' }
+        scopes: { type: array, items: { $ref: '#/components/schemas/Scope' }, description: 'Not tokens:read, tokens:write, users:write, plugins:read, plugins:write, packs:read or packs:write.' }
         events: { type: array, items: { $ref: '#/components/schemas/PluginEvent' } }
         webhook: { type: [string, 'null'], description: A path, for example /hooks/cloudfactory. }
         pages:
@@ -4688,7 +4851,7 @@ components:
                 host: { type: string }
                 status: { type: string, enum: [starting, running, stopped, failed, removing] }
         commands: { type: array, items: { type: object, properties: { name: { type: string }, description: { type: string } } } }
-        signedBy: { oneOf: [{ $ref: '#/components/schemas/PluginKey' }, { type: 'null' }] }
+        signedBy: { oneOf: [{ $ref: '#/components/schemas/TrustedKey' }, { type: 'null' }] }
         tokenExpiresAt: { type: [string, 'null'], format: date-time }
         tokenLastUsedAt: { type: [string, 'null'], format: date-time }
         deliveries:
@@ -4738,8 +4901,9 @@ components:
         target: { type: string, enum: [website, server, customer] }
         confirm: { type: [string, 'null'] }
         roles: { type: array, items: { type: string } }
-    PluginKey:
+    TrustedKey:
       type: object
+      description: A public key of a publisher. Plugins and packs use the same trusted keys.
       properties:
         id: { type: string }
         name: { type: string }
@@ -4762,6 +4926,107 @@ components:
       type: object
       properties:
         developerMode: { type: boolean }
+    PackRef:
+      type: object
+      description: The pack of an image.
+      properties:
+        id: { type: string }
+        slug: { type: string }
+        name: { type: string }
+        version: { type: string }
+    PackRuntime:
+      type: object
+      description: The runtime of a pack (cf-runtime/1).
+      properties:
+        contract: { type: string, enum: [cf-runtime/1] }
+        type: { type: string, enum: [app] }
+        defaultCommand: { type: string }
+        defaultInstall: { type: string, description: Empty when the pack has no install command. }
+    PackSigner:
+      type: object
+      properties:
+        name: { type: string }
+        fingerprint: { type: [string, 'null'], description: The SHA-256 of the DER bytes of the key. Null for the Cloudfactory release key. }
+        release: { type: boolean, description: True when the Cloudfactory release key made the signature. }
+    Pack:
+      type: object
+      properties:
+        id: { type: string }
+        slug: { type: string, description: The name of the runtime, for example golang. }
+        name: { type: string }
+        version: { type: string }
+        publisher: { type: string }
+        description: { type: [string, 'null'] }
+        signed: { type: boolean }
+        signedBy: { oneOf: [{ $ref: '#/components/schemas/PackSigner' }, { type: 'null' }] }
+        runtime: { $ref: '#/components/schemas/PackRuntime' }
+        images:
+          type: array
+          description: The images of the pack, the latest version first.
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              name: { type: string }
+              version: { type: string }
+              reference: { type: string, description: The repository, with no tag. }
+              tag: { type: string }
+              digest: { type: string }
+              availableDigest: { type: [string, 'null'], description: A new digest from a new version of the pack. It waits for a rollout. }
+              supportEndsAt: { type: [string, 'null'], format: date }
+              websites: { type: integer }
+        servers:
+          type: array
+          description: The state of the pack on each web server.
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              name: { type: string }
+              version: { type: [string, 'null'], description: The version that the server reported. }
+              state: { type: string, enum: [installed, pending, failing] }
+        installedBy: { type: [string, 'null'] }
+        installedAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    PackPreview:
+      type: object
+      properties:
+        manifest:
+          type: object
+          description: The manifest, with only the keys of the contract.
+          properties:
+            contract: { type: string, enum: [cf-pack/1] }
+            kind: { type: string, enum: [runtime] }
+            slug: { type: string }
+            name: { type: string }
+            version: { type: string }
+            publisher: { type: string }
+            description: { type: string }
+            runtime: { $ref: '#/components/schemas/PackRuntime' }
+            images:
+              type: array
+              items:
+                type: object
+                properties:
+                  version: { type: string }
+                  ref: { type: string }
+                  repository: { type: string }
+                  tag: { type: string }
+                  digest: { type: string }
+                  supportEndsAt: { type: [string, 'null'], format: date }
+        signedBy: { oneOf: [{ $ref: '#/components/schemas/PackSigner' }, { type: 'null' }] }
+        installed:
+          oneOf:
+            - type: object
+              properties:
+                id: { type: string }
+                version: { type: string }
+            - type: 'null'
+        developerMode: { type: boolean }
+    PackSettings:
+      type: object
+      properties:
+        developerMode: { type: boolean }
     Error:
       type: object
       properties:
@@ -4775,7 +5040,7 @@ components:
           additionalProperties: { type: array, items: { type: string } }
     Scope:
       type: string
-      enum: [websites:read, websites:write, databases:read, databases:write, dns:read, dns:write, backups:read, backups:write, mail:read, mail:write, servers:read, servers:write, images:read, images:write, customers:read, customers:write, users:read, users:write, audit:read, tokens:read, tokens:write, plugins:read, plugins:write]
+      enum: [websites:read, websites:write, databases:read, databases:write, dns:read, dns:write, backups:read, backups:write, mail:read, mail:write, servers:read, servers:write, images:read, images:write, customers:read, customers:write, users:read, users:write, audit:read, tokens:read, tokens:write, plugins:read, plugins:write, packs:read, packs:write]
     User:
       type: object
       properties:
@@ -5368,7 +5633,7 @@ components:
         supportEndsAt: { type: [string, 'null'], format: date }
         policy: { type: string, enum: [automatic, security_automatic, manual] }
         custom: { type: boolean }
-        appRuntime: { type: boolean, description: True for an image of a runtime from a manifest of the agent. }
+        pack: { oneOf: [{ $ref: '#/components/schemas/PackRef' }, { type: 'null' }], description: The pack that gives the image. Null for the other images. }
         defaults:
           type: [object, 'null']
           description: The usual start command and install command of an application image.
@@ -5960,9 +6225,20 @@ components:
           type: [array, 'null']
           description: >-
             The website runtimes that the agent can run: the built-in runtimes and the runtimes
-            from manifest files (runtimeManifests in agent.json). An agent of an earlier release
-            does not send the field.
+            of the packs that it loaded. An agent of an earlier release does not send the field.
           items: { type: string, maxLength: 32 }
+        packs:
+          type: [array, 'null']
+          maxItems: 50
+          description: >-
+            The packs that the agent loaded (SetPacks): the slug and the version of each one.
+            When they do not agree with the panel, the panel sends the packs again.
+          items:
+            type: object
+            required: [slug, version]
+            properties:
+              slug: { type: string, maxLength: 40 }
+              version: { type: string, maxLength: 40 }
         features:
           type: [array, 'null']
           description: >-

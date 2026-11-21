@@ -103,5 +103,7 @@ return [
         'tokens:read', 'tokens:write',
         // Only an administrator can install plugins. A plugin cannot have this scope.
         'plugins:read', 'plugins:write',
+        // Only an administrator can install packs. A plugin cannot have this scope.
+        'packs:read', 'packs:write',
     ],
 ];

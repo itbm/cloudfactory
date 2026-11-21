@@ -33,9 +33,10 @@ class Manifest
     /**
      * The scopes that a plugin cannot have. With "tokens", a plugin can make a token with more
      * time. With "users:write", it can reset the password of a user and sign in as that user.
-     * With "plugins", it can change its own scopes or install a different plugin.
+     * With "plugins", it can change its own scopes or install a different plugin. With
+     * "packs", it can install a runtime on each server.
      */
-    public const FORBIDDEN_SCOPES = ['tokens:read', 'tokens:write', 'users:write', 'plugins:read', 'plugins:write'];
+    public const FORBIDDEN_SCOPES = ['tokens:read', 'tokens:write', 'users:write', 'plugins:read', 'plugins:write', 'packs:read', 'packs:write'];
 
     /**
      * Adversarial review, finding A7-02: the scope that a plugin must have to get an event or

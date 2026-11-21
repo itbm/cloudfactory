@@ -6,6 +6,7 @@ use App\Enums\AgentAction;
 use App\Enums\JobState;
 use App\Models\AgentJob;
 use App\Models\Database;
+use App\Models\Pack;
 use App\Models\Website;
 use App\Services\JobOutcome;
 use App\Services\Mesh;
@@ -129,6 +130,11 @@ class RunDemoJob implements ShouldQueue
             AgentAction::CreateDatabase => ($p['engine'] ?? '') === Database::VALKEY ? ['number' => self::freeValkeyNumber($job)] : [],
             AgentAction::Backup => ['snapshotId' => bin2hex(random_bytes(32)), 'sizeBytes' => random_int(40, 900) * 1024 ** 2, 'dumps' => [], 'forgotten' => []],
             AgentAction::InstallHostUpdates => ['rebootRequired' => false],
+            // The demonstration agent loads each pack of the panel, as a real agent does.
+            AgentAction::SetPacks => [
+                'packs' => Pack::orderBy('slug')->get()->map(fn (Pack $pack) => ['slug' => $pack->slug, 'version' => $pack->version])->all(),
+                'runtimes' => [...['frankenphp', 'apache-php-fpm', 'node', 'python', 'custom'], ...Pack::orderBy('slug')->pluck('slug')->all()],
+            ],
             // Keys with the form of the keys of a real agent. They are not real keys.
             AgentAction::PrepareMailNode => ['keys' => [
                 'wireguardKey' => base64_encode(hash('sha256', 'wg'.$job->server_id, true)),

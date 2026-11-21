@@ -15,14 +15,13 @@ use App\Validation\InputRules;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
-use Illuminate\Validation\ValidationException;
 
 /** FR-307 and FR-1106 to FR-1110: runtime images and their update policy. */
 class ImageController extends Controller
 {
     public function index(): JsonResponse
     {
-        return response()->json(['data' => Image::withCount('websites')->orderBy('name')->get()->map(fn (Image $i) => self::present($i))]);
+        return response()->json(['data' => Image::with('pack')->withCount('websites')->orderBy('name')->get()->map(fn (Image $i) => self::present($i))]);
     }
 
     /**
@@ -31,7 +30,7 @@ class ImageController extends Controller
      */
     public function runtimes(Request $request): JsonResponse
     {
-        $images = Image::where('family', '!=', 'edge')
+        $images = Image::with('pack')->where('family', '!=', 'edge')
             ->when(! $request->user()->isAdministrator(), fn ($q) => $q->where('custom', false))
             ->orderBy('name')->get();
 
@@ -40,7 +39,7 @@ class ImageController extends Controller
             'phpVersion' => $i->php_version, 'version' => $i->runtime_version, 'custom' => $i->custom, 'supportEndsAt' => $i->support_ends_at?->toIso8601String(),
             // The usual commands of an application image, for the form of a new website.
             'defaults' => $i->appDefaults(),
-            'appRuntime' => (bool) $i->app_runtime,
+            'pack' => self::presentPack($i),
         ])]);
     }
 
@@ -55,31 +54,18 @@ class ImageController extends Controller
             'tag' => ['required', Input::rule('imageTag')],
             // FR-1110: automatic or manual updates for each image.
             'policy' => ['required', Rule::in([UpdatePolicy::Automatic->value, UpdatePolicy::Manual->value])],
-            // The name of a runtime from a manifest of the agent, for example "golang". The image
-            // then runs the start command of each website, as a Node.js image does.
-            'runtime' => ['sometimes', 'nullable', 'string', 'regex:/^[a-z][a-z0-9-]{1,30}$/', Rule::notIn(Image::BUILT_IN_FAMILIES)],
-            // The usual start command of a website with the image. The user can change it.
-            'defaultCommand' => ['required_with:runtime', Rule::prohibitedIf(! $request->filled('runtime')), 'string', Input::rule('commandLine')],
-            'defaultInstall' => ['sometimes', 'nullable', Rule::prohibitedIf(! $request->filled('runtime')), 'string', Input::rule('commandLine')],
             ...self::runRules(),
         ]);
-        $runtime = $data['runtime'] ?? null;
-        if ($runtime !== null && (isset($data['containerPort']) || ! empty($data['command']))) {
-            throw ValidationException::withMessages(['runtime' => 'An image of a runtime uses port 8080 and the start command of each website. Remove the port and the command.']);
-        }
-        $fields = self::fields(array_diff_key($data, array_flip(['runtime', 'defaultCommand', 'defaultInstall'])));
-        $image = Image::create($runtime === null
-            ? [...$fields, 'family' => 'custom', 'custom' => true]
-            : [...$fields, 'family' => $runtime, 'custom' => false, 'app_runtime' => true,
-                'default_command' => $data['defaultCommand'] ?? null, 'default_install' => $data['defaultInstall'] ?? null]);
-        Audit::record($request, 'Added image', "{$data['reference']}:{$data['tag']}".($runtime ? " (runtime {$runtime})" : ''));
+        // A new runtime comes from a pack (PackController), not from an image of this form.
+        $image = Image::create([...self::fields($data), 'family' => 'custom', 'custom' => true]);
+        Audit::record($request, 'Added image', "{$data['reference']}:{$data['tag']}");
 
         return response()->json(self::present($image), 201);
     }
 
     public function update(Request $request, string $id): JsonResponse
     {
-        $image = Image::findOrFail($id);
+        $image = Image::with('pack')->findOrFail($id);
         $data = $request->validate(['policy' => ['sometimes', Rule::enum(UpdatePolicy::class)], ...($image->custom ? self::runRules() : [])]);
         $image->update(self::fields($data));
         Audit::record($request, 'Changed image', $image->name.(isset($data['policy']) ? ": {$data['policy']}" : ''));
@@ -121,6 +107,14 @@ class ImageController extends Controller
         return $out;
     }
 
+    /** @return array{id: string, slug: string, name: string, version: string}|null The pack of the image. */
+    private static function presentPack(Image $i): ?array
+    {
+        $p = $i->pack;
+
+        return $p ? ['id' => $p->id, 'slug' => $p->slug, 'name' => $p->name, 'version' => $p->version] : null;
+    }
+
     public static function present(Image $i): array
     {
         return [
@@ -137,7 +131,7 @@ class ImageController extends Controller
             'supportEndsAt' => $i->support_ends_at?->toDateString(),
             'policy' => $i->policy->value,
             'custom' => $i->custom,
-            'appRuntime' => (bool) $i->app_runtime,
+            'pack' => self::presentPack($i),
             'defaults' => $i->appDefaults(),
             'signatureVerified' => $i->signature_verified,
             'checkedAt' => $i->checked_at?->toIso8601String(),

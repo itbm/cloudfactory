@@ -56,7 +56,7 @@ const versionOf = (i: RuntimeImage) => (i.phpVersion ? `PHP ${i.phpVersion}` : i
 export function runtimeGroups(images: RuntimeImage[]): RuntimeGroup[] {
   const groups: RuntimeGroup[] = [];
   for (const i of images) {
-    const key = i.custom || !(GROUP_TITLE[i.family] || i.appRuntime) ? i.id : i.family;
+    const key = i.custom || !(GROUP_TITLE[i.family] || i.pack) ? i.id : i.family;
     const group = groups.find((g) => g.key === key);
     if (group) group.images.push(i);
     else groups.push({ key, title: key === i.id ? i.name : GROUP_TITLE[i.family] ?? runtimeTitle(i), images: [i] });
@@ -73,7 +73,7 @@ export function runtimeGroups(images: RuntimeImage[]): RuntimeGroup[] {
 const runtimeTitle = (i: RuntimeImage) => i.name.replace(/\s+v?\d[\w.-]*$/, "") || i.family;
 
 /** True for an image that runs the start command of the website: Node.js, Python, or a runtime from a manifest. */
-export const isAppImage = (i: RuntimeImage | undefined) => !!i && !i.custom && (i.family === "node" || i.family === "python" || !!i.appRuntime);
+export const isAppImage = (i: RuntimeImage | undefined) => !!i && !i.custom && (i.family === "node" || i.family === "python" || !!i.pack);
 
 /** The image of a family with the newest PHP version that still has support, or the first image. */
 export function defaultImage(images: RuntimeImage[], family: RuntimeImage["family"]): string {
@@ -87,7 +87,7 @@ export function defaultImage(images: RuntimeImage[], family: RuntimeImage["famil
 export function NewWebsitePage() {
   const state = useStore();
   const navigate = useNavigate();
-  const runtimes = state.images.filter((i) => ["frankenphp", "apache-php-fpm", "node", "python", "custom", "edge"].includes(i.family) || (i.appRuntime && !i.custom));
+  const runtimes = state.images.filter((i) => ["frankenphp", "apache-php-fpm", "node", "python", "custom", "edge"].includes(i.family) || (i.pack && !i.custom));
   const webServers = state.servers.filter((s) => s.roles.includes("web"));
   const [name, setName] = useState("");
   const [kind, setKind] = useState<WebsiteKind>("public");
@@ -105,7 +105,7 @@ export function NewWebsitePage() {
   const [appCommand, setAppCommand] = useState<string | null>(null);
   const [install, setInstall] = useState<string | null>(null);
   // The presets are for Node.js and Python. A runtime from a manifest has the commands of its image.
-  const preset = image?.appRuntime ? undefined : PRESETS[application];
+  const preset = image?.pack ? undefined : PRESETS[application];
   const startValue = appCommand ?? preset?.command ?? image?.defaults?.command ?? "";
   const installValue = install ?? preset?.install ?? image?.defaults?.install ?? "";
   // Batch 3, issue 2: a reseller makes websites for itself and for its customers.

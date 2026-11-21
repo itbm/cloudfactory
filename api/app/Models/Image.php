@@ -8,12 +8,13 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 #[Fillable([
     'name', 'family', 'reference', 'tag', 'digest', 'available_tag', 'available_digest', 'php_version',
     'support_ends_at', 'policy', 'custom', 'signature_verified', 'checked_at', 'check_error', 'container_port', 'command', 'runtime_version',
-    'app_runtime', 'default_command', 'default_install',
+    'pack_id', 'default_command', 'default_install',
 ])]
 class Image extends Model
 {
@@ -25,7 +26,6 @@ class Image extends Model
             'policy' => UpdatePolicy::class,
             'support_ends_at' => 'date',
             'custom' => 'boolean',
-            'app_runtime' => 'boolean',
             'signature_verified' => 'boolean',
             'checked_at' => 'datetime',
             'container_port' => 'integer',
@@ -36,6 +36,12 @@ class Image extends Model
     public function websites(): HasMany
     {
         return $this->hasMany(Website::class);
+    }
+
+    /** The pack of the image (docs/packs.md), or null for an official image or a custom image. */
+    public function pack(): BelongsTo
+    {
+        return $this->belongsTo(Pack::class);
     }
 
     /**
@@ -61,12 +67,6 @@ class Image extends Model
     public const APP_FAMILIES = ['node', 'python'];
 
     /**
-     * The families that the panel and the agent have built in. A runtime from a manifest of
-     * the agent cannot have one of these names.
-     */
-    public const BUILT_IN_FAMILIES = ['frankenphp', 'apache-php-fpm', 'node', 'python', 'custom', 'static', 'edge', 'mail', 'dns', 'database'];
-
-    /**
      * The usual start command and install command of each application family. The user can
      * change them. The Node.js install command keeps the lock file when it is there. The
      * Python install command makes a virtual environment in the application directory: the
@@ -83,12 +83,12 @@ class Image extends Model
     }
 
     /**
-     * True for a Node.js or Python image, or an image of a runtime from a manifest: the
-     * container runs the start command of the website.
+     * True for a Node.js or Python image, or an image of a pack: the container runs the start
+     * command of the website.
      */
     public function isApp(): bool
     {
-        return ! $this->custom && ($this->app_runtime || in_array($this->family, self::APP_FAMILIES, true));
+        return ! $this->custom && ($this->pack_id !== null || in_array($this->family, self::APP_FAMILIES, true));
     }
 
     /**
@@ -99,7 +99,7 @@ class Image extends Model
      */
     public function appDefaults(): ?array
     {
-        if ($this->app_runtime && ! $this->custom) {
+        if ($this->pack_id !== null && ! $this->custom) {
             return ['command' => (string) $this->default_command, 'install' => (string) $this->default_install];
         }
 
