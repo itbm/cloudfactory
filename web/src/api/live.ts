@@ -157,11 +157,11 @@ interface ApiServer {
 interface ApiImage {
   id: string; name: string; family: RuntimeImage["family"]; reference: string; tag: string; digest: string | null; availableTag: string | null; phpVersion: RuntimeImage["phpVersion"] | null; version?: string | null;
   supportEndsAt: string | null; policy: RuntimeImage["policy"]; custom: boolean; signatureVerified: boolean; websites: number | null; checkedAt?: string | null; checkError?: string | null;
-  containerPort?: number; command?: string[] | null; appRuntime?: boolean; defaults?: RuntimeImage["defaults"] | null;
+  containerPort?: number; command?: string[] | null; pack?: RuntimeImage["pack"] | null; defaults?: RuntimeImage["defaults"] | null;
 }
 interface ApiRuntimeImage {
   id: string; name: string; family: RuntimeImage["family"]; tag: string; phpVersion?: RuntimeImage["phpVersion"] | null; version?: string | null; custom: boolean; supportEndsAt: string | null;
-  defaults?: RuntimeImage["defaults"] | null; appRuntime?: boolean;
+  defaults?: RuntimeImage["defaults"] | null; pack?: RuntimeImage["pack"] | null;
 }
 interface ApiRollout {
   id: string; imageId: string; title: string; fromTag: string; toTag: string; severity: Rollout["severity"]; state: Rollout["state"]; stages: Rollout["stages"];
@@ -285,7 +285,7 @@ export function toImage(i: ApiImage, rollouts: ApiRollout[]): RuntimeImage {
     availableNote: i.availableTag && rolling ? "rolling_out" : undefined, phpVersion: i.phpVersion ?? undefined, version: i.version ?? undefined, supportEndsAt: i.supportEndsAt ?? undefined,
     websites: String(i.websites ?? 0), policy: i.policy, checkError: i.checkError ?? undefined,
     custom: i.custom, signatureVerified: i.signatureVerified, digest: i.digest ?? "", containerPort: i.containerPort, command: i.command ?? undefined,
-    defaults: i.defaults ?? undefined, appRuntime: i.appRuntime || undefined,
+    defaults: i.defaults ?? undefined, pack: i.pack ?? undefined,
   };
 }
 
@@ -293,7 +293,7 @@ export function toRuntimeImage(i: ApiRuntimeImage): RuntimeImage {
   return {
     id: i.id, name: i.name, family: i.family, reference: "", running: i.tag, phpVersion: i.phpVersion ?? undefined, version: i.version ?? undefined,
     defaults: i.defaults ?? undefined, supportEndsAt: i.supportEndsAt ?? undefined,
-    websites: "", policy: "manual", custom: i.custom, signatureVerified: !i.custom, digest: "", appRuntime: i.appRuntime || undefined,
+    websites: "", policy: "manual", custom: i.custom, signatureVerified: !i.custom, digest: "", pack: i.pack ?? undefined,
   };
 }
 

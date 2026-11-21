@@ -1,12 +1,12 @@
-# Go runtime image: an example of a runtime from a manifest (runtime.json), with no new agent
-# code. Build it with:
-#   podman build --build-arg GO_VERSION=1.25 -t golang1.25 plugins/runtimes/golang
+# Go runtime image: the image of the example pack (pack.json), with no new agent code. Build
+# it with:
+#   podman build --build-arg GO_VERSION=1.27 -t ghcr.io/example/cf-golang:1.27 plugins/packs/golang
 #
-# The image follows the contract of the kind "app" (agent/internal/quadlet/runtimes.go): it
-# has /usr/local/bin/cf-app, which starts the start command of the website in CF_APP_DIR.
-# The application listens on the port in the variable PORT (8080).
+# The image follows the runtime contract cf-runtime/1, type "app" (docs/packs.md): it has
+# /usr/local/bin/cf-app, which starts the start command of the website in CF_APP_DIR. The
+# application listens on the port in the variable PORT (8080).
 # SPDX-License-Identifier: AGPL-3.0-only
-ARG GO_VERSION=1.25
+ARG GO_VERSION=1.27
 FROM docker.io/library/golang:${GO_VERSION}-trixie AS welcome
 WORKDIR /src
 COPY welcome.go .
@@ -36,4 +36,4 @@ ENTRYPOINT ["/usr/local/bin/cf-app"]
 CMD ["sh", "-c", "./server"]
 LABEL org.opencontainers.image.source="https://github.com/itbm/cloudfactory" \
       org.opencontainers.image.licenses="AGPL-3.0-only" \
-      org.opencontainers.image.description="Cloudfactory Go runtime (example of a runtime manifest)"
+      org.opencontainers.image.description="Cloudfactory Go runtime (example pack)"

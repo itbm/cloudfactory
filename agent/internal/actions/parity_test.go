@@ -28,6 +28,7 @@ import (
 	agentv1 "github.com/itbm/cloudfactory/agent/gen/cloudfactory/agent/v1"
 	"github.com/itbm/cloudfactory/agent/internal/execx"
 	"github.com/itbm/cloudfactory/agent/internal/jobs"
+	"github.com/itbm/cloudfactory/agent/internal/packs"
 	"github.com/itbm/cloudfactory/agent/internal/quadlet"
 	"google.golang.org/protobuf/proto"
 )
@@ -450,24 +451,25 @@ func TestParityOfACopyWithValkey(t *testing.T) {
 	p.check("copy-valkey")
 }
 
-// A runtime from a manifest (plugins/runtimes/golang) runs as Node.js and Python run: the
-// start command of the customer through cf-app. With no manifest, the agent refuses it
-// (runtime-unknown-runtime).
-func TestARuntimeFromAManifest(t *testing.T) {
-	manifests := t.TempDir()
-	b, err := os.ReadFile("../../../plugins/runtimes/golang/runtime.json")
+// The runtime of a pack (plugins/packs/golang) runs as Node.js and Python run: the start
+// command of the customer through cf-app. With no pack, the agent refuses it
+// (runtime-unknown-runtime). The record is the record of the runtime from a manifest file of
+// the first stage: the source of the runtime changed, the unit did not.
+func TestTheRuntimeOfAPack(t *testing.T) {
+	raw, err := os.ReadFile("../../../plugins/packs/golang/pack.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(manifests, "golang.json"), b, 0o644); err != nil {
+	pack, err := packs.Check(raw, "", "")
+	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := quadlet.LoadRuntimeManifests(manifests); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { quadlet.LoadRuntimeManifests("") })
+	t.Cleanup(func() { quadlet.SetPackRuntimes(nil) })
 
 	d, f, _ := deps(t)
+	if err := d.usePacks([]packs.Pack{pack}); err != nil {
+		t.Fatal(err)
+	}
 	users(d)
 	p := newParityRecord(t, d)
 	w := customerWebsite()
@@ -478,7 +480,7 @@ func TestARuntimeFromAManifest(t *testing.T) {
 	}
 	p.job(f, "CreateWebsite")(d.CreateWebsite(&agentv1.WebsiteRequest{JobId: jobID, Website: w}))
 	p.files()
-	p.check("runtime-golang-from-a-manifest")
+	p.check("runtime-golang-from-a-pack")
 
 	unit := p.text()
 	for _, want := range []string{"Environment=CF_APP_DIR=/app", "Environment=PORT=8080", `Exec="./server"`} {

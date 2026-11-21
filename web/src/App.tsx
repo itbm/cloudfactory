@@ -25,6 +25,7 @@ import { ServersPage } from "./pages/ServersPage";
 import { SetPasswordPage } from "./pages/SetPasswordPage";
 import { SetTotpPage } from "./pages/SetTotpPage";
 import { PluginFramePage } from "./pages/PluginFramePage";
+import { PacksPage } from "./pages/PacksPage";
 import { PluginsPage } from "./pages/PluginsPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { SetupPage } from "./pages/SetupPage";
@@ -108,6 +109,7 @@ export function App() {
             <Route path="brand" element={<BrandPage />} />
             <Route path="settings" element={<SettingsPage />} />
             <Route path="settings/:tab" element={<SettingsPage />} />
+            <Route path="packs" element={<PacksPage />} />
             <Route path="plugins" element={<PluginsPage />} />
             <Route path="plugin/:pluginId/:pageId" element={<PluginFramePage />} />
             <Route path="*" element={<Home />} />

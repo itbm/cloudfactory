@@ -11,6 +11,7 @@ import {
   History,
   Layers,
   ListChecks,
+  Package,
   Puzzle,
   LogOut,
   Mail,
@@ -195,6 +196,7 @@ const ICONS: Record<NavEntry["icon"], ReactNode> = {
   brand: <Palette size={18} />,
   settings: <Settings2 size={18} />,
   plugins: <Puzzle size={18} />,
+  packs: <Package size={18} />,
 };
 
 /** A count or a mark at the end of a link, for example the number of open setup items. */

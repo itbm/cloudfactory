@@ -108,6 +108,15 @@ final class InputRules
     /** The bcrypt hash of a mailbox password. The panel makes it, and the agent gives it to the mail server. The agent never gets the password. */
     public const MAIL_PASSWORD_HASH = '/^(?:^\\$2y\\$1[0-9]\\$[.\\/A-Za-z0-9]{53}$)/D';
 
+    /** The version of the runtime in one image of a pack, for example "1.25". Customers select it. */
+    public const PACK_IMAGE_VERSION = '/^(?:^[0-9A-Za-z][0-9A-Za-z.+_-]{0,15}$)/D';
+
+    /** The name of a pack, for example "golang". It is also the name of the runtime of the pack in the jobs of the agent. */
+    public const PACK_SLUG = '/^(?:^[a-z][a-z0-9-]{1,30}$)/D';
+
+    /** The version of a pack, for example "1.2.0". */
+    public const PACK_VERSION = '/^(?:^[0-9]{1,6}\\.[0-9]{1,6}\\.[0-9]{1,6}([-+][0-9A-Za-z.-]{1,30})?$)/D';
+
     /** The name of a PHP extension. */
     public const PHP_EXTENSION = '/^(?:^[a-z0-9_]{1,40}$)/D';
 
@@ -170,6 +179,9 @@ final class InputRules
         'mailAddress' => self::MAIL_ADDRESS,
         'mailLocalPart' => self::MAIL_LOCAL_PART,
         'mailPasswordHash' => self::MAIL_PASSWORD_HASH,
+        'packImageVersion' => self::PACK_IMAGE_VERSION,
+        'packSlug' => self::PACK_SLUG,
+        'packVersion' => self::PACK_VERSION,
         'phpExtension' => self::PHP_EXTENSION,
         'restorePath' => self::RESTORE_PATH,
         'routePath' => self::ROUTE_PATH,
@@ -216,6 +228,9 @@ final class InputRules
         'mailAddress' => 'Enter a mail address in lower-case letters, for example sales@example.com.',
         'mailLocalPart' => 'Use 1 to 64 lower-case letters, digits, dots, hyphens and underscores. Start and end with a letter or a digit.',
         'mailPasswordHash' => 'Enter a bcrypt hash.',
+        'packImageVersion' => 'Use up to 16 letters, digits and the characters . + _ -, for example 1.25.',
+        'packSlug' => 'Use 2 to 31 lower-case letters, digits and "-". The first character is a letter.',
+        'packVersion' => 'Use a version such as 1.2.0.',
         'phpExtension' => 'Use 1 to 40 lower-case letters, digits and underscores.',
         'restorePath' => 'Enter a path that starts with /, for example /public/index.php. Do not use "//", "." or ".." parts, or a / at the end.',
         'routePath' => 'Use a path such as /01jbq3z5k8n6/: a slash, 1 to 40 lower-case letters and digits, and a slash.',
@@ -235,6 +250,9 @@ final class InputRules
 
     /** A database name does not start with one of these (CF-01). */
     public const RESERVED_DATABASE_PREFIXES = ['pg_'];
+
+    /** The names of the built-in runtimes, the image families and the database engines. A pack cannot have one of these names. */
+    public const RESERVED_RUNTIME_NAMES = ['frankenphp', 'apache-php-fpm', 'node', 'python', 'custom', 'static', 'edge', 'mail', 'dns', 'database', 'mariadb', 'postgresql', 'valkey'];
 
     /** The largest number of build commands of a deploy. */
     public const MAX_BUILD_COMMANDS = 10;
@@ -265,4 +283,13 @@ final class InputRules
 
     /** The largest number of environment variables of a website. */
     public const MAX_ENVIRONMENT_VARIABLES = 50;
+
+    /** The largest number of images in one pack. */
+    public const MAX_PACK_IMAGES = 10;
+
+    /** The largest size of a pack manifest, in bytes. */
+    public const MAX_PACK_MANIFEST_BYTES = 32768;
+
+    /** The largest number of packs on a panel. */
+    public const MAX_PACKS = 50;
 }

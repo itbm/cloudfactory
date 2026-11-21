@@ -160,6 +160,8 @@ const (
 	// AgentServiceReceiveDatabaseServerProcedure is the fully-qualified name of the AgentService's
 	// ReceiveDatabaseServer RPC.
 	AgentServiceReceiveDatabaseServerProcedure = "/cloudfactory.agent.v1.AgentService/ReceiveDatabaseServer"
+	// AgentServiceSetPacksProcedure is the fully-qualified name of the AgentService's SetPacks RPC.
+	AgentServiceSetPacksProcedure = "/cloudfactory.agent.v1.AgentService/SetPacks"
 	// AgentServiceGetStatusProcedure is the fully-qualified name of the AgentService's GetStatus RPC.
 	AgentServiceGetStatusProcedure = "/cloudfactory.agent.v1.AgentService/GetStatus"
 	// AgentServiceListFilesProcedure is the fully-qualified name of the AgentService's ListFiles RPC.
@@ -225,6 +227,10 @@ type AgentServiceClient interface {
 	RotateMeshKey(context.Context, *connect.Request[v1.RotateMeshKeyRequest]) (*connect.Response[v1.JobAccepted], error)
 	SendDatabaseServer(context.Context, *connect.Request[v1.SendDatabaseServerRequest]) (*connect.Response[v1.JobAccepted], error)
 	ReceiveDatabaseServer(context.Context, *connect.Request[v1.ReceiveDatabaseServerRequest]) (*connect.Response[v1.JobAccepted], error)
+	// Sets the packs of the server: all packs that the panel has installed (docs/packs.md). The
+	// agent checks the signature of each pack, saves the packs, lets Podman pull the images of
+	// each pack only with a signature of its publisher, and loads the runtimes of the packs.
+	SetPacks(context.Context, *connect.Request[v1.SetPacksRequest]) (*connect.Response[v1.JobAccepted], error)
 	// Returns the actual state of the server at once. This method does not make a job.
 	GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.HostStatus], error)
 	// The file manager and the logs of a website. These methods do not make a job: they give
@@ -508,6 +514,12 @@ func NewAgentServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(agentServiceMethods.ByName("ReceiveDatabaseServer")),
 			connect.WithClientOptions(opts...),
 		),
+		setPacks: connect.NewClient[v1.SetPacksRequest, v1.JobAccepted](
+			httpClient,
+			baseURL+AgentServiceSetPacksProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("SetPacks")),
+			connect.WithClientOptions(opts...),
+		),
 		getStatus: connect.NewClient[v1.GetStatusRequest, v1.HostStatus](
 			httpClient,
 			baseURL+AgentServiceGetStatusProcedure,
@@ -604,6 +616,7 @@ type agentServiceClient struct {
 	rotateMeshKey         *connect.Client[v1.RotateMeshKeyRequest, v1.JobAccepted]
 	sendDatabaseServer    *connect.Client[v1.SendDatabaseServerRequest, v1.JobAccepted]
 	receiveDatabaseServer *connect.Client[v1.ReceiveDatabaseServerRequest, v1.JobAccepted]
+	setPacks              *connect.Client[v1.SetPacksRequest, v1.JobAccepted]
 	getStatus             *connect.Client[v1.GetStatusRequest, v1.HostStatus]
 	listFiles             *connect.Client[v1.FileRequest, v1.FileList]
 	readFile              *connect.Client[v1.FileRequest, v1.FileContent]
@@ -829,6 +842,11 @@ func (c *agentServiceClient) ReceiveDatabaseServer(ctx context.Context, req *con
 	return c.receiveDatabaseServer.CallUnary(ctx, req)
 }
 
+// SetPacks calls cloudfactory.agent.v1.AgentService.SetPacks.
+func (c *agentServiceClient) SetPacks(ctx context.Context, req *connect.Request[v1.SetPacksRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return c.setPacks.CallUnary(ctx, req)
+}
+
 // GetStatus calls cloudfactory.agent.v1.AgentService.GetStatus.
 func (c *agentServiceClient) GetStatus(ctx context.Context, req *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.HostStatus], error) {
 	return c.getStatus.CallUnary(ctx, req)
@@ -915,6 +933,10 @@ type AgentServiceHandler interface {
 	RotateMeshKey(context.Context, *connect.Request[v1.RotateMeshKeyRequest]) (*connect.Response[v1.JobAccepted], error)
 	SendDatabaseServer(context.Context, *connect.Request[v1.SendDatabaseServerRequest]) (*connect.Response[v1.JobAccepted], error)
 	ReceiveDatabaseServer(context.Context, *connect.Request[v1.ReceiveDatabaseServerRequest]) (*connect.Response[v1.JobAccepted], error)
+	// Sets the packs of the server: all packs that the panel has installed (docs/packs.md). The
+	// agent checks the signature of each pack, saves the packs, lets Podman pull the images of
+	// each pack only with a signature of its publisher, and loads the runtimes of the packs.
+	SetPacks(context.Context, *connect.Request[v1.SetPacksRequest]) (*connect.Response[v1.JobAccepted], error)
 	// Returns the actual state of the server at once. This method does not make a job.
 	GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.HostStatus], error)
 	// The file manager and the logs of a website. These methods do not make a job: they give
@@ -1194,6 +1216,12 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(agentServiceMethods.ByName("ReceiveDatabaseServer")),
 		connect.WithHandlerOptions(opts...),
 	)
+	agentServiceSetPacksHandler := connect.NewUnaryHandler(
+		AgentServiceSetPacksProcedure,
+		svc.SetPacks,
+		connect.WithSchema(agentServiceMethods.ByName("SetPacks")),
+		connect.WithHandlerOptions(opts...),
+	)
 	agentServiceGetStatusHandler := connect.NewUnaryHandler(
 		AgentServiceGetStatusProcedure,
 		svc.GetStatus,
@@ -1330,6 +1358,8 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 			agentServiceSendDatabaseServerHandler.ServeHTTP(w, r)
 		case AgentServiceReceiveDatabaseServerProcedure:
 			agentServiceReceiveDatabaseServerHandler.ServeHTTP(w, r)
+		case AgentServiceSetPacksProcedure:
+			agentServiceSetPacksHandler.ServeHTTP(w, r)
 		case AgentServiceGetStatusProcedure:
 			agentServiceGetStatusHandler.ServeHTTP(w, r)
 		case AgentServiceListFilesProcedure:
@@ -1525,6 +1555,10 @@ func (UnimplementedAgentServiceHandler) SendDatabaseServer(context.Context, *con
 
 func (UnimplementedAgentServiceHandler) ReceiveDatabaseServer(context.Context, *connect.Request[v1.ReceiveDatabaseServerRequest]) (*connect.Response[v1.JobAccepted], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.ReceiveDatabaseServer is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) SetPacks(context.Context, *connect.Request[v1.SetPacksRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.SetPacks is not implemented"))
 }
 
 func (UnimplementedAgentServiceHandler) GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.HostStatus], error) {

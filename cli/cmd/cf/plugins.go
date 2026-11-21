@@ -26,7 +26,7 @@ func init() {
 		"database-server", "db-servers", "databases", "database", "database-users", "database-user", "db-users", "dns", "networks",
 		"network", "backups", "backup", "jobs", "job", "servers", "server", "mesh", "panel-certificate", "images", "image", "sftp",
 		"customers", "customer", "users", "user", "plans", "plan", "audit", "account", "rollouts", "rollout", "tokens", "token",
-		"files", "file", "logs", "cron", "deploys", "deploy", "plugins", "plugin",
+		"files", "file", "logs", "cron", "deploys", "deploy", "plugins", "plugin", "packs", "pack",
 		// Adversarial review, finding C1-02: these commands were not in the list.
 		"env", "mail", "email", "mail-server", "notifications", "notification",
 	} {
@@ -375,7 +375,7 @@ func (a *app) pluginKeys(ctx context.Context, args []string) error {
 		var out struct {
 			Data []map[string]any `json:"data"`
 		}
-		if err := a.api.Do(ctx, http.MethodGet, "/plugin-keys", nil, nil, &out); err != nil {
+		if err := a.api.Do(ctx, http.MethodGet, "/trusted-keys", nil, nil, &out); err != nil {
 			return err
 		}
 		if a.json {
@@ -412,7 +412,7 @@ func (a *app) pluginKeys(ctx context.Context, args []string) error {
 			return err
 		}
 		var out map[string]any
-		if err := a.api.Do(ctx, http.MethodPost, "/plugin-keys", nil, body, &out); err != nil {
+		if err := a.api.Do(ctx, http.MethodPost, "/trusted-keys", nil, body, &out); err != nil {
 			return err
 		}
 		fmt.Fprintf(a.out, "The panel trusts the key of %s (SHA-256 %s).\n", cell(out["name"]), cell(out["fingerprint"]))
@@ -421,7 +421,7 @@ func (a *app) pluginKeys(ctx context.Context, args []string) error {
 		if err := need(args, 2, "the ID of the key"); err != nil {
 			return err
 		}
-		if err := a.api.Do(ctx, http.MethodDelete, "/plugin-keys/"+args[1], nil, nil, nil); err != nil {
+		if err := a.api.Do(ctx, http.MethodDelete, "/trusted-keys/"+args[1], nil, nil, nil); err != nil {
 			return err
 		}
 		fmt.Fprintln(a.out, "The key is removed. The installed plugins stay.")

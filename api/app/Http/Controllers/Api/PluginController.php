@@ -82,7 +82,7 @@ class PluginController extends Controller
 
         return response()->json([
             'manifest' => $spec,
-            'signedBy' => $key ? self::presentKey($key) : null,
+            'signedBy' => $key ? TrustedKeyController::present($key) : null,
             'installed' => Plugin::where('slug', $spec['slug'])->value('id'),
             'developerMode' => self::developerMode(),
         ]);
@@ -322,37 +322,6 @@ class PluginController extends Controller
         $copy = Events::deliver($delivery->plugin, $delivery->event, $delivery->payload['data'] ?? []);
 
         return response()->json(self::presentDelivery($copy), 202);
-    }
-
-    public function keys(): JsonResponse
-    {
-        return response()->json(['data' => PluginKey::orderBy('name')->get()->map(fn (PluginKey $k) => self::presentKey($k))]);
-    }
-
-    public function storeKey(Request $request): JsonResponse
-    {
-        $data = $request->validate([
-            'name' => ['required', 'string', 'max:100'],
-            'publicKey' => ['required', 'string', 'max:4096'],
-        ]);
-        AuthController::confirmIdentity($request);
-        $fingerprint = Signatures::fingerprint($data['publicKey']);
-        if (PluginKey::where('fingerprint', $fingerprint)->exists()) {
-            throw ValidationException::withMessages(['publicKey' => 'The panel trusts this key already.']);
-        }
-        $key = PluginKey::create(['name' => $data['name'], 'public_key' => trim($data['publicKey'])."\n", 'fingerprint' => $fingerprint]);
-        Audit::record($request, 'Trusted plugin key', "{$key->name} (".substr($fingerprint, 0, 16).')');
-
-        return response()->json(self::presentKey($key), 201);
-    }
-
-    public function destroyKey(Request $request, string $id): JsonResponse
-    {
-        $key = PluginKey::findOrFail($id);
-        $key->delete();
-        Audit::record($request, 'Removed trusted plugin key', $key->name);
-
-        return response()->json(null, 204);
     }
 
     public function settings(): JsonResponse
@@ -609,7 +578,7 @@ class PluginController extends Controller
                 'host' => $p->host,
                 'status' => $p->container_status,
             ] : null,
-            'signedBy' => $p->key ? self::presentKey($p->key) : null,
+            'signedBy' => $p->key ? TrustedKeyController::present($p->key) : null,
             'tokenExpiresAt' => $token?->expires_at?->toIso8601String(),
             'tokenLastUsedAt' => $token?->last_used_at?->toIso8601String(),
             'deliveries' => [
@@ -655,17 +624,6 @@ class PluginController extends Controller
     }
 
     /** @return array<string, mixed> */
-    private static function presentKey(PluginKey $k): array
-    {
-        return [
-            'id' => $k->id,
-            'name' => $k->name,
-            'fingerprint' => $k->fingerprint,
-            'publicKey' => $k->public_key,
-            'createdAt' => $k->created_at?->toIso8601String(),
-        ];
-    }
-
     /** @return array<string, mixed> */
     private static function presentDelivery(PluginDelivery $d): array
     {

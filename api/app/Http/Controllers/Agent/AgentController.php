@@ -16,8 +16,10 @@ use App\Models\Server;
 use App\Services\Dns\Zones;
 use App\Services\JobOutcome;
 use App\Services\Mesh;
+use App\Services\Packs\Packs;
 use App\Services\PanelCertificate;
 use App\Services\UsageRecorder;
+use App\Validation\InputRules;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -120,6 +122,10 @@ class AgentController extends Controller
             'runtimes.*' => ['string', 'max:32'],
             'features' => ['nullable', 'array', 'max:50'],
             'features.*' => ['string', 'max:64'],
+            // The packs of the server (SetPacks): the name and the version of each one.
+            'packs' => ['nullable', 'array', 'max:'.InputRules::MAX_PACKS],
+            'packs.*.slug' => ['required', 'string', 'max:40'],
+            'packs.*.version' => ['required', 'string', 'max:40'],
             // True when the agent can operate the database servers of customers.
             'databaseInstances' => ['boolean'],
             // The state and the resource use of each database server on the server.
@@ -200,6 +206,7 @@ class AgentController extends Controller
             'database_engines' => $data['databaseEngines'] ?? null,
             'agent_runtimes' => $data['runtimes'] ?? null,
             'agent_features' => $data['features'] ?? null,
+            'agent_packs' => $data['packs'] ?? null,
             'database_instances' => $data['databaseInstances'] ?? false,
             'dns' => $data['dns'] ?? false,
             'addresses' => $data['addresses'] ?? $server->addresses,
@@ -228,6 +235,11 @@ class AgentController extends Controller
         }
         // The server gets the zones that it does not have, for example after it was offline,
         // and loses the zones that it must not have.
+        // The server gets the packs of the panel when it has other packs, for example after
+        // it was offline or after a failed job.
+        if (is_array($data['packs'] ?? null)) {
+            app(Packs::class)->reconcile($server->fresh(), $data['packs']);
+        }
         if (is_array($data['dnsZones'] ?? null)) {
             app(Zones::class)->reconcile($server->fresh(), $data['dnsZones']);
         }

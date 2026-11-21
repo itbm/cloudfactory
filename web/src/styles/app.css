@@ -996,5 +996,5 @@ a.stat-link .stat-value { margin-bottom: 8px; }
 .plugin-meta { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 4px; color: var(--text-muted); font-size: 13px; }
 .scope-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 .scope-list li { display: flex; gap: 10px; align-items: baseline; }
-.scope-list code { flex: none; }
+.scope-list code, .scope-list strong { flex: none; }
 .manifest-input { font-family: var(--font-mono); font-size: 12px; min-height: 160px; }

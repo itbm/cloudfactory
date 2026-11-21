@@ -130,15 +130,15 @@ class WebsiteController extends Controller
             // A healthy server first. A degraded server can also get a website: its agent answers.
             // A server that the panel cannot connect to comes last: its jobs fail.
             : Server::whereJsonContains('roles', 'web')->whereIn('state', Server::WORKING)->withCount('websites')
-                ->when($image->app_runtime, fn ($q) => $q->whereJsonContains('agent_runtimes', $image->family))
+                ->when($image->pack_id !== null, fn ($q) => $q->whereJsonContains('agent_runtimes', $image->family))
                 ->orderByRaw('case when connection_error is null then 0 else 1 end')
                 ->orderByRaw("case when state = 'healthy' then 0 else 1 end")->orderBy('websites_count')->first();
         if (! $server || ! in_array('web', $server->roles, true)) {
             throw ValidationException::withMessages(['serverId' => 'Select a server with the web role.']);
         }
-        // A runtime from a manifest operates only on a server whose agent reports it.
-        if ($image->app_runtime && ! $server->hasRuntime($image->family)) {
-            throw ValidationException::withMessages([(isset($data['serverId']) ? 'serverId' : 'imageId') => "The agent on the server {$server->name} does not have the runtime {$image->family}. Add its manifest to the agent (runtimeManifests in agent.json), or select a different server."]);
+        // The runtime of a pack operates only on a server whose agent loaded the pack.
+        if ($image->pack_id !== null && ! $server->hasRuntime($image->family)) {
+            throw ValidationException::withMessages([(isset($data['serverId']) ? 'serverId' : 'imageId') => "The agent on the server {$server->name} does not have the runtime {$image->family} yet. The panel sends the packs to each web server: wait for the server to load the pack, or select a different server."]);
         }
         $unixUser = self::unixUser($data['name']);
         $domain = null;

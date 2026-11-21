@@ -30,11 +30,14 @@ import type {
   Job,
   LogLine,
   Mesh,
+  Pack,
+  PackManifest,
+  PackSigner,
   Plan,
   Plugin,
   PluginCredentials,
   PluginDelivery,
-  PluginKey,
+  TrustedKey,
   PluginManifest,
   PluginActionResult,
   PluginPlacement,
@@ -1006,14 +1009,12 @@ export function postAdminerForm(target: Window, url: string, form: AdminerForm) 
  * `runtime`, the image is for a runtime from a manifest of the agent, for example Go: its
  * websites run their start command, and customers can select it.
  */
-export function addImage(
-  name: string, reference: string, tag: string, policy: UpdatePolicy,
-  run: { containerPort?: string; command?: string; runtime?: string; defaultCommand?: string; defaultInstall?: string } = {},
-) {
-  const image = { name: name.trim(), reference: reference.trim(), tag: tag.trim(), policy };
-  const body = run.runtime?.trim()
-    ? { ...image, runtime: run.runtime.trim(), defaultCommand: run.defaultCommand?.trim() ?? "", defaultInstall: run.defaultInstall?.trim() || null }
-    : { ...image, containerPort: run.containerPort?.trim() ? Number(run.containerPort) : null, command: run.command?.trim() ? splitCommand(run.command) : null };
+/** Adds an own OCI image. A new runtime comes from a pack (installPack), not from an image. */
+export function addImage(name: string, reference: string, tag: string, policy: UpdatePolicy, run: { containerPort?: string; command?: string } = {}) {
+  const body = {
+    name: name.trim(), reference: reference.trim(), tag: tag.trim(), policy,
+    containerPort: run.containerPort?.trim() ? Number(run.containerPort) : null, command: run.command?.trim() ? splitCommand(run.command) : null,
+  };
   return call(() => live.request("POST", "/images", body)).then(() => refresh()).then(() => undefined);
 }
 
@@ -1478,14 +1479,14 @@ export function changePassword(current: string, next: string, confirm: string, t
 
 // Plugins (docs/plugins.md). Only an administrator manages them. Each role opens the pages.
 
-export interface PluginAdmin { plugins: Plugin[]; keys: PluginKey[]; developerMode: boolean }
+export interface PluginAdmin { plugins: Plugin[]; keys: TrustedKey[]; developerMode: boolean }
 
 /** The plugins, the trusted keys and the developer mode, for the Plugins page. */
 export async function loadPlugins(): Promise<PluginAdmin> {
   return call(async () => {
     const [plugins, keys, settings] = await Promise.all([
       live.request<{ data: Plugin[] }>("GET", "/plugins"),
-      live.request<{ data: PluginKey[] }>("GET", "/plugin-keys"),
+      live.request<{ data: TrustedKey[] }>("GET", "/trusted-keys"),
       live.request<{ developerMode: boolean }>("GET", "/plugin-settings"),
     ]);
     return { plugins: plugins.data, keys: keys.data, developerMode: settings.developerMode };
@@ -1496,7 +1497,7 @@ export function pluginDeliveries(pluginId: string): Promise<PluginDelivery[]> {
   return call(() => live.request<{ data: PluginDelivery[] }>("GET", `/plugins/${pluginId}/deliveries`).then((r) => r.data));
 }
 
-export interface PluginPreview { manifest: PluginManifest; signedBy: PluginKey | null; installed: string | null; developerMode: boolean }
+export interface PluginPreview { manifest: PluginManifest; signedBy: TrustedKey | null; installed: string | null; developerMode: boolean }
 
 /** Checks a manifest and gives what it asks for. It changes nothing. */
 export function previewPlugin(manifest: string, signature: string): Promise<PluginPreview> {
@@ -1562,12 +1563,13 @@ export function retryPluginDelivery(pluginId: string, deliveryId: string): Promi
   return call(() => live.request<PluginDelivery>("POST", `/plugins/${pluginId}/deliveries/${deliveryId}/retry`));
 }
 
-export function addPluginKey(name: string, publicKey: string, confirm: Confirmation): Promise<PluginKey> {
-  return call(() => live.request<PluginKey>("POST", "/plugin-keys", { name: name.trim(), publicKey: publicKey.trim(), ...confirmation(confirm) }));
+/** Trusts the public key of a publisher, for plugins and packs. */
+export function addTrustedKey(name: string, publicKey: string, confirm: Confirmation): Promise<TrustedKey> {
+  return call(() => live.request<TrustedKey>("POST", "/trusted-keys", { name: name.trim(), publicKey: publicKey.trim(), ...confirmation(confirm) }));
 }
 
-export function removePluginKey(keyId: string): Promise<void> {
-  return call(() => live.request("DELETE", `/plugin-keys/${keyId}`).then(() => undefined));
+export function removeTrustedKey(keyId: string): Promise<void> {
+  return call(() => live.request("DELETE", `/trusted-keys/${keyId}`).then(() => undefined));
 }
 
 export function setPluginDeveloperMode(on: boolean, confirm: Confirmation): Promise<boolean> {
@@ -1584,3 +1586,65 @@ export function pluginPageSession(pluginId: string, pageId: string): Promise<Plu
   return call(() => live.request<PluginPageSession>("POST", `/plugin-pages/${pluginId}/${pageId}/session`));
 }
 
+
+// Packs (docs/packs.md). Only an administrator manages them.
+
+export interface PackAdmin { packs: Pack[]; keys: TrustedKey[]; developerMode: boolean }
+
+/** The packs, the trusted keys and the developer mode, for the Packs page. */
+export async function loadPacks(): Promise<PackAdmin> {
+  return call(async () => {
+    const [packs, keys, settings] = await Promise.all([
+      live.request<{ data: Pack[] }>("GET", "/packs"),
+      live.request<{ data: TrustedKey[] }>("GET", "/trusted-keys"),
+      live.request<{ developerMode: boolean }>("GET", "/pack-settings"),
+    ]);
+    return { packs: packs.data, keys: keys.data, developerMode: settings.developerMode };
+  });
+}
+
+export interface PackPreview { manifest: PackManifest; signedBy: PackSigner | null; installed: { id: string; version: string } | null; developerMode: boolean }
+
+/**
+ * Checks a manifest and gives what it adds. It changes nothing. The panel keeps the exact text
+ * of the manifest, because the signature covers each byte: the store does not trim it.
+ */
+export function previewPack(manifest: string, signature: string): Promise<PackPreview> {
+  return call(() => live.request<PackPreview>("POST", "/packs/preview", { manifest, signature: signature.trim() || null }));
+}
+
+export function installPack(manifest: string, signature: string, confirm: Confirmation): Promise<Pack> {
+  return call(async () => {
+    const r = await live.request<Pack>("POST", "/packs", { manifest, signature: signature.trim() || null, ...confirmation(confirm) });
+    await refresh();
+    return r;
+  });
+}
+
+export function updatePack(packId: string, manifest: string, signature: string, confirm: Confirmation): Promise<Pack> {
+  return call(async () => {
+    const r = await live.request<Pack>("PUT", `/packs/${packId}`, { manifest, signature: signature.trim() || null, ...confirmation(confirm) });
+    await refresh();
+    return r;
+  });
+}
+
+export function removePack(packId: string): Promise<void> {
+  return call(async () => {
+    await live.request("DELETE", `/packs/${packId}`);
+    await refresh();
+  });
+}
+
+/** Sends all packs to each web server again, for example after a failed job. */
+export function syncPacks(): Promise<number> {
+  return call(async () => {
+    const r = await live.request<{ servers: number }>("POST", "/packs/sync");
+    await refresh();
+    return r.servers;
+  });
+}
+
+export function setPackDeveloperMode(on: boolean, confirm: Confirmation): Promise<boolean> {
+  return call(() => live.request<{ developerMode: boolean }>("PUT", "/pack-settings", { developerMode: on, ...(on ? confirmation(confirm) : {}) }).then((r) => r.developerMode));
+}

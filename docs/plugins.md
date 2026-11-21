@@ -130,7 +130,8 @@ Only an administrator can install a plugin. Each step that gives access needs th
 of the administrator, and the TOTP code when TOTP is on.
 
 1. Add the public key of the publisher: **Plugins > Trusted keys > Add key**, or
-   `cf plugins keys add --name NAME --file cosign.pub`.
+   `cf plugins keys add --name NAME --file cosign.pub`. Plugins and [packs](packs.md) use
+   the same list of trusted keys (`/api/v1/trusted-keys`).
 2. Start the server of the plugin on its own host name, for example
    `https://uptime.example.net`. Do not use the host name of the panel. The panel refuses it.
 3. Select **Plugins > Install plugin**. Paste the manifest and the signature. Select
@@ -507,73 +508,22 @@ Refer to [security.md](security.md#plugins).
 
 ## Runtimes and database engines
 
-The runtimes and the database engines of the agent are becoming packs that a publisher can
-add. Stage 1 gives the contracts in the agent and three switches. All switches are off by
-default. With no switch, the agent operates as in the previous release.
+A [pack](packs.md) adds a website runtime, for example Go, with no new agent code. A publisher
+signs the pack, and an administrator installs it on the **Packs** page. The panel sends the
+pack to each web server. Refer to [packs.md](packs.md).
+
+The database engines are becoming packs too. Until then, the agent has two switches for the
+trial. The two switches are off by default. With no switch, the agent operates as in the
+previous release.
 
 | Setting in `/etc/cloudfactory/agent.json` | Effect |
 | --- | --- |
-| `"runtimeManifests": "/etc/cloudfactory/runtimes"` | The agent reads each runtime manifest (`*.json`) in the directory. |
 | `"valkeyBackups": true` | The backups of the websites include their Valkey databases. |
 | `"manageTrial": true` | The agent asks the MariaDB image for the sizes of its databases with `/cf/manage`. |
 
 After you change a setting, restart the agent: `systemctl restart cf-agent`. The agent
-reports its runtimes and the switches that are on (`runtimes` and `features` in the report).
-
-### Runtime manifests
-
-A runtime manifest adds a website runtime with no new agent code. A manifest is one JSON
-object:
-
-```json
-{"name": "golang", "label": "Go", "kind": "app"}
-```
-
-- `name` is the name of the runtime in the requests of the panel: 2 to 31 lower-case
-  letters, digits and hyphens. It cannot be the name of a built-in runtime.
-- `label` is the name for people.
-- `kind` must be `app`. The agent runs the runtime as it runs Node.js and Python, with the
-  same isolation. A manifest cannot change the unit in other ways.
-
-The image of an `app` runtime must have `/usr/local/bin/cf-app`. The script goes to
-`CF_APP_DIR` and runs the start command of the website. The application listens on the
-port in `PORT`. Refer to the example in
-[plugins/runtimes/golang](../plugins/runtimes/golang/README.md).
-
-When a manifest is not valid, the agent writes an error in its log and uses only the
-built-in runtimes. The agent continues to operate.
-
-### Runtime images in the panel
-
-To let customers use a runtime from a manifest, an administrator adds an image for it:
-
-1. Go to **Apps** and select **Add your own image**.
-2. Select **Runtime from an agent manifest**.
-3. Type the name, the image reference and the tag of the image.
-4. In **Runtime name**, type the `name` of the manifest, for example `golang`.
-5. Type the usual start command, for example `./server`. You can also type the usual install
-   command, for example `go build -o server .`.
-6. Select **Add image**.
-
-The API request is `POST /api/v1/images` with `runtime`, `defaultCommand` and
-`defaultInstall`. An image of a runtime has no port and no command of its own: the website
-gives the start command, and the application listens on `PORT`.
-
-Then:
-
-- Customers see the runtime on the **New website** page, with one choice for each version
-  of the image. The usual commands of the image fill the form. Each website can change them.
-- The panel puts a website of the runtime only on a server whose agent reports the runtime.
-  An agent from an earlier release reports no runtimes, so it gets no website of a runtime
-  from a manifest. When no server has the runtime, the panel refuses the website and tells
-  the user why.
-- The **Runtime** tab of the website shows the start command, the install command and the
-  application directory, as for Node.js and Python.
-- The panel checks the registry for updates of the image, as for an own image.
-
-The images that you have do not change. The migration adds the columns `app_runtime`,
-`default_command` and `default_install` to the table `images`, with values that keep each
-image as before.
+reports its runtimes, its packs and the switches that are on (`runtimes`, `packs` and
+`features` in the report).
 
 ### Valkey backups
 

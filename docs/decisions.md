@@ -249,3 +249,24 @@ between two servers goes through the internet.
 | Who makes the tunnels for a network | The panel, when a website on one server is in a network with a database server on the other. It removes them when no network needs them. | A customer does not know the servers. A tunnel that nobody needs is one more path to protect. |
 | The network `default` | Each customer has it, and each new website and database server joins it. | A customer with one network needs no decision. It gives the same access as before on one server. |
 | Test and repair | One action, **Repair**: the panel sends the state again, and each server tests the tunnel. The reports of the agents give the state of each tunnel each minute. | A test with no repair has no use for an administrator, and the state is on the page already. |
+
+## Compatibility while the version is 0.x
+
+| Item | Decision | Reason |
+| ---- | -------- | ------ |
+| Backwards compatibility | None while the version is 0.x. A release can rename or remove a column, a setting, an API field, a route or a CLI command. | The project owner decided it. There are no production installations yet. A compatibility layer for data that does not exist makes the code larger and slower to change. |
+| Migrations | Change the migration that made the table, or make the new form directly. No migration moves old data. | Each 0.x release is a new installation. |
+| The pack contracts | `cf-pack/1` and `cf-runtime/1` are stable. A change gets a new contract name. | Publishers outside the project make packs. They must not need to follow each change of the panel. |
+| When it ends | Release 1.0. | Then installations have data to keep. |
+
+## Packs: signed manifests that the panel sends to each server
+
+| Item | Decision | Reason |
+| ---- | -------- | ------ |
+| What a pack can add | A website runtime of the type `app` only (`cf-runtime/1`). Database engines come later. | The agent already runs Node.js and Python this way, with the same isolation. A pack gives only data, so the agent runs no code of the publisher outside a website container. |
+| The signature | ECDSA P-256 with SHA-256 over the exact bytes of the manifest (`cosign sign-blob`), and `cosign sign` on each image with the same key. | Plugins already use this format, and Podman checks cosign signatures. One key covers the manifest and the images. |
+| Trusted keys | One list for plugins and packs (`/v1/trusted-keys`), and the release key. | An administrator trusts a publisher, not a type of extension. |
+| Where the packs are | The panel keeps them. It sends all packs to each web server in one job, and sends them again when a report of the agent differs. | The panel is the source of the desired state, as for the zones of DNS and the mesh. A new server gets the packs after its first report. |
+| The image policy | One `sigstoreSigned` rule for each repository of a signed pack, with the key of the pack. No rule for a repository that a rule of the installer covers. | A pack can then never make the rule of the release registry weaker. |
+| Unknown keys | An error, except a key that starts with `x-`. | An agent must never ignore a key of a later contract. Publishers can still add their own data. |
+| Updates of the images | The pack gives the digests. The panel does not check the registry for pack images. A new digest for an image in use waits for a rollout. | The signature of the manifest covers the digests. A new tag in the registry has no signature of the manifest. |

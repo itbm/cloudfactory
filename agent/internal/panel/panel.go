@@ -120,8 +120,11 @@ type Report struct {
 	// earlier release does not send them: it has MariaDB and PostgreSQL only.
 	DatabaseEngines []string `json:"databaseEngines,omitempty"`
 	// Runtimes are the website runtimes that this agent can run: the built-in runtimes and
-	// the runtimes from manifest files.
+	// the runtimes of the packs.
 	Runtimes []string `json:"runtimes,omitempty"`
+	// Packs are the packs of the server (SetPacks). The panel sends its packs again to a
+	// server that does not have them.
+	Packs []PackState `json:"packs"`
 	// Features are the optional features that are on, for example "valkey-backups".
 	Features []string `json:"features,omitempty"`
 	// DatabaseInstances is true when this agent gives each customer its own database servers
@@ -153,6 +156,12 @@ type Report struct {
 	Mail *MailReport `json:"mail,omitempty"`
 	// CronRuns are the results of the cron jobs that ran since the last reports.
 	CronRuns []CronRun `json:"cronRuns,omitempty"`
+}
+
+// PackState is the name and the version of one pack of the server.
+type PackState struct {
+	Slug    string `json:"slug"`
+	Version string `json:"version"`
 }
 
 // MailReport is the state of the mail server and the size of each mailbox.

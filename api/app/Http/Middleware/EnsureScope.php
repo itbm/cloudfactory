@@ -8,19 +8,22 @@ use Symfony\Component\HttpFoundation\Response;
 
 /**
  * FR-104: check the scope of the API token. A GET or HEAD request needs "<area>:read".
- * Other methods need "<area>:write". A token with the "*" ability has all scopes.
+ * Other methods need "<area>:write". A token with the "*" ability has all scopes. A route of
+ * two areas, for example "scope:plugins,packs", needs the scope of one of them.
  */
 class EnsureScope
 {
-    public function handle(Request $request, Closure $next, string $area): Response
+    public function handle(Request $request, Closure $next, string ...$areas): Response
     {
-        $ability = $area.($request->isMethodSafe() ? ':read' : ':write');
+        $suffix = $request->isMethodSafe() ? ':read' : ':write';
         $token = $request->user()?->currentAccessToken();
 
         // A write scope also gives read access.
-        $allowed = $token && ($token->can($ability) || ($request->isMethodSafe() && $token->can($area.':write')));
+        $allowed = $token && collect($areas)->contains(fn (string $area) => $token->can($area.$suffix) || ($request->isMethodSafe() && $token->can($area.':write')));
         if (! $allowed) {
-            return response()->json(['message' => "The token does not have the {$ability} scope."], 403);
+            $abilities = implode(' or ', array_map(fn (string $area) => $area.$suffix, $areas));
+
+            return response()->json(['message' => "The token does not have the {$abilities} scope."], 403);
         }
 
         return $next($request);

@@ -12,6 +12,27 @@
 | ShellCheck   | 0.10 or later    | The installation script    |
 | Podman       | 5                | The images                 |
 
+## Compatibility while the version is 0.x
+
+While the version of Cloudfactory is 0.x, the project is in development. Each release is a
+new installation. Obey these rules:
+
+- Do not keep backwards compatibility. A change can rename or remove a column, a setting, an
+  API field, a route, a CLI command or a file format.
+- Do not write migrations that move old data, shims or compatibility layers. Change the
+  migration that made the table, or add a migration that makes the new form directly.
+- Remove the old code in the same change. Do not keep a fallback for data of an earlier
+  release.
+- Change the tests, the fixtures, the OpenAPI document and the documentation in the same
+  change.
+
+There is one exception: the pack contracts `cf-pack/1` and `cf-runtime/1` are stable,
+because publishers outside the project depend on them (refer to
+[packs.md](packs.md#the-stable-contract)).
+
+Release 1.0 starts the compatibility rules. The decision is in
+[decisions.md](decisions.md#compatibility-while-the-version-is-0x).
+
 ## Web panel
 
 ```sh
@@ -276,6 +297,24 @@ The generator writes these files. Do not change them by hand:
   `validate.Domain`.
 - `api/app/Validation/InputRules.php`: one pattern and one message for each rule. Use
   `Input::rule('domain')` in the rules of a request, or `Input::valid('domain', $value)`.
+
+## Pack contract
+
+The panel API (`App\Services\Packs\PackManifest`) and the agent (`agent/internal/packs`)
+check pack manifests with the same rules. The test cases are in
+[`schema/pack-vectors.json`](../schema/pack-vectors.json). The tests of the two components run
+each case.
+
+The contracts `cf-pack/1` and `cf-runtime/1` are stable. Do not change what a valid manifest
+is. To fix a check that accepts a manifest that the contract does not permit:
+
+1. Add an invalid case to `schema/pack-vectors.json`.
+2. Change the Go code and the PHP code.
+3. Run the tests of the agent and of the panel API.
+4. Change [packs.md](packs.md) when the text of the contract was not clear.
+
+A new key or a new value needs a new contract, for example `cf-pack/2`. Refer to
+[packs.md](packs.md#the-stable-contract).
 
 ## Continuous integration
 

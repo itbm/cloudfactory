@@ -28,7 +28,7 @@ describe("the console of each role", () => {
   it("gives each role its own first page and its own menu", async () => {
     await open("administrator", "/");
     expect(heading()).toBe("Overview");
-    expect(menu()).toEqual(["Overview", "Finish setup", "Servers", "Network", "Images and updates", "Customers", "Plans", "Websites", "Files", "Databases", "Email", "DNS", "Private networks", "Backups", "Apps", "Jobs and activity", "Usage alerts", "Plugins", "Settings", "Uptime"]);
+    expect(menu()).toEqual(["Overview", "Finish setup", "Servers", "Network", "Images and updates", "Customers", "Plans", "Websites", "Files", "Databases", "Email", "DNS", "Private networks", "Backups", "Apps", "Jobs and activity", "Usage alerts", "Packs", "Plugins", "Settings", "Uptime"]);
     cleanup();
     reset();
 

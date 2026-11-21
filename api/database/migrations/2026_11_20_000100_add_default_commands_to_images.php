@@ -5,17 +5,14 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * An image of a runtime from a manifest of the agent (runtimeManifests in agent.json), for
- * example Go. The image runs the start command of the website, as a Node.js or Python image
- * does. Its family is the name of the runtime. The existing images are not runtime images
- * from a manifest, so they do not change.
+ * The usual start command and install command of an application image, for example of the
+ * runtime of a pack (docs/packs.md). The New website form fills its fields with them.
  */
 return new class extends Migration
 {
     public function up(): void
     {
         Schema::table('images', function (Blueprint $table) {
-            $table->boolean('app_runtime')->default(false);
             $table->string('default_command', 1000)->nullable();
             $table->string('default_install', 1000)->nullable();
         });
@@ -24,7 +21,7 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('images', function (Blueprint $table) {
-            $table->dropColumn(['app_runtime', 'default_command', 'default_install']);
+            $table->dropColumn(['default_command', 'default_install']);
         });
     }
 };

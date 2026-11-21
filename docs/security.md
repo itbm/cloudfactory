@@ -701,6 +701,50 @@ What the boundary does not protect:
   slow makes each of these changes up to 5 seconds slower. A hook with `"onError": "refuse"`
   stops the changes while the plugin is down. Turn off the plugin to remove its hooks.
 
+## Packs
+
+A pack adds a website runtime ([packs.md](packs.md)). A pack is data: names, usual commands
+and images with digests. The panel and the agent never run a program that a manifest names.
+
+- **Approval.** Only an administrator installs, updates or removes a pack, adds a trusted key
+  or turns on the developer mode for packs. An install, an update and the developer mode need
+  the password and the TOTP code. The audit log records each change. A token needs the scope
+  `packs:write`, and a plugin cannot get the scopes `packs:read` and `packs:write`.
+- **Signature.** The panel installs a pack only when a trusted key or the release key signed
+  the exact bytes of the manifest. The panel keeps these bytes. It does not trim them, so the
+  signature stays correct.
+- **Checks in three places.** The panel, the worker of the agent and the root helper each
+  check the manifest and the signature. The panel and the agent use the same rules and the
+  same test cases (`schema/pack-vectors.json`). A key that the contract does not have is an
+  error, so an agent never ignores a key of a later contract.
+- **Images.** The signature of the manifest covers the digest of each image, and the agent
+  pulls only that digest. The agent adds a rule to the Podman signature policy for each
+  repository of a signed pack: Podman pulls an image of the repository only with a signature
+  of the key of the pack. The agent never changes a rule of the installer, and adds no rule
+  for a repository that a rule of the installer covers. Thus a pack cannot make the policy
+  of the release registry weaker.
+- **One repository, one pack.** An image repository can be in one pack only, and not in an
+  own image of the panel. Two packs with different keys cannot share a policy rule.
+- **Names.** The name of a pack cannot be the name of a built-in runtime, an image family or
+  a database engine. A pack cannot replace a built-in runtime.
+- **Isolation.** A website of a pack runtime has the same unit and the same isolation as each
+  other website: gVisor, a read-only root file system, no capabilities and its own network
+  namespace.
+- **Removal.** The panel refuses to remove a pack that websites use, and refuses to remove a
+  trusted key that signed an installed pack. The agent also refuses to remove a pack whose
+  runtime a website of its server uses.
+
+Known limits:
+
+- The image of a pack runs the code of each website of its runtime, so it can do all that
+  such a website can do.
+- A person who gets the private key of a publisher can sign a new version of its packs. Do
+  not install a new version until the publisher has a new key. To stop trusting the old key,
+  remove its packs, then remove the key.
+- The developer mode accepts packs with no signature. A pack with no signature gets no policy
+  rule, so its images must pass the policy of the installer. Do not use the developer mode on
+  a production panel.
+
 ## Backups
 
 - Each server with the role `web` has its own restic repository and its own repository

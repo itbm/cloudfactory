@@ -237,11 +237,24 @@ Usage:
                        The panel runs the signed image of the plugin in a gVisor container.
   cf plugins upgrade PLUGIN [--manifest plugin.json] [--signature plugin.json.sig] [--totp CODE]
   cf plugins credentials PLUGIN [--totp CODE]    A new token and a new webhook secret. The old ones stop.
-  cf plugins keys list
+  cf plugins keys list                 The trusted keys of publishers. Plugins and packs use the same keys.
   cf plugins keys add --name NAME --file cosign.pub [--totp CODE]
-  cf plugins keys remove ID
+  cf plugins keys remove ID            The panel refuses to remove a key that signed an installed pack.
   cf plugins developer-mode on|off [--totp CODE]
                        Changes that give a plugin access need your password from CF_PASSWORD or stdin.
+  cf packs list                        The packs: signed manifests that add a website runtime, for example Go.
+  cf packs get PACK                    A PACK is a slug (for example golang) or an ID. Shows the images and the state on each web server.
+  cf packs preview [--manifest pack.json] [--signature pack.json.sig]
+                       Checks the manifest and the signature, and shows what the pack adds. It changes nothing.
+  cf packs install [--manifest pack.json] [--signature pack.json.sig] [--totp CODE]
+  cf packs upgrade PACK [--manifest pack.json] [--signature pack.json.sig] [--totp CODE]
+                       A new version. A new digest for an image that websites use waits for a rollout.
+  cf packs remove PACK                 The panel refuses to remove a pack that websites use.
+  cf packs sync                        Sends all packs to each web server again.
+  cf packs keys list|add|remove        The same as cf plugins keys.
+  cf packs developer-mode on|off [--totp CODE]
+                       The developer mode accepts packs with no signature. Use it only to test your own pack.
+                       Install, upgrade and the developer mode need your password from CF_PASSWORD or stdin.
   cf NAME [ARG]...     Runs the program cf-NAME from the PATH, for example a command of a plugin.
                        It gets CF_PANEL and CF_TOKEN of your sign-in.
   cf version
@@ -471,6 +484,8 @@ func (a *app) dispatch(ctx context.Context, args []string) error {
 		return a.deploys(ctx, sub, rest)
 	case "plugins", "plugin":
 		return a.plugins(ctx, sub, rest)
+	case "packs", "pack":
+		return a.packs(ctx, sub, rest)
 	}
 	return fmt.Errorf("unknown command %q; see cf help", cmd)
 }

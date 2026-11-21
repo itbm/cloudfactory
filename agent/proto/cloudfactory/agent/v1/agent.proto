@@ -58,6 +58,10 @@ service AgentService {
   rpc RotateMeshKey(RotateMeshKeyRequest) returns (JobAccepted);
   rpc SendDatabaseServer(SendDatabaseServerRequest) returns (JobAccepted);
   rpc ReceiveDatabaseServer(ReceiveDatabaseServerRequest) returns (JobAccepted);
+  // Sets the packs of the server: all packs that the panel has installed (docs/packs.md). The
+  // agent checks the signature of each pack, saves the packs, lets Podman pull the images of
+  // each pack only with a signature of its publisher, and loads the runtimes of the packs.
+  rpc SetPacks(SetPacksRequest) returns (JobAccepted);
 
   // Returns the actual state of the server at once. This method does not make a job.
   rpc GetStatus(GetStatusRequest) returns (HostStatus);
@@ -551,6 +555,23 @@ message SetPanelCertificateRequest {
 message SetPanelBrandsRequest {
   string job_id = 1;
   repeated string domains = 2;
+}
+
+message SetPacksRequest {
+  string job_id = 1;
+  // All packs of the panel. A pack that the server has and that is not in the list goes.
+  repeated Pack packs = 2;
+}
+
+// One pack: its manifest, its signature and the public key of its publisher.
+message Pack {
+  // The exact bytes of pack.json that the publisher signed. The agent checks them again.
+  string manifest = 1;
+  // The signature of the manifest in base64, as "cosign sign-blob" writes it. Empty for a
+  // pack with no signature from the developer mode of the panel.
+  string signature = 2;
+  // The ECDSA P-256 public key of the publisher in PEM format. Empty with no signature.
+  string public_key = 3;
 }
 
 // One other server that this server has an encrypted tunnel to.

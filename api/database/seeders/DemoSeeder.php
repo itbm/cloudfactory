@@ -25,6 +25,7 @@ use App\Models\Network;
 use App\Models\NetworkMember;
 use App\Models\NotificationDelivery;
 use App\Models\NotificationTemplate;
+use App\Models\Pack;
 use App\Models\Plan;
 use App\Models\Plugin;
 use App\Models\PluginDelivery;
@@ -44,6 +45,7 @@ use App\Services\Dns\Zones;
 use App\Services\Networks;
 use App\Services\Notifications\Notifier;
 use App\Services\OpenPgpKey;
+use App\Services\Packs\PackManifest;
 use App\Services\PanelCertificate;
 use App\Services\Plugins\Manifest;
 use App\Services\Plugins\Signatures;
@@ -119,6 +121,50 @@ class DemoSeeder extends Seeder
         $this->settingsAndAudit();
         $this->notifications();
         $this->plugins();
+        $this->packs();
+    }
+
+    /**
+     * A signed pack that adds a Go runtime (docs/packs.md). web-1 and web-2 loaded it. web-3 has
+     * an agent of an earlier release: the pack waits for it.
+     */
+    private function packs(): void
+    {
+        $private = openssl_pkey_new(['private_key_type' => OPENSSL_KEYTYPE_EC, 'curve_name' => 'prime256v1']);
+        $public = openssl_pkey_get_details($private)['key'];
+        $key = PluginKey::create(['name' => 'Example Packs Ltd', 'public_key' => $public, 'fingerprint' => Signatures::fingerprint($public)]);
+        $image = fn (string $version, string $ends) => [
+            'version' => $version, 'ref' => "ghcr.io/example-packs/cf-golang:{$version}",
+            'digest' => 'sha256:'.hash('sha256', "cf-golang {$version}"), 'supportEndsAt' => $ends,
+        ];
+        $manifest = json_encode([
+            'contract' => PackManifest::CONTRACT, 'kind' => 'runtime', 'slug' => 'golang', 'name' => 'Go', 'version' => '1.2.0',
+            'publisher' => 'Example Packs Ltd', 'description' => 'Go applications. The panel builds the application with the install command, then runs the start command.',
+            'runtime' => ['contract' => PackManifest::RUNTIME_CONTRACT, 'type' => 'app', 'defaultCommand' => './server', 'defaultInstall' => 'go build -o server .'],
+            'images' => [$image('1.27', '2027-08-31'), $image('1.26', '2027-02-28')],
+        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)."\n";
+        openssl_sign($manifest, $signature, $private, OPENSSL_ALGO_SHA256);
+        $spec = PackManifest::parse($manifest);
+        $pack = Pack::create([
+            'slug' => $spec['slug'], 'name' => $spec['name'], 'version' => $spec['version'], 'publisher' => $spec['publisher'],
+            'description' => $spec['description'], 'manifest' => $manifest, 'signature' => base64_encode($signature),
+            'public_key' => $public, 'plugin_key_id' => $key->id, 'signer' => $key->name,
+            'user_id' => User::where('email', 'admin@example.com')->value('id'),
+        ]);
+        foreach ($spec['images'] as $img) {
+            $pack->images()->create([
+                'name' => "Go {$img['version']}", 'family' => 'golang', 'reference' => $img['repository'], 'tag' => $img['tag'], 'digest' => $img['digest'],
+                'runtime_version' => $img['version'], 'support_ends_at' => $img['supportEndsAt'], 'custom' => false, 'signature_verified' => true,
+                'policy' => 'manual', 'default_command' => './server', 'default_install' => 'go build -o server .', 'checked_at' => now()->subHour(),
+            ]);
+        }
+        foreach (['web-1', 'web-2'] as $name) {
+            $this->servers[$name]->update([
+                'agent_packs' => [['slug' => 'golang', 'version' => '1.2.0']],
+                'agent_runtimes' => ['frankenphp', 'apache-php-fpm', 'node', 'python', 'custom', 'golang'],
+            ]);
+        }
+        $this->servers['web-3']->update(['packs_resync' => ['at' => now()->subMinutes(3)->toIso8601String(), 'tries' => 3]]);
     }
 
     /**

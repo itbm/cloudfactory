@@ -34,6 +34,9 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->redirectGuestsTo(null);
         // The pages of the plugins can call the API from the browser (AllowPluginOrigins).
         $middleware->prepend(AllowPluginOrigins::class);
+        // The publisher signs the exact bytes of a manifest, often with a new line at the end.
+        // The panel keeps these bytes (docs/packs.md), so it does not trim them.
+        $middleware->trimStrings(except: ['manifest']);
         // Audit batch 3, finding 1: all requests come through the edge proxy, which sets
         // X-Forwarded-For to the address of the client. The API ports are open only on the
         // service address of the host (CF-10), so only the edge proxy and the local agent can

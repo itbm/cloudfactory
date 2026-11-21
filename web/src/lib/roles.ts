@@ -20,7 +20,7 @@ export interface NavEntry {
   to: string;
   label: string;
   /** The name of the icon (components/Layout.tsx). */
-  icon: "overview" | "setup" | "servers" | "network" | "updates" | "customers" | "plans" | "websites" | "files" | "databases" | "email" | "dns" | "networks" | "backups" | "apps" | "jobs" | "alerts" | "account" | "brand" | "settings" | "plugins";
+  icon: "overview" | "setup" | "servers" | "network" | "updates" | "customers" | "plans" | "websites" | "files" | "databases" | "email" | "dns" | "networks" | "backups" | "apps" | "jobs" | "alerts" | "account" | "brand" | "settings" | "plugins" | "packs";
 }
 
 export interface NavSection {
@@ -57,7 +57,7 @@ export const NAVIGATION: Record<Role, NavSection[]> = {
     { title: "Platform", items: [{ to: "/servers", label: "Servers", icon: "servers" }, { to: "/network", label: "Network", icon: "network" }, { to: "/updates", label: "Images and updates", icon: "updates" }] },
     { title: "Customers", items: [{ to: "/customers", label: "Customers", icon: "customers" }, { to: "/plans", label: "Plans", icon: "plans" }] },
     { title: "Hosting", items: hosting("Websites", "Jobs and activity") },
-    { title: "Panel", items: [{ to: "/plugins", label: "Plugins", icon: "plugins" }, { to: "/settings", label: "Settings", icon: "settings" }] },
+    { title: "Panel", items: [{ to: "/packs", label: "Packs", icon: "packs" }, { to: "/plugins", label: "Plugins", icon: "plugins" }, { to: "/settings", label: "Settings", icon: "settings" }] },
   ],
   reseller: [
     { title: "Customers", items: [{ to: "/customers", label: "Customers", icon: "customers" }, { to: "/plans", label: "Plans", icon: "plans" }, { to: "/brand", label: "Brand", icon: "brand" }] },
@@ -81,6 +81,7 @@ const ONLY: [prefix: string, roles: Role[]][] = [
   ["/plans", ["administrator", "reseller"]],
   ["/account", ["reseller", "owner"]],
   ["/plugins", ["administrator"]],
+  ["/packs", ["administrator"]],
   // White label: a reseller sets its brand. The administrator sets the default brand in Settings.
   ["/brand", ["reseller"]],
 ];

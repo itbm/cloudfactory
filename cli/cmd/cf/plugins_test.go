@@ -34,7 +34,7 @@ func pluginPanel(t *testing.T) (*httptest.Server, *[]string) {
 		case path == "/plugins/P1/test":
 			w.WriteHeader(http.StatusAccepted)
 			w.Write([]byte(`{"id":"D1","state":"pending"}`))
-		case path == "/plugin-keys" && r.Method == http.MethodPost:
+		case path == "/trusted-keys" && r.Method == http.MethodPost:
 			w.WriteHeader(http.StatusCreated)
 			w.Write([]byte(`{"id":"K1","name":"Example Ltd","fingerprint":"ab12"}`))
 		default:

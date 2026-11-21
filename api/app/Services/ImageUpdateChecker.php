@@ -36,9 +36,13 @@ class ImageUpdateChecker
     /** Checks one image. It gives a short result for the command output. */
     public function check(Image $image): string
     {
+        // The manifest of a pack gives the digest of each image of the pack. A new image
+        // comes with a new version of the pack (App\Services\Packs\Packs::upgrade).
+        if ($image->pack_id !== null) {
+            return 'no update: the pack gives the version';
+        }
         try {
-            // An image of a runtime from a manifest comes from its own publisher, as a custom image does.
-            $result = $image->custom || $image->app_runtime ? $this->checkCustom($image) : $this->checkOfficial($image);
+            $result = $image->custom ? $this->checkCustom($image) : $this->checkOfficial($image);
             $image->update(['checked_at' => now(), 'check_error' => null]);
         } catch (Throwable $e) {
             $image->update(['checked_at' => now(), 'check_error' => mb_substr($e->getMessage(), 0, 250)]);

@@ -231,16 +231,6 @@ func updateGvisor(ctx context.Context, cfg *config.Config) {
 // the same way: the helper makes each path and each image name from its own copy, and does
 // not use a value of the worker for them.
 func newDeps(cfg config.Config, run execx.Runner) (*actions.Deps, error) {
-	// The runtimes from manifest files (off by default). A manifest that is not valid does not
-	// stop the agent: the agent then has only the built-in runtimes, as with no setting.
-	if loaded, err := quadlet.LoadRuntimeManifests(cfg.RuntimeManifests); err != nil {
-		slog.Error("read the runtime manifests; only the built-in runtimes are available", "dir", cfg.RuntimeManifests, "err", err)
-		quadlet.LoadRuntimeManifests("")
-	} else if len(loaded) > 0 {
-		for _, r := range loaded {
-			slog.Info("runtime from a manifest", "name", r.Name, "kind", r.Kind, "file", r.Manifest)
-		}
-	}
 	keyPEM, err := os.ReadFile(signingKey)
 	if err != nil {
 		return nil, fmt.Errorf("read the signing key: %w", err)
@@ -278,6 +268,11 @@ func newDeps(cfg config.Config, run execx.Runner) (*actions.Deps, error) {
 		SftpPort:      cfg.SftpPort,
 		// The panel uses these addresses for the DNS records of the websites on this server.
 		PublicAddresses: cfg.PublicAddresses,
+	}
+	// The runtimes of the packs of the server (docs/packs.md). A pack that is not valid does
+	// not stop the agent: the agent writes it in its log, and the other packs load.
+	if err := d.LoadPacks(); err != nil {
+		slog.Error("read the packs of the server; only the built-in runtimes are available", "err", err)
 	}
 	// CF-13: the admin API of the edge proxy is a Unix socket.
 	if path, ok := strings.CutPrefix(cfg.CaddyAdmin, "unix://"); ok {

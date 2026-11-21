@@ -392,6 +392,39 @@ var ruleMailPasswordHash = rule{
 // The bcrypt hash of a mailbox password. The panel makes it, and the agent gives it to the mail server. The agent never gets the password.
 func MailPasswordHash(s string) error { return ruleMailPasswordHash.check(s) }
 
+var rulePackImageVersion = rule{
+	what:    "version of a pack image",
+	pattern: regexp.MustCompile(`^[0-9A-Za-z][0-9A-Za-z.+_-]{0,15}$`),
+	echo:    true,
+}
+
+// PackImageVersion checks a value with the rule "packImageVersion" of schema/input-rules.json.
+//
+// The version of the runtime in one image of a pack, for example "1.25". Customers select it.
+func PackImageVersion(s string) error { return rulePackImageVersion.check(s) }
+
+var rulePackSlug = rule{
+	what:    "pack name",
+	pattern: regexp.MustCompile(`^[a-z][a-z0-9-]{1,30}$`),
+	echo:    true,
+}
+
+// PackSlug checks a value with the rule "packSlug" of schema/input-rules.json.
+//
+// The name of a pack, for example "golang". It is also the name of the runtime of the pack in the jobs of the agent.
+func PackSlug(s string) error { return rulePackSlug.check(s) }
+
+var rulePackVersion = rule{
+	what:    "pack version",
+	pattern: regexp.MustCompile(`^[0-9]{1,6}\.[0-9]{1,6}\.[0-9]{1,6}([-+][0-9A-Za-z.-]{1,30})?$`),
+	echo:    true,
+}
+
+// PackVersion checks a value with the rule "packVersion" of schema/input-rules.json.
+//
+// The version of a pack, for example "1.2.0".
+func PackVersion(s string) error { return rulePackVersion.check(s) }
+
 var ruleExtension = rule{
 	what:    "PHP extension",
 	pattern: regexp.MustCompile(`^[a-z0-9_]{1,40}$`),
@@ -529,6 +562,9 @@ var rules = map[string]*rule{
 	"mailAddress":        &ruleMailAddress,
 	"mailLocalPart":      &ruleMailLocalPart,
 	"mailPasswordHash":   &ruleMailPasswordHash,
+	"packImageVersion":   &rulePackImageVersion,
+	"packSlug":           &rulePackSlug,
+	"packVersion":        &rulePackVersion,
 	"phpExtension":       &ruleExtension,
 	"restorePath":        &ruleRestorePath,
 	"routePath":          &ruleRoutePath,
@@ -548,6 +584,9 @@ var reservedDatabaseNames = []string{"mysql", "sys", "information_schema", "perf
 
 // A database name does not start with one of these (CF-01).
 var reservedDatabasePrefixes = []string{"pg_"}
+
+// The names of the built-in runtimes, the image families and the database engines. A pack cannot have one of these names.
+var reservedRuntimeNames = []string{"frankenphp", "apache-php-fpm", "node", "python", "custom", "static", "edge", "mail", "dns", "database", "mariadb", "postgresql", "valkey"}
 
 // MaxBuildCommands: The largest number of build commands of a deploy.
 const MaxBuildCommands = 10
@@ -578,3 +617,12 @@ const MaxDnsZonesPerJob = 100
 
 // MaxEnvironmentVariables: The largest number of environment variables of a website.
 const MaxEnvironmentVariables = 50
+
+// MaxPackImages: The largest number of images in one pack.
+const MaxPackImages = 10
+
+// MaxPackManifestBytes: The largest size of a pack manifest, in bytes.
+const MaxPackManifestBytes = 32768
+
+// MaxPacks: The largest number of packs on a panel.
+const MaxPacks = 50

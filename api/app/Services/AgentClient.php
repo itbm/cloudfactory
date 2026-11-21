@@ -9,6 +9,7 @@ use App\Models\GitSource;
 use App\Models\Server;
 use App\Models\Website;
 use App\Services\Dns\Zones;
+use App\Services\Packs\Packs;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\RequestException;
@@ -53,6 +54,9 @@ class AgentClient
                 // The mesh state has the secret key of each pair of servers. It is not in the job:
                 // the panel adds the current state each time that it sends the job.
                 ...($job->action === AgentAction::SetMesh ? ['mesh' => Mesh::stateFor($server)] : []),
+                // The packs are not in the job either: the agent gets the packs that the panel
+                // has when it sends the job, also for a job that waited in the queue.
+                ...($job->action === AgentAction::SetPacks ? ['packs' => Packs::forAgent()] : []),
                 ...($job->action->usesBackupRepository() ? ['credentials' => (object) [
                     ...BackupController::credentialsFor($server, $shared),
                     'RESTIC_PASSWORD' => $shared ? (string) BackupController::sharedRepositoryPassword() : $server->backupPassword(),

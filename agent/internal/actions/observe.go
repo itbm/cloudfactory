@@ -186,6 +186,7 @@ func (d *Deps) FillReport(ctx context.Context, r *panel.Report) {
 	for _, rt := range quadlet.Runtimes() {
 		r.Runtimes = append(r.Runtimes, rt.Name)
 	}
+	r.Packs = d.PackStates()
 	if d.ValkeyBackups {
 		r.Features = append(r.Features, "valkey-backups")
 	}

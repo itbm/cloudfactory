@@ -195,6 +195,10 @@ func (s *Service) SetPanelBrands(_ context.Context, r *connect.Request[agentv1.S
 	return s.submit(s.Deps.SetPanelBrands(r.Msg))
 }
 
+func (s *Service) SetPacks(_ context.Context, r *connect.Request[agentv1.SetPacksRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.SetPacks(r.Msg))
+}
+
 func (s *Service) SetCronJobs(_ context.Context, r *connect.Request[agentv1.SetCronJobsRequest]) (*connect.Response[agentv1.JobAccepted], error) {
 	return s.submit(s.Deps.SetCronJobs(r.Msg))
 }

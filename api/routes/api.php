@@ -29,6 +29,7 @@ use App\Http\Controllers\Api\MeshController;
 use App\Http\Controllers\Api\NetworkController;
 use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\NotificationTemplateController;
+use App\Http\Controllers\Api\PackController;
 use App\Http\Controllers\Api\PanelCertificateController;
 use App\Http\Controllers\Api\PlanController;
 use App\Http\Controllers\Api\PluginController;
@@ -37,6 +38,7 @@ use App\Http\Controllers\Api\RuntimeController;
 use App\Http\Controllers\Api\ServerController;
 use App\Http\Controllers\Api\SetupController;
 use App\Http\Controllers\Api\SftpController;
+use App\Http\Controllers\Api\TrustedKeyController;
 use App\Http\Controllers\Api\UsageController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\WebsiteController;
@@ -275,9 +277,6 @@ Route::prefix('v1')->group(function () {
             Route::get('plugins', [PluginController::class, 'index']);
             Route::post('plugins/preview', [PluginController::class, 'preview']);
             Route::post('plugins', [PluginController::class, 'store'])->middleware('throttle:10,1,post-plugins');
-            Route::get('plugin-keys', [PluginController::class, 'keys']);
-            Route::post('plugin-keys', [PluginController::class, 'storeKey'])->middleware('throttle:10,1,post-plugin-keys');
-            Route::delete('plugin-keys/{id}', [PluginController::class, 'destroyKey']);
             Route::get('plugin-settings', [PluginController::class, 'settings']);
             Route::put('plugin-settings', [PluginController::class, 'updateSettings'])->middleware('throttle:10,1,put-plugin-settings');
             Route::get('plugins/{id}', [PluginController::class, 'show']);
@@ -289,6 +288,24 @@ Route::prefix('v1')->group(function () {
             Route::post('plugins/{id}/test', [PluginController::class, 'test'])->middleware('throttle:30,1,post-plugins-x-test');
             Route::get('plugins/{id}/deliveries', [PluginController::class, 'deliveries']);
             Route::post('plugins/{id}/deliveries/{deliveryId}/retry', [PluginController::class, 'retry'])->middleware('throttle:30,1,post-plugins-x-deliveries-x-retry');
+        });
+        // The public keys of the publishers of plugins and packs (TrustedKeyController).
+        Route::middleware(['admin', 'scope:plugins,packs'])->group(function () {
+            Route::get('trusted-keys', [TrustedKeyController::class, 'index']);
+            Route::post('trusted-keys', [TrustedKeyController::class, 'store'])->middleware('throttle:10,1,post-trusted-keys');
+            Route::delete('trusted-keys/{id}', [TrustedKeyController::class, 'destroy']);
+        });
+        // Packs: signed manifests that add a website runtime (PackController, docs/packs.md).
+        Route::middleware(['admin', 'scope:packs'])->group(function () {
+            Route::get('packs', [PackController::class, 'index']);
+            Route::post('packs/preview', [PackController::class, 'preview'])->middleware('throttle:30,1,post-packs-preview');
+            Route::post('packs', [PackController::class, 'store'])->middleware('throttle:10,1,post-packs');
+            Route::post('packs/sync', [PackController::class, 'sync'])->middleware('throttle:10,1,post-packs-sync');
+            Route::get('pack-settings', [PackController::class, 'settings']);
+            Route::put('pack-settings', [PackController::class, 'updateSettings'])->middleware('throttle:10,1,put-pack-settings');
+            Route::get('packs/{id}', [PackController::class, 'show']);
+            Route::put('packs/{id}', [PackController::class, 'update'])->middleware('throttle:10,1,put-packs-x');
+            Route::delete('packs/{id}', [PackController::class, 'destroy']);
         });
         // The pages of the plugins for the menu, and a short token for a page. Each role.
         Route::get('plugin-pages', [PluginController::class, 'pages']);

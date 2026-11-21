@@ -1,9 +1,6 @@
 package quadlet
 
 import (
-	"os"
-	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -29,30 +26,12 @@ func TestTheBuiltInRuntimes(t *testing.T) {
 	}
 }
 
-func writeManifests(t *testing.T, files map[string]string) string {
-	t.Helper()
-	dir := t.TempDir()
-	for name, content := range files {
-		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	return dir
-}
-
-func TestRuntimeManifests(t *testing.T) {
-	t.Cleanup(func() { LoadRuntimeManifests("") })
-	dir := writeManifests(t, map[string]string{
-		"golang.json": `{"name": "golang", "label": "Go", "kind": "app"}`,
-		"ruby.json":   `{"name": "ruby", "label": "Ruby", "kind": "app"}`,
-		"notes.txt":   `not a manifest`,
-	})
-	loaded, err := LoadRuntimeManifests(dir)
-	if err != nil {
+func TestPackRuntimes(t *testing.T) {
+	t.Cleanup(func() { SetPackRuntimes(nil) })
+	golang := RuntimeSpec{Name: "golang", Label: "Go", Kind: KindApp, Pack: "golang 1.0.0"}
+	ruby := RuntimeSpec{Name: "ruby", Label: "Ruby", Kind: KindApp, Pack: "ruby 2.0.0"}
+	if err := SetPackRuntimes([]RuntimeSpec{golang, ruby}); err != nil {
 		t.Fatal(err)
-	}
-	if len(loaded) != 2 || loaded[0].Name != "golang" || loaded[1].Name != "ruby" {
-		t.Fatalf("loaded %+v", loaded)
 	}
 	if !IsApp("golang") || IsPHP("golang") || IsCustom("golang") {
 		t.Error("golang is not an application runtime")
@@ -61,36 +40,28 @@ func TestRuntimeManifests(t *testing.T) {
 		t.Errorf("%d runtimes", n)
 	}
 
-	// A manifest that is not valid stops the load, and the runtimes stay as they were.
-	for name, content := range map[string]string{
-		"kind php":      `{"name": "php9", "label": "PHP 9", "kind": "php"}`,
-		"kind custom":   `{"name": "mine", "label": "Mine", "kind": "custom"}`,
-		"built in":      `{"name": "node", "label": "Node", "kind": "app"}`,
-		"bad name":      `{"name": "Go Lang", "label": "Go", "kind": "app"}`,
-		"no label":      `{"name": "golang", "kind": "app"}`,
-		"unknown field": `{"name": "golang", "label": "Go", "kind": "app", "exec": "sh"}`,
-		"two objects":   `{"name": "golang", "label": "Go", "kind": "app"} {}`,
-		"not JSON":      `name=golang`,
+	// A pack gives only the kind "app", and no pack takes the name of a different runtime. A
+	// refused list changes nothing.
+	for name, list := range map[string][]RuntimeSpec{
+		"kind php":    {{Name: "php9", Label: "PHP 9", Kind: KindPHP}},
+		"kind custom": {{Name: "mine", Label: "Mine", Kind: KindCustom}},
+		"built in":    {{Name: "node", Label: "Node", Kind: KindApp}},
+		"no label":    {{Name: "zig", Kind: KindApp}},
+		"two times":   {golang, {Name: "golang", Label: "Go 2", Kind: KindApp}},
 	} {
-		if _, err := LoadRuntimeManifests(writeManifests(t, map[string]string{"x.json": content})); err == nil {
-			t.Errorf("%s: the manifest is accepted", name)
+		if err := SetPackRuntimes(list); err == nil {
+			t.Errorf("%s: the list is accepted", name)
 		}
 		if !IsApp("ruby") {
-			t.Errorf("%s: the runtimes changed after a refused load", name)
+			t.Errorf("%s: the runtimes changed after a refused list", name)
 		}
 	}
-	if _, err := LoadRuntimeManifests(writeManifests(t, map[string]string{
-		"a.json": `{"name": "golang", "label": "Go", "kind": "app"}`,
-		"b.json": `{"name": "golang", "label": "Go 2", "kind": "app"}`,
-	})); err == nil || !strings.Contains(err.Error(), "already a runtime") {
-		t.Errorf("two manifests with one name: %v", err)
-	}
 
-	// No directory: only the built-in runtimes.
-	if _, err := LoadRuntimeManifests(""); err != nil {
+	// No packs: only the built-in runtimes.
+	if err := SetPackRuntimes(nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, ok := RuntimeOf("golang"); ok || len(Runtimes()) != len(builtinRuntimes) {
-		t.Error("the runtimes from manifests stay after a load with no directory")
+		t.Error("the runtimes of packs stay after an empty list")
 	}
 }

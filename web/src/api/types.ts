@@ -269,10 +269,10 @@ export interface RuntimeImage {
   /** The usual start command and install command of an application image. */
   defaults?: { command: string; install: string };
   /**
-   * True for an image of a runtime from a manifest of the agent, for example Go. Its websites
+   * The pack of an image of a runtime from a pack, for example Go (docs/packs.md). Its websites
    * run their start command, as Node.js websites do.
    */
-  appRuntime?: boolean;
+  pack?: PackRef;
   supportEndsAt?: string;
   websites: string;
   policy: UpdatePolicy;
@@ -1142,7 +1142,8 @@ export interface PluginPage {
   roles: Role[];
 }
 
-export interface PluginKey {
+/** A public key of a publisher that an administrator trusts for plugins and packs. */
+export interface TrustedKey {
   id: string;
   name: string;
   fingerprint: string;
@@ -1208,7 +1209,7 @@ export interface Plugin {
   /** The container of a plugin that the panel runs, or null for a plugin outside the panel. */
   hosting: { serverId: string | null; serverName: string | null; host: string; status: "starting" | "running" | "stopped" | "failed" | "removing" } | null;
   commands: { name: string; description: string }[];
-  signedBy: PluginKey | null;
+  signedBy: TrustedKey | null;
   tokenExpiresAt: string | null;
   tokenLastUsedAt: string | null;
   deliveries: { delivered: number; pending: number; failed: number; last: PluginDelivery | null };
@@ -1288,4 +1289,60 @@ export interface UsageAlert {
 export interface UsageAlertSettings {
   warningPercent: number;
   criticalPercent: number;
+}
+
+// Packs (docs/packs.md): signed manifests from publishers that add a website runtime.
+
+export interface PackRef { id: string; slug: string; name: string; version: string }
+
+/** The runtime contract of a pack: cf-runtime/1 has the type "app". */
+export interface PackRuntime { contract: string; type: "app"; defaultCommand: string; defaultInstall: string }
+
+/** The key that signed a pack. "release" is true for the release key of Cloudfactory. */
+export interface PackSigner { name: string; fingerprint: string | null; release: boolean }
+
+export interface PackImage {
+  id: string;
+  name: string;
+  version: string;
+  reference: string;
+  tag: string;
+  digest: string;
+  /** A new digest from a new version of the pack. A website uses the image, so it waits for a rollout. */
+  availableDigest: string | null;
+  supportEndsAt: string | null;
+  websites: number;
+}
+
+/** The state of a pack on a web server: the server loaded it, waits for it, or failed to load it. */
+export interface PackServer { id: string; name: string; version: string | null; state: "installed" | "pending" | "failing" }
+
+export interface Pack {
+  id: string;
+  slug: string;
+  name: string;
+  version: string;
+  publisher: string;
+  description: string | null;
+  signed: boolean;
+  signedBy: PackSigner | null;
+  runtime: PackRuntime;
+  images: PackImage[];
+  servers: PackServer[];
+  installedBy: string | null;
+  installedAt: string;
+  updatedAt: string;
+}
+
+/** A manifest as the panel reads it, before an install. */
+export interface PackManifest {
+  contract: string;
+  kind: "runtime";
+  slug: string;
+  name: string;
+  version: string;
+  publisher: string;
+  description: string;
+  runtime: PackRuntime;
+  images: { version: string; ref: string; repository: string; tag: string; digest: string; supportEndsAt: string | null }[];
 }
