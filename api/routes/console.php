@@ -34,3 +34,6 @@ Schedule::command('cloudfactory:uptime')->everyMinute()->withoutOverlapping();
 
 // Uptime checks: the panel keeps the results for 8 days and the closed incidents for 90 days.
 Schedule::command('cloudfactory:prune-uptime')->daily()->withoutOverlapping();
+
+// Imports: the archives of the imports that did not start (docs/imports.md).
+Schedule::command('cloudfactory:prune-imports')->hourly()->withoutOverlapping();

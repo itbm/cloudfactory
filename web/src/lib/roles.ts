@@ -20,7 +20,7 @@ export interface NavEntry {
   to: string;
   label: string;
   /** The name of the icon (components/Layout.tsx). */
-  icon: "overview" | "setup" | "servers" | "network" | "updates" | "customers" | "plans" | "websites" | "files" | "databases" | "email" | "dns" | "networks" | "backups" | "apps" | "jobs" | "alerts" | "uptime" | "account" | "brand" | "settings" | "plugins" | "packs";
+  icon: "overview" | "setup" | "servers" | "network" | "updates" | "customers" | "plans" | "websites" | "files" | "databases" | "email" | "dns" | "networks" | "backups" | "apps" | "jobs" | "alerts" | "uptime" | "account" | "brand" | "settings" | "plugins" | "packs" | "imports";
 }
 
 export interface NavSection {
@@ -56,7 +56,7 @@ export const NAVIGATION: Record<Role, NavSection[]> = {
   administrator: [
     { items: [{ to: "/overview", label: "Overview", icon: "overview" }, { to: "/setup", label: "Finish setup", icon: "setup" }] },
     { title: "Platform", items: [{ to: "/servers", label: "Servers", icon: "servers" }, { to: "/network", label: "Network", icon: "network" }, { to: "/updates", label: "Images and updates", icon: "updates" }] },
-    { title: "Customers", items: [{ to: "/customers", label: "Customers", icon: "customers" }, { to: "/plans", label: "Plans", icon: "plans" }] },
+    { title: "Customers", items: [{ to: "/customers", label: "Customers", icon: "customers" }, { to: "/plans", label: "Plans", icon: "plans" }, { to: "/imports", label: "Imports", icon: "imports" }] },
     { title: "Hosting", items: hosting("Websites", "Jobs and activity") },
     { title: "Panel", items: [{ to: "/packs", label: "Packs", icon: "packs" }, { to: "/plugins", label: "Plugins", icon: "plugins" }, { to: "/settings", label: "Settings", icon: "settings" }] },
   ],
@@ -83,6 +83,7 @@ const ONLY: [prefix: string, roles: Role[]][] = [
   ["/account", ["reseller", "owner"]],
   ["/plugins", ["administrator"]],
   ["/packs", ["administrator"]],
+  ["/imports", ["administrator"]],
   // White label: a reseller sets its brand. The administrator sets the default brand in Settings.
   ["/brand", ["reseller"]],
 ];
