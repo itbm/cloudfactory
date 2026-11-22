@@ -187,7 +187,9 @@ The product specification, section 6.4, gives the requirements.
   proxy. The user `cf-edge` owns that storage, so the root helper reads the files with no
   symbolic links, and accepts only a certificate for the host name with its own key.
 - The panel sends the bcrypt hash of a mailbox password to the agent. The panel does not keep
-  the password, and the job record has no hash after the job.
+  the password, and the job record has no hash after the job. An import from a different
+  panel keeps the hash of the old server (SHA-512-crypt, SHA-256-crypt or MD5-crypt), so that
+  the mailbox keeps its password. The mail server can check these hashes.
 - A customer adds a domain that a different customer could own only after a DNS TXT record
   shows that the customer controls the domain, as for a website domain.
 - The mail server opens connections only to the DNS and to port 25 of public addresses. It
