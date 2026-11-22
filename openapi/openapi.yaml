@@ -42,6 +42,10 @@ tags:
   - name: Images
     description: Administrators only.
   - name: Customers
+  - name: Imports
+    description: >-
+      The import of an account from cPanel, DirectAdmin, Plesk or HestiaCP. Administrators only.
+      Refer to docs/imports.md.
   - name: Users
     description: The users who can sign in. These routes need the users scope.
   - name: Audit
@@ -333,6 +337,7 @@ paths:
                 planId: { type: string, description: The plan of the customer when you do not give it. Only an administrator or the reseller of the customer can give a different plan. }
                 serverId: { type: string }
                 customerId: { type: string, description: Necessary for administrators and resellers. }
+                documentRoot: { type: string, maxLength: 200, description: 'The directory of the website that the web server serves, relative to the directory of the website, for example "public". The default is ".". Not for an application image.' }
       responses:
         '202': { $ref: '#/components/responses/WebsiteJob' }
         '403': { $ref: '#/components/responses/Forbidden' }
@@ -2768,6 +2773,170 @@ paths:
                       password: { type: string }
         '403': { $ref: '#/components/responses/Forbidden' }
 
+  /v1/imports:
+    get:
+      tags: [Imports]
+      summary: List the imports
+      description: The 200 newest imports.
+      responses:
+        '200':
+          description: The imports.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/Import' } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Imports]
+      summary: Start an import of an account
+      description: >-
+        Give the HTTPS URL of the backup archive, or the name and the size of a file. With a
+        URL, the web server downloads the archive at once. With a file, send the file in parts
+        to /v1/imports/{id}/archive. The web server then downloads the archive from the panel.
+        The server reads the archive, and the import gets the status "ready" with a plan.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [customerId, serverId]
+              properties:
+                customerId: { type: string, description: The customer that gets the websites, the mail domains and the DNS zones. }
+                serverId: { type: string, description: The web server of the new websites. Its agent must report the feature "imports". }
+                url: { type: string, format: uri, maxLength: 2048, description: An HTTPS URL with no user name and no password, for example a signed URL of object storage. Each server that needs the archive downloads it. The URL must resolve to a public address. }
+                fileName: { type: string, maxLength: 255, description: The name of the archive file, with no directory. Not with url. }
+                sizeBytes: { type: integer, minimum: 1, description: The size of the file. Necessary with fileName. The limit is 50 GiB by default (CF_IMPORT_MAX_BYTES). }
+      responses:
+        '201':
+          description: The import. With a URL, the job that downloads and reads the archive.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  import: { $ref: '#/components/schemas/Import' }
+                  job: { oneOf: [{ $ref: '#/components/schemas/Job' }, { type: 'null' }] }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { description: The customer is suspended. }
+        '422': { $ref: '#/components/responses/Invalid' }
+        '429': { description: Too many imports in one minute. }
+
+  /v1/imports/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    get:
+      tags: [Imports]
+      summary: Get an import, with its plan or its parts
+      responses:
+        '200':
+          description: The import.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ImportDetail' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Imports]
+      summary: Remove an import
+      description: >-
+        Removes the import and its archive from the panel and from each server. The websites,
+        the mail domains and the DNS zones of the import stay.
+      responses:
+        '202':
+          description: The jobs that remove the archive from the servers.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  jobs: { type: array, items: { $ref: '#/components/schemas/Job' } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: The import runs. Wait until it is complete. }
+
+  /v1/imports/{id}/archive:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    put:
+      tags: [Imports]
+      summary: Send a part of the archive
+      description: >-
+        Send the parts in order. Each part has 1 byte to 4 MiB. `offset` is the number of
+        bytes that the panel has. After a connection error, read `receivedBytes` and send
+        from that offset. After the last part, the web server downloads and reads the archive.
+      parameters:
+        - { name: offset, in: query, required: true, schema: { type: integer, minimum: 0 } }
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary, maxLength: 4194304 }
+      responses:
+        '200':
+          description: The panel has the part. After the last part, the job that downloads and reads the archive.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  receivedBytes: { type: integer }
+                  job: { oneOf: [{ $ref: '#/components/schemas/Job' }, { type: 'null' }] }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: The offset is not the number of bytes that the panel has, or the import does not wait for a file.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  receivedBytes: { type: integer }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/imports/{id}/start:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [Imports]
+      summary: Import the selected parts of the account
+      description: >-
+        Only for an import with the status "ready", one time. The panel makes the records with
+        the checks of the API: the websites with their domains, databases and cron jobs, the
+        mail domains with their mailboxes and addresses, and the DNS records. Then the servers
+        copy the files, the dumps and the messages. Each part gets an item with a state. The
+        token needs the scope databases:write for websites with databases, mail:write for mail
+        domains and dns:write for DNS zones.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [websites, mailDomains, dnsZones]
+              properties:
+                websites:
+                  type: array
+                  items:
+                    type: object
+                    required: [name]
+                    properties:
+                      name: { type: string, description: The name of a website of the plan. }
+                      imageId: { type: [string, 'null'], description: An official PHP image. The default is the image of the plan. }
+                mailDomains: { type: array, items: { type: string } }
+                dnsZones: { type: array, items: { type: string } }
+                rewriteWordPress: { type: boolean, default: true, description: Put the settings of the new database in wp-config.php of each WordPress website. }
+      responses:
+        '202':
+          description: The import runs.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ImportDetail' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: The import is not ready, or it started already. }
+        '422': { $ref: '#/components/responses/Invalid' }
+
   /v1/jobs:
     get:
       tags: [Jobs]
@@ -4820,6 +4989,24 @@ paths:
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  /agent/v1/imports/{id}/archive:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    get:
+      tags: [Agent]
+      summary: Download the uploaded archive of an import
+      description: Only for the agent of a server with a FetchImport job of the import that is queued or runs.
+      security:
+        - agentToken: []
+      responses:
+        '200':
+          description: The archive.
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   /agent/v1/report:
     post:
       tags: [Agent]
@@ -5659,6 +5846,125 @@ components:
         websites: { type: integer, description: The number of websites of the customer that have a domain in the zone. }
         createdAt: { type: string, format: date-time }
         records: { type: array, items: { $ref: '#/components/schemas/DnsRecord' }, description: Only in the answer for one zone. }
+    Import:
+      type: object
+      properties:
+        id: { type: string }
+        status: { type: string, enum: [uploading, fetching, ready, starting, running, done, failed] }
+        source: { type: string, enum: [upload, url] }
+        fileName: { type: [string, 'null'] }
+        sizeBytes: { type: integer }
+        receivedBytes: { type: integer, description: The bytes of an upload that the panel has. }
+        panel: { type: [string, 'null'], enum: [cpanel, directadmin, plesk, hestia, cloudfactory, null] }
+        panelName: { type: [string, 'null'] }
+        account: { type: [string, 'null'], description: The name of the account on the old panel. }
+        customerId: { type: string }
+        customerName: { type: [string, 'null'] }
+        serverId: { type: string }
+        serverName: { type: [string, 'null'] }
+        error: { type: [string, 'null'] }
+        counts:
+          type: [object, 'null']
+          properties:
+            websites: { type: integer }
+            databases: { type: integer }
+            mailboxes: { type: integer }
+            dnsZones: { type: integer }
+        progress:
+          type: object
+          properties:
+            total: { type: integer }
+            done: { type: integer }
+            failed: { type: integer, description: The parts that failed or that the import skipped. }
+        createdAt: { type: string, format: date-time }
+        startedAt: { type: [string, 'null'], format: date-time }
+        finishedAt: { type: [string, 'null'], format: date-time }
+    ImportDetail:
+      allOf:
+        - { $ref: '#/components/schemas/Import' }
+        - type: object
+          properties:
+            customer:
+              type: [object, 'null']
+              description: The customer in the backup.
+              properties:
+                name: { type: string }
+                email: { type: string }
+            warnings:
+              type: array
+              description: The parts of the account that the import does not copy.
+              items:
+                type: object
+                properties:
+                  item: { type: string }
+                  message: { type: string }
+            plan: { oneOf: [{ $ref: '#/components/schemas/ImportPlan' }, { type: 'null' }], description: Only for the status "ready". }
+            items: { type: array, items: { $ref: '#/components/schemas/ImportItem' } }
+    ImportPlan:
+      type: object
+      properties:
+        websites:
+          type: array
+          items:
+            type: object
+            properties:
+              name: { type: string }
+              domains: { type: array, items: { type: object, properties: { name: { type: string }, kind: { type: string, enum: [primary, alias, redirect] } } } }
+              phpVersion: { type: [string, 'null'], description: The PHP version on the old panel. }
+              imageId: { type: [string, 'null'], description: The image that the import selects. }
+              imageName: { type: [string, 'null'] }
+              diskBytes: { type: integer }
+              files: { type: boolean }
+              databases: { type: array, items: { type: object, properties: { name: { type: string }, bytes: { type: integer } } } }
+              databaseUsers: { type: integer }
+              cronJobs: { type: integer }
+              wordpress: { type: boolean }
+              conflict: { type: [string, 'null'], description: The reason that the import cannot make the website. }
+        mailDomains:
+          type: array
+          items:
+            type: object
+            properties:
+              name: { type: string }
+              mailboxes: { type: integer }
+              quotaBytes: { type: integer, description: The total size of the new mailboxes. }
+              aliases: { type: integer }
+              messages: { type: integer }
+              bytes: { type: integer }
+              newPasswords: { type: integer, description: The mailboxes that get a new password. }
+              conflict: { type: [string, 'null'] }
+        mailSpace:
+          type: [object, 'null']
+          description: The free mail space in the plan of the customer. A mailbox that does not fit fails.
+          properties:
+            mailboxes: { type: integer }
+            bytes: { type: integer }
+        dnsZones:
+          type: array
+          items:
+            type: object
+            properties:
+              name: { type: string }
+              exists: { type: boolean, description: The customer has this zone. The import adds the records that it does not have. }
+              conflict: { type: [string, 'null'] }
+        images:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              name: { type: string }
+              phpVersion: { type: string }
+    ImportItem:
+      type: object
+      properties:
+        id: { type: string }
+        kind: { type: string, enum: [website, domain, database, databaseUsers, cronJob, files, dump, mailDomain, mailbox, mailAlias, messages, dnsZone] }
+        name: { type: string }
+        state: { type: string, enum: [waiting, running, done, failed, skipped] }
+        error: { type: [string, 'null'] }
+        detail: { type: [string, 'null'] }
+        jobId: { type: [string, 'null'] }
     DnsAccount:
       type: object
       properties:
