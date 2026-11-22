@@ -3,6 +3,7 @@
 namespace App\Demo;
 
 use App\Models\DnsZone;
+use App\Models\Import;
 use App\Models\Mailbox;
 use App\Models\MailDomain;
 use App\Models\User;
@@ -26,7 +27,7 @@ class Fixtures
         '/rollouts', '/audit?perPage=100', '/users', '/panel-certificate', '/runtime-images', '/setup', '/account', '/database-servers', '/dns-zones', '/dns-accounts', '/mesh', '/networks', '/usage-alerts',
         '/me/notification-preferences', '/notifications?perPage=50', '/mail-server', '/notification-templates',
         '/mail/domains', '/mail/mailboxes', '/mail/aliases', '/mail-clusters',
-        '/plugin-pages', '/plugin-actions', '/plugins', '/trusted-keys', '/plugin-settings', '/packs', '/pack-settings',
+        '/plugin-pages', '/plugin-actions', '/plugins', '/trusted-keys', '/plugin-settings', '/packs', '/pack-settings', '/imports',
     ];
 
     /**
@@ -48,6 +49,12 @@ class Fixtures
         $visible = $user->visibleCustomerIds();
         foreach (DnsZone::when($visible !== null, fn ($q) => $q->whereIn('customer_id', $visible))->orderBy('name')->pluck('id') as $id) {
             $paths[] = "/dns-zones/{$id}";
+        }
+        // The page of an import reads the import with its plan or its parts.
+        if ($user->isAdministrator()) {
+            foreach (Import::orderBy('created_at')->pluck('id') as $id) {
+                $paths[] = "/imports/{$id}";
+            }
         }
         // The autoresponder dialog of a mailbox reads the autoresponder from the mail server.
         // The fixtures have the mailboxes of the first mail domain of the user.

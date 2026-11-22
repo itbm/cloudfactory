@@ -75,14 +75,20 @@ func set(values ...string) object {
 	return out
 }
 
-// capabilities are the JMAP capabilities of the method calls of the agent.
-var capabilities = []string{"urn:ietf:params:jmap:core", "urn:stalwart:jmap", "urn:ietf:params:jmap:filenode",
+// managementUsing are the capabilities of the method calls of the management API. The
+// autoresponder needs vacationresponse and sieve.
+var managementUsing = []string{"urn:ietf:params:jmap:core", "urn:stalwart:jmap", "urn:ietf:params:jmap:filenode",
 	"urn:ietf:params:jmap:vacationresponse", "urn:ietf:params:jmap:sieve"}
 
 // call sends one method call and gives its result.
 func (c *Client) call(ctx context.Context, method string, args object) (object, error) {
+	return c.callUsing(ctx, managementUsing, method, args)
+}
+
+// callUsing sends one method call with the capabilities in using.
+func (c *Client) callUsing(ctx context.Context, using []string, method string, args object) (object, error) {
 	body, err := json.Marshal(object{
-		"using":       capabilities,
+		"using":       using,
 		"methodCalls": []any{[]any{method, args, "0"}},
 	})
 	if err != nil {
@@ -700,7 +706,8 @@ func (c *Client) accountID(ctx context.Context, domainID, localPart string) (str
 	return c.exact(ctx, "x:Account", ids, object{"name": localPart, "domainId": domainID})
 }
 
-// SetMailbox makes a mailbox, or changes its size. passwordHash is a bcrypt hash: the agent
+// SetMailbox makes a mailbox, or changes its size. passwordHash is a bcrypt hash, or a crypt
+// hash from an import (SHA-512-crypt, SHA-256-crypt or MD5-crypt): the agent
 // never has the password. An empty hash keeps the password of a mailbox that exists.
 func (c *Client) SetMailbox(ctx context.Context, domain, localPart string, quotaBytes int64, passwordHash string) error {
 	domainID, err := c.existingDomain(ctx, domain)

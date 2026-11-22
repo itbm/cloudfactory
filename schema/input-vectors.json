@@ -1301,13 +1301,22 @@
     },
     "mailPasswordHash": {
       "valid": [
-        "$2y$12$abcdefghijklmnopqrstuuABCDEFGHIJKLMNOPQRSTUVWXYZ01234"
+        "$2y$12$abcdefghijklmnopqrstuuABCDEFGHIJKLMNOPQRSTUVWXYZ01234",
+        "$2b$10$abcdefghijklmnopqrstuuABCDEFGHIJKLMNOPQRSTUVWXYZ01234",
+        "$6$saltsalt$aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "$6$rounds=5000$saltsalt$BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+        "$5$saltsalt$ccccccccccccccccccccccccccccccccccccccccccc",
+        "$1$abcdefgh$abcdefghijklmnopqrstuv"
       ],
       "invalid": [
         "",
         "secret",
         "$2y$12$short",
-        "$1$abcdefgh$abcdefghijklmnopqrstuv",
+        "$2y$03$abcdefghijklmnopqrstuuABCDEFGHIJKLMNOPQRSTUVWXYZ01234",
+        "$1$abcdefghi$abcdefghijklmnopqrstuv",
+        "$6$saltsalt$short",
+        "$6$saltsalt$aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "{SHA512-CRYPT}$6$saltsalt$aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "$2y$12$abcdefghijklmnopqrstuuABCDEFGHIJKLMNOPQRSTUVWXYZ01234\n"
       ]
     },
