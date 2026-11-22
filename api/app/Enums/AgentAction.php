@@ -52,6 +52,12 @@ enum AgentAction: string
     case SendDatabaseServer = 'SendDatabaseServer';
     case ReceiveDatabaseServer = 'ReceiveDatabaseServer';
     case SetPacks = 'SetPacks';
+    // The import of an account from a different panel (docs/imports.md).
+    case FetchImport = 'FetchImport';
+    case ImportFiles = 'ImportFiles';
+    case ImportDatabase = 'ImportDatabase';
+    case ImportMail = 'ImportMail';
+    case DeleteImport = 'DeleteImport';
 
     /** The steps that the agent reports for this action. */
     public function steps(): array
@@ -105,6 +111,12 @@ enum AgentAction: string
             self::SendDatabaseServer => ['Stop database server', 'Send data'],
             self::ReceiveDatabaseServer => ['Prepare database server', 'Receive data', 'Start database server'],
             self::SetPacks => ['Check the packs', 'Save the packs and the image policy', 'Load the runtimes'],
+            // A download for a server that only copies a part has no second step.
+            self::FetchImport => ['Download archive', 'Read archive'],
+            self::ImportFiles => ['Check archive', 'Copy files'],
+            self::ImportDatabase => ['Check archive', 'Load dump'],
+            self::ImportMail => ['Check archive', 'Copy messages'],
+            self::DeleteImport => ['Remove archive'],
         };
     }
 

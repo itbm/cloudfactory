@@ -6,6 +6,7 @@ use App\Enums\AgentAction;
 use App\Enums\JobState;
 use App\Models\AgentJob;
 use App\Models\Database;
+use App\Models\Import;
 use App\Models\Pack;
 use App\Models\Website;
 use App\Services\JobOutcome;
@@ -29,7 +30,8 @@ use Illuminate\Foundation\Queue\Queueable;
  *   switch fails. With a migration command, the job succeeds, and the website keeps the release;
  * - a cron job with "fail" in its command;
  * - an install of dependencies with "fail" in its install command;
- * - a DNS zone with a name that starts with "fail.".
+ * - a DNS zone with a name that starts with "fail.";
+ * - an import with "fail" in the name of its file or in its address.
  */
 class RunDemoJob implements ShouldQueue
 {
@@ -121,8 +123,20 @@ class RunDemoJob implements ShouldQueue
                 'step' => 0,
                 'error' => 'the command ended with exit code 1: PHP Fatal error:  Uncaught RuntimeException: The export did not complete in /app/src/export.php:18',
             ],
+            $job->action === AgentAction::FetchImport && str_contains(self::importName($job), 'fail') => [
+                'step' => 1,
+                'error' => 'the archive is not a cPanel, DirectAdmin, Plesk or HestiaCP account backup',
+            ],
             default => null,
         };
+    }
+
+    /** The name of the file or the address of the import of a job. */
+    private static function importName(AgentJob $job): string
+    {
+        $import = Import::find($job->payload['importId'] ?? null);
+
+        return strtolower((string) ($import?->source === Import::URL ? $import->url : $import?->file_name));
     }
 
     /**
@@ -164,6 +178,16 @@ class RunDemoJob implements ShouldQueue
                 'migrated' => ($p['migrationCommand'] ?? '') !== '',
                 'healthError' => str_contains((string) ($p['repository'] ?? ''), 'unhealthy') ? self::UNHEALTHY : '',
             ],
+            AgentAction::FetchImport => [
+                'sha256' => hash('sha256', (string) ($p['importId'] ?? '')),
+                'bytes' => Import::find($p['importId'] ?? null)?->size_bytes ?: 1_870 * 1024 ** 2,
+                ...(($p['inspect'] ?? false) ? ['account' => DemoImport::account(self::importName($job))] : []),
+            ],
+            AgentAction::ImportFiles => [
+                'files' => 1_000 + crc32((string) ($p['path'] ?? '')) % 20_000, 'bytes' => 0, 'skipped' => [],
+                'rewritten' => isset($p['wordpressConfig']) ? [$p['wordpressConfig']] : [],
+            ],
+            AgentAction::ImportMail => ['messages' => 140 * count($p['mailboxes'] ?? []), 'failed' => []],
             AgentAction::UpdateAgent => ['version' => config('cloudfactory.agent.latest_version')],
             // Each peer answers through its tunnel.
             AgentAction::SetMesh => ['mesh' => [
