@@ -81,7 +81,8 @@ The demo agent (`api/app/Demo`) fails these jobs, so that you can see a failure:
 - a change of a DNS zone with a name that starts with `fail.`.
 
 In the demonstration mode, the file manager shows a small set of sample files for each
-website, and keeps your changes in the cache. The logs are sample lines.
+website, and keeps your changes in the cache. The logs are sample entries for the last two
+days. The search and its filters work on these entries.
 
 The demo mode does not ask the public DNS. For a DNS zone with a name that starts with
 `elsewhere.`, it answers that the domain uses the name servers of a registrar. For each other

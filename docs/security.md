@@ -102,6 +102,18 @@ The product specification, section 6.4, gives the requirements.
   a Git source, and each deploy.
 - The panel records each change of a file, a cron job and a Git source in the audit log.
   It does not record the content of a file.
+- The access log of the edge proxy goes to the agent on `169.254.77.1:19514`. The firewall
+  lets only root and the user `cf-edge` connect to the private service address, so a website
+  cannot send entries. The agent, not the website, sets the website ID of each route, so a
+  request cannot put an entry in the log of a different website.
+- The access log has the client addresses, the URIs with their queries, the user agents and
+  the referrers of the visitors. It does not have the cookies, the `Authorization` header or
+  the other headers. The agent keeps it for 30 days at most. A user reads only the logs of
+  the websites that the user can see. Only an administrator reads the server log, which has
+  the requests to the panel and the webmail.
+- The search of the container log runs as the website user, with the same limits as the file
+  manager. The agent removes the control characters from each entry (finding G5-09), and the
+  CLI removes them again before it writes to a terminal.
 
 ## Databases
 
