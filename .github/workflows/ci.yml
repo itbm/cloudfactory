@@ -32,6 +32,9 @@ jobs:
       - run: npx tsc --noEmit
       - run: npx vitest run
       - run: npm run build
+      - name: Test the Cloudflare DNS plugin
+        run: node --test test/*.test.mjs
+        working-directory: plugins/dns-cloudflare
 
   api:
     name: Panel API (PHP ${{ matrix.php }})
