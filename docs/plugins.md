@@ -512,8 +512,11 @@ keeps the records of the zone. After each change, the panel sends the full zone 
 plugin, and the plugin makes the zone at the provider the same. Thus a customer uses the same
 pages, API and CLI for a zone at the provider and for a zone on the DNS servers of the panel.
 
-The [Cloudflare DNS plugin](../plugins/dns-cloudflare/README.md) is an example. It has no
-dependencies, and you can use it as a start for a different provider.
+The project has plugins for [Cloudflare](../plugins/dns-cloudflare/README.md),
+[Amazon Route 53](../plugins/dns-route53/README.md),
+[PowerDNS](../plugins/dns-powerdns/README.md), [Hetzner](../plugins/dns-hetzner/README.md) and
+[DigitalOcean](../plugins/dns-digitalocean/README.md). They have no dependencies. Use one of
+them as a start for a different provider.
 
 ### The manifest of a DNS provider
 

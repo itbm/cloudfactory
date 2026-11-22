@@ -313,6 +313,12 @@ The product specification, section 6.4, gives the requirements.
 - The panel reads each answer of a plugin only as data. It keeps only valid host names and DS
   records. It shows up to 300 characters of the error of a plugin, and it writes the error of
   the connection, which has the address of the plugin, only to its log.
+- A credential can be an address, for example the API address of the PowerDNS plugin. Thus a
+  user can make the plugin send requests to that address. The PowerDNS plugin does not connect
+  to an address on its host or in a private network, unless the operator permits it in
+  `POWERDNS_ALLOW`. It checks each address of the host name, connects to the address that it
+  checked, does not follow redirects, and needs HTTPS. Do the same in a plugin that connects to
+  an address from a user.
 
 ## The edge proxy
 

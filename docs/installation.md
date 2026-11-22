@@ -902,13 +902,23 @@ A zone can use an external DNS provider, for example Cloudflare, and not the DNS
 the panel. The panel keeps the records. After each change, the panel sends the full zone to
 the provider. A plugin gives each provider. Refer to [plugins.md](plugins.md#dns-providers).
 
-To offer Cloudflare, install the Cloudflare DNS plugin. Refer to
-[plugins/dns-cloudflare/README.md](../plugins/dns-cloudflare/README.md). The panel needs no
-DNS server for a zone at a provider.
+Install the plugin of each provider that you offer. The panel needs no DNS server for a zone
+at a provider.
 
-1. Make an API token at the provider. For Cloudflare, give the token the permissions
-   **Zone: Read** and **DNS: Edit**. To let the panel add and remove zones at Cloudflare, also
-   give **Zone: Edit**, and give the account ID in the next step.
+| Provider | Plugin | DNSSEC |
+| -------- | ------ | ------ |
+| Cloudflare | [plugins/dns-cloudflare](../plugins/dns-cloudflare/README.md) | Yes |
+| Amazon Route 53 | [plugins/dns-route53](../plugins/dns-route53/README.md) | Yes, with a KMS key |
+| PowerDNS | [plugins/dns-powerdns](../plugins/dns-powerdns/README.md) | Yes |
+| Hetzner | [plugins/dns-hetzner](../plugins/dns-hetzner/README.md) | No |
+| DigitalOcean | [plugins/dns-digitalocean](../plugins/dns-digitalocean/README.md) | No |
+
+The README of each plugin tells which credentials to make at the provider. A zone with DNSSEC
+can move only to a provider with DNSSEC.
+
+1. Make the credentials at the provider. For example, for Cloudflare, make an API token with
+   the permissions **Zone: Read** and **DNS: Edit**. To let the panel add and remove zones at
+   Cloudflare, also give **Zone: Edit**, and give the account ID in the next step.
 2. On the **DNS** page, in the card **External DNS providers**, select **Add account**.
 3. Select the provider, type a name and the credentials, and select **Add account**. The
    plugin checks the credentials before the panel keeps them.
