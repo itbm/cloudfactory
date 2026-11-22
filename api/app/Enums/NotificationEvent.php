@@ -18,6 +18,7 @@ enum NotificationEvent: string
     case ServerOffline = 'server.offline';
     case UptimeDown = 'uptime.down';
     case UptimeUp = 'uptime.up';
+    case PasswordReset = 'password.reset';
 
     public function label(): string
     {
@@ -32,6 +33,7 @@ enum NotificationEvent: string
             self::ServerOffline => 'Servers that are offline',
             self::UptimeDown => 'Websites that are down',
             self::UptimeUp => 'Websites that are up again',
+            self::PasswordReset => 'Password reset',
         };
     }
 
@@ -48,6 +50,7 @@ enum NotificationEvent: string
             self::ServerOffline => 'A server did not report to the panel for 5 minutes.',
             self::UptimeDown => 'An uptime check of a website failed a number of times in a row.',
             self::UptimeUp => 'A website that was down answers its uptime check again.',
+            self::PasswordReset => 'Someone asked for a link to set a new password for your user.',
         };
     }
 
@@ -72,7 +75,33 @@ enum NotificationEvent: string
      */
     public function required(): bool
     {
-        return in_array($this, [self::AccountSuspended, self::NewDeviceSignIn], true);
+        return in_array($this, [self::AccountSuspended, self::NewDeviceSignIn, self::PasswordReset], true);
+    }
+
+    /**
+     * The words that each template of the event must have. An email to reset a password with
+     * no link is of no use.
+     *
+     * @return list<string>
+     */
+    public function requiredVariables(): array
+    {
+        return match ($this) {
+            self::PasswordReset => ['resetUrl'],
+            default => [],
+        };
+    }
+
+    /**
+     * The words whose values are secret. The panel keeps a copy of each email (the "Sent
+     * emails" list), and an administrator or a reseller can read it. The copy has a placeholder
+     * in place of a secret value. Only the email that the SMTP server gets has the value.
+     *
+     * @return list<string>
+     */
+    public function secretVariables(): array
+    {
+        return $this->requiredVariables();
     }
 
     /**
@@ -106,6 +135,7 @@ enum NotificationEvent: string
             self::ServerOffline => ['server' => 'web-2', 'lastSeen' => '15 Nov 2026 02:55 UTC'],
             self::UptimeDown => ['website' => 'shop.example.com', 'url' => 'https://shop.example.com/', 'error' => 'HTTP status 503.', 'since' => '15 Nov 2026 03:12 UTC'],
             self::UptimeUp => ['website' => 'shop.example.com', 'url' => 'https://shop.example.com/', 'downtime' => '14 minutes', 'since' => '15 Nov 2026 03:12 UTC', 'until' => '15 Nov 2026 03:26 UTC'],
+            self::PasswordReset => ['resetUrl' => 'https://panel.example.com/reset-password#token=4f1c…', 'minutes' => '60', 'ip' => '203.0.113.7'],
         };
     }
 
@@ -135,6 +165,7 @@ enum NotificationEvent: string
             self::ServerOffline => 'The server {{server}} is offline',
             self::UptimeDown => '{{website}} is down',
             self::UptimeUp => '{{website}} is up again',
+            self::PasswordReset => 'Set a new password for {{brand}}',
         };
     }
 
@@ -151,6 +182,7 @@ enum NotificationEvent: string
             self::ServerOffline => "Hello {{name}},\n\nThe server {{server}} did not report to the panel since {{lastSeen}}. The panel keeps its jobs until it reports again.\n\nMake sure that the server is on and that the agent service runs:\n{{panelUrl}}/servers",
             self::UptimeDown => "Hello {{name}},\n\nThe uptime check of {{website}} fails since {{since}}.\n\nAddress: {{url}}\nError: {{error}}\n\nThe panel checks the address again, and sends an email when the website answers again. Open the panel to see the checks:\n{{panelUrl}}/uptime",
             self::UptimeUp => "Hello {{name}},\n\n{{website}} answers its uptime check again. It was down for {{downtime}}, from {{since}} to {{until}}.\n\nAddress: {{url}}\n\nOpen the panel to see the incidents:\n{{panelUrl}}/uptime",
+            self::PasswordReset => "Hello {{name}},\n\nSomeone asked for a link to set a new password for your user on {{brand}}. The request came from the IP address {{ip}}.\n\nTo set a new password, open this link. It works one time only, for {{minutes}} minutes:\n{{resetUrl}}\n\nA new password does not turn off your authenticator app.\n\nIf you did not ask for this link, you need not do anything. Your password does not change.",
         };
     }
 }
