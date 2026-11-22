@@ -5,6 +5,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -47,6 +49,19 @@ func dnsPanel(t *testing.T) (*httptest.Server, *[]string) {
 		case path == "/dns-zones/Z1/records/R3" && (r.Method == http.MethodPatch || r.Method == http.MethodDelete), path == "/dns-zones/Z1" && r.Method == http.MethodDelete:
 			w.WriteHeader(http.StatusAccepted)
 			w.Write([]byte(`{"jobs":[` + job + `]}`))
+		case path == "/dns-zones/Z1/import":
+			dry := strings.Contains(string(body), `"dryRun":true`)
+			if !dry {
+				w.WriteHeader(http.StatusAccepted)
+			}
+			jobs := ``
+			if !dry {
+				jobs = job
+			}
+			w.Write([]byte(`{"dryRun":` + map[bool]string{true: "true", false: "false"}[dry] + `,"added":[{"line":2,"name":"www","type":"A","value":"192.0.2.1","ttl":3600,"priority":null,"note":null}],` +
+				`"existing":1,"skipped":[{"line":1,"text":"@ IN SOA ns1. host. 1 2 3 4 5","code":"soa","reason":"The panel makes the SOA record of the zone."}],"zone":` + zone + `,"jobs":[` + jobs + `]}`))
+		case path == "/dns-zones/Z1/export":
+			w.Write([]byte(`{"name":"example.com","zoneFile":"$ORIGIN example.com.\n@ 3600 IN MX 10 mx1.mail.example.\n"}`))
 		case path == "/dns-zones/Z1/check":
 			w.Write([]byte(strings.Replace(zone, `"state":"elsewhere"`, `"state":"here"`, 1)))
 		case path == "/jobs/J1":
@@ -72,8 +87,8 @@ func TestDnsListAndGet(t *testing.T) {
 		t.Fatal(err)
 	}
 	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
-	if len(lines) != 3 || row(lines[0]) != "NAME STATUS PUBLICDNS DNSSEC RECORDS CUSTOMERID ID" ||
-		row(lines[1]) != "example.com active elsewhere on 3 C1 Z1" || lines[2] != "Name servers: ns1.panel.example, ns2.panel.example" {
+	if len(lines) != 3 || row(lines[0]) != "NAME STATUS DNSPROVIDER PUBLICDNS DNSSEC RECORDS CUSTOMERID ID" ||
+		row(lines[1]) != "example.com active panel elsewhere on 3 C1 Z1" || lines[2] != "Name servers: ns1.panel.example, ns2.panel.example" {
 		t.Errorf("output:\n%s", out)
 	}
 	if len(*calls) != 1 || (*calls)[0] != "GET /dns-zones?customerId=C1" {
@@ -169,5 +184,214 @@ func TestDnsAddShowsTheJobOfEachServer(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "Record R9: @ TXT v=spf1 -all\n") || !strings.Contains(out.String(), "Add TXT record to example.com: complete.\n") {
 		t.Errorf("output:\n%s", out)
+	}
+}
+
+func TestDnsImportAndExport(t *testing.T) {
+	srv, calls := dnsPanel(t)
+	defer srv.Close()
+	a, out := testApp(srv)
+	ctx := context.Background()
+	file := filepath.Join(t.TempDir(), "example.com.db")
+	if err := os.WriteFile(file, []byte("@ IN SOA ns1. host. 1 2 3 4 5\nwww IN A 192.0.2.1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := a.dispatch(ctx, []string{"dns", "import", "example.com", file, "--dry-run"}); err != nil {
+		t.Fatal(err)
+	}
+	want := `POST /api/v1/dns-zones/Z1/import {"dryRun":true,"zoneFile":"@ IN SOA ns1. host. 1 2 3 4 5\nwww IN A 192.0.2.1\n"}`
+	if len(*calls) != 1 || (*calls)[0] != want {
+		t.Errorf("calls: %v", *calls)
+	}
+	for _, line := range []string{
+		"Would add 1 record. 1 record is in the zone already. 1 line is not imported.",
+		"Line 1: The panel makes the SOA record of the zone.",
+	} {
+		if !strings.Contains(out.String(), line) {
+			t.Errorf("no %q in:\n%s", line, out)
+		}
+	}
+
+	*calls = nil
+	out.Reset()
+	if err := a.dispatch(ctx, []string{"dns", "import", "example.com", file}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "Added 1 record.") || len(*calls) != 1 || !strings.Contains((*calls)[0], `"dryRun":false`) {
+		t.Errorf("calls %v, output:\n%s", *calls, out)
+	}
+	if err := a.dispatch(ctx, []string{"dns", "import", "example.com"}); err == nil || !strings.Contains(err.Error(), "a zone file") {
+		t.Errorf("error: %v", err)
+	}
+
+	out.Reset()
+	if err := a.dispatch(ctx, []string{"dns", "export", "example.com"}); err != nil {
+		t.Fatal(err)
+	}
+	if out.String() != "$ORIGIN example.com.\n@ 3600 IN MX 10 mx1.mail.example.\n" {
+		t.Errorf("output:\n%s", out)
+	}
+	saved := filepath.Join(t.TempDir(), "out.zone")
+	out.Reset()
+	if err := a.dispatch(ctx, []string{"dns", "export", "example.com", "--file", saved}); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(saved); !strings.HasPrefix(string(b), "$ORIGIN example.com.") {
+		t.Errorf("file: %q", b)
+	}
+}
+
+// providerPanel answers like the panel API for the DNS accounts of a customer, and a zone at
+// Cloudflare.
+func providerPanel(t *testing.T) (*httptest.Server, *[]string) {
+	var calls []string
+	const accounts = `{"data":[{"id":"A1","name":"Main","customerId":"C1","pluginId":"P1","provider":"cloudflare","providerName":"Cloudflare","available":true,` +
+		`"account":"it@example.com","zones":1,"credentials":{"apiToken":null,"accountId":"abc"}},` +
+		`{"id":"A2","name":"Panel Cloudflare","customerId":null,"pluginId":"P1","provider":"cloudflare","providerName":"Cloudflare","available":true,"account":"Hosting","zones":0,"credentials":{}}],` +
+		`"providers":[{"pluginId":"P1","pluginName":"Cloudflare DNS","id":"cloudflare","name":"Cloudflare","dnssec":true,"credentials":[` +
+		`{"id":"apiToken","label":"API token","secret":true,"optional":false},{"id":"accountId","label":"Account ID","secret":false,"optional":true}]}]}`
+	const zone = `{"id":"Z1","name":"example.com","customerId":"C1","status":"active","serial":1794000000,"recordCount":3,` +
+		`"nameServers":["ada.ns.cloudflare.com","bob.ns.cloudflare.com"],"servers":[],` +
+		`"provider":{"accountId":"A1","accountName":"Main","name":"Cloudflare","state":"failed","error":"Cloudflare does not accept the API token.","active":false,"handover":{"endsAt":null}},` +
+		`"delegation":{"state":"here","nameServers":["ada.ns.cloudflare.com"]},"dnssec":{"enabled":false,"ds":null},"records":[]}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		body, _ := io.ReadAll(r.Body)
+		if r.Method != http.MethodGet {
+			calls = append(calls, strings.TrimSpace(r.Method+" "+r.URL.RequestURI()+" "+string(body)))
+		}
+		switch path := strings.TrimPrefix(r.URL.Path, "/api/v1"); {
+		case path == "/dns-accounts" && r.Method == http.MethodGet:
+			w.Write([]byte(accounts))
+		case path == "/dns-accounts" && r.Method == http.MethodPost:
+			w.WriteHeader(http.StatusCreated)
+			w.Write([]byte(`{"id":"A3","name":"New","account":"it@example.com"}`))
+		case path == "/dns-accounts/A1" && r.Method == http.MethodPatch:
+			w.Write([]byte(`{"id":"A1","name":"Renamed"}`))
+		case path == "/dns-accounts/A1" && r.Method == http.MethodDelete:
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			w.Write([]byte(`{"message":"x","errors":{"account":["1 DNS zone uses this account."]}}`))
+		case path == "/dns-zones" && r.Method == http.MethodGet:
+			w.Write([]byte(`{"data":[` + zone + `],"nameServers":["ns1.panel.example"]}`))
+		case path == "/dns-zones/Z1" && r.Method == http.MethodGet:
+			w.Write([]byte(zone))
+		case path == "/dns-zones" && r.Method == http.MethodPost, path == "/dns-zones/Z1/move":
+			w.WriteHeader(http.StatusAccepted)
+			w.Write([]byte(`{"zone":` + zone + `,"jobs":[]}`))
+		case path == "/dns-zones/Z1" && r.Method == http.MethodDelete:
+			w.WriteHeader(http.StatusAccepted)
+			w.Write([]byte(`{"jobs":[]}`))
+		default:
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+			w.Write([]byte(`{"message":"Not found."}`))
+		}
+	}))
+	return srv, &calls
+}
+
+func TestDnsAccounts(t *testing.T) {
+	srv, calls := providerPanel(t)
+	defer srv.Close()
+	a, out := testApp(srv)
+	ctx := context.Background()
+
+	if err := a.dispatch(ctx, []string{"dns", "accounts"}); err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
+	if len(lines) != 4 || row(lines[0]) != "NAME PROVIDERNAME ACCOUNT OWNER ZONES ID" || row(lines[1]) != "Main Cloudflare it@example.com C1 1 A1" ||
+		!strings.HasSuffix(row(lines[2]), "panel 0 A2") ||
+		lines[3] != "Provider cloudflare: Cloudflare, from the plugin Cloudflare DNS. Fields: apiToken (secret: CF_API_TOKEN or stdin), accountId (optional)." {
+		t.Errorf("output:\n%s", out)
+	}
+
+	// The secret comes from stdin, not from an argument.
+	a.in = strings.NewReader("token-1\n")
+	out.Reset()
+	if err := a.dispatch(ctx, []string{"dns", "accounts", "add", "Cloudflare", "New", "--set", "accountId=abc", "--customer", "C1"}); err != nil {
+		t.Fatal(err)
+	}
+	if want := `POST /api/v1/dns-accounts {"credentials":{"accountId":"abc","apiToken":"token-1"},"customerId":"C1","name":"New","pluginId":"P1","provider":"cloudflare"}`; len(*calls) != 1 || (*calls)[0] != want {
+		t.Errorf("calls: %v", *calls)
+	}
+	if !strings.Contains(out.String(), "Added the DNS account New (Cloudflare, it@example.com): A3.") {
+		t.Errorf("output:\n%s", out)
+	}
+	*calls = nil
+	t.Setenv("CF_API_TOKEN", "token-2")
+	if err := a.dispatch(ctx, []string{"dns", "accounts", "add", "cloudflare", "Shared", "--panel"}); err != nil {
+		t.Fatal(err)
+	}
+	if want := `POST /api/v1/dns-accounts {"credentials":{"apiToken":"token-2"},"customerId":null,"name":"Shared","pluginId":"P1","provider":"cloudflare"}`; len(*calls) != 1 || (*calls)[0] != want {
+		t.Errorf("calls: %v", *calls)
+	}
+	for _, args := range [][]string{
+		{"dns", "accounts", "add", "cloudflare", "X", "--set", "apiToken=secret"},
+		{"dns", "accounts", "add", "cloudflare", "X", "--set", "colour=blue"},
+		{"dns", "accounts", "add", "route53", "X"},
+		{"dns", "accounts", "add", "cloudflare", "X", "--panel", "--customer", "C1"},
+		{"dns", "accounts", "set", "Main"},
+		{"dns", "accounts", "set", "Other", "--name", "X"},
+	} {
+		if err := a.dispatch(ctx, args); err == nil {
+			t.Errorf("%v: no error", args)
+		}
+	}
+
+	*calls = nil
+	if err := a.dispatch(ctx, []string{"dns", "accounts", "set", "main", "--name", "Renamed", "--credentials"}); err != nil {
+		t.Fatal(err)
+	}
+	if want := `PATCH /api/v1/dns-accounts/A1 {"credentials":{"apiToken":"token-2"},"name":"Renamed"}`; len(*calls) != 1 || (*calls)[0] != want {
+		t.Errorf("calls: %v", *calls)
+	}
+	if err := a.dispatch(ctx, []string{"dns", "accounts", "remove", "A1"}); err == nil || !strings.Contains(err.Error(), "1 DNS zone uses this account.") {
+		t.Errorf("error: %v", err)
+	}
+}
+
+func TestDnsZoneAtProvider(t *testing.T) {
+	srv, calls := providerPanel(t)
+	defer srv.Close()
+	a, out := testApp(srv)
+	ctx := context.Background()
+
+	if err := a.dispatch(ctx, []string{"dns", "get", "example.com"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"Provider:      Cloudflare (account Main): could not take the last change\n",
+		"Error:         Cloudflare does not accept the API token.\n",
+		"Handover:      the name servers of the panel also answer until two days after the registrar has the new name servers\n",
+		"Name servers:  ada.ns.cloudflare.com, bob.ns.cloudflare.com (from Cloudflare)\n",
+		"Public DNS:    the registrar sends the queries to Cloudflare\n",
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("no %q in:\n%s", want, out)
+		}
+	}
+
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"dns", "create", "example.com", "--account", "Main"}, `POST /api/v1/dns-zones {"accountId":"A1","importRecords":true,"name":"example.com"}`},
+		{[]string{"dns", "create", "example.com", "--account", "A2", "--no-import"}, `POST /api/v1/dns-zones {"accountId":"A2","importRecords":false,"name":"example.com"}`},
+		{[]string{"dns", "move", "example.com", "panel"}, `POST /api/v1/dns-zones/Z1/move {"accountId":null,"importRecords":true}`},
+		{[]string{"dns", "move", "example.com", "Panel Cloudflare", "--no-import"}, `POST /api/v1/dns-zones/Z1/move {"accountId":"A2","importRecords":false}`},
+		{[]string{"dns", "delete", "example.com", "--keep-at-provider"}, `DELETE /api/v1/dns-zones/Z1?keepAtProvider=1`},
+	} {
+		*calls = nil
+		if err := a.dispatch(ctx, tc.args); err != nil {
+			t.Errorf("%v: %v", tc.args, err)
+		}
+		if len(*calls) != 1 || (*calls)[0] != tc.want {
+			t.Errorf("%v: calls %v", tc.args, *calls)
+		}
+	}
+	if err := a.dispatch(ctx, []string{"dns", "move", "example.com"}); err == nil {
+		t.Error("move with no account: no error")
 	}
 }
