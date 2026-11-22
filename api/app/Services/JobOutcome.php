@@ -20,6 +20,7 @@ use App\Models\Snapshot;
 use App\Models\Website;
 use App\Services\Dns\Zones;
 use App\Services\Exports\AccountExports;
+use App\Services\Imports\Runner;
 use App\Services\Notifications\Notifier;
 use App\Services\Packs\Packs;
 use App\Services\Plugins\Events;
@@ -119,6 +120,10 @@ class JobOutcome
             // A part of an account export is complete, or the export failed.
             if ($job->action === AgentAction::ExportWebsite) {
                 AccountExports::jobFinished($job, $state === JobState::Succeeded, $error, $result);
+            }
+            // A job of an import: the next parts of the import can start.
+            if ($job->import_id !== null) {
+                app(Runner::class)->jobFinished($job, $state === JobState::Succeeded, $result);
             }
 
             if ($job->rollout_id && ($rollout = Rollout::find($job->rollout_id))) {
@@ -588,7 +593,7 @@ class JobOutcome
 
     private static function withoutPasswords(array $payload): array
     {
-        unset($payload['password'], $payload['passwordHash'], $payload['token']);
+        unset($payload['password'], $payload['passwordHash'], $payload['token'], $payload['wordpressValues']);
         // The token and the webhook secret of a plugin that the panel runs.
         if (is_array($payload['website'] ?? null)) {
             unset($payload['website']['environment']);

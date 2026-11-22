@@ -53,6 +53,12 @@ enum AgentAction: string
     case ReceiveDatabaseServer = 'ReceiveDatabaseServer';
     case SetPacks = 'SetPacks';
     case ExportWebsite = 'ExportWebsite';
+    // The import of an account from a different panel (docs/imports.md).
+    case FetchImport = 'FetchImport';
+    case ImportFiles = 'ImportFiles';
+    case ImportDatabase = 'ImportDatabase';
+    case ImportMail = 'ImportMail';
+    case DeleteImport = 'DeleteImport';
 
     /** The steps that the agent reports for this action. */
     public function steps(): array
@@ -108,6 +114,12 @@ enum AgentAction: string
             self::SetPacks => ['Check the packs', 'Save the packs and the image policy', 'Load the runtimes'],
             // An account export: the agent sends each part to the panel while it makes it.
             self::ExportWebsite => ['Send database dumps', 'Send files'],
+            // A download for a server that only copies a part has no second step.
+            self::FetchImport => ['Download archive', 'Read archive'],
+            self::ImportFiles => ['Check archive', 'Copy files'],
+            self::ImportDatabase => ['Check archive', 'Load dump'],
+            self::ImportMail => ['Check archive', 'Copy messages'],
+            self::DeleteImport => ['Remove archive'],
         };
     }
 

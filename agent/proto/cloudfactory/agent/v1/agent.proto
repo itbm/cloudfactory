@@ -66,6 +66,16 @@ service AgentService {
   // of a website to the panel, as parts of an export. Each part goes to
   // /api/agent/v1/export-parts/{id} in pieces. The agent keeps no copy.
   rpc ExportWebsite(ExportWebsiteRequest) returns (JobAccepted);
+  // The import of an account from a different hosting panel, for example cPanel or
+  // DirectAdmin (docs/imports.md). The worker of the agent keeps the backup archive in its own
+  // directory and reads it as a stream. It never extracts the archive as root: the Unix user
+  // of a website writes the files, and the database clients and the mail server get the
+  // content of the dumps and of the messages.
+  rpc FetchImport(FetchImportRequest) returns (JobAccepted);
+  rpc ImportFiles(ImportFilesRequest) returns (JobAccepted);
+  rpc ImportDatabase(ImportDatabaseRequest) returns (JobAccepted);
+  rpc ImportMail(ImportMailRequest) returns (JobAccepted);
+  rpc DeleteImport(DeleteImportRequest) returns (JobAccepted);
 
   // Returns the actual state of the server at once. This method does not make a job.
   rpc GetStatus(GetStatusRequest) returns (HostStatus);
@@ -257,8 +267,9 @@ message SetMailboxRequest {
   // The part of the address before the @ sign.
   string local_part = 3;
   int64 quota_bytes = 4;
-  // The bcrypt hash of the password. The agent never gets the password. Empty: the mailbox
-  // keeps its password.
+  // The hash of the password: bcrypt, or a crypt hash from an import (rule
+  // "mailPasswordHash"). The agent never gets the password. Empty: the mailbox keeps its
+  // password.
   string password_hash = 5;
   // True: the job sets the encryption of the mailbox. False: the encryption does not change.
   bool set_encryption = 6;
@@ -943,4 +954,80 @@ message LogLine {
 
 message Logs {
   repeated LogLine lines = 1;
+}
+
+// Downloads the backup archive of an import to this server. The result has "sha256" and
+// "bytes". With inspect, the result also has "account": the description of the account in the
+// format "cf-account/1".
+message FetchImportRequest {
+  string job_id = 1;
+  string import_id = 2;
+  // An HTTPS URL of the archive. Empty: the agent downloads the upload of the import from the
+  // panel (/api/agent/v1/imports/{id}/archive).
+  string url = 3;
+  // The SHA-256 hash that the archive must have. Empty for the first download of the archive.
+  string sha256 = 4;
+  // The largest size of the archive, in bytes.
+  int64 max_bytes = 5;
+  bool inspect = 6;
+}
+
+// Copies the files of one website from the archive into the directory of the website, as the
+// Unix user of the website. The result has "files", "bytes", "skipped" and "rewritten".
+message ImportFilesRequest {
+  string job_id = 1;
+  string import_id = 2;
+  string website_id = 3;
+  string unix_user = 4;
+  // The directory in the archive. A part of the path with the name of a tar archive goes into
+  // that nested archive.
+  string path = 5;
+  // Directories in path that the agent does not copy.
+  repeated string exclude = 6;
+  // The agent removes all files of the website first.
+  bool replace = 7;
+  // A WordPress configuration file (relative to path) whose database settings change to
+  // wordpress_values: DB_NAME, DB_USER, DB_PASSWORD and DB_HOST.
+  string wordpress_config = 8;
+  map<string, string> wordpress_values = 9;
+}
+
+// Loads a database dump of the archive into a database of a website. The database is empty
+// first, as for a restore.
+message ImportDatabaseRequest {
+  string job_id = 1;
+  string import_id = 2;
+  string website_id = 3;
+  string unix_user = 4;
+  // "mariadb".
+  string engine = 5;
+  string name = 6;
+  // The dump in the archive: plain SQL, or SQL in gzip, bzip2 or zstd.
+  string path = 7;
+  // The ID of the database server of the database.
+  string database_server = 8;
+  // The ID of the customer of the website. It is necessary for a website of a different server.
+  string customer = 9;
+}
+
+// Copies the messages of Maildir folders in the archive into mailboxes of the mail server. A
+// job that runs again does not copy a message two times. The result has "messages" (the
+// number of messages that the job copied) and "failed" for each address.
+message ImportMailRequest {
+  string job_id = 1;
+  string import_id = 2;
+  repeated ImportMailbox mailboxes = 3;
+}
+
+message ImportMailbox {
+  string domain = 1;
+  string local_part = 2;
+  // The Maildir in the archive.
+  string path = 3;
+}
+
+// Removes the archive of an import and the records of its jobs from this server.
+message DeleteImportRequest {
+  string job_id = 1;
+  string import_id = 2;
 }

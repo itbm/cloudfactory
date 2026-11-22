@@ -31,3 +31,5 @@ Schedule::command('cloudfactory:check-certificates')->dailyAt('08:00')->withoutO
 
 // Account exports: the panel removes an archive when it expires (7 days by default).
 Schedule::command('cloudfactory:expire-exports')->hourly()->withoutOverlapping();
+// Imports: the archives of the imports that did not start (docs/imports.md).
+Schedule::command('cloudfactory:prune-imports')->hourly()->withoutOverlapping();
