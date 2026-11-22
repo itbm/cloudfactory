@@ -56,17 +56,26 @@ use App\Services\Notifications\Notifier;
 use App\Services\OpenPgpKey;
 use App\Services\Packs\PackManifest;
 use App\Services\PanelCertificate;
+use App\Services\Passkeys;
 use App\Services\Plugins\Manifest;
 use App\Services\Plugins\Signatures;
 use App\Services\SshKey;
 use App\Services\UsageRecorder;
+use CBOR\ByteStringObject;
+use CBOR\MapObject;
+use CBOR\NegativeIntegerObject;
+use CBOR\UnsignedIntegerObject;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
+use ParagonIE\ConstantTime\Base64UrlSafe;
 use RuntimeException;
+use Symfony\Component\Uid\Uuid;
+use Webauthn\CredentialRecord;
+use Webauthn\TrustPath\EmptyTrustPath;
 
 /**
  * The sample data of the demonstration mode (config/demo.php). The web panel uses this data
@@ -119,6 +128,7 @@ class DemoSeeder extends Seeder
         $this->servers();
         $this->websites();
         $this->brand();
+        $this->passkeys();
         $this->dns();
         $this->certificates();
         $this->databases();
@@ -361,6 +371,36 @@ class DemoSeeder extends Seeder
         $u('Bea Baker', 'bea@cornerbakery.example.org', Role::Owner, $this->customers['bakery'])->forceFill(['must_change_password' => true])->save();
         $u('Hari Books', 'hari@harbourbooks.example.net', Role::Owner, $this->customers['books']);
         $u('Lee Lawson', 'lee@lawson.example.org', Role::Owner, $this->customers['lawson']);
+    }
+
+    /**
+     * FR-103: passkeys of some users. Each passkey has a new ES256 key, but the private key is
+     * not kept: nobody can sign in with these passkeys.
+     */
+    private function passkeys(): void
+    {
+        $passkeys = app(Passkeys::class);
+        $panel = config('cloudfactory.panel_domain');
+        $add = function (string $email, string $name, string $rpId, bool $synced, ?Carbon $used, int $daysAgo) use ($passkeys) {
+            $user = User::where('email', $email)->firstOrFail();
+            $handle = $user->passkeys()->value('user_handle') ?? Base64UrlSafe::encodeUnpadded(random_bytes(32));
+            $key = openssl_pkey_get_details(openssl_pkey_new(['curve_name' => 'prime256v1', 'private_key_type' => OPENSSL_KEYTYPE_EC]))['ec'];
+            $cose = MapObject::create()
+                ->add(UnsignedIntegerObject::create(1), UnsignedIntegerObject::create(2))
+                ->add(UnsignedIntegerObject::create(3), NegativeIntegerObject::create(-7))
+                ->add(NegativeIntegerObject::create(-1), UnsignedIntegerObject::create(1))
+                ->add(NegativeIntegerObject::create(-2), ByteStringObject::create(str_pad($key['x'], 32, "\0", STR_PAD_LEFT)))
+                ->add(NegativeIntegerObject::create(-3), ByteStringObject::create(str_pad($key['y'], 32, "\0", STR_PAD_LEFT)));
+            $record = CredentialRecord::create(random_bytes(32), 'public-key', ['internal', 'hybrid'], 'none', EmptyTrustPath::create(), Uuid::fromString('00000000-0000-0000-0000-000000000000'),
+                (string) $cose, Base64UrlSafe::decodeNoPadding($handle), $used ? 4 : 0, backupEligible: $synced, backupStatus: $synced, uvInitialized: true);
+            $passkey = $passkeys->keep($user, $record, $name, $rpId, $handle);
+            $passkey->forceFill(['created_at' => now()->subDays($daysAgo), 'last_used_at' => $used])->save();
+        };
+        $add('owner@example.com', 'iPhone', $panel, true, now()->subHours(3), 40);
+        $add('owner@example.com', 'YubiKey 5C', $panel, false, null, 12);
+        $add('admin@example.com', 'MacBook Pro', $panel, true, now()->subMinutes(25), 90);
+        // A passkey works only on its own domain: this one is for the panel domain of the brand.
+        $add('reseller@example.com', 'Pixel 9', Branding::panelDomains()[0] ?? $panel, true, now()->subDays(2), 30);
     }
 
     private function images(): void

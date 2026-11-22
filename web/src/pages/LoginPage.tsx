@@ -1,10 +1,12 @@
+import { KeyRound } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAction } from "../api/hooks";
 import { signInMethods, type SignInMethods } from "../api/live";
-import { signIn } from "../api/store";
+import { signIn, signInWithPasskey } from "../api/store";
 import { BrandMark, useBrand } from "../components/Brand";
 import { Field, FormError } from "../components/ui";
+import { passkeysSupported } from "../lib/webauthn";
 
 /**
  * Sign in with an email and a password (FR-103). The panel asks for a code from the
@@ -21,9 +23,12 @@ export function LoginPage() {
   const [code, setCode] = useState("");
   const [step, setStep] = useState<"start" | "totp">("start");
   const pw = useAction(async (totp: string) => signIn(email, password, totp));
+  const passkey = useAction(signInWithPasskey);
   // Each role has its own first page (lib/roles.ts).
   const go = () => navigate("/");
-  const busy = pw.busy;
+  const busy = pw.busy || passkey.busy;
+  // FR-103: a passkey works only on a panel domain, and only in a browser that has WebAuthn.
+  const passkeys = methods?.passkeys && passkeysSupported();
 
   return (
     <main className="login" id="main">
@@ -55,6 +60,13 @@ export function LoginPage() {
             <Field label="Password" error={pw.error?.fields.password}>{(p) => <input {...p} className="input" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />}</Field>
             <button type="submit" className="btn btn-primary" style={{ width: "100%", marginTop: 16 }} disabled={busy}>{pw.busy ? "Signing in…" : "Sign in"}</button>
             {methods?.passwordReset && <div className="sign-in-links"><Link className="btn-link" to="/forgot-password" state={{ email }}>Forgot your password?</Link></div>}
+            {passkeys && <>
+              <div className="divider">or</div>
+              <FormError error={passkey.error} />
+              <button type="button" className="btn" style={{ width: "100%" }} disabled={busy} onClick={async () => { pw.clear(); if ((await passkey.run()).ok) go(); }}>
+                <KeyRound size={18} aria-hidden="true" />{passkey.busy ? "Waiting for the passkey…" : "Sign in with a passkey"}
+              </button>
+            </>}
           </form>
         ) : (
           <form noValidate onSubmit={async (e) => {

@@ -571,8 +571,8 @@ directory with mode 0700:
 
 ## Users and API tokens
 
-- Users sign in with a password and a TOTP code. An administrator and a reseller must have
-  TOTP. A website owner can turn it on. A TOTP code works only one
+- Users sign in with a password and a TOTP code, or with a passkey. An administrator and a
+  reseller must have TOTP. A website owner can turn it on. A TOTP code works only one
   time. The panel examines the password first, and asks for the code only when the password is
   correct and TOTP is on for the user. Thus a user with no TOTP does not see the code step, and
   a wrong password gives its error immediately. The request for the code shows that the
@@ -606,6 +606,35 @@ directory with mode 0700:
     or the reseller.
   - The template of the email must have the link (`{{resetUrl}}`) in the text, and not in the
     subject. A user cannot turn off this email.
+- A user can add passkeys in **Settings** and then sign in with a passkey, in place of the
+  password and the TOTP code (FR-103). The panel uses WebAuthn. Obey these rules:
+  - Each passkey must verify the user, with a fingerprint, a face or a PIN. Thus a passkey is
+    a sign-in with two factors: the device and the person. The panel refuses a passkey that
+    only shows that a person is present.
+  - A passkey works only on the panel domain where the user added it: the panel domain or
+    the panel domain of a reseller brand. The panel examines each answer against the domain
+    of the passkey, not against the `Host` header, and accepts only the exact HTTPS origin of
+    that domain. A different domain or a subdomain cannot use the passkey. Thus a fake site
+    cannot get a sign-in from a passkey.
+  - Passkeys do not work on the address of a website or on an IP address. The sign-in page
+    shows the passkey button only on a panel domain.
+  - To add or remove a passkey, the user gives the password and, when TOTP is on, a code. Only
+    a sign-in session can add, rename or remove a passkey, not an API token. A stolen session
+    alone cannot add a passkey. After 5 incorrect attempts, the panel refuses these changes
+    for 15 minutes.
+  - A challenge works one time only, for 5 minutes. The panel asks for no attestation, so it
+    does not know the make of the device. The panel keeps only the public key of a passkey, not a secret.
+  - At the start of a sign-in, the browser shows the passkeys of the domain. The panel does
+    not ask for an email, so the answer shows no data of a user.
+  - A passkey is in a password manager or in a cloud account when **Synced** shows next to
+    it. Then it is on more than one device.
+  - A user can have 20 passkeys. Each sign-in with a passkey is an audit event, and a new
+    device gets the email **Sign-in from a new device**.
+  - A suspended user cannot sign in with a passkey. A reset of the password by an
+    administrator or a reseller removes all passkeys of the user. A reset by email does not:
+    the user can still sign in with a passkey.
+  - An administrator or a reseller must still set up TOTP. A passkey does not replace this
+    rule, because the panel asks for TOTP to confirm changes to administrators.
 - An administrator or a reseller with no TOTP can sign in, but the API then accepts only the
   account data, the password change, the TOTP setup and the sign-out (the answer has the code
   `totp_setup_required`). The web panel shows only the page **Set up an authenticator app**.
@@ -622,11 +651,12 @@ directory with mode 0700:
   users of its own customers. An owner sees the list of its users only. Only a sign-in session
   of an administrator can make, reset or delete an administrator. An API token cannot. A user
   cannot reset or delete its own account in this way. A password reset signs the user out,
-  deletes the API tokens of the user and removes a sign-in lock. Each of these changes is an
+  deletes the API tokens and the passkeys of the user, and removes a sign-in lock. Each of these changes is an
   audit event.
 - On the panel server, root can run `cf-agent panel reset-password EMAIL` and
   `cf-agent panel unlock EMAIL`. This is the procedure when no administrator can sign in.
-- In **Settings**, a user changes the password and turns TOTP on or off. Each change needs the
+- In **Settings**, a user changes the password, turns TOTP on or off, and adds or removes
+  passkeys. Each change needs the
   current password and, when TOTP is on, a code. Only a sign-in session can do this, not an API
   token. A password change signs out the other sessions of the user and deletes the API
   tokens of the user. A new password has 12 or more characters.

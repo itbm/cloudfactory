@@ -68,6 +68,12 @@ job completes with no server.
 Sign in as `admin@example.com`, `reseller@example.com` or `owner@example.com`. The password
 is `password`. The sample users have no TOTP.
 
+To try passkeys, open the web panel at `http://localhost:5173`, not at `127.0.0.1`. A browser
+makes a passkey only on HTTPS or on `localhost`. The passkeys of the sample data are for the
+domain `panel.cloudfactory.io`, so you cannot sign in with them. Add a new passkey in
+**Settings**. `CF_PASSKEY_LOCAL_ORIGINS` gives the other origins of `localhost` that the API
+accepts in development.
+
 The sample data (`api/database/seeders/DemoSeeder.php`) has an example of each state that a
 page can show: a website that the panel could not make, a server with updates, a degraded
 server, a suspended customer, a domain that waits for its DNS record.
