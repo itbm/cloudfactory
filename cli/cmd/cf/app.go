@@ -136,7 +136,10 @@ Usage:
   cf mail clusters get CLUSTER             Show the step of the setup, the members and the DNS records.
   cf mail clusters retry CLUSTER           Start a step that failed again.
   cf dns list [--customer ID]                          The DNS zones, and the name servers of the panel.
-  cf dns create DOMAIN [--customer ID]                 Then give the name servers to the registrar of the domain.
+  cf dns create DOMAIN [--customer ID] [--account ACCOUNT [--no-import]]
+                                                       Then give the name servers to the registrar of the domain. With
+                                                       --account, the zone is at an external DNS provider, and first gets
+                                                       the records that the provider has for the domain.
   cf dns get ZONE                                      The state of the zone, and the DS record when DNSSEC is on.
   cf dns records ZONE [--type TYPE]
   cf dns add ZONE TYPE NAME VALUE [--ttl SECONDS] [--priority N]
@@ -147,7 +150,18 @@ Usage:
   cf dns dnssec ZONE on|off                            Before "off", remove the DS record at the registrar.
   cf dns check ZONE                                    Ask the public DNS for the name servers of the zone again.
   cf dns sync ZONE                                     Send the zone to each DNS server again.
-  cf dns delete ZONE
+  cf dns import ZONE FILE [--dry-run]                  Add the records of a zone file (the format of BIND), for example
+                                                       the export of your current DNS provider. --dry-run makes no change.
+  cf dns export ZONE [--file PATH]                     The records of the zone as a zone file.
+  cf dns move ZONE ACCOUNT|panel [--no-import]        Move the zone to a different DNS provider, or back to the panel.
+  cf dns delete ZONE [--keep-at-provider]              With --keep-at-provider, the zone stays at its external DNS provider.
+  cf dns accounts list                                 The accounts at external DNS providers, and the providers of the plugins.
+  cf dns accounts add PROVIDER NAME [--set FIELD=VALUE]... [--customer ID | --panel]
+                                                       The plugin checks the credentials. Each secret field comes from its
+                                                       environment variable (apiToken: CF_API_TOKEN) or stdin.
+  cf dns accounts set ACCOUNT [--name NAME] [--set FIELD=VALUE]... [--credentials]
+                                                       --credentials sends the secrets from their environment variables again.
+  cf dns accounts remove ACCOUNT                       Only an account that no zone uses.
   cf networks list [--customer ID]                     The private networks. Each customer has the network "default".
   cf networks create NAME [--customer ID] [--website WEBSITE]... [--database-server DATABASE_SERVER]...
                                                        The plan of the customer gives the number of named networks.
