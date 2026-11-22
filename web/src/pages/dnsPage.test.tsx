@@ -28,7 +28,7 @@ describe("the DNS page", () => {
     expect(within(main).getByRole("link", { name: "acme.example.com" })).toBeTruthy();
     expect(within(main).getByRole("link", { name: "acme-outlet.example.com" })).toBeTruthy();
     expect(main.textContent).not.toContain("northwind.example.com");
-    expect(main.textContent).toContain("Acme Ltd has 2 of");
+    expect(main.textContent).toContain("Acme Ltd has 3 of");
     expect(main.textContent).toContain("Uses other name servers");
     expect(main.textContent).toContain("ns1.registrar.example, ns2.registrar.example");
     expect(within(page).getByLabelText("Name server 1").textContent).toBe("ns1.panel.example");
@@ -52,11 +52,26 @@ describe("the DNS page", () => {
   it("tells an administrator what to do when the panel has no DNS server", async () => {
     const api = await signedIn("administrator");
     api.change<{ data: unknown[]; nameServers: string[] }>("/dns-zones", (b) => { b.data = []; b.nameServers = []; });
+    api.change<{ data: unknown[] }>("/dns-accounts", (b) => { b.data = []; });
     const { refresh } = await import("../api/store");
     await refresh();
     render(<MemoryRouter initialEntries={["/dns"]}><App /></MemoryRouter>);
     expect(screen.getByRole("main").textContent).toContain("This panel has no DNS server.");
     expect(screen.queryByRole("button", { name: "New DNS zone" })).toBeNull();
+  });
+
+  it("lets an administrator make zones at a DNS provider when the panel has no DNS server", async () => {
+    const api = await signedIn("administrator");
+    api.change<{ data: unknown[]; nameServers: string[] }>("/dns-zones", (b) => { b.data = []; b.nameServers = []; });
+    const { refresh } = await import("../api/store");
+    await refresh();
+    render(<MemoryRouter initialEntries={["/dns"]}><App /></MemoryRouter>);
+    expect(screen.getByRole("main").textContent).not.toContain("This panel has no DNS server.");
+    fireEvent.click(screen.getByRole("button", { name: "New DNS zone" }));
+    const select = within(screen.getByRole("dialog")).getByLabelText("Name servers") as HTMLSelectElement;
+    const options = [...select.options].map((o) => o.textContent ?? "");
+    expect(options).toContain("Cloudflare: Panel Cloudflare");
+    expect(options.some((o) => o.startsWith("This panel"))).toBe(false);
   });
 
   it("makes a zone and opens it", async () => {

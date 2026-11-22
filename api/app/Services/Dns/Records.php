@@ -56,6 +56,11 @@ class Records
         if (! in_array($type, InputRules::DNS_RECORD_TYPES, true)) {
             self::fail('type', 'Select one of these types: '.implode(', ', InputRules::DNS_RECORD_TYPES).'.');
         }
+        // An external DNS provider can take fewer types (the manifest of its plugin).
+        $types = $zone->dns_account_id !== null ? ($zone->account?->definition()['types'] ?? null) : null;
+        if ($types !== null && ! in_array($type, $types, true)) {
+            self::fail('type', "{$zone->account->providerName()} does not take {$type} records. Select one of these types: ".implode(', ', $types).'.');
+        }
         $name = self::name($zone, (string) ($input['name'] ?? $editing?->name ?? '@'));
         $ttl = $input['ttl'] ?? $editing?->ttl ?? self::DEFAULT_TTL;
         if (! is_int($ttl) || $ttl < InputRules::MIN_DNS_SHORT_TTL || $ttl > InputRules::MAX_DNS_TTL) {
