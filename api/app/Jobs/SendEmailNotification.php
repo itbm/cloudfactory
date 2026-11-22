@@ -10,6 +10,7 @@ use App\Services\Notifications\Senders;
 use App\Services\Notifications\Templates;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Support\Facades\Crypt;
 use Throwable;
 
 /**
@@ -25,7 +26,12 @@ class SendEmailNotification implements ShouldQueue
 
     public int $tries = self::ATTEMPTS;
 
-    public function __construct(public string $deliveryId) {}
+    /**
+     * The secret values of the email are encrypted in $secrets: a JSON object of placeholder
+     * and value (Notifier::placeholder). The copy of the email in the panel has only the
+     * placeholders, so the panel cannot send the email again after this job.
+     */
+    public function __construct(public string $deliveryId, public ?string $secrets = null) {}
 
     /** @return list<int> */
     public function backoff(): array
@@ -57,8 +63,12 @@ class SendEmailNotification implements ShouldQueue
             $server->reply_to = (string) $support;
         }
         $attempt = $delivery->attempts + 1;
+        $body = $delivery->body;
+        if ($this->secrets !== null) {
+            $body = strtr($body, (array) json_decode(Crypt::decryptString($this->secrets), true));
+        }
         try {
-            $transport->send($server, $delivery->recipient, $delivery->subject, $delivery->body, Templates::html($delivery->body, $brand));
+            $transport->send($server, $delivery->recipient, $delivery->subject, $body, Templates::html($body, $brand));
         } catch (Throwable $e) {
             $last = $attempt >= self::ATTEMPTS;
             $delivery->update(['attempts' => $attempt, 'error' => $e instanceof MailFailed ? $e->getMessage() : 'The panel could not send the email.', 'state' => $last ? 'failed' : 'queued']);

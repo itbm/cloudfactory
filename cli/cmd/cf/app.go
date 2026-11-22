@@ -170,6 +170,17 @@ Usage:
   cf dns accounts set ACCOUNT [--name NAME] [--set FIELD=VALUE]... [--credentials]
                                                        --credentials sends the secrets from their environment variables again.
   cf dns accounts remove ACCOUNT                       Only an account that no zone uses.
+  cf certificates list [--customer ID]                 The certificates of the customers, and the domains that use them.
+  cf certificates get CERTIFICATE [--pem]              CERTIFICATE is the ID or the first name. --pem shows only the chain.
+  cf certificates upload --cert FILE --key FILE [--customer ID]
+                       The chain and the private key in PEM format. "-" reads the standard input.
+  cf certificates request DOMAIN [--wildcard] [--customer ID]
+                       Let's Encrypt with DNS validation. The customer needs a DNS zone for the domain on the
+                       panel, and the registrar must have the name servers of the zone. The command waits
+                       until the order ends.
+  cf certificates replace CERTIFICATE --cert FILE --key FILE   Replace an uploaded certificate.
+  cf certificates renew CERTIFICATE                    Start a new order now. The panel also renews by itself.
+  cf certificates delete CERTIFICATE                   Its domains get a different certificate.
   cf networks list [--customer ID]                     The private networks. Each customer has the network "default".
   cf networks create NAME [--customer ID] [--website WEBSITE]... [--database-server DATABASE_SERVER]...
                                                        The plan of the customer gives the number of named networks.
@@ -468,6 +479,8 @@ func (a *app) dispatch(ctx context.Context, args []string) error {
 		return a.databaseUsers(ctx, sub, rest)
 	case "dns":
 		return a.dns(ctx, sub, rest)
+	case "certificates", "certificate", "certs":
+		return a.certificates(ctx, sub, rest)
 	case "networks", "network":
 		return a.networks(ctx, sub, rest)
 	case "notifications", "notification":
