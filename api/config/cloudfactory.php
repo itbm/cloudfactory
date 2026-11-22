@@ -61,6 +61,16 @@ return [
     // certificate order, and Let's Encrypt limits the orders of a server.
     'domains_per_website' => (int) env('CF_DOMAINS_PER_WEBSITE', 50),
 
+    // The certificates of the customers (docs/certificates.md): the maximum number for each
+    // customer, and the ACME CA of the certificates with DNS validation. The panel makes an
+    // ACME account for each directory. CF_ACME_EMAIL is optional: the CA can send notices
+    // about the account to this address.
+    'certificates_per_customer' => (int) env('CF_CERTIFICATES_PER_CUSTOMER', 20),
+    'acme' => [
+        'directory' => env('CF_ACME_DIRECTORY', 'https://acme-v02.api.letsencrypt.org/directory'),
+        'email' => env('CF_ACME_EMAIL'),
+    ],
+
     // FR-902: the default retention policy.
     'backups' => [
         'daily' => 7,

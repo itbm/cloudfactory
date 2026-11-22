@@ -203,6 +203,10 @@ func (s *Service) ExportWebsite(_ context.Context, r *connect.Request[agentv1.Ex
 	return s.submit(s.Deps.ExportWebsite(r.Msg))
 }
 
+func (s *Service) SetCertificates(_ context.Context, r *connect.Request[agentv1.SetCertificatesRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.SetCertificates(r.Msg))
+}
+
 func (s *Service) FetchImport(_ context.Context, r *connect.Request[agentv1.FetchImportRequest]) (*connect.Response[agentv1.JobAccepted], error) {
 	return s.submit(s.Deps.FetchImport(r.Msg))
 }

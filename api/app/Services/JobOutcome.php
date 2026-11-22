@@ -18,6 +18,7 @@ use App\Models\Release;
 use App\Models\Rollout;
 use App\Models\Snapshot;
 use App\Models\Website;
+use App\Services\Certificates\Certificates;
 use App\Services\Dns\Zones;
 use App\Services\Exports\AccountExports;
 use App\Services\Imports\Runner;
@@ -120,6 +121,14 @@ class JobOutcome
             // A part of an account export is complete, or the export failed.
             if ($job->action === AgentAction::ExportWebsite) {
                 AccountExports::jobFinished($job, $state === JobState::Succeeded, $error, $result);
+            }
+            if ($job->action === AgentAction::SetCertificates && $state === JobState::Succeeded) {
+                Certificates::jobFinished($job, $result);
+            }
+            // The domains of the server changed: the server gets the certificates from the
+            // panel for its domains now, not at the next report.
+            if ($state === JobState::Succeeded && in_array($job->action, [AgentAction::CreateWebsite, AgentAction::DeleteWebsite, AgentAction::AddDomain, AgentAction::RemoveDomain], true)) {
+                app(Certificates::class)->serverChanged($job->server, $job->customer_id);
             }
             // A job of an import: the next parts of the import can start.
             if ($job->import_id !== null) {

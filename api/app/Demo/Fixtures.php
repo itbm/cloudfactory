@@ -2,6 +2,7 @@
 
 namespace App\Demo;
 
+use App\Models\Certificate;
 use App\Models\DnsZone;
 use App\Models\Import;
 use App\Models\User;
@@ -27,6 +28,7 @@ class Fixtures
         '/mail/domains', '/mail/mailboxes', '/mail/aliases', '/mail-clusters',
         '/plugin-pages', '/plugin-actions', '/plugins', '/trusted-keys', '/plugin-settings', '/packs', '/pack-settings', '/imports',
         '/exports',
+        '/certificates',
     ];
 
     /**
@@ -48,6 +50,10 @@ class Fixtures
         $visible = $user->visibleCustomerIds();
         foreach (DnsZone::when($visible !== null, fn ($q) => $q->whereIn('customer_id', $visible))->orderBy('name')->pluck('id') as $id) {
             $paths[] = "/dns-zones/{$id}";
+        }
+        // The page of a certificate reads the certificate with its chain.
+        foreach (Certificate::when($visible !== null, fn ($q) => $q->whereIn('customer_id', $visible))->orderBy('id')->pluck('id') as $id) {
+            $paths[] = "/certificates/{$id}";
         }
         // The page of an import reads the import with its plan or its parts.
         if ($user->isAdministrator()) {
