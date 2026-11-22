@@ -228,14 +228,6 @@ func (a *app) files(ctx context.Context, sub string, args []string) error {
 	return fmt.Errorf("unknown command files %s", sub)
 }
 
-// plural gives "1 file" or "2 files".
-func plural(n int, one, many string) string {
-	if n == 1 {
-		return "1 " + one
-	}
-	return strconv.Itoa(n) + " " + many
-}
-
 // archiveJob starts a job that makes or extracts an archive. It waits for the job, then
 // prints the summary of the job.
 func (a *app) archiveJob(ctx context.Context, path string, body map[string]any, archive string) error {

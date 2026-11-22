@@ -414,17 +414,75 @@ export interface DnsZone {
   delegation: { state: DnsDelegation; nameServers: string[]; checkedAt?: string };
   dnssec: {
     enabled: boolean;
+    /** pending: the external DNS provider makes the key. The DS record comes after that. */
+    state: "off" | "pending" | "active";
     /** The DS record that the customer gives to the registrar of the domain. */
     ds?: { keyTag: number; algorithm: number; digestType: number; digest: string; record: string };
     dnskey?: string;
   };
-  /** The state of the zone on each name server. */
+  /** The state of the zone on each name server of the panel. */
   servers: { nameServer: string; state: "ok" | "pending" | "failed" | "removed" }[];
+  /** The external DNS provider of the zone. Undefined for a zone on the DNS servers of the panel. */
+  provider?: DnsZoneProvider;
   /** The number of websites of the customer with a domain in the zone. */
   websites: number;
   createdAt: string;
   /** Undefined until the panel has read the records of the zone. */
   records?: DnsRecord[];
+}
+
+/** The state of a zone at its external DNS provider. */
+export interface DnsZoneProvider {
+  accountId: string;
+  accountName: string;
+  /** The name of the provider, for example Cloudflare. */
+  name: string;
+  /** The last change at the provider. */
+  state: "ok" | "pending" | "failed";
+  error?: string;
+  /** True when the provider answers for the zone. Some providers wait until the registrar has their name servers. */
+  active: boolean;
+  syncedAt?: string;
+  changes?: { added: number; changed: number; removed: number };
+  /** The records that the panel copied from the provider when the zone came there. */
+  imported?: { added: number; existing: number; skipped: { line: number; text: string; code: string; reason: string }[] };
+  /** The DNS servers of the panel still answer for the zone that moved to the provider. */
+  handover?: { endsAt?: string };
+}
+
+/** An external DNS provider that a plugin offers (contract cf-dns-provider/1). */
+export interface DnsProvider {
+  pluginId: string;
+  pluginName: string;
+  id: string;
+  name: string;
+  /** True when the provider can sign the zones. */
+  dnssec: boolean;
+  types: DnsRecordType[];
+  credentials: { id: string; label: string; secret: boolean; optional: boolean; hint: string }[];
+}
+
+/** An account at an external DNS provider. An account with no customer belongs to the panel. */
+export interface DnsAccount {
+  id: string;
+  name: string;
+  /** Undefined for an account of the panel. Each customer can use it. */
+  customerId?: string;
+  pluginId: string;
+  provider: string;
+  providerName: string;
+  /** False when the plugin is off, or does not offer the provider now. */
+  available: boolean;
+  /** The name of the account at the provider. */
+  account?: string;
+  dnssec: boolean;
+  types: DnsRecordType[];
+  /** The values of the fields that are not secret. A secret field is null. */
+  credentials: Record<string, string | null>;
+  /** The zones that use the account. */
+  zones: number;
+  checkedAt?: string;
+  createdAt: string;
 }
 
 export type DatabaseEngine = "mariadb" | "postgresql" | "valkey";
@@ -985,6 +1043,10 @@ export interface State {
   dnsZones: DnsZone[];
   /** The host names of the DNS servers of the panel. Empty: the panel has no DNS server. */
   nameServers: string[];
+  /** The accounts at external DNS providers that the user can use. */
+  dnsAccounts: DnsAccount[];
+  /** The external DNS providers that the plugins that are on offer. */
+  dnsProviders: DnsProvider[];
   /** The mesh. Only an administrator has it. */
   mesh?: Mesh;
   /** The private networks of the customers that the user can see. */

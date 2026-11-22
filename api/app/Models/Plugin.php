@@ -81,6 +81,16 @@ class Plugin extends Model
         return $this->spec()['hooks'] ?? [];
     }
 
+    /**
+     * The external DNS providers that the plugin offers (contract cf-dns-provider/1).
+     *
+     * @return list<array{id: string, name: string, path: string, dnssec: bool, types: list<string>, credentials: list<array{id: string, label: string, secret: bool, optional: bool, hint: string}>}>
+     */
+    public function dnsProviders(): array
+    {
+        return $this->spec()['dnsProviders'] ?? [];
+    }
+
     /** The full address of a path of the manifest. */
     public function urlOf(string $path): string
     {
