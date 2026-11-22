@@ -20,6 +20,8 @@ A plugin can do these things:
   server of the plugin, with a short token of the user who selects it.
 - Refuse some changes before the panel makes them, with before hooks.
 - Add commands to the `cf` CLI. `cf NAME` runs the program `cf-NAME`.
+- Send DNS zones to an external DNS provider, for example Cloudflare. Refer to
+  [DNS providers](#dns-providers).
 
 A plugin cannot do these things:
 
@@ -94,6 +96,7 @@ A plugin cannot do these things:
 | `actions` | Up to 20 actions. `target` is `website`, `server` or `customer`. `roles` gives the roles that see the button. `confirm` is optional: a question that the panel asks before it runs the action. |
 | `hooks` | Up to 20 before hooks. `event` is a hook of the table in [Before hooks](#before-hooks). `onError` is `allow` (the default) or `refuse`. |
 | `commands` | Up to 20 commands. The panel shows them only as information. |
+| `dnsProviders` | Up to 10 external DNS providers. Refer to [DNS providers](#dns-providers). |
 | `image` | Optional. `ref` is the image with a tag. `digest` is its `sha256:` digest, with 64 hexadecimal digits. `port` is the port of the program in the container, 1024 to 65535 (default 8080). |
 
 Each path starts with `/`. A path cannot have `..`, a query or a fragment. The paths are
@@ -501,6 +504,153 @@ environment variables:
 
 The program runs as your user, with your token. Install only the programs of publishers that
 you trust.
+
+## DNS providers
+
+A plugin can send DNS zones to an external DNS provider, for example Cloudflare. The panel
+keeps the records of the zone. After each change, the panel sends the full zone to the
+plugin, and the plugin makes the zone at the provider the same. Thus a customer uses the same
+pages, API and CLI for a zone at the provider and for a zone on the DNS servers of the panel.
+
+The project has plugins for [Cloudflare](../plugins/dns-cloudflare/README.md),
+[Amazon Route 53](../plugins/dns-route53/README.md),
+[PowerDNS](../plugins/dns-powerdns/README.md), [Hetzner](../plugins/dns-hetzner/README.md) and
+[DigitalOcean](../plugins/dns-digitalocean/README.md). They have no dependencies. Use one of
+them as a start for a different provider.
+
+### The manifest of a DNS provider
+
+```json
+"dnsProviders": [
+  {
+    "id": "cloudflare",
+    "name": "Cloudflare",
+    "path": "/dns/cloudflare",
+    "dnssec": true,
+    "types": ["A", "AAAA", "CNAME", "MX", "TXT", "SRV", "CAA", "NS"],
+    "credentials": [
+      { "id": "apiToken", "label": "API token", "secret": true, "hint": "Give the token the permissions Zone: Read and DNS: Edit." },
+      { "id": "accountId", "label": "Account ID", "optional": true }
+    ]
+  }
+]
+```
+
+| Key | Rule |
+| --- | ---- |
+| `id` | Lower-case letters, digits and `-`. 1 to 40 characters. Unique in the manifest. |
+| `name` | The name that users see. Up to 40 characters. |
+| `path` | The path that gets the requests of the provider. |
+| `dnssec` | `true` when the plugin can turn DNSSEC on at the provider. The default is `false`. |
+| `types` | The record types that the provider takes. The default is all the types of the panel. The panel refuses a record of a different type in a zone at the provider. |
+| `credentials` | Up to 10 fields that a user fills in to add an account. `id` has letters and digits, and starts with a letter. `label` has up to 60 characters. `hint` has up to 200 characters. |
+
+A field with `"secret": true` is a secret, for example an API token. The panel keeps all the
+credentials encrypted. It never shows a secret again, and it shows the other fields only to
+the owner of the account. A field with `"optional": true` can be empty.
+
+The panel refuses an upgrade that removes a provider that DNS accounts use. It also refuses to
+remove a plugin while DNS accounts use it. Remove the accounts first.
+
+A DNS provider needs no scope, because the panel sends the data in the request. The plugin
+does not use the API of the panel.
+
+### The contract cf-dns-provider/1 (trial)
+
+The panel sends `POST` to the path of the provider, with the headers of an event (refer to
+[The request](#the-request)). `Cloudfactory-Event` is `dns.provider`. Check the signature of
+each request (refer to [Check the signature](#check-the-signature)).
+
+```json
+{
+  "id": "01jd2m4w3h6ya8c0vvv1q8x0zr",
+  "contract": "cf-dns-provider/1",
+  "provider": "cloudflare",
+  "operation": "sync",
+  "credentials": { "apiToken": "...", "accountId": "..." },
+  "zone": {
+    "name": "example.com",
+    "serial": 1794567600,
+    "dnssec": false,
+    "records": [
+      { "name": "@", "type": "A", "ttl": 300, "value": "203.0.113.10", "priority": null },
+      { "name": "@", "type": "MX", "ttl": 3600, "value": "mx1.example.net", "priority": 10 }
+    ]
+  },
+  "createdAt": "2026-11-22T10:42:07+00:00"
+}
+```
+
+The panel sends each request one time, with a new `id`. Refuse a request with an `id` that you
+received before. The panel does not try again in the same request. For a zone, the panel tries
+again later (refer to [The attempts of the panel](#the-attempts-of-the-panel)).
+
+| Operation | `zone` | Time | Answer |
+| --------- | ------ | ---- | ------ |
+| `verify` | `null` | 15 s | `{"account": "Example Ltd"}`. `account` is a name for the account at the provider, or `null`. |
+| `records` | `{"name"}` | 30 s | `{"exists": true, "records": [...], "nameServers": [...]}`. The records that the provider has for the zone now. |
+| `sync` | `{"name", "serial", "dnssec", "records"}` | 60 s | Refer to the next table. |
+| `remove` | `{"name"}` | 30 s | `{}`. The zone is not at the provider now. |
+
+The answer to `sync`:
+
+| Key | Value |
+| --- | ----- |
+| `nameServers` | The name servers of the zone at the provider. The user gives them to the registrar. |
+| `active` | `true` when the provider answers for the zone. |
+| `dnssec` | `{"state": "off" \| "pending" \| "active", "ds": [{"keyTag", "algorithm", "digestType", "digest"}]}`. The DS records for the registrar. |
+| `changes` | `{"added", "changed", "removed"}`: the number of records that the plugin changed. |
+
+Rules for `sync`:
+
+- Make the records at the provider the same as `records`, for the types of `types`. Do not
+  change records of other types.
+- Do not change the NS records of the zone itself (`@`). The provider keeps them. The panel
+  does not send them.
+- `records` has a TXT record `_cloudfactory-challenge` with a token of the panel. Send it as the
+  other records. The panel looks for the token in the public DNS. Only the token proves that
+  the public DNS uses this zone, because a different account at the provider can have the same
+  name servers.
+- Add the zone at the provider when it is not there, if the credentials permit it.
+- Turn DNSSEC on or off at the provider, as `dnssec` gives.
+- `sync` must be idempotent. The panel can send the same zone again.
+
+The records have the form of the panel. `name` is `@` or a name relative to the zone. `value`
+of an MX, CNAME or NS record is a host name with no dot at the end. `value` of an SRV record is
+`<weight> <port> <target>`, and `priority` has its priority. `value` of a CAA record is
+`<flags> <tag> "<value>"`. `value` of a TXT record has no quotation marks.
+
+The answer to `records` uses the same form. The panel copies these records to a zone that moves
+to the provider. It does not copy the NS records of the zone itself, a record of a type that the
+panel does not have, or a record that is not valid. The user sees the records that the panel did
+not copy.
+
+### Errors
+
+To refuse an operation, answer with a status from 400 to 599 and a JSON body:
+
+```json
+{ "error": "Cloudflare refused the API token. Make a token with the permissions Zone: Read and DNS: Edit." }
+```
+
+The panel shows `error` to the user, with up to 300 characters. Write it for the user, and do
+not put a secret in it. When the answer has no `error`, the panel shows a general message. The
+panel writes the details to its log, and never shows the address of the plugin.
+
+### The attempts of the panel
+
+A queue worker of the panel sends `sync` after each change of the zone. When `sync` fails, the
+zone has the status **Failed**, and the provider continues to answer with the records that it
+had before. The panel tries again after 1 minute, 5 minutes, 30 minutes and 2 hours. After
+that, the hourly command `cloudfactory:check-dns` tries again each hour. A change of the credentials of the
+account also sends the zones again.
+
+### A zone that moves to a provider
+
+When a zone moves from the DNS servers of the panel to a provider, the DNS servers of the panel
+continue to answer for the zone. This is the handover. The handover stops two days after the
+public DNS stops showing the name servers of the panel for the domain. Thus the domain
+continues to work while the new name servers go through the DNS.
 
 ## Security
 
