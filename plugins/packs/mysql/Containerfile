@@ -1,5 +1,5 @@
 # MySQL image of the example database pack (pack.json), with no new agent code. Build it with:
-#   podman build --build-arg MYSQL_VERSION=8.4 -t ghcr.io/example/cf-mysql:8.4 plugins/packs/mysql
+#   podman build --build-arg MYSQL_VERSION=8.4 -t ghcr.io/example/cf-mysql:8.4 -f plugins/packs/mysql/Containerfile plugins/packs/mysql
 #
 # The image obeys the database contract cf-database/1 (docs/packs.md):
 # - The engine listens on port 3306 and keeps its data in /var/lib/mysql.
@@ -16,7 +16,14 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags=-s -o /cf-manage .
 
 FROM docker.io/library/mysql:${MYSQL_VERSION}
 # The user mysql of the base image owns the data files. The agent starts the container as 999.
-RUN test "$(id -u mysql):$(id -g mysql)" = 999:999
+# The pack does not use MySQL Shell. The entrypoint uses gosu only when it starts as root, and
+# the container never starts as root. Remove them, so that the image has fewer programs that
+# can have vulnerabilities.
+RUN test "$(id -u mysql):$(id -g mysql)" = 999:999 \
+ && microdnf remove -y mysql-shell \
+ && microdnf clean all \
+ && rm -rf /usr/lib/mysqlsh /usr/local/bin/gosu \
+ && test ! -e /usr/bin/mysqlsh
 COPY cloudfactory.cnf /etc/mysql/conf.d/cloudfactory.cnf
 COPY --chmod=0755 cf-start /usr/local/bin/cf-start
 COPY --from=manage --chmod=0755 /cf-manage /cf/manage
