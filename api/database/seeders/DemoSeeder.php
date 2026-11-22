@@ -2,6 +2,8 @@
 
 namespace Database\Seeders;
 
+use App\Demo\DemoAcme;
+use App\Demo\DemoImport;
 use App\Demo\DemoMailDns;
 use App\Enums\AgentAction;
 use App\Enums\DomainKind;
@@ -10,13 +12,16 @@ use App\Enums\NotificationEvent;
 use App\Enums\Role;
 use App\Models\AgentJob;
 use App\Models\AuditEntry;
+use App\Models\Certificate;
 use App\Models\Customer;
 use App\Models\DatabaseServer;
 use App\Models\DnsAccount;
 use App\Models\DnsRecord;
 use App\Models\DnsZone;
+use App\Models\Domain;
 use App\Models\GitSource;
 use App\Models\Image;
+use App\Models\Import;
 use App\Models\MailAlias;
 use App\Models\Mailbox;
 use App\Models\MailDomain;
@@ -41,8 +46,11 @@ use App\Models\User;
 use App\Models\Website;
 use App\Providers\DemoServiceProvider;
 use App\Services\Branding;
+use App\Services\Certificates\Certificates;
+use App\Services\Certificates\Pem;
 use App\Services\Dns\Dnssec;
 use App\Services\Dns\Zones;
+use App\Services\Imports\Description;
 use App\Services\Networks;
 use App\Services\Notifications\Notifier;
 use App\Services\OpenPgpKey;
@@ -112,6 +120,7 @@ class DemoSeeder extends Seeder
         $this->websites();
         $this->brand();
         $this->dns();
+        $this->certificates();
         $this->databases();
         $this->usageHistory();
         $this->settleMesh();
@@ -119,6 +128,7 @@ class DemoSeeder extends Seeder
         $this->cronJobsAndDeploys();
         $this->mail();
         $this->jobsAndRollout();
+        $this->imports();
         $this->settingsAndAudit();
         $this->notifications();
         $this->plugins();
@@ -393,7 +403,7 @@ class DemoSeeder extends Seeder
         $common = [
             'agent_version' => self::AGENT, 'os' => 'Debian 13', 'kernel' => '6.12.48', 'arch' => 'x86-64', 'podman_version' => '5.4.2',
             'gvisor_version' => 'release-20261019.0', 'pending_updates' => [], 'last_seen_at' => now(), 'connection_checked_at' => now(), 'sftp_port' => 2222,
-            'database_engines' => ['mariadb', 'postgresql', 'valkey'], 'database_instances' => true,
+            'database_engines' => ['mariadb', 'postgresql', 'valkey'], 'database_instances' => true, 'agent_features' => ['imports'],
         ];
         // Two servers answer DNS queries. The customers give their host names to the registrar of a domain.
         $dns = fn (int $n) => ['dns' => true, 'dns_name' => "ns{$n}.panel.example", 'addresses' => ["203.0.113.{$n}0", "2001:db8:{$n}0::1"]];
@@ -680,6 +690,52 @@ class DemoSeeder extends Seeder
         $record('cornerbakery.example.org', '@', 'MX', 'mail.cornerbakery.example.org', 10);
         $record('cornerbakery.example.org', 'mail', 'A', '198.51.100.80');
         $record('harbourbooks.example.net', '@', 'TXT', 'v=spf1 -all');
+    }
+
+    /**
+     * The certificates of the customers (docs/certificates.md): a wildcard certificate with DNS
+     * validation, an uploaded certificate that expires soon, and an order that failed. web-1
+     * and web-2 loaded the certificates. The dates follow the clock of the panel, as the other
+     * sample data does. The PEM data has the dates of the computer that made the sample data.
+     */
+    private function certificates(): void
+    {
+        $admin = User::where('email', 'admin@example.com')->value('id');
+        $make = function (string $customer, string $source, array $names, ?array $pem, array $more = []) use ($admin): Certificate {
+            $info = $pem ? Pem::info($pem['cert']) : null;
+            $certificate = new Certificate([
+                'customer_id' => $this->customers[$customer]->id, 'source' => $source, 'names' => $names, 'user_id' => $admin,
+                ...($pem && $info ? ['certificate' => $pem['cert'], 'private_key' => $pem['key'], 'fingerprint' => $info['fingerprint'], 'issuer' => $info['issuer']] : []),
+                ...$more,
+            ]);
+            $certificate->created_at = $certificate->not_before ?? now()->subHours(3);
+            $certificate->save();
+
+            return $certificate;
+        };
+        // The demonstration CA gave this certificate 25 days ago. The panel renews it in 35 days.
+        $make('acme', Certificate::ACME, ['acme.example.com', '*.acme.example.com'], DemoAcme::issue(['acme.example.com', '*.acme.example.com']), [
+            'not_before' => now()->subDays(25), 'expires_at' => now()->addDays(65), 'renew_at' => now()->addDays(35), 'trusted' => true,
+        ]);
+        // An uploaded certificate from a different CA. It expires in 12 days: the customer must upload a new one.
+        $make('bakery', Certificate::UPLOAD, ['cornerbakery.example.org', 'www.cornerbakery.example.org'],
+            DemoAcme::issue(['cornerbakery.example.org', 'www.cornerbakery.example.org'], 365, DemoAcme::makeAuthority('Example TLS CA 2026', 'Example Trust Ltd')), [
+                'not_before' => now()->subDays(353), 'expires_at' => now()->addDays(12), 'trusted' => true,
+            ]);
+        // The registrar of this domain does not send the queries to the panel yet.
+        $make('acme', Certificate::ACME, ['acme-outlet.example.com', '*.acme-outlet.example.com'], null, [
+            'error' => 'The public DNS does not send the queries for acme-outlet.example.com to the name servers of this panel, so the certificate authority cannot see the records of the panel. Give the name servers of the panel to the registrar of acme-outlet.example.com, and then check the zone on the DNS page.',
+            'tries' => 1,
+        ]);
+        $certificates = app(Certificates::class);
+        foreach (['web-1', 'web-2'] as $name) {
+            $wanted = $certificates->wanted($this->servers[$name]);
+            $this->servers[$name]->update(['agent_certificates' => $wanted]);
+            foreach ($wanted as $c) {
+                Domain::whereIn('website_id', $this->servers[$name]->websites()->select('id'))->whereIn('name', $c['hosts'])
+                    ->update(['certificate_state' => 'valid', 'certificate_expires_at' => Certificate::find($c['id'])->expires_at]);
+            }
+        }
     }
 
     private function databases(): void
@@ -1005,6 +1061,46 @@ class DemoSeeder extends Seeder
         $rollout->created_at = now()->subHours(30);
         $rollout->updated_at = now()->subHours(29);
         $rollout->save();
+    }
+
+    /**
+     * Two imports (docs/imports.md). The cPanel backup of Corner Bakery is ready: its plan has a
+     * website with a name that the panel has already. Harbour Books came from DirectAdmin.
+     */
+    private function imports(): void
+    {
+        $admin = User::where('email', 'admin@example.com')->first();
+        $ready = new Import([
+            'customer_id' => $this->customers['bakery']->id, 'server_id' => $this->servers['web-2']->id, 'user_id' => $admin->id,
+            'source' => Import::UPLOAD, 'file_name' => 'cpmove-bakery.tar.gz', 'size_bytes' => 1_870 * self::MB, 'received_bytes' => 1_870 * self::MB,
+            'sha256' => hash('sha256', 'cpmove-bakery.tar.gz'), 'status' => Import::READY, 'panel' => 'cpanel', 'account' => 'bakery',
+            'description' => Description::normalise(DemoImport::account('cpmove-bakery.tar.gz')), 'items' => [], 'servers' => [$this->servers['web-2']->id => 'ready'],
+        ]);
+        $ready->created_at = now()->subMinutes(18);
+        $ready->save();
+
+        $books = $this->websites['harbourbooks.example.net'];
+        $item = fn (string $id, string $kind, string $name, string $state, ?string $detail = null, ?string $error = null) => compact('id', 'kind', 'name', 'state', 'detail', 'error') + ['job' => null];
+        $done = new Import([
+            'customer_id' => $this->customers['books']->id, 'server_id' => $books->server_id, 'user_id' => $admin->id,
+            'source' => Import::URL, 'url' => 'https://files.example.net/backups/user.admin.harbour.tar.zst', 'file_name' => 'user.admin.harbour.tar.zst',
+            'size_bytes' => 4_310 * self::MB, 'received_bytes' => 0, 'sha256' => hash('sha256', 'user.admin.harbour.tar.zst'), 'status' => Import::DONE,
+            'panel' => 'directadmin', 'account' => 'harbour', 'servers' => [$books->server_id => 'ready'],
+            'items' => [
+                $item('i1', 'website', 'harbourbooks.example.net', 'done'),
+                $item('i2', 'domain', 'www.harbourbooks.example.net', 'done'),
+                $item('i3', 'database', 'harbour_shop', 'done', 'New name: '.$books->unix_user.'_shop'),
+                $item('i4', 'cronJob', '*/5 * * * * php /home/harbour/domains/harbourbooks.example.net/public_html/wp-cron.php', 'done'),
+                $item('i5', 'dnsZone', 'harbourbooks.example.net', 'done', '9 records added'),
+                $item('i6', 'dump', $books->unix_user.'_shop', 'done', 'Dump loaded'),
+                $item('i7', 'files', 'harbourbooks.example.net', 'done', '18204 files copied, database settings changed in wp-config.php'),
+                $item('i8', 'website', 'events.harbourbooks.example.net', 'failed', null, 'A website with this name exists.'),
+            ],
+        ]);
+        $done->created_at = now()->subDays(41);
+        $done->started_at = now()->subDays(41)->addMinutes(9);
+        $done->finished_at = now()->subDays(41)->addMinutes(31);
+        $done->save();
     }
 
     private function settingsAndAudit(): void

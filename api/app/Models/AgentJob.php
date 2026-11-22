@@ -10,7 +10,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /** One job for one agent (spec section 6.3, steps 4 to 7). */
-#[Fillable(['server_id', 'website_id', 'database_server_id', 'dns_zone_id', 'customer_id', 'rollout_id', 'action', 'title', 'ref', 'payload', 'steps', 'step', 'state', 'error', 'result', 'started_at', 'finished_at', 'resent_at'])]
+#[Fillable(['server_id', 'website_id', 'database_server_id', 'dns_zone_id', 'customer_id', 'rollout_id', 'import_id', 'action', 'title', 'ref', 'payload', 'steps', 'step', 'state', 'error', 'result', 'started_at', 'finished_at', 'resent_at'])]
 class AgentJob extends Model
 {
     use Concerns\GuardsState, HasUlids;

@@ -161,7 +161,7 @@ func TestTheReportOfThePanelServerHasThePanelCertificate(t *testing.T) {
 // that CA, so the report checks the chain with the root certificate of the CA.
 func TestTheReportAcceptsTheCertificateOfALocalName(t *testing.T) {
 	d, edge := panelServer(t, "shop.localhost", false)
-	st := d.domainState(context.Background(), "shop.localhost")
+	st := d.domainState(context.Background(), "shop.localhost", "")
 	if st.Certificate != "valid" || !st.DNSPointsHere || st.ExpiresAt == "" {
 		t.Errorf("state = %+v", st)
 	}
@@ -173,7 +173,7 @@ func TestTheReportAcceptsTheCertificateOfALocalName(t *testing.T) {
 		return []*x509.Certificate{leaf, other}, nil
 	}
 	d.DNSPointsHere = LocalDNS()
-	if st := d.domainState(context.Background(), "shop.localhost"); st.Certificate != "pending" || !st.DNSPointsHere {
+	if st := d.domainState(context.Background(), "shop.localhost", ""); st.Certificate != "pending" || !st.DNSPointsHere {
 		t.Errorf("state = %+v", st)
 	}
 	_ = edge

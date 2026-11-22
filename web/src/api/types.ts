@@ -67,6 +67,54 @@ export interface Certificate {
   state: CertificateState;
   expiresAt?: string;
   renewedAt?: string;
+  /** "automatic": the edge proxy gets the certificate. Otherwise a certificate of the customer from the panel. */
+  source?: CertificateSource;
+  /** The certificate of the customer that the domain uses (source "upload" or "acme"). */
+  certificateId?: string;
+}
+
+/** Where the certificate of a domain comes from (docs/certificates.md). */
+export type CertificateSource = "automatic" | "upload" | "acme";
+
+/**
+ * issuing: the first order runs. failed: the first order failed. renewing: an order for a new
+ * certificate runs, and the current certificate stays in use.
+ */
+export type CustomerCertificateState = "issuing" | "failed" | "renewing" | "expired" | "valid";
+
+/** The stage of an order with DNS validation. */
+export type CertificateOrderStage = "new" | "dns" | "validating" | "finalizing";
+
+/**
+ * A certificate of a customer: a certificate that the customer uploaded, or a certificate that
+ * the panel gets from Let's Encrypt with DNS validation ("acme"). Each domain of a website of the
+ * customer uses the best certificate that is valid for it.
+ */
+export interface CustomerCertificate {
+  id: string;
+  customerId: string;
+  source: "upload" | "acme";
+  names: string[];
+  state: CustomerCertificateState;
+  issuer?: string;
+  fingerprint?: string;
+  notBefore?: string;
+  expiresAt?: string;
+  /** False when browsers do not trust the certificate, for example a self-signed certificate. */
+  trusted?: boolean;
+  /** Only for "acme": the time of the next renewal. */
+  renewAt?: string;
+  /** The order that runs, with the TXT records of the DNS validation. */
+  order?: { stage: CertificateOrderStage; startedAt?: string; records: { name: string; value: string }[] };
+  /** The error of the last order. */
+  error?: string;
+  /** The time of the next try of a renewal that failed. */
+  nextTryAt?: string;
+  /** The domains that use the certificate now, from the reports of the servers. */
+  usedBy: { domain: string; websiteId?: string; websiteName?: string; serverName: string }[];
+  createdAt: string;
+  /** The certificate chain in PEM format, after the panel read the certificate. */
+  certificatePem?: string;
 }
 
 export interface LastChange {
@@ -390,8 +438,8 @@ export interface DnsRecord {
   ttl: number;
   /** Only an MX or an SRV record has a priority. */
   priority?: number;
-  /** A record that the panel made: a name server of the zone, or the address of a website. */
-  managed?: "ns" | "website";
+  /** A record that the panel made: a name server of the zone, the address of a website, or a TXT record of the DNS validation of a certificate while the order runs. */
+  managed?: "ns" | "website" | "acme";
 }
 
 /** updating: a DNS server does not have the last change yet. failed: a DNS server could not load the zone. */
@@ -1041,6 +1089,8 @@ export interface State {
   mailAliases: MailAlias[];
   /** The DNS zones of the customers that the user can see. */
   dnsZones: DnsZone[];
+  /** The certificates of the customers that the user can see. */
+  certificates: CustomerCertificate[];
   /** The host names of the DNS servers of the panel. Empty: the panel has no DNS server. */
   nameServers: string[];
   /** The accounts at external DNS providers that the user can use. */

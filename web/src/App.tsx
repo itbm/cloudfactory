@@ -9,12 +9,14 @@ import { AlertsPage } from "./pages/AlertsPage";
 import { AppsPage } from "./pages/AppsPage";
 import { BackupsPage } from "./pages/BackupsPage";
 import { BrandPage } from "./pages/BrandPage";
+import { CertificatesPage } from "./pages/CertificatesPage";
 import { CustomersPage } from "./pages/CustomersPage";
 import { DatabasesPage } from "./pages/DatabasesPage";
 import { DnsPage } from "./pages/DnsPage";
 import { EmailPage } from "./pages/EmailPage";
 import { NetworksPage } from "./pages/NetworksPage";
 import { FilesPage } from "./pages/FilesPage";
+import { ImportsPage } from "./pages/ImportsPage";
 import { JobsPage } from "./pages/JobsPage";
 import { LoginPage } from "./pages/LoginPage";
 import { NewWebsitePage } from "./pages/NewWebsitePage";
@@ -91,6 +93,8 @@ export function App() {
             <Route path="customers" element={<CustomersPage />} />
             <Route path="customers/:tab" element={<CustomersPage />} />
             <Route path="plans" element={<PlansPage />} />
+            <Route path="imports" element={<ImportsPage />} />
+            <Route path="imports/:id" element={<ImportsPage />} />
             <Route path="websites" element={<WebsitesPage />} />
             <Route path="websites/new" element={<NewWebsitePage />} />
             <Route path="websites/:id" element={<WebsiteDetailPage />} />
@@ -100,6 +104,8 @@ export function App() {
             <Route path="email" element={<EmailPage />} />
             <Route path="dns" element={<DnsPage />} />
             <Route path="dns/:id" element={<DnsPage />} />
+            <Route path="certificates" element={<CertificatesPage />} />
+            <Route path="certificates/:id" element={<CertificatesPage />} />
             <Route path="networks" element={<NetworksPage />} />
             <Route path="backups" element={<BackupsPage />} />
             <Route path="apps" element={<AppsPage />} />
