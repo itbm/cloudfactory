@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"os"
 	"path"
@@ -691,26 +690,10 @@ func (d *Deps) copyDatabase(ctx context.Context, from dbServer, fromName string,
 		if err != nil {
 			return err
 		}
-		filter := drv.dumpFilter()
-		if filter == nil {
-			return d.Run.Pipe(ctx, dump, client)
-		}
 		// The dump goes through the filter, as a stream. For MariaDB it is withoutDefiners:
 		// the user of the restore cannot make an object for the definer of the source
 		// (finding G3-02).
-		pr, pw := io.Pipe()
-		dumped := make(chan error, 1)
-		go func() {
-			err := d.Run.Stream(ctx, nil, pw, dump[0], dump[1:]...)
-			pw.CloseWithError(err)
-			dumped <- err
-		}()
-		err = d.Run.Stream(ctx, filter(pr), nil, client[0], client[1:]...)
-		pr.CloseWithError(err)
-		if derr := <-dumped; derr != nil && err == nil {
-			err = derr
-		}
-		return err
+		return d.pipeFiltered(ctx, dump, client, drv.dumpFilter())
 	})
 	if err != nil {
 		return fmt.Errorf("copy %s to %s: %w", fromName, toName, err)

@@ -162,6 +162,20 @@ const (
 	AgentServiceReceiveDatabaseServerProcedure = "/cloudfactory.agent.v1.AgentService/ReceiveDatabaseServer"
 	// AgentServiceSetPacksProcedure is the fully-qualified name of the AgentService's SetPacks RPC.
 	AgentServiceSetPacksProcedure = "/cloudfactory.agent.v1.AgentService/SetPacks"
+	// AgentServiceInstallWordPressProcedure is the fully-qualified name of the AgentService's
+	// InstallWordPress RPC.
+	AgentServiceInstallWordPressProcedure = "/cloudfactory.agent.v1.AgentService/InstallWordPress"
+	// AgentServiceCheckWordPressProcedure is the fully-qualified name of the AgentService's
+	// CheckWordPress RPC.
+	AgentServiceCheckWordPressProcedure = "/cloudfactory.agent.v1.AgentService/CheckWordPress"
+	// AgentServiceUpdateWordPressProcedure is the fully-qualified name of the AgentService's
+	// UpdateWordPress RPC.
+	AgentServiceUpdateWordPressProcedure = "/cloudfactory.agent.v1.AgentService/UpdateWordPress"
+	// AgentServiceRestoreWordPressProcedure is the fully-qualified name of the AgentService's
+	// RestoreWordPress RPC.
+	AgentServiceRestoreWordPressProcedure = "/cloudfactory.agent.v1.AgentService/RestoreWordPress"
+	// AgentServiceRunWpCliProcedure is the fully-qualified name of the AgentService's RunWpCli RPC.
+	AgentServiceRunWpCliProcedure = "/cloudfactory.agent.v1.AgentService/RunWpCli"
 	// AgentServiceGetStatusProcedure is the fully-qualified name of the AgentService's GetStatus RPC.
 	AgentServiceGetStatusProcedure = "/cloudfactory.agent.v1.AgentService/GetStatus"
 	// AgentServiceListFilesProcedure is the fully-qualified name of the AgentService's ListFiles RPC.
@@ -231,6 +245,20 @@ type AgentServiceClient interface {
 	// agent checks the signature of each pack, saves the packs, lets Podman pull the images of
 	// each pack only with a signature of its publisher, and loads the runtimes of the packs.
 	SetPacks(context.Context, *connect.Request[v1.SetPacksRequest]) (*connect.Response[v1.JobAccepted], error)
+	// Installs WordPress in the document root of a running PHP website (FR-206). The agent makes
+	// the MariaDB database and its user, downloads WordPress with WP-CLI, writes wp-config.php
+	// and runs the installer. The document root must be empty, or have only the default page.
+	InstallWordPress(context.Context, *connect.Request[v1.InstallWordPressRequest]) (*connect.Response[v1.JobAccepted], error)
+	// Reads the versions of WordPress, of its plugins and of its themes, and the updates that
+	// are available. The result has the inventory.
+	CheckWordPress(context.Context, *connect.Request[v1.CheckWordPressRequest]) (*connect.Response[v1.JobAccepted], error)
+	// Saves a restore point, then updates WordPress, plugins and themes, then does a health
+	// check. When an update or the health check fails, the agent puts back the restore point.
+	UpdateWordPress(context.Context, *connect.Request[v1.UpdateWordPressRequest]) (*connect.Response[v1.JobAccepted], error)
+	// Puts back the restore point of the last update of a WordPress site.
+	RestoreWordPress(context.Context, *connect.Request[v1.RestoreWordPressRequest]) (*connect.Response[v1.JobAccepted], error)
+	// Runs one WP-CLI command in the container of a website, as the website user, with no shell.
+	RunWpCli(context.Context, *connect.Request[v1.RunWpCliRequest]) (*connect.Response[v1.JobAccepted], error)
 	// Returns the actual state of the server at once. This method does not make a job.
 	GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.HostStatus], error)
 	// The file manager and the logs of a website. These methods do not make a job: they give
@@ -520,6 +548,36 @@ func NewAgentServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(agentServiceMethods.ByName("SetPacks")),
 			connect.WithClientOptions(opts...),
 		),
+		installWordPress: connect.NewClient[v1.InstallWordPressRequest, v1.JobAccepted](
+			httpClient,
+			baseURL+AgentServiceInstallWordPressProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("InstallWordPress")),
+			connect.WithClientOptions(opts...),
+		),
+		checkWordPress: connect.NewClient[v1.CheckWordPressRequest, v1.JobAccepted](
+			httpClient,
+			baseURL+AgentServiceCheckWordPressProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("CheckWordPress")),
+			connect.WithClientOptions(opts...),
+		),
+		updateWordPress: connect.NewClient[v1.UpdateWordPressRequest, v1.JobAccepted](
+			httpClient,
+			baseURL+AgentServiceUpdateWordPressProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("UpdateWordPress")),
+			connect.WithClientOptions(opts...),
+		),
+		restoreWordPress: connect.NewClient[v1.RestoreWordPressRequest, v1.JobAccepted](
+			httpClient,
+			baseURL+AgentServiceRestoreWordPressProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("RestoreWordPress")),
+			connect.WithClientOptions(opts...),
+		),
+		runWpCli: connect.NewClient[v1.RunWpCliRequest, v1.JobAccepted](
+			httpClient,
+			baseURL+AgentServiceRunWpCliProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("RunWpCli")),
+			connect.WithClientOptions(opts...),
+		),
 		getStatus: connect.NewClient[v1.GetStatusRequest, v1.HostStatus](
 			httpClient,
 			baseURL+AgentServiceGetStatusProcedure,
@@ -617,6 +675,11 @@ type agentServiceClient struct {
 	sendDatabaseServer    *connect.Client[v1.SendDatabaseServerRequest, v1.JobAccepted]
 	receiveDatabaseServer *connect.Client[v1.ReceiveDatabaseServerRequest, v1.JobAccepted]
 	setPacks              *connect.Client[v1.SetPacksRequest, v1.JobAccepted]
+	installWordPress      *connect.Client[v1.InstallWordPressRequest, v1.JobAccepted]
+	checkWordPress        *connect.Client[v1.CheckWordPressRequest, v1.JobAccepted]
+	updateWordPress       *connect.Client[v1.UpdateWordPressRequest, v1.JobAccepted]
+	restoreWordPress      *connect.Client[v1.RestoreWordPressRequest, v1.JobAccepted]
+	runWpCli              *connect.Client[v1.RunWpCliRequest, v1.JobAccepted]
 	getStatus             *connect.Client[v1.GetStatusRequest, v1.HostStatus]
 	listFiles             *connect.Client[v1.FileRequest, v1.FileList]
 	readFile              *connect.Client[v1.FileRequest, v1.FileContent]
@@ -847,6 +910,31 @@ func (c *agentServiceClient) SetPacks(ctx context.Context, req *connect.Request[
 	return c.setPacks.CallUnary(ctx, req)
 }
 
+// InstallWordPress calls cloudfactory.agent.v1.AgentService.InstallWordPress.
+func (c *agentServiceClient) InstallWordPress(ctx context.Context, req *connect.Request[v1.InstallWordPressRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return c.installWordPress.CallUnary(ctx, req)
+}
+
+// CheckWordPress calls cloudfactory.agent.v1.AgentService.CheckWordPress.
+func (c *agentServiceClient) CheckWordPress(ctx context.Context, req *connect.Request[v1.CheckWordPressRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return c.checkWordPress.CallUnary(ctx, req)
+}
+
+// UpdateWordPress calls cloudfactory.agent.v1.AgentService.UpdateWordPress.
+func (c *agentServiceClient) UpdateWordPress(ctx context.Context, req *connect.Request[v1.UpdateWordPressRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return c.updateWordPress.CallUnary(ctx, req)
+}
+
+// RestoreWordPress calls cloudfactory.agent.v1.AgentService.RestoreWordPress.
+func (c *agentServiceClient) RestoreWordPress(ctx context.Context, req *connect.Request[v1.RestoreWordPressRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return c.restoreWordPress.CallUnary(ctx, req)
+}
+
+// RunWpCli calls cloudfactory.agent.v1.AgentService.RunWpCli.
+func (c *agentServiceClient) RunWpCli(ctx context.Context, req *connect.Request[v1.RunWpCliRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return c.runWpCli.CallUnary(ctx, req)
+}
+
 // GetStatus calls cloudfactory.agent.v1.AgentService.GetStatus.
 func (c *agentServiceClient) GetStatus(ctx context.Context, req *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.HostStatus], error) {
 	return c.getStatus.CallUnary(ctx, req)
@@ -937,6 +1025,20 @@ type AgentServiceHandler interface {
 	// agent checks the signature of each pack, saves the packs, lets Podman pull the images of
 	// each pack only with a signature of its publisher, and loads the runtimes of the packs.
 	SetPacks(context.Context, *connect.Request[v1.SetPacksRequest]) (*connect.Response[v1.JobAccepted], error)
+	// Installs WordPress in the document root of a running PHP website (FR-206). The agent makes
+	// the MariaDB database and its user, downloads WordPress with WP-CLI, writes wp-config.php
+	// and runs the installer. The document root must be empty, or have only the default page.
+	InstallWordPress(context.Context, *connect.Request[v1.InstallWordPressRequest]) (*connect.Response[v1.JobAccepted], error)
+	// Reads the versions of WordPress, of its plugins and of its themes, and the updates that
+	// are available. The result has the inventory.
+	CheckWordPress(context.Context, *connect.Request[v1.CheckWordPressRequest]) (*connect.Response[v1.JobAccepted], error)
+	// Saves a restore point, then updates WordPress, plugins and themes, then does a health
+	// check. When an update or the health check fails, the agent puts back the restore point.
+	UpdateWordPress(context.Context, *connect.Request[v1.UpdateWordPressRequest]) (*connect.Response[v1.JobAccepted], error)
+	// Puts back the restore point of the last update of a WordPress site.
+	RestoreWordPress(context.Context, *connect.Request[v1.RestoreWordPressRequest]) (*connect.Response[v1.JobAccepted], error)
+	// Runs one WP-CLI command in the container of a website, as the website user, with no shell.
+	RunWpCli(context.Context, *connect.Request[v1.RunWpCliRequest]) (*connect.Response[v1.JobAccepted], error)
 	// Returns the actual state of the server at once. This method does not make a job.
 	GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.HostStatus], error)
 	// The file manager and the logs of a website. These methods do not make a job: they give
@@ -1222,6 +1324,36 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(agentServiceMethods.ByName("SetPacks")),
 		connect.WithHandlerOptions(opts...),
 	)
+	agentServiceInstallWordPressHandler := connect.NewUnaryHandler(
+		AgentServiceInstallWordPressProcedure,
+		svc.InstallWordPress,
+		connect.WithSchema(agentServiceMethods.ByName("InstallWordPress")),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentServiceCheckWordPressHandler := connect.NewUnaryHandler(
+		AgentServiceCheckWordPressProcedure,
+		svc.CheckWordPress,
+		connect.WithSchema(agentServiceMethods.ByName("CheckWordPress")),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentServiceUpdateWordPressHandler := connect.NewUnaryHandler(
+		AgentServiceUpdateWordPressProcedure,
+		svc.UpdateWordPress,
+		connect.WithSchema(agentServiceMethods.ByName("UpdateWordPress")),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentServiceRestoreWordPressHandler := connect.NewUnaryHandler(
+		AgentServiceRestoreWordPressProcedure,
+		svc.RestoreWordPress,
+		connect.WithSchema(agentServiceMethods.ByName("RestoreWordPress")),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentServiceRunWpCliHandler := connect.NewUnaryHandler(
+		AgentServiceRunWpCliProcedure,
+		svc.RunWpCli,
+		connect.WithSchema(agentServiceMethods.ByName("RunWpCli")),
+		connect.WithHandlerOptions(opts...),
+	)
 	agentServiceGetStatusHandler := connect.NewUnaryHandler(
 		AgentServiceGetStatusProcedure,
 		svc.GetStatus,
@@ -1360,6 +1492,16 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 			agentServiceReceiveDatabaseServerHandler.ServeHTTP(w, r)
 		case AgentServiceSetPacksProcedure:
 			agentServiceSetPacksHandler.ServeHTTP(w, r)
+		case AgentServiceInstallWordPressProcedure:
+			agentServiceInstallWordPressHandler.ServeHTTP(w, r)
+		case AgentServiceCheckWordPressProcedure:
+			agentServiceCheckWordPressHandler.ServeHTTP(w, r)
+		case AgentServiceUpdateWordPressProcedure:
+			agentServiceUpdateWordPressHandler.ServeHTTP(w, r)
+		case AgentServiceRestoreWordPressProcedure:
+			agentServiceRestoreWordPressHandler.ServeHTTP(w, r)
+		case AgentServiceRunWpCliProcedure:
+			agentServiceRunWpCliHandler.ServeHTTP(w, r)
 		case AgentServiceGetStatusProcedure:
 			agentServiceGetStatusHandler.ServeHTTP(w, r)
 		case AgentServiceListFilesProcedure:
@@ -1559,6 +1701,26 @@ func (UnimplementedAgentServiceHandler) ReceiveDatabaseServer(context.Context, *
 
 func (UnimplementedAgentServiceHandler) SetPacks(context.Context, *connect.Request[v1.SetPacksRequest]) (*connect.Response[v1.JobAccepted], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.SetPacks is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) InstallWordPress(context.Context, *connect.Request[v1.InstallWordPressRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.InstallWordPress is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) CheckWordPress(context.Context, *connect.Request[v1.CheckWordPressRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.CheckWordPress is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) UpdateWordPress(context.Context, *connect.Request[v1.UpdateWordPressRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.UpdateWordPress is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) RestoreWordPress(context.Context, *connect.Request[v1.RestoreWordPressRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.RestoreWordPress is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) RunWpCli(context.Context, *connect.Request[v1.RunWpCliRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.RunWpCli is not implemented"))
 }
 
 func (UnimplementedAgentServiceHandler) GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.HostStatus], error) {

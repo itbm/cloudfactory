@@ -62,6 +62,20 @@ service AgentService {
   // agent checks the signature of each pack, saves the packs, lets Podman pull the images of
   // each pack only with a signature of its publisher, and loads the runtimes of the packs.
   rpc SetPacks(SetPacksRequest) returns (JobAccepted);
+  // Installs WordPress in the document root of a running PHP website (FR-206). The agent makes
+  // the MariaDB database and its user, downloads WordPress with WP-CLI, writes wp-config.php
+  // and runs the installer. The document root must be empty, or have only the default page.
+  rpc InstallWordPress(InstallWordPressRequest) returns (JobAccepted);
+  // Reads the versions of WordPress, of its plugins and of its themes, and the updates that
+  // are available. The result has the inventory.
+  rpc CheckWordPress(CheckWordPressRequest) returns (JobAccepted);
+  // Saves a restore point, then updates WordPress, plugins and themes, then does a health
+  // check. When an update or the health check fails, the agent puts back the restore point.
+  rpc UpdateWordPress(UpdateWordPressRequest) returns (JobAccepted);
+  // Puts back the restore point of the last update of a WordPress site.
+  rpc RestoreWordPress(RestoreWordPressRequest) returns (JobAccepted);
+  // Runs one WP-CLI command in the container of a website, as the website user, with no shell.
+  rpc RunWpCli(RunWpCliRequest) returns (JobAccepted);
 
   // Returns the actual state of the server at once. This method does not make a job.
   rpc GetStatus(GetStatusRequest) returns (HostStatus);
@@ -912,4 +926,60 @@ message LogLine {
 
 message Logs {
   repeated LogLine lines = 1;
+}
+
+// InstallWordPress. The database and its user are new. The names start with the Unix user of
+// the website (CF-01).
+message InstallWordPressRequest {
+  string job_id = 1;
+  string website_id = 2;
+  // A MariaDB database server of the customer, on this server. The agent makes it when it
+  // does not have it.
+  DatabaseServer database_server = 3;
+  string database_name = 4;
+  string database_user = 5;
+  string database_password = 6;
+  // The title of the site.
+  string title = 7;
+  // The first administrator.
+  string admin_user = 8;
+  string admin_email = 9;
+  string admin_password = 10;
+  // A WordPress locale, for example "en_GB".
+  string locale = 11;
+}
+
+message CheckWordPressRequest {
+  string job_id = 1;
+  string website_id = 2;
+}
+
+// UpdateWordPress. Each list has the names of the plugins or themes to update.
+message UpdateWordPressRequest {
+  string job_id = 1;
+  string website_id = 2;
+  // "": no update of WordPress. "minor": the latest version with the same major version, for
+  // example 6.8.1 to 6.8.3. "latest": the latest version.
+  string core = 3;
+  repeated string plugins = 4;
+  repeated string themes = 5;
+  // The database of the site, for the restore point. With no database, the restore point has
+  // only the files.
+  DatabaseRef database = 6;
+  HealthCheck health_check = 7;
+}
+
+message RestoreWordPressRequest {
+  string job_id = 1;
+  string website_id = 2;
+  // The database of the site. The agent loads the dump of the restore point into it.
+  DatabaseRef database = 3;
+}
+
+// RunWpCli. The arguments come after "wp", for example ["plugin", "list"]. The agent adds
+// --path with the document root of the website.
+message RunWpCliRequest {
+  string job_id = 1;
+  string website_id = 2;
+  repeated string args = 3;
 }

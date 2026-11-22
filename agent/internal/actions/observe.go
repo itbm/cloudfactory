@@ -187,6 +187,8 @@ func (d *Deps) FillReport(ctx context.Context, r *panel.Report) {
 		r.Runtimes = append(r.Runtimes, rt.Name)
 	}
 	r.Packs = d.PackStates()
+	// The agent runs WP-CLI for the WordPress sites (FR-206).
+	r.Features = append(r.Features, "wordpress")
 	if d.ValkeyBackups {
 		r.Features = append(r.Features, "valkey-backups")
 	}

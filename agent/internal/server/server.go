@@ -199,6 +199,26 @@ func (s *Service) SetPacks(_ context.Context, r *connect.Request[agentv1.SetPack
 	return s.submit(s.Deps.SetPacks(r.Msg))
 }
 
+func (s *Service) InstallWordPress(_ context.Context, r *connect.Request[agentv1.InstallWordPressRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.InstallWordPress(r.Msg))
+}
+
+func (s *Service) CheckWordPress(_ context.Context, r *connect.Request[agentv1.CheckWordPressRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.CheckWordPress(r.Msg))
+}
+
+func (s *Service) UpdateWordPress(_ context.Context, r *connect.Request[agentv1.UpdateWordPressRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.UpdateWordPress(r.Msg))
+}
+
+func (s *Service) RestoreWordPress(_ context.Context, r *connect.Request[agentv1.RestoreWordPressRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.RestoreWordPress(r.Msg))
+}
+
+func (s *Service) RunWpCli(_ context.Context, r *connect.Request[agentv1.RunWpCliRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.RunWpCli(r.Msg))
+}
+
 func (s *Service) SetCronJobs(_ context.Context, r *connect.Request[agentv1.SetCronJobsRequest]) (*connect.Response[agentv1.JobAccepted], error) {
 	return s.submit(s.Deps.SetCronJobs(r.Msg))
 }
