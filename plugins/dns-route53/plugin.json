@@ -1,0 +1,35 @@
+{
+  "schema": 1,
+  "slug": "dns-route53",
+  "name": "Amazon Route 53",
+  "version": "1.0.0",
+  "publisher": "Cloudfactory",
+  "description": "Sends DNS zones to public hosted zones in Amazon Route 53. The panel keeps the records, and the plugin makes the hosted zone the same after each change.",
+  "scopes": [],
+  "dnsProviders": [
+    {
+      "id": "route53",
+      "name": "Amazon Route 53",
+      "path": "/dns/route53",
+      "dnssec": true,
+      "credentials": [
+        {
+          "id": "accessKeyId",
+          "label": "Access key ID",
+          "hint": "The access key of an IAM user with the Route 53 permissions in the README of the plugin."
+        },
+        {
+          "id": "secretAccessKey",
+          "label": "Secret access key",
+          "secret": true
+        },
+        {
+          "id": "kmsKeyArn",
+          "label": "KMS key ARN for DNSSEC",
+          "optional": true,
+          "hint": "Only for DNSSEC: an asymmetric KMS key in us-east-1 with the key spec ECC_NIST_P256 and the key usage Sign and verify."
+        }
+      ]
+    }
+  ]
+}

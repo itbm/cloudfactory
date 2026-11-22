@@ -724,6 +724,16 @@ server that starts with no data gets all zones.
   public addresses that the agent of the server of the website reported. A user can change
   such a record. Then the record belongs to the user, and the panel does not change it again.
 
+### Zone files
+
+The panel reads and writes zone files in the format of RFC 1035 (`App\Services\Dns\ZoneFile`).
+The parser reads only data: it does not follow `$INCLUDE` and it does not run `$GENERATE`. It
+gives each record in the form that the panel keeps, with the shared input rules, and does not
+read the database. Thus an import from a different hosting panel can show a preview before the
+zone exists. An import into a zone (`POST /v1/dns-zones/{id}/import`) checks each record with
+the rules of a new record, in one transaction with a lock on the zone. A preview does the same
+checks in a transaction that the panel rolls back.
+
 ### The name servers of the domain
 
 A zone has an effect only when the registrar of the domain has the name servers of the
@@ -731,6 +741,48 @@ panel. The panel asks the public DNS for the NS records of the domain and shows 
 states: the domain uses the name servers of the panel, it uses other name servers, it has no
 name servers, or the panel could not check. When the domain uses the name servers of the
 panel, the panel verifies the domains of the websites in the zone with no TXT record.
+
+### External DNS providers
+
+A zone can be at an external DNS provider, for example Cloudflare, and not on the DNS servers
+of the panel. A plugin gives each provider (`dnsProviders` in the manifest, contract
+`cf-dns-provider/1`, refer to [plugins.md](plugins.md#dns-providers)). The panel stays the
+source of the records:
+
+```text
+ web panel or cf ──► API ──► records in the panel database
+                              │ after each change: serial + 1
+                              ▼
+                     queue worker (SyncDnsZone) ──► signed POST "sync" ──► plugin ──► provider API
+                              ▲                                              │
+                              └──────── name servers, DNSSEC, changes ◄──────┘
+```
+
+- A DNS account (`dns_accounts`) has the plugin, the provider and the credentials. The panel
+  keeps the credentials encrypted. An account belongs to a customer, or to the panel. Each
+  customer can make zones with an account of the panel.
+- A zone at a provider (`dns_zones.dns_account_id`) gets no job of an agent. After each
+  change, a queue worker sends the full zone to the plugin with `sync`. The job has one try at
+  a time for each zone, and a later serial replaces an earlier one. The panel keeps the state
+  of the last `sync` (`provider_state`): the serial, the name servers, the DNSSEC state and
+  the error.
+- The NS records of a zone at a provider are the name servers that the provider gives. The
+  panel does not send them to the provider.
+- The panel sends a TXT record `_cloudfactory-challenge` with the claim token of the customer
+  for the zone. The domain counts as delegated to the zone ("here") only when the public DNS
+  gives the name servers of the provider and the token. The name servers of a provider serve
+  many accounts, and the plugin gives the name servers from data of the customer. Without the
+  token, a customer could claim the domain of a different customer at the same provider, and
+  the panel would verify the domains of the websites in the zone with no TXT record.
+- The panel reads each answer of the plugin only as data. It keeps only valid host names and
+  DS records, and shows up to 300 characters of an error. The address of the plugin and the
+  error of the connection go only to the log.
+- When `sync` fails, the job tries again after 1 minute, 5 minutes, 30 minutes and 2 hours.
+  The hourly command `cloudfactory:check-dns` then sends each zone that the provider does not
+  have with the last serial.
+- When a zone moves from the DNS servers of the panel to a provider, it stays on the DNS
+  servers (`handover`) until two days after the public DNS stops showing the name servers of
+  the panel. The panel does not remove a zone from the DNS servers during the handover.
 
 ### DNSSEC
 
@@ -743,6 +795,9 @@ The panel shows the DS record that the customer gives to the registrar.
 
 The panel does not change the key of a zone on a schedule. To change the key, remove the DS
 record at the registrar, turn DNSSEC off and on, and give the new DS record to the registrar.
+
+For a zone at an external DNS provider, the provider makes the key and signs the zone. The
+plugin gives the DS record in the answer to `sync`.
 
 ## Files, logs, cron jobs and deploys of a website
 
