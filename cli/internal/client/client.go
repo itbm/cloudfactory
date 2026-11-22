@@ -99,14 +99,23 @@ func (e *Error) Error() string {
 
 // Do sends a request. out can be nil.
 func (c *Client) Do(ctx context.Context, method, path string, query url.Values, body, out any) error {
-	var r io.Reader
-	if body != nil {
-		b, err := json.Marshal(body)
-		if err != nil {
-			return err
-		}
-		r = bytes.NewReader(b)
+	if body == nil {
+		return c.send(ctx, method, path, query, nil, "", out)
 	}
+	b, err := json.Marshal(body)
+	if err != nil {
+		return err
+	}
+	return c.send(ctx, method, path, query, bytes.NewReader(b), "application/json", out)
+}
+
+// SendBytes sends bytes, for example a part of the archive of an import
+// (application/octet-stream). out can be nil.
+func (c *Client) SendBytes(ctx context.Context, method, path string, query url.Values, body []byte, out any) error {
+	return c.send(ctx, method, path, query, bytes.NewReader(body), "application/octet-stream", out)
+}
+
+func (c *Client) send(ctx context.Context, method, path string, query url.Values, r io.Reader, contentType string, out any) error {
 	u := c.BaseURL + "/api/v1" + path
 	if len(query) > 0 {
 		u += "?" + query.Encode()
@@ -116,8 +125,8 @@ func (c *Client) Do(ctx context.Context, method, path string, query url.Values, 
 		return err
 	}
 	req.Header.Set("Accept", "application/json")
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
 	}
 	if c.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.Token)

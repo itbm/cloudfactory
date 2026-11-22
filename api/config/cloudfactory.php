@@ -61,6 +61,16 @@ return [
     // certificate order, and Let's Encrypt limits the orders of a server.
     'domains_per_website' => (int) env('CF_DOMAINS_PER_WEBSITE', 50),
 
+    // The certificates of the customers (docs/certificates.md): the maximum number for each
+    // customer, and the ACME CA of the certificates with DNS validation. The panel makes an
+    // ACME account for each directory. CF_ACME_EMAIL is optional: the CA can send notices
+    // about the account to this address.
+    'certificates_per_customer' => (int) env('CF_CERTIFICATES_PER_CUSTOMER', 20),
+    'acme' => [
+        'directory' => env('CF_ACME_DIRECTORY', 'https://acme-v02.api.letsencrypt.org/directory'),
+        'email' => env('CF_ACME_EMAIL'),
+    ],
+
     // FR-902: the default retention policy.
     'backups' => [
         'daily' => 7,
@@ -68,6 +78,13 @@ return [
         'monthly' => 6,
         'time' => '03:00',
         'target' => env('CF_BACKUP_TARGET', ''),
+    ],
+
+    // The import of an account from a different panel (docs/imports.md): the largest archive,
+    // and the free disk space that an upload to the panel must leave.
+    'imports' => [
+        'max_bytes' => (int) env('CF_IMPORT_MAX_BYTES', 50 * 1024 ** 3),
+        'reserve_bytes' => (int) env('CF_IMPORT_RESERVE_BYTES', 2 * 1024 ** 3),
     ],
 
     // Audit finding R8: the number of manual backups that the panel keeps for each website.

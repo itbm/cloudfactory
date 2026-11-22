@@ -23,6 +23,12 @@ class DnsRecord extends Model
     /** The panel made the record for a domain of a website. */
     public const WEBSITE = 'website';
 
+    /**
+     * The panel made the record for the DNS validation of a certificate order. The panel
+     * removes it after the order. A user cannot change it.
+     */
+    public const ACME = 'acme';
+
     protected function casts(): array
     {
         return ['ttl' => 'integer', 'priority' => 'integer'];

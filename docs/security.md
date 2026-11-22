@@ -187,7 +187,9 @@ The product specification, section 6.4, gives the requirements.
   proxy. The user `cf-edge` owns that storage, so the root helper reads the files with no
   symbolic links, and accepts only a certificate for the host name with its own key.
 - The panel sends the bcrypt hash of a mailbox password to the agent. The panel does not keep
-  the password, and the job record has no hash after the job.
+  the password, and the job record has no hash after the job. An import from a different
+  panel keeps the hash of the old server (SHA-512-crypt, SHA-256-crypt or MD5-crypt), so that
+  the mailbox keeps its password. The mail server can check these hashes.
 - A customer adds a domain that a different customer could own only after a DNS TXT record
   shows that the customer controls the domain, as for a website domain.
 - The mail server opens connections only to the DNS and to port 25 of public addresses. It
@@ -268,6 +270,22 @@ The product specification, section 6.4, gives the requirements.
   certificate order. A customer can add 30 domains in one hour and start 10 domain checks in
   one minute. An administrator has no such limit.
 
+## Certificates of the customers
+
+- The panel keeps the private key of each certificate encrypted with the application key. The
+  API never gives a private key, also not to an administrator. Refer to
+  [certificates.md](certificates.md#security).
+- The agent gets the private keys only in the `SetCertificates` job. `AgentClient` adds them
+  when it sends the job, so the job record has no keys.
+- The panel refuses a certificate that is valid for a host name of the panel, of a server, of
+  a plugin, of Adminer or of a mail server, or for the panel domain of a reseller.
+- The panel does not send a certificate to a server when it is valid for a domain on that
+  server that does not use a certificate from the panel. Thus the edge proxy cannot send the
+  certificate of one customer for the domain of a different customer.
+- A customer can have 20 certificates (`CF_CERTIFICATES_PER_CUSTOMER`), and can make 20
+  uploads, replacements, orders and renewals in one hour. The DNS validation adds TXT records
+  only in the zones of the customer.
+
 ## DNS zones
 
 - A zone belongs to one customer. A user can see and change only the zones of the customers
@@ -319,6 +337,30 @@ The product specification, section 6.4, gives the requirements.
   `POWERDNS_ALLOW`. It checks each address of the host name, connects to the address that it
   checked, does not follow redirects, and needs HTTPS. Do the same in a plugin that connects to
   an address from a user.
+
+## Account imports
+
+An administrator can import the backup of an account from cPanel, DirectAdmin, Plesk or
+HestiaCP ([imports.md](imports.md)). The backup can come from the customer, so the agent does
+not trust it:
+
+- Only an administrator can import an account. The import makes each record with the API, as
+  that administrator, so each record has the checks and the plan limits of the API.
+- The worker of the agent downloads and reads the archive as a stream. It never extracts the
+  archive, and root never opens it. The worker refuses each name that goes out of the archive.
+- The worker reads the XML files of a Plesk backup with the Go decoder, which does not read
+  external entities. A file has 4 MiB, 64 levels and 500,000 elements at most.
+- A Plesk backup can have a mailbox password as text. The agent makes a SHA-512-crypt hash of
+  it, and only the hash goes to the panel.
+- The Unix user of the website extracts the files of the website. The database client in the
+  container of the database server loads a dump, as a temporary user for the one database.
+- A download from a URL connects only to public addresses, also after a redirect, and uses no
+  proxy. Thus a URL cannot reach a service of the server or of a private network.
+- Each server that downloads an upload from the panel uses the agent API with its client
+  certificate. The panel gives the archive only to a server that has a download job of the
+  import. Each server checks the SHA-256 hash of the archive.
+- The panel and each server delete the archive when the import ends. The panel keeps the
+  description of the account encrypted, because it has the mailbox password hashes.
 
 ## The edge proxy
 
@@ -537,11 +579,33 @@ directory with mode 0700:
   password is correct. This is the same as for most services. The sign-in limits protect the
   password: a wrong password and a wrong code are failed attempts. A suspended account with no
   TOTP gets the same answer for a correct and an incorrect password.
-- The panel sends no email. An administrator or a reseller makes a user, and the panel shows a
-  temporary password of 20 characters one time. The first administrator from the installation
-  script has a temporary password also. With a temporary password, the API accepts only the
-  password change, the account data and the sign-out. The web panel shows only the form
-  **Set a new password**.
+- An administrator or a reseller makes a user, and the panel shows a temporary password of
+  20 characters one time. The first administrator from the installation script has a temporary
+  password also. With a temporary password, the API accepts only the password change, the
+  account data and the sign-out. The web panel shows only the form **Set a new password**.
+- A user who does not know the password can ask for an email with a link (**Forgot your
+  password?** on the sign-in page). The sign-in page shows the link only when an SMTP server
+  can send the email. Obey these rules:
+  - The answer is the same for each email, also for an email with no user. The panel checks a
+    password hash also for an unknown email, so the response time does not show which accounts
+    exist.
+  - The link goes to the panel domain of the brand of the user, not to the domain of the
+    request. A request with a different `Host` header cannot send the link to a different site.
+  - The code of the link is after `#`. The browser does not send it to a server, so no access
+    log has it. The panel keeps only a bcrypt hash of the code.
+  - A link works one time only, for 60 minutes. A new link stops the earlier link. The panel
+    sends one link in each minute for one user, and accepts 5 requests in each minute from one
+    address.
+  - The panel keeps a copy of each email in **Sent emails**, and an administrator or the
+    reseller of the user can read it. The copy has a placeholder in the place of the link. The
+    queue has the link encrypted with `APP_KEY`. Thus nobody can send the email again: the
+    user asks for a new link.
+  - A new password signs out all sessions of the user, deletes the API tokens of the user, and
+    removes the sign-in lock for the network of the request. It does not turn off TOTP: the user
+    still needs a code to sign in. A user who lost the authenticator app asks an administrator
+    or the reseller.
+  - The template of the email must have the link (`{{resetUrl}}`) in the text, and not in the
+    subject. A user cannot turn off this email.
 - An administrator or a reseller with no TOTP can sign in, but the API then accepts only the
   account data, the password change, the TOTP setup and the sign-out (the answer has the code
   `totp_setup_required`). The web panel shows only the page **Set up an authenticator app**.

@@ -54,6 +54,13 @@ enum AgentAction: string
     case SendWebsite = 'SendWebsite';
     case ReceiveWebsite = 'ReceiveWebsite';
     case SetPacks = 'SetPacks';
+    case SetCertificates = 'SetCertificates';
+    // The import of an account from a different panel (docs/imports.md).
+    case FetchImport = 'FetchImport';
+    case ImportFiles = 'ImportFiles';
+    case ImportDatabase = 'ImportDatabase';
+    case ImportMail = 'ImportMail';
+    case DeleteImport = 'DeleteImport';
 
     /** The steps that the agent reports for this action. */
     public function steps(): array
@@ -109,6 +116,13 @@ enum AgentAction: string
             self::SendWebsite => ['Stop website', 'Send files'],
             self::ReceiveWebsite => ['Create Unix user', 'Receive files', 'Pull and check image signature', 'Start container in gVisor', 'Configure edge proxy', 'Set SFTP access and cron jobs', 'Get TLS certificate'],
             self::SetPacks => ['Check the packs', 'Save the packs and the image policy', 'Load the runtimes'],
+            self::SetCertificates => ['Load certificates', 'Check certificates'],
+            // A download for a server that only copies a part has no second step.
+            self::FetchImport => ['Download archive', 'Read archive'],
+            self::ImportFiles => ['Check archive', 'Copy files'],
+            self::ImportDatabase => ['Check archive', 'Load dump'],
+            self::ImportMail => ['Check archive', 'Copy messages'],
+            self::DeleteImport => ['Remove archive'],
         };
     }
 

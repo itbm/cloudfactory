@@ -2,8 +2,10 @@
 
 namespace App\Http\Resources;
 
+use App\Models\Certificate;
 use App\Models\Domain;
 use App\Models\Website;
+use App\Services\Certificates\Certificates;
 use App\Services\Networks;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -63,7 +65,11 @@ class WebsiteResource extends JsonResource
             'usage' => $this->usage,
             // The traffic of the website in the current calendar month, in bytes in and out.
             'bandwidthBytes' => $this->bandwidth_month === now()->utc()->format('Y-m') ? (int) $this->bandwidth_bytes : 0,
-            'domains' => $this->whenLoaded('domains', fn () => $this->domains->map(fn (Domain $d) => self::domain($d))),
+            'domains' => $this->whenLoaded('domains', function () {
+                $certificates = Certificates::ofWebsite($this->resource);
+
+                return $this->domains->map(fn (Domain $d) => self::domain($d, $certificates));
+            }),
             // Spec section 10: the owner signs in as the Unix user of the website, with an SSH key, to
             // the SFTP container of the server.
             'sftp' => [
@@ -90,16 +96,30 @@ class WebsiteResource extends JsonResource
         return $host && ! str_starts_with($host, '169.254.') && $host !== '127.0.0.1' ? $host : config('cloudfactory.panel_domain');
     }
 
-    /** CF-03: a domain that is not verified shows the TXT record that the customer must add. */
-    public static function domain(Domain $d): array
+    /**
+     * CF-03: a domain that is not verified shows the TXT record that the customer must add. The
+     * certificate of the domain is from the edge proxy ("automatic") or from the panel ("upload"
+     * or "acme", docs/certificates.md).
+     *
+     * @param  array<string, Certificate>|null  $certificates  the certificates of the website (Certificates::ofWebsite)
+     */
+    public static function domain(Domain $d, ?array $certificates = null): array
     {
+        $certificates ??= $d->website ? Certificates::ofWebsite($d->website) : [];
+        $panel = $certificates[$d->name] ?? null;
+
         return [
             'name' => $d->name,
             'kind' => $d->kind->value,
             'verified' => $d->verified(),
             'verification' => $d->verified() ? null : ['type' => 'TXT', 'name' => $d->verificationRecord(), 'value' => $d->verification_token],
             'dnsPointsHere' => $d->dns_points_here,
-            'certificate' => ['state' => $d->certificate_state, 'expiresAt' => $d->certificate_expires_at?->toIso8601String()],
+            'certificate' => [
+                'state' => $d->certificate_state,
+                'expiresAt' => $d->certificate_expires_at?->toIso8601String(),
+                'source' => $panel?->source ?? 'automatic',
+                'certificateId' => $panel?->id,
+            ],
         ];
     }
 }

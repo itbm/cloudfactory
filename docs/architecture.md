@@ -1471,8 +1471,10 @@ server:
 5. The new server pulls and checks the image, starts the website in gVisor, makes the route
    of the edge proxy, sets the SFTP keys and the cron jobs, and gets the TLS certificate.
 6. The panel records the new server. The DNS zones of the panel get the addresses of the new
-   server. A zone with a DNS account also goes to its provider. The old server removes its
-   copy with `DeleteWebsite` and `moved`: that job does not remove the databases.
+   server. A zone with a DNS account also goes to its provider. The new server gets the
+   certificates from the panel for the domains of the website (`SetCertificates`). The old
+   server removes its copy with `DeleteWebsite` and `moved`: that job does not remove the
+   databases.
 
 When the move fails, the website stays on the old server. If the old server could not send
 the files, it starts the website again at once. In the other cases, the panel starts it
@@ -1490,6 +1492,8 @@ the two servers at the same time.
 - While the website moves, the panel refuses each change of the website with HTTP status
   409. A suspension, a rollout and the nightly backup wait for the end of the move. A change
   of the plan goes to the new server at the end of the move.
+- The panel does not start a move while a job of the website or of its staging copy is not
+  complete, or while an import of the customer runs on the old server.
 - The backups of the files from before the move are in the repository of the old server. The
   panel can restore only a database from them. The weekly job of the old server removes them
   after the time for the backups of a deleted website (`forget_moved_website_ids` of

@@ -17,6 +17,7 @@ use App\Models\Database;
 use App\Models\DatabaseServer;
 use App\Models\DatabaseTool;
 use App\Models\Image;
+use App\Models\Import;
 use App\Models\Plan;
 use App\Models\Plugin;
 use App\Models\Server;
@@ -103,6 +104,9 @@ class WebsiteController extends Controller
             'planId' => ['nullable', 'exists:plans,id'],
             'serverId' => ['nullable', 'exists:servers,id'],
             'customerId' => ['nullable', 'exists:customers,id'],
+            // The directory in /app that the web server serves, for example "web". "." is /app
+            // itself, for the files of a different panel (docs/imports.md).
+            'documentRoot' => ['sometimes', 'string', Input::rule('documentRoot')],
         ]);
         $user = $request->user();
         $customerId = $data['customerId'] ?? $user->customer_id;
@@ -179,6 +183,7 @@ class WebsiteController extends Controller
                 'install_command' => $defaults && $install !== '' ? $install : null,
                 // A Node.js or Python website runs from its application directory: /app.
                 ...($defaults ? ['document_root' => '.'] : []),
+                ...(isset($data['documentRoot']) && ! $defaults ? ['document_root' => $data['documentRoot']] : []),
                 'application' => $data['application'] ?? '',
                 'customer_id' => $customer->id,
                 'server_id' => $server->id,
@@ -395,6 +400,10 @@ class WebsiteController extends Controller
         $copies = Website::where('staging_of', $website->id)->select('id');
         if (AgentJob::where(fn ($q) => $q->where('website_id', $website->id)->orWhereIn('website_id', $copies))->whereIn('state', [JobState::Queued->value, JobState::Running->value])->exists()) {
             throw ValidationException::withMessages(['website' => 'A change of this website is in progress. Wait until it is complete.']);
+        }
+        // An import sends the next parts of its websites to the server of the import.
+        if (Import::where(['customer_id' => $website->customer_id, 'server_id' => $website->server_id])->whereIn('status', [Import::STARTING, Import::RUNNING])->exists()) {
+            throw ValidationException::withMessages(['website' => 'An import of this customer is in progress on this server. Wait until it is complete.']);
         }
 
         // The secret of this move. Only the two agents get it.

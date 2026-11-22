@@ -8,16 +8,19 @@ use App\Enums\Role;
 use App\Enums\WebsiteStatus;
 use App\Models\AgentJob;
 use App\Models\BackupRemoval;
+use App\Models\Certificate;
 use App\Models\CronJob;
 use App\Models\Database;
 use App\Models\DatabaseServer;
 use App\Models\DnsRecord;
 use App\Models\DnsZone;
+use App\Models\Import;
 use App\Models\MeshTunnel;
 use App\Models\NetworkMember;
 use App\Models\Server;
 use App\Models\Snapshot;
 use App\Models\Website;
+use App\Services\Certificates\Certificates;
 use App\Services\JobOutcome;
 use App\Services\Mesh;
 use App\Services\Networks;
@@ -206,6 +209,24 @@ class WebsiteMoveTest extends TestCase
         $this->assertSame(0, AgentJob::where('action', AgentAction::SetRuntime->value)->count());
     }
 
+    public function test_the_new_server_gets_the_uploaded_certificate_of_the_website(): void
+    {
+        [$old, $new, $website] = $this->setUpMove();
+        $certificate = Certificate::create([
+            'customer_id' => $website->customer_id, 'source' => Certificate::UPLOAD, 'names' => ['shop.example'],
+            'certificate' => "-----BEGIN CERTIFICATE-----\nshop.example\n-----END CERTIFICATE-----\n", 'private_key' => 'key',
+            'fingerprint' => hash('sha256', 'shop.example'), 'issuer' => 'Test', 'not_before' => now()->subDay(), 'expires_at' => now()->addDays(60), 'trusted' => true,
+        ]);
+        $this->assertSame([], app(Certificates::class)->forServer($new));
+        $this->postJson("/api/v1/websites/{$website->id}/move", ['serverId' => $new->id])->assertAccepted();
+        app(JobOutcome::class)->finish(self::job(AgentAction::ReceiveWebsite), JobState::Succeeded, null, []);
+
+        $sync = self::job(AgentAction::SetCertificates);
+        $this->assertSame($new->id, $sync->server_id);
+        $this->assertSame([$certificate->id], array_map(fn (array $e) => $e['certificate']->id, app(Certificates::class)->forServer($new)));
+        $this->assertSame([], app(Certificates::class)->forServer($old));
+    }
+
     public function test_a_move_needs_a_network_to_the_database_servers_on_other_servers(): void
     {
         [, $new, $website] = $this->setUpMove();
@@ -247,6 +268,11 @@ class WebsiteMoveTest extends TestCase
         $this->postJson("/api/v1/websites/{$website->id}/move", ['serverId' => $new->id])
             ->assertJsonValidationErrors(['website' => 'A change of this website is in progress. Wait until it is complete.']);
         $making->update(['state' => JobState::Failed]);
+        // An import sends the next parts of its websites to the server of the import.
+        $import = Import::create(['customer_id' => $website->customer_id, 'server_id' => $old->id, 'source' => Import::UPLOAD, 'file_name' => 'a.tar.gz', 'status' => Import::RUNNING]);
+        $this->postJson("/api/v1/websites/{$website->id}/move", ['serverId' => $new->id])
+            ->assertJsonValidationErrors(['website' => 'An import of this customer is in progress on this server. Wait until it is complete.']);
+        $import->update(['status' => Import::DONE]);
         $website->update(['status' => WebsiteStatus::Stopping]);
         $this->postJson("/api/v1/websites/{$website->id}/move", ['serverId' => $new->id])->assertJsonValidationErrors('website');
         $website->update(['status' => WebsiteStatus::Running]);
