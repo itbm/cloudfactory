@@ -719,6 +719,54 @@ If the move fails, the database server stays on the old server and operates ther
 server removes what it received. Look at the jobs of the two servers on **Jobs** for the
 cause, correct it, and move the database server again.
 
+#### Move a website to a different server
+
+An administrator can move a website to a different server, for example to make space on a
+server or before you remove a server. The website keeps its domains, its databases, its SFTP
+keys, its cron jobs and its network name.
+
+Before you move a website:
+
+1. Make sure that the two servers are healthy, and that their agents are of this release or
+   later. The panel refuses the move when an agent cannot move websites.
+2. Make sure that each database server of the website is on the new server, or in a network
+   with the website. The panel refuses the move when it is not.
+3. Make sure that the app connects to a database server on a different server with the
+   network name and the usual port of the engine, for example `shop-db.internal:3306`. An
+   app that uses the engine name, for example `mariadb.internal`, loses the connection after
+   the move.
+4. For a domain in a different DNS service, set a short TTL on its address records some
+   hours before the move. The panel changes the records in its own DNS zones.
+5. Select a time with little traffic. The website does not operate while its files move. The
+   time depends on the size of the files: about one minute for each 5 GB on a 1 Gbit/s
+   connection between the servers.
+
+To move a website:
+
+1. Open the website. Open the menu of the website and select **Move to a different
+   server**.
+2. Select the new server, and select **Move website**.
+3. The status is **Moving** until the new server operates the website. Then the status is
+   **Running**, or **Stopped** for a website that was stopped before the move.
+4. For a domain in a different DNS service, change the A and AAAA records to the addresses
+   of the new server.
+
+With the CLI:
+
+```sh
+cf websites move shop.example.com --server web-2
+```
+
+The SFTP host of the website is now the host of the new server. Tell the owner of the
+website.
+
+The backups from before the move stay on the old server for the time of the backups of a
+deleted website. The panel can restore only a database from them.
+
+If the move fails, the website stays on the old server and operates there. The new server
+removes what it received. Look at the jobs of the two servers on **Jobs** for the cause,
+correct it, and move the website again.
+
 #### Limits of a database server
 
 - **Memory.** When MariaDB or PostgreSQL uses more memory than its limit, the kernel stops
@@ -1260,8 +1308,8 @@ server degraded.
 
 The firewall accepts only SSH, SFTP, HTTP, HTTPS and the agent port. A server that has
 tunnels to other servers also accepts the UDP port of the tunnels (51820), only from those
-servers. While a database server moves to a server, that server also accepts TCP port 7445
-on its mesh address, only from the mesh address of the old server. A server that has DNS
+servers. While a database server or a website moves to a server, that server also accepts TCP
+port 7445 on its mesh address, only from the mesh address of the old server. A server that has DNS
 zones also accepts port 53 (UDP and TCP). The database servers
 publish their ports only on the database network `169.254.80.0/20` of the loopback interface,
 so the databases are not open to the internet.
