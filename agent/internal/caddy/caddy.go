@@ -25,6 +25,9 @@ import (
 
 const serverName = "edge"
 
+// panelConnectionID is the @id of the TLS connection policy of the panel domain.
+const panelConnectionID = "cf-panel-connection"
+
 // AdminSocket is the path of the admin socket in the edge container. The host directory of the
 // socket is mounted at /run/caddy-admin.
 const AdminSocket = "/run/caddy-admin/admin.sock"
@@ -140,6 +143,9 @@ func BaseConfig() map[string]any {
 				"listen": []string{":8443"},
 				"routes": []any{},
 				"logs":   map[string]any{"default_logger_name": "access"},
+				// A certificate from the panel does not stop the certificates of other hosts
+				// (SetCertificates).
+				"automatic_https": AutomaticHTTPS(nil),
 			}},
 		}},
 	}
@@ -378,14 +384,14 @@ func (c *Client) ApplyPanel(ctx context.Context, domain, method string, apiPort,
 		"terminal": true,
 	}
 	// Ask for a client certificate on the panel domain, but do not require it. Agents send one.
-	policies := []any{
-		map[string]any{"match": map[string]any{"sni": []string{domain}}, "client_authentication": map[string]any{"mode": "request"}},
-		map[string]any{},
+	// The policies of the certificates from the panel stay (SetCertificates).
+	current, err := c.connectionPolicies(ctx)
+	if err != nil {
+		return err
 	}
-	if err := c.expect(ctx, http.MethodPatch, "/config/apps/http/servers/"+serverName+"/tls_connection_policies", policies, http.StatusOK); err != nil {
-		if err := c.expect(ctx, http.MethodPut, "/config/apps/http/servers/"+serverName+"/tls_connection_policies", policies, http.StatusOK); err != nil {
-			return err
-		}
+	panel := map[string]any{"@id": panelConnectionID, "match": map[string]any{"sni": []string{domain}}, "client_authentication": map[string]any{"mode": "request"}}
+	if err := c.setConnectionPolicies(ctx, PanelConnectionPolicies(current, panel)); err != nil {
+		return err
 	}
 	// A route that exists is replaced in place, with no gap. It is already the first route.
 	status, body, err := c.do(ctx, http.MethodPatch, "/id/cf-panel", route)

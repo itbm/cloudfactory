@@ -9,6 +9,7 @@ import { AlertsPage } from "./pages/AlertsPage";
 import { AppsPage } from "./pages/AppsPage";
 import { BackupsPage } from "./pages/BackupsPage";
 import { BrandPage } from "./pages/BrandPage";
+import { CertificatesPage } from "./pages/CertificatesPage";
 import { CustomersPage } from "./pages/CustomersPage";
 import { DatabasesPage } from "./pages/DatabasesPage";
 import { DnsPage } from "./pages/DnsPage";
@@ -104,6 +105,8 @@ export function App() {
             <Route path="email" element={<EmailPage />} />
             <Route path="dns" element={<DnsPage />} />
             <Route path="dns/:id" element={<DnsPage />} />
+            <Route path="certificates" element={<CertificatesPage />} />
+            <Route path="certificates/:id" element={<CertificatesPage />} />
             <Route path="networks" element={<NetworksPage />} />
             <Route path="backups" element={<BackupsPage />} />
             <Route path="apps" element={<AppsPage />} />

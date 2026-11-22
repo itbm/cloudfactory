@@ -26,7 +26,9 @@ Who gets the email of an event:
 - **Certificate:** the users of the customer of the website, and the administrators. The panel
   renews a certificate 30 days before it expires. Each day at 08:00, the panel finds each
   certificate that expires in 14 days or less, and each domain that has no certificate because
-  the order failed. You get one email for each certificate and expiry date.
+  the order failed. You get one email for each certificate and expiry date. The panel cannot
+  renew a certificate that you uploaded. The value `{{advice}}` tells you what to do for each
+  type of certificate. Refer to [certificates.md](certificates.md).
 - **Suspension:** the users of the customer. When a reseller is suspended, the users of its
   customers also get the email.
 - **Sign-in from a new device:** the user. The web panel keeps a random device ID in the

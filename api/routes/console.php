@@ -35,5 +35,9 @@ Schedule::command('cloudfactory:uptime')->everyMinute()->withoutOverlapping();
 // Uptime checks: the panel keeps the results for 8 days and the closed incidents for 90 days.
 Schedule::command('cloudfactory:prune-uptime')->daily()->withoutOverlapping();
 
+// The certificates with DNS validation: the renewals, and the stages of the ACME orders. The
+// command runs for up to 50 seconds, so it runs in the background.
+Schedule::command('cloudfactory:certificates')->everyMinute()->withoutOverlapping()->runInBackground();
+
 // Imports: the archives of the imports that did not start (docs/imports.md).
 Schedule::command('cloudfactory:prune-imports')->hourly()->withoutOverlapping();
