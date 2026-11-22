@@ -384,3 +384,21 @@ colour, panel domain, name servers and mail host. The files are in [white-label/
 | [05-reseller-panel-domain-proof.png](white-label/05-reseller-panel-domain-proof.png) | A new panel domain needs a TXT record that proves control. |
 | [06-administrator-default-brand.png](white-label/06-administrator-default-brand.png) | The administrator sets the default brand in Settings. |
 | [07-reseller-brand-phone.png](white-label/07-reseller-brand-phone.png) | The Brand page on a phone. |
+
+## Certificates
+
+The certificates of the customers: uploads, and certificates with DNS validation from
+Let's Encrypt. In the demonstration mode, a demo CA signs the certificates. Refer to
+[certificates.md](../certificates.md). The files are in [certificates/](certificates).
+
+| File | Page |
+| ---- | ---- |
+| [01-owner-certificates.png](certificates/01-owner-certificates.png) | The certificates of a customer, with the domains that use each one. |
+| [02-owner-certificate.png](certificates/02-owner-certificate.png) | A wildcard certificate with DNS validation, its details and the domains that use it. |
+| [03-owner-failed-order.png](certificates/03-owner-failed-order.png) | An order that failed, because the zone does not use the name servers of the panel. |
+| [04-owner-get-wildcard-certificate.png](certificates/04-owner-get-wildcard-certificate.png) | Get a wildcard certificate for a zone of the customer. |
+| [05-owner-renewal.png](certificates/05-owner-renewal.png) | A renewal: the stages of the order and the TXT records. |
+| [06-owner-upload-certificate.png](certificates/06-owner-upload-certificate.png) | Upload a certificate chain and its private key. |
+| [07-owner-website-domains.png](certificates/07-owner-website-domains.png) | The domains of a website, with a link to the certificate of each domain. |
+| [08-admin-certificates.png](certificates/08-admin-certificates.png) | An administrator sees the certificates of all customers. |
+| [09-owner-certificates-phone.png](certificates/09-owner-certificates-phone.png) | The certificates on a phone. |

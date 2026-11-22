@@ -345,7 +345,10 @@ func prepareWorker(cfg config.Config, uid, gid int) error {
 	if err := ownJobs(cfg.DataDir, uid, gid); err != nil {
 		return err
 	}
-	return ownLogs(cfg.DataDir, uid, gid)
+	if err := ownLogs(cfg.DataDir, uid, gid); err != nil {
+		return err
+	}
+	return ownImports(cfg.DataDir, uid, gid)
 }
 
 // logsDir is the directory of the access logs of the websites in the data directory. Only the
@@ -354,27 +357,39 @@ const logsDir = "logs"
 
 // ownLogs gives the directory of the access logs to the worker.
 func ownLogs(dataDir string, uid, gid int) error {
+	return ownWorkerDir(dataDir, logsDir, uid, gid)
+}
+
+// ownImports gives the directory of the import archives to the worker (actions.ImportsDir).
+// The worker reads the archives as streams: root never opens them.
+func ownImports(dataDir string, uid, gid int) error {
+	return ownWorkerDir(dataDir, "imports", uid, gid)
+}
+
+// ownWorkerDir makes the directory name in the data directory for the worker, or gives it to
+// the worker when root owns it.
+func ownWorkerDir(dataDir, name string, uid, gid int) error {
 	data, err := safefs.Open(dataDir)
 	if err != nil {
 		return err
 	}
 	defer data.Close()
-	fi, err := data.Lstat(logsDir)
+	fi, err := data.Lstat(name)
 	if errors.Is(err, os.ErrNotExist) {
-		return data.Mkdir(logsDir, 0o700, uid, gid)
+		return data.Mkdir(name, 0o700, uid, gid)
 	}
 	if err != nil {
 		return err
 	}
 	if !fi.IsDir() {
-		return fmt.Errorf("%s is not a directory", filepath.Join(dataDir, logsDir))
+		return fmt.Errorf("%s is not a directory", filepath.Join(dataDir, name))
 	}
 	if st, ok := fi.Sys().(*syscall.Stat_t); ok && int(st.Uid) != uid {
-		// The agent operated as one root process before.
-		if err := data.ChownTree(logsDir, uid, gid); err != nil {
+		// Root made the directory, for example while the agent operated as one process.
+		if err := data.ChownTree(name, uid, gid); err != nil {
 			return err
 		}
-		return data.SetDir(logsDir, 0o700, uid, gid)
+		return data.SetDir(name, 0o700, uid, gid)
 	}
 	return nil
 }
@@ -570,6 +585,7 @@ func work(ctx context.Context, cfg config.Config, g gate.Gate) error {
 	gv := gvisor.Installer{Root: gvisorRoot, BinDir: gvisorBin}
 	reporter := panel.New(cfg.PanelURL, cfg.AgentToken, &cert, cfg.PanelServerCertificateSHA256, cfg.PanelCASHA256)
 	dialLocal(reporter, deps)
+	deps.PanelDownload = reporter.Download
 
 	h := deps.Host
 	// FR-202: the disk I/O limit needs the disk of the websites. The disk limit is a user

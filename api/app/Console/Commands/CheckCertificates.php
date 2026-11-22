@@ -22,7 +22,7 @@ class CheckCertificates extends Command
 
     public function handle(Notifier $notifier): int
     {
-        $domains = Domain::with('website.customer')
+        $domains = Domain::with(['website.customer', 'website.server'])
             ->whereHas('website')
             ->where(fn ($q) => $q
                 ->where(fn ($q) => $q->where('certificate_state', 'valid')->where('certificate_expires_at', '<=', now()->addDays(self::DAYS)))
