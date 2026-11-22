@@ -13,6 +13,7 @@ use App\Models\DnsZone;
 use App\Models\Plugin;
 use App\Models\Setting;
 use App\Services\Dns\Zones;
+use App\Services\DomainPolicy;
 use App\Services\JobOutcome;
 use App\Services\Plugins\Manifest;
 use App\Services\Plugins\Outbound;
@@ -42,6 +43,9 @@ class DnsProviderTest extends TestCase
     /** @var array<string, array{0: int, 1: array<string, mixed>}> The answer of the plugin for each operation. */
     private array $answers = [];
 
+    /** @var array<string, list<string>> The TXT records of the public DNS. */
+    private array $txt = [];
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -67,6 +71,13 @@ class DnsProviderTest extends TestCase
         });
         $this->customer = $this->customer($this->plan());
         $this->plugin = $this->dnsPlugin();
+        $this->fakeTxt($this->txt);
+    }
+
+    /** The TXT record with the claim token that the panel sends with a zone to the provider. */
+    private function claim(string $zone): string
+    {
+        return app(DomainPolicy::class)->claimToken($this->customer->id, $zone);
     }
 
     /** @param  array<string, mixed>  $provider */
@@ -231,6 +242,8 @@ class DnsProviderTest extends TestCase
             ['name' => '@', 'type' => 'MX', 'ttl' => 300, 'value' => 'mail.example.net', 'priority' => 10],
             ['name' => '@', 'type' => 'TXT', 'ttl' => 300, 'value' => 'v=spf1 -all'],
             ['name' => 'bad', 'type' => 'PTR', 'ttl' => 300, 'value' => 'x'],
+            // The claim token from an earlier zone of the panel is not a record of the customer.
+            ['name' => '_cloudfactory-challenge', 'type' => 'TXT', 'ttl' => 300, 'value' => $this->claim('example.com')],
         ]]];
         Queue::fake();
 
@@ -257,8 +270,9 @@ class DnsProviderTest extends TestCase
         $this->runSync($zone);
         $sync = $this->callsFor('sync')[0];
         $this->assertSame(['name' => 'example.com', 'serial' => $zone->serial, 'dnssec' => false], array_diff_key($sync['zone'], ['records' => true]));
-        $this->assertEqualsCanonicalizing(['@ MX mail.example.net', '@ TXT v=spf1 -all', 'www CNAME example.com'],
+        $this->assertEqualsCanonicalizing(['@ MX mail.example.net', '@ TXT v=spf1 -all', 'www CNAME example.com', '_cloudfactory-challenge TXT '.$this->claim('example.com')],
             array_map(fn ($r) => "{$r['name']} {$r['type']} {$r['value']}", $sync['zone']['records']));
+        $this->assertSame(0, $zone->records()->where('name', '_cloudfactory-challenge')->count());
         $zone->refresh();
         $this->assertSame('ok', $zone->provider_state['state']);
         $this->assertSame(self::CLOUDFLARE_NS, $zone->provider_state['nameServers']);
@@ -275,8 +289,13 @@ class DnsProviderTest extends TestCase
             ->assertJsonPath('nameServers', self::CLOUDFLARE_NS)
             ->assertJsonPath('delegation.state', 'none');
 
-        // The registrar has the name servers of Cloudflare: the customer controls the domain.
+        // The registrar has the name servers of Cloudflare. A different account at Cloudflare
+        // can have the same name servers, so this alone does not prove that the customer
+        // controls the domain.
         $this->nameServersSeen['example.com'] = array_reverse(self::CLOUDFLARE_NS);
+        $this->postJson("/api/v1/dns-zones/{$zone->id}/check")->assertOk()->assertJsonPath('delegation.state', 'unknown');
+        $this->assertFalse(Zones::controls($this->customer->id, 'shop.example.com'));
+        $this->txt['_cloudfactory-challenge.example.com'] = ['other', $this->claim('example.com')];
         $this->postJson("/api/v1/dns-zones/{$zone->id}/check")->assertOk()->assertJsonPath('delegation.state', 'here');
         $this->assertTrue(Zones::controls($this->customer->id, 'shop.example.com'));
 
@@ -380,6 +399,7 @@ class DnsProviderTest extends TestCase
 
         // The registrar has the name servers of Cloudflare. The handover time starts.
         $this->nameServersSeen['example.com'] = self::CLOUDFLARE_NS;
+        $this->txt['_cloudfactory-challenge.example.com'] = [$this->claim('example.com')];
         $this->postJson("/api/v1/dns-zones/{$zone->id}/check")->assertOk()->assertJsonPath('delegation.state', 'here');
         $zone->refresh();
         $this->assertTrue($zone->onPanelServers());

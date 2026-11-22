@@ -114,7 +114,7 @@ class Zones
         $other = $this->checkName($name, $customer, $user);
         // The provider must answer before the panel makes the zone. A wrong token then stops
         // here, and the panel does not make a zone that cannot go to the provider.
-        $remote = $account && $importRecords ? $this->providers->records($account, $name) : null;
+        $remote = $account && $importRecords ? $this->providers->records($account, $name, $customer->id) : null;
         try {
             $zone = DB::transaction(function () use ($customer, $name, $other, $account) {
                 // The count and the new zone are in one transaction, with a lock on the customer.
@@ -174,7 +174,7 @@ class Zones
         if ($account === null && self::nameServers() === []) {
             throw ValidationException::withMessages(['accountId' => 'The panel has no DNS server.']);
         }
-        $remote = $account && $importRecords ? $this->providers->records($account, $zone->name) : null;
+        $remote = $account && $importRecords ? $this->providers->records($account, $zone->name, $zone->customer_id) : null;
         $from = $zone->account?->providerName() ?? 'the DNS servers of the panel';
         $handover = $account !== null && $zone->onPanelServers();
         $zone->update([
@@ -645,6 +645,13 @@ class Zones
             $ours !== [] && array_diff($seen, $ours) === [] => DnsZone::HERE,
             default => DnsZone::ELSEWHERE,
         };
+        // The name servers of a provider serve many accounts, and the plugin gives the name
+        // servers from the account of the customer. A different customer can have the same name
+        // servers. Only the claim token that the panel sends with the zone proves that the public
+        // DNS uses this zone, and thus that the customer controls the domain.
+        if ($state === DnsZone::HERE && $zone->dns_account_id !== null && ! $this->policy->proves($zone->customer_id, $zone->name)) {
+            $state = DnsZone::UNKNOWN;
+        }
         $was = $zone->delegation;
         $changes = ['delegation' => $state, 'delegation_name_servers' => $seen, 'delegation_checked_at' => now()];
         // The handover time starts when the public DNS stops giving the name servers of the panel.

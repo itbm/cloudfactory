@@ -129,6 +129,21 @@ describe("external DNS providers", () => {
     await waitFor(() => expect(api.changes.at(-1)).toMatchObject({ method: "POST", path: `/dns-zones/${id}/sync` }));
   });
 
+  it("waits for the TXT record of the panel at Cloudflare before the zone counts as in use", async () => {
+    const api = await signedIn("owner");
+    const id = zone("acmeshop.example.com").id;
+    api.change<{ delegation: { state: string; nameServers: string[] } }>(`/dns-zones/${id}`, (z) => {
+      z.delegation.state = "unknown";
+      z.delegation.nameServers = ["ada.ns.cloudflare.com", "bob.ns.cloudflare.com"];
+    });
+    render(<MemoryRouter initialEntries={[`/dns/${id}`]}><App /></MemoryRouter>);
+    const status = await screen.findByText(/does not answer with this zone yet/);
+    const alert = status.closest("[role=status]")!;
+    expect(alert.textContent).toContain("The registrar has the name servers of Cloudflare, but Cloudflare does not answer with this zone yet.");
+    expect(alert.textContent).toContain("_cloudfactory-challenge.acmeshop.example.com");
+    expect(alert.textContent).not.toContain("have no effect until");
+  });
+
   it("moves a zone of the panel to Cloudflare", async () => {
     const api = await open("owner", () => `/dns/${zone("acme-outlet.example.com").id}`);
     const before = clone(zone("acme-outlet.example.com"));

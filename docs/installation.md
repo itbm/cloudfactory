@@ -938,6 +938,11 @@ With the CLI: `cf dns create example.com --account "Main account"`.
 
 ![The page of a zone at Cloudflare, with the name servers for the registrar](screenshots/dns/6-zone-at-cloudflare.png)
 
+The panel sends a TXT record `_cloudfactory-challenge` with the zone. Do not remove it at the
+provider. The page of the zone shows that the domain uses the zone only when the public DNS
+gives this record. A different account at the provider can have the same name servers, so the
+name servers alone do not prove that the domain uses your zone.
+
 You change the records of the zone in the panel, as for a zone on the DNS servers of the
 panel. Do not change the records at the provider: the next change in the panel removes them.
 The panel does not change the NS records of the zone at the provider, and records of a type

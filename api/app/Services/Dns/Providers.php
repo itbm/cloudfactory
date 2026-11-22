@@ -6,6 +6,7 @@ use App\Models\DnsAccount;
 use App\Models\DnsRecord;
 use App\Models\DnsZone;
 use App\Models\Plugin;
+use App\Services\DomainPolicy;
 use App\Services\Plugins\Caller;
 use App\Validation\Input;
 use App\Validation\InputRules;
@@ -47,7 +48,10 @@ class Providers
 
     private const MAX_DS = 4;
 
-    public function __construct(private Caller $caller) {}
+    /** The TTL of the TXT record with the claim token of a zone. */
+    public const CLAIM_TTL = 300;
+
+    public function __construct(private Caller $caller, private DomainPolicy $policy) {}
 
     /**
      * The providers of the plugins that are on, with their plugin.
@@ -90,8 +94,9 @@ class Providers
      *
      * @throws ValidationException
      */
-    public function records(DnsAccount $account, string $zoneName): array
+    public function records(DnsAccount $account, string $zoneName, string $customerId): array
     {
+        $claim = $this->policy->claimToken($customerId, $zoneName);
         $result = $this->forAccount($account, 'records', ['name' => $zoneName]);
         if ($result['error'] !== null) {
             throw ValidationException::withMessages(['accountId' => $result['error']]);
@@ -113,6 +118,10 @@ class Providers
             if ($type === 'NS' && in_array($name, ['@', '', $zoneName], true)) {
                 continue;
             }
+            // The panel sends the claim token with the zone. It is not a record of the customer.
+            if ($type === 'TXT' && $name === DomainPolicy::CHALLENGE && $value === $claim) {
+                continue;
+            }
             $records[] = [
                 'line' => $i + 1,
                 'text' => mb_substr(trim("{$name} {$ttl} {$type} ".($priority !== null ? "{$priority} " : '').$value), 0, 300),
@@ -127,18 +136,28 @@ class Providers
      * Sends the full zone to the provider. The state has the name servers of the zone at the
      * provider, "active" (the provider answers for the zone) and the state of DNSSEC.
      *
+     * The zone also has a TXT record with the claim token of the customer for the zone. The
+     * name servers of a provider serve many accounts, and the name servers that the plugin
+     * gives come from the account of the customer. Thus only the token in the public DNS proves
+     * that the public DNS uses this zone (Zones::checkDelegation).
+     *
      * @return array{error: ?string, state: array<string, mixed>}
      */
     public function sync(DnsZone $zone): array
     {
+        // The provider keeps the NS records of the zone itself.
+        $records = $zone->records()->where(fn ($q) => $q->whereNull('managed')->orWhere('managed', '!=', DnsRecord::NS))
+            ->orderBy('name')->orderBy('type')->orderBy('id')->get()
+            ->map(fn (DnsRecord $r) => ['name' => $r->name, 'type' => $r->type, 'ttl' => $r->ttl, 'value' => $r->value, 'priority' => $r->priority])->all();
+        $claim = ['name' => DomainPolicy::CHALLENGE, 'type' => 'TXT', 'ttl' => self::CLAIM_TTL, 'value' => $this->policy->claimToken($zone->customer_id, $zone->name), 'priority' => null];
+        if (! collect($records)->contains(fn (array $r) => $r['name'] === $claim['name'] && $r['type'] === 'TXT' && $r['value'] === $claim['value'])) {
+            $records[] = $claim;
+        }
         $result = $this->forAccount($zone->account, 'sync', [
             'name' => $zone->name,
             'serial' => $zone->serial,
             'dnssec' => $zone->dnssec,
-            // The provider keeps the NS records of the zone itself.
-            'records' => $zone->records()->where(fn ($q) => $q->whereNull('managed')->orWhere('managed', '!=', DnsRecord::NS))
-                ->orderBy('name')->orderBy('type')->orderBy('id')->get()
-                ->map(fn (DnsRecord $r) => ['name' => $r->name, 'type' => $r->type, 'ttl' => $r->ttl, 'value' => $r->value, 'priority' => $r->priority])->all(),
+            'records' => $records,
         ]);
         if ($result['error'] !== null) {
             return ['error' => $result['error'], 'state' => []];

@@ -299,6 +299,21 @@ The product specification, section 6.4, gives the requirements.
 - The DNS server answers only for its zones. It has no recursion, and it limits the rate of
   the answers to one network.
 
+### Zones at an external DNS provider
+
+- The panel keeps the credentials of a DNS account encrypted. The API never gives a secret
+  back. A customer cannot see the credentials of an account of the panel. Only the plugin of
+  the provider gets the credentials, in a signed request.
+- The name servers of a provider are not a proof of control, because the provider gives the
+  same name servers to many accounts. The plugin also gives the name servers from data of the
+  customer. The panel sends a TXT record `_cloudfactory-challenge` with the claim token of the
+  customer with the zone. The domain counts as delegated to the zone only when the public DNS
+  gives the name servers of the provider and this token. Only then does the panel verify the
+  domains of the websites in the zone with no other TXT record.
+- The panel reads each answer of a plugin only as data. It keeps only valid host names and DS
+  records. It shows up to 300 characters of the error of a plugin, and it writes the error of
+  the connection, which has the address of the plugin, only to its log.
+
 ## The edge proxy
 
 - The admin API of Caddy listens on a Unix socket, not on a TCP port. Only the user `cf-edge`

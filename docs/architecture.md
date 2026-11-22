@@ -768,6 +768,12 @@ source of the records:
   the error.
 - The NS records of a zone at a provider are the name servers that the provider gives. The
   panel does not send them to the provider.
+- The panel sends a TXT record `_cloudfactory-challenge` with the claim token of the customer
+  for the zone. The domain counts as delegated to the zone ("here") only when the public DNS
+  gives the name servers of the provider and the token. The name servers of a provider serve
+  many accounts, and the plugin gives the name servers from data of the customer. Without the
+  token, a customer could claim the domain of a different customer at the same provider, and
+  the panel would verify the domains of the websites in the zone with no TXT record.
 - The panel reads each answer of the plugin only as data. It keeps only valid host names and
   DS records, and shows up to 300 characters of an error. The address of the plugin and the
   error of the connection go only to the log.

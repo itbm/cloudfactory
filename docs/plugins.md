@@ -604,6 +604,10 @@ Rules for `sync`:
   change records of other types.
 - Do not change the NS records of the zone itself (`@`). The provider keeps them. The panel
   does not send them.
+- `records` has a TXT record `_cloudfactory-challenge` with a token of the panel. Send it as the
+  other records. The panel looks for the token in the public DNS. Only the token proves that
+  the public DNS uses this zone, because a different account at the provider can have the same
+  name servers.
 - Add the zone at the provider when it is not there, if the credentials permit it.
 - Turn DNSSEC on or off at the provider, as `dnssec` gives.
 - `sync` must be idempotent. The panel can send the same zone again.

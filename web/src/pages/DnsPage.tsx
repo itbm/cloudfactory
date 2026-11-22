@@ -347,6 +347,8 @@ function ZonePage({ id }: { id: string }) {
   const account = provider ? state.dnsAccounts.find((a) => a.id === provider.accountId) : undefined;
   const canSign = !provider || (account?.dnssec ?? true);
   const signer = provider?.name ?? "The DNS servers";
+  // The registrar has the name servers of the provider, and the panel waits for its TXT record in the public DNS.
+  const waitsForProvider = !!provider && zone.delegation.state === "unknown" && zone.delegation.nameServers.length > 0;
 
   return (
     <>
@@ -387,9 +389,10 @@ function ZonePage({ id }: { id: string }) {
         {!locked && zone.delegation.state !== "here" && (
           <div className="alert alert-info alert-stack mt" role="status">
             <p>
-              <strong>{zone.delegation.state === "elsewhere" ? "The domain uses other name servers." : zone.delegation.state === "none" ? "The public DNS has no name servers for the domain." : "The panel has not checked the name servers of the domain."}</strong>{" "}
+              <strong>{zone.delegation.state === "elsewhere" ? "The domain uses other name servers." : zone.delegation.state === "none" ? "The public DNS has no name servers for the domain." : waitsForProvider ? `The registrar has the name servers of ${provider?.name}, but ${provider?.name} does not answer with this zone yet.` : "The panel has not checked the name servers of the domain."}</strong>{" "}
+              {waitsForProvider && <>The panel checks the TXT record <code>_cloudfactory-challenge.{zone.name}</code> that it sends to {provider?.name} with the zone. A different account at {provider?.name} can have the same name servers, so only this record shows that the domain uses this zone. </>}
               {zone.delegation.state === "elsewhere" && zone.delegation.nameServers.length > 0 && <>The registrar now has <code>{zone.delegation.nameServers.join(", ")}</code>. </>}
-              {zone.nameServers.length > 0
+              {waitsForProvider ? "" : zone.nameServers.length > 0
                 ? <>The records below have no effect until the registrar of {zone.name} has the name servers of {provider?.name ?? "this panel"}: <code>{zone.nameServers.join(", ")}</code>. </>
                 : <>The records below have no effect until the registrar of {zone.name} has the name servers of {provider?.name ?? "this panel"}. {provider?.name} gives them after the first change. </>}
               {provider ? "" : "Copy the records that the domain uses now to this zone first."}
