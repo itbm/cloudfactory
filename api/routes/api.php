@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\AuditController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BackupController;
 use App\Http\Controllers\Api\BrandController;
+use App\Http\Controllers\Api\CertificateController;
 use App\Http\Controllers\Api\CronJobController;
 use App\Http\Controllers\Api\CustomerController;
 use App\Http\Controllers\Api\DatabaseController;
@@ -19,6 +20,7 @@ use App\Http\Controllers\Api\DnsZoneController;
 use App\Http\Controllers\Api\DomainController;
 use App\Http\Controllers\Api\FileController;
 use App\Http\Controllers\Api\ImageController;
+use App\Http\Controllers\Api\ImportController;
 use App\Http\Controllers\Api\JobController;
 use App\Http\Controllers\Api\LogController;
 use App\Http\Controllers\Api\MailAliasController;
@@ -97,6 +99,14 @@ Route::prefix('v1')->group(function () {
             Route::post('websites/{websiteId}/domains/{name}/primary', [DomainController::class, 'makePrimary']);
             Route::post('websites/{websiteId}/domains/{name}/check', [DomainController::class, 'check'])->middleware('throttle:domain-checks');
             Route::delete('websites/{websiteId}/domains/{name}', [DomainController::class, 'destroy']);
+            // The certificates of the customers: uploads, and certificates with DNS validation
+            // (docs/certificates.md). Each order uses the limits of the certificate authority.
+            Route::get('certificates', [CertificateController::class, 'index']);
+            Route::post('certificates', [CertificateController::class, 'store'])->middleware('throttle:certificate-changes');
+            Route::get('certificates/{id}', [CertificateController::class, 'show']);
+            Route::put('certificates/{id}', [CertificateController::class, 'update'])->middleware('throttle:certificate-changes');
+            Route::post('certificates/{id}/renew', [CertificateController::class, 'renew'])->middleware('throttle:certificate-changes');
+            Route::delete('certificates/{id}', [CertificateController::class, 'destroy']);
             Route::put('websites/{websiteId}/sftp', [SftpController::class, 'update']);
             Route::put('websites/{websiteId}/runtime', [RuntimeController::class, 'update']);
             Route::post('websites/{websiteId}/runtime/revert', [RuntimeController::class, 'revert']);
@@ -254,6 +264,18 @@ Route::prefix('v1')->group(function () {
             Route::get('setup', [SetupController::class, 'show']);
         });
 
+        // The import of an account from cPanel, DirectAdmin, Plesk or HestiaCP (docs/imports.md).
+        // The import makes websites, databases, mail and DNS zones, so only an administrator
+        // imports.
+        Route::middleware(['admin', 'scope:websites'])->group(function () {
+            Route::get('imports', [ImportController::class, 'index']);
+            Route::post('imports', [ImportController::class, 'store'])->middleware('throttle:20,1,post-imports');
+            Route::get('imports/{id}', [ImportController::class, 'show']);
+            Route::put('imports/{id}/archive', [ImportController::class, 'upload']);
+            Route::post('imports/{id}/start', [ImportController::class, 'start']);
+            Route::delete('imports/{id}', [ImportController::class, 'destroy']);
+        });
+
         Route::middleware(['admin', 'scope:images'])->group(function () {
             Route::get('images', [ImageController::class, 'index']);
             Route::post('images', [ImageController::class, 'store']);
@@ -361,5 +383,7 @@ Route::prefix('agent/v1')->group(function () {
     Route::middleware('agent')->group(function () {
         Route::post('jobs/{id}/events', [AgentController::class, 'jobEvent']);
         Route::post('report', [AgentController::class, 'report']);
+        // The uploaded archive of an import, for a server with a download job of the import.
+        Route::get('imports/{id}/archive', [ImportController::class, 'archive']);
     });
 });

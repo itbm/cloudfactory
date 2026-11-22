@@ -47,6 +47,25 @@ type fakeEdge struct {
 	methods []string
 	// brands are the reseller panel domains that SetPanelBrands got last.
 	brands []string
+	// certs are the certificates from the panel that SetCertificates got last.
+	certs []caddy.Certificate
+}
+
+func (f *fakeEdge) SetCertificates(_ context.Context, certs []caddy.Certificate) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.certs = certs
+	return nil
+}
+
+func (f *fakeEdge) Certificates(context.Context) ([]caddy.LoadedCertificate, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := []caddy.LoadedCertificate{}
+	for _, c := range f.certs {
+		out = append(out, caddy.LoadedCertificate{ID: c.ID, SHA256: caddy.Fingerprint(c.CertificatePEM), Hosts: c.Hosts})
+	}
+	return out, nil
 }
 
 func (f *fakeEdge) SetPanelBrands(_ context.Context, _ string, brands []string) error {

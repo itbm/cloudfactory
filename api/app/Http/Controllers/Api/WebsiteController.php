@@ -105,6 +105,9 @@ class WebsiteController extends Controller
             // the administrator, one time.
             'wordpress' => ['sometimes', 'nullable', 'array'],
             ...($request->filled('wordpress') ? WordPress::installRules('wordpress.') : []),
+            // The directory in /app that the web server serves, for example "web". "." is /app
+            // itself, for the files of a different panel (docs/imports.md).
+            'documentRoot' => ['sometimes', 'string', Input::rule('documentRoot')],
         ]);
         $user = $request->user();
         $customerId = $data['customerId'] ?? $user->customer_id;
@@ -192,6 +195,7 @@ class WebsiteController extends Controller
                 'install_command' => $defaults && $install !== '' ? $install : null,
                 // A Node.js or Python website runs from its application directory: /app.
                 ...($defaults ? ['document_root' => '.'] : []),
+                ...(isset($data['documentRoot']) && ! $defaults ? ['document_root' => $data['documentRoot']] : []),
                 'application' => $data['application'] ?? '',
                 'customer_id' => $customer->id,
                 'server_id' => $server->id,

@@ -57,6 +57,13 @@ enum AgentAction: string
     case UpdateWordPress = 'UpdateWordPress';
     case RestoreWordPress = 'RestoreWordPress';
     case RunWpCli = 'RunWpCli';
+    case SetCertificates = 'SetCertificates';
+    // The import of an account from a different panel (docs/imports.md).
+    case FetchImport = 'FetchImport';
+    case ImportFiles = 'ImportFiles';
+    case ImportDatabase = 'ImportDatabase';
+    case ImportMail = 'ImportMail';
+    case DeleteImport = 'DeleteImport';
 
     /** The steps that the agent reports for this action. */
     public function steps(): array
@@ -117,6 +124,13 @@ enum AgentAction: string
             self::UpdateWordPress => ['Check WordPress', 'Save a restore point', 'Update WordPress', 'Update plugins', 'Update themes', 'Health check'],
             self::RestoreWordPress => ['Put back the restore point', 'Check WordPress'],
             self::RunWpCli => ['Run the command', 'Check WordPress'],
+            self::SetCertificates => ['Load certificates', 'Check certificates'],
+            // A download for a server that only copies a part has no second step.
+            self::FetchImport => ['Download archive', 'Read archive'],
+            self::ImportFiles => ['Check archive', 'Copy files'],
+            self::ImportDatabase => ['Check archive', 'Load dump'],
+            self::ImportMail => ['Check archive', 'Copy messages'],
+            self::DeleteImport => ['Remove archive'],
         };
     }
 
