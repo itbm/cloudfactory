@@ -1,11 +1,12 @@
 # Packs
 
-This directory has the packs of Cloudfactory and an example pack. The contract of a pack is
+This directory has the packs of Cloudfactory and two example packs. The contract of a pack is
 in [docs/packs.md](../../docs/packs.md).
 
 | Directory | Pack |
 | --- | --- |
 | [golang](golang/README.md) | An example pack for a publisher. It adds the runtime Go (`cf-runtime/1`). |
+| [mysql](mysql/README.md) | An example database pack for a publisher. It adds the engine MySQL 8.4 (`cf-pack/2`, `cf-database/1`). The release does not publish it. |
 | `php-legacy-frankenphp` | PHP 8.3 and 8.2 for FrankenPHP (`cf-php/1`). |
 | `php-legacy-apache` | PHP 8.3 and 8.2 for Apache + PHP-FPM (`cf-php/1`). |
 

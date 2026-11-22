@@ -122,7 +122,11 @@ function PackCard({ pack: p, onChange }: { pack: Pack; onChange: () => void }) {
                   <tr><th scope="row">Commands</th><td>Start: <code>{p.runtime.defaultCommand}</code>{p.runtime.defaultInstall && <><br />Install: <code>{p.runtime.defaultInstall}</code></>}<span className="cell-sub">Each website can change them.</span></td></tr>
                 </>
               )}
-              <tr><th scope="row">{db ? "Database servers" : "Websites"}</th><td>{used === 0 ? "None" : used}</td></tr>
+              {db ? (
+                <tr><th scope="row">In use</th><td>{used === 0 ? "No database servers" : used === 1 ? "1 database server" : `${used} database servers`}</td></tr>
+              ) : (
+                <tr><th scope="row">Websites</th><td>{used === 0 ? "None" : used}</td></tr>
+              )}
               <tr><th scope="row">Installed</th><td>{relativeTime(p.installedAt)}{p.installedBy && <> by {p.installedBy}</>}{p.updatedAt !== p.installedAt && <span className="cell-sub">Last version {relativeTime(p.updatedAt)}</span>}</td></tr>
             </tbody>
           </table>

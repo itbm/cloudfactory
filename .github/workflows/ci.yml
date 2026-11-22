@@ -187,6 +187,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - run: shellcheck -s sh install/install.sh install/test.sh images/apache-php-fpm/start.sh images/panel-api/start.sh images/sftp/start.sh images/mariadb/cf-manage plugins/packs/golang/cf-app
+      - run: shellcheck -s sh install/install.sh install/test.sh images/apache-php-fpm/start.sh images/panel-api/start.sh images/sftp/start.sh images/mariadb/cf-manage plugins/packs/golang/cf-app plugins/packs/mysql/cf-start plugins/packs/mysql/test.sh
       - run: sh install/test.sh
       - run: dash install/test.sh

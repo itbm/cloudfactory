@@ -204,6 +204,7 @@ describe("the Packs page", () => {
     expect(within(card).getByText("ghcr.io/example-packs/cf-mysql:8.4")).toBeTruthy();
     const head = within(card).getAllByRole("columnheader").map((h) => h.textContent);
     expect(head).toContain("Database servers");
+    expect(card.textContent).toContain("In use1 database server");
     // The sample MySQL database server uses the pack, so the pack cannot go.
     fireEvent.click(within(card).getByRole("button", { name: "Actions for MySQL" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "Remove pack" }));

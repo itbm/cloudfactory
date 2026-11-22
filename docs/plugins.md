@@ -508,13 +508,14 @@ Refer to [security.md](security.md#plugins).
 
 ## Runtimes and database engines
 
-A [pack](packs.md) adds a website runtime, for example Go, with no new agent code. A publisher
-signs the pack, and an administrator installs it on the **Packs** page. The panel sends the
-pack to each web server. Refer to [packs.md](packs.md).
+A [pack](packs.md) adds a website runtime, for example Go, or a database engine, for example
+MySQL, with no new agent code. A publisher signs the pack, and an administrator installs it on
+the **Packs** page. The panel sends the pack to each web server. Refer to
+[packs.md](packs.md). A database pack obeys the database contract `cf-database/1`
+([packs.md](packs.md#the-database-contract-cf-database1)).
 
-The database engines are becoming packs too. Until then, the agent has two switches for the
-trial. The two switches are off by default. With no switch, the agent operates as in the
-previous release.
+The built-in engines have two switches for a trial. The two switches are off by default. With
+no switch, the agent operates as in the previous release.
 
 | Setting in `/etc/cloudfactory/agent.json` | Effect |
 | --- | --- |
@@ -537,7 +538,10 @@ value from before or after the change. This is correct for caches, sessions and 
 
 ### The management contract cf-database/1 (trial)
 
-An engine image can have the program `/cf/manage`. The agent runs:
+The image of a database pack has the program `/cf/manage` with all operations of
+`cf-database/1` (refer to [packs.md](packs.md#the-database-contract-cf-database1)). The image
+of the built-in MariaDB engine has the program too, with three operations only. The agent
+runs:
 
 ```sh
 podman exec -i <container> /cf/manage <operation>
@@ -552,6 +556,6 @@ code that is not 0 is an error. The MariaDB image has these operations:
 | `ready` | `{"ready":true}` when the server accepts TCP connections |
 | `sizes` | `{"sizes":[{"name":"...","bytes":N}]}` |
 
-In the trial, the agent uses only `sizes`. When the answer is not valid, the agent uses its
-own query. Later stages add the operations for databases, users, dumps and restores, so
-that an engine from a different publisher needs no agent code.
+In the trial, the agent uses only `sizes` of the MariaDB image. When the answer is not valid,
+the agent uses its own query. The agent always uses its own commands for the other tasks of
+the built-in engines.
