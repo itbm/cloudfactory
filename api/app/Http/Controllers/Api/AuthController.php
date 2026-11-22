@@ -11,6 +11,7 @@ use App\Services\Branding;
 use App\Services\LoginThrottle;
 use App\Services\Notifications\Devices;
 use App\Services\Notifications\Notifier;
+use App\Services\Notifications\Senders;
 use App\Services\Totp;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -101,6 +102,21 @@ class AuthController extends Controller
         }
 
         return response()->json(['token' => $token->plainTextToken, 'expiresAt' => $token->accessToken->expires_at?->toIso8601String()]);
+    }
+
+    /**
+     * The ways to sign in that the sign-in page shows, for the domain of the request. A person
+     * who has not signed in can read it.
+     */
+    public function methods(Request $request): JsonResponse
+    {
+        // The link to set a new password needs an SMTP server: the server of the reseller that
+        // has this panel domain, else the server of the panel.
+        $reseller = Branding::resellerForHost($request->getHost());
+
+        return response()->json([
+            'passwordReset' => Senders::server($reseller) !== null,
+        ])->header('Cache-Control', 'no-cache');
     }
 
     /** The name of the token of a sign-in. */
