@@ -1109,7 +1109,7 @@ func TestTheWatchNeedsTheExpectedStatus(t *testing.T) {
 	}
 
 	err := run(t)(d.SetRuntime(&agentv1.WebsiteRequest{JobId: jobID2, Website: website("ghcr.io/cloudfactory/frankenphp-php8.5:8.5.0-1"), HealthCheck: &agentv1.HealthCheck{Status: 200, MaxErrorRate: 0.01, Seconds: 300}}))
-	if err == nil || !strings.Contains(err.Error(), "health checks failed") {
+	if err == nil || !strings.HasPrefix(err.Error(), "the health check failed after the switch: ") || !strings.Contains(err.Error(), "checks failed, last error: status 500, not 200") {
 		t.Fatalf("err = %v", err)
 	}
 	if edge.sites[websiteID].Port != 20000 {

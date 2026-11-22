@@ -25,6 +25,8 @@ use Illuminate\Foundation\Queue\Queueable;
  * - a new mailbox, alias or forwarder with the name "fail", for example "fail@example.com";
  * - a public key for a mailbox that has the text "FAIL";
  * - a deploy from a repository with "fail" in its address;
+ * - a deploy from a repository with "unhealthy" in its address: the health check after the
+ *   switch fails. With a migration command, the job succeeds, and the website keeps the release;
  * - a cron job with "fail" in its command;
  * - an install of dependencies with "fail" in its install command;
  * - a DNS zone with a name that starts with "fail.".
@@ -34,6 +36,9 @@ class RunDemoJob implements ShouldQueue
     use Queueable;
 
     public int $tries = 1;
+
+    /** The error of a health check after the switch that fails. */
+    private const UNHEALTHY = 'the health check failed after the switch: 9 of 30 checks failed, last error: status 500';
 
     public int $timeout = 120;
 
@@ -100,6 +105,10 @@ class RunDemoJob implements ShouldQueue
                 'step' => 2,
                 'error' => 'knotc -b zone-reload '.collect($p['zones'])->pluck('name')->first(fn ($n) => str_starts_with((string) $n, 'fail.')).': exit status 1: error: (operation timed out)',
             ],
+            $job->action === AgentAction::Deploy && str_contains((string) ($p['repository'] ?? ''), 'unhealthy') && ($p['migrationCommand'] ?? '') === '' => [
+                'step' => array_search('Switch traffic', AgentAction::Deploy->steps(), true),
+                'error' => self::UNHEALTHY,
+            ],
             $job->action === AgentAction::Deploy && str_contains((string) ($p['repository'] ?? ''), 'fail') => [
                 'step' => 1,
                 'error' => "a build command failed: exit status 2: Installing dependencies from lock file\nYour lock file does not contain a compatible set of packages. Please run composer update.",
@@ -152,6 +161,8 @@ class RunDemoJob implements ShouldQueue
                 'message' => 'Update the '.(['home page', 'checkout form', 'product list', 'contact page'][crc32((string) ($p['releaseId'] ?? '')) % 4]),
                 'removed' => [],
                 'documentRoot' => $p['website']['documentRoot'] ?? '',
+                'migrated' => ($p['migrationCommand'] ?? '') !== '',
+                'healthError' => str_contains((string) ($p['repository'] ?? ''), 'unhealthy') ? self::UNHEALTHY : '',
             ],
             AgentAction::UpdateAgent => ['version' => config('cloudfactory.agent.latest_version')],
             // Each peer answers through its tunnel.

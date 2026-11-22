@@ -14,6 +14,14 @@ use App\Models\Website;
 /** Spec section 6.3, step 4: put a job in the queue for the agent on the correct server. */
 class JobDispatcher
 {
+    /**
+     * FR-1104: the health check after a change of the image (RolloutEngine) and after a deploy
+     * (FR-1008). The agent checks the website for 5 minutes after the switch, and goes back
+     * when more than 5% of the checks fail. Batch 1, finding 6: status 0 accepts each answer
+     * below 500, for example a redirect to a login page. The agent makes about 30 checks.
+     */
+    public const HEALTH_CHECK = ['status' => 0, 'maxErrorRate' => 0.05, 'seconds' => 300];
+
     public function dispatch(
         Server $server,
         AgentAction $action,

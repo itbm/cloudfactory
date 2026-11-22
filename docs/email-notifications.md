@@ -16,6 +16,7 @@ the emails that they get.
 | Sign-in from a new device     | `signin.new_device`    | All users (always on)              |
 | Usage alerts                  | `usage.alert`          | Administrators, resellers, owners  |
 | Servers that are offline      | `server.offline`       | Administrators                     |
+| Deploys that need attention   | `deploy.attention`     | Resellers, owners                  |
 
 Who gets the email of an event:
 
@@ -33,6 +34,10 @@ Who gets the email of an event:
 - **Usage alert:** the users of the customer and of its reseller. The usage alerts feature
   makes the alert.
 - **Server offline:** the administrators, when a server does not report for 5 minutes.
+- **Deploy that needs attention:** the users of the customer of the website and of its
+  reseller. A deploy ran the migration command, and then the website failed its health check.
+  The panel did not go back to the previous release, because the previous release possibly
+  does not operate with the changed database. You get one email for each release.
 
 ## Set up the SMTP server (administrators)
 

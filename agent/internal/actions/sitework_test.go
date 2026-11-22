@@ -339,7 +339,7 @@ func TestDeployBuildsInAContainerAndSwitchesWithNoStop(t *testing.T) {
 	for _, s := range job.Steps {
 		names = append(names, s.Name)
 	}
-	if got := strings.Join(names, "|"); got != "Get the code|Build|Check image signature|Start new container on a copy|Health check|Switch traffic|Stop old container|Remove old releases" {
+	if got := strings.Join(names, "|"); got != "Get the code|Build|Migrate the database|Check image signature|Start new container on a copy|Health check|Switch traffic|Stop old container|Remove old releases" {
 		t.Errorf("steps = %s", got)
 	}
 
@@ -395,8 +395,224 @@ func TestDeployBuildsInAContainerAndSwitchesWithNoStop(t *testing.T) {
 		t.Errorf("calls = %v", f.Calls)
 	}
 	r := job.Result()
-	if r["commit"] != "4f9a1c2d4f9a1c2d4f9a1c2d4f9a1c2d4f9a1c2d" || r["message"] != "fix: the checkout page" || r["releaseId"] != releaseID || len(r["removed"].([]string)) != 1 {
+	if r["commit"] != "4f9a1c2d4f9a1c2d4f9a1c2d4f9a1c2d4f9a1c2d" || r["message"] != "fix: the checkout page" || r["releaseId"] != releaseID || len(r["removed"].([]string)) != 1 || r["migrated"] != false || r["healthError"] != "" {
 		t.Errorf("result = %v", r)
+	}
+}
+
+// buildCalls gives the commands of the build containers that do not get the code.
+func buildCalls(f *execx.Fake) []string {
+	var out []string
+	for _, c := range f.Calls {
+		if strings.HasPrefix(c, buildStart) && !strings.Contains(c, "git clone") {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+func TestDeployRunsTheMigrationCommandBeforeTheSwitch(t *testing.T) {
+	d, f, edge := withSite(t)
+	home := d.Host.Home("acme_x7k2")
+	req := deployRequest()
+	req.BuildCommands = []string{"composer install --no-dev"}
+	req.MigrationCommand = "php artisan migrate --force"
+	// The edge has the old port while the migration runs.
+	f.Rules = append(f.Rules, execx.Rule{Prefix: buildStart, Do: func() error {
+		if edge.sites[websiteID].Port != 20000 {
+			return errors.New("the switch was before the migration")
+		}
+		return nil
+	}})
+	job, err := d.Deploy(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := runSteps(t, job, nil); err != nil {
+		t.Fatal(err)
+	}
+	builds := buildCalls(f)
+	if len(builds) != 2 || !strings.Contains(builds[0], "exec 1>&2\ncomposer install --no-dev sh") || !strings.Contains(builds[1], "exec 1>&2\nphp artisan migrate --force sh") {
+		t.Fatalf("builds = %q", builds)
+	}
+	// The migration gets the same environment file as the build. The agent writes it once.
+	if !strings.Contains(builds[1], "--env-file="+home+"/.cf-deploy/"+releaseID+".env") || !strings.Contains(builds[1], "--workdir=/app/releases/"+releaseID) {
+		t.Errorf("migration = %s", builds[1])
+	}
+	writes := 0
+	for _, c := range f.Calls {
+		if strings.HasSuffix(c, home+"/.cf-deploy "+releaseID+".env") {
+			writes++
+		}
+	}
+	if writes != 1 || !f.Called(asSite+"rm -rf -- "+home+"/.cf-deploy") {
+		t.Errorf("env file writes = %d, calls = %v", writes, f.Calls)
+	}
+	if r := job.Result(); r["migrated"] != true || r["healthError"] != "" {
+		t.Errorf("result = %v", r)
+	}
+}
+
+func TestDeployStopsWhenTheMigrationCommandFails(t *testing.T) {
+	d, f, edge := withSite(t)
+	req := deployRequest()
+	req.MigrationCommand = "php artisan migrate --force"
+	f.Rules = append(f.Rules, execx.Rule{Prefix: buildStart, Do: func() error {
+		if strings.Contains(f.Calls[len(f.Calls)-1], "migrate --force sh") && !strings.Contains(f.Calls[len(f.Calls)-1], "composer") {
+			return errors.New("runuser -u acme_x7k2 -- env …: exit status 1: SQLSTATE[42S01]: Base table or view already exists")
+		}
+		return nil
+	}})
+	job, err := d.Deploy(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = runSteps(t, job, nil)
+	if err == nil || err.Error() != "the migration command failed: exit status 1: SQLSTATE[42S01]: Base table or view already exists" {
+		t.Fatalf("err = %v", err)
+	}
+	if site, _ := d.State.Get(websiteID); site.Suffix != "" || edge.sites[websiteID].Port != 20000 {
+		t.Errorf("the website changed: %+v", site)
+	}
+	if !f.Called(asSite + "rm -rf -- " + d.Host.Home("acme_x7k2") + "/.cf-deploy") {
+		t.Error("the agent did not remove the files of the deploy")
+	}
+}
+
+// failAfterSwitch makes each check of the new container fail after the switch.
+func failAfterSwitch(d *Deps, edge *fakeEdge) {
+	d.MaxWatch = 50 * time.Millisecond
+	d.Health = func(_ context.Context, port int, _ string) (int, error) {
+		if port == 20001 && edge.sites[websiteID].Port == 20001 {
+			return 500, nil
+		}
+		return 200, nil
+	}
+}
+
+func TestDeployGoesBackWhenTheHealthCheckAfterTheSwitchFails(t *testing.T) {
+	d, f, edge := withSite(t)
+	failAfterSwitch(d, edge)
+	req := deployRequest()
+	req.HealthCheck = &agentv1.HealthCheck{MaxErrorRate: 0.05, Seconds: 300}
+	job, err := d.Deploy(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = runSteps(t, job, nil)
+	if err == nil || !strings.HasPrefix(err.Error(), "the health check failed after the switch: ") {
+		t.Fatalf("err = %v", err)
+	}
+	// FR-1008: the website goes back to the previous release.
+	if site, _ := d.State.Get(websiteID); site.Suffix != "" || site.Website.GetDocumentRoot() != "" || edge.sites[websiteID].Port != 20000 {
+		t.Errorf("the website did not go back: %+v", site)
+	}
+	if !f.Called("systemctl --user --machine=acme_x7k2@ stop cf-acme_x7k2-b.service") || !f.Called(asSite+"rm -rf -- "+d.Host.AppDir("acme_x7k2")+"/releases/"+releaseID) {
+		t.Errorf("calls = %v", f.Calls)
+	}
+}
+
+func TestDeployWithAMigrationKeepsTheReleaseWhenTheHealthCheckFails(t *testing.T) {
+	d, f, edge := withSite(t)
+	failAfterSwitch(d, edge)
+	req := deployRequest()
+	req.MigrationCommand = "php artisan migrate --force"
+	req.HealthCheck = &agentv1.HealthCheck{MaxErrorRate: 0.05, Seconds: 300}
+	job, err := d.Deploy(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := runSteps(t, job, nil); err != nil {
+		t.Fatalf("the job failed: %v", err)
+	}
+	// FR-1009: the website keeps the new release, and the result has the error.
+	site, _ := d.State.Get(websiteID)
+	if site.Suffix != "-b" || site.Website.GetDocumentRoot() != "releases/"+releaseID+"/public" || edge.sites[websiteID].Port != site.Port {
+		t.Errorf("the website went back: %+v", site)
+	}
+	// The step "Get the code" empties the release first. Nothing removes it after that.
+	removes := 0
+	for _, c := range f.Calls {
+		if c == asSite+"rm -rf -- "+d.Host.AppDir("acme_x7k2")+"/releases/"+releaseID {
+			removes++
+		}
+	}
+	if removes != 1 {
+		t.Errorf("the agent removed the new release: %d removes", removes)
+	}
+	r := job.Result()
+	if r["migrated"] != true || !strings.HasPrefix(r["healthError"].(string), "the health check failed after the switch: ") || !strings.Contains(r["healthError"].(string), "last error: status 500") {
+		t.Errorf("result = %v", r)
+	}
+}
+
+const lsRemoteStart = buildStart + "-p RuntimeMaxSec=45 "
+
+func TestCheckBranchesGivesTheLastCommitOfEachBranch(t *testing.T) {
+	d, f, _ := withSite(t)
+	home := d.Host.Home("acme_x7k2")
+	head := "4f9a1c2d4f9a1c2d4f9a1c2d4f9a1c2d4f9a1c2d"
+	// The fake gives the same output for each check: a branch "gone" is not in it.
+	f.Rules = append(f.Rules, execx.Rule{Prefix: lsRemoteStart, Output: head + "\trefs/heads/main\n"})
+	key := "-----BEGIN OPENSSH PRIVATE KEY-----\nabc\n-----END OPENSSH PRIVATE KEY-----\n"
+	heads, err := d.CheckBranches(context.Background(), &agentv1.CheckBranchesRequest{Checks: []*agentv1.BranchCheck{
+		{WebsiteId: websiteID, Repository: "git@github.com:acme/shop.git", Branch: "main", DeployKey: key},
+		{WebsiteId: websiteID, Repository: "git@github.com:acme/shop.git", Branch: "gone"},
+		{WebsiteId: jobID2, Repository: "git@github.com:acme/shop.git", Branch: "main"},
+		{WebsiteId: websiteID, Repository: "--upload-pack=x", Branch: "main"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := heads.GetHeads()
+	if len(got) != 4 || got[0].GetCommit() != head || got[0].GetError() != "" || got[0].GetWebsiteId() != websiteID {
+		t.Fatalf("heads = %v", got)
+	}
+	if got[1].GetCommit() != "" || got[1].GetError() != "the branch gone is not in the repository" {
+		t.Errorf("missing branch = %v", got[1])
+	}
+	if got[2].GetError() != "the agent does not know this website" || got[3].GetError() == "" {
+		t.Errorf("bad checks = %v, %v", got[2], got[3])
+	}
+
+	// The check runs in a build container of the website with the key of the website. The
+	// key is on the standard input, in a directory that a deploy does not remove.
+	call, _ := called(f, lsRemoteStart)
+	for _, want := range []string{
+		"--volume=" + home + "/.cf-check/deploy.key:/run/cf-deploy-key:ro,Z",
+		"--volume=" + home + "/.cf-ssh:/run/cf-ssh:Z",
+		"--workdir=/tmp",
+		siteImage + " sh -c set -e\ngit ls-remote --heads -- \"$2\" \"refs/heads/$1\" sh main git@github.com:acme/shop.git",
+	} {
+		if !strings.Contains(call, want) {
+			t.Errorf("the check has no %q:\n%s", want, call)
+		}
+	}
+	if _, in := called(f, asSite+"sh -c umask 077 && mkdir -p \"$1\" && cat > \"$1/$2\" sh "+home+"/.cf-check deploy.key"); in != key {
+		t.Errorf("key = %q", in)
+	}
+	if !f.Called(asSite + "rm -rf -- " + home + "/.cf-check") {
+		t.Error("the agent did not remove the key")
+	}
+	for _, c := range f.Calls {
+		if strings.Contains(c, "PRIVATE KEY") {
+			t.Errorf("the key is in a command line: %s", c)
+		}
+	}
+
+	if _, err := d.CheckBranches(context.Background(), &agentv1.CheckBranchesRequest{Checks: make([]*agentv1.BranchCheck, MaxBranchChecks+1)}); err == nil {
+		t.Error("too many checks: no error")
+	}
+}
+
+func TestCheckBranchesExplainsAChangedHostKey(t *testing.T) {
+	d, f, _ := withSite(t)
+	f.Rules = append(f.Rules, execx.Rule{Prefix: lsRemoteStart, Err: errors.New("exit status 128: @@@ WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED! @@@")})
+	heads, err := d.CheckBranches(context.Background(), &agentv1.CheckBranchesRequest{Checks: []*agentv1.BranchCheck{
+		{WebsiteId: websiteID, Repository: "git@github.com:acme/shop.git", Branch: "main", DeployKey: "-----BEGIN OPENSSH PRIVATE KEY-----\nabc\n-----END OPENSSH PRIVATE KEY-----\n"},
+	}})
+	if err != nil || !strings.Contains(heads.GetHeads()[0].GetError(), "start a deploy and select to forget the key of the Git host") {
+		t.Fatalf("heads = %v, err = %v", heads, err)
 	}
 }
 

@@ -8,9 +8,11 @@ use Illuminate\Database\Eloquent\Model;
 
 /**
  * The result of one deploy of a website: the directory "releases/<id>" in the files of the
- * website. The column "ref" has the branch.
+ * website. The column "ref" has the branch. "migration" is true when the deploy ran the
+ * migration command. "health_error" has the error of a failed health check after the switch
+ * of such a deploy: the website kept the release (FR-1009).
  */
-#[Fillable(['website_id', 'ref', 'commit', 'message', 'state', 'live', 'migration', 'duration_seconds', 'document_root', 'trigger', 'agent_job_id', 'error'])]
+#[Fillable(['website_id', 'ref', 'commit', 'message', 'state', 'live', 'migration', 'duration_seconds', 'document_root', 'trigger', 'agent_job_id', 'error', 'health_error'])]
 class Release extends Model
 {
     use HasUlids;
