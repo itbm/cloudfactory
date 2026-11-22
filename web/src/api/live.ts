@@ -19,7 +19,10 @@ import type {
   Mailbox,
   DatabaseUser,
   DnsRecord,
+  DnsAccount,
+  DnsProvider,
   DnsZone,
+  DnsZoneProvider,
   DomainVerification,
   Job,
   Limits,
@@ -177,9 +180,14 @@ interface ApiPanelCertificate {
 }
 interface ApiDatabaseServer extends Omit<DatabaseServer, "usage" | "createdAt"> { usage: DatabaseServer["usage"] | null; createdAt: string | null }
 interface ApiDnsRecord extends Omit<DnsRecord, "priority" | "managed"> { priority: number | null; managed: DnsRecord["managed"] | null }
-interface ApiDnsZone extends Omit<DnsZone, "delegation" | "dnssec" | "records" | "createdAt"> {
+interface ApiDnsZoneProvider extends Omit<DnsZoneProvider, "error" | "syncedAt" | "changes" | "imported" | "handover"> {
+  error: string | null; syncedAt: string | null; changes: DnsZoneProvider["changes"] | null; imported: DnsZoneProvider["imported"] | null; handover: { endsAt: string | null } | null;
+}
+interface ApiDnsZone extends Omit<DnsZone, "delegation" | "dnssec" | "records" | "createdAt" | "provider"> {
   delegation: { state: DnsZone["delegation"]["state"]; nameServers: string[]; checkedAt: string | null };
-  dnssec: { enabled: boolean; ds: DnsZone["dnssec"]["ds"] | null; dnskey: string | null };
+  // A panel API of an earlier release has no state and no provider.
+  dnssec: { enabled: boolean; state?: DnsZone["dnssec"]["state"]; ds: DnsZone["dnssec"]["ds"] | null; dnskey: string | null };
+  provider?: ApiDnsZoneProvider | null;
   createdAt: string | null;
   records?: ApiDnsRecord[];
 }
@@ -321,10 +329,35 @@ export interface ApiNetwork extends PrivateNetwork { createdAt?: string | null }
 
 export const toNetwork = (n: ApiNetwork): PrivateNetwork => ({ id: n.id, customerId: n.customerId, name: n.name, isDefault: n.isDefault, websiteIds: n.websiteIds ?? [], databaseServerIds: n.databaseServerIds ?? [] });
 
+interface ApiDnsAccount extends Omit<DnsAccount, "customerId" | "account" | "checkedAt" | "createdAt" | "credentials"> {
+  customerId: string | null; account: string | null; checkedAt: string | null; createdAt: string | null;
+  // PHP gives an empty object as an empty list.
+  credentials: Record<string, string | null> | [];
+}
+
+export const toDnsAccount = (a: ApiDnsAccount): DnsAccount => ({
+  ...a,
+  customerId: a.customerId ?? undefined,
+  account: a.account ?? undefined,
+  checkedAt: a.checkedAt ?? undefined,
+  createdAt: a.createdAt ?? "",
+  credentials: Array.isArray(a.credentials) ? {} : a.credentials,
+});
+
+const toDnsZoneProvider = (p: ApiDnsZoneProvider): DnsZoneProvider => ({
+  ...p,
+  error: p.error ?? undefined,
+  syncedAt: p.syncedAt ?? undefined,
+  changes: p.changes ?? undefined,
+  imported: p.imported ?? undefined,
+  handover: p.handover ? { endsAt: p.handover.endsAt ?? undefined } : undefined,
+});
+
 export const toDnsZone = (z: ApiDnsZone): DnsZone => ({
   ...z,
   delegation: { state: z.delegation.state, nameServers: z.delegation.nameServers ?? [], checkedAt: z.delegation.checkedAt ?? undefined },
-  dnssec: { enabled: z.dnssec.enabled, ds: z.dnssec.ds ?? undefined, dnskey: z.dnssec.dnskey ?? undefined },
+  dnssec: { enabled: z.dnssec.enabled, state: z.dnssec.state ?? (z.dnssec.enabled ? "active" : "off"), ds: z.dnssec.ds ?? undefined, dnskey: z.dnssec.dnskey ?? undefined },
+  provider: z.provider ? toDnsZoneProvider(z.provider) : undefined,
   createdAt: z.createdAt ?? "",
   records: z.records?.map(toDnsRecord),
 });
@@ -403,7 +436,7 @@ export async function load(previous: State): Promise<State> {
   const admin = me.role === "administrator";
   const optional = <T>(p: Promise<T>, fallback: T) => p.catch(() => fallback);
 
-  const [websites, jobs, customers, plans, tokens, policy, servers, images, rollouts, audit, users, certificate, setup, account, databaseServers, dns, mesh, networks, alerts, mailDomains, mailboxes, mailAliases, mailClusters, pluginPages, pluginActions] = await Promise.all([
+  const [websites, jobs, customers, plans, tokens, policy, servers, images, rollouts, audit, users, certificate, setup, account, databaseServers, dns, dnsAccounts, mesh, networks, alerts, mailDomains, mailboxes, mailAliases, mailClusters, pluginPages, pluginActions] = await Promise.all([
     all<ApiWebsite>("/websites"),
     request<{ data: ApiJob[] }>("GET", "/jobs?perPage=50").then((r) => r.data),
     optional(request<{ data: ApiCustomer[] }>("GET", "/customers").then((r) => r.data), []),
@@ -422,6 +455,8 @@ export async function load(previous: State): Promise<State> {
     optional(request<{ data: ApiDatabaseServer[] }>("GET", "/database-servers").then((r) => r.data), []),
     // The DNS zones, and the name servers that a customer gives to the registrar of a domain.
     optional(request<{ data: ApiDnsZone[]; nameServers?: string[] }>("GET", "/dns-zones"), { data: [], nameServers: [] }),
+    // The accounts at external DNS providers, and the providers of the plugins.
+    optional(request<{ data: ApiDnsAccount[]; providers: DnsProvider[] }>("GET", "/dns-accounts"), { data: [], providers: [] }),
     // A panel API of an earlier release has no mesh.
     admin ? optional(request<Mesh>("GET", "/mesh"), undefined) : Promise.resolve(undefined),
     // A panel API of an earlier release has no private networks.
@@ -487,6 +522,8 @@ export async function load(previous: State): Promise<State> {
     databaseServers: databaseServers.map(toDatabaseServer),
     dnsZones: dns.data.map((z) => zoneDetails.get(z.id) ?? { ...toDnsZone(z), records: previous.dnsZones.find((x) => x.id === z.id && x.serial === z.serial)?.records }),
     nameServers: dns.nameServers ?? [],
+    dnsAccounts: dnsAccounts.data.map(toDnsAccount),
+    dnsProviders: dnsAccounts.providers,
     mesh,
     networks,
     pluginPages,
@@ -751,4 +788,4 @@ export async function waitForJob(job: ApiJob | Job, onChange: (job: Job) => void
   return current;
 }
 
-export type { ApiDatabaseServer, ApiDnsRecord, ApiDnsZone, ApiMailDomain, ApiMailbox, ApiJob, ApiPanelCertificate, ApiUser, ApiWebsite };
+export type { ApiDatabaseServer, ApiDnsAccount, ApiDnsRecord, ApiDnsZone, ApiMailDomain, ApiMailbox, ApiJob, ApiPanelCertificate, ApiUser, ApiWebsite };

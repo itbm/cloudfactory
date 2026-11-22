@@ -1,18 +1,20 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useAction, useStore } from "../api/hooks";
 import { contextCustomers, inContext, visibleWebsites } from "../api/selectors";
-import { checkDnsZone, createDnsZone, deleteDnsRecord, deleteDnsZone, saveDnsRecord, setDnssec, showDnsZone, syncDnsZone } from "../api/store";
+import { checkDnsZone, createDnsZone, deleteDnsRecord, deleteDnsZone, exportDnsZone, importDnsZone, saveDnsRecord, setDnssec, showDnsZone, syncDnsZone, type DnsImportResult } from "../api/store";
 import type { DnsRecord, DnsRecordType, DnsZone, State } from "../api/types";
 import { Topbar } from "../components/Layout";
 import { Card, Empty, Field, FormError, JobError, Modal, PageHeader, RowMenu, Status, TableWrap } from "../components/ui";
 import { relativeTime } from "../lib/format";
 import { DNS_DELEGATION, DNS_RECORD_TYPES, DNS_ZONE_STATUS, jobActive, ttlText } from "../lib/labels";
+import { AccountsCard, delegationText, DNSSEC_ALGORITHMS, DS_DIGESTS, MoveDialog, ProviderCard, usableAccounts } from "./DnsProviders";
 import { CopyField } from "./website/AccessTab";
 
 /**
  * DNS hosting. A customer makes a zone for a domain, and then gives the name servers of the
- * panel to the registrar of the domain. The panel sends each change to each DNS server.
+ * panel to the registrar of the domain. The panel sends each change to each DNS server. A zone
+ * can also use an external DNS provider, for example Cloudflare (DnsProviders).
  */
 export function DnsPage() {
   const { id } = useParams();
@@ -67,6 +69,8 @@ function ZoneList() {
   const only = customers.length === 1 ? customers[0] : undefined;
   const allowed = only && state.plans.find((p) => p.id === only.planId)?.dnsZones;
   const available = state.nameServers.length > 0;
+  // A zone can go to the name servers of the panel, or to an external DNS provider.
+  const canCreate = available || state.dnsAccounts.some((a) => a.available);
   // The domains of the websites, with the zone that has each one.
   const domains = visibleWebsites(state).flatMap((w) => w.domains.map((d) => ({ website: w, domain: d, zone: zoneOf(state.dnsZones, d.name, w.customerId) })));
 
@@ -76,15 +80,15 @@ function ZoneList() {
       <main id="main" className="content content-wide">
         <PageHeader
           title="DNS"
-          description="The DNS records of your domains. Make a zone for a domain, and then give the name servers of this panel to the registrar of the domain. The panel checks each record before it saves it."
-          actions={available && <button type="button" className="btn btn-primary" onClick={() => setCreating("")}>New DNS zone</button>}
+          description="The DNS records of your domains. Make a zone for a domain, and then give the name servers of this panel, or of your external DNS provider, to the registrar of the domain. The panel checks each record before it saves it."
+          actions={canCreate && <button type="button" className="btn btn-primary" onClick={() => setCreating("")}>New DNS zone</button>}
         />
-        {!available && <NoDnsServer admin={admin} />}
+        {!canCreate && <NoDnsServer admin={admin} />}
         <div className="stack">
           <Card title="DNS zones">
             <div className="card-body" style={{ paddingBottom: 12 }}>
               <p className="muted">
-                A zone has all the records of one domain. The domain uses the zone only when its registrar has the name servers of this panel.
+                A zone has all the records of one domain. The domain uses the zone only when its registrar has the name servers of the zone.
                 {only && allowed !== undefined && <> {only.name} has {zones.filter((z) => z.customerId === only.id).length} of {allowed} DNS zones.</>}
               </p>
               <FormError error={check.error ?? sync.error ?? remove.error} />
@@ -95,6 +99,7 @@ function ZoneList() {
                   <tr>
                     <th scope="col">Zone</th>
                     <th scope="col">Records</th>
+                    <th scope="col">DNS provider</th>
                     <th scope="col">Registrar</th>
                     <th scope="col">DNSSEC</th>
                     <th scope="col">Status</th>
@@ -116,7 +121,11 @@ function ZoneList() {
                           {z.websites > 0 && <span className="cell-sub nowrap">{z.websites} {z.websites === 1 ? "website" : "websites"}</span>}
                         </td>
                         <td>
-                          <Status tone={delegation.tone}>{delegation.label}</Status>
+                          {z.provider ? z.provider.name : "This panel"}
+                          {z.provider && <span className="cell-sub">{z.provider.handover ? "Handover from this panel" : z.provider.accountName}</span>}
+                        </td>
+                        <td>
+                          <Status tone={delegation.tone}>{delegationText(z, delegation.label)}</Status>
                           {z.delegation.state === "elsewhere" && z.delegation.nameServers.length > 0 && <span className="cell-sub">{z.delegation.nameServers.join(", ")}</span>}
                         </td>
                         <td>{z.dnssec.enabled ? <Status tone="success">On</Status> : <Status tone="neutral">Off</Status>}</td>
@@ -137,11 +146,13 @@ function ZoneList() {
                       </tr>
                     );
                   })}
-                  {zones.length === 0 && <tr><td colSpan={6} className="muted">No DNS zones.{available && " Make a zone for a domain that you own."}</td></tr>}
+                  {zones.length === 0 && <tr><td colSpan={7} className="muted">No DNS zones.{canCreate && " Make a zone for a domain that you own."}</td></tr>}
                 </tbody>
               </table>
             </TableWrap>
           </Card>
+
+          <AccountsCard />
 
           {available && (
             <Card title="Name servers of this panel">
@@ -170,7 +181,7 @@ function ZoneList() {
                         <td>
                           {zone
                             ? <Link to={`/dns/${zone.id}`}>{zone.name}</Link>
-                            : available
+                            : canCreate
                               ? <button type="button" className="btn-link" onClick={() => setCreating(domain.name.replace(/^www\./, ""))}>Make a zone</button>
                               : <span className="muted">None</span>}
                         </td>
@@ -185,7 +196,7 @@ function ZoneList() {
         </div>
       </main>
       {creating !== null && <CreateDialog name={creating} onClose={() => setCreating(null)} />}
-      {removing && <RemoveDialog zone={removing} onClose={() => setRemoving(null)} onRemove={() => void remove.run(removing.id)} />}
+      {removing && <RemoveDialog zone={removing} onClose={() => setRemoving(null)} onRemove={(keep) => void remove.run(removing.id, keep)} />}
     </>
   );
 }
@@ -196,6 +207,12 @@ function CreateDialog({ name: first, onClose }: { name: string; onClose: () => v
   const customers = contextCustomers(state);
   const [customerId, setCustomerId] = useState(() => customers.find((c) => c.id === state.session.contextId)?.id ?? customers[0]?.id ?? "");
   const [name, setName] = useState(first);
+  const panel = state.nameServers.length > 0;
+  const accounts = usableAccounts(state, customerId);
+  // "": the name servers of the panel.
+  const [accountId, setAccountId] = useState(() => panel ? "" : accounts[0]?.id ?? "");
+  const [importRecords, setImportRecords] = useState(true);
+  const account = accounts.find((a) => a.id === accountId);
   const create = useAction(createDnsZone);
   const customer = customers.find((c) => c.id === customerId);
   const own = state.dnsZones.filter((z) => z.customerId === customerId).length;
@@ -210,17 +227,21 @@ function CreateDialog({ name: first, onClose }: { name: string; onClose: () => v
     >
       <form id="new-zone" noValidate onSubmit={async (e) => {
         e.preventDefault();
-        const r = await create.run(name, customerId);
+        const r = await create.run(name, customerId, account?.id, importRecords);
         if (r.ok) {
           onClose();
           navigate(`/dns/${r.value}`);
         }
       }}>
-        <FormError error={create.error} shown={["name", "customerId"]} />
+        <FormError error={create.error} shown={["name", "customerId", "accountId"]} />
         {customers.length > 1 && (
           <Field label="Customer" error={create.error?.fields.customerId}>
             {(p) => (
-              <select {...p} className="select" value={customerId} onChange={(e) => setCustomerId(e.target.value)}>
+              <select {...p} className="select" value={customerId} onChange={(e) => {
+                setCustomerId(e.target.value);
+                // An account of a different customer is not for this customer.
+                if (!usableAccounts(state, e.target.value).some((a) => a.id === accountId)) setAccountId(panel ? "" : usableAccounts(state, e.target.value)[0]?.id ?? "");
+              }}>
                 {customers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             )}
@@ -234,24 +255,48 @@ function CreateDialog({ name: first, onClose }: { name: string; onClose: () => v
         <Field label="Domain" hint="The domain that you registered, for example example.com. The zone also has all the names below the domain." error={create.error?.fields.name}>
           {(p) => <input {...p} className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="example.com" autoCapitalize="none" spellCheck={false} />}
         </Field>
+        {accounts.length > 0 && (
+          <Field label="Name servers" hint={account ? `The zone goes to ${account.providerName}. The panel keeps the records, and sends each change to ${account.providerName}.` : undefined} error={create.error?.fields.accountId}>
+            {(p) => (
+              <select {...p} className="select" value={accountId} onChange={(e) => setAccountId(e.target.value)}>
+                {panel && <option value="">This panel ({state.nameServers.join(", ")})</option>}
+                {accounts.map((a) => <option key={a.id} value={a.id}>{a.providerName}: {a.name}</option>)}
+              </select>
+            )}
+          </Field>
+        )}
+        {account && (
+          <label className="check" style={{ marginTop: 10 }}><input type="checkbox" checked={importRecords} onChange={(e) => setImportRecords(e.target.checked)} />Copy the records that {account.providerName} has for the domain now</label>
+        )}
         <p className="muted small" style={{ marginTop: 14 }}>
-          The panel makes the name server records of the zone, and the address records of the websites of the customer that have a domain in the zone. The domain continues to use its current DNS provider until you change the name servers at the registrar.
+          {account
+            ? `The panel makes the address records of the websites of the customer that have a domain in the zone. ${account.providerName} keeps the name server records. The domain continues to use its current DNS provider until you change the name servers at the registrar.`
+            : "The panel makes the name server records of the zone, and the address records of the websites of the customer that have a domain in the zone. The domain continues to use its current DNS provider until you change the name servers at the registrar."}
         </p>
       </form>
     </Modal>
   );
 }
 
-function RemoveDialog({ zone, onClose, onRemove }: { zone: DnsZone; onClose: () => void; onRemove: () => void }) {
+function RemoveDialog({ zone, onClose, onRemove }: { zone: DnsZone; onClose: () => void; onRemove: (keepAtProvider: boolean) => void }) {
+  const [keep, setKeep] = useState(false);
+  const provider = zone.provider?.name;
   return (
     <Modal
       title={`Remove DNS zone ${zone.name}?`}
       onClose={onClose}
-      footer={<><button type="button" className="btn" onClick={onClose}>Cancel</button><button type="button" className="btn btn-danger-solid" onClick={() => { onClose(); onRemove(); }}>Remove zone</button></>}
+      footer={<><button type="button" className="btn" onClick={onClose}>Cancel</button><button type="button" className="btn btn-danger-solid" onClick={() => { onClose(); onRemove(keep); }}>Remove zone</button></>}
     >
-      <p>The panel removes the zone and its {zone.recordCount} records from each DNS server. You cannot restore the records.</p>
-      {zone.delegation.state === "here" && (
-        <p style={{ marginTop: 10 }}><strong>The domain uses the name servers of this panel.</strong> When you remove the zone, the websites and the email of the domain stop until the domain has a different DNS provider. First set the new name servers at the registrar.</p>
+      {provider ? (
+        <>
+          <p>{keep ? `The panel forgets the zone and its ${zone.recordCount} records. The zone stays at ${provider} with its records, and the panel does not change it again.` : `The panel removes the zone and its ${zone.recordCount} records from ${provider}. You cannot restore the records.`}</p>
+          <label className="check" style={{ marginTop: 10 }}><input type="checkbox" checked={keep} onChange={(e) => setKeep(e.target.checked)} />Keep the zone at {provider}</label>
+        </>
+      ) : (
+        <p>The panel removes the zone and its {zone.recordCount} records from each DNS server. You cannot restore the records.</p>
+      )}
+      {zone.delegation.state === "here" && !keep && (
+        <p style={{ marginTop: 10 }}><strong>The domain uses the name servers of {provider ?? "this panel"}.</strong> When you remove the zone, the websites and the email of the domain stop until the domain has a different DNS provider. First set the new name servers at the registrar.</p>
       )}
       {zone.dnssec.enabled && (
         <p style={{ marginTop: 10 }}><strong>The zone has DNSSEC.</strong> First remove the DS record at the registrar. If the DS record stays, resolvers refuse the answers of the new DNS provider.</p>
@@ -271,7 +316,10 @@ function ZonePage({ id }: { id: string }) {
   const [removingRecord, setRemovingRecord] = useState<DnsRecord | null>(null);
   const [removing, setRemoving] = useState(false);
   const [dnssecDialog, setDnssecDialog] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [moving, setMoving] = useState(false);
   const [type, setType] = useState<"all" | DnsRecordType>("all");
+  const exportZone = useAction(async (zoneId: string, name: string) => saveText(`${name}.zone`, await exportDnsZone(zoneId)));
   const check = useAction(checkDnsZone);
   const sync = useAction(syncDnsZone);
   const remove = useAction(deleteDnsZone);
@@ -294,6 +342,13 @@ function ZonePage({ id }: { id: string }) {
   const locked = zone.status === "removing";
   const failed = zone.status === "failed" ? state.jobs.find((j) => j.dnsZoneId === zone.id && j.state === "failed") : undefined;
   const full = (name: string) => (name === "@" ? zone.name : `${name}.${zone.name}`);
+  const provider = zone.provider;
+  // The account of the zone, when the user can see it. It tells if the provider can sign zones.
+  const account = provider ? state.dnsAccounts.find((a) => a.id === provider.accountId) : undefined;
+  const canSign = !provider || (account?.dnssec ?? true);
+  const signer = provider?.name ?? "The DNS servers";
+  // The registrar has the name servers of the provider, and the panel waits for its TXT record in the public DNS.
+  const waitsForProvider = !!provider && zone.delegation.state === "unknown" && zone.delegation.nameServers.length > 0;
 
   return (
     <>
@@ -303,18 +358,28 @@ function ZonePage({ id }: { id: string }) {
         <div className="detail-header">
           <div>
             <div className="detail-title"><h1>{zone.name}</h1><Status tone={status.tone}>{status.label}</Status></div>
-            <p className="detail-meta">{[customer?.name, `${zone.recordCount} records`, `serial ${zone.serial}`].filter(Boolean).join(" · ")}</p>
+            <p className="detail-meta">{[customer?.name, provider ? `at ${provider.name}` : undefined, `${zone.recordCount} records`, `serial ${zone.serial}`].filter(Boolean).join(" · ")}</p>
           </div>
           {!locked && (
             <div className="btn-group">
               <button type="button" className="btn btn-danger" onClick={() => setRemoving(true)}>Remove zone</button>
+              <button type="button" className="btn" disabled={exportZone.busy} onClick={() => void exportZone.run(zone.id, zone.name)}>Export</button>
+              <button type="button" className="btn" onClick={() => setImporting(true)}>Import</button>
+              {(state.dnsAccounts.length > 0 || provider) && <button type="button" className="btn" onClick={() => setMoving(true)}>Move</button>}
               <button type="button" className="btn btn-primary" onClick={() => setEditing("new")}>Add record</button>
             </div>
           )}
         </div>
-        <FormError error={check.error ?? sync.error ?? remove.error ?? removeRecord.error ?? dnssec.error} />
+        <FormError error={check.error ?? sync.error ?? remove.error ?? removeRecord.error ?? dnssec.error ?? exportZone.error} />
 
-        {zone.status === "failed" && (
+        {zone.status === "failed" && provider?.state === "failed" && (
+          <div className="alert alert-danger alert-stack mt" role="alert">
+            <p><strong>{provider.name} does not have the last change.</strong> {provider.name} continues to answer with the records that it had before. The panel sends the zone again by itself: first after one minute, and then after a longer time for each try. You can also send it now.</p>
+            {provider.error && <div className="cause"><p>{provider.error}</p></div>}
+            <p><button type="button" className="btn" disabled={sync.busy} onClick={() => void sync.run(zone.id)}>{sync.busy ? "Sending…" : "Send again now"}</button></p>
+          </div>
+        )}
+        {zone.status === "failed" && provider?.state !== "failed" && (
           <div className="alert alert-danger alert-stack mt" role="alert">
             <p><strong>A DNS server does not have the last change.</strong> The server continues to answer with the records that it had before. The panel sends the zone again by itself: first after one minute, and then after a longer time for each try. You can also send it now.</p>
             {failed && <div className="cause"><JobError job={failed} /></div>}
@@ -324,9 +389,13 @@ function ZonePage({ id }: { id: string }) {
         {!locked && zone.delegation.state !== "here" && (
           <div className="alert alert-info alert-stack mt" role="status">
             <p>
-              <strong>{zone.delegation.state === "elsewhere" ? "The domain uses other name servers." : zone.delegation.state === "none" ? "The public DNS has no name servers for the domain." : "The panel has not checked the name servers of the domain."}</strong>{" "}
+              <strong>{zone.delegation.state === "elsewhere" ? "The domain uses other name servers." : zone.delegation.state === "none" ? "The public DNS has no name servers for the domain." : waitsForProvider ? `The registrar has the name servers of ${provider?.name}, but ${provider?.name} does not answer with this zone yet.` : "The panel has not checked the name servers of the domain."}</strong>{" "}
+              {waitsForProvider && <>The panel checks the TXT record <code>_cloudfactory-challenge.{zone.name}</code> that it sends to {provider?.name} with the zone. A different account at {provider?.name} can have the same name servers, so only this record shows that the domain uses this zone. </>}
               {zone.delegation.state === "elsewhere" && zone.delegation.nameServers.length > 0 && <>The registrar now has <code>{zone.delegation.nameServers.join(", ")}</code>. </>}
-              The records below have no effect until the registrar of {zone.name} has the name servers of this panel: <code>{zone.nameServers.join(", ")}</code>. Copy the records that the domain uses now to this zone first.
+              {waitsForProvider ? "" : zone.nameServers.length > 0
+                ? <>The records below have no effect until the registrar of {zone.name} has the name servers of {provider?.name ?? "this panel"}: <code>{zone.nameServers.join(", ")}</code>. </>
+                : <>The records below have no effect until the registrar of {zone.name} has the name servers of {provider?.name ?? "this panel"}. {provider?.name} gives them after the first change. </>}
+              {provider ? "" : "Copy the records that the domain uses now to this zone first."}
             </p>
             <p><button type="button" className="btn" disabled={check.busy} onClick={() => void check.run(zone.id)}>{check.busy ? "Checking…" : "Check again"}</button></p>
           </div>
@@ -335,12 +404,13 @@ function ZonePage({ id }: { id: string }) {
         <div className="grid-2 mt">
           <Card title="Name servers" actions={!locked && <button type="button" className="btn btn-sm" disabled={check.busy} onClick={() => void check.run(zone.id)}>Check</button>}>
             <div className="card-body">
+              <ProviderCard zone={zone} syncing={sync.busy} onSync={() => void sync.run(zone.id)} />
               <table className="kv">
                 <tbody>
                   <tr>
                     <th scope="row">Registrar</th>
                     <td>
-                      <Status tone={delegation.tone}>{delegation.label}</Status>
+                      <Status tone={delegation.tone}>{delegationText(zone, delegation.label)}</Status>
                       {zone.delegation.checkedAt && <span className="cell-sub">Checked {relativeTime(zone.delegation.checkedAt)}</span>}
                     </td>
                   </tr>
@@ -355,7 +425,7 @@ function ZonePage({ id }: { id: string }) {
                       </td>
                     </tr>
                   ))}
-                  {zone.servers.length === 0 && <tr><th scope="row">Server</th><td className="muted">The panel has no DNS server.</td></tr>}
+                  {zone.servers.length === 0 && !provider && <tr><th scope="row">Server</th><td className="muted">The panel has no DNS server.</td></tr>}
                 </tbody>
               </table>
             </div>
@@ -363,19 +433,24 @@ function ZonePage({ id }: { id: string }) {
 
           <Card
             title="DNSSEC"
-            actions={!locked && <button type="button" className="btn btn-sm" disabled={dnssec.busy} onClick={() => setDnssecDialog(true)}>{zone.dnssec.enabled ? "Turn off" : "Turn on"}</button>}
+            actions={!locked && (canSign || zone.dnssec.enabled) && <button type="button" className="btn btn-sm" disabled={dnssec.busy} onClick={() => setDnssecDialog(true)}>{zone.dnssec.enabled ? "Turn off" : "Turn on"}</button>}
           >
             <div className="card-body">
-              {zone.dnssec.enabled && zone.dnssec.ds ? (
+              {zone.dnssec.enabled && !zone.dnssec.ds ? (
                 <>
-                  <p><Status tone="success">On</Status> <span className="muted">The DNS servers sign each answer of the zone.</span></p>
+                  <p><Status tone="info">Waits</Status> <span className="muted">{signer} makes the key of the zone.</span></p>
+                  <p className="muted" style={{ marginTop: 10 }}>The DS record for the registrar comes when the key is ready. This can take some minutes.</p>
+                </>
+              ) : zone.dnssec.enabled && zone.dnssec.ds ? (
+                <>
+                  <p><Status tone="success">On</Status> <span className="muted">{signer} {provider ? "signs" : "sign"} each answer of the zone.</span></p>
                   <p className="muted" style={{ margin: "10px 0" }}>Give this DS record to the registrar of the domain. Resolvers check the signatures only when the registrar has the record.</p>
                   <CopyField value={zone.dnssec.ds.record} label="DS record" />
                   <table className="kv" style={{ marginTop: 8 }}>
                     <tbody>
                       <tr><th scope="row">Key tag</th><td><code>{zone.dnssec.ds.keyTag}</code></td></tr>
-                      <tr><th scope="row">Algorithm</th><td><code>{zone.dnssec.ds.algorithm}</code> <span className="muted">ECDSA P-256 with SHA-256</span></td></tr>
-                      <tr><th scope="row">Digest type</th><td><code>{zone.dnssec.ds.digestType}</code> <span className="muted">SHA-256</span></td></tr>
+                      <tr><th scope="row">Algorithm</th><td><code>{zone.dnssec.ds.algorithm}</code> <span className="muted">{DNSSEC_ALGORITHMS[zone.dnssec.ds.algorithm] ?? ""}</span></td></tr>
+                      <tr><th scope="row">Digest type</th><td><code>{zone.dnssec.ds.digestType}</code> <span className="muted">{DS_DIGESTS[zone.dnssec.ds.digestType] ?? ""}</span></td></tr>
                       <tr><th scope="row">Digest</th><td><code>{zone.dnssec.ds.digest}</code></td></tr>
                     </tbody>
                   </table>
@@ -383,7 +458,13 @@ function ZonePage({ id }: { id: string }) {
               ) : (
                 <>
                   <p><Status tone="neutral">Off</Status></p>
-                  <p className="muted" style={{ marginTop: 10 }}>With DNSSEC, the DNS servers sign each answer of the zone, and a resolver can check that nobody changed the answer. The panel makes one key for the zone and gives you a DS record for the registrar.</p>
+                  <p className="muted" style={{ marginTop: 10 }}>
+                    {!canSign
+                      ? `The plugin of ${provider?.name} cannot turn on DNSSEC.`
+                      : provider
+                        ? `With DNSSEC, ${provider.name} signs each answer of the zone, and a resolver can check that nobody changed the answer. ${provider.name} makes the key, and the panel shows the DS record for the registrar.`
+                        : "With DNSSEC, the DNS servers sign each answer of the zone, and a resolver can check that nobody changed the answer. The panel makes one key for the zone and gives you a DS record for the registrar."}
+                  </p>
                 </>
               )}
             </div>
@@ -414,7 +495,7 @@ function ZonePage({ id }: { id: string }) {
                       {r.priority !== undefined && <span className="cell-sub">Priority {r.priority}</span>}
                     </td>
                     <td className="nowrap">{ttlText(r.ttl)}</td>
-                    <td className="muted nowrap">{r.managed === "ns" ? "Panel: name server" : r.managed === "website" ? "Panel: website" : "You"}</td>
+                    <td className="muted nowrap">{r.managed === "ns" ? (provider ? `${provider.name}: name server` : "Panel: name server") : r.managed === "website" ? "Panel: website" : "You"}</td>
                     <td className="cell-actions">
                       {!locked && r.managed !== "ns" && (
                         <RowMenu label={`Actions for the ${r.type} record ${r.name}`} actions={[
@@ -431,12 +512,14 @@ function ZonePage({ id }: { id: string }) {
             </table>
           </TableWrap>
           <p className="card-body muted small" style={{ paddingTop: 12 }}>
-            <code>@</code> is the domain itself. The panel keeps the name server records of the zone, and you cannot change them. When you change a record that the panel made for a website, the record becomes yours and the panel does not change it again.
+            <code>@</code> is the domain itself. {provider ? `The name server records of the zone come from ${provider.name}, and you cannot change them.` : "The panel keeps the name server records of the zone, and you cannot change them."} When you change a record that the panel made for a website, the record becomes yours and the panel does not change it again.
           </p>
         </Card>
       </main>
 
       {editing && <RecordDialog zone={zone} record={editing === "new" ? undefined : editing} onClose={() => setEditing(null)} />}
+      {importing && <ImportDialog zone={zone} onClose={() => setImporting(false)} />}
+      {moving && <MoveDialog zone={zone} onClose={() => setMoving(false)} />}
       {removingRecord && (
         <Modal
           title={`Remove the ${removingRecord.type} record ${removingRecord.name}?`}
@@ -447,7 +530,7 @@ function ZonePage({ id }: { id: string }) {
           {removingRecord.managed === "website" && <p style={{ marginTop: 10 }}>The panel made this record for a website. With no record, the domain does not point to the website.</p>}
         </Modal>
       )}
-      {removing && <RemoveDialog zone={zone} onClose={() => setRemoving(false)} onRemove={() => void remove.run(zone.id).then((r) => { if (r.ok) navigate("/dns"); })} />}
+      {removing && <RemoveDialog zone={zone} onClose={() => setRemoving(false)} onRemove={(keep) => void remove.run(zone.id, keep).then((r) => { if (r.ok) navigate("/dns"); })} />}
       {dnssecDialog && (
         <Modal
           title={zone.dnssec.enabled ? `Turn off DNSSEC for ${zone.name}?` : `Turn on DNSSEC for ${zone.name}?`}
@@ -457,17 +540,143 @@ function ZonePage({ id }: { id: string }) {
           {zone.dnssec.enabled ? (
             <>
               <p><strong>First remove the DS record at the registrar, and wait one day.</strong> If the registrar still has the DS record, resolvers refuse all the answers of the zone, and the websites and the email of the domain stop.</p>
-              <p style={{ marginTop: 10 }}>The panel deletes the key of the zone. If you turn on DNSSEC again, the zone gets a new key and a new DS record.</p>
+              <p style={{ marginTop: 10 }}>{provider ? `${provider.name} deletes` : "The panel deletes"} the key of the zone. If you turn on DNSSEC again, the zone gets a new key and a new DS record.</p>
             </>
           ) : (
             <>
-              <p>The panel makes a key for the zone, and the DNS servers sign the zone. Then the panel shows a DS record.</p>
+              <p>{provider ? `${provider.name} makes a key for the zone, and signs the zone. Then the panel shows the DS record of ${provider.name}.` : "The panel makes a key for the zone, and the DNS servers sign the zone. Then the panel shows a DS record."}</p>
               <p style={{ marginTop: 10 }}>DNSSEC has an effect only after you give the DS record to the registrar of the domain. Until then, the zone operates as before.</p>
             </>
           )}
         </Modal>
       )}
     </>
+  );
+}
+
+/** Gives the text to the browser as a file to save. */
+function saveText(name: string, text: string) {
+  const url = URL.createObjectURL(new Blob([text], { type: "text/plain" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+/** The largest zone file that the panel reads (ZoneFile::MAX_BYTES). */
+const MAX_ZONE_FILE = 1024 * 1024;
+
+/**
+ * Imports the records of a zone file, for example the export of a different DNS provider. The
+ * panel first shows a preview: the records that it adds, and the lines that it does not import.
+ */
+function ImportDialog({ zone, onClose }: { zone: DnsZone; onClose: () => void }) {
+  const [text, setText] = useState("");
+  const [preview, setPreview] = useState<DnsImportResult | null>(null);
+  const [fileError, setFileError] = useState<string | null>(null);
+  const run = useAction(importDnsZone);
+  const picker = useRef<HTMLInputElement>(null);
+  const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+  return (
+    <Modal
+      wide
+      title={`Import records to ${zone.name}`}
+      onClose={onClose}
+      footer={preview ? (
+        <>
+          <button type="button" className="btn" onClick={() => { setPreview(null); run.clear(); }}>Back</button>
+          <button type="button" className="btn btn-primary" disabled={run.busy || preview.added.length === 0} onClick={async () => {
+            const r = await run.run(zone.id, text, false);
+            if (r.ok) onClose();
+          }}>{preview.added.length === 0 ? "No records to import" : `Import ${plural(preview.added.length, "record", "records")}`}</button>
+        </>
+      ) : (
+        <>
+          <button type="button" className="btn" onClick={onClose}>Cancel</button>
+          <button type="submit" form="dns-import" className="btn btn-primary" disabled={run.busy || text.trim() === ""}>{run.busy ? "Reading…" : "Preview"}</button>
+        </>
+      )}
+    >
+      <FormError error={run.error} shown={["zoneFile"]} />
+      {!preview ? (
+        <form id="dns-import" noValidate onSubmit={async (e) => {
+          e.preventDefault();
+          const r = await run.run(zone.id, text, true);
+          if (r.ok) setPreview(r.value);
+        }}>
+          <p className="muted" style={{ marginBottom: 12 }}>
+            Paste a zone file, for example the export of your current DNS provider or of cPanel. The panel checks each record. It adds only the records that the zone does not have, and it does not change or remove a record.
+          </p>
+          <Field label="Zone file" error={run.error?.fields.zoneFile ?? fileError ?? undefined}>
+            {(p) => <textarea {...p} className="input mono" rows={12} value={text} onChange={(e) => setText(e.target.value)} placeholder={`$ORIGIN ${zone.name}.\nwww   3600  IN  A    203.0.113.10\n@     3600  IN  MX   10 mail.${zone.name}.`} spellCheck={false} />}
+          </Field>
+          <p style={{ marginTop: 10 }}>
+            <button type="button" className="btn btn-sm" onClick={() => picker.current?.click()}>Open a file</button>
+            <input ref={picker} type="file" hidden accept=".zone,.db,.txt,text/plain,text/dns" aria-label="Open a zone file" onChange={async (e) => {
+              const file = e.target.files?.[0];
+              e.target.value = "";
+              if (!file) return;
+              if (file.size > MAX_ZONE_FILE) {
+                setFileError("The file is larger than 1 MB.");
+                return;
+              }
+              setFileError(null);
+              setText(await file.text());
+            }} />
+          </p>
+        </form>
+      ) : (
+        <>
+          <p role="status">
+            {preview.added.length > 0 ? <strong>{plural(preview.added.length, "record", "records")} to add.</strong> : <strong>No records to add.</strong>}{" "}
+            {preview.existing > 0 && <>{plural(preview.existing, "record is", "records are")} in the zone already. </>}
+            {preview.skipped.length > 0 && <>The panel does not import {plural(preview.skipped.length, "line", "lines")}.</>}
+          </p>
+          {preview.added.length > 0 && (
+            <TableWrap>
+              <table>
+                <caption className="visually-hidden">Records to add</caption>
+                <thead><tr><th scope="col">Name</th><th scope="col">Type</th><th scope="col">Value</th><th scope="col">TTL</th></tr></thead>
+                <tbody>
+                  {preview.added.map((r) => (
+                    <tr key={`${r.line}-${r.type}-${r.value}`}>
+                      <td><code>{r.name}</code></td>
+                      <td><span className="tag">{r.type}</span></td>
+                      <td style={{ maxWidth: 360, overflowWrap: "anywhere" }}>
+                        <code>{r.value}</code>
+                        {r.priority !== undefined && <span className="cell-sub">Priority {r.priority}</span>}
+                        {r.note && <span className="cell-sub">{r.note}</span>}
+                      </td>
+                      <td className="nowrap">{ttlText(r.ttl)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </TableWrap>
+          )}
+          {preview.skipped.length > 0 && (
+            <>
+              <h3 className="small" style={{ margin: "16px 0 8px" }}>Lines that the panel does not import</h3>
+              <TableWrap>
+                <table>
+                  <thead><tr><th scope="col">Line</th><th scope="col">Text and reason</th></tr></thead>
+                  <tbody>
+                    {preview.skipped.map((s) => (
+                      <tr key={`${s.line}-${s.code}`}>
+                        <td className="nowrap">{s.line}</td>
+                        <td style={{ maxWidth: 480, overflowWrap: "anywhere" }}><code>{s.text}</code><span className="cell-sub">{s.reason}</span></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </TableWrap>
+            </>
+          )}
+        </>
+      )}
+    </Modal>
   );
 }
 
