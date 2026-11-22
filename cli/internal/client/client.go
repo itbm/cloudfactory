@@ -181,9 +181,11 @@ type Website struct {
 	Application string `json:"application"`
 	Status      string `json:"status"`
 	ServerID    string `json:"serverId"`
-	UnixUser    string `json:"unixUser"`
-	NetworkHost string `json:"networkHost"`
-	NetworkPort int    `json:"networkPort"`
+	// MovingToServerID is the server that receives the website, while the status is "moving".
+	MovingToServerID string `json:"movingToServerId"`
+	UnixUser         string `json:"unixUser"`
+	NetworkHost      string `json:"networkHost"`
+	NetworkPort      int    `json:"networkPort"`
 	// Kind is "public", "private" or "worker". Command is the start command of a worker or of
 	// a Node.js or Python website. Environment has the names of the variables, not the values.
 	Kind           string   `json:"kind"`
