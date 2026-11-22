@@ -95,6 +95,7 @@ the script before you run it.
 - [Private networks: a guide for customers](docs/private-networks.md)
 - [Import an account from a different panel](docs/imports.md)
 - [Email notifications](docs/email-notifications.md)
+- [Certificates: uploads and wildcard certificates](docs/certificates.md)
 - [Development](docs/development.md)
 - [Releases and signing keys](docs/releasing.md)
 - [Decisions about the open questions](docs/decisions.md)

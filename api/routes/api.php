@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\AuditController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BackupController;
 use App\Http\Controllers\Api\BrandController;
+use App\Http\Controllers\Api\CertificateController;
 use App\Http\Controllers\Api\CronJobController;
 use App\Http\Controllers\Api\CustomerController;
 use App\Http\Controllers\Api\DatabaseController;
@@ -113,6 +114,14 @@ Route::prefix('v1')->group(function () {
             Route::post('websites/{websiteId}/domains/{name}/primary', [DomainController::class, 'makePrimary']);
             Route::post('websites/{websiteId}/domains/{name}/check', [DomainController::class, 'check'])->middleware('throttle:domain-checks');
             Route::delete('websites/{websiteId}/domains/{name}', [DomainController::class, 'destroy']);
+            // The certificates of the customers: uploads, and certificates with DNS validation
+            // (docs/certificates.md). Each order uses the limits of the certificate authority.
+            Route::get('certificates', [CertificateController::class, 'index']);
+            Route::post('certificates', [CertificateController::class, 'store'])->middleware('throttle:certificate-changes');
+            Route::get('certificates/{id}', [CertificateController::class, 'show']);
+            Route::put('certificates/{id}', [CertificateController::class, 'update'])->middleware('throttle:certificate-changes');
+            Route::post('certificates/{id}/renew', [CertificateController::class, 'renew'])->middleware('throttle:certificate-changes');
+            Route::delete('certificates/{id}', [CertificateController::class, 'destroy']);
             Route::put('websites/{websiteId}/sftp', [SftpController::class, 'update']);
             Route::put('websites/{websiteId}/runtime', [RuntimeController::class, 'update']);
             Route::post('websites/{websiteId}/runtime/revert', [RuntimeController::class, 'revert']);
