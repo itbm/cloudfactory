@@ -139,7 +139,7 @@ interface ApiMe {
   brand?: Brand;
 }
 interface ApiUser { id: number; name: string; email: string; role: User["role"]; customerId: string | null; totpEnabled: boolean; mustChangePassword: boolean; createdAt: string | null }
-interface ApiJob { id: string; title: string; ref: string | null; action?: string | null; state: Job["state"]; steps: string[]; step: number; error: string | null; websiteId: string | null; serverId: string | null; databaseServerId?: string | null; dnsZoneId?: string | null; createdAt: string; finishedAt: string | null }
+interface ApiJob { id: string; title: string; ref: string | null; action?: string | null; state: Job["state"]; steps: string[]; step: number; error: string | null; result?: Job["result"] | null; websiteId: string | null; serverId: string | null; databaseServerId?: string | null; dnsZoneId?: string | null; createdAt: string; finishedAt: string | null }
 interface ApiWebsite {
   id: string; name: string; application: string; customerId: string; serverId: string; planId: string; unixUser: string; networkHost?: string | null; networkPort?: number | null; kind?: Website["kind"]; command?: string | null; installCommand?: string | null; environment?: string[]; status: Website["status"];
   runtime: { imageId: string; family: string; image: string; phpVersion: string | null; version?: string | null; workerMode: boolean; extensions: string[]; phpIni: Record<string, string>; previousImageId: string | null; documentRoot?: string; digest?: string | null; signatureVerified?: boolean };
@@ -202,7 +202,7 @@ export function toJob(j: ApiJob): Job {
   return {
     id: j.id, title: j.title, ref: j.ref ?? undefined, action: j.action ?? undefined, state: j.state, steps: j.steps ?? [], step: j.step ?? 0, error: j.error ?? undefined,
     createdAt: j.createdAt, finishedAt: j.finishedAt ?? undefined, websiteId: j.websiteId ?? undefined, serverId: j.serverId ?? undefined,
-    databaseServerId: j.databaseServerId ?? undefined, dnsZoneId: j.dnsZoneId ?? undefined,
+    databaseServerId: j.databaseServerId ?? undefined, dnsZoneId: j.dnsZoneId ?? undefined, result: j.result ?? undefined,
   };
 }
 

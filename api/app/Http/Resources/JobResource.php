@@ -64,6 +64,8 @@ class JobResource extends JsonResource
             'steps' => $this->steps,
             'step' => $this->step,
             'error' => self::errorFor($request, $this->resource),
+            // The summary of an archive operation (AgentAction::keepsResult), or null.
+            'result' => $this->result,
             'websiteId' => $this->website_id,
             'databaseServerId' => $this->database_server_id,
             'dnsZoneId' => $this->dns_zone_id,

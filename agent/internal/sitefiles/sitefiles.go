@@ -10,6 +10,8 @@
 //
 // A request is one JSON value on the standard input. The answer is one JSON value on the
 // standard output.
+//
+// The archives (archive.go) and the changes of permissions (mode.go) obey the same limits.
 package sitefiles
 
 import (
@@ -23,6 +25,7 @@ import (
 	"path"
 	"sort"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 	"unicode/utf8"
@@ -38,6 +41,12 @@ const (
 	OpMkdir  = "mkdir"
 	OpMove   = "move"
 	OpDelete = "delete"
+	// OpChmod changes the permission bits of a file or a directory (mode.go).
+	OpChmod = "chmod"
+	// OpArchive makes an archive of files and directories (archive.go).
+	OpArchive = "archive"
+	// OpExtract extracts the files of an archive into a directory (archive.go).
+	OpExtract = "extract"
 )
 
 // The codes of an error. The agent gives each code its own status to the panel.
@@ -61,8 +70,8 @@ const (
 	MaxWrite = 5 << 20
 )
 
-// Request is one operation on a path. Path and To start with "/", which is the directory of
-// the website.
+// Request is one operation on a path. Path, To and Paths start with "/", which is the
+// directory of the website.
 type Request struct {
 	Op   string `json:"op"`
 	Path string `json:"path"`
@@ -72,6 +81,18 @@ type Request struct {
 	Content []byte `json:"content,omitempty"`
 	// CreateOnly makes a write fail when the file exists.
 	CreateOnly bool `json:"createOnly,omitempty"`
+	// Paths are the files and the directories for a new archive. Path is then the path of the
+	// archive.
+	Paths []string `json:"paths,omitempty"`
+	// Overwrite lets an extract replace the files that exist. To is then the directory for
+	// the files of the archive.
+	Overwrite bool `json:"overwrite,omitempty"`
+	// Mode is the permission bits of a change of mode, as an octal number, for example "0644".
+	Mode string `json:"mode,omitempty"`
+	// Recursive also changes each file and each directory in a directory. Mode is then the
+	// mode of each directory, and FileMode is the mode of each file.
+	Recursive bool   `json:"recursive,omitempty"`
+	FileMode  string `json:"fileMode,omitempty"`
 }
 
 // Entry is one file or directory.
@@ -93,6 +114,10 @@ type Response struct {
 	Truncated bool    `json:"truncated,omitempty"`
 	Entry     *Entry  `json:"entry,omitempty"`
 	Content   []byte  `json:"content,omitempty"`
+	// Changed is the number of files and directories that a change of mode changed.
+	Changed int `json:"changed,omitempty"`
+	// Summary is the result of an archive operation.
+	Summary *Summary `json:"summary,omitempty"`
 	// Code and Error are set when the operation failed.
 	Code  string `json:"code,omitempty"`
 	Error string `json:"error,omitempty"`
@@ -241,6 +266,12 @@ func Do(dir string, req Request) (Response, error) {
 			return Response{}, err
 		}
 		return Response{}, root.RemoveAll(local(req.Path))
+	case OpChmod:
+		return chmod(root, req)
+	case OpArchive:
+		return makeArchive(root, req)
+	case OpExtract:
+		return extract(root, req)
 	}
 	return Response{}, fail(CodeInvalid, "the operation %q is not valid", req.Op)
 }
@@ -310,27 +341,37 @@ func list(root *os.Root, p string) (Response, error) {
 	return resp, nil
 }
 
-func read(root *os.Root, p string) (Response, error) {
+// openFile opens a regular file to read it.
+func openFile(root *os.Root, name string) (*os.File, fs.FileInfo, error) {
 	// The type check comes before the open, and the open does not block. The open of a FIFO
 	// waited for a writer with no limit (adversarial review, findings A2-03 and G5-03). The
 	// website can change the path between the two calls, so the check after the open stays.
-	if fi, err := root.Stat(local(p)); err != nil {
-		return Response{}, err
+	if fi, err := root.Stat(name); err != nil {
+		return nil, nil, err
 	} else if !fi.Mode().IsRegular() {
-		return Response{}, fail(CodeInvalid, "the path is not a file")
+		return nil, nil, fail(CodeInvalid, "the path is not a file")
 	}
-	f, err := root.OpenFile(local(p), os.O_RDONLY|syscall.O_NONBLOCK, 0)
+	f, err := root.OpenFile(name, os.O_RDONLY|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		return nil, nil, err
+	}
+	fi, err := f.Stat()
+	if err == nil && !fi.Mode().IsRegular() {
+		err = fail(CodeInvalid, "the path is not a file")
+	}
+	if err != nil {
+		f.Close()
+		return nil, nil, err
+	}
+	return f, fi, nil
+}
+
+func read(root *os.Root, p string) (Response, error) {
+	f, fi, err := openFile(root, local(p))
 	if err != nil {
 		return Response{}, err
 	}
 	defer f.Close()
-	fi, err := f.Stat()
-	if err != nil {
-		return Response{}, err
-	}
-	if !fi.Mode().IsRegular() {
-		return Response{}, fail(CodeInvalid, "the path is not a file")
-	}
 	if fi.Size() > MaxRead {
 		return Response{}, fail(CodeTooLarge, "the file has more than %d MB; use SFTP to download it", MaxRead>>20)
 	}
@@ -368,21 +409,12 @@ func write(root *os.Root, req Request) (Response, error) {
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		return Response{}, err
 	}
-	tmp := path.Join(path.Dir(name), ".cf-upload-"+fmt.Sprintf("%d-%d", os.Getpid(), time.Now().UnixNano()))
+	tmp := tempName(path.Dir(name), ".cf-upload-")
 	f, err := root.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
 		return Response{}, err
 	}
-	// The agent stops this program at its time limit. The temporary file does not stay.
-	stopped := make(chan os.Signal, 1)
-	signal.Notify(stopped, syscall.SIGTERM, syscall.SIGINT)
-	defer signal.Stop(stopped)
-	go func() {
-		if _, ok := <-stopped; ok {
-			_ = root.Remove(tmp)
-			os.Exit(1)
-		}
-	}()
+	defer removeAtStop(root, tmp)()
 	_, err = f.Write(req.Content)
 	if cerr := f.Close(); err == nil {
 		err = cerr
@@ -455,6 +487,45 @@ func renameNoReplace(root *os.Root, from, to string) error {
 		return root.Rename(from, to)
 	}
 	return err
+}
+
+// tempName gives a name for a temporary file in the directory dir.
+func tempName(dir, prefix string) string {
+	return path.Join(dir, fmt.Sprintf("%s%d-%d", prefix, os.Getpid(), time.Now().UnixNano()))
+}
+
+// stop has the temporary file that the program writes now.
+var stop struct {
+	sync.Mutex
+	once sync.Once
+	root *os.Root
+	name string
+}
+
+// removeAtStop records the temporary file that the program writes now, and gives the function
+// that ends the record. The agent stops this program at its time limit (SIGTERM). The program
+// then removes the temporary file and ends, so that the file does not stay.
+func removeAtStop(root *os.Root, name string) func() {
+	stop.once.Do(func() {
+		stopped := make(chan os.Signal, 1)
+		signal.Notify(stopped, syscall.SIGTERM, syscall.SIGINT)
+		go func() {
+			<-stopped
+			stop.Lock()
+			if stop.root != nil {
+				_ = stop.root.Remove(stop.name)
+			}
+			os.Exit(1)
+		}()
+	})
+	stop.Lock()
+	stop.root, stop.name = root, name
+	stop.Unlock()
+	return func() {
+		stop.Lock()
+		stop.root = nil
+		stop.Unlock()
+	}
 }
 
 // IsText reports whether the content of a file is text: valid UTF-8 with no NUL byte.

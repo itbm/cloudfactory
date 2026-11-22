@@ -729,6 +729,7 @@
                     ],
                     "step": 3,
                     "error": null,
+                    "result": null,
                     "websiteId": "01m7zwcak9m3c7xpmw97k1dxn9",
                     "databaseServerId": null,
                     "dnsZoneId": null,
@@ -749,6 +750,7 @@
                     ],
                     "step": 0,
                     "error": "The step \"Create database\" failed on the server. Your provider can see the details.",
+                    "result": null,
                     "websiteId": "01m7zwcak9m3c7xpmw97k1dxn9",
                     "databaseServerId": null,
                     "dnsZoneId": null,
@@ -769,6 +771,7 @@
                     ],
                     "step": 3,
                     "error": null,
+                    "result": null,
                     "websiteId": "01m7zwcakhwxpa8qmpsqz4p0gk",
                     "databaseServerId": null,
                     "dnsZoneId": null,
@@ -789,6 +792,7 @@
                     ],
                     "step": 3,
                     "error": null,
+                    "result": null,
                     "websiteId": null,
                     "databaseServerId": null,
                     "dnsZoneId": "01m7zwcap7437c1j2xf4a18g23",
@@ -809,6 +813,7 @@
                     ],
                     "step": 3,
                     "error": null,
+                    "result": null,
                     "websiteId": null,
                     "databaseServerId": null,
                     "dnsZoneId": "01m7zwcap7437c1j2xf4a18g23",
@@ -830,6 +835,7 @@
                     ],
                     "step": 4,
                     "error": null,
+                    "result": null,
                     "websiteId": "01m7zwcajpcbqz8v9kkvqnc65a",
                     "databaseServerId": null,
                     "dnsZoneId": null,
@@ -2266,6 +2272,15 @@
                     "modifiedAt": "2025-10-30T20:00:00Z",
                     "mode": "0640",
                     "target": null
+                },
+                {
+                    "name": "site-2026-10.zip",
+                    "path": "/site-2026-10.zip",
+                    "type": "file",
+                    "sizeBytes": 3240,
+                    "modifiedAt": "2025-11-03T18:00:00Z",
+                    "mode": "0640",
+                    "target": null
                 }
             ],
             "truncated": false
@@ -2927,6 +2942,15 @@
                     "modifiedAt": "2026-08-11T20:00:00Z",
                     "mode": "0640",
                     "target": null
+                },
+                {
+                    "name": "site-2026-10.zip",
+                    "path": "/site-2026-10.zip",
+                    "type": "file",
+                    "sizeBytes": 3240,
+                    "modifiedAt": "2026-08-15T18:00:00Z",
+                    "mode": "0640",
+                    "target": null
                 }
             ],
             "truncated": false
@@ -3442,6 +3466,15 @@
                     "modifiedAt": "2026-11-06T20:00:00Z",
                     "mode": "0640",
                     "target": null
+                },
+                {
+                    "name": "site-2026-10.zip",
+                    "path": "/site-2026-10.zip",
+                    "type": "file",
+                    "sizeBytes": 3240,
+                    "modifiedAt": "2026-11-10T18:00:00Z",
+                    "mode": "0640",
+                    "target": null
                 }
             ],
             "truncated": false
@@ -3940,6 +3973,15 @@
                     "type": "file",
                     "sizeBytes": 80,
                     "modifiedAt": "2025-10-20T20:00:00Z",
+                    "mode": "0640",
+                    "target": null
+                },
+                {
+                    "name": "site-2026-10.zip",
+                    "path": "/site-2026-10.zip",
+                    "type": "file",
+                    "sizeBytes": 3240,
+                    "modifiedAt": "2025-10-24T18:00:00Z",
                     "mode": "0640",
                     "target": null
                 }
@@ -4462,6 +4504,15 @@
                     "modifiedAt": "2026-11-02T20:00:00Z",
                     "mode": "0640",
                     "target": null
+                },
+                {
+                    "name": "site-2026-10.zip",
+                    "path": "/site-2026-10.zip",
+                    "type": "file",
+                    "sizeBytes": 3240,
+                    "modifiedAt": "2026-11-06T18:00:00Z",
+                    "mode": "0640",
+                    "target": null
                 }
             ],
             "truncated": false
@@ -4970,6 +5021,15 @@
                     "type": "file",
                     "sizeBytes": 80,
                     "modifiedAt": "2026-11-02T20:00:00Z",
+                    "mode": "0640",
+                    "target": null
+                },
+                {
+                    "name": "site-2026-10.zip",
+                    "path": "/site-2026-10.zip",
+                    "type": "file",
+                    "sizeBytes": 3240,
+                    "modifiedAt": "2026-11-06T18:00:00Z",
                     "mode": "0640",
                     "target": null
                 }
@@ -5582,6 +5642,15 @@
                     "modifiedAt": "2026-04-18T20:00:00Z",
                     "mode": "0640",
                     "target": null
+                },
+                {
+                    "name": "site-2026-10.zip",
+                    "path": "/site-2026-10.zip",
+                    "type": "file",
+                    "sizeBytes": 3240,
+                    "modifiedAt": "2026-04-22T18:00:00Z",
+                    "mode": "0640",
+                    "target": null
                 }
             ],
             "truncated": false
@@ -6153,6 +6222,15 @@
                     "type": "file",
                     "sizeBytes": 80,
                     "modifiedAt": "2026-10-25T20:00:00Z",
+                    "mode": "0640",
+                    "target": null
+                },
+                {
+                    "name": "site-2026-10.zip",
+                    "path": "/site-2026-10.zip",
+                    "type": "file",
+                    "sizeBytes": 3240,
+                    "modifiedAt": "2026-10-29T18:00:00Z",
                     "mode": "0640",
                     "target": null
                 }

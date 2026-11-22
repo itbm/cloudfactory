@@ -12,6 +12,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/itbm/cloudfactory/cli/internal/client"
 )
 
 // The file manager, the logs, the cron jobs and the deploys of a website.
@@ -168,8 +170,119 @@ func (a *app) files(ctx context.Context, sub string, args []string) error {
 			return err
 		}
 		return done(map[string]any{"deleted": path}, "Deleted "+path+".")
+	case "chmod":
+		if err := need(args, 3, "a website, a path and a mode, for example 644"); err != nil {
+			return err
+		}
+		fs := flag.NewFlagSet("chmod", flag.ContinueOnError)
+		recursive := fs.Bool("recursive", false, "also change all directories and files in the directory")
+		fileMode := fs.String("file-mode", "", "with --recursive: the mode of each file, for example 644")
+		if err := fs.Parse(args[3:]); err != nil {
+			return err
+		}
+		if *recursive != (*fileMode != "") {
+			return errors.New("use --recursive and --file-mode together, for example --recursive --file-mode 644")
+		}
+		body := map[string]any{"path": path, "mode": args[2]}
+		if *recursive {
+			body["recursive"], body["fileMode"] = true, *fileMode
+		}
+		var out struct {
+			File    fileEntry `json:"file"`
+			Changed int       `json:"changed"`
+		}
+		if err := a.api.Do(ctx, http.MethodPut, base+"/permissions", nil, body, &out); err != nil {
+			return err
+		}
+		if a.json {
+			return a.printJSON(out)
+		}
+		if *recursive {
+			fmt.Fprintf(a.out, "Changed the mode of %d directories and files in %s.\n", out.Changed, path)
+			return nil
+		}
+		fmt.Fprintf(a.out, "Changed the mode of %s to %s.\n", path, out.File.Mode)
+		return nil
+	case "archive":
+		if err := need(args, 3, "a website, the path of the new archive and the paths to put in it"); err != nil {
+			return err
+		}
+		paths := make([]string, 0, len(args)-2)
+		for _, p := range args[2:] {
+			paths = append(paths, sitePath(p))
+		}
+		return a.archiveJob(ctx, base+"/archives", map[string]any{"paths": paths, "path": path}, path)
+	case "extract":
+		fs := flag.NewFlagSet("extract", flag.ContinueOnError)
+		to := fs.String("to", "", "the directory for the files (the default is the directory of the archive)")
+		overwrite := fs.Bool("overwrite", false, "replace the files that exist")
+		if err := fs.Parse(args[2:]); err != nil {
+			return err
+		}
+		body := map[string]any{"path": path, "overwrite": *overwrite}
+		if *to != "" {
+			body["to"] = sitePath(*to)
+		}
+		return a.archiveJob(ctx, base+"/extract", body, path)
 	}
 	return fmt.Errorf("unknown command files %s", sub)
+}
+
+// plural gives "1 file" or "2 files".
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return "1 " + one
+	}
+	return strconv.Itoa(n) + " " + many
+}
+
+// archiveJob starts a job that makes or extracts an archive. It waits for the job, then
+// prints the summary of the job.
+func (a *app) archiveJob(ctx context.Context, path string, body map[string]any, archive string) error {
+	var out struct {
+		Job *client.Job `json:"job"`
+	}
+	if err := a.api.Do(ctx, http.MethodPost, path, nil, body, &out); err != nil {
+		return err
+	}
+	if a.json {
+		return a.printJSON(out)
+	}
+	if out.Job == nil {
+		return errors.New("the panel did not start a job")
+	}
+	if a.noWait {
+		fmt.Fprintf(a.out, "Job %s is in the queue: %s\n", out.Job.ID, out.Job.Title)
+		return nil
+	}
+	job, err := a.api.WaitJob(ctx, out.Job.ID, a.poll, nil)
+	if err != nil {
+		return fmt.Errorf("%s: %w", job.Title, err)
+	}
+	s := job.Result
+	if s == nil {
+		fmt.Fprintf(a.out, "%s: complete.\n", job.Title)
+		return nil
+	}
+	contents := fmt.Sprintf("%s, %s and %s", plural(s.Files, "file", "files"), plural(s.Directories, "directory", "directories"), plural(s.Links, "link", "links"))
+	if strings.HasSuffix(path, "/archives") {
+		fmt.Fprintf(a.out, "Made %s: %s, %s.\n", archive, contents, plural(int(s.SizeBytes), "byte", "bytes"))
+	} else {
+		fmt.Fprintf(a.out, "Extracted %s: %s.\n", archive, contents)
+	}
+	if s.Kept > 0 {
+		fmt.Fprintf(a.out, "%s already and did not change. Add --overwrite to replace them.\n", plural(s.Kept, "file exists", "files exist"))
+	}
+	if s.Skipped > 0 {
+		fmt.Fprintf(a.out, "Skipped %s:\n", plural(s.Skipped, "entry", "entries"))
+		for _, n := range s.SkippedNames {
+			fmt.Fprintf(a.out, "  %s\n", n)
+		}
+		if s.Skipped > len(s.SkippedNames) {
+			fmt.Fprintf(a.out, "  and %d more\n", s.Skipped-len(s.SkippedNames))
+		}
+	}
+	return nil
 }
 
 // logs prints the last log lines of a website: "cf logs WEBSITE".

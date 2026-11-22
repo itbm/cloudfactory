@@ -90,6 +90,7 @@ class JobOutcome
                 'payload' => self::withoutPasswords($j->payload),
                 'step' => $state === JobState::Succeeded ? count($j->steps) : $j->step,
                 'error' => $error,
+                'result' => $state === JobState::Succeeded ? self::keptResult($j, $result) : null,
                 'finished_at' => now(),
             ]);
             if (! $changed) {
@@ -250,6 +251,29 @@ class JobOutcome
             AgentAction::DeleteMailAlias => MailAlias::whereKey($p['mailAliasId'] ?? '')->where('status', MailDomain::REMOVING)->delete(),
             default => null,
         };
+    }
+
+    /**
+     * The result that the panel keeps for the user (AgentAction::keepsResult): the counts of
+     * an archive operation and the first names that the agent skipped. The values come from
+     * the agent, so the panel keeps only the known fields, each with its type.
+     *
+     * @param  array<string, mixed>  $result
+     * @return array<string, mixed>|null
+     */
+    private static function keptResult(AgentJob $job, array $result): ?array
+    {
+        if (! $job->action->keepsResult()) {
+            return null;
+        }
+        $kept = [];
+        foreach (['files', 'directories', 'links', 'sizeBytes', 'kept', 'skipped'] as $field) {
+            $kept[$field] = max(0, (int) ($result[$field] ?? 0));
+        }
+        $names = array_filter(is_array($result['skippedNames'] ?? null) ? $result['skippedNames'] : [], 'is_string');
+        $kept['skippedNames'] = array_map(fn (string $n) => Str::limit($n, 200), array_slice(array_values($names), 0, 20));
+
+        return $kept;
     }
 
     private function applyFailure(AgentJob $job, ?Website $website): void

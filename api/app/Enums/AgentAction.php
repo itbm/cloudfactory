@@ -52,6 +52,8 @@ enum AgentAction: string
     case SendDatabaseServer = 'SendDatabaseServer';
     case ReceiveDatabaseServer = 'ReceiveDatabaseServer';
     case SetPacks = 'SetPacks';
+    case MakeArchive = 'MakeArchive';
+    case ExtractArchive = 'ExtractArchive';
 
     /** The steps that the agent reports for this action. */
     public function steps(): array
@@ -105,7 +107,18 @@ enum AgentAction: string
             self::SendDatabaseServer => ['Stop database server', 'Send data'],
             self::ReceiveDatabaseServer => ['Prepare database server', 'Receive data', 'Start database server'],
             self::SetPacks => ['Check the packs', 'Save the packs and the image policy', 'Load the runtimes'],
+            self::MakeArchive => ['Make the archive'],
+            self::ExtractArchive => ['Extract the archive'],
         };
+    }
+
+    /**
+     * The actions whose result the panel keeps for the user: the summary of an archive
+     * (agent/internal/sitefiles.Summary). The API gives it with the job.
+     */
+    public function keepsResult(): bool
+    {
+        return in_array($this, [self::MakeArchive, self::ExtractArchive], true);
     }
 
     /** The actions that use the backup repository. The panel adds its credentials when it sends the job. */

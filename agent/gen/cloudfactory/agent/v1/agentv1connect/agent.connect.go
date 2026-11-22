@@ -162,6 +162,12 @@ const (
 	AgentServiceReceiveDatabaseServerProcedure = "/cloudfactory.agent.v1.AgentService/ReceiveDatabaseServer"
 	// AgentServiceSetPacksProcedure is the fully-qualified name of the AgentService's SetPacks RPC.
 	AgentServiceSetPacksProcedure = "/cloudfactory.agent.v1.AgentService/SetPacks"
+	// AgentServiceMakeArchiveProcedure is the fully-qualified name of the AgentService's MakeArchive
+	// RPC.
+	AgentServiceMakeArchiveProcedure = "/cloudfactory.agent.v1.AgentService/MakeArchive"
+	// AgentServiceExtractArchiveProcedure is the fully-qualified name of the AgentService's
+	// ExtractArchive RPC.
+	AgentServiceExtractArchiveProcedure = "/cloudfactory.agent.v1.AgentService/ExtractArchive"
 	// AgentServiceGetStatusProcedure is the fully-qualified name of the AgentService's GetStatus RPC.
 	AgentServiceGetStatusProcedure = "/cloudfactory.agent.v1.AgentService/GetStatus"
 	// AgentServiceListFilesProcedure is the fully-qualified name of the AgentService's ListFiles RPC.
@@ -177,6 +183,9 @@ const (
 	AgentServiceMoveFileProcedure = "/cloudfactory.agent.v1.AgentService/MoveFile"
 	// AgentServiceDeleteFileProcedure is the fully-qualified name of the AgentService's DeleteFile RPC.
 	AgentServiceDeleteFileProcedure = "/cloudfactory.agent.v1.AgentService/DeleteFile"
+	// AgentServiceSetFileModeProcedure is the fully-qualified name of the AgentService's SetFileMode
+	// RPC.
+	AgentServiceSetFileModeProcedure = "/cloudfactory.agent.v1.AgentService/SetFileMode"
 	// AgentServiceGetLogsProcedure is the fully-qualified name of the AgentService's GetLogs RPC.
 	AgentServiceGetLogsProcedure = "/cloudfactory.agent.v1.AgentService/GetLogs"
 )
@@ -231,6 +240,10 @@ type AgentServiceClient interface {
 	// agent checks the signature of each pack, saves the packs, lets Podman pull the images of
 	// each pack only with a signature of its publisher, and loads the runtimes of the packs.
 	SetPacks(context.Context, *connect.Request[v1.SetPacksRequest]) (*connect.Response[v1.JobAccepted], error)
+	// The archives of the file manager. The agent does each job as the Unix user of the
+	// website, in the directory of the website, as the methods of the file manager below.
+	MakeArchive(context.Context, *connect.Request[v1.MakeArchiveRequest]) (*connect.Response[v1.JobAccepted], error)
+	ExtractArchive(context.Context, *connect.Request[v1.ExtractArchiveRequest]) (*connect.Response[v1.JobAccepted], error)
 	// Returns the actual state of the server at once. This method does not make a job.
 	GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.HostStatus], error)
 	// The file manager and the logs of a website. These methods do not make a job: they give
@@ -242,6 +255,7 @@ type AgentServiceClient interface {
 	MakeDirectory(context.Context, *connect.Request[v1.FileRequest]) (*connect.Response[v1.FileEntry], error)
 	MoveFile(context.Context, *connect.Request[v1.MoveFileRequest]) (*connect.Response[v1.FileEntry], error)
 	DeleteFile(context.Context, *connect.Request[v1.FileRequest]) (*connect.Response[v1.FileDeleted], error)
+	SetFileMode(context.Context, *connect.Request[v1.SetFileModeRequest]) (*connect.Response[v1.FileModeSet], error)
 	GetLogs(context.Context, *connect.Request[v1.GetLogsRequest]) (*connect.Response[v1.Logs], error)
 }
 
@@ -520,6 +534,18 @@ func NewAgentServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(agentServiceMethods.ByName("SetPacks")),
 			connect.WithClientOptions(opts...),
 		),
+		makeArchive: connect.NewClient[v1.MakeArchiveRequest, v1.JobAccepted](
+			httpClient,
+			baseURL+AgentServiceMakeArchiveProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("MakeArchive")),
+			connect.WithClientOptions(opts...),
+		),
+		extractArchive: connect.NewClient[v1.ExtractArchiveRequest, v1.JobAccepted](
+			httpClient,
+			baseURL+AgentServiceExtractArchiveProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("ExtractArchive")),
+			connect.WithClientOptions(opts...),
+		),
 		getStatus: connect.NewClient[v1.GetStatusRequest, v1.HostStatus](
 			httpClient,
 			baseURL+AgentServiceGetStatusProcedure,
@@ -560,6 +586,12 @@ func NewAgentServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			httpClient,
 			baseURL+AgentServiceDeleteFileProcedure,
 			connect.WithSchema(agentServiceMethods.ByName("DeleteFile")),
+			connect.WithClientOptions(opts...),
+		),
+		setFileMode: connect.NewClient[v1.SetFileModeRequest, v1.FileModeSet](
+			httpClient,
+			baseURL+AgentServiceSetFileModeProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("SetFileMode")),
 			connect.WithClientOptions(opts...),
 		),
 		getLogs: connect.NewClient[v1.GetLogsRequest, v1.Logs](
@@ -617,6 +649,8 @@ type agentServiceClient struct {
 	sendDatabaseServer    *connect.Client[v1.SendDatabaseServerRequest, v1.JobAccepted]
 	receiveDatabaseServer *connect.Client[v1.ReceiveDatabaseServerRequest, v1.JobAccepted]
 	setPacks              *connect.Client[v1.SetPacksRequest, v1.JobAccepted]
+	makeArchive           *connect.Client[v1.MakeArchiveRequest, v1.JobAccepted]
+	extractArchive        *connect.Client[v1.ExtractArchiveRequest, v1.JobAccepted]
 	getStatus             *connect.Client[v1.GetStatusRequest, v1.HostStatus]
 	listFiles             *connect.Client[v1.FileRequest, v1.FileList]
 	readFile              *connect.Client[v1.FileRequest, v1.FileContent]
@@ -624,6 +658,7 @@ type agentServiceClient struct {
 	makeDirectory         *connect.Client[v1.FileRequest, v1.FileEntry]
 	moveFile              *connect.Client[v1.MoveFileRequest, v1.FileEntry]
 	deleteFile            *connect.Client[v1.FileRequest, v1.FileDeleted]
+	setFileMode           *connect.Client[v1.SetFileModeRequest, v1.FileModeSet]
 	getLogs               *connect.Client[v1.GetLogsRequest, v1.Logs]
 }
 
@@ -847,6 +882,16 @@ func (c *agentServiceClient) SetPacks(ctx context.Context, req *connect.Request[
 	return c.setPacks.CallUnary(ctx, req)
 }
 
+// MakeArchive calls cloudfactory.agent.v1.AgentService.MakeArchive.
+func (c *agentServiceClient) MakeArchive(ctx context.Context, req *connect.Request[v1.MakeArchiveRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return c.makeArchive.CallUnary(ctx, req)
+}
+
+// ExtractArchive calls cloudfactory.agent.v1.AgentService.ExtractArchive.
+func (c *agentServiceClient) ExtractArchive(ctx context.Context, req *connect.Request[v1.ExtractArchiveRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return c.extractArchive.CallUnary(ctx, req)
+}
+
 // GetStatus calls cloudfactory.agent.v1.AgentService.GetStatus.
 func (c *agentServiceClient) GetStatus(ctx context.Context, req *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.HostStatus], error) {
 	return c.getStatus.CallUnary(ctx, req)
@@ -880,6 +925,11 @@ func (c *agentServiceClient) MoveFile(ctx context.Context, req *connect.Request[
 // DeleteFile calls cloudfactory.agent.v1.AgentService.DeleteFile.
 func (c *agentServiceClient) DeleteFile(ctx context.Context, req *connect.Request[v1.FileRequest]) (*connect.Response[v1.FileDeleted], error) {
 	return c.deleteFile.CallUnary(ctx, req)
+}
+
+// SetFileMode calls cloudfactory.agent.v1.AgentService.SetFileMode.
+func (c *agentServiceClient) SetFileMode(ctx context.Context, req *connect.Request[v1.SetFileModeRequest]) (*connect.Response[v1.FileModeSet], error) {
+	return c.setFileMode.CallUnary(ctx, req)
 }
 
 // GetLogs calls cloudfactory.agent.v1.AgentService.GetLogs.
@@ -937,6 +987,10 @@ type AgentServiceHandler interface {
 	// agent checks the signature of each pack, saves the packs, lets Podman pull the images of
 	// each pack only with a signature of its publisher, and loads the runtimes of the packs.
 	SetPacks(context.Context, *connect.Request[v1.SetPacksRequest]) (*connect.Response[v1.JobAccepted], error)
+	// The archives of the file manager. The agent does each job as the Unix user of the
+	// website, in the directory of the website, as the methods of the file manager below.
+	MakeArchive(context.Context, *connect.Request[v1.MakeArchiveRequest]) (*connect.Response[v1.JobAccepted], error)
+	ExtractArchive(context.Context, *connect.Request[v1.ExtractArchiveRequest]) (*connect.Response[v1.JobAccepted], error)
 	// Returns the actual state of the server at once. This method does not make a job.
 	GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.HostStatus], error)
 	// The file manager and the logs of a website. These methods do not make a job: they give
@@ -948,6 +1002,7 @@ type AgentServiceHandler interface {
 	MakeDirectory(context.Context, *connect.Request[v1.FileRequest]) (*connect.Response[v1.FileEntry], error)
 	MoveFile(context.Context, *connect.Request[v1.MoveFileRequest]) (*connect.Response[v1.FileEntry], error)
 	DeleteFile(context.Context, *connect.Request[v1.FileRequest]) (*connect.Response[v1.FileDeleted], error)
+	SetFileMode(context.Context, *connect.Request[v1.SetFileModeRequest]) (*connect.Response[v1.FileModeSet], error)
 	GetLogs(context.Context, *connect.Request[v1.GetLogsRequest]) (*connect.Response[v1.Logs], error)
 }
 
@@ -1222,6 +1277,18 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(agentServiceMethods.ByName("SetPacks")),
 		connect.WithHandlerOptions(opts...),
 	)
+	agentServiceMakeArchiveHandler := connect.NewUnaryHandler(
+		AgentServiceMakeArchiveProcedure,
+		svc.MakeArchive,
+		connect.WithSchema(agentServiceMethods.ByName("MakeArchive")),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentServiceExtractArchiveHandler := connect.NewUnaryHandler(
+		AgentServiceExtractArchiveProcedure,
+		svc.ExtractArchive,
+		connect.WithSchema(agentServiceMethods.ByName("ExtractArchive")),
+		connect.WithHandlerOptions(opts...),
+	)
 	agentServiceGetStatusHandler := connect.NewUnaryHandler(
 		AgentServiceGetStatusProcedure,
 		svc.GetStatus,
@@ -1262,6 +1329,12 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 		AgentServiceDeleteFileProcedure,
 		svc.DeleteFile,
 		connect.WithSchema(agentServiceMethods.ByName("DeleteFile")),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentServiceSetFileModeHandler := connect.NewUnaryHandler(
+		AgentServiceSetFileModeProcedure,
+		svc.SetFileMode,
+		connect.WithSchema(agentServiceMethods.ByName("SetFileMode")),
 		connect.WithHandlerOptions(opts...),
 	)
 	agentServiceGetLogsHandler := connect.NewUnaryHandler(
@@ -1360,6 +1433,10 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 			agentServiceReceiveDatabaseServerHandler.ServeHTTP(w, r)
 		case AgentServiceSetPacksProcedure:
 			agentServiceSetPacksHandler.ServeHTTP(w, r)
+		case AgentServiceMakeArchiveProcedure:
+			agentServiceMakeArchiveHandler.ServeHTTP(w, r)
+		case AgentServiceExtractArchiveProcedure:
+			agentServiceExtractArchiveHandler.ServeHTTP(w, r)
 		case AgentServiceGetStatusProcedure:
 			agentServiceGetStatusHandler.ServeHTTP(w, r)
 		case AgentServiceListFilesProcedure:
@@ -1374,6 +1451,8 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 			agentServiceMoveFileHandler.ServeHTTP(w, r)
 		case AgentServiceDeleteFileProcedure:
 			agentServiceDeleteFileHandler.ServeHTTP(w, r)
+		case AgentServiceSetFileModeProcedure:
+			agentServiceSetFileModeHandler.ServeHTTP(w, r)
 		case AgentServiceGetLogsProcedure:
 			agentServiceGetLogsHandler.ServeHTTP(w, r)
 		default:
@@ -1561,6 +1640,14 @@ func (UnimplementedAgentServiceHandler) SetPacks(context.Context, *connect.Reque
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.SetPacks is not implemented"))
 }
 
+func (UnimplementedAgentServiceHandler) MakeArchive(context.Context, *connect.Request[v1.MakeArchiveRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.MakeArchive is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) ExtractArchive(context.Context, *connect.Request[v1.ExtractArchiveRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.ExtractArchive is not implemented"))
+}
+
 func (UnimplementedAgentServiceHandler) GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.HostStatus], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.GetStatus is not implemented"))
 }
@@ -1587,6 +1674,10 @@ func (UnimplementedAgentServiceHandler) MoveFile(context.Context, *connect.Reque
 
 func (UnimplementedAgentServiceHandler) DeleteFile(context.Context, *connect.Request[v1.FileRequest]) (*connect.Response[v1.FileDeleted], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.DeleteFile is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) SetFileMode(context.Context, *connect.Request[v1.SetFileModeRequest]) (*connect.Response[v1.FileModeSet], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.SetFileMode is not implemented"))
 }
 
 func (UnimplementedAgentServiceHandler) GetLogs(context.Context, *connect.Request[v1.GetLogsRequest]) (*connect.Response[v1.Logs], error) {

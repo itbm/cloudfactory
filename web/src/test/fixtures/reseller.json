@@ -497,6 +497,7 @@
                     ],
                     "step": 3,
                     "error": "The step \"Start container in gVisor\" failed on the server. Your provider can see the details.",
+                    "result": null,
                     "websiteId": "01m7zwcamn72f0skt4xfrgep29",
                     "databaseServerId": null,
                     "dnsZoneId": null,
@@ -517,6 +518,7 @@
                     ],
                     "step": 3,
                     "error": null,
+                    "result": null,
                     "websiteId": null,
                     "databaseServerId": null,
                     "dnsZoneId": "01m7zwcaprf32wbcdm589e4zpq",
@@ -537,6 +539,7 @@
                     ],
                     "step": 2,
                     "error": "The step \"Load zones\" failed on the server. Your provider can see the details.",
+                    "result": null,
                     "websiteId": null,
                     "databaseServerId": null,
                     "dnsZoneId": "01m7zwcaprf32wbcdm589e4zpq",
@@ -557,6 +560,7 @@
                     ],
                     "step": 3,
                     "error": null,
+                    "result": null,
                     "websiteId": "01m7zwcamdcnyxgqg7y6qxy9kq",
                     "databaseServerId": null,
                     "dnsZoneId": null,
@@ -5440,6 +5444,15 @@
                     "modifiedAt": "2026-07-27T20:00:00Z",
                     "mode": "0640",
                     "target": null
+                },
+                {
+                    "name": "site-2026-10.zip",
+                    "path": "/site-2026-10.zip",
+                    "type": "file",
+                    "sizeBytes": 3240,
+                    "modifiedAt": "2026-07-31T18:00:00Z",
+                    "mode": "0640",
+                    "target": null
                 }
             ],
             "truncated": false
@@ -5983,6 +5996,15 @@
                     "modifiedAt": "2026-10-05T20:00:00Z",
                     "mode": "0640",
                     "target": null
+                },
+                {
+                    "name": "site-2026-10.zip",
+                    "path": "/site-2026-10.zip",
+                    "type": "file",
+                    "sizeBytes": 3240,
+                    "modifiedAt": "2026-10-09T18:00:00Z",
+                    "mode": "0640",
+                    "target": null
                 }
             ],
             "truncated": false
@@ -6448,6 +6470,15 @@
                     "modifiedAt": "2026-01-28T20:00:00Z",
                     "mode": "0640",
                     "target": null
+                },
+                {
+                    "name": "site-2026-10.zip",
+                    "path": "/site-2026-10.zip",
+                    "type": "file",
+                    "sizeBytes": 3240,
+                    "modifiedAt": "2026-02-01T18:00:00Z",
+                    "mode": "0640",
+                    "target": null
                 }
             ],
             "truncated": false
@@ -6877,6 +6908,15 @@
                     "type": "file",
                     "sizeBytes": 80,
                     "modifiedAt": "2026-10-15T20:00:00Z",
+                    "mode": "0640",
+                    "target": null
+                },
+                {
+                    "name": "site-2026-10.zip",
+                    "path": "/site-2026-10.zip",
+                    "type": "file",
+                    "sizeBytes": 3240,
+                    "modifiedAt": "2026-10-19T18:00:00Z",
                     "mode": "0640",
                     "target": null
                 }

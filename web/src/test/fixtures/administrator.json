@@ -1220,6 +1220,7 @@
                     ],
                     "step": 3,
                     "error": "systemctl start cf-site-eventsha_08d5.service: exit status 1: the container did not answer the health check on port 8080 in 90 seconds",
+                    "result": null,
                     "websiteId": "01m7zwcamn72f0skt4xfrgep29",
                     "databaseServerId": null,
                     "dnsZoneId": null,
@@ -1240,6 +1241,7 @@
                     ],
                     "step": 3,
                     "error": null,
+                    "result": null,
                     "websiteId": null,
                     "databaseServerId": null,
                     "dnsZoneId": "01m7zwcaprf32wbcdm589e4zpq",
@@ -1260,6 +1262,7 @@
                     ],
                     "step": 2,
                     "error": "knotc -b zone-reload harbourbooks.example.net: exit status 1: error: [harbourbooks.example.net.] (operation timed out)",
+                    "result": null,
                     "websiteId": null,
                     "databaseServerId": null,
                     "dnsZoneId": "01m7zwcaprf32wbcdm589e4zpq",
@@ -1280,6 +1283,7 @@
                     ],
                     "step": 3,
                     "error": null,
+                    "result": null,
                     "websiteId": "01m7zwcak9m3c7xpmw97k1dxn9",
                     "databaseServerId": null,
                     "dnsZoneId": null,
@@ -1300,6 +1304,7 @@
                     ],
                     "step": 0,
                     "error": "runuser -u cf-db -- env XDG_RUNTIME_DIR=/run/user/994 podman exec cf-valkey valkey-cli -s /run/valkey/valkey.sock PING: exit status 1: Could not connect to Valkey at /run/valkey/valkey.sock: No such file or directory",
+                    "result": null,
                     "websiteId": "01m7zwcak9m3c7xpmw97k1dxn9",
                     "databaseServerId": null,
                     "dnsZoneId": null,
@@ -1320,6 +1325,7 @@
                     ],
                     "step": 3,
                     "error": null,
+                    "result": null,
                     "websiteId": "01m7zwcamdcnyxgqg7y6qxy9kq",
                     "databaseServerId": null,
                     "dnsZoneId": null,
@@ -1340,6 +1346,7 @@
                     ],
                     "step": 3,
                     "error": null,
+                    "result": null,
                     "websiteId": "01m7zwcakhwxpa8qmpsqz4p0gk",
                     "databaseServerId": null,
                     "dnsZoneId": null,
@@ -1360,6 +1367,7 @@
                     ],
                     "step": 3,
                     "error": null,
+                    "result": null,
                     "websiteId": null,
                     "databaseServerId": null,
                     "dnsZoneId": "01m7zwcap7437c1j2xf4a18g23",
@@ -1380,6 +1388,7 @@
                     ],
                     "step": 3,
                     "error": null,
+                    "result": null,
                     "websiteId": null,
                     "databaseServerId": null,
                     "dnsZoneId": "01m7zwcap7437c1j2xf4a18g23",
@@ -1401,6 +1410,7 @@
                     ],
                     "step": 4,
                     "error": null,
+                    "result": null,
                     "websiteId": "01m7zwcajpcbqz8v9kkvqnc65a",
                     "databaseServerId": null,
                     "dnsZoneId": null,
@@ -1421,6 +1431,7 @@
                     ],
                     "step": 3,
                     "error": null,
+                    "result": null,
                     "websiteId": null,
                     "databaseServerId": null,
                     "dnsZoneId": null,
@@ -8249,6 +8260,15 @@
                     "modifiedAt": "2025-10-30T20:00:00Z",
                     "mode": "0640",
                     "target": null
+                },
+                {
+                    "name": "site-2026-10.zip",
+                    "path": "/site-2026-10.zip",
+                    "type": "file",
+                    "sizeBytes": 3240,
+                    "modifiedAt": "2025-11-03T18:00:00Z",
+                    "mode": "0640",
+                    "target": null
                 }
             ],
             "truncated": false
@@ -8910,6 +8930,15 @@
                     "modifiedAt": "2026-08-11T20:00:00Z",
                     "mode": "0640",
                     "target": null
+                },
+                {
+                    "name": "site-2026-10.zip",
+                    "path": "/site-2026-10.zip",
+                    "type": "file",
+                    "sizeBytes": 3240,
+                    "modifiedAt": "2026-08-15T18:00:00Z",
+                    "mode": "0640",
+                    "target": null
                 }
             ],
             "truncated": false
@@ -9372,6 +9401,15 @@
                     "type": "file",
                     "sizeBytes": 80,
                     "modifiedAt": "2026-07-27T20:00:00Z",
+                    "mode": "0640",
+                    "target": null
+                },
+                {
+                    "name": "site-2026-10.zip",
+                    "path": "/site-2026-10.zip",
+                    "type": "file",
+                    "sizeBytes": 3240,
+                    "modifiedAt": "2026-07-31T18:00:00Z",
                     "mode": "0640",
                     "target": null
                 }
@@ -9882,6 +9920,15 @@
                     "type": "file",
                     "sizeBytes": 80,
                     "modifiedAt": "2026-11-06T20:00:00Z",
+                    "mode": "0640",
+                    "target": null
+                },
+                {
+                    "name": "site-2026-10.zip",
+                    "path": "/site-2026-10.zip",
+                    "type": "file",
+                    "sizeBytes": 3240,
+                    "modifiedAt": "2026-11-10T18:00:00Z",
                     "mode": "0640",
                     "target": null
                 }
@@ -10417,6 +10464,15 @@
                     "modifiedAt": "2026-10-05T20:00:00Z",
                     "mode": "0640",
                     "target": null
+                },
+                {
+                    "name": "site-2026-10.zip",
+                    "path": "/site-2026-10.zip",
+                    "type": "file",
+                    "sizeBytes": 3240,
+                    "modifiedAt": "2026-10-09T18:00:00Z",
+                    "mode": "0640",
+                    "target": null
                 }
             ],
             "truncated": false
@@ -10869,6 +10925,15 @@
                     "type": "file",
                     "sizeBytes": 80,
                     "modifiedAt": "2026-05-08T20:00:00Z",
+                    "mode": "0640",
+                    "target": null
+                },
+                {
+                    "name": "site-2026-10.zip",
+                    "path": "/site-2026-10.zip",
+                    "type": "file",
+                    "sizeBytes": 3240,
+                    "modifiedAt": "2026-05-12T18:00:00Z",
                     "mode": "0640",
                     "target": null
                 }
@@ -11334,6 +11399,15 @@
                     "type": "file",
                     "sizeBytes": 80,
                     "modifiedAt": "2026-01-28T20:00:00Z",
+                    "mode": "0640",
+                    "target": null
+                },
+                {
+                    "name": "site-2026-10.zip",
+                    "path": "/site-2026-10.zip",
+                    "type": "file",
+                    "sizeBytes": 3240,
+                    "modifiedAt": "2026-02-01T18:00:00Z",
                     "mode": "0640",
                     "target": null
                 }
@@ -11849,6 +11923,15 @@
                     "type": "file",
                     "sizeBytes": 80,
                     "modifiedAt": "2025-10-20T20:00:00Z",
+                    "mode": "0640",
+                    "target": null
+                },
+                {
+                    "name": "site-2026-10.zip",
+                    "path": "/site-2026-10.zip",
+                    "type": "file",
+                    "sizeBytes": 3240,
+                    "modifiedAt": "2025-10-24T18:00:00Z",
                     "mode": "0640",
                     "target": null
                 }
@@ -12371,6 +12454,15 @@
                     "modifiedAt": "2026-11-02T20:00:00Z",
                     "mode": "0640",
                     "target": null
+                },
+                {
+                    "name": "site-2026-10.zip",
+                    "path": "/site-2026-10.zip",
+                    "type": "file",
+                    "sizeBytes": 3240,
+                    "modifiedAt": "2026-11-06T18:00:00Z",
+                    "mode": "0640",
+                    "target": null
                 }
             ],
             "truncated": false
@@ -12881,6 +12973,15 @@
                     "modifiedAt": "2026-11-02T20:00:00Z",
                     "mode": "0640",
                     "target": null
+                },
+                {
+                    "name": "site-2026-10.zip",
+                    "path": "/site-2026-10.zip",
+                    "type": "file",
+                    "sizeBytes": 3240,
+                    "modifiedAt": "2026-11-06T18:00:00Z",
+                    "mode": "0640",
+                    "target": null
                 }
             ],
             "truncated": false
@@ -13290,6 +13391,15 @@
                     "type": "file",
                     "sizeBytes": 80,
                     "modifiedAt": "2026-10-15T20:00:00Z",
+                    "mode": "0640",
+                    "target": null
+                },
+                {
+                    "name": "site-2026-10.zip",
+                    "path": "/site-2026-10.zip",
+                    "type": "file",
+                    "sizeBytes": 3240,
+                    "modifiedAt": "2026-10-19T18:00:00Z",
                     "mode": "0640",
                     "target": null
                 }
@@ -13897,6 +14007,15 @@
                     "modifiedAt": "2026-04-18T20:00:00Z",
                     "mode": "0640",
                     "target": null
+                },
+                {
+                    "name": "site-2026-10.zip",
+                    "path": "/site-2026-10.zip",
+                    "type": "file",
+                    "sizeBytes": 3240,
+                    "modifiedAt": "2026-04-22T18:00:00Z",
+                    "mode": "0640",
+                    "target": null
                 }
             ],
             "truncated": false
@@ -14468,6 +14587,15 @@
                     "type": "file",
                     "sizeBytes": 80,
                     "modifiedAt": "2026-10-25T20:00:00Z",
+                    "mode": "0640",
+                    "target": null
+                },
+                {
+                    "name": "site-2026-10.zip",
+                    "path": "/site-2026-10.zip",
+                    "type": "file",
+                    "sizeBytes": 3240,
+                    "modifiedAt": "2026-10-29T18:00:00Z",
                     "mode": "0640",
                     "target": null
                 }
