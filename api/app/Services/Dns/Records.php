@@ -34,6 +34,24 @@ class Records
      */
     public static function check(DnsZone $zone, array $input, ?DnsRecord $editing = null): array
     {
+        $record = self::normalize($zone, $input, $editing);
+        self::checkPlace($zone, $record['type'], $record['name'], $record['value'], $record['priority'], $editing);
+
+        return $record;
+    }
+
+    /**
+     * Checks the values of a record with the shared input rules, and gives them in the form that
+     * the panel keeps. It does not compare the record with the other records of the zone, so
+     * that the zone can be a zone that is not saved yet (for example the preview of an import).
+     *
+     * @param  array<string, mixed>  $input  "type", "name", "value", "ttl" and "priority".
+     * @return array{name: string, type: string, ttl: int, value: string, priority: ?int}
+     *
+     * @throws ValidationException
+     */
+    public static function normalize(DnsZone $zone, array $input, ?DnsRecord $editing = null): array
+    {
         $type = $editing?->type ?? strtoupper(trim((string) ($input['type'] ?? '')));
         if (! in_array($type, InputRules::DNS_RECORD_TYPES, true)) {
             self::fail('type', 'Select one of these types: '.implode(', ', InputRules::DNS_RECORD_TYPES).'.');
@@ -51,7 +69,6 @@ class Records
                 self::fail('priority', 'Use a priority from 0 to 65535.');
             }
         }
-        self::checkPlace($zone, $type, $name, $value, $priority, $editing);
 
         return ['name' => $name, 'type' => $type, 'ttl' => $ttl, 'value' => $value, 'priority' => $priority];
     }

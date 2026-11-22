@@ -2040,6 +2040,73 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '429': { description: Too many DNS changes in one minute. }
 
+  /v1/dns-zones/{id}/import:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [DNS]
+      summary: Import the records of a zone file
+      description: >-
+        Reads a zone file in the format of RFC 1035 (the format of BIND), for example the
+        export of the current DNS provider of the domain or of cPanel. The panel checks each
+        record as it checks a new record, and adds the records that the zone does not have.
+        It does not change or remove a record of the zone.
+
+
+        The panel does not import the SOA record, the NS records of the zone itself, records
+        of other types than A, AAAA, CNAME, MX, TXT, SRV, CAA and NS, and names outside the
+        zone. It also keeps the A, AAAA and CNAME records that it made for a website. `skipped`
+        gives each line that the panel did not import, with a code and a reason. A TTL below
+        60 seconds or above 7 days becomes 60 seconds or 7 days, and `note` tells it.
+
+
+        With `dryRun`, the panel makes no change, and the answer shows what it would import.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [zoneFile]
+              properties:
+                zoneFile: { type: string, maxLength: 1048576, description: The text of the zone file. }
+                dryRun: { type: boolean, default: false }
+      responses:
+        '200':
+          description: The preview (`dryRun`), or an import that added no record.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DnsImport' }
+        '202':
+          description: The records are in the zone. Each DNS server gets the zone in a job.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DnsImport' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+        '429': { description: Too many DNS changes in one minute. }
+
+  /v1/dns-zones/{id}/export:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    get:
+      tags: [DNS]
+      summary: Export a DNS zone as a zone file
+      description: >-
+        The records of the zone in the format of RFC 1035, with the SOA record that the DNS
+        servers of the panel give. A different DNS server or provider can load the file.
+      responses:
+        '200':
+          description: The zone file.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  name: { type: string }
+                  zoneFile: { type: string }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   /v1/mail/domains:
     get:
       tags: [Email]
@@ -5417,6 +5484,38 @@ components:
         websites: { type: integer, description: The number of websites of the customer that have a domain in the zone. }
         createdAt: { type: string, format: date-time }
         records: { type: array, items: { $ref: '#/components/schemas/DnsRecord' }, description: Only in the answer for one zone. }
+    DnsImport:
+      type: object
+      properties:
+        dryRun: { type: boolean }
+        added:
+          type: array
+          description: The records that the panel added, or would add with `dryRun`.
+          items:
+            type: object
+            properties:
+              line: { type: integer, description: The line of the record in the zone file. }
+              name: { type: string }
+              type: { $ref: '#/components/schemas/DnsRecordType' }
+              value: { type: string }
+              ttl: { type: integer }
+              priority: { type: [integer, 'null'] }
+              note: { type: [string, 'null'], description: 'For example, the TTL that the panel changed.' }
+        existing: { type: integer, description: The number of records of the file that the zone has already. }
+        skipped:
+          type: array
+          description: The lines that the panel did not import.
+          items:
+            type: object
+            properties:
+              line: { type: integer }
+              text: { type: string, description: The text of the line, up to 200 characters. }
+              code:
+                type: string
+                enum: [syntax, directive, class, outside, soa, type, panel, invalid, duplicate, website]
+              reason: { type: string }
+        zone: { $ref: '#/components/schemas/DnsZone' }
+        jobs: { type: array, items: { $ref: '#/components/schemas/Job' } }
     Snapshot:
       type: object
       properties:

@@ -169,6 +169,8 @@ Route::prefix('v1')->group(function () {
             Route::put('dns-zones/{id}/dnssec', [DnsZoneController::class, 'dnssec'])->middleware('throttle:dns-changes');
             Route::post('dns-zones/{id}/check', [DnsZoneController::class, 'check'])->middleware('throttle:domain-checks');
             Route::post('dns-zones/{id}/sync', [DnsZoneController::class, 'sync'])->middleware('throttle:dns-changes');
+            Route::post('dns-zones/{id}/import', [DnsZoneController::class, 'import'])->middleware('throttle:dns-changes');
+            Route::get('dns-zones/{id}/export', [DnsZoneController::class, 'export']);
         });
 
         // Email: the mail domains of a customer, with their mailboxes, aliases and forwarders.

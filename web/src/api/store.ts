@@ -1187,6 +1187,35 @@ export function setDnssec(zoneId: string, enabled: boolean): Promise<void> {
   });
 }
 
+/** The result of an import of a zone file, or of its preview. */
+export interface DnsImportResult {
+  dryRun: boolean;
+  /** The records that the panel added, or would add. */
+  added: { line: number; name: string; type: DnsRecordType; value: string; ttl: number; priority?: number; note?: string }[];
+  /** The number of records of the file that the zone has already. */
+  existing: number;
+  /** The lines that the panel does not import, with the reason. */
+  skipped: { line: number; text: string; code: string; reason: string }[];
+}
+
+/** Adds the records of a zone file to a zone. With dryRun, the panel only tells what it would add. */
+export function importDnsZone(zoneId: string, zoneFile: string, dryRun: boolean): Promise<DnsImportResult> {
+  return call(async () => {
+    type Added = Omit<DnsImportResult["added"][number], "priority" | "note"> & { priority: number | null; note: string | null };
+    const r = await live.request<{ dryRun: boolean; added: Added[]; existing: number; skipped: DnsImportResult["skipped"]; zone: live.ApiDnsZone } & DnsJobs>("POST", `/dns-zones/${zoneId}/import`, { zoneFile, dryRun });
+    if (!dryRun) {
+      putDnsZone(r.zone);
+      trackZone(zoneId, r.jobs);
+    }
+    return { dryRun: r.dryRun, existing: r.existing, skipped: r.skipped, added: r.added.map((a) => ({ ...a, priority: a.priority ?? undefined, note: a.note ?? undefined })) };
+  });
+}
+
+/** The records of a zone as a zone file (RFC 1035). */
+export function exportDnsZone(zoneId: string): Promise<string> {
+  return call(async () => (await live.request<{ name: string; zoneFile: string }>("GET", `/dns-zones/${zoneId}/export`)).zoneFile);
+}
+
 /** Asks the public DNS again for the name servers of the domain. */
 export function checkDnsZone(zoneId: string): Promise<void> {
   return call(async () => {

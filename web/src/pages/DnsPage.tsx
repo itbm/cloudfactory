@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useAction, useStore } from "../api/hooks";
 import { contextCustomers, inContext, visibleWebsites } from "../api/selectors";
-import { checkDnsZone, createDnsZone, deleteDnsRecord, deleteDnsZone, saveDnsRecord, setDnssec, showDnsZone, syncDnsZone } from "../api/store";
+import { checkDnsZone, createDnsZone, deleteDnsRecord, deleteDnsZone, exportDnsZone, importDnsZone, saveDnsRecord, setDnssec, showDnsZone, syncDnsZone, type DnsImportResult } from "../api/store";
 import type { DnsRecord, DnsRecordType, DnsZone, State } from "../api/types";
 import { Topbar } from "../components/Layout";
 import { Card, Empty, Field, FormError, JobError, Modal, PageHeader, RowMenu, Status, TableWrap } from "../components/ui";
@@ -271,7 +271,9 @@ function ZonePage({ id }: { id: string }) {
   const [removingRecord, setRemovingRecord] = useState<DnsRecord | null>(null);
   const [removing, setRemoving] = useState(false);
   const [dnssecDialog, setDnssecDialog] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [type, setType] = useState<"all" | DnsRecordType>("all");
+  const exportZone = useAction(async (zoneId: string, name: string) => saveText(`${name}.zone`, await exportDnsZone(zoneId)));
   const check = useAction(checkDnsZone);
   const sync = useAction(syncDnsZone);
   const remove = useAction(deleteDnsZone);
@@ -308,11 +310,13 @@ function ZonePage({ id }: { id: string }) {
           {!locked && (
             <div className="btn-group">
               <button type="button" className="btn btn-danger" onClick={() => setRemoving(true)}>Remove zone</button>
+              <button type="button" className="btn" disabled={exportZone.busy} onClick={() => void exportZone.run(zone.id, zone.name)}>Export</button>
+              <button type="button" className="btn" onClick={() => setImporting(true)}>Import</button>
               <button type="button" className="btn btn-primary" onClick={() => setEditing("new")}>Add record</button>
             </div>
           )}
         </div>
-        <FormError error={check.error ?? sync.error ?? remove.error ?? removeRecord.error ?? dnssec.error} />
+        <FormError error={check.error ?? sync.error ?? remove.error ?? removeRecord.error ?? dnssec.error ?? exportZone.error} />
 
         {zone.status === "failed" && (
           <div className="alert alert-danger alert-stack mt" role="alert">
@@ -437,6 +441,7 @@ function ZonePage({ id }: { id: string }) {
       </main>
 
       {editing && <RecordDialog zone={zone} record={editing === "new" ? undefined : editing} onClose={() => setEditing(null)} />}
+      {importing && <ImportDialog zone={zone} onClose={() => setImporting(false)} />}
       {removingRecord && (
         <Modal
           title={`Remove the ${removingRecord.type} record ${removingRecord.name}?`}
@@ -468,6 +473,132 @@ function ZonePage({ id }: { id: string }) {
         </Modal>
       )}
     </>
+  );
+}
+
+/** Gives the text to the browser as a file to save. */
+function saveText(name: string, text: string) {
+  const url = URL.createObjectURL(new Blob([text], { type: "text/plain" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+/** The largest zone file that the panel reads (ZoneFile::MAX_BYTES). */
+const MAX_ZONE_FILE = 1024 * 1024;
+
+/**
+ * Imports the records of a zone file, for example the export of a different DNS provider. The
+ * panel first shows a preview: the records that it adds, and the lines that it does not import.
+ */
+function ImportDialog({ zone, onClose }: { zone: DnsZone; onClose: () => void }) {
+  const [text, setText] = useState("");
+  const [preview, setPreview] = useState<DnsImportResult | null>(null);
+  const [fileError, setFileError] = useState<string | null>(null);
+  const run = useAction(importDnsZone);
+  const picker = useRef<HTMLInputElement>(null);
+  const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+  return (
+    <Modal
+      wide
+      title={`Import records to ${zone.name}`}
+      onClose={onClose}
+      footer={preview ? (
+        <>
+          <button type="button" className="btn" onClick={() => { setPreview(null); run.clear(); }}>Back</button>
+          <button type="button" className="btn btn-primary" disabled={run.busy || preview.added.length === 0} onClick={async () => {
+            const r = await run.run(zone.id, text, false);
+            if (r.ok) onClose();
+          }}>{preview.added.length === 0 ? "No records to import" : `Import ${plural(preview.added.length, "record", "records")}`}</button>
+        </>
+      ) : (
+        <>
+          <button type="button" className="btn" onClick={onClose}>Cancel</button>
+          <button type="submit" form="dns-import" className="btn btn-primary" disabled={run.busy || text.trim() === ""}>{run.busy ? "Reading…" : "Preview"}</button>
+        </>
+      )}
+    >
+      <FormError error={run.error} shown={["zoneFile"]} />
+      {!preview ? (
+        <form id="dns-import" noValidate onSubmit={async (e) => {
+          e.preventDefault();
+          const r = await run.run(zone.id, text, true);
+          if (r.ok) setPreview(r.value);
+        }}>
+          <p className="muted" style={{ marginBottom: 12 }}>
+            Paste a zone file, for example the export of your current DNS provider or of cPanel. The panel checks each record. It adds only the records that the zone does not have, and it does not change or remove a record.
+          </p>
+          <Field label="Zone file" error={run.error?.fields.zoneFile ?? fileError ?? undefined}>
+            {(p) => <textarea {...p} className="input mono" rows={12} value={text} onChange={(e) => setText(e.target.value)} placeholder={`$ORIGIN ${zone.name}.\nwww   3600  IN  A    203.0.113.10\n@     3600  IN  MX   10 mail.${zone.name}.`} spellCheck={false} />}
+          </Field>
+          <p style={{ marginTop: 10 }}>
+            <button type="button" className="btn btn-sm" onClick={() => picker.current?.click()}>Open a file</button>
+            <input ref={picker} type="file" hidden accept=".zone,.db,.txt,text/plain,text/dns" aria-label="Open a zone file" onChange={async (e) => {
+              const file = e.target.files?.[0];
+              e.target.value = "";
+              if (!file) return;
+              if (file.size > MAX_ZONE_FILE) {
+                setFileError("The file is larger than 1 MB.");
+                return;
+              }
+              setFileError(null);
+              setText(await file.text());
+            }} />
+          </p>
+        </form>
+      ) : (
+        <>
+          <p role="status">
+            {preview.added.length > 0 ? <strong>{plural(preview.added.length, "record", "records")} to add.</strong> : <strong>No records to add.</strong>}{" "}
+            {preview.existing > 0 && <>{plural(preview.existing, "record is", "records are")} in the zone already. </>}
+            {preview.skipped.length > 0 && <>The panel does not import {plural(preview.skipped.length, "line", "lines")}.</>}
+          </p>
+          {preview.added.length > 0 && (
+            <TableWrap>
+              <table>
+                <caption className="visually-hidden">Records to add</caption>
+                <thead><tr><th scope="col">Name</th><th scope="col">Type</th><th scope="col">Value</th><th scope="col">TTL</th></tr></thead>
+                <tbody>
+                  {preview.added.map((r) => (
+                    <tr key={`${r.line}-${r.type}-${r.value}`}>
+                      <td><code>{r.name}</code></td>
+                      <td><span className="tag">{r.type}</span></td>
+                      <td style={{ maxWidth: 360, overflowWrap: "anywhere" }}>
+                        <code>{r.value}</code>
+                        {r.priority !== undefined && <span className="cell-sub">Priority {r.priority}</span>}
+                        {r.note && <span className="cell-sub">{r.note}</span>}
+                      </td>
+                      <td className="nowrap">{ttlText(r.ttl)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </TableWrap>
+          )}
+          {preview.skipped.length > 0 && (
+            <>
+              <h3 className="small" style={{ margin: "16px 0 8px" }}>Lines that the panel does not import</h3>
+              <TableWrap>
+                <table>
+                  <thead><tr><th scope="col">Line</th><th scope="col">Text and reason</th></tr></thead>
+                  <tbody>
+                    {preview.skipped.map((s) => (
+                      <tr key={`${s.line}-${s.code}`}>
+                        <td className="nowrap">{s.line}</td>
+                        <td style={{ maxWidth: 480, overflowWrap: "anywhere" }}><code>{s.text}</code><span className="cell-sub">{s.reason}</span></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </TableWrap>
+            </>
+          )}
+        </>
+      )}
+    </Modal>
   );
 }
 

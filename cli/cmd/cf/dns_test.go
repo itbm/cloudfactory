@@ -5,6 +5,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -47,6 +49,19 @@ func dnsPanel(t *testing.T) (*httptest.Server, *[]string) {
 		case path == "/dns-zones/Z1/records/R3" && (r.Method == http.MethodPatch || r.Method == http.MethodDelete), path == "/dns-zones/Z1" && r.Method == http.MethodDelete:
 			w.WriteHeader(http.StatusAccepted)
 			w.Write([]byte(`{"jobs":[` + job + `]}`))
+		case path == "/dns-zones/Z1/import":
+			dry := strings.Contains(string(body), `"dryRun":true`)
+			if !dry {
+				w.WriteHeader(http.StatusAccepted)
+			}
+			jobs := ``
+			if !dry {
+				jobs = job
+			}
+			w.Write([]byte(`{"dryRun":` + map[bool]string{true: "true", false: "false"}[dry] + `,"added":[{"line":2,"name":"www","type":"A","value":"192.0.2.1","ttl":3600,"priority":null,"note":null}],` +
+				`"existing":1,"skipped":[{"line":1,"text":"@ IN SOA ns1. host. 1 2 3 4 5","code":"soa","reason":"The panel makes the SOA record of the zone."}],"zone":` + zone + `,"jobs":[` + jobs + `]}`))
+		case path == "/dns-zones/Z1/export":
+			w.Write([]byte(`{"name":"example.com","zoneFile":"$ORIGIN example.com.\n@ 3600 IN MX 10 mx1.mail.example.\n"}`))
 		case path == "/dns-zones/Z1/check":
 			w.Write([]byte(strings.Replace(zone, `"state":"elsewhere"`, `"state":"here"`, 1)))
 		case path == "/jobs/J1":
@@ -169,5 +184,60 @@ func TestDnsAddShowsTheJobOfEachServer(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "Record R9: @ TXT v=spf1 -all\n") || !strings.Contains(out.String(), "Add TXT record to example.com: complete.\n") {
 		t.Errorf("output:\n%s", out)
+	}
+}
+
+func TestDnsImportAndExport(t *testing.T) {
+	srv, calls := dnsPanel(t)
+	defer srv.Close()
+	a, out := testApp(srv)
+	ctx := context.Background()
+	file := filepath.Join(t.TempDir(), "example.com.db")
+	if err := os.WriteFile(file, []byte("@ IN SOA ns1. host. 1 2 3 4 5\nwww IN A 192.0.2.1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := a.dispatch(ctx, []string{"dns", "import", "example.com", file, "--dry-run"}); err != nil {
+		t.Fatal(err)
+	}
+	want := `POST /api/v1/dns-zones/Z1/import {"dryRun":true,"zoneFile":"@ IN SOA ns1. host. 1 2 3 4 5\nwww IN A 192.0.2.1\n"}`
+	if len(*calls) != 1 || (*calls)[0] != want {
+		t.Errorf("calls: %v", *calls)
+	}
+	for _, line := range []string{
+		"Would add 1 record. 1 record is in the zone already. 1 line is not imported.",
+		"Line 1: The panel makes the SOA record of the zone.",
+	} {
+		if !strings.Contains(out.String(), line) {
+			t.Errorf("no %q in:\n%s", line, out)
+		}
+	}
+
+	*calls = nil
+	out.Reset()
+	if err := a.dispatch(ctx, []string{"dns", "import", "example.com", file}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "Added 1 record.") || len(*calls) != 1 || !strings.Contains((*calls)[0], `"dryRun":false`) {
+		t.Errorf("calls %v, output:\n%s", *calls, out)
+	}
+	if err := a.dispatch(ctx, []string{"dns", "import", "example.com"}); err == nil || !strings.Contains(err.Error(), "a zone file") {
+		t.Errorf("error: %v", err)
+	}
+
+	out.Reset()
+	if err := a.dispatch(ctx, []string{"dns", "export", "example.com"}); err != nil {
+		t.Fatal(err)
+	}
+	if out.String() != "$ORIGIN example.com.\n@ 3600 IN MX 10 mx1.mail.example.\n" {
+		t.Errorf("output:\n%s", out)
+	}
+	saved := filepath.Join(t.TempDir(), "out.zone")
+	out.Reset()
+	if err := a.dispatch(ctx, []string{"dns", "export", "example.com", "--file", saved}); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(saved); !strings.HasPrefix(string(b), "$ORIGIN example.com.") {
+		t.Errorf("file: %q", b)
 	}
 }

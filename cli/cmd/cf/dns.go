@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 
 	"github.com/itbm/cloudfactory/cli/internal/client"
@@ -287,8 +288,100 @@ func (a *app) dns(ctx context.Context, sub string, args []string) error {
 		return nil
 	case "sync":
 		return a.changeZone(ctx, http.MethodPost, path+"/sync", nil)
+	case "import":
+		return a.importZone(ctx, zone, path, rest)
+	case "export":
+		fs := flag.NewFlagSet("export", flag.ContinueOnError)
+		file := fs.String("file", "", "write the zone file to this file. With none, it goes to the output.")
+		if err := fs.Parse(rest); err != nil {
+			return err
+		}
+		var out struct {
+			Name     string `json:"name"`
+			ZoneFile string `json:"zoneFile"`
+		}
+		if err := a.api.Do(ctx, http.MethodGet, path+"/export", nil, nil, &out); err != nil {
+			return err
+		}
+		if a.json {
+			return a.printJSON(out)
+		}
+		if *file != "" {
+			if err := os.WriteFile(*file, []byte(out.ZoneFile), 0o644); err != nil {
+				return err
+			}
+			fmt.Fprintf(a.out, "Wrote the zone %s to %s.\n", out.Name, *file)
+			return nil
+		}
+		fmt.Fprint(a.out, out.ZoneFile)
+		return nil
 	case "delete":
 		return a.changeZone(ctx, http.MethodDelete, path, nil)
 	}
 	return fmt.Errorf("unknown command dns %s", sub)
+}
+
+// importZone adds the records of a zone file to a zone. With --dry-run, it shows what the panel
+// would add, and makes no change.
+func (a *app) importZone(ctx context.Context, zone map[string]any, path string, args []string) error {
+	if err := need(args, 1, "a zone file, for example: cf dns import "+cell(zone["name"])+" example.com.db"); err != nil {
+		return err
+	}
+	fs := flag.NewFlagSet("import", flag.ContinueOnError)
+	dryRun := fs.Bool("dry-run", false, "show what the panel would import, and make no change")
+	if err := fs.Parse(args[1:]); err != nil {
+		return err
+	}
+	text, err := os.ReadFile(args[0])
+	if err != nil {
+		return err
+	}
+	var out struct {
+		Added    []map[string]any `json:"added"`
+		Existing int              `json:"existing"`
+		Skipped  []struct {
+			Line   int    `json:"line"`
+			Text   string `json:"text"`
+			Reason string `json:"reason"`
+		} `json:"skipped"`
+		Jobs []client.Job `json:"jobs"`
+	}
+	if err := a.api.Do(ctx, http.MethodPost, path+"/import", nil, map[string]any{"zoneFile": string(text), "dryRun": *dryRun}, &out); err != nil {
+		return err
+	}
+	if a.json {
+		return a.printJSON(out)
+	}
+	if len(out.Added) > 0 {
+		a.table(out.Added, []string{"line", "name", "type", "value", "priority", "ttl", "note"})
+	}
+	verb := "Added"
+	if *dryRun {
+		verb = "Would add"
+	}
+	fmt.Fprintf(a.out, "%s %s. %s in the zone already. %s not imported.\n", verb, plural(len(out.Added), "record", "records"),
+		plural(out.Existing, "record is", "records are"), plural(len(out.Skipped), "line is", "lines are"))
+	for _, s := range out.Skipped {
+		fmt.Fprintf(a.out, "Line %d: %s\n  %s\n", s.Line, s.Reason, s.Text)
+	}
+	if *dryRun {
+		return nil
+	}
+	var errs []error
+	for _, job := range out.Jobs {
+		if a.noWait {
+			fmt.Fprintf(a.out, "Job %s is in the queue: %s\n", job.ID, job.Title)
+			continue
+		}
+		errs = append(errs, a.wait(ctx, job.ID))
+	}
+	return errors.Join(errs...)
+}
+
+// plural gives the number with the word for one or for more.
+func plural(n int, one, more string) string {
+	if n == 1 {
+		return fmt.Sprintf("%d %s", n, one)
+	}
+	return fmt.Sprintf("%d %s", n, more)
 }

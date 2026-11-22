@@ -858,6 +858,44 @@ cf dns records example.com
   panel gives a TXT record. Add the record at the current DNS provider of the domain to prove
   that you control the domain, and then make the zone again.
 
+#### Import the records from a different DNS provider
+
+Most DNS providers and hosting panels can export a zone as a zone file (the format of BIND).
+For example, cPanel keeps the zone of each domain in `dnszones/<domain>.db`.
+
+1. Export the zone at the current DNS provider of the domain.
+2. On the page of the zone, select **Import**.
+3. Paste the zone file, or select **Open a file**.
+4. Select **Preview**. The panel shows the records that it adds, and each line that it does
+   not import, with the reason.
+5. Select **Import**.
+
+With the CLI:
+
+```sh
+cf dns import example.com example.com.db --dry-run    # the preview
+cf dns import example.com example.com.db
+```
+
+The panel checks each record as it checks a record that you add. The import adds only the
+records that the zone does not have. It does not change or remove a record of the zone. The
+panel does not import these lines:
+
+- The SOA record and the NS records of the zone itself. The panel makes these records.
+- Records of other types than A, AAAA, CNAME, MX, TXT, SRV, CAA and NS, for example PTR.
+- Names that are not in the zone, and records of a class that is not `IN`.
+- `$INCLUDE` and `$GENERATE`. Put the records of these lines in the file.
+- The A, AAAA and CNAME records of a name that a website of the panel has. The panel makes
+  the address records of each website.
+
+A TTL that is shorter than 60 seconds becomes 60 seconds. A TTL that is longer than 7 days
+becomes 7 days.
+
+![The preview of an import: the records to add, and the lines that the panel does not import](screenshots/dns/1-import-preview.png)
+
+To get the records of a zone as a zone file, select **Export** on the page of the zone, or
+run `cf dns export example.com --file example.com.zone`.
+
 #### DNSSEC
 
 Turn on DNSSEC on the page of the zone, or with `cf dns dnssec example.com on`. The panel

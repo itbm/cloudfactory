@@ -724,6 +724,16 @@ server that starts with no data gets all zones.
   public addresses that the agent of the server of the website reported. A user can change
   such a record. Then the record belongs to the user, and the panel does not change it again.
 
+### Zone files
+
+The panel reads and writes zone files in the format of RFC 1035 (`App\Services\Dns\ZoneFile`).
+The parser reads only data: it does not follow `$INCLUDE` and it does not run `$GENERATE`. It
+gives each record in the form that the panel keeps, with the shared input rules, and does not
+read the database. Thus an import from a different hosting panel can show a preview before the
+zone exists. An import into a zone (`POST /v1/dns-zones/{id}/import`) checks each record with
+the rules of a new record, in one transaction with a lock on the zone. A preview does the same
+checks in a transaction that the panel rolls back.
+
 ### The name servers of the domain
 
 A zone has an effect only when the registrar of the domain has the name servers of the

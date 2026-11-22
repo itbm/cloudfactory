@@ -14,7 +14,9 @@ use App\Models\Website;
 use App\Services\Audit;
 use App\Services\Branding;
 use App\Services\Dns\Dnssec;
+use App\Services\Dns\Import;
 use App\Services\Dns\Records;
+use App\Services\Dns\ZoneFile;
 use App\Services\Dns\Zones;
 use App\Validation\Input;
 use Illuminate\Database\Eloquent\Builder;
@@ -190,6 +192,43 @@ class DnsZoneController extends Controller
         $jobs = $this->zones->changed($zone, "Send DNS zone {$zone->name} again");
 
         return response()->json(['zone' => self::present($zone->fresh(), Zones::servers(), records: true), 'jobs' => JobResource::collection(collect($jobs))->resolve($request)], 202);
+    }
+
+    /**
+     * Adds the records of a zone file to the zone, for example the export of the current DNS
+     * provider of the domain. With "dryRun", the panel only shows what it would add. The import
+     * does not change or remove the records that the zone has.
+     */
+    public function import(Request $request, string $id, Import $import): JsonResponse
+    {
+        $zone = $this->findActive($request, $id);
+        $data = $request->validate([
+            'zoneFile' => ['required', 'string', 'max:'.ZoneFile::MAX_BYTES],
+            'dryRun' => ['sometimes', 'boolean'],
+        ]);
+        $dryRun = (bool) ($data['dryRun'] ?? false);
+        $result = $import->run($zone, $data['zoneFile'], $dryRun);
+        $count = count($result['added']);
+        if (! $dryRun && $count > 0) {
+            Audit::record($request, 'Imported DNS records', "{$zone->name} ({$count} ".($count === 1 ? 'record' : 'records').')', $zone->customer_id);
+        }
+
+        return response()->json([
+            'dryRun' => $dryRun,
+            'added' => $result['added'],
+            'existing' => $result['existing'],
+            'skipped' => $result['skipped'],
+            'zone' => self::present($zone->fresh(), Zones::servers(), records: true),
+            'jobs' => JobResource::collection(collect($result['jobs']))->resolve($request),
+        ], $dryRun || $count === 0 ? 200 : 202);
+    }
+
+    /** The records of the zone as a zone file, for a different DNS provider or for a backup. */
+    public function export(Request $request, string $id): JsonResponse
+    {
+        $zone = $this->find($request, $id);
+
+        return response()->json(['name' => $zone->name, 'zoneFile' => ZoneFile::render($zone)]);
     }
 
     /** A record that a user can change. The panel keeps the NS records of the zone itself. */
