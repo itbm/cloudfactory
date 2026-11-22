@@ -199,6 +199,9 @@ class DnsZoneController extends Controller
         if ($record->managed === DnsRecord::NS) {
             throw ValidationException::withMessages(['record' => 'The panel keeps the name servers of the zone. You cannot change this record.']);
         }
+        if ($record->managed === DnsRecord::ACME) {
+            throw ValidationException::withMessages(['record' => 'The panel added this record for a certificate order, and removes it when the order is complete. You cannot change it.']);
+        }
 
         return $record;
     }
@@ -241,7 +244,7 @@ class DnsZoneController extends Controller
             'value' => $r->value,
             'ttl' => $r->ttl,
             'priority' => $r->priority,
-            // "ns" or "website" for a record that the panel made, or null.
+            // "ns", "website" or "acme" for a record that the panel made, or null.
             'managed' => $r->managed,
         ];
     }
