@@ -43,21 +43,33 @@ func (d *Deps) CheckBranches(ctx context.Context, req *agentv1.CheckBranchesRequ
 		return nil, fmt.Errorf("a request can have %d branch checks", MaxBranchChecks)
 	}
 	heads := make([]*agentv1.BranchHead, len(checks))
-	slots := make(chan struct{}, branchCheckParallel)
-	var wg sync.WaitGroup
+	// The checks of one website use the same directory for the key, so they run one after
+	// the other. The checks of different websites run at the same time.
+	var order []string
+	byWebsite := map[string][]int{}
 	for i, c := range checks {
 		heads[i] = &agentv1.BranchHead{WebsiteId: c.GetWebsiteId()}
+		if _, seen := byWebsite[c.GetWebsiteId()]; !seen {
+			order = append(order, c.GetWebsiteId())
+		}
+		byWebsite[c.GetWebsiteId()] = append(byWebsite[c.GetWebsiteId()], i)
+	}
+	slots := make(chan struct{}, branchCheckParallel)
+	var wg sync.WaitGroup
+	for _, website := range order {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			slots <- struct{}{}
 			defer func() { <-slots }()
-			commit, err := d.checkBranch(ctx, c)
-			if err != nil {
-				heads[i].Error = cleanText(err.Error())
-				return
+			for _, i := range byWebsite[website] {
+				commit, err := d.checkBranch(ctx, checks[i])
+				if err != nil {
+					heads[i].Error = cleanText(err.Error())
+					continue
+				}
+				heads[i].Commit = commit
 			}
-			heads[i].Commit = commit
 		}()
 	}
 	wg.Wait()

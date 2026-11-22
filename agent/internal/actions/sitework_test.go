@@ -576,8 +576,12 @@ func TestCheckBranchesGivesTheLastCommitOfEachBranch(t *testing.T) {
 	}
 
 	// The check runs in a build container of the website with the key of the website. The
-	// key is on the standard input, in a directory that a deploy does not remove.
+	// key is on the standard input, in a directory that a deploy does not remove. The checks
+	// of one website run in the order of the request, so the first check is "main".
 	call, _ := called(f, lsRemoteStart)
+	if second := strings.Index(strings.Join(f.Calls, "\n"), " sh gone git@github.com"); second < strings.Index(strings.Join(f.Calls, "\n"), " sh main git@github.com") {
+		t.Errorf("the checks of one website did not run in order:\n%s", strings.Join(f.Calls, "\n"))
+	}
 	for _, want := range []string{
 		"--volume=" + home + "/.cf-check/deploy.key:/run/cf-deploy-key:ro,Z",
 		"--volume=" + home + "/.cf-ssh:/run/cf-ssh:Z",
