@@ -10,6 +10,7 @@ import { Card, Field, FormError, Modal, PageHeader, RowMenu, Status, TableWrap, 
 import { bytes, shortDate } from "../lib/format";
 import { ROLE_LABEL } from "../lib/roles";
 import { CopyField } from "./website/AccessTab";
+import { AccountExportsPanel } from "../features/AccountExports";
 
 /** The customers and their users. Only an administrator and a reseller have this page. */
 export function CustomersPage() {
@@ -43,6 +44,7 @@ function Customers() {
   const [access, setAccess] = useState<NewAccess | null>(null);
   const [planFor, setPlanFor] = useState<Customer | null>(null);
   const [suspending, setSuspending] = useState<Customer | null>(null);
+  const [exporting, setExporting] = useState<Customer | null>(null);
   const add = useAction(addCustomer);
   const change = useAction(setCustomer);
   const admin = state.session.user.role === "administrator";
@@ -59,6 +61,7 @@ function Customers() {
     c.suspended
       ? { label: "Lift the suspension", onSelect: () => void change.run(c.id, { suspended: false }), disabled: change.busy }
       : { label: "Suspend…", onSelect: () => setSuspending(c), danger: true },
+    { label: "Export account…", onSelect: () => setExporting(c) },
     ...pluginRowActions(pluginActions, (action) => setPluginAction({ action, customer: c })),
   ];
   return (
@@ -119,6 +122,11 @@ function Customers() {
         </Modal>
       )}
       {access && <AccessDialog access={access} onClose={() => setAccess(null)} />}
+      {exporting && (
+        <Modal wide title={`Account export: ${exporting.name}`} onClose={() => setExporting(null)} footer={<button type="button" className="btn" onClick={() => setExporting(null)}>Close</button>}>
+          <AccountExportsPanel customerId={exporting.id} customerName={exporting.name} inCard={false} />
+        </Modal>
+      )}
     </Card>
   );
 }

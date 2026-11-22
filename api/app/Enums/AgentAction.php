@@ -52,6 +52,7 @@ enum AgentAction: string
     case SendDatabaseServer = 'SendDatabaseServer';
     case ReceiveDatabaseServer = 'ReceiveDatabaseServer';
     case SetPacks = 'SetPacks';
+    case ExportWebsite = 'ExportWebsite';
 
     /** The steps that the agent reports for this action. */
     public function steps(): array
@@ -105,6 +106,8 @@ enum AgentAction: string
             self::SendDatabaseServer => ['Stop database server', 'Send data'],
             self::ReceiveDatabaseServer => ['Prepare database server', 'Receive data', 'Start database server'],
             self::SetPacks => ['Check the packs', 'Save the packs and the image policy', 'Load the runtimes'],
+            // An account export: the agent sends each part to the panel while it makes it.
+            self::ExportWebsite => ['Send database dumps', 'Send files'],
         };
     }
 

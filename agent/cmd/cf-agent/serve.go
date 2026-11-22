@@ -535,6 +535,8 @@ func work(ctx context.Context, cfg config.Config, g gate.Gate) error {
 	gv := gvisor.Installer{Root: gvisorRoot, BinDir: gvisorBin}
 	reporter := panel.New(cfg.PanelURL, cfg.AgentToken, &cert, cfg.PanelServerCertificateSHA256, cfg.PanelCASHA256)
 	dialLocal(reporter, deps)
+	// The parts of an account export go to the panel on the connection of the reports.
+	deps.Exports = reporter
 
 	h := deps.Host
 	// FR-202: the disk I/O limit needs the disk of the websites. The disk limit is a user

@@ -3,10 +3,12 @@
 namespace App\Console\Commands;
 
 use App\Providers\DemoServiceProvider;
+use App\Services\Exports\AccountExports;
 use Database\Seeders\DemoSeeder;
 use Illuminate\Console\Attributes\Description;
 use Illuminate\Console\Attributes\Signature;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\File;
 
 /**
  * Makes the database again with the sample data of the demonstration mode. The command
@@ -24,6 +26,8 @@ class DemoReset extends Command
             return self::FAILURE;
         }
         $this->call('migrate:fresh', ['--force' => true]);
+        // The files of the account exports of the old data.
+        File::deleteDirectory(AccountExports::root());
         $this->call('db:seed', ['--class' => DemoSeeder::class, '--force' => true]);
         $this->info('The sample data is ready. Sign in as admin@example.com, reseller@example.com or owner@example.com with the password "'.DemoSeeder::PASSWORD.'".');
 

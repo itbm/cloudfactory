@@ -25,6 +25,7 @@ class Fixtures
         '/me/notification-preferences', '/notifications?perPage=50', '/mail-server', '/notification-templates',
         '/mail/domains', '/mail/mailboxes', '/mail/aliases', '/mail-clusters',
         '/plugin-pages', '/plugin-actions', '/plugins', '/trusted-keys', '/plugin-settings', '/packs', '/pack-settings',
+        '/exports',
     ];
 
     /**

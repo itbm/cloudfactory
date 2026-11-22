@@ -28,3 +28,6 @@ Schedule::command('cloudfactory:prune-plugin-deliveries')->daily()->withoutOverl
 
 // Email notifications: the TLS certificates that expire soon. One email for each certificate.
 Schedule::command('cloudfactory:check-certificates')->dailyAt('08:00')->withoutOverlapping();
+
+// Account exports: the panel removes an archive when it expires (7 days by default).
+Schedule::command('cloudfactory:expire-exports')->hourly()->withoutOverlapping();

@@ -2,12 +2,14 @@
 
 namespace Database\Seeders;
 
+use App\Demo\DemoExport;
 use App\Demo\DemoMailDns;
 use App\Enums\AgentAction;
 use App\Enums\DomainKind;
 use App\Enums\JobState;
 use App\Enums\NotificationEvent;
 use App\Enums\Role;
+use App\Models\AccountExport;
 use App\Models\AgentJob;
 use App\Models\AuditEntry;
 use App\Models\Customer;
@@ -42,6 +44,7 @@ use App\Providers\DemoServiceProvider;
 use App\Services\Branding;
 use App\Services\Dns\Dnssec;
 use App\Services\Dns\Zones;
+use App\Services\Exports\Description;
 use App\Services\Networks;
 use App\Services\Notifications\Notifier;
 use App\Services\OpenPgpKey;
@@ -117,6 +120,8 @@ class DemoSeeder extends Seeder
         $this->backups();
         $this->cronJobsAndDeploys();
         $this->mail();
+        // After the mail: the description of an export has the email addresses.
+        $this->exports();
         $this->jobsAndRollout();
         $this->settingsAndAudit();
         $this->notifications();
@@ -834,6 +839,25 @@ class DemoSeeder extends Seeder
                 $this->snapshot($website, 'manual', $size, $databases, now()->subHours(5));
             }
         }
+    }
+
+    /**
+     * Account exports: Acme Ltd has one that is ready and one that failed. Northwind Agency
+     * exported the account of its customer Harbour Books.
+     */
+    private function exports(): void
+    {
+        $owner = User::where('email', 'owner@example.com')->first();
+        DemoExport::seed($this->customers['acme'], $owner, now()->subDays(2)->setTime(16, 40));
+        $failed = AccountExport::create([
+            'customer_id' => $this->customers['acme']->id, 'user_id' => $owner?->id, 'state' => AccountExport::FAILED, 'files' => true, 'databases' => true,
+            'description' => Description::of($this->customers['acme'], true, true),
+            'error' => 'Export shop.acme.example.com failed: database acme_shop: mariadb-dump: Got error: 2013: "Lost connection to server during query" when dumping table `orders` at row: 18234',
+            'finished_at' => now()->subDays(5)->setTime(9, 18), 'expires_at' => now()->subDays(5)->setTime(9, 18)->addDays(7),
+        ]);
+        $failed->created_at = now()->subDays(5)->setTime(9, 12);
+        $failed->save();
+        DemoExport::seed($this->customers['books'], User::where('email', 'reseller@example.com')->first(), now()->subDay()->setTime(11, 5));
     }
 
     /** @param  ?string  $serverId  The server of a part with only databases. Null is a backup of the website. */

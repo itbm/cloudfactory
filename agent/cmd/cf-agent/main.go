@@ -42,6 +42,7 @@ import (
 	"github.com/itbm/cloudfactory/agent/internal/pki"
 	"github.com/itbm/cloudfactory/agent/internal/quadlet"
 	"github.com/itbm/cloudfactory/agent/internal/selfupdate"
+	"github.com/itbm/cloudfactory/agent/internal/sitearchive"
 	"github.com/itbm/cloudfactory/agent/internal/sitefiles"
 	"github.com/itbm/cloudfactory/agent/internal/status"
 	"github.com/itbm/cloudfactory/agent/internal/validate"
@@ -75,6 +76,20 @@ func main() {
 	// (actions.Files), so it is not in the usage text. It reads no settings of the agent.
 	if len(os.Args) == 3 && os.Args[1] == "site-files" {
 		if err := sitefiles.Main(os.Args[2], os.Stdin, os.Stdout); err != nil {
+			os.Exit(1)
+		}
+		return
+	}
+	// The archive of the files of a website for an account export. The worker starts this
+	// command as the Unix user of a website (actions.ExportWebsite), so it is not in the usage
+	// text. It reads no settings of the agent, and it writes the archive to the standard output.
+	if len(os.Args) > 1 && os.Args[1] == sitearchive.Command {
+		dir, maxBytes, err := sitearchive.Args(os.Args[2:])
+		if err == nil {
+			_, err = sitearchive.Main(dir, maxBytes, os.Stdout)
+		}
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
 		return

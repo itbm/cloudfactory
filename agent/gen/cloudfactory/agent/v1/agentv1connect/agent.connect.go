@@ -162,6 +162,9 @@ const (
 	AgentServiceReceiveDatabaseServerProcedure = "/cloudfactory.agent.v1.AgentService/ReceiveDatabaseServer"
 	// AgentServiceSetPacksProcedure is the fully-qualified name of the AgentService's SetPacks RPC.
 	AgentServiceSetPacksProcedure = "/cloudfactory.agent.v1.AgentService/SetPacks"
+	// AgentServiceExportWebsiteProcedure is the fully-qualified name of the AgentService's
+	// ExportWebsite RPC.
+	AgentServiceExportWebsiteProcedure = "/cloudfactory.agent.v1.AgentService/ExportWebsite"
 	// AgentServiceGetStatusProcedure is the fully-qualified name of the AgentService's GetStatus RPC.
 	AgentServiceGetStatusProcedure = "/cloudfactory.agent.v1.AgentService/GetStatus"
 	// AgentServiceListFilesProcedure is the fully-qualified name of the AgentService's ListFiles RPC.
@@ -231,6 +234,10 @@ type AgentServiceClient interface {
 	// agent checks the signature of each pack, saves the packs, lets Podman pull the images of
 	// each pack only with a signature of its publisher, and loads the runtimes of the packs.
 	SetPacks(context.Context, *connect.Request[v1.SetPacksRequest]) (*connect.Response[v1.JobAccepted], error)
+	// Account export (docs/account-export.md): the agent sends the files and the database dumps
+	// of a website to the panel, as parts of an export. Each part goes to
+	// /api/agent/v1/export-parts/{id} in pieces. The agent keeps no copy.
+	ExportWebsite(context.Context, *connect.Request[v1.ExportWebsiteRequest]) (*connect.Response[v1.JobAccepted], error)
 	// Returns the actual state of the server at once. This method does not make a job.
 	GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.HostStatus], error)
 	// The file manager and the logs of a website. These methods do not make a job: they give
@@ -520,6 +527,12 @@ func NewAgentServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(agentServiceMethods.ByName("SetPacks")),
 			connect.WithClientOptions(opts...),
 		),
+		exportWebsite: connect.NewClient[v1.ExportWebsiteRequest, v1.JobAccepted](
+			httpClient,
+			baseURL+AgentServiceExportWebsiteProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("ExportWebsite")),
+			connect.WithClientOptions(opts...),
+		),
 		getStatus: connect.NewClient[v1.GetStatusRequest, v1.HostStatus](
 			httpClient,
 			baseURL+AgentServiceGetStatusProcedure,
@@ -617,6 +630,7 @@ type agentServiceClient struct {
 	sendDatabaseServer    *connect.Client[v1.SendDatabaseServerRequest, v1.JobAccepted]
 	receiveDatabaseServer *connect.Client[v1.ReceiveDatabaseServerRequest, v1.JobAccepted]
 	setPacks              *connect.Client[v1.SetPacksRequest, v1.JobAccepted]
+	exportWebsite         *connect.Client[v1.ExportWebsiteRequest, v1.JobAccepted]
 	getStatus             *connect.Client[v1.GetStatusRequest, v1.HostStatus]
 	listFiles             *connect.Client[v1.FileRequest, v1.FileList]
 	readFile              *connect.Client[v1.FileRequest, v1.FileContent]
@@ -847,6 +861,11 @@ func (c *agentServiceClient) SetPacks(ctx context.Context, req *connect.Request[
 	return c.setPacks.CallUnary(ctx, req)
 }
 
+// ExportWebsite calls cloudfactory.agent.v1.AgentService.ExportWebsite.
+func (c *agentServiceClient) ExportWebsite(ctx context.Context, req *connect.Request[v1.ExportWebsiteRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return c.exportWebsite.CallUnary(ctx, req)
+}
+
 // GetStatus calls cloudfactory.agent.v1.AgentService.GetStatus.
 func (c *agentServiceClient) GetStatus(ctx context.Context, req *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.HostStatus], error) {
 	return c.getStatus.CallUnary(ctx, req)
@@ -937,6 +956,10 @@ type AgentServiceHandler interface {
 	// agent checks the signature of each pack, saves the packs, lets Podman pull the images of
 	// each pack only with a signature of its publisher, and loads the runtimes of the packs.
 	SetPacks(context.Context, *connect.Request[v1.SetPacksRequest]) (*connect.Response[v1.JobAccepted], error)
+	// Account export (docs/account-export.md): the agent sends the files and the database dumps
+	// of a website to the panel, as parts of an export. Each part goes to
+	// /api/agent/v1/export-parts/{id} in pieces. The agent keeps no copy.
+	ExportWebsite(context.Context, *connect.Request[v1.ExportWebsiteRequest]) (*connect.Response[v1.JobAccepted], error)
 	// Returns the actual state of the server at once. This method does not make a job.
 	GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.HostStatus], error)
 	// The file manager and the logs of a website. These methods do not make a job: they give
@@ -1222,6 +1245,12 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(agentServiceMethods.ByName("SetPacks")),
 		connect.WithHandlerOptions(opts...),
 	)
+	agentServiceExportWebsiteHandler := connect.NewUnaryHandler(
+		AgentServiceExportWebsiteProcedure,
+		svc.ExportWebsite,
+		connect.WithSchema(agentServiceMethods.ByName("ExportWebsite")),
+		connect.WithHandlerOptions(opts...),
+	)
 	agentServiceGetStatusHandler := connect.NewUnaryHandler(
 		AgentServiceGetStatusProcedure,
 		svc.GetStatus,
@@ -1360,6 +1389,8 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 			agentServiceReceiveDatabaseServerHandler.ServeHTTP(w, r)
 		case AgentServiceSetPacksProcedure:
 			agentServiceSetPacksHandler.ServeHTTP(w, r)
+		case AgentServiceExportWebsiteProcedure:
+			agentServiceExportWebsiteHandler.ServeHTTP(w, r)
 		case AgentServiceGetStatusProcedure:
 			agentServiceGetStatusHandler.ServeHTTP(w, r)
 		case AgentServiceListFilesProcedure:
@@ -1559,6 +1590,10 @@ func (UnimplementedAgentServiceHandler) ReceiveDatabaseServer(context.Context, *
 
 func (UnimplementedAgentServiceHandler) SetPacks(context.Context, *connect.Request[v1.SetPacksRequest]) (*connect.Response[v1.JobAccepted], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.SetPacks is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) ExportWebsite(context.Context, *connect.Request[v1.ExportWebsiteRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.ExportWebsite is not implemented"))
 }
 
 func (UnimplementedAgentServiceHandler) GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.HostStatus], error) {

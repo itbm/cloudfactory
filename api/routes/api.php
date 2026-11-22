@@ -1,8 +1,10 @@
 <?php
 
 use App\Http\Controllers\Agent\AgentController;
+use App\Http\Controllers\Agent\ExportPartController;
 use App\Http\Controllers\Agent\JoinController;
 use App\Http\Controllers\Api\AccountController;
+use App\Http\Controllers\Api\AccountExportController;
 use App\Http\Controllers\Api\AuditController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BackupController;
@@ -58,6 +60,10 @@ Route::prefix('v1')->group(function () {
     // The webhook of a website: a Git host calls it after a push. The token in the address is
     // the only credential.
     Route::post('hooks/deploy/{token}', [DeployController::class, 'hook'])->middleware('throttle:30,1,post-hooks-deploy-x');
+    // The download of an account export. The signature of the link is the only credential
+    // (AccountExportController::downloadLink).
+    Route::get('export-downloads/{id}', [AccountExportController::class, 'download'])->name('export-download')
+        ->middleware(['signed:relative', 'throttle:30,1,get-export-downloads-x']);
 
     Route::middleware(['auth:sanctum', 'active'])->group(function () {
         Route::post('auth/logout', [AuthController::class, 'logout']);
@@ -187,6 +193,15 @@ Route::prefix('v1')->group(function () {
             Route::get('mail/aliases', [MailAliasController::class, 'index']);
             Route::post('mail/aliases', [MailAliasController::class, 'store'])->middleware('throttle:mail-changes');
             Route::delete('mail/aliases/{id}', [MailAliasController::class, 'destroy'])->middleware('throttle:mail-changes');
+        });
+
+        // Account exports (docs/account-export.md). A plugin cannot have the scope "exports".
+        Route::middleware('scope:exports')->group(function () {
+            Route::get('exports', [AccountExportController::class, 'index']);
+            Route::post('exports', [AccountExportController::class, 'store'])->middleware('throttle:10,1,post-exports');
+            Route::get('exports/{id}', [AccountExportController::class, 'show']);
+            Route::post('exports/{id}/download-link', [AccountExportController::class, 'downloadLink'])->middleware('throttle:30,1,post-exports-x-download-link');
+            Route::delete('exports/{id}', [AccountExportController::class, 'destroy']);
         });
 
         Route::middleware('scope:backups')->group(function () {
@@ -342,5 +357,7 @@ Route::prefix('agent/v1')->group(function () {
     Route::middleware('agent')->group(function () {
         Route::post('jobs/{id}/events', [AgentController::class, 'jobEvent']);
         Route::post('report', [AgentController::class, 'report']);
+        // A piece of a part of an account export (AccountExports::receive).
+        Route::put('export-parts/{id}', ExportPartController::class);
     });
 });

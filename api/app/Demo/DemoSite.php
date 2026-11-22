@@ -4,6 +4,7 @@ namespace App\Demo;
 
 use App\Models\Website;
 use App\Services\AgentCallException;
+use App\Services\Exports\TarWriter;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 
@@ -77,6 +78,27 @@ class DemoSite
             '/composer.json' => $file("{\n    \"name\": \"example/website\",\n    \"require\": {\n        \"php\": \"^8.3\"\n    }\n}\n", 190),
             '/.env.example' => $file("APP_ENV=production\nDB_HOST=mariadb.internal\n", 190),
         ];
+    }
+
+    /**
+     * The files of a website as a tar archive with gzip, as "cf-agent site-archive" writes it
+     * for an account export.
+     */
+    public static function archive(Website $website): string
+    {
+        $out = fopen('php://memory', 'w+b');
+        $tar = new TarWriter($out);
+        foreach (self::tree($website) as $path => $node) {
+            if ($node['type'] === 'file') {
+                $tar->addString(ltrim($path, '/'), $node['content'], Carbon::parse($node['modified'])->getTimestamp());
+            }
+        }
+        fwrite($out, TarWriter::end());
+        rewind($out);
+        $bytes = (string) stream_get_contents($out);
+        fclose($out);
+
+        return (string) gzencode($bytes);
     }
 
     /** @return array<string, mixed> */
