@@ -416,3 +416,31 @@ func (c *Client) once(ctx context.Context, path string, body []byte, out any) (r
 	}
 	return false, nil
 }
+
+// Download writes the content of a GET route of the panel to w, for example the archive of an
+// import. The request has no time limit of its own: the context ends it.
+func (c *Client) Download(ctx context.Context, path string, w io.Writer) (int64, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.BaseURL+path, nil)
+	if err != nil {
+		return 0, err
+	}
+	if c.Token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.Token)
+	}
+	hc := *c.HTTP
+	hc.Timeout = 0
+	resp, err := hc.Do(req)
+	if err != nil {
+		return 0, fmt.Errorf("panel: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		data, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		var msg struct {
+			Message string `json:"message"`
+		}
+		json.Unmarshal(data, &msg)
+		return 0, fmt.Errorf("panel: %s: status %d: %s", path, resp.StatusCode, msg.Message)
+	}
+	return io.Copy(w, resp.Body)
+}

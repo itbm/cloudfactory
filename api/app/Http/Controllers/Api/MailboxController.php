@@ -31,6 +31,13 @@ use Illuminate\Validation\ValidationException;
  */
 class MailboxController extends Controller
 {
+    /**
+     * The import of an account from a different panel (Imports\Runner) sets this attribute of
+     * the request to the password hash of the old server: the mailbox keeps its password. A
+     * client of the API cannot set an attribute of a request.
+     */
+    public const IMPORT_HASH = 'importPasswordHash';
+
     public function __construct(private JobDispatcher $jobs) {}
 
     private function visible(Request $request): Builder
@@ -67,7 +74,9 @@ class MailboxController extends Controller
         }
         Mail::checkPlan($customer, $data['quotaBytes']);
 
-        $password = $data['password'] ?? Mail::password();
+        $imported = $request->attributes->get(self::IMPORT_HASH);
+        $imported = is_string($imported) && Input::valid('mailPasswordHash', $imported) && ! isset($data['password']) && ! ($data['encrypt'] ?? false) ? $imported : null;
+        $password = $imported === null ? ($data['password'] ?? Mail::password()) : null;
         $keys = ($data['encrypt'] ?? false) ? OpenPgpKey::generate($data['localPart'].'@'.$domain->name, $password) : null;
         // Adversarial review, finding A6-09: the checks and the new mailbox are in one
         // transaction, with a lock on the customer. Two requests at the same time cannot go
@@ -84,7 +93,7 @@ class MailboxController extends Controller
                 'quota_bytes' => $data['quotaBytes'], 'status' => MailDomain::PENDING, 'private_key' => $keys['privateKey'] ?? null,
             ]);
         })->setRelation('domain', $domain);
-        $job = $this->jobs->dispatch($domain->server, AgentAction::SetMailbox, self::payload($mailbox) + ['passwordHash' => Mail::hash($password), 'create' => true]
+        $job = $this->jobs->dispatch($domain->server, AgentAction::SetMailbox, self::payload($mailbox) + ['passwordHash' => $imported ?? Mail::hash($password), 'create' => true]
             + ($keys ? ['setEncryption' => true, 'publicKey' => $keys['publicKey']] : []), "Create mailbox {$mailbox->address()}", customerId: $customer->id);
         Audit::record($request, 'Created mailbox', $mailbox->address(), $customer->id);
 
