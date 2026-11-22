@@ -16,6 +16,7 @@ the emails that they get.
 | Sign-in from a new device     | `signin.new_device`    | All users (always on)              |
 | Usage alerts                  | `usage.alert`          | Administrators, resellers, owners  |
 | Servers that are offline      | `server.offline`       | Administrators                     |
+| Password reset                | `password.reset`       | All users (always on)              |
 
 Who gets the email of an event:
 
@@ -35,6 +36,10 @@ Who gets the email of an event:
 - **Usage alert:** the users of the customer and of its reseller. The usage alerts feature
   makes the alert.
 - **Server offline:** the administrators, when a server does not report for 5 minutes.
+- **Password reset:** the user, when somebody asks for a link to set a new password on the
+  sign-in page. The template must have `{{resetUrl}}` in the text. **Sent emails** shows the
+  email with a placeholder in the place of the link, and you cannot send it again. Refer to
+  [security.md](security.md#users-and-api-tokens).
 
 ## Set up the SMTP server (administrators)
 
@@ -105,7 +110,7 @@ address becomes a link.
 ## Select the emails that you get (all users)
 
 Go to **Settings**, then **Notifications**. Turn each event on or off. You cannot turn off the
-security emails: account suspended, and sign-in from a new device.
+security emails: account suspended, sign-in from a new device, and password reset.
 
 With the command line tool:
 
