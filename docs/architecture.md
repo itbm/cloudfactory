@@ -843,6 +843,13 @@ website. When the address answers correctly again, the panel sends a second emai
 The code is in `api/app/Services/Uptime`. The API is in
 `api/app/Http/Controllers/Api/UptimeController.php`.
 
+![The Uptime tab of a website that is down: the cause, the uptime, the last 24 hours, the response time, the last 30 days and the incidents](screenshots/uptime/1-website-uptime.png)
+
+The page **Uptime checks** shows the checks of all websites that the user can see, the checks
+that are down first, and the last incidents.
+
+![The page Uptime checks of an administrator, with one website that is down](screenshots/uptime/2-uptime-checks.png)
+
 ### A check
 
 - A check has a domain of the website, the protocol (HTTPS or HTTP), a path and a query.
@@ -854,6 +861,8 @@ The code is in `api/app/Services/Uptime`. The API is in
   for example 204.
 - A check can also expect a text. The panel looks for the text in the first 1 MiB of the
   answer. Upper case and lower case are different.
+
+![The form of an uptime check](screenshots/uptime/3-change-check.png)
 
 ### The requests
 

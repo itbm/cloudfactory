@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useLoad } from "../api/hooks";
-import { duration, listAllUptimeChecks, listUptimeIncidents, uptimeText, type UptimeState } from "../api/uptime";
+import { duration, listAllUptimeChecks, listUptimeIncidents, type UptimeState } from "../api/uptime";
 import { Topbar } from "../components/Layout";
 import { Card, Empty, FormError, PageHeader, Status, TableWrap, Tabs } from "../components/ui";
 import { clockTime, longDate } from "../lib/format";
-import { LastResult, UPTIME_STATE, UptimeStateText } from "./website/UptimeTab";
+import { LastResult, UPTIME_STATE, UptimeCell, UptimeStateText } from "./website/UptimeTab";
 
 /** The page loads the checks again after this time, so the state stays current. */
 const RELOAD_MS = 30_000;
@@ -75,10 +75,7 @@ export function UptimePage() {
                           </td>
                           <td><UptimeStateText check={c} /></td>
                           <td><LastResult check={c} /></td>
-                          <td className="nowrap">
-                            {uptimeText(c.uptime.day)} <span className="muted small">24 hours</span>
-                            <span className="cell-sub">{uptimeText(c.uptime.month)} in 30 days</span>
-                          </td>
+                          <td className="nowrap"><UptimeCell check={c} /></td>
                         </tr>
                       ))}
                       {shown.length === 0 && <tr><td colSpan={4} className="muted">{checks.loading ? "Loading…" : "No checks in this state."}</td></tr>}

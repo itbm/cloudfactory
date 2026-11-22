@@ -49,6 +49,17 @@ export function LastResult({ check }: { check: UptimeCheck }) {
   );
 }
 
+/** The uptime of the last 24 hours and of the last 30 days. */
+export function UptimeCell({ check }: { check: UptimeCheck }) {
+  if (check.uptime.day === null && check.uptime.month === null) return <span className="muted">No data</span>;
+  return (
+    <>
+      {uptimeText(check.uptime.day)} <span className="muted small">24 hours</span>
+      <span className="cell-sub">{uptimeText(check.uptime.month)} in 30 days</span>
+    </>
+  );
+}
+
 /** What the check expects: "Status 200 to 399", and the text. */
 export function expectation(check: Pick<UptimeCheck, "expectedStatus" | "keyword">): string {
   const status = check.expectedStatus === null ? "Status 200 to 399" : `Status ${check.expectedStatus}`;
@@ -207,7 +218,7 @@ function CheckDetail({ detail, onRun, onEdit, running, result, closeResult }: {
             <tr><th scope="row">Expects</th><td>{expectation(detail)}</td></tr>
             <tr><th scope="row">Interval</th><td>Every {intervalText(detail.intervalSeconds)}, with a timeout of {detail.timeoutSeconds} seconds</td></tr>
             <tr><th scope="row">Alert</th><td>After {detail.failuresBeforeAlert} failed {detail.failuresBeforeAlert === 1 ? "request" : "requests"} in a row</td></tr>
-            {detail.nextCheckAt && <tr><th scope="row">Next check</th><td>{new Date(detail.nextCheckAt).getTime() <= Date.now() ? "Now" : relativeTime(detail.nextCheckAt)}</td></tr>}
+            {detail.nextCheckAt && <tr><th scope="row">Next check</th><td>{new Date(detail.nextCheckAt).getTime() - Date.now() <= 60_000 ? "Within 1 minute" : relativeTime(detail.nextCheckAt)}</td></tr>}
           </tbody>
         </table>
       </div>
@@ -375,10 +386,7 @@ export function UptimeTab({ website }: { website: Website }) {
                     </td>
                     <td><UptimeStateText check={c} /></td>
                     <td><LastResult check={c} /></td>
-                    <td className="nowrap">
-                      {uptimeText(c.uptime.day)} <span className="muted small">24 hours</span>
-                      <span className="cell-sub">{uptimeText(c.uptime.month)} in 30 days</span>
-                    </td>
+                    <td className="nowrap"><UptimeCell check={c} /></td>
                     <td>
                       <RowMenu label={`Actions for ${c.url}`} actions={[
                         { label: "Check now", disabled: run.busy || c.state === "paused", onSelect: () => void run.run(c) },
