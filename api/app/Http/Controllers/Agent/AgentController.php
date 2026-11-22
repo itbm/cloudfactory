@@ -13,6 +13,7 @@ use App\Models\DatabaseServer;
 use App\Models\Domain;
 use App\Models\Mailbox;
 use App\Models\Server;
+use App\Services\Certificates\Certificates;
 use App\Services\Dns\Zones;
 use App\Services\JobOutcome;
 use App\Services\Mesh;
@@ -126,6 +127,13 @@ class AgentController extends Controller
             'packs' => ['nullable', 'array', 'max:'.InputRules::MAX_PACKS],
             'packs.*.slug' => ['required', 'string', 'max:40'],
             'packs.*.version' => ['required', 'string', 'max:40'],
+            // The certificates from the panel that the edge proxy has (SetCertificates): the
+            // ID, the SHA-256 fingerprint and the hosts of each one.
+            'certificates' => ['nullable', 'array', 'max:'.InputRules::MAX_CERTIFICATES_PER_SERVER],
+            'certificates.*.id' => ['required', 'string', 'max:64'],
+            'certificates.*.sha256' => ['required', 'string', 'max:64'],
+            'certificates.*.hosts' => ['array', 'max:'.InputRules::MAX_CERTIFICATE_HOSTS],
+            'certificates.*.hosts.*' => ['string', 'max:253'],
             // True when the agent can operate the database servers of customers.
             'databaseInstances' => ['boolean'],
             // The state and the resource use of each database server on the server.
@@ -242,6 +250,12 @@ class AgentController extends Controller
         }
         if (is_array($data['dnsZones'] ?? null)) {
             app(Zones::class)->reconcile($server->fresh(), $data['dnsZones']);
+        }
+        // The server gets the certificates from the panel again when it has other
+        // certificates, for example after a restart of the edge proxy.
+        if (($reported = Certificates::normalReport($data['certificates'] ?? null)) !== null) {
+            $server->update(['agent_certificates' => $reported]);
+            app(Certificates::class)->reconcile($server->fresh(), $reported);
         }
         // The mesh: the public key of the server and the state of its tunnels.
         if (isset($data['mesh'])) {

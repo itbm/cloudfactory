@@ -1,4 +1,4 @@
-import type { DatabaseServerStatus, DnsDelegation, DnsRecordType, DnsZoneStatus, Domain, HostUpdatePolicy, JobState, MailStatus, RuntimeKind, ServerRole, ServerState, UpdatePolicy, WebsiteKind, WebsiteStatus } from "../api/types";
+import type { CertificateOrderStage, CertificateSource, CustomerCertificate, DatabaseServerStatus, DnsDelegation, DnsRecordType, DnsZoneStatus, Domain, HostUpdatePolicy, JobState, MailStatus, RuntimeKind, ServerRole, ServerState, UpdatePolicy, WebsiteKind, WebsiteStatus } from "../api/types";
 import type { Tone } from "../components/ui";
 import { daysUntil, longDate, relativeTime } from "./format";
 
@@ -188,3 +188,36 @@ export const DISK_LIMIT_NOT_APPLIED = "Not applied on this server";
 
 /** The same text for a value that is the sum of all shown websites. */
 export const DISK_LIMIT_NOT_APPLIED_ALL = "The limit is not applied";
+
+/** The status of a certificate of a customer (docs/certificates.md). */
+export function certificateStatus(c: Pick<CustomerCertificate, "state" | "expiresAt" | "source">): { label: string; tone: Tone } {
+  switch (c.state) {
+    case "issuing":
+      return { label: "Getting the certificate", tone: "info" };
+    case "renewing":
+      return { label: "Renewing", tone: "info" };
+    case "failed":
+      return { label: "Failed", tone: "danger" };
+    case "expired":
+      return { label: "Expired", tone: "danger" };
+    case "valid":
+      return c.source === "upload" && c.expiresAt && daysUntil(c.expiresAt) <= 14 ? { label: "Expires soon", tone: "warning" } : { label: "Valid", tone: "success" };
+  }
+}
+
+/** The stages of an order with DNS validation, in their sequence. */
+export const CERTIFICATE_STAGES: CertificateOrderStage[] = ["new", "dns", "validating", "finalizing"];
+
+export const CERTIFICATE_STAGE: Record<CertificateOrderStage, string> = {
+  new: "Make the order and add the TXT records",
+  dns: "Wait for the DNS servers",
+  validating: "Let's Encrypt checks the records",
+  finalizing: "Get the certificate",
+};
+
+/** Where the certificate of a domain comes from. */
+export const CERTIFICATE_SOURCE: Record<CertificateSource, string> = {
+  automatic: "From the edge proxy",
+  upload: "Uploaded certificate",
+  acme: "Certificate with DNS validation",
+};
