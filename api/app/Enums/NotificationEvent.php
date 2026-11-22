@@ -16,6 +16,8 @@ enum NotificationEvent: string
     case NewDeviceSignIn = 'signin.new_device';
     case UsageAlert = 'usage.alert';
     case ServerOffline = 'server.offline';
+    case UptimeDown = 'uptime.down';
+    case UptimeUp = 'uptime.up';
 
     public function label(): string
     {
@@ -28,6 +30,8 @@ enum NotificationEvent: string
             self::NewDeviceSignIn => 'Sign-in from a new device',
             self::UsageAlert => 'Usage alerts',
             self::ServerOffline => 'Servers that are offline',
+            self::UptimeDown => 'Websites that are down',
+            self::UptimeUp => 'Websites that are up again',
         };
     }
 
@@ -42,6 +46,8 @@ enum NotificationEvent: string
             self::NewDeviceSignIn => 'Someone signed in to your user from a device or browser that the panel does not know.',
             self::UsageAlert => 'A website or the account uses almost all of a limit of its plan.',
             self::ServerOffline => 'A server did not report to the panel for 5 minutes.',
+            self::UptimeDown => 'An uptime check of a website failed a number of times in a row.',
+            self::UptimeUp => 'A website that was down answers its uptime check again.',
         };
     }
 
@@ -69,10 +75,14 @@ enum NotificationEvent: string
         return in_array($this, [self::AccountSuspended, self::NewDeviceSignIn], true);
     }
 
-    /** A new user receives each event that their role can receive, until they turn it off. */
-    public function defaultOn(): bool
+    /**
+     * A new user receives each event that their role can receive, until they turn it off. An
+     * administrator can see the uptime checks of all customers, so the uptime emails are off
+     * for an administrator until they turn them on.
+     */
+    public function defaultOn(Role $role): bool
     {
-        return true;
+        return ! ($role === Role::Administrator && in_array($this, [self::UptimeDown, self::UptimeUp], true));
     }
 
     /**
@@ -94,6 +104,8 @@ enum NotificationEvent: string
             self::NewDeviceSignIn => ['device' => 'Firefox on Linux', 'ip' => '203.0.113.7', 'time' => '15 Nov 2026 09:41 UTC'],
             self::UsageAlert => ['account' => 'Acme Ltd', 'resource' => 'Disk', 'website' => 'shop.example.com', 'used' => '9.1 GB', 'limit' => '10 GB', 'percent' => '91', 'level' => 'warning'],
             self::ServerOffline => ['server' => 'web-2', 'lastSeen' => '15 Nov 2026 02:55 UTC'],
+            self::UptimeDown => ['website' => 'shop.example.com', 'url' => 'https://shop.example.com/', 'error' => 'HTTP status 503.', 'since' => '15 Nov 2026 03:12 UTC'],
+            self::UptimeUp => ['website' => 'shop.example.com', 'url' => 'https://shop.example.com/', 'downtime' => '14 minutes', 'since' => '15 Nov 2026 03:12 UTC', 'until' => '15 Nov 2026 03:26 UTC'],
         };
     }
 
@@ -108,6 +120,8 @@ enum NotificationEvent: string
             self::NewDeviceSignIn => 'New sign-in to {{brand}}',
             self::UsageAlert => '{{account}} uses {{percent}}% of its {{resource}} limit',
             self::ServerOffline => 'The server {{server}} is offline',
+            self::UptimeDown => '{{website}} is down',
+            self::UptimeUp => '{{website}} is up again',
         };
     }
 
@@ -122,6 +136,8 @@ enum NotificationEvent: string
             self::NewDeviceSignIn => "Hello {{name}},\n\nSomeone signed in to your user on {{brand}} from a new device.\n\nDevice: {{device}}\nIP address: {{ip}}\nTime: {{time}}\n\nIf this was you, you need not do anything. If not, change your password now, and turn on the authenticator app:\n{{panelUrl}}/settings",
             self::UsageAlert => "Hello {{name}},\n\n{{account}} uses {{used}} of {{limit}} ({{percent}}%) of its {{resource}} limit. Website: {{website}}\n\nWhen it uses all of the limit, changes can fail. Remove data that you do not need, or ask for a larger plan:\n{{panelUrl}}/account",
             self::ServerOffline => "Hello {{name}},\n\nThe server {{server}} did not report to the panel since {{lastSeen}}. The panel keeps its jobs until it reports again.\n\nMake sure that the server is on and that the agent service runs:\n{{panelUrl}}/servers",
+            self::UptimeDown => "Hello {{name}},\n\nThe uptime check of {{website}} fails since {{since}}.\n\nAddress: {{url}}\nError: {{error}}\n\nThe panel checks the address again, and sends an email when the website answers again. Open the panel to see the checks:\n{{panelUrl}}/uptime",
+            self::UptimeUp => "Hello {{name}},\n\n{{website}} answers its uptime check again. It was down for {{downtime}}, from {{since}} to {{until}}.\n\nAddress: {{url}}\n\nOpen the panel to see the incidents:\n{{panelUrl}}/uptime",
         };
     }
 }

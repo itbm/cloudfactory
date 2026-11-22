@@ -3,6 +3,7 @@
 namespace App\Demo;
 
 use App\Models\DnsZone;
+use App\Models\UptimeCheck;
 use App\Models\User;
 use App\Models\Website;
 use Illuminate\Contracts\Http\Kernel;
@@ -25,6 +26,8 @@ class Fixtures
         '/me/notification-preferences', '/notifications?perPage=50', '/mail-server', '/notification-templates',
         '/mail/domains', '/mail/mailboxes', '/mail/aliases', '/mail-clusters',
         '/plugin-pages', '/plugin-actions', '/plugins', '/trusted-keys', '/plugin-settings', '/packs', '/pack-settings',
+        // The page "Uptime" reads the checks and the incidents when the user opens it.
+        '/uptime-checks?perPage=100&page=1', '/uptime-incidents',
     ];
 
     /**
@@ -40,7 +43,12 @@ class Fixtures
         // user opens that part of the website.
         foreach (self::websites($user) as $id) {
             array_push($paths, "/websites/{$id}/databases", "/websites/{$id}/snapshots", "/websites/{$id}/cron-jobs", "/websites/{$id}/deploy",
-                "/websites/{$id}/files?path=%2F", "/websites/{$id}/files?path=%2Fpublic", "/websites/{$id}/files/content?path=%2Fpublic%2Findex.php", "/websites/{$id}/logs?lines=200");
+                "/websites/{$id}/files?path=%2F", "/websites/{$id}/files?path=%2Fpublic", "/websites/{$id}/files/content?path=%2Fpublic%2Findex.php", "/websites/{$id}/logs?lines=200",
+                "/websites/{$id}/uptime-checks");
+            // The tab "Uptime" of a website reads each check with its history.
+            foreach (UptimeCheck::where('website_id', $id)->orderBy('created_at')->pluck('id') as $check) {
+                $paths[] = "/websites/{$id}/uptime-checks/{$check}";
+            }
         }
         // The page of a DNS zone reads the zone with its records.
         $visible = $user->visibleCustomerIds();

@@ -19,6 +19,12 @@ class Events
     /** A job of an agent is complete: it succeeded or it failed. */
     public const JOB_FINISHED = 'job.finished';
 
+    /** An uptime check of a website is down: it failed a number of times in a row. */
+    public const UPTIME_DOWN = 'uptime.down';
+
+    /** The website of an uptime check that was down answers again. */
+    public const UPTIME_UP = 'uptime.up';
+
     /** A test event. The administrator sends it from the page of the plugin. */
     public const TEST = 'plugin.test';
 
@@ -53,6 +59,7 @@ class Events
         'database.created', 'database.removed',
         'backup.started', 'restore.started', 'deploy.started',
         'customer.created', 'customer.changed', 'user.created',
+        self::UPTIME_DOWN, self::UPTIME_UP,
     ];
 
     /**
