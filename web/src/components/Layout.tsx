@@ -5,6 +5,7 @@ import {
   ChevronsUpDown,
   CircleUser,
   Database,
+  FolderInput,
   FolderOpen,
   Gauge,
   Globe,
@@ -22,6 +23,7 @@ import {
   Server,
   Settings2,
   Share2,
+  ShieldCheck,
   Signpost,
   Tags,
   Users,
@@ -187,6 +189,7 @@ const ICONS: Record<NavEntry["icon"], ReactNode> = {
   databases: <Database size={18} />,
   email: <Mail size={18} />,
   dns: <Signpost size={18} />,
+  certificates: <ShieldCheck size={18} />,
   networks: <Share2 size={18} />,
   backups: <History size={18} />,
   apps: <Boxes size={18} />,
@@ -197,6 +200,7 @@ const ICONS: Record<NavEntry["icon"], ReactNode> = {
   settings: <Settings2 size={18} />,
   plugins: <Puzzle size={18} />,
   packs: <Package size={18} />,
+  imports: <FolderInput size={18} />,
 };
 
 /** A count or a mark at the end of a link, for example the number of open setup items. */

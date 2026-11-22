@@ -30,6 +30,10 @@ tags:
   - name: Databases
   - name: DNS
     description: DNS hosting. The zones of the customers and their records.
+  - name: Certificates
+    description: >-
+      The TLS certificates of the customers: uploads, and certificates from Let's Encrypt with
+      DNS validation. Refer to docs/certificates.md. These routes need the websites scope.
   - name: Networks
     description: The private networks of the customers, like a VPC.
   - name: Backups
@@ -42,6 +46,10 @@ tags:
   - name: Images
     description: Administrators only.
   - name: Customers
+  - name: Imports
+    description: >-
+      The import of an account from cPanel, DirectAdmin, Plesk or HestiaCP. Administrators only.
+      Refer to docs/imports.md.
   - name: Users
     description: The users who can sign in. These routes need the users scope.
   - name: Audit
@@ -333,6 +341,7 @@ paths:
                 planId: { type: string, description: The plan of the customer when you do not give it. Only an administrator or the reseller of the customer can give a different plan. }
                 serverId: { type: string }
                 customerId: { type: string, description: Necessary for administrators and resellers. }
+                documentRoot: { type: string, maxLength: 200, description: 'The directory of the website that the web server serves, relative to the directory of the website, for example "public". The default is ".". Not for an application image.' }
       responses:
         '202': { $ref: '#/components/responses/WebsiteJob' }
         '403': { $ref: '#/components/responses/Forbidden' }
@@ -1923,6 +1932,144 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/Invalid' }
 
+  /v1/certificates:
+    get:
+      tags: [Certificates]
+      summary: List certificates
+      description: >-
+        The certificates of the customers that you can see. Each verified domain of a website
+        uses the best certificate of its customer that is valid for it. A domain with no such
+        certificate gets a certificate from the edge proxy.
+      parameters:
+        - { name: customerId, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: The certificates, in the order that the panel got them.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/Certificate' } }
+    post:
+      tags: [Certificates]
+      summary: Add a certificate
+      description: >-
+        With the source `upload`, send the certificate chain and its private key in PEM format.
+        The chain can have the certificates in any order. The key must not have a password.
+
+
+        With the source `acme`, the panel gets a certificate for `domain` from Let's Encrypt
+        with DNS validation. With `wildcard`, the certificate is also valid for `*.domain`. The
+        customer must have a DNS zone for the domain on the DNS page, and the registrar must
+        send the queries for the zone to the name servers of the panel. The order runs after
+        the response: read the certificate again to see its state.
+
+
+        A certificate must not be valid for a host name of the panel or of a server. Each
+        customer can have 20 certificates (`CF_CERTIFICATES_PER_CUSTOMER`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [source]
+              properties:
+                source: { type: string, enum: [upload, acme] }
+                customerId: { type: [string, 'null'], description: Default is the customer of the user. }
+                certificate: { type: string, maxLength: 65536, description: 'For "upload": the certificate chain in PEM format.' }
+                privateKey: { type: string, maxLength: 65536, description: 'For "upload": the private key in PEM format, with no password.' }
+                domain: { type: string, description: 'For "acme": the domain, for example example.com.' }
+                wildcard: { type: boolean, description: 'For "acme": the certificate is also valid for each name directly below the domain.' }
+      responses:
+        '201':
+          description: The certificate. For an order, the state is `issuing`.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Certificate' }
+        '409': { description: The customer is suspended. }
+        '422': { $ref: '#/components/responses/Invalid' }
+        '429': { description: Too many certificate changes in one hour. }
+
+  /v1/certificates/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    get:
+      tags: [Certificates]
+      summary: Get a certificate with its chain
+      responses:
+        '200':
+          description: The certificate, with the certificate chain in PEM format. The API never gives the private key.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/Certificate' }
+                  - type: object
+                    properties:
+                      certificatePem: { type: [string, 'null'] }
+        '404': { description: Not found. }
+    put:
+      tags: [Certificates]
+      summary: Replace an uploaded certificate
+      description: >-
+        Replaces the chain and the key of an uploaded certificate, for example with a renewed
+        certificate from your CA. The panel renews a certificate with the source `acme` itself.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [certificate, privateKey]
+              properties:
+                certificate: { type: string, maxLength: 65536 }
+                privateKey: { type: string, maxLength: 65536 }
+      responses:
+        '200':
+          description: The certificate. The servers get the new certificate.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Certificate' }
+        '409': { description: The customer is suspended. }
+        '422': { $ref: '#/components/responses/Invalid' }
+        '429': { description: Too many certificate changes in one hour. }
+    delete:
+      tags: [Certificates]
+      summary: Remove a certificate
+      description: The domains that used the certificate get a certificate from the edge proxy again.
+      responses:
+        '202':
+          description: The panel removed the certificate. The jobs send the new list of certificates to the servers.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  jobs: { type: integer, description: The number of jobs. }
+        '404': { description: Not found. }
+
+  /v1/certificates/{id}/renew:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [Certificates]
+      summary: Renew a certificate now
+      description: >-
+        Starts a new order for a certificate with the source `acme`: a renewal, or a new try
+        after an order failed. An order that runs starts again. The panel also renews each
+        certificate itself after two thirds of its lifetime.
+      responses:
+        '202':
+          description: The order started.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Certificate' }
+        '409': { description: The customer is suspended. }
+        '422': { $ref: '#/components/responses/Invalid' }
+        '429': { description: Too many certificate changes in one hour. }
+
   /v1/dns-zones:
     get:
       tags: [DNS]
@@ -2845,6 +2992,170 @@ paths:
                       repository: { type: string, nullable: true }
                       password: { type: string }
         '403': { $ref: '#/components/responses/Forbidden' }
+
+  /v1/imports:
+    get:
+      tags: [Imports]
+      summary: List the imports
+      description: The 200 newest imports.
+      responses:
+        '200':
+          description: The imports.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/Import' } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Imports]
+      summary: Start an import of an account
+      description: >-
+        Give the HTTPS URL of the backup archive, or the name and the size of a file. With a
+        URL, the web server downloads the archive at once. With a file, send the file in parts
+        to /v1/imports/{id}/archive. The web server then downloads the archive from the panel.
+        The server reads the archive, and the import gets the status "ready" with a plan.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [customerId, serverId]
+              properties:
+                customerId: { type: string, description: The customer that gets the websites, the mail domains and the DNS zones. }
+                serverId: { type: string, description: The web server of the new websites. Its agent must report the feature "imports". }
+                url: { type: string, format: uri, maxLength: 2048, description: An HTTPS URL with no user name and no password, for example a signed URL of object storage. Each server that needs the archive downloads it. The URL must resolve to a public address. }
+                fileName: { type: string, maxLength: 255, description: The name of the archive file, with no directory. Not with url. }
+                sizeBytes: { type: integer, minimum: 1, description: The size of the file. Necessary with fileName. The limit is 50 GiB by default (CF_IMPORT_MAX_BYTES). }
+      responses:
+        '201':
+          description: The import. With a URL, the job that downloads and reads the archive.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  import: { $ref: '#/components/schemas/Import' }
+                  job: { oneOf: [{ $ref: '#/components/schemas/Job' }, { type: 'null' }] }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { description: The customer is suspended. }
+        '422': { $ref: '#/components/responses/Invalid' }
+        '429': { description: Too many imports in one minute. }
+
+  /v1/imports/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    get:
+      tags: [Imports]
+      summary: Get an import, with its plan or its parts
+      responses:
+        '200':
+          description: The import.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ImportDetail' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Imports]
+      summary: Remove an import
+      description: >-
+        Removes the import and its archive from the panel and from each server. The websites,
+        the mail domains and the DNS zones of the import stay.
+      responses:
+        '202':
+          description: The jobs that remove the archive from the servers.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  jobs: { type: array, items: { $ref: '#/components/schemas/Job' } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: The import runs. Wait until it is complete. }
+
+  /v1/imports/{id}/archive:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    put:
+      tags: [Imports]
+      summary: Send a part of the archive
+      description: >-
+        Send the parts in order. Each part has 1 byte to 4 MiB. `offset` is the number of
+        bytes that the panel has. After a connection error, read `receivedBytes` and send
+        from that offset. After the last part, the web server downloads and reads the archive.
+      parameters:
+        - { name: offset, in: query, required: true, schema: { type: integer, minimum: 0 } }
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: { type: string, format: binary, maxLength: 4194304 }
+      responses:
+        '200':
+          description: The panel has the part. After the last part, the job that downloads and reads the archive.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  receivedBytes: { type: integer }
+                  job: { oneOf: [{ $ref: '#/components/schemas/Job' }, { type: 'null' }] }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: The offset is not the number of bytes that the panel has, or the import does not wait for a file.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+                  receivedBytes: { type: integer }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/imports/{id}/start:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [Imports]
+      summary: Import the selected parts of the account
+      description: >-
+        Only for an import with the status "ready", one time. The panel makes the records with
+        the checks of the API: the websites with their domains, databases and cron jobs, the
+        mail domains with their mailboxes and addresses, and the DNS records. Then the servers
+        copy the files, the dumps and the messages. Each part gets an item with a state. The
+        token needs the scope databases:write for websites with databases, mail:write for mail
+        domains and dns:write for DNS zones.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [websites, mailDomains, dnsZones]
+              properties:
+                websites:
+                  type: array
+                  items:
+                    type: object
+                    required: [name]
+                    properties:
+                      name: { type: string, description: The name of a website of the plan. }
+                      imageId: { type: [string, 'null'], description: An official PHP image. The default is the image of the plan. }
+                mailDomains: { type: array, items: { type: string } }
+                dnsZones: { type: array, items: { type: string } }
+                rewriteWordPress: { type: boolean, default: true, description: Put the settings of the new database in wp-config.php of each WordPress website. }
+      responses:
+        '202':
+          description: The import runs.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ImportDetail' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: The import is not ready, or it started already. }
+        '422': { $ref: '#/components/responses/Invalid' }
 
   /v1/jobs:
     get:
@@ -4898,6 +5209,24 @@ paths:
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  /agent/v1/imports/{id}/archive:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    get:
+      tags: [Agent]
+      summary: Download the uploaded archive of an import
+      description: Only for the agent of a server with a FetchImport job of the import that is queued or runs.
+      security:
+        - agentToken: []
+      responses:
+        '200':
+          description: The archive.
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   /agent/v1/report:
     post:
       tags: [Agent]
@@ -5746,6 +6075,53 @@ components:
             cannot change them. `website`: an A or AAAA record that the panel made for a domain
             of a website. The panel changes it when the server of the website gets a new
             address, and removes it with the domain. Null: a record of the user.
+    Certificate:
+      type: object
+      properties:
+        id: { type: string }
+        customerId: { type: string }
+        source: { type: string, enum: [upload, acme], description: '"upload": the customer uploaded it. "acme": the panel gets it from Let''s Encrypt with DNS validation.' }
+        names: { type: array, items: { type: string }, example: [example.com, '*.example.com'] }
+        state:
+          type: string
+          enum: [issuing, failed, renewing, expired, valid]
+          description: '"issuing": the first order runs. "failed": the first order failed. "renewing": an order for a new certificate runs, and the current certificate stays in use.'
+        issuer: { type: [string, 'null'] }
+        fingerprint: { type: [string, 'null'], description: The SHA-256 fingerprint of the certificate, in lower-case hexadecimal. }
+        notBefore: { type: [string, 'null'], format: date-time }
+        expiresAt: { type: [string, 'null'], format: date-time }
+        trusted: { type: [boolean, 'null'], description: False when browsers do not trust the certificate, for example a self-signed certificate. }
+        renewAt: { type: [string, 'null'], format: date-time, description: 'Only for "acme": the time of the next renewal.' }
+        order:
+          description: The order that runs, or null.
+          oneOf:
+            - type: 'null'
+            - type: object
+              properties:
+                stage: { type: string, enum: [new, dns, validating, finalizing] }
+                startedAt: { type: string, format: date-time }
+                records:
+                  type: array
+                  description: The TXT records of the DNS validation.
+                  items:
+                    type: object
+                    properties:
+                      name: { type: string, example: _acme-challenge.example.com }
+                      value: { type: string }
+        error: { type: [string, 'null'], description: The error of the last order. }
+        nextTryAt: { type: [string, 'null'], format: date-time, description: The time of the next try of a renewal that failed. }
+        usedBy:
+          type: array
+          description: The domains that use the certificate now, from the reports of the servers.
+          items:
+            type: object
+            properties:
+              domain: { type: string }
+              websiteId: { type: [string, 'null'] }
+              websiteName: { type: [string, 'null'] }
+              serverName: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
     DnsZone:
       type: object
       properties:
@@ -5831,6 +6207,125 @@ components:
         websites: { type: integer, description: The number of websites of the customer that have a domain in the zone. }
         createdAt: { type: string, format: date-time }
         records: { type: array, items: { $ref: '#/components/schemas/DnsRecord' }, description: Only in the answer for one zone. }
+    Import:
+      type: object
+      properties:
+        id: { type: string }
+        status: { type: string, enum: [uploading, fetching, ready, starting, running, done, failed] }
+        source: { type: string, enum: [upload, url] }
+        fileName: { type: [string, 'null'] }
+        sizeBytes: { type: integer }
+        receivedBytes: { type: integer, description: The bytes of an upload that the panel has. }
+        panel: { type: [string, 'null'], enum: [cpanel, directadmin, plesk, hestia, cloudfactory, null] }
+        panelName: { type: [string, 'null'] }
+        account: { type: [string, 'null'], description: The name of the account on the old panel. }
+        customerId: { type: string }
+        customerName: { type: [string, 'null'] }
+        serverId: { type: string }
+        serverName: { type: [string, 'null'] }
+        error: { type: [string, 'null'] }
+        counts:
+          type: [object, 'null']
+          properties:
+            websites: { type: integer }
+            databases: { type: integer }
+            mailboxes: { type: integer }
+            dnsZones: { type: integer }
+        progress:
+          type: object
+          properties:
+            total: { type: integer }
+            done: { type: integer }
+            failed: { type: integer, description: The parts that failed or that the import skipped. }
+        createdAt: { type: string, format: date-time }
+        startedAt: { type: [string, 'null'], format: date-time }
+        finishedAt: { type: [string, 'null'], format: date-time }
+    ImportDetail:
+      allOf:
+        - { $ref: '#/components/schemas/Import' }
+        - type: object
+          properties:
+            customer:
+              type: [object, 'null']
+              description: The customer in the backup.
+              properties:
+                name: { type: string }
+                email: { type: string }
+            warnings:
+              type: array
+              description: The parts of the account that the import does not copy.
+              items:
+                type: object
+                properties:
+                  item: { type: string }
+                  message: { type: string }
+            plan: { oneOf: [{ $ref: '#/components/schemas/ImportPlan' }, { type: 'null' }], description: Only for the status "ready". }
+            items: { type: array, items: { $ref: '#/components/schemas/ImportItem' } }
+    ImportPlan:
+      type: object
+      properties:
+        websites:
+          type: array
+          items:
+            type: object
+            properties:
+              name: { type: string }
+              domains: { type: array, items: { type: object, properties: { name: { type: string }, kind: { type: string, enum: [primary, alias, redirect] } } } }
+              phpVersion: { type: [string, 'null'], description: The PHP version on the old panel. }
+              imageId: { type: [string, 'null'], description: The image that the import selects. }
+              imageName: { type: [string, 'null'] }
+              diskBytes: { type: integer }
+              files: { type: boolean }
+              databases: { type: array, items: { type: object, properties: { name: { type: string }, bytes: { type: integer } } } }
+              databaseUsers: { type: integer }
+              cronJobs: { type: integer }
+              wordpress: { type: boolean }
+              conflict: { type: [string, 'null'], description: The reason that the import cannot make the website. }
+        mailDomains:
+          type: array
+          items:
+            type: object
+            properties:
+              name: { type: string }
+              mailboxes: { type: integer }
+              quotaBytes: { type: integer, description: The total size of the new mailboxes. }
+              aliases: { type: integer }
+              messages: { type: integer }
+              bytes: { type: integer }
+              newPasswords: { type: integer, description: The mailboxes that get a new password. }
+              conflict: { type: [string, 'null'] }
+        mailSpace:
+          type: [object, 'null']
+          description: The free mail space in the plan of the customer. A mailbox that does not fit fails.
+          properties:
+            mailboxes: { type: integer }
+            bytes: { type: integer }
+        dnsZones:
+          type: array
+          items:
+            type: object
+            properties:
+              name: { type: string }
+              exists: { type: boolean, description: The customer has this zone. The import adds the records that it does not have. }
+              conflict: { type: [string, 'null'] }
+        images:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              name: { type: string }
+              phpVersion: { type: string }
+    ImportItem:
+      type: object
+      properties:
+        id: { type: string }
+        kind: { type: string, enum: [website, domain, database, databaseUsers, cronJob, files, dump, mailDomain, mailbox, mailAlias, messages, dnsZone] }
+        name: { type: string }
+        state: { type: string, enum: [waiting, running, done, failed, skipped] }
+        error: { type: [string, 'null'] }
+        detail: { type: [string, 'null'] }
+        jobId: { type: [string, 'null'] }
     DnsAccount:
       type: object
       properties:
@@ -6220,6 +6715,11 @@ components:
           properties:
             state: { type: string, enum: [pending, valid, expired, failed] }
             expiresAt: { type: [string, 'null'], format: date-time }
+            source:
+              type: string
+              enum: [automatic, upload, acme]
+              description: '"automatic": the edge proxy gets the certificate. "upload" or "acme": a certificate of the customer from the panel (certificateId).'
+            certificateId: { type: [string, 'null'] }
     DatabaseLimits:
       type: object
       description: The limits of a database server. The agent applies the disk limit with a disk image of this size.
@@ -6722,6 +7222,20 @@ components:
             properties:
               slug: { type: string, maxLength: 40 }
               version: { type: string, maxLength: 40 }
+        certificates:
+          type: [array, 'null']
+          maxItems: 2000
+          description: >-
+            The certificates from the panel that the edge proxy has (SetCertificates): the ID,
+            the SHA-256 fingerprint and the hosts of each one. When they do not agree with the
+            panel, the panel sends the certificates again. Null when the agent could not read them.
+          items:
+            type: object
+            required: [id, sha256]
+            properties:
+              id: { type: string, maxLength: 64 }
+              sha256: { type: string, maxLength: 64 }
+              hosts: { type: array, maxItems: 5000, items: { type: string, maxLength: 253 } }
         features:
           type: [array, 'null']
           description: >-

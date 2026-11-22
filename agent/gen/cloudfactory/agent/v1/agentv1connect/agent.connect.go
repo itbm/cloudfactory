@@ -165,6 +165,23 @@ const (
 	// AgentServiceSetWebsiteSecurityProcedure is the fully-qualified name of the AgentService's
 	// SetWebsiteSecurity RPC.
 	AgentServiceSetWebsiteSecurityProcedure = "/cloudfactory.agent.v1.AgentService/SetWebsiteSecurity"
+	// AgentServiceSetCertificatesProcedure is the fully-qualified name of the AgentService's
+	// SetCertificates RPC.
+	AgentServiceSetCertificatesProcedure = "/cloudfactory.agent.v1.AgentService/SetCertificates"
+	// AgentServiceFetchImportProcedure is the fully-qualified name of the AgentService's FetchImport
+	// RPC.
+	AgentServiceFetchImportProcedure = "/cloudfactory.agent.v1.AgentService/FetchImport"
+	// AgentServiceImportFilesProcedure is the fully-qualified name of the AgentService's ImportFiles
+	// RPC.
+	AgentServiceImportFilesProcedure = "/cloudfactory.agent.v1.AgentService/ImportFiles"
+	// AgentServiceImportDatabaseProcedure is the fully-qualified name of the AgentService's
+	// ImportDatabase RPC.
+	AgentServiceImportDatabaseProcedure = "/cloudfactory.agent.v1.AgentService/ImportDatabase"
+	// AgentServiceImportMailProcedure is the fully-qualified name of the AgentService's ImportMail RPC.
+	AgentServiceImportMailProcedure = "/cloudfactory.agent.v1.AgentService/ImportMail"
+	// AgentServiceDeleteImportProcedure is the fully-qualified name of the AgentService's DeleteImport
+	// RPC.
+	AgentServiceDeleteImportProcedure = "/cloudfactory.agent.v1.AgentService/DeleteImport"
 	// AgentServiceGetStatusProcedure is the fully-qualified name of the AgentService's GetStatus RPC.
 	AgentServiceGetStatusProcedure = "/cloudfactory.agent.v1.AgentService/GetStatus"
 	// AgentServiceListFilesProcedure is the fully-qualified name of the AgentService's ListFiles RPC.
@@ -241,6 +258,22 @@ type AgentServiceClient interface {
 	// the password-protected paths and the sign-in limit (WebsiteSecurity). The agent keeps the
 	// value with the website and changes only the edge route. The container does not restart.
 	SetWebsiteSecurity(context.Context, *connect.Request[v1.SetWebsiteSecurityRequest]) (*connect.Response[v1.JobAccepted], error)
+	// Sets the certificates from the panel on the edge proxy of the server: the certificates
+	// that a customer uploaded, and the certificates that the panel got from an ACME CA with
+	// DNS validation. The list is complete. A certificate that the edge proxy has and that is not
+	// in the list goes. Each host of a certificate then uses that certificate, and the edge proxy
+	// does not get a certificate for the host itself.
+	SetCertificates(context.Context, *connect.Request[v1.SetCertificatesRequest]) (*connect.Response[v1.JobAccepted], error)
+	// The import of an account from a different hosting panel, for example cPanel or
+	// DirectAdmin (docs/imports.md). The worker of the agent keeps the backup archive in its own
+	// directory and reads it as a stream. It never extracts the archive as root: the Unix user
+	// of a website writes the files, and the database clients and the mail server get the
+	// content of the dumps and of the messages.
+	FetchImport(context.Context, *connect.Request[v1.FetchImportRequest]) (*connect.Response[v1.JobAccepted], error)
+	ImportFiles(context.Context, *connect.Request[v1.ImportFilesRequest]) (*connect.Response[v1.JobAccepted], error)
+	ImportDatabase(context.Context, *connect.Request[v1.ImportDatabaseRequest]) (*connect.Response[v1.JobAccepted], error)
+	ImportMail(context.Context, *connect.Request[v1.ImportMailRequest]) (*connect.Response[v1.JobAccepted], error)
+	DeleteImport(context.Context, *connect.Request[v1.DeleteImportRequest]) (*connect.Response[v1.JobAccepted], error)
 	// Returns the actual state of the server at once. This method does not make a job.
 	GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.HostStatus], error)
 	// The file manager and the logs of a website. These methods do not make a job: they give
@@ -539,6 +572,42 @@ func NewAgentServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(agentServiceMethods.ByName("SetWebsiteSecurity")),
 			connect.WithClientOptions(opts...),
 		),
+		setCertificates: connect.NewClient[v1.SetCertificatesRequest, v1.JobAccepted](
+			httpClient,
+			baseURL+AgentServiceSetCertificatesProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("SetCertificates")),
+			connect.WithClientOptions(opts...),
+		),
+		fetchImport: connect.NewClient[v1.FetchImportRequest, v1.JobAccepted](
+			httpClient,
+			baseURL+AgentServiceFetchImportProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("FetchImport")),
+			connect.WithClientOptions(opts...),
+		),
+		importFiles: connect.NewClient[v1.ImportFilesRequest, v1.JobAccepted](
+			httpClient,
+			baseURL+AgentServiceImportFilesProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("ImportFiles")),
+			connect.WithClientOptions(opts...),
+		),
+		importDatabase: connect.NewClient[v1.ImportDatabaseRequest, v1.JobAccepted](
+			httpClient,
+			baseURL+AgentServiceImportDatabaseProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("ImportDatabase")),
+			connect.WithClientOptions(opts...),
+		),
+		importMail: connect.NewClient[v1.ImportMailRequest, v1.JobAccepted](
+			httpClient,
+			baseURL+AgentServiceImportMailProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("ImportMail")),
+			connect.WithClientOptions(opts...),
+		),
+		deleteImport: connect.NewClient[v1.DeleteImportRequest, v1.JobAccepted](
+			httpClient,
+			baseURL+AgentServiceDeleteImportProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("DeleteImport")),
+			connect.WithClientOptions(opts...),
+		),
 		getStatus: connect.NewClient[v1.GetStatusRequest, v1.HostStatus](
 			httpClient,
 			baseURL+AgentServiceGetStatusProcedure,
@@ -643,6 +712,12 @@ type agentServiceClient struct {
 	receiveDatabaseServer *connect.Client[v1.ReceiveDatabaseServerRequest, v1.JobAccepted]
 	setPacks              *connect.Client[v1.SetPacksRequest, v1.JobAccepted]
 	setWebsiteSecurity    *connect.Client[v1.SetWebsiteSecurityRequest, v1.JobAccepted]
+	setCertificates       *connect.Client[v1.SetCertificatesRequest, v1.JobAccepted]
+	fetchImport           *connect.Client[v1.FetchImportRequest, v1.JobAccepted]
+	importFiles           *connect.Client[v1.ImportFilesRequest, v1.JobAccepted]
+	importDatabase        *connect.Client[v1.ImportDatabaseRequest, v1.JobAccepted]
+	importMail            *connect.Client[v1.ImportMailRequest, v1.JobAccepted]
+	deleteImport          *connect.Client[v1.DeleteImportRequest, v1.JobAccepted]
 	getStatus             *connect.Client[v1.GetStatusRequest, v1.HostStatus]
 	listFiles             *connect.Client[v1.FileRequest, v1.FileList]
 	readFile              *connect.Client[v1.FileRequest, v1.FileContent]
@@ -879,6 +954,36 @@ func (c *agentServiceClient) SetWebsiteSecurity(ctx context.Context, req *connec
 	return c.setWebsiteSecurity.CallUnary(ctx, req)
 }
 
+// SetCertificates calls cloudfactory.agent.v1.AgentService.SetCertificates.
+func (c *agentServiceClient) SetCertificates(ctx context.Context, req *connect.Request[v1.SetCertificatesRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return c.setCertificates.CallUnary(ctx, req)
+}
+
+// FetchImport calls cloudfactory.agent.v1.AgentService.FetchImport.
+func (c *agentServiceClient) FetchImport(ctx context.Context, req *connect.Request[v1.FetchImportRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return c.fetchImport.CallUnary(ctx, req)
+}
+
+// ImportFiles calls cloudfactory.agent.v1.AgentService.ImportFiles.
+func (c *agentServiceClient) ImportFiles(ctx context.Context, req *connect.Request[v1.ImportFilesRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return c.importFiles.CallUnary(ctx, req)
+}
+
+// ImportDatabase calls cloudfactory.agent.v1.AgentService.ImportDatabase.
+func (c *agentServiceClient) ImportDatabase(ctx context.Context, req *connect.Request[v1.ImportDatabaseRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return c.importDatabase.CallUnary(ctx, req)
+}
+
+// ImportMail calls cloudfactory.agent.v1.AgentService.ImportMail.
+func (c *agentServiceClient) ImportMail(ctx context.Context, req *connect.Request[v1.ImportMailRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return c.importMail.CallUnary(ctx, req)
+}
+
+// DeleteImport calls cloudfactory.agent.v1.AgentService.DeleteImport.
+func (c *agentServiceClient) DeleteImport(ctx context.Context, req *connect.Request[v1.DeleteImportRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return c.deleteImport.CallUnary(ctx, req)
+}
+
 // GetStatus calls cloudfactory.agent.v1.AgentService.GetStatus.
 func (c *agentServiceClient) GetStatus(ctx context.Context, req *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.HostStatus], error) {
 	return c.getStatus.CallUnary(ctx, req)
@@ -978,6 +1083,22 @@ type AgentServiceHandler interface {
 	// the password-protected paths and the sign-in limit (WebsiteSecurity). The agent keeps the
 	// value with the website and changes only the edge route. The container does not restart.
 	SetWebsiteSecurity(context.Context, *connect.Request[v1.SetWebsiteSecurityRequest]) (*connect.Response[v1.JobAccepted], error)
+	// Sets the certificates from the panel on the edge proxy of the server: the certificates
+	// that a customer uploaded, and the certificates that the panel got from an ACME CA with
+	// DNS validation. The list is complete. A certificate that the edge proxy has and that is not
+	// in the list goes. Each host of a certificate then uses that certificate, and the edge proxy
+	// does not get a certificate for the host itself.
+	SetCertificates(context.Context, *connect.Request[v1.SetCertificatesRequest]) (*connect.Response[v1.JobAccepted], error)
+	// The import of an account from a different hosting panel, for example cPanel or
+	// DirectAdmin (docs/imports.md). The worker of the agent keeps the backup archive in its own
+	// directory and reads it as a stream. It never extracts the archive as root: the Unix user
+	// of a website writes the files, and the database clients and the mail server get the
+	// content of the dumps and of the messages.
+	FetchImport(context.Context, *connect.Request[v1.FetchImportRequest]) (*connect.Response[v1.JobAccepted], error)
+	ImportFiles(context.Context, *connect.Request[v1.ImportFilesRequest]) (*connect.Response[v1.JobAccepted], error)
+	ImportDatabase(context.Context, *connect.Request[v1.ImportDatabaseRequest]) (*connect.Response[v1.JobAccepted], error)
+	ImportMail(context.Context, *connect.Request[v1.ImportMailRequest]) (*connect.Response[v1.JobAccepted], error)
+	DeleteImport(context.Context, *connect.Request[v1.DeleteImportRequest]) (*connect.Response[v1.JobAccepted], error)
 	// Returns the actual state of the server at once. This method does not make a job.
 	GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.HostStatus], error)
 	// The file manager and the logs of a website. These methods do not make a job: they give
@@ -1272,6 +1393,42 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(agentServiceMethods.ByName("SetWebsiteSecurity")),
 		connect.WithHandlerOptions(opts...),
 	)
+	agentServiceSetCertificatesHandler := connect.NewUnaryHandler(
+		AgentServiceSetCertificatesProcedure,
+		svc.SetCertificates,
+		connect.WithSchema(agentServiceMethods.ByName("SetCertificates")),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentServiceFetchImportHandler := connect.NewUnaryHandler(
+		AgentServiceFetchImportProcedure,
+		svc.FetchImport,
+		connect.WithSchema(agentServiceMethods.ByName("FetchImport")),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentServiceImportFilesHandler := connect.NewUnaryHandler(
+		AgentServiceImportFilesProcedure,
+		svc.ImportFiles,
+		connect.WithSchema(agentServiceMethods.ByName("ImportFiles")),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentServiceImportDatabaseHandler := connect.NewUnaryHandler(
+		AgentServiceImportDatabaseProcedure,
+		svc.ImportDatabase,
+		connect.WithSchema(agentServiceMethods.ByName("ImportDatabase")),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentServiceImportMailHandler := connect.NewUnaryHandler(
+		AgentServiceImportMailProcedure,
+		svc.ImportMail,
+		connect.WithSchema(agentServiceMethods.ByName("ImportMail")),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentServiceDeleteImportHandler := connect.NewUnaryHandler(
+		AgentServiceDeleteImportProcedure,
+		svc.DeleteImport,
+		connect.WithSchema(agentServiceMethods.ByName("DeleteImport")),
+		connect.WithHandlerOptions(opts...),
+	)
 	agentServiceGetStatusHandler := connect.NewUnaryHandler(
 		AgentServiceGetStatusProcedure,
 		svc.GetStatus,
@@ -1418,6 +1575,18 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 			agentServiceSetPacksHandler.ServeHTTP(w, r)
 		case AgentServiceSetWebsiteSecurityProcedure:
 			agentServiceSetWebsiteSecurityHandler.ServeHTTP(w, r)
+		case AgentServiceSetCertificatesProcedure:
+			agentServiceSetCertificatesHandler.ServeHTTP(w, r)
+		case AgentServiceFetchImportProcedure:
+			agentServiceFetchImportHandler.ServeHTTP(w, r)
+		case AgentServiceImportFilesProcedure:
+			agentServiceImportFilesHandler.ServeHTTP(w, r)
+		case AgentServiceImportDatabaseProcedure:
+			agentServiceImportDatabaseHandler.ServeHTTP(w, r)
+		case AgentServiceImportMailProcedure:
+			agentServiceImportMailHandler.ServeHTTP(w, r)
+		case AgentServiceDeleteImportProcedure:
+			agentServiceDeleteImportHandler.ServeHTTP(w, r)
 		case AgentServiceGetStatusProcedure:
 			agentServiceGetStatusHandler.ServeHTTP(w, r)
 		case AgentServiceListFilesProcedure:
@@ -1623,6 +1792,30 @@ func (UnimplementedAgentServiceHandler) SetPacks(context.Context, *connect.Reque
 
 func (UnimplementedAgentServiceHandler) SetWebsiteSecurity(context.Context, *connect.Request[v1.SetWebsiteSecurityRequest]) (*connect.Response[v1.JobAccepted], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.SetWebsiteSecurity is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) SetCertificates(context.Context, *connect.Request[v1.SetCertificatesRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.SetCertificates is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) FetchImport(context.Context, *connect.Request[v1.FetchImportRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.FetchImport is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) ImportFiles(context.Context, *connect.Request[v1.ImportFilesRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.ImportFiles is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) ImportDatabase(context.Context, *connect.Request[v1.ImportDatabaseRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.ImportDatabase is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) ImportMail(context.Context, *connect.Request[v1.ImportMailRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.ImportMail is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) DeleteImport(context.Context, *connect.Request[v1.DeleteImportRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.DeleteImport is not implemented"))
 }
 
 func (UnimplementedAgentServiceHandler) GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.HostStatus], error) {

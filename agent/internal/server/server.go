@@ -203,6 +203,30 @@ func (s *Service) SetWebsiteSecurity(_ context.Context, r *connect.Request[agent
 	return s.submit(s.Deps.SetWebsiteSecurity(r.Msg))
 }
 
+func (s *Service) SetCertificates(_ context.Context, r *connect.Request[agentv1.SetCertificatesRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.SetCertificates(r.Msg))
+}
+
+func (s *Service) FetchImport(_ context.Context, r *connect.Request[agentv1.FetchImportRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.FetchImport(r.Msg))
+}
+
+func (s *Service) ImportFiles(_ context.Context, r *connect.Request[agentv1.ImportFilesRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.ImportFiles(r.Msg))
+}
+
+func (s *Service) ImportDatabase(_ context.Context, r *connect.Request[agentv1.ImportDatabaseRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.ImportDatabase(r.Msg))
+}
+
+func (s *Service) ImportMail(_ context.Context, r *connect.Request[agentv1.ImportMailRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.ImportMail(r.Msg))
+}
+
+func (s *Service) DeleteImport(_ context.Context, r *connect.Request[agentv1.DeleteImportRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.DeleteImport(r.Msg))
+}
+
 func (s *Service) SetCronJobs(_ context.Context, r *connect.Request[agentv1.SetCronJobsRequest]) (*connect.Response[agentv1.JobAccepted], error) {
 	return s.submit(s.Deps.SetCronJobs(r.Msg))
 }
