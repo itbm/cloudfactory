@@ -5,8 +5,10 @@ namespace App\Services\Dns;
 use App\Enums\AgentAction;
 use App\Enums\JobState;
 use App\Http\Controllers\Api\DomainController;
+use App\Jobs\SyncDnsZone;
 use App\Models\AgentJob;
 use App\Models\Customer;
+use App\Models\DnsAccount;
 use App\Models\DnsRecord;
 use App\Models\DnsZone;
 use App\Models\Domain;
@@ -35,6 +37,9 @@ use Illuminate\Validation\ValidationException;
  *   so a domain that points to them does not show which customer controls it.
  * - The panel makes the NS records of each zone, and the A and AAAA records of the domains
  *   of the websites of the customer.
+ * - A zone with a DNS account goes to an external DNS provider, for example Cloudflare, and
+ *   not to the DNS servers of the panel (Providers). The panel still keeps the records. The
+ *   NS records of the zone are the name servers that the provider gives.
  */
 class Zones
 {
@@ -44,7 +49,14 @@ class Zones
     /** The TTL of the NS records of a zone: one hour. */
     public const NS_TTL = 3600;
 
-    public function __construct(private JobDispatcher $jobs, private Lookup $lookup, private DomainPolicy $policy) {}
+    /**
+     * The time that the DNS servers of the panel keep a zone that moved to a provider, after
+     * the public DNS stops giving the name servers of the panel: two days. Resolvers can keep
+     * the old NS records for that time.
+     */
+    public const HANDOVER_HOURS = 48;
+
+    public function __construct(private JobDispatcher $jobs, private Lookup $lookup, private DomainPolicy $policy, private Providers $providers) {}
 
     /**
      * The servers that answer DNS queries: a server with the role "dns", an agent that can
@@ -86,20 +98,25 @@ class Zones
 
     /**
      * Makes a zone for a customer, with its NS records and the records of the websites of the
-     * customer, and sends it to the DNS servers.
+     * customer, and sends it to the DNS servers. With a DNS account, the zone goes to the
+     * provider of the account. With "importRecords", the zone first gets the records that the
+     * provider has for the name now. The result of that copy is in "provider_state.imported".
      *
      * @throws ValidationException
      */
-    public function create(Customer $customer, string $name, User $user): DnsZone
+    public function create(Customer $customer, string $name, User $user, ?DnsAccount $account = null, bool $importRecords = true): DnsZone
     {
-        if (self::nameServers() === []) {
+        if ($account === null && self::nameServers() === []) {
             throw ValidationException::withMessages(['name' => $user->isAdministrator()
                 ? 'The panel has no DNS server. Give a server the role "DNS" and a name server host name on the page of the server.'
                 : 'DNS hosting is not available. Ask your provider.']);
         }
         $other = $this->checkName($name, $customer, $user);
+        // The provider must answer before the panel makes the zone. A wrong token then stops
+        // here, and the panel does not make a zone that cannot go to the provider.
+        $remote = $account && $importRecords ? $this->providers->records($account, $name, $customer->id) : null;
         try {
-            $zone = DB::transaction(function () use ($customer, $name, $other) {
+            $zone = DB::transaction(function () use ($customer, $name, $other, $account) {
                 // The count and the new zone are in one transaction, with a lock on the customer.
                 $customer = Customer::with('plan')->lockForUpdate()->findOrFail($customer->id);
                 self::checkLimit($customer);
@@ -108,7 +125,7 @@ class Zones
                 // name, so the panel removes only its record.
                 $other?->delete();
 
-                return DnsZone::create(['customer_id' => $customer->id, 'name' => $name, 'serial' => now()->timestamp, 'status' => DnsZone::ACTIVE]);
+                return DnsZone::create(['customer_id' => $customer->id, 'name' => $name, 'serial' => now()->timestamp, 'status' => DnsZone::ACTIVE, 'dns_account_id' => $account?->id]);
             });
         } catch (UniqueConstraintViolationException) {
             throw ValidationException::withMessages(['name' => 'A zone with this name was made at the same time. Try again.']);
@@ -121,10 +138,82 @@ class Zones
         foreach (self::websiteDomains($zone) as [$website, $domain]) {
             self::writeWebsiteRecords($zone, $website, $domain);
         }
+        if ($remote !== null) {
+            $this->importRemote($zone, $remote);
+        }
         $this->checkDelegation($zone);
         $this->push($zone, "Create DNS zone {$zone->name}");
 
         return $zone;
+    }
+
+    /**
+     * Moves a zone to a different DNS provider, or back to the DNS servers of the panel. The
+     * records stay. The customer then gives the new name servers to the registrar.
+     *
+     * - From the DNS servers of the panel to a provider: the DNS servers of the panel keep the
+     *   zone in a handover time, until HANDOVER_HOURS after the public DNS stops giving their
+     *   names. They answer with the NS records of the provider.
+     * - From a provider: the zone stays at the old provider, with its records of the time of
+     *   the move. The customer removes it there after the registrar has the new name servers.
+     * - A zone with DNSSEC does not move: the new provider signs with a different key, and the
+     *   DS record at the registrar must change first.
+     *
+     * @return list<AgentJob>
+     *
+     * @throws ValidationException
+     */
+    public function move(DnsZone $zone, ?DnsAccount $account, bool $importRecords = true): array
+    {
+        if ($zone->dns_account_id === $account?->id) {
+            throw ValidationException::withMessages(['accountId' => $account ? 'The zone uses this DNS account already.' : 'The zone uses the name servers of the panel already.']);
+        }
+        if ($zone->dnssec) {
+            throw ValidationException::withMessages(['accountId' => 'Turn off DNSSEC before you move the zone. First remove the DS record at the registrar, and wait one day.']);
+        }
+        if ($account === null && self::nameServers() === []) {
+            throw ValidationException::withMessages(['accountId' => 'The panel has no DNS server.']);
+        }
+        $remote = $account && $importRecords ? $this->providers->records($account, $zone->name, $zone->customer_id) : null;
+        $from = $zone->account?->providerName() ?? 'the DNS servers of the panel';
+        $handover = $account !== null && $zone->onPanelServers();
+        $zone->update([
+            'dns_account_id' => $account?->id,
+            'provider_state' => null,
+            'handover' => $handover,
+            'handover_ends_at' => null,
+        ]);
+        $zone->unsetRelation('account');
+        // Back to the panel: the NS records are the name servers of the panel again. To a
+        // provider: the NS records stay until the provider gives its name servers.
+        self::writeNameServers($zone);
+        if ($remote !== null) {
+            $this->importRemote($zone, $remote);
+        }
+        $this->checkDelegation($zone);
+        $to = $account?->providerName() ?? 'the DNS servers of the panel';
+
+        return $this->changed($zone, "Move DNS zone {$zone->name} from {$from} to {$to}");
+    }
+
+    /**
+     * Adds the records that the provider had to the zone (Import::apply), and keeps the result
+     * in "provider_state.imported" for the user.
+     *
+     * @param  list<array<string, mixed>>  $remote
+     */
+    private function importRemote(DnsZone $zone, array $remote): void
+    {
+        $result = DB::transaction(function () use ($zone, $remote) {
+            DnsZone::whereKey($zone->id)->lockForUpdate()->first();
+
+            return Import::apply($zone, $remote);
+        });
+        $zone->update(['provider_state' => [...($zone->provider_state ?? []), 'imported' => [
+            'added' => count($result['added']),
+            'existing' => $result['existing'],
+            'skipped' => array_slice($result['skipped'], 0, 50),
+        ]]]);
     }
 
     /**
@@ -277,20 +366,51 @@ class Zones
     }
 
     /**
-     * Sends one zone to each DNS server, with one job for each server.
+     * Sends one zone to each DNS server, with one job for each server. A zone with a DNS
+     * account goes to its provider (SyncDnsZone), and to the DNS servers of the panel only in
+     * its handover time.
      *
      * @return list<AgentJob>
      */
     public function push(DnsZone $zone, string $title): array
     {
         $jobs = [];
-        $servers = self::servers();
-        self::mark($zone, $servers->pluck('id')->all(), $zone->serial, 'pending');
-        foreach ($servers as $server) {
-            $jobs[] = $this->jobs->dispatch($server, AgentAction::SetDnsZones, ['zones' => [self::forAgent($zone)]], $title, dnsZone: $zone);
+        if ($zone->onPanelServers()) {
+            $servers = self::servers();
+            self::mark($zone, $servers->pluck('id')->all(), $zone->serial, 'pending');
+            foreach ($servers as $server) {
+                $jobs[] = $this->jobs->dispatch($server, AgentAction::SetDnsZones, ['zones' => [self::forAgent($zone)]], $title, dnsZone: $zone);
+            }
+        }
+        if ($zone->dns_account_id !== null) {
+            self::markProvider($zone, $zone->serial, ['state' => 'pending']);
+            SyncDnsZone::dispatch($zone->id)->afterCommit();
         }
 
         return $jobs;
+    }
+
+    /**
+     * Records the state of a zone at its provider. A result for an old serial does not change
+     * the record of a newer serial.
+     *
+     * @param  array<string, mixed>  $fields
+     */
+    public static function markProvider(DnsZone $zone, int $serial, array $fields): void
+    {
+        DB::transaction(function () use ($zone, $serial, $fields) {
+            $current = DnsZone::lockForUpdate()->find($zone->id);
+            if (! $current) {
+                return;
+            }
+            $state = $current->provider_state ?? [];
+            if (($state['serial'] ?? 0) > $serial) {
+                return;
+            }
+            $state = array_filter(['serial' => $serial, ...$fields] + $state, fn ($v) => $v !== null);
+            $current->update(['provider_state' => $state]);
+            $zone->setAttribute('provider_state', $state)->syncOriginalAttribute('provider_state');
+        });
     }
 
     /**
@@ -300,7 +420,7 @@ class Zones
     public function resellerNameServersChanged(Customer $reseller): void
     {
         $ids = Customer::where('id', $reseller->id)->orWhere('reseller_id', $reseller->id)->pluck('id');
-        foreach (DnsZone::with('customer')->whereIn('customer_id', $ids)->where('status', DnsZone::ACTIVE)->orderBy('name')->get() as $zone) {
+        foreach (DnsZone::with('customer')->whereIn('customer_id', $ids)->where('status', DnsZone::ACTIVE)->whereNull('dns_account_id')->orderBy('name')->get() as $zone) {
             self::writeNameServers($zone);
             $this->changed($zone, "Update the name servers of DNS zone {$zone->name}");
         }
@@ -313,7 +433,7 @@ class Zones
     public function pushAll(): void
     {
         $servers = self::servers();
-        DnsZone::where('status', DnsZone::ACTIVE)->orderBy('name')->chunkById(InputRules::MAX_DNS_ZONES_PER_JOB, function (Collection $zones) use ($servers) {
+        DnsZone::where('status', DnsZone::ACTIVE)->onPanelServers()->orderBy('name')->chunkById(InputRules::MAX_DNS_ZONES_PER_JOB, function (Collection $zones) use ($servers) {
             foreach ($zones as $zone) {
                 self::writeNameServers($zone);
                 self::bump($zone);
@@ -367,7 +487,7 @@ class Zones
         $send = collect();
         $healed = [];
         if ($answers) {
-            foreach (DnsZone::where('status', DnsZone::ACTIVE)->orderBy('name')->get() as $zone) {
+            foreach (DnsZone::where('status', DnsZone::ACTIVE)->onPanelServers()->orderBy('name')->get() as $zone) {
                 $sync = $zone->sync[$server->id] ?? null;
                 // The server has a newer zone than the panel, for example after a restore of
                 // the panel database. The server refuses an older zone, so the zone gets a
@@ -388,7 +508,8 @@ class Zones
                 }
             }
         }
-        $keep = $answers ? DnsZone::where('status', DnsZone::ACTIVE)->pluck('name')->flip() : collect();
+        // A zone at an external provider goes from the server after its handover time.
+        $keep = $answers ? DnsZone::where('status', DnsZone::ACTIVE)->onPanelServers()->pluck('name')->flip() : collect();
         $remove = $has->keys()->reject(fn (string $name) => $keep->has($name))->values();
 
         if ($send->isEmpty() && $remove->isEmpty()) {
@@ -440,13 +561,23 @@ class Zones
 
     /**
      * Removes a zone. The record stays, with the state "removing", until each DNS server
-     * removed the zone.
+     * removed the zone. A zone at an external provider goes from the provider first, unless
+     * "keepAtProvider": then only the panel stops to change it.
      *
      * @return list<AgentJob>
+     *
+     * @throws ValidationException
      */
-    public function remove(DnsZone $zone): array
+    public function remove(DnsZone $zone, bool $keepAtProvider = false): array
     {
-        $servers = self::servers();
+        if ($zone->account && ! $keepAtProvider) {
+            $error = $this->providers->remove($zone->account, $zone->name);
+            if ($error !== null) {
+                $name = $zone->account->providerName();
+                throw ValidationException::withMessages(['zone' => "The panel could not remove the zone at {$name}. {$error} Try again, or keep the zone at {$name}."]);
+            }
+        }
+        $servers = $zone->onPanelServers() ? self::servers() : collect();
         if ($servers->isEmpty()) {
             $zone->delete();
 
@@ -473,6 +604,19 @@ class Zones
         if ($enabled === $zone->dnssec) {
             return [];
         }
+        if ($zone->account) {
+            // The provider signs the zone with its own key, and gives the DS record.
+            $name = $zone->account->providerName();
+            if ($enabled && ! ($zone->account->definition()['dnssec'] ?? false)) {
+                throw ValidationException::withMessages(['enabled' => "The plugin of {$name} cannot turn on DNSSEC."]);
+            }
+            if ($enabled && $zone->onPanelServers()) {
+                throw ValidationException::withMessages(['enabled' => "Turn on DNSSEC when the handover to {$name} is complete. The DNS servers of the panel still answer for the zone, and they do not have the key of {$name}."]);
+            }
+            $zone->update(['dnssec' => $enabled]);
+
+            return $this->changed($zone, ($enabled ? 'Turn on' : 'Turn off')." DNSSEC for {$zone->name} at {$name}");
+        }
         if ($enabled) {
             $key = Dnssec::generate();
             $zone->update(['dnssec' => true, 'dnssec_key' => $key['key'], 'dnssec_public_key' => $key['publicKey'], 'dnssec_key_tag' => $key['keyTag']]);
@@ -493,14 +637,28 @@ class Zones
         $seen = $this->lookup->nameServers($zone->name);
         // White label: the host names of the panel, or the host names that the reseller of
         // the customer gave to the same name servers.
-        $ours = array_values(array_unique([...self::nameServers(), ...Branding::nameServersFor($zone->customer)]));
+        $panel = array_values(array_unique([...self::nameServers(), ...Branding::nameServersFor($zone->customer)]));
+        // A zone at an external provider: the name servers that the provider gives the zone.
+        $ours = $zone->dns_account_id !== null ? ($zone->provider_state['nameServers'] ?? []) : $panel;
         $state = match (true) {
             $seen === [] => DnsZone::NONE,
-            array_diff($seen, $ours) === [] => DnsZone::HERE,
+            $ours !== [] && array_diff($seen, $ours) === [] => DnsZone::HERE,
             default => DnsZone::ELSEWHERE,
         };
+        // The name servers of a provider serve many accounts, and the plugin gives the name
+        // servers from the account of the customer. A different customer can have the same name
+        // servers. Only the claim token that the panel sends with the zone proves that the public
+        // DNS uses this zone, and thus that the customer controls the domain.
+        if ($state === DnsZone::HERE && $zone->dns_account_id !== null && ! $this->policy->proves($zone->customer_id, $zone->name)) {
+            $state = DnsZone::UNKNOWN;
+        }
         $was = $zone->delegation;
-        $zone->update(['delegation' => $state, 'delegation_name_servers' => $seen, 'delegation_checked_at' => now()]);
+        $changes = ['delegation' => $state, 'delegation_name_servers' => $seen, 'delegation_checked_at' => now()];
+        // The handover time starts when the public DNS stops giving the name servers of the panel.
+        if ($zone->handover && $zone->handover_ends_at === null && $seen !== [] && array_intersect($seen, $panel) === []) {
+            $changes['handover_ends_at'] = now()->addHours(self::HANDOVER_HOURS);
+        }
+        $zone->update($changes);
         if ($state === DnsZone::HERE && $was !== DnsZone::HERE) {
             $this->verifyDomains($zone);
         }
@@ -633,20 +791,27 @@ class Zones
     /**
      * Writes the NS records of the zone itself: one for each name server of the panel. A zone
      * of a reseller, or of a customer of a reseller, gets the host names of the reseller when
-     * it has its own names for the name servers (white label).
+     * it has its own names for the name servers (white label). A zone at an external provider
+     * gets the name servers that the provider gives. Until the provider gives them, the records
+     * stay. It reports true when the records changed.
      */
-    private static function writeNameServers(DnsZone $zone): void
+    public static function writeNameServers(DnsZone $zone): bool
     {
-        $hosts = Branding::nameServersFor($zone->customer);
+        $hosts = $zone->dns_account_id !== null ? ($zone->provider_state['nameServers'] ?? []) : Branding::nameServersFor($zone->customer);
+        if ($hosts === []) {
+            return false;
+        }
         sort($hosts);
         $current = $zone->records()->where('managed', DnsRecord::NS)->pluck('value')->sort()->values()->all();
         if ($current === $hosts) {
-            return;
+            return false;
         }
         $zone->records()->where('managed', DnsRecord::NS)->delete();
         foreach ($hosts as $host) {
             $zone->records()->create(['name' => '@', 'type' => 'NS', 'ttl' => self::NS_TTL, 'value' => $host, 'managed' => DnsRecord::NS]);
         }
+
+        return true;
     }
 
     /** The zone as the agent gets it: the full list of the records, and the DNSSEC key. */
@@ -748,7 +913,7 @@ class Zones
         if ($zone->status === DnsZone::REMOVING) {
             return DnsZone::REMOVING;
         }
-        $states = ($servers ?? self::servers())->map(function (Server $s) use ($zone) {
+        $states = ($zone->onPanelServers() ? ($servers ?? self::servers()) : collect())->map(function (Server $s) use ($zone) {
             $sync = $zone->sync[$s->id] ?? null;
 
             return match (true) {
@@ -757,6 +922,14 @@ class Zones
                 default => 'active',
             };
         });
+        if ($zone->dns_account_id !== null) {
+            $provider = $zone->provider_state ?? [];
+            $states->push(match (true) {
+                ($provider['serial'] ?? 0) < $zone->serial, ($provider['state'] ?? 'pending') === 'pending' => 'updating',
+                $provider['state'] === 'failed' => 'failed',
+                default => 'active',
+            });
+        }
 
         return $states->contains('failed') ? 'failed' : ($states->contains('updating') ? 'updating' : 'active');
     }

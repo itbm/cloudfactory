@@ -1936,6 +1936,13 @@ paths:
         your current DNS provider to prove that you control the domain, and send the request
         again. Only an administrator can make a zone for the domain of the panel or for the
         host name of a server.
+
+
+        With `accountId`, the zone goes to an external DNS provider, for example Cloudflare, and
+        not to the DNS servers of the panel. The panel still keeps the records. With
+        `importRecords` (the default), the zone first gets the records that the provider has
+        for the name now. The provider must answer: the response is 422 when it refuses the
+        credentials. `zone.provider.imported` gives the result of the copy.
       requestBody:
         required: true
         content:
@@ -1946,6 +1953,8 @@ paths:
               properties:
                 name: { type: string, description: 'The domain, for example example.com.' }
                 customerId: { type: [string, 'null'], description: Default is the customer of the user. }
+                accountId: { type: [string, 'null'], description: 'A DNS account of the customer, or of the panel (`/v1/dns-accounts`). Null: the DNS servers of the panel.' }
+                importRecords: { type: boolean, default: true, description: With `accountId` only. }
       responses:
         '202': { $ref: '#/components/responses/DnsZoneJobs' }
         '409': { description: The customer is suspended. }
@@ -1974,9 +1983,17 @@ paths:
         name servers at the registrar of the domain: while the registrar sends the queries to
         the panel, a different customer of the panel could make a zone with the same name.
         `jobs` is empty when the panel has no DNS server.
+
+
+        A zone at an external DNS provider goes from the provider first. The response is 422
+        when the provider does not remove it. With `keepAtProvider`, the zone stays at the
+        provider, and only the panel stops changing it.
+      parameters:
+        - { name: keepAtProvider, in: query, schema: { type: boolean, default: false } }
       responses:
         '202': { $ref: '#/components/responses/DnsJobs' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
 
   /v1/dns-zones/{id}/records:
     parameters:
@@ -2095,6 +2112,196 @@ paths:
         '202': { $ref: '#/components/responses/DnsZoneJobs' }
         '404': { $ref: '#/components/responses/NotFound' }
         '429': { description: Too many DNS changes in one minute. }
+
+  /v1/dns-zones/{id}/move:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [DNS]
+      summary: Move a DNS zone to a different DNS provider
+      description: >-
+        Moves the zone to the provider of a DNS account, or back to the DNS servers of the panel
+        (`accountId` null). The records stay. Then give the new name servers
+        (`zone.nameServers`) to the registrar of the domain.
+
+
+        - From the DNS servers of the panel to a provider: the DNS servers of the panel keep the
+          zone in a handover time (`zone.provider.handover`). They answer with the NS records of
+          the provider. The time ends 48 hours after the public DNS stops giving the name
+          servers of the panel.
+
+        - From a provider: the zone stays at the old provider. Remove it there after the
+          registrar has the new name servers.
+
+        - A zone with DNSSEC does not move. Turn off DNSSEC first.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [accountId]
+              properties:
+                accountId: { type: [string, 'null'] }
+                importRecords: { type: boolean, default: true, description: First copy the records that the new provider has for the name now. }
+      responses:
+        '202': { $ref: '#/components/responses/DnsZoneJobs' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+        '429': { description: Too many DNS changes in one minute. }
+
+  /v1/dns-accounts:
+    get:
+      tags: [DNS]
+      summary: List DNS accounts and DNS providers
+      description: >-
+        The accounts at external DNS providers that you can use: the accounts of the customers
+        that you can see, and the accounts of the panel. `providers` has the DNS providers that
+        the plugins that are on offer. A customer does not see the credentials of an account of
+        the panel.
+      responses:
+        '200':
+          description: The accounts and the providers.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/DnsAccount' } }
+                  providers: { type: array, items: { $ref: '#/components/schemas/DnsProvider' } }
+    post:
+      tags: [DNS]
+      summary: Add a DNS account
+      description: >-
+        The plugin of the provider checks the credentials first. The response is 422 with the
+        error of the plugin when the provider refuses them. Only an administrator can add an
+        account of the panel (`customerId` null). Each customer, and the panel, can have 20
+        accounts.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, pluginId, provider, credentials]
+              properties:
+                name: { type: string, maxLength: 60 }
+                pluginId: { type: string }
+                provider: { type: string, description: The `id` of the provider in the manifest of the plugin. }
+                credentials: { type: object, additionalProperties: { type: string }, description: 'A value for each field of the provider, for example `{"apiToken": "…"}`.' }
+                customerId: { type: [string, 'null'], description: 'Default: the customer of the user. For an administrator, the default is null: an account of the panel.' }
+      responses:
+        '201':
+          description: The account.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DnsAccount' }
+        '422': { $ref: '#/components/responses/Invalid' }
+        '429': { description: Too many DNS changes in one minute. }
+
+  /v1/dns-accounts/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    patch:
+      tags: [DNS]
+      summary: Change a DNS account
+      description: >-
+        The plugin checks new credentials before the panel keeps them. An empty secret field
+        keeps its current value. The zones that the provider could not change go again.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, maxLength: 60 }
+                credentials: { type: object, additionalProperties: { type: string } }
+      responses:
+        '200':
+          description: The account.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DnsAccount' }
+        '403': { description: Only an administrator can change an account of the panel. }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+    delete:
+      tags: [DNS]
+      summary: Remove a DNS account
+      description: The response is 422 while zones use the account. Move or remove the zones first.
+      responses:
+        '204': { description: The account is removed. }
+        '403': { description: Only an administrator can remove an account of the panel. }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/dns-zones/{id}/import:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [DNS]
+      summary: Import the records of a zone file
+      description: >-
+        Reads a zone file in the format of RFC 1035 (the format of BIND), for example the
+        export of the current DNS provider of the domain or of cPanel. The panel checks each
+        record as it checks a new record, and adds the records that the zone does not have.
+        It does not change or remove a record of the zone.
+
+
+        The panel does not import the SOA record, the NS records of the zone itself, records
+        of other types than A, AAAA, CNAME, MX, TXT, SRV, CAA and NS, and names outside the
+        zone. It also keeps the A, AAAA and CNAME records that it made for a website. `skipped`
+        gives each line that the panel did not import, with a code and a reason. A TTL below
+        60 seconds or above 7 days becomes 60 seconds or 7 days, and `note` tells it.
+
+
+        With `dryRun`, the panel makes no change, and the answer shows what it would import.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [zoneFile]
+              properties:
+                zoneFile: { type: string, maxLength: 1048576, description: The text of the zone file. }
+                dryRun: { type: boolean, default: false }
+      responses:
+        '200':
+          description: The preview (`dryRun`), or an import that added no record.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DnsImport' }
+        '202':
+          description: The records are in the zone. Each DNS server gets the zone in a job.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DnsImport' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+        '429': { description: Too many DNS changes in one minute. }
+
+  /v1/dns-zones/{id}/export:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    get:
+      tags: [DNS]
+      summary: Export a DNS zone as a zone file
+      description: >-
+        The records of the zone in the format of RFC 1035, with the SOA record that the DNS
+        servers of the panel give. A different DNS server or provider can load the file.
+      responses:
+        '200':
+          description: The zone file.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  name: { type: string }
+                  zoneFile: { type: string }
+        '404': { $ref: '#/components/responses/NotFound' }
 
   /v1/mail/domains:
     get:
@@ -4907,6 +5114,7 @@ components:
                 host: { type: string }
                 status: { type: string, enum: [starting, running, stopped, failed, removing] }
         commands: { type: array, items: { type: object, properties: { name: { type: string }, description: { type: string } } } }
+        dnsProviders: { type: array, items: { $ref: '#/components/schemas/DnsProvider' }, description: 'The external DNS providers of the plugin. Each item has the fields of DnsProvider, and `path`, but no `pluginId`.' }
         signedBy: { oneOf: [{ $ref: '#/components/schemas/TrustedKey' }, { type: 'null' }] }
         tokenExpiresAt: { type: [string, 'null'], format: date-time }
         tokenLastUsedAt: { type: [string, 'null'], format: date-time }
@@ -5441,7 +5649,37 @@ components:
             did not take the last change. Send the zone again (`/sync`).
         serial: { type: integer, description: The serial of the zone. It is the time of the last change, in seconds. A signed zone has a serial that the DNS server makes. }
         recordCount: { type: integer }
-        nameServers: { type: array, items: { type: string }, description: The host names of the name servers of the panel. Give them to the registrar of the domain. }
+        nameServers: { type: array, items: { type: string }, description: 'The host names of the name servers for the registrar of the domain: of the panel, or of the external DNS provider of the zone. Empty until the provider gives them.' }
+        provider:
+          type: [object, 'null']
+          description: The external DNS provider of the zone. Null for a zone on the DNS servers of the panel.
+          properties:
+            accountId: { type: string }
+            accountName: { type: string }
+            name: { type: string, description: 'The name of the provider, for example Cloudflare.' }
+            state: { type: string, enum: [ok, pending, failed], description: The state of the last change at the provider. }
+            error: { type: [string, 'null'], description: The error of the last try. }
+            active: { type: boolean, description: True when the provider answers for the zone. Some providers wait until the registrar has their name servers. }
+            syncedAt: { type: [string, 'null'], format: date-time }
+            changes:
+              type: [object, 'null']
+              description: The changes of the last change at the provider.
+              properties:
+                added: { type: integer }
+                changed: { type: integer }
+                removed: { type: integer }
+            imported:
+              type: [object, 'null']
+              description: The records that the panel copied from the provider when the zone came there.
+              properties:
+                added: { type: integer }
+                existing: { type: integer }
+                skipped: { type: array, items: { type: object, properties: { line: { type: integer }, text: { type: string }, code: { type: string }, reason: { type: string } } } }
+            handover:
+              type: [object, 'null']
+              description: Not null while the DNS servers of the panel still answer for a zone that moved to the provider.
+              properties:
+                endsAt: { type: [string, 'null'], format: date-time, description: Null until the public DNS stops giving the name servers of the panel. }
         delegation:
           type: object
           description: What the public DNS says about the zone.
@@ -5450,7 +5688,8 @@ components:
               type: string
               enum: [here, elsewhere, none, unknown]
               description: >-
-                `here`: the public DNS gives the name servers of the panel. `elsewhere`: it
+                `here`: the public DNS gives the name servers of the panel, or of the external
+                DNS provider of the zone. `elsewhere`: it
                 gives other name servers, so the zone on the panel has no effect yet. `none`:
                 it has no name servers for the domain. `unknown`: the panel did not ask yet.
             nameServers: { type: array, items: { type: string }, description: The name servers that the public DNS gave. }
@@ -5459,19 +5698,20 @@ components:
           type: object
           properties:
             enabled: { type: boolean }
+            state: { type: string, enum: [off, pending, active], description: '`pending`: the external DNS provider makes the key. The DS record comes after that.' }
             ds:
               type: [object, 'null']
-              description: The DS record for the registrar of the domain. Null when DNSSEC is off.
+              description: The DS record for the registrar of the domain. Null when DNSSEC is off. An external DNS provider signs with its own key.
               properties:
                 keyTag: { type: integer }
-                algorithm: { type: integer, description: 13 (ECDSA P-256 with SHA-256). }
+                algorithm: { type: integer, description: 13 (ECDSA P-256 with SHA-256) on the DNS servers of the panel. }
                 digestType: { type: integer, description: 2 (SHA-256). }
                 digest: { type: string }
                 record: { type: string, description: 'The full record, for example `example.com. IN DS 22976 13 2 3A81…`.' }
             dnskey: { type: [string, 'null'], description: The DNSKEY record. Some registrars ask for it and not for the DS record. }
         servers:
           type: array
-          description: The state of the zone on each DNS server.
+          description: The state of the zone on each DNS server of the panel. Empty for a zone at an external DNS provider, after its handover time.
           items:
             type: object
             properties:
@@ -5480,6 +5720,75 @@ components:
         websites: { type: integer, description: The number of websites of the customer that have a domain in the zone. }
         createdAt: { type: string, format: date-time }
         records: { type: array, items: { $ref: '#/components/schemas/DnsRecord' }, description: Only in the answer for one zone. }
+    DnsAccount:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        customerId: { type: [string, 'null'], description: Null for an account of the panel. Each customer can use it. }
+        pluginId: { type: string }
+        provider: { type: string }
+        providerName: { type: string }
+        available: { type: boolean, description: False when the plugin is off, or does not offer the provider now. }
+        account: { type: [string, 'null'], description: The name of the account at the provider, as the plugin gives it. }
+        dnssec: { type: boolean, description: True when the provider can sign the zones. }
+        types: { type: array, items: { type: string }, description: The record types that the provider takes. }
+        credentials: { type: object, additionalProperties: { type: [string, 'null'] }, description: The values of the fields that are not secret. A secret field is null. Empty for a customer and an account of the panel. }
+        zones: { type: integer, description: The zones that use the account. A customer counts only its own zones. }
+        checkedAt: { type: [string, 'null'], format: date-time }
+        createdAt: { type: string, format: date-time }
+    DnsProvider:
+      type: object
+      description: A DNS provider of a plugin (contract cf-dns-provider/1).
+      properties:
+        pluginId: { type: string }
+        pluginName: { type: string }
+        id: { type: string }
+        name: { type: string }
+        dnssec: { type: boolean }
+        types: { type: array, items: { type: string } }
+        credentials:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              label: { type: string }
+              secret: { type: boolean }
+              optional: { type: boolean }
+              hint: { type: string }
+    DnsImport:
+      type: object
+      properties:
+        dryRun: { type: boolean }
+        added:
+          type: array
+          description: The records that the panel added, or would add with `dryRun`.
+          items:
+            type: object
+            properties:
+              line: { type: integer, description: The line of the record in the zone file. }
+              name: { type: string }
+              type: { $ref: '#/components/schemas/DnsRecordType' }
+              value: { type: string }
+              ttl: { type: integer }
+              priority: { type: [integer, 'null'] }
+              note: { type: [string, 'null'], description: 'For example, the TTL that the panel changed.' }
+        existing: { type: integer, description: The number of records of the file that the zone has already. }
+        skipped:
+          type: array
+          description: The lines that the panel did not import.
+          items:
+            type: object
+            properties:
+              line: { type: integer }
+              text: { type: string, description: The text of the line, up to 200 characters. }
+              code:
+                type: string
+                enum: [syntax, directive, class, outside, soa, type, panel, invalid, duplicate, website]
+              reason: { type: string }
+        zone: { $ref: '#/components/schemas/DnsZone' }
+        jobs: { type: array, items: { $ref: '#/components/schemas/Job' } }
     Snapshot:
       type: object
       properties:

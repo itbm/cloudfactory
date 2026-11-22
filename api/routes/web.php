@@ -2,6 +2,7 @@
 
 use App\Providers\DemoServiceProvider;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
 // The panel API has no web pages. The web panel is a separate app (see web/).
@@ -24,4 +25,21 @@ if (DemoServiceProvider::enabled()) {
     ]))->withoutMiddleware(PreventRequestForgery::class);
     Route::post('/demo-plugins/uptime/hooks/before', fn () => response()->json(['allow' => true]))
         ->withoutMiddleware(PreventRequestForgery::class);
+    // The Cloudflare DNS plugin (plugins/dns-cloudflare), with no Cloudflare: it accepts each
+    // token, and gives the same name servers to each zone.
+    Route::post('/demo-plugins/dns-cloudflare/dns/cloudflare', fn (Request $request) => response()->json(match ($request->input('operation')) {
+        'verify' => ['account' => 'Demo account'],
+        'records' => ['exists' => true, 'nameServers' => ['ada.ns.cloudflare.com', 'bob.ns.cloudflare.com'], 'records' => [
+            ['name' => '@', 'type' => 'TXT', 'ttl' => 300, 'value' => 'google-site-verification=demo'],
+            ['name' => 'www', 'type' => 'HTTPS', 'ttl' => 300, 'value' => '1 . alpn="h2"'],
+        ]],
+        'sync' => [
+            'nameServers' => ['ada.ns.cloudflare.com', 'bob.ns.cloudflare.com'], 'active' => true,
+            'dnssec' => $request->boolean('zone.dnssec')
+                ? ['state' => 'active', 'ds' => [['keyTag' => 2371, 'algorithm' => 13, 'digestType' => 2, 'digest' => strtoupper(hash('sha256', (string) $request->input('zone.name')))]]]
+                : ['state' => 'off', 'ds' => []],
+            'changes' => ['added' => 0, 'changed' => 0, 'removed' => 0],
+        ],
+        default => [],
+    }))->withoutMiddleware(PreventRequestForgery::class);
 }

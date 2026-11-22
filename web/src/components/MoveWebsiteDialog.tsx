@@ -51,7 +51,7 @@ export function MoveWebsiteDialog({ website, onClose }: { website: Website; onCl
             <li>The website does not operate while its files move. The time depends on the size of the files: about one minute for each 5 GB on a 1 Gbit/s connection. A stopped website stays stopped.</li>
             {website.kind === "public" && (
               <li>
-                The panel changes the address records of the domains in its DNS zones. For a domain at a different DNS service, change the A and AAAA records to the addresses of the new server
+                The panel changes the address records of the domains in its DNS zones, also in a zone at a DNS provider. For a domain with no DNS zone in the panel, change the A and AAAA records to the addresses of the new server
                 {to && to.addresses.length > 0 ? <>: {to.addresses.map((a, i) => <span key={a}>{i > 0 && ", "}<code>{a}</code></span>)}</> : ""}. Set a short TTL some hours before the move.
               </li>
             )}
