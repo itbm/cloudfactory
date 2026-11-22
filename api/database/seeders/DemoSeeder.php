@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use App\Demo\DemoImport;
 use App\Demo\DemoMailDns;
 use App\Enums\AgentAction;
 use App\Enums\DomainKind;
@@ -17,6 +18,7 @@ use App\Models\DnsRecord;
 use App\Models\DnsZone;
 use App\Models\GitSource;
 use App\Models\Image;
+use App\Models\Import;
 use App\Models\MailAlias;
 use App\Models\Mailbox;
 use App\Models\MailDomain;
@@ -43,6 +45,7 @@ use App\Providers\DemoServiceProvider;
 use App\Services\Branding;
 use App\Services\Dns\Dnssec;
 use App\Services\Dns\Zones;
+use App\Services\Imports\Description;
 use App\Services\Networks;
 use App\Services\Notifications\Notifier;
 use App\Services\OpenPgpKey;
@@ -119,6 +122,7 @@ class DemoSeeder extends Seeder
         $this->cronJobsAndDeploys();
         $this->mail();
         $this->jobsAndRollout();
+        $this->imports();
         $this->settingsAndAudit();
         $this->notifications();
         $this->plugins();
@@ -393,7 +397,7 @@ class DemoSeeder extends Seeder
         $common = [
             'agent_version' => self::AGENT, 'os' => 'Debian 13', 'kernel' => '6.12.48', 'arch' => 'x86-64', 'podman_version' => '5.4.2',
             'gvisor_version' => 'release-20261019.0', 'pending_updates' => [], 'last_seen_at' => now(), 'connection_checked_at' => now(), 'sftp_port' => 2222,
-            'database_engines' => ['mariadb', 'postgresql', 'valkey'], 'database_instances' => true,
+            'database_engines' => ['mariadb', 'postgresql', 'valkey'], 'database_instances' => true, 'agent_features' => ['imports'],
         ];
         // Two servers answer DNS queries. The customers give their host names to the registrar of a domain.
         $dns = fn (int $n) => ['dns' => true, 'dns_name' => "ns{$n}.panel.example", 'addresses' => ["203.0.113.{$n}0", "2001:db8:{$n}0::1"]];
@@ -1008,6 +1012,46 @@ class DemoSeeder extends Seeder
         $rollout->created_at = now()->subHours(30);
         $rollout->updated_at = now()->subHours(29);
         $rollout->save();
+    }
+
+    /**
+     * Two imports (docs/imports.md). The cPanel backup of Corner Bakery is ready: its plan has a
+     * website with a name that the panel has already. Harbour Books came from DirectAdmin.
+     */
+    private function imports(): void
+    {
+        $admin = User::where('email', 'admin@example.com')->first();
+        $ready = new Import([
+            'customer_id' => $this->customers['bakery']->id, 'server_id' => $this->servers['web-2']->id, 'user_id' => $admin->id,
+            'source' => Import::UPLOAD, 'file_name' => 'cpmove-bakery.tar.gz', 'size_bytes' => 1_870 * self::MB, 'received_bytes' => 1_870 * self::MB,
+            'sha256' => hash('sha256', 'cpmove-bakery.tar.gz'), 'status' => Import::READY, 'panel' => 'cpanel', 'account' => 'bakery',
+            'description' => Description::normalise(DemoImport::account('cpmove-bakery.tar.gz')), 'items' => [], 'servers' => [$this->servers['web-2']->id => 'ready'],
+        ]);
+        $ready->created_at = now()->subMinutes(18);
+        $ready->save();
+
+        $books = $this->websites['harbourbooks.example.net'];
+        $item = fn (string $id, string $kind, string $name, string $state, ?string $detail = null, ?string $error = null) => compact('id', 'kind', 'name', 'state', 'detail', 'error') + ['job' => null];
+        $done = new Import([
+            'customer_id' => $this->customers['books']->id, 'server_id' => $books->server_id, 'user_id' => $admin->id,
+            'source' => Import::URL, 'url' => 'https://files.example.net/backups/user.admin.harbour.tar.zst', 'file_name' => 'user.admin.harbour.tar.zst',
+            'size_bytes' => 4_310 * self::MB, 'received_bytes' => 0, 'sha256' => hash('sha256', 'user.admin.harbour.tar.zst'), 'status' => Import::DONE,
+            'panel' => 'directadmin', 'account' => 'harbour', 'servers' => [$books->server_id => 'ready'],
+            'items' => [
+                $item('i1', 'website', 'harbourbooks.example.net', 'done'),
+                $item('i2', 'domain', 'www.harbourbooks.example.net', 'done'),
+                $item('i3', 'database', 'harbour_shop', 'done', 'New name: '.$books->unix_user.'_shop'),
+                $item('i4', 'cronJob', '*/5 * * * * php /home/harbour/domains/harbourbooks.example.net/public_html/wp-cron.php', 'done'),
+                $item('i5', 'dnsZone', 'harbourbooks.example.net', 'done', '9 records added'),
+                $item('i6', 'dump', $books->unix_user.'_shop', 'done', 'Dump loaded'),
+                $item('i7', 'files', 'harbourbooks.example.net', 'done', '18204 files copied, database settings changed in wp-config.php'),
+                $item('i8', 'website', 'events.harbourbooks.example.net', 'failed', null, 'A website with this name exists.'),
+            ],
+        ]);
+        $done->created_at = now()->subDays(41);
+        $done->started_at = now()->subDays(41)->addMinutes(9);
+        $done->finished_at = now()->subDays(41)->addMinutes(31);
+        $done->save();
     }
 
     private function settingsAndAudit(): void

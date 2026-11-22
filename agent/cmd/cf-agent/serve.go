@@ -341,7 +341,39 @@ func prepareWorker(cfg config.Config, uid, gid int) error {
 			return err
 		}
 	}
-	return ownJobs(cfg.DataDir, uid, gid)
+	if err := ownJobs(cfg.DataDir, uid, gid); err != nil {
+		return err
+	}
+	return ownImports(cfg.DataDir, uid, gid)
+}
+
+// ownImports gives the directory of the import archives to the worker (actions.ImportsDir).
+// The worker reads the archives as streams: root never opens them.
+func ownImports(dataDir string, uid, gid int) error {
+	data, err := safefs.Open(dataDir)
+	if err != nil {
+		return err
+	}
+	defer data.Close()
+	const importsDir = "imports"
+	fi, err := data.Lstat(importsDir)
+	if errors.Is(err, os.ErrNotExist) {
+		return data.Mkdir(importsDir, 0o700, uid, gid)
+	}
+	if err != nil {
+		return err
+	}
+	if !fi.IsDir() {
+		return fmt.Errorf("%s is not a directory", filepath.Join(dataDir, importsDir))
+	}
+	if st, ok := fi.Sys().(*syscall.Stat_t); ok && int(st.Uid) != uid {
+		// Root made the directory, for example while the agent operated as one process.
+		if err := data.ChownTree(importsDir, uid, gid); err != nil {
+			return err
+		}
+		return data.SetDir(importsDir, 0o700, uid, gid)
+	}
+	return nil
 }
 
 // ownJobs gives the records of the jobs to the worker.
@@ -535,6 +567,7 @@ func work(ctx context.Context, cfg config.Config, g gate.Gate) error {
 	gv := gvisor.Installer{Root: gvisorRoot, BinDir: gvisorBin}
 	reporter := panel.New(cfg.PanelURL, cfg.AgentToken, &cert, cfg.PanelServerCertificateSHA256, cfg.PanelCASHA256)
 	dialLocal(reporter, deps)
+	deps.PanelDownload = reporter.Download
 
 	h := deps.Host
 	// FR-202: the disk I/O limit needs the disk of the websites. The disk limit is a user
