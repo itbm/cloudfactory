@@ -1050,28 +1050,7 @@ func (d *Deps) SetWebsitePower(req *agentv1.SetWebsitePowerRequest) (jobs.Job, e
 			if site == nil {
 				return errors.New("the agent does not know this website")
 			}
-			// The unit of a stopped website has no [Install] section, so that systemd does not
-			// start it at boot.
-			wasStopped := site.Stopped
-			site.Stopped = action == "stop"
-			u := d.unit(site.Website, site.Port, site.Suffix)
-			u.Stopped = site.Stopped
-			if _, err := d.Host.WriteUnit(site.UnixUser, u.UnitName(), quadlet.ContainerUnit(u)); err != nil {
-				return err
-			}
-			if _, err := d.Host.Systemctl(ctx, site.UnixUser, "daemon-reload"); err != nil {
-				return err
-			}
-			if _, err = d.Host.Systemctl(ctx, site.UnixUser, action, u.ServiceName()); err != nil {
-				return err
-			}
-			if err := d.State.Put(site); err != nil {
-				return err
-			}
-			if site.Stopped == wasStopped {
-				return nil
-			}
-			return d.applyStoppedPage(ctx, site)
+			return d.power(ctx, site, action)
 		}},
 		{Name: "Health check", Do: func(ctx context.Context) error {
 			if action == "stop" {
@@ -1080,6 +1059,31 @@ func (d *Deps) SetWebsitePower(req *agentv1.SetWebsitePowerRequest) (jobs.Job, e
 			return d.waitSite(ctx, site.Website, site.Port, site.Suffix)
 		}},
 	}}, nil
+}
+
+// power starts, stops or restarts the container of a website, and records the state. The unit
+// of a stopped website has no [Install] section, so that systemd does not start it at boot.
+func (d *Deps) power(ctx context.Context, site *Site, action string) error {
+	wasStopped := site.Stopped
+	site.Stopped = action == "stop"
+	u := d.unit(site.Website, site.Port, site.Suffix)
+	u.Stopped = site.Stopped
+	if _, err := d.Host.WriteUnit(site.UnixUser, u.UnitName(), quadlet.ContainerUnit(u)); err != nil {
+		return err
+	}
+	if _, err := d.Host.Systemctl(ctx, site.UnixUser, "daemon-reload"); err != nil {
+		return err
+	}
+	if _, err := d.Host.Systemctl(ctx, site.UnixUser, action, u.ServiceName()); err != nil {
+		return err
+	}
+	if err := d.State.Put(site); err != nil {
+		return err
+	}
+	if site.Stopped == wasStopped {
+		return nil
+	}
+	return d.applyStoppedPage(ctx, site)
 }
 
 // SetLimits changes the cgroup limits of a running website, and writes them to the unit for

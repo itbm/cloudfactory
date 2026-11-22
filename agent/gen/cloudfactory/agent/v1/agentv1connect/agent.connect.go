@@ -160,6 +160,12 @@ const (
 	// AgentServiceReceiveDatabaseServerProcedure is the fully-qualified name of the AgentService's
 	// ReceiveDatabaseServer RPC.
 	AgentServiceReceiveDatabaseServerProcedure = "/cloudfactory.agent.v1.AgentService/ReceiveDatabaseServer"
+	// AgentServiceSendWebsiteProcedure is the fully-qualified name of the AgentService's SendWebsite
+	// RPC.
+	AgentServiceSendWebsiteProcedure = "/cloudfactory.agent.v1.AgentService/SendWebsite"
+	// AgentServiceReceiveWebsiteProcedure is the fully-qualified name of the AgentService's
+	// ReceiveWebsite RPC.
+	AgentServiceReceiveWebsiteProcedure = "/cloudfactory.agent.v1.AgentService/ReceiveWebsite"
 	// AgentServiceSetPacksProcedure is the fully-qualified name of the AgentService's SetPacks RPC.
 	AgentServiceSetPacksProcedure = "/cloudfactory.agent.v1.AgentService/SetPacks"
 	// AgentServiceGetStatusProcedure is the fully-qualified name of the AgentService's GetStatus RPC.
@@ -227,6 +233,8 @@ type AgentServiceClient interface {
 	RotateMeshKey(context.Context, *connect.Request[v1.RotateMeshKeyRequest]) (*connect.Response[v1.JobAccepted], error)
 	SendDatabaseServer(context.Context, *connect.Request[v1.SendDatabaseServerRequest]) (*connect.Response[v1.JobAccepted], error)
 	ReceiveDatabaseServer(context.Context, *connect.Request[v1.ReceiveDatabaseServerRequest]) (*connect.Response[v1.JobAccepted], error)
+	SendWebsite(context.Context, *connect.Request[v1.SendWebsiteRequest]) (*connect.Response[v1.JobAccepted], error)
+	ReceiveWebsite(context.Context, *connect.Request[v1.ReceiveWebsiteRequest]) (*connect.Response[v1.JobAccepted], error)
 	// Sets the packs of the server: all packs that the panel has installed (docs/packs.md). The
 	// agent checks the signature of each pack, saves the packs, lets Podman pull the images of
 	// each pack only with a signature of its publisher, and loads the runtimes of the packs.
@@ -514,6 +522,18 @@ func NewAgentServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(agentServiceMethods.ByName("ReceiveDatabaseServer")),
 			connect.WithClientOptions(opts...),
 		),
+		sendWebsite: connect.NewClient[v1.SendWebsiteRequest, v1.JobAccepted](
+			httpClient,
+			baseURL+AgentServiceSendWebsiteProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("SendWebsite")),
+			connect.WithClientOptions(opts...),
+		),
+		receiveWebsite: connect.NewClient[v1.ReceiveWebsiteRequest, v1.JobAccepted](
+			httpClient,
+			baseURL+AgentServiceReceiveWebsiteProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("ReceiveWebsite")),
+			connect.WithClientOptions(opts...),
+		),
 		setPacks: connect.NewClient[v1.SetPacksRequest, v1.JobAccepted](
 			httpClient,
 			baseURL+AgentServiceSetPacksProcedure,
@@ -616,6 +636,8 @@ type agentServiceClient struct {
 	rotateMeshKey         *connect.Client[v1.RotateMeshKeyRequest, v1.JobAccepted]
 	sendDatabaseServer    *connect.Client[v1.SendDatabaseServerRequest, v1.JobAccepted]
 	receiveDatabaseServer *connect.Client[v1.ReceiveDatabaseServerRequest, v1.JobAccepted]
+	sendWebsite           *connect.Client[v1.SendWebsiteRequest, v1.JobAccepted]
+	receiveWebsite        *connect.Client[v1.ReceiveWebsiteRequest, v1.JobAccepted]
 	setPacks              *connect.Client[v1.SetPacksRequest, v1.JobAccepted]
 	getStatus             *connect.Client[v1.GetStatusRequest, v1.HostStatus]
 	listFiles             *connect.Client[v1.FileRequest, v1.FileList]
@@ -842,6 +864,16 @@ func (c *agentServiceClient) ReceiveDatabaseServer(ctx context.Context, req *con
 	return c.receiveDatabaseServer.CallUnary(ctx, req)
 }
 
+// SendWebsite calls cloudfactory.agent.v1.AgentService.SendWebsite.
+func (c *agentServiceClient) SendWebsite(ctx context.Context, req *connect.Request[v1.SendWebsiteRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return c.sendWebsite.CallUnary(ctx, req)
+}
+
+// ReceiveWebsite calls cloudfactory.agent.v1.AgentService.ReceiveWebsite.
+func (c *agentServiceClient) ReceiveWebsite(ctx context.Context, req *connect.Request[v1.ReceiveWebsiteRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return c.receiveWebsite.CallUnary(ctx, req)
+}
+
 // SetPacks calls cloudfactory.agent.v1.AgentService.SetPacks.
 func (c *agentServiceClient) SetPacks(ctx context.Context, req *connect.Request[v1.SetPacksRequest]) (*connect.Response[v1.JobAccepted], error) {
 	return c.setPacks.CallUnary(ctx, req)
@@ -933,6 +965,8 @@ type AgentServiceHandler interface {
 	RotateMeshKey(context.Context, *connect.Request[v1.RotateMeshKeyRequest]) (*connect.Response[v1.JobAccepted], error)
 	SendDatabaseServer(context.Context, *connect.Request[v1.SendDatabaseServerRequest]) (*connect.Response[v1.JobAccepted], error)
 	ReceiveDatabaseServer(context.Context, *connect.Request[v1.ReceiveDatabaseServerRequest]) (*connect.Response[v1.JobAccepted], error)
+	SendWebsite(context.Context, *connect.Request[v1.SendWebsiteRequest]) (*connect.Response[v1.JobAccepted], error)
+	ReceiveWebsite(context.Context, *connect.Request[v1.ReceiveWebsiteRequest]) (*connect.Response[v1.JobAccepted], error)
 	// Sets the packs of the server: all packs that the panel has installed (docs/packs.md). The
 	// agent checks the signature of each pack, saves the packs, lets Podman pull the images of
 	// each pack only with a signature of its publisher, and loads the runtimes of the packs.
@@ -1216,6 +1250,18 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(agentServiceMethods.ByName("ReceiveDatabaseServer")),
 		connect.WithHandlerOptions(opts...),
 	)
+	agentServiceSendWebsiteHandler := connect.NewUnaryHandler(
+		AgentServiceSendWebsiteProcedure,
+		svc.SendWebsite,
+		connect.WithSchema(agentServiceMethods.ByName("SendWebsite")),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentServiceReceiveWebsiteHandler := connect.NewUnaryHandler(
+		AgentServiceReceiveWebsiteProcedure,
+		svc.ReceiveWebsite,
+		connect.WithSchema(agentServiceMethods.ByName("ReceiveWebsite")),
+		connect.WithHandlerOptions(opts...),
+	)
 	agentServiceSetPacksHandler := connect.NewUnaryHandler(
 		AgentServiceSetPacksProcedure,
 		svc.SetPacks,
@@ -1358,6 +1404,10 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 			agentServiceSendDatabaseServerHandler.ServeHTTP(w, r)
 		case AgentServiceReceiveDatabaseServerProcedure:
 			agentServiceReceiveDatabaseServerHandler.ServeHTTP(w, r)
+		case AgentServiceSendWebsiteProcedure:
+			agentServiceSendWebsiteHandler.ServeHTTP(w, r)
+		case AgentServiceReceiveWebsiteProcedure:
+			agentServiceReceiveWebsiteHandler.ServeHTTP(w, r)
 		case AgentServiceSetPacksProcedure:
 			agentServiceSetPacksHandler.ServeHTTP(w, r)
 		case AgentServiceGetStatusProcedure:
@@ -1555,6 +1605,14 @@ func (UnimplementedAgentServiceHandler) SendDatabaseServer(context.Context, *con
 
 func (UnimplementedAgentServiceHandler) ReceiveDatabaseServer(context.Context, *connect.Request[v1.ReceiveDatabaseServerRequest]) (*connect.Response[v1.JobAccepted], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.ReceiveDatabaseServer is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) SendWebsite(context.Context, *connect.Request[v1.SendWebsiteRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.SendWebsite is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) ReceiveWebsite(context.Context, *connect.Request[v1.ReceiveWebsiteRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.ReceiveWebsite is not implemented"))
 }
 
 func (UnimplementedAgentServiceHandler) SetPacks(context.Context, *connect.Request[v1.SetPacksRequest]) (*connect.Response[v1.JobAccepted], error) {

@@ -175,6 +175,14 @@ func (s *Service) ReceiveDatabaseServer(_ context.Context, r *connect.Request[ag
 	return s.submit(s.Deps.ReceiveDatabaseServer(r.Msg))
 }
 
+func (s *Service) SendWebsite(_ context.Context, r *connect.Request[agentv1.SendWebsiteRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.SendWebsite(r.Msg))
+}
+
+func (s *Service) ReceiveWebsite(_ context.Context, r *connect.Request[agentv1.ReceiveWebsiteRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.ReceiveWebsite(r.Msg))
+}
+
 func (s *Service) SetDnsZones(_ context.Context, r *connect.Request[agentv1.SetDnsZonesRequest]) (*connect.Response[agentv1.JobAccepted], error) {
 	return s.submit(s.Deps.SetDnsZones(r.Msg))
 }

@@ -348,7 +348,8 @@ func (d *Deps) resticArgs(args, env []string, c *resticCommand) error {
 		if len(args) == 1 && snapshotID.MatchString(args[0]) {
 			return nil
 		}
-		if len(args) == 2 && args[0] == "--tag" && resticTagRE.MatchString(args[1]) {
+		// All snapshots of a website, or the snapshots of one kind (Deps.forgetWebsiteFiles).
+		if len(args) == 2 && args[0] == "--tag" && (resticTagRE.MatchString(args[1]) || resticKindRE.MatchString(args[1])) {
 			return nil
 		}
 	case "forget":

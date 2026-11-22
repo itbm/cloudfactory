@@ -235,6 +235,11 @@ func (d *Deps) removeWebsiteUser(ctx context.Context, user string) error {
 	if err := d.removeSiteDisk(ctx, user); err != nil {
 		return err
 	}
+	// The token of a move to this server (sitemove.go). A later website with this Unix user
+	// receives its files again.
+	if err := os.Remove(d.moveMarker(user)); err != nil && !os.IsNotExist(err) {
+		return err
+	}
 	return d.Host.RemoveUser(ctx, user)
 }
 

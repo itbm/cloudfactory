@@ -58,6 +58,8 @@ service AgentService {
   rpc RotateMeshKey(RotateMeshKeyRequest) returns (JobAccepted);
   rpc SendDatabaseServer(SendDatabaseServerRequest) returns (JobAccepted);
   rpc ReceiveDatabaseServer(ReceiveDatabaseServerRequest) returns (JobAccepted);
+  rpc SendWebsite(SendWebsiteRequest) returns (JobAccepted);
+  rpc ReceiveWebsite(ReceiveWebsiteRequest) returns (JobAccepted);
   // Sets the packs of the server: all packs that the panel has installed (docs/packs.md). The
   // agent checks the signature of each pack, saves the packs, lets Podman pull the images of
   // each pack only with a signature of its publisher, and loads the runtimes of the packs.
@@ -493,6 +495,10 @@ message PruneBackupsRequest {
   map<string, string> credentials = 3;
   // The IDs of deleted websites. The agent removes all their snapshots first.
   repeated string forget_website_ids = 4;
+  // The IDs of websites that moved to a different server. The agent removes their snapshots of
+  // the files (the kinds "scheduled" and "manual"). It keeps the snapshots of the databases
+  // that this server makes for them (the kinds "scheduled-databases" and "manual-databases").
+  repeated string forget_moved_website_ids = 5;
 }
 
 message RestoreRequest {
@@ -688,6 +694,46 @@ message ReceiveDatabaseServerRequest {
   // minutes. The data has no time limit, but a connection that sends nothing for 2 minutes
   // ends.
   int32 timeout_seconds = 5;
+}
+
+// The move of a website to a different server, with the same ID, Unix user, domains and member
+// address. The panel sends ReceiveWebsite to the new server and SendWebsite to the old server.
+// The old server stops the website and sends its files through the tunnel between the two
+// servers, to the transfer port of the new server. The new server then starts the website and
+// adds its edge route. The files of the old server stay until the panel sends DeleteWebsite to
+// it. The databases stay in their database servers.
+message SendWebsiteRequest {
+  string job_id = 1;
+  string website_id = 2;
+  string unix_user = 3;
+  // The mesh address of the new server. It must be the address of a peer of this server.
+  string to = 4;
+  // The secret of this move: 64 hexadecimal characters. The new server accepts only a
+  // connection that sends it first.
+  string token = 5;
+  // True when the website was stopped before the move. When the files did not go to the new
+  // server, the agent starts the website again only when this is false.
+  bool stopped = 6;
+}
+
+message ReceiveWebsiteRequest {
+  string job_id = 1;
+  // The website, as for CreateWebsite.
+  Website website = 2;
+  // The mesh address of the old server. It must be the address of a peer of this server.
+  string from = 3;
+  string token = 4;
+  // The time that this server waits for the old server to connect, in seconds. 0 means 15
+  // minutes. The files have no time limit, but a connection that sends nothing for 2 minutes
+  // ends.
+  int32 timeout_seconds = 5;
+  // True when the website was stopped before the move. The new server then does not start it.
+  bool stopped = 6;
+  // The SFTP access of the website, as for SetSftp.
+  bool sftp_enabled = 7;
+  repeated string sftp_keys = 8;
+  // The cron jobs of the website, as for SetCronJobs.
+  repeated CronJob cron_jobs = 9;
 }
 
 message HostRequest {
