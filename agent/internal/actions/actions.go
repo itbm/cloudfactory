@@ -40,6 +40,10 @@ type Edge interface {
 	SetPanelBrands(ctx context.Context, domain string, brands []string) error
 	// PanelCARoot gives the root certificate of the CA of the panel in PEM format.
 	PanelCARoot(ctx context.Context) (string, error)
+	// SetCertificates sets the certificates from the panel, and Certificates gives the
+	// certificates from the panel that the edge proxy has.
+	SetCertificates(ctx context.Context, certs []caddy.Certificate) error
+	Certificates(ctx context.Context) ([]caddy.LoadedCertificate, error)
 }
 
 // Deps are the parts of the host that the actions change.

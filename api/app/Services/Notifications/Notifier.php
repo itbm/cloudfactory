@@ -16,6 +16,7 @@ use App\Models\NotificationDelivery;
 use App\Models\Server;
 use App\Models\User;
 use App\Models\Website;
+use App\Services\Certificates\Certificates;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Crypt;
@@ -237,6 +238,7 @@ class Notifier
             'expiresAt' => $expires?->format('j M Y') ?? 'no certificate',
             'days' => (string) $days,
             'state' => (string) $domain->certificate_state,
+            'advice' => NotificationEvent::certificateAdvice($domain->name, (Certificates::ofWebsite($website)[$domain->name] ?? null)?->source ?? 'automatic'),
         ], $key);
     }
 }
