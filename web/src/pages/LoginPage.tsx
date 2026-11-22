@@ -1,6 +1,7 @@
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAction } from "../api/hooks";
+import { signInMethods, type SignInMethods } from "../api/live";
 import { signIn } from "../api/store";
 import { BrandMark, useBrand } from "../components/Brand";
 import { Field, FormError } from "../components/ui";
@@ -11,8 +12,11 @@ import { Field, FormError } from "../components/ui";
  */
 export function LoginPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const brand = useBrand();
-  const [email, setEmail] = useState("");
+  const methods = useSignInMethods();
+  // After a new password, the page of the link sends the email.
+  const [email, setEmail] = useState((location.state as { email?: string } | null)?.email ?? "");
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
   const [step, setStep] = useState<"start" | "totp">("start");
@@ -50,6 +54,7 @@ export function LoginPage() {
             <Field label="Email" error={pw.error?.fields.email}>{(p) => <input {...p} className="input" type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} />}</Field>
             <Field label="Password" error={pw.error?.fields.password}>{(p) => <input {...p} className="input" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />}</Field>
             <button type="submit" className="btn btn-primary" style={{ width: "100%", marginTop: 16 }} disabled={busy}>{pw.busy ? "Signing in…" : "Sign in"}</button>
+            {methods?.passwordReset && <div className="sign-in-links"><Link className="btn-link" to="/forgot-password" state={{ email }}>Forgot your password?</Link></div>}
           </form>
         ) : (
           <form noValidate onSubmit={async (e) => {
@@ -69,4 +74,15 @@ export function LoginPage() {
       </div>
     </main>
   );
+}
+
+/** The ways to sign in for the domain of the page. Until the API answers, the page shows only the password. */
+function useSignInMethods(): SignInMethods | null {
+  const [methods, setMethods] = useState<SignInMethods | null>(null);
+  useEffect(() => {
+    let current = true;
+    signInMethods().then((m) => { if (current) setMethods(m); }).catch(() => {});
+    return () => { current = false; };
+  }, []);
+  return methods;
 }

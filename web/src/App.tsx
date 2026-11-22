@@ -22,6 +22,7 @@ import { LoginPage } from "./pages/LoginPage";
 import { NewWebsitePage } from "./pages/NewWebsitePage";
 import { OverviewPage } from "./pages/OverviewPage";
 import { NetworkPage } from "./pages/NetworkPage";
+import { ForgotPasswordPage, ResetPasswordPage } from "./pages/PasswordResetPages";
 import { PlansPage } from "./pages/PlansPage";
 import { ServersPage } from "./pages/ServersPage";
 import { SetPasswordPage } from "./pages/SetPasswordPage";
@@ -81,6 +82,8 @@ export function App() {
       <BrandTheme />
       <Routes>
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
         <Route element={<RequireSignIn><Layout /></RequireSignIn>}>
           <Route element={<RoleGuard />}>
             <Route index element={<Home />} />

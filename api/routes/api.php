@@ -35,6 +35,7 @@ use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\NotificationTemplateController;
 use App\Http\Controllers\Api\PackController;
 use App\Http\Controllers\Api\PanelCertificateController;
+use App\Http\Controllers\Api\PasswordResetController;
 use App\Http\Controllers\Api\PlanController;
 use App\Http\Controllers\Api\PluginController;
 use App\Http\Controllers\Api\RolloutController;
@@ -57,6 +58,11 @@ Route::prefix('v1')->group(function () {
     // Adversarial review, finding A1-07: the third value of a throttle is the name of its
     // counter. Without a name, all limits of one client would share one counter.
     Route::post('auth/login', [AuthController::class, 'login'])->middleware('throttle:10,1,post-auth-login');
+    // The ways to sign in that the sign-in page shows.
+    Route::get('auth/methods', [AuthController::class, 'methods'])->middleware('throttle:60,1,get-auth-methods');
+    // A user who does not know the password asks for an email with a link to set a new one.
+    Route::post('auth/password-reset', [PasswordResetController::class, 'request'])->middleware('throttle:5,1,post-auth-password-reset');
+    Route::post('auth/password-reset/confirm', [PasswordResetController::class, 'reset'])->middleware('throttle:10,1,post-auth-password-reset-confirm');
     // White label: the brand of the sign-in page, for the domain of the request.
     Route::get('brand', [BrandController::class, 'show'])->middleware('throttle:60,1,get-brand');
     // The webhook of a website: a Git host calls it after a push. The token in the address is

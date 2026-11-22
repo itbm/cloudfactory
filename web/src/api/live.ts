@@ -434,6 +434,26 @@ export async function signInBrand(): Promise<Brand> {
   return request<Brand>("GET", "/brand");
 }
 
+/** The ways to sign in that the sign-in page shows, for the domain that the browser opened. */
+export interface SignInMethods {
+  /** The panel can send an email with a link to set a new password. */
+  passwordReset: boolean;
+}
+
+export async function signInMethods(): Promise<SignInMethods> {
+  return request<SignInMethods>("GET", "/auth/methods");
+}
+
+/** Asks for an email with a link to set a new password. The answer is the same for each email. */
+export async function requestPasswordReset(email: string): Promise<string> {
+  return (await request<{ message: string }>("POST", "/auth/password-reset", { email })).message;
+}
+
+/** Sets a new password with the code from the link in the email. */
+export async function resetPassword(email: string, resetToken: string, password: string, confirmation: string): Promise<void> {
+  await request<void>("POST", "/auth/password-reset/confirm", { email, token: resetToken, password, password_confirmation: confirmation });
+}
+
 /** Loads the full state for the signed-in user from the API. */
 export async function load(previous: State): Promise<State> {
   const me = await request<ApiMe>("GET", "/me");
