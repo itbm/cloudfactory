@@ -102,6 +102,7 @@ jobs:
           - { image: mail, context: images/mail, file: images/mail/Containerfile, args: '' }
           - { image: mail-keep, context: images/mail-keep, file: images/mail-keep/Containerfile, args: '' }
           - { image: webmail, context: images/webmail, file: images/webmail/Containerfile, args: '' }
+          - { image: scan, context: images/scan, file: images/scan/Containerfile, args: '' }
           - { image: panel-api, context: ., file: images/panel-api/Containerfile, args: '' }
           - { image: panel-web, context: ., file: images/panel-web/Containerfile, args: '' }
     steps:

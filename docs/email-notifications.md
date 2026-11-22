@@ -18,6 +18,7 @@ the emails that they get.
 | Servers that are offline      | `server.offline`       | Administrators                     |
 | Deploys that need attention   | `deploy.attention`     | Resellers, owners                  |
 | Password reset                | `password.reset`       | All users (always on)              |
+| Malware found                 | `malware.found`        | Administrators, resellers, owners  |
 
 Who gets the email of an event:
 
@@ -45,6 +46,9 @@ Who gets the email of an event:
   sign-in page. The template must have `{{resetUrl}}` in the text. **Sent emails** shows the
   email with a placeholder in the place of the link, and you cannot send it again. Refer to
   [security.md](security.md#users-and-api-tokens).
+- **Malware found:** the users of the customer of the website, the users of its reseller, and
+  the administrators. You get one email for each malware scan that finds infected files. The
+  email has the first 10 files.
 
 ## Set up the SMTP server (administrators)
 

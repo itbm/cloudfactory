@@ -16,6 +16,9 @@ import type {
   CommandLogPage,
   CronJob,
   FirewallEvent,
+  MalwareScan,
+  MalwareScans,
+  MalwareScanSchedule,
   Customer,
   CustomerCertificate,
   DatabaseEngine,
@@ -621,6 +624,24 @@ export async function runCommand(websiteId: string, command: string, timeoutSeco
   }));
   await track(r.job);
   return readCommand(websiteId, r.command.id);
+}
+
+// The malware scans of a website
+
+export function readMalwareScans(websiteId: string): Promise<MalwareScans> {
+  return call(() => live.request<MalwareScans>("GET", `/websites/${websiteId}/malware-scans`));
+}
+
+/** Starts a scan now. The job updates the signatures of the server, then scans the files. */
+export function startMalwareScan(websiteId: string): Promise<MalwareScan> {
+  return call(() => live.request<{ scan: MalwareScan; job: live.ApiJob }>("POST", `/websites/${websiteId}/malware-scans`)).then((r) => {
+    void track(r.job);
+    return r.scan;
+  });
+}
+
+export function setMalwareScanSchedule(websiteId: string, schedule: MalwareScanSchedule): Promise<MalwareScans> {
+  return call(() => live.request<MalwareScans>("PATCH", `/websites/${websiteId}/malware-scans`, { schedule }));
 }
 
 export function readDeploy(websiteId: string): Promise<Deploy> {

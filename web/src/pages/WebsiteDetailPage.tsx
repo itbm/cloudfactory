@@ -21,6 +21,7 @@ import { DomainsTab } from "./website/DomainsTab";
 import { FilesTab } from "./website/FilesTab";
 import { LogsTab } from "./website/LogsTab";
 import { RuntimeTab } from "./website/RuntimeTab";
+import { MalwareScanCard } from "./website/MalwareScanCard";
 import { SecurityTab } from "./website/SecurityTab";
 import { SettingsTab } from "./website/SettingsTab";
 import { PluginActionsCard } from "../components/PluginActions";
@@ -43,7 +44,7 @@ const TABS = [
 ] as const;
 
 /** The tabs of a website with domains. A private website and a worker get no requests from the internet. */
-const PUBLIC_ONLY: string[] = ["domains", "security"];
+const PUBLIC_ONLY: string[] = ["domains"];
 
 function UpdateBanner({ website }: { website: Website }) {
   const state = useStore();
@@ -346,9 +347,12 @@ export function WebsiteDetailPage() {
         {tab === "commands" && <CommandsTab key={website.id} website={website} />}
         {tab === "logs" && <LogsTab key={website.id} website={website} />}
         {tab === "security" && (website.kind === "public" ? <SecurityTab key={website.id} website={website} /> : (
-          <Empty title="No protection in the edge proxy">
-            <p>A {WEBSITE_KIND[website.kind].toLowerCase()} gets no requests from the internet, so the edge proxy does not protect it.</p>
-          </Empty>
+          <div className="stack">
+            <MalwareScanCard key={website.id} website={website} />
+            <Empty title="No protection in the edge proxy">
+              <p>A {WEBSITE_KIND[website.kind].toLowerCase()} gets no requests from the internet, so the edge proxy does not protect it.</p>
+            </Empty>
+          </div>
         ))}
         {tab === "backups" && <BackupsTab website={website} />}
         {tab === "access" && <AccessTab website={website} />}

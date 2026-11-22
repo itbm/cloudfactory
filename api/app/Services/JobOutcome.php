@@ -120,6 +120,9 @@ class JobOutcome
             if (in_array($job->action, [AgentAction::SetDnsZones, AgentAction::DeleteDnsZones], true)) {
                 Zones::jobFinished($job, $state === JobState::Succeeded);
             }
+            if ($job->action === AgentAction::ScanWebsite) {
+                MalwareScans::jobFinished($job, $state === JobState::Succeeded, $result);
+            }
             if ($job->action === AgentAction::SetPacks && $state === JobState::Succeeded) {
                 Packs::jobFinished($job, $result);
             }

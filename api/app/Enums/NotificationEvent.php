@@ -18,6 +18,7 @@ enum NotificationEvent: string
     case ServerOffline = 'server.offline';
     case DeployNeedsAttention = 'deploy.attention';
     case PasswordReset = 'password.reset';
+    case MalwareFound = 'malware.found';
 
     public function label(): string
     {
@@ -32,6 +33,7 @@ enum NotificationEvent: string
             self::ServerOffline => 'Servers that are offline',
             self::DeployNeedsAttention => 'Deploys that need attention',
             self::PasswordReset => 'Password reset',
+            self::MalwareFound => 'Malware found',
         };
     }
 
@@ -48,6 +50,7 @@ enum NotificationEvent: string
             self::ServerOffline => 'A server did not report to the panel for 5 minutes.',
             self::DeployNeedsAttention => 'A deploy ran a database migration, and then the website failed its health check. The panel did not go back to the previous release.',
             self::PasswordReset => 'Someone asked for a link to set a new password for your user.',
+            self::MalwareFound => 'A malware scan found infected files in a website.',
         };
     }
 
@@ -129,6 +132,7 @@ enum NotificationEvent: string
             self::ServerOffline => ['server' => 'web-2', 'lastSeen' => '15 Nov 2026 02:55 UTC'],
             self::DeployNeedsAttention => ['website' => 'api.example.com', 'branch' => 'main', 'commit' => '4f9a1c2', 'message' => 'Add the invoice table', 'error' => 'the health check failed after the switch: 9 of 30 checks failed.', 'time' => '15 Nov 2026 14:20 UTC', 'websiteId' => '01jbq3z5k8n6t4w2x9y7r5p3q9'],
             self::PasswordReset => ['resetUrl' => 'https://panel.example.com/reset-password#token=4f1c…', 'minutes' => '60', 'ip' => '203.0.113.7'],
+            self::MalwareFound => ['website' => 'shop.example.com', 'count' => '2', 'files' => "/public/wp-content/uploads/cache.php (Php.Webshell)\n/public/x.php (Php.Trojan)", 'time' => '15 Nov 2026 03:20 UTC'],
         };
     }
 
@@ -158,6 +162,7 @@ enum NotificationEvent: string
             self::ServerOffline => 'The server {{server}} is offline',
             self::DeployNeedsAttention => 'Examine {{website}}: the health check failed after a migration',
             self::PasswordReset => 'Set a new password for {{brand}}',
+            self::MalwareFound => 'Malware found in {{website}}',
         };
     }
 
@@ -174,6 +179,7 @@ enum NotificationEvent: string
             self::ServerOffline => "Hello {{name}},\n\nThe server {{server}} did not report to the panel since {{lastSeen}}. The panel keeps its jobs until it reports again.\n\nMake sure that the server is on and that the agent service runs:\n{{panelUrl}}/servers",
             self::DeployNeedsAttention => "Hello {{name}},\n\nA deploy of {{website}} ran the migration command. After the switch, the website failed its health check:\n\n{{error}}\n\nBranch: {{branch}}\nCommit: {{commit}} {{message}}\nTime: {{time}}\n\nThe website serves the new release. The panel did not go back to the previous release, because the previous release possibly does not operate with the changed database.\n\nExamine the logs of the website, and push a correction. To go back, first restore the database from a backup, and then go back to an earlier release:\n{{panelUrl}}/websites/{{websiteId}}/deploys",
             self::PasswordReset => "Hello {{name}},\n\nSomeone asked for a link to set a new password for your user on {{brand}}. The request came from the IP address {{ip}}.\n\nTo set a new password, open this link. It works one time only, for {{minutes}} minutes:\n{{resetUrl}}\n\nA new password does not turn off your authenticator app or remove your passkeys.\n\nIf you did not ask for this link, you need not do anything. Your password does not change.",
+            self::MalwareFound => "Hello {{name}},\n\nThe malware scan of {{website}} at {{time}} found {{count}} infected files:\n\n{{files}}\n\nThe scan did not change the files. Open the Security tab of the website to remove the files, then scan again. Also change the passwords of the website, and update its software:\n{{panelUrl}}/websites",
         };
     }
 }

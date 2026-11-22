@@ -105,6 +105,10 @@ Usage:
   cf security protect WEBSITE PATH --user NAME         Add a user to a password-protected path, or change the password. The
                                                        password is read from CF_PATH_PASSWORD or stdin.
   cf security unprotect WEBSITE PATH [--user NAME]     Remove a user, or the password of the path.
+  cf security scan WEBSITE                             Scan the files for malware now, and show the result. The exit status
+                                                       is 1 when the scan finds malware.
+  cf security scans WEBSITE                            The malware scan schedule and the last scans.
+  cf security scan-schedule WEBSITE weekly|off
   cf previews list WEBSITE                             The settings and the preview websites of the pull requests.
   cf previews set WEBSITE [--on | --off] [--domain DOMAIN] [--limit N] [--copy-environment | --no-copy-environment]
                                                        Each preview is a website pr-NUMBER.DOMAIN. Use a sub-domain of a

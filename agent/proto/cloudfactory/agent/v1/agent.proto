@@ -87,6 +87,9 @@ service AgentService {
   rpc ImportDatabase(ImportDatabaseRequest) returns (JobAccepted);
   rpc ImportMail(ImportMailRequest) returns (JobAccepted);
   rpc DeleteImport(DeleteImportRequest) returns (JobAccepted);
+  // Scans the files of a website for malware with ClamAV. The job first updates the
+  // signatures of the server. The result has the files that ClamAV found.
+  rpc ScanWebsite(ScanWebsiteRequest) returns (JobAccepted);
 
   // Returns the actual state of the server at once. This method does not make a job.
   rpc GetStatus(GetStatusRequest) returns (HostStatus);
@@ -437,6 +440,12 @@ message SetWebsiteSecurityRequest {
   string unix_user = 3;
   // The panel adds the current value each time that it sends the job.
   WebsiteSecurity security = 4;
+}
+
+message ScanWebsiteRequest {
+  string job_id = 1;
+  string website_id = 2;
+  string unix_user = 3;
 }
 
 message SetLimitsRequest {

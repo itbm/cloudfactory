@@ -30,6 +30,9 @@ Schedule::command('cloudfactory:prune-usage')->daily()->withoutOverlapping();
 // Plugins: the panel keeps the deliveries of events for 30 days.
 Schedule::command('cloudfactory:prune-plugin-deliveries')->daily()->withoutOverlapping();
 
+// The weekly malware scan of each website, in the hour of the week of the website.
+Schedule::command('cloudfactory:malware-scans')->hourly()->withoutOverlapping();
+
 // Email notifications: the TLS certificates that expire soon. One email for each certificate.
 Schedule::command('cloudfactory:check-certificates')->dailyAt('08:00')->withoutOverlapping();
 

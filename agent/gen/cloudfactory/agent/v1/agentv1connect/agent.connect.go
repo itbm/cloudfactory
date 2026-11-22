@@ -184,6 +184,9 @@ const (
 	// AgentServiceDeleteImportProcedure is the fully-qualified name of the AgentService's DeleteImport
 	// RPC.
 	AgentServiceDeleteImportProcedure = "/cloudfactory.agent.v1.AgentService/DeleteImport"
+	// AgentServiceScanWebsiteProcedure is the fully-qualified name of the AgentService's ScanWebsite
+	// RPC.
+	AgentServiceScanWebsiteProcedure = "/cloudfactory.agent.v1.AgentService/ScanWebsite"
 	// AgentServiceGetStatusProcedure is the fully-qualified name of the AgentService's GetStatus RPC.
 	AgentServiceGetStatusProcedure = "/cloudfactory.agent.v1.AgentService/GetStatus"
 	// AgentServiceListFilesProcedure is the fully-qualified name of the AgentService's ListFiles RPC.
@@ -284,6 +287,9 @@ type AgentServiceClient interface {
 	ImportDatabase(context.Context, *connect.Request[v1.ImportDatabaseRequest]) (*connect.Response[v1.JobAccepted], error)
 	ImportMail(context.Context, *connect.Request[v1.ImportMailRequest]) (*connect.Response[v1.JobAccepted], error)
 	DeleteImport(context.Context, *connect.Request[v1.DeleteImportRequest]) (*connect.Response[v1.JobAccepted], error)
+	// Scans the files of a website for malware with ClamAV. The job first updates the
+	// signatures of the server. The result has the files that ClamAV found.
+	ScanWebsite(context.Context, *connect.Request[v1.ScanWebsiteRequest]) (*connect.Response[v1.JobAccepted], error)
 	// Returns the actual state of the server at once. This method does not make a job.
 	GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.HostStatus], error)
 	// The file manager and the logs of a website. These methods do not make a job: they give
@@ -628,6 +634,12 @@ func NewAgentServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(agentServiceMethods.ByName("DeleteImport")),
 			connect.WithClientOptions(opts...),
 		),
+		scanWebsite: connect.NewClient[v1.ScanWebsiteRequest, v1.JobAccepted](
+			httpClient,
+			baseURL+AgentServiceScanWebsiteProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("ScanWebsite")),
+			connect.WithClientOptions(opts...),
+		),
 		getStatus: connect.NewClient[v1.GetStatusRequest, v1.HostStatus](
 			httpClient,
 			baseURL+AgentServiceGetStatusProcedure,
@@ -745,6 +757,7 @@ type agentServiceClient struct {
 	importDatabase        *connect.Client[v1.ImportDatabaseRequest, v1.JobAccepted]
 	importMail            *connect.Client[v1.ImportMailRequest, v1.JobAccepted]
 	deleteImport          *connect.Client[v1.DeleteImportRequest, v1.JobAccepted]
+	scanWebsite           *connect.Client[v1.ScanWebsiteRequest, v1.JobAccepted]
 	getStatus             *connect.Client[v1.GetStatusRequest, v1.HostStatus]
 	listFiles             *connect.Client[v1.FileRequest, v1.FileList]
 	readFile              *connect.Client[v1.FileRequest, v1.FileContent]
@@ -1017,6 +1030,11 @@ func (c *agentServiceClient) DeleteImport(ctx context.Context, req *connect.Requ
 	return c.deleteImport.CallUnary(ctx, req)
 }
 
+// ScanWebsite calls cloudfactory.agent.v1.AgentService.ScanWebsite.
+func (c *agentServiceClient) ScanWebsite(ctx context.Context, req *connect.Request[v1.ScanWebsiteRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return c.scanWebsite.CallUnary(ctx, req)
+}
+
 // GetStatus calls cloudfactory.agent.v1.AgentService.GetStatus.
 func (c *agentServiceClient) GetStatus(ctx context.Context, req *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.HostStatus], error) {
 	return c.getStatus.CallUnary(ctx, req)
@@ -1142,6 +1160,9 @@ type AgentServiceHandler interface {
 	ImportDatabase(context.Context, *connect.Request[v1.ImportDatabaseRequest]) (*connect.Response[v1.JobAccepted], error)
 	ImportMail(context.Context, *connect.Request[v1.ImportMailRequest]) (*connect.Response[v1.JobAccepted], error)
 	DeleteImport(context.Context, *connect.Request[v1.DeleteImportRequest]) (*connect.Response[v1.JobAccepted], error)
+	// Scans the files of a website for malware with ClamAV. The job first updates the
+	// signatures of the server. The result has the files that ClamAV found.
+	ScanWebsite(context.Context, *connect.Request[v1.ScanWebsiteRequest]) (*connect.Response[v1.JobAccepted], error)
 	// Returns the actual state of the server at once. This method does not make a job.
 	GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.HostStatus], error)
 	// The file manager and the logs of a website. These methods do not make a job: they give
@@ -1482,6 +1503,12 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(agentServiceMethods.ByName("DeleteImport")),
 		connect.WithHandlerOptions(opts...),
 	)
+	agentServiceScanWebsiteHandler := connect.NewUnaryHandler(
+		AgentServiceScanWebsiteProcedure,
+		svc.ScanWebsite,
+		connect.WithSchema(agentServiceMethods.ByName("ScanWebsite")),
+		connect.WithHandlerOptions(opts...),
+	)
 	agentServiceGetStatusHandler := connect.NewUnaryHandler(
 		AgentServiceGetStatusProcedure,
 		svc.GetStatus,
@@ -1648,6 +1675,8 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 			agentServiceImportMailHandler.ServeHTTP(w, r)
 		case AgentServiceDeleteImportProcedure:
 			agentServiceDeleteImportHandler.ServeHTTP(w, r)
+		case AgentServiceScanWebsiteProcedure:
+			agentServiceScanWebsiteHandler.ServeHTTP(w, r)
 		case AgentServiceGetStatusProcedure:
 			agentServiceGetStatusHandler.ServeHTTP(w, r)
 		case AgentServiceListFilesProcedure:
@@ -1883,6 +1912,10 @@ func (UnimplementedAgentServiceHandler) ImportMail(context.Context, *connect.Req
 
 func (UnimplementedAgentServiceHandler) DeleteImport(context.Context, *connect.Request[v1.DeleteImportRequest]) (*connect.Response[v1.JobAccepted], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.DeleteImport is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) ScanWebsite(context.Context, *connect.Request[v1.ScanWebsiteRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.ScanWebsite is not implemented"))
 }
 
 func (UnimplementedAgentServiceHandler) GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.HostStatus], error) {
