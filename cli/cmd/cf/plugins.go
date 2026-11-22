@@ -28,7 +28,7 @@ func init() {
 		"customers", "customer", "users", "user", "plans", "plan", "audit", "account", "rollouts", "rollout", "tokens", "token",
 		"files", "file", "logs", "cron", "deploys", "deploy", "plugins", "plugin", "packs", "pack",
 		// Adversarial review, finding C1-02: these commands were not in the list.
-		"env", "mail", "email", "mail-server", "notifications", "notification",
+		"env", "mail", "email", "mail-server", "notifications", "notification", "uptime-checks", "uptime-check",
 	} {
 		builtin[c] = true
 	}
