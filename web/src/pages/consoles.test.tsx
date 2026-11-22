@@ -28,20 +28,20 @@ describe("the console of each role", () => {
   it("gives each role its own first page and its own menu", async () => {
     await open("administrator", "/");
     expect(heading()).toBe("Overview");
-    expect(menu()).toEqual(["Overview", "Finish setup", "Servers", "Network", "Images and updates", "Customers", "Plans", "Websites", "Files", "Databases", "Email", "DNS", "Private networks", "Backups", "Apps", "Jobs and activity", "Usage alerts", "Packs", "Plugins", "Settings", "Uptime"]);
+    expect(menu()).toEqual(["Overview", "Finish setup", "Servers", "Network", "Images and updates", "Customers", "Plans", "Websites", "Files", "Databases", "Email", "DNS", "Certificates", "Private networks", "Backups", "Apps", "Jobs and activity", "Usage alerts", "Packs", "Plugins", "Settings", "Uptime"]);
     cleanup();
     reset();
 
     await open("reseller", "/");
     expect(heading()).toBe("Customers");
     // The sample reseller has a brand with a support email: the menu links to it.
-    expect(menu()).toEqual(["Customers", "Plans", "Brand", "Websites", "Files", "Databases", "Email", "DNS", "Private networks", "Backups", "Apps", "Jobs and activity", "Usage alerts", "My account", "Settings", "Uptime", "Get help by email"]);
+    expect(menu()).toEqual(["Customers", "Plans", "Brand", "Websites", "Files", "Databases", "Email", "DNS", "Certificates", "Private networks", "Backups", "Apps", "Jobs and activity", "Usage alerts", "My account", "Settings", "Uptime", "Get help by email"]);
     cleanup();
     reset();
 
     await open("owner", "/");
     expect(heading()).toBe("My websites");
-    expect(menu()).toEqual(["My websites", "Files", "Databases", "Email", "DNS", "Private networks", "Backups", "Apps", "Activity", "Usage alerts", "My account", "Settings", "Uptime"]);
+    expect(menu()).toEqual(["My websites", "Files", "Databases", "Email", "DNS", "Certificates", "Private networks", "Backups", "Apps", "Activity", "Usage alerts", "My account", "Settings", "Uptime"]);
   });
 
   it("has no link from the menu of an owner or a reseller to a page that the role cannot open", () => {

@@ -4,7 +4,7 @@ import { useAction, useStore } from "../../api/hooks";
 import { addDomain, checkDns, makePrimary, removeDomain, verifyDomain } from "../../api/store";
 import type { DomainKind, Website } from "../../api/types";
 import { Card, ConfirmButton, Field, FormError, Status, TableWrap } from "../../components/ui";
-import { certificateUntil, jobActive } from "../../lib/labels";
+import { CERTIFICATE_SOURCE, certificateUntil, jobActive } from "../../lib/labels";
 
 const KIND_LABEL: Record<DomainKind, string> = { primary: "Primary", redirect: "Redirect", alias: "Alias" };
 
@@ -72,7 +72,12 @@ export function DomainsTab({ website }: { website: Website }) {
                           </>
                         )}
                     </td>
-                    <td className="muted">{certificateUntil(d, website.status === "failed").replace(/^./, (c) => c.toUpperCase())}</td>
+                    <td className="muted">
+                      {certificateUntil(d, website.status === "failed").replace(/^./, (c) => c.toUpperCase())}
+                      {d.certificate.certificateId && d.certificate.source !== "automatic" && (
+                        <span className="cell-sub"><Link to={`/certificates/${d.certificate.certificateId}`}>{CERTIFICATE_SOURCE[d.certificate.source ?? "automatic"]}</Link></span>
+                      )}
+                    </td>
                     <td>
                       <div className="btn-group" style={{ justifyContent: "flex-end" }}>
                         {d.verification && (

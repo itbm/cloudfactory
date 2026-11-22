@@ -414,9 +414,9 @@ function ZonePage({ id }: { id: string }) {
                       {r.priority !== undefined && <span className="cell-sub">Priority {r.priority}</span>}
                     </td>
                     <td className="nowrap">{ttlText(r.ttl)}</td>
-                    <td className="muted nowrap">{r.managed === "ns" ? "Panel: name server" : r.managed === "website" ? "Panel: website" : "You"}</td>
+                    <td className="muted nowrap">{r.managed === "ns" ? "Panel: name server" : r.managed === "website" ? "Panel: website" : r.managed === "acme" ? "Panel: certificate" : "You"}</td>
                     <td className="cell-actions">
-                      {!locked && r.managed !== "ns" && (
+                      {!locked && r.managed !== "ns" && r.managed !== "acme" && (
                         <RowMenu label={`Actions for the ${r.type} record ${r.name}`} actions={[
                           { label: "Change", onSelect: () => setEditing(r) },
                           { label: "Remove", danger: true, onSelect: () => setRemovingRecord(r) },
@@ -431,7 +431,7 @@ function ZonePage({ id }: { id: string }) {
             </table>
           </TableWrap>
           <p className="card-body muted small" style={{ paddingTop: 12 }}>
-            <code>@</code> is the domain itself. The panel keeps the name server records of the zone, and you cannot change them. When you change a record that the panel made for a website, the record becomes yours and the panel does not change it again.
+            <code>@</code> is the domain itself. The panel keeps the name server records of the zone, and you cannot change them. While the panel gets a certificate with DNS validation, the zone has a TXT record <code>_acme-challenge</code> of the panel for some minutes. When you change a record that the panel made for a website, the record becomes yours and the panel does not change it again.
           </p>
         </Card>
       </main>
