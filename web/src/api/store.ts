@@ -21,6 +21,7 @@ import type {
   DatabaseLimits,
   DatabasePrivileges,
   DatabaseServer,
+  DnsProvider,
   DnsRecordType,
   Deploy,
   MailAlias,
@@ -75,7 +76,7 @@ export function emptyState(): State {
   return {
     session: { signedIn: false, user: { id: "", name: "", email: "", role: "owner" }, contextId: "" },
     contexts: [], websites: [], jobs: [], activity: [], notifications: [], servers: [], images: [], rollout: undefined,
-    databaseServers: [], dnsZones: [], nameServers: [], networks: [], pluginPages: [], pluginActions: [], usageAlerts: [], alertSettings: { warningPercent: 80, criticalPercent: 95 }, mailDomains: [], mailClusters: [], mailboxes: [], mailAliases: [], databases: [], databaseUsers: [], remoteDatabaseServers: {}, snapshots: [], plans: [], customers: [], users: [],
+    databaseServers: [], dnsZones: [], nameServers: [], dnsAccounts: [], dnsProviders: [], networks: [], pluginPages: [], pluginActions: [], usageAlerts: [], alertSettings: { warningPercent: 80, criticalPercent: 95 }, mailDomains: [], mailClusters: [], mailboxes: [], mailAliases: [], databases: [], databaseUsers: [], remoteDatabaseServers: {}, snapshots: [], plans: [], customers: [], users: [],
     backupPolicy: { daily: 7, weekly: 4, monthly: 6, time: "03:00", target: "", credentialNames: [] },
     tokens: [], totpEnabled: false, securityNotices: [], audit: [], joinToken: "", joinCaSha256: undefined,
     panelDomain: "",
@@ -1114,7 +1115,24 @@ function trackZone(zoneId: string, jobs: live.ApiJob[]) {
     const z = d.dnsZones.find((x) => x.id === zoneId);
     if (z && jobs.length && z.status !== "removing") z.status = "updating";
   });
-  void Promise.all(jobs.map((j) => track(j))).then(() => showDnsZone(zoneId)).catch(() => undefined);
+  void Promise.all(jobs.map((j) => track(j))).then(() => showDnsZone(zoneId)).then(() => followProvider(zoneId)).catch(() => undefined);
+}
+
+/** The time between two reads of a zone that waits for its external DNS provider. */
+export const PROVIDER_POLL_MS = 2000;
+
+/**
+ * A zone at an external DNS provider has no job of an agent. A queue worker of the panel sends
+ * it to the plugin. The panel reads the zone again until the provider has the last change,
+ * for up to 30 seconds.
+ */
+async function followProvider(zoneId: string) {
+  for (let i = 0; i < 15; i++) {
+    const zone = state.dnsZones.find((x) => x.id === zoneId);
+    if (!zone?.provider || zone.provider.state !== "pending" || zone.status === "removing") return;
+    await new Promise((resolve) => setTimeout(resolve, PROVIDER_POLL_MS));
+    await showDnsZone(zoneId);
+  }
 }
 
 /** Reads the records of a zone. The zone page calls it when it opens. */
@@ -1129,26 +1147,103 @@ export async function showDnsZone(zoneId: string): Promise<void> {
   }
 }
 
-/** Makes a zone for a domain of a customer. The promise gives the ID of the zone. */
-export function createDnsZone(name: string, customerId?: string): Promise<string> {
+/**
+ * Makes a zone for a domain of a customer. With a DNS account, the zone goes to its external
+ * provider, and first gets the records that the provider has now ("importRecords"). The
+ * promise gives the ID of the zone.
+ */
+export function createDnsZone(name: string, customerId?: string, accountId?: string, importRecords = true): Promise<string> {
   return call(async () => {
-    const r = await live.request<{ zone: live.ApiDnsZone } & DnsJobs>("POST", "/dns-zones", { name: name.trim().toLowerCase().replace(/\.$/, ""), customerId: customerId || undefined });
+    const r = await live.request<{ zone: live.ApiDnsZone } & DnsJobs>("POST", "/dns-zones", {
+      name: name.trim().toLowerCase().replace(/\.$/, ""), customerId: customerId || undefined, ...(accountId ? { accountId, importRecords } : {}),
+    });
     putDnsZone(r.zone);
     trackZone(r.zone.id, r.jobs);
+    patchAccountZones(accountId, 1);
     return r.zone.id;
   });
 }
 
-/** Removes a zone and all its records from each DNS server. */
-export function deleteDnsZone(zoneId: string): Promise<void> {
+/** Moves a zone to the provider of a DNS account, or back to the DNS servers of the panel (null). */
+export function moveDnsZone(zoneId: string, accountId: string | null, importRecords = true): Promise<void> {
   return call(async () => {
-    const r = await live.request<DnsJobs>("DELETE", `/dns-zones/${zoneId}`);
+    const before = state.dnsZones.find((z) => z.id === zoneId)?.provider?.accountId;
+    const r = await live.request<{ zone: live.ApiDnsZone } & DnsJobs>("POST", `/dns-zones/${zoneId}/move`, { accountId, importRecords });
+    putDnsZone(r.zone);
+    trackZone(zoneId, r.jobs);
+    patchAccountZones(before, -1);
+    patchAccountZones(accountId ?? undefined, 1);
+  });
+}
+
+/** The count of zones of an account changes with the zones. */
+function patchAccountZones(accountId: string | undefined, change: number) {
+  if (!accountId) return;
+  update((d) => {
+    const a = d.dnsAccounts.find((x) => x.id === accountId);
+    if (a) a.zones = Math.max(0, a.zones + change);
+  });
+}
+
+/**
+ * Removes a zone and all its records from each DNS server. A zone at an external provider goes
+ * from the provider too, unless "keepAtProvider".
+ */
+export function deleteDnsZone(zoneId: string, keepAtProvider = false): Promise<void> {
+  return call(async () => {
+    const accountId = state.dnsZones.find((z) => z.id === zoneId)?.provider?.accountId;
+    const r = await live.request<DnsJobs>("DELETE", `/dns-zones/${zoneId}${keepAtProvider ? "?keepAtProvider=1" : ""}`);
+    patchAccountZones(accountId, -1);
     update((d) => {
       const z = d.dnsZones.find((x) => x.id === zoneId);
       if (z) z.status = "removing";
     });
     void Promise.all(r.jobs.map((j) => track(j))).then(() => refresh()).catch(() => undefined);
     if (r.jobs.length === 0) void refresh();
+  });
+}
+
+/** Reads the DNS accounts and the DNS providers again. */
+async function loadDnsAccounts() {
+  const r = await live.request<{ data: live.ApiDnsAccount[]; providers: DnsProvider[] }>("GET", "/dns-accounts");
+  update((d) => {
+    d.dnsAccounts = r.data.map(live.toDnsAccount);
+    d.dnsProviders = r.providers;
+  });
+}
+
+export interface DnsAccountInput {
+  name: string;
+  /** For a new account only. */
+  pluginId?: string;
+  provider?: string;
+  /** A value for each field of the provider. An empty secret keeps its value. */
+  credentials?: Record<string, string>;
+  /** For a new account only. Null: an account of the panel (only an administrator). */
+  customerId?: string | null;
+}
+
+/** Adds an account at an external DNS provider, or changes one. The plugin checks the credentials first. */
+export function saveDnsAccount(input: DnsAccountInput, accountId?: string): Promise<void> {
+  return call(async () => {
+    if (accountId) {
+      await live.request<live.ApiDnsAccount>("PATCH", `/dns-accounts/${accountId}`, { name: input.name.trim(), ...(input.credentials ? { credentials: input.credentials } : {}) });
+    } else {
+      await live.request<live.ApiDnsAccount>("POST", "/dns-accounts", {
+        name: input.name.trim(), pluginId: input.pluginId, provider: input.provider, credentials: input.credentials ?? {}, customerId: input.customerId,
+      });
+    }
+    await loadDnsAccounts();
+  });
+}
+
+/** Removes an account that no zone uses. */
+export function deleteDnsAccount(accountId: string): Promise<void> {
+  return call(async () => {
+    await live.request<void>("DELETE", `/dns-accounts/${accountId}`);
+    update((d) => {
+      d.dnsAccounts = d.dnsAccounts.filter((a) => a.id !== accountId);
+    });
   });
 }
 
@@ -1197,6 +1292,35 @@ export function setDnssec(zoneId: string, enabled: boolean): Promise<void> {
     putDnsZone(r.zone);
     trackZone(zoneId, r.jobs);
   });
+}
+
+/** The result of an import of a zone file, or of its preview. */
+export interface DnsImportResult {
+  dryRun: boolean;
+  /** The records that the panel added, or would add. */
+  added: { line: number; name: string; type: DnsRecordType; value: string; ttl: number; priority?: number; note?: string }[];
+  /** The number of records of the file that the zone has already. */
+  existing: number;
+  /** The lines that the panel does not import, with the reason. */
+  skipped: { line: number; text: string; code: string; reason: string }[];
+}
+
+/** Adds the records of a zone file to a zone. With dryRun, the panel only tells what it would add. */
+export function importDnsZone(zoneId: string, zoneFile: string, dryRun: boolean): Promise<DnsImportResult> {
+  return call(async () => {
+    type Added = Omit<DnsImportResult["added"][number], "priority" | "note"> & { priority: number | null; note: string | null };
+    const r = await live.request<{ dryRun: boolean; added: Added[]; existing: number; skipped: DnsImportResult["skipped"]; zone: live.ApiDnsZone } & DnsJobs>("POST", `/dns-zones/${zoneId}/import`, { zoneFile, dryRun });
+    if (!dryRun) {
+      putDnsZone(r.zone);
+      trackZone(zoneId, r.jobs);
+    }
+    return { dryRun: r.dryRun, existing: r.existing, skipped: r.skipped, added: r.added.map((a) => ({ ...a, priority: a.priority ?? undefined, note: a.note ?? undefined })) };
+  });
+}
+
+/** The records of a zone as a zone file (RFC 1035). */
+export function exportDnsZone(zoneId: string): Promise<string> {
+  return call(async () => (await live.request<{ name: string; zoneFile: string }>("GET", `/dns-zones/${zoneId}/export`)).zoneFile);
 }
 
 /** Asks the public DNS again for the name servers of the domain. */
