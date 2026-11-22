@@ -18,6 +18,7 @@ use App\Models\User;
 use App\Models\Website;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Throwable;
@@ -60,6 +61,15 @@ class Notifier
     /** @param array<string, scalar|null> $values */
     private function queue(NotificationEvent $event, User $user, array $values, ?string $dedupeKey): bool
     {
+        // The copy of the email in the panel has a placeholder for each secret value. The job
+        // gets the values, encrypted, and puts them in the email that it sends.
+        $secrets = [];
+        foreach ($event->secretVariables() as $name) {
+            if (array_key_exists($name, $values)) {
+                $secrets[self::placeholder($name)] = (string) $values[$name];
+                $values[$name] = self::placeholder($name);
+            }
+        }
         if ($dedupeKey !== null && NotificationDelivery::where('user_id', $user->id)->where('dedupe_key', $dedupeKey)->exists()) {
             return false;
         }
@@ -90,10 +100,16 @@ class Notifier
             return false;
         }
         if ($server) {
-            SendEmailNotification::dispatch($delivery->id)->afterCommit();
+            SendEmailNotification::dispatch($delivery->id, $secrets ? Crypt::encryptString((string) json_encode($secrets)) : null)->afterCommit();
         }
 
         return true;
+    }
+
+    /** The text in the copy of an email in the place of a secret value. */
+    public static function placeholder(string $name): string
+    {
+        return "[{$name}: only in the email]";
     }
 
     /** The users of a customer, and for a customer of a reseller, the users of the reseller. */
@@ -181,6 +197,15 @@ class Notifier
     public function usageAlert(Customer $customer, array $values, string $key): int
     {
         return $this->send(NotificationEvent::UsageAlert, self::usersOf($customer), ['account' => $customer->name] + $values, $key);
+    }
+
+    /**
+     * The link to set a new password. The user gets the email also when they turned off the
+     * other emails. The copy in the panel does not have the link.
+     */
+    public function passwordReset(User $user, string $url, int $minutes, string $ip): int
+    {
+        return $this->send(NotificationEvent::PasswordReset, [$user], ['resetUrl' => $url, 'minutes' => (string) $minutes, 'ip' => $ip]);
     }
 
     public function serverOffline(Server $server): void

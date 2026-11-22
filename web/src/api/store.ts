@@ -234,6 +234,16 @@ export function signIn(email: string, password: string, totp = "") {
   });
 }
 
+/** Asks for an email with a link to set a new password. */
+export function requestPasswordReset(email: string) {
+  return call(() => live.requestPasswordReset(email));
+}
+
+/** Sets a new password with the code from the link in the email. The user then signs in. */
+export function resetPassword(email: string, token: string, password: string, confirmation: string) {
+  return call(() => live.resetPassword(email, token, password, confirmation));
+}
+
 export function signOut() {
   live.signOut();
   session++;

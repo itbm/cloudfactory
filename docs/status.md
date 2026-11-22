@@ -12,6 +12,7 @@ shows what this repository has now.
 | One console for each role: an administrator console, a reseller console and an owner console, each with its own menu and first page | `web/src/lib/roles.ts`, `web/src/App.tsx` |
 | Setup checklist for the administrator, with the effect of each open item | `api/app/Http/Controllers/Api/SetupController.php`, `web/src/pages/SetupPage.tsx` |
 | Account page for owners and resellers: plan, use, provider and users | `api/app/Http/Controllers/Api/AccountController.php`, `web/src/pages/AccountPage.tsx` |
+| Password reset by email: a link that works one time for 60 minutes, to the panel domain of the brand of the user | `api/app/Http/Controllers/Api/PasswordResetController.php`, `web/src/pages/PasswordResetPages.tsx` |
 | New image tags from the registry: the panel checks each hour and accepts a tag only with a good signature (FR-1110) | `api/app/Services/ImageUpdateChecker.php` |
 | Host CPU, memory and disk use in the agent report | `agent/internal/status` |
 | CPU, memory and disk use of each website in the agent report | `agent/internal/actions/observe.go` |
@@ -54,7 +55,7 @@ shows what this repository has now.
 | Deploys | A deploy starts by hand or with a webhook. The panel does not check the signature that a Git host puts on a webhook: the secret is the address. The panel has no deploy on a schedule, and does not go back automatically after the switch. The build runs in the runtime image of the website. The PHP images have Git and Composer but not Node.js: to build front-end files with npm, use a Node.js website or build the files before the push. A website with a custom image cannot deploy from Git. |
 | Staging copy | A staging copy gets the files only. It keeps the database settings of the original website, so it uses the live databases. |
 | Restore of a full website | A restore of the full website restores the files only. Restore each database separately. |
-| Email from the panel | The panel sends no email. A new user gets a temporary password from the person who makes the user. |
+| Email from the panel | A new user gets a temporary password from the person who makes the user, not an email with a link. A user who lost the authenticator app cannot reset TOTP by email: an administrator or the reseller resets it. |
 | Known security limits | Refer to [security.md](security.md#known-limits): image tags in the signature policy, service images between releases, and one set of object storage credentials for all servers. |
 | Disk limits | The agent applies the disk limit of each website and each database server with a user quota. The installer turns the user quotas on for an ext4 file system. For XFS, you turn them on. On a file system with no user quotas, each new website and each new database server with a disk limit gets a disk image, which needs loop devices. A website that has a directory on such a file system keeps it, and has no disk limit: the agent does not move its files into a disk image. A server with no user quotas and no loop devices has no disk limits. Refer to [installation.md](installation.md#disk-quotas). |
 | gVisor benchmark | Release 0.1 must measure websites, MariaDB and DNS in gVisor (R-08). This is not done. |
