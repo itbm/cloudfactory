@@ -61,6 +61,12 @@ class User extends Authenticatable
         return $this->hasMany(Passkey::class);
     }
 
+    /** Single sign-on: the accounts of identity providers that the user connected. */
+    public function identities(): HasMany
+    {
+        return $this->hasMany(UserIdentity::class);
+    }
+
     /** The user of a plugin. Nobody signs in as this user. Only the token of the plugin uses it. */
     public function isPlugin(): bool
     {

@@ -508,7 +508,8 @@ directory with mode 0700:
 
 ## Users and API tokens
 
-- Users sign in with a password and a TOTP code, or with a passkey. An administrator and a
+- Users sign in with a password and a TOTP code, with a passkey, or with a single sign-on
+  provider. An administrator and a
   reseller must have TOTP. A website owner can turn it on. A TOTP code works only one
   time. The panel examines the password first, and asks for the code only when the password is
   correct and TOTP is on for the user. Thus a user with no TOTP does not see the code step, and
@@ -572,6 +573,53 @@ directory with mode 0700:
     the user can still sign in with a passkey.
   - An administrator or a reseller must still set up TOTP. A passkey does not replace this
     rule, because the panel asks for TOTP to confirm changes to administrators.
+- An administrator can add OpenID Connect and SAML 2.0 identity providers in **Settings >
+  Single sign-on**. Then the sign-in page shows the button **Sign in with NAME** for each
+  provider that is on. Obey these rules:
+  - The panel signs in only a user who connected the account of the provider in **Settings**.
+    The panel does not make users: an administrator or a reseller makes the user first.
+  - An administrator can let the panel connect the user with the same email at the first
+    sign-in (**Connect users by email**). Then the panel accepts only an email that the
+    provider verified (`email_verified` in OpenID Connect), and only for the email domains in
+    the list of the provider. A SAML answer has no verified flag, so the panel trusts the
+    emails of a SAML provider when this setting is on. Turn it on only when the provider
+    controls all the email addresses of these domains. Otherwise, a person who gets an email
+    address of the domain at the provider can sign in as the user with that email.
+  - To connect or disconnect an account, the user gives the password and, when TOTP is on, a
+    code. Only a sign-in session can do this, not an API token. One account of a provider
+    connects to one user only.
+  - A sign-in with a provider does not replace TOTP. When TOTP is on for the user, the panel
+    asks for a code after the provider signs the user in. After 5 wrong codes, the sign-in
+    stops. The wrong codes count for the sign-in lock of the account.
+  - Single sign-on works only on the panel domain. It does not work on the panel domain of a
+    reseller brand, on the address of a website or on an IP address. The provider sends the
+    browser back only to the addresses that the administrator registered.
+  - OpenID Connect: the panel uses the authorization code flow with PKCE (`S256`), a state
+    and a nonce. It reads the discovery document of the issuer, and the issuer in the
+    document must be the same. The panel verifies the signature of the ID token with the
+    keys of the provider, and examines the issuer, the audience, the expiry time and the
+    nonce. It accepts only `RS256`, `RS384`, `RS512`, `PS256`, `PS384`, `PS512`, `ES256`,
+    `ES384` and `EdDSA`. It refuses `HS256` and `none`. Each address of the provider must
+    use HTTPS.
+  - SAML: the panel sends the request with the HTTP-Redirect binding, and the provider posts
+    the answer. The answer or its assertion must have a valid signature of the certificate
+    of the provider. The panel examines the issuer, the destination, the audience, the time
+    and the ID of the request (`InResponseTo`). It refuses an answer that it did not ask for
+    (a sign-in that starts at the provider), an encrypted assertion and a transient NameID.
+    The panel does not sign its requests.
+  - The panel addresses for the providers are the same for all providers. The state of the
+    sign-in identifies the provider. The state works one time only, for 10 minutes. A cookie
+    (`HttpOnly`, path `/api/v1/auth/sso`) binds the state to the browser that started the
+    sign-in. Thus a person cannot sign a different browser in to an account of that person.
+  - After the sign-in, the browser gets a ticket after `#` in the address. The browser does
+    not send it to a server, so no access log has it. The ticket works one time only, for
+    5 minutes.
+  - The panel keeps the client secret encrypted with `APP_KEY`, and does not show it again.
+  - Each sign-in, each connection and each change of a provider is an audit event. A new
+    device gets the email **Sign-in from a new device**.
+  - A suspended user cannot sign in with a provider. A password reset by an administrator or
+    a reseller disconnects all accounts of the user. A removal of a provider disconnects all
+    its accounts. **Sign out** signs the user out of the panel, not out of the provider.
 - An administrator or a reseller with no TOTP can sign in, but the API then accepts only the
   account data, the password change, the TOTP setup and the sign-out (the answer has the code
   `totp_setup_required`). The web panel shows only the page **Set up an authenticator app**.
@@ -588,12 +636,12 @@ directory with mode 0700:
   users of its own customers. An owner sees the list of its users only. Only a sign-in session
   of an administrator can make, reset or delete an administrator. An API token cannot. A user
   cannot reset or delete its own account in this way. A password reset signs the user out,
-  deletes the API tokens and the passkeys of the user, and removes a sign-in lock. Each of these changes is an
-  audit event.
+  deletes the API tokens and the passkeys of the user, disconnects the single sign-on
+  accounts of the user, and removes a sign-in lock. Each of these changes is an audit event.
 - On the panel server, root can run `cf-agent panel reset-password EMAIL` and
   `cf-agent panel unlock EMAIL`. This is the procedure when no administrator can sign in.
-- In **Settings**, a user changes the password, turns TOTP on or off, and adds or removes
-  passkeys. Each change needs the
+- In **Settings**, a user changes the password, turns TOTP on or off, adds or removes
+  passkeys, and connects or disconnects single sign-on accounts. Each change needs the
   current password and, when TOTP is on, a code. Only a sign-in session can do this, not an API
   token. A password change signs out the other sessions of the user and deletes the API
   tokens of the user. A new password has 12 or more characters.

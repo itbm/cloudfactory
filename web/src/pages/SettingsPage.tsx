@@ -9,6 +9,7 @@ import { auditCsv } from "../lib/csv";
 import { daysUntil, longDate, relativeTime, shortDate } from "../lib/format";
 import { EmailDelivery, NotificationSettings } from "../features/Notifications";
 import { PasskeysCard } from "../features/Passkeys";
+import { IdentityProviders, SignOnCard } from "../features/SingleSignOn";
 import { DefaultBrandSettings } from "./BrandPage";
 import { CopyField } from "./website/AccessTab";
 
@@ -28,7 +29,7 @@ export function SettingsPage() {
     ...(sendsEmail ? [{ id: "email", label: "Email delivery" }] : []),
     { id: "tokens", label: "API tokens" },
     { id: "audit", label: "Audit log" },
-    ...(isAdmin ? [{ id: "panel", label: "Panel certificate" }, { id: "brand", label: "Brand" }] : []),
+    ...(isAdmin ? [{ id: "sso", label: "Single sign-on" }, { id: "panel", label: "Panel certificate" }, { id: "brand", label: "Brand" }] : []),
   ];
   const tab = tabs.some((t) => t.id === asked) ? asked! : "security";
   const setTab = (id: string) => navigate(id === "security" ? "/settings" : `/settings/${id}`);
@@ -43,6 +44,7 @@ export function SettingsPage() {
         {tab === "email" && <EmailDelivery />}
         {tab === "tokens" && <Tokens />}
         {tab === "audit" && <Audit />}
+        {tab === "sso" && <IdentityProviders />}
         {tab === "panel" && <PanelCertificateSettings />}
         {tab === "brand" && <DefaultBrandSettings />}
       </main>
@@ -50,7 +52,7 @@ export function SettingsPage() {
   );
 }
 
-/** FR-103 and R-01: the password, TOTP and the passkeys. */
+/** FR-103 and R-01: the password, TOTP, the passkeys and the accounts for single sign-on. */
 function Security() {
   const state = useStore();
   const [totpMode, setTotpMode] = useState<"on" | "off" | null>(null);
@@ -66,7 +68,10 @@ function Security() {
   };
   return (
     <div className="grid-2">
-      <PasswordCard />
+      <div className="stack">
+        <PasswordCard />
+        <SignOnCard />
+      </div>
       <div className="stack">
         <Card title="Authenticator app (TOTP)">
           <div className="card-body">

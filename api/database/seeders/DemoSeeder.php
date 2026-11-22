@@ -15,6 +15,7 @@ use App\Models\DatabaseServer;
 use App\Models\DnsRecord;
 use App\Models\DnsZone;
 use App\Models\GitSource;
+use App\Models\IdentityProvider;
 use App\Models\Image;
 use App\Models\MailAlias;
 use App\Models\Mailbox;
@@ -120,6 +121,7 @@ class DemoSeeder extends Seeder
         $this->websites();
         $this->brand();
         $this->passkeys();
+        $this->singleSignOn();
         $this->dns();
         $this->databases();
         $this->usageHistory();
@@ -334,6 +336,33 @@ class DemoSeeder extends Seeder
         $add('admin@example.com', 'MacBook Pro', $panel, true, now()->subMinutes(25), 90);
         // A passkey works only on its own domain: this one is for the panel domain of the brand.
         $add('reseller@example.com', 'Pixel 9', Branding::panelDomains()[0] ?? $panel, true, now()->subDays(2), 30);
+    }
+
+    /**
+     * Single sign-on: an OpenID Connect provider that connects the users of example.com by
+     * email, and a SAML provider that is off. The demonstration panel cannot reach them.
+     */
+    private function singleSignOn(): void
+    {
+        $google = IdentityProvider::create([
+            'name' => 'Google Workspace', 'protocol' => IdentityProvider::OIDC, 'issuer' => 'https://accounts.google.com',
+            'client_id' => '123456789012-demo.apps.googleusercontent.com', 'client_secret' => 'demo-secret',
+            'link_by_email' => true, 'email_domains' => ['example.com'],
+        ]);
+        $key = openssl_pkey_new(['private_key_bits' => 2048, 'private_key_type' => OPENSSL_KEYTYPE_RSA]);
+        openssl_x509_export(openssl_csr_sign(openssl_csr_new(['commonName' => 'Microsoft Azure Federated SSO Certificate'], $key), null, $key, 1095), $certificate);
+        IdentityProvider::create([
+            'name' => 'Microsoft Entra ID', 'protocol' => IdentityProvider::SAML, 'enabled' => false,
+            'entity_id' => 'https://sts.windows.net/0b5c1e5e-demo-4e0a-9d8e-000000000000/',
+            'sso_url' => 'https://login.microsoftonline.com/0b5c1e5e-demo-4e0a-9d8e-000000000000/saml2',
+            'certificate' => $certificate, 'link_by_email' => false, 'email_domains' => [],
+        ]);
+        // The owner signed in with the provider, and the administrator connected the account.
+        foreach (['owner@example.com' => now()->subDays(2), 'admin@example.com' => null] as $email => $used) {
+            User::where('email', $email)->firstOrFail()->identities()->create([
+                'identity_provider_id' => $google->id, 'subject' => '1'.substr(hash('sha256', $email), 0, 20), 'email' => $email, 'last_used_at' => $used,
+            ]);
+        }
     }
 
     private function images(): void

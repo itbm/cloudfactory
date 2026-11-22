@@ -61,7 +61,7 @@ describe("passkeys", () => {
 
   it("shows no passkey button when passkeys do not work on the domain or in the browser", async () => {
     const api = panelApi("owner");
-    api.on("GET /auth/methods", () => ({ passwordReset: true, passkeys: false }));
+    api.on("GET /auth/methods", () => ({ passwordReset: true, passkeys: false, providers: [] }));
     render(<MemoryRouter initialEntries={["/login"]}><App /></MemoryRouter>);
     await screen.findByRole("link", { name: "Forgot your password?" });
     expect(screen.queryByRole("button", { name: "Sign in with a passkey" })).toBeNull();

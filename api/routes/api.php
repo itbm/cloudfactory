@@ -17,6 +17,7 @@ use App\Http\Controllers\Api\DeployController;
 use App\Http\Controllers\Api\DnsZoneController;
 use App\Http\Controllers\Api\DomainController;
 use App\Http\Controllers\Api\FileController;
+use App\Http\Controllers\Api\IdentityProviderController;
 use App\Http\Controllers\Api\ImageController;
 use App\Http\Controllers\Api\JobController;
 use App\Http\Controllers\Api\LogController;
@@ -40,6 +41,7 @@ use App\Http\Controllers\Api\RuntimeController;
 use App\Http\Controllers\Api\ServerController;
 use App\Http\Controllers\Api\SetupController;
 use App\Http\Controllers\Api\SftpController;
+use App\Http\Controllers\Api\SsoController;
 use App\Http\Controllers\Api\TrustedKeyController;
 use App\Http\Controllers\Api\UsageController;
 use App\Http\Controllers\Api\UserController;
@@ -63,6 +65,12 @@ Route::prefix('v1')->group(function () {
     // FR-103: sign in with a passkey, in place of the password and the TOTP code.
     Route::post('auth/passkey/options', [PasskeyController::class, 'signInOptions'])->middleware('throttle:30,1,post-auth-passkey-options');
     Route::post('auth/passkey', [PasskeyController::class, 'signIn'])->middleware('throttle:10,1,post-auth-passkey');
+    // Single sign-on: the browser goes to the identity provider and comes back (SsoController).
+    Route::get('auth/sso/oidc/callback', [SsoController::class, 'callback'])->middleware('throttle:30,1,get-auth-sso-oidc-callback');
+    Route::post('auth/sso/saml/acs', [SsoController::class, 'acs'])->middleware('throttle:30,1,post-auth-sso-saml-acs');
+    Route::get('auth/sso/saml/metadata', [SsoController::class, 'metadata'])->middleware('throttle:60,1,get-auth-sso-saml-metadata');
+    Route::get('auth/sso/{id}', [SsoController::class, 'start'])->middleware('throttle:30,1,get-auth-sso-x');
+    Route::post('auth/sso/complete', [SsoController::class, 'complete'])->middleware('throttle:10,1,post-auth-sso-complete');
     // White label: the brand of the sign-in page, for the domain of the request.
     Route::get('brand', [BrandController::class, 'show'])->middleware('throttle:60,1,get-brand');
     // The webhook of a website: a Git host calls it after a push. The token in the address is
@@ -83,8 +91,12 @@ Route::prefix('v1')->group(function () {
             Route::post('me/passkeys', [PasskeyController::class, 'store']);
             Route::patch('me/passkeys/{id}', [PasskeyController::class, 'update']);
             Route::delete('me/passkeys/{id}', [PasskeyController::class, 'destroy']);
+            Route::post('me/identities/{id}', [SsoController::class, 'connect']);
+            Route::delete('me/identities/{id}', [SsoController::class, 'disconnect']);
         });
         Route::get('me/passkeys', [PasskeyController::class, 'index']);
+        // Single sign-on: the accounts of identity providers that the user connected.
+        Route::get('me/identities', [SsoController::class, 'identities']);
         Route::middleware('scope:tokens')->group(function () {
             Route::get('tokens', [AuthController::class, 'tokens']);
             Route::post('tokens', [AuthController::class, 'createToken'])->middleware('throttle:10,1,post-tokens');
@@ -284,6 +296,13 @@ Route::prefix('v1')->group(function () {
             Route::post('users', [UserController::class, 'store'])->middleware('throttle:30,1,post-users');
             Route::post('users/{id}/reset-password', [UserController::class, 'resetPassword'])->whereNumber('id')->middleware('throttle:30,1,post-users-x-reset-password');
             Route::delete('users/{id}', [UserController::class, 'destroy'])->whereNumber('id');
+        });
+        // Single sign-on: the identity providers of the panel (IdentityProviderController).
+        Route::middleware(['admin', 'scope:users'])->group(function () {
+            Route::get('identity-providers', [IdentityProviderController::class, 'index']);
+            Route::post('identity-providers', [IdentityProviderController::class, 'store'])->middleware('throttle:10,1,post-identity-providers');
+            Route::put('identity-providers/{id}', [IdentityProviderController::class, 'update'])->middleware('throttle:10,1,put-identity-providers-x');
+            Route::delete('identity-providers/{id}', [IdentityProviderController::class, 'destroy']);
         });
 
         Route::get('audit', [AuditController::class, 'index'])->middleware('scope:audit');

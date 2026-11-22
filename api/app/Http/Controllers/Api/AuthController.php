@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Middleware\EnsureActive;
 use App\Models\AuditEntry;
+use App\Models\IdentityProvider;
 use App\Models\User;
 use App\Services\Audit;
 use App\Services\Branding;
@@ -13,6 +14,7 @@ use App\Services\Notifications\Devices;
 use App\Services\Notifications\Notifier;
 use App\Services\Notifications\Senders;
 use App\Services\Passkeys;
+use App\Services\Sso\SingleSignOn;
 use App\Services\Totp;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -128,6 +130,9 @@ class AuthController extends Controller
             'passwordReset' => Senders::server($reseller) !== null,
             // FR-103: a passkey works only on a panel domain (Passkeys::rpIds).
             'passkeys' => Passkeys::rpIdFor($request->getHost()) !== null,
+            // Single sign-on works only on the panel domain (SingleSignOn::baseUrl).
+            'providers' => SingleSignOn::baseUrl($request) === null ? [] : IdentityProvider::where('enabled', true)->orderBy('name')->get(['id', 'name'])
+                ->map(fn (IdentityProvider $p) => ['id' => $p->id, 'name' => $p->name])->all(),
         ])->header('Cache-Control', 'no-cache');
     }
 
