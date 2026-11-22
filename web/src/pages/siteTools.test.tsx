@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it } from "vitest";
 import { App } from "../App";
-import type { CronJob, Deploy } from "../api/types";
+import type { CronJob, Deploy, LogEntry } from "../api/types";
 import { toBase64 } from "../features/FileManager";
 import { apiJob, reset, signedIn, website, type PanelApi } from "../test/panelApi";
 
@@ -82,12 +82,63 @@ describe("the file manager", () => {
 });
 
 describe("the logs of a website", () => {
-  it("shows the log lines and filters them", async () => {
+  const request: LogEntry = {
+    at: "2026-11-14T09:58:52.757Z", source: "access", text: "",
+    access: { client: "198.51.100.250", method: "POST", host: "shop.acme.example.com", uri: "/wp-login.php", proto: "HTTP/2.0", status: 404, sizeBytes: 548, durationMs: 1.2, userAgent: "zgrab", referer: "" },
+  };
+  const line: LogEntry = { at: "2026-11-14T09:58:52.700Z", source: "error", text: "PHP Warning:  Undefined array key", access: null };
+
+  it("shows the requests, the lines and the summary of the search", async () => {
     await open("shop.acme.example.com", "logs");
     const view = await screen.findByLabelText("Log lines");
-    await waitFor(() => expect(view.querySelectorAll("div").length).toBeGreaterThan(5));
-    fireEvent.change(screen.getByLabelText("Filter"), { target: { value: "no line has this text" } });
-    expect(view.textContent).toBe("No lines match the filter.");
+    await waitFor(() => expect(view.querySelectorAll(".log-row")).toHaveLength(50));
+    const summary = screen.getByRole("region", { name: "Summary of the search" });
+    expect(summary.textContent).toContain("Requests");
+    expect(within(summary).getByRole("img").getAttribute("aria-label")).toMatch(/^Status codes: 2xx \d/);
+    expect(screen.getByRole("button", { name: "Load older entries" })).toBeTruthy();
+  });
+
+  it("sends the search and the filters to the API, and loads older entries", async () => {
+    const { api, id } = await open("shop.acme.example.com", "logs");
+    await screen.findByRole("button", { name: "Load older entries" });
+    const paths: string[] = [];
+    api.on(`GET /websites/${id}/logs?*`, (_body, path) => {
+      paths.push(path);
+      const first = !path.includes("cursor=");
+      return { entries: first ? [request] : [line], next: first ? "page-2" : null, summary: null };
+    });
+    const base = `/websites/${id}/logs`;
+
+    fireEvent.change(screen.getByLabelText("Search the logs"), { target: { value: " wp-login " } });
+    fireEvent.change(screen.getByLabelText("Client"), { target: { value: "198.51.100.0/24" } });
+    fireEvent.click(screen.getByRole("button", { name: "Search" }));
+    await waitFor(() => expect(paths.at(-1)).toBe(`${base}?q=wp-login&client=198.51.100.0%2F24&limit=50&summary=1`));
+    fireEvent.click(screen.getByRole("button", { name: "4xx" }));
+    fireEvent.change(screen.getByLabelText("Method"), { target: { value: "POST" } });
+    fireEvent.click(screen.getByRole("button", { name: "Output" }));
+    await waitFor(() => expect(paths.at(-1)).toBe(`${base}?sources=access%2Cerror&q=wp-login&status=4xx&method=POST&client=198.51.100.0%2F24&limit=50&summary=1`));
+    expect(screen.getByText(/filters apply only to requests/)).toBeTruthy();
+
+    const view = screen.getByLabelText("Log lines");
+    await waitFor(() => expect(view.textContent).toContain("/wp-login.php"));
+    fireEvent.click(screen.getByRole("button", { name: "Load older entries" }));
+    await waitFor(() => expect(view.querySelectorAll(".log-row")).toHaveLength(2));
+    expect(paths.at(-1)).toBe(`${base}?sources=access%2Cerror&q=wp-login&status=4xx&method=POST&client=198.51.100.0%2F24&cursor=page-2&limit=50`);
+    expect(view.querySelector(".log-row.err")?.textContent).toContain("PHP Warning");
+    expect(screen.queryByRole("button", { name: "Load older entries" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
+    await waitFor(() => expect(paths.at(-1)).toBe(`${base}?limit=50&summary=1`));
+  });
+
+  it("filters by a top client of the summary, and shows the error of the API", async () => {
+    const { api, id } = await open("shop.acme.example.com", "logs");
+    const top = (await screen.findAllByRole("button", { name: /^Show the requests of / }))[0];
+    const client = top.getAttribute("aria-label")!.replace("Show the requests of ", "");
+    api.on(`GET /websites/${id}/logs?*`, () => [422, { message: "Enter an IP address or a network, for example 203.0.113.7 or 203.0.113.0/24.", errors: { client: ["Enter an IP address or a network."] } }]);
+    fireEvent.click(top);
+    expect((screen.getByLabelText("Client") as HTMLInputElement).value).toBe(client);
+    expect((await screen.findByRole("alert")).textContent).toContain("Enter an IP address");
   });
 });
 

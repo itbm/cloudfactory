@@ -147,9 +147,12 @@ class DemoLogs
             'client' => $scanner ? '198.51.100.250' : self::pick(['203.0.113.7' => 9, '198.51.100.23' => 6, '192.0.2.44' => 4, '2001:db8:4e::7a' => 4, '203.0.113.88' => 3, '192.0.2.130' => 2, '2001:db8:91::12' => 2, '198.51.100.61' => 1]),
             'method' => $method, 'host' => $host, 'uri' => $path, 'proto' => self::pick(['HTTP/2.0' => 7, 'HTTP/1.1' => 2, 'HTTP/3.0' => 1]), 'status' => $status,
             'sizeBytes' => match ($status) {
-                304, 303, 301 => 0, 404 => 548, default => $path === '/css/site.css' ? 2416 : mt_rand(900, 48000)
+                304, 303, 301 => 0, 404 => 548, 500 => mt_rand(900, 1400), default => $path === '/css/site.css' ? 2416 : mt_rand(900, 48000)
             },
-            'durationSeconds' => $status === 500 ? mt_rand(2500, 5000) / 1000 : mt_rand(1, 400000) / 1000000,
+            // Most answers are fast. A failed request waits for the stock service.
+            'durationSeconds' => match (true) {
+                $status === 500 => mt_rand(2500, 5000) / 1000, mt_rand(0, 9) === 0 => mt_rand(300, 900) / 1000, default => mt_rand(3000, 120000) / 1000000
+            },
             'userAgent' => $scanner ? 'Mozilla/5.0 zgrab/0.x' : self::pick([
                 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:145.0) Gecko/20100101 Firefox/145.0' => 4,
                 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36' => 5,
@@ -188,20 +191,23 @@ class DemoLogs
      */
     private static function serverRequest(Server $server, Carbon $at): array
     {
-        $panel = parse_url((string) config('app.url'), PHP_URL_HOST) ?: 'panel.example.com';
+        // The host name of the panel, or an example name for a panel on an IP address.
+        $panel = (string) parse_url((string) config('app.url'), PHP_URL_HOST);
+        $panel = $panel === '' || $panel === 'localhost' || filter_var($panel, FILTER_VALIDATE_IP) !== false ? 'panel.example.com' : $panel;
         $mail = $server->mail_hostname ?? 'mail.example.com';
         [$host, $uri, $method] = explode(' ', self::pick([
             "{$panel} /api/v1/websites GET" => 6, "{$panel} /api/v1/jobs GET" => 8, "{$panel} /api/v1/me GET" => 3, "{$panel} /api/v1/auth/login POST" => 2,
             "{$panel} / GET" => 3, "{$mail} / GET" => 3, "{$mail} /.well-known/jmap GET" => 4, "{$panel} /wp-admin/ GET" => 1,
         ]));
 
+        $status = match (true) {
+            $uri === '/wp-admin/' => 404, $uri === '/api/v1/auth/login' && mt_rand(0, 3) === 0 => 422, default => 200
+        };
+
         return [self::access($at, [
-            'client' => self::pick(['203.0.113.7' => 6, '192.0.2.44' => 3, '2001:db8:4e::7a' => 2, '198.51.100.250' => 1]),
-            'method' => $method, 'host' => $host, 'uri' => $uri, 'proto' => 'HTTP/2.0',
-            'status' => match (true) {
-                $uri === '/wp-admin/' => 404, $uri === '/api/v1/auth/login' && mt_rand(0, 3) === 0 => 422, default => 200
-            },
-            'sizeBytes' => mt_rand(400, 90000), 'durationSeconds' => mt_rand(1000, 250000) / 1000000,
+            'client' => $status === 404 ? '198.51.100.250' : self::pick(['203.0.113.7' => 6, '192.0.2.44' => 3, '2001:db8:4e::7a' => 2]),
+            'method' => $method, 'host' => $host, 'uri' => $uri, 'proto' => 'HTTP/2.0', 'status' => $status,
+            'sizeBytes' => $status === 200 ? mt_rand(400, 90000) : mt_rand(120, 600), 'durationSeconds' => mt_rand(1000, 250000) / 1000000,
             'userAgent' => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:145.0) Gecko/20100101 Firefox/145.0', 'referer' => '',
         ])];
     }
