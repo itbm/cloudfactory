@@ -2,6 +2,8 @@
 
 namespace App\Providers;
 
+use App\Services\Certificates\DnsProviders;
+use App\Services\Certificates\PanelDns;
 use App\Services\Mesh;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Database\Events\TransactionRolledBack;
@@ -17,7 +19,9 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        // The DNS services of the DNS validation of certificates. A provider for a DNS service
+        // outside the panel adds itself with the same tag (ChallengeDns).
+        $this->app->tag([PanelDns::class], DnsProviders::TAG);
     }
 
     /**
@@ -38,6 +42,9 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('customer-changes', fn (Request $request) => self::forCustomer($request, Limit::perHour(60), 'customer-changes'));
         // Each request of the file manager and of the logs starts a command on the server.
         RateLimiter::for('site-tools', fn (Request $request) => Limit::perMinute(300)->by('site-tools:'.($request->user()?->id ?? $request->ip())));
+        // Each new certificate and each renewal starts an order at the certificate authority,
+        // and Let's Encrypt limits the orders of an account.
+        RateLimiter::for('certificate-changes', fn (Request $request) => self::forCustomer($request, Limit::perHour(20), 'certificate-changes'));
         RateLimiter::for('domain-checks', fn (Request $request) => self::forCustomer($request, Limit::perMinute(10), 'domain-checks'));
         Event::listen(TransactionRolledBack::class, fn () => Mesh::forgetPendingRefresh());
     }

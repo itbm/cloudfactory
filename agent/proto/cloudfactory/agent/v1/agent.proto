@@ -67,6 +67,12 @@ service AgentService {
   // agent checks the signature of each pack, saves the packs, lets Podman pull the images of
   // each pack only with a signature of its publisher, and loads the runtimes of the packs.
   rpc SetPacks(SetPacksRequest) returns (JobAccepted);
+  // Sets the certificates from the panel on the edge proxy of the server: the certificates
+  // that a customer uploaded, and the certificates that the panel got from an ACME CA with
+  // DNS validation. The list is complete. A certificate that the edge proxy has and that is not
+  // in the list goes. Each host of a certificate then uses that certificate, and the edge proxy
+  // does not get a certificate for the host itself.
+  rpc SetCertificates(SetCertificatesRequest) returns (JobAccepted);
   // The import of an account from a different hosting panel, for example cPanel or
   // DirectAdmin (docs/imports.md). The worker of the agent keeps the backup archive in its own
   // directory and reads it as a stream. It never extracts the archive as root: the Unix user
@@ -577,6 +583,26 @@ message SetPacksRequest {
   string job_id = 1;
   // All packs of the panel. A pack that the server has and that is not in the list goes.
   repeated Pack packs = 2;
+}
+
+message SetCertificatesRequest {
+  string job_id = 1;
+  // All certificates from the panel for this server.
+  repeated EdgeCertificate certificates = 2;
+}
+
+// One certificate from the panel and the hosts of this server that use it.
+message EdgeCertificate {
+  // The ID of the certificate in the panel.
+  string id = 1;
+  // The domains of the websites of this server that use the certificate. The certificate is
+  // valid for each of them.
+  repeated string hosts = 2;
+  // The certificate chain in PEM format: the certificate first, then the intermediate
+  // certificates.
+  string certificate_pem = 3;
+  // The private key of the certificate in PEM format.
+  string private_key_pem = 4;
 }
 
 // One pack: its manifest, its signature and the public key of its publisher.

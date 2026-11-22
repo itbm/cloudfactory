@@ -282,6 +282,22 @@ The product specification, section 6.4, gives the requirements.
   certificate order. A customer can add 30 domains in one hour and start 10 domain checks in
   one minute. An administrator has no such limit.
 
+## Certificates of the customers
+
+- The panel keeps the private key of each certificate encrypted with the application key. The
+  API never gives a private key, also not to an administrator. Refer to
+  [certificates.md](certificates.md#security).
+- The agent gets the private keys only in the `SetCertificates` job. `AgentClient` adds them
+  when it sends the job, so the job record has no keys.
+- The panel refuses a certificate that is valid for a host name of the panel, of a server, of
+  a plugin, of Adminer or of a mail server, or for the panel domain of a reseller.
+- The panel does not send a certificate to a server when it is valid for a domain on that
+  server that does not use a certificate from the panel. Thus the edge proxy cannot send the
+  certificate of one customer for the domain of a different customer.
+- A customer can have 20 certificates (`CF_CERTIFICATES_PER_CUSTOMER`), and can make 20
+  uploads, replacements, orders and renewals in one hour. The DNS validation adds TXT records
+  only in the zones of the customer.
+
 ## DNS zones
 
 - A zone belongs to one customer. A user can see and change only the zones of the customers
