@@ -103,6 +103,39 @@ The product specification, section 6.4, gives the requirements.
 - The panel records each change of a file, a cron job and a Git source in the audit log.
   It does not record the content of a file.
 
+## WordPress
+
+- The agent runs WP-CLI in the gVisor container of the website, as the website user. WP-CLI
+  thus has the same rights as the code of the website. The root helper has no new command and
+  no new operation for WordPress.
+- No shell is between the panel and WP-CLI. The agent gives each argument to `podman exec`
+  as it is. The API and the agent refuse control characters in an argument
+  (`wpCliArgument` in `schema/input-rules.json`) and more than 40 arguments.
+- The passwords of a new site go to WP-CLI on standard input (`--prompt`), not in the
+  arguments of a process. The panel encrypts the install request and the payload of the job
+  in its database. It removes the install request when it sends the job, and removes the
+  passwords and the WP-CLI arguments from the job when the job ends. The API gives the
+  password of the first administrator one time.
+- The history of the WP-CLI commands and the audit log have each command with `***` in place
+  of the value of a password option, for example `--user_pass`. The command `wp eval` and
+  other commands can still have a secret in a different argument. The history is visible to
+  the users of the customer.
+- A user with access to the website can run each WP-CLI command, for example `wp eval` or
+  `wp plugin install`. This gives the user no new rights: the user can upload the same code
+  with SFTP.
+- The restore point is in the home directory of the website user, outside the directory of
+  the website. The website, its cron jobs and SFTP see only the directory of the website,
+  so they cannot read or change the restore point. It has a dump of the database with the
+  data of the site: the files have the mode `0600`.
+- WordPress does not update itself: the panel writes `AUTOMATIC_UPDATER_DISABLED` to
+  `wp-config.php`. The panel does each update with a restore point and a health check, in
+  the maintenance window of the server or when a user starts it.
+- A token needs the scope `websites:write` for WordPress, and also `databases:write` to
+  install WordPress, because the install makes a database. For a suspended customer, the
+  panel refuses each WordPress change.
+- The panel records each install, check, update, roll back, change of the settings and
+  WP-CLI command in the audit log.
+
 ## Databases
 
 - Each customer has its own database servers on a server. A database server is one

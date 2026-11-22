@@ -26,7 +26,7 @@ func init() {
 		"database-server", "db-servers", "databases", "database", "database-users", "database-user", "db-users", "dns", "networks",
 		"network", "backups", "backup", "jobs", "job", "servers", "server", "mesh", "panel-certificate", "images", "image", "sftp",
 		"customers", "customer", "users", "user", "plans", "plan", "audit", "account", "rollouts", "rollout", "tokens", "token",
-		"files", "file", "logs", "cron", "deploys", "deploy", "plugins", "plugin", "packs", "pack",
+		"files", "file", "logs", "cron", "deploys", "deploy", "plugins", "plugin", "packs", "pack", "wordpress", "wp",
 		// Adversarial review, finding C1-02: these commands were not in the list.
 		"env", "mail", "email", "mail-server", "notifications", "notification",
 	} {

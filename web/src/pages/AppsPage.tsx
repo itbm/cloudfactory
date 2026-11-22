@@ -9,8 +9,8 @@ import { jobActive, POLICY_LABEL } from "../lib/labels";
 
 // The API of this release has no Git deploys or build containers.
 const CATALOGUE = [
-  { name: "WordPress", family: "frankenphp", runtime: "FrankenPHP · PHP 8.5", text: "Blog and content site. Upload WordPress with SFTP and set the document root to \".\".", later: true },
-  { name: "WooCommerce", family: "frankenphp", runtime: "FrankenPHP · PHP 8.4", text: "WordPress with a shop. Uses a MariaDB database.", later: true },
+  { name: "WordPress", family: "frankenphp", runtime: "FrankenPHP · PHP 8.5", text: "Blog and content site. The panel installs WordPress with a MariaDB database, and updates it with a restore point." },
+  { name: "WooCommerce", family: "frankenphp", runtime: "FrankenPHP · PHP 8.4", text: "WordPress with a shop. The panel installs WordPress with a MariaDB database. Then install the WooCommerce plugin." },
   { name: "Laravel", family: "frankenphp", runtime: "FrankenPHP worker · PHP 8.5", text: "Upload the files with SFTP. Worker mode is available for Laravel Octane." },
   { name: "Symfony", family: "frankenphp", runtime: "FrankenPHP · PHP 8.5", text: "Upload the files with SFTP, with the vendor directory." },
   { name: "Static site", family: "edge", runtime: "Caddy · static files", text: "A small Caddy container serves the files. Upload them with SFTP." },

@@ -2,11 +2,13 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAction, useStore } from "../api/hooks";
 import { ApiError, createWebsite, makeCustomer } from "../api/store";
+import type { WordPressAdmin } from "../api/types";
 import { contextCustomers } from "../api/selectors";
 import type { RuntimeImage, WebsiteKind } from "../api/types";
 import { Topbar } from "../components/Layout";
 import { Card, Field, FormError, PageHeader } from "../components/ui";
 import { bytes } from "../lib/format";
+import { AdminCredentials, emptyInstall, WordPressFields } from "./website/WordPressTab";
 
 /** The value of the customer field for a customer that does not exist yet. */
 const NEW_CUSTOMER = "new";
@@ -118,6 +120,13 @@ export function NewWebsitePage() {
   const reseller = state.session.user.role === "reseller";
   const [planId, setPlanId] = useState(() => state.customers.find((c) => c.id === customerId)?.planId ?? state.plans[0]?.id ?? "");
   const [serverId, setServerId] = useState(webServers[0]?.id ?? "");
+  // FR-206: the panel installs WordPress in a new public PHP website.
+  const wordpressApp = application === "WordPress" || application === "WooCommerce";
+  const php = image?.family === "frankenphp" || image?.family === "apache-php-fpm";
+  const canInstall = kind === "public" && wordpressApp && php;
+  const [installWordPress, setInstallWordPress] = useState(true);
+  const [wordpress, setWordpress] = useState(emptyInstall);
+  const [created, setCreated] = useState<{ websiteId: string; admin: WordPressAdmin } | null>(null);
   const action = useAction(async () => {
     let owner = customerId;
     if (newCustomer) {
@@ -131,13 +140,19 @@ export function NewWebsitePage() {
       // If the website has an error, the next attempt uses this customer and does not make a second one.
       setCustomerId(owner);
     }
-    return createWebsite({ name, application, imageId, planId, serverId, customerId: owner, kind, command: app ? startValue : command, installCommand: app ? installValue : undefined, app });
+    return createWebsite({
+      name, application, imageId, planId, serverId, customerId: owner, kind, command: app ? startValue : command, installCommand: app ? installValue : undefined, app,
+      wordpress: canInstall && installWordPress ? wordpress : undefined,
+    });
   });
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     const result = await action.run();
-    if (result.ok) navigate(`/websites/${result.value.websiteId}`);
+    if (!result.ok) return;
+    // The API gives the password of the WordPress administrator one time.
+    if (result.value.wordpress) setCreated({ websiteId: result.value.websiteId, admin: result.value.wordpress });
+    else navigate(`/websites/${result.value.websiteId}`);
   };
 
   const err = action.error?.fields ?? {};
@@ -258,6 +273,22 @@ export function NewWebsitePage() {
               <p className="hint" style={{ marginTop: 10 }}>Each image is signed and scanned. The container runs in gVisor.</p>
             </div>
           </Card>
+          {canInstall && (
+            <Card title="WordPress">
+              <div className="card-body">
+                <label className="check">
+                  <input type="checkbox" checked={installWordPress} onChange={(e) => setInstallWordPress(e.target.checked)} />
+                  <span>Install WordPress</span>
+                </label>
+                <p className="hint" style={{ marginBottom: installWordPress ? 14 : 0 }}>
+                  {installWordPress
+                    ? <>The panel makes a MariaDB database and a user, and installs the latest WordPress. Then it updates WordPress with a restore point and a health check.{application === "WooCommerce" ? <> To add the shop, install the WooCommerce plugin in WordPress, or run <code>plugin install woocommerce --activate</code> on the WordPress tab.</> : null}</>
+                    : "Upload WordPress with SFTP. Then select Find WordPress on the WordPress tab."}
+                </p>
+                {installWordPress && <WordPressFields value={wordpress} onChange={setWordpress} errors={err} prefix="wordpress." />}
+              </div>
+            </Card>
+          )}
           <Card title="Plan and server">
             <div className="card-body">
               {choosePlan ? (
@@ -295,6 +326,7 @@ export function NewWebsitePage() {
             <button type="submit" className="btn btn-primary" disabled={action.busy}>{kind === "worker" ? "Create worker" : "Create website"}</button>
           </div>
         </form>
+        {created && <AdminCredentials admin={created.admin} closeLabel="Open the website" onClose={() => navigate(`/websites/${created.websiteId}/wordpress`)} />}
       </main>
     </>
   );

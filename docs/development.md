@@ -78,6 +78,8 @@ The demo agent (`api/app/Demo`) fails these jobs, so that you can see a failure:
 - a new database with a name that ends with `_fail`;
 - a deploy from a repository with `fail` in its address (the build step fails);
 - a cron job with `fail` in its command, when you select **Run now**;
+- a WordPress update of a plugin with `fail` in its name (the health check fails, and the
+  agent puts back the restore point);
 - a change of a DNS zone with a name that starts with `fail.`.
 
 In the demonstration mode, the file manager shows a small set of sample files for each

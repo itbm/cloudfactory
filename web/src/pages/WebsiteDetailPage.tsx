@@ -21,6 +21,7 @@ import { FilesTab } from "./website/FilesTab";
 import { LogsTab } from "./website/LogsTab";
 import { RuntimeTab } from "./website/RuntimeTab";
 import { SettingsTab } from "./website/SettingsTab";
+import { canHaveWordPress, WordPressTab } from "./website/WordPressTab";
 import { PluginActionsCard } from "../components/PluginActions";
 
 const TABS = [
@@ -30,6 +31,7 @@ const TABS = [
   ["runtime", "Runtime"],
   ["files", "Files"],
   ["databases", "Databases"],
+  ["wordpress", "WordPress"],
   ["deploys", "Deploys"],
   ["cron", "Cron"],
   ["logs", "Logs"],
@@ -321,7 +323,7 @@ export function WebsiteDetailPage() {
           </div>
         </div>
         {website.status === "failed" && <FailedNotice website={website} />}
-        <Tabs label="Website sections" current={tab} items={TABS.filter(([tabId]) => website.kind === "public" || tabId !== "domains").map(([tabId, label]) => ({ id: tabId, label, href: tabId === "overview" ? `/websites/${website.id}` : `/websites/${website.id}/${tabId}` }))} />
+        <Tabs label="Website sections" current={tab} items={TABS.filter(([tabId]) => (website.kind === "public" || tabId !== "domains") && (tabId !== "wordpress" || canHaveWordPress(website))).map(([tabId, label]) => ({ id: tabId, label, href: tabId === "overview" ? `/websites/${website.id}` : `/websites/${website.id}/${tabId}` }))} />
         {website.managedByTerraform && tab !== "overview" && <div style={{ marginBottom: 20 }}><TerraformNotice resource="this website" /></div>}
         {tab === "overview" && <Overview website={website} />}
         {tab === "domains" && (website.kind === "public" ? <DomainsTab website={website} /> : (
@@ -332,6 +334,7 @@ export function WebsiteDetailPage() {
         {tab === "usage" && <UsagePanel key={website.id} subject="website" id={website.id} />}
         {tab === "runtime" && <RuntimeTab website={website} />}
         {tab === "databases" && <DatabasesTab website={website} />}
+        {tab === "wordpress" && <WordPressTab key={website.id} website={website} />}
         {tab === "files" && <FilesTab website={website} />}
         {tab === "deploys" && <DeploysTab key={website.id} website={website} />}
         {tab === "cron" && <CronTab key={website.id} website={website} />}

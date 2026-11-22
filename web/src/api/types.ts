@@ -1057,6 +1057,87 @@ export interface CronJob {
   lastOutput: string | null;
 }
 
+/** FR-206: a plugin or a theme of a WordPress site. */
+export interface WordPressItem {
+  name: string;
+  title: string;
+  status: string;
+  version: string;
+  /** The version of the available update, or null. */
+  update: string | null;
+}
+
+/** The last update of a WordPress site. "rolledBack": the agent put back the restore point. */
+export interface WordPressUpdate {
+  jobId: string | null;
+  at: string;
+  automatic: boolean;
+  core: "" | "minor" | "latest";
+  plugins: string[];
+  themes: string[];
+  state: "succeeded" | "rolledBack" | "failed";
+  from?: string | null;
+  to?: string | null;
+  error?: string | null;
+}
+
+export type WordPressCorePolicy = "off" | "minor" | "all";
+
+export interface WordPressAutoUpdates {
+  core: WordPressCorePolicy;
+  plugins: boolean;
+  themes: boolean;
+}
+
+/** WordPress in the document root of a website. */
+export interface WordPressSite {
+  status: "installing" | "checking" | "ready" | "failed";
+  version: string | null;
+  /** The newest version of the same major version, or null. */
+  coreMinor: string | null;
+  /** The newest version of WordPress, when it is a new major version. */
+  coreLatest: string | null;
+  siteUrl: string | null;
+  adminUrl: string | null;
+  adminUser: string | null;
+  databaseId: string | null;
+  plugins: WordPressItem[];
+  themes: WordPressItem[];
+  checkedAt: string | null;
+  autoUpdates: WordPressAutoUpdates;
+  lastUpdate: WordPressUpdate | null;
+  /** The files with no uploads, and the database, from before the last update. */
+  restorePoint: { at: string; version: string | null; database: boolean } | null;
+  error: string | null;
+}
+
+/** One WP-CLI command that a user ran, with its output. */
+export interface WpCliCommand {
+  id: string;
+  command: string;
+  status: "running" | "done" | "failed";
+  exitCode: number | null;
+  output: string | null;
+  ranAt: string | null;
+  createdAt: string | null;
+  user: string | null;
+  jobId: string;
+}
+
+/** The first administrator of a new WordPress site. The API gives the password one time. */
+export interface WordPressAdmin {
+  user: string;
+  password: string;
+  loginUrl: string;
+}
+
+export interface WordPressState {
+  wordpress: WordPressSite | null;
+  commands: WpCliCommand[];
+  /** The ID of the open WordPress job of the website, or null. */
+  busy: string | null;
+}
+
 export interface GitSource {
   repository: string;
   branch: string;
