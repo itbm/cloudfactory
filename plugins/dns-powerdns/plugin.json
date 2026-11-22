@@ -1,0 +1,42 @@
+{
+  "schema": 1,
+  "slug": "dns-powerdns",
+  "name": "PowerDNS",
+  "version": "1.0.0",
+  "publisher": "Cloudfactory",
+  "description": "Sends DNS zones to a PowerDNS Authoritative Server with its HTTP API. The panel keeps the records, and the plugin makes the zone in PowerDNS the same after each change.",
+  "scopes": [],
+  "dnsProviders": [
+    {
+      "id": "powerdns",
+      "name": "PowerDNS",
+      "path": "/dns/powerdns",
+      "dnssec": true,
+      "credentials": [
+        {
+          "id": "apiUrl",
+          "label": "API address",
+          "hint": "The address of the API of PowerDNS, for example https://pdns.example.net:8081. Use HTTPS."
+        },
+        {
+          "id": "apiKey",
+          "label": "API key",
+          "secret": true,
+          "hint": "The value of api-key in the configuration of PowerDNS."
+        },
+        {
+          "id": "serverId",
+          "label": "Server ID",
+          "optional": true,
+          "hint": "The default is localhost."
+        },
+        {
+          "id": "nameServers",
+          "label": "Name servers for new zones",
+          "optional": true,
+          "hint": "The NS records of a zone that the panel adds, with commas, for example ns1.example.net, ns2.example.net."
+        }
+      ]
+    }
+  ]
+}

@@ -6,6 +6,7 @@ use App\Enums\Role;
 use App\Http\Controllers\Controller;
 use App\Http\Middleware\AllowPluginOrigins;
 use App\Models\Customer;
+use App\Models\DnsAccount;
 use App\Models\Plugin;
 use App\Models\PluginDelivery;
 use App\Models\PluginKey;
@@ -163,6 +164,14 @@ class PluginController extends Controller
             throw ValidationException::withMessages(['manifest' => "This manifest is for the plugin \"{$spec['slug']}\", not \"{$plugin->slug}\"."]);
         }
         $key = self::checkSignature($data['manifest'], $data['signature'] ?? null);
+        // A DNS account needs its provider. The new version must still offer each provider
+        // that an account uses.
+        $offered = array_column($spec['dnsProviders'], 'id');
+        foreach (DnsAccount::where('plugin_id', $plugin->id)->distinct()->pluck('provider') as $used) {
+            if (! in_array($used, $offered, true)) {
+                throw ValidationException::withMessages(['manifest' => "The new version does not offer the DNS provider \"{$used}\". DNS accounts use it. Remove the accounts first."]);
+            }
+        }
         if ($plugin->hosted() && empty($spec['image'])) {
             throw ValidationException::withMessages(['manifest' => 'The panel runs this plugin, so its manifest must have an image.']);
         }
@@ -237,6 +246,11 @@ class PluginController extends Controller
     public function destroy(Request $request, string $id): JsonResponse
     {
         $plugin = Plugin::with(['user', 'server'])->findOrFail($id);
+        // The zones of a DNS account go to the provider through this plugin.
+        $accounts = DnsAccount::where('plugin_id', $plugin->id)->count();
+        if ($accounts > 0) {
+            throw ValidationException::withMessages(['plugin' => "{$accounts} DNS ".($accounts === 1 ? 'account uses' : 'accounts use').' this plugin. Move their zones to a different DNS provider, and remove the accounts, first.']);
+        }
         if ($plugin->hosted() && $plugin->server) {
             // The agent removes the container, its Unix user and its route.
             $this->hosting->remove($plugin);
@@ -571,6 +585,7 @@ class PluginController extends Controller
             'actions' => array_map(fn (array $a) => self::presentAction($p, $a), $p->actions()),
             'hooks' => $p->hooks(),
             'commands' => $spec['commands'] ?? [],
+            'dnsProviders' => $p->dnsProviders(),
             'image' => $spec['image'] ?? null,
             'hosting' => $p->hosted() ? [
                 'serverId' => $p->server_id,
