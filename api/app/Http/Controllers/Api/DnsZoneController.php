@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\JobResource;
 use App\Models\AgentJob;
 use App\Models\Customer;
+use App\Models\DnsAccount;
 use App\Models\DnsRecord;
 use App\Models\DnsZone;
 use App\Models\Server;
@@ -14,7 +15,9 @@ use App\Models\Website;
 use App\Services\Audit;
 use App\Services\Branding;
 use App\Services\Dns\Dnssec;
+use App\Services\Dns\Import;
 use App\Services\Dns\Records;
+use App\Services\Dns\ZoneFile;
 use App\Services\Dns\Zones;
 use App\Validation\Input;
 use Illuminate\Database\Eloquent\Builder;
@@ -30,6 +33,7 @@ use Illuminate\Validation\ValidationException;
  * A customer makes a zone for a domain, and then gives the name servers of the panel to the
  * registrar of the domain. Each change of a zone goes to each DNS server as a job. The panel
  * makes the NS records of the zone, and the A and AAAA records of the websites of the customer.
+ * A zone with a DNS account goes to an external DNS provider instead (DnsAccountController).
  */
 class DnsZoneController extends Controller
 {
@@ -62,7 +66,7 @@ class DnsZoneController extends Controller
     {
         $request->validate(['customerId' => ['nullable', 'string']]);
         $servers = Zones::servers();
-        $zones = $this->visible($request)->withCount('records')
+        $zones = $this->visible($request)->with(['customer', 'account.plugin'])->withCount('records')
             ->when($request->query('customerId'), fn ($q, $id) => $q->where('customer_id', $id))
             ->orderBy('name')->get();
 
@@ -84,6 +88,10 @@ class DnsZoneController extends Controller
         $data = $request->validate([
             'name' => ['required', 'string', Input::rule('domain')],
             'customerId' => ['nullable', 'exists:customers,id'],
+            // A DNS account: the zone goes to its external provider. Null: the DNS servers of the panel.
+            'accountId' => ['nullable', 'string', 'max:64'],
+            // With a DNS account: first copy the records that the provider has for the name now.
+            'importRecords' => ['sometimes', 'boolean'],
         ]);
         $user = $request->user();
         $customerId = $data['customerId'] ?? $user->customer_id;
@@ -93,8 +101,9 @@ class DnsZoneController extends Controller
         $customer = Customer::with('plan')->findOrFail($customerId);
         abort_if($customer->isSuspended(), 409, 'This customer is suspended. Lift the suspension before you make a DNS zone.');
 
-        $zone = $this->zones->create($customer, $data['name'], $user);
-        Audit::record($request, 'Created DNS zone', $zone->name, $customer->id);
+        $account = self::account($request, $data['accountId'] ?? null, $customer->id);
+        $zone = $this->zones->create($customer, $data['name'], $user, $account, (bool) ($data['importRecords'] ?? true));
+        Audit::record($request, 'Created DNS zone', $zone->name.($account ? " ({$account->providerName()})" : ''), $customer->id);
 
         return response()->json(['zone' => self::present($zone->fresh(), Zones::servers(), records: true), 'jobs' => self::jobs($request, $zone)], 202);
     }
@@ -108,8 +117,11 @@ class DnsZoneController extends Controller
             ->whereIn('state', [JobState::Queued->value, JobState::Running->value])->exists()) {
             throw ValidationException::withMessages(['zone' => 'The panel removes this zone. Wait until the jobs are complete.']);
         }
-        $jobs = $this->zones->remove($zone);
-        Audit::record($request, 'Removed DNS zone', $zone->name, $zone->customer_id);
+        // A zone at an external provider goes from the provider too, unless "keepAtProvider".
+        $keep = $request->boolean('keepAtProvider');
+        $provider = $zone->account?->providerName();
+        $jobs = $this->zones->remove($zone, $keep);
+        Audit::record($request, 'Removed DNS zone', $zone->name.($provider ? ($keep ? " (kept at {$provider})" : " (also at {$provider})") : ''), $zone->customer_id);
 
         return response()->json(['jobs' => JobResource::collection(collect($jobs))->resolve($request)], 202);
     }
@@ -174,6 +186,46 @@ class DnsZoneController extends Controller
         return response()->json(['zone' => self::present($zone->fresh(), Zones::servers(), records: true), 'jobs' => JobResource::collection(collect($jobs))->resolve($request)], 202);
     }
 
+    /**
+     * Moves the zone to a different DNS provider, or back to the DNS servers of the panel
+     * ("accountId": null). The records stay. Refer to Zones::move.
+     */
+    public function move(Request $request, string $id): JsonResponse
+    {
+        $zone = $this->findActive($request, $id);
+        $data = $request->validate([
+            'accountId' => ['present', 'nullable', 'string', 'max:64'],
+            'importRecords' => ['sometimes', 'boolean'],
+        ]);
+        $account = self::account($request, $data['accountId'], $zone->customer_id);
+        $jobs = $this->zones->move($zone, $account, (bool) ($data['importRecords'] ?? true));
+        Audit::record($request, 'Moved DNS zone', "{$zone->name} to ".($account ? "{$account->providerName()} ({$account->name})" : 'the DNS servers of the panel'), $zone->customer_id);
+
+        return response()->json(['zone' => self::present($zone->fresh(), Zones::servers(), records: true), 'jobs' => JobResource::collection(collect($jobs))->resolve($request)], 202);
+    }
+
+    /**
+     * The DNS account for a zone of the customer: an account of the customer, or of the panel.
+     * Null when the request gives no account.
+     *
+     * @throws ValidationException
+     */
+    private static function account(Request $request, ?string $id, string $customerId): ?DnsAccount
+    {
+        if ($id === null || $id === '') {
+            return null;
+        }
+        $account = DnsAccount::with('plugin')->find($id);
+        if (! $account || ! $account->usableBy($customerId) || ($account->customer_id !== null && ! $request->user()->canSeeCustomer($account->customer_id))) {
+            throw ValidationException::withMessages(['accountId' => 'Select a DNS account of this customer, or of the panel.']);
+        }
+        if ($account->definition() === null || ! $account->plugin->enabled) {
+            throw ValidationException::withMessages(['accountId' => "The plugin of the DNS account {$account->name} is off. Speak to your provider."]);
+        }
+
+        return $account;
+    }
+
     /** Asks the public DNS again if the name servers of the zone are the name servers of the panel. */
     public function check(Request $request, string $id): JsonResponse
     {
@@ -190,6 +242,43 @@ class DnsZoneController extends Controller
         $jobs = $this->zones->changed($zone, "Send DNS zone {$zone->name} again");
 
         return response()->json(['zone' => self::present($zone->fresh(), Zones::servers(), records: true), 'jobs' => JobResource::collection(collect($jobs))->resolve($request)], 202);
+    }
+
+    /**
+     * Adds the records of a zone file to the zone, for example the export of the current DNS
+     * provider of the domain. With "dryRun", the panel only shows what it would add. The import
+     * does not change or remove the records that the zone has.
+     */
+    public function import(Request $request, string $id, Import $import): JsonResponse
+    {
+        $zone = $this->findActive($request, $id);
+        $data = $request->validate([
+            'zoneFile' => ['required', 'string', 'max:'.ZoneFile::MAX_BYTES],
+            'dryRun' => ['sometimes', 'boolean'],
+        ]);
+        $dryRun = (bool) ($data['dryRun'] ?? false);
+        $result = $import->run($zone, $data['zoneFile'], $dryRun);
+        $count = count($result['added']);
+        if (! $dryRun && $count > 0) {
+            Audit::record($request, 'Imported DNS records', "{$zone->name} ({$count} ".($count === 1 ? 'record' : 'records').')', $zone->customer_id);
+        }
+
+        return response()->json([
+            'dryRun' => $dryRun,
+            'added' => $result['added'],
+            'existing' => $result['existing'],
+            'skipped' => $result['skipped'],
+            'zone' => self::present($zone->fresh(), Zones::servers(), records: true),
+            'jobs' => JobResource::collection(collect($result['jobs']))->resolve($request),
+        ], $dryRun || $count === 0 ? 200 : 202);
+    }
+
+    /** The records of the zone as a zone file, for a different DNS provider or for a backup. */
+    public function export(Request $request, string $id): JsonResponse
+    {
+        $zone = $this->find($request, $id);
+
+        return response()->json(['name' => $zone->name, 'zoneFile' => ZoneFile::render($zone)]);
     }
 
     /** A record that a user can change. The panel keeps the NS records of the zone itself. */
@@ -253,6 +342,9 @@ class DnsZoneController extends Controller
     public static function present(DnsZone $z, Collection $servers, bool $records = false): array
     {
         $ds = $z->ds();
+        $account = $z->dns_account_id !== null ? $z->account : null;
+        $state = $z->provider_state ?? [];
+        $onPanel = $z->onPanelServers();
 
         return [
             'id' => $z->id,
@@ -262,7 +354,26 @@ class DnsZoneController extends Controller
             'status' => Zones::state($z, $servers),
             'serial' => $z->serial,
             'recordCount' => $z->records_count ?? $z->records()->count(),
-            'nameServers' => Branding::nameServersFor($z->customer),
+            // The name servers for the registrar: of the panel, or of the external provider.
+            'nameServers' => $account ? ($state['nameServers'] ?? []) : Branding::nameServersFor($z->customer),
+            // Null for a zone on the DNS servers of the panel.
+            'provider' => $account ? [
+                'accountId' => $account->id,
+                'accountName' => $account->name,
+                'name' => $account->providerName(),
+                // The last change at the provider: "ok", "pending" or "failed".
+                'state' => (($state['serial'] ?? 0) < $z->serial) ? 'pending' : ($state['state'] ?? 'pending'),
+                'error' => $state['error'] ?? null,
+                // True when the provider answers for the zone. Cloudflare, for example, waits
+                // until the registrar has its name servers.
+                'active' => (bool) ($state['active'] ?? false),
+                'syncedAt' => $state['syncedAt'] ?? null,
+                'changes' => $state['changes'] ?? null,
+                // The records that the panel copied from the provider when the zone moved there.
+                'imported' => $state['imported'] ?? null,
+                // The DNS servers of the panel still answer for the zone that moved here.
+                'handover' => $onPanel ? ['endsAt' => $z->handover_ends_at?->toIso8601String()] : null,
+            ] : null,
             // What the public DNS says: "here" when the registrar sends the queries to the panel.
             'delegation' => [
                 'state' => $z->delegation,
@@ -271,11 +382,13 @@ class DnsZoneController extends Controller
             ],
             'dnssec' => [
                 'enabled' => $z->dnssec,
+                // "off", "pending" (the provider makes the key) or "active".
+                'state' => ! $z->dnssec ? 'off' : ($account ? ($state['dnssec']['state'] ?? 'pending') : 'active'),
                 'ds' => $ds,
                 'dnskey' => $z->dnssec && $z->dnssec_public_key ? Dnssec::dnskey($z->name, $z->dnssec_public_key) : null,
             ],
-            // The state of the zone on each name server: "ok", "pending" or "failed".
-            'servers' => $servers->map(fn (Server $s) => [
+            // The state of the zone on each name server of the panel: "ok", "pending" or "failed".
+            'servers' => ($onPanel ? $servers : collect())->map(fn (Server $s) => [
                 'nameServer' => Branding::nameServerName($z->customer, $s->dns_name),
                 'state' => (($z->sync[$s->id]['serial'] ?? 0) < $z->serial) ? 'pending' : ($z->sync[$s->id]['state'] ?? 'pending'),
             ])->values()->all(),

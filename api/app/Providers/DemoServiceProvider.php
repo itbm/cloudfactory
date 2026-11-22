@@ -4,6 +4,7 @@ namespace App\Providers;
 
 use App\Demo\DemoAcme;
 use App\Demo\DemoAgentClient;
+use App\Demo\DemoDomainPolicy;
 use App\Demo\DemoLookup;
 use App\Demo\DemoMailDns;
 use App\Models\MeshTunnel;
@@ -11,6 +12,7 @@ use App\Models\Server;
 use App\Services\AgentClient;
 use App\Services\Certificates\Acme;
 use App\Services\Dns\Lookup;
+use App\Services\DomainPolicy;
 use App\Services\MailDns;
 use App\Services\Notifications\DemoMailTransport;
 use App\Services\Notifications\MailTransport;
@@ -44,6 +46,8 @@ class DemoServiceProvider extends ServiceProvider
         $this->app->bind(Lookup::class, fn () => self::enabled() ? new DemoLookup : new Lookup);
         // The demonstration mode gets the certificates with DNS validation from a demonstration CA.
         $this->app->bind(Acme::class, fn () => self::enabled() ? new DemoAcme : Acme::fromConfig());
+        // A zone at an external DNS provider gives its claim token, as the real provider does.
+        $this->app->bind(DomainPolicy::class, fn () => self::enabled() ? new DemoDomainPolicy : new DomainPolicy);
         // The demonstration mode sends no email. It writes each email to the log.
         $this->app->singleton(MailTransport::class, fn () => self::enabled() ? new DemoMailTransport : new SmtpMailTransport);
         $this->app->bind(MailDns::class, fn () => self::enabled() ? new DemoMailDns : new MailDns);

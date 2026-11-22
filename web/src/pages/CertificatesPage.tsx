@@ -252,11 +252,11 @@ function RequestDialog({ onClose }: { onClose: () => void }) {
       }}>
         <FormError error={request.error} shown={["domain", "customerId", "wildcard"]} />
         <p className="muted" style={{ marginBottom: 14 }}>
-          The panel gets the certificate from Let's Encrypt. To prove that you control the domain, the panel adds a TXT record to the DNS zone of the domain on this panel. The panel renews the certificate by itself.
+          The panel gets the certificate from Let's Encrypt. To prove that you control the domain, the panel adds a TXT record to the DNS zone of the domain on the DNS page. The panel renews the certificate by itself.
         </p>
         <CustomerField customerId={customerId} setCustomerId={(id) => { setCustomerId(id); setDomain(usableZones(state, id)[0]?.name ?? ""); }} error={request.error?.fields.customerId} />
         <div style={{ marginTop: 14 }}>
-          <Field label="Domain" hint="A domain with a DNS zone on this panel. The registrar of the domain must have the name servers of this panel." error={request.error?.fields.domain}>
+          <Field label="Domain" hint="A domain with a DNS zone on the DNS page. The registrar of the domain must have the name servers of the zone." error={request.error?.fields.domain}>
             {(p) => (
               <>
                 <input {...p} className="input" list="certificate-zones" value={domain} onChange={(e) => setDomain(e.target.value)} placeholder="example.com" autoCapitalize="none" spellCheck={false} />
@@ -271,7 +271,7 @@ function RequestDialog({ onClose }: { onClose: () => void }) {
         </label>
         {zones.length === 0 && (
           <p className="alert alert-info" role="status" style={{ marginTop: 14 }}>
-            This customer has no DNS zone that the registrar sends to this panel. Make a zone on the <Link to="/dns">DNS</Link> page, and give the name servers of the panel to the registrar of the domain.
+            This customer has no DNS zone that the public DNS uses. Make a zone on the <Link to="/dns">DNS</Link> page, and give the name servers of the zone to the registrar of the domain.
           </p>
         )}
       </form>

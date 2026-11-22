@@ -9,10 +9,11 @@ use App\Validation\InputRules;
 use Illuminate\Support\Facades\DB;
 
 /**
- * The DNS hosting of the panel as the DNS service of the DNS validation. The customer must
- * have a DNS zone with the name in it, and the registrar must send the queries for the zone to
- * the name servers of the panel. The panel adds the TXT records to the zone with the mark
- * "acme", sends the zone to each DNS server, and removes the records after the order.
+ * The DNS zones of the panel as the DNS service of the DNS validation. The customer must have
+ * a DNS zone with the name in it, and the public DNS must use the zone: the registrar sends the
+ * queries to the name servers of the panel, or to the name servers of the external DNS
+ * provider of the zone. The panel adds the TXT records to the zone with the mark "acme", sends
+ * the zone to each DNS server or to its provider, and removes the records after the order.
  */
 class PanelDns implements ChallengeDns
 {
@@ -38,7 +39,9 @@ class PanelDns implements ChallengeDns
             return null;
         }
         if (! $zone->delegatedHere()) {
-            return "The public DNS does not send the queries for {$zone->name} to the name servers of this panel, so the certificate authority cannot see the records of the panel. Give the name servers of the panel to the registrar of {$zone->name}, and then check the zone on the DNS page.";
+            $servers = $zone->dns_account_id !== null ? 'the name servers of '.($zone->account?->providerName() ?? 'its DNS provider') : 'the name servers of this panel';
+
+            return "The public DNS does not send the queries for {$zone->name} to {$servers}, so the certificate authority cannot see the records of the zone. Give {$servers} to the registrar of {$zone->name}, and then check the zone on the DNS page.";
         }
         $name = $zone->relative($recordName);
         if ($zone->records()->where('name', $name)->where('type', 'CNAME')->exists()) {
@@ -75,15 +78,26 @@ class PanelDns implements ChallengeDns
         return ['zones' => $serials];
     }
 
+    /**
+     * True when each DNS server of the panel has the serial of the records, and the external
+     * DNS provider of a zone at a provider has it too. In the handover time of a zone, the
+     * panel checks both.
+     */
     public function ready(array $state): bool
     {
         $servers = Zones::servers();
-        if ($servers->isEmpty()) {
-            return false;
-        }
         foreach ((array) ($state['zones'] ?? []) as $zoneId => $serial) {
             $zone = DnsZone::find($zoneId);
             if (! $zone) {
+                return false;
+            }
+            if ($zone->dns_account_id !== null && (($zone->provider_state['serial'] ?? 0) < $serial || ($zone->provider_state['state'] ?? '') !== 'ok')) {
+                return false;
+            }
+            if (! $zone->onPanelServers()) {
+                continue;
+            }
+            if ($servers->isEmpty()) {
                 return false;
             }
             foreach ($servers as $server) {

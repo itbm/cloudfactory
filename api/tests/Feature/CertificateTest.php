@@ -7,13 +7,16 @@ use App\Enums\DomainKind;
 use App\Enums\JobState;
 use App\Enums\Role;
 use App\Jobs\SendJobToAgent;
+use App\Jobs\SyncDnsZone;
 use App\Models\AgentJob;
 use App\Models\Certificate;
 use App\Models\Customer;
+use App\Models\DnsAccount;
 use App\Models\DnsRecord;
 use App\Models\DnsZone;
 use App\Models\MailServer;
 use App\Models\NotificationDelivery;
+use App\Models\Plugin;
 use App\Models\Server;
 use App\Models\Setting;
 use App\Models\Website;
@@ -23,11 +26,13 @@ use App\Services\Certificates\AcmeOrders;
 use App\Services\Certificates\Certificates;
 use App\Services\Certificates\DnsProviders;
 use App\Services\Certificates\PanelDns;
+use App\Services\Dns\Zones;
 use App\Services\JobDispatcher;
 use App\Services\JobOutcome;
 use Illuminate\Http\Client\Request as HttpRequest;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
 use Tests\TestCase;
 
 /**
@@ -617,7 +622,7 @@ class CertificateTest extends TestCase
     {
         $this->hosting();
         $request = fn () => $this->postJson('/api/v1/certificates', ['source' => 'acme', 'customerId' => $this->customer->id, 'domain' => 'example.com', 'wildcard' => true]);
-        $request()->assertUnprocessable()->assertJsonPath('errors.domain.0', 'The panel cannot add DNS records for example.com. Make a DNS zone for the domain on the DNS page, and give the name servers of the panel to the registrar of the domain.');
+        $request()->assertUnprocessable()->assertJsonPath('errors.domain.0', 'The panel cannot add DNS records for example.com. Make a DNS zone for the domain on the DNS page, and give the name servers of the zone to the registrar of the domain.');
 
         $zone = $this->zone();
         $zone->update(['delegation' => DnsZone::ELSEWHERE]);
@@ -679,5 +684,44 @@ class CertificateTest extends TestCase
         $this->assertSame('panel', $providers[0]->key());
         $this->assertSame('_acme-challenge.example.com', DnsProviders::recordName('*.example.com'));
         $this->assertSame('_acme-challenge.shop.example.com', DnsProviders::recordName('shop.example.com'));
+    }
+
+    public function test_a_zone_at_an_external_dns_provider_holds_the_records_of_the_dns_validation(): void
+    {
+        Queue::fake();
+        $this->hosting();
+        $plugin = Plugin::create([
+            'slug' => 'dns-cloudflare', 'name' => 'Cloudflare DNS', 'version' => '1.0.0', 'publisher' => 'Example Ltd', 'enabled' => true,
+            'manifest' => json_encode(['schema' => 1, 'slug' => 'dns-cloudflare', 'name' => 'Cloudflare DNS', 'version' => '1.0.0', 'publisher' => 'Example Ltd', 'scopes' => [],
+                'dnsProviders' => [['id' => 'cloudflare', 'name' => 'Cloudflare', 'path' => '/dns/cloudflare', 'dnssec' => true, 'types' => ['TXT'], 'credentials' => []]]]),
+            'base_url' => 'https://dns.example.net', 'webhook_secret' => 'whsec_test',
+        ]);
+        $account = DnsAccount::create(['customer_id' => $this->customer->id, 'plugin_id' => $plugin->id, 'provider' => 'cloudflare', 'name' => 'Our Cloudflare', 'credentials' => []]);
+        $zone = DnsZone::create([
+            'customer_id' => $this->customer->id, 'name' => 'example.com', 'serial' => 1, 'status' => DnsZone::ACTIVE, 'delegation' => DnsZone::ELSEWHERE,
+            'dns_account_id' => $account->id, 'provider_state' => ['serial' => 1, 'state' => 'ok'],
+        ]);
+        $dns = app(PanelDns::class);
+
+        // The registrar must give the name servers of the provider.
+        $this->assertTrue($dns->holds($this->customer->id, '_acme-challenge.example.com'));
+        $this->assertStringContainsString('to the name servers of Cloudflare,', (string) $dns->problem($this->customer->id, '_acme-challenge.example.com'));
+        $zone->update(['delegation' => DnsZone::HERE]);
+        $this->assertNull($dns->problem($this->customer->id, '_acme-challenge.example.com'));
+
+        // The panel sends the records to the provider, and waits until the provider has them.
+        $state = $dns->present($this->customer->id, [['name' => '_acme-challenge.example.com', 'value' => 'abc123']]);
+        $this->assertSame(1, $zone->records()->where('managed', DnsRecord::ACME)->count());
+        Queue::assertPushed(SyncDnsZone::class);
+        $serial = $zone->fresh()->serial;
+        $this->assertSame([$zone->id => $serial], $state['zones']);
+        $this->assertFalse($dns->ready($state));
+        Zones::markProvider($zone, $serial, ['state' => 'ok']);
+        $this->assertTrue($dns->ready($state));
+
+        // In the handover time, the DNS servers of the panel must have the records too.
+        $this->dnsServer('ns1.hosting.example');
+        $zone->update(['handover' => true, 'handover_ends_at' => now()->addDay()]);
+        $this->assertFalse($dns->ready($state));
     }
 }

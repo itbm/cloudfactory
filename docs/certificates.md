@@ -91,8 +91,9 @@ The ID of the certificate does not change. The servers get the new certificate a
 
 Before you start, make sure of these items:
 
-- The customer has a DNS zone for the domain on the **DNS** page.
-- The registrar of the domain has the name servers of the panel. The **DNS** page shows
+- The customer has a DNS zone for the domain on the **DNS** page. The zone can be on the
+  DNS servers of the panel or at an external DNS provider, for example Cloudflare.
+- The registrar of the domain has the name servers of the zone. The **DNS** page shows
   "Uses these name servers" for the zone.
 - The zone has no CNAME record at `_acme-challenge` or `_acme-challenge.<sub-domain>`.
 
@@ -102,7 +103,7 @@ Do these steps:
 2. Select **Get a wildcard certificate**.
 3. An administrator or a reseller with more than one customer selects the customer.
 4. Type the domain, for example `example.com`. The list shows the zones of the customer that
-   use the name servers of the panel.
+   the public DNS uses.
 5. To get a certificate for the domain only, clear **Also for each name directly below the
    domain**.
 6. Select **Get certificate**.
@@ -113,7 +114,7 @@ certificate shows each stage of the order:
 | Stage                                   | What occurs                                                                                   |
 | --------------------------------------- | --------------------------------------------------------------------------------------------- |
 | Make the order and add the TXT records  | The panel makes an order at Let's Encrypt. It adds a TXT record at `_acme-challenge` for each name. |
-| Wait for the DNS servers                | The panel waits until all its DNS servers give the new records.                               |
+| Wait for the DNS servers                | The panel waits until all its DNS servers, or the DNS provider of the zone, have the new records. |
 | Let's Encrypt checks the records        | Let's Encrypt reads the TXT records through the public DNS.                                    |
 | Get the certificate                     | The panel sends a new key request (CSR) and gets the certificate.                             |
 
@@ -216,17 +217,23 @@ The check of a domain that uses a certificate from the panel asks the edge proxy
 certificate, as a browser does. The check compares the fingerprint with the certificate from
 the panel. The DNS of the domain is not important for this check.
 
-## Add a DNS provider for the DNS validation
+## Add a DNS service for the DNS validation
 
-The DNS hosting of the panel holds the TXT records by default. A DNS service outside the panel,
-for example Cloudflare or Route 53, can also hold them. To add such a service, do these steps:
+The DNS zones of the panel hold the TXT records (`PanelDns`). This includes a zone at an
+external DNS provider, for example Cloudflare or Route 53: the panel keeps the records of the
+zone and sends them to the provider. Refer to [plugins.md](plugins.md#dns-providers). For such
+a zone, the panel waits until the provider has the serial of the new records. Thus a DNS
+provider plugin needs nothing more for the DNS validation.
+
+A DNS service that is not a zone of the panel can also hold the records. To add such a
+service, do these steps:
 
 1. Make a class that implements `App\Services\Certificates\ChallengeDns`.
 2. Give the class the container tag `certificates.dns` (`DnsProviders::TAG`) in a service
    provider.
 
-The panel asks each provider in turn for each record name. The first provider that holds the
-name for the customer gets the records. The DNS hosting of the panel is always first. The
+The panel asks each service in turn for each record name. The first service that holds the
+name for the customer gets the records. The DNS zones of the panel are always first. The
 interface has these functions:
 
 | Function    | What it does                                                                                     |

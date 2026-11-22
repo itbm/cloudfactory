@@ -6,9 +6,10 @@ namespace App\Services\Certificates;
  * A DNS service that can hold the TXT records of the DNS validation (dns-01) of an ACME order.
  *
  * The panel asks each provider in turn (DnsProviders) for the name of each record. The first
- * provider that holds the name for the customer gets the record. The DNS hosting of the panel
- * is the first provider (PanelDns). A provider for a DNS service outside the panel, for example
- * Cloudflare, implements this interface and has the container tag DnsProviders::TAG.
+ * provider that holds the name for the customer gets the record. The DNS zones of the panel
+ * are the first provider (PanelDns), also a zone at an external DNS provider such as
+ * Cloudflare. A DNS service that is not a zone of the panel implements this interface and has
+ * the container tag DnsProviders::TAG.
  *
  * The record names are full names, for example "_acme-challenge.example.com". A wildcard name
  * "*.example.com" has the record of "example.com". One name can have two records with

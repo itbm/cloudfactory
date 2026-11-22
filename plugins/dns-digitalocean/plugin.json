@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "slug": "dns-digitalocean",
+  "name": "DigitalOcean DNS",
+  "version": "1.0.0",
+  "publisher": "Cloudfactory",
+  "description": "Sends DNS zones to DigitalOcean. The panel keeps the records, and the plugin makes the domain at DigitalOcean the same after each change.",
+  "scopes": [],
+  "dnsProviders": [
+    {
+      "id": "digitalocean",
+      "name": "DigitalOcean",
+      "path": "/dns/digitalocean",
+      "dnssec": false,
+      "credentials": [
+        {
+          "id": "apiToken",
+          "label": "API token",
+          "secret": true,
+          "hint": "A personal access token with the scopes domain:read, domain:create, domain:update and domain:delete, and account:read."
+        }
+      ]
+    }
+  ]
+}

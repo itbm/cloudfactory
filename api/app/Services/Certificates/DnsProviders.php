@@ -59,7 +59,7 @@ class DnsProviders
             if ($provider === null) {
                 $base = str_starts_with($name, '*.') ? substr($name, 2) : $name;
 
-                return "The panel cannot add DNS records for {$base}. Make a DNS zone for the domain on the DNS page, and give the name servers of the panel to the registrar of the domain.";
+                return "The panel cannot add DNS records for {$base}. Make a DNS zone for the domain on the DNS page, and give the name servers of the zone to the registrar of the domain.";
             }
             if (($problem = $provider->problem($customerId, $record)) !== null) {
                 return $problem;
