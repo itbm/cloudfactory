@@ -44,6 +44,7 @@ enum AgentAction: string
     case DeleteDnsZones = 'DeleteDnsZones';
     case SetCronJobs = 'SetCronJobs';
     case RunCronJob = 'RunCronJob';
+    case RunCommand = 'RunCommand';
     case Deploy = 'Deploy';
     case ActivateRelease = 'ActivateRelease';
     case InstallDependencies = 'InstallDependencies';
@@ -93,6 +94,7 @@ enum AgentAction: string
             self::DeleteDnsZones => ['Remove zones'],
             self::SetCronJobs => ['Save the cron jobs'],
             self::RunCronJob => ['Run the command'],
+            self::RunCommand => ['Run the command'],
             // The steps after "Build" are the steps of SetRuntime: the agent starts the website
             // from the new release with no stop.
             self::Deploy => ['Get the code', 'Build', ...self::SetRuntime->steps(), 'Remove old releases'],

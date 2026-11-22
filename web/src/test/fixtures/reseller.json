@@ -5384,6 +5384,17 @@
             "data": []
         }
     },
+    "GET /websites/01m7zwcamdcnyxgqg7y6qxy9kq/commands": {
+        "status": 200,
+        "body": {
+            "data": [],
+            "meta": {
+                "currentPage": 1,
+                "lastPage": 1,
+                "total": 0
+            }
+        }
+    },
     "GET /websites/01m7zwcamdcnyxgqg7y6qxy9kq/deploy": {
         "status": 200,
         "body": {
@@ -5750,6 +5761,17 @@
             "data": []
         }
     },
+    "GET /websites/01m7zwcamn72f0skt4xfrgep29/commands": {
+        "status": 200,
+        "body": {
+            "data": [],
+            "meta": {
+                "currentPage": 1,
+                "lastPage": 1,
+                "total": 0
+            }
+        }
+    },
     "GET /websites/01m7zwcamn72f0skt4xfrgep29/deploy": {
         "status": 200,
         "body": {
@@ -5925,6 +5947,17 @@
         "status": 200,
         "body": {
             "data": []
+        }
+    },
+    "GET /websites/01m7zwcamhc032v5p863nhtmxw/commands": {
+        "status": 200,
+        "body": {
+            "data": [],
+            "meta": {
+                "currentPage": 1,
+                "lastPage": 1,
+                "total": 0
+            }
         }
     },
     "GET /websites/01m7zwcamhc032v5p863nhtmxw/deploy": {
@@ -6392,6 +6425,17 @@
             ]
         }
     },
+    "GET /websites/01m7zwcam89vz5d7p7k8fx5ta2/commands": {
+        "status": 200,
+        "body": {
+            "data": [],
+            "meta": {
+                "currentPage": 1,
+                "lastPage": 1,
+                "total": 0
+            }
+        }
+    },
     "GET /websites/01m7zwcam89vz5d7p7k8fx5ta2/deploy": {
         "status": 200,
         "body": {
@@ -6821,6 +6865,17 @@
         "status": 200,
         "body": {
             "data": []
+        }
+    },
+    "GET /websites/01m7zwcann8v34h4wpatn59wjr/commands": {
+        "status": 200,
+        "body": {
+            "data": [],
+            "meta": {
+                "currentPage": 1,
+                "lastPage": 1,
+                "total": 0
+            }
         }
     },
     "GET /websites/01m7zwcann8v34h4wpatn59wjr/deploy": {

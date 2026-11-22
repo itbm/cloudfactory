@@ -8193,6 +8193,17 @@
             ]
         }
     },
+    "GET /websites/01m7zwcajpcbqz8v9kkvqnc65a/commands": {
+        "status": 200,
+        "body": {
+            "data": [],
+            "meta": {
+                "currentPage": 1,
+                "lastPage": 1,
+                "total": 0
+            }
+        }
+    },
     "GET /websites/01m7zwcajpcbqz8v9kkvqnc65a/deploy": {
         "status": 200,
         "body": {
@@ -8772,6 +8783,98 @@
             ]
         }
     },
+    "GET /websites/01m7zwcakhwxpa8qmpsqz4p0gk/commands": {
+        "status": 200,
+        "body": {
+            "data": [
+                {
+                    "id": "01m82jppdpt215s2n6f4p03hwd",
+                    "websiteId": "01m7zwcakhwxpa8qmpsqz4p0gk",
+                    "source": "run",
+                    "command": "php artisan orders:export --since=yesterday",
+                    "state": "done",
+                    "exitCode": 1,
+                    "timedOut": false,
+                    "timeoutSeconds": 600,
+                    "actor": "Olu Owner",
+                    "ip": "203.0.113.14",
+                    "jobId": null,
+                    "createdAt": "2026-11-14T09:48:00+00:00",
+                    "startedAt": "2026-11-14T09:48:00+00:00",
+                    "finishedAt": "2026-11-14T09:48:04+00:00"
+                },
+                {
+                    "id": "01m82jppdpt215s2n6f4p03hwc",
+                    "websiteId": "01m7zwcakhwxpa8qmpsqz4p0gk",
+                    "source": "run",
+                    "command": "php artisan queue:restart",
+                    "state": "done",
+                    "exitCode": 0,
+                    "timedOut": false,
+                    "timeoutSeconds": 600,
+                    "actor": "Olu Owner",
+                    "ip": "203.0.113.14",
+                    "jobId": null,
+                    "createdAt": "2026-11-14T09:18:00+00:00",
+                    "startedAt": "2026-11-14T09:18:00+00:00",
+                    "finishedAt": "2026-11-14T09:18:01+00:00"
+                },
+                {
+                    "id": "01m82jppdn0fn09b0qmcgnj1ge",
+                    "websiteId": "01m7zwcakhwxpa8qmpsqz4p0gk",
+                    "source": "run",
+                    "command": "du -sh storage/logs",
+                    "state": "done",
+                    "exitCode": 0,
+                    "timedOut": false,
+                    "timeoutSeconds": 600,
+                    "actor": "Alex Admin",
+                    "ip": "203.0.113.11",
+                    "jobId": null,
+                    "createdAt": "2026-11-14T05:00:00+00:00",
+                    "startedAt": "2026-11-14T05:00:00+00:00",
+                    "finishedAt": "2026-11-14T05:00:01+00:00"
+                },
+                {
+                    "id": "01m82jppdn0fn09b0qmcgnj1gd",
+                    "websiteId": "01m7zwcakhwxpa8qmpsqz4p0gk",
+                    "source": "run",
+                    "command": "php artisan config:cache",
+                    "state": "done",
+                    "exitCode": 0,
+                    "timedOut": false,
+                    "timeoutSeconds": 600,
+                    "actor": "Olu Owner",
+                    "ip": "203.0.113.14",
+                    "jobId": null,
+                    "createdAt": "2026-11-13T09:10:00+00:00",
+                    "startedAt": "2026-11-13T09:10:00+00:00",
+                    "finishedAt": "2026-11-13T09:10:01+00:00"
+                },
+                {
+                    "id": "01m82jppdn0fn09b0qmcgnj1gc",
+                    "websiteId": "01m7zwcakhwxpa8qmpsqz4p0gk",
+                    "source": "run",
+                    "command": "php artisan migrate --force",
+                    "state": "done",
+                    "exitCode": 0,
+                    "timedOut": false,
+                    "timeoutSeconds": 600,
+                    "actor": "Olu Owner",
+                    "ip": "203.0.113.14",
+                    "jobId": null,
+                    "createdAt": "2026-11-13T09:00:00+00:00",
+                    "startedAt": "2026-11-13T09:00:00+00:00",
+                    "finishedAt": "2026-11-13T09:00:03+00:00"
+                }
+            ],
+            "meta": {
+                "currentPage": 1,
+                "lastPage": 1,
+                "total": 5
+            }
+        }
+    },
     "GET /websites/01m7zwcakhwxpa8qmpsqz4p0gk/deploy": {
         "status": 200,
         "body": {
@@ -9318,6 +9421,17 @@
             "data": []
         }
     },
+    "GET /websites/01m7zwcamdcnyxgqg7y6qxy9kq/commands": {
+        "status": 200,
+        "body": {
+            "data": [],
+            "meta": {
+                "currentPage": 1,
+                "lastPage": 1,
+                "total": 0
+            }
+        }
+    },
     "GET /websites/01m7zwcamdcnyxgqg7y6qxy9kq/deploy": {
         "status": 200,
         "body": {
@@ -9828,6 +9942,17 @@
             "data": []
         }
     },
+    "GET /websites/01m7zwcanbp77t9f5canvt4kac/commands": {
+        "status": 200,
+        "body": {
+            "data": [],
+            "meta": {
+                "currentPage": 1,
+                "lastPage": 1,
+                "total": 0
+            }
+        }
+    },
     "GET /websites/01m7zwcanbp77t9f5canvt4kac/deploy": {
         "status": 200,
         "body": {
@@ -10184,6 +10309,17 @@
             "data": []
         }
     },
+    "GET /websites/01m7zwcamn72f0skt4xfrgep29/commands": {
+        "status": 200,
+        "body": {
+            "data": [],
+            "meta": {
+                "currentPage": 1,
+                "lastPage": 1,
+                "total": 0
+            }
+        }
+    },
     "GET /websites/01m7zwcamn72f0skt4xfrgep29/deploy": {
         "status": 200,
         "body": {
@@ -10359,6 +10495,17 @@
         "status": 200,
         "body": {
             "data": []
+        }
+    },
+    "GET /websites/01m7zwcamhc032v5p863nhtmxw/commands": {
+        "status": 200,
+        "body": {
+            "data": [],
+            "meta": {
+                "currentPage": 1,
+                "lastPage": 1,
+                "total": 0
+            }
         }
     },
     "GET /websites/01m7zwcamhc032v5p863nhtmxw/deploy": {
@@ -10813,6 +10960,17 @@
         "status": 200,
         "body": {
             "data": []
+        }
+    },
+    "GET /websites/01m7zwcamsw32yqh1nv58nwz27/commands": {
+        "status": 200,
+        "body": {
+            "data": [],
+            "meta": {
+                "currentPage": 1,
+                "lastPage": 1,
+                "total": 0
+            }
         }
     },
     "GET /websites/01m7zwcamsw32yqh1nv58nwz27/deploy": {
@@ -11278,6 +11436,17 @@
                     "lastOutput": "Success: Database optimized."
                 }
             ]
+        }
+    },
+    "GET /websites/01m7zwcam89vz5d7p7k8fx5ta2/commands": {
+        "status": 200,
+        "body": {
+            "data": [],
+            "meta": {
+                "currentPage": 1,
+                "lastPage": 1,
+                "total": 0
+            }
         }
     },
     "GET /websites/01m7zwcam89vz5d7p7k8fx5ta2/deploy": {
@@ -11793,6 +11962,17 @@
         "status": 200,
         "body": {
             "data": []
+        }
+    },
+    "GET /websites/01m7zwcam0z7xgae8zs98cyj1w/commands": {
+        "status": 200,
+        "body": {
+            "data": [],
+            "meta": {
+                "currentPage": 1,
+                "lastPage": 1,
+                "total": 0
+            }
         }
     },
     "GET /websites/01m7zwcam0z7xgae8zs98cyj1w/deploy": {
@@ -12315,6 +12495,17 @@
             "data": []
         }
     },
+    "GET /websites/01m7zwcamyf7z3qcgzxeaw99pk/commands": {
+        "status": 200,
+        "body": {
+            "data": [],
+            "meta": {
+                "currentPage": 1,
+                "lastPage": 1,
+                "total": 0
+            }
+        }
+    },
     "GET /websites/01m7zwcamyf7z3qcgzxeaw99pk/deploy": {
         "status": 200,
         "body": {
@@ -12825,6 +13016,17 @@
             "data": []
         }
     },
+    "GET /websites/01m7zwcan6scqraz17xrhcyza9/commands": {
+        "status": 200,
+        "body": {
+            "data": [],
+            "meta": {
+                "currentPage": 1,
+                "lastPage": 1,
+                "total": 0
+            }
+        }
+    },
     "GET /websites/01m7zwcan6scqraz17xrhcyza9/deploy": {
         "status": 200,
         "body": {
@@ -13234,6 +13436,17 @@
         "status": 200,
         "body": {
             "data": []
+        }
+    },
+    "GET /websites/01m7zwcann8v34h4wpatn59wjr/commands": {
+        "status": 200,
+        "body": {
+            "data": [],
+            "meta": {
+                "currentPage": 1,
+                "lastPage": 1,
+                "total": 0
+            }
         }
     },
     "GET /websites/01m7zwcann8v34h4wpatn59wjr/deploy": {
@@ -13841,6 +14054,50 @@
             ]
         }
     },
+    "GET /websites/01m7zwcak9m3c7xpmw97k1dxn9/commands": {
+        "status": 200,
+        "body": {
+            "data": [
+                {
+                    "id": "01m82jppdpt215s2n6f4p03hwf",
+                    "websiteId": "01m7zwcak9m3c7xpmw97k1dxn9",
+                    "source": "run",
+                    "command": "wp cache flush",
+                    "state": "done",
+                    "exitCode": 0,
+                    "timedOut": false,
+                    "timeoutSeconds": 600,
+                    "actor": "Olu Owner",
+                    "ip": "203.0.113.14",
+                    "jobId": null,
+                    "createdAt": "2026-11-14T08:32:00+00:00",
+                    "startedAt": "2026-11-14T08:32:00+00:00",
+                    "finishedAt": "2026-11-14T08:32:01+00:00"
+                },
+                {
+                    "id": "01m82jppdpt215s2n6f4p03hwe",
+                    "websiteId": "01m7zwcak9m3c7xpmw97k1dxn9",
+                    "source": "run",
+                    "command": "wp plugin list --update=available",
+                    "state": "done",
+                    "exitCode": 0,
+                    "timedOut": false,
+                    "timeoutSeconds": 600,
+                    "actor": "Olu Owner",
+                    "ip": "203.0.113.14",
+                    "jobId": null,
+                    "createdAt": "2026-11-14T08:30:00+00:00",
+                    "startedAt": "2026-11-14T08:30:00+00:00",
+                    "finishedAt": "2026-11-14T08:30:02+00:00"
+                }
+            ],
+            "meta": {
+                "currentPage": 1,
+                "lastPage": 1,
+                "total": 2
+            }
+        }
+    },
     "GET /websites/01m7zwcak9m3c7xpmw97k1dxn9/deploy": {
         "status": 200,
         "body": {
@@ -14412,6 +14669,17 @@
         "status": 200,
         "body": {
             "data": []
+        }
+    },
+    "GET /websites/01m7zwcakqr2r1per94d71k2g4/commands": {
+        "status": 200,
+        "body": {
+            "data": [],
+            "meta": {
+                "currentPage": 1,
+                "lastPage": 1,
+                "total": 0
+            }
         }
     },
     "GET /websites/01m7zwcakqr2r1per94d71k2g4/deploy": {
