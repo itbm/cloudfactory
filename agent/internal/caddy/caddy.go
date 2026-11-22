@@ -1,7 +1,8 @@
 // Package caddy sets the routes of the edge proxy through the Caddy admin API.
 //
 // Each website has one route with the ID "cf-<website ID>". The route sends all requests to the
-// website container, which also serves the static files (FR-309). The edge proxy cannot read the
+// website container, which also serves the static files (FR-309). It adds the website ID to
+// the entry of each request in the access log, which Caddy sends to the agent. The edge proxy cannot read the
 // files of the websites, so a link in one website cannot show the files of a different website
 // (CF-04). Redirect domains have a second route with the ID "cf-<website ID>-redirect" (FR-402).
 //
@@ -105,29 +106,79 @@ const StoppedPage = `<!doctype html>
 </html>
 `
 
-// EnsureBase loads the base configuration when Caddy has no "edge" server.
+// EnsureBase loads the base configuration when Caddy has no "edge" server. When Caddy has
+// one, it sets the logging configuration of this agent version, if it is different.
 func (c *Client) EnsureBase(ctx context.Context) error {
 	status, _, err := c.do(ctx, http.MethodGet, "/config/apps/http/servers/"+serverName, nil)
 	if err != nil {
 		return err
 	}
-	if status == http.StatusOK {
+	if status != http.StatusOK {
+		return c.expect(ctx, http.MethodPost, "/load", BaseConfig(), http.StatusOK)
+	}
+	status, body, err := c.do(ctx, http.MethodGet, "/config/logging", nil)
+	if err != nil {
+		return err
+	}
+	want, err := json.Marshal(LoggingConfig())
+	if err != nil {
+		return err
+	}
+	if status == http.StatusOK && sameJSON(body, want) {
 		return nil
 	}
-	return c.expect(ctx, http.MethodPost, "/load", BaseConfig(), http.StatusOK)
+	return c.expect(ctx, http.MethodPost, "/config/logging", LoggingConfig(), http.StatusOK)
 }
 
-// BaseConfig is the configuration of a new edge proxy. It logs requests as JSON, and it
-// counts the traffic of each host.
+// sameJSON reports whether two JSON documents have the same values.
+func sameJSON(a, b []byte) bool {
+	var x, y any
+	if json.Unmarshal(a, &x) != nil || json.Unmarshal(b, &y) != nil {
+		return false
+	}
+	xb, _ := json.Marshal(x)
+	yb, _ := json.Marshal(y)
+	return bytes.Equal(xb, yb)
+}
+
+// LogAddress is the address in the edge container to which Caddy sends the access log: the
+// receiver of the worker on the private service address (sitelogs.Receiver).
+var LogAddress = "tcp/" + quadlet.ServiceAddress + ":" + strconv.Itoa(quadlet.EdgeLogPort)
+
+// LoggingConfig is the logging configuration of the edge proxy. Caddy sends each entry of the
+// access log as one line of JSON to the agent. When the agent does not answer, Caddy writes
+// the entries to its standard error, and connects again after 10 seconds. The route of each
+// website adds the field "cf_website" (SiteRoute), so the agent knows the website of each
+// entry.
+func LoggingConfig() map[string]any {
+	return map[string]any{"logs": map[string]any{
+		"access": map[string]any{
+			"writer": map[string]any{"output": "net", "address": LogAddress, "dial_timeout": "2s", "soft_start": true},
+			"encoder": map[string]any{
+				"format":          "json",
+				"time_format":     "rfc3339_nano",
+				"duration_format": "seconds",
+			},
+			"include": []string{"http.log.access"},
+		},
+		// The access log has each request one time: not also in the default log.
+		"default": map[string]any{"exclude": []string{"http.log.access"}},
+	}}
+}
+
+// logField adds the ID of the website to the entry of each request of a route in the access
+// log. The agent puts the entry in the access log of that website.
+func logField(websiteID string) map[string]any {
+	return map[string]any{"handler": "log_append", "key": "cf_website", "value": websiteID, "early": true}
+}
+
+// BaseConfig is the configuration of a new edge proxy. It sends the access log to the agent,
+// and it counts the traffic of each host.
 func BaseConfig() map[string]any {
 	return map[string]any{
 		// CF-13: a Unix socket, not a TCP port. Only the edge user and root can open it.
-		"admin": map[string]any{"listen": "unix/" + AdminSocket},
-		"logging": map[string]any{"logs": map[string]any{
-			"access": map[string]any{"encoder": map[string]any{"format": "json"}, "include": []string{"http.log.access"}},
-			// The access log has each request one time: not also in the default log.
-			"default": map[string]any{"exclude": []string{"http.log.access"}},
-		}},
+		"admin":   map[string]any{"listen": "unix/" + AdminSocket},
+		"logging": LoggingConfig(),
 		"apps": map[string]any{"http": map[string]any{
 			// The host firewall redirects 80 and 443 to these ports. The "edge" server listens
 			// for HTTPS. Caddy adds a server on the HTTP port that redirects to HTTPS and
@@ -267,7 +318,7 @@ func SiteRoute(s Site, upstream string) map[string]any {
 	return map[string]any{
 		"@id":      "cf-" + s.WebsiteID,
 		"match":    []any{match},
-		"handle":   []any{handler},
+		"handle":   []any{logField(s.WebsiteID), handler},
 		"terminal": true,
 	}
 }
@@ -294,7 +345,7 @@ func RedirectRoute(s Site) map[string]any {
 	return map[string]any{
 		"@id":   "cf-" + s.WebsiteID + "-redirect",
 		"match": []any{hostMatch(s.Redirects)},
-		"handle": []any{map[string]any{
+		"handle": []any{logField(s.WebsiteID), map[string]any{
 			"handler":     "static_response",
 			"status_code": 308,
 			"headers":     map[string]any{"Location": []string{"https://" + s.Primary + "{http.request.uri}"}},

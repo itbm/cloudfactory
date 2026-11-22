@@ -2,7 +2,11 @@
   "admin": { "listen": "unix//run/caddy-admin/admin.sock" },
   "logging": {
     "logs": {
-      "access": { "encoder": { "format": "json" }, "include": ["http.log.access"] },
+      "access": {
+        "writer": { "output": "net", "address": "tcp/169.254.77.1:19514", "dial_timeout": "2s", "soft_start": true },
+        "encoder": { "format": "json", "time_format": "rfc3339_nano", "duration_format": "seconds" },
+        "include": ["http.log.access"]
+      },
       "default": { "exclude": ["http.log.access"] }
     }
   },

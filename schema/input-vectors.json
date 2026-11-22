@@ -1322,6 +1322,22 @@
     "packImageVersion": {
       "valid": ["1.25", "3.4.1", "1.25-alpine", "2024_1", "1+r2", "abcdefghijklmnop"],
       "invalid": ["", "-1.25", ".1", "1 25", "1/25", "1.25\n", "abcdefghijklmnopq"]
+    },
+    "logSearch": {
+      "valid": ["/checkout", "500 -bot", "\"PHP Fatal error\" stock", "café", { "repeat": [["a", 200]] }],
+      "invalid": ["", "a\nb", "a\tb", "a\u0000b", "a\u007fb", { "repeat": [["a", 201]] }]
+    },
+    "logCursor": {
+      "valid": ["eyJhIjp7ImYiOiIyMDI2In19", "a-b_C9", { "repeat": [["a", 512]] }],
+      "invalid": ["", "a b", "a+b", "a/b", "a=", { "repeat": [["a", 513]] }]
+    },
+    "httpStatus": {
+      "valid": ["100", "200", "404", "599", "5xx", "1xx"],
+      "invalid": ["", "099", "600", "4x", "4XX", "x04", "2000", "20"]
+    },
+    "httpMethod": {
+      "valid": ["GET", "POST", "PROPFIND", { "repeat": [["A", 16]] }],
+      "invalid": ["", "get", "GE T", "G1", { "repeat": [["A", 17]] }]
     }
   }
 }

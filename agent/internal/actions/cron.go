@@ -16,6 +16,7 @@ import (
 	"github.com/itbm/cloudfactory/agent/internal/jobs"
 	"github.com/itbm/cloudfactory/agent/internal/panel"
 	"github.com/itbm/cloudfactory/agent/internal/quadlet"
+	"github.com/itbm/cloudfactory/agent/internal/sitelogs"
 	"github.com/itbm/cloudfactory/agent/internal/validate"
 )
 
@@ -216,7 +217,7 @@ func (d *Deps) runCron(ctx context.Context, site *Site, e CronEntry) panel.CronR
 	default:
 		run.Output = out
 	}
-	run.Output = lastLines(cleanText(run.Output), cronOutputMax)
+	run.Output = lastLines(sitelogs.Clean(run.Output), cronOutputMax)
 	return run
 }
 

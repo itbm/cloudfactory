@@ -43,6 +43,7 @@ import (
 	"github.com/itbm/cloudfactory/agent/internal/quadlet"
 	"github.com/itbm/cloudfactory/agent/internal/selfupdate"
 	"github.com/itbm/cloudfactory/agent/internal/sitefiles"
+	"github.com/itbm/cloudfactory/agent/internal/sitelogs"
 	"github.com/itbm/cloudfactory/agent/internal/status"
 	"github.com/itbm/cloudfactory/agent/internal/validate"
 )
@@ -75,6 +76,15 @@ func main() {
 	// (actions.Files), so it is not in the usage text. It reads no settings of the agent.
 	if len(os.Args) == 3 && os.Args[1] == "site-files" {
 		if err := sitefiles.Main(os.Args[2], os.Stdin, os.Stdout); err != nil {
+			os.Exit(1)
+		}
+		return
+	}
+	// The search of the log of the containers of a website. The worker starts this command as
+	// the Unix user of the website (actions.SearchLogs), so it is not in the usage text. It
+	// reads no settings of the agent.
+	if len(os.Args) == 3 && os.Args[1] == "log-search" {
+		if err := sitelogs.Main(os.Args[2], os.Stdin, os.Stdout); err != nil {
 			os.Exit(1)
 		}
 		return

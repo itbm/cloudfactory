@@ -17,6 +17,7 @@ import (
 	agentv1 "github.com/itbm/cloudfactory/agent/gen/cloudfactory/agent/v1"
 	"github.com/itbm/cloudfactory/agent/internal/jobs"
 	"github.com/itbm/cloudfactory/agent/internal/quadlet"
+	"github.com/itbm/cloudfactory/agent/internal/sitelogs"
 	"github.com/itbm/cloudfactory/agent/internal/validate"
 )
 
@@ -132,7 +133,7 @@ func commandError(what string, err error) error {
 	} else if errors.Is(err, context.DeadlineExceeded) || strings.Contains(text, "signal: killed") {
 		text = "the time limit ended"
 	}
-	return fmt.Errorf("%s: %s", what, cleanText(text))
+	return fmt.Errorf("%s: %s", what, sitelogs.Clean(text))
 }
 
 // commitID is the ID of a Git commit: SHA-1 or SHA-256.
@@ -292,7 +293,7 @@ func (d *Deps) Deploy(req *agentv1.DeployRequest) (jobs.Job, error) {
 			if len(message) > 200 {
 				message = message[:200]
 			}
-			message = strings.ReplaceAll(cleanText(strings.ToValidUTF8(message, "")), "\n", " ")
+			message = strings.ReplaceAll(sitelogs.Clean(strings.ToValidUTF8(message, "")), "\n", " ")
 			return nil
 		}},
 		{Name: "Build", Do: func(ctx context.Context) error {

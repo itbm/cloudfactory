@@ -177,8 +177,8 @@ const (
 	AgentServiceMoveFileProcedure = "/cloudfactory.agent.v1.AgentService/MoveFile"
 	// AgentServiceDeleteFileProcedure is the fully-qualified name of the AgentService's DeleteFile RPC.
 	AgentServiceDeleteFileProcedure = "/cloudfactory.agent.v1.AgentService/DeleteFile"
-	// AgentServiceGetLogsProcedure is the fully-qualified name of the AgentService's GetLogs RPC.
-	AgentServiceGetLogsProcedure = "/cloudfactory.agent.v1.AgentService/GetLogs"
+	// AgentServiceSearchLogsProcedure is the fully-qualified name of the AgentService's SearchLogs RPC.
+	AgentServiceSearchLogsProcedure = "/cloudfactory.agent.v1.AgentService/SearchLogs"
 )
 
 // AgentServiceClient is a client for the cloudfactory.agent.v1.AgentService service.
@@ -233,16 +233,21 @@ type AgentServiceClient interface {
 	SetPacks(context.Context, *connect.Request[v1.SetPacksRequest]) (*connect.Response[v1.JobAccepted], error)
 	// Returns the actual state of the server at once. This method does not make a job.
 	GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.HostStatus], error)
-	// The file manager and the logs of a website. These methods do not make a job: they give
-	// the result at once. The agent does each of them as the Unix user of the website, in the
-	// directory of the website.
+	// The file manager of a website. These methods do not make a job: they give the result at
+	// once. The agent does each of them as the Unix user of the website, in the directory of the
+	// website.
 	ListFiles(context.Context, *connect.Request[v1.FileRequest]) (*connect.Response[v1.FileList], error)
 	ReadFile(context.Context, *connect.Request[v1.FileRequest]) (*connect.Response[v1.FileContent], error)
 	WriteFile(context.Context, *connect.Request[v1.WriteFileRequest]) (*connect.Response[v1.FileEntry], error)
 	MakeDirectory(context.Context, *connect.Request[v1.FileRequest]) (*connect.Response[v1.FileEntry], error)
 	MoveFile(context.Context, *connect.Request[v1.MoveFileRequest]) (*connect.Response[v1.FileEntry], error)
 	DeleteFile(context.Context, *connect.Request[v1.FileRequest]) (*connect.Response[v1.FileDeleted], error)
-	GetLogs(context.Context, *connect.Request[v1.GetLogsRequest]) (*connect.Response[v1.Logs], error)
+	// Searches the logs of a website: the access log of the edge proxy, and the output and the
+	// errors of the containers of the website. The agent reads the log of the containers as the
+	// Unix user of the website. With no website, it searches the access log of the edge proxy
+	// for the requests that are not for a website: the panel, the webmail and the mail host.
+	// This method does not make a job.
+	SearchLogs(context.Context, *connect.Request[v1.SearchLogsRequest]) (*connect.Response[v1.LogSearchResult], error)
 }
 
 // NewAgentServiceClient constructs a client for the cloudfactory.agent.v1.AgentService service. By
@@ -562,10 +567,10 @@ func NewAgentServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(agentServiceMethods.ByName("DeleteFile")),
 			connect.WithClientOptions(opts...),
 		),
-		getLogs: connect.NewClient[v1.GetLogsRequest, v1.Logs](
+		searchLogs: connect.NewClient[v1.SearchLogsRequest, v1.LogSearchResult](
 			httpClient,
-			baseURL+AgentServiceGetLogsProcedure,
-			connect.WithSchema(agentServiceMethods.ByName("GetLogs")),
+			baseURL+AgentServiceSearchLogsProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("SearchLogs")),
 			connect.WithClientOptions(opts...),
 		),
 	}
@@ -624,7 +629,7 @@ type agentServiceClient struct {
 	makeDirectory         *connect.Client[v1.FileRequest, v1.FileEntry]
 	moveFile              *connect.Client[v1.MoveFileRequest, v1.FileEntry]
 	deleteFile            *connect.Client[v1.FileRequest, v1.FileDeleted]
-	getLogs               *connect.Client[v1.GetLogsRequest, v1.Logs]
+	searchLogs            *connect.Client[v1.SearchLogsRequest, v1.LogSearchResult]
 }
 
 // CreateWebsite calls cloudfactory.agent.v1.AgentService.CreateWebsite.
@@ -882,9 +887,9 @@ func (c *agentServiceClient) DeleteFile(ctx context.Context, req *connect.Reques
 	return c.deleteFile.CallUnary(ctx, req)
 }
 
-// GetLogs calls cloudfactory.agent.v1.AgentService.GetLogs.
-func (c *agentServiceClient) GetLogs(ctx context.Context, req *connect.Request[v1.GetLogsRequest]) (*connect.Response[v1.Logs], error) {
-	return c.getLogs.CallUnary(ctx, req)
+// SearchLogs calls cloudfactory.agent.v1.AgentService.SearchLogs.
+func (c *agentServiceClient) SearchLogs(ctx context.Context, req *connect.Request[v1.SearchLogsRequest]) (*connect.Response[v1.LogSearchResult], error) {
+	return c.searchLogs.CallUnary(ctx, req)
 }
 
 // AgentServiceHandler is an implementation of the cloudfactory.agent.v1.AgentService service.
@@ -939,16 +944,21 @@ type AgentServiceHandler interface {
 	SetPacks(context.Context, *connect.Request[v1.SetPacksRequest]) (*connect.Response[v1.JobAccepted], error)
 	// Returns the actual state of the server at once. This method does not make a job.
 	GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.HostStatus], error)
-	// The file manager and the logs of a website. These methods do not make a job: they give
-	// the result at once. The agent does each of them as the Unix user of the website, in the
-	// directory of the website.
+	// The file manager of a website. These methods do not make a job: they give the result at
+	// once. The agent does each of them as the Unix user of the website, in the directory of the
+	// website.
 	ListFiles(context.Context, *connect.Request[v1.FileRequest]) (*connect.Response[v1.FileList], error)
 	ReadFile(context.Context, *connect.Request[v1.FileRequest]) (*connect.Response[v1.FileContent], error)
 	WriteFile(context.Context, *connect.Request[v1.WriteFileRequest]) (*connect.Response[v1.FileEntry], error)
 	MakeDirectory(context.Context, *connect.Request[v1.FileRequest]) (*connect.Response[v1.FileEntry], error)
 	MoveFile(context.Context, *connect.Request[v1.MoveFileRequest]) (*connect.Response[v1.FileEntry], error)
 	DeleteFile(context.Context, *connect.Request[v1.FileRequest]) (*connect.Response[v1.FileDeleted], error)
-	GetLogs(context.Context, *connect.Request[v1.GetLogsRequest]) (*connect.Response[v1.Logs], error)
+	// Searches the logs of a website: the access log of the edge proxy, and the output and the
+	// errors of the containers of the website. The agent reads the log of the containers as the
+	// Unix user of the website. With no website, it searches the access log of the edge proxy
+	// for the requests that are not for a website: the panel, the webmail and the mail host.
+	// This method does not make a job.
+	SearchLogs(context.Context, *connect.Request[v1.SearchLogsRequest]) (*connect.Response[v1.LogSearchResult], error)
 }
 
 // NewAgentServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -1264,10 +1274,10 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(agentServiceMethods.ByName("DeleteFile")),
 		connect.WithHandlerOptions(opts...),
 	)
-	agentServiceGetLogsHandler := connect.NewUnaryHandler(
-		AgentServiceGetLogsProcedure,
-		svc.GetLogs,
-		connect.WithSchema(agentServiceMethods.ByName("GetLogs")),
+	agentServiceSearchLogsHandler := connect.NewUnaryHandler(
+		AgentServiceSearchLogsProcedure,
+		svc.SearchLogs,
+		connect.WithSchema(agentServiceMethods.ByName("SearchLogs")),
 		connect.WithHandlerOptions(opts...),
 	)
 	return "/cloudfactory.agent.v1.AgentService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1374,8 +1384,8 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 			agentServiceMoveFileHandler.ServeHTTP(w, r)
 		case AgentServiceDeleteFileProcedure:
 			agentServiceDeleteFileHandler.ServeHTTP(w, r)
-		case AgentServiceGetLogsProcedure:
-			agentServiceGetLogsHandler.ServeHTTP(w, r)
+		case AgentServiceSearchLogsProcedure:
+			agentServiceSearchLogsHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -1589,6 +1599,6 @@ func (UnimplementedAgentServiceHandler) DeleteFile(context.Context, *connect.Req
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.DeleteFile is not implemented"))
 }
 
-func (UnimplementedAgentServiceHandler) GetLogs(context.Context, *connect.Request[v1.GetLogsRequest]) (*connect.Response[v1.Logs], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.GetLogs is not implemented"))
+func (UnimplementedAgentServiceHandler) SearchLogs(context.Context, *connect.Request[v1.SearchLogsRequest]) (*connect.Response[v1.LogSearchResult], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.SearchLogs is not implemented"))
 }

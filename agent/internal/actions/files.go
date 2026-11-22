@@ -6,19 +6,20 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
-	"strconv"
-	"strings"
+	"slices"
 	"time"
 
 	agentv1 "github.com/itbm/cloudfactory/agent/gen/cloudfactory/agent/v1"
 	"github.com/itbm/cloudfactory/agent/internal/sitefiles"
+	"github.com/itbm/cloudfactory/agent/internal/sitelogs"
 	"github.com/itbm/cloudfactory/agent/internal/validate"
 )
 
 // The file manager and the logs of the panel. These functions do not make a job: the panel
 // waits for the answer. Each of them runs a command as the Unix user of the website, so the
 // kernel limits it to the files of that website. The agent never opens a file of a website
-// as root or as its own user.
+// as root or as its own user. The access log of the edge proxy is a file of the worker, not of
+// the website.
 
 // ErrUnknownWebsite is the error for a website that the agent does not have.
 var ErrUnknownWebsite = errors.New("the agent does not know this website")
@@ -108,81 +109,114 @@ func (d *Deps) logFile(unixUser string) string {
 	return filepath.Join(d.Host.Home(unixUser), "website.log")
 }
 
-// The limits of GetLogs.
-const (
-	defaultLogLines = 200
-	maxLogLines     = 2000
-	maxLogLineBytes = 4000
-)
+// ensureAccessLog makes the directory of the access log of a website. The worker keeps the
+// entries of a website only when the directory is there.
+func (d *Deps) ensureAccessLog(websiteID string) error {
+	if d.AccessLogs == nil {
+		return nil
+	}
+	return d.AccessLogs.Ensure(websiteID)
+}
 
-// Logs gives the last lines of the output of the containers of a website. The standard
-// output has the access log, and the standard error has the errors.
-func (d *Deps) Logs(ctx context.Context, websiteID string, lines int) ([]*agentv1.LogLine, error) {
-	site, err := d.knownSite(websiteID)
+// SearchLogs searches the logs of a website: the access log of the edge proxy, which the
+// worker keeps (sitelogs.Store), and the log file of its containers, which the agent reads as
+// the website user. With no website, it searches the access log of the routes that are not
+// for a website.
+func (d *Deps) SearchLogs(ctx context.Context, req *agentv1.SearchLogsRequest) (*agentv1.LogSearchResult, error) {
+	q, cursor, err := sitelogs.Parse(sitelogs.Request{
+		Sources: req.GetSources(), Text: req.GetText(), Statuses: req.GetStatuses(), Methods: req.GetMethods(),
+		Client: req.GetClient(), From: req.GetFrom(), To: req.GetTo(), Cursor: req.GetCursor(), Limit: int(req.GetLimit()), Summary: req.GetSummary(),
+	})
 	if err != nil {
-		return nil, err
+		return nil, &FileError{Code: sitefiles.CodeInvalid, Text: err.Error()}
 	}
-	if lines <= 0 {
-		lines = defaultLogLines
-	}
-	lines = min(lines, maxLogLines)
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	out, err := d.Run.Run(ctx, "runuser", "-u", site.UnixUser, "--", "tail", "-n", strconv.Itoa(lines), d.logFile(site.UnixUser))
-	if err != nil {
-		// A website that did not start after this release has no log file yet.
-		return nil, nil
-	}
-	return parseLogs(out), nil
-}
-
-// parseLogs reads lines in the "k8s-file" format of Podman:
-// "<time> <stdout|stderr> <F|P> <text>". It ignores a line with a different format.
-func parseLogs(out string) []*agentv1.LogLine {
-	var lines []*agentv1.LogLine
-	for _, raw := range strings.Split(out, "\n") {
-		parts := strings.SplitN(raw, " ", 4)
-		if len(parts) < 3 {
-			continue
+	logName := sitelogs.ServerLog
+	var site *Site
+	if req.GetWebsiteId() != "" {
+		if site, err = d.knownSite(req.GetWebsiteId()); err != nil {
+			return nil, err
 		}
-		at, err := time.Parse(time.RFC3339Nano, parts[0])
+		logName = req.GetWebsiteId()
+	} else {
+		q.Sources = []string{sitelogs.SourceAccess}
+	}
+	var access, container *sitelogs.Group
+	if slices.Contains(q.Sources, sitelogs.SourceAccess) && d.AccessLogs != nil {
+		g, err := d.AccessLogs.Search(logName, &q, cursor.Access)
 		if err != nil {
-			continue
+			return nil, err
 		}
-		stream := "access"
-		switch parts[1] {
-		case "stdout":
-		case "stderr":
-			stream = "error"
-		default:
-			continue
-		}
-		text := ""
-		if len(parts) == 4 {
-			text = cleanText(parts[3])
-		}
-		if len(text) > maxLogLineBytes {
-			text = strings.ToValidUTF8(text[:maxLogLineBytes], "") + "…"
-		}
-		lines = append(lines, &agentv1.LogLine{At: at.UTC().Format(time.RFC3339Nano), Stream: stream, Text: text})
+		access = &g
 	}
-	return lines
+	switch {
+	case site == nil || !slices.Contains(q.Sources, sitelogs.SourceOutput) && !slices.Contains(q.Sources, sitelogs.SourceError):
+	case cursor.Container != nil && cursor.Container.End && !q.Summary:
+		// The earlier pages gave all lines of the containers.
+		container = &sitelogs.Group{}
+	default:
+		in, err := sitelogs.ContainerRequest(&q, cursor.Container)
+		if err != nil {
+			return nil, err
+		}
+		out, err := d.Run.RunInput(ctx, string(in), "runuser", "-u", site.UnixUser, "--", d.agentBinary(), "log-search", d.logFile(site.UnixUser))
+		if err != nil {
+			return nil, fmt.Errorf("the search of the log did not start: %w", err)
+		}
+		g, err := sitelogs.ReadContainerResult([]byte(out))
+		if err != nil {
+			return nil, err
+		}
+		container = &g
+	}
+	entries, next, more := sitelogs.Merge(q.Limit, cursor, access, container)
+	out := &agentv1.LogSearchResult{}
+	for _, e := range entries {
+		out.Entries = append(out.Entries, logEntry(e))
+	}
+	if more {
+		out.Next = next.Encode()
+	}
+	if q.Summary {
+		var sum *sitelogs.Summary
+		for _, g := range []*sitelogs.Group{access, container} {
+			if g != nil {
+				sum = sitelogs.AddSummary(sum, g.Summary)
+			}
+		}
+		out.Summary = logSummary(sum)
+	}
+	return out, nil
 }
 
-// cleanText gives a text of a website with no control character and no invalid UTF-8. The
-// owner of a website controls the log lines, the output of a cron job, the output of a build
-// and the subject of a commit. A person with more rights reads them, also in a terminal,
-// where a control character can change earlier lines (adversarial review, finding G5-09).
-// Tabs and line ends stay.
-func cleanText(s string) string {
-	s = strings.ToValidUTF8(s, "�")
-	return strings.Map(func(r rune) rune {
-		switch {
-		case r == '\t' || r == '\n':
-			return r
-		case r < 0x20 || r == 0x7f || r >= 0x80 && r < 0xa0 || r == 0x2028 || r == 0x2029:
-			return '�'
+// logEntry gives an entry of a log as a message for the panel.
+func logEntry(e sitelogs.Entry) *agentv1.LogEntry {
+	out := &agentv1.LogEntry{At: e.At.UTC().Format(time.RFC3339Nano), Source: e.Source, Text: e.Text}
+	if a := e.Access; a != nil {
+		out.Access = &agentv1.AccessEntry{
+			Client: a.Client, Method: a.Method, Host: a.Host, Uri: a.URI, Proto: a.Proto, Status: int32(a.Status),
+			SizeBytes: a.Size, DurationSeconds: a.Duration, UserAgent: a.UserAgent, Referer: a.Referer,
 		}
-		return r
-	}, s)
+	}
+	return out
+}
+
+// logSummary gives the summary of a search as a message for the panel.
+func logSummary(s *sitelogs.Summary) *agentv1.LogSummary {
+	out := &agentv1.LogSummary{}
+	if s == nil {
+		return out
+	}
+	out.Access, out.Output, out.Error, out.Statuses, out.SizeBytes = s.Access, s.Output, s.Error, s.Statuses, s.SizeBytes
+	for _, c := range s.TopPaths {
+		out.TopPaths = append(out.TopPaths, &agentv1.LogCount{Value: c.Value, Count: c.Count})
+	}
+	for _, c := range s.TopClients {
+		out.TopClients = append(out.TopClients, &agentv1.LogCount{Value: c.Value, Count: c.Count})
+	}
+	if !s.Oldest.IsZero() {
+		out.Oldest = s.Oldest.UTC().Format(time.RFC3339Nano)
+	}
+	return out
 }

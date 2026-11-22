@@ -24,6 +24,7 @@ import (
 	"github.com/itbm/cloudfactory/agent/internal/packs"
 	"github.com/itbm/cloudfactory/agent/internal/quadlet"
 	"github.com/itbm/cloudfactory/agent/internal/selfupdate"
+	"github.com/itbm/cloudfactory/agent/internal/sitelogs"
 )
 
 // Edge is the part of the Caddy client that the actions use.
@@ -214,9 +215,12 @@ type Deps struct {
 	SavePanelCA func(fingerprint string) error
 	// EdgeImage is the image of the edge proxy of this agent version.
 	EdgeImage string
-	// AgentBinary is the path of the program of the agent. The file manager starts it as the
-	// Unix user of a website. The default is "/usr/local/bin/cf-agent".
+	// AgentBinary is the path of the program of the agent. The file manager and the search of
+	// the logs start it as the Unix user of a website. The default is "/usr/local/bin/cf-agent".
 	AgentBinary string
+	// AccessLogs keeps the access log of the edge proxy for each website. The worker writes
+	// it. nil means no access logs.
+	AccessLogs *sitelogs.Store
 	// CronLimit is the time limit of the command of a cron job. The default is 1 hour.
 	CronLimit time.Duration
 	// BuildLimit is the time limit of each step of a deploy that runs commands. The default

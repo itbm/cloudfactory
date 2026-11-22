@@ -263,6 +263,28 @@ var ruleGitRepository = rule{
 // The address of a Git repository: HTTPS with no user name and no password, SSH as a URL, or the short SSH form "git@host:path". It cannot start with "-", and it cannot name a file or a helper program.
 func GitRepository(s string) error { return ruleGitRepository.check(s) }
 
+var ruleHTTPMethod = rule{
+	what:    "HTTP method",
+	pattern: regexp.MustCompile(`^[A-Z]{1,16}$`),
+	echo:    true,
+}
+
+// HTTPMethod checks a value with the rule "httpMethod" of schema/input-rules.json.
+//
+// An HTTP method in upper case, for example "POST".
+func HTTPMethod(s string) error { return ruleHTTPMethod.check(s) }
+
+var ruleHTTPStatus = rule{
+	what:    "HTTP status",
+	pattern: regexp.MustCompile(`^[1-5]([0-9][0-9]|xx)$`),
+	echo:    true,
+}
+
+// HTTPStatus checks a value with the rule "httpStatus" of schema/input-rules.json.
+//
+// An HTTP status code from 100 to 599, for example "404", or a class of status codes, for example "5xx".
+func HTTPStatus(s string) error { return ruleHTTPStatus.check(s) }
+
 var ruleID = rule{
 	what:    "ID",
 	pattern: regexp.MustCompile(`^[0-9A-Za-z]{26}$`),
@@ -356,6 +378,29 @@ var ruleIPv6 = rule{
 //
 // An IPv6 address in lower case, for the value of an AAAA record. It has only hexadecimal groups and colons: no IPv4 part and no zone.
 func IPv6(s string) error { return ruleIPv6.check(s) }
+
+var ruleLogCursor = rule{
+	what:      "log cursor",
+	pattern:   regexp.MustCompile(`^[A-Za-z0-9_-]+$`),
+	maxLength: 512,
+}
+
+// LogCursor checks a value with the rule "logCursor" of schema/input-rules.json.
+//
+// The value "next" of a search in the logs, which the agent makes. The search then gives the older entries.
+func LogCursor(s string) error { return ruleLogCursor.check(s) }
+
+var ruleLogSearch = rule{
+	what:      "search text of the logs",
+	pattern:   regexp.MustCompile(`^[^\x00-\x1f\x7f]+$`),
+	maxLength: 200,
+	echo:      true,
+}
+
+// LogSearch checks a value with the rule "logSearch" of schema/input-rules.json.
+//
+// The words of a search in the logs of a website. It is on one line and has no control characters. A word that starts with "-" must not be in an entry, and words in double quotation marks are one word.
+func LogSearch(s string) error { return ruleLogSearch.check(s) }
 
 var ruleMailAddress = rule{
 	what:      "mail address",
@@ -551,6 +596,8 @@ var rules = map[string]*rule{
 	"filePath":           &ruleFilePath,
 	"gitBranch":          &ruleGitBranch,
 	"gitRepository":      &ruleGitRepository,
+	"httpMethod":         &ruleHTTPMethod,
+	"httpStatus":         &ruleHTTPStatus,
 	"id":                 &ruleID,
 	"image":              &ruleImage,
 	"imageReference":     &ruleImageReference,
@@ -559,6 +606,8 @@ var rules = map[string]*rule{
 	"iniValue":           &ruleIniValue,
 	"ipv4":               &ruleIPv4,
 	"ipv6":               &ruleIPv6,
+	"logCursor":          &ruleLogCursor,
+	"logSearch":          &ruleLogSearch,
 	"mailAddress":        &ruleMailAddress,
 	"mailLocalPart":      &ruleMailLocalPart,
 	"mailPasswordHash":   &ruleMailPasswordHash,
@@ -617,6 +666,12 @@ const MaxDnsZonesPerJob = 100
 
 // MaxEnvironmentVariables: The largest number of environment variables of a website.
 const MaxEnvironmentVariables = 50
+
+// MaxLogEntries: The largest number of entries in one page of a search in the logs.
+const MaxLogEntries = 1000
+
+// MaxLogFilters: The largest number of status codes or of methods in a search in the logs.
+const MaxLogFilters = 10
 
 // MaxPackImages: The largest number of images in one pack.
 const MaxPackImages = 10
