@@ -130,6 +130,13 @@ export const DATABASE_HOST = { mariadb: "mariadb.internal", postgresql: "postgre
 export const DATABASE_PORT = { mariadb: 3306, postgresql: 5432, valkey: 6379 } as const;
 
 /** The status of a mail domain, a mailbox, an alias or a forwarder. */
+/**
+ * FR-603: the panel shows a warning when a mailbox is 90% full. At 98%, the warning is
+ * critical. The panel API has the same values (Mailbox::FULL_WARNING_PERCENT).
+ */
+export const MAILBOX_WARNING_PERCENT = 90;
+export const MAILBOX_CRITICAL_PERCENT = 98;
+
 export const MAIL_STATUS: Record<MailStatus, { label: string; tone: Tone }> = {
   pending: { label: "Setting up", tone: "info" },
   active: { label: "Active", tone: "success" },

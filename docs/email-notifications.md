@@ -31,7 +31,7 @@ Who gets the email of an event:
   browser. The first sign-in of a user gives no email. A client with no device ID, for example
   the `cf` command, is known by its user agent.
 - **Usage alert:** the users of the customer and of its reseller. The usage alerts feature
-  makes the alert.
+  makes the alert. A mailbox that is 90% full also gets an alert. The email names the mailbox.
 - **Server offline:** the administrators, when a server does not report for 5 minutes.
 
 ## Set up the SMTP server (administrators)

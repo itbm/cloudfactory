@@ -40,7 +40,7 @@ enum NotificationEvent: string
             self::AccountSuspended => 'The account is suspended, and its websites are stopped.',
             self::AccountRestored => 'The suspension of the account is lifted.',
             self::NewDeviceSignIn => 'Someone signed in to your user from a device or browser that the panel does not know.',
-            self::UsageAlert => 'A website or the account uses almost all of a limit of its plan.',
+            self::UsageAlert => 'A website, a database server or a mailbox uses almost all of its limit.',
             self::ServerOffline => 'A server did not report to the panel for 5 minutes.',
         };
     }
@@ -92,7 +92,7 @@ enum NotificationEvent: string
             self::AccountSuspended => ['account' => 'Acme Ltd', 'provider' => 'Cloudfactory', 'supportEmail' => 'support@example.com'],
             self::AccountRestored => ['account' => 'Acme Ltd', 'provider' => 'Cloudfactory'],
             self::NewDeviceSignIn => ['device' => 'Firefox on Linux', 'ip' => '203.0.113.7', 'time' => '15 Nov 2026 09:41 UTC'],
-            self::UsageAlert => ['account' => 'Acme Ltd', 'resource' => 'Disk', 'website' => 'shop.example.com', 'used' => '9.1 GB', 'limit' => '10 GB', 'percent' => '91', 'level' => 'warning'],
+            self::UsageAlert => ['account' => 'Acme Ltd', 'resource' => 'Disk', 'website' => 'shop.example.com', 'subject' => 'website shop.example.com', 'used' => '9.1 GB', 'limit' => '10 GB', 'percent' => '91', 'level' => 'warning'],
             self::ServerOffline => ['server' => 'web-2', 'lastSeen' => '15 Nov 2026 02:55 UTC'],
         };
     }
@@ -120,7 +120,7 @@ enum NotificationEvent: string
             self::AccountSuspended => "Hello {{name}},\n\nYour account {{account}} is suspended. Your websites are stopped, and SFTP access is off. Your files, databases and backups are not deleted.\n\nTo lift the suspension, speak to {{provider}}: {{supportEmail}}",
             self::AccountRestored => "Hello {{name}},\n\nThe suspension of your account {{account}} is lifted. The panel starts your websites again, and turns SFTP access on again.\n\n{{panelUrl}}",
             self::NewDeviceSignIn => "Hello {{name}},\n\nSomeone signed in to your user on {{brand}} from a new device.\n\nDevice: {{device}}\nIP address: {{ip}}\nTime: {{time}}\n\nIf this was you, you need not do anything. If not, change your password now, and turn on the authenticator app:\n{{panelUrl}}/settings",
-            self::UsageAlert => "Hello {{name}},\n\n{{account}} uses {{used}} of {{limit}} ({{percent}}%) of its {{resource}} limit. Website: {{website}}\n\nWhen it uses all of the limit, changes can fail. Remove data that you do not need, or ask for a larger plan:\n{{panelUrl}}/account",
+            self::UsageAlert => "Hello {{name}},\n\n{{account}} uses {{used}} of {{limit}} ({{percent}}%) of its {{resource}} limit.\nFor: {{subject}}\n\nWhen it uses all of the limit, changes can fail. A full mailbox refuses new mail. Remove data that you do not need, or ask for a larger limit:\n{{panelUrl}}/alerts",
             self::ServerOffline => "Hello {{name}},\n\nThe server {{server}} did not report to the panel since {{lastSeen}}. The panel keeps its jobs until it reports again.\n\nMake sure that the server is on and that the agent service runs:\n{{panelUrl}}/servers",
         };
     }

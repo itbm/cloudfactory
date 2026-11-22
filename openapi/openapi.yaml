@@ -968,14 +968,16 @@ paths:
         An alert opens when a resource of a website, a server or a database server reaches the
         warning percent of its limit, and becomes critical at the critical percent. It closes
         when the use goes 5 points below the warning percent. CPU and memory use the average of
-        the last 30 minutes. An administrator sees all alerts, also those of the servers. A
-        reseller sees the alerts of its customers, and an owner the alerts of their websites
-        and database servers. The panel does not stop a website at its limit because of an
+        the last 30 minutes. FR-603: a mailbox alert opens when a mailbox is 90% full, and
+        becomes critical at 98%. These two values do not change with the settings. An
+        administrator sees all alerts, also those of the servers. A reseller sees the alerts of
+        its customers, and an owner the alerts of their websites, database servers and
+        mailboxes. The panel does not stop a website at its limit because of an
         alert. The panel fires the Laravel events `UsageAlertRaised` and `UsageAlertResolved`
         for delivery, for example by email.
       parameters:
         - { name: state, in: query, schema: { type: string, enum: [open, resolved, all], default: open } }
-        - { name: subjectType, in: query, schema: { type: string, enum: [website, server, database_server] } }
+        - { name: subjectType, in: query, schema: { type: string, enum: [website, server, database_server, mailbox] } }
         - { name: subjectId, in: query, schema: { type: string } }
       responses:
         '200':
@@ -5141,12 +5143,12 @@ components:
       type: object
       properties:
         id: { type: string }
-        subjectType: { type: string, enum: [website, server, database_server] }
+        subjectType: { type: string, enum: [website, server, database_server, mailbox] }
         subjectId: { type: string }
-        subjectName: { type: [string, 'null'], description: Null when the subject was removed. }
+        subjectName: { type: [string, 'null'], description: 'Null when the subject was removed. The name of a mailbox is its address.' }
         customerId: { type: [string, 'null'], description: Null for a server. }
         serverId: { type: [string, 'null'] }
-        resource: { type: string, enum: [cpu, memory, disk, bandwidth, processes] }
+        resource: { type: string, enum: [cpu, memory, disk, bandwidth, processes, storage], description: '"storage" is the size of a mailbox.' }
         level: { type: string, enum: [warning, critical] }
         used: { type: number }
         limit: { type: number }

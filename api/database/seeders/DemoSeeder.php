@@ -469,6 +469,20 @@ class DemoSeeder extends Seeder
             MailAlias::create(['customer_id' => $owner->id, 'mail_domain_id' => $domain->id, 'local_part' => $local, 'kind' => 'alias', 'destinations' => ["$box@northwind.example.com"], 'status' => MailDomain::ACTIVE]);
         }
         MailAlias::create(['customer_id' => $owner->id, 'mail_domain_id' => $domain->id, 'local_part' => 'partners', 'kind' => 'forwarder', 'destinations' => ['alliances@partner.example.net', 'deals@reseller.example.org'], 'status' => MailDomain::ACTIVE]);
+
+        // FR-603: each mailbox that is 90% full or more has an alert, as after a mail report.
+        foreach (Mailbox::with('domain')->orderBy('local_part')->get() as $i => $mailbox) {
+            $percent = round($mailbox->used_bytes / $mailbox->quota_bytes * 100, 1);
+            if ($percent < Mailbox::FULL_WARNING_PERCENT) {
+                continue;
+            }
+            $level = $percent >= Mailbox::FULL_CRITICAL_PERCENT ? UsageAlert::CRITICAL : UsageAlert::WARNING;
+            UsageAlert::create([
+                'subject_type' => UsageAlert::MAILBOX, 'subject_id' => $mailbox->id, 'customer_id' => $mailbox->customer_id, 'server_id' => $mailbox->domain->server_id,
+                'resource' => 'storage', 'level' => $level, 'used' => $mailbox->used_bytes, 'limit' => $mailbox->quota_bytes, 'percent' => $percent,
+                'notified_level' => $level, 'opened_at' => now()->subHours(3 + $i % 20),
+            ]);
+        }
     }
 
     private function websites(): void
