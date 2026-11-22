@@ -80,6 +80,10 @@ The demo agent (`api/app/Demo`) fails these jobs, so that you can see a failure:
 - a cron job with `fail` in its command, when you select **Run now**;
 - a change of a DNS zone with a name that starts with `fail.`.
 
+The demonstration mode sends no request for an uptime check. Each sample website answers with
+HTTP status 200 and a page with its name. A check with `fail` in its path gets no answer, and a
+check that expects a different status or a text that is not on the page fails.
+
 In the demonstration mode, the file manager shows a small set of sample files for each
 website, and keeps your changes in the cache. The logs are sample lines.
 

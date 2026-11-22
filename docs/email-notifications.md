@@ -6,16 +6,18 @@ the emails that they get.
 
 ## Events
 
-| Event                         | Key                    | Who can get it                     |
-| ----------------------------- | ---------------------- | ---------------------------------- |
-| Failed jobs                   | `job.failed`           | Administrators, resellers, owners  |
-| Failed backups                | `backup.failed`        | Administrators, resellers, owners  |
-| Certificates that expire soon | `certificate.expiring` | Administrators, resellers, owners  |
-| Account suspended             | `account.suspended`    | Resellers, owners (always on)      |
-| Suspension lifted             | `account.restored`     | Resellers, owners                  |
-| Sign-in from a new device     | `signin.new_device`    | All users (always on)              |
-| Usage alerts                  | `usage.alert`          | Administrators, resellers, owners  |
-| Servers that are offline      | `server.offline`       | Administrators                     |
+| Event                         | Key                    | Who can get it                                     |
+| ----------------------------- | ---------------------- | -------------------------------------------------- |
+| Failed jobs                   | `job.failed`           | Administrators, resellers, owners                  |
+| Failed backups                | `backup.failed`        | Administrators, resellers, owners                  |
+| Certificates that expire soon | `certificate.expiring` | Administrators, resellers, owners                  |
+| Account suspended             | `account.suspended`    | Resellers, owners (always on)                      |
+| Suspension lifted             | `account.restored`     | Resellers, owners                                  |
+| Sign-in from a new device     | `signin.new_device`    | All users (always on)                              |
+| Usage alerts                  | `usage.alert`          | Administrators, resellers, owners                  |
+| Servers that are offline      | `server.offline`       | Administrators                                     |
+| Websites that are down        | `uptime.down`          | Administrators (off by default), resellers, owners |
+| Websites that are up again    | `uptime.up`            | Administrators (off by default), resellers, owners |
 
 Who gets the email of an event:
 
@@ -33,6 +35,12 @@ Who gets the email of an event:
 - **Usage alert:** the users of the customer and of its reseller. The usage alerts feature
   makes the alert.
 - **Server offline:** the administrators, when a server does not report for 5 minutes.
+- **Website down and up again:** the users of the customer of the website, the users of its
+  reseller, and the administrators. An uptime check of the website sends the email after the
+  number of failed requests in a row that the check has (2 by default). When the website
+  answers correctly again, the same users get an email with the length of the incident. The
+  emails are off by default for an administrator. Refer to
+  [Uptime checks](architecture.md#uptime-checks).
 
 ## Set up the SMTP server (administrators)
 

@@ -10,8 +10,8 @@ use Illuminate\Support\Carbon;
 
 /**
  * The uptime checks of the demonstration mode. The panel sends no request. Each sample website
- * answers with HTTP status 200 and a short page with its name. A domain that starts with
- * "fail." gives no answer, and a check fails when the page does not have its text.
+ * answers with HTTP status 200 and a short page with its name. A path with "fail" in it gives
+ * no answer, and a check fails when the page does not have its text.
  */
 class DemoUptimeProbe extends Probe
 {
@@ -33,7 +33,7 @@ class DemoUptimeProbe extends Probe
     public static function answer(UptimeCheck $check, Carbon $at): ProbeResult
     {
         $name = (string) $check->domain?->name;
-        if (str_starts_with($name, 'fail.')) {
+        if (str_contains($check->path, 'fail')) {
             return ProbeResult::failed("No answer in {$check->timeout_seconds} seconds.", networkError: true);
         }
         $ms = self::latency($name.$check->path, $at);
