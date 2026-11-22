@@ -35,6 +35,7 @@ func wpRules() []execx.Rule {
 		{Prefix: wpCmd + "plugin list", Output: "PHP Notice: something\n" + `[{"name":"akismet","title":"Akismet Anti-spam","status":"active","version":"5.3","update_version":"5.4"}]`},
 		{Prefix: wpCmd + "theme list", Output: `[{"name":"twentytwentyfive","title":"Twenty Twenty-Five","status":"active","version":"1.2","update_version":""}]`},
 		{Prefix: wpCmd + "option get siteurl", Output: "https://acme.example\n"},
+		{Prefix: wpCmd + "config get DB_NAME", Output: "acme_x7k2_wp\n"},
 		{Prefix: wpCmd + "eval", Output: "cf-wordpress-ok"},
 	}
 }
@@ -42,7 +43,7 @@ func wpRules() []execx.Rule {
 func installRequest() *agentv1.InstallWordPressRequest {
 	return &agentv1.InstallWordPressRequest{JobId: jobID2, WebsiteId: websiteID, DatabaseServer: databaseServer("mariadb"),
 		DatabaseName: "acme_x7k2_wp", DatabaseUser: "acme_x7k2_wp", DatabasePassword: dbPW,
-		Title: "Acme shop", AdminUser: "owner", AdminEmail: "owner@acme.example", AdminPassword: adminPW, Locale: "en_GB"}
+		Title: "Acme shop", AdminUser: "owner", AdminEmail: "owner@acme.example", AdminPassword: adminPW, Locale: "en_GB", Url: "https://acme.example"}
 }
 
 // withWordPress gives a website with the answers of WP-CLI.
@@ -109,7 +110,7 @@ func TestInstallWordPressSendsThePasswordsOnStdin(t *testing.T) {
 		t.Error("the agent wrote .htaccess for FrankenPHP")
 	}
 	wp := job.Result()["wordpress"].(map[string]any)
-	if wp["version"] != "6.8.1" || wp["coreMinor"] != "6.8.3" || wp["coreLatest"] != "6.9" || wp["siteUrl"] != "https://acme.example" {
+	if wp["version"] != "6.8.1" || wp["coreMinor"] != "6.8.3" || wp["coreLatest"] != "6.9" || wp["siteUrl"] != "https://acme.example" || wp["databaseName"] != "acme_x7k2_wp" {
 		t.Errorf("result = %v", wp)
 	}
 	plugins := wp["plugins"].([]any)
@@ -151,6 +152,8 @@ func TestInstallWordPressRefusesBadInput(t *testing.T) {
 		"foreign database":    func(r *agentv1.InstallWordPressRequest) { r.DatabaseName = "other_x7k2_wp" },
 		"foreign user":        func(r *agentv1.InstallWordPressRequest) { r.DatabaseUser = "root" },
 		"PostgreSQL":          func(r *agentv1.InstallWordPressRequest) { r.DatabaseServer = databaseServer("postgresql") },
+		"plain HTTP":          func(r *agentv1.InstallWordPressRequest) { r.Url = "http://acme.example" },
+		"address with a path": func(r *agentv1.InstallWordPressRequest) { r.Url = "https://acme.example/blog --skip-email" },
 	} {
 		req := installRequest()
 		change(req)
@@ -380,5 +383,15 @@ func TestCheckWordPressReadsAMessageAsNoUpdate(t *testing.T) {
 	}
 	if !f.Called(wpCmd + "core version" + wpFlags) {
 		t.Errorf("calls = %v", f.Calls)
+	}
+}
+
+// The owner of the website reads the message of WP-CLI, with no command line of the host.
+func TestWordPressErrorsHaveTheMessageOfWPCLI(t *testing.T) {
+	d, f := withWordPress(t)
+	f.Rules = append([]execx.Rule{{Prefix: wpCmd + "core version", Err: errors.New("runuser -u acme_x7k2 -- env podman exec: exit status 1: Error: This does not seem to be a WordPress installation.")}}, f.Rules...)
+	err := run(t)(d.CheckWordPress(&agentv1.CheckWordPressRequest{JobId: jobID2, WebsiteId: websiteID}))
+	if err == nil || !strings.HasSuffix(err.Error(), "wp core version: Error: This does not seem to be a WordPress installation.") || strings.Contains(err.Error(), "runuser") || strings.Contains(err.Error(), "exit status") {
+		t.Errorf("err = %v", err)
 	}
 }

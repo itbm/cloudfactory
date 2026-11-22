@@ -42,6 +42,7 @@ use App\Http\Controllers\Api\TrustedKeyController;
 use App\Http\Controllers\Api\UsageController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\WebsiteController;
+use App\Http\Controllers\Api\WordPressController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -118,6 +119,16 @@ Route::prefix('v1')->group(function () {
             Route::patch('websites/{websiteId}/cron-jobs/{cronJobId}', [CronJobController::class, 'update']);
             Route::delete('websites/{websiteId}/cron-jobs/{cronJobId}', [CronJobController::class, 'destroy']);
             Route::post('websites/{websiteId}/cron-jobs/{cronJobId}/run', [CronJobController::class, 'run'])->middleware('throttle:30,1,post-websites-x-cron-jobs-x-run');
+
+            // FR-206: WordPress. The agent runs WP-CLI in the container of the website.
+            Route::get('websites/{websiteId}/wordpress', [WordPressController::class, 'show']);
+            Route::post('websites/{websiteId}/wordpress', [WordPressController::class, 'store'])->middleware('throttle:10,1,post-websites-x-wordpress');
+            Route::patch('websites/{websiteId}/wordpress', [WordPressController::class, 'update']);
+            Route::post('websites/{websiteId}/wordpress/check', [WordPressController::class, 'check'])->middleware('throttle:30,1,post-websites-x-wordpress-check');
+            Route::post('websites/{websiteId}/wordpress/updates', [WordPressController::class, 'updates'])->middleware('throttle:30,1,post-websites-x-wordpress-updates');
+            Route::post('websites/{websiteId}/wordpress/restore', [WordPressController::class, 'restore'])->middleware('throttle:10,1,post-websites-x-wordpress-restore');
+            Route::post('websites/{websiteId}/wordpress/cli', [WordPressController::class, 'cli'])->middleware('throttle:30,1,post-websites-x-wordpress-cli');
+            Route::get('websites/{websiteId}/wordpress/commands', [WordPressController::class, 'commands']);
 
             // Deploys from a Git repository.
             Route::get('websites/{websiteId}/deploy', [DeployController::class, 'show']);

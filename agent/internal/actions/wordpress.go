@@ -73,11 +73,13 @@ type wpInventory struct {
 	// CoreMinor is the latest version with the same major version, when it is newer.
 	CoreMinor string `json:"coreMinor,omitempty"`
 	// CoreLatest is the latest version, when it is a newer major version.
-	CoreLatest string   `json:"coreLatest,omitempty"`
-	SiteURL    string   `json:"siteUrl"`
-	Plugins    []wpItem `json:"plugins"`
-	Themes     []wpItem `json:"themes"`
-	CheckedAt  string   `json:"checkedAt"`
+	CoreLatest string `json:"coreLatest,omitempty"`
+	SiteURL    string `json:"siteUrl"`
+	// DatabaseName is the database in wp-config.php, or "".
+	DatabaseName string   `json:"databaseName,omitempty"`
+	Plugins      []wpItem `json:"plugins"`
+	Themes       []wpItem `json:"themes"`
+	CheckedAt    string   `json:"checkedAt"`
 }
 
 func (inv wpInventory) result() map[string]any {
@@ -147,9 +149,31 @@ func (d *Deps) wp(ctx context.Context, site *Site, stdin string, args ...string)
 	defer cancel()
 	out, err := d.Run.RunInput(ctx, stdin, argv[0], append(argv[1:], args...)...)
 	if err != nil {
-		return out, commandError("wp "+wpCommandName(args), err)
+		return out, wpError(args, err)
 	}
 	return out, nil
+}
+
+// errNoWPCLI is the error of a WP-CLI command in an image with no WP-CLI: an image from
+// before FR-206.
+var errNoWPCLI = errors.New("the image of the website has no WP-CLI; update the runtime of the website to get a new image, then try again")
+
+// wpError gives the error of a WP-CLI command: the command and the message of WP-CLI, with
+// no command line of the host. The owner of the website reads it.
+func wpError(args []string, err error) error {
+	text := err.Error()
+	i := strings.LastIndex(text, "exit status ")
+	if i < 0 {
+		return commandError("wp "+wpCommandName(args), err)
+	}
+	status, message, _ := strings.Cut(text[i+len("exit status "):], ": ")
+	if status == "126" || status == "127" {
+		return errNoWPCLI
+	}
+	if message = strings.TrimSpace(message); message == "" {
+		return fmt.Errorf("wp %s: exit code %s", wpCommandName(args), status)
+	}
+	return fmt.Errorf("wp %s: %s", wpCommandName(args), lastLines(cleanText(message), 600))
 }
 
 // wpCommandName gives the WP-CLI command of a list of arguments, with no options and no
@@ -167,13 +191,8 @@ func wpCommandName(args []string) string {
 
 // checkWPCLI makes sure that the image of the website has WP-CLI.
 func (d *Deps) checkWPCLI(ctx context.Context, site *Site) error {
-	if _, err := d.wp(ctx, site, "", "cli", "version"); err != nil {
-		if strings.Contains(err.Error(), "exit status 127") || strings.Contains(err.Error(), "exit status 126") {
-			return errors.New("the image of the website has no WP-CLI; update the runtime of the website to get a new image, then try again")
-		}
-		return err
-	}
-	return nil
+	_, err := d.wp(ctx, site, "", "cli", "version")
+	return err
 }
 
 // wpListed is one plugin or theme as WP-CLI writes it with --format=json.
@@ -277,6 +296,11 @@ func (d *Deps) checkWordPress(ctx context.Context, site *Site) (wpInventory, err
 		return inv, err
 	}
 	inv.SiteURL = wpText(out, 300)
+	// The panel finds the database of a site that it did not install. A site can set its
+	// database in a different way, so this value can be missing.
+	if out, err = d.wp(ctx, site, "", append([]string{"config", "get", "DB_NAME"}, wpMaintenance...)...); err == nil && validate.DatabaseName(strings.TrimSpace(out)) == nil {
+		inv.DatabaseName = strings.TrimSpace(out)
+	}
 	inv.CheckedAt = time.Now().UTC().Format(time.RFC3339)
 	return inv, nil
 }
@@ -304,6 +328,9 @@ func checkInstall(req *agentv1.InstallWordPressRequest) error {
 	errs := []error{validate.ID(req.GetWebsiteId()), checkWebsiteServer(req.GetDatabaseServer(), "mariadb"),
 		validate.WordpressTitle(req.GetTitle()), validate.WordpressUser(req.GetAdminUser()),
 		validate.MailAddress(req.GetAdminEmail()), validate.WordpressLocale(req.GetLocale())}
+	if host, ok := strings.CutPrefix(req.GetUrl(), "https://"); !ok || validate.Domain(host) != nil {
+		errs = append(errs, errors.New("the address of the site must be https:// and a domain"))
+	}
 	if validate.DatabasePassword(req.GetDatabasePassword()) != nil || validate.DatabasePassword(req.GetAdminPassword()) != nil {
 		errs = append(errs, errors.New("each password must have 16 to 64 letters and digits"))
 	}
@@ -353,9 +380,6 @@ func (d *Deps) InstallWordPress(req *agentv1.InstallWordPressRequest) (jobs.Job,
 			site, err := d.wordpressSite(req.GetWebsiteId())
 			if err != nil {
 				return err
-			}
-			if primaryDomain(site.Website) == "" {
-				return errors.New("the website has no primary domain")
 			}
 			if err := d.checkWPCLI(ctx, site); err != nil {
 				return err
@@ -420,7 +444,7 @@ else echo used; fi`, "sh", d.siteRoot(site), wpDefaultPage, req.GetDatabaseName(
 				"--dbuser="+req.GetDatabaseUser(), "--dbhost="+dbHost, "--dbcharset=utf8mb4", "--locale="+req.GetLocale(), "--force", "--prompt=dbpass"); err != nil {
 				return err
 			}
-			if _, err := d.wp(ctx, site, req.GetAdminPassword()+"\n", "core", "install", "--url=https://"+primaryDomain(site.Website),
+			if _, err := d.wp(ctx, site, req.GetAdminPassword()+"\n", "core", "install", "--url="+req.GetUrl(),
 				"--title="+req.GetTitle(), "--admin_user="+req.GetAdminUser(), "--admin_email="+req.GetAdminEmail(), "--skip-email", "--prompt=admin_password"); err != nil {
 				return err
 			}
@@ -800,7 +824,7 @@ func (d *Deps) RunWpCli(req *agentv1.RunWpCliRequest) (jobs.Job, error) {
 			case 124:
 				output += fmt.Sprintf("\nThe command did not end in %s. The agent stopped it.", wpCliLimit)
 			case 126, 127:
-				return errors.New("the image of the website has no WP-CLI; update the runtime of the website to get a new image, then try again")
+				return errNoWPCLI
 			}
 			output = lastLines(cleanText(output), wpCliOutputMax)
 			return nil

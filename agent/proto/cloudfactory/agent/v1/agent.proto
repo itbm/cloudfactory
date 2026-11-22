@@ -947,6 +947,9 @@ message InstallWordPressRequest {
   string admin_password = 10;
   // A WordPress locale, for example "en_GB".
   string locale = 11;
+  // The address of the site: "https://" and the name of the website. The edge proxy can serve
+  // the name later, when the owner verifies the domain.
+  string url = 12;
 }
 
 message CheckWordPressRequest {

@@ -52,6 +52,11 @@ enum AgentAction: string
     case SendDatabaseServer = 'SendDatabaseServer';
     case ReceiveDatabaseServer = 'ReceiveDatabaseServer';
     case SetPacks = 'SetPacks';
+    case InstallWordPress = 'InstallWordPress';
+    case CheckWordPress = 'CheckWordPress';
+    case UpdateWordPress = 'UpdateWordPress';
+    case RestoreWordPress = 'RestoreWordPress';
+    case RunWpCli = 'RunWpCli';
 
     /** The steps that the agent reports for this action. */
     public function steps(): array
@@ -105,6 +110,13 @@ enum AgentAction: string
             self::SendDatabaseServer => ['Stop database server', 'Send data'],
             self::ReceiveDatabaseServer => ['Prepare database server', 'Receive data', 'Start database server'],
             self::SetPacks => ['Check the packs', 'Save the packs and the image policy', 'Load the runtimes'],
+            // FR-206: WordPress sites. The agent runs WP-CLI in the container of the website.
+            self::InstallWordPress => ['Check the website', 'Create database', 'Download WordPress', 'Install WordPress', 'Check WordPress'],
+            self::CheckWordPress => ['Check WordPress'],
+            // When a step after "Save a restore point" fails, the agent puts back the restore point.
+            self::UpdateWordPress => ['Check WordPress', 'Save a restore point', 'Update WordPress', 'Update plugins', 'Update themes', 'Health check'],
+            self::RestoreWordPress => ['Put back the restore point', 'Check WordPress'],
+            self::RunWpCli => ['Run the command', 'Check WordPress'],
         };
     }
 

@@ -29,6 +29,7 @@ use App\Services\JobDispatcher;
 use App\Services\Networks;
 use App\Services\Plugins\Hooks;
 use App\Services\WebsiteRemoval;
+use App\Services\WordPress;
 use App\Validation\Input;
 use App\Validation\InputRules;
 use Illuminate\Http\JsonResponse;
@@ -100,6 +101,10 @@ class WebsiteController extends Controller
             'planId' => ['nullable', 'exists:plans,id'],
             'serverId' => ['nullable', 'exists:servers,id'],
             'customerId' => ['nullable', 'exists:customers,id'],
+            // FR-206: install WordPress when the website runs. The answer has the password of
+            // the administrator, one time.
+            'wordpress' => ['sometimes', 'nullable', 'array'],
+            ...($request->filled('wordpress') ? WordPress::installRules('wordpress.') : []),
         ]);
         $user = $request->user();
         $customerId = $data['customerId'] ?? $user->customer_id;
@@ -140,6 +145,16 @@ class WebsiteController extends Controller
         if ($image->pack_id !== null && ! $server->hasRuntime($image->family)) {
             throw ValidationException::withMessages([(isset($data['serverId']) ? 'serverId' : 'imageId') => "The agent on the server {$server->name} does not have the runtime {$image->family} yet. The panel sends the packs to each web server: wait for the server to load the pack, or select a different server."]);
         }
+        $wordpress = $data['wordpress'] ?? null;
+        if ($wordpress !== null) {
+            WordPressController::requireDatabaseScope($request);
+            if ($kind !== Website::PUBLIC || ! $image->isPhp()) {
+                throw ValidationException::withMessages(['wordpress' => 'WordPress needs a public website with a PHP runtime.']);
+            }
+            if (! $server->hasAgentFeature(WordPress::FEATURE)) {
+                throw ValidationException::withMessages(['wordpress' => "The agent on the server {$server->name} cannot install WordPress. Update the agent of the server, or select a different server."]);
+            }
+        }
         $unixUser = self::unixUser($data['name']);
         $domain = null;
         if ($kind === Website::PUBLIC) {
@@ -164,7 +179,8 @@ class WebsiteController extends Controller
             'planId' => $plan->id, 'imageId' => $image->id, 'serverId' => $server->id,
         ], $user);
 
-        $website = DB::transaction(function () use ($data, $kind, $unixUser, $customer, $image, $plan, $server, $domain) {
+        $admin = null;
+        $website = DB::transaction(function () use ($data, $kind, $unixUser, $customer, $image, $plan, $server, $domain, $wordpress, &$admin) {
             self::checkWebsiteLimit($customer);
             // The usual commands of the family, when the user gave none.
             $defaults = $image->appDefaults();
@@ -191,6 +207,11 @@ class WebsiteController extends Controller
             if ($domain) {
                 $website->domains()->create($domain);
             }
+            // The database and the install request. The install starts when the website runs.
+            if ($wordpress !== null) {
+                [$site, $password] = WordPress::prepare($website, $wordpress);
+                $admin = WordPressController::admin($website, $site, $password);
+            }
 
             return $website;
         });
@@ -202,7 +223,11 @@ class WebsiteController extends Controller
         }
         Audit::record($request, 'Created website', $website->name, $customer->id);
 
-        return response()->json(['website' => new WebsiteResource($website->fresh(['image', 'domains'])), 'job' => new JobResource($job)], 202);
+        return response()->json([
+            'website' => new WebsiteResource($website->fresh(['image', 'domains'])),
+            'job' => new JobResource($job),
+            ...($admin ? ['wordpress' => ['admin' => $admin]] : []),
+        ], 202);
     }
 
     public function update(Request $request, string $id): JsonResponse

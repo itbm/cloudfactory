@@ -108,6 +108,11 @@ class RunDemoJob implements ShouldQueue
                 'step' => 0,
                 'error' => "the install command failed: exit status 1: npm error code EUSAGE\nnpm error The `npm ci` command can only install with an existing package-lock.json.",
             ],
+            // An update of a plugin with "fail" in its name breaks the site. The agent puts back the restore point.
+            $job->action === AgentAction::UpdateWordPress && collect($p['plugins'] ?? [])->contains(fn ($n) => str_contains((string) $n, 'fail')) => [
+                'step' => 5,
+                'error' => 'WordPress does not load: wp eval: PHP Fatal error:  Uncaught Error: Call to undefined function wc_get_order(); the agent put back the restore point',
+            ],
             $job->action === AgentAction::RunCronJob && str_contains((string) ($p['cronJob']['command'] ?? ''), 'fail') => [
                 'step' => 0,
                 'error' => 'the command ended with exit code 1: PHP Fatal error:  Uncaught RuntimeException: The export did not complete in /app/src/export.php:18',
@@ -145,6 +150,7 @@ class RunDemoJob implements ShouldQueue
             // The fingerprint of the demonstration is not the fingerprint of the key.
             AgentAction::SetMailbox => ($p['publicKey'] ?? '') !== '' ? ['encryption' => ['fingerprints' => [strtoupper(sha1($p['publicKey']))], 'type' => 'OpenPGP v4: X25519', 'expiresAt' => null, 'warnings' => []]] : [],
             AgentAction::SetMailDomain => ['records' => DemoMailDns::records((string) ($p['domain'] ?? ''), (string) $job->server->mail_hostname)],
+            AgentAction::InstallWordPress, AgentAction::CheckWordPress, AgentAction::UpdateWordPress, AgentAction::RestoreWordPress, AgentAction::RunWpCli => DemoWordPress::result($job),
             AgentAction::RunCronJob => ['cronJobId' => $p['cronJob']['id'] ?? '', 'exitCode' => 0, 'output' => "Running scheduled tasks.\nDone in 0.4 s.", 'ranAt' => now()->toIso8601String()],
             AgentAction::Deploy => [
                 'releaseId' => $p['releaseId'] ?? '',

@@ -5579,7 +5579,10 @@ type InstallWordPressRequest struct {
 	AdminEmail    string `protobuf:"bytes,9,opt,name=admin_email,json=adminEmail,proto3" json:"admin_email,omitempty"`
 	AdminPassword string `protobuf:"bytes,10,opt,name=admin_password,json=adminPassword,proto3" json:"admin_password,omitempty"`
 	// A WordPress locale, for example "en_GB".
-	Locale        string `protobuf:"bytes,11,opt,name=locale,proto3" json:"locale,omitempty"`
+	Locale string `protobuf:"bytes,11,opt,name=locale,proto3" json:"locale,omitempty"`
+	// The address of the site: "https://" and the name of the website. The edge proxy can serve
+	// the name later, when the owner verifies the domain.
+	Url           string `protobuf:"bytes,12,opt,name=url,proto3" json:"url,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -5687,6 +5690,13 @@ func (x *InstallWordPressRequest) GetAdminPassword() string {
 func (x *InstallWordPressRequest) GetLocale() string {
 	if x != nil {
 		return x.Locale
+	}
+	return ""
+}
+
+func (x *InstallWordPressRequest) GetUrl() string {
+	if x != nil {
+		return x.Url
 	}
 	return ""
 }
@@ -6437,7 +6447,7 @@ const file_cloudfactory_agent_v1_agent_proto_rawDesc = "" +
 	"\x06stream\x18\x02 \x01(\tR\x06stream\x12\x12\n" +
 	"\x04text\x18\x03 \x01(\tR\x04text\"<\n" +
 	"\x04Logs\x124\n" +
-	"\x05lines\x18\x01 \x03(\v2\x1e.cloudfactory.agent.v1.LogLineR\x05lines\"\xab\x03\n" +
+	"\x05lines\x18\x01 \x03(\v2\x1e.cloudfactory.agent.v1.LogLineR\x05lines\"\xbd\x03\n" +
 	"\x17InstallWordPressRequest\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x1d\n" +
 	"\n" +
@@ -6453,7 +6463,8 @@ const file_cloudfactory_agent_v1_agent_proto_rawDesc = "" +
 	"adminEmail\x12%\n" +
 	"\x0eadmin_password\x18\n" +
 	" \x01(\tR\radminPassword\x12\x16\n" +
-	"\x06locale\x18\v \x01(\tR\x06locale\"M\n" +
+	"\x06locale\x18\v \x01(\tR\x06locale\x12\x10\n" +
+	"\x03url\x18\f \x01(\tR\x03url\"M\n" +
 	"\x15CheckWordPressRequest\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x1d\n" +
 	"\n" +
