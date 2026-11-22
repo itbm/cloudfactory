@@ -70,6 +70,13 @@ return [
         'target' => env('CF_BACKUP_TARGET', ''),
     ],
 
+    // The import of an account from a different panel (docs/imports.md): the largest archive,
+    // and the free disk space that an upload to the panel must leave.
+    'imports' => [
+        'max_bytes' => (int) env('CF_IMPORT_MAX_BYTES', 50 * 1024 ** 3),
+        'reserve_bytes' => (int) env('CF_IMPORT_RESERVE_BYTES', 2 * 1024 ** 3),
+    ],
+
     // Audit finding R8: the number of manual backups that the panel keeps for each website and
     // each mailbox. The retention policy above is only for the scheduled backups.
     'manual_backups' => (int) env('CF_MANUAL_BACKUPS', 10),

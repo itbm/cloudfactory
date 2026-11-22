@@ -408,12 +408,12 @@ func MailLocalPart(s string) error { return ruleMailLocalPart.check(s) }
 
 var ruleMailPasswordHash = rule{
 	what:    "password hash",
-	pattern: regexp.MustCompile(`^\$2y\$1[0-9]\$[./A-Za-z0-9]{53}$`),
+	pattern: regexp.MustCompile(`^(\$2[aby]\$(0[4-9]|[12][0-9]|3[01])\$[./A-Za-z0-9]{53}|\$6\$(rounds=[0-9]{4,9}\$)?[./A-Za-z0-9]{1,16}\$[./A-Za-z0-9]{86}|\$5\$(rounds=[0-9]{4,9}\$)?[./A-Za-z0-9]{1,16}\$[./A-Za-z0-9]{43}|\$1\$[./A-Za-z0-9]{1,8}\$[./A-Za-z0-9]{22})$`),
 }
 
 // MailPasswordHash checks a value with the rule "mailPasswordHash" of schema/input-rules.json.
 //
-// The bcrypt hash of a mailbox password. The panel makes it, and the agent gives it to the mail server. The agent never gets the password.
+// The hash of a mailbox password: bcrypt, which the panel makes, or SHA-512-crypt, SHA-256-crypt or MD5-crypt from the import of a different panel. The agent gives it to the mail server. The agent never gets the password.
 func MailPasswordHash(s string) error { return ruleMailPasswordHash.check(s) }
 
 var rulePackImageVersion = rule{

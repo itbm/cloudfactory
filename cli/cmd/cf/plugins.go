@@ -29,6 +29,7 @@ func init() {
 		"files", "file", "logs", "cron", "deploys", "deploy", "plugins", "plugin", "packs", "pack",
 		// Adversarial review, finding C1-02: these commands were not in the list.
 		"env", "mail", "email", "mail-server", "notifications", "notification",
+		"imports", "import",
 	} {
 		builtin[c] = true
 	}
