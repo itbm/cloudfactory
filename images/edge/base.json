@@ -14,7 +14,8 @@
         "edge": {
           "listen": [":8443"],
           "routes": [],
-          "logs": { "default_logger_name": "access" }
+          "logs": { "default_logger_name": "access" },
+          "automatic_https": { "ignore_loaded_certificates": true }
         }
       }
     }
