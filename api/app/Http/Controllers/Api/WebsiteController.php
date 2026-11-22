@@ -390,8 +390,10 @@ class WebsiteController extends Controller
         if ($moving = BackupController::movingServerOf($website)) {
             DatabaseServers::refuseMoving($moving, 'website');
         }
-        // A job of the website that is not complete goes to the old server.
-        if (AgentJob::where('website_id', $website->id)->whereIn('state', [JobState::Queued->value, JobState::Running->value])->exists()) {
+        // A job of the website that is not complete goes to the old server. The job that makes
+        // a staging copy reads the files of the website on the old server.
+        $copies = Website::where('staging_of', $website->id)->select('id');
+        if (AgentJob::where(fn ($q) => $q->where('website_id', $website->id)->orWhereIn('website_id', $copies))->whereIn('state', [JobState::Queued->value, JobState::Running->value])->exists()) {
             throw ValidationException::withMessages(['website' => 'A change of this website is in progress. Wait until it is complete.']);
         }
 

@@ -240,6 +240,13 @@ class WebsiteMoveTest extends TestCase
         $this->postJson("/api/v1/websites/{$website->id}/move", ['serverId' => $new->id])
             ->assertJsonValidationErrors(['website' => 'A change of this website is in progress. Wait until it is complete.']);
         $pending->update(['state' => JobState::Succeeded]);
+        // The job that makes a staging copy reads the files of the website on the old server.
+        $copy = $website->replicate();
+        $copy->fill(['name' => 'staging.'.$website->name, 'unix_user' => 'stagingm_1a2b', 'staging_of' => $website->id])->save();
+        $making = AgentJob::create(['server_id' => $old->id, 'website_id' => $copy->id, 'action' => AgentAction::CreateWebsite, 'title' => 'Make staging copy', 'payload' => [], 'steps' => [], 'state' => JobState::Queued]);
+        $this->postJson("/api/v1/websites/{$website->id}/move", ['serverId' => $new->id])
+            ->assertJsonValidationErrors(['website' => 'A change of this website is in progress. Wait until it is complete.']);
+        $making->update(['state' => JobState::Failed]);
         $website->update(['status' => WebsiteStatus::Stopping]);
         $this->postJson("/api/v1/websites/{$website->id}/move", ['serverId' => $new->id])->assertJsonValidationErrors('website');
         $website->update(['status' => WebsiteStatus::Running]);
