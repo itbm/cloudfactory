@@ -94,6 +94,12 @@ class DemoAcme extends Acme
         return (string) (Cache::get('demo-acme:'.basename($certificateUrl))['certificate'] ?? '');
     }
 
+    /** The demo CA acts as a public CA, as the certificates of the demo seeder do. */
+    public function trusted(array $chain): bool
+    {
+        return true;
+    }
+
     public function dnsValue(string $token): string
     {
         return self::base64url(hash('sha256', $token.'.demo', true));

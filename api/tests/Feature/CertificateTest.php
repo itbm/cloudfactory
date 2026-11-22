@@ -12,6 +12,8 @@ use App\Models\Certificate;
 use App\Models\Customer;
 use App\Models\DnsRecord;
 use App\Models\DnsZone;
+use App\Models\MailServer;
+use App\Models\NotificationDelivery;
 use App\Models\Server;
 use App\Models\Setting;
 use App\Models\Website;
@@ -293,6 +295,22 @@ class CertificateTest extends TestCase
         Certificate::query()->delete();
         $this->certificate($this->customer, ['*.example.com']);
         $this->assertSame([], $this->onServer($this->web));
+    }
+
+    public function test_the_email_for_an_uploaded_certificate_that_expires_soon_tells_the_customer_to_replace_it(): void
+    {
+        $this->hosting();
+        $this->user(Role::Owner, $this->customer);
+        // The panel sends emails through an SMTP server.
+        MailServer::create(['host' => 'smtp.example.com', 'port' => 587, 'encryption' => 'starttls', 'username' => 'panel', 'password' => 'secret', 'from_address' => 'panel@example.com', 'from_name' => 'Example Hosting']);
+        $certificate = $this->certificate($this->customer, ['shop.example.com'], ['expires_at' => now()->addDays(10)]);
+        $this->web->update(['agent_certificates' => [['id' => $certificate->id, 'sha256' => $certificate->fingerprint, 'hosts' => ['shop.example.com']]]]);
+        $this->website->domains()->update(['certificate_state' => 'valid', 'certificate_expires_at' => $certificate->expires_at]);
+
+        $this->artisan('cloudfactory:check-certificates')->assertSuccessful();
+        $body = NotificationDelivery::firstOrFail()->body;
+        $this->assertStringContainsString('You uploaded this certificate to the panel, so the panel cannot renew it.', $body);
+        $this->assertStringNotContainsString('Check DNS', $body);
     }
 
     public function test_the_panel_sends_the_certificates_again_when_a_server_reports_other_certificates(): void

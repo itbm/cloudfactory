@@ -132,7 +132,7 @@ export function DomainsTab({ website }: { website: Website }) {
               <button type="submit" className="btn btn-primary" disabled={add.busy}>Add domain</button>
             </div>
           </div>
-          <p className="hint" style={{ marginTop: 10 }}>Before the edge proxy serves a new domain, you must prove that you control it with a DNS TXT record. A sub-domain of a verified domain does not need a new record. The edge proxy gets a TLS certificate through ACME when the DNS points to this server.</p>
+          <p className="hint" style={{ marginTop: 10 }}>Before the edge proxy serves a new domain, you must prove that you control it with a DNS TXT record. A sub-domain of a verified domain does not need a new record. The edge proxy gets a TLS certificate through ACME when the DNS points to this server. To use your own certificate or a wildcard certificate, add it on the <Link to="/certificates">Certificates</Link> page.</p>
           {state.nameServers.length > 0 && <p className="hint" style={{ marginTop: 6 }}>When the domain is in one of your <Link to="/dns">DNS zones</Link>, the panel makes the address records of the domain. A domain that uses the name servers of this panel needs no TXT record.</p>}
         </form>
       </Card>

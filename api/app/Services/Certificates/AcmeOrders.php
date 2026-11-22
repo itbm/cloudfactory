@@ -240,7 +240,7 @@ class AcmeOrders
             'issuer' => $info['issuer'],
             'not_before' => $info['not_before'],
             'expires_at' => $info['expires_at'],
-            'trusted' => Pem::trusted($certs),
+            'trusted' => $this->acme()->trusted($certs),
             // The panel renews the certificate after two thirds of its lifetime: 30 days
             // before the end for a certificate of 90 days.
             'renew_at' => $info['not_before']->copy()->addSeconds(intdiv($lifetime * 2, 3)),

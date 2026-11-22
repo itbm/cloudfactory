@@ -93,6 +93,17 @@ class Acme
         return $this->post($certificateUrl, null, accept: 'application/pem-certificate-chain')->body();
     }
 
+    /**
+     * True when browsers trust the chain from the CA. The certificate of a staging CA, for
+     * example, has a chain that browsers do not trust.
+     *
+     * @param  list<string>  $chain
+     */
+    public function trusted(array $chain): bool
+    {
+        return Pem::trusted($chain);
+    }
+
     /** The value of the DNS TXT record of a dns-01 challenge (RFC 8555, section 8.4). */
     public function dnsValue(string $token): string
     {

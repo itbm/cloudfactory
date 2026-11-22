@@ -111,7 +111,7 @@ function CertificateList() {
                           {c.trusted === false && <span className="cell-sub">Browsers do not trust it</span>}
                         </td>
                         <td><ExpiryCell c={c} /></td>
-                        <td>{c.usedBy.length === 0 ? <span className="muted">No domain</span> : `${c.usedBy.length} ${c.usedBy.length === 1 ? "domain" : "domains"}`}</td>
+                        <td style={{ whiteSpace: "nowrap" }}>{c.usedBy.length === 0 ? <span className="muted">No domain</span> : `${c.usedBy.length} ${c.usedBy.length === 1 ? "domain" : "domains"}`}</td>
                         <td className="cell-actions">
                           <RowMenu label={`Actions for the certificate ${c.names[0]}`} actions={[
                             { label: "Open", onSelect: () => navigate(`/certificates/${c.id}`) },
@@ -419,7 +419,7 @@ function CertificatePage({ id }: { id: string }) {
                     <tr key={`${u.serverName}-${u.domain}`}>
                       <td>{u.domain}</td>
                       <td>{u.websiteId ? <Link to={`/websites/${u.websiteId}/domains`}>{u.websiteName}</Link> : <span className="muted">None</span>}</td>
-                      <td className="muted">{u.serverName}</td>
+                      <td className="muted" style={{ whiteSpace: "nowrap" }}>{u.serverName}</td>
                     </tr>
                   ))}
                   {c.usedBy.length === 0 && <tr><td colSpan={3} className="muted">No domain uses the certificate now. A domain of a website of the customer that the certificate is valid for gets it.</td></tr>}
