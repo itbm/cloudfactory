@@ -7,7 +7,9 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
+	"net/http"
 	"net/netip"
 	"os"
 	"path/filepath"
@@ -210,6 +212,14 @@ type Deps struct {
 	// HostSftpConfig is the SSH configuration of the host from release 0.1. The default is
 	// "/etc/ssh/sshd_config.d/50-cloudfactory-sftp.conf".
 	HostSftpConfig string
+
+	// PanelDownload writes the content of a GET route of the panel to a writer, for example
+	// the archive of an import (imports.go). Nil means that the agent cannot download from the
+	// panel.
+	PanelDownload func(ctx context.Context, path string, w io.Writer) (int64, error)
+	// ImportHTTP downloads the archive of an import from a URL. Nil means a client that
+	// connects only to public addresses (publicHTTP). Tests replace it.
+	ImportHTTP *http.Client
 
 	// SavePlatform keeps the gVisor platform in the settings of the agent (ConfigureHost).
 	SavePlatform func(platform string) error

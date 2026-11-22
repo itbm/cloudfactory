@@ -242,6 +242,15 @@ Usage:
   cf customers create --name NAME --email EMAIL --plan ID [--role owner|reseller] [--with-user]
                        --with-user also makes a user with the email of the customer, and shows a temporary password.
   cf customers set ID [--plan ID] [--suspend | --unsuspend]
+  cf imports list
+  cf imports create --customer CUSTOMER --server SERVER (--file FILE | --url URL)
+                       Reads a cPanel, DirectAdmin, Plesk or HestiaCP backup. The command sends a FILE to the panel in parts,
+                       then waits for the plan. Each server downloads a URL itself.
+  cf imports upload IMPORT --file FILE     Continues an upload from the part that the panel has.
+  cf imports get IMPORT                    Shows the plan, or the parts of a running or complete import.
+  cf imports start IMPORT (--all | [--website NAME[=IMAGE_ID]]... [--mail DOMAIN]... [--zone ZONE]...) [--keep-wp-config]
+                       Makes the selected parts for the customer, and waits until the import is complete.
+  cf imports delete IMPORT                 Removes the import and its archive. The websites stay.
   cf users list
   cf users create --name NAME --email EMAIL (--customer ID | --administrator) [--totp CODE]
                        The command shows a temporary password once. The user sets a new password at the first sign-in.
@@ -488,6 +497,8 @@ func (a *app) dispatch(ctx context.Context, args []string) error {
 		return a.mail(ctx, sub, rest)
 	case "customers", "customer":
 		return a.customers(ctx, sub, rest)
+	case "imports", "import":
+		return a.imports(ctx, sub, rest)
 	case "users", "user":
 		return a.users(ctx, sub, rest)
 	case "plans", "plan":

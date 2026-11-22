@@ -32,3 +32,6 @@ Schedule::command('cloudfactory:check-certificates')->dailyAt('08:00')->withoutO
 // The certificates with DNS validation: the renewals, and the stages of the ACME orders. The
 // command runs for up to 50 seconds, so it runs in the background.
 Schedule::command('cloudfactory:certificates')->everyMinute()->withoutOverlapping()->runInBackground();
+
+// Imports: the archives of the imports that did not start (docs/imports.md).
+Schedule::command('cloudfactory:prune-imports')->hourly()->withoutOverlapping();

@@ -20,6 +20,7 @@ use App\Http\Controllers\Api\DnsZoneController;
 use App\Http\Controllers\Api\DomainController;
 use App\Http\Controllers\Api\FileController;
 use App\Http\Controllers\Api\ImageController;
+use App\Http\Controllers\Api\ImportController;
 use App\Http\Controllers\Api\JobController;
 use App\Http\Controllers\Api\LogController;
 use App\Http\Controllers\Api\MailAliasController;
@@ -252,6 +253,18 @@ Route::prefix('v1')->group(function () {
             Route::get('setup', [SetupController::class, 'show']);
         });
 
+        // The import of an account from cPanel, DirectAdmin, Plesk or HestiaCP (docs/imports.md).
+        // The import makes websites, databases, mail and DNS zones, so only an administrator
+        // imports.
+        Route::middleware(['admin', 'scope:websites'])->group(function () {
+            Route::get('imports', [ImportController::class, 'index']);
+            Route::post('imports', [ImportController::class, 'store'])->middleware('throttle:20,1,post-imports');
+            Route::get('imports/{id}', [ImportController::class, 'show']);
+            Route::put('imports/{id}/archive', [ImportController::class, 'upload']);
+            Route::post('imports/{id}/start', [ImportController::class, 'start']);
+            Route::delete('imports/{id}', [ImportController::class, 'destroy']);
+        });
+
         Route::middleware(['admin', 'scope:images'])->group(function () {
             Route::get('images', [ImageController::class, 'index']);
             Route::post('images', [ImageController::class, 'store']);
@@ -359,5 +372,7 @@ Route::prefix('agent/v1')->group(function () {
     Route::middleware('agent')->group(function () {
         Route::post('jobs/{id}/events', [AgentController::class, 'jobEvent']);
         Route::post('report', [AgentController::class, 'report']);
+        // The uploaded archive of an import, for a server with a download job of the import.
+        Route::get('imports/{id}/archive', [ImportController::class, 'archive']);
     });
 });
