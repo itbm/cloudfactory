@@ -237,7 +237,14 @@ class DemoTest extends TestCase
         $this->postJson("{$base}/files/move", ['from' => '/public/hello.txt', 'to' => '/public/images/hello.txt'])->assertOk()->assertJsonPath('file.path', '/public/images/hello.txt');
         $this->deleteJson("{$base}/files?path=/public/images")->assertNoContent();
         $this->getJson("{$base}/files/content?path=/public/images/hello.txt")->assertNotFound();
-        $this->getJson("{$base}/logs")->assertOk()->assertJsonStructure(['lines' => [['at', 'stream', 'text']]]);
+
+        // The logs have sample entries for the search, the filters and the pages.
+        $logs = $this->getJson("{$base}/logs?summary=1&limit=5")->assertOk()->assertJsonCount(5, 'entries')
+            ->assertJsonStructure(['entries' => [['at', 'source', 'text', 'access']], 'next', 'summary' => ['total', 'sources', 'statuses', 'topPaths', 'topClients', 'sizeBytes', 'oldest']])->json();
+        $older = $this->getJson("{$base}/logs?limit=5&cursor={$logs['next']}")->assertOk()->json('entries');
+        $this->assertLessThanOrEqual($logs['entries'][4]['at'], $older[0]['at']);
+        $this->getJson("{$base}/logs?status=4xx&method=GET")->assertOk()->assertJsonPath('entries.0.access.status', fn (int $status) => $status >= 400 && $status < 500);
+        $this->getJson("{$base}/logs?sources=error&q=php")->assertOk()->assertJsonPath('entries.0.source', 'error')->assertJsonPath('entries.0.access', null);
 
         // "Run now" gives the cron job a result.
         $cron = $website->cronJobs()->firstOrFail();

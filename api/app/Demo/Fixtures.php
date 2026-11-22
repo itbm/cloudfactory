@@ -40,7 +40,7 @@ class Fixtures
         // user opens that part of the website.
         foreach (self::websites($user) as $id) {
             array_push($paths, "/websites/{$id}/databases", "/websites/{$id}/snapshots", "/websites/{$id}/cron-jobs", "/websites/{$id}/deploy",
-                "/websites/{$id}/files?path=%2F", "/websites/{$id}/files?path=%2Fpublic", "/websites/{$id}/files/content?path=%2Fpublic%2Findex.php", "/websites/{$id}/logs?lines=200");
+                "/websites/{$id}/files?path=%2F", "/websites/{$id}/files?path=%2Fpublic", "/websites/{$id}/files/content?path=%2Fpublic%2Findex.php", "/websites/{$id}/logs?limit=50&summary=1");
         }
         // The page of a DNS zone reads the zone with its records.
         $visible = $user->visibleCustomerIds();
