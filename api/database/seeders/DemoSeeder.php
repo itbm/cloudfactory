@@ -12,6 +12,7 @@ use App\Models\AgentJob;
 use App\Models\AuditEntry;
 use App\Models\Customer;
 use App\Models\DatabaseServer;
+use App\Models\DnsAccount;
 use App\Models\DnsRecord;
 use App\Models\DnsZone;
 use App\Models\GitSource;
@@ -122,6 +123,7 @@ class DemoSeeder extends Seeder
         $this->settingsAndAudit();
         $this->notifications();
         $this->plugins();
+        $this->dnsProviders();
         $this->packs();
     }
 
@@ -201,6 +203,10 @@ class DemoSeeder extends Seeder
                 'scopes' => ['websites:read', 'customers:read'], 'events' => ['job.finished', 'customer.created'], 'webhook' => '/cloudfactory/events',
                 'actions' => [['id' => 'notify', 'title' => 'Send a test alert', 'target' => 'customer', 'path' => '/cloudfactory/actions/notify', 'roles' => ['administrator', 'reseller'], 'confirm' => 'Send a test alert to the chat channel of this customer?']],
             ], 'https://alerts.example.net', true],
+            // The Cloudflare DNS plugin (plugins/dns-cloudflare). The demonstration mode answers
+            // for it (routes/web.php), so a user can add an account and make a zone.
+            [json_decode((string) file_get_contents(base_path('../plugins/dns-cloudflare/plugin.json')), true),
+                rtrim((string) env('CF_DEMO_PLUGIN_URL', 'http://127.0.0.1:8000'), '/').'/demo-plugins/dns-cloudflare', true],
         ];
         foreach ($plugins as [$manifest, $baseUrl, $enabled]) {
             [$spec, $signature] = $sign($manifest);
@@ -254,6 +260,57 @@ class DemoSeeder extends Seeder
             $delivery->created_at = now()->subMinutes($minutesAgo);
             $delivery->save();
         }
+    }
+
+    /**
+     * DNS accounts at Cloudflare: one of the panel, and one of Acme Ltd. Acme Ltd has a zone at
+     * Cloudflare. A zone of Northwind Agency moved to Cloudflare and is in its handover time.
+     */
+    private function dnsProviders(): void
+    {
+        $plugin = Plugin::where('slug', 'dns-cloudflare')->firstOrFail();
+        $cloudflare = ['ada.ns.cloudflare.com', 'bob.ns.cloudflare.com'];
+        $panel = DnsAccount::create([
+            'customer_id' => null, 'plugin_id' => $plugin->id, 'provider' => 'cloudflare', 'name' => 'Panel Cloudflare',
+            'credentials' => ['apiToken' => 'demo-'.Str::random(32), 'accountId' => '5f2c0a9d1e7b4c3a8d6e0f1a2b3c4d5e'], 'account' => 'Example Hosting Ltd', 'checked_at' => now()->subDays(3),
+        ]);
+        $acme = DnsAccount::create([
+            'customer_id' => $this->customers['acme']->id, 'plugin_id' => $plugin->id, 'provider' => 'cloudflare', 'name' => 'Acme Cloudflare',
+            'credentials' => ['apiToken' => 'demo-'.Str::random(32)], 'account' => 'it@acme.example.com', 'checked_at' => now()->subDays(20),
+        ]);
+        $rows = [
+            // name, customer, account, days since creation, handover
+            ['acmeshop.example.com', 'acme', $acme, 21, false],
+            ['northwind.example.org', 'northwind', $panel, 2, true],
+        ];
+        foreach ($rows as [$name, $customer, $account, $days, $handover]) {
+            $serial = now()->subHours($days)->timestamp;
+            $zone = new DnsZone([
+                'customer_id' => $this->customers[$customer]->id, 'name' => $name, 'serial' => $serial, 'status' => DnsZone::ACTIVE, 'dns_account_id' => $account->id,
+                'delegation' => $handover ? DnsZone::ELSEWHERE : DnsZone::HERE, 'delegation_name_servers' => $handover ? Branding::nameServersFor($this->customers[$customer]) : $cloudflare,
+                'delegation_checked_at' => now()->subMinutes(9), 'handover' => $handover,
+                'sync' => $handover ? Zones::servers()->mapWithKeys(fn (Server $s) => [$s->id => ['serial' => $serial, 'state' => 'ok']])->all() : null,
+                'provider_state' => [
+                    'serial' => $serial, 'state' => 'ok', 'nameServers' => $cloudflare, 'active' => ! $handover,
+                    'dnssec' => ['state' => 'off', 'ds' => []], 'changes' => ['added' => 0, 'changed' => 1, 'removed' => 0],
+                    'syncedAt' => now()->subHours(2)->toIso8601String(), 'triedAt' => now()->subHours(2)->toIso8601String(),
+                    'imported' => $handover ? null : ['added' => 4, 'existing' => 0, 'skipped' => [['line' => 7, 'text' => 'www 300 HTTPS 1 . alpn="h2"', 'code' => 'invalid', 'reason' => 'Select one of these types: A, AAAA, CNAME, MX, TXT, SRV, CAA, NS.']]],
+                ],
+            ]);
+            $zone->created_at = now()->subDays($days);
+            $zone->save();
+            foreach ($cloudflare as $host) {
+                $zone->records()->create(['name' => '@', 'type' => 'NS', 'ttl' => Zones::NS_TTL, 'value' => $host, 'managed' => DnsRecord::NS]);
+            }
+            $this->zones[$name] = $zone;
+        }
+        $record = fn (string $zone, string $name, string $type, string $value, ?int $priority = null, int $ttl = 3600) => $this->zones[$zone]->records()->create(compact('name', 'type', 'value', 'priority', 'ttl'));
+        $record('acmeshop.example.com', '@', 'A', '198.51.100.40', null, 300);
+        $record('acmeshop.example.com', 'www', 'CNAME', 'acmeshop.example.com', null, 300);
+        $record('acmeshop.example.com', '@', 'MX', 'mx1.mail.example', 10);
+        $record('acmeshop.example.com', '@', 'TXT', 'v=spf1 include:_spf.mail.example -all');
+        $record('northwind.example.org', '@', 'A', '198.51.100.90', null, 300);
+        $record('northwind.example.org', '@', 'TXT', 'v=spf1 -all');
     }
 
     private function plans(): void
