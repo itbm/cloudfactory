@@ -14,6 +14,30 @@ use App\Models\Website;
 /** Spec section 6.3, step 4: put a job in the queue for the agent on the correct server. */
 class JobDispatcher
 {
+    /** The import whose jobs the panel makes now (forImport), or null. */
+    private static ?string $importId = null;
+
+    /**
+     * Runs $fn, and gives each job that it makes the import. The panel then continues the
+     * import when the job ends (Imports\Runner::jobFinished). The import uses the controllers
+     * of the API to make its websites, databases and mail, so their jobs get the import here.
+     *
+     * @template T
+     *
+     * @param  callable(): T  $fn
+     * @return T
+     */
+    public static function forImport(string $importId, callable $fn): mixed
+    {
+        $previous = self::$importId;
+        self::$importId = $importId;
+        try {
+            return $fn();
+        } finally {
+            self::$importId = $previous;
+        }
+    }
+
     public function dispatch(
         Server $server,
         AgentAction $action,
@@ -43,6 +67,7 @@ class JobDispatcher
             // is removed.
             'customer_id' => $customerId ?? $website?->customer_id ?? $databaseServer?->customer_id ?? $dnsZone?->customer_id,
             'rollout_id' => $rolloutId,
+            'import_id' => self::$importId,
             'action' => $action,
             'title' => $title,
             'ref' => $ref,

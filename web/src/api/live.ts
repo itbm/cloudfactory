@@ -84,12 +84,21 @@ export function setUnauthorisedHandler(fn: () => void) {
 }
 
 export async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  return send<T>(method, path, body === undefined ? undefined : JSON.stringify(body), body === undefined ? undefined : "application/json");
+}
+
+/** Sends bytes, for example a part of the archive of an import (application/octet-stream). */
+export async function sendBytes<T>(method: string, path: string, bytes: Blob): Promise<T> {
+  return send<T>(method, path, bytes, "application/octet-stream");
+}
+
+async function send<T>(method: string, path: string, body: BodyInit | undefined, contentType: string | undefined): Promise<T> {
   const headers: Record<string, string> = { Accept: "application/json" };
-  if (body !== undefined) headers["Content-Type"] = "application/json";
+  if (contentType) headers["Content-Type"] = contentType;
   if (token) headers.Authorization = `Bearer ${token}`;
   let res: Response;
   try {
-    res = await fetch(BASE + path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+    res = await fetch(BASE + path, { method, headers, body });
   } catch {
     throw new LiveError("The panel API does not answer. Check your connection and try again.");
   }

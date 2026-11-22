@@ -301,6 +301,26 @@ The product specification, section 6.4, gives the requirements.
 - The DNS server answers only for its zones. It has no recursion, and it limits the rate of
   the answers to one network.
 
+## Account imports
+
+An administrator can import the backup of an account from cPanel or DirectAdmin
+([imports.md](imports.md)). The backup can come from the customer, so the agent does not
+trust it:
+
+- Only an administrator can import an account. The import makes each record with the API, as
+  that administrator, so each record has the checks and the plan limits of the API.
+- The worker of the agent downloads and reads the archive as a stream. It never extracts the
+  archive, and root never opens it. The worker refuses each name that goes out of the archive.
+- The Unix user of the website extracts the files of the website. The database client in the
+  container of the database server loads a dump, as a temporary user for the one database.
+- A download from a URL connects only to public addresses, also after a redirect, and uses no
+  proxy. Thus a URL cannot reach a service of the server or of a private network.
+- Each server that downloads an upload from the panel uses the agent API with its client
+  certificate. The panel gives the archive only to a server that has a download job of the
+  import. Each server checks the SHA-256 hash of the archive.
+- The panel and each server delete the archive when the import ends. The panel keeps the
+  description of the account encrypted, because it has the mailbox password hashes.
+
 ## The edge proxy
 
 - The admin API of Caddy listens on a Unix socket, not on a TCP port. Only the user `cf-edge`

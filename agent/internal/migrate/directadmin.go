@@ -181,8 +181,8 @@ func (d *directAdmin) account() (Account, error) {
 			}
 		}
 		sort.Strings(subs)
-		w := Website{Name: domain, Kind: "public", Runtime: Runtime{Family: "php", DocumentRoot: "."}, Content: content(root, subs), AppConfig: appConfig(root)}
-		w.DiskBytes = w.Content.Bytes
+		w := Website{Name: domain, Kind: "public", Runtime: Runtime{Family: "php", DocumentRoot: "."}, Content: &WebsiteContent{Files: content(root, subs)}, AppConfig: appConfig(root)}
+		w.DiskBytes = w.Content.Files.Bytes
 		addDomain(&w, seen, domain, "primary")
 		addDomain(&w, seen, "www."+domain, "alias")
 		for _, line := range lines(d.files["backup/"+domain+"/domain.pointers"]) {
@@ -202,8 +202,8 @@ func (d *directAdmin) account() (Account, error) {
 			if seen[name] {
 				continue
 			}
-			sw := Website{Name: name, Kind: "public", Runtime: Runtime{Family: "php", DocumentRoot: "."}, Content: content(root+"/"+label, nil), AppConfig: appConfig(root + "/" + label)}
-			sw.DiskBytes = sw.Content.Bytes
+			sw := Website{Name: name, Kind: "public", Runtime: Runtime{Family: "php", DocumentRoot: "."}, Content: &WebsiteContent{Files: content(root+"/"+label, nil)}, AppConfig: appConfig(root + "/" + label)}
+			sw.DiskBytes = sw.Content.Files.Bytes
 			addDomain(&sw, seen, name, "primary")
 			websites = append(websites, sw)
 		}

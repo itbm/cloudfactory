@@ -290,7 +290,7 @@ func (c *cpanel) account() (Account, error) {
 		}
 		sort.Strings(content.Exclude)
 		content.Bytes = max(bytes, 0)
-		websites[i].Content = content
+		websites[i].Content = &WebsiteContent{Files: content}
 		websites[i].DiskBytes = content.Bytes
 		if b := c.files[strings.TrimPrefix(p, c.top+"/")+"/wp-config.php"]; b != nil {
 			if db := wordpressDatabase(b); db != "" {

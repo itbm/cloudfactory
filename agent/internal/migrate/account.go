@@ -48,13 +48,20 @@ type Website struct {
 	CronJobs      []CronJob      `json:"cronJobs"`
 	Databases     []Database     `json:"databases"`
 	DatabaseUsers []DatabaseUser `json:"databaseUsers"`
-	// Content is the document root of the website in the archive.
-	Content *Content `json:"content,omitempty"`
+	// Content is the content of the website in the archive.
+	Content *WebsiteContent `json:"content,omitempty"`
 	// DiskBytes is the size of the files after extraction.
 	DiskBytes int64 `json:"diskBytes"`
 	// AppConfig is a configuration file with the database settings that the import can
 	// change, for example wp-config.php.
 	AppConfig *AppConfig `json:"appConfig,omitempty"`
+}
+
+// WebsiteContent is the content of a website in the archive. The account export of the panel
+// writes the same field (docs/account-export.md).
+type WebsiteContent struct {
+	// Files is the document root of the website in the archive.
+	Files *Content `json:"files"`
 }
 
 // Runtime is the runtime of a website on the old panel.

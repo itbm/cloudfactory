@@ -209,8 +209,8 @@ func checkCpanel(t *testing.T, acc Account, home string) {
 	if !slices.Equal(domains, []string{"example.com:primary", "www.example.com:alias", "example.org:alias", "www.example.org:alias"}) {
 		t.Errorf("domains = %v", domains)
 	}
-	if main.Content == nil || main.Content.Path != home+"/public_html" || !slices.Equal(main.Content.Exclude, []string{"shop"}) {
-		t.Fatalf("content = %+v", main.Content)
+	if main.Content == nil || main.Content.Files.Path != home+"/public_html" || !slices.Equal(main.Content.Files.Exclude, []string{"shop"}) {
+		t.Fatalf("content = %+v", main.Content.Files)
 	}
 	if main.AppConfig == nil || main.AppConfig.Database != "alice_wp" || main.AppConfig.File != "wp-config.php" {
 		t.Errorf("app config = %+v", main.AppConfig)
@@ -234,12 +234,12 @@ func checkCpanel(t *testing.T, acc Account, home string) {
 	if len(main.CronJobs) != 1 || main.CronJobs[0].Schedule != "*/5 * * * *" || main.CronJobs[0].Command != "php /home/alice/public_html/cron.php" || main.CronJobs[0].Enabled {
 		t.Errorf("cron jobs = %+v", main.CronJobs)
 	}
-	if blog := acc.Websites[1]; blog.Runtime.PHPVersion != "7.4" || blog.Content.Path != home+"/blog" {
-		t.Errorf("blog = %+v %+v", blog.Runtime, blog.Content)
+	if blog := acc.Websites[1]; blog.Runtime.PHPVersion != "7.4" || blog.Content.Files.Path != home+"/blog" {
+		t.Errorf("blog = %+v %+v", blog.Runtime, blog.Content.Files)
 	}
 	shop := acc.Websites[2]
-	if shop.Content.Path != home+"/public_html/shop" || shop.Domains[0].Name != "shop.net" {
-		t.Errorf("shop = %+v %+v", shop.Content, shop.Domains)
+	if shop.Content.Files.Path != home+"/public_html/shop" || shop.Domains[0].Name != "shop.net" {
+		t.Errorf("shop = %+v %+v", shop.Content.Files, shop.Domains)
 	}
 	if len(acc.Mail.Domains) != 1 {
 		t.Fatalf("mail = %+v", acc.Mail)
@@ -280,7 +280,7 @@ func TestInspectCpanelNestedHome(t *testing.T) {
 	checkCpanel(t, acc, "cpmove-alice/homedir.tar")
 
 	var out bytes.Buffer
-	st, err := WriteFiles(context.Background(), a, acc.Websites[1].Content.Path, FileOptions{}, &out)
+	st, err := WriteFiles(context.Background(), a, acc.Websites[1].Content.Files.Path, FileOptions{}, &out)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -333,11 +333,11 @@ func TestInspectDirectAdmin(t *testing.T) {
 	if !slices.Equal(domains, []string{"example.net:primary", "www.example.net:alias", "example.info:alias", "www.example.info:alias", "example.biz:redirect", "www.example.biz:redirect"}) {
 		t.Errorf("domains = %v", domains)
 	}
-	if w.Content.Path != "domains/example.net/public_html" || !slices.Equal(w.Content.Exclude, []string{"dev"}) {
-		t.Errorf("content = %+v", w.Content)
+	if w.Content.Files.Path != "domains/example.net/public_html" || !slices.Equal(w.Content.Files.Exclude, []string{"dev"}) {
+		t.Errorf("content = %+v", w.Content.Files)
 	}
-	if w.Content.Bytes != int64(len("home")+len(strings.ReplaceAll(wpConfig, "alice_wp'", "bob_shop'"))) {
-		t.Errorf("content bytes = %d", w.Content.Bytes)
+	if w.Content.Files.Bytes != int64(len("home")+len(strings.ReplaceAll(wpConfig, "alice_wp'", "bob_shop'"))) {
+		t.Errorf("content bytes = %d", w.Content.Files.Bytes)
 	}
 	if len(w.Databases) != 1 || w.Databases[0].Name != "bob_shop" || w.Databases[0].Content.Path != "backup/bob_shop.sql.gz" {
 		t.Errorf("databases = %+v", w.Databases)
@@ -352,7 +352,7 @@ func TestInspectDirectAdmin(t *testing.T) {
 	if len(w.CronJobs) != 1 || w.CronJobs[0].Schedule != "0 3 * * *" {
 		t.Errorf("cron = %+v", w.CronJobs)
 	}
-	if acc.Websites[1].Content.Path != "domains/example.net/public_html/dev" {
+	if acc.Websites[1].Content.Files.Path != "domains/example.net/public_html/dev" {
 		t.Errorf("dev content = %+v", acc.Websites[1].Content)
 	}
 	md := acc.Mail.Domains[0]
@@ -389,8 +389,8 @@ func TestInspectDirectAdminWithTopDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if acc.Websites[0].Content.Path != "user.admin.bob/domains/example.net/public_html" || acc.Websites[0].Databases[0].Content.Path != "user.admin.bob/backup/bob_shop.sql.gz" {
-		t.Errorf("paths = %+v %+v", acc.Websites[0].Content, acc.Websites[0].Databases)
+	if acc.Websites[0].Content.Files.Path != "user.admin.bob/domains/example.net/public_html" || acc.Websites[0].Databases[0].Content.Path != "user.admin.bob/backup/bob_shop.sql.gz" {
+		t.Errorf("paths = %+v %+v", acc.Websites[0].Content.Files, acc.Websites[0].Databases)
 	}
 }
 
