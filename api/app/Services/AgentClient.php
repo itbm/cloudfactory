@@ -47,6 +47,7 @@ class AgentClient
                 // The secrets of a mail cluster are not in the job.
                 ...MailClusters::secretsFor($job),
                 ...Mail::keyFileFor($job),
+                ...MailSettings::passwordFor($job),
                 ...Zones::keysFor($job),
                 // The credentials of the object storage and the password of the repository are not
                 // in the job. The panel adds the current values each time that it sends the job.

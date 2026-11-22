@@ -5,17 +5,22 @@ namespace Tests\Feature;
 use App\Enums\AgentAction;
 use App\Enums\JobState;
 use App\Enums\Role;
+use App\Jobs\SendJobToAgent;
 use App\Models\AgentJob;
 use App\Models\Customer;
 use App\Models\MailAlias;
 use App\Models\Mailbox;
+use App\Models\MailCluster;
 use App\Models\MailDomain;
 use App\Models\Server;
+use App\Services\AgentClient;
 use App\Services\JobOutcome;
 use App\Services\Mail;
 use App\Services\MailDns;
+use App\Services\MailSettings;
 use App\Services\OpenPgpKey;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 /**
@@ -119,6 +124,66 @@ class MailTest extends TestCase
         $this->hosting();
         $this->actingWith($this->user(Role::Owner, $this->customer));
         $this->putJson("/api/v1/servers/{$this->host->id}/mail", ['hostname' => 'mail.host.example'])->assertForbidden();
+    }
+
+    public function test_an_administrator_sets_the_spam_filter_and_an_outbound_relay(): void
+    {
+        $this->hosting();
+        $this->actingWith($this->user(Role::Owner, $this->customer));
+        $url = "/api/v1/servers/{$this->host->id}/mail/settings";
+        $this->putJson($url, ['spamFilter' => true, 'spamScore' => 5])->assertForbidden();
+
+        $this->actingWith($this->user());
+        // A new mail server has the default settings of Stalwart.
+        $this->getJson("/api/v1/servers/{$this->host->id}")->assertJsonPath('mail.settings', ['spamFilter' => true, 'spamScore' => 5, 'rejectScore' => null, 'relay' => null]);
+        $relay = ['host' => 'smtp.relay.example.net', 'port' => 587, 'username' => 'mailer', 'password' => 's3cret-relay'];
+        $this->putJson($url, ['spamFilter' => true, 'spamScore' => 0])->assertJsonValidationErrors('spamScore');
+        $this->putJson($url, ['spamFilter' => true, 'spamScore' => 6, 'rejectScore' => 6])->assertJsonValidationErrors('rejectScore');
+        $this->putJson($url, ['spamFilter' => true, 'spamScore' => 6, 'relay' => [...$relay, 'port' => 22]])->assertJsonValidationErrors('relay.port');
+        $this->putJson($url, ['spamFilter' => true, 'spamScore' => 6, 'relay' => [...$relay, 'host' => '10.0.0.5']])->assertJsonValidationErrors('relay.host');
+        $this->putJson($url, ['spamFilter' => true, 'spamScore' => 6, 'relay' => [...$relay, 'password' => "a\nb"]])->assertJsonValidationErrors('relay.password');
+        $this->putJson($url, ['spamFilter' => true, 'spamScore' => 6, 'relay' => [...$relay, 'password' => null]])->assertJsonValidationErrors('relay.password');
+
+        $response = $this->putJson($url, ['spamFilter' => true, 'spamScore' => 6.5, 'rejectScore' => 15, 'relay' => $relay])->assertAccepted()
+            ->assertJsonPath('server.mail.settings.relay', ['host' => 'smtp.relay.example.net', 'port' => 587, 'username' => 'mailer', 'hasPassword' => true]);
+        $job = AgentJob::findOrFail($response->json('job.id'));
+        $this->assertSame(AgentAction::SetMailSettings, $job->action);
+        $this->assertSame(['host' => 'smtp.relay.example.net', 'port' => 587, 'username' => 'mailer'], $job->payload['relay']);
+        $this->assertEquals([6.5, 15], [$job->payload['spamScore'], $job->payload['rejectScore']]);
+        // The panel keeps the password encrypted. The job record and the API do not have it.
+        $this->assertStringNotContainsString('s3cret-relay', json_encode($job->payload));
+        $this->assertStringNotContainsString('s3cret-relay', (string) DB::table('servers')->where('id', $this->host->id)->value('mail_relay_password'));
+        $this->assertStringNotContainsString('s3cret-relay', $this->getJson("/api/v1/servers/{$this->host->id}")->content());
+        // The panel adds the password when it sends the job.
+        $this->host->update(['certificate_pem' => 'test', 'certificate_fingerprint' => str_repeat('ab', 32)]);
+        Http::fake(['*' => Http::response(['jobId' => $job->id])]);
+        (new SendJobToAgent($job->id))->handle(app(AgentClient::class));
+        Http::assertSent(fn ($r) => str_ends_with($r->url(), '/SetMailSettings') && $r['relay']['password'] === 's3cret-relay' && $r['spamFilter'] === true);
+        // One change at a time.
+        $this->putJson($url, ['spamFilter' => true, 'spamScore' => 5])->assertJsonValidationErrors('spamFilter');
+        $this->finish($job->id);
+
+        // With no password in the request, the relay keeps its password.
+        $job = $this->putJson($url, ['spamFilter' => false, 'spamScore' => 5, 'relay' => ['host' => 'smtp.relay.example.net', 'port' => 465, 'username' => 'mailer']])->assertAccepted()->json('job.id');
+        $this->assertSame('s3cret-relay', $this->host->fresh()->mail_relay_password);
+        $this->assertSame(['relay' => ['host' => 'smtp.relay.example.net', 'port' => 465, 'username' => 'mailer', 'password' => 's3cret-relay']], MailSettings::passwordFor(AgentJob::findOrFail($job)));
+        $this->finish($job);
+        // A job that fails goes back to the settings from before it.
+        $job = $this->putJson($url, ['spamFilter' => true, 'spamScore' => 9, 'relay' => null])->assertAccepted()->json('job.id');
+        $this->assertNull($this->host->fresh()->mail_relay_password);
+        $this->finish($job, JobState::Failed);
+        $this->getJson("/api/v1/servers/{$this->host->id}")->assertJsonPath('mail.settings.spamFilter', false)->assertJsonPath('mail.settings.relay.port', 465);
+        $this->assertTrue(AgentJob::where('action', AgentAction::SetMailSettings->value)->count() === 3);
+    }
+
+    public function test_mail_settings_need_a_mail_server_that_is_not_in_a_cluster(): void
+    {
+        $this->actingWith($this->user());
+        $server = $this->server(['roles' => ['email']]);
+        $this->putJson("/api/v1/servers/{$server->id}/mail/settings", ['spamFilter' => true, 'spamScore' => 5])->assertJsonValidationErrors(['spamFilter' => 'Turn on email']);
+        $cluster = MailCluster::create(['name' => 'eu', 'hostname' => 'mx.example.net', 'status' => 'running', 'phase' => 'done', 'network' => '10.77.1.0/24', 'secrets' => []]);
+        $server->update(['mail_hostname' => 'mx-1.example.net', 'mail_status' => 'running', 'mail_cluster_id' => $cluster->id]);
+        $this->putJson("/api/v1/servers/{$server->id}/mail/settings", ['spamFilter' => true, 'spamScore' => 5])->assertJsonValidationErrors(['spamFilter' => 'mail cluster']);
     }
 
     public function test_an_owner_adds_a_domain_of_one_of_its_websites(): void

@@ -127,6 +127,9 @@ const (
 	// AgentServiceSetMailAliasProcedure is the fully-qualified name of the AgentService's SetMailAlias
 	// RPC.
 	AgentServiceSetMailAliasProcedure = "/cloudfactory.agent.v1.AgentService/SetMailAlias"
+	// AgentServiceSetMailSettingsProcedure is the fully-qualified name of the AgentService's
+	// SetMailSettings RPC.
+	AgentServiceSetMailSettingsProcedure = "/cloudfactory.agent.v1.AgentService/SetMailSettings"
 	// AgentServiceDeleteMailAliasProcedure is the fully-qualified name of the AgentService's
 	// DeleteMailAlias RPC.
 	AgentServiceDeleteMailAliasProcedure = "/cloudfactory.agent.v1.AgentService/DeleteMailAlias"
@@ -215,6 +218,7 @@ type AgentServiceClient interface {
 	SetMailbox(context.Context, *connect.Request[v1.SetMailboxRequest]) (*connect.Response[v1.JobAccepted], error)
 	DeleteMailbox(context.Context, *connect.Request[v1.MailAddressRequest]) (*connect.Response[v1.JobAccepted], error)
 	SetMailAlias(context.Context, *connect.Request[v1.SetMailAliasRequest]) (*connect.Response[v1.JobAccepted], error)
+	SetMailSettings(context.Context, *connect.Request[v1.SetMailSettingsRequest]) (*connect.Response[v1.JobAccepted], error)
 	DeleteMailAlias(context.Context, *connect.Request[v1.MailAddressRequest]) (*connect.Response[v1.JobAccepted], error)
 	SetDnsZones(context.Context, *connect.Request[v1.SetDnsZonesRequest]) (*connect.Response[v1.JobAccepted], error)
 	DeleteDnsZones(context.Context, *connect.Request[v1.DeleteDnsZonesRequest]) (*connect.Response[v1.JobAccepted], error)
@@ -442,6 +446,12 @@ func NewAgentServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(agentServiceMethods.ByName("SetMailAlias")),
 			connect.WithClientOptions(opts...),
 		),
+		setMailSettings: connect.NewClient[v1.SetMailSettingsRequest, v1.JobAccepted](
+			httpClient,
+			baseURL+AgentServiceSetMailSettingsProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("SetMailSettings")),
+			connect.WithClientOptions(opts...),
+		),
 		deleteMailAlias: connect.NewClient[v1.MailAddressRequest, v1.JobAccepted](
 			httpClient,
 			baseURL+AgentServiceDeleteMailAliasProcedure,
@@ -604,6 +614,7 @@ type agentServiceClient struct {
 	setMailbox            *connect.Client[v1.SetMailboxRequest, v1.JobAccepted]
 	deleteMailbox         *connect.Client[v1.MailAddressRequest, v1.JobAccepted]
 	setMailAlias          *connect.Client[v1.SetMailAliasRequest, v1.JobAccepted]
+	setMailSettings       *connect.Client[v1.SetMailSettingsRequest, v1.JobAccepted]
 	deleteMailAlias       *connect.Client[v1.MailAddressRequest, v1.JobAccepted]
 	setDnsZones           *connect.Client[v1.SetDnsZonesRequest, v1.JobAccepted]
 	deleteDnsZones        *connect.Client[v1.DeleteDnsZonesRequest, v1.JobAccepted]
@@ -782,6 +793,11 @@ func (c *agentServiceClient) SetMailAlias(ctx context.Context, req *connect.Requ
 	return c.setMailAlias.CallUnary(ctx, req)
 }
 
+// SetMailSettings calls cloudfactory.agent.v1.AgentService.SetMailSettings.
+func (c *agentServiceClient) SetMailSettings(ctx context.Context, req *connect.Request[v1.SetMailSettingsRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return c.setMailSettings.CallUnary(ctx, req)
+}
+
 // DeleteMailAlias calls cloudfactory.agent.v1.AgentService.DeleteMailAlias.
 func (c *agentServiceClient) DeleteMailAlias(ctx context.Context, req *connect.Request[v1.MailAddressRequest]) (*connect.Response[v1.JobAccepted], error) {
 	return c.deleteMailAlias.CallUnary(ctx, req)
@@ -921,6 +937,7 @@ type AgentServiceHandler interface {
 	SetMailbox(context.Context, *connect.Request[v1.SetMailboxRequest]) (*connect.Response[v1.JobAccepted], error)
 	DeleteMailbox(context.Context, *connect.Request[v1.MailAddressRequest]) (*connect.Response[v1.JobAccepted], error)
 	SetMailAlias(context.Context, *connect.Request[v1.SetMailAliasRequest]) (*connect.Response[v1.JobAccepted], error)
+	SetMailSettings(context.Context, *connect.Request[v1.SetMailSettingsRequest]) (*connect.Response[v1.JobAccepted], error)
 	DeleteMailAlias(context.Context, *connect.Request[v1.MailAddressRequest]) (*connect.Response[v1.JobAccepted], error)
 	SetDnsZones(context.Context, *connect.Request[v1.SetDnsZonesRequest]) (*connect.Response[v1.JobAccepted], error)
 	DeleteDnsZones(context.Context, *connect.Request[v1.DeleteDnsZonesRequest]) (*connect.Response[v1.JobAccepted], error)
@@ -1144,6 +1161,12 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(agentServiceMethods.ByName("SetMailAlias")),
 		connect.WithHandlerOptions(opts...),
 	)
+	agentServiceSetMailSettingsHandler := connect.NewUnaryHandler(
+		AgentServiceSetMailSettingsProcedure,
+		svc.SetMailSettings,
+		connect.WithSchema(agentServiceMethods.ByName("SetMailSettings")),
+		connect.WithHandlerOptions(opts...),
+	)
 	agentServiceDeleteMailAliasHandler := connect.NewUnaryHandler(
 		AgentServiceDeleteMailAliasProcedure,
 		svc.DeleteMailAlias,
@@ -1334,6 +1357,8 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 			agentServiceDeleteMailboxHandler.ServeHTTP(w, r)
 		case AgentServiceSetMailAliasProcedure:
 			agentServiceSetMailAliasHandler.ServeHTTP(w, r)
+		case AgentServiceSetMailSettingsProcedure:
+			agentServiceSetMailSettingsHandler.ServeHTTP(w, r)
 		case AgentServiceDeleteMailAliasProcedure:
 			agentServiceDeleteMailAliasHandler.ServeHTTP(w, r)
 		case AgentServiceSetDnsZonesProcedure:
@@ -1507,6 +1532,10 @@ func (UnimplementedAgentServiceHandler) DeleteMailbox(context.Context, *connect.
 
 func (UnimplementedAgentServiceHandler) SetMailAlias(context.Context, *connect.Request[v1.SetMailAliasRequest]) (*connect.Response[v1.JobAccepted], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.SetMailAlias is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) SetMailSettings(context.Context, *connect.Request[v1.SetMailSettingsRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.SetMailSettings is not implemented"))
 }
 
 func (UnimplementedAgentServiceHandler) DeleteMailAlias(context.Context, *connect.Request[v1.MailAddressRequest]) (*connect.Response[v1.JobAccepted], error) {

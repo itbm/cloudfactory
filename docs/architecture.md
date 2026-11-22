@@ -497,6 +497,7 @@ job only for a domain of that customer.
 | Password of the administrator of the management API | `/etc/cloudfactory/mail/admin.env` | Only root and the group `cf-mail` can read the file. The root helper gives the password to the worker. |
 | TLS certificate | `/etc/cloudfactory/mail/certs` | The edge proxy gets and renews the certificate of the mail host name. The root helper copies it for the mail server, at the start of the agent and one time each day. |
 | Passwords of the mailboxes | The mail server keeps a bcrypt hash | The panel makes the hash and sends only the hash. The panel shows the password one time. The agent never has it. |
+| Spam filter and outbound relay | `mail_settings` of the server in the panel, and the data store of the mail server | An administrator sets them (`PUT /v1/servers/{id}/mail/settings`, or `cf servers mail-settings SERVER`). The panel keeps the password of the relay encrypted, and adds it to the `SetMailSettings` job each time that it sends the job. |
 
 The first start of the mail server is in the recovery mode of Stalwart, which has only the
 management API. The agent sets the listeners, the host name and the certificate, and then
@@ -510,6 +511,28 @@ when the user asks (`POST /v1/mail/domains/{id}/check`) and shows which records 
 The status report of the agent has the state of the mail server and the size of the messages
 of each mailbox. The plan of a customer gives the number of its mailboxes and the total size
 of these mailboxes.
+
+### Spam filter and outbound relay
+
+The spam filter of Stalwart gives each new message a score. A message with the spam score or
+more goes to the junk folder of the mailbox. With a reject score, the mail server refuses a
+message with that score or more. The default settings are the settings of a new mail server:
+the filter is on, the spam score is 5, and the mail server refuses no message for its score.
+
+By default, Stalwart downloads the rules of the filter from GitHub. The firewall stops that
+download, and with no rules the filter gives each message the score 0. Thus the image `mail`
+has a pinned release of the rules (`/usr/local/share/stalwart/spam-filter-rules.json.gz`).
+At each start of the agent, the agent sets the mail server to read the rules from that file.
+A new release of the rules needs a new image.
+
+An outbound relay sends the outgoing mail for the mail server, for example when the provider
+of the server blocks port 25. The agent adds the route `relay` (`x:MtaRoute`) and sets the
+outbound strategy to use it. Mail for a domain of the server stays on the server. The relay
+must have a public address and one of the ports 25, 465, 587 or 2525. Port 465 uses TLS from
+the start, and the other ports use STARTTLS.
+
+A member of a mail cluster has the default settings: the panel does not change the settings
+of a cluster.
 
 ### Encryption of the stored mail (OpenPGP)
 

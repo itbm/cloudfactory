@@ -287,6 +287,8 @@ class JobOutcome
             AgentAction::SetMailServer => $job->server->update(($p['previous']['status'] ?? null) === 'running' && ! $job->server->mailDomains()->exists()
                 ? ['mail_hostname' => $p['previous']['hostname'] ?? $job->server->mail_hostname, 'mail_status' => 'running']
                 : ['mail_status' => 'failed']),
+            // The panel shows the settings from before the change. The password of a relay stays.
+            AgentAction::SetMailSettings => $job->server->update(['mail_settings' => $p['revert']['mail_settings'] ?? null]),
             AgentAction::SetMailDomain => MailDomain::whereKey($p['mailDomainId'] ?? '')->where('status', MailDomain::PENDING)->update(['status' => MailDomain::FAILED]),
             // A new mailbox is possibly not on the mail server. A change that failed keeps the old size.
             AgentAction::SetMailbox => ($p['create'] ?? false)

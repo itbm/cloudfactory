@@ -339,4 +339,36 @@ describe("email on a server", () => {
     fireEvent.click(within(card).getByRole("button", { name: "Turn on email" }));
     await waitFor(() => expect(api.changes.at(-1)).toMatchObject({ method: "PUT", path: `/servers/${id}/mail`, body: { hostname: "mail.example.net" } }));
   });
+
+  it("shows and changes the spam filter and the outbound relay", async () => {
+    const { api, id } = await openServer("mail-1");
+    const card = screen.getByRole("heading", { name: "Email" }).closest(".card") as HTMLElement;
+    expect(card.textContent).toContain("On. Junk folder at score 5. Refused at score 15.");
+    expect(card.textContent).toContain("Through the relay smtp.relay.example.net:587, as mail-1.");
+    api.on(`PUT /servers/${id}/mail/settings`, () => [202, { job: apiJob({ id: "job-settings", action: "SetMailSettings", serverId: id }) }]);
+
+    // The same user keeps the password: the request has no password.
+    fireEvent.click(within(card).getByRole("button", { name: "Change" }));
+    let dialog = screen.getByRole("dialog");
+    expect((within(dialog).getByLabelText("Password") as HTMLInputElement).placeholder).not.toBe("");
+    fireEvent.change(within(dialog).getByLabelText("Junk folder at score"), { target: { value: "6.5" } });
+    fireEvent.change(within(dialog).getByLabelText("Port"), { target: { value: "465" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save settings" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(api.changes.at(-1)).toEqual({ method: "PUT", path: `/servers/${id}/mail/settings`, body: { spamFilter: true, spamScore: 6.5, rejectScore: 15, relay: { host: "smtp.relay.example.net", port: 465, username: "mail-1" } } });
+
+    // A different user needs its password. With no refusal and no relay, the request has null.
+    fireEvent.click(within(card).getByRole("button", { name: "Change" }));
+    dialog = screen.getByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("User name"), { target: { value: "other" } });
+    fireEvent.change(within(dialog).getByLabelText("Password"), { target: { value: "new-secret" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save settings" }));
+    await waitFor(() => expect(api.changes.at(-1)).toMatchObject({ body: { relay: { username: "other", password: "new-secret" } } }));
+    fireEvent.click(within(card).getByRole("button", { name: "Change" }));
+    dialog = screen.getByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: "Refuse a message with a high score" }));
+    fireEvent.click(within(dialog).getByRole("radio", { name: /^Send directly/ }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save settings" }));
+    await waitFor(() => expect(api.changes.at(-1)).toMatchObject({ body: { spamFilter: true, rejectScore: null, relay: null } }));
+  });
 });

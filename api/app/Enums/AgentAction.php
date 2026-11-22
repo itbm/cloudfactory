@@ -40,6 +40,7 @@ enum AgentAction: string
     case DeleteMailbox = 'DeleteMailbox';
     case SetMailAlias = 'SetMailAlias';
     case DeleteMailAlias = 'DeleteMailAlias';
+    case SetMailSettings = 'SetMailSettings';
     case SetDnsZones = 'SetDnsZones';
     case DeleteDnsZones = 'DeleteDnsZones';
     case SetCronJobs = 'SetCronJobs';
@@ -88,6 +89,7 @@ enum AgentAction: string
             self::DeleteMailbox => ['Remove mailbox and its messages'],
             self::SetMailAlias => ['Set address'],
             self::DeleteMailAlias => ['Remove address'],
+            self::SetMailSettings => ['Set spam filter', 'Set outbound relay'],
             self::SetPanelBrands => ['Set panel domains', 'Get TLS certificates'],
             self::SetDnsZones => ['Start DNS server', 'Write zones', 'Load zones'],
             self::DeleteDnsZones => ['Remove zones'],

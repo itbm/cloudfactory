@@ -297,8 +297,9 @@ func (d *Deps) mailInfo(ctx context.Context) (info mailInfo, err error) {
 // openMailPorts writes the firewall rules of the mail server and loads the firewall again:
 //
 //   - the public ports 25, 465, 587 and 993 go to the ports of the container;
-//   - the mail server can open connections only to the DNS and to port 25 of other mail
-//     servers. It cannot connect to a service of this server or to a private network.
+//   - the mail server can open connections only to the DNS, to port 25 of other mail servers
+//     and to the ports of an outbound relay (465, 587 and 2525). It cannot connect to a
+//     service of this server or to a private network.
 //
 // The rules are in a file that the firewall file of the installer includes. A server with no
 // firewall file of the installer has a firewall that the administrator manages.
@@ -389,8 +390,8 @@ func MailFirewall(uid, webmailUID int, cluster *mailcluster.Cluster) string {
 		"    fib daddr type { local, broadcast, multicast } jump refuse",
 		"    ip daddr { 0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 168.63.129.16, 169.254.0.0/16, 172.16.0.0/12, 192.168.0.0/16, 224.0.0.0/3 } jump refuse",
 		"    ip6 daddr { ::1, fc00::/7, fe80::/10, ff00::/8 } jump refuse",
-		"    # Other mail servers.",
-		"    tcp dport 25 accept",
+		"    # Other mail servers, and the ports of an outbound relay.",
+		"    tcp dport { 25, 465, 587, 2525 } accept",
 		"    jump refuse",
 		"  }",
 		webmailChain(webmailUID) + "  chain output {",

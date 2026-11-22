@@ -212,6 +212,8 @@ Route::prefix('v1')->group(function () {
             Route::post('servers/{id}/check-connection', [ServerController::class, 'checkConnection']);
             // Turns on email for a server with the email role.
             Route::put('servers/{id}/mail', [ServerController::class, 'setMail']);
+            // The spam filter and the outbound relay of the mail server of a server.
+            Route::put('servers/{id}/mail/settings', [ServerController::class, 'setMailSettings']);
             // Mail clusters: mail servers on three or five servers that share their data.
             Route::get('mail-clusters', [MailClusterController::class, 'index']);
             Route::post('mail-clusters', [MailClusterController::class, 'store']);

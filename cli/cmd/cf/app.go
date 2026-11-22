@@ -186,6 +186,10 @@ Usage:
   cf servers update SERVER [--policy security|all|tools]   "tools" updates the held container tools.
   cf servers mail SERVER --hostname NAME   Turn on email for a server, or change the host name of its mail server.
                                            The name needs an A or AAAA record with the address of the server.
+  cf servers mail-settings SERVER [--spam-filter=true|false] [--spam-score N] [--reject-score N | --no-reject]
+                        [--relay HOST:PORT [--relay-user USER [--new-relay-password]] | --no-relay]
+                       The spam filter and the outbound relay of the mail server. Only the given values change.
+                       A new user, or --new-relay-password, reads the password from CF_RELAY_PASSWORD or stdin.
   cf servers reboot SERVER
   cf servers update-agent SERVER [--version VERSION] [--allow-downgrade]
   cf servers join-token
@@ -1500,7 +1504,7 @@ func (a *app) servers(ctx context.Context, sub string, args []string) error {
 	switch sub {
 	case "list", "ls":
 		return a.simpleList(ctx, "/servers", []string{"name", "state", "roles", "agentVersion", "rebootRequired", "id"})
-	case "get", "set", "mail", "update", "reboot", "update-agent", "check", "remove", "rm":
+	case "get", "set", "mail", "mail-settings", "update", "reboot", "update-agent", "check", "remove", "rm":
 		return a.server(ctx, sub, args)
 	case "join-token":
 		var out struct {

@@ -190,9 +190,13 @@ The product specification, section 6.4, gives the requirements.
   the password, and the job record has no hash after the job.
 - A customer adds a domain that a different customer could own only after a DNS TXT record
   shows that the customer controls the domain, as for a website domain.
-- The mail server opens connections only to the DNS and to port 25 of public addresses. It
-  cannot connect to a service of the server, to a private network or to the metadata service
-  of a cloud provider.
+- The mail server opens connections only to the DNS and to the ports 25, 465, 587 and 2525 of
+  public addresses. The ports 465, 587 and 2525 are for an outbound relay. It cannot connect
+  to a service of the server, to a private network or to the metadata service of a cloud
+  provider.
+- The panel keeps the password of an outbound relay encrypted with the key of the
+  application. The job record does not have it: the panel adds it each time that it sends the
+  job. The API never shows it again.
 - The mail server refuses mail for a domain that it does not have (no open relay). A mail
   program must sign in to send mail.
 - A private key that the panel makes is protected with the password of the mailbox, and the
@@ -956,7 +960,7 @@ The table also limits the outgoing connections:
 - On a server with email, the agent adds the file `/etc/cloudfactory/firewall/mail.nft`. It
   opens the mail ports 25, 465, 587 and 993 and redirects them to the ports of the mail
   container. The chain `mail` gets each new connection of the user `cf-mail`. It permits DNS
-  and port 25 of public addresses, and refuses all other connections.
+  and the ports 25, 465, 587 and 2525 of public addresses, and refuses all other connections.
 - The chain `webmail` gets each new connection of the user `cf-webmail`. It permits DNS, the
   edge proxy of the server (port 443, which the firewall sends to 8443) and port 443 of public
   addresses. It refuses all other addresses of the server and the private networks.

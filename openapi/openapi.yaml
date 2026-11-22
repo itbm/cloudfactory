@@ -2975,6 +2975,62 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/Invalid' }
 
+  /v1/servers/{id}/mail/settings:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    put:
+      tags: [Servers]
+      summary: Set the spam filter and the outbound relay of a mail server
+      description: >-
+        Only an administrator. The spam filter gives each new message a score. A message with
+        `spamScore` or more goes to the junk folder of the mailbox. With `rejectScore`, the
+        mail server refuses a message with that score or more. The mail server gets the rules
+        of the spam filter from its image.
+
+
+        With a relay, the mail server sends the outgoing mail through the relay, for example
+        when the provider of the server blocks port 25. Mail for the mail domains of the server
+        does not go through the relay. The relay must have a public address. Port 465 uses TLS
+        from the start, and the other ports use STARTTLS. Leave out `relay.password` to keep the
+        password. The panel never shows the password again.
+
+
+        The response is 422 when the server has no mail server, when it is a member of a mail
+        cluster, and when a change of the mail server is in progress. When the job fails, the
+        panel shows the settings from before the change.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [spamFilter, spamScore]
+              properties:
+                spamFilter: { type: boolean }
+                spamScore: { type: number, minimum: 1, maximum: 50, example: 5 }
+                rejectScore: { type: [number, 'null'], maximum: 100, description: More than spamScore. Null refuses no message for its score., example: 15 }
+                relay:
+                  type: [object, 'null']
+                  required: [host, port]
+                  properties:
+                    host: { type: string, example: smtp.relay.example.net }
+                    port: { type: integer, enum: [25, 465, 587, 2525] }
+                    username: { type: [string, 'null'], maxLength: 500, description: Null when the relay accepts the mail with no sign-in. }
+                    password: { type: [string, 'null'], maxLength: 500, writeOnly: true, description: Leave out to keep the password. Needed with a user name. }
+      responses:
+        '202':
+          description: The job sets the spam filter and the relay.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  server: { $ref: '#/components/schemas/Server' }
+                  job: { $ref: '#/components/schemas/Job' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
   /v1/mail-clusters:
     get:
       tags: [Servers]
@@ -5520,6 +5576,22 @@ components:
     ServerRole:
       type: string
       enum: [web, database, email, dns, backup]
+    MailSettings:
+      type: object
+      description: The spam filter and the outbound relay of a mail server. A new mail server has the default values.
+      required: [spamFilter, spamScore, rejectScore, relay]
+      properties:
+        spamFilter: { type: boolean, description: True when the mail server gives each new message a spam score. Default true. }
+        spamScore: { type: number, description: A message with this score or more goes to the junk folder. Default 5. }
+        rejectScore: { type: [number, 'null'], description: The mail server refuses a message with this score or more. Null refuses no message for its score. Default null. }
+        relay:
+          type: [object, 'null']
+          description: Null when the mail server sends each message directly to the mail server of the recipient.
+          properties:
+            host: { type: string }
+            port: { type: integer, enum: [25, 465, 587, 2525] }
+            username: { type: [string, 'null'] }
+            hasPassword: { type: boolean }
     Server:
       type: object
       properties:
@@ -5572,6 +5644,7 @@ components:
             status: { type: string, enum: [starting, running, stopped, failed] }
             domains: { type: integer, description: The number of mail domains on the server. A server with mail domains cannot be removed. }
             clusterId: { type: [string, 'null'], description: Not null when the server is a member of this mail cluster. }
+            settings: { $ref: '#/components/schemas/MailSettings' }
         os: { type: [string, 'null'] }
         kernel: { type: [string, 'null'] }
         arch: { type: [string, 'null'] }

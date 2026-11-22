@@ -143,6 +143,10 @@ func (s *Service) SetMailAlias(_ context.Context, r *connect.Request[agentv1.Set
 	return s.submit(s.Deps.SetMailAlias(r.Msg))
 }
 
+func (s *Service) SetMailSettings(_ context.Context, r *connect.Request[agentv1.SetMailSettingsRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.SetMailSettings(r.Msg))
+}
+
 func (s *Service) DeleteMailAlias(_ context.Context, r *connect.Request[agentv1.MailAddressRequest]) (*connect.Response[agentv1.JobAccepted], error) {
 	return s.submit(s.Deps.DeleteMailAlias(r.Msg))
 }

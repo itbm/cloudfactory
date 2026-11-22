@@ -22,6 +22,7 @@ import type {
   DnsRecordType,
   Deploy,
   MailAlias,
+  MailSettingsInput,
   DomainKind,
   FileContent,
   FileEntry,
@@ -882,6 +883,15 @@ export function retryMailCluster(clusterId: string) {
 
 export function setServerMail(serverId: string, hostname: string) {
   return call(() => live.request<JobAnswer>("PUT", `/servers/${serverId}/mail`, { hostname: hostname.trim().toLowerCase() })).then((r) => track(r.job).then(() => refresh()));
+}
+
+/** Sets the spam filter and the outbound relay of the mail server of a server. */
+export function setServerMailSettings(serverId: string, settings: MailSettingsInput) {
+  return call(async () => {
+    const r = await live.request<JobAnswer>("PUT", `/servers/${serverId}/mail/settings`, settings);
+    void track(r.job).then(() => refresh());
+    await refresh();
+  });
 }
 
 /**

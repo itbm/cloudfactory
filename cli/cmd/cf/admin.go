@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -246,6 +247,8 @@ func (a *app) server(ctx context.Context, sub string, args []string) error {
 			return errors.New("give --hostname with the host name of the mail server")
 		}
 		return a.change(ctx, http.MethodPut, path+"/mail", map[string]any{"hostname": *hostname})
+	case "mail-settings":
+		return a.mailSettings(ctx, s, path, fs, args[1:])
 	case "update":
 		policy := fs.String("policy", "", `security, all, or tools for the held container tools. The default is the policy of the server.`)
 		if err := fs.Parse(args[1:]); err != nil {
@@ -775,4 +778,81 @@ func (a *app) panelCertificate(ctx context.Context, sub string, args []string) e
 		return a.change(ctx, http.MethodPut, "/panel-certificate", map[string]string{"method": args[0]})
 	}
 	return fmt.Errorf("unknown command panel-certificate %s", sub)
+}
+
+// mailSettings changes the spam filter and the outbound relay of the mail server of a server.
+// The values that the user does not give stay as they are.
+func (a *app) mailSettings(ctx context.Context, s map[string]any, path string, fs *flag.FlagSet, args []string) error {
+	mail, _ := s["mail"].(map[string]any)
+	current, _ := mail["settings"].(map[string]any)
+	if current == nil {
+		return errors.New("this server has no mail server. Turn on email first: cf servers mail SERVER --hostname NAME")
+	}
+	filter := fs.String("spam-filter", "", "true or false: give each new message a spam score")
+	spam := fs.Float64("spam-score", 0, "a message with this score or more goes to the junk folder (1 to 50)")
+	reject := fs.Float64("reject-score", 0, "refuse a message with this score or more (more than the spam score)")
+	noReject := fs.Bool("no-reject", false, "refuse no message for its score")
+	relay := fs.String("relay", "", "send the outgoing mail through this relay, HOST:PORT (port 25, 465, 587 or 2525)")
+	user := fs.String("relay-user", "", "the user name for the relay")
+	newPassword := fs.Bool("new-relay-password", false, "give a new password for the same user")
+	noRelay := fs.Bool("no-relay", false, "send the outgoing mail directly to the mail server of each recipient")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NFlag() == 0 {
+		return errors.New("give --spam-filter, --spam-score, --reject-score, --no-reject, --relay or --no-relay")
+	}
+	if (*reject != 0 && *noReject) || (*relay != "" && *noRelay) || (*user == "" && *newPassword) || (*user != "" && *relay == "") {
+		return errors.New("give --reject-score or --no-reject, and --relay (with --relay-user) or --no-relay")
+	}
+	body := map[string]any{"spamFilter": current["spamFilter"], "spamScore": current["spamScore"], "rejectScore": current["rejectScore"]}
+	switch *filter {
+	case "":
+	case "true", "on":
+		body["spamFilter"] = true
+	case "false", "off":
+		body["spamFilter"] = false
+	default:
+		return errors.New("--spam-filter is true or false")
+	}
+	if *spam != 0 {
+		body["spamScore"] = *spam
+	}
+	if *reject != 0 {
+		body["rejectScore"] = *reject
+	} else if *noReject {
+		body["rejectScore"] = nil
+	}
+	old, _ := current["relay"].(map[string]any)
+	switch {
+	case *noRelay:
+		body["relay"] = nil
+	case *relay != "":
+		host, port, err := net.SplitHostPort(*relay)
+		n, perr := strconv.Atoi(port)
+		if err != nil || perr != nil {
+			return errors.New("give --relay as HOST:PORT, for example smtp.relay.example.net:587")
+		}
+		r := map[string]any{"host": host, "port": n, "username": nil}
+		if *user != "" {
+			r["username"] = *user
+			// The same user keeps its password, unless the user asks for a new password.
+			if *newPassword || old == nil || old["username"] != *user || old["hasPassword"] != true {
+				password, err := a.secret("CF_RELAY_PASSWORD", "Password of the relay: ")
+				if err != nil {
+					return err
+				}
+				r["password"] = password
+			}
+		}
+		body["relay"] = r
+	default:
+		if old != nil {
+			// The relay stays with its password.
+			body["relay"] = map[string]any{"host": old["host"], "port": old["port"], "username": old["username"]}
+		} else {
+			body["relay"] = nil
+		}
+	}
+	return a.change(ctx, http.MethodPut, path+"/mail/settings", body)
 }
