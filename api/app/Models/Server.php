@@ -20,6 +20,7 @@ use Illuminate\Support\Facades\DB;
     'mesh_public_key', 'mesh_address', 'mesh_endpoint', 'mesh_version', 'mesh_wanted_version', 'mesh_networks', 'mesh_websites', 'mesh_moves', 'mesh_state_hash',
     'sftp_port', 'panel_ca_sha256', 'connection_error', 'connection_checked_at', 'database_engines', 'database_instances', 'mail_hostname', 'mail_status',
     'mail_cluster_id', 'mail_cluster_member', 'agent_runtimes', 'agent_features', 'agent_packs', 'packs_resync',
+    'agent_certificates', 'certificates_resync',
 ])]
 #[Hidden(['agent_token_hash', 'backup_password', 'backup_credentials'])]
 class Server extends Model
@@ -88,6 +89,8 @@ class Server extends Model
             'agent_features' => 'array',
             'agent_packs' => 'array',
             'packs_resync' => 'array',
+            'agent_certificates' => 'array',
+            'certificates_resync' => 'array',
             'database_instances' => 'boolean',
             'dns' => 'boolean',
             'addresses' => 'array',

@@ -27,6 +27,16 @@ type fakeCaddy struct {
 	tls []map[string]any
 	// calls are the method and path of each request.
 	calls []string
+	// config has the JSON of some paths of the configuration, as the admin API keeps it:
+	// the TLS connection policies, the automatic HTTPS and the loaded certificates.
+	config map[string]string
+}
+
+// configPaths are the paths of fakeCaddy.config.
+var configPaths = map[string]bool{
+	"/config/apps/http/servers/edge/tls_connection_policies": true,
+	"/config/apps/http/servers/edge/automatic_https":         true,
+	"/config/apps/tls/certificates/load_pem":                 true,
 }
 
 // object finds a route or a TLS automation policy by its @id.
@@ -51,6 +61,31 @@ func (f *fakeCaddy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer f.mu.Unlock()
 	f.calls = append(f.calls, r.Method+" "+r.URL.Path)
 	switch {
+	case configPaths[r.URL.Path]:
+		// The answers of the admin API: GET gives null for a value that is not there, PUT
+		// refuses a value that is there, and PATCH and DELETE refuse a value that is not there.
+		if f.config == nil {
+			f.config = map[string]string{}
+		}
+		v, ok := f.config[r.URL.Path]
+		b, _ := io.ReadAll(r.Body)
+		switch {
+		case r.Method == http.MethodGet && !ok:
+			w.Write([]byte("null"))
+		case r.Method == http.MethodGet:
+			w.Write([]byte(v))
+		case r.Method == http.MethodPut && ok:
+			http.Error(w, `{"error":"key already exists"}`, http.StatusConflict)
+		case (r.Method == http.MethodPatch || r.Method == http.MethodDelete) && !ok:
+			http.Error(w, `{"error":"key does not exist"}`, http.StatusNotFound)
+		case r.Method == http.MethodDelete:
+			delete(f.config, r.URL.Path)
+		default:
+			f.config[r.URL.Path] = string(b)
+			if strings.HasSuffix(r.URL.Path, "tls_connection_policies") {
+				f.policies = string(b)
+			}
+		}
 	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/config/apps/http/servers/edge"):
 		if !f.loaded {
 			w.WriteHeader(http.StatusNotFound)
@@ -69,9 +104,6 @@ func (f *fakeCaddy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		b, _ := io.ReadAll(r.Body)
 		json.Unmarshal(b, &route)
 		f.routes = append([]map[string]any{route}, f.routes...)
-	case r.URL.Path == "/config/apps/http/servers/edge/tls_connection_policies":
-		b, _ := io.ReadAll(r.Body)
-		f.policies = string(b)
 	case (r.Method == http.MethodPatch || r.Method == http.MethodGet) && strings.Count(r.URL.Path, "/") == 3 && strings.HasPrefix(r.URL.Path, "/id/"):
 		// A field of an object, for example /id/cf-panel/match.
 		id, field, _ := strings.Cut(strings.TrimPrefix(r.URL.Path, "/id/"), "/")

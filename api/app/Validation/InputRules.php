@@ -278,6 +278,15 @@ final class InputRules
     /** The largest number of build commands of a deploy. */
     public const MAX_BUILD_COMMANDS = 10;
 
+    /** The largest size of a certificate chain or of a private key in PEM format, in bytes. */
+    public const MAX_CERTIFICATE_BYTES = 65536;
+
+    /** The largest number of hosts that use one certificate on one server. */
+    public const MAX_CERTIFICATE_HOSTS = 5000;
+
+    /** The largest number of certificates from the panel on one server. */
+    public const MAX_CERTIFICATES_PER_SERVER = 2000;
+
     /** The largest number of arguments of a start command. */
     public const MAX_COMMAND_ARGUMENTS = 32;
 

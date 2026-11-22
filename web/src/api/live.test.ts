@@ -74,7 +74,7 @@ describe("mappers", () => {
     expect(w.use.cpuPercent).toBe(12);
     expect(w.use.memoryBytes).toBe(0);
     expect(w.imageTag).toBe("0.1.0");
-    expect(w.domains[0]).toEqual({ name: "acme.example.com", kind: "primary", dnsPointsHere: true, certificate: { state: "valid", expiresAt: undefined } });
+    expect(w.domains[0]).toEqual({ name: "acme.example.com", kind: "primary", dnsPointsHere: true, certificate: { state: "valid", expiresAt: undefined, source: "automatic", certificateId: undefined } });
   });
 
   it("maps whether the agent of a server can operate database servers", () => {
