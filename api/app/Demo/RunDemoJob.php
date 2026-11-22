@@ -8,6 +8,7 @@ use App\Models\AgentJob;
 use App\Models\Database;
 use App\Models\Pack;
 use App\Models\Website;
+use App\Services\Certificates\Certificates;
 use App\Services\JobOutcome;
 use App\Services\Mesh;
 use App\Services\PanelCertificate;
@@ -135,6 +136,8 @@ class RunDemoJob implements ShouldQueue
                 'packs' => Pack::orderBy('slug')->get()->map(fn (Pack $pack) => ['slug' => $pack->slug, 'version' => $pack->version])->all(),
                 'runtimes' => [...['frankenphp', 'apache-php-fpm', 'node', 'python', 'custom'], ...Pack::orderBy('slug')->pluck('slug')->all()],
             ],
+            // The demonstration agent loads each certificate that the server must have.
+            AgentAction::SetCertificates => ['certificates' => app(Certificates::class)->wanted($job->server)],
             // Keys with the form of the keys of a real agent. They are not real keys.
             AgentAction::PrepareMailNode => ['keys' => [
                 'wireguardKey' => base64_encode(hash('sha256', 'wg'.$job->server_id, true)),

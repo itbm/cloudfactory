@@ -37,11 +37,14 @@ class AcmeOrders
     /** The longest time between two tries of a renewal that failed, in hours. */
     public const RETRY_MAX_HOURS = 24;
 
-    public function __construct(private DnsProviders $dns, private Certificates $certificates, private ?Acme $acme = null) {}
+    private ?Acme $acme = null;
 
+    public function __construct(private DnsProviders $dns, private Certificates $certificates) {}
+
+    /** The client of the CA. The demonstration mode has its own CA (DemoServiceProvider). */
     private function acme(): Acme
     {
-        return $this->acme ??= Acme::fromConfig();
+        return $this->acme ??= app(Acme::class);
     }
 
     /** Starts a new order for the certificate. An order that runs stops first. */
