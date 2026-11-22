@@ -429,8 +429,14 @@ class ImportTest extends TestCase
         $this->assertSame(['info', 'owner'], array_column($d['mail']['domains'][0]['aliases'], 'localPart'));
         $this->assertArrayNotHasKey('extra', $d);
 
+        // A Plesk backup has the content in nested archives.
+        $plesk = Description::normalise(DemoImport::account('backup_bakery_2611221200.tar'));
+        $this->assertSame('plesk', $plesk['source']['panel']);
+        $this->assertSame('clients/bakery/domains/bakeryclub.example.org/backup_user-data_2611221200.tgz/httpdocs', $plesk['websites'][0]['content']['files']['path']);
+        $this->assertSame('clients/bakery/domains/bakeryclub.example.org/mailnames/hello/backup_mailbox_2611221200.tgz', $plesk['mail']['domains'][0]['mailboxes'][0]['content']['path']);
+
         $this->expectExceptionMessage('comes from a panel that the import does not know');
-        Description::normalise(['format' => Description::FORMAT, 'source' => ['panel' => 'plesk']]);
+        Description::normalise(['format' => Description::FORMAT, 'source' => ['panel' => 'ispconfig']]);
     }
 
     public function test_a_database_name_loses_the_account_of_the_old_panel(): void

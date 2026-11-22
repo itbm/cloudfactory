@@ -238,7 +238,7 @@ Route::prefix('v1')->group(function () {
             Route::get('setup', [SetupController::class, 'show']);
         });
 
-        // The import of an account from cPanel or DirectAdmin (docs/imports.md). The import
+        // The import of an account from cPanel, DirectAdmin or Plesk (docs/imports.md). The import
         // makes websites, databases, mail and DNS zones, so only an administrator imports.
         Route::middleware(['admin', 'scope:websites'])->group(function () {
             Route::get('imports', [ImportController::class, 'index']);

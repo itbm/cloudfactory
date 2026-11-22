@@ -44,7 +44,7 @@ tags:
   - name: Customers
   - name: Imports
     description: >-
-      The import of an account from cPanel or DirectAdmin. Administrators only. Refer to
+      The import of an account from cPanel, DirectAdmin or Plesk. Administrators only. Refer to
       docs/imports.md.
   - name: Users
     description: The users who can sign in. These routes need the users scope.
@@ -5680,7 +5680,7 @@ components:
         fileName: { type: [string, 'null'] }
         sizeBytes: { type: integer }
         receivedBytes: { type: integer, description: The bytes of an upload that the panel has. }
-        panel: { type: [string, 'null'], enum: [cpanel, directadmin, cloudfactory, null] }
+        panel: { type: [string, 'null'], enum: [cpanel, directadmin, plesk, cloudfactory, null] }
         panelName: { type: [string, 'null'] }
         account: { type: [string, 'null'], description: The name of the account on the old panel. }
         customerId: { type: string }

@@ -23,7 +23,7 @@ use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
 /**
- * The import of an account from a different hosting panel: cPanel or DirectAdmin
+ * The import of an account from a different hosting panel: cPanel, DirectAdmin or Plesk
  * (docs/imports.md). Only an administrator imports an account: the import makes websites on a
  * server that the administrator selects.
  *

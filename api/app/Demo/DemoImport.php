@@ -6,7 +6,8 @@ namespace App\Demo;
  * The account that the demo agent reads from the archive of an import: an example of the
  * result of FetchImport (agent/internal/migrate). The demo agent does not read the archive.
  * The name of the file or the address selects the panel: a name with "directadmin" or a name
- * that starts with "user." is a DirectAdmin backup. Each other name is a cPanel backup.
+ * that starts with "user." is a DirectAdmin backup. A name with "plesk" or a name that starts
+ * with "backup_" is a Plesk backup. Each other name is a cPanel backup.
  */
 final class DemoImport
 {
@@ -14,15 +15,31 @@ final class DemoImport
     public static function account(string $name): array
     {
         $base = strtolower(basename((string) parse_url($name, PHP_URL_PATH)));
-        $panel = str_contains($base, 'directadmin') || str_starts_with($base, 'user.') ? 'directadmin' : 'cpanel';
-        $home = $panel === 'cpanel' ? 'cpmove-bakery/homedir' : 'domains';
-        $docroot = fn (string $domain, string $dir) => $panel === 'cpanel' ? "{$home}/{$dir}" : "{$home}/{$domain}/public_html";
-        $dump = fn (string $db) => $panel === 'cpanel' ? "cpmove-bakery/mysql/{$db}.sql" : "backup/{$db}.sql.gz";
-        $maildir = fn (string $local) => $panel === 'cpanel' ? "{$home}/mail/bakeryclub.example.org/{$local}" : "imap/bakeryclub.example.org/{$local}/Maildir";
+        $panel = match (true) {
+            str_contains($base, 'directadmin') || str_starts_with($base, 'user.') => 'directadmin',
+            str_contains($base, 'plesk') || str_starts_with($base, 'backup_') => 'plesk',
+            default => 'cpanel',
+        };
+        $home = ['cpanel' => 'cpmove-bakery/homedir', 'directadmin' => 'domains', 'plesk' => 'clients/bakery/domains/bakeryclub.example.org'][$panel];
+        $docroot = fn (string $domain, string $dir) => match ($panel) {
+            'cpanel' => "{$home}/{$dir}",
+            'directadmin' => "{$home}/{$domain}/public_html",
+            'plesk' => "{$home}/backup_user-data_2611221200.tgz/".str_replace('public_html', 'httpdocs', $dir),
+        };
+        $dump = fn (string $db) => match ($panel) {
+            'cpanel' => "cpmove-bakery/mysql/{$db}.sql",
+            'directadmin' => "backup/{$db}.sql.gz",
+            'plesk' => "{$home}/databases/{$db}_1/backup_sqldump_2611221200.tzst",
+        };
+        $maildir = fn (string $local) => match ($panel) {
+            'cpanel' => "{$home}/mail/bakeryclub.example.org/{$local}",
+            'directadmin' => "imap/bakeryclub.example.org/{$local}/Maildir",
+            'plesk' => "{$home}/mailnames/{$local}/backup_mailbox_2611221200.tgz",
+        };
 
         return [
             'format' => 'cf-account/1',
-            'source' => ['panel' => $panel, 'version' => $panel === 'cpanel' ? '11.130.0.15' : '1.680', 'account' => 'bakery'],
+            'source' => ['panel' => $panel, 'version' => ['cpanel' => '11.130.0.15', 'directadmin' => '1.680', 'plesk' => '18.0.60'][$panel], 'account' => 'bakery'],
             'customer' => ['name' => 'Corner Bakery', 'email' => 'hello@cornerbakery.example.org'],
             'websites' => [
                 self::website('bakeryclub.example.org', '8.1', $docroot('bakeryclub.example.org', 'public_html'), 1_240 * 1024 ** 2, ['orders'], [

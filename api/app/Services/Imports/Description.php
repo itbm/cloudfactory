@@ -20,9 +20,9 @@ final class Description
     public const FORMAT = 'cf-account/1';
 
     /** The panels that the agent can read, and this panel for an account export. */
-    public const PANELS = ['cpanel', 'directadmin', 'cloudfactory'];
+    public const PANELS = ['cpanel', 'directadmin', 'plesk', 'cloudfactory'];
 
-    public const PANEL_NAMES = ['cpanel' => 'cPanel', 'directadmin' => 'DirectAdmin', 'cloudfactory' => 'Cloudfactory'];
+    public const PANEL_NAMES = ['cpanel' => 'cPanel', 'directadmin' => 'DirectAdmin', 'plesk' => 'Plesk', 'cloudfactory' => 'Cloudfactory'];
 
     /** The limits of the agent (agent/internal/migrate/account.go). */
     public const MAX_WEBSITES = 200;

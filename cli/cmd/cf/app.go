@@ -222,7 +222,7 @@ Usage:
   cf customers set ID [--plan ID] [--suspend | --unsuspend]
   cf imports list
   cf imports create --customer CUSTOMER --server SERVER (--file FILE | --url URL)
-                       Reads a cPanel or DirectAdmin backup. The command sends a FILE to the panel in parts,
+                       Reads a cPanel, DirectAdmin or Plesk backup. The command sends a FILE to the panel in parts,
                        then waits for the plan. Each server downloads a URL itself.
   cf imports upload IMPORT --file FILE     Continues an upload from the part that the panel has.
   cf imports get IMPORT                    Shows the plan, or the parts of a running or complete import.

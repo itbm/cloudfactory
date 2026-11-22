@@ -76,6 +76,9 @@ type Archive struct {
 	// Expand reports whether a member is a nested archive that the walk reads too. Nil means
 	// no nested archives.
 	Expand func(name string) bool
+	// Lenient skips a nested archive that Expand selects and that is not a tar archive. With
+	// no Lenient, such a member is an error.
+	Lenient bool
 }
 
 // Walk calls fn for each member of the archive, in the order of the archive. r is the content
@@ -87,17 +90,23 @@ func (a *Archive) Walk(ctx context.Context, fn func(e Entry, r io.Reader) error)
 		return err
 	}
 	defer f.Close()
-	err = walkStream(ctx, f, "", a.Expand, fn, 0)
+	err = walkStream(ctx, f, "", a.Expand, a.Lenient, fn, 0)
 	if errors.Is(err, ErrStop) {
 		return nil
 	}
 	return err
 }
 
+// nestedFormatError is the error of a nested archive that is not a tar archive.
+type nestedFormatError struct{ name string }
+
+func (e *nestedFormatError) Error() string { return e.name + ": " + ErrFormat.Error() }
+func (e *nestedFormatError) Unwrap() error { return ErrFormat }
+
 // maxDepth is the largest number of archives in archives.
 const maxDepth = 3
 
-func walkStream(ctx context.Context, r io.Reader, prefix string, expand func(string) bool, fn func(Entry, io.Reader) error, depth int) error {
+func walkStream(ctx context.Context, r io.Reader, prefix string, expand func(string) bool, lenient bool, fn func(Entry, io.Reader) error, depth int) error {
 	plain, done, err := Decompress(r)
 	if err != nil {
 		return err
@@ -147,10 +156,17 @@ func walkStream(ctx context.Context, r io.Reader, prefix string, expand func(str
 			e.Type, e.Size = TypeOther, 0
 		}
 		if e.Type == TypeFile && depth < maxDepth && expand != nil && IsTarName(name) && expand(name) {
-			if err := walkStream(ctx, tr, name, expand, fn, depth+1); err != nil {
-				if errors.Is(err, ErrFormat) {
-					return fmt.Errorf("%s: %w", name, err)
+			err := walkStream(ctx, tr, name, expand, lenient, fn, depth+1)
+			var nested *nestedFormatError
+			if errors.Is(err, ErrFormat) && !errors.As(err, &nested) {
+				// The member itself is not a tar archive.
+				if lenient {
+					// The next header skips the rest of the member.
+					continue
 				}
+				return &nestedFormatError{name: name}
+			}
+			if err != nil {
 				return err
 			}
 			continue

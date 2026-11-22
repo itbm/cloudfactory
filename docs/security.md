@@ -303,7 +303,7 @@ The product specification, section 6.4, gives the requirements.
 
 ## Account imports
 
-An administrator can import the backup of an account from cPanel or DirectAdmin
+An administrator can import the backup of an account from cPanel, DirectAdmin or Plesk
 ([imports.md](imports.md)). The backup can come from the customer, so the agent does not
 trust it:
 
@@ -311,6 +311,10 @@ trust it:
   that administrator, so each record has the checks and the plan limits of the API.
 - The worker of the agent downloads and reads the archive as a stream. It never extracts the
   archive, and root never opens it. The worker refuses each name that goes out of the archive.
+- The worker reads the XML files of a Plesk backup with the Go decoder, which does not read
+  external entities. A file has 4 MiB, 64 levels and 500,000 elements at most.
+- A Plesk backup can have a mailbox password as text. The agent makes a SHA-512-crypt hash of
+  it, and only the hash goes to the panel.
 - The Unix user of the website extracts the files of the website. The database client in the
   container of the database server loads a dump, as a temporary user for the one database.
 - A download from a URL connects only to public addresses, also after a redirect, and uses no

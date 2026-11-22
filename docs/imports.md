@@ -1,7 +1,7 @@
 # Import an account from a different panel
 
-This guide is for an administrator. It tells you how to move a hosting account from cPanel or
-DirectAdmin to Cloudfactory. The import reads the backup of the account and makes its websites,
+This guide is for an administrator. It tells you how to move a hosting account from cPanel,
+DirectAdmin or Plesk to Cloudfactory. The import reads the backup of the account and makes its websites,
 databases, cron jobs, mailboxes and DNS zones for a customer of the panel.
 
 The old panel continues to operate during the import. The websites and the mail move to
@@ -13,25 +13,29 @@ Cloudfactory only when you change the DNS of their domains.
 | ----------- | ------------------------------------------------------------------------------------------------------------------ |
 | cPanel      | The account backup of `pkgacct` or of **Backup** in cPanel, for example `cpmove-USER.tar.gz` or `backup-MM.DD.YYYY_HH-MM-SS_USER.tar.gz` |
 | DirectAdmin | The user backup of DirectAdmin, for example `user.admin.USER.tar.gz` or `user.admin.USER.tar.zst`                  |
+| Plesk       | A backup of a subscription or a customer from **Backup Manager** or `pleskbackup`, downloaded as one file, for example `backup_example.com_2311221200.tar` |
 
 The file can be a tar archive with no compression, or with gzip, bzip2 or zstd compression. The
 agent finds the type from the content of the file, not from its name. It also reads an archive
-in the archive, for example `homedir.tar` of cPanel.
+in the archive, for example `homedir.tar` of cPanel or `backup_user-data_2311221200.tgz` of
+Plesk.
 
-Plesk and HestiaCP are not supported yet.
+For Plesk, make the backup with no password protection, or with password protection off for
+the download. The backup of Plesk for Windows (a ZIP file) is not supported. HestiaCP is not
+supported yet.
 
 ## What the import copies
 
 | Part           | What the import does                                                                                                                                                                                                                              |
 | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Websites       | It makes one PHP website for each web domain: the main domain, each addon domain and each subdomain. The website gets the image with the same PHP version. If the panel has no such image, the website gets the image with the next newer version. |
-| Domains        | It adds the aliases (parked domains and domain pointers) and the redirects to their website.                                                                                                                                                      |
+| Websites       | It makes one PHP website for each web domain: the main domain, each addon domain and each subdomain (in Plesk, each site of a subscription). The website gets the image with the same PHP version. If the panel has no such image, the website gets the image with the next newer version. |
+| Domains        | It adds the aliases (parked domains, domain pointers and Plesk domain aliases) and the redirects to their website.                                                                                                                                                      |
 | Files          | It copies the document root of each website. A document root in a different document root, for example a subdomain in `public_html`, goes to its own website only.                                                                                |
 | Databases      | It makes a MariaDB database for each MySQL or MariaDB database of a website, and loads the dump. The name of the database gets the Unix user of the website in place of the account name: `bakery_wp` becomes `<unix-user>_wp`.                     |
 | Database users | It makes one user for each database, with the name of the database and a new password. It does not copy the other users of the old panel.                                                                                                         |
 | WordPress      | It writes the new database name, user, password and host into `wp-config.php`. You can turn this off before you start the import.                                                                                                                |
 | Cron jobs      | It adds each cron job of the account to its website, **turned off**. Read each command, change the paths of the old panel, then turn the cron job on.                                                                                            |
-| Mail           | It makes each mail domain, mailbox, alias and forwarder, and copies the messages of each folder. A mailbox keeps its password when the old panel has a hash that the mail server can use: bcrypt, SHA-512-crypt, SHA-256-crypt or MD5-crypt.      |
+| Mail           | It makes each mail domain, mailbox, alias and forwarder, and copies the messages of each folder. A mailbox keeps its password when the old panel has a hash that the mail server can use: bcrypt, SHA-512-crypt, SHA-256-crypt or MD5-crypt. Plesk usually encrypts the passwords with a key of its server: these mailboxes get a new password. |
 | DNS zones      | It makes each DNS zone and adds its records. If the customer has the zone already, the import adds only the records that the zone does not have.                                                                                                  |
 
 The import does not copy these parts. The plan shows a warning for each one that the backup has:
@@ -43,6 +47,8 @@ The import does not copy these parts. The plan shows a warning for each one that
 - FTP accounts (use SFTP with an SSH key);
 - autoresponders, catch-all addresses and forwarders to a program;
 - the `private_html` directory of DirectAdmin (the import copies `public_html` only);
+- the mail of a Plesk domain alias, and the scheduled tasks of Plesk that are not in the
+  crontab of the system user;
 - the SOA and NS records of a zone, and the records of the cPanel services, for example
   `cpanel`, `whm` and `webmail`.
 
@@ -139,6 +145,10 @@ trust it:
   opens it.
 - The agent never extracts the archive. It reads it as a stream, and refuses each name that goes
   out of the archive.
+- The agent reads the XML files of a Plesk backup with no external entities, and with limits on
+  the size and the depth.
+- A Plesk backup can have a mailbox password as text. The agent makes a SHA-512-crypt hash of
+  it, and only the hash goes to the panel.
 - The Unix user of the website extracts the files of the website from a new tar stream. The
   stream has only directories, regular files and symbolic links.
 - The database client in the container of the database server loads a dump as a temporary user
@@ -162,4 +172,8 @@ items are not tested on a real server yet:
 - the download and the extraction with Podman and gVisor;
 - the load of a dump into a database server;
 - the copy of messages into the JMAP account of a mailbox, as the administrator of Stalwart;
-- a mailbox password hash of cPanel or DirectAdmin in Stalwart.
+- a mailbox password hash of cPanel or DirectAdmin in Stalwart;
+- a backup from a real Plesk server. Plesk does not publish the schema of its backup files. The
+  agent reads the XML elements that the public sources and other migration tools show
+  (`domain`, `phosting`, `sites`, `mailuser`, `database`, `dnsrec` and the `cid` content
+  references). Test an import of a Plesk backup before you move many accounts.

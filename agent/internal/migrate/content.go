@@ -2,11 +2,13 @@ package migrate
 
 import (
 	"archive/tar"
+	"bufio"
 	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"io"
+	"path"
 	"regexp"
 	"strconv"
 	"strings"
@@ -133,10 +135,11 @@ func WriteFiles(ctx context.Context, a *Archive, dir string, opts FileOptions, w
 var ErrNoMember = errors.New("the archive does not have the file")
 
 // WithMember calls fn with the content of one file of the archive. A gzip, bzip2 or zstd
-// file is given plain.
+// file is given plain. A file that is a tar archive gives its first regular file, for example
+// the dump in the "sqldump" archive of a Plesk backup.
 func WithMember(ctx context.Context, a *Archive, name string, fn func(r io.Reader) error) error {
 	walk := *a
-	walk.Expand = ExpandFor(name)
+	walk.Expand = ExpandFor(path.Dir(name))
 	found := false
 	err := walk.Walk(ctx, func(e Entry, r io.Reader) error {
 		if e.Name != name || e.Type != TypeFile {
@@ -148,7 +151,11 @@ func WithMember(ctx context.Context, a *Archive, name string, fn func(r io.Reade
 			return err
 		}
 		defer done()
-		if err := fn(plain); err != nil {
+		br := bufio.NewReaderSize(plain, 4096)
+		if head, _ := br.Peek(512); len(head) == 512 && bytes.Equal(head[257:262], []byte("ustar")) {
+			return firstFile(br, fn)
+		}
+		if err := fn(br); err != nil {
 			return err
 		}
 		return ErrStop
@@ -157,6 +164,32 @@ func WithMember(ctx context.Context, a *Archive, name string, fn func(r io.Reade
 		return fmt.Errorf("%w: %s", ErrNoMember, name)
 	}
 	return err
+}
+
+// firstFile calls fn with the first regular file of a tar stream, given plain.
+func firstFile(r io.Reader, fn func(r io.Reader) error) error {
+	tr := tar.NewReader(r)
+	for {
+		h, err := tr.Next()
+		if errors.Is(err, io.EOF) {
+			return ErrNoMember
+		}
+		if err != nil {
+			return fmt.Errorf("read the archive: %w", err)
+		}
+		if h.Typeflag != tar.TypeReg {
+			continue
+		}
+		plain, done, err := Decompress(tr)
+		if err != nil {
+			return err
+		}
+		defer done()
+		if err := fn(plain); err != nil {
+			return err
+		}
+		return ErrStop
+	}
 }
 
 // Message is one message of a Maildir.

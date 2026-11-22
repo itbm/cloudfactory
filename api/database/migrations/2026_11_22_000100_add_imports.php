@@ -5,7 +5,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * The import of an account from a different hosting panel, for example cPanel or DirectAdmin
+ * The import of an account from a different hosting panel, for example cPanel, DirectAdmin or Plesk
  * (docs/imports.md).
  *
  * - "source" is "upload" (the panel keeps the archive in its storage) or "url" (each server

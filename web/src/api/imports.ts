@@ -1,4 +1,4 @@
-// The import of an account from cPanel or DirectAdmin (docs/imports.md). Only an administrator
+// The import of an account from cPanel, DirectAdmin or Plesk (docs/imports.md). Only an administrator
 // imports an account. The page loads this data when it opens, so it is not in the state of the
 // store.
 
@@ -18,7 +18,7 @@ export interface Import {
   fileName: string | null;
   sizeBytes: number;
   receivedBytes: number;
-  panel: "cpanel" | "directadmin" | "cloudfactory" | null;
+  panel: "cpanel" | "directadmin" | "plesk" | "cloudfactory" | null;
   panelName: string | null;
   account: string | null;
   customerId: string;

@@ -26,7 +26,7 @@ type Account struct {
 
 // Source tells where the description comes from.
 type Source struct {
-	// Panel is "cpanel" or "directadmin".
+	// Panel is "cpanel", "directadmin" or "plesk".
 	Panel   string `json:"panel"`
 	Version string `json:"version,omitempty"`
 	// Account is the name of the account on the old panel.
@@ -216,14 +216,15 @@ type adapter interface {
 }
 
 // ErrUnknown is the error of an archive that no adapter knows.
-var ErrUnknown = errors.New("the archive is not a cPanel or DirectAdmin account backup")
+var ErrUnknown = errors.New("the archive is not a cPanel, DirectAdmin or Plesk account backup")
 
 func adapters() []adapter {
-	return []adapter{newCpanel(), newDirectAdmin()}
+	return []adapter{newCpanel(), newDirectAdmin(), newPlesk()}
 }
 
 // Inspect reads the archive one time and gives the description of the account. With no
-// Expand, the walk reads the nested archives that the adapters know (InspectExpand).
+// Expand, the walk reads the nested archives that the adapters know (InspectExpand). It skips
+// a nested archive that is not a tar archive.
 func Inspect(ctx context.Context, a *Archive) (Account, error) {
 	all := adapters()
 	var budget int64 = maxSmallTotal
@@ -231,6 +232,7 @@ func Inspect(ctx context.Context, a *Archive) (Account, error) {
 	if walk.Expand == nil {
 		walk.Expand = InspectExpand
 	}
+	walk.Lenient = true
 	err := walk.Walk(ctx, func(e Entry, r io.Reader) error {
 		var content []byte
 		var want []adapter
@@ -275,10 +277,15 @@ func Inspect(ctx context.Context, a *Archive) (Account, error) {
 }
 
 // InspectExpand selects the nested archives of the known backup formats: the home directory
-// of an older cPanel backup ("cpmove-USER/homedir.tar").
+// of an older cPanel backup ("cpmove-USER/homedir.tar"), and the archives of the files and
+// the mailboxes of a Plesk backup ("backup_user-data_2311221200.tgz").
 func InspectExpand(name string) bool {
 	top, rest, ok := strings.Cut(name, "/")
-	return ok && top != "" && rest == "homedir.tar"
+	if ok && top != "" && rest == "homedir.tar" {
+		return true
+	}
+	_, _, nested := nestedOf(name)
+	return !nested && pleskContentArchive(name)
 }
 
 // bound keeps a description in the limits, with a warning for each part that it leaves out.
