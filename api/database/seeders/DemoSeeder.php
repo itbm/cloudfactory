@@ -18,6 +18,7 @@ use App\Models\GitSource;
 use App\Models\Image;
 use App\Models\MailAlias;
 use App\Models\Mailbox;
+use App\Models\MailboxSnapshot;
 use App\Models\MailDomain;
 use App\Models\MailServer;
 use App\Models\MeshTunnel;
@@ -447,6 +448,22 @@ class DemoSeeder extends Seeder
             'encryption' => ['fingerprints' => [$keys['fingerprint']], 'keyType' => 'OpenPGP v4: X25519', 'expiresAt' => null, 'warnings' => []],
         ]);
 
+        // The backups of the mailboxes of the small customers: one for each of the last seven
+        // nights, and one manual backup of info@acme.example.com. A mailbox gets a little
+        // smaller each night back. The owner restored info@ from the backup of three nights ago
+        // yesterday. One message was too large for the mail server.
+        foreach (Mailbox::whereIn('customer_id', [$this->customers['acme']->id, $this->customers['bakery']->id, $this->customers['books']->id])->with('domain')->orderBy('local_part')->get() as $mailbox) {
+            for ($night = 1; $night <= 7; $night++) {
+                $snapshot = $this->mailboxSnapshot($mailbox, 'scheduled', now()->subDays($night)->setTime(2, 4 + $night), $server->id, 1 - $night * 0.004);
+                if ($mailbox->local_part === 'info' && $night === 3) {
+                    $snapshot->update(['last_restore' => ['at' => now()->subDay()->setTime(9, 41)->toIso8601String(), 'added' => 14, 'present' => $snapshot->messages - 15, 'tooLarge' => 1, 'failed' => 0]]);
+                }
+            }
+            if ($mailbox->local_part === 'info') {
+                $this->mailboxSnapshot($mailbox, 'manual', now()->subHours(3), $server->id, 1);
+            }
+        }
+
         // A large customer, to show the Email page with many mailboxes and aliases.
         $owner = $this->customers['northwind'];
         $domain = MailDomain::create([
@@ -836,12 +853,26 @@ class DemoSeeder extends Seeder
         }
     }
 
+    /** A backup of a mailbox, with about 80 KB for each message. */
+    private function mailboxSnapshot(Mailbox $mailbox, string $kind, \DateTimeInterface $at, string $serverId, float $part): MailboxSnapshot
+    {
+        $size = (int) max(64 * 1024, $mailbox->used_bytes * $part);
+        $snapshot = new MailboxSnapshot([
+            'mailbox_id' => $mailbox->id, 'address' => $mailbox->address(), 'server_id' => $serverId, 'kind' => $kind,
+            'restic_id' => hash('sha256', $mailbox->id.$kind.$at->format('c')), 'size_bytes' => $size, 'messages' => intdiv($size, 80 * 1024),
+        ]);
+        $snapshot->created_at = $at;
+        $snapshot->save();
+
+        return $snapshot;
+    }
+
     /** @param  ?string  $serverId  The server of a part with only databases. Null is a backup of the website. */
     private function snapshot(Website $website, string $kind, int $size, array $databases, \DateTimeInterface $at, ?string $serverId = null): void
     {
         $snapshot = new Snapshot([
             'website_id' => $website->id, 'kind' => $kind, 'restic_id' => hash('sha256', $website->id.$kind.$at->format('c').$serverId), 'size_bytes' => max($size, self::MB),
-            'databases' => $databases, 'mailboxes' => [], 'dump_hashes' => [],
+            'databases' => $databases, 'dump_hashes' => [],
             'server_id' => $serverId ?? $website->server_id, 'part' => $serverId ? Snapshot::DATABASES : Snapshot::WEBSITE,
         ]);
         $snapshot->created_at = $at > now() ? now()->subHours(20) : $at;

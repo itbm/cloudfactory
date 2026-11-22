@@ -24,6 +24,7 @@ import type {
   DnsRecordType,
   Deploy,
   MailAlias,
+  MailboxBackup,
   DomainKind,
   FileContent,
   FileEntry,
@@ -855,6 +856,21 @@ export function getAutoresponder(mailboxId: string): Promise<Autoresponder> {
 /** Sets the autoresponder of a mailbox. The mail server makes the change at once. */
 export function setAutoresponder(mailboxId: string, input: AutoresponderInput): Promise<Autoresponder> {
   return call(async () => (await live.request<{ autoresponder: Autoresponder }>("PUT", `/mail/mailboxes/${mailboxId}/autoresponder`, input)).autoresponder);
+}
+
+/** Reads the backups of a mailbox, the newest first. */
+export function listMailboxBackups(mailboxId: string): Promise<MailboxBackup[]> {
+  return call(async () => (await live.request<{ data: MailboxBackup[] }>("GET", `/mail/mailboxes/${mailboxId}/backups`)).data);
+}
+
+/** Starts a backup of a mailbox. The job ends when the backup is in the repository. */
+export function backUpMailbox(mailboxId: string): Promise<{ job: Promise<Job> }> {
+  return call(() => live.request<JobAnswer>("POST", `/mail/mailboxes/${mailboxId}/backups`)).then((r) => ({ job: track(r.job) }));
+}
+
+/** Adds the messages of a backup that the mailbox does not have. */
+export function restoreMailbox(mailboxId: string, backupId: string): Promise<{ job: Promise<Job> }> {
+  return call(() => live.request<JobAnswer>("POST", `/mail/mailboxes/${mailboxId}/backups/${backupId}/restore`)).then((r) => ({ job: track(r.job) }));
 }
 
 /** Removes a mailbox and its messages. */

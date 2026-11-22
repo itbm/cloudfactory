@@ -164,7 +164,6 @@ return new class extends Migration
             $table->string('restic_id')->nullable();
             $table->unsignedBigInteger('size_bytes')->default(0);
             $table->json('databases');
-            $table->json('mailboxes');
             $table->timestamps();
         });
 

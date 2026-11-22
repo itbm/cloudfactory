@@ -6,6 +6,8 @@ use App\Enums\AgentAction;
 use App\Enums\JobState;
 use App\Models\AgentJob;
 use App\Models\Database;
+use App\Models\Mailbox;
+use App\Models\MailboxSnapshot;
 use App\Models\Pack;
 use App\Models\Website;
 use App\Services\JobOutcome;
@@ -129,6 +131,9 @@ class RunDemoJob implements ShouldQueue
             AgentAction::CreateWebsite, AgentAction::AddDomain => ['dnsPointsHere' => true],
             AgentAction::CreateDatabase => ($p['engine'] ?? '') === Database::VALKEY ? ['number' => self::freeValkeyNumber($job)] : [],
             AgentAction::Backup => ['snapshotId' => bin2hex(random_bytes(32)), 'sizeBytes' => random_int(40, 900) * 1024 ** 2, 'dumps' => [], 'forgotten' => []],
+            AgentAction::BackupMailbox => self::mailboxBackup($p),
+            // The demonstration has all messages of each backup in the mailbox already.
+            AgentAction::RestoreMailbox => ['added' => 0, 'present' => (int) (MailboxSnapshot::where('restic_id', $p['snapshotId'] ?? '')->value('messages') ?? 0), 'tooLarge' => 0, 'failed' => 0, 'firstError' => ''],
             AgentAction::InstallHostUpdates => ['rebootRequired' => false],
             // The demonstration agent loads each pack of the panel, as a real agent does.
             AgentAction::SetPacks => [
@@ -194,6 +199,20 @@ class RunDemoJob implements ShouldQueue
     }
 
     /** The first Valkey database number that no website on the server of the job uses. */
+    /**
+     * A backup of a mailbox: about 80 KB for each message of the mailbox, as in DemoSeeder.
+     * The retention removes nothing.
+     *
+     * @return array<string, mixed>
+     */
+    private static function mailboxBackup(array $p): array
+    {
+        $used = (int) (Mailbox::whereKey($p['mailboxId'] ?? '')->value('used_bytes') ?? 0);
+        $size = max(64 * 1024, $used);
+
+        return ['snapshotId' => bin2hex(random_bytes(32)), 'sizeBytes' => $size, 'messages' => intdiv($size, 80 * 1024), 'forgotten' => []];
+    }
+
     private static function freeValkeyNumber(AgentJob $job): int
     {
         $used = Database::where('engine', Database::VALKEY)

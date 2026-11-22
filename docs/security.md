@@ -747,13 +747,13 @@ Known limits:
 
 ## Backups
 
-- Each server with the role `web` has its own restic repository and its own repository
-  password. The panel sends a password only to its server, with each backup job. A person who
+- Each server with the role `web` or `email` has its own restic repository and its own
+  repository password. The panel sends a password only to its server, with each backup job. A person who
   has root access to one server cannot read the backups of the other servers.
 - The agent does not keep the repository password or the credentials of the object storage
   in a file. It gets them with each job and gives them to restic in the environment, not in
   the command line.
-- Each server with the role `web` can have its own key for the object storage. The storage
+- Each server with the role `web` or `email` can have its own key for the object storage. The storage
   provider limits the key to the repository of that server. The panel sends the key only to
   that server, with each backup job. A person who has root access to one server can then not
   read, delete or change the backups of the other servers. Refer to

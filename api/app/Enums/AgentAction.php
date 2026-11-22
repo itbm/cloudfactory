@@ -40,6 +40,8 @@ enum AgentAction: string
     case DeleteMailbox = 'DeleteMailbox';
     case SetMailAlias = 'SetMailAlias';
     case DeleteMailAlias = 'DeleteMailAlias';
+    case BackupMailbox = 'BackupMailbox';
+    case RestoreMailbox = 'RestoreMailbox';
     case SetDnsZones = 'SetDnsZones';
     case DeleteDnsZones = 'DeleteDnsZones';
     case SetCronJobs = 'SetCronJobs';
@@ -75,7 +77,7 @@ enum AgentAction: string
             self::InstallHostUpdates => ['Download packages', 'Install packages', 'Restart changed services only'],
             self::Reboot => ['Drain the edge proxy', 'Stop containers', 'Reboot', 'Start containers', 'Check all services'],
             self::UpdateAgent => ['Download agent binary', 'Check signature', 'Keep previous binary for rollback', 'Restart agent'],
-            self::PruneBackups => ['Remove backups of deleted websites', 'Remove unused data'],
+            self::PruneBackups => ['Remove backups of deleted websites and mailboxes', 'Remove unused data'],
             self::SetSftp => ['Set SFTP access'],
             self::ConfigureHost => ['Save settings', 'Restart websites', 'Restart services'],
             self::SetPanelCertificate => ['Change certificate method', 'Get TLS certificate'],
@@ -88,6 +90,8 @@ enum AgentAction: string
             self::DeleteMailbox => ['Remove mailbox and its messages'],
             self::SetMailAlias => ['Set address'],
             self::DeleteMailAlias => ['Remove address'],
+            self::BackupMailbox => ['Export and upload the messages', 'Apply retention'],
+            self::RestoreMailbox => ['Download the backup and add the messages'],
             self::SetPanelBrands => ['Set panel domains', 'Get TLS certificates'],
             self::SetDnsZones => ['Start DNS server', 'Write zones', 'Load zones'],
             self::DeleteDnsZones => ['Remove zones'],
@@ -112,7 +116,7 @@ enum AgentAction: string
     public function usesBackupRepository(): bool
     {
         return match ($this) {
-            self::Backup, self::Restore, self::PruneBackups => true,
+            self::Backup, self::Restore, self::PruneBackups, self::BackupMailbox, self::RestoreMailbox => true,
             default => false,
         };
     }

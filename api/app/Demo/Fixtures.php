@@ -49,11 +49,12 @@ class Fixtures
         foreach (DnsZone::when($visible !== null, fn ($q) => $q->whereIn('customer_id', $visible))->orderBy('name')->pluck('id') as $id) {
             $paths[] = "/dns-zones/{$id}";
         }
-        // The autoresponder dialog of a mailbox reads the autoresponder from the mail server.
-        // The fixtures have the mailboxes of the first mail domain of the user.
+        // The autoresponder dialog of a mailbox reads the autoresponder from the mail server,
+        // and the backups dialog reads the backups of the mailbox. The fixtures have the
+        // mailboxes of the first mail domain of the user.
         $domain = MailDomain::when($visible !== null, fn ($q) => $q->whereIn('customer_id', $visible))->orderBy('name')->first();
         foreach (Mailbox::where('mail_domain_id', $domain?->id)->orderBy('local_part')->pluck('id') as $id) {
-            $paths[] = "/mail/mailboxes/{$id}/autoresponder";
+            array_push($paths, "/mail/mailboxes/{$id}/autoresponder", "/mail/mailboxes/{$id}/backups");
         }
         $answers = [];
         foreach ($paths as $path) {

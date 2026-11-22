@@ -605,18 +605,7 @@ func newRepo(target string, creds map[string]string) (repo, error) {
 // restic runs restic on the repository. The credentials go in the environment, not in the
 // arguments. restic waits for a lock of a different job, for example a prune.
 func (d *Deps) restic(ctx context.Context, r repo, args ...string) (string, error) {
-	base := []string{"--repo", r.target}
-	if r.creds["RESTIC_PASSWORD"] == "" {
-		// The panel sends the password of the repository of this server (RESTIC_PASSWORD).
-		// A local key file is only for a manual set-up.
-		base = append(base, "--password-file", d.ResticPasswordFile)
-	}
-	base = append(base, "--json", "--retry-lock", "30m")
-	env := make([]string, 0, len(r.creds))
-	for _, k := range slices.Sorted(maps.Keys(r.creds)) {
-		env = append(env, k+"="+r.creds[k])
-	}
-	argv := append([]string{"restic"}, append(base, args...)...)
+	argv, env := d.resticCommand(r, args)
 	if len(args) > 0 && args[0] == "backup" {
 		// A backup reads the files of a website, which the website can change at any time.
 		// restic runs in a jail, where a symbolic link in these files cannot point to a file
@@ -634,6 +623,30 @@ func (d *Deps) restic(ctx context.Context, r repo, args ...string) (string, erro
 		return d.Run.RunEnv(ctx, env, "", d.agentBinary(), j.Args()...)
 	}
 	return d.Run.RunEnv(ctx, env, "", argv[0], argv[1:]...)
+}
+
+// resticCommand gives the command line and the environment of a restic command.
+func (d *Deps) resticCommand(r repo, args []string) (argv, env []string) {
+	argv = []string{"restic", "--repo", r.target}
+	if r.creds["RESTIC_PASSWORD"] == "" {
+		// The panel sends the password of the repository of this server (RESTIC_PASSWORD).
+		// A local key file is only for a manual set-up.
+		argv = append(argv, "--password-file", d.ResticPasswordFile)
+	}
+	argv = append(argv, "--json", "--retry-lock", "30m")
+	env = make([]string, 0, len(r.creds))
+	for _, k := range slices.Sorted(maps.Keys(r.creds)) {
+		env = append(env, k+"="+r.creds[k])
+	}
+	return append(argv, args...), env
+}
+
+// resticStream runs restic with its stdin and stdout connected to a reader and a writer. It is
+// for the commands that read no path and write no path: the backup of a mailbox from stdin,
+// and its restore to stdout. Thus they need no jail.
+func (d *Deps) resticStream(ctx context.Context, r repo, stdin io.Reader, stdout io.Writer, args ...string) error {
+	argv, env := d.resticCommand(r, args)
+	return d.Run.StreamEnv(ctx, env, stdin, stdout, argv[0], argv[1:]...)
 }
 
 // resticTmp is the directory of the temporary files of restic in the jail of a backup. Only
@@ -654,17 +667,17 @@ func (d *Deps) ensureRepo(ctx context.Context, r repo) error {
 	return err
 }
 
-// forget removes the snapshots of a website that the retention policy does not keep
-// (FR-902). It gives the IDs of the removed snapshots. The data stays in the repository until
-// PruneBackups.
+// forget removes the snapshots of a website or a mailbox that the retention policy does not
+// keep (FR-902). The tags are, for example, "website=<ID>,kind=scheduled". It gives the IDs of
+// the removed snapshots. The data stays in the repository until PruneBackups.
 //
 // Audit finding R8: the policy is for the snapshots of one kind. The retention of the
 // scheduled backups thus does not remove the backups that a user made.
-func (d *Deps) forget(ctx context.Context, r repo, websiteID, kind string, keep *agentv1.Retention) ([]string, error) {
+func (d *Deps) forget(ctx context.Context, r repo, tags string, keep *agentv1.Retention) ([]string, error) {
 	if keep.GetDaily() <= 0 && keep.GetWeekly() <= 0 && keep.GetMonthly() <= 0 && keep.GetLast() <= 0 {
 		return nil, nil
 	}
-	args := []string{"forget", "--tag", "website=" + websiteID + ",kind=" + kind, "--group-by", ""}
+	args := []string{"forget", "--tag", tags, "--group-by", ""}
 	if keep.GetLast() > 0 {
 		args = append(args, "--keep-last", fmt.Sprint(keep.GetLast()))
 	}
@@ -692,9 +705,10 @@ func (d *Deps) forget(ctx context.Context, r repo, websiteID, kind string, keep 
 	return ids, nil
 }
 
-// forgetWebsite removes all snapshots of a website that the panel deleted (audit finding R8).
-func (d *Deps) forgetWebsite(ctx context.Context, r repo, websiteID string) error {
-	out, err := d.restic(ctx, r, "snapshots", "--tag", "website="+websiteID)
+// forgetAll removes all snapshots with a tag, for example "website=<ID>": the snapshots of a
+// website or a mailbox that the panel deleted (audit finding R8).
+func (d *Deps) forgetAll(ctx context.Context, r repo, tag string) error {
+	out, err := d.restic(ctx, r, "snapshots", "--tag", tag)
 	if err != nil {
 		return err
 	}
@@ -729,27 +743,36 @@ func lastJSONLine(out string) string {
 
 // PruneBackups removes the data that no snapshot uses from the repository (FR-902). The panel
 // sends it to one server after the nightly backups. Before that, the agent removes the
-// snapshots of the websites that the panel deleted some time ago (audit finding R8).
+// snapshots of the websites and the mailboxes that the panel deleted some time ago (audit
+// finding R8).
 func (d *Deps) PruneBackups(req *agentv1.PruneBackupsRequest) (jobs.Job, error) {
 	r, err := newRepo(req.GetTarget(), req.GetCredentials())
 	if err != nil {
 		return jobs.Job{}, err
 	}
+	tags := []string{}
 	for _, id := range req.GetForgetWebsiteIds() {
 		if err := validate.ID(id); err != nil {
 			return jobs.Job{}, err
 		}
+		tags = append(tags, "website="+id)
+	}
+	for _, id := range req.GetForgetMailboxIds() {
+		if err := validate.ID(id); err != nil {
+			return jobs.Job{}, err
+		}
+		tags = append(tags, "mailbox="+id)
 	}
 	return jobs.Job{ID: req.GetJobId(), Key: "backup-repository", Long: true, Steps: []jobs.Step{
-		{Name: "Remove backups of deleted websites", Do: func(ctx context.Context) error {
-			if len(req.GetForgetWebsiteIds()) == 0 {
+		{Name: "Remove backups of deleted websites and mailboxes", Do: func(ctx context.Context) error {
+			if len(tags) == 0 {
 				return nil
 			}
 			if err := d.ensureRepo(ctx, r); err != nil {
 				return err
 			}
-			for _, id := range req.GetForgetWebsiteIds() {
-				if err := d.forgetWebsite(ctx, r, id); err != nil {
+			for _, tag := range tags {
+				if err := d.forgetAll(ctx, r, tag); err != nil {
 					return err
 				}
 			}
@@ -922,7 +945,7 @@ func (d *Deps) Backup(req *agentv1.BackupRequest) (jobs.Job, error) {
 			if req.GetRetention() == nil {
 				return nil
 			}
-			ids, err := d.forget(ctx, r, req.GetWebsiteId(), kind, req.GetRetention())
+			ids, err := d.forget(ctx, r, "website="+req.GetWebsiteId()+",kind="+kind, req.GetRetention())
 			forgotten = ids
 			return err
 		}},

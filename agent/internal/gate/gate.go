@@ -54,7 +54,7 @@ type request struct {
 	Argv []string `json:"argv,omitempty"`
 	// To is the second command of a pipe.
 	To []string `json:"to,omitempty"`
-	// Env has more environment variables for the command (run).
+	// Env has more environment variables for the command (run, stream).
 	Env []string `json:"env,omitempty"`
 	// Stdin is the input of the command (run).
 	Stdin string `json:"stdin,omitempty"`

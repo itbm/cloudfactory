@@ -242,12 +242,16 @@ func (d *Deps) allowUserSystemctl(args []string) error {
 var (
 	resticTagRE  = regexp.MustCompile(`^website=[0-9A-Za-z]{26}$`)
 	resticKindRE = regexp.MustCompile(`^website=[0-9A-Za-z]{26},kind=(manual|scheduled)(-databases)?$`)
-	countRE      = regexp.MustCompile(`^[0-9]{1,9}$`)
+	mailboxTagRE = regexp.MustCompile(`^mailbox=[0-9A-Za-z]{26}$`)
+	// mailboxKindRE is the tag of the snapshots of one mailbox and one kind (Deps.forget).
+	mailboxKindRE = regexp.MustCompile(`^mailbox=[0-9A-Za-z]{26},kind=(manual|scheduled)$`)
+	countRE       = regexp.MustCompile(`^[0-9]{1,9}$`)
 )
 
 // allowRestic checks a restic command (Deps.restic). restic runs as root: a backup reads the
 // files of a website and its database dumps, and a restore writes into the directory of a
-// restore job. The policy lets restic read and write no other path.
+// restore job. The policy lets restic read and write no other path. The backup of a mailbox
+// reads stdin, and its restore writes to stdout (Deps.resticStream): they use no path.
 //
 //	restic --repo <target> [--password-file <key file>] --json --retry-lock 30m <command>
 func (d *Deps) allowRestic(args, env []string) error {
@@ -255,7 +259,7 @@ func (d *Deps) allowRestic(args, env []string) error {
 	if err != nil {
 		return err
 	}
-	if c.command == "backup" {
+	if c.command == "backup" && !c.stdin {
 		return errors.New("restic makes a backup only in a jail (cf-agent jail)")
 	}
 	return nil
@@ -279,8 +283,8 @@ func (d *Deps) allowJail(args, env []string) error {
 	if err != nil {
 		return err
 	}
-	if c.command != "backup" {
-		return errors.New("only a backup runs in a jail")
+	if c.command != "backup" || c.stdin {
+		return errors.New("only a backup of files runs in a jail")
 	}
 	shown := c.paths
 	if c.keyFile && d.ResticPasswordFile != "" {
@@ -299,6 +303,8 @@ type resticCommand struct {
 	paths []string
 	// keyFile is true when restic reads the key file of the agent.
 	keyFile bool
+	// stdin is true for a backup of the data on stdin: the backup of a mailbox.
+	stdin bool
 }
 
 // checkRestic checks a restic command against the forms of the policy (resticArgs).
@@ -348,17 +354,27 @@ func (d *Deps) resticArgs(args, env []string, c *resticCommand) error {
 		if len(args) == 1 && snapshotID.MatchString(args[0]) {
 			return nil
 		}
-		if len(args) == 2 && args[0] == "--tag" && resticTagRE.MatchString(args[1]) {
+		if len(args) == 2 && args[0] == "--tag" && (resticTagRE.MatchString(args[1]) || mailboxTagRE.MatchString(args[1])) {
 			return nil
 		}
 	case "forget":
 		if snapshots(args) {
 			return nil
 		}
-		if len(args) >= 4 && args[0] == "--tag" && resticKindRE.MatchString(args[1]) && args[2] == "--group-by" && args[3] == "" {
+		if len(args) >= 4 && args[0] == "--tag" && (resticKindRE.MatchString(args[1]) || mailboxKindRE.MatchString(args[1])) && args[2] == "--group-by" && args[3] == "" {
 			return allowRetention(args[4:])
 		}
+	case "dump":
+		// The backup of a mailbox to stdout (RestoreMailbox).
+		if len(args) == 2 && snapshotID.MatchString(args[0]) && args[1] == "/"+mailboxBackupFile {
+			return nil
+		}
 	case "backup":
+		// The backup of a mailbox from stdin (BackupMailbox). restic reads no file.
+		if len(args) == 7 && slices.Equal(args[:3], []string{"--stdin", "--stdin-filename", mailboxBackupFile}) && args[3] == "--tag" && mailboxTagRE.MatchString(args[4]) && args[5] == "--tag" && (args[6] == "kind=manual" || args[6] == "kind=scheduled") {
+			c.stdin = true
+			return nil
+		}
 		// Only the dump directory of a website: the databases of a website of a different
 		// server (Backup with databases_only).
 		if len(args) == 5 && args[1] == "--tag" && resticTagRE.MatchString(args[2]) && args[3] == "--tag" && (args[4] == "kind=manual-databases" || args[4] == "kind=scheduled-databases") {

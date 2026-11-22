@@ -13,6 +13,7 @@ import { Card, Field, FormError, Meter, Modal, PageHeader, RowMenu, Status, Tabl
 import { bytes, GB, MB } from "../lib/format";
 import { MAIL_STATUS } from "../lib/labels";
 import { AutoresponderDialog } from "./Autoresponder";
+import { MailboxBackupsDialog } from "./MailboxBackups";
 import { CopyField } from "./website/AccessTab";
 
 const PURPOSE: Record<string, string> = {
@@ -439,6 +440,7 @@ function MailboxesCard({ boxes, aliases, domains, domainId, onDomain }: { boxes:
   const [editing, setEditing] = useState<Mailbox | null>(null);
   const [encrypting, setEncrypting] = useState<string | null>(null);
   const [answering, setAnswering] = useState<Mailbox | null>(null);
+  const [backingUp, setBackingUp] = useState<Mailbox | null>(null);
   const [removing, setRemoving] = useState<Mailbox | null>(null);
   // "withKey": the password also opens the private key that the panel made.
   const [secret, setSecret] = useState<{ address: string; password: string; withKey?: boolean } | null>(null);
@@ -510,6 +512,7 @@ function MailboxesCard({ boxes, aliases, domains, domainId, onDomain }: { boxes:
                         ...(m.status === "active" ? [
                           { label: "Add alias", onSelect: () => setOpen((s) => new Set(s).add(m.id)) },
                           { label: "Autoresponder", onSelect: () => setAnswering(m) },
+                          { label: "Backups", onSelect: () => setBackingUp(m) },
                           { label: "Encryption", onSelect: () => setEncrypting(m.id) },
                           { label: "Change size", onSelect: () => setEditing(m) },
                           { label: "New password", onSelect: () => (m.privateKey ? setResetting(m.id) : void change.run(m.id, { newPassword: true }).then((r) => { if (r.ok && r.value) setSecret({ address: m.address, password: r.value }); })) },
@@ -531,6 +534,7 @@ function MailboxesCard({ boxes, aliases, domains, domainId, onDomain }: { boxes:
       {editing && <SizeDialog mailbox={editing} onClose={() => setEditing(null)} />}
       {encrypted && <EncryptionDialog mailbox={encrypted} onClose={() => setEncrypting(null)} />}
       {answering && <AutoresponderDialog mailbox={answering} onClose={() => setAnswering(null)} />}
+      {backingUp && <MailboxBackupsDialog mailbox={backingUp} onClose={() => setBackingUp(null)} />}
       {secret && <PasswordDialog address={secret.address} password={secret.password} mailboxId={secret.withKey ? boxes.find((m) => m.address === secret.address)?.id : undefined} onClose={() => setSecret(null)} />}
       {reset && <NewPasswordDialog mailbox={reset} onClose={() => setResetting(null)} onDone={(password) => { setResetting(null); if (password) setSecret({ address: reset.address, password, withKey: true }); }} />}
       {removing && (

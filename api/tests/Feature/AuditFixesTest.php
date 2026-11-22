@@ -279,10 +279,10 @@ class AuditFixesTest extends TestCase
         $this->postJson('/api/v1/images', ['name' => 'Nginx', 'reference' => 'registry.example.com/nginx', 'tag' => '1.27', 'policy' => 'manual'])->assertCreated();
     }
 
-    public function test_the_agent_has_no_mailbox_restore(): void
+    public function test_a_website_restore_has_no_mailbox_scope(): void
     {
         $website = $this->website($this->customer(), $this->server(), $this->image());
-        $snapshot = $website->snapshots()->create(['kind' => 'manual', 'restic_id' => 'abc', 'size_bytes' => 1, 'databases' => [], 'mailboxes' => []]);
+        $snapshot = $website->snapshots()->create(['kind' => 'manual', 'restic_id' => 'abc', 'size_bytes' => 1, 'databases' => []]);
         $this->actingWith($this->user());
 
         $this->postJson("/api/v1/websites/{$website->id}/snapshots/{$snapshot->id}/restore", ['scope' => 'mailbox', 'item' => 'info@acme.example'])
@@ -392,7 +392,7 @@ class AuditFixesTest extends TestCase
     {
         Setting::put('backup_policy', ['daily' => 7, 'weekly' => 4, 'monthly' => 6, 'time' => '03:00', 'target' => 's3:s3.example.com/bucket']);
         $website = $this->website($this->customer(), $this->server(), $this->image());
-        $snapshot = Snapshot::create(['website_id' => $website->id, 'kind' => 'manual', 'restic_id' => 'abc12345', 'databases' => [], 'mailboxes' => []]);
+        $snapshot = Snapshot::create(['website_id' => $website->id, 'kind' => 'manual', 'restic_id' => 'abc12345', 'databases' => []]);
         $this->actingWith($this->user(Role::Owner, $website->customer));
         $url = "/api/v1/websites/{$website->id}/snapshots/{$snapshot->id}/restore";
 
@@ -438,7 +438,7 @@ class AuditFixesTest extends TestCase
         $this->artisan('cloudfactory:backups')->assertSuccessful();
         $prune = AgentJob::where('action', AgentAction::PruneBackups->value)->where('server_id', $server->id)->latest('id')->firstOrFail();
         $this->assertSame([$website->id], $prune->payload['forgetWebsiteIds']);
-        $this->assertSame(['Remove backups of deleted websites', 'Remove unused data'], $prune->steps);
+        $this->assertSame(['Remove backups of deleted websites and mailboxes', 'Remove unused data'], $prune->steps);
         // The other server does not have the backups of this website.
         $this->assertSame([], AgentJob::where('action', AgentAction::PruneBackups->value)->where('server_id', $other->id)->latest('id')->firstOrFail()->payload['forgetWebsiteIds']);
         app(JobOutcome::class)->finish($prune, JobState::Failed, 'restic: exit status 1');

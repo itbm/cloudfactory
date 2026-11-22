@@ -148,9 +148,26 @@ func TestPipeAndStream(t *testing.T) {
 			if err := g.Stream(ctx, nil, &out, "sh", "-c", "exit 3"); err == nil || !strings.Contains(err.Error(), "exit status 3") {
 				t.Fatalf("stream error = %v", err)
 			}
+			// The environment of a stream, for example the credentials of restic.
+			out.Reset()
+			script := `cat >/dev/null; printf "complete %s" "$CF_TEST_VALUE"`
+			if err := g.StreamEnv(ctx, []string{"CF_TEST_VALUE=secret"}, bytes.NewReader(in), &out, "sh", "-c", script); err != nil || out.String() != "complete secret" {
+				t.Fatalf("stream with environment = %q, %v", out.String(), err)
+			}
+			// An input that fails stops the command before the end of its input.
+			out.Reset()
+			failing := io.MultiReader(bytes.NewReader(in), iotestErr{})
+			if err := g.StreamEnv(ctx, nil, failing, &out, "sh", "-c", script); err == nil || strings.Contains(out.String(), "complete") {
+				t.Fatalf("stream with an input that failed = %q, %v", out.String(), err)
+			}
 		})
 	}
 }
+
+// iotestErr is an input that fails.
+type iotestErr struct{}
+
+func (iotestErr) Read([]byte) (int, error) { return 0, errKnown }
 
 func TestCallOperations(t *testing.T) {
 	for name, g := range gates(t) {

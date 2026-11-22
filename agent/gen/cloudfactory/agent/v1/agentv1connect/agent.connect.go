@@ -130,6 +130,12 @@ const (
 	// AgentServiceDeleteMailAliasProcedure is the fully-qualified name of the AgentService's
 	// DeleteMailAlias RPC.
 	AgentServiceDeleteMailAliasProcedure = "/cloudfactory.agent.v1.AgentService/DeleteMailAlias"
+	// AgentServiceBackupMailboxProcedure is the fully-qualified name of the AgentService's
+	// BackupMailbox RPC.
+	AgentServiceBackupMailboxProcedure = "/cloudfactory.agent.v1.AgentService/BackupMailbox"
+	// AgentServiceRestoreMailboxProcedure is the fully-qualified name of the AgentService's
+	// RestoreMailbox RPC.
+	AgentServiceRestoreMailboxProcedure = "/cloudfactory.agent.v1.AgentService/RestoreMailbox"
 	// AgentServiceSetDnsZonesProcedure is the fully-qualified name of the AgentService's SetDnsZones
 	// RPC.
 	AgentServiceSetDnsZonesProcedure = "/cloudfactory.agent.v1.AgentService/SetDnsZones"
@@ -222,6 +228,11 @@ type AgentServiceClient interface {
 	DeleteMailbox(context.Context, *connect.Request[v1.MailAddressRequest]) (*connect.Response[v1.JobAccepted], error)
 	SetMailAlias(context.Context, *connect.Request[v1.SetMailAliasRequest]) (*connect.Response[v1.JobAccepted], error)
 	DeleteMailAlias(context.Context, *connect.Request[v1.MailAddressRequest]) (*connect.Response[v1.JobAccepted], error)
+	// Makes a backup of all folders and messages of one mailbox in the restic repository of
+	// this server.
+	BackupMailbox(context.Context, *connect.Request[v1.BackupMailboxRequest]) (*connect.Response[v1.JobAccepted], error)
+	// Adds the messages of a mailbox backup that the mailbox does not have.
+	RestoreMailbox(context.Context, *connect.Request[v1.RestoreMailboxRequest]) (*connect.Response[v1.JobAccepted], error)
 	SetDnsZones(context.Context, *connect.Request[v1.SetDnsZonesRequest]) (*connect.Response[v1.JobAccepted], error)
 	DeleteDnsZones(context.Context, *connect.Request[v1.DeleteDnsZonesRequest]) (*connect.Response[v1.JobAccepted], error)
 	SetCronJobs(context.Context, *connect.Request[v1.SetCronJobsRequest]) (*connect.Response[v1.JobAccepted], error)
@@ -459,6 +470,18 @@ func NewAgentServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(agentServiceMethods.ByName("DeleteMailAlias")),
 			connect.WithClientOptions(opts...),
 		),
+		backupMailbox: connect.NewClient[v1.BackupMailboxRequest, v1.JobAccepted](
+			httpClient,
+			baseURL+AgentServiceBackupMailboxProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("BackupMailbox")),
+			connect.WithClientOptions(opts...),
+		),
+		restoreMailbox: connect.NewClient[v1.RestoreMailboxRequest, v1.JobAccepted](
+			httpClient,
+			baseURL+AgentServiceRestoreMailboxProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("RestoreMailbox")),
+			connect.WithClientOptions(opts...),
+		),
 		setDnsZones: connect.NewClient[v1.SetDnsZonesRequest, v1.JobAccepted](
 			httpClient,
 			baseURL+AgentServiceSetDnsZonesProcedure,
@@ -628,6 +651,8 @@ type agentServiceClient struct {
 	deleteMailbox         *connect.Client[v1.MailAddressRequest, v1.JobAccepted]
 	setMailAlias          *connect.Client[v1.SetMailAliasRequest, v1.JobAccepted]
 	deleteMailAlias       *connect.Client[v1.MailAddressRequest, v1.JobAccepted]
+	backupMailbox         *connect.Client[v1.BackupMailboxRequest, v1.JobAccepted]
+	restoreMailbox        *connect.Client[v1.RestoreMailboxRequest, v1.JobAccepted]
 	setDnsZones           *connect.Client[v1.SetDnsZonesRequest, v1.JobAccepted]
 	deleteDnsZones        *connect.Client[v1.DeleteDnsZonesRequest, v1.JobAccepted]
 	setCronJobs           *connect.Client[v1.SetCronJobsRequest, v1.JobAccepted]
@@ -812,6 +837,16 @@ func (c *agentServiceClient) DeleteMailAlias(ctx context.Context, req *connect.R
 	return c.deleteMailAlias.CallUnary(ctx, req)
 }
 
+// BackupMailbox calls cloudfactory.agent.v1.AgentService.BackupMailbox.
+func (c *agentServiceClient) BackupMailbox(ctx context.Context, req *connect.Request[v1.BackupMailboxRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return c.backupMailbox.CallUnary(ctx, req)
+}
+
+// RestoreMailbox calls cloudfactory.agent.v1.AgentService.RestoreMailbox.
+func (c *agentServiceClient) RestoreMailbox(ctx context.Context, req *connect.Request[v1.RestoreMailboxRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return c.restoreMailbox.CallUnary(ctx, req)
+}
+
 // SetDnsZones calls cloudfactory.agent.v1.AgentService.SetDnsZones.
 func (c *agentServiceClient) SetDnsZones(ctx context.Context, req *connect.Request[v1.SetDnsZonesRequest]) (*connect.Response[v1.JobAccepted], error) {
 	return c.setDnsZones.CallUnary(ctx, req)
@@ -957,6 +992,11 @@ type AgentServiceHandler interface {
 	DeleteMailbox(context.Context, *connect.Request[v1.MailAddressRequest]) (*connect.Response[v1.JobAccepted], error)
 	SetMailAlias(context.Context, *connect.Request[v1.SetMailAliasRequest]) (*connect.Response[v1.JobAccepted], error)
 	DeleteMailAlias(context.Context, *connect.Request[v1.MailAddressRequest]) (*connect.Response[v1.JobAccepted], error)
+	// Makes a backup of all folders and messages of one mailbox in the restic repository of
+	// this server.
+	BackupMailbox(context.Context, *connect.Request[v1.BackupMailboxRequest]) (*connect.Response[v1.JobAccepted], error)
+	// Adds the messages of a mailbox backup that the mailbox does not have.
+	RestoreMailbox(context.Context, *connect.Request[v1.RestoreMailboxRequest]) (*connect.Response[v1.JobAccepted], error)
 	SetDnsZones(context.Context, *connect.Request[v1.SetDnsZonesRequest]) (*connect.Response[v1.JobAccepted], error)
 	DeleteDnsZones(context.Context, *connect.Request[v1.DeleteDnsZonesRequest]) (*connect.Response[v1.JobAccepted], error)
 	SetCronJobs(context.Context, *connect.Request[v1.SetCronJobsRequest]) (*connect.Response[v1.JobAccepted], error)
@@ -1190,6 +1230,18 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(agentServiceMethods.ByName("DeleteMailAlias")),
 		connect.WithHandlerOptions(opts...),
 	)
+	agentServiceBackupMailboxHandler := connect.NewUnaryHandler(
+		AgentServiceBackupMailboxProcedure,
+		svc.BackupMailbox,
+		connect.WithSchema(agentServiceMethods.ByName("BackupMailbox")),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentServiceRestoreMailboxHandler := connect.NewUnaryHandler(
+		AgentServiceRestoreMailboxProcedure,
+		svc.RestoreMailbox,
+		connect.WithSchema(agentServiceMethods.ByName("RestoreMailbox")),
+		connect.WithHandlerOptions(opts...),
+	)
 	agentServiceSetDnsZonesHandler := connect.NewUnaryHandler(
 		AgentServiceSetDnsZonesProcedure,
 		svc.SetDnsZones,
@@ -1388,6 +1440,10 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 			agentServiceSetMailAliasHandler.ServeHTTP(w, r)
 		case AgentServiceDeleteMailAliasProcedure:
 			agentServiceDeleteMailAliasHandler.ServeHTTP(w, r)
+		case AgentServiceBackupMailboxProcedure:
+			agentServiceBackupMailboxHandler.ServeHTTP(w, r)
+		case AgentServiceRestoreMailboxProcedure:
+			agentServiceRestoreMailboxHandler.ServeHTTP(w, r)
 		case AgentServiceSetDnsZonesProcedure:
 			agentServiceSetDnsZonesHandler.ServeHTTP(w, r)
 		case AgentServiceDeleteDnsZonesProcedure:
@@ -1567,6 +1623,14 @@ func (UnimplementedAgentServiceHandler) SetMailAlias(context.Context, *connect.R
 
 func (UnimplementedAgentServiceHandler) DeleteMailAlias(context.Context, *connect.Request[v1.MailAddressRequest]) (*connect.Response[v1.JobAccepted], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.DeleteMailAlias is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) BackupMailbox(context.Context, *connect.Request[v1.BackupMailboxRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.BackupMailbox is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) RestoreMailbox(context.Context, *connect.Request[v1.RestoreMailboxRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.RestoreMailbox is not implemented"))
 }
 
 func (UnimplementedAgentServiceHandler) SetDnsZones(context.Context, *connect.Request[v1.SetDnsZonesRequest]) (*connect.Response[v1.JobAccepted], error) {

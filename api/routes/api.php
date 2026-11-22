@@ -22,6 +22,7 @@ use App\Http\Controllers\Api\JobController;
 use App\Http\Controllers\Api\LogController;
 use App\Http\Controllers\Api\MailAliasController;
 use App\Http\Controllers\Api\MailAutoresponderController;
+use App\Http\Controllers\Api\MailBackupController;
 use App\Http\Controllers\Api\MailboxController;
 use App\Http\Controllers\Api\MailClusterController;
 use App\Http\Controllers\Api\MailDomainController;
@@ -196,6 +197,10 @@ Route::prefix('v1')->group(function () {
             Route::get('websites/{websiteId}/snapshots', [BackupController::class, 'index']);
             Route::post('websites/{websiteId}/snapshots', [BackupController::class, 'store'])->middleware('throttle:20,1,post-snapshots');
             Route::post('websites/{websiteId}/snapshots/{snapshotId}/restore', [BackupController::class, 'restore'])->middleware('throttle:20,1,post-restore');
+            // The backups of a mailbox. A restore also needs the scope mail:write.
+            Route::get('mail/mailboxes/{id}/backups', [MailBackupController::class, 'index']);
+            Route::post('mail/mailboxes/{id}/backups', [MailBackupController::class, 'store'])->middleware('throttle:20,1,post-mailbox-backups');
+            Route::post('mail/mailboxes/{id}/backups/{snapshotId}/restore', [MailBackupController::class, 'restore'])->middleware('throttle:20,1,post-mailbox-restore');
             Route::get('backup-policy', [BackupController::class, 'showPolicy']);
             Route::put('backup-policy', [BackupController::class, 'updatePolicy'])->middleware('admin');
             Route::get('backup-policy/repository-password', [BackupController::class, 'showRepositoryPassword'])->middleware(['admin', 'throttle:10,1,get-repository-password']);

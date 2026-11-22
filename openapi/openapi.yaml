@@ -2506,6 +2506,60 @@ paths:
         '202': { $ref: '#/components/responses/JobOnly' }
         '422': { $ref: '#/components/responses/Invalid' }
 
+  /v1/mail/mailboxes/{id}/backups:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    get:
+      tags: [Backups]
+      summary: List the backups of a mailbox
+      description: >-
+        Each backup is a restic snapshot of all folders and messages of the mailbox, in the
+        repository of the server of the mail domain. The nightly job makes a backup of each
+        active mailbox, with the retention policy. The newest backup is first. The answer has
+        up to 100 backups.
+      responses:
+        '200':
+          description: The backups.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/MailboxBackup' } }
+        '404': { description: The mailbox is not there. }
+    post:
+      tags: [Backups]
+      summary: Back up a mailbox now
+      description: >-
+        Makes a manual backup of the mailbox. The panel keeps the newest manual backups of each
+        mailbox (`manual` in the backup policy). A mailbox has one backup or restore at a time,
+        and the panel does not remove a mailbox while one is in progress.
+      responses:
+        '202': { $ref: '#/components/responses/JobOnly' }
+        '404': { description: The mailbox is not there. }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/mail/mailboxes/{id}/backups/{snapshotId}/restore:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+      - { name: snapshotId, in: path, required: true, schema: { type: string }, description: The ID of a backup of this mailbox. }
+    post:
+      tags: [Backups]
+      summary: Restore a backup of a mailbox
+      description: >-
+        Adds each message of the backup that the mailbox does not have, in its folders and with
+        its flags. The agent makes each folder of these messages that the mailbox does not have.
+        The restore does not change or remove a message or a folder of the mailbox, so a second
+        restore of the same backup adds nothing. A message that has the same Message-ID, time
+        and size as a message of the mailbox is in the mailbox already. The token needs the
+        scope `mail:write` too. When the mailbox becomes full, the restore stops.
+      responses:
+        '202': { $ref: '#/components/responses/JobOnly' }
+        '403': { description: The token does not have the scope mail:write. }
+        '404': { description: The mailbox or the backup is not there. }
+        '422': { $ref: '#/components/responses/Invalid' }
+
   /v1/backup-policy:
     get:
       tags: [Backups]
@@ -5498,8 +5552,27 @@ components:
             on one different server. A backup of a website with such databases has one snapshot
             of each part.
         serverId: { type: string, description: The server whose repository has the snapshot. }
-        mailboxes: { type: array, items: { type: string } }
         createdAt: { type: string, format: date-time }
+    MailboxBackup:
+      type: object
+      required: [id, kind, sizeBytes, messages, serverId, createdAt, lastRestore]
+      properties:
+        id: { type: string }
+        kind: { type: string, enum: [scheduled, manual] }
+        sizeBytes: { type: integer, description: The size of the messages in the backup. }
+        messages: { type: integer, description: The number of messages in the backup. }
+        serverId: { type: string, description: The server whose repository has the backup. }
+        createdAt: { type: string, format: date-time }
+        lastRestore:
+          type: [object, 'null']
+          description: The result of the last restore of this backup. Null when nobody restored it.
+          required: [at, added, present, tooLarge, failed]
+          properties:
+            at: { type: string, format: date-time }
+            added: { type: integer, description: The messages that the restore added. }
+            present: { type: integer, description: The messages that were in the mailbox already. }
+            tooLarge: { type: integer, description: The messages that are larger than the upload limit of the mail server. The restore did not add them. }
+            failed: { type: integer, description: The other messages that the mail server did not accept. }
     BackupPolicy:
       type: object
       required: [daily, weekly, monthly, time, target]
@@ -5508,7 +5581,7 @@ components:
         weekly: { type: integer, minimum: 0, maximum: 520 }
         monthly: { type: integer, minimum: 0, maximum: 240 }
         time: { type: string, pattern: '^[0-2][0-9]:[0-5][0-9]$', description: The time of the nightly backups, in UTC. }
-        manual: { type: integer, readOnly: true, description: The number of manual backups that the panel keeps for each website. The operator sets it with CF_MANUAL_BACKUPS. }
+        manual: { type: integer, readOnly: true, description: The number of manual backups that the panel keeps for each website and each mailbox. The operator sets it with CF_MANUAL_BACKUPS. }
         target: { type: string, description: 'A restic repository in object storage, for example "s3:s3.amazonaws.com/bucket/path" or "b2:bucket:path".' }
         credentials:
           type: [object, 'null']

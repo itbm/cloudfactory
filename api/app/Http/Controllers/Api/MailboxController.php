@@ -211,13 +211,15 @@ class MailboxController extends Controller
 
     /**
      * Removes a mailbox and all its messages. The aliases of the mailbox go with it: an alias
-     * with no mailbox would refuse all its mail.
+     * with no mailbox would refuse all its mail. The backups of the mailbox stay for a set time
+     * (JobOutcome::mailboxRemoved).
      */
     public function destroy(Request $request, string $id): JsonResponse
     {
         $mailbox = $this->visible($request)->findOrFail($id);
         Mail::refuseRemoved($mailbox, 'mailboxId', 'mailbox');
         Mail::refuseOpenChange($mailbox, 'mailboxId', 'mailbox');
+        MailBackupController::refuseBusy($mailbox);
         $aliases = MailAlias::with('domain.server')->where('customer_id', $mailbox->customer_id)->where('kind', MailAlias::ALIAS)->where('status', '!=', MailDomain::REMOVING)
             ->get()->filter(fn (MailAlias $a) => $a->destinations === [$mailbox->address()]);
         foreach ($aliases as $alias) {

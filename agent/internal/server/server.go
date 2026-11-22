@@ -149,6 +149,14 @@ func (s *Service) DeleteMailAlias(_ context.Context, r *connect.Request[agentv1.
 	return s.submit(s.Deps.DeleteMailAlias(r.Msg))
 }
 
+func (s *Service) BackupMailbox(_ context.Context, r *connect.Request[agentv1.BackupMailboxRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.BackupMailbox(r.Msg))
+}
+
+func (s *Service) RestoreMailbox(_ context.Context, r *connect.Request[agentv1.RestoreMailboxRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.RestoreMailbox(r.Msg))
+}
+
 func (s *Service) SetSftp(_ context.Context, r *connect.Request[agentv1.SetSftpRequest]) (*connect.Response[agentv1.JobAccepted], error) {
 	return s.submit(s.Deps.SetSftp(r.Msg))
 }

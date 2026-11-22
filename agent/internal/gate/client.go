@@ -116,7 +116,11 @@ func (c *Client) Pipe(ctx context.Context, from, to []string) error {
 }
 
 func (c *Client) Stream(ctx context.Context, stdin io.Reader, stdout io.Writer, name string, args ...string) error {
-	req := request{Kind: kindStream, Argv: append([]string{name}, args...), SendsInput: stdin != nil, WantsOutput: stdout != nil}
+	return c.StreamEnv(ctx, nil, stdin, stdout, name, args...)
+}
+
+func (c *Client) StreamEnv(ctx context.Context, env []string, stdin io.Reader, stdout io.Writer, name string, args ...string) error {
+	req := request{Kind: kindStream, Argv: append([]string{name}, args...), Env: env, SendsInput: stdin != nil, WantsOutput: stdout != nil}
 	conn, stop, err := c.open(ctx, req)
 	if err != nil {
 		return err

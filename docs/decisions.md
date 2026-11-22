@@ -57,7 +57,8 @@ runuser -u cf-panel -- env XDG_RUNTIME_DIR=/run/user/$(id -u cf-panel) \
 
 ## One backup repository for each server
 
-Each server with the role `web` has its own restic repository and its own repository password.
+Each server with the role `web` or `email` has its own restic repository and its own repository
+password.
 An earlier version used one repository and one password for all servers. The reasons for the
 change:
 
