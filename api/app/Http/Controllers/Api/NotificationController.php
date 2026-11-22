@@ -95,6 +95,11 @@ class NotificationController extends Controller
         if (! in_array($delivery->state, ['failed', 'skipped'], true)) {
             return response()->json(['message' => 'Only a failed or skipped email can be sent again.'], 409);
         }
+        // The copy of the email has no secret values, for example the link to set a new password.
+        $event = NotificationEvent::tryFrom($delivery->event);
+        if ($event && $event->secretVariables()) {
+            return response()->json(['message' => 'The panel does not keep the link of this email. The user asks for a new email.'], 409);
+        }
         $server = Senders::server($reseller);
         if (! $server) {
             return response()->json(['message' => 'Set up the SMTP server first.'], 409);

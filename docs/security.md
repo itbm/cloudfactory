@@ -588,11 +588,33 @@ directory with mode 0700:
   password is correct. This is the same as for most services. The sign-in limits protect the
   password: a wrong password and a wrong code are failed attempts. A suspended account with no
   TOTP gets the same answer for a correct and an incorrect password.
-- The panel sends no email. An administrator or a reseller makes a user, and the panel shows a
-  temporary password of 20 characters one time. The first administrator from the installation
-  script has a temporary password also. With a temporary password, the API accepts only the
-  password change, the account data and the sign-out. The web panel shows only the form
-  **Set a new password**.
+- An administrator or a reseller makes a user, and the panel shows a temporary password of
+  20 characters one time. The first administrator from the installation script has a temporary
+  password also. With a temporary password, the API accepts only the password change, the
+  account data and the sign-out. The web panel shows only the form **Set a new password**.
+- A user who does not know the password can ask for an email with a link (**Forgot your
+  password?** on the sign-in page). The sign-in page shows the link only when an SMTP server
+  can send the email. Obey these rules:
+  - The answer is the same for each email, also for an email with no user. The panel checks a
+    password hash also for an unknown email, so the response time does not show which accounts
+    exist.
+  - The link goes to the panel domain of the brand of the user, not to the domain of the
+    request. A request with a different `Host` header cannot send the link to a different site.
+  - The code of the link is after `#`. The browser does not send it to a server, so no access
+    log has it. The panel keeps only a bcrypt hash of the code.
+  - A link works one time only, for 60 minutes. A new link stops the earlier link. The panel
+    sends one link in each minute for one user, and accepts 5 requests in each minute from one
+    address.
+  - The panel keeps a copy of each email in **Sent emails**, and an administrator or the
+    reseller of the user can read it. The copy has a placeholder in the place of the link. The
+    queue has the link encrypted with `APP_KEY`. Thus nobody can send the email again: the
+    user asks for a new link.
+  - A new password signs out all sessions of the user, deletes the API tokens of the user, and
+    removes the sign-in lock for the network of the request. It does not turn off TOTP: the user
+    still needs a code to sign in. A user who lost the authenticator app asks an administrator
+    or the reseller.
+  - The template of the email must have the link (`{{resetUrl}}`) in the text, and not in the
+    subject. A user cannot turn off this email.
 - An administrator or a reseller with no TOTP can sign in, but the API then accepts only the
   account data, the password change, the TOTP setup and the sign-out (the answer has the code
   `totp_setup_required`). The web panel shows only the page **Set up an authenticator app**.
