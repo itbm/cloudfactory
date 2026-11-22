@@ -108,8 +108,14 @@ final class InputRules
     /** The bcrypt hash of a mailbox password. The panel makes it, and the agent gives it to the mail server. The agent never gets the password. */
     public const MAIL_PASSWORD_HASH = '/^(?:^\\$2y\\$1[0-9]\\$[.\\/A-Za-z0-9]{53}$)/D';
 
+    /** The absolute path of the data directory in the container of a database pack (cf-database/1), for example "/var/lib/mysql". The first directory cannot be one of reservedPackDirs. */
+    public const PACK_DATA_DIR = '/^(?:^(\\/[a-z0-9][a-z0-9._-]{0,63}){1,8}$)/D';
+
     /** The version of the runtime in one image of a pack, for example "1.25". Customers select it. */
     public const PACK_IMAGE_VERSION = '/^(?:^[0-9A-Za-z][0-9A-Za-z.+_-]{0,15}$)/D';
+
+    /** The TCP port of the engine in the container of a database pack (cf-database/1), for example "3306". The panel and the agent also check that it is from 1024 to 65535. */
+    public const PACK_PORT = '/^(?:^[1-9][0-9]{3,4}$)/D';
 
     /** The name of a pack, for example "golang". It is also the name of the runtime of the pack in the jobs of the agent. */
     public const PACK_SLUG = '/^(?:^[a-z][a-z0-9-]{1,30}$)/D';
@@ -182,7 +188,9 @@ final class InputRules
         'mailAddress' => self::MAIL_ADDRESS,
         'mailLocalPart' => self::MAIL_LOCAL_PART,
         'mailPasswordHash' => self::MAIL_PASSWORD_HASH,
+        'packDataDir' => self::PACK_DATA_DIR,
         'packImageVersion' => self::PACK_IMAGE_VERSION,
+        'packPort' => self::PACK_PORT,
         'packSlug' => self::PACK_SLUG,
         'packVersion' => self::PACK_VERSION,
         'phpExtension' => self::PHP_EXTENSION,
@@ -232,7 +240,9 @@ final class InputRules
         'mailAddress' => 'Enter a mail address in lower-case letters, for example sales@example.com.',
         'mailLocalPart' => 'Use 1 to 64 lower-case letters, digits, dots, hyphens and underscores. Start and end with a letter or a digit.',
         'mailPasswordHash' => 'Enter a bcrypt hash.',
+        'packDataDir' => 'Use an absolute path such as /var/lib/mysql, with lower-case letters, digits and the characters . _ -.',
         'packImageVersion' => 'Use up to 16 letters, digits and the characters . + _ -, for example 1.25.',
+        'packPort' => 'Use a TCP port from 1024 to 65535.',
         'packSlug' => 'Use 2 to 31 lower-case letters, digits and "-". The first character is a letter.',
         'packVersion' => 'Use a version such as 1.2.0.',
         'phpExtension' => 'Use 1 to 40 lower-case letters, digits and underscores.',
@@ -259,6 +269,9 @@ final class InputRules
     /** A database name does not start with one of these (CF-01). */
     public const RESERVED_DATABASE_PREFIXES = ['pg_'];
 
+    /** The first directory of the data directory of a database pack cannot be one of these. The agent mounts a temporary file system at /tmp, and the others belong to the container. */
+    public const RESERVED_PACK_DIRS = ['tmp', 'proc', 'sys', 'dev', 'run', 'cf'];
+
     /** The names of the built-in runtimes, the image families and the database engines. A pack cannot have one of these names. */
     public const RESERVED_RUNTIME_NAMES = ['frankenphp', 'apache-php-fpm', 'node', 'python', 'custom', 'static', 'edge', 'mail', 'dns', 'database', 'mariadb', 'postgresql', 'valkey'];
 
@@ -273,6 +286,9 @@ final class InputRules
 
     /** The largest number of cron jobs of a website. */
     public const MAX_CRON_JOBS = 20;
+
+    /** The first host port of the database servers of the database packs. Each database pack gets a block of 50 ports from this port, one block for each pack on the panel. */
+    public const MIN_DATABASE_PACK_PORT = 20000;
 
     /** The largest number of secrets of a deploy. */
     public const MAX_DEPLOY_SECRETS = 50;

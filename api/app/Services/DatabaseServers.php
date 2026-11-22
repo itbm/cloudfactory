@@ -40,10 +40,12 @@ class DatabaseServers
         ?string $name = null,
         ?array $limits = null,
         string $field = 'engine',
+        ?string $version = null,
     ): DatabaseServer {
         self::checkHost($server, $engine, $field);
+        $version = DatabaseEngines::versionFor($engine, $version);
 
-        return DB::transaction(function () use ($customer, $server, $engine, $plan, $name, $limits, $field) {
+        return DB::transaction(function () use ($customer, $server, $engine, $plan, $name, $limits, $field, $version) {
             // The count, the port and the new record are in one transaction. The lock on the
             // customer row stops two requests from passing the limit, or from getting the same
             // port, at the same time.
@@ -60,6 +62,7 @@ class DatabaseServers
                 'server_id' => $server->id,
                 'plan_id' => $plan->id,
                 'engine' => $engine,
+                'engine_version' => $version,
                 'name' => $name ?? self::freeName($customer->id, $engine),
                 'port' => $port,
                 'limits' => $limits ?? $plan->database_limits,
@@ -125,7 +128,8 @@ class DatabaseServers
 
     /**
      * The smallest free port of an engine on the address of a customer on a server, or null.
-     * The first database server of an engine gets the usual port of the engine.
+     * The first database server of a built-in engine gets the usual port of the engine. The
+     * database servers of a pack engine get the ports of the block of the pack.
      */
     public static function freePort(string $customerId, string $serverId, string $engine): ?int
     {
@@ -139,7 +143,10 @@ class DatabaseServers
                 ->map(fn (AgentJob $job) => $job->payload['databaseServer']['port'] ?? null)->filter()->all();
             $used = array_merge($used, array_map('intval', $reserved));
         }
-        $first = DatabaseServer::FIRST_PORT[$engine];
+        $first = DatabaseEngines::firstPort($engine);
+        if ($first === null) {
+            return null;
+        }
         for ($port = $first; $port < $first + DatabaseServer::PORTS; $port++) {
             if (! in_array($port, $used, true)) {
                 return $port;
@@ -236,7 +243,9 @@ class DatabaseServers
      */
     public static function connection(Website $website, DatabaseServer $server): array
     {
-        if (self::isRemote($website, $server)) {
+        // A website connects to a database server of a pack engine by its member name and the
+        // port of the engine, also on the same server.
+        if (self::isRemote($website, $server) || DatabaseEngines::isPack($server->engine)) {
             return ['host' => (string) Networks::hostOf($server), 'port' => Networks::portOf($server->engine)];
         }
 
@@ -279,12 +288,7 @@ class DatabaseServers
 
     public static function engineName(string $engine): string
     {
-        return match ($engine) {
-            'mariadb' => 'MariaDB',
-            'postgresql' => 'PostgreSQL',
-            Database::VALKEY => 'Valkey',
-            default => $engine,
-        };
+        return DatabaseEngines::label($engine);
     }
 
     private static function plural(int $count): string

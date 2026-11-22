@@ -52,6 +52,7 @@ use App\Services\Plugins\Manifest;
 use App\Services\Plugins\Signatures;
 use App\Services\SshKey;
 use App\Services\UsageRecorder;
+use App\Validation\InputRules;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Crypt;
@@ -182,13 +183,48 @@ class DemoSeeder extends Seeder
             'user_id' => User::where('email', 'admin@example.com')->value('id'),
         ]);
         Packs::syncImages($php, $spec);
+        // A database pack that adds MySQL (cf-database/1). Its database servers get the first
+        // block of ports.
+        $manifest = json_encode([
+            'contract' => PackManifest::CONTRACT_2, 'kind' => PackManifest::KIND_DATABASE, 'slug' => 'mysql', 'name' => 'MySQL', 'version' => '1.0.0',
+            'publisher' => 'Example Packs Ltd', 'description' => 'MySQL database servers. The image starts from the official MySQL image and adds the program /cf/manage of the contract cf-database/1.',
+            'database' => ['contract' => PackManifest::DATABASE_CONTRACT, 'port' => '3306', 'dataDir' => '/var/lib/mysql'],
+            'images' => [
+                ['version' => '8.4', 'ref' => 'ghcr.io/example-packs/cf-mysql:8.4', 'digest' => 'sha256:'.hash('sha256', 'cf-mysql 8.4'), 'supportEndsAt' => '2032-04-30'],
+                ['version' => '8.0', 'ref' => 'ghcr.io/example-packs/cf-mysql:8.0', 'digest' => 'sha256:'.hash('sha256', 'cf-mysql 8.0'), 'supportEndsAt' => '2026-04-30'],
+            ],
+        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)."\n";
+        openssl_sign($manifest, $signature, $private, OPENSSL_ALGO_SHA256);
+        $spec = PackManifest::parse($manifest);
+        Pack::create([
+            'slug' => $spec['slug'], 'kind' => $spec['kind'], 'name' => $spec['name'], 'version' => $spec['version'], 'publisher' => $spec['publisher'],
+            'description' => $spec['description'], 'manifest' => $manifest, 'signature' => base64_encode($signature),
+            'public_key' => $public, 'plugin_key_id' => $key->id, 'signer' => $key->name, 'database_port' => InputRules::MIN_DATABASE_PACK_PORT,
+            'user_id' => User::where('email', 'admin@example.com')->value('id'),
+        ]);
         foreach (['web-1', 'web-2'] as $name) {
             $this->servers[$name]->update([
-                'agent_packs' => [['slug' => 'golang', 'version' => '1.2.0'], ['slug' => 'php-legacy-apache', 'version' => '0.1.9']],
+                'agent_packs' => [['slug' => 'golang', 'version' => '1.2.0'], ['slug' => 'php-legacy-apache', 'version' => '0.1.9'], ['slug' => 'mysql', 'version' => '1.0.0']],
                 'agent_runtimes' => ['frankenphp', 'apache-php-fpm', 'node', 'python', 'custom', 'golang'],
+                'database_engines' => ['mariadb', 'postgresql', 'valkey', 'mysql'],
             ]);
         }
         $this->servers['web-3']->update(['packs_resync' => ['at' => now()->subMinutes(3)->toIso8601String(), 'tries' => 3]]);
+
+        // A MySQL database server of Acme, with the database of its API. The website connects
+        // to it by its network name.
+        $api = $this->websites['api.acme.example.com'];
+        $plan = $api->customer->plan;
+        $mysql = DatabaseServer::create([
+            'customer_id' => $api->customer_id, 'server_id' => $api->server_id, 'plan_id' => $plan->id, 'engine' => 'mysql', 'engine_version' => '8.4',
+            'name' => 'mysql-1', 'port' => InputRules::MIN_DATABASE_PACK_PORT, 'limits' => $plan->database_limits, 'status' => DatabaseServer::RUNNING,
+            'usage' => ['memoryBytes' => 310 * self::MB, 'diskBytes' => 230 * self::MB, 'diskSizeBytes' => $plan->database_limits['diskBytes']],
+        ]);
+        $name = $api->unix_user.'_events';
+        $database = $api->databases()->create(['engine' => 'mysql', 'name' => $name, 'size_bytes' => 164 * self::MB, 'database_server_id' => $mysql->id]);
+        $user = $api->databaseUsers()->create(['engine' => 'mysql', 'name' => $name, 'access' => 'website', 'database_server_id' => $mysql->id]);
+        $user->databases()->attach($database->id, ['privileges' => 'readwrite']);
+        $this->settleMesh();
     }
 
     /**

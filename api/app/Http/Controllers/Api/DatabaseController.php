@@ -10,6 +10,7 @@ use App\Models\DatabaseServer;
 use App\Models\DatabaseUser;
 use App\Models\Website;
 use App\Services\Audit;
+use App\Services\DatabaseEngines;
 use App\Services\DatabaseNames;
 use App\Services\DatabaseServers;
 use App\Services\JobDispatcher;
@@ -81,7 +82,7 @@ class DatabaseController extends Controller
         // Adversarial review, finding X1-04: a new database can start a database server.
         abort_if($website->customer?->isSuspended() ?? false, 409, 'This customer is suspended. Lift the suspension before you make a database.');
         $data = $request->validate([
-            'engine' => ['required', Rule::in(Database::ENGINES)],
+            'engine' => ['required', Rule::in(DatabaseEngines::all())],
             'name' => ['required', 'string', 'max:64'],
             'createUser' => ['sometimes', 'boolean'],
             // The database server that gets the database. With none, the panel selects the

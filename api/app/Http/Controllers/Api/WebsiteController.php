@@ -21,6 +21,7 @@ use App\Models\Server;
 use App\Models\User;
 use App\Models\Website;
 use App\Services\Audit;
+use App\Services\DatabaseEngines;
 use App\Services\DatabaseNames;
 use App\Services\DatabaseServers;
 use App\Services\Dns\Zones;
@@ -428,9 +429,9 @@ class WebsiteController extends Controller
         $copies = $users = $credentials = $servers = [];
         $from = DatabaseNames::prefix($source);
         $to = DatabaseNames::prefix($copy);
+        // A website connects to a database server of a pack engine by its member name.
         $connection = fn (string $engine, DatabaseServer $server) => [
-            'host' => DatabaseServer::HOSTS[$engine],
-            'port' => $server->port,
+            ...(DatabaseEngines::isPack($engine) ? DatabaseServers::connection($copy, $server) : ['host' => DatabaseServer::HOSTS[$engine], 'port' => $server->port]),
             'databaseServerId' => $server->id,
         ];
         $all = $source->databases()->with('databaseServer')->orderBy('name')->get();
@@ -439,7 +440,7 @@ class WebsiteController extends Controller
             $servers[] = $databases[0]->databaseServer;
             DatabaseServers::checkSpace($databases[0]->databaseServer, $databases->count());
         }
-        foreach ($all->whereIn('engine', Database::SQL_ENGINES)->groupBy('engine') as $engine => $ofEngine) {
+        foreach ($all->whereIn('engine', DatabaseEngines::withUsers())->groupBy('engine') as $engine => $ofEngine) {
             $number = 0;
             // The database servers in the sequence of their ports: the first database server of
             // an engine has the user "app". The next ones have "app2", "app3", and so on.

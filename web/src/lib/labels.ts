@@ -1,4 +1,4 @@
-import type { DatabaseServerStatus, DnsDelegation, DnsRecordType, DnsZoneStatus, Domain, HostUpdatePolicy, JobState, MailStatus, PackRuntime, RuntimeImage, RuntimeKind, ServerRole, ServerState, UpdatePolicy, WebsiteKind, WebsiteStatus } from "../api/types";
+import type { BuiltInDatabaseEngine, DatabaseEngine, DatabaseEngineInfo, DatabaseServerStatus, DnsDelegation, DnsRecordType, DnsZoneStatus, Domain, HostUpdatePolicy, JobState, MailStatus, PackRuntime, RuntimeImage, RuntimeKind, ServerRole, ServerState, UpdatePolicy, WebsiteKind, WebsiteStatus } from "../api/types";
 import type { Tone } from "../components/ui";
 import { daysUntil, longDate, relativeTime } from "./format";
 
@@ -129,8 +129,36 @@ export const HOST_POLICY_LABEL: Record<HostUpdatePolicy, string> = {
   manual: "Manual",
 };
 
-/** The name of each database engine. */
+/** The name of each built-in database engine. */
 export const ENGINE_NAME = { mariadb: "MariaDB", postgresql: "PostgreSQL", valkey: "Valkey" } as const;
+
+/**
+ * The built-in engines and their features. The panel uses them until it has the list from the
+ * API, and with a panel API of an earlier release.
+ */
+export const BUILT_IN_ENGINES: DatabaseEngineInfo[] = [
+  { engine: "mariadb", name: "MariaDB", port: 3306, pack: null, versions: [], users: true, moves: true, adminer: true, anywhere: true },
+  { engine: "postgresql", name: "PostgreSQL", port: 5432, pack: null, versions: [], users: true, moves: true, adminer: true, anywhere: false },
+  { engine: "valkey", name: "Valkey", port: 6379, pack: null, versions: [], users: false, moves: true, adminer: false, anywhere: false },
+];
+
+const isBuiltIn = (engine: DatabaseEngine): engine is BuiltInDatabaseEngine => engine in ENGINE_NAME;
+
+/** The features of an engine. An engine that the panel does not know (a removed pack) has no features. */
+export function engineInfo(engines: DatabaseEngineInfo[], engine: DatabaseEngine): DatabaseEngineInfo {
+  return engines.find((e) => e.engine === engine) ?? BUILT_IN_ENGINES.find((e) => e.engine === engine)
+    ?? { engine, name: engine, port: 0, pack: null, versions: [], users: false, moves: false, adminer: false, anywhere: false };
+}
+
+/** The name of an engine for people: "MariaDB", or the name of its database pack, for example "MySQL". */
+export function engineName(engines: DatabaseEngineInfo[], engine: DatabaseEngine): string {
+  return isBuiltIn(engine) ? ENGINE_NAME[engine] : engineInfo(engines, engine).name;
+}
+
+/** The host name of a built-in engine on the server of a website. A pack engine has none: the websites use the network name. */
+export function engineHost(engine: DatabaseEngine): string | undefined {
+  return isBuiltIn(engine) ? DATABASE_HOST[engine] : undefined;
+}
 
 /** The host name that a website container connects to, for each database engine. */
 export const DATABASE_HOST = { mariadb: "mariadb.internal", postgresql: "postgres.internal", valkey: "valkey.internal" } as const;

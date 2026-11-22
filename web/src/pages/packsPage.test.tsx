@@ -194,6 +194,47 @@ describe("the Packs page", () => {
     expect(api.changes.find((c) => c.method === "POST" && c.path === "/packs")!.body).toMatchObject({ manifest, signature: "c2lnbmF0dXJl", password: "password" });
   });
 
+  it("shows a database pack with its engine, its block of ports and its database servers", async () => {
+    await signedIn("administrator");
+    render(<MemoryRouter initialEntries={["/packs"]}><App /></MemoryRouter>);
+    const card = (await screen.findByRole("heading", { name: "MySQL 1.0.0" })).closest(".card") as HTMLElement;
+    expect(card.textContent).toContain("cf-database/1, port 3306, data in /var/lib/mysql");
+    expect(card.textContent).toContain("20000 to 20049");
+    expect(within(card).queryByText("Commands")).toBeNull();
+    expect(within(card).getByText("ghcr.io/example-packs/cf-mysql:8.4")).toBeTruthy();
+    const head = within(card).getAllByRole("columnheader").map((h) => h.textContent);
+    expect(head).toContain("Database servers");
+    // The sample MySQL database server uses the pack, so the pack cannot go.
+    fireEvent.click(within(card).getByRole("button", { name: "Actions for MySQL" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Remove pack" }));
+    const dialog = screen.getByRole("dialog");
+    expect(dialog.textContent).toContain("1 database server of MySQL uses this pack.");
+    expect(within(dialog).getByRole("button", { name: "Remove pack" })).toHaveProperty("disabled", true);
+  });
+
+  it("shows what a database pack adds before the install", async () => {
+    const api = await signedIn("administrator");
+    api.on("POST /packs/preview", () => ({
+      manifest: {
+        contract: "cf-pack/2", kind: "database", slug: "mongodb", name: "MongoDB", version: "1.0.0", publisher: "Example Packs Ltd", description: "",
+        runtime: { contract: "", type: "", defaultCommand: "", defaultInstall: "", family: "" },
+        database: { contract: "cf-database/1", port: 27017, dataDir: "/data/db" },
+        images: [{ version: "8.0", ref: "ghcr.io/example-packs/cf-mongodb:8.0", repository: "ghcr.io/example-packs/cf-mongodb", tag: "8.0", digest: `sha256:${"c".repeat(64)}`, supportEndsAt: null }],
+      },
+      signedBy: { name: "Example Packs Ltd", fingerprint: null, release: false }, installed: null, developerMode: false,
+    }));
+    render(<MemoryRouter initialEntries={["/packs"]}><App /></MemoryRouter>);
+    fireEvent.click(await screen.findByRole("button", { name: "Install pack" }));
+    const dialog = screen.getByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("Manifest (pack.json)"), { target: { value: "{}" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Check the manifest" }));
+    expect(await within(dialog).findByText("MongoDB 1.0.0")).toBeTruthy();
+    expect(dialog.textContent).toContain("Customers can make database servers of MongoDB, with the version 8.0.");
+    expect(dialog.textContent).toContain("listens on port 27017");
+    expect(dialog.textContent).toContain("as all database servers do");
+    expect(dialog.textContent).not.toContain("start command");
+  });
+
   it("does not remove a pack that websites use", async () => {
     const api = await signedIn("administrator");
     api.change<{ data: { images: { websites: number }[] }[] }>("/packs", (answer) => { answer.data[0].images[0].websites = 2; });

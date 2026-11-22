@@ -13,7 +13,7 @@ afterEach(() => {
   reset();
 });
 
-// The owner of the sample data is a user of Acme Ltd. Acme has four database servers on web-1.
+// The owner of the sample data is a user of Acme Ltd. Acme has five database servers on web-1, one of them of the pack engine MySQL.
 const open = async (role: Role): Promise<PanelApi> => {
   const api = await signedIn(role);
   render(<MemoryRouter><DatabaseServersPanel /></MemoryRouter>);
@@ -31,7 +31,7 @@ const answer = (name: string, over: Record<string, unknown> = {}) => ({ ...serve
 describe("the database servers panel", () => {
   it("shows the plan, the limits, the use, the databases and the host of each database server", async () => {
     await open("owner");
-    expect(screen.getByText(/Acme Ltd has 4 of 6 database servers/)).toBeTruthy();
+    expect(screen.getByText(/Acme Ltd has 5 of 6 database servers/)).toBeTruthy();
     const maria = row("mariadb-1");
     expect(maria.textContent).toContain("MariaDB");
     expect(maria.textContent).toContain("Business");
@@ -50,6 +50,39 @@ describe("the database servers panel", () => {
     expect(row("valkey-1").textContent).toContain("valkey.internal:6379");
     // An owner cannot read the plans of other customers, so the panel has no name for this plan.
     expect(row("mariadb-reports").textContent).toContain("Other plan");
+  });
+
+  it("shows the version and the network name of a database server of a pack engine, with no move", async () => {
+    await open("administrator");
+    const mysql = row("mysql-1");
+    expect(mysql.textContent).toContain("MySQL 8.4");
+    expect(mysql.textContent).toContain("mysql-1.internal:3306");
+    // A database server of a pack has only its network name.
+    expect(mysql.textContent).not.toContain("Also");
+    expect(actions(mysql).map((b) => b.textContent)).toEqual(["Change", "Remove"]);
+    expect(actions(row("mariadb-1")).map((b) => b.textContent)).toContain("Move to a different server");
+  });
+
+  it("makes a database server of a pack engine with the version that the user selects", async () => {
+    const api = await open("administrator");
+    api.on("POST /database-servers", () => [202, {
+      databaseServer: answer("mysql-1", { id: "new-mysql", name: "mysql-2", engineVersion: "8.0", port: 3306, status: "starting", usage: null, databases: 0 }),
+      job: apiJob({ id: "job-mysql", title: "Create database server mysql-2", action: "SetDatabaseServer", databaseServerId: "new-mysql" }),
+    }]);
+    fireEvent.click(screen.getByRole("button", { name: "New database server" }));
+    const dialog = screen.getByRole("dialog");
+    fireEvent.change(within(dialog).getByLabelText("Customer"), { target: { value: acme().id } });
+    expect(within(dialog).getByRole("radio", { name: /MySQL/ }).closest("label")!.textContent).toContain("From a pack of Example Packs Ltd");
+    // A built-in engine has no version to select.
+    expect(within(dialog).queryByLabelText("Version")).toBeNull();
+    fireEvent.click(within(dialog).getByRole("radio", { name: /MySQL/ }));
+    expect(dialog.textContent).toContain("the panel gives the name mysql-2");
+    const version = within(dialog).getByLabelText("Version") as HTMLSelectElement;
+    expect([...version.options].map((o) => o.textContent)).toEqual(["MySQL 8.4 · support until 30 April 2032", "MySQL 8.0 · support ended 30 April 2026"]);
+    fireEvent.change(version, { target: { value: "8.0" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Create database server" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(api.changes.at(-1)).toMatchObject({ method: "POST", path: "/database-servers", body: { engine: "mysql", customerId: acme().id, version: "8.0" } });
   });
 
   it("shows only the limits of a failed database server, with the cause for an administrator only", async () => {
@@ -84,7 +117,7 @@ describe("the database servers panel", () => {
     fireEvent.click(screen.getByRole("button", { name: "New database server" }));
     const dialog = screen.getByRole("dialog");
     fireEvent.change(within(dialog).getByLabelText("Customer"), { target: { value: acme().id } });
-    expect(dialog.textContent).toContain("Acme Ltd has 4 of 6 database servers.");
+    expect(dialog.textContent).toContain("Acme Ltd has 5 of 6 database servers.");
     // With no name, the panel gives the next free name of the engine.
     expect(dialog.textContent).toContain("the panel gives the name mariadb-2");
     fireEvent.click(within(dialog).getByRole("radio", { name: /PostgreSQL/ }));

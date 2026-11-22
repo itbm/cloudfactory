@@ -92,7 +92,9 @@ describe("mappers", () => {
     const api = { id: "ds1", name: "mariadb-1", engine: "mariadb" as const, customerId: "c1", serverId: "s1", planId: "p1", status: "starting" as const, host: "mariadb.internal", port: 3306, networkHost: "mariadb-1.internal", networkPort: 3306,
       limits: { vcpus: 1, memoryBytes: 536870912, diskBytes: 5368709120 }, usage: null, databases: 0, maxDatabases: 10, createdAt: null };
     // A new database server has no report of the server yet.
-    expect(toDatabaseServer(api)).toEqual({ ...api, usage: undefined, createdAt: "" });
+    expect(toDatabaseServer(api)).toEqual({ ...api, engineVersion: null, usage: undefined, createdAt: "" });
+    // A database server of a pack engine has the version of the engine.
+    expect(toDatabaseServer({ ...api, engine: "mysql", engineVersion: "8.4" }).engineVersion).toBe("8.4");
     const usage = { memoryBytes: 1024, diskBytes: 2048, diskSizeBytes: 4096 };
     expect(toDatabaseServer({ ...api, status: "running", usage, createdAt: "2026-11-14T10:00:00+00:00" })).toMatchObject({ status: "running", usage, createdAt: "2026-11-14T10:00:00+00:00" });
     const job = { id: "j1", title: "Create database server mariadb-1", ref: null, state: "running" as const, steps: ["Start database server"], step: 0, error: null, websiteId: null, serverId: "s1", createdAt: "2026-11-14T10:00:00Z", finishedAt: null };
