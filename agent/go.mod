@@ -9,7 +9,7 @@ require (
 	google.golang.org/protobuf v1.36.12
 )
 
-require golang.org/x/sys v0.44.0
+require golang.org/x/sys v0.50.0
 
 // zstd for the backup archives of other panels (internal/migrate).
-require github.com/klauspost/compress v1.20.4
+require github.com/klauspost/compress v1.20.5
