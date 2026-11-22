@@ -204,7 +204,10 @@ class RolloutEngine
         $done = count($rollout->updated_ids) + count($rollout->rolled_back);
         $target = $rollout->stageTarget($rollout->stage);
         $handled = [...$rollout->updated_ids, ...array_column($rollout->rolled_back, 'websiteId')];
-        $next = array_slice(array_values(array_diff($rollout->website_ids, $handled)), 0, max(0, $target - $done));
+        // A website that moves to a different server gets the new image in a later stage. At
+        // the end of the rollout, a website that still moves keeps the old tag.
+        $moving = Website::whereIn('id', $rollout->website_ids)->where('status', WebsiteStatus::Moving->value)->pluck('id')->all();
+        $next = array_slice(array_values(array_diff($rollout->website_ids, $handled, $moving)), 0, max(0, $target - $done));
 
         if ($next === []) {
             $this->advance($rollout);

@@ -4,12 +4,14 @@ namespace App\Http\Controllers\Api;
 
 use App\Enums\AgentAction;
 use App\Enums\DomainKind;
+use App\Enums\JobState;
 use App\Enums\Role;
 use App\Enums\WebsiteStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\JobResource;
 use App\Http\Resources\WebsiteResource;
 use App\Models\AgentJob;
+use App\Models\CronJob;
 use App\Models\Customer;
 use App\Models\Database;
 use App\Models\DatabaseServer;
@@ -26,6 +28,7 @@ use App\Services\DatabaseServers;
 use App\Services\Dns\Zones;
 use App\Services\DomainPolicy;
 use App\Services\JobDispatcher;
+use App\Services\Mesh;
 use App\Services\Networks;
 use App\Services\Plugins\Hooks;
 use App\Services\WebsiteRemoval;
@@ -335,6 +338,98 @@ class WebsiteController extends Controller
 
         return response()->json(['job' => new JobResource($job)], 202);
     }
+
+    /**
+     * Moves a website to a different server. Only an administrator can do this. The website
+     * keeps its ID, its Unix user, its domains, its databases and its network name.
+     *
+     * 1. The new server makes the Unix user of the website, and waits for the files.
+     * 2. The old server stops the website, turns off SFTP, and sends the files through the
+     *    tunnel between the two servers.
+     * 3. The new server starts the website with its SFTP keys and its cron jobs. Then the panel
+     *    records the new server and changes the DNS records in its zones, and the old server
+     *    removes its copy (JobOutcome).
+     *
+     * The website does not operate while its files go to the new server. Its databases stay
+     * on their database servers: the website connects to a database server on a different
+     * server through a network.
+     */
+    public function move(Request $request, string $id): JsonResponse
+    {
+        abort_unless($request->user()->isAdministrator(), 403, 'Only an administrator can move a website.');
+        $data = $request->validate(['serverId' => ['required', 'string', 'exists:servers,id']]);
+        $website = $this->findWebsite($request, $id);
+        $to = Server::findOrFail($data['serverId']);
+        $from = $website->server;
+        if (! in_array($website->status, [WebsiteStatus::Running, WebsiteStatus::Stopped], true)) {
+            throw ValidationException::withMessages(['website' => 'Only a website that runs or that is stopped can move. Wait until its current change is complete.']);
+        }
+        if ($to->id === $from->id) {
+            throw ValidationException::withMessages(['serverId' => "The website is on the server {$to->name}. Select a different server."]);
+        }
+        if (! in_array('web', $to->roles, true)) {
+            throw ValidationException::withMessages(['serverId' => 'Select a server with the web role.']);
+        }
+        if ($to->state !== 'healthy' || $from->state !== 'healthy') {
+            throw ValidationException::withMessages(['serverId' => 'The two servers must be healthy. Wait until the agents report again.']);
+        }
+        foreach ([$from, $to] as $server) {
+            if (! Networks::supports($server) || ! $server->mesh_moves || Mesh::tunnelAddress($server) === null) {
+                throw ValidationException::withMessages(['serverId' => "The agent on the server {$server->name} cannot move websites. Update the agent of the server, then try again."]);
+            }
+        }
+        // Only the websites of its networks connect to a private website, and a worker needs
+        // the start command (store).
+        if (! $website->isPublic() && ! Networks::supportsWebsites($to)) {
+            throw ValidationException::withMessages(['serverId' => "The agent on the server {$to->name} did not report that it can operate a ".Website::KIND_NAMES[$website->kind].'. Update the agent of the server, then try again.']);
+        }
+        if ($website->image->pack_id !== null && ! $to->hasRuntime($website->image->family)) {
+            throw ValidationException::withMessages(['serverId' => "The agent on the server {$to->name} does not have the runtime {$website->image->family} yet. Wait for the server to load the pack, or select a different server."]);
+        }
+        Networks::checkWebsiteMove($website, $to);
+        if ($moving = BackupController::movingServerOf($website)) {
+            DatabaseServers::refuseMoving($moving, 'website');
+        }
+        // A job of the website that is not complete goes to the old server.
+        if (AgentJob::where('website_id', $website->id)->whereIn('state', [JobState::Queued->value, JobState::Running->value])->exists()) {
+            throw ValidationException::withMessages(['website' => 'A change of this website is in progress. Wait until it is complete.']);
+        }
+
+        // The secret of this move. Only the two agents get it.
+        $token = bin2hex(random_bytes(32));
+        $stopped = $website->status === WebsiteStatus::Stopped;
+        $website->update(['status' => WebsiteStatus::Moving, 'moving_to_server_id' => $to->id]);
+        // The tunnel between the two servers. A refresh starts the jobs that make it.
+        $fromAddress = Mesh::addressFor($from);
+        $toAddress = Mesh::addressFor($to);
+        Mesh::refreshLater();
+        $receive = $this->jobs->dispatch($to, AgentAction::ReceiveWebsite, JobDispatcher::websitePayload($website) + [
+            'from' => $fromAddress,
+            'token' => $token,
+            'timeoutSeconds' => self::MOVE_TIMEOUT,
+            // A website that is stopped stays stopped on the new server.
+            'stopped' => $stopped,
+            'sftpEnabled' => (bool) $website->sftp_enabled,
+            'sftpKeys' => $website->sftp_keys ?? [],
+            'cronJobs' => $website->cronJobs()->get()->map(fn (CronJob $c) => CronJobController::payload($c))->all(),
+        ], "Receive website {$website->name} from {$from->name}", $website);
+        $send = $this->jobs->dispatch($from, AgentAction::SendWebsite, [
+            'websiteId' => $website->id,
+            'unixUser' => $website->unix_user,
+            'to' => $toAddress,
+            'token' => $token,
+            'stopped' => $stopped,
+        ], "Send website {$website->name} to {$to->name}", $website);
+        Audit::record($request, 'Moved website', "{$website->name} from {$from->name} to {$to->name}", $website->customer_id);
+
+        return response()->json([
+            'website' => new WebsiteResource($website->fresh(['image', 'domains', 'server'])),
+            'jobs' => [new JobResource($receive), new JobResource($send)],
+        ], 202);
+    }
+
+    /** The time in seconds in which the old server must connect to the new server. */
+    public const MOVE_TIMEOUT = 900;
 
     /** FR-205: make a staging copy in one action. */
     public function staging(Request $request, string $id): JsonResponse

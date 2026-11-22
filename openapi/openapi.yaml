@@ -476,6 +476,62 @@ paths:
                         databaseServerId: { type: string }
         '422': { $ref: '#/components/responses/Invalid' }
 
+  /v1/websites/{id}/move:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [Websites]
+      summary: Move a website to a different server
+      description: >-
+        Only an administrator. The website keeps its ID, its Unix user, its domains, its
+        databases, its SFTP keys, its cron jobs and its network name. Its files go through the
+        encrypted tunnel between the two servers. The website does not operate while the files
+        move, and it accepts no change. A website that was stopped stays stopped.
+
+
+        The databases stay on their database servers. After the move, the website connects to
+        a database server on a different server through a network with the network name, for
+        example `shop-db.internal`. The name of the engine, for example `mariadb.internal`, is
+        only for a database server on the server of the website. The panel changes the address
+        records of the domains in its DNS zones. For a domain in a different DNS service, change
+        the address records to the addresses of the new server. The SFTP host is the host of
+        the new server.
+
+
+        The response is 422 when: the server is the same server, the server does not have the
+        web role, a server is not healthy, an agent cannot move websites, the new server does
+        not have the runtime of the website, a database server of the website is not on the new
+        server and not in a network with the website, a database server of the website moves,
+        or the website does not operate or changes now. When the move fails, the website stays
+        on the old server and operates there.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [serverId]
+              properties:
+                serverId: { type: string, description: The server that gets the website. }
+      responses:
+        '202':
+          description: >-
+            The new server receives the website, and the old server sends it. The first job is
+            the job of the new server.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  website: { $ref: '#/components/schemas/Website' }
+                  jobs:
+                    type: array
+                    items: { $ref: '#/components/schemas/Job' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: The website moves to a different server now. }
+        '422': { $ref: '#/components/responses/Invalid' }
+
   /v1/websites/{websiteId}/domains:
     parameters:
       - { $ref: '#/components/parameters/WebsiteId' }
@@ -5091,7 +5147,10 @@ components:
         lastUsedAt: { type: [string, 'null'], format: date-time }
     WebsiteStatus:
       type: string
-      enum: [starting, running, stopping, stopped, failed]
+      enum: [starting, running, stopping, stopped, failed, moving]
+      description: >-
+        "moving": the website goes to a different server now. The website accepts no change
+        until the move is complete.
     Limits:
       type: object
       required: [vcpus, memoryBytes, diskBytes, diskIoBytesPerSecond, processes]
@@ -5177,6 +5236,10 @@ components:
         application: { type: string }
         customerId: { type: string }
         serverId: { type: string }
+        movingToServerId:
+          type: string
+          nullable: true
+          description: The server that receives the website, while the status is "moving".
         planId: { type: string }
         unixUser: { type: string }
         networkHost:

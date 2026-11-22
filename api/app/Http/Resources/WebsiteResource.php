@@ -21,6 +21,8 @@ class WebsiteResource extends JsonResource
             'application' => $this->application,
             'customerId' => $this->customer_id,
             'serverId' => $this->server_id,
+            // The server that receives the website, while the status is "moving".
+            'movingToServerId' => $this->moving_to_server_id,
             'planId' => $this->plan_id,
             'unixUser' => $this->unix_user,
             // The name and the port for a different website in a network with this website.

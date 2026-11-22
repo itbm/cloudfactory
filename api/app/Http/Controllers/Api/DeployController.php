@@ -182,7 +182,8 @@ class DeployController extends Controller
         if (is_string($ref) && $ref !== '' && $ref !== 'refs/heads/'.$source->branch && $ref !== $source->branch) {
             return response()->json(['status' => 'ignored', 'message' => "The deploys of this website use the branch {$source->branch}."]);
         }
-        abort_if($website->status === WebsiteStatus::Failed || ($website->customer?->isSuspended() ?? false), 409, 'The website cannot deploy now.');
+        // A website that moves to a different server deploys when the move is complete.
+        abort_if(in_array($website->status, [WebsiteStatus::Failed, WebsiteStatus::Moving], true) || ($website->customer?->isSuspended() ?? false), 409, 'The website cannot deploy now.');
         if ($website->releases()->where('state', Release::BUILDING)->exists()) {
             return response()->json(['status' => 'busy', 'message' => 'A deploy is in progress.'], 202);
         }

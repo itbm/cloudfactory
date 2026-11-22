@@ -2,13 +2,16 @@
 
 namespace App\Services;
 
+use App\Enums\WebsiteStatus;
 use App\Models\Customer;
 use App\Models\Database;
 use App\Models\DatabaseServer;
+use App\Models\DatabaseUser;
 use App\Models\Network;
 use App\Models\NetworkMember;
 use App\Models\Server;
 use App\Models\Website;
+use Illuminate\Contracts\Database\Query\Expression;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -141,6 +144,32 @@ class Networks
         }
     }
 
+    /**
+     * After a move, the website connects to each of its database servers that is not on the
+     * new server through a network. The two must be in one network before the move, and the
+     * database server must have a network name.
+     *
+     * @throws ValidationException
+     */
+    public static function checkWebsiteMove(Website $website, Server $to): void
+    {
+        $ids = Database::where('website_id', $website->id)->whereNotNull('database_server_id')->pluck('database_server_id')
+            ->concat(DatabaseUser::where('website_id', $website->id)->whereNotNull('database_server_id')->pluck('database_server_id'))->unique();
+        $servers = DatabaseServer::with('server')->whereIn('id', $ids)->where('server_id', '!=', $to->id)->orderBy('name')->get();
+        $networks = NetworkMember::where('website_id', $website->id)->select('network_id');
+        foreach ($servers as $server) {
+            if (self::hostOf($server) === null) {
+                throw ValidationException::withMessages(['serverId' => "The database server {$server->name} of this website is not on the new server, and it has no network name. Move the database server to the new server first, or give it a different name."]);
+            }
+            if (! NetworkMember::where('database_server_id', $server->id)->whereIn('network_id', $networks)->exists()) {
+                throw ValidationException::withMessages(['serverId' => "The database server {$server->name} of this website is not on the new server. Put the website and the database server in one network first."]);
+            }
+            if (! self::supports($server->server)) {
+                throw ValidationException::withMessages(['serverId' => "The agent on the server {$server->server->name} of the database server {$server->name} cannot operate networks. Update the agent of the server, then try again."]);
+            }
+        }
+    }
+
     /** The named networks that count against the plan of a customer: for a reseller, also those of its customers. */
     public static function countFor(Customer $customer): int
     {
@@ -252,6 +281,9 @@ class Networks
      *
      * "kind" is "database" or "website". "name" has no ".internal".
      *
+     * The server of a website that moves is its new server: the old server stopped the
+     * website, and the new server starts it with its names.
+     *
      * @return Collection<int, object{website_id: string, website_server_id: string, kind: string, member_id: string, server_id: string, name: string, port: int, mesh_address: ?string}>
      */
     public static function links(): Collection
@@ -266,7 +298,7 @@ class Networks
             ->where('database_servers.status', '!=', DatabaseServer::REMOVING)
             ->whereNotIn('database_servers.name', self::RESERVED)
             ->select([
-                'websites.id as website_id', 'websites.server_id as website_server_id',
+                'websites.id as website_id', self::websiteServer('websites', 'website_server_id'),
                 'database_servers.id as member_id', 'database_servers.server_id as server_id',
                 'database_servers.name', 'database_servers.engine', 'database_servers.mesh_address',
             ])
@@ -287,8 +319,8 @@ class Networks
             ->where('members.kind', '!=', Website::WORKER)
             ->whereNotNull('members.server_id')
             ->select([
-                'websites.id as website_id', 'websites.server_id as website_server_id',
-                'members.id as member_id', 'members.server_id as server_id',
+                'websites.id as website_id', self::websiteServer('websites', 'website_server_id'),
+                'members.id as member_id', self::websiteServer('members', 'server_id'),
                 'members.unix_user', 'members.mesh_address',
             ])
             ->distinct()
@@ -331,6 +363,12 @@ class Networks
 
     /** @var array{0: Collection, 1: array<string, list<object>>}|null The links of links() by server. */
     private static ?array $index = null;
+
+    /** The column with the server of a website for links(): the new server of a website that moves. */
+    private static function websiteServer(string $table, string $as): Expression
+    {
+        return DB::raw("coalesce({$table}.moving_to_server_id, {$table}.server_id) as {$as}");
+    }
 
     /**
      * True when a website can connect to a database server on a different server: the two are
@@ -385,7 +423,10 @@ class Networks
         }
         // A database server that moves goes through the tunnel between its old server and its
         // new server.
-        foreach (DatabaseServer::where('status', DatabaseServer::MOVING)->whereNotNull('moving_to_server_id')->get(['server_id', 'moving_to_server_id']) as $move) {
+        $moves = DatabaseServer::where('status', DatabaseServer::MOVING)->whereNotNull('moving_to_server_id')->get(['server_id', 'moving_to_server_id'])
+            // The files of a website that moves go through the same tunnel.
+            ->concat(Website::where('status', WebsiteStatus::Moving->value)->whereNotNull('moving_to_server_id')->get(['server_id', 'moving_to_server_id']));
+        foreach ($moves as $move) {
             $pair = [$move->server_id, $move->moving_to_server_id];
             sort($pair);
             $pairs[implode(' ', $pair)] = $pair;

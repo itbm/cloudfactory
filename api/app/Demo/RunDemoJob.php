@@ -127,6 +127,7 @@ class RunDemoJob implements ShouldQueue
 
         return match ($job->action) {
             AgentAction::CreateWebsite, AgentAction::AddDomain => ['dnsPointsHere' => true],
+            AgentAction::ReceiveWebsite => ['dnsPointsHere' => true, 'port' => 20000],
             AgentAction::CreateDatabase => ($p['engine'] ?? '') === Database::VALKEY ? ['number' => self::freeValkeyNumber($job)] : [],
             AgentAction::Backup => ['snapshotId' => bin2hex(random_bytes(32)), 'sizeBytes' => random_int(40, 900) * 1024 ** 2, 'dumps' => [], 'forgotten' => []],
             AgentAction::InstallHostUpdates => ['rebootRequired' => false],

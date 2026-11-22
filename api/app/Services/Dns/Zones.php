@@ -560,6 +560,28 @@ class Zones
     }
 
     /**
+     * A website moved to a different server. The records that the panel made for its domains
+     * get the addresses of the new server. A name with records of the customer keeps them: the
+     * customer changes them.
+     */
+    public function websiteMoved(Website $website): void
+    {
+        $changed = [];
+        foreach ($website->domains()->pluck('name') as $domain) {
+            $zone = self::zoneOf($website->customer_id, $domain);
+            $name = $zone?->relative($domain);
+            if ($zone && $zone->records()->where(['name' => $name, 'managed' => DnsRecord::WEBSITE])->exists()) {
+                $zone->records()->where(['name' => $name, 'managed' => DnsRecord::WEBSITE])->delete();
+                self::writeWebsiteRecords($zone, $website, $domain);
+                $changed[$zone->id] = $zone;
+            }
+        }
+        foreach ($changed as $zone) {
+            $this->changed($zone, "Update the DNS records of {$website->name}");
+        }
+    }
+
+    /**
      * The domains of the websites of the customer of a zone that are in the zone.
      *
      * @return list<array{0: Website, 1: string}>
