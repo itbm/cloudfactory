@@ -137,12 +137,19 @@ class Branding
      */
     public static function forHost(string $host): array
     {
-        $host = strtolower(rtrim($host, '.'));
-        $reseller = $host === '' ? null : Customer::where('role', 'reseller')->whereNotNull('branding')->get()
-            ->first(fn (Customer $c) => ($c->branding['panelDomain'] ?? null) === $host);
+        $reseller = self::resellerForHost($host);
         $brand = $reseller ? self::forCustomer($reseller) : self::forCustomer(null);
 
         return array_intersect_key($brand, array_flip(['name', 'colour', 'logo', 'supportEmail', 'builtIn']));
+    }
+
+    /** The reseller that has this panel domain, or null for the panel. */
+    public static function resellerForHost(string $host): ?Customer
+    {
+        $host = strtolower(rtrim($host, '.'));
+
+        return $host === '' ? null : Customer::where('role', 'reseller')->whereNotNull('branding')->get()
+            ->first(fn (Customer $c) => ($c->branding['panelDomain'] ?? null) === $host);
     }
 
     /** The URL of the panel that the customer uses: the panel domain of its reseller, if any. */
