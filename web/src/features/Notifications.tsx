@@ -104,7 +104,8 @@ export function SentEmails({ canRetry, everyone }: { canRetry: boolean; everyone
                 <td>{d.recipient}</td>
                 <td><Status tone={STATE[d.state].tone}>{STATE[d.state].label}</Status>{d.error && <span className="cell-sub note-danger" style={{ maxWidth: 320 }}>{d.error}</span>}</td>
                 <td className="cell-actions" style={{ width: 120 }}>
-                  {canRetry && (d.state === "failed" || d.state === "skipped") && (
+                  {/* The panel does not keep the link of a password reset email: the user asks for a new one. */}
+                  {canRetry && (d.state === "failed" || d.state === "skipped") && d.event !== "password.reset" && (
                     <button type="button" className="btn btn-sm" disabled={retry.busy} onClick={async () => { if ((await retry.run(d.id)).ok) list.reload(); }}>Send again</button>
                   )}
                 </td>

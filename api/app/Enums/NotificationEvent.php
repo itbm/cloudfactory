@@ -16,6 +16,7 @@ enum NotificationEvent: string
     case NewDeviceSignIn = 'signin.new_device';
     case UsageAlert = 'usage.alert';
     case ServerOffline = 'server.offline';
+    case PasswordReset = 'password.reset';
 
     public function label(): string
     {
@@ -28,6 +29,7 @@ enum NotificationEvent: string
             self::NewDeviceSignIn => 'Sign-in from a new device',
             self::UsageAlert => 'Usage alerts',
             self::ServerOffline => 'Servers that are offline',
+            self::PasswordReset => 'Password reset',
         };
     }
 
@@ -42,6 +44,7 @@ enum NotificationEvent: string
             self::NewDeviceSignIn => 'Someone signed in to your user from a device or browser that the panel does not know.',
             self::UsageAlert => 'A website or the account uses almost all of a limit of its plan.',
             self::ServerOffline => 'A server did not report to the panel for 5 minutes.',
+            self::PasswordReset => 'Someone asked for a link to set a new password for your user.',
         };
     }
 
@@ -66,7 +69,33 @@ enum NotificationEvent: string
      */
     public function required(): bool
     {
-        return in_array($this, [self::AccountSuspended, self::NewDeviceSignIn], true);
+        return in_array($this, [self::AccountSuspended, self::NewDeviceSignIn, self::PasswordReset], true);
+    }
+
+    /**
+     * The words that each template of the event must have. An email to reset a password with
+     * no link is of no use.
+     *
+     * @return list<string>
+     */
+    public function requiredVariables(): array
+    {
+        return match ($this) {
+            self::PasswordReset => ['resetUrl'],
+            default => [],
+        };
+    }
+
+    /**
+     * The words whose values are secret. The panel keeps a copy of each email (the "Sent
+     * emails" list), and an administrator or a reseller can read it. The copy has a placeholder
+     * in place of a secret value. Only the email that the SMTP server gets has the value.
+     *
+     * @return list<string>
+     */
+    public function secretVariables(): array
+    {
+        return $this->requiredVariables();
     }
 
     /** A new user receives each event that their role can receive, until they turn it off. */
@@ -94,6 +123,7 @@ enum NotificationEvent: string
             self::NewDeviceSignIn => ['device' => 'Firefox on Linux', 'ip' => '203.0.113.7', 'time' => '15 Nov 2026 09:41 UTC'],
             self::UsageAlert => ['account' => 'Acme Ltd', 'resource' => 'Disk', 'website' => 'shop.example.com', 'used' => '9.1 GB', 'limit' => '10 GB', 'percent' => '91', 'level' => 'warning'],
             self::ServerOffline => ['server' => 'web-2', 'lastSeen' => '15 Nov 2026 02:55 UTC'],
+            self::PasswordReset => ['resetUrl' => 'https://panel.example.com/reset-password#token=4f1c…', 'minutes' => '60', 'ip' => '203.0.113.7'],
         };
     }
 
@@ -121,6 +151,7 @@ enum NotificationEvent: string
             self::NewDeviceSignIn => 'New sign-in to {{brand}}',
             self::UsageAlert => '{{account}} uses {{percent}}% of its {{resource}} limit',
             self::ServerOffline => 'The server {{server}} is offline',
+            self::PasswordReset => 'Set a new password for {{brand}}',
         };
     }
 
@@ -135,6 +166,7 @@ enum NotificationEvent: string
             self::NewDeviceSignIn => "Hello {{name}},\n\nSomeone signed in to your user on {{brand}} from a new device.\n\nDevice: {{device}}\nIP address: {{ip}}\nTime: {{time}}\n\nIf this was you, you need not do anything. If not, change your password now, and turn on the authenticator app:\n{{panelUrl}}/settings",
             self::UsageAlert => "Hello {{name}},\n\n{{account}} uses {{used}} of {{limit}} ({{percent}}%) of its {{resource}} limit. Website: {{website}}\n\nWhen it uses all of the limit, changes can fail. Remove data that you do not need, or ask for a larger plan:\n{{panelUrl}}/account",
             self::ServerOffline => "Hello {{name}},\n\nThe server {{server}} did not report to the panel since {{lastSeen}}. The panel keeps its jobs until it reports again.\n\nMake sure that the server is on and that the agent service runs:\n{{panelUrl}}/servers",
+            self::PasswordReset => "Hello {{name}},\n\nSomeone asked for a link to set a new password for your user on {{brand}}. The request came from the IP address {{ip}}.\n\nTo set a new password, open this link. It works one time only, for {{minutes}} minutes:\n{{resetUrl}}\n\nA new password does not turn off your authenticator app.\n\nIf you did not ask for this link, you need not do anything. Your password does not change.",
         };
     }
 }
