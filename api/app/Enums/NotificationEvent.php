@@ -17,6 +17,7 @@ enum NotificationEvent: string
     case UsageAlert = 'usage.alert';
     case ServerOffline = 'server.offline';
     case DeployNeedsAttention = 'deploy.attention';
+    case PasswordReset = 'password.reset';
 
     public function label(): string
     {
@@ -30,6 +31,7 @@ enum NotificationEvent: string
             self::UsageAlert => 'Usage alerts',
             self::ServerOffline => 'Servers that are offline',
             self::DeployNeedsAttention => 'Deploys that need attention',
+            self::PasswordReset => 'Password reset',
         };
     }
 
@@ -45,6 +47,7 @@ enum NotificationEvent: string
             self::UsageAlert => 'A website or the account uses almost all of a limit of its plan.',
             self::ServerOffline => 'A server did not report to the panel for 5 minutes.',
             self::DeployNeedsAttention => 'A deploy ran a database migration, and then the website failed its health check. The panel did not go back to the previous release.',
+            self::PasswordReset => 'Someone asked for a link to set a new password for your user.',
         };
     }
 
@@ -70,7 +73,33 @@ enum NotificationEvent: string
      */
     public function required(): bool
     {
-        return in_array($this, [self::AccountSuspended, self::NewDeviceSignIn], true);
+        return in_array($this, [self::AccountSuspended, self::NewDeviceSignIn, self::PasswordReset], true);
+    }
+
+    /**
+     * The words that each template of the event must have. An email to reset a password with
+     * no link is of no use.
+     *
+     * @return list<string>
+     */
+    public function requiredVariables(): array
+    {
+        return match ($this) {
+            self::PasswordReset => ['resetUrl'],
+            default => [],
+        };
+    }
+
+    /**
+     * The words whose values are secret. The panel keeps a copy of each email (the "Sent
+     * emails" list), and an administrator or a reseller can read it. The copy has a placeholder
+     * in place of a secret value. Only the email that the SMTP server gets has the value.
+     *
+     * @return list<string>
+     */
+    public function secretVariables(): array
+    {
+        return $this->requiredVariables();
     }
 
     /** A new user receives each event that their role can receive, until they turn it off. */
@@ -99,6 +128,7 @@ enum NotificationEvent: string
             self::UsageAlert => ['account' => 'Acme Ltd', 'resource' => 'Disk', 'website' => 'shop.example.com', 'used' => '9.1 GB', 'limit' => '10 GB', 'percent' => '91', 'level' => 'warning'],
             self::ServerOffline => ['server' => 'web-2', 'lastSeen' => '15 Nov 2026 02:55 UTC'],
             self::DeployNeedsAttention => ['website' => 'api.example.com', 'branch' => 'main', 'commit' => '4f9a1c2', 'message' => 'Add the invoice table', 'error' => 'the health check failed after the switch: 9 of 30 checks failed.', 'time' => '15 Nov 2026 14:20 UTC', 'websiteId' => '01jbq3z5k8n6t4w2x9y7r5p3q9'],
+            self::PasswordReset => ['resetUrl' => 'https://panel.example.com/reset-password#token=4f1c…', 'minutes' => '60', 'ip' => '203.0.113.7'],
         };
     }
 
@@ -127,6 +157,7 @@ enum NotificationEvent: string
             self::UsageAlert => '{{account}} uses {{percent}}% of its {{resource}} limit',
             self::ServerOffline => 'The server {{server}} is offline',
             self::DeployNeedsAttention => 'Examine {{website}}: the health check failed after a migration',
+            self::PasswordReset => 'Set a new password for {{brand}}',
         };
     }
 
@@ -142,6 +173,7 @@ enum NotificationEvent: string
             self::UsageAlert => "Hello {{name}},\n\n{{account}} uses {{used}} of {{limit}} ({{percent}}%) of its {{resource}} limit. Website: {{website}}\n\nWhen it uses all of the limit, changes can fail. Remove data that you do not need, or ask for a larger plan:\n{{panelUrl}}/account",
             self::ServerOffline => "Hello {{name}},\n\nThe server {{server}} did not report to the panel since {{lastSeen}}. The panel keeps its jobs until it reports again.\n\nMake sure that the server is on and that the agent service runs:\n{{panelUrl}}/servers",
             self::DeployNeedsAttention => "Hello {{name}},\n\nA deploy of {{website}} ran the migration command. After the switch, the website failed its health check:\n\n{{error}}\n\nBranch: {{branch}}\nCommit: {{commit}} {{message}}\nTime: {{time}}\n\nThe website serves the new release. The panel did not go back to the previous release, because the previous release possibly does not operate with the changed database.\n\nExamine the logs of the website, and push a correction. To go back, first restore the database from a backup, and then go back to an earlier release:\n{{panelUrl}}/websites/{{websiteId}}/deploys",
+            self::PasswordReset => "Hello {{name}},\n\nSomeone asked for a link to set a new password for your user on {{brand}}. The request came from the IP address {{ip}}.\n\nTo set a new password, open this link. It works one time only, for {{minutes}} minutes:\n{{resetUrl}}\n\nA new password does not turn off your authenticator app.\n\nIf you did not ask for this link, you need not do anything. Your password does not change.",
         };
     }
 }

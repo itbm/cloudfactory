@@ -17,6 +17,7 @@ the emails that they get.
 | Usage alerts                  | `usage.alert`          | Administrators, resellers, owners  |
 | Servers that are offline      | `server.offline`       | Administrators                     |
 | Deploys that need attention   | `deploy.attention`     | Resellers, owners                  |
+| Password reset                | `password.reset`       | All users (always on)              |
 
 Who gets the email of an event:
 
@@ -40,6 +41,10 @@ Who gets the email of an event:
   reseller. A deploy ran the migration command, and then the website failed its health check.
   The panel did not go back to the previous release, because the previous release possibly
   does not operate with the changed database. You get one email for each release.
+- **Password reset:** the user, when somebody asks for a link to set a new password on the
+  sign-in page. The template must have `{{resetUrl}}` in the text. **Sent emails** shows the
+  email with a placeholder in the place of the link, and you cannot send it again. Refer to
+  [security.md](security.md#users-and-api-tokens).
 
 ## Set up the SMTP server (administrators)
 
@@ -110,7 +115,7 @@ address becomes a link.
 ## Select the emails that you get (all users)
 
 Go to **Settings**, then **Notifications**. Turn each event on or off. You cannot turn off the
-security emails: account suspended, and sign-in from a new device.
+security emails: account suspended, sign-in from a new device, and password reset.
 
 With the command line tool:
 

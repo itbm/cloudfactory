@@ -7,7 +7,7 @@ import { ApiError } from "./store";
 
 export type NotificationEvent =
   | "job.failed" | "backup.failed" | "certificate.expiring" | "account.suspended"
-  | "account.restored" | "signin.new_device" | "usage.alert" | "server.offline" | "deploy.attention";
+  | "account.restored" | "signin.new_device" | "usage.alert" | "server.offline" | "deploy.attention" | "password.reset";
 
 export interface NotificationPreference {
   event: NotificationEvent;

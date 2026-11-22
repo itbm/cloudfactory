@@ -125,6 +125,91 @@ paths:
         '403': { description: The customer of the user is suspended. The panel gives this answer only to a user who also gave a correct TOTP code. A user with no TOTP gets the 422 answer with an error on `email`. }
         '429': { description: Too many attempts from this address, or too many failed attempts for this account. The Retry-After header gives the number of seconds to wait. }
 
+  /v1/auth/methods:
+    get:
+      tags: [Auth]
+      summary: The ways to sign in
+      description: >-
+        The ways to sign in that the sign-in page shows, for the domain of the request. A person who
+        has not signed in can read it.
+      security: []
+      responses:
+        '200':
+          description: The ways to sign in.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [passwordReset]
+                properties:
+                  passwordReset:
+                    type: boolean
+                    description: >-
+                      The panel can send an email with a link to set a new password: an SMTP server
+                      is on for the reseller of this panel domain, or for the panel.
+
+  /v1/auth/password-reset:
+    post:
+      tags: [Auth]
+      summary: Ask for an email to set a new password
+      description: >-
+        Sends an email with a link to set a new password. The answer is the same for each email,
+        also for an email with no user. The link goes to the panel domain of the brand of the user.
+        The code of the link is after `#` in the link. A link works one time only, for 60 minutes,
+        and a new link stops the earlier link. The panel sends one link in each minute for one
+        user. A new password does not turn off TOTP.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, format: email, maxLength: 255 }
+      responses:
+        '202':
+          description: The panel sends the email if a user has this email.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message: { type: string }
+        '422': { $ref: '#/components/responses/Invalid' }
+        '429': { description: More than 5 requests in one minute from this address. }
+
+  /v1/auth/password-reset/confirm:
+    post:
+      tags: [Auth]
+      summary: Set a new password with the link
+      description: >-
+        Sets a new password with the email and the code from the link. The panel then signs out
+        all sessions of the user, deletes the API tokens of the user and removes the sign-in lock
+        for the network of the request. TOTP stays on. A code works one time only.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, token, password, password_confirmation]
+              properties:
+                email: { type: string, format: email, maxLength: 255 }
+                token: { type: string, maxLength: 200, description: The code from the link. }
+                password: { type: string, minLength: 12 }
+                password_confirmation: { type: string }
+      responses:
+        '204': { description: The password is changed. Sign in with the new password. }
+        '422':
+          description: The code is not correct or is too old (an error on `token`), or the new password is not valid.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ValidationError' }
+        '429': { description: More than 10 requests in one minute from this address. }
+
   /v1/auth/logout:
     post:
       tags: [Auth]
@@ -6899,7 +6984,7 @@ components:
             id: { type: string }
     NotificationEvent:
       type: string
-      enum: [job.failed, backup.failed, certificate.expiring, account.suspended, account.restored, signin.new_device, usage.alert, server.offline, deploy.attention]
+      enum: [job.failed, backup.failed, certificate.expiring, account.suspended, account.restored, signin.new_device, usage.alert, server.offline, deploy.attention, password.reset]
     NotificationPreference:
       type: object
       properties:
