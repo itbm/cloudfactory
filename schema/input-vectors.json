@@ -1322,6 +1322,10 @@
     "packImageVersion": {
       "valid": ["1.25", "3.4.1", "1.25-alpine", "2024_1", "1+r2", "abcdefghijklmnop"],
       "invalid": ["", "-1.25", ".1", "1 25", "1/25", "1.25\n", "abcdefghijklmnopq"]
+    },
+    "phpVersion": {
+      "valid": ["8.2", "8.3", "7.4", "10.0", "8.10"],
+      "invalid": ["", "8", "8.2.1", "8.x", ".2", "8.", "8.2-fpm", "123.1", "8.2\n"]
     }
   }
 }

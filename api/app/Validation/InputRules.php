@@ -120,6 +120,9 @@ final class InputRules
     /** The name of a PHP extension. */
     public const PHP_EXTENSION = '/^(?:^[a-z0-9_]{1,40}$)/D';
 
+    /** The version of PHP in one image of a PHP pack (cf-php/1): the major version and the minor version, for example "8.3". */
+    public const PHP_VERSION = '/^(?:^[0-9]{1,2}\\.[0-9]{1,2}$)/D';
+
     /** The path of a file or a directory in a website. It starts with "/". It has no empty part, no "." part, no ".." part and no "/" at the end. */
     public const RESTORE_PATH = '/^(?=[\\s\\S]{0,4096}\\z)(?![\\s\\S]*?(?:\\/\\.\\.?(\\/|$)))(?:^(\\/|(\\/[^\\/\\x00]+)+)$)/D';
 
@@ -183,6 +186,7 @@ final class InputRules
         'packSlug' => self::PACK_SLUG,
         'packVersion' => self::PACK_VERSION,
         'phpExtension' => self::PHP_EXTENSION,
+        'phpVersion' => self::PHP_VERSION,
         'restorePath' => self::RESTORE_PATH,
         'routePath' => self::ROUTE_PATH,
         'secretName' => self::SECRET_NAME,
@@ -232,6 +236,7 @@ final class InputRules
         'packSlug' => 'Use 2 to 31 lower-case letters, digits and "-". The first character is a letter.',
         'packVersion' => 'Use a version such as 1.2.0.',
         'phpExtension' => 'Use 1 to 40 lower-case letters, digits and underscores.',
+        'phpVersion' => 'Use a PHP version such as 8.3: two numbers with a dot between them.',
         'restorePath' => 'Enter a path that starts with /, for example /public/index.php. Do not use "//", "." or ".." parts, or a / at the end.',
         'routePath' => 'Use a path such as /01jbq3z5k8n6/: a slash, 1 to 40 lower-case letters and digits, and a slash.',
         'secretName' => 'Use 1 to 64 capital letters, digits and underscores. Do not start with a digit.',
@@ -244,6 +249,9 @@ final class InputRules
 
     /** The types of DNS record that a user can make. */
     public const DNS_RECORD_TYPES = ['A', 'AAAA', 'CNAME', 'MX', 'TXT', 'SRV', 'CAA', 'NS'];
+
+    /** The built-in PHP runtimes. A PHP pack (cf-php/1) adds versions of PHP to one of them. */
+    public const PHP_RUNTIMES = ['frankenphp', 'apache-php-fpm'];
 
     /** Names that the database servers use (CF-01). */
     public const RESERVED_DATABASE_NAMES = ['mysql', 'sys', 'information_schema', 'performance_schema', 'postgres', 'template0', 'template1', 'root', 'mariadb.sys', 'healthcheck'];

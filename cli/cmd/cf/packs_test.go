@@ -184,3 +184,16 @@ func TestPacksIsABuiltInCommand(t *testing.T) {
 		}
 	}
 }
+
+// A cf-php/1 pack adds versions of PHP to a built-in PHP runtime. It has no type and no
+// commands, so the CLI shows the PHP runtime.
+func TestPackRuntimeOfAPHPPack(t *testing.T) {
+	got := packRuntime(map[string]any{"contract": "cf-php/1", "type": "", "defaultCommand": "", "defaultInstall": "", "family": "apache-php-fpm"})
+	if want := "Runtime:       cf-php/1, adds PHP versions to apache-php-fpm\n"; got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+	got = packRuntime(map[string]any{"contract": "cf-runtime/1", "type": "app", "defaultCommand": "./server", "defaultInstall": "", "family": ""})
+	if !strings.Contains(got, "Start command: ./server\n") {
+		t.Errorf("got %q", got)
+	}
+}

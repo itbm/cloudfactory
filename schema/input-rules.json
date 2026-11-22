@@ -347,6 +347,13 @@
       "doc": "The version of the runtime in one image of a pack, for example \"1.25\". Customers select it.",
       "pattern": "^[0-9A-Za-z][0-9A-Za-z.+_-]{0,15}$",
       "message": "Use up to 16 letters, digits and the characters . + _ -, for example 1.25."
+    },
+    "phpVersion": {
+      "what": "PHP version",
+      "doc": "The version of PHP in one image of a PHP pack (cf-php/1): the major version and the minor version, for example \"8.3\".",
+      "pattern": "^[0-9]{1,2}\\.[0-9]{1,2}$",
+      "go": "PHPVersion",
+      "message": "Use a PHP version such as 8.3: two numbers with a dot between them."
     }
   },
   "sets": {
@@ -361,6 +368,10 @@
     "dnsRecordTypes": {
       "doc": "The types of DNS record that a user can make.",
       "values": ["A", "AAAA", "CNAME", "MX", "TXT", "SRV", "CAA", "NS"]
+    },
+    "phpRuntimes": {
+      "doc": "The built-in PHP runtimes. A PHP pack (cf-php/1) adds versions of PHP to one of them.",
+      "values": ["frankenphp", "apache-php-fpm"]
     },
     "reservedRuntimeNames": {
       "doc": "The names of the built-in runtimes, the image families and the database engines. A pack cannot have one of these names.",

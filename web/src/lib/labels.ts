@@ -1,4 +1,4 @@
-import type { DatabaseServerStatus, DnsDelegation, DnsRecordType, DnsZoneStatus, Domain, HostUpdatePolicy, JobState, MailStatus, RuntimeKind, ServerRole, ServerState, UpdatePolicy, WebsiteKind, WebsiteStatus } from "../api/types";
+import type { DatabaseServerStatus, DnsDelegation, DnsRecordType, DnsZoneStatus, Domain, HostUpdatePolicy, JobState, MailStatus, PackRuntime, RuntimeImage, RuntimeKind, ServerRole, ServerState, UpdatePolicy, WebsiteKind, WebsiteStatus } from "../api/types";
 import type { Tone } from "../components/ui";
 import { daysUntil, longDate, relativeTime } from "./format";
 
@@ -52,6 +52,15 @@ export const RUNTIME_KIND: Record<RuntimeKind, string> = {
   static: "Static files",
   app: "Runtime",
 };
+
+/** The built-in PHP runtimes. A PHP pack (cf-php/1) adds versions of PHP to one of them. */
+export const PHP_FAMILIES: RuntimeImage["family"][] = ["frankenphp", "apache-php-fpm"];
+
+/** True for a pack that adds versions of PHP to a built-in PHP runtime (cf-php/1), not a runtime of its own. */
+export const isPhpPack = (runtime: PackRuntime) => runtime.contract === "cf-php/1";
+
+/** The name of a built-in PHP runtime, for example "Apache + PHP-FPM". */
+export const phpFamilyName = (family: string) => (family === "frankenphp" || family === "apache-php-fpm" ? RUNTIME_KIND[family] : family);
 
 /**
  * True when a public certificate authority gives certificates for the name. The API and the

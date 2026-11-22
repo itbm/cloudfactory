@@ -115,6 +115,14 @@ class Packs
         if ($upgrade !== null && $spec['version'] === $upgrade->version) {
             throw ValidationException::withMessages(['manifest' => "The version {$spec['version']} is installed. Give a manifest with a new version."]);
         }
+        // The websites of the images keep their runtime: an update cannot change a pack of a
+        // new runtime into a PHP pack, or a PHP pack to a different PHP runtime.
+        if ($upgrade !== null) {
+            $before = $upgrade->spec()['runtime'];
+            if ($before['contract'] !== $spec['runtime']['contract'] || $before['family'] !== $spec['runtime']['family']) {
+                throw ValidationException::withMessages(['manifest' => 'The new version has a different runtime. An update of a pack cannot change its runtime contract or its PHP runtime.']);
+            }
+        }
         if ($upgrade === null && Pack::count() >= InputRules::MAX_PACKS) {
             throw ValidationException::withMessages(['manifest' => sprintf('The panel can have %d packs.', InputRules::MAX_PACKS)]);
         }
@@ -128,6 +136,17 @@ class Packs
                 throw ValidationException::withMessages(['manifest' => $other->pack
                     ? "The image {$img['repository']} is in the pack {$other->pack->slug}. An image repository can be in one pack only."
                     : "The image {$img['repository']} is the image {$other->name} of the panel. A pack needs its own image repository."]);
+            }
+        }
+        // A PHP pack adds a version of PHP only when the runtime does not have it, so that the
+        // New website page has one image for each version of each runtime.
+        if (PackManifest::isPhp($spec)) {
+            foreach ($spec['images'] as $img) {
+                $other = Image::where('family', $spec['runtime']['family'])->where('php_version', $img['version'])
+                    ->where(fn ($q) => $q->whereNull('pack_id')->orWhere('pack_id', '!=', $upgrade?->id ?? ''))->first();
+                if ($other !== null) {
+                    throw ValidationException::withMessages(['manifest' => "The panel has the image {$other->name} already. A PHP pack can add only a version of PHP that the runtime does not have."]);
+                }
             }
         }
         if ($upgrade !== null) {
@@ -215,16 +234,23 @@ class Packs
         ];
     }
 
-    /** Makes the images of the pack agree with its manifest. */
-    private static function syncImages(Pack $pack, array $spec): void
+    /**
+     * Makes the images of the pack agree with its manifest. An image of a pack of a new runtime
+     * has the family of the pack. An image of a PHP pack has the family of its built-in PHP
+     * runtime, so that it is one more version of that runtime for the websites.
+     */
+    public static function syncImages(Pack $pack, array $spec): void
     {
+        $php = PackManifest::isPhp($spec);
         $keep = [];
         foreach ($spec['images'] as $img) {
             $keep[] = $img['version'];
             $fields = [
-                'name' => "{$spec['name']} {$img['version']}", 'family' => $spec['slug'], 'reference' => $img['repository'],
-                'runtime_version' => $img['version'], 'support_ends_at' => $img['supportEndsAt'], 'custom' => false,
-                'default_command' => $spec['runtime']['defaultCommand'], 'default_install' => $spec['runtime']['defaultInstall'] ?: null,
+                'name' => $php ? Image::PHP_LABELS[$spec['runtime']['family']]." · PHP {$img['version']}" : "{$spec['name']} {$img['version']}",
+                'family' => $php ? $spec['runtime']['family'] : $spec['slug'], 'reference' => $img['repository'],
+                'runtime_version' => $img['version'], 'php_version' => $php ? $img['version'] : null,
+                'support_ends_at' => $img['supportEndsAt'], 'custom' => false,
+                'default_command' => $php ? null : $spec['runtime']['defaultCommand'], 'default_install' => $php ? null : ($spec['runtime']['defaultInstall'] ?: null),
                 // The signature of the manifest covers the digest. Each server checks the
                 // signature of the image with the key of the publisher when it pulls the image.
                 'signature_verified' => $pack->signed(),

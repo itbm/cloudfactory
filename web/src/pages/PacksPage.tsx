@@ -8,12 +8,16 @@ import { Topbar } from "../components/Layout";
 import { TrustedKeys } from "../components/TrustedKeys";
 import { Card, Empty, Field, FormError, Modal, PageHeader, RowMenu, Status, TableWrap, Toggle } from "../components/ui";
 import { longDate, relativeTime } from "../lib/format";
+import { isPhpPack, phpFamilyName } from "../lib/labels";
 
 const SERVER_TEXT: Record<PackServer["state"], string> = { installed: "Loaded", pending: "Waiting", failing: "Not loaded" };
 const SERVER_TONE = { installed: "success", pending: "warning", failing: "danger" } as const;
 
 /** The first 12 digits of a digest, enough to compare two digests. */
 const shortDigest = (digest: string) => digest.replace(/^sha256:/, "").slice(0, 12);
+
+/** A list of PHP versions in words, for example "PHP 8.3 and 8.2". */
+const phpList = (versions: string[]) => (versions.length < 2 ? `PHP ${versions[0] ?? ""}` : `PHP ${versions.slice(0, -1).join(", ")} and ${versions[versions.length - 1]}`);
 
 function SignedBy({ signer, developerMode }: { signer: PackSigner | null; developerMode?: boolean }) {
   if (signer?.release) return <Status tone="success">Signed by the Cloudfactory release key</Status>;
@@ -24,7 +28,7 @@ function SignedBy({ signer, developerMode }: { signer: PackSigner | null; develo
 
 /**
  * Packs (docs/packs.md): a signed manifest from a publisher adds a website runtime, for example
- * Go, with no new agent code. The panel sends each pack to each web server. Each agent checks
+ * Go, or older versions of PHP for a built-in PHP runtime, with no new agent code. The panel sends each pack to each web server. Each agent checks
  * the signature again, and Podman pulls an image of a pack only with a signature of the key of
  * its publisher.
  */
@@ -41,7 +45,7 @@ export function PacksPage() {
       <main id="main" className="content content-wide">
         <PageHeader
           title="Packs"
-          description="A pack adds a website runtime, for example Go, with no new agent code. Its publisher signs the manifest and each image. The panel installs a pack only when a trusted key signed it, and each server checks the signatures again."
+          description="A pack adds a website runtime, for example Go, or more versions of PHP, with no new agent code. Its publisher signs the manifest and each image. The panel installs a pack only when a trusted key signed it, and each server checks the signatures again."
           actions={
             <>
               <button type="button" className="btn" disabled={sync.busy || !data.data?.packs.length} onClick={() => void sync.run()}>Send to the servers again</button>
@@ -80,6 +84,7 @@ function PackCard({ pack: p, onChange }: { pack: Pack; onChange: () => void }) {
   const remove = useAction(async () => { await removePack(p.id); onChange(); });
   const used = p.images.reduce((n, i) => n + i.websites, 0);
   const waiting = p.images.filter((i) => i.availableDigest);
+  const php = isPhpPack(p.runtime);
 
   return (
     <Card className="plugin-card" title={`${p.name} ${p.version}`} actions={
@@ -96,8 +101,14 @@ function PackCard({ pack: p, onChange }: { pack: Pack; onChange: () => void }) {
             <tbody>
               <tr><th scope="row">Publisher</th><td>{p.publisher}</td></tr>
               <tr><th scope="row">Signature</th><td><SignedBy signer={p.signedBy} /></td></tr>
-              <tr><th scope="row">Runtime</th><td><code>{p.slug}</code><span className="cell-sub">{p.runtime.contract}, type {p.runtime.type}</span></td></tr>
-              <tr><th scope="row">Commands</th><td>Start: <code>{p.runtime.defaultCommand}</code>{p.runtime.defaultInstall && <><br />Install: <code>{p.runtime.defaultInstall}</code></>}<span className="cell-sub">Each website can change them.</span></td></tr>
+              {php ? (
+                <tr><th scope="row">Runtime</th><td>{phpFamilyName(p.runtime.family)}<span className="cell-sub">{p.runtime.contract}: adds {phpList(p.images.map((i) => i.version))}</span></td></tr>
+              ) : (
+                <>
+                  <tr><th scope="row">Runtime</th><td><code>{p.slug}</code><span className="cell-sub">{p.runtime.contract}, type {p.runtime.type}</span></td></tr>
+                  <tr><th scope="row">Commands</th><td>Start: <code>{p.runtime.defaultCommand}</code>{p.runtime.defaultInstall && <><br />Install: <code>{p.runtime.defaultInstall}</code></>}<span className="cell-sub">Each website can change them.</span></td></tr>
+                </>
+              )}
               <tr><th scope="row">Websites</th><td>{used === 0 ? "None" : used}</td></tr>
               <tr><th scope="row">Installed</th><td>{relativeTime(p.installedAt)}{p.installedBy && <> by {p.installedBy}</>}{p.updatedAt !== p.installedAt && <span className="cell-sub">Last version {relativeTime(p.updatedAt)}</span>}</td></tr>
             </tbody>
@@ -144,8 +155,8 @@ function PackCard({ pack: p, onChange }: { pack: Pack; onChange: () => void }) {
       {removing && (
         <Modal title={`Remove ${p.name}?`} onClose={() => setRemoving(false)} footer={<><button type="button" className="btn" onClick={() => setRemoving(false)}>Cancel</button><button type="button" className="btn btn-danger-solid" disabled={remove.busy || used > 0} onClick={() => { setRemoving(false); void remove.run(); }}>Remove pack</button></>}>
           {used > 0
-            ? <p style={{ marginTop: 0 }}>{used === 1 ? "1 website uses" : `${used} websites use`} this runtime. Change the runtime of these websites, or remove them, before you remove the pack.</p>
-            : <p style={{ marginTop: 0 }}>The runtime {p.name} and its images leave the panel. Each web server removes the pack and the rules of its images from the image policy.</p>}
+            ? <p style={{ marginTop: 0 }}>{used === 1 ? "1 website uses" : `${used} websites use`} {php ? "a version of PHP of this pack" : "this runtime"}. Change the runtime of these websites, or remove them, before you remove the pack.</p>
+            : <p style={{ marginTop: 0 }}>{php ? <>{phpList(p.images.map((i) => i.version))} for {phpFamilyName(p.runtime.family)}</> : <>The runtime {p.name}</>} and its images leave the panel. Each web server removes the pack and the rules of its images from the image policy.</p>}
         </Modal>
       )}
       {updating && <InstallDialog pack={p} onClose={() => setUpdating(false)} onInstalled={() => { setUpdating(false); onChange(); }} />}
@@ -173,6 +184,7 @@ function InstallDialog({ pack, onClose, onInstalled }: { pack?: Pack; onClose: (
   const before = pack?.images.map((i) => i.version) ?? [];
   const added = versions.filter((v) => !before.includes(v));
   const removed = before.filter((v) => !versions.includes(v));
+  const php = !!m && isPhpPack(m.runtime);
 
   return (
     <Modal wide title={pack ? `Install a new version of ${pack.name}` : "Install pack"} onClose={onClose} footer={
@@ -217,14 +229,16 @@ function InstallDialog({ pack, onClose, onInstalled }: { pack?: Pack; onClose: (
           {preview.installed && !pack && <div className="alert alert-warning" role="status"><p>Version {preview.installed.version} of this pack is installed. To change it, use <strong>Install a new version</strong> on its card.</p></div>}
           {pack && preview.installed && <p>This replaces version {preview.installed.version}.{added.length > 0 && <> New runtime versions: {added.join(", ")}.</>}{removed.length > 0 && <> Removed runtime versions: {removed.join(", ")}.</>}</p>}
           <h4>Runtime</h4>
-          <p>Customers can select {m.name} for a new website. The website runs the start command <code>{m.runtime.defaultCommand}</code>{m.runtime.defaultInstall && <> after the install command <code>{m.runtime.defaultInstall}</code> in a build container</>}. Each website can change the commands.</p>
+          {php
+            ? <p>The pack adds {phpList(versions)} to {phpFamilyName(m.runtime.family)}. Customers can select these versions for a new website, and for a website that uses {phpFamilyName(m.runtime.family)} now. The websites keep the PHP settings of {phpFamilyName(m.runtime.family)}: the extensions of the plan, the php.ini values and the document root.</p>
+            : <p>Customers can select {m.name} for a new website. The website runs the start command <code>{m.runtime.defaultCommand}</code>{m.runtime.defaultInstall && <> after the install command <code>{m.runtime.defaultInstall}</code> in a build container</>}. Each website can change the commands.</p>}
           <h4>Images</h4>
           <TableWrap>
             <table>
               <thead><tr><th scope="col">Version</th><th scope="col">Image</th><th scope="col">Digest</th><th scope="col">End of support</th></tr></thead>
               <tbody>
                 {m.images.map((i) => (
-                  <tr key={i.version}><td><strong>{m.name} {i.version}</strong></td><td><code>{i.ref}</code></td><td><code title={i.digest}>{shortDigest(i.digest)}</code></td><td>{i.supportEndsAt ? longDate(i.supportEndsAt) : "Not given"}</td></tr>
+                  <tr key={i.version}><td><strong>{php ? `PHP ${i.version}` : `${m.name} ${i.version}`}</strong></td><td><code>{i.ref}</code></td><td><code title={i.digest}>{shortDigest(i.digest)}</code></td><td>{i.supportEndsAt ? longDate(i.supportEndsAt) : "Not given"}</td></tr>
                 ))}
               </tbody>
             </table>
@@ -235,7 +249,7 @@ function InstallDialog({ pack, onClose, onInstalled }: { pack?: Pack; onClose: (
             <li>A website of the pack runs in gVisor with a read-only root file system, no capabilities and the limits of its plan, as all websites do.</li>
             <li>The pack gives only data. It cannot run a command on a server or change the settings of a container.</li>
           </ul>
-          <ConfirmIdentityFields value={confirmation} onChange={setConfirmation} error={install.error} reason="A pack adds a runtime to each web server." />
+          <ConfirmIdentityFields value={confirmation} onChange={setConfirmation} error={install.error} reason={php ? "A pack adds images to each web server." : "A pack adds a runtime to each web server."} />
         </form>
       )}
     </Modal>

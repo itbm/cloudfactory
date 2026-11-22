@@ -110,6 +110,15 @@ func PackName(s string) error {
 	return nil
 }
 
+// PHPRuntime checks the runtime of a PHP pack (cf-php/1): a built-in PHP runtime of the set
+// "phpRuntimes". A PHP pack adds versions of PHP to that runtime.
+func PHPRuntime(s string) error {
+	if !slices.Contains(phpRuntimes, s) {
+		return fmt.Errorf("the runtime %q is not a built-in PHP runtime; use one of %s", s, strings.Join(phpRuntimes, ", "))
+	}
+	return nil
+}
+
 // Command checks the start command of a custom image.
 func Command(args []string) error {
 	if len(args) > MaxCommandArguments {

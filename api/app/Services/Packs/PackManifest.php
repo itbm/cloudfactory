@@ -12,6 +12,9 @@ use Illuminate\Validation\ValidationException;
  * that the contract does not have is an error, except a key that starts with "x-", so that
  * the panel never ignores a key of a later contract.
  *
+ * The runtime contract gives the keys of the runtime object. A pack with "cf-runtime/1" adds a
+ * new runtime. A pack with "cf-php/1" adds versions of PHP to a built-in PHP runtime.
+ *
  * The panel reads the manifest only as data. It never runs a program that a manifest names.
  */
 class PackManifest
@@ -22,6 +25,13 @@ class PackManifest
     /** The version of the contract between the agent and the image of a runtime pack. */
     public const RUNTIME_CONTRACT = 'cf-runtime/1';
 
+    /**
+     * The version of the contract between the agent and the image of a PHP pack. A PHP pack
+     * adds versions of PHP to a built-in PHP runtime (runtime.family), and its images do what
+     * the images of that runtime do.
+     */
+    public const PHP_CONTRACT = 'cf-php/1';
+
     /** The only kind of pack of cf-pack/1. The kind "database" is for a later release. */
     public const KIND_RUNTIME = 'runtime';
 
@@ -30,7 +40,11 @@ class PackManifest
 
     private const TOP = ['contract', 'kind', 'slug', 'name', 'version', 'publisher', 'description', 'runtime', 'images'];
 
-    private const RUNTIME = ['contract', 'type', 'defaultCommand', 'defaultInstall'];
+    /** The keys of the runtime object for each runtime contract. */
+    private const RUNTIME = [
+        self::RUNTIME_CONTRACT => ['contract', 'type', 'defaultCommand', 'defaultInstall'],
+        self::PHP_CONTRACT => ['contract', 'family'],
+    ];
 
     private const IMAGE = ['version', 'ref', 'digest', 'supportEndsAt'];
 
@@ -38,7 +52,7 @@ class PackManifest
      * Reads and checks a manifest. The result has only the keys of the contract.
      *
      * @return array{contract: string, kind: string, slug: string, name: string, version: string, publisher: string, description: string,
-     *     runtime: array{contract: string, type: string, defaultCommand: string, defaultInstall: string},
+     *     runtime: array{contract: string, type: string, defaultCommand: string, defaultInstall: string, family: string},
      *     images: list<array{version: string, ref: string, repository: string, tag: string, digest: string, supportEndsAt: ?string}>}
      *
      * @throws ValidationException
@@ -75,23 +89,33 @@ class PackManifest
         self::text('publisher', $m['publisher'], 1, 100, $errors);
         self::text('description', $m['description'], 0, 500, $errors);
 
-        $m['runtime'] = ['contract' => '', 'type' => '', 'defaultCommand' => '', 'defaultInstall' => ''];
+        $m['runtime'] = ['contract' => '', 'type' => '', 'defaultCommand' => '', 'defaultInstall' => '', 'family' => ''];
         if (! property_exists($top, 'runtime')) {
             $errors[] = 'A runtime pack needs the key runtime.';
+        } elseif (! is_object($top->runtime)) {
+            $errors[] = 'runtime is not a JSON object.';
         } else {
-            $runtime = self::object($top->runtime, 'runtime', self::RUNTIME);
-            foreach (self::RUNTIME as $key) {
-                $m['runtime'][$key] = self::string($runtime, $key, "runtime.{$key}", $errors);
+            $m['runtime']['contract'] = self::string($top->runtime, 'contract', 'runtime.contract', $errors);
+            $known = self::RUNTIME[$m['runtime']['contract']] ?? null;
+            if ($known === null) {
+                $errors[] = "The runtime contract \"{$m['runtime']['contract']}\" is not known. This panel reads \"".self::RUNTIME_CONTRACT.'" and "'.self::PHP_CONTRACT.'".';
+            } else {
+                $runtime = self::object($top->runtime, 'runtime', $known);
+                foreach (array_diff($known, ['contract']) as $key) {
+                    $m['runtime'][$key] = self::string($runtime, $key, "runtime.{$key}", $errors);
+                }
             }
-            if ($m['runtime']['contract'] !== self::RUNTIME_CONTRACT) {
-                $errors[] = "The runtime contract \"{$m['runtime']['contract']}\" is not known. This panel reads \"".self::RUNTIME_CONTRACT.'".';
+            if ($m['runtime']['contract'] === self::RUNTIME_CONTRACT) {
+                if ($m['runtime']['type'] !== self::TYPE_APP) {
+                    $errors[] = "The runtime type \"{$m['runtime']['type']}\" is not known. ".self::RUNTIME_CONTRACT.' has only the type "'.self::TYPE_APP.'".';
+                }
+                self::command('runtime.defaultCommand', $m['runtime']['defaultCommand'], true, $errors);
+                self::command('runtime.defaultInstall', $m['runtime']['defaultInstall'], false, $errors);
+            } elseif ($m['runtime']['contract'] === self::PHP_CONTRACT && ! in_array($m['runtime']['family'], InputRules::PHP_RUNTIMES, true)) {
+                $errors[] = "runtime.family: the runtime \"{$m['runtime']['family']}\" is not a built-in PHP runtime. Use one of ".implode(', ', InputRules::PHP_RUNTIMES).'.';
             }
-            if ($m['runtime']['type'] !== self::TYPE_APP) {
-                $errors[] = "The runtime type \"{$m['runtime']['type']}\" is not known. ".self::RUNTIME_CONTRACT.' has only the type "'.self::TYPE_APP.'".';
-            }
-            self::command('runtime.defaultCommand', $m['runtime']['defaultCommand'], true, $errors);
-            self::command('runtime.defaultInstall', $m['runtime']['defaultInstall'], false, $errors);
         }
+        $php = $m['runtime']['contract'] === self::PHP_CONTRACT;
 
         $images = $top->images ?? null;
         $m['images'] = [];
@@ -116,6 +140,9 @@ class PackManifest
             }
             if (! Input::valid('packImageVersion', $img['version'])) {
                 $errors[] = "{$what}.version: ".InputRules::MESSAGES['packImageVersion'];
+            } elseif ($php && ! Input::valid('phpVersion', $img['version'])) {
+                // The agent writes the php.ini file of a website for this version of PHP.
+                $errors[] = "{$what}.version: ".InputRules::MESSAGES['phpVersion'];
             }
             if (! Input::valid('image', $img['ref'])) {
                 $errors[] = "{$what}.ref: ".InputRules::MESSAGES['image'];
@@ -144,6 +171,17 @@ class PackManifest
         }
 
         return $m;
+    }
+
+    /**
+     * True when the pack adds versions of PHP to a built-in PHP runtime (cf-php/1). Such a pack
+     * adds no runtime of its own.
+     *
+     * @param  array<string, mixed>  $spec  The result of parse.
+     */
+    public static function isPhp(array $spec): bool
+    {
+        return ($spec['runtime']['contract'] ?? null) === self::PHP_CONTRACT;
     }
 
     /** An image reference with no tag and no digest, for example "ghcr.io/example/cf-golang". */

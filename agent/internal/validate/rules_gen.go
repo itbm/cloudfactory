@@ -436,6 +436,17 @@ var ruleExtension = rule{
 // The name of a PHP extension.
 func Extension(s string) error { return ruleExtension.check(s) }
 
+var rulePHPVersion = rule{
+	what:    "PHP version",
+	pattern: regexp.MustCompile(`^[0-9]{1,2}\.[0-9]{1,2}$`),
+	echo:    true,
+}
+
+// PHPVersion checks a value with the rule "phpVersion" of schema/input-rules.json.
+//
+// The version of PHP in one image of a PHP pack (cf-php/1): the major version and the minor version, for example "8.3".
+func PHPVersion(s string) error { return rulePHPVersion.check(s) }
+
 var ruleRestorePath = rule{
 	what:      "path",
 	pattern:   regexp.MustCompile(`^(/|(/[^/\x00]+)+)$`),
@@ -566,6 +577,7 @@ var rules = map[string]*rule{
 	"packSlug":           &rulePackSlug,
 	"packVersion":        &rulePackVersion,
 	"phpExtension":       &ruleExtension,
+	"phpVersion":         &rulePHPVersion,
 	"restorePath":        &ruleRestorePath,
 	"routePath":          &ruleRoutePath,
 	"secretName":         &ruleSecretName,
@@ -578,6 +590,9 @@ var rules = map[string]*rule{
 
 // The types of DNS record that a user can make.
 var dnsRecordTypes = []string{"A", "AAAA", "CNAME", "MX", "TXT", "SRV", "CAA", "NS"}
+
+// The built-in PHP runtimes. A PHP pack (cf-php/1) adds versions of PHP to one of them.
+var phpRuntimes = []string{"frankenphp", "apache-php-fpm"}
 
 // Names that the database servers use (CF-01).
 var reservedDatabaseNames = []string{"mysql", "sys", "information_schema", "performance_schema", "postgres", "template0", "template1", "root", "mariadb.sys", "healthcheck"}

@@ -46,6 +46,7 @@ use App\Services\Networks;
 use App\Services\Notifications\Notifier;
 use App\Services\OpenPgpKey;
 use App\Services\Packs\PackManifest;
+use App\Services\Packs\Packs;
 use App\Services\PanelCertificate;
 use App\Services\Plugins\Manifest;
 use App\Services\Plugins\Signatures;
@@ -158,9 +159,32 @@ class DemoSeeder extends Seeder
                 'policy' => 'manual', 'default_command' => './server', 'default_install' => 'go build -o server .', 'checked_at' => now()->subHour(),
             ]);
         }
+        // A pack of Cloudfactory: PHP 8.3 and 8.2 for Apache + PHP-FPM (cf-php/1). The release
+        // key signs it. The demo has no release key, so it signs the manifest with a new key.
+        $registry = config('cloudfactory.registry');
+        $legacy = fn (string $php, string $ends) => [
+            'version' => $php, 'ref' => "{$registry}/apache-php{$php}:0.1.9",
+            'digest' => 'sha256:'.hash('sha256', "cloudfactory-demo-apache-php{$php}:0.1.9"), 'supportEndsAt' => $ends,
+        ];
+        $manifest = json_encode([
+            'contract' => PackManifest::CONTRACT, 'kind' => 'runtime', 'slug' => 'php-legacy-apache', 'name' => 'Older PHP for Apache + PHP-FPM', 'version' => '0.1.9',
+            'publisher' => 'Cloudfactory', 'description' => 'PHP 8.2 and 8.3 for the Apache + PHP-FPM runtime, for websites that move from a server with an older PHP, for example from cPanel. These versions get only security fixes. PHP 8.2 gets no fixes after 31 December 2026.',
+            'runtime' => ['contract' => PackManifest::PHP_CONTRACT, 'family' => 'apache-php-fpm'],
+            'images' => [$legacy('8.3', '2027-12-31'), $legacy('8.2', '2026-12-31')],
+        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)."\n";
+        $release = openssl_pkey_new(['private_key_type' => OPENSSL_KEYTYPE_EC, 'curve_name' => 'prime256v1']);
+        openssl_sign($manifest, $signature, $release, OPENSSL_ALGO_SHA256);
+        $spec = PackManifest::parse($manifest);
+        $php = Pack::create([
+            'slug' => $spec['slug'], 'name' => $spec['name'], 'version' => $spec['version'], 'publisher' => $spec['publisher'],
+            'description' => $spec['description'], 'manifest' => $manifest, 'signature' => base64_encode($signature),
+            'public_key' => openssl_pkey_get_details($release)['key'], 'plugin_key_id' => null, 'signer' => Pack::RELEASE_KEY,
+            'user_id' => User::where('email', 'admin@example.com')->value('id'),
+        ]);
+        Packs::syncImages($php, $spec);
         foreach (['web-1', 'web-2'] as $name) {
             $this->servers[$name]->update([
-                'agent_packs' => [['slug' => 'golang', 'version' => '1.2.0']],
+                'agent_packs' => [['slug' => 'golang', 'version' => '1.2.0'], ['slug' => 'php-legacy-apache', 'version' => '0.1.9']],
                 'agent_runtimes' => ['frankenphp', 'apache-php-fpm', 'node', 'python', 'custom', 'golang'],
             ]);
         }

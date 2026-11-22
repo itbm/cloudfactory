@@ -1,29 +1,37 @@
 # Packs
 
-A pack adds a website runtime to Cloudfactory, for example Go, with no new agent code. A
-publisher makes the pack: a manifest (`pack.json`) and one image for each version of the
-runtime. The publisher signs the manifest and the images with one key. An administrator
+A pack adds a website runtime to Cloudfactory, for example Go, with no new agent code. A pack
+can also add versions of PHP to a built-in PHP runtime, for example PHP 8.2 for Apache +
+PHP-FPM. A publisher makes the pack: a manifest (`pack.json`) and one image for each version of
+the runtime. The publisher signs the manifest and the images with one key. An administrator
 installs the pack in the panel. The panel then sends the pack to each web server, and
 customers can select the runtime on the **New website** page.
 
 This document is the contract between a publisher and Cloudfactory. The example pack is in
-[plugins/packs/golang](../plugins/packs/golang/README.md).
+[plugins/packs/golang](../plugins/packs/golang/README.md). The packs of Cloudfactory for older
+versions of PHP are in [plugins/packs](../plugins/packs/README.md). Refer to
+[The packs of Cloudfactory](#the-packs-of-cloudfactory).
 
 ![The Packs page with the Go pack, its state on each web server, its images and the trusted keys](screenshots/packs/1-packs.png)
 
 ## The stable contract
 
-A pack has two contracts:
+A pack has two contracts: the contract of the manifest, and the runtime contract. The runtime
+object of the manifest names its runtime contract.
 
 | Contract | What it covers |
 | --- | --- |
 | `cf-pack/1` | The format of the manifest: the keys, the values and the signature. |
-| `cf-runtime/1` | What the image of the runtime must do, and what the agent gives to it. |
+| `cf-runtime/1` | A runtime contract. A new runtime: what its image must do, and what the agent gives to it. |
+| `cf-php/1` | A runtime contract. More versions of PHP for a built-in PHP runtime: what the images must do. |
 
-From this release, the two contracts are stable:
+From this release, the contracts are stable:
 
-- The rules of `cf-pack/1` and `cf-runtime/1` do not change. A change that adds a key, adds
-  a value or changes what a key does gets a new contract name, for example `cf-pack/2`.
+- The rules of `cf-pack/1`, `cf-runtime/1` and `cf-php/1` do not change. A change that adds a
+  key, adds a value or changes what a key does gets a new contract name, for example
+  `cf-pack/2`.
+- A new runtime contract is a new contract name, for example `cf-php/1`. It does not change the
+  rules of `cf-pack/1` or of a different runtime contract.
 - An agent refuses a contract name that it does not know. It also refuses a key that it does
   not know. Thus an agent never ignores a key of a later contract.
 - A later release of Cloudfactory can read more than one contract.
@@ -71,7 +79,7 @@ A manifest is one JSON object of 32 KB or less. For example:
 | --- | --- | --- |
 | `contract` | Yes | `cf-pack/1`. |
 | `kind` | Yes | `runtime`. The kind `database` is for a later release. The panel refuses it. |
-| `slug` | Yes | The name of the runtime: 2 to 31 characters. Use lower-case letters, digits and hyphens. The first character is a letter. The name cannot be a built-in name (refer to the next list). |
+| `slug` | Yes | The name of the pack. For `cf-runtime/1`, it is also the name of the runtime. 2 to 31 characters. Use lower-case letters, digits and hyphens. The first character is a letter. The name cannot be a built-in name (refer to the next list). |
 | `name` | Yes | The name for people, 1 to 60 characters. |
 | `version` | Yes | The version of the pack: three numbers with a dot between them, for example `1.2.0`. A suffix with `-` or `+` is permitted, for example `2.0.0-rc.1`. |
 | `publisher` | Yes | The name of the publisher, 1 to 100 characters. |
@@ -88,9 +96,16 @@ The built-in names are `frankenphp`, `apache-php-fpm`, `node`, `python`, `custom
 
 ### Keys of the runtime
 
+The key `contract` selects the other keys. A key of a different runtime contract is an error.
+
 | Key | Necessary | Value |
 | --- | --- | --- |
-| `contract` | Yes | `cf-runtime/1`. |
+| `contract` | Yes | `cf-runtime/1` or `cf-php/1`. |
+
+The keys of `cf-runtime/1`:
+
+| Key | Necessary | Value |
+| --- | --- | --- |
 | `type` | Yes | `app`. It is the only type of `cf-runtime/1`. |
 | `defaultCommand` | Yes | The usual start command of a website, for example `./server`. One line. |
 | `defaultInstall` | No | The usual install command of a website, for example `go build -o server .`. One line. |
@@ -98,17 +113,36 @@ The built-in names are `frankenphp`, `apache-php-fpm`, `node`, `python`, `custom
 The two commands fill the **New website** form. Each website can change them. The agent
 does not run a command from the manifest: it runs only the commands of the website.
 
+The keys of `cf-php/1`:
+
+| Key | Necessary | Value |
+| --- | --- | --- |
+| `family` | Yes | The built-in PHP runtime: `frankenphp` or `apache-php-fpm` (`phpRuntimes` in [`schema/input-rules.json`](../schema/input-rules.json)). |
+
+For example:
+
+```json
+"runtime": {
+  "contract": "cf-php/1",
+  "family": "apache-php-fpm"
+}
+```
+
 ### Keys of an image
 
 | Key | Necessary | Value |
 | --- | --- | --- |
-| `version` | Yes | The version of the runtime, for example `1.27`. Customers select it. 1 to 16 characters: letters, digits, `.`, `+`, `_` and `-`. Each version is in the pack one time only. |
+| `version` | Yes | The version of the runtime, for example `1.27`. Customers select it. 1 to 16 characters: letters, digits, `.`, `+`, `_` and `-`. Each version is in the pack one time only. For `cf-php/1`, the version of PHP: two numbers with a dot between them, for example `8.2`. |
 | `ref` | Yes | The image with its registry and a tag, for example `ghcr.io/example/cf-golang:1.27`. No digest. |
 | `digest` | Yes | The `sha256:` digest of the image. The agent pulls only this digest. |
 | `supportEndsAt` | No | The last day of support, for example `2027-08-31`. The panel shows it with the image. |
 
 An image repository can be in one pack only. The panel refuses a repository that a different
 pack or an own image of the panel has.
+
+A `cf-php/1` pack can add only a version of PHP that the PHP runtime does not have. For
+example, the panel refuses PHP 8.4 for Apache + PHP-FPM, because the panel has that image
+already.
 
 ## The runtime contract cf-runtime/1
 
@@ -124,6 +158,34 @@ obey these rules:
 The agent gives each container the same isolation as each other website: gVisor, a read-only
 root file system, no capabilities and its own network namespace. A pack cannot change the
 unit of the container.
+
+## The PHP contract cf-php/1
+
+A `cf-php/1` pack adds versions of PHP to a built-in PHP runtime. It adds no runtime of its
+own. A website with an image of the pack is a PHP website of that runtime. It has the
+settings of a PHP website: the extensions of its plan, the php.ini values, the document root,
+and for FrankenPHP the worker mode.
+
+Each image must do the same as the built-in image of the runtime
+([images/frankenphp](../images/frankenphp/Containerfile) or
+[images/apache-php-fpm](../images/apache-php-fpm/Containerfile)):
+
+- The image has the version of PHP that `version` gives.
+- The web server listens on port 8080. It serves the directory in `CF_DOCUMENT_ROOT`, for
+  example `/app/public`.
+- The image has all the extensions of the largest plan: `intl`, `gd`, `zip`, `exif`,
+  `bcmath`, `mysqli`, `pdo_mysql`, `pdo_pgsql`, `redis`, `imagick`, `soap` and, before PHP
+  8.5, `opcache`. The image turns none of them on.
+- The agent mounts the php.ini file of the website at
+  `/usr/local/etc/php/conf.d/zz-cloudfactory.ini`. Each extension in the file must load. Before
+  PHP 8.5, the file has the line `zend_extension=opcache`.
+- The image starts as the Unix user of the website, with a read-only root file system, `/tmp`
+  as the only writable directory outside `/app`, and no capabilities.
+- A FrankenPHP image reads `FRANKENPHP_CONFIG` for the worker mode.
+- The image has Git, an SSH client and Composer for the deploys from Git.
+
+The agent loads the pack, but it adds no runtime for it. The website uses the driver of the
+built-in runtime.
 
 ## Make and sign a pack
 
@@ -174,6 +236,40 @@ openssl ec -in pack.key -pubout -out pack.pub                     # one time
 openssl dgst -sha256 -sign pack.key pack.json | base64 -w0 > pack.json.sig
 ```
 
+## The packs of Cloudfactory
+
+Cloudfactory publishes two packs with each release. They add older versions of PHP, for
+example for websites that come from cPanel:
+
+| Pack | Adds | End of support |
+| --- | --- | --- |
+| `php-legacy-frankenphp` | PHP 8.3 and 8.2 for FrankenPHP | PHP 8.3: 2027-12-31. PHP 8.2: 2026-12-31. |
+| `php-legacy-apache` | PHP 8.3 and 8.2 for Apache + PHP-FPM | PHP 8.3: 2027-12-31. PHP 8.2: 2026-12-31. |
+
+The release key of Cloudfactory signs the manifests and the images, so the packs need no
+trusted key. Each release has the files `SLUG.pack.json` and `SLUG.pack.json.sig`. To install
+a pack:
+
+1. Download the two files of the pack from the release of your version of Cloudfactory.
+2. Install the pack. Refer to [Install a pack](#install-a-pack).
+
+![The review of the pack of older PHP versions for FrankenPHP: the release key signed it, and it adds PHP 8.3 and 8.2](screenshots/packs/6-php-pack-review.png)
+
+The **Packs** page shows the PHP runtime of the pack and its versions:
+
+![The pack of older PHP versions for Apache + PHP-FPM on the Packs page, with its state on each web server and its images](screenshots/packs/5-php-pack.png)
+
+Customers select a version of the pack in the versions of the PHP runtime:
+
+![The New website form with Apache + PHP-FPM and PHP 8.2 from the pack](screenshots/packs/8-new-website-php82.png)
+
+Each release has new images for the packs, with the security fixes of PHP and Debian. The
+panel does not install them itself. After you update Cloudfactory, install the new version of
+each pack from the new release. Refer to [Install a new version](#install-a-new-version).
+
+The panel shows the end of support of each version. Move each website to PHP 8.4 or later
+before that date. Refer to [plugins/packs](../plugins/packs/README.md).
+
 ## Publish a pack
 
 Give these files to the administrators:
@@ -223,8 +319,9 @@ When the administrator installs a pack:
 1. The panel checks the manifest with the rules of this document. It checks the signature
    with the trusted keys and the release key.
 2. The panel keeps the exact bytes of the manifest and the signature.
-3. The panel adds one runtime image for each version of the pack. The family of each image
-   is the slug of the pack.
+3. The panel adds one runtime image for each version of the pack. For `cf-runtime/1`, the
+   family of each image is the slug of the pack. For `cf-php/1`, the family is the PHP runtime
+   of the pack, for example `apache-php-fpm`.
 4. The panel sends all packs to each web server in the job **Send the packs**.
 
 On each web server, the agent:
@@ -238,8 +335,8 @@ On each web server, the agent:
    key of the pack.
 4. Writes `/etc/containers/registries.d/cloudfactory-packs.yaml`, so that Podman finds the
    signatures next to the images.
-5. Removes the packs that are not in the job. It refuses to remove a pack whose runtime a
-   website of the server uses.
+5. Removes the packs that are not in the job. It refuses to remove a pack whose runtime or
+   image a website of the server uses.
 6. Loads the runtimes, and reports the packs and the runtimes to the panel.
 
 The agent never makes a rule of the installer weaker. When a rule of the installer already
@@ -259,8 +356,10 @@ different, the panel sends the packs again. After each failure, it waits longer:
 16, 32 and then 60 minutes. A new web server gets the packs after its first report. To send
 the packs at once, select **Send to the servers again**, or use `cf packs sync`.
 
-The panel puts a website of the runtime only on a server that reports the runtime. When no
-server has it, the panel refuses the website and tells the user why.
+The panel puts a website of the runtime only on a server that reports the runtime. It puts a
+website with an image of a `cf-php/1` pack only on a server that reports the pack. When no
+server has it, the panel refuses the website and tells the user why. The panel also refuses to
+change the runtime of a website to an image that its server does not have yet.
 
 Customers see the runtime on the **Apps** page and on the **New website** page, with one
 choice for each version:
@@ -283,6 +382,8 @@ The slug must be the same, and the version must be different. Then:
   and updates** page, or with `cf rollouts start IMAGE_ID`.
 - The panel refuses a manifest that removes a version that websites use. Move the websites
   to a different version first.
+- The new version must have the same runtime contract. For `cf-php/1`, it must also have the
+  same `family`.
 
 The panel does not check the registry for new tags of the images of a pack. The pack gives
 the versions and the digests.
@@ -327,8 +428,10 @@ When you change a rule of the contract, add a valid case and an invalid case.
 
 ## Limits
 
-- `cf-pack/1` has only the kind `runtime`, and `cf-runtime/1` has only the type `app`. The
-  packs for database engines come later (refer to the trial contract `cf-database/1` in
+- `cf-pack/1` has only the kind `runtime`, and `cf-runtime/1` has only the type `app`.
+- A `cf-php/1` pack adds versions of PHP to FrankenPHP or to Apache + PHP-FPM only. It cannot
+  add an extension that the largest plan does not have.
+- The packs for database engines come later (refer to the trial contract `cf-database/1` in
   [plugins.md](plugins.md#the-management-contract-cf-database1-trial)).
 - A panel can have up to 50 packs. A pack can have up to 10 images.
 - A pack cannot add a page, a setting or a program to the panel or to the agent. To add such

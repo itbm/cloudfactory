@@ -125,21 +125,21 @@ class WebsiteController extends Controller
                 : ['serverId' => 'Only an administrator can select the server.']);
         }
         $plan = Plan::findOrFail($planId);
-        $server = isset($data['serverId'])
-            ? Server::findOrFail($data['serverId'])
-            // A healthy server first. A degraded server can also get a website: its agent answers.
-            // A server that the panel cannot connect to comes last: its jobs fail.
-            : Server::whereJsonContains('roles', 'web')->whereIn('state', Server::WORKING)->withCount('websites')
-                ->when($image->pack_id !== null, fn ($q) => $q->whereJsonContains('agent_runtimes', $image->family))
+        if (isset($data['serverId'])) {
+            $server = Server::findOrFail($data['serverId']);
+        } else {
+            // A healthy server first. A degraded server can also get a website: its agent
+            // answers. A server that the panel cannot connect to comes last: its jobs fail. The
+            // image of a pack goes only to a server whose agent loaded the pack.
+            $servers = Server::whereJsonContains('roles', 'web')->whereIn('state', Server::WORKING)->withCount('websites')
                 ->orderByRaw('case when connection_error is null then 0 else 1 end')
-                ->orderByRaw("case when state = 'healthy' then 0 else 1 end")->orderBy('websites_count')->first();
+                ->orderByRaw("case when state = 'healthy' then 0 else 1 end")->orderBy('websites_count')->get();
+            $server = $servers->first(fn (Server $s) => $s->canRun($image)) ?? $servers->first();
+        }
         if (! $server || ! in_array('web', $server->roles, true)) {
             throw ValidationException::withMessages(['serverId' => 'Select a server with the web role.']);
         }
-        // The runtime of a pack operates only on a server whose agent loaded the pack.
-        if ($image->pack_id !== null && ! $server->hasRuntime($image->family)) {
-            throw ValidationException::withMessages([(isset($data['serverId']) ? 'serverId' : 'imageId') => "The agent on the server {$server->name} does not have the runtime {$image->family} yet. The panel sends the packs to each web server: wait for the server to load the pack, or select a different server."]);
-        }
+        self::refuseImageOnServer($image, $server, isset($data['serverId']) ? 'serverId' : 'imageId');
         $unixUser = self::unixUser($data['name']);
         $domain = null;
         if ($kind === Website::PUBLIC) {
@@ -501,6 +501,20 @@ class WebsiteController extends Controller
                     : "The {$reseller->plan->name} plan allows {$reseller->plan->websites} websites in total, for you and your customers."]);
             }
         }
+    }
+
+    /**
+     * The image of a pack operates only on a server whose agent loaded the pack.
+     *
+     * @throws ValidationException
+     */
+    public static function refuseImageOnServer(Image $image, Server $server, string $field): void
+    {
+        if ($server->canRun($image)) {
+            return;
+        }
+        $what = $image->isPhp() ? "the pack {$image->pack?->name}" : "the runtime {$image->family}";
+        throw ValidationException::withMessages([$field => "The agent on the server {$server->name} does not have {$what} yet. The panel sends the packs to each web server: wait for the server to load the pack, or select a different server."]);
     }
 
     /**

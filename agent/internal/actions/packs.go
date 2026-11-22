@@ -91,14 +91,23 @@ func (d *Deps) usePacks(list []packs.Pack) error {
 	d.packs = slices.Clone(list)
 	d.packsMu.Unlock()
 	for _, p := range list {
+		if p.Manifest.PHP() {
+			slog.Info("PHP versions of a pack", "pack", p.Manifest.Slug, "version", p.Manifest.Version, "runtime", p.Manifest.Runtime.Family, "signed", p.Signed())
+			continue
+		}
 		slog.Info("runtime of a pack", "pack", p.Manifest.Slug, "version", p.Manifest.Version, "signed", p.Signed())
 	}
 	return nil
 }
 
+// runtimesOf gives the runtimes of the packs. A PHP pack (cf-php/1) adds no runtime: its
+// images are versions of a built-in PHP runtime, and the agent runs them as that runtime.
 func runtimesOf(list []packs.Pack) []quadlet.RuntimeSpec {
 	out := make([]quadlet.RuntimeSpec, 0, len(list))
 	for _, p := range list {
+		if p.Manifest.PHP() {
+			continue
+		}
 		out = append(out, quadlet.RuntimeSpec{Name: p.Manifest.Slug, Label: p.Manifest.Name, Kind: quadlet.KindApp, Pack: p.Manifest.Slug + " " + p.Manifest.Version})
 	}
 	return out
@@ -172,8 +181,9 @@ func (d *Deps) SetPacks(req *agentv1.SetPacksRequest) (jobs.Job, error) {
 	}}, nil
 }
 
-// checkPackUse refuses to remove the pack of a runtime that a website of the server uses: the
-// agent could not start the website again. The panel refuses to remove such a pack too.
+// checkPackUse refuses to remove a pack that a website of the server uses: the runtime of
+// the pack, or an image of the pack (a PHP pack has no runtime of its own). The agent could
+// not start the website again. The panel refuses to remove such a pack too.
 func (d *Deps) checkPackUse(list []packs.Pack) error {
 	keep := map[string]bool{}
 	for _, p := range list {
@@ -181,9 +191,15 @@ func (d *Deps) checkPackUse(list []packs.Pack) error {
 	}
 	d.packsMu.Lock()
 	var gone []string
+	// repos gives the pack of each image repository of the packs that go.
+	repos := map[string]string{}
 	for _, p := range d.packs {
-		if !keep[p.Manifest.Slug] {
-			gone = append(gone, p.Manifest.Slug)
+		if keep[p.Manifest.Slug] {
+			continue
+		}
+		gone = append(gone, p.Manifest.Slug)
+		for _, img := range p.Manifest.Images {
+			repos[img.Repository()] = p.Manifest.Slug
 		}
 	}
 	d.packsMu.Unlock()
@@ -195,8 +211,14 @@ func (d *Deps) checkPackUse(list []packs.Pack) error {
 		return err
 	}
 	for _, s := range sites {
-		if s.Website != nil && slices.Contains(gone, s.Website.GetRuntime()) {
+		if s.Website == nil {
+			continue
+		}
+		if slices.Contains(gone, s.Website.GetRuntime()) {
 			return fmt.Errorf("the website %s uses the runtime %s, so its pack cannot go", s.ID, s.Website.GetRuntime())
+		}
+		if pack, ok := repos[packs.Repository(s.Website.GetImage())]; ok {
+			return fmt.Errorf("the website %s uses the image %s of the pack %s, so the pack cannot go", s.ID, packs.Repository(s.Website.GetImage()), pack)
 		}
 	}
 	return nil

@@ -1,5 +1,6 @@
 // Package packs reads and checks packs: signed manifests from a publisher that add a website
-// runtime to Cloudfactory with no new agent code. docs/packs.md is the contract.
+// runtime, or versions of a built-in PHP runtime, to Cloudfactory with no new agent code.
+// docs/packs.md is the contract.
 //
 // A pack has a manifest (pack.json) with the contract "cf-pack/1", and the images of the
 // runtime, each with a digest. The publisher signs the exact bytes of the manifest with an
@@ -32,8 +33,12 @@ const (
 	// Contract is the version of the manifest format.
 	Contract = "cf-pack/1"
 	// RuntimeContract is the version of the contract between the agent and the image of a
-	// runtime pack.
+	// runtime pack that adds a new runtime.
 	RuntimeContract = "cf-runtime/1"
+	// PHPContract is the version of the contract between the agent and the image of a PHP
+	// pack. A PHP pack adds no runtime: it adds versions of PHP to a built-in PHP runtime
+	// (Runtime.Family), and its images do what the images of that runtime do.
+	PHPContract = "cf-php/1"
 	// KindRuntime is the only kind of pack of the contract cf-pack/1. The kind "database" is
 	// for a later release.
 	KindRuntime = "runtime"
@@ -62,15 +67,29 @@ type Manifest struct {
 	Images      []Image `json:"images"`
 }
 
-// Runtime is the runtime of a runtime pack.
+// Runtime is the runtime of a runtime pack. The runtime contract gives its keys: Type,
+// DefaultCommand and DefaultInstall for cf-runtime/1, and Family for cf-php/1.
 type Runtime struct {
 	Contract string `json:"contract"`
-	Type     string `json:"type"`
+	Type     string `json:"type,omitempty"`
 	// DefaultCommand and DefaultInstall are the usual start command and install command of a
 	// website. Only the panel uses them: the job of a website gives its own command.
-	DefaultCommand string `json:"defaultCommand"`
+	DefaultCommand string `json:"defaultCommand,omitempty"`
 	DefaultInstall string `json:"defaultInstall,omitempty"`
+	// Family is the built-in PHP runtime that a PHP pack adds versions to, for example
+	// "apache-php-fpm".
+	Family string `json:"family,omitempty"`
 }
+
+// runtimeKeys are the keys of the runtime object for each runtime contract.
+var runtimeKeys = map[string][]string{
+	RuntimeContract: {"contract", "type", "defaultCommand", "defaultInstall"},
+	PHPContract:     {"contract", "family"},
+}
+
+// PHP reports whether the pack adds versions of PHP to a built-in PHP runtime (cf-php/1). Such
+// a pack adds no runtime to the agent.
+func (m Manifest) PHP() bool { return m.Runtime.Contract == PHPContract }
 
 // Image is one image of a runtime pack, for one version of the runtime.
 type Image struct {
@@ -146,29 +165,10 @@ func Parse(raw []byte) (Manifest, error) {
 	errs := []error{validate.PackName(m.Slug), validate.PackVersion(m.Version),
 		text("name", m.Name, 1, 60), text("publisher", m.Publisher, 1, 100), text("description", m.Description, 0, 500)}
 
-	rt, ok := top["runtime"]
-	if !ok {
+	if rt, ok := top["runtime"]; !ok {
 		errs = append(errs, errors.New("a runtime pack needs the key runtime"))
-	} else if fields, err := object(rt, "runtime", "contract", "type", "defaultCommand", "defaultInstall"); err != nil {
+	} else if err := parseRuntime(rt, &m.Runtime); err != nil {
 		errs = append(errs, err)
-	} else {
-		for _, f := range []struct {
-			key string
-			to  *string
-		}{{"contract", &m.Runtime.Contract}, {"type", &m.Runtime.Type}, {"defaultCommand", &m.Runtime.DefaultCommand}, {"defaultInstall", &m.Runtime.DefaultInstall}} {
-			if v, ok := fields[f.key]; ok {
-				if err := json.Unmarshal(v, f.to); err != nil {
-					errs = append(errs, fmt.Errorf("runtime.%s: %w", f.key, errString))
-				}
-			}
-		}
-		if m.Runtime.Contract != RuntimeContract {
-			errs = append(errs, fmt.Errorf("the runtime contract %q is not known; this agent reads %q", m.Runtime.Contract, RuntimeContract))
-		}
-		if m.Runtime.Type != TypeApp {
-			errs = append(errs, fmt.Errorf("the runtime type %q is not known; %s has only the type %q", m.Runtime.Type, RuntimeContract, TypeApp))
-		}
-		errs = append(errs, commandLine("runtime.defaultCommand", m.Runtime.DefaultCommand, true), commandLine("runtime.defaultInstall", m.Runtime.DefaultInstall, false))
 	}
 
 	var images []json.RawMessage
@@ -197,6 +197,12 @@ func Parse(raw []byte) (Manifest, error) {
 			}
 		}
 		errs = append(errs, validate.PackImageVersion(img.Version), validate.Image(img.Ref))
+		if m.PHP() && img.Version != "" {
+			// The agent writes the php.ini file of a website for this version of PHP.
+			if err := validate.PHPVersion(img.Version); err != nil {
+				errs = append(errs, fmt.Errorf("%s.version: %w", what, err))
+			}
+		}
 		if img.Digest == "" {
 			errs = append(errs, fmt.Errorf("%s needs a digest", what))
 		} else {
@@ -217,6 +223,49 @@ func Parse(raw []byte) (Manifest, error) {
 }
 
 var errString = errors.New("the value must be a string")
+
+// parseRuntime reads and checks the runtime object of a runtime pack. The runtime contract
+// gives the keys of the object.
+func parseRuntime(raw json.RawMessage, rt *Runtime) error {
+	var probe map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &probe); err != nil || probe == nil {
+		return errors.New("runtime is not a JSON object")
+	}
+	if v, ok := probe["contract"]; ok && json.Unmarshal(v, &rt.Contract) != nil {
+		return fmt.Errorf("runtime.contract: %w", errString)
+	}
+	known, ok := runtimeKeys[rt.Contract]
+	if !ok {
+		return fmt.Errorf("the runtime contract %q is not known; this agent reads %q and %q", rt.Contract, RuntimeContract, PHPContract)
+	}
+	fields, err := object(raw, "runtime", known...)
+	if err != nil {
+		return err
+	}
+	var errs []error
+	for _, f := range []struct {
+		key string
+		to  *string
+	}{{"type", &rt.Type}, {"defaultCommand", &rt.DefaultCommand}, {"defaultInstall", &rt.DefaultInstall}, {"family", &rt.Family}} {
+		if v, ok := fields[f.key]; ok {
+			if err := json.Unmarshal(v, f.to); err != nil {
+				errs = append(errs, fmt.Errorf("runtime.%s: %w", f.key, errString))
+			}
+		}
+	}
+	switch rt.Contract {
+	case RuntimeContract:
+		if rt.Type != TypeApp {
+			errs = append(errs, fmt.Errorf("the runtime type %q is not known; %s has only the type %q", rt.Type, RuntimeContract, TypeApp))
+		}
+		errs = append(errs, commandLine("runtime.defaultCommand", rt.DefaultCommand, true), commandLine("runtime.defaultInstall", rt.DefaultInstall, false))
+	case PHPContract:
+		if err := validate.PHPRuntime(rt.Family); err != nil {
+			errs = append(errs, fmt.Errorf("runtime.family: %w", err))
+		}
+	}
+	return errors.Join(errs...)
+}
 
 // object reads a JSON object and gives its values. A key that is not in known and that does
 // not start with "x-" is an error.

@@ -48,14 +48,23 @@ func packVersions(images any) string {
 	return strings.Join(versions, ", ")
 }
 
+// packRuntime gives the lines of the runtime of a pack. A cf-runtime/1 pack has a type and
+// commands. A cf-php/1 pack adds versions of PHP to a built-in PHP runtime.
+func packRuntime(rt map[string]any) string {
+	if rt["contract"] == "cf-php/1" {
+		return fmt.Sprintf("Runtime:       %s, adds PHP versions to %s\n", cell(rt["contract"]), cell(rt["family"]))
+	}
+	return fmt.Sprintf("Runtime:       %s, type %s\nStart command: %s\nInstall:       %s\n",
+		cell(rt["contract"]), cell(rt["type"]), cell(rt["defaultCommand"]), cell(rt["defaultInstall"]))
+}
+
 func (a *app) printPack(p map[string]any) error {
 	if a.json {
 		return a.printJSON(p)
 	}
 	rt, _ := p["runtime"].(map[string]any)
-	fmt.Fprintf(a.out, "Name:          %s %s (%s)\nID:            %s\nPublisher:     %s, %s\nRuntime:       %s, type %s\nStart command: %s\nInstall:       %s\n",
-		cell(p["name"]), cell(p["version"]), cell(p["slug"]), cell(p["id"]), cell(p["publisher"]), packSigner(p["signedBy"]),
-		cell(rt["contract"]), cell(rt["type"]), cell(rt["defaultCommand"]), cell(rt["defaultInstall"]))
+	fmt.Fprintf(a.out, "Name:          %s %s (%s)\nID:            %s\nPublisher:     %s, %s\n%s",
+		cell(p["name"]), cell(p["version"]), cell(p["slug"]), cell(p["id"]), cell(p["publisher"]), packSigner(p["signedBy"]), packRuntime(rt))
 	images, _ := p["images"].([]any)
 	for _, x := range images {
 		i, _ := x.(map[string]any)
@@ -83,9 +92,8 @@ func (a *app) printPackPreview(out map[string]any) error {
 	}
 	m, _ := out["manifest"].(map[string]any)
 	rt, _ := m["runtime"].(map[string]any)
-	fmt.Fprintf(a.out, "Pack:          %s %s (%s)\nPublisher:     %s, %s\nRuntime:       %s, type %s\nStart command: %s\nInstall:       %s\n",
-		cell(m["name"]), cell(m["version"]), cell(m["slug"]), cell(m["publisher"]), packSigner(out["signedBy"]),
-		cell(rt["contract"]), cell(rt["type"]), cell(rt["defaultCommand"]), cell(rt["defaultInstall"]))
+	fmt.Fprintf(a.out, "Pack:          %s %s (%s)\nPublisher:     %s, %s\n%s",
+		cell(m["name"]), cell(m["version"]), cell(m["slug"]), cell(m["publisher"]), packSigner(out["signedBy"]), packRuntime(rt))
 	images, _ := m["images"].([]any)
 	for _, x := range images {
 		i, _ := x.(map[string]any)

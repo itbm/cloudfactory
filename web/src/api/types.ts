@@ -41,7 +41,8 @@ export type WebsiteStatus = "running" | "stopped" | "starting" | "stopping" | "f
 /** "app" is a runtime from a manifest of the agent, for example Go. It runs the start command of the website. */
 export type RuntimeKind = "frankenphp" | "apache-php-fpm" | "node" | "python" | "oci" | "static" | "app";
 
-export type PhpVersion = "8.4" | "8.5";
+/** The version of PHP of an image, for example "8.5". A PHP pack adds older versions, for example "8.2" (docs/packs.md). */
+export type PhpVersion = string;
 
 export interface Runtime {
   kind: RuntimeKind;
@@ -1295,8 +1296,12 @@ export interface UsageAlertSettings {
 
 export interface PackRef { id: string; slug: string; name: string; version: string }
 
-/** The runtime contract of a pack: cf-runtime/1 has the type "app". */
-export interface PackRuntime { contract: string; type: "app"; defaultCommand: string; defaultInstall: string }
+/**
+ * The runtime contract of a pack. "cf-runtime/1" adds a runtime of the type "app", which runs
+ * the start command of the website. "cf-php/1" adds versions of PHP to the built-in PHP runtime
+ * in "family". The keys of the other contract are empty.
+ */
+export interface PackRuntime { contract: "cf-runtime/1" | "cf-php/1" | (string & {}); type: "app" | ""; defaultCommand: string; defaultInstall: string; family: string }
 
 /** The key that signed a pack. "release" is true for the release key of Cloudfactory. */
 export interface PackSigner { name: string; fingerprint: string | null; release: boolean }
