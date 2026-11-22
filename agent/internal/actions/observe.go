@@ -187,6 +187,7 @@ func (d *Deps) FillReport(ctx context.Context, r *panel.Report) {
 		r.Runtimes = append(r.Runtimes, rt.Name)
 	}
 	r.Packs = d.PackStates()
+	r.Certificates = d.certificateStates(ctx)
 	if d.ValkeyBackups {
 		r.Features = append(r.Features, "valkey-backups")
 	}
@@ -441,6 +442,8 @@ func (d *Deps) domainStates(ctx context.Context, sites []*Site) []panel.DomainSt
 		}
 	}
 	states := make([]*panel.DomainState, len(names))
+	// The hosts that use a certificate from the panel.
+	custom := d.panelCertificateHosts(ctx)
 	next := make(chan int)
 	var wg sync.WaitGroup
 	for w := 0; w < min(domainWorkers, len(names)); w++ {
@@ -448,7 +451,7 @@ func (d *Deps) domainStates(ctx context.Context, sites []*Site) []panel.DomainSt
 		go func() {
 			defer wg.Done()
 			for i := range next {
-				st := d.domainState(ctx, names[i])
+				st := d.domainState(ctx, names[i], custom[names[i]])
 				// A check that the time limit stopped gives no reliable result.
 				if ctx.Err() == nil {
 					states[i] = &st
@@ -478,8 +481,24 @@ feed:
 // domainState checks one domain. The agent asks the edge proxy for the certificate of the
 // domain, as a browser does, and checks it with the system roots. A domain with a valid
 // certificate also points to this server, for example behind NAT.
-func (d *Deps) domainState(ctx context.Context, name string) panel.DomainState {
+//
+// panelSHA256 is the fingerprint of the certificate from the panel that the domain uses, or
+// "". The agent then checks that the edge proxy sends that certificate. The DNS is not
+// important for such a certificate.
+func (d *Deps) domainState(ctx context.Context, name, panelSHA256 string) panel.DomainState {
 	st := panel.DomainState{Name: name, DNSPointsHere: d.DNSPointsHere(ctx, name), Certificate: "pending"}
+	if panelSHA256 != "" {
+		exp, err := d.panelCertificate(ctx, name, panelSHA256)
+		switch {
+		case err != nil:
+			st.Certificate = "failed"
+		case time.Until(exp) < 0:
+			st.Certificate, st.ExpiresAt = "expired", exp.UTC().Format(time.RFC3339)
+		default:
+			st.Certificate, st.ExpiresAt = "valid", exp.UTC().Format(time.RFC3339)
+		}
+		return st
+	}
 	if exp, err := d.certificate(ctx, name); err == nil {
 		st.Certificate, st.ExpiresAt, st.DNSPointsHere = "valid", exp.UTC().Format(time.RFC3339), true
 		if time.Until(exp) < 0 {
