@@ -20,6 +20,7 @@ import { DomainsTab } from "./website/DomainsTab";
 import { FilesTab } from "./website/FilesTab";
 import { LogsTab } from "./website/LogsTab";
 import { RuntimeTab } from "./website/RuntimeTab";
+import { SecurityTab } from "./website/SecurityTab";
 import { SettingsTab } from "./website/SettingsTab";
 import { PluginActionsCard } from "../components/PluginActions";
 
@@ -33,10 +34,14 @@ const TABS = [
   ["deploys", "Deploys"],
   ["cron", "Cron"],
   ["logs", "Logs"],
+  ["security", "Security"],
   ["backups", "Backups"],
   ["access", "SFTP"],
   ["settings", "Settings"],
 ] as const;
+
+/** The tabs of a website with domains. A private website and a worker get no requests from the internet. */
+const PUBLIC_ONLY: string[] = ["domains", "security"];
 
 function UpdateBanner({ website }: { website: Website }) {
   const state = useStore();
@@ -321,7 +326,7 @@ export function WebsiteDetailPage() {
           </div>
         </div>
         {website.status === "failed" && <FailedNotice website={website} />}
-        <Tabs label="Website sections" current={tab} items={TABS.filter(([tabId]) => website.kind === "public" || tabId !== "domains").map(([tabId, label]) => ({ id: tabId, label, href: tabId === "overview" ? `/websites/${website.id}` : `/websites/${website.id}/${tabId}` }))} />
+        <Tabs label="Website sections" current={tab} items={TABS.filter(([tabId]) => website.kind === "public" || !PUBLIC_ONLY.includes(tabId)).map(([tabId, label]) => ({ id: tabId, label, href: tabId === "overview" ? `/websites/${website.id}` : `/websites/${website.id}/${tabId}` }))} />
         {website.managedByTerraform && tab !== "overview" && <div style={{ marginBottom: 20 }}><TerraformNotice resource="this website" /></div>}
         {tab === "overview" && <Overview website={website} />}
         {tab === "domains" && (website.kind === "public" ? <DomainsTab website={website} /> : (
@@ -336,6 +341,11 @@ export function WebsiteDetailPage() {
         {tab === "deploys" && <DeploysTab key={website.id} website={website} />}
         {tab === "cron" && <CronTab key={website.id} website={website} />}
         {tab === "logs" && <LogsTab key={website.id} website={website} />}
+        {tab === "security" && (website.kind === "public" ? <SecurityTab key={website.id} website={website} /> : (
+          <Empty title="No protection in the edge proxy">
+            <p>A {WEBSITE_KIND[website.kind].toLowerCase()} gets no requests from the internet, so the edge proxy does not protect it.</p>
+          </Empty>
+        ))}
         {tab === "backups" && <BackupsTab website={website} />}
         {tab === "access" && <AccessTab website={website} />}
         {tab === "settings" && <SettingsTab website={website} />}

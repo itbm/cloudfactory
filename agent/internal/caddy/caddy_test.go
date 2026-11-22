@@ -27,6 +27,8 @@ type fakeCaddy struct {
 	tls []map[string]any
 	// calls are the method and path of each request.
 	calls []string
+	// logging is the logging configuration, or nil when the configuration has none.
+	logging map[string]any
 }
 
 // object finds a route or a TLS automation policy by its @id.
@@ -58,7 +60,15 @@ func (f *fakeCaddy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		w.Write([]byte("{}"))
 	case r.Method == http.MethodPost && r.URL.Path == "/load":
+		var cfg map[string]any
+		readJSON(r, &cfg)
+		f.logging, _ = cfg["logging"].(map[string]any)
 		f.loaded = true
+	case r.Method == http.MethodGet && r.URL.Path == "/config/logging/logs/firewall":
+		logs, _ := f.logging["logs"].(map[string]any)
+		json.NewEncoder(w).Encode(logs["firewall"])
+	case r.Method == http.MethodPost && r.URL.Path == "/config/logging":
+		readJSON(r, &f.logging)
 	case r.Method == http.MethodPost && r.URL.Path == "/config/apps/http/servers/edge/routes":
 		var route map[string]any
 		b, _ := io.ReadAll(r.Body)

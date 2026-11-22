@@ -82,6 +82,18 @@ Usage:
                                                        --forget-host-key: after the Git server got a new SSH host key.
   cf deploys activate WEBSITE RELEASE_ID               Go back to a release that is on the server.
   cf deploys disconnect WEBSITE
+  cf security show WEBSITE                             The protection of the website in the edge proxy.
+  cf security firewall WEBSITE [--mode off|detect|block] [--exclude RULE_ID]... [--include RULE_ID]... [--no-exclusions]
+                               [--skip PATH]... [--no-skip]
+                                                       Use detect first, and look at the events before you select block.
+  cf security events WEBSITE [--limit N]               The last requests that the firewall blocked or detected.
+  cf security ip WEBSITE [--allow RANGE]... [--block RANGE]... [--remove RANGE]... [--no-allow] [--no-block]
+                                                       With an allow list, the edge proxy refuses all other addresses.
+  cf security sign-in-limit WEBSITE --per-minute N [--path PATH]... [--wordpress]
+                                                       POST requests to the sign-in paths from one IP address. 0 is no limit.
+  cf security protect WEBSITE PATH --user NAME         Add a user to a password-protected path, or change the password. The
+                                                       password is read from CF_PATH_PASSWORD or stdin.
+  cf security unprotect WEBSITE PATH [--user NAME]     Remove a user, or the password of the path.
   cf database-servers list [--customer ID] [--server SERVER] [--engine mariadb|postgresql|valkey]
   cf database-servers get DATABASE_SERVER
   cf database-servers create --engine mariadb|postgresql|valkey [--name NAME] [--customer ID] [--plan ID] [--server SERVER]
@@ -482,6 +494,8 @@ func (a *app) dispatch(ctx context.Context, args []string) error {
 		return a.cron(ctx, sub, rest)
 	case "deploys", "deploy":
 		return a.deploys(ctx, sub, rest)
+	case "security":
+		return a.security(ctx, sub, rest)
 	case "plugins", "plugin":
 		return a.plugins(ctx, sub, rest)
 	case "packs", "pack":

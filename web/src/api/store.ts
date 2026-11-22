@@ -14,6 +14,7 @@ import type {
   BrandFields,
   Confirmation,
   CronJob,
+  FirewallEvent,
   Customer,
   DatabaseEngine,
   DatabaseLimits,
@@ -50,6 +51,8 @@ import type {
   UpdatePolicy,
   Website,
   WebsiteKind,
+  WebsiteSecurity,
+  WebsiteSecurityChange,
   UsageAlert,
   UsageAlertSettings,
   UsageHistory,
@@ -526,6 +529,27 @@ export function removeCronJob(websiteId: string, cronJobId: string): Promise<voi
 /** Runs the command of a cron job now. The promise resolves when the command has finished. */
 export function runCronJob(websiteId: string, cronJobId: string): Promise<Job> {
   return call(() => live.request<JobAnswer>("POST", `/websites/${websiteId}/cron-jobs/${cronJobId}/run`)).then((r) => track(r.job));
+}
+
+// The protection of a website in the edge proxy
+
+type SecurityAnswer = { security: WebsiteSecurity; job: live.ApiJob | null };
+
+export function readSecurity(websiteId: string): Promise<WebsiteSecurity> {
+  return call(() => live.request<{ security: WebsiteSecurity }>("GET", `/websites/${websiteId}/security`)).then((r) => r.security);
+}
+
+/** Changes the protection. The panel saves the change at once, and a job applies it to the edge proxy. */
+export function setSecurity(websiteId: string, change: WebsiteSecurityChange): Promise<WebsiteSecurity> {
+  return call(() => live.request<SecurityAnswer>("PATCH", `/websites/${websiteId}/security`, change)).then((r) => {
+    if (r.job) void track(r.job);
+    return r.security;
+  });
+}
+
+/** The last requests that the firewall blocked or detected, the newest first. */
+export function listFirewallEvents(websiteId: string): Promise<FirewallEvent[]> {
+  return call(() => live.request<{ events: FirewallEvent[] }>("GET", `/websites/${websiteId}/security/events`)).then((r) => r.events);
 }
 
 export function readDeploy(websiteId: string): Promise<Deploy> {

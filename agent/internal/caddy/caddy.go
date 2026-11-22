@@ -79,6 +79,9 @@ type Site struct {
 	// the paths that start with it, so that more websites can have the same host. The database
 	// tool of each customer uses this (Adminer): all customers have one host.
 	Path string
+	// Security is the protection of the website: the firewall, the IP address rules, the
+	// password-protected paths and the sign-in limit (security.go). Nil is no protection.
+	Security *Security
 }
 
 // PathRoute sends the requests for some paths to a port. A path that ends with "*" is a prefix.
@@ -112,9 +115,22 @@ func (c *Client) EnsureBase(ctx context.Context) error {
 		return err
 	}
 	if status == http.StatusOK {
-		return nil
+		return c.ensureFirewallLog(ctx)
 	}
 	return c.expect(ctx, http.MethodPost, "/load", BaseConfig(), http.StatusOK)
+}
+
+// ensureFirewallLog adds the firewall log to an edge proxy whose configuration does not have
+// it: Caddy keeps the configuration of an earlier agent in its data directory.
+func (c *Client) ensureFirewallLog(ctx context.Context) error {
+	status, body, err := c.do(ctx, http.MethodGet, "/config/logging/logs/firewall", nil)
+	if err != nil {
+		return err
+	}
+	if status == http.StatusOK && !bytes.Equal(bytes.TrimSpace(body), []byte("null")) {
+		return nil
+	}
+	return c.expect(ctx, http.MethodPost, "/config/logging", BaseConfig()["logging"], http.StatusOK)
 }
 
 // BaseConfig is the configuration of a new edge proxy. It logs requests as JSON, and it
@@ -125,8 +141,11 @@ func BaseConfig() map[string]any {
 		"admin": map[string]any{"listen": "unix/" + AdminSocket},
 		"logging": map[string]any{"logs": map[string]any{
 			"access": map[string]any{"encoder": map[string]any{"format": "json"}, "include": []string{"http.log.access"}},
-			// The access log has each request one time: not also in the default log.
-			"default": map[string]any{"exclude": []string{"http.log.access"}},
+			// The firewall log has the events of the firewall of the websites (security.go).
+			"firewall": firewallLogs()["firewall"],
+			// The access log has each request one time: not also in the default log. The
+			// firewall events are only in the firewall log.
+			"default": map[string]any{"exclude": []string{"http.log.access", firewallLogger}},
 		}},
 		"apps": map[string]any{"http": map[string]any{
 			// The host firewall redirects 80 and 443 to these ports. The "edge" server listens
@@ -156,6 +175,11 @@ func (c *Client) Apply(ctx context.Context, s Site) error {
 	// start to get a certificate for a local name from its default CA.
 	if err := c.applyLocalPolicy(ctx, s); err != nil {
 		return err
+	}
+	if s.Security != nil && s.Security.firewallOn() {
+		if err := c.ensureFirewallLog(ctx); err != nil {
+			return err
+		}
 	}
 	redirect := "cf-" + s.WebsiteID + "-redirect"
 	if len(s.Redirects) > 0 {
@@ -211,11 +235,17 @@ func unknownID(body []byte) bool { return bytes.Contains(body, []byte("unknown o
 // SiteRoute is the route of the primary domain and the aliases. The route of a stopped website
 // keeps the domains, so that the edge proxy keeps their certificates.
 func SiteRoute(s Site, upstream string) map[string]any {
+	protect := s.Security.active() && !s.Stopped && s.Page == ""
 	proxy := func(port int) map[string]any {
-		return map[string]any{
+		h := map[string]any{
 			"handler":   "reverse_proxy",
 			"upstreams": []any{map[string]any{"dial": upstream + ":" + strconv.Itoa(port)}},
 		}
+		if protect && s.Security.firewallOn() {
+			// The transaction ID of the firewall is for the edge proxy only.
+			h["headers"] = map[string]any{"request": map[string]any{"delete": []string{FirewallTxHeader}}}
+		}
+		return h
 	}
 	handler := proxy(s.Port)
 	if len(s.Paths) > 0 {
@@ -239,6 +269,10 @@ func SiteRoute(s Site, upstream string) map[string]any {
 			routes = append(routes, map[string]any{"match": []any{match}, "handle": []any{handle}, "terminal": true})
 		}
 		routes = append(routes, map[string]any{"handle": []any{handler}})
+		handler = map[string]any{"handler": "subroute", "routes": routes}
+	}
+	if protect {
+		routes := append(securityRoutes(s.WebsiteID, s.Security), map[string]any{"handle": []any{handler}})
 		handler = map[string]any{"handler": "subroute", "routes": routes}
 	}
 	if s.Stopped {

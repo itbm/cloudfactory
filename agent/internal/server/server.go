@@ -199,6 +199,10 @@ func (s *Service) SetPacks(_ context.Context, r *connect.Request[agentv1.SetPack
 	return s.submit(s.Deps.SetPacks(r.Msg))
 }
 
+func (s *Service) SetWebsiteSecurity(_ context.Context, r *connect.Request[agentv1.SetWebsiteSecurityRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.SetWebsiteSecurity(r.Msg))
+}
+
 func (s *Service) SetCronJobs(_ context.Context, r *connect.Request[agentv1.SetCronJobsRequest]) (*connect.Response[agentv1.JobAccepted], error) {
 	return s.submit(s.Deps.SetCronJobs(r.Msg))
 }
@@ -316,6 +320,14 @@ func (s *Service) GetLogs(ctx context.Context, r *connect.Request[agentv1.GetLog
 		return nil, fileError(err)
 	}
 	return connect.NewResponse(&agentv1.Logs{Lines: lines}), nil
+}
+
+func (s *Service) GetFirewallEvents(ctx context.Context, r *connect.Request[agentv1.GetFirewallEventsRequest]) (*connect.Response[agentv1.FirewallEvents], error) {
+	events, err := s.Deps.FirewallEvents(ctx, r.Msg.GetWebsiteId(), int(r.Msg.GetLimit()))
+	if err != nil {
+		return nil, fileError(err)
+	}
+	return connect.NewResponse(&agentv1.FirewallEvents{Events: events}), nil
 }
 
 func (s *Service) GetStatus(ctx context.Context, _ *connect.Request[agentv1.GetStatusRequest]) (*connect.Response[agentv1.HostStatus], error) {

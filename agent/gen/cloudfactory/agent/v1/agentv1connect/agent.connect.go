@@ -162,6 +162,9 @@ const (
 	AgentServiceReceiveDatabaseServerProcedure = "/cloudfactory.agent.v1.AgentService/ReceiveDatabaseServer"
 	// AgentServiceSetPacksProcedure is the fully-qualified name of the AgentService's SetPacks RPC.
 	AgentServiceSetPacksProcedure = "/cloudfactory.agent.v1.AgentService/SetPacks"
+	// AgentServiceSetWebsiteSecurityProcedure is the fully-qualified name of the AgentService's
+	// SetWebsiteSecurity RPC.
+	AgentServiceSetWebsiteSecurityProcedure = "/cloudfactory.agent.v1.AgentService/SetWebsiteSecurity"
 	// AgentServiceGetStatusProcedure is the fully-qualified name of the AgentService's GetStatus RPC.
 	AgentServiceGetStatusProcedure = "/cloudfactory.agent.v1.AgentService/GetStatus"
 	// AgentServiceListFilesProcedure is the fully-qualified name of the AgentService's ListFiles RPC.
@@ -179,6 +182,9 @@ const (
 	AgentServiceDeleteFileProcedure = "/cloudfactory.agent.v1.AgentService/DeleteFile"
 	// AgentServiceGetLogsProcedure is the fully-qualified name of the AgentService's GetLogs RPC.
 	AgentServiceGetLogsProcedure = "/cloudfactory.agent.v1.AgentService/GetLogs"
+	// AgentServiceGetFirewallEventsProcedure is the fully-qualified name of the AgentService's
+	// GetFirewallEvents RPC.
+	AgentServiceGetFirewallEventsProcedure = "/cloudfactory.agent.v1.AgentService/GetFirewallEvents"
 )
 
 // AgentServiceClient is a client for the cloudfactory.agent.v1.AgentService service.
@@ -231,6 +237,10 @@ type AgentServiceClient interface {
 	// agent checks the signature of each pack, saves the packs, lets Podman pull the images of
 	// each pack only with a signature of its publisher, and loads the runtimes of the packs.
 	SetPacks(context.Context, *connect.Request[v1.SetPacksRequest]) (*connect.Response[v1.JobAccepted], error)
+	// Sets the protection of a website in the edge proxy: the firewall, the IP address rules,
+	// the password-protected paths and the sign-in limit (WebsiteSecurity). The agent keeps the
+	// value with the website and changes only the edge route. The container does not restart.
+	SetWebsiteSecurity(context.Context, *connect.Request[v1.SetWebsiteSecurityRequest]) (*connect.Response[v1.JobAccepted], error)
 	// Returns the actual state of the server at once. This method does not make a job.
 	GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.HostStatus], error)
 	// The file manager and the logs of a website. These methods do not make a job: they give
@@ -243,6 +253,9 @@ type AgentServiceClient interface {
 	MoveFile(context.Context, *connect.Request[v1.MoveFileRequest]) (*connect.Response[v1.FileEntry], error)
 	DeleteFile(context.Context, *connect.Request[v1.FileRequest]) (*connect.Response[v1.FileDeleted], error)
 	GetLogs(context.Context, *connect.Request[v1.GetLogsRequest]) (*connect.Response[v1.Logs], error)
+	// The last requests of a website that the firewall of the edge proxy blocked or detected.
+	// This method does not make a job.
+	GetFirewallEvents(context.Context, *connect.Request[v1.GetFirewallEventsRequest]) (*connect.Response[v1.FirewallEvents], error)
 }
 
 // NewAgentServiceClient constructs a client for the cloudfactory.agent.v1.AgentService service. By
@@ -520,6 +533,12 @@ func NewAgentServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(agentServiceMethods.ByName("SetPacks")),
 			connect.WithClientOptions(opts...),
 		),
+		setWebsiteSecurity: connect.NewClient[v1.SetWebsiteSecurityRequest, v1.JobAccepted](
+			httpClient,
+			baseURL+AgentServiceSetWebsiteSecurityProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("SetWebsiteSecurity")),
+			connect.WithClientOptions(opts...),
+		),
 		getStatus: connect.NewClient[v1.GetStatusRequest, v1.HostStatus](
 			httpClient,
 			baseURL+AgentServiceGetStatusProcedure,
@@ -566,6 +585,12 @@ func NewAgentServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			httpClient,
 			baseURL+AgentServiceGetLogsProcedure,
 			connect.WithSchema(agentServiceMethods.ByName("GetLogs")),
+			connect.WithClientOptions(opts...),
+		),
+		getFirewallEvents: connect.NewClient[v1.GetFirewallEventsRequest, v1.FirewallEvents](
+			httpClient,
+			baseURL+AgentServiceGetFirewallEventsProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("GetFirewallEvents")),
 			connect.WithClientOptions(opts...),
 		),
 	}
@@ -617,6 +642,7 @@ type agentServiceClient struct {
 	sendDatabaseServer    *connect.Client[v1.SendDatabaseServerRequest, v1.JobAccepted]
 	receiveDatabaseServer *connect.Client[v1.ReceiveDatabaseServerRequest, v1.JobAccepted]
 	setPacks              *connect.Client[v1.SetPacksRequest, v1.JobAccepted]
+	setWebsiteSecurity    *connect.Client[v1.SetWebsiteSecurityRequest, v1.JobAccepted]
 	getStatus             *connect.Client[v1.GetStatusRequest, v1.HostStatus]
 	listFiles             *connect.Client[v1.FileRequest, v1.FileList]
 	readFile              *connect.Client[v1.FileRequest, v1.FileContent]
@@ -625,6 +651,7 @@ type agentServiceClient struct {
 	moveFile              *connect.Client[v1.MoveFileRequest, v1.FileEntry]
 	deleteFile            *connect.Client[v1.FileRequest, v1.FileDeleted]
 	getLogs               *connect.Client[v1.GetLogsRequest, v1.Logs]
+	getFirewallEvents     *connect.Client[v1.GetFirewallEventsRequest, v1.FirewallEvents]
 }
 
 // CreateWebsite calls cloudfactory.agent.v1.AgentService.CreateWebsite.
@@ -847,6 +874,11 @@ func (c *agentServiceClient) SetPacks(ctx context.Context, req *connect.Request[
 	return c.setPacks.CallUnary(ctx, req)
 }
 
+// SetWebsiteSecurity calls cloudfactory.agent.v1.AgentService.SetWebsiteSecurity.
+func (c *agentServiceClient) SetWebsiteSecurity(ctx context.Context, req *connect.Request[v1.SetWebsiteSecurityRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return c.setWebsiteSecurity.CallUnary(ctx, req)
+}
+
 // GetStatus calls cloudfactory.agent.v1.AgentService.GetStatus.
 func (c *agentServiceClient) GetStatus(ctx context.Context, req *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.HostStatus], error) {
 	return c.getStatus.CallUnary(ctx, req)
@@ -885,6 +917,11 @@ func (c *agentServiceClient) DeleteFile(ctx context.Context, req *connect.Reques
 // GetLogs calls cloudfactory.agent.v1.AgentService.GetLogs.
 func (c *agentServiceClient) GetLogs(ctx context.Context, req *connect.Request[v1.GetLogsRequest]) (*connect.Response[v1.Logs], error) {
 	return c.getLogs.CallUnary(ctx, req)
+}
+
+// GetFirewallEvents calls cloudfactory.agent.v1.AgentService.GetFirewallEvents.
+func (c *agentServiceClient) GetFirewallEvents(ctx context.Context, req *connect.Request[v1.GetFirewallEventsRequest]) (*connect.Response[v1.FirewallEvents], error) {
+	return c.getFirewallEvents.CallUnary(ctx, req)
 }
 
 // AgentServiceHandler is an implementation of the cloudfactory.agent.v1.AgentService service.
@@ -937,6 +974,10 @@ type AgentServiceHandler interface {
 	// agent checks the signature of each pack, saves the packs, lets Podman pull the images of
 	// each pack only with a signature of its publisher, and loads the runtimes of the packs.
 	SetPacks(context.Context, *connect.Request[v1.SetPacksRequest]) (*connect.Response[v1.JobAccepted], error)
+	// Sets the protection of a website in the edge proxy: the firewall, the IP address rules,
+	// the password-protected paths and the sign-in limit (WebsiteSecurity). The agent keeps the
+	// value with the website and changes only the edge route. The container does not restart.
+	SetWebsiteSecurity(context.Context, *connect.Request[v1.SetWebsiteSecurityRequest]) (*connect.Response[v1.JobAccepted], error)
 	// Returns the actual state of the server at once. This method does not make a job.
 	GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.HostStatus], error)
 	// The file manager and the logs of a website. These methods do not make a job: they give
@@ -949,6 +990,9 @@ type AgentServiceHandler interface {
 	MoveFile(context.Context, *connect.Request[v1.MoveFileRequest]) (*connect.Response[v1.FileEntry], error)
 	DeleteFile(context.Context, *connect.Request[v1.FileRequest]) (*connect.Response[v1.FileDeleted], error)
 	GetLogs(context.Context, *connect.Request[v1.GetLogsRequest]) (*connect.Response[v1.Logs], error)
+	// The last requests of a website that the firewall of the edge proxy blocked or detected.
+	// This method does not make a job.
+	GetFirewallEvents(context.Context, *connect.Request[v1.GetFirewallEventsRequest]) (*connect.Response[v1.FirewallEvents], error)
 }
 
 // NewAgentServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -1222,6 +1266,12 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(agentServiceMethods.ByName("SetPacks")),
 		connect.WithHandlerOptions(opts...),
 	)
+	agentServiceSetWebsiteSecurityHandler := connect.NewUnaryHandler(
+		AgentServiceSetWebsiteSecurityProcedure,
+		svc.SetWebsiteSecurity,
+		connect.WithSchema(agentServiceMethods.ByName("SetWebsiteSecurity")),
+		connect.WithHandlerOptions(opts...),
+	)
 	agentServiceGetStatusHandler := connect.NewUnaryHandler(
 		AgentServiceGetStatusProcedure,
 		svc.GetStatus,
@@ -1268,6 +1318,12 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 		AgentServiceGetLogsProcedure,
 		svc.GetLogs,
 		connect.WithSchema(agentServiceMethods.ByName("GetLogs")),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentServiceGetFirewallEventsHandler := connect.NewUnaryHandler(
+		AgentServiceGetFirewallEventsProcedure,
+		svc.GetFirewallEvents,
+		connect.WithSchema(agentServiceMethods.ByName("GetFirewallEvents")),
 		connect.WithHandlerOptions(opts...),
 	)
 	return "/cloudfactory.agent.v1.AgentService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1360,6 +1416,8 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 			agentServiceReceiveDatabaseServerHandler.ServeHTTP(w, r)
 		case AgentServiceSetPacksProcedure:
 			agentServiceSetPacksHandler.ServeHTTP(w, r)
+		case AgentServiceSetWebsiteSecurityProcedure:
+			agentServiceSetWebsiteSecurityHandler.ServeHTTP(w, r)
 		case AgentServiceGetStatusProcedure:
 			agentServiceGetStatusHandler.ServeHTTP(w, r)
 		case AgentServiceListFilesProcedure:
@@ -1376,6 +1434,8 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 			agentServiceDeleteFileHandler.ServeHTTP(w, r)
 		case AgentServiceGetLogsProcedure:
 			agentServiceGetLogsHandler.ServeHTTP(w, r)
+		case AgentServiceGetFirewallEventsProcedure:
+			agentServiceGetFirewallEventsHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -1561,6 +1621,10 @@ func (UnimplementedAgentServiceHandler) SetPacks(context.Context, *connect.Reque
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.SetPacks is not implemented"))
 }
 
+func (UnimplementedAgentServiceHandler) SetWebsiteSecurity(context.Context, *connect.Request[v1.SetWebsiteSecurityRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.SetWebsiteSecurity is not implemented"))
+}
+
 func (UnimplementedAgentServiceHandler) GetStatus(context.Context, *connect.Request[v1.GetStatusRequest]) (*connect.Response[v1.HostStatus], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.GetStatus is not implemented"))
 }
@@ -1591,4 +1655,8 @@ func (UnimplementedAgentServiceHandler) DeleteFile(context.Context, *connect.Req
 
 func (UnimplementedAgentServiceHandler) GetLogs(context.Context, *connect.Request[v1.GetLogsRequest]) (*connect.Response[v1.Logs], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.GetLogs is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) GetFirewallEvents(context.Context, *connect.Request[v1.GetFirewallEventsRequest]) (*connect.Response[v1.FirewallEvents], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.GetFirewallEvents is not implemented"))
 }
