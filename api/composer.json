@@ -11,9 +11,11 @@
     "license": "AGPL-3.0-only",
     "require": {
         "php": "^8.4",
+        "firebase/php-jwt": "^7.0",
         "laravel/framework": "^13.17",
         "laravel/sanctum": "^4.0",
         "laravel/tinker": "^3.0",
+        "onelogin/php-saml": "^4.3",
         "web-auth/webauthn-lib": "^5.3"
     },
     "require-dev": {

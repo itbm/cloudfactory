@@ -440,6 +440,8 @@ export interface SignInMethods {
   passwordReset: boolean;
   /** Passkeys work on this domain (FR-103). */
   passkeys: boolean;
+  /** The identity providers for single sign-on. The list is empty on a domain that is not the panel domain. */
+  providers: { id: string; name: string }[];
 }
 
 export async function signInMethods(): Promise<SignInMethods> {
@@ -702,6 +704,98 @@ export async function renamePasskey(id: string, name: string): Promise<Passkey> 
 
 export async function removePasskey(id: string, password: string, totp: string): Promise<void> {
   await request<void>("DELETE", `/me/passkeys/${encodeURIComponent(id)}`, { password, totp: totp || undefined });
+}
+
+// Single sign-on with OpenID Connect and SAML
+
+/** The address that starts a sign-in with a provider. The browser goes to it, so it is not a request of fetch. */
+export const signOnUrl = (providerId: string) => `${BASE}/auth/sso/${encodeURIComponent(providerId)}`;
+
+/**
+ * Changes the ticket from the provider into a session. When TOTP is on for the user, the API
+ * asks for a code, as for a sign-in with a password.
+ */
+export async function completeSignOn(ticket: string, totp: string): Promise<void> {
+  const res = await request<{ token: string }>("POST", "/auth/sso/complete", { ticket, totp: totp || undefined, deviceId: deviceId() });
+  token = res.token;
+  writeToken(token);
+}
+
+/** A provider that the user can use, and the account of the user at the provider. */
+export interface UserIdentity {
+  providerId: string;
+  name: string;
+  protocol: "oidc" | "saml";
+  connected: boolean;
+  /** The email that the provider gave at the last sign-in. */
+  email: string | null;
+  connectedAt: string | null;
+  lastUsedAt: string | null;
+}
+
+export async function listIdentities(): Promise<UserIdentity[]> {
+  return (await request<{ data: UserIdentity[] }>("GET", "/me/identities")).data;
+}
+
+/** The first step to connect an account. The answer is the address for the browser. */
+export async function connectIdentity(providerId: string, password: string, totp: string): Promise<string> {
+  return (await request<{ url: string }>("POST", `/me/identities/${encodeURIComponent(providerId)}`, { password, totp: totp || undefined })).url;
+}
+
+export async function disconnectIdentity(providerId: string, password: string, totp: string): Promise<void> {
+  await request<void>("DELETE", `/me/identities/${encodeURIComponent(providerId)}`, { password, totp: totp || undefined });
+}
+
+/** An identity provider that an administrator added. */
+export interface IdentityProvider {
+  id: string;
+  name: string;
+  protocol: "oidc" | "saml";
+  enabled: boolean;
+  issuer: string | null;
+  clientId: string | null;
+  /** The panel does not show the client secret again. */
+  hasClientSecret: boolean;
+  entityId: string | null;
+  ssoUrl: string | null;
+  certificate: string | null;
+  certificateExpiresAt: string | null;
+  /** The panel connects an account to the user with the same verified email. */
+  linkByEmail: boolean;
+  emailDomains: string[];
+  /** The number of connected accounts. */
+  users: number;
+  createdAt: string;
+}
+
+export interface IdentityProviderInput {
+  name: string;
+  protocol?: "oidc" | "saml";
+  enabled: boolean;
+  issuer?: string;
+  clientId?: string;
+  /** Empty keeps the secret. */
+  clientSecret?: string;
+  entityId?: string;
+  ssoUrl?: string;
+  certificate?: string;
+  linkByEmail: boolean;
+  emailDomains: string[];
+}
+
+/** The values that the administrator gives to a provider. They are the same for all the providers. */
+export interface ServiceProvider {
+  /** OpenID Connect: the redirect URI. */
+  redirectUri: string;
+  /** SAML: the entity ID of the panel, which is also the address of its metadata. */
+  entityId: string;
+  /** SAML: the assertion consumer service. */
+  acsUrl: string;
+}
+
+export async function listIdentityProviders(): Promise<{ providers: IdentityProvider[]; serviceProvider: ServiceProvider }> {
+  const r = await request<{ data: IdentityProvider[]; serviceProvider: ServiceProvider }>("GET", "/identity-providers");
+  return { providers: r.data, serviceProvider: r.serviceProvider };
 }
 
 /**

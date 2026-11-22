@@ -1,16 +1,18 @@
-import { KeyRound } from "lucide-react";
+import { KeyRound, LogIn } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAction } from "../api/hooks";
-import { signInMethods, type SignInMethods } from "../api/live";
+import { signInMethods, signOnUrl, type SignInMethods } from "../api/live";
 import { signIn, signInWithPasskey } from "../api/store";
 import { BrandMark, useBrand } from "../components/Brand";
 import { Field, FormError } from "../components/ui";
+import { fragmentValue, signOnError } from "../lib/sso";
 import { passkeysSupported } from "../lib/webauthn";
 
 /**
  * Sign in with an email and a password (FR-103). The panel asks for a code from the
- * authenticator app only when the account has TOTP, and only after a correct password.
+ * authenticator app only when the account has TOTP, and only after a correct password. A
+ * passkey and the single sign-on providers are the other ways to sign in.
  */
 export function LoginPage() {
   const navigate = useNavigate();
@@ -29,6 +31,12 @@ export function LoginPage() {
   const busy = pw.busy || passkey.busy;
   // FR-103: a passkey works only on a panel domain, and only in a browser that has WebAuthn.
   const passkeys = methods?.passkeys && passkeysSupported();
+  const providers = methods?.providers ?? [];
+  // A sign-in with a provider that did not work comes back with a code in the fragment.
+  const [ssoError, setSsoError] = useState(() => signOnError(fragmentValue(location.hash, "sso-error")));
+  useEffect(() => {
+    if (location.hash) navigate({ pathname: location.pathname, search: location.search }, { replace: true, state: location.state });
+  }, [location, navigate]);
 
   return (
     <main className="login" id="main">
@@ -43,10 +51,12 @@ export function LoginPage() {
             ? <>The password is correct. Type the code from your authenticator app for <strong>{email}</strong>.</>
             : "Use your email and your password."}
         </p>
+        {ssoError && <div className="alert alert-danger" role="alert"><p>{ssoError}</p></div>}
         <FormError error={pw.error} shown={step === "start" ? ["email", "password"] : ["totp"]} />
         {step === "start" ? (
           <form noValidate onSubmit={async (e) => {
             e.preventDefault();
+            setSsoError(null);
             const r = await pw.run("");
             if (r.ok) go();
             // The password is correct and the account has TOTP: ask for the code. This is not an error.
@@ -60,12 +70,18 @@ export function LoginPage() {
             <Field label="Password" error={pw.error?.fields.password}>{(p) => <input {...p} className="input" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />}</Field>
             <button type="submit" className="btn btn-primary" style={{ width: "100%", marginTop: 16 }} disabled={busy}>{pw.busy ? "Signing in…" : "Sign in"}</button>
             {methods?.passwordReset && <div className="sign-in-links"><Link className="btn-link" to="/forgot-password" state={{ email }}>Forgot your password?</Link></div>}
-            {passkeys && <>
+            {(passkeys || providers.length > 0) && <>
               <div className="divider">or</div>
               <FormError error={passkey.error} />
-              <button type="button" className="btn" style={{ width: "100%" }} disabled={busy} onClick={async () => { pw.clear(); if ((await passkey.run()).ok) go(); }}>
-                <KeyRound size={18} aria-hidden="true" />{passkey.busy ? "Waiting for the passkey…" : "Sign in with a passkey"}
-              </button>
+              <div className="sign-in-options">
+                {passkeys && (
+                  <button type="button" className="btn" disabled={busy} onClick={async () => { pw.clear(); setSsoError(null); if ((await passkey.run()).ok) go(); }}>
+                    <KeyRound size={18} aria-hidden="true" />{passkey.busy ? "Waiting for the passkey…" : "Sign in with a passkey"}
+                  </button>
+                )}
+                {/* The browser goes to the provider, and the provider sends it back to the page /sso. */}
+                {providers.map((p) => <a key={p.id} className="btn" href={signOnUrl(p.id)}><LogIn size={18} aria-hidden="true" />Sign in with {p.name}</a>)}
+              </div>
             </>}
           </form>
         ) : (

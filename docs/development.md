@@ -74,6 +74,12 @@ domain `panel.cloudfactory.io`, so you cannot sign in with them. Add a new passk
 **Settings**. `CF_PASSKEY_LOCAL_ORIGINS` gives the other origins of `localhost` that the API
 accepts in development.
 
+Single sign-on also works on `localhost` in development, with HTTP. The providers of the
+sample data are examples: they do not work. To try single sign-on, add a provider of your own
+in **Settings > Single sign-on**, for example a Keycloak container. In development, the
+addresses of the provider can use HTTP. Register the redirect URI that the panel shows, for
+example `http://localhost:5173/api/v1/auth/sso/oidc/callback`.
+
 The sample data (`api/database/seeders/DemoSeeder.php`) has an example of each state that a
 page can show: a website that the panel could not make, a server with updates, a degraded
 server, a suspended customer, a domain that waits for its DNS record.

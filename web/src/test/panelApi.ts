@@ -57,8 +57,9 @@ export function panelApi(role: Role): PanelApi {
     if (key === "POST /auth/logout") return respond({ status: 204, body: null });
     // The brand of the sign-in page: the built-in brand, unless a test gives a different one.
     if (key === "GET /brand") return respond({ status: 200, body: { name: "Cloudfactory", colour: "#1d5fd6", logo: null, supportEmail: null, builtIn: true } });
-    // The ways to sign in of the sign-in page: the panel has an SMTP server, and passkeys work.
-    if (key === "GET /auth/methods") return respond({ status: 200, body: { passwordReset: true, passkeys: true } });
+    // The ways to sign in of the sign-in page: the panel has an SMTP server, passkeys work, and
+    // there is no single sign-on provider.
+    if (key === "GET /auth/methods") return respond({ status: 200, body: { passwordReset: true, passkeys: true, providers: [] } });
     if (answers[key]) return respond(answers[key]);
     // The usage graphs: the fixtures have no history. A test can give one with "on".
     if (method === "GET" && /^\/(websites|servers|database-servers)\/[^/]+\/usage\?range=/.test(path)) {
