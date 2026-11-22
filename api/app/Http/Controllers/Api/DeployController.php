@@ -11,7 +11,9 @@ use App\Models\GitSource;
 use App\Models\Release;
 use App\Models\Website;
 use App\Services\Audit;
+use App\Services\Deploys\PullRequest;
 use App\Services\JobDispatcher;
+use App\Services\Previews;
 use App\Services\SshKey;
 use App\Validation\Input;
 use App\Validation\InputRules;
@@ -44,6 +46,7 @@ class DeployController extends Controller
     public function update(Request $request, string $websiteId): JsonResponse
     {
         $website = $this->changeable($request, $websiteId);
+        Previews::refuseChange($website);
         $data = $request->validate([
             'repository' => ['required', 'string', Input::rule('gitRepository')],
             'branch' => ['required', 'string', Input::rule('gitBranch')],
@@ -92,7 +95,10 @@ class DeployController extends Controller
     public function destroy(Request $request, string $websiteId): JsonResponse
     {
         $website = $this->changeable($request, $websiteId);
+        Previews::refuseChange($website);
         abort_if($website->releases()->where('state', Release::BUILDING)->exists(), 409, 'A deploy is in progress. Wait until it is complete.');
+        // The previews of the pull requests go with the Git source.
+        app(Previews::class)->removeAll($website, $request);
         $website->gitSource()->delete();
         $website->releases()->delete();
         Audit::record($request, 'Disconnected Git repository', $website->name, $website->customer_id);
@@ -104,6 +110,7 @@ class DeployController extends Controller
     public function setSecret(Request $request, string $websiteId, string $name): JsonResponse
     {
         $website = $this->changeable($request, $websiteId);
+        Previews::refuseChange($website);
         $source = $this->source($website);
         if (! Input::valid('secretName', $name)) {
             throw ValidationException::withMessages(['name' => InputRules::MESSAGES['secretName']]);
@@ -124,6 +131,7 @@ class DeployController extends Controller
     public function removeSecret(Request $request, string $websiteId, string $name): JsonResponse
     {
         $website = $this->changeable($request, $websiteId);
+        Previews::refuseChange($website);
         $source = $this->source($website);
         $secrets = $source->secrets ?? [];
         abort_unless(isset($secrets[$name]), 404);
@@ -172,11 +180,23 @@ class DeployController extends Controller
      * The webhook of a website: a request with the token of the website starts a deploy. The
      * token is the only credential. A Git host sends the branch of a push as "ref", for example
      * "refs/heads/main": a push to a different branch starts no deploy.
+     *
+     * A pull request event makes, deploys or removes the preview of the pull request
+     * (App\Services\Previews). It does not need the trigger "webhook": a website can deploy
+     * its branch by hand and get previews of its pull requests.
      */
     public function hook(Request $request, string $token): JsonResponse
     {
         $source = GitSource::where('webhook_token_hash', hash('sha256', $token))->first();
-        abort_if(! $source || $source->trigger !== GitSource::WEBHOOK, 404);
+        abort_if(! $source || ($source->trigger !== GitSource::WEBHOOK && ! $source->previews), 404);
+        if ($pullRequest = PullRequest::from($request)) {
+            [$status, $answer] = app(Previews::class)->hook($source, $pullRequest, $request);
+
+            return response()->json($answer, $status);
+        }
+        if ($source->trigger !== GitSource::WEBHOOK) {
+            return response()->json(['status' => 'ignored', 'message' => 'This website deploys its branch by hand. The webhook makes only the previews of pull requests.']);
+        }
         $website = $source->website()->with(['image', 'domains', 'server', 'customer'])->firstOrFail();
         $ref = $request->input('ref');
         if (is_string($ref) && $ref !== '' && $ref !== 'refs/heads/'.$source->branch && $ref !== $source->branch) {

@@ -109,6 +109,8 @@ class JobOutcome
             DatabaseTools::jobFinished($job, $state === JobState::Succeeded);
             // The container of a plugin that the panel runs.
             Hosting::jobFinished($job, $state === JobState::Succeeded);
+            // A preview of a pull request: the first deploy after the website, or a deploy again.
+            Previews::jobFinished($job, $state === JobState::Succeeded);
             if (in_array($job->action, [AgentAction::SetDnsZones, AgentAction::DeleteDnsZones], true)) {
                 Zones::jobFinished($job, $state === JobState::Succeeded);
             }

@@ -73,6 +73,15 @@ class WebsiteResource extends JsonResource
                 'authorizedKeys' => $this->sftp_keys ?? [],
             ],
             'stagingOf' => $this->staging_of,
+            // A preview of a pull request (App\Services\Previews): the website of the Git source
+            // and the pull request. The panel removes the preview when the pull request closes.
+            'previewOf' => ($p = $this->previewOf) ? [
+                'websiteId' => $p->website_id,
+                'number' => $p->number,
+                'branch' => $p->branch,
+                'title' => $p->title,
+                'url' => $p->url,
+            ] : null,
             'managedByTerraform' => $this->managed_by_terraform,
             'createdAt' => $this->created_at?->toIso8601String(),
             'updatedAt' => $this->updated_at?->toIso8601String(),

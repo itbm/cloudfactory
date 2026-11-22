@@ -272,7 +272,7 @@ only some changes. Their data is the same as the data of `audit.recorded`.
 
 | Event | Audit action |
 | ----- | ------------ |
-| `website.created`, `website.changed`, `website.removed` | Created website, Changed website, Removed website |
+| `website.created`, `website.changed`, `website.removed` | Created website, Made preview, Changed website, Removed website, Removed preview |
 | `domain.added`, `domain.verified`, `domain.removed` | Added domain, Verified domain, Removed domain |
 | `database.created`, `database.removed` | Created database, Removed database |
 | `backup.started`, `restore.started` | Backed up website, Restored from backup |

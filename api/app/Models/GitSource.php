@@ -13,7 +13,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * webhook token and the secrets encrypted. It sends the key and the secrets to the agent with
  * each deploy job, and the agent does not keep them.
  */
-#[Fillable(['website_id', 'repository', 'branch', 'web_directory', 'trigger', 'build_commands', 'public_key', 'private_key', 'webhook_token', 'webhook_token_hash', 'secrets'])]
+#[Fillable(['website_id', 'repository', 'branch', 'web_directory', 'trigger', 'build_commands', 'public_key', 'private_key', 'webhook_token', 'webhook_token_hash', 'secrets',
+    'previews', 'preview_domain', 'preview_limit', 'preview_environment'])]
 #[Hidden(['private_key', 'webhook_token', 'webhook_token_hash', 'secrets'])]
 class GitSource extends Model
 {
@@ -30,6 +31,9 @@ class GitSource extends Model
             'private_key' => 'encrypted',
             'webhook_token' => 'encrypted',
             'secrets' => 'encrypted:array',
+            'previews' => 'boolean',
+            'preview_limit' => 'integer',
+            'preview_environment' => 'boolean',
         ];
     }
 

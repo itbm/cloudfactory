@@ -84,7 +84,7 @@ class DemoTest extends TestCase
         $this->seed(DemoSeeder::class);
 
         $this->signInAs('admin@example.com');
-        $this->getJson('/api/v1/websites?perPage=100')->assertOk()->assertJsonCount(14, 'data');
+        $this->getJson('/api/v1/websites?perPage=100')->assertOk()->assertJsonCount(15, 'data');
         $this->getJson('/api/v1/servers')->assertOk()->assertJsonCount(4, 'data');
         $this->getJson('/api/v1/mail/domains')->assertOk()->assertJsonCount(4, 'data');
 
@@ -102,7 +102,8 @@ class DemoTest extends TestCase
         $this->getJson('/api/v1/mail/mailboxes')->assertOk()->assertJsonCount(4, 'data');
         $this->getJson('/api/v1/mail/aliases')->assertOk()->assertJsonCount(2, 'data');
         $names = $this->getJson('/api/v1/websites?perPage=100')->assertOk()->json('data.*.name');
-        $this->assertCount(8, $names);
+        // The websites of Acme and the preview of a pull request of its API.
+        $this->assertCount(9, $names);
         $this->assertSame(['orders-1c16.internal', 'queue-00b1.internal'], array_values(array_filter($names, fn ($n) => ! str_ends_with($n, 'acme.example.com'))));
     }
 
