@@ -20,8 +20,9 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'customer_id', 'name', 'serial', 'status', 'delegation', 'delegation_name_servers', 'delegation_checked_at',
     'dnssec', 'dnssec_key', 'dnssec_key_tag', 'dnssec_public_key', 'sync',
     'dns_account_id', 'provider_state', 'handover', 'handover_ends_at',
+    'transfer_addresses', 'transfer_notify', 'transfer_tsig_algorithm', 'transfer_tsig_secret', 'transfer_name_servers',
 ])]
-#[Hidden(['dnssec_key'])]
+#[Hidden(['dnssec_key', 'transfer_tsig_secret'])]
 class DnsZone extends Model
 {
     use HasUlids;
@@ -56,7 +57,18 @@ class DnsZone extends Model
             'provider_state' => 'array',
             'handover' => 'boolean',
             'handover_ends_at' => 'datetime',
+            // The secondaries of the owner of the zone (App\Services\Dns\Secondaries).
+            'transfer_addresses' => 'array',
+            'transfer_notify' => 'boolean',
+            'transfer_tsig_secret' => 'encrypted',
+            'transfer_name_servers' => 'array',
         ];
+    }
+
+    /** The name of the TSIG key of the transfers of the zone. */
+    public function transferKeyName(): string
+    {
+        return 'transfer.'.$this->name;
     }
 
     /** The account at the external DNS provider of the zone, or null for the DNS servers of the panel. */

@@ -138,6 +138,12 @@ final class InputRules
     /** One public key in the format of authorized_keys, with no options. */
     public const SSH_KEY = '/^(?=[\\s\\S]{0,8192}\\z)(?:^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp256|ecdsa-sha2-nistp384|ecdsa-sha2-nistp521|sk-ssh-ed25519@openssh\\.com|sk-ecdsa-sha2-nistp256@openssh\\.com) [A-Za-z0-9+\\/]+={0,3}( [ -~]{0,200})?$)/D';
 
+    /** The name of a TSIG key (RFC 8945) for zone transfers: a DNS name in lower case, with no dot at the end. Both servers of a transfer use the same name. */
+    public const TSIG_NAME = '/^(?=[\\s\\S]{0,253}\\z)(?:^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$)/D';
+
+    /** The secret of a TSIG key in base64: 16 to 64 bytes. The panel makes it, or the administrator copies it from the secondary DNS service. */
+    public const TSIG_SECRET = '/^(?=[\\s\\S]{0,88}\\z)(?:^([A-Za-z0-9+\\/]{4}){5,21}([A-Za-z0-9+\\/]{2}==|[A-Za-z0-9+\\/]{3}=)?$)/D';
+
     /** The Unix user of a website, for example "acme_x7k2". */
     public const UNIX_USER = '/^(?:^[a-z][a-z0-9]{0,15}_[a-z0-9]{4}$)/D';
 
@@ -189,6 +195,8 @@ final class InputRules
         'secretValue' => self::SECRET_VALUE,
         'sha256' => self::SHA256,
         'sshKey' => self::SSH_KEY,
+        'tsigName' => self::TSIG_NAME,
+        'tsigSecret' => self::TSIG_SECRET,
         'unixUser' => self::UNIX_USER,
         'version' => self::VERSION,
     ];
@@ -238,6 +246,8 @@ final class InputRules
         'secretValue' => 'Enter a value of 1 to 4096 characters on one line.',
         'sha256' => 'Enter 64 hexadecimal digits in lower case.',
         'sshKey' => 'Enter one public SSH key on one line, for example: ssh-ed25519 AAAA... name. Do not put options before the key.',
+        'tsigName' => 'Enter a key name in lower-case letters, digits, "-" and ".", for example cf-transfer.example.net.',
+        'tsigSecret' => 'Enter the secret in base64, with 16 to 64 bytes.',
         'unixUser' => 'Use a name such as acme_x7k2: a letter, at most 15 letters or digits, an underscore, and 4 letters or digits.',
         'version' => 'Enter a version, for example 0.1.0.',
     ];
@@ -253,6 +263,9 @@ final class InputRules
 
     /** The names of the built-in runtimes, the image families and the database engines. A pack cannot have one of these names. */
     public const RESERVED_RUNTIME_NAMES = ['frankenphp', 'apache-php-fpm', 'node', 'python', 'custom', 'static', 'edge', 'mail', 'dns', 'database', 'mariadb', 'postgresql', 'valkey'];
+
+    /** The algorithms of a TSIG key for zone transfers. */
+    public const TSIG_ALGORITHMS = ['hmac-sha256', 'hmac-sha512'];
 
     /** The largest number of build commands of a deploy. */
     public const MAX_BUILD_COMMANDS = 10;
@@ -272,8 +285,14 @@ final class InputRules
     /** The largest number of records in a DNS zone. */
     public const MAX_DNS_RECORDS_PER_ZONE = 1000;
 
+    /** The largest number of secondary DNS servers of the panel. */
+    public const MAX_DNS_SECONDARIES = 10;
+
     /** The smallest TTL of a DNS record, in seconds. */
     public const MIN_DNS_SHORT_TTL = 60;
+
+    /** The largest number of addresses of one secondary DNS server, or of the zone transfers of one zone. */
+    public const MAX_DNS_TRANSFER_ADDRESSES = 10;
 
     /** The largest TTL of a DNS record, in seconds. */
     public const MAX_DNS_TTL = 604800;

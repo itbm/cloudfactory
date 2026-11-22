@@ -9,6 +9,7 @@ import { Card, Empty, Field, FormError, JobError, Modal, PageHeader, RowMenu, St
 import { relativeTime } from "../lib/format";
 import { DNS_DELEGATION, DNS_RECORD_TYPES, DNS_ZONE_STATUS, jobActive, ttlText } from "../lib/labels";
 import { AccountsCard, delegationText, DNSSEC_ALGORITHMS, DS_DIGESTS, MoveDialog, ProviderCard, usableAccounts } from "./DnsProviders";
+import { SecondariesCard, TransfersCard } from "./DnsTransfers";
 import { CopyField } from "./website/AccessTab";
 
 /**
@@ -153,6 +154,8 @@ function ZoneList() {
           </Card>
 
           <AccountsCard />
+
+          <SecondariesCard />
 
           {available && (
             <Card title="Name servers of this panel">
@@ -470,6 +473,8 @@ function ZonePage({ id }: { id: string }) {
             </div>
           </Card>
         </div>
+
+        <TransfersCard zone={zone} locked={locked} />
 
         <Card
           className="mt"

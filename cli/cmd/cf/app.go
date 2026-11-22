@@ -162,6 +162,25 @@ Usage:
   cf dns accounts set ACCOUNT [--name NAME] [--set FIELD=VALUE]... [--credentials]
                                                        --credentials sends the secrets from their environment variables again.
   cf dns accounts remove ACCOUNT                       Only an account that no zone uses.
+  cf dns transfers ZONE                                The zone transfers to your own secondary DNS servers.
+  cf dns transfers ZONE set [--address IP]... [--name-server HOST]... [--no-name-servers] [--notify=false]
+                         [--tsig=false] [--algorithm hmac-sha256|hmac-sha512] [--own-secret] [--new-secret]
+                                                       Let your secondary DNS servers copy the zone. A flag that you do not
+                                                       give keeps its value. --own-secret reads the secret from
+                                                       CF_TSIG_SECRET or stdin. With none, the panel makes the secret.
+  cf dns transfers ZONE stop                           Your secondaries cannot copy the zone after this.
+  cf dns transfers ZONE secret                         The TSIG key with its secret. The audit log records it.
+  cf dns secondaries list                              The secondary DNS servers of the panel (administrators only). They copy
+                                                       all zones. It also shows the addresses to copy from.
+  cf dns secondaries add NAME --address IP... [--name-server HOST] [--notify=false] [--catalog]
+                         [--tsig=false] [--algorithm ALGORITHM] [--key-name NAME] [--own-secret]
+                                                       With --name-server, each zone gets an NS record for the secondary.
+                                                       With --catalog, it also copies the catalog zone and finds new zones.
+  cf dns secondaries set SECONDARY [--name NAME] [--address IP]... [--name-server HOST | --no-name-server]
+                         [--notify=BOOL] [--catalog=BOOL] [--tsig=BOOL] [--algorithm ALGORITHM] [--key-name NAME]
+                         [--own-secret | --new-secret]
+  cf dns secondaries remove SECONDARY                  Before this, remove its name server at the registrar of each domain.
+  cf dns secondaries secret SECONDARY                  The TSIG key with its secret, also in the format of BIND.
   cf networks list [--customer ID]                     The private networks. Each customer has the network "default".
   cf networks create NAME [--customer ID] [--website WEBSITE]... [--database-server DATABASE_SERVER]...
                                                        The plan of the customer gives the number of named networks.

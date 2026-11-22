@@ -76,6 +76,8 @@ const (
 	opDnsLoad   = "dns.load"
 	opDnsRemove = "dns.remove"
 	opDnsStatus = "dns.status"
+	// opDnsSecondaries sets the secondary DNS servers of the panel.
+	opDnsSecondaries = "dns.secondaries"
 
 	opDBPrepare      = "db.prepare"
 	opDBRemoveData   = "db.removeData"
@@ -553,6 +555,7 @@ func (d *Deps) RootOps() map[string]gate.Handler {
 		opDnsStatus: gate.Op(func(ctx context.Context, _ gate.None) (dnsStatusOut, error) {
 			return d.dnsStatus(ctx), nil
 		}),
+		opDnsSecondaries: none(func(ctx context.Context, in dnsSecondariesIn) error { return d.writeDnsSecondaries(ctx, in) }),
 
 		// The database containers: their directories, disks and secrets, and the firewall.
 		opDBPrepare: gate.Op(func(ctx context.Context, in serverIn) (bool, error) {

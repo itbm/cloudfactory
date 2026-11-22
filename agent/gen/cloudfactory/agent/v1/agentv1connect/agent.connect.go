@@ -136,6 +136,9 @@ const (
 	// AgentServiceDeleteDnsZonesProcedure is the fully-qualified name of the AgentService's
 	// DeleteDnsZones RPC.
 	AgentServiceDeleteDnsZonesProcedure = "/cloudfactory.agent.v1.AgentService/DeleteDnsZones"
+	// AgentServiceSetDnsSecondariesProcedure is the fully-qualified name of the AgentService's
+	// SetDnsSecondaries RPC.
+	AgentServiceSetDnsSecondariesProcedure = "/cloudfactory.agent.v1.AgentService/SetDnsSecondaries"
 	// AgentServiceSetCronJobsProcedure is the fully-qualified name of the AgentService's SetCronJobs
 	// RPC.
 	AgentServiceSetCronJobsProcedure = "/cloudfactory.agent.v1.AgentService/SetCronJobs"
@@ -218,6 +221,7 @@ type AgentServiceClient interface {
 	DeleteMailAlias(context.Context, *connect.Request[v1.MailAddressRequest]) (*connect.Response[v1.JobAccepted], error)
 	SetDnsZones(context.Context, *connect.Request[v1.SetDnsZonesRequest]) (*connect.Response[v1.JobAccepted], error)
 	DeleteDnsZones(context.Context, *connect.Request[v1.DeleteDnsZonesRequest]) (*connect.Response[v1.JobAccepted], error)
+	SetDnsSecondaries(context.Context, *connect.Request[v1.SetDnsSecondariesRequest]) (*connect.Response[v1.JobAccepted], error)
 	SetCronJobs(context.Context, *connect.Request[v1.SetCronJobsRequest]) (*connect.Response[v1.JobAccepted], error)
 	RunCronJob(context.Context, *connect.Request[v1.RunCronJobRequest]) (*connect.Response[v1.JobAccepted], error)
 	Deploy(context.Context, *connect.Request[v1.DeployRequest]) (*connect.Response[v1.JobAccepted], error)
@@ -460,6 +464,12 @@ func NewAgentServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(agentServiceMethods.ByName("DeleteDnsZones")),
 			connect.WithClientOptions(opts...),
 		),
+		setDnsSecondaries: connect.NewClient[v1.SetDnsSecondariesRequest, v1.JobAccepted](
+			httpClient,
+			baseURL+AgentServiceSetDnsSecondariesProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("SetDnsSecondaries")),
+			connect.WithClientOptions(opts...),
+		),
 		setCronJobs: connect.NewClient[v1.SetCronJobsRequest, v1.JobAccepted](
 			httpClient,
 			baseURL+AgentServiceSetCronJobsProcedure,
@@ -607,6 +617,7 @@ type agentServiceClient struct {
 	deleteMailAlias       *connect.Client[v1.MailAddressRequest, v1.JobAccepted]
 	setDnsZones           *connect.Client[v1.SetDnsZonesRequest, v1.JobAccepted]
 	deleteDnsZones        *connect.Client[v1.DeleteDnsZonesRequest, v1.JobAccepted]
+	setDnsSecondaries     *connect.Client[v1.SetDnsSecondariesRequest, v1.JobAccepted]
 	setCronJobs           *connect.Client[v1.SetCronJobsRequest, v1.JobAccepted]
 	runCronJob            *connect.Client[v1.RunCronJobRequest, v1.JobAccepted]
 	deploy                *connect.Client[v1.DeployRequest, v1.JobAccepted]
@@ -797,6 +808,11 @@ func (c *agentServiceClient) DeleteDnsZones(ctx context.Context, req *connect.Re
 	return c.deleteDnsZones.CallUnary(ctx, req)
 }
 
+// SetDnsSecondaries calls cloudfactory.agent.v1.AgentService.SetDnsSecondaries.
+func (c *agentServiceClient) SetDnsSecondaries(ctx context.Context, req *connect.Request[v1.SetDnsSecondariesRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return c.setDnsSecondaries.CallUnary(ctx, req)
+}
+
 // SetCronJobs calls cloudfactory.agent.v1.AgentService.SetCronJobs.
 func (c *agentServiceClient) SetCronJobs(ctx context.Context, req *connect.Request[v1.SetCronJobsRequest]) (*connect.Response[v1.JobAccepted], error) {
 	return c.setCronJobs.CallUnary(ctx, req)
@@ -924,6 +940,7 @@ type AgentServiceHandler interface {
 	DeleteMailAlias(context.Context, *connect.Request[v1.MailAddressRequest]) (*connect.Response[v1.JobAccepted], error)
 	SetDnsZones(context.Context, *connect.Request[v1.SetDnsZonesRequest]) (*connect.Response[v1.JobAccepted], error)
 	DeleteDnsZones(context.Context, *connect.Request[v1.DeleteDnsZonesRequest]) (*connect.Response[v1.JobAccepted], error)
+	SetDnsSecondaries(context.Context, *connect.Request[v1.SetDnsSecondariesRequest]) (*connect.Response[v1.JobAccepted], error)
 	SetCronJobs(context.Context, *connect.Request[v1.SetCronJobsRequest]) (*connect.Response[v1.JobAccepted], error)
 	RunCronJob(context.Context, *connect.Request[v1.RunCronJobRequest]) (*connect.Response[v1.JobAccepted], error)
 	Deploy(context.Context, *connect.Request[v1.DeployRequest]) (*connect.Response[v1.JobAccepted], error)
@@ -1162,6 +1179,12 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(agentServiceMethods.ByName("DeleteDnsZones")),
 		connect.WithHandlerOptions(opts...),
 	)
+	agentServiceSetDnsSecondariesHandler := connect.NewUnaryHandler(
+		AgentServiceSetDnsSecondariesProcedure,
+		svc.SetDnsSecondaries,
+		connect.WithSchema(agentServiceMethods.ByName("SetDnsSecondaries")),
+		connect.WithHandlerOptions(opts...),
+	)
 	agentServiceSetCronJobsHandler := connect.NewUnaryHandler(
 		AgentServiceSetCronJobsProcedure,
 		svc.SetCronJobs,
@@ -1340,6 +1363,8 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 			agentServiceSetDnsZonesHandler.ServeHTTP(w, r)
 		case AgentServiceDeleteDnsZonesProcedure:
 			agentServiceDeleteDnsZonesHandler.ServeHTTP(w, r)
+		case AgentServiceSetDnsSecondariesProcedure:
+			agentServiceSetDnsSecondariesHandler.ServeHTTP(w, r)
 		case AgentServiceSetCronJobsProcedure:
 			agentServiceSetCronJobsHandler.ServeHTTP(w, r)
 		case AgentServiceRunCronJobProcedure:
@@ -1519,6 +1544,10 @@ func (UnimplementedAgentServiceHandler) SetDnsZones(context.Context, *connect.Re
 
 func (UnimplementedAgentServiceHandler) DeleteDnsZones(context.Context, *connect.Request[v1.DeleteDnsZonesRequest]) (*connect.Response[v1.JobAccepted], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.DeleteDnsZones is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) SetDnsSecondaries(context.Context, *connect.Request[v1.SetDnsSecondariesRequest]) (*connect.Response[v1.JobAccepted], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.SetDnsSecondaries is not implemented"))
 }
 
 func (UnimplementedAgentServiceHandler) SetCronJobs(context.Context, *connect.Request[v1.SetCronJobsRequest]) (*connect.Response[v1.JobAccepted], error) {

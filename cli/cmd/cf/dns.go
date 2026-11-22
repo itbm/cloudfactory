@@ -90,6 +90,7 @@ func (a *app) printZone(zone map[string]any) {
 		ds, _ := d["ds"].(map[string]any)
 		fmt.Fprintf(a.out, "DS record:     %s\n", cell(ds["record"]))
 	}
+	a.printTransfers(zone)
 	if d, _ := zone["delegation"].(map[string]any); d["state"] != "here" {
 		fmt.Fprintln(a.out, "Give the name servers to the registrar of the domain. Then run: cf dns check "+cell(zone["name"]))
 	}
@@ -200,6 +201,8 @@ func (a *app) dns(ctx context.Context, sub string, args []string) error {
 		return a.changeZone(ctx, http.MethodPost, "/dns-zones", body)
 	case "accounts":
 		return a.dnsAccountsCommand(ctx, args)
+	case "secondaries":
+		return a.dnsSecondariesCommand(ctx, args)
 	}
 	if err := need(args, 1, "a DNS zone"); err != nil {
 		return err
@@ -321,6 +324,8 @@ func (a *app) dns(ctx context.Context, sub string, args []string) error {
 		return nil
 	case "sync":
 		return a.changeZone(ctx, http.MethodPost, path+"/sync", nil)
+	case "transfers":
+		return a.dnsTransfers(ctx, zone, path, rest)
 	case "import":
 		return a.importZone(ctx, zone, path, rest)
 	case "export":

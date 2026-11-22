@@ -2094,6 +2094,197 @@ paths:
         '422': { $ref: '#/components/responses/Invalid' }
         '429': { description: Too many DNS changes in one minute. }
 
+  /v1/dns-zones/{id}/transfers:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    put:
+      tags: [DNS]
+      summary: Send a DNS zone to your own secondary DNS servers
+      description: >-
+        Your secondary DNS servers copy the zone from the DNS servers of the panel with zone
+        transfers (AXFR and IXFR). The panel never copies a zone from a different server.
+
+
+        - `addresses` are the addresses of your secondary DNS servers. Only these addresses can
+          copy the zone. They must be public addresses.
+
+        - Configure your secondary DNS servers to copy the zone from the addresses in
+          `zone.transfers.primaries`.
+
+        - With `tsig` (the default), a TSIG key signs the transfers. The key has the name
+          `transfer.` and the name of the zone. The panel makes the secret, or keeps the secret
+          that you give in `secret`. Get the secret from `/transfers/secret`.
+
+        - With `notify` (the default), the DNS servers send NOTIFY to your secondaries after each
+          change, so that they copy the change at once.
+
+        - `nameServers` are the host names of your secondaries. The zone gets an NS record for
+          each one. Give them to the registrar too.
+
+
+        A zone at an external DNS provider has no zone transfers from the panel.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [addresses]
+              properties:
+                addresses: { type: array, minItems: 1, maxItems: 10, items: { type: string }, description: IPv4 or IPv6 addresses. }
+                notify: { type: boolean, default: true }
+                nameServers: { type: array, maxItems: 4, items: { type: string } }
+                tsig: { type: boolean, default: true }
+                algorithm: { type: string, enum: [hmac-sha256, hmac-sha512], default: hmac-sha256 }
+                secret: { type: [string, 'null'], description: A TSIG secret in base64, with 16 to 64 bytes. Default: the current secret, or a new secret. }
+                newSecret: { type: boolean, default: false, description: Make a new secret. Then give the new secret to your secondaries. }
+      responses:
+        '202': { $ref: '#/components/responses/DnsZoneJobs' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+        '429': { description: Too many DNS changes in one minute. }
+    delete:
+      tags: [DNS]
+      summary: Stop the zone transfers to your own secondary DNS servers
+      description: The zone loses the NS records of your secondaries. `jobs` is empty when the zone had no transfers.
+      responses:
+        '202': { $ref: '#/components/responses/DnsZoneJobs' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { description: Too many DNS changes in one minute. }
+
+  /v1/dns-zones/{id}/transfers/secret:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    get:
+      tags: [DNS]
+      summary: Get the TSIG key of the zone transfers
+      description: The audit log records each request. The limit is 10 requests in one minute.
+      responses:
+        '200':
+          description: The TSIG key.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TsigKey' }
+        '404': { description: The zone does not exist, or its transfers have no TSIG key. }
+        '429': { description: Too many requests in one minute. }
+
+  /v1/dns-secondaries:
+    get:
+      tags: [DNS]
+      summary: List the secondary DNS servers of the panel
+      description: >-
+        Administrators only. A secondary DNS server of the panel copies all zones on the DNS
+        servers of the panel with zone transfers. `primaries` has the addresses of the DNS
+        servers of the panel: configure each secondary to copy the zones from them. `servers`
+        tells if each DNS server of the panel has the current list.
+      responses:
+        '200':
+          description: The secondaries.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/DnsSecondary' } }
+                  catalogZone: { type: string, description: 'The name of the catalog zone (RFC 9432). A secondary with `catalog` copies it, and finds each zone in it.' }
+                  primaries: { type: array, items: { type: object, properties: { nameServer: { type: string }, addresses: { type: array, items: { type: string } } } } }
+                  servers: { type: array, items: { type: object, properties: { server: { type: string }, state: { type: string, enum: [ok, pending, failed] } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [DNS]
+      summary: Add a secondary DNS server
+      description: >-
+        Administrators only. Each DNS server of the panel gets the new list in a job. The panel
+        has at most 10 secondaries.
+
+
+        - `addresses` can copy the zones, and get NOTIFY when `notify` is true. A private
+          address is permitted, for example of a secondary in the same private network.
+
+        - With `nameServer`, each zone on the DNS servers of the panel gets an NS record for the
+          secondary. The DNS servers then get all zones again.
+
+        - A new secondary has a TSIG key unless `tsig` is false. The panel makes the key name
+          and the secret, or keeps the values that you give. A key name cannot start with
+          `transfer.`.
+
+        - With `catalog`, the secondary also copies the catalog zone. When the catalog zone
+          starts or stops, each DNS server of the panel restarts. It does not answer for a
+          short time.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DnsSecondaryInput' }
+      responses:
+        '202':
+          description: The secondary, and the jobs of the DNS servers.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DnsSecondaryJobs' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Invalid' }
+        '429': { description: Too many DNS changes in one minute. }
+
+  /v1/dns-secondaries/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    patch:
+      tags: [DNS]
+      summary: Change a secondary DNS server
+      description: >-
+        Administrators only. A field that the request does not have keeps its value. A new
+        algorithm, or `newSecret`, gives a new secret. The answer is 200 with no jobs when
+        nothing changed.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DnsSecondaryInput' }
+      responses:
+        '200':
+          description: Nothing changed.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DnsSecondaryJobs' }
+        '202':
+          description: The secondary, and the jobs of the DNS servers.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DnsSecondaryJobs' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+    delete:
+      tags: [DNS]
+      summary: Remove a secondary DNS server
+      description: Administrators only. The DNS servers of the panel stop the transfers to the secondary.
+      responses:
+        '202':
+          description: The jobs of the DNS servers.
+          content:
+            application/json:
+              schema: { type: object, properties: { jobs: { type: array, items: { $ref: '#/components/schemas/Job' } } } }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/dns-secondaries/{id}/secret:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    get:
+      tags: [DNS]
+      summary: Get the TSIG key of a secondary DNS server
+      description: Administrators only. The audit log records each request. The limit is 10 requests in one minute.
+      responses:
+        '200':
+          description: The TSIG key.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TsigKey' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { description: The secondary does not exist, or it has no TSIG key. }
+        '429': { description: Too many requests in one minute. }
+
   /v1/dns-accounts:
     get:
       tags: [DNS]
@@ -5586,7 +5777,7 @@ components:
             did not take the last change. Send the zone again (`/sync`).
         serial: { type: integer, description: The serial of the zone. It is the time of the last change, in seconds. A signed zone has a serial that the DNS server makes. }
         recordCount: { type: integer }
-        nameServers: { type: array, items: { type: string }, description: 'The host names of the name servers for the registrar of the domain: of the panel, or of the external DNS provider of the zone. Empty until the provider gives them.' }
+        nameServers: { type: array, items: { type: string }, description: 'The host names of the name servers for the registrar of the domain: of the panel and of its secondary DNS servers, or of the external DNS provider of the zone. Empty until the provider gives them.' }
         provider:
           type: [object, 'null']
           description: The external DNS provider of the zone. Null for a zone on the DNS servers of the panel.
@@ -5646,6 +5837,19 @@ components:
                 digest: { type: string }
                 record: { type: string, description: 'The full record, for example `example.com. IN DS 22976 13 2 3A81…`.' }
             dnskey: { type: [string, 'null'], description: The DNSKEY record. Some registrars ask for it and not for the DS record. }
+        transfers:
+          type: [object, 'null']
+          description: The zone transfers to the secondary DNS servers of the owner of the zone (`/transfers`). Null for a zone at an external DNS provider.
+          properties:
+            addresses: { type: array, items: { type: string }, description: Empty when the zone has no transfers. }
+            notify: { type: boolean }
+            nameServers: { type: array, items: { type: string } }
+            tsig:
+              type: [object, 'null']
+              properties:
+                name: { type: string }
+                algorithm: { type: string }
+            primaries: { type: array, items: { type: string }, description: The addresses of the DNS servers of the panel. The secondaries copy the zone from these addresses. }
         servers:
           type: array
           description: The state of the zone on each DNS server of the panel. Empty for a zone at an external DNS provider, after its handover time.
@@ -5657,6 +5861,46 @@ components:
         websites: { type: integer, description: The number of websites of the customer that have a domain in the zone. }
         createdAt: { type: string, format: date-time }
         records: { type: array, items: { $ref: '#/components/schemas/DnsRecord' }, description: Only in the answer for one zone. }
+    DnsSecondary:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        addresses: { type: array, items: { type: string } }
+        nameServer: { type: [string, 'null'], description: The host name of the secondary. Each zone on the DNS servers of the panel has an NS record for it. }
+        tsig:
+          type: [object, 'null']
+          description: The TSIG key that signs the transfers, with no secret. Null when the transfers have no key.
+          properties:
+            name: { type: string }
+            algorithm: { type: string, enum: [hmac-sha256, hmac-sha512] }
+        notify: { type: boolean }
+        catalog: { type: boolean, description: True when the secondary also copies the catalog zone. }
+        createdAt: { type: string, format: date-time }
+    DnsSecondaryInput:
+      type: object
+      properties:
+        name: { type: string, maxLength: 60, description: Required for a new secondary. }
+        addresses: { type: array, minItems: 1, maxItems: 10, items: { type: string }, description: Required for a new secondary. }
+        nameServer: { type: [string, 'null'] }
+        tsig: { type: boolean, description: 'Default: true for a new secondary.' }
+        keyName: { type: [string, 'null'], description: 'Default: the current name, or a new name such as `cf-01jd…`.' }
+        algorithm: { type: string, enum: [hmac-sha256, hmac-sha512] }
+        secret: { type: [string, 'null'], description: A TSIG secret in base64, with 16 to 64 bytes. }
+        newSecret: { type: boolean }
+        notify: { type: boolean, description: 'Default: true for a new secondary.' }
+        catalog: { type: boolean, description: 'Default: false for a new secondary.' }
+    DnsSecondaryJobs:
+      type: object
+      properties:
+        secondary: { $ref: '#/components/schemas/DnsSecondary' }
+        jobs: { type: array, items: { $ref: '#/components/schemas/Job' } }
+    TsigKey:
+      type: object
+      properties:
+        name: { type: string }
+        algorithm: { type: string, enum: [hmac-sha256, hmac-sha512] }
+        secret: { type: string, description: The secret in base64. }
     DnsAccount:
       type: object
       properties:

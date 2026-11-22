@@ -87,7 +87,7 @@ class DnsTest extends TestCase
                     ['name' => '@', 'type' => 'NS', 'ttl' => 3600, 'value' => self::NS[0], 'priority' => 0],
                     ['name' => '@', 'type' => 'NS', 'ttl' => 3600, 'value' => self::NS[1], 'priority' => 0],
                 ],
-                'dnssecKey' => '', 'dnssecKeyTag' => 0,
+                'dnssecKey' => '', 'dnssecKeyTag' => 0, 'transfers' => null,
             ]], $job->payload['zones']);
         }
 

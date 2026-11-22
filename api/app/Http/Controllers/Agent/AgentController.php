@@ -13,6 +13,7 @@ use App\Models\DatabaseServer;
 use App\Models\Domain;
 use App\Models\Mailbox;
 use App\Models\Server;
+use App\Services\Dns\Secondaries;
 use App\Services\Dns\Zones;
 use App\Services\JobOutcome;
 use App\Services\Mesh;
@@ -145,6 +146,8 @@ class AgentController extends Controller
             'dnsZones' => ['nullable', 'array', 'max:100000'],
             'dnsZones.*.name' => ['required', 'string', 'max:253'],
             'dnsZones.*.serial' => ['required', 'integer', 'min:0', 'max:4294967295'],
+            // The version of the list of the secondary DNS servers that the DNS server has.
+            'dnsSecondaries' => ['nullable', 'integer', 'min:0'],
             // Spec section 10: the port of the SFTP container. An agent of release 0.1 does not send it.
             'sftpPort' => ['nullable', 'integer', 'between:1,65535'],
             // The certificate of the panel domain. Only the agent on the panel server sends it.
@@ -242,6 +245,8 @@ class AgentController extends Controller
         }
         if (is_array($data['dnsZones'] ?? null)) {
             app(Zones::class)->reconcile($server->fresh(), $data['dnsZones']);
+            // The server gets the list of the secondary DNS servers when it has a different version.
+            app(Secondaries::class)->reconcile($server->fresh(), (int) ($data['dnsSecondaries'] ?? 0));
         }
         // The mesh: the public key of the server and the state of its tunnels.
         if (isset($data['mesh'])) {

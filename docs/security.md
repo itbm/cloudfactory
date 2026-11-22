@@ -320,6 +320,32 @@ The product specification, section 6.4, gives the requirements.
   checked, does not follow redirects, and needs HTTPS. Do the same in a plugin that connects to
   an address from a user.
 
+### Zone transfers to secondary DNS servers
+
+- A DNS server of the panel gives a zone transfer only to an address in the list of the
+  secondaries of the zone. A TSIG key signs the transfer and the NOTIFY messages, unless the
+  user turns off the key. Without a key, only the address limits the transfers.
+- The owner of a zone can give only public addresses for the transfers of the zone. The panel
+  and the agent refuse private, loopback, link-local, multicast and other special addresses,
+  and IPv4 addresses in IPv6 form. Thus a user cannot let a container or a different server
+  in a private network copy a zone. Only an administrator can give a private address, for a
+  secondary of the panel.
+- The panel keeps each TSIG secret encrypted. The secrets are not in the jobs table: the panel
+  adds them when it sends the job to the agent. On a DNS server, the secrets are in
+  `keys.conf`, which only root and the user `cf-dns` can read.
+- The API gives a secret only through the routes `GET /v1/dns-secondaries/{id}/secret` and
+  `GET /v1/dns-zones/{id}/transfers/secret`. Each user can call them 10 times in one minute,
+  and the audit log records each call. The other answers give only the name and the algorithm
+  of the key.
+- The panel makes each secret from random bytes: 32 bytes for HMAC-SHA256 and 64 bytes for
+  HMAC-SHA512. A user can give the secret of a secondary DNS service. It must have 16 to 64
+  bytes in base64.
+- The TSIG key of the transfers of one zone has the name `transfer.<zone>`. A secondary of the
+  panel cannot have a key name that starts with `transfer.`, so a key of one zone cannot open
+  the transfers of all zones.
+- Only an administrator can see and change the secondaries of the panel, because they copy
+  the zones of all customers.
+
 ## The edge proxy
 
 - The admin API of Caddy listens on a Unix socket, not on a TCP port. Only the user `cf-edge`

@@ -28,6 +28,11 @@ return [
 
     'panel_domain' => env('CF_PANEL_DOMAIN', 'panel.cloudfactory.io'),
 
+    // Secondary DNS: the name of the catalog zone (RFC 9432), the list of the zones that a
+    // secondary DNS server can copy. Give each panel its own name when one secondary copies
+    // the zones of more than one panel. No customer can make a zone with this name.
+    'dns_catalog_zone' => env('CF_DNS_CATALOG_ZONE', 'catalog.cloudfactory.invalid'),
+
     // The database tool (Adminer). Each customer has one Adminer container on the panel
     // server, and the browser opens it on this domain, with one path for each customer. With
     // no value, the domain is "adminer." and the panel domain. The DNS of the domain must

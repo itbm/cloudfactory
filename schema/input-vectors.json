@@ -939,6 +939,14 @@
         }
       ]
     },
+    "tsigName": {
+      "valid": ["cf-transfer.example.net", "transfer.example.com", "key1", "a-b.c-d", {"repeat": [["a", 63]]}],
+      "invalid": ["", "Key", "key.", ".key", "-key", "a..b", "key name", "key\nx", "key_1", "transfer.example.com.\nacl:", {"repeat": [["a", 64]]}]
+    },
+    "tsigSecret": {
+      "valid": ["c2VjcmV0c2VjcmV0c2VjcmV0c2VjcmV0c2VjcmV0MTI=", "MDEyMzQ1Njc4OWFiY2RlZg==", "AAAAAAAAAAAAAAAAAAAAAAAA", {"repeat": [["A", 86], ["=", 2]]}],
+      "invalid": ["", "c2hvcnQ=", "not base64!", "c2VjcmV0c2VjcmV0c2VjcmV0c2VjcmV0c2VjcmV0MTI", "c2VjcmV0c2VjcmV0c2VjcmV0c2VjcmV0c2VjcmV0MTI=\n", "c2VjcmV0 c2VjcmV0c2VjcmV0c2VjcmV0c2VjcmV0MTI=", {"repeat": [["A", 88]]}]
+    },
     "envName": {
       "valid": [
         "DATABASE_URL",

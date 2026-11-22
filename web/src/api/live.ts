@@ -20,6 +20,7 @@ import type {
   DnsRecord,
   DnsAccount,
   DnsProvider,
+  DnsSecondaries,
   DnsZone,
   DnsZoneProvider,
   DomainVerification,
@@ -40,6 +41,7 @@ import type {
   SetupChecklist,
   Snapshot,
   State,
+  TsigAlgorithm,
   UsageAlert,
   UsageAlertSettings,
   User,
@@ -182,8 +184,13 @@ interface ApiDnsRecord extends Omit<DnsRecord, "priority" | "managed"> { priorit
 interface ApiDnsZoneProvider extends Omit<DnsZoneProvider, "error" | "syncedAt" | "changes" | "imported" | "handover"> {
   error: string | null; syncedAt: string | null; changes: DnsZoneProvider["changes"] | null; imported: DnsZoneProvider["imported"] | null; handover: { endsAt: string | null } | null;
 }
-interface ApiDnsZone extends Omit<DnsZone, "delegation" | "dnssec" | "records" | "createdAt" | "provider"> {
+interface ApiTsig { name: string; algorithm: TsigAlgorithm }
+export interface ApiDnsTransfers { addresses: string[]; notify: boolean; nameServers: string[]; tsig: ApiTsig | null; primaries: string[] }
+export interface ApiDnsSecondary { id: string; name: string; addresses: string[]; nameServer: string | null; tsig: ApiTsig | null; notify: boolean; catalog: boolean; createdAt: string | null }
+export interface ApiDnsSecondaries extends Omit<DnsSecondaries, "data"> { data: ApiDnsSecondary[] }
+interface ApiDnsZone extends Omit<DnsZone, "delegation" | "dnssec" | "records" | "createdAt" | "provider" | "transfers"> {
   delegation: { state: DnsZone["delegation"]["state"]; nameServers: string[]; checkedAt: string | null };
+  transfers?: ApiDnsTransfers | null;
   // A panel API of an earlier release has no state and no provider.
   dnssec: { enabled: boolean; state?: DnsZone["dnssec"]["state"]; ds: DnsZone["dnssec"]["ds"] | null; dnskey: string | null };
   provider?: ApiDnsZoneProvider | null;
@@ -357,8 +364,14 @@ export const toDnsZone = (z: ApiDnsZone): DnsZone => ({
   delegation: { state: z.delegation.state, nameServers: z.delegation.nameServers ?? [], checkedAt: z.delegation.checkedAt ?? undefined },
   dnssec: { enabled: z.dnssec.enabled, state: z.dnssec.state ?? (z.dnssec.enabled ? "active" : "off"), ds: z.dnssec.ds ?? undefined, dnskey: z.dnssec.dnskey ?? undefined },
   provider: z.provider ? toDnsZoneProvider(z.provider) : undefined,
+  transfers: z.transfers ? { ...z.transfers, tsig: z.transfers.tsig ?? undefined } : undefined,
   createdAt: z.createdAt ?? "",
   records: z.records?.map(toDnsRecord),
+});
+
+export const toDnsSecondaries = (s: ApiDnsSecondaries): DnsSecondaries => ({
+  ...s,
+  data: s.data.map((x) => ({ ...x, nameServer: x.nameServer ?? undefined, tsig: x.tsig ?? undefined, createdAt: x.createdAt ?? "" })),
 });
 
 /** The zones that the user opened. Each load reads their records again. */
@@ -411,7 +424,7 @@ export async function load(previous: State): Promise<State> {
   const admin = me.role === "administrator";
   const optional = <T>(p: Promise<T>, fallback: T) => p.catch(() => fallback);
 
-  const [websites, jobs, customers, plans, tokens, policy, servers, images, rollouts, audit, users, certificate, setup, account, databaseServers, dns, dnsAccounts, mesh, networks, alerts, mailDomains, mailboxes, mailAliases, mailClusters, pluginPages, pluginActions] = await Promise.all([
+  const [websites, jobs, customers, plans, tokens, policy, servers, images, rollouts, audit, users, certificate, setup, account, databaseServers, dns, dnsAccounts, dnsSecondaries, mesh, networks, alerts, mailDomains, mailboxes, mailAliases, mailClusters, pluginPages, pluginActions] = await Promise.all([
     all<ApiWebsite>("/websites"),
     request<{ data: ApiJob[] }>("GET", "/jobs?perPage=50").then((r) => r.data),
     optional(request<{ data: ApiCustomer[] }>("GET", "/customers").then((r) => r.data), []),
@@ -432,6 +445,8 @@ export async function load(previous: State): Promise<State> {
     optional(request<{ data: ApiDnsZone[]; nameServers?: string[] }>("GET", "/dns-zones"), { data: [], nameServers: [] }),
     // The accounts at external DNS providers, and the providers of the plugins.
     optional(request<{ data: ApiDnsAccount[]; providers: DnsProvider[] }>("GET", "/dns-accounts"), { data: [], providers: [] }),
+    // The secondary DNS servers of the panel, which copy all zones.
+    admin ? optional(request<ApiDnsSecondaries>("GET", "/dns-secondaries").then(toDnsSecondaries), undefined) : Promise.resolve(undefined),
     // A panel API of an earlier release has no mesh.
     admin ? optional(request<Mesh>("GET", "/mesh"), undefined) : Promise.resolve(undefined),
     // A panel API of an earlier release has no private networks.
@@ -499,6 +514,7 @@ export async function load(previous: State): Promise<State> {
     nameServers: dns.nameServers ?? [],
     dnsAccounts: dnsAccounts.data.map(toDnsAccount),
     dnsProviders: dnsAccounts.providers,
+    dnsSecondaries,
     mesh,
     networks,
     pluginPages,

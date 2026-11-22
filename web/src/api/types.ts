@@ -407,11 +407,59 @@ export interface DnsZone {
   servers: { nameServer: string; state: "ok" | "pending" | "failed" | "removed" }[];
   /** The external DNS provider of the zone. Undefined for a zone on the DNS servers of the panel. */
   provider?: DnsZoneProvider;
+  /** The zone transfers to the secondary DNS servers of the owner. Undefined for a zone at an external DNS provider. */
+  transfers?: DnsTransfers;
   /** The number of websites of the customer with a domain in the zone. */
   websites: number;
   createdAt: string;
   /** Undefined until the panel has read the records of the zone. */
   records?: DnsRecord[];
+}
+
+export type TsigAlgorithm = "hmac-sha256" | "hmac-sha512";
+
+/** A TSIG key that signs zone transfers. */
+export interface TsigKey {
+  name: string;
+  algorithm: TsigAlgorithm;
+  /** The secret in base64. Only the "secret" routes of the API give it. */
+  secret?: string;
+}
+
+/** The zone transfers of one zone to the secondary DNS servers of its owner. */
+export interface DnsTransfers {
+  /** Empty when the zone has no transfers. */
+  addresses: string[];
+  notify: boolean;
+  /** The host names of the secondaries. The zone has an NS record for each one. */
+  nameServers: string[];
+  tsig?: TsigKey;
+  /** The addresses of the DNS servers of the panel. The secondaries copy the zone from these. */
+  primaries: string[];
+}
+
+/** A secondary DNS server of the panel. It copies all zones. */
+export interface DnsSecondary {
+  id: string;
+  name: string;
+  addresses: string[];
+  /** The host name of the secondary. Each zone has an NS record for it. */
+  nameServer?: string;
+  tsig?: TsigKey;
+  notify: boolean;
+  /** True when the secondary also copies the catalog zone. */
+  catalog: boolean;
+  createdAt: string;
+}
+
+/** The secondary DNS servers of the panel. Only an administrator has them. */
+export interface DnsSecondaries {
+  data: DnsSecondary[];
+  catalogZone: string;
+  /** The DNS servers of the panel, which the secondaries copy the zones from. */
+  primaries: { nameServer: string; addresses: string[] }[];
+  /** The state of the list on each DNS server of the panel. */
+  servers: { server: string; state: "ok" | "pending" | "failed" }[];
 }
 
 /** The state of a zone at its external DNS provider. */
@@ -1030,6 +1078,8 @@ export interface State {
   dnsAccounts: DnsAccount[];
   /** The external DNS providers that the plugins that are on offer. */
   dnsProviders: DnsProvider[];
+  /** The secondary DNS servers of the panel. Only an administrator has them. */
+  dnsSecondaries?: DnsSecondaries;
   /** The mesh. Only an administrator has it. */
   mesh?: Mesh;
   /** The private networks of the customers that the user can see. */

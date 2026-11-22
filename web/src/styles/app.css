@@ -482,6 +482,9 @@ a.cell-title:hover { text-decoration: underline; }
 .copy-field { display: flex; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
 .copy-field code { flex: 1; min-width: 0; padding: 12px; background: var(--surface-muted); overflow-x: auto; white-space: nowrap; }
 .copy-field button { border: 0; border-left: 1px solid var(--border); border-radius: 0; }
+.copy-fields { display: grid; gap: 12px; }
+.copy-fields .label { margin-bottom: 4px; }
+.copy-wrap .copy-field code { white-space: normal; overflow-wrap: anywhere; }
 
 .text-success { color: var(--success); }
 .text-danger { color: var(--danger); }

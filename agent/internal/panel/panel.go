@@ -141,6 +141,9 @@ type Report struct {
 	// The panel sends each zone that this server does not have, for example after the server
 	// was offline or lost its data. An agent that cannot operate DNS sends null.
 	DNSZones []DNSZoneState `json:"dnsZones"`
+	// DNSSecondaries is the version of the list of the secondary DNS servers that this server
+	// has (SetDnsSecondaries). The panel sends the list again when it has a different version.
+	DNSSecondaries int64 `json:"dnsSecondaries"`
 	// SftpPort is the port that the website owners use for SFTP on this server.
 	SftpPort int `json:"sftpPort,omitempty"`
 	// PanelCertificate is the certificate of the panel domain. Only the panel server sends it.

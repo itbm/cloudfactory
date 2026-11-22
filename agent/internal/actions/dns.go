@@ -29,8 +29,9 @@ import (
 // DNS hosting. A server with the role "dns" answers the DNS queries for the zones of the
 // customers. One container, cf-dns, runs Knot DNS in gVisor as the Unix user cf-dns.
 //
-// The panel sends each zone, with all its records, to each DNS server (SetDnsZones). There
-// are no zone transfers, so the DNS server opens no connection and accepts only queries.
+// The panel sends each zone, with all its records, to each DNS server (SetDnsZones). The DNS
+// servers of the panel do not copy zones between them. A secondary DNS server outside the
+// panel can copy the zones with zone transfers (dns_transfers.go).
 //
 // The root helper does all the work, because it writes the configuration of a service:
 //   - It checks each record again, and writes each zone file itself. The worker gives
@@ -67,6 +68,8 @@ type (
 		// Key is the private DNSSEC key in the PEM format, or empty.
 		Key    string
 		KeyTag int
+		// Transfers are the transfers to the secondaries of the owner of the zone, or nil.
+		Transfers *dnsTransfers
 	}
 	dnsWriteIn struct {
 		Zones []dnsZone
@@ -81,6 +84,8 @@ type (
 		Enabled bool
 		// Zones are the zones of this server, for the report to the panel.
 		Zones []panel.DNSZoneState
+		// Secondaries is the version of the list of the secondaries of this server.
+		Secondaries int64
 	}
 )
 
@@ -88,6 +93,9 @@ type (
 // fixed. A test with a Knot server on the host gives the paths of the host.
 type dnsLayout struct {
 	Conf, Zones, Storage, Run string
+	// NotifyPort is the port of the secondaries for NOTIFY. 0 is port 53. Only a test gives a
+	// different port.
+	NotifyPort int
 }
 
 // DnsTest lets a test run Knot on the host, with no container.
@@ -96,6 +104,10 @@ type DnsTest struct {
 	Knot func(ctx context.Context, argv ...string) (string, error)
 	// Listen is the address of the server, for example "127.0.0.1@8053".
 	Listen []string
+	// NotifyPort is the port of the secondaries for NOTIFY.
+	NotifyPort int
+	// Restart restarts the DNS server.
+	Restart func(ctx context.Context) error
 }
 
 func (d *Deps) dnsDir() string       { return filepath.Join(d.DataDir, "dns") }
@@ -107,7 +119,7 @@ func (d *Deps) dnsStateFile() string { return filepath.Join(d.DataDir, "dns.json
 
 func (d *Deps) dnsLayout() dnsLayout {
 	if d.DnsTest != nil {
-		return dnsLayout{Conf: filepath.Join(d.dnsConfigDir(), "knot.conf"), Zones: d.dnsZonesDir(), Storage: d.dnsDataDir(), Run: filepath.Join(d.dnsDir(), "run")}
+		return dnsLayout{Conf: filepath.Join(d.dnsConfigDir(), "knot.conf"), Zones: d.dnsZonesDir(), Storage: d.dnsDataDir(), Run: filepath.Join(d.dnsDir(), "run"), NotifyPort: d.DnsTest.NotifyPort}
 	}
 	return dnsLayout{Conf: "/etc/knot/knot.conf", Zones: "/etc/knot/zones", Storage: "/var/lib/knot", Run: "/run/knot"}
 }
@@ -127,7 +139,7 @@ func (d *Deps) knot(ctx context.Context, tool string, args ...string) (string, e
 func (d *Deps) SetDnsZones(req *agentv1.SetDnsZonesRequest) (jobs.Job, error) {
 	zones := make([]dnsZone, 0, len(req.GetZones()))
 	for _, z := range req.GetZones() {
-		zone := dnsZone{Name: z.GetName(), Serial: z.GetSerial(), Key: z.GetDnssecKey(), KeyTag: int(z.GetDnssecKeyTag())}
+		zone := dnsZone{Name: z.GetName(), Serial: z.GetSerial(), Key: z.GetDnssecKey(), KeyTag: int(z.GetDnssecKeyTag()), Transfers: transfersFrom(z.GetTransfers())}
 		for _, r := range z.GetRecords() {
 			zone.Records = append(zone.Records, dnsRecord{Name: r.GetName(), Type: r.GetType(), Value: r.GetValue(), TTL: int(r.GetTtl()), Priority: int(r.GetPriority())})
 		}
@@ -188,6 +200,9 @@ func checkDnsZones(zones []dnsZone) error {
 	}
 	for _, z := range zones {
 		if _, err := renderZone(z); err != nil {
+			return fmt.Errorf("DNS zone %s: %w", z.Name, err)
+		}
+		if err := checkTransfers(z.Name, z.Transfers); err != nil {
 			return fmt.Errorf("DNS zone %s: %w", z.Name, err)
 		}
 	}
@@ -323,6 +338,11 @@ func quoteTxt(text string) string {
 // dnsState is the list of the zones of this server. Only root reads and writes the file.
 type dnsState struct {
 	Zones map[string]dnsZoneState `json:"zones"`
+	// Secondaries copy all zones. Catalog is the name of the catalog zone. SecondariesVersion
+	// is the version of the list in the panel.
+	Secondaries        []dnsSecondary `json:"secondaries,omitempty"`
+	Catalog            string         `json:"catalog,omitempty"`
+	SecondariesVersion int64          `json:"secondariesVersion,omitempty"`
 }
 
 type dnsZoneState struct {
@@ -333,6 +353,8 @@ type dnsZoneState struct {
 	// Signed is true when the DNS server signs the zone (DNSSEC).
 	Signed bool `json:"signed,omitempty"`
 	KeyTag int  `json:"keyTag,omitempty"`
+	// Transfers are the transfers to the secondaries of the owner of the zone.
+	Transfers *dnsTransfers `json:"transfers,omitempty"`
 }
 
 // readDnsState gives the zones of this server. ok is false when this server never got a
@@ -379,25 +401,57 @@ func knotConf(l dnsLayout, listen []string, st dnsState) string {
 	// The server does not give its name or its version.
 	b.WriteString("    identity: \"\"\n    version: \"\"\n    nsid: \"\"\n")
 	b.WriteString("log:\n  - target: stderr\n    any: info\n")
+	// The TSIG keys are in a file that only root and the DNS user can read.
+	fmt.Fprintf(&b, "include: %q\n", filepath.Join(filepath.Dir(l.Conf), "keys.conf"))
 	fmt.Fprintf(&b, "database:\n    storage: %q\n", l.Storage)
+	tr := transfersConf(st, l.NotifyPort)
+	b.WriteString(tr.text)
 	// The rate limit of the answers to one network, against the use of the server in an
 	// attack on a different address.
 	b.WriteString("mod-rrl:\n  - id: default\n    rate-limit: 50\n    slip: 2\n")
 	// One key signs the zone and its keys (CSK). The panel makes the key, and all DNS
 	// servers have the same key. NSEC3 with no more iterations and no salt (RFC 9276).
 	b.WriteString("policy:\n  - id: shared\n    manual: on\n    single-type-signing: on\n    algorithm: ecdsap256sha256\n    nsec3: on\n    nsec3-iterations: 0\n    nsec3-salt-length: 0\n")
+	// The secondaries of the panel can copy each zone, and get NOTIFY after each change.
+	shared := ""
+	if len(tr.acl) > 0 {
+		shared += "    acl: " + list(tr.acl) + "\n"
+	}
+	if len(tr.notify) > 0 {
+		shared += "    notify: " + list(tr.notify) + "\n"
+	}
+	if st.catalogOn() {
+		shared += fmt.Sprintf("    catalog-role: member\n    catalog-zone: %s.\n", st.Catalog)
+	}
 	template := func(id, more string) {
 		fmt.Fprintf(&b, "  - id: %s\n    storage: %q\n    file: \"%%s.zone\"\n    zonefile-sync: -1\n    semantic-checks: on\n%s", id, l.Zones, more)
 	}
 	b.WriteString("template:\n")
 	// Knot accepts a module for all zones only in the template "default".
-	template("default", "    global-module: mod-rrl/default\n    zonefile-load: whole\n    journal-content: none\n")
-	template("signed", "    zonefile-load: difference-no-serial\n    journal-content: all\n    serial-policy: unixtime\n    dnssec-signing: on\n    dnssec-policy: shared\n")
+	template("default", "    global-module: mod-rrl/default\n    zonefile-load: whole\n    journal-content: none\n"+shared)
+	template("signed", "    zonefile-load: difference-no-serial\n    journal-content: all\n    serial-policy: unixtime\n    dnssec-signing: on\n    dnssec-policy: shared\n"+shared)
+	if st.catalogOn() {
+		// Knot makes the catalog zone from the zones with "catalog-role: member". It has no
+		// zone file.
+		fmt.Fprintf(&b, "  - id: catalog\n    storage: %q\n    zonefile-sync: -1\n    zonefile-load: none\n    journal-content: all\n", l.Zones)
+	}
 	b.WriteString("zone:\n")
+	if st.catalogOn() {
+		fmt.Fprintf(&b, "  - domain: %s.\n    template: catalog\n    catalog-role: generate\n    acl: %s\n", st.Catalog, list(tr.catalogACL))
+		if len(tr.catalogNotify) > 0 {
+			fmt.Fprintf(&b, "    notify: %s\n", list(tr.catalogNotify))
+		}
+	}
 	for _, name := range slices.Sorted(mapKeys(st.Zones)) {
 		fmt.Fprintf(&b, "  - domain: %s.\n", name)
 		if st.Zones[name].Signed {
 			b.WriteString("    template: signed\n")
+		}
+		if acl, ok := tr.zoneACL[name]; ok {
+			fmt.Fprintf(&b, "    acl: %s\n", list(acl))
+		}
+		if notify, ok := tr.zoneNotify[name]; ok {
+			fmt.Fprintf(&b, "    notify: %s\n", list(notify))
 		}
 	}
 	return b.String()
@@ -421,8 +475,11 @@ func (d *Deps) dnsListen() []string {
 	return []string{"0.0.0.0@" + port, "::@" + port}
 }
 
-// writeKnotConf writes knot.conf. It reports true when the file changed.
+// writeKnotConf writes keys.conf and knot.conf. It reports true when knot.conf changed.
 func (d *Deps) writeKnotConf(st dnsState) (bool, error) {
+	if err := d.writeKnotKeys(st); err != nil {
+		return false, err
+	}
 	return host.WriteFile(filepath.Join(d.dnsConfigDir(), "knot.conf"), knotConf(d.dnsLayout(), d.dnsListen(), st), 0o644)
 }
 
@@ -452,7 +509,7 @@ func (d *Deps) dnsStatus(ctx context.Context) dnsStatusOut {
 	d.dnsMu.Lock()
 	defer d.dnsMu.Unlock()
 	st, ok, _ := d.readDnsState()
-	out := dnsStatusOut{Enabled: ok}
+	out := dnsStatusOut{Enabled: ok, Secondaries: st.SecondariesVersion}
 	for _, name := range slices.Sorted(mapKeys(st.Zones)) {
 		out.Zones = append(out.Zones, panel.DNSZoneState{Name: name, Serial: st.Zones[name].Loaded})
 	}
@@ -633,6 +690,9 @@ func (d *Deps) writeDnsZones(ctx context.Context, zones []dnsZone) error {
 	}
 	var unsigned []string
 	for _, z := range zones {
+		if z.Name == st.Catalog {
+			return fmt.Errorf("DNS zone %s: the catalog zone of the secondaries has this name", z.Name)
+		}
 		was, known := st.Zones[z.Name]
 		if known && was.Serial > z.Serial {
 			slog.Info("DNS: the server has a newer zone", "zone", z.Name, "serial", was.Serial, "job", z.Serial)
@@ -648,7 +708,7 @@ func (d *Deps) writeDnsZones(ctx context.Context, zones []dnsZone) error {
 		if was.Signed && z.Key == "" {
 			unsigned = append(unsigned, z.Name)
 		}
-		st.Zones[z.Name] = dnsZoneState{Serial: z.Serial, Loaded: was.Loaded, Signed: z.Key != "", KeyTag: z.KeyTag}
+		st.Zones[z.Name] = dnsZoneState{Serial: z.Serial, Loaded: was.Loaded, Signed: z.Key != "", KeyTag: z.KeyTag, Transfers: z.Transfers}
 	}
 	// The configuration has each new zone before Knot gets its key.
 	if _, err := d.writeKnotConf(st); err != nil {

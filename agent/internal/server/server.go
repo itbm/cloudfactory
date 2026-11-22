@@ -183,6 +183,10 @@ func (s *Service) DeleteDnsZones(_ context.Context, r *connect.Request[agentv1.D
 	return s.submit(s.Deps.DeleteDnsZones(r.Msg))
 }
 
+func (s *Service) SetDnsSecondaries(_ context.Context, r *connect.Request[agentv1.SetDnsSecondariesRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.SetDnsSecondaries(r.Msg))
+}
+
 func (s *Service) ConfigureHost(_ context.Context, r *connect.Request[agentv1.ConfigureHostRequest]) (*connect.Response[agentv1.JobAccepted], error) {
 	return s.submit(s.Deps.ConfigureHost(r.Msg))
 }

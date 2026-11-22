@@ -180,7 +180,17 @@ func protoZone(z dnsZone) *agentv1.DnsZone {
 	for _, r := range z.Records {
 		out.Records = append(out.Records, &agentv1.DnsRecord{Name: r.Name, Type: r.Type, Ttl: int32(r.TTL), Value: r.Value, Priority: int32(r.Priority)})
 	}
+	if t := z.Transfers; t != nil {
+		out.Transfers = &agentv1.DnsTransfers{Addresses: t.Addresses, Notify: t.Notify, Tsig: protoTsig(t.Tsig)}
+	}
 	return out
+}
+
+func protoTsig(k *dnsTsig) *agentv1.TsigKey {
+	if k == nil {
+		return nil
+	}
+	return &agentv1.TsigKey{Name: k.Name, Algorithm: k.Algorithm, Secret: k.Secret}
 }
 
 func TestSetDnsZonesStartsTheServerAndWritesTheZone(t *testing.T) {

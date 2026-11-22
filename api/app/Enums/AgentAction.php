@@ -42,6 +42,7 @@ enum AgentAction: string
     case DeleteMailAlias = 'DeleteMailAlias';
     case SetDnsZones = 'SetDnsZones';
     case DeleteDnsZones = 'DeleteDnsZones';
+    case SetDnsSecondaries = 'SetDnsSecondaries';
     case SetCronJobs = 'SetCronJobs';
     case RunCronJob = 'RunCronJob';
     case Deploy = 'Deploy';
@@ -91,6 +92,7 @@ enum AgentAction: string
             self::SetPanelBrands => ['Set panel domains', 'Get TLS certificates'],
             self::SetDnsZones => ['Start DNS server', 'Write zones', 'Load zones'],
             self::DeleteDnsZones => ['Remove zones'],
+            self::SetDnsSecondaries => ['Start DNS server', 'Set secondary DNS servers'],
             self::SetCronJobs => ['Save the cron jobs'],
             self::RunCronJob => ['Run the command'],
             // The steps after "Build" are the steps of SetRuntime: the agent starts the website

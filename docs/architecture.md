@@ -667,13 +667,15 @@ customers. It does not resolve other names.
 
 ### The panel sends full zones
 
-The DNS servers do not use zone transfers between them. The panel has the records, and it
-sends each changed zone to each DNS server in a job:
+The DNS servers of the panel do not use zone transfers between them. The panel has the
+records, and it sends each changed zone to each DNS server in a job. A secondary DNS server
+outside the panel can copy the zones (refer to [Secondary DNS servers](#secondary-dns-servers)).
 
 | Job | Work |
 | --- | ---- |
 | `SetDnsZones` | Start the DNS server if necessary, write the zone files, and load the zones. One job has 100 zones at most. |
 | `DeleteDnsZones` | Remove the zones, their files and their keys. |
+| `SetDnsSecondaries` | Start the DNS server if necessary, and write the list of the secondary DNS servers of the panel. |
 
 A zone in a job has its name, its serial and all its records. The root helper does not accept
 a zone file from the worker. It checks each record with the shared input rules and writes the
@@ -783,6 +785,63 @@ source of the records:
 - When a zone moves from the DNS servers of the panel to a provider, it stays on the DNS
   servers (`handover`) until two days after the public DNS stops showing the name servers of
   the panel. The panel does not remove a zone from the DNS servers during the handover.
+
+### Secondary DNS servers
+
+A secondary DNS server outside the panel can copy zones from the DNS servers of the panel with
+zone transfers (AXFR and IXFR). For example, a secondary DNS service of a different company
+gives more name servers in other networks. The panel never copies a zone from a different
+server. The panel is always the source of the records.
+
+```text
+ panel ──► SetDnsZones, SetDnsSecondaries ──► DNS servers of the panel (Knot DNS, primaries)
+                                                │ NOTIFY after each change, signed with TSIG
+                                                ▼
+                                   secondary ──► AXFR or IXFR, signed with TSIG ──► port 53
+```
+
+There are two types of secondaries:
+
+| Type | Who manages it | Zones | TSIG key |
+| ---- | -------------- | ----- | -------- |
+| A secondary of the panel (`dns_secondaries`) | An administrator | All zones on the DNS servers of the panel, and the catalog zone if the administrator selects it | One key for each secondary. The administrator gives the name, or the panel makes the name `cf-<ULID>`. |
+| The zone transfers of one zone (`dns_zones.transfer_*`) | The owner of the zone | Only that zone | `transfer.<zone>` |
+
+- The list of the secondaries of the panel has a version (the setting
+  `dns.secondaries.version`). Each change of the list gives it a higher version. The panel
+  then sends a `SetDnsSecondaries` job with only the version to each DNS server. When the panel
+  sends the job to the agent, it adds the full list from the database, with the secrets
+  (`Secondaries::forAgent`). Thus the secrets are not in the jobs table, and a job that waits
+  in the queue gets the last list.
+- The panel adds the zone transfers of a zone, with the secret, to the zone in `SetDnsZones` in
+  the same way.
+- The report of each agent has the version of the list on its DNS server (`dnsSecondaries`).
+  When the version is not the version of the panel, the panel sends the list again. It does
+  nothing while a `SetDnsSecondaries` job of the server is in the queue or runs, and it waits
+  10 minutes after a job that failed.
+- The root helper writes the keys to `keys.conf`, which only root and the user `cf-dns` can
+  read. It writes the remotes and the ACLs to `knot.conf`. Knot DNS gives a transfer only to an
+  address of a secondary, and only with the key of that secondary. After each change of a
+  zone, it sends NOTIFY, signed with the key, to each secondary with **Send NOTIFY**.
+- The addresses of the zone transfers of one zone must be public addresses. Thus the owner of
+  a zone cannot let an address in a private network or on the server copy the zone. An
+  administrator can give a private address to a secondary of the panel, for example for a
+  secondary in the same private network.
+- The catalog zone (RFC 9432) lists all zones on the DNS servers of the panel. Its name is in
+  `CF_DNS_CATALOG_ZONE` (default `catalog.cloudfactory.invalid`). A secondary that copies the
+  catalog zone finds each new zone and each removed zone itself. Knot DNS reads the catalog
+  role of a zone only when it makes the zone. Thus the agent restarts the DNS server when the
+  catalog zone starts, stops or gets a new name. For other changes of the list, the agent
+  only loads the configuration again. When `CF_DNS_CATALOG_ZONE` changes, the next report of
+  an agent gives the list a new version, so each DNS server gets the new name.
+- A secondary of the panel with a name server host name is a name server of each zone. Each
+  zone gets an NS record for it, and the panel sends all zones again when this host name
+  changes. The owner of a zone can give the host names of the secondaries of the zone, at most
+  4. The zone gets an NS record for each of them.
+- The domain uses the zone ("here") only when each public name server of the domain is a
+  name server of the panel, of a secondary of the panel or of the zone, and at least one is a
+  DNS server of the panel.
+- A zone at an external DNS provider has no zone transfers. The provider has the zone.
 
 ### DNSSEC
 

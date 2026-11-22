@@ -15,6 +15,7 @@ use App\Http\Controllers\Api\DatabaseToolController;
 use App\Http\Controllers\Api\DatabaseUserController;
 use App\Http\Controllers\Api\DeployController;
 use App\Http\Controllers\Api\DnsAccountController;
+use App\Http\Controllers\Api\DnsSecondaryController;
 use App\Http\Controllers\Api\DnsZoneController;
 use App\Http\Controllers\Api\DomainController;
 use App\Http\Controllers\Api\FileController;
@@ -173,6 +174,16 @@ Route::prefix('v1')->group(function () {
             Route::post('dns-zones/{id}/import', [DnsZoneController::class, 'import'])->middleware('throttle:dns-changes');
             Route::get('dns-zones/{id}/export', [DnsZoneController::class, 'export']);
             Route::post('dns-zones/{id}/move', [DnsZoneController::class, 'move'])->middleware('throttle:dns-changes');
+            // Zone transfers to the secondary DNS servers of the owner of a zone.
+            Route::put('dns-zones/{id}/transfers', [DnsZoneController::class, 'transfers'])->middleware('throttle:dns-changes');
+            Route::delete('dns-zones/{id}/transfers', [DnsZoneController::class, 'destroyTransfers'])->middleware('throttle:dns-changes');
+            Route::get('dns-zones/{id}/transfers/secret', [DnsZoneController::class, 'transfersSecret'])->middleware('throttle:10,1,get-dns-transfers-secret');
+            // The secondary DNS servers of the panel, which copy all zones.
+            Route::get('dns-secondaries', [DnsSecondaryController::class, 'index'])->middleware('admin');
+            Route::post('dns-secondaries', [DnsSecondaryController::class, 'store'])->middleware(['admin', 'throttle:dns-changes']);
+            Route::patch('dns-secondaries/{id}', [DnsSecondaryController::class, 'update'])->middleware(['admin', 'throttle:dns-changes']);
+            Route::delete('dns-secondaries/{id}', [DnsSecondaryController::class, 'destroy'])->middleware(['admin', 'throttle:dns-changes']);
+            Route::get('dns-secondaries/{id}/secret', [DnsSecondaryController::class, 'secret'])->middleware(['admin', 'throttle:10,1,get-dns-secondary-secret']);
             Route::get('dns-accounts', [DnsAccountController::class, 'index']);
             Route::post('dns-accounts', [DnsAccountController::class, 'store'])->middleware('throttle:dns-changes');
             Route::patch('dns-accounts/{id}', [DnsAccountController::class, 'update'])->middleware('throttle:dns-changes');

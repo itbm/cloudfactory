@@ -504,6 +504,29 @@ var ruleSSHKey = rule{
 // One public key in the format of authorized_keys, with no options.
 func SSHKey(s string) error { return ruleSSHKey.check(s) }
 
+var ruleTSIGName = rule{
+	what:      "TSIG key name",
+	pattern:   regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$`),
+	maxLength: 253,
+	echo:      true,
+}
+
+// TSIGName checks a value with the rule "tsigName" of schema/input-rules.json.
+//
+// The name of a TSIG key (RFC 8945) for zone transfers: a DNS name in lower case, with no dot at the end. Both servers of a transfer use the same name.
+func TSIGName(s string) error { return ruleTSIGName.check(s) }
+
+var ruleTSIGSecret = rule{
+	what:      "TSIG secret",
+	pattern:   regexp.MustCompile(`^([A-Za-z0-9+/]{4}){5,21}([A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$`),
+	maxLength: 88,
+}
+
+// TSIGSecret checks a value with the rule "tsigSecret" of schema/input-rules.json.
+//
+// The secret of a TSIG key in base64: 16 to 64 bytes. The panel makes it, or the administrator copies it from the secondary DNS service.
+func TSIGSecret(s string) error { return ruleTSIGSecret.check(s) }
+
 var ruleUnixUser = rule{
 	what:    "Unix user",
 	pattern: regexp.MustCompile(`^[a-z][a-z0-9]{0,15}_[a-z0-9]{4}$`),
@@ -572,6 +595,8 @@ var rules = map[string]*rule{
 	"secretValue":        &ruleSecretValue,
 	"sha256":             &ruleSHA256,
 	"sshKey":             &ruleSSHKey,
+	"tsigName":           &ruleTSIGName,
+	"tsigSecret":         &ruleTSIGSecret,
 	"unixUser":           &ruleUnixUser,
 	"version":            &ruleVersion,
 }
@@ -587,6 +612,9 @@ var reservedDatabasePrefixes = []string{"pg_"}
 
 // The names of the built-in runtimes, the image families and the database engines. A pack cannot have one of these names.
 var reservedRuntimeNames = []string{"frankenphp", "apache-php-fpm", "node", "python", "custom", "static", "edge", "mail", "dns", "database", "mariadb", "postgresql", "valkey"}
+
+// The algorithms of a TSIG key for zone transfers.
+var tsigAlgorithms = []string{"hmac-sha256", "hmac-sha512"}
 
 // MaxBuildCommands: The largest number of build commands of a deploy.
 const MaxBuildCommands = 10
@@ -606,8 +634,14 @@ const MaxDeploySecrets = 50
 // MaxDnsRecordsPerZone: The largest number of records in a DNS zone.
 const MaxDnsRecordsPerZone = 1000
 
+// MaxDnsSecondaries: The largest number of secondary DNS servers of the panel.
+const MaxDnsSecondaries = 10
+
 // MinDnsShortTtl: The smallest TTL of a DNS record, in seconds.
 const MinDnsShortTtl = 60
+
+// MaxDnsTransferAddresses: The largest number of addresses of one secondary DNS server, or of the zone transfers of one zone.
+const MaxDnsTransferAddresses = 10
 
 // MaxDnsTtl: The largest TTL of a DNS record, in seconds.
 const MaxDnsTtl = 604800

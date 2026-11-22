@@ -134,6 +134,14 @@ The DNS server is Knot DNS in one container on each server with the role `dns`.
   transfers (AXFR) or notifications between them. Thus there is no primary server that must
   be in operation, no transfer key to keep, and no open port between the servers. The cost
   is one job for each DNS server and each change.
+- Secondary DNS is only outbound: a DNS server outside the panel can copy the zones from the
+  DNS servers of the panel, but the panel never copies a zone from a different server. The
+  panel keeps the records, checks each record with the shared input rules, and gives each
+  record to the plugins of the external DNS providers. A zone that a different server sends
+  would skip these checks, and the panel would not be the only source of the records. To
+  move a zone into the panel, import its zone file.
+- Each DNS server of the panel is a primary server for the secondaries. A secondary can copy
+  a zone from each DNS server, so the transfers continue when one DNS server is offline.
 - The root helper writes the zone files from records that it checks. It does not accept the
   text of a zone file.
 - The panel makes the DNSSEC key of a zone and gives it to each DNS server. With a key that
