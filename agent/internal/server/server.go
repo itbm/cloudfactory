@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/itbm/cloudfactory/agent/internal/jobs"
 	"github.com/itbm/cloudfactory/agent/internal/pki"
 	"github.com/itbm/cloudfactory/agent/internal/sitefiles"
+	"github.com/itbm/cloudfactory/agent/internal/stalwart"
 	"github.com/itbm/cloudfactory/agent/internal/status"
 )
 
@@ -316,6 +318,38 @@ func (s *Service) GetLogs(ctx context.Context, r *connect.Request[agentv1.GetLog
 		return nil, fileError(err)
 	}
 	return connect.NewResponse(&agentv1.Logs{Lines: lines}), nil
+}
+
+// mailError gives the error of a request for the mail server its code for the panel.
+func mailError(err error) error {
+	var invalid *actions.InvalidError
+	switch {
+	case errors.As(err, &invalid):
+		return connect.NewError(connect.CodeInvalidArgument, err)
+	case errors.Is(err, stalwart.ErrNoMailbox):
+		return connect.NewError(connect.CodeNotFound, err)
+	case errors.Is(err, actions.ErrNoMail):
+		return connect.NewError(connect.CodeFailedPrecondition, err)
+	case errors.Is(err, context.DeadlineExceeded):
+		return connect.NewError(connect.CodeDeadlineExceeded, err)
+	}
+	return connect.NewError(connect.CodeUnavailable, fmt.Errorf("the mail server did not answer: %w", err))
+}
+
+func (s *Service) GetAutoresponder(ctx context.Context, r *connect.Request[agentv1.MailAddressRequest]) (*connect.Response[agentv1.Autoresponder], error) {
+	a, err := s.Deps.GetAutoresponder(ctx, r.Msg)
+	if err != nil {
+		return nil, mailError(err)
+	}
+	return connect.NewResponse(a), nil
+}
+
+func (s *Service) SetAutoresponder(ctx context.Context, r *connect.Request[agentv1.SetAutoresponderRequest]) (*connect.Response[agentv1.Autoresponder], error) {
+	a, err := s.Deps.SetAutoresponder(ctx, r.Msg)
+	if err != nil {
+		return nil, mailError(err)
+	}
+	return connect.NewResponse(a), nil
 }
 
 func (s *Service) GetStatus(ctx context.Context, _ *connect.Request[agentv1.GetStatusRequest]) (*connect.Response[agentv1.HostStatus], error) {

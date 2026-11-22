@@ -76,6 +76,12 @@ service AgentService {
   rpc MoveFile(MoveFileRequest) returns (FileEntry);
   rpc DeleteFile(FileRequest) returns (FileDeleted);
   rpc GetLogs(GetLogsRequest) returns (Logs);
+
+  // The autoresponder of a mailbox. These methods do not make a job: they give the result at
+  // once. The mail server keeps the autoresponder (JMAP VacationResponse), and the webmail
+  // changes the same autoresponder. The job_id of the request is not used.
+  rpc GetAutoresponder(MailAddressRequest) returns (Autoresponder);
+  rpc SetAutoresponder(SetAutoresponderRequest) returns (Autoresponder);
 }
 
 message JobAccepted {
@@ -286,6 +292,30 @@ message SetMailAliasRequest {
   string domain = 2;
   string local_part = 3;
   repeated string destinations = 4;
+}
+
+// The autoresponder of a mailbox. When it is on, the mail server answers a new message with
+// the text. It answers each sender one time in 30 days. It does not answer a mailing list or
+// an automatic message.
+message Autoresponder {
+  bool enabled = 1;
+  // Empty: the subject of the answer is "Auto:" and the subject of the message.
+  string subject = 2;
+  string text = 3;
+  // The period of the autoresponder, in RFC 3339 (UTC). Empty: no start, or no end.
+  string starts_at = 4;
+  string ends_at = 5;
+  // Only in an answer: the name of the active Sieve script of the mailbox, for example the
+  // filter rules that the user made in the webmail. The mail server runs one script for each
+  // mailbox, so the autoresponder stops this script when it is on. Empty: no other script is
+  // active.
+  string filter_script = 6;
+}
+
+message SetAutoresponderRequest {
+  string domain = 1;
+  string local_part = 2;
+  Autoresponder autoresponder = 3;
 }
 
 // Stops a database server and removes its data. The panel sends it only for a database

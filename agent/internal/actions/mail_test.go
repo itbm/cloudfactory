@@ -40,7 +40,7 @@ func TestTheRootHelperPreparesTheMailServer(t *testing.T) {
 	if info, err := d.mailInfo(ctx); err != nil || info.Hostname != "" {
 		t.Fatalf("a server with no mail server: %+v, %v", info, err)
 	}
-	if _, err := d.mailClient(ctx); err != errNoMail {
+	if _, err := d.mailClient(ctx); err != ErrNoMail {
 		t.Fatalf("mailClient: %v", err)
 	}
 	prepared, err := d.prepareMail(ctx, mailHost)
@@ -301,7 +301,7 @@ func TestTheMailJobsCheckTheirValues(t *testing.T) {
 	if err != nil || job.Key != mailKey {
 		t.Fatalf("DeleteMailbox: %v", err)
 	}
-	if err := job.Steps[0].Do(context.Background()); err != errNoMail {
+	if err := job.Steps[0].Do(context.Background()); err != ErrNoMail {
 		t.Errorf("the step: %v", err)
 	}
 	if r := d.mailReport(context.Background()); r != nil {

@@ -179,6 +179,12 @@ const (
 	AgentServiceDeleteFileProcedure = "/cloudfactory.agent.v1.AgentService/DeleteFile"
 	// AgentServiceGetLogsProcedure is the fully-qualified name of the AgentService's GetLogs RPC.
 	AgentServiceGetLogsProcedure = "/cloudfactory.agent.v1.AgentService/GetLogs"
+	// AgentServiceGetAutoresponderProcedure is the fully-qualified name of the AgentService's
+	// GetAutoresponder RPC.
+	AgentServiceGetAutoresponderProcedure = "/cloudfactory.agent.v1.AgentService/GetAutoresponder"
+	// AgentServiceSetAutoresponderProcedure is the fully-qualified name of the AgentService's
+	// SetAutoresponder RPC.
+	AgentServiceSetAutoresponderProcedure = "/cloudfactory.agent.v1.AgentService/SetAutoresponder"
 )
 
 // AgentServiceClient is a client for the cloudfactory.agent.v1.AgentService service.
@@ -243,6 +249,11 @@ type AgentServiceClient interface {
 	MoveFile(context.Context, *connect.Request[v1.MoveFileRequest]) (*connect.Response[v1.FileEntry], error)
 	DeleteFile(context.Context, *connect.Request[v1.FileRequest]) (*connect.Response[v1.FileDeleted], error)
 	GetLogs(context.Context, *connect.Request[v1.GetLogsRequest]) (*connect.Response[v1.Logs], error)
+	// The autoresponder of a mailbox. These methods do not make a job: they give the result at
+	// once. The mail server keeps the autoresponder (JMAP VacationResponse), and the webmail
+	// changes the same autoresponder. The job_id of the request is not used.
+	GetAutoresponder(context.Context, *connect.Request[v1.MailAddressRequest]) (*connect.Response[v1.Autoresponder], error)
+	SetAutoresponder(context.Context, *connect.Request[v1.SetAutoresponderRequest]) (*connect.Response[v1.Autoresponder], error)
 }
 
 // NewAgentServiceClient constructs a client for the cloudfactory.agent.v1.AgentService service. By
@@ -568,6 +579,18 @@ func NewAgentServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(agentServiceMethods.ByName("GetLogs")),
 			connect.WithClientOptions(opts...),
 		),
+		getAutoresponder: connect.NewClient[v1.MailAddressRequest, v1.Autoresponder](
+			httpClient,
+			baseURL+AgentServiceGetAutoresponderProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("GetAutoresponder")),
+			connect.WithClientOptions(opts...),
+		),
+		setAutoresponder: connect.NewClient[v1.SetAutoresponderRequest, v1.Autoresponder](
+			httpClient,
+			baseURL+AgentServiceSetAutoresponderProcedure,
+			connect.WithSchema(agentServiceMethods.ByName("SetAutoresponder")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
@@ -625,6 +648,8 @@ type agentServiceClient struct {
 	moveFile              *connect.Client[v1.MoveFileRequest, v1.FileEntry]
 	deleteFile            *connect.Client[v1.FileRequest, v1.FileDeleted]
 	getLogs               *connect.Client[v1.GetLogsRequest, v1.Logs]
+	getAutoresponder      *connect.Client[v1.MailAddressRequest, v1.Autoresponder]
+	setAutoresponder      *connect.Client[v1.SetAutoresponderRequest, v1.Autoresponder]
 }
 
 // CreateWebsite calls cloudfactory.agent.v1.AgentService.CreateWebsite.
@@ -887,6 +912,16 @@ func (c *agentServiceClient) GetLogs(ctx context.Context, req *connect.Request[v
 	return c.getLogs.CallUnary(ctx, req)
 }
 
+// GetAutoresponder calls cloudfactory.agent.v1.AgentService.GetAutoresponder.
+func (c *agentServiceClient) GetAutoresponder(ctx context.Context, req *connect.Request[v1.MailAddressRequest]) (*connect.Response[v1.Autoresponder], error) {
+	return c.getAutoresponder.CallUnary(ctx, req)
+}
+
+// SetAutoresponder calls cloudfactory.agent.v1.AgentService.SetAutoresponder.
+func (c *agentServiceClient) SetAutoresponder(ctx context.Context, req *connect.Request[v1.SetAutoresponderRequest]) (*connect.Response[v1.Autoresponder], error) {
+	return c.setAutoresponder.CallUnary(ctx, req)
+}
+
 // AgentServiceHandler is an implementation of the cloudfactory.agent.v1.AgentService service.
 type AgentServiceHandler interface {
 	CreateWebsite(context.Context, *connect.Request[v1.WebsiteRequest]) (*connect.Response[v1.JobAccepted], error)
@@ -949,6 +984,11 @@ type AgentServiceHandler interface {
 	MoveFile(context.Context, *connect.Request[v1.MoveFileRequest]) (*connect.Response[v1.FileEntry], error)
 	DeleteFile(context.Context, *connect.Request[v1.FileRequest]) (*connect.Response[v1.FileDeleted], error)
 	GetLogs(context.Context, *connect.Request[v1.GetLogsRequest]) (*connect.Response[v1.Logs], error)
+	// The autoresponder of a mailbox. These methods do not make a job: they give the result at
+	// once. The mail server keeps the autoresponder (JMAP VacationResponse), and the webmail
+	// changes the same autoresponder. The job_id of the request is not used.
+	GetAutoresponder(context.Context, *connect.Request[v1.MailAddressRequest]) (*connect.Response[v1.Autoresponder], error)
+	SetAutoresponder(context.Context, *connect.Request[v1.SetAutoresponderRequest]) (*connect.Response[v1.Autoresponder], error)
 }
 
 // NewAgentServiceHandler builds an HTTP handler from the service implementation. It returns the
@@ -1270,6 +1310,18 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 		connect.WithSchema(agentServiceMethods.ByName("GetLogs")),
 		connect.WithHandlerOptions(opts...),
 	)
+	agentServiceGetAutoresponderHandler := connect.NewUnaryHandler(
+		AgentServiceGetAutoresponderProcedure,
+		svc.GetAutoresponder,
+		connect.WithSchema(agentServiceMethods.ByName("GetAutoresponder")),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentServiceSetAutoresponderHandler := connect.NewUnaryHandler(
+		AgentServiceSetAutoresponderProcedure,
+		svc.SetAutoresponder,
+		connect.WithSchema(agentServiceMethods.ByName("SetAutoresponder")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/cloudfactory.agent.v1.AgentService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case AgentServiceCreateWebsiteProcedure:
@@ -1376,6 +1428,10 @@ func NewAgentServiceHandler(svc AgentServiceHandler, opts ...connect.HandlerOpti
 			agentServiceDeleteFileHandler.ServeHTTP(w, r)
 		case AgentServiceGetLogsProcedure:
 			agentServiceGetLogsHandler.ServeHTTP(w, r)
+		case AgentServiceGetAutoresponderProcedure:
+			agentServiceGetAutoresponderHandler.ServeHTTP(w, r)
+		case AgentServiceSetAutoresponderProcedure:
+			agentServiceSetAutoresponderHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -1591,4 +1647,12 @@ func (UnimplementedAgentServiceHandler) DeleteFile(context.Context, *connect.Req
 
 func (UnimplementedAgentServiceHandler) GetLogs(context.Context, *connect.Request[v1.GetLogsRequest]) (*connect.Response[v1.Logs], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.GetLogs is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) GetAutoresponder(context.Context, *connect.Request[v1.MailAddressRequest]) (*connect.Response[v1.Autoresponder], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.GetAutoresponder is not implemented"))
+}
+
+func (UnimplementedAgentServiceHandler) SetAutoresponder(context.Context, *connect.Request[v1.SetAutoresponderRequest]) (*connect.Response[v1.Autoresponder], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("cloudfactory.agent.v1.AgentService.SetAutoresponder is not implemented"))
 }

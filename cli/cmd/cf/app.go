@@ -123,6 +123,9 @@ Usage:
   cf mail mailboxes set ADDRESS [--quota-mb N] [--new-password] [--encrypt | --public-key FILE | --no-encryption]
   cf mail mailboxes private-key ADDRESS [--output FILE]
                                            The private key that the panel made. It needs the password of the mailbox.
+  cf mail mailboxes autoresponder ADDRESS [--on | --off] [--subject TEXT] [--text-file FILE] [--from DAY] [--until DAY]
+                                           Show or change the autoresponder. DAY is YYYY-MM-DD in the time zone
+                                           of this computer, or an RFC 3339 time. "-" removes a subject or a day.
   cf mail mailboxes delete ADDRESS         Remove a mailbox and its messages.
   cf mail aliases list [--domain DOMAIN] [--customer ID]
   cf mail aliases create ADDRESS --to ADDRESS... [--forward]

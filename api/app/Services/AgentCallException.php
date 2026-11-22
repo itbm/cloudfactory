@@ -19,7 +19,7 @@ class AgentCallException extends \RuntimeException
     {
         return match ($this->agentCode) {
             'not_found' => 404,
-            'already_exists' => 409,
+            'already_exists', 'failed_precondition' => 409,
             'invalid_argument', 'out_of_range', 'resource_exhausted' => 422,
             'permission_denied' => 403,
             'unavailable', 'unimplemented', 'deadline_exceeded' => 503,
@@ -31,7 +31,7 @@ class AgentCallException extends \RuntimeException
     public function userMessage(): string
     {
         return match ($this->agentCode) {
-            'not_found', 'already_exists', 'invalid_argument', 'out_of_range', 'resource_exhausted', 'permission_denied', 'unavailable' => ucfirst($this->getMessage()),
+            'not_found', 'already_exists', 'failed_precondition', 'invalid_argument', 'out_of_range', 'resource_exhausted', 'permission_denied', 'unavailable' => ucfirst($this->getMessage()),
             'unimplemented' => 'The agent of this server is from an earlier release. Update the agent of the server.',
             'deadline_exceeded' => 'The server did not answer in time. Try again.',
             default => 'The server could not do this. Try again later.',

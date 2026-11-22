@@ -161,6 +161,7 @@ func TestRealServer(t *testing.T) {
 	if _, ok := usage["info@"+domain]; err != nil || !ok {
 		t.Fatalf("usage %v, err %v", usage, err)
 	}
+	testAutoresponder(ctx, t, c, domain)
 	for _, destinations := range [][]string{{"info@" + domain}, {"info@" + domain, "ann@elsewhere.example.net"}} {
 		if err := c.SetAddress(ctx, domain, "team", destinations); err != nil {
 			t.Fatal(err)

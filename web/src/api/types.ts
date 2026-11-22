@@ -474,6 +474,24 @@ export interface Mailbox {
   privateKey?: { passwordCurrent: boolean } | null;
 }
 
+/**
+ * The autoresponder of a mailbox. The mail server keeps it, and the webmail changes the same
+ * autoresponder: the panel reads it each time.
+ */
+export interface Autoresponder {
+  enabled: boolean;
+  /** Null: the subject is "Auto:" and the subject of the message. */
+  subject: string | null;
+  text: string;
+  /** RFC 3339 in UTC. Null: no start, or no end. */
+  startsAt: string | null;
+  endsAt: string | null;
+  /** Not null: the active filter rules (Sieve script) of the mailbox. They stop when the autoresponder is on. */
+  filterScript: string | null;
+}
+
+export type AutoresponderInput = Omit<Autoresponder, "filterScript">;
+
 /** What the mail server found in the OpenPGP public key of a mailbox. */
 export interface MailEncryption {
   fingerprints: string[];

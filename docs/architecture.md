@@ -497,6 +497,7 @@ job only for a domain of that customer.
 | Password of the administrator of the management API | `/etc/cloudfactory/mail/admin.env` | Only root and the group `cf-mail` can read the file. The root helper gives the password to the worker. |
 | TLS certificate | `/etc/cloudfactory/mail/certs` | The edge proxy gets and renews the certificate of the mail host name. The root helper copies it for the mail server, at the start of the agent and one time each day. |
 | Passwords of the mailboxes | The mail server keeps a bcrypt hash | The panel makes the hash and sends only the hash. The panel shows the password one time. The agent never has it. |
+| Autoresponders | The data store of the mail server (JMAP `VacationResponse`) | The mail server is the source. The panel reads and changes an autoresponder through the agent at once, with no job, and keeps no copy. |
 
 The first start of the mail server is in the recovery mode of Stalwart, which has only the
 management API. The agent sets the listeners, the host name and the certificate, and then
@@ -536,6 +537,38 @@ old protection and shows that the key has an older password (`privateKey.passwor
 The mail server encrypts only new mail. It does not encrypt the messages that the mailbox has
 before the key, and it cannot decrypt the stored mail. Search on the server does not find
 words in an encrypted message.
+
+### Autoresponder
+
+A mailbox can have an autoresponder. When it is on, the mail server answers each new message
+with a text. It answers each sender one time in 30 days (the default of Stalwart). It does not
+answer a mailing list or an automatic message (RFC 5230). The autoresponder can have a first
+day and a last day.
+
+The mail server keeps the autoresponder as JMAP `VacationResponse`, and the webmail changes the
+same object. Thus the panel keeps no copy. The panel reads and sets it at once through the
+agent, with no job:
+
+```text
+ web panel ──► GET|PUT /v1/mail/mailboxes/{id}/autoresponder ──► GetAutoresponder|SetAutoresponder
+           ──► worker of the agent ──► VacationResponse/get|set (management API)
+```
+
+- The panel and the agent check the subject and the text with the rules
+  `autoresponderSubject` and `autoresponderText` (`schema/input-rules.json`). Stalwart refuses
+  a text of 2048 bytes or more, so the limit is 2000 bytes.
+- The agent sends only the plain text. It removes the HTML text that a mail program can set.
+  When the mail server has only HTML text, the agent gives the text without the tags.
+- The agent sends each time in UTC. The web panel uses days in the time zone of the browser:
+  the first day starts at 00:00 and the last day ends at 23:59:59.
+- In a mail cluster, a different member answers when the server of the mail domain is offline
+  (`MailClusters::member`).
+
+The mail server makes a Sieve script with the name `vacation` from the autoresponder. Stalwart
+runs one active Sieve script for each mailbox. When the autoresponder is on, the filter rules
+that the user made in the webmail stop. They do not start again when the autoresponder is off.
+The answer has `filterScript`, the name of the other active script, and the web panel tells the
+user about it.
 
 ### Webmail (Bulwark)
 

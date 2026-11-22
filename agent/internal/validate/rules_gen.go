@@ -4,6 +4,30 @@ package validate
 
 import "regexp"
 
+var ruleAutoresponderSubject = rule{
+	what:      "subject of the autoresponder",
+	pattern:   regexp.MustCompile(`^[^\x00-\x1f\x7f]+$`),
+	maxLength: 200,
+	empty:     true,
+}
+
+// AutoresponderSubject checks a value with the rule "autoresponderSubject" of schema/input-rules.json.
+//
+// The subject of the answer of an autoresponder. It is on one line and has no control characters. An empty subject is permitted: the mail server then uses "Auto:" and the subject of the message.
+func AutoresponderSubject(s string) error { return ruleAutoresponderSubject.check(s) }
+
+var ruleAutoresponderText = rule{
+	what:      "text of the autoresponder",
+	pattern:   regexp.MustCompile(`^[^\x00-\x08\x0b\x0c\x0e-\x1f\x7f]+$`),
+	maxLength: 2000,
+	empty:     true,
+}
+
+// AutoresponderText checks a value with the rule "autoresponderText" of schema/input-rules.json.
+//
+// The text of the answer of an autoresponder. It can have line breaks and tabs, but no other control characters. The mail server accepts a text of less than 2048 bytes.
+func AutoresponderText(s string) error { return ruleAutoresponderText.check(s) }
+
 var ruleCommandArgument = rule{
 	what:      "argument of the start command",
 	pattern:   regexp.MustCompile(`^[^\x00-\x1f\x7f]+$`),
@@ -529,51 +553,53 @@ func Version(s string) error { return ruleVersion.check(s) }
 
 // rules has each rule by its name in schema/input-rules.json.
 var rules = map[string]*rule{
-	"commandArgument":    &ruleCommandArgument,
-	"commandLine":        &ruleCommandLine,
-	"cronSchedule":       &ruleCronSchedule,
-	"databaseClientHost": &ruleDatabaseClientHost,
-	"databaseName":       &ruleDatabaseName,
-	"databaseNameSuffix": &ruleDatabaseNameSuffix,
-	"databasePassword":   &ruleDatabasePassword,
-	"digest":             &ruleDigest,
-	"dnsCaa":             &ruleDNSCaa,
-	"dnsHost":            &ruleDNSHost,
-	"dnsRecordName":      &ruleDNSRecordName,
-	"dnsSrv":             &ruleDNSSrv,
-	"dnsTxt":             &ruleDNSTxt,
-	"dnssecKey":          &ruleDNSSECKey,
-	"documentRoot":       &ruleDocumentRoot,
-	"domain":             &ruleDomain,
-	"envName":            &ruleEnvName,
-	"envValue":           &ruleEnvValue,
-	"environmentValue":   &ruleEnvironmentValue,
-	"filePath":           &ruleFilePath,
-	"gitBranch":          &ruleGitBranch,
-	"gitRepository":      &ruleGitRepository,
-	"id":                 &ruleID,
-	"image":              &ruleImage,
-	"imageReference":     &ruleImageReference,
-	"imageTag":           &ruleImageTag,
-	"iniKey":             &ruleIniKey,
-	"iniValue":           &ruleIniValue,
-	"ipv4":               &ruleIPv4,
-	"ipv6":               &ruleIPv6,
-	"mailAddress":        &ruleMailAddress,
-	"mailLocalPart":      &ruleMailLocalPart,
-	"mailPasswordHash":   &ruleMailPasswordHash,
-	"packImageVersion":   &rulePackImageVersion,
-	"packSlug":           &rulePackSlug,
-	"packVersion":        &rulePackVersion,
-	"phpExtension":       &ruleExtension,
-	"restorePath":        &ruleRestorePath,
-	"routePath":          &ruleRoutePath,
-	"secretName":         &ruleSecretName,
-	"secretValue":        &ruleSecretValue,
-	"sha256":             &ruleSHA256,
-	"sshKey":             &ruleSSHKey,
-	"unixUser":           &ruleUnixUser,
-	"version":            &ruleVersion,
+	"autoresponderSubject": &ruleAutoresponderSubject,
+	"autoresponderText":    &ruleAutoresponderText,
+	"commandArgument":      &ruleCommandArgument,
+	"commandLine":          &ruleCommandLine,
+	"cronSchedule":         &ruleCronSchedule,
+	"databaseClientHost":   &ruleDatabaseClientHost,
+	"databaseName":         &ruleDatabaseName,
+	"databaseNameSuffix":   &ruleDatabaseNameSuffix,
+	"databasePassword":     &ruleDatabasePassword,
+	"digest":               &ruleDigest,
+	"dnsCaa":               &ruleDNSCaa,
+	"dnsHost":              &ruleDNSHost,
+	"dnsRecordName":        &ruleDNSRecordName,
+	"dnsSrv":               &ruleDNSSrv,
+	"dnsTxt":               &ruleDNSTxt,
+	"dnssecKey":            &ruleDNSSECKey,
+	"documentRoot":         &ruleDocumentRoot,
+	"domain":               &ruleDomain,
+	"envName":              &ruleEnvName,
+	"envValue":             &ruleEnvValue,
+	"environmentValue":     &ruleEnvironmentValue,
+	"filePath":             &ruleFilePath,
+	"gitBranch":            &ruleGitBranch,
+	"gitRepository":        &ruleGitRepository,
+	"id":                   &ruleID,
+	"image":                &ruleImage,
+	"imageReference":       &ruleImageReference,
+	"imageTag":             &ruleImageTag,
+	"iniKey":               &ruleIniKey,
+	"iniValue":             &ruleIniValue,
+	"ipv4":                 &ruleIPv4,
+	"ipv6":                 &ruleIPv6,
+	"mailAddress":          &ruleMailAddress,
+	"mailLocalPart":        &ruleMailLocalPart,
+	"mailPasswordHash":     &ruleMailPasswordHash,
+	"packImageVersion":     &rulePackImageVersion,
+	"packSlug":             &rulePackSlug,
+	"packVersion":          &rulePackVersion,
+	"phpExtension":         &ruleExtension,
+	"restorePath":          &ruleRestorePath,
+	"routePath":            &ruleRoutePath,
+	"secretName":           &ruleSecretName,
+	"secretValue":          &ruleSecretValue,
+	"sha256":               &ruleSHA256,
+	"sshKey":               &ruleSSHKey,
+	"unixUser":             &ruleUnixUser,
+	"version":              &ruleVersion,
 }
 
 // The types of DNS record that a user can make.

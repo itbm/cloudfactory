@@ -75,10 +75,14 @@ func set(values ...string) object {
 	return out
 }
 
+// capabilities are the JMAP capabilities of the method calls of the agent.
+var capabilities = []string{"urn:ietf:params:jmap:core", "urn:stalwart:jmap", "urn:ietf:params:jmap:filenode",
+	"urn:ietf:params:jmap:vacationresponse", "urn:ietf:params:jmap:sieve"}
+
 // call sends one method call and gives its result.
 func (c *Client) call(ctx context.Context, method string, args object) (object, error) {
 	body, err := json.Marshal(object{
-		"using":       []string{"urn:ietf:params:jmap:core", "urn:stalwart:jmap", "urn:ietf:params:jmap:filenode"},
+		"using":       capabilities,
 		"methodCalls": []any{[]any{method, args, "0"}},
 	})
 	if err != nil {
