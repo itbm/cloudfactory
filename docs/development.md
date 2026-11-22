@@ -84,7 +84,9 @@ The demo agent (`api/app/Demo`) fails these jobs, so that you can see a failure:
 The demo agent does not read the archive of an import. Each import gets the same sample
 account (`api/app/Demo/DemoImport.php`). A file name with `directadmin`, or a file name that
 starts with `user.`, gives a DirectAdmin backup. A file name with `plesk`, or a file name that
-starts with `backup_`, gives a Plesk backup. Each other name gives a cPanel backup.
+starts with `backup_`, gives a Plesk backup. A file name with `hestia`, or a file name of the
+form `USER.2026-11-22_05-00-00.tar`, gives a HestiaCP backup. Each other name gives a cPanel
+backup.
 
 In the demonstration mode, the file manager shows a small set of sample files for each
 website, and keeps your changes in the cache. The logs are sample lines.

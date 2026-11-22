@@ -5,8 +5,8 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * The import of an account from a different hosting panel, for example cPanel, DirectAdmin or Plesk
- * (docs/imports.md).
+ * The import of an account from a different hosting panel, for example cPanel, DirectAdmin,
+ * Plesk or HestiaCP (docs/imports.md).
  *
  * - "source" is "upload" (the panel keeps the archive in its storage) or "url" (each server
  *   downloads the archive from the URL). The model keeps the URL encrypted, because a URL

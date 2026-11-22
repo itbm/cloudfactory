@@ -303,9 +303,9 @@ The product specification, section 6.4, gives the requirements.
 
 ## Account imports
 
-An administrator can import the backup of an account from cPanel, DirectAdmin or Plesk
-([imports.md](imports.md)). The backup can come from the customer, so the agent does not
-trust it:
+An administrator can import the backup of an account from cPanel, DirectAdmin, Plesk or
+HestiaCP ([imports.md](imports.md)). The backup can come from the customer, so the agent does
+not trust it:
 
 - Only an administrator can import an account. The import makes each record with the API, as
   that administrator, so each record has the checks and the plan limits of the API.

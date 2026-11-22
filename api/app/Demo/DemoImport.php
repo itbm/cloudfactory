@@ -7,7 +7,8 @@ namespace App\Demo;
  * result of FetchImport (agent/internal/migrate). The demo agent does not read the archive.
  * The name of the file or the address selects the panel: a name with "directadmin" or a name
  * that starts with "user." is a DirectAdmin backup. A name with "plesk" or a name that starts
- * with "backup_" is a Plesk backup. Each other name is a cPanel backup.
+ * with "backup_" is a Plesk backup. A name with "hestia" or a name of the form
+ * "USER.2026-11-22_05-00-00.tar" is a HestiaCP backup. Each other name is a cPanel backup.
  */
 final class DemoImport
 {
@@ -18,28 +19,32 @@ final class DemoImport
         $panel = match (true) {
             str_contains($base, 'directadmin') || str_starts_with($base, 'user.') => 'directadmin',
             str_contains($base, 'plesk') || str_starts_with($base, 'backup_') => 'plesk',
+            str_contains($base, 'hestia') || preg_match('/\.\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.tar$/', $base) === 1 => 'hestia',
             default => 'cpanel',
         };
-        $home = ['cpanel' => 'cpmove-bakery/homedir', 'directadmin' => 'domains', 'plesk' => 'clients/bakery/domains/bakeryclub.example.org'][$panel];
+        $home = ['cpanel' => 'cpmove-bakery/homedir', 'directadmin' => 'domains', 'plesk' => 'clients/bakery/domains/bakeryclub.example.org', 'hestia' => 'web'][$panel];
         $docroot = fn (string $domain, string $dir) => match ($panel) {
             'cpanel' => "{$home}/{$dir}",
             'directadmin' => "{$home}/{$domain}/public_html",
             'plesk' => "{$home}/backup_user-data_2611221200.tgz/".str_replace('public_html', 'httpdocs', $dir),
+            'hestia' => "{$home}/{$domain}/domain_data.tar.zst/public_html",
         };
         $dump = fn (string $db) => match ($panel) {
             'cpanel' => "cpmove-bakery/mysql/{$db}.sql",
             'directadmin' => "backup/{$db}.sql.gz",
             'plesk' => "{$home}/databases/{$db}_1/backup_sqldump_2611221200.tzst",
+            'hestia' => "db/{$db}/{$db}.mysql.sql.zst",
         };
         $maildir = fn (string $local) => match ($panel) {
             'cpanel' => "{$home}/mail/bakeryclub.example.org/{$local}",
             'directadmin' => "imap/bakeryclub.example.org/{$local}/Maildir",
             'plesk' => "{$home}/mailnames/{$local}/backup_mailbox_2611221200.tgz",
+            'hestia' => "mail/bakeryclub.example.org/accounts.tar.zst/{$local}",
         };
 
         return [
             'format' => 'cf-account/1',
-            'source' => ['panel' => $panel, 'version' => ['cpanel' => '11.130.0.15', 'directadmin' => '1.680', 'plesk' => '18.0.60'][$panel], 'account' => 'bakery'],
+            'source' => ['panel' => $panel, 'version' => ['cpanel' => '11.130.0.15', 'directadmin' => '1.680', 'plesk' => '18.0.60', 'hestia' => ''][$panel], 'account' => 'bakery'],
             'customer' => ['name' => 'Corner Bakery', 'email' => 'hello@cornerbakery.example.org'],
             'websites' => [
                 self::website('bakeryclub.example.org', '8.1', $docroot('bakeryclub.example.org', 'public_html'), 1_240 * 1024 ** 2, ['orders'], [

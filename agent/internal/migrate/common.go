@@ -113,10 +113,11 @@ func domainName(s string) string {
 
 // passwordHash gives a mail password hash that the mail server can check (the rule
 // "mailPasswordHash"): bcrypt, SHA-512-crypt, SHA-256-crypt or MD5-crypt. Other hashes give "",
-// and the import makes a new password.
+// and the import makes a new password. A Dovecot scheme at the start goes: "{MD5}" is
+// MD5-crypt in Dovecot.
 func passwordHash(s string) string {
 	s = strings.TrimSpace(s)
-	for _, scheme := range []string{"{SHA512-CRYPT}", "{SHA256-CRYPT}", "{MD5-CRYPT}", "{BLF-CRYPT}", "{CRYPT}"} {
+	for _, scheme := range []string{"{SHA512-CRYPT}", "{SHA256-CRYPT}", "{MD5-CRYPT}", "{BLF-CRYPT}", "{CRYPT}", "{MD5}"} {
 		s = strings.TrimPrefix(s, scheme)
 	}
 	if validate.MailPasswordHash(s) == nil {

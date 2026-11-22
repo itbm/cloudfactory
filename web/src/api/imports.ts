@@ -1,6 +1,6 @@
-// The import of an account from cPanel, DirectAdmin or Plesk (docs/imports.md). Only an administrator
-// imports an account. The page loads this data when it opens, so it is not in the state of the
-// store.
+// The import of an account from cPanel, DirectAdmin, Plesk or HestiaCP (docs/imports.md). Only an
+// administrator imports an account. The page loads this data when it opens, so it is not in the
+// state of the store.
 
 import * as live from "./live";
 import { ApiError } from "./store";
@@ -18,7 +18,7 @@ export interface Import {
   fileName: string | null;
   sizeBytes: number;
   receivedBytes: number;
-  panel: "cpanel" | "directadmin" | "plesk" | "cloudfactory" | null;
+  panel: "cpanel" | "directadmin" | "plesk" | "hestia" | "cloudfactory" | null;
   panelName: string | null;
   account: string | null;
   customerId: string;

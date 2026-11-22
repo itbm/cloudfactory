@@ -1,8 +1,8 @@
 # Import an account from a different panel
 
 This guide is for an administrator. It tells you how to move a hosting account from cPanel,
-DirectAdmin or Plesk to Cloudfactory. The import reads the backup of the account and makes its websites,
-databases, cron jobs, mailboxes and DNS zones for a customer of the panel.
+DirectAdmin, Plesk or HestiaCP to Cloudfactory. The import reads the backup of the account and
+makes its websites, databases, cron jobs, mailboxes and DNS zones for a customer of the panel.
 
 The old panel continues to operate during the import. The websites and the mail move to
 Cloudfactory only when you change the DNS of their domains.
@@ -14,28 +14,28 @@ Cloudfactory only when you change the DNS of their domains.
 | cPanel      | The account backup of `pkgacct` or of **Backup** in cPanel, for example `cpmove-USER.tar.gz` or `backup-MM.DD.YYYY_HH-MM-SS_USER.tar.gz` |
 | DirectAdmin | The user backup of DirectAdmin, for example `user.admin.USER.tar.gz` or `user.admin.USER.tar.zst`                  |
 | Plesk       | A backup of a subscription or a customer from **Backup Manager** or `pleskbackup`, downloaded as one file, for example `backup_example.com_2311221200.tar` |
+| HestiaCP    | A user backup from **Backups** in HestiaCP or from `v-backup-user`, for example `USER.2026-11-22_05-00-00.tar`. The agent also reads a VestaCP backup, which has the same layout. |
 
 The file can be a tar archive with no compression, or with gzip, bzip2 or zstd compression. The
 agent finds the type from the content of the file, not from its name. It also reads an archive
-in the archive, for example `homedir.tar` of cPanel or `backup_user-data_2311221200.tgz` of
-Plesk.
+in the archive, for example `homedir.tar` of cPanel, `backup_user-data_2311221200.tgz` of
+Plesk or `domain_data.tar.zst` of HestiaCP.
 
 For Plesk, make the backup with no password protection, or with password protection off for
-the download. The backup of Plesk for Windows (a ZIP file) is not supported. HestiaCP is not
-supported yet.
+the download. The backup of Plesk for Windows (a ZIP file) is not supported.
 
 ## What the import copies
 
 | Part           | What the import does                                                                                                                                                                                                                              |
 | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Websites       | It makes one PHP website for each web domain: the main domain, each addon domain and each subdomain (in Plesk, each site of a subscription). The website gets the image with the same PHP version. If the panel has no such image, the website gets the image with the next newer version. |
-| Domains        | It adds the aliases (parked domains, domain pointers and Plesk domain aliases) and the redirects to their website.                                                                                                                                                      |
+| Domains        | It adds the aliases (parked domains, domain pointers, Plesk domain aliases and HestiaCP web aliases) and the redirects to their website. A HestiaCP web domain with the document root of a different web domain becomes an alias of that website. |
 | Files          | It copies the document root of each website. A document root in a different document root, for example a subdomain in `public_html`, goes to its own website only.                                                                                |
 | Databases      | It makes a MariaDB database for each MySQL or MariaDB database of a website, and loads the dump. The name of the database gets the Unix user of the website in place of the account name: `bakery_wp` becomes `<unix-user>_wp`.                     |
 | Database users | It makes one user for each database, with the name of the database and a new password. It does not copy the other users of the old panel.                                                                                                         |
 | WordPress      | It writes the new database name, user, password and host into `wp-config.php`. You can turn this off before you start the import.                                                                                                                |
 | Cron jobs      | It adds each cron job of the account to its website, **turned off**. Read each command, change the paths of the old panel, then turn the cron job on.                                                                                            |
-| Mail           | It makes each mail domain, mailbox, alias and forwarder, and copies the messages of each folder. A mailbox keeps its password when the old panel has a hash that the mail server can use: bcrypt, SHA-512-crypt, SHA-256-crypt or MD5-crypt. Plesk usually encrypts the passwords with a key of its server: these mailboxes get a new password. |
+| Mail           | It makes each mail domain, mailbox, alias and forwarder, and copies the messages of each folder. A mailbox keeps its password when the old panel has a hash that the mail server can use: bcrypt, SHA-512-crypt, SHA-256-crypt or MD5-crypt. Plesk usually encrypts the passwords with a key of its server, and HestiaCP can use Argon2id: these mailboxes get a new password. |
 | DNS zones      | It makes each DNS zone and adds its records. If the customer has the zone already, the import adds only the records that the zone does not have.                                                                                                  |
 
 The import does not copy these parts. The plan shows a warning for each one that the backup has:
@@ -46,7 +46,9 @@ The import does not copy these parts. The plan shows a warning for each one that
   the new server);
 - FTP accounts (use SFTP with an SSH key);
 - autoresponders, catch-all addresses and forwarders to a program;
-- the `private_html` directory of DirectAdmin (the import copies `public_html` only);
+- the `private_html` directory of DirectAdmin and the `public_shtml` directory of HestiaCP (the
+  import copies `public_html` only);
+- the redirect of a HestiaCP web domain;
 - the mail of a Plesk domain alias, and the scheduled tasks of Plesk that are not in the
   crontab of the system user;
 - the SOA and NS records of a zone, and the records of the cPanel services, for example
@@ -177,3 +179,5 @@ items are not tested on a real server yet:
   agent reads the XML elements that the public sources and other migration tools show
   (`domain`, `phosting`, `sites`, `mailuser`, `database`, `dnsrec` and the `cid` content
   references). Test an import of a Plesk backup before you move many accounts.
+- a backup from a real HestiaCP or VestaCP server. The agent reads the layout that the backup
+  script of HestiaCP (`v-backup-user`) writes.

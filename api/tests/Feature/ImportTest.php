@@ -435,6 +435,14 @@ class ImportTest extends TestCase
         $this->assertSame('clients/bakery/domains/bakeryclub.example.org/backup_user-data_2611221200.tgz/httpdocs', $plesk['websites'][0]['content']['files']['path']);
         $this->assertSame('clients/bakery/domains/bakeryclub.example.org/mailnames/hello/backup_mailbox_2611221200.tgz', $plesk['mail']['domains'][0]['mailboxes'][0]['content']['path']);
 
+        // A HestiaCP backup has an archive of the files of each web domain.
+        $hestia = Description::normalise(DemoImport::account('bakery.2026-11-22_05-00-00.tar'));
+        $this->assertSame('hestia', $hestia['source']['panel']);
+        $this->assertSame('', $hestia['source']['version']);
+        $this->assertSame('web/orders.bakeryclub.example.org/domain_data.tar.zst/public_html', $hestia['websites'][1]['content']['files']['path']);
+        $this->assertSame('db/bakery_wp/bakery_wp.mysql.sql.zst', $hestia['websites'][0]['databases'][0]['content']['path']);
+        $this->assertSame('mail/bakeryclub.example.org/accounts.tar.zst/hello', $hestia['mail']['domains'][0]['mailboxes'][0]['content']['path']);
+
         $this->expectExceptionMessage('comes from a panel that the import does not know');
         Description::normalise(['format' => Description::FORMAT, 'source' => ['panel' => 'ispconfig']]);
     }

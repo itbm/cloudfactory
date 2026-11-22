@@ -26,7 +26,7 @@ type Account struct {
 
 // Source tells where the description comes from.
 type Source struct {
-	// Panel is "cpanel", "directadmin" or "plesk".
+	// Panel is "cpanel", "directadmin", "plesk" or "hestia".
 	Panel   string `json:"panel"`
 	Version string `json:"version,omitempty"`
 	// Account is the name of the account on the old panel.
@@ -216,10 +216,10 @@ type adapter interface {
 }
 
 // ErrUnknown is the error of an archive that no adapter knows.
-var ErrUnknown = errors.New("the archive is not a cPanel, DirectAdmin or Plesk account backup")
+var ErrUnknown = errors.New("the archive is not a cPanel, DirectAdmin, Plesk or HestiaCP account backup")
 
 func adapters() []adapter {
-	return []adapter{newCpanel(), newDirectAdmin(), newPlesk()}
+	return []adapter{newCpanel(), newDirectAdmin(), newPlesk(), newHestia()}
 }
 
 // Inspect reads the archive one time and gives the description of the account. With no
@@ -277,15 +277,16 @@ func Inspect(ctx context.Context, a *Archive) (Account, error) {
 }
 
 // InspectExpand selects the nested archives of the known backup formats: the home directory
-// of an older cPanel backup ("cpmove-USER/homedir.tar"), and the archives of the files and
-// the mailboxes of a Plesk backup ("backup_user-data_2311221200.tgz").
+// of an older cPanel backup ("cpmove-USER/homedir.tar"), the archives of the files and the
+// mailboxes of a Plesk backup ("backup_user-data_2311221200.tgz"), and the archives of the
+// files and the mailboxes of a HestiaCP backup ("web/DOMAIN/domain_data.tar.zst").
 func InspectExpand(name string) bool {
 	top, rest, ok := strings.Cut(name, "/")
 	if ok && top != "" && rest == "homedir.tar" {
 		return true
 	}
 	_, _, nested := nestedOf(name)
-	return !nested && pleskContentArchive(name)
+	return !nested && (pleskContentArchive(name) || hestiaContentArchive(name))
 }
 
 // bound keeps a description in the limits, with a warning for each part that it leaves out.

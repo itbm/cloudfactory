@@ -115,9 +115,9 @@ func (d importDetail) statusText() string {
 	return d.Status
 }
 
-// imports reads the backup of an account from cPanel, DirectAdmin or Plesk and makes its websites,
-// databases, mailboxes and DNS zones for a customer (FR-1501, FR-1502). Only an administrator
-// can import an account.
+// imports reads the backup of an account from cPanel, DirectAdmin, Plesk or HestiaCP and makes
+// its websites, databases, mailboxes and DNS zones for a customer (FR-1501, FR-1502). Only an
+// administrator can import an account.
 func (a *app) imports(ctx context.Context, sub string, args []string) error {
 	switch sub {
 	case "list", "ls":

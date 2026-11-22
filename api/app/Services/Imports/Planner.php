@@ -95,8 +95,8 @@ final class Planner
     }
 
     /**
-     * The official PHP images. Apache first: the websites of cPanel, DirectAdmin and Plesk often
-     * have .htaccess files.
+     * The official PHP images. Apache first: the websites of cPanel, DirectAdmin, Plesk and
+     * HestiaCP often have .htaccess files.
      *
      * @return Collection<int, Image>
      */

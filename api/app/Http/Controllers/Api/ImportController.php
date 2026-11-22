@@ -23,9 +23,9 @@ use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
 /**
- * The import of an account from a different hosting panel: cPanel, DirectAdmin or Plesk
- * (docs/imports.md). Only an administrator imports an account: the import makes websites on a
- * server that the administrator selects.
+ * The import of an account from a different hosting panel: cPanel, DirectAdmin, Plesk or
+ * HestiaCP (docs/imports.md). Only an administrator imports an account: the import makes
+ * websites on a server that the administrator selects.
  *
  * 1. POST /imports with a URL of the backup archive, or with the name and the size of a file.
  *    The browser or the cf command then sends the file in parts (PUT /imports/{id}/archive).
