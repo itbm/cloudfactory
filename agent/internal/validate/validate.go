@@ -110,6 +110,10 @@ func PackName(s string) error {
 	return nil
 }
 
+// ReservedPackDir reports whether a directory of the root of a container is in the set
+// "reservedPackDirs". The data directory of a database pack cannot be in such a directory.
+func ReservedPackDir(name string) bool { return slices.Contains(reservedPackDirs, name) }
+
 // PHPRuntime checks the runtime of a PHP pack (cf-php/1): a built-in PHP runtime of the set
 // "phpRuntimes". A PHP pack adds versions of PHP to that runtime.
 func PHPRuntime(s string) error {

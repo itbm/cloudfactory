@@ -157,13 +157,17 @@ message DatabaseServer {
   string id = 1;
   // The ID of the customer.
   string customer = 2;
-  // "mariadb", "postgresql" or "valkey".
+  // "mariadb", "postgresql", "valkey", or the slug of a database pack (docs/packs.md).
   string engine = 3;
-  // The port on the address of the customer. The first database server of an engine has the
-  // usual port of the engine (3306, 5432 or 6379). A second one has the next port.
+  // The port on the address of the customer. The first database server of a built-in engine
+  // has the usual port of the engine (3306, 5432 or 6379). A second one has the next port. A
+  // database server of a pack engine has a port in the block of its pack, from 20000.
   int32 port = 4;
   // The limits of the container: vcpus, memory_bytes and disk_bytes. 0 means no limit.
   Limits limits = 5;
+  // The version of the engine of a pack engine, for example "8.4": an image of the pack. A
+  // database server keeps its version. Empty for a built-in engine.
+  string version = 6;
 }
 
 // SetDatabaseServer makes a database server, or changes the limits of a database server.

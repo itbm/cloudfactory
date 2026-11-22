@@ -1326,6 +1326,14 @@
     "phpVersion": {
       "valid": ["8.2", "8.3", "7.4", "10.0", "8.10"],
       "invalid": ["", "8", "8.2.1", "8.x", ".2", "8.", "8.2-fpm", "123.1", "8.2\n"]
+    },
+    "packPort": {
+      "valid": ["1024", "3306", "27017", "65535"],
+      "invalid": ["", "0", "80", "0333", "123456", "3306\n", "33 06", "-3306"]
+    },
+    "packDataDir": {
+      "valid": ["/var/lib/mysql", "/data", "/var/lib/postgresql/data", "/srv/db-1", "/opt/engine_2.0/data"],
+      "invalid": ["", "/", "var/lib/mysql", "/var/lib/mysql/", "/var/../etc", "/var/./lib", "/var//lib", "/Var/lib", "/var/lib mysql", "/var/lib:z", "/data\n", "/.hidden"]
     }
   }
 }

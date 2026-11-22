@@ -392,6 +392,17 @@ var ruleMailPasswordHash = rule{
 // The bcrypt hash of a mailbox password. The panel makes it, and the agent gives it to the mail server. The agent never gets the password.
 func MailPasswordHash(s string) error { return ruleMailPasswordHash.check(s) }
 
+var rulePackDataDir = rule{
+	what:    "data directory of a database pack",
+	pattern: regexp.MustCompile(`^(/[a-z0-9][a-z0-9._-]{0,63}){1,8}$`),
+	echo:    true,
+}
+
+// PackDataDir checks a value with the rule "packDataDir" of schema/input-rules.json.
+//
+// The absolute path of the data directory in the container of a database pack (cf-database/1), for example "/var/lib/mysql". The first directory cannot be one of reservedPackDirs.
+func PackDataDir(s string) error { return rulePackDataDir.check(s) }
+
 var rulePackImageVersion = rule{
 	what:    "version of a pack image",
 	pattern: regexp.MustCompile(`^[0-9A-Za-z][0-9A-Za-z.+_-]{0,15}$`),
@@ -402,6 +413,17 @@ var rulePackImageVersion = rule{
 //
 // The version of the runtime in one image of a pack, for example "1.25". Customers select it.
 func PackImageVersion(s string) error { return rulePackImageVersion.check(s) }
+
+var rulePackPort = rule{
+	what:    "port of a database pack",
+	pattern: regexp.MustCompile(`^[1-9][0-9]{3,4}$`),
+	echo:    true,
+}
+
+// PackPort checks a value with the rule "packPort" of schema/input-rules.json.
+//
+// The TCP port of the engine in the container of a database pack (cf-database/1), for example "3306". The panel and the agent also check that it is from 1024 to 65535.
+func PackPort(s string) error { return rulePackPort.check(s) }
 
 var rulePackSlug = rule{
 	what:    "pack name",
@@ -573,7 +595,9 @@ var rules = map[string]*rule{
 	"mailAddress":        &ruleMailAddress,
 	"mailLocalPart":      &ruleMailLocalPart,
 	"mailPasswordHash":   &ruleMailPasswordHash,
+	"packDataDir":        &rulePackDataDir,
 	"packImageVersion":   &rulePackImageVersion,
+	"packPort":           &rulePackPort,
 	"packSlug":           &rulePackSlug,
 	"packVersion":        &rulePackVersion,
 	"phpExtension":       &ruleExtension,
@@ -600,6 +624,9 @@ var reservedDatabaseNames = []string{"mysql", "sys", "information_schema", "perf
 // A database name does not start with one of these (CF-01).
 var reservedDatabasePrefixes = []string{"pg_"}
 
+// The first directory of the data directory of a database pack cannot be one of these. The agent mounts a temporary file system at /tmp, and the others belong to the container.
+var reservedPackDirs = []string{"tmp", "proc", "sys", "dev", "run", "cf"}
+
 // The names of the built-in runtimes, the image families and the database engines. A pack cannot have one of these names.
 var reservedRuntimeNames = []string{"frankenphp", "apache-php-fpm", "node", "python", "custom", "static", "edge", "mail", "dns", "database", "mariadb", "postgresql", "valkey"}
 
@@ -614,6 +641,9 @@ const MaxContainerEnvironment = 20
 
 // MaxCronJobs: The largest number of cron jobs of a website.
 const MaxCronJobs = 20
+
+// MinDatabasePackPort: The first host port of the database servers of the database packs. Each database pack gets a block of 50 ports from this port, one block for each pack on the panel.
+const MinDatabasePackPort = 20000
 
 // MaxDeploySecrets: The largest number of secrets of a deploy.
 const MaxDeploySecrets = 50

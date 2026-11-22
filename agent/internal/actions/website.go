@@ -678,6 +678,12 @@ func checkCopies(req *agentv1.WebsiteRequest) error {
 // through the agent, and it loads as a temporary user with access to the new database only
 // (CF-06).
 func (d *Deps) copyDatabase(ctx context.Context, from dbServer, fromName string, to dbServer, toName string) error {
+	if isManaged(to.Engine) {
+		if err := d.copyPackDatabase(ctx, from, fromName, to, toName); err != nil {
+			return fmt.Errorf("copy %s to %s: %w", fromName, toName, err)
+		}
+		return nil
+	}
 	drv, err := sqlOf(to.Engine)
 	if err != nil {
 		return err
@@ -757,6 +763,20 @@ func (d *Deps) copyDatabases(ctx context.Context, req *agentv1.WebsiteRequest, v
 				return err
 			}
 			valkeyNumbers[u.GetName()] = number
+			continue
+		}
+		if isManaged(engine) {
+			databases := []packAccess{}
+			for _, c := range req.GetCopyDatabases() {
+				if c.GetEngine() == engine && strings.EqualFold(c.GetToServer(), u.GetDatabaseServer()) {
+					databases = append(databases, packAccess{Name: c.GetTo(), Access: "readwrite"})
+				}
+			}
+			// A job that runs again after a restart finds the user of its first run, and sets
+			// it again.
+			if err := (packDriver{}).setUser(ctx, d, srv, u.GetName(), u.GetPassword(), databases); err != nil {
+				return err
+			}
 			continue
 		}
 		host, err := mariaHost("website")
