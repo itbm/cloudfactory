@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use App\Demo\DemoAcme;
 use App\Demo\DemoImport;
 use App\Demo\DemoMailDns;
 use App\Enums\AgentAction;
@@ -11,11 +12,13 @@ use App\Enums\NotificationEvent;
 use App\Enums\Role;
 use App\Models\AgentJob;
 use App\Models\AuditEntry;
+use App\Models\Certificate;
 use App\Models\Customer;
 use App\Models\DatabaseServer;
 use App\Models\DnsAccount;
 use App\Models\DnsRecord;
 use App\Models\DnsZone;
+use App\Models\Domain;
 use App\Models\GitSource;
 use App\Models\Image;
 use App\Models\Import;
@@ -43,6 +46,8 @@ use App\Models\User;
 use App\Models\Website;
 use App\Providers\DemoServiceProvider;
 use App\Services\Branding;
+use App\Services\Certificates\Certificates;
+use App\Services\Certificates\Pem;
 use App\Services\Dns\Dnssec;
 use App\Services\Dns\Zones;
 use App\Services\Imports\Description;
@@ -115,6 +120,7 @@ class DemoSeeder extends Seeder
         $this->websites();
         $this->brand();
         $this->dns();
+        $this->certificates();
         $this->databases();
         $this->usageHistory();
         $this->settleMesh();
@@ -684,6 +690,52 @@ class DemoSeeder extends Seeder
         $record('cornerbakery.example.org', '@', 'MX', 'mail.cornerbakery.example.org', 10);
         $record('cornerbakery.example.org', 'mail', 'A', '198.51.100.80');
         $record('harbourbooks.example.net', '@', 'TXT', 'v=spf1 -all');
+    }
+
+    /**
+     * The certificates of the customers (docs/certificates.md): a wildcard certificate with DNS
+     * validation, an uploaded certificate that expires soon, and an order that failed. web-1
+     * and web-2 loaded the certificates. The dates follow the clock of the panel, as the other
+     * sample data does. The PEM data has the dates of the computer that made the sample data.
+     */
+    private function certificates(): void
+    {
+        $admin = User::where('email', 'admin@example.com')->value('id');
+        $make = function (string $customer, string $source, array $names, ?array $pem, array $more = []) use ($admin): Certificate {
+            $info = $pem ? Pem::info($pem['cert']) : null;
+            $certificate = new Certificate([
+                'customer_id' => $this->customers[$customer]->id, 'source' => $source, 'names' => $names, 'user_id' => $admin,
+                ...($pem && $info ? ['certificate' => $pem['cert'], 'private_key' => $pem['key'], 'fingerprint' => $info['fingerprint'], 'issuer' => $info['issuer']] : []),
+                ...$more,
+            ]);
+            $certificate->created_at = $certificate->not_before ?? now()->subHours(3);
+            $certificate->save();
+
+            return $certificate;
+        };
+        // The demonstration CA gave this certificate 25 days ago. The panel renews it in 35 days.
+        $make('acme', Certificate::ACME, ['acme.example.com', '*.acme.example.com'], DemoAcme::issue(['acme.example.com', '*.acme.example.com']), [
+            'not_before' => now()->subDays(25), 'expires_at' => now()->addDays(65), 'renew_at' => now()->addDays(35), 'trusted' => true,
+        ]);
+        // An uploaded certificate from a different CA. It expires in 12 days: the customer must upload a new one.
+        $make('bakery', Certificate::UPLOAD, ['cornerbakery.example.org', 'www.cornerbakery.example.org'],
+            DemoAcme::issue(['cornerbakery.example.org', 'www.cornerbakery.example.org'], 365, DemoAcme::makeAuthority('Example TLS CA 2026', 'Example Trust Ltd')), [
+                'not_before' => now()->subDays(353), 'expires_at' => now()->addDays(12), 'trusted' => true,
+            ]);
+        // The registrar of this domain does not send the queries to the panel yet.
+        $make('acme', Certificate::ACME, ['acme-outlet.example.com', '*.acme-outlet.example.com'], null, [
+            'error' => 'The public DNS does not send the queries for acme-outlet.example.com to the name servers of this panel, so the certificate authority cannot see the records of the panel. Give the name servers of the panel to the registrar of acme-outlet.example.com, and then check the zone on the DNS page.',
+            'tries' => 1,
+        ]);
+        $certificates = app(Certificates::class);
+        foreach (['web-1', 'web-2'] as $name) {
+            $wanted = $certificates->wanted($this->servers[$name]);
+            $this->servers[$name]->update(['agent_certificates' => $wanted]);
+            foreach ($wanted as $c) {
+                Domain::whereIn('website_id', $this->servers[$name]->websites()->select('id'))->whereIn('name', $c['hosts'])
+                    ->update(['certificate_state' => 'valid', 'certificate_expires_at' => Certificate::find($c['id'])->expires_at]);
+            }
+        }
     }
 
     private function databases(): void

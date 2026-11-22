@@ -9,7 +9,10 @@ import type {
   BackupPolicy,
   Brand,
   BrandStatus,
+  CertificateOrderStage,
+  CertificateSource,
   Customer,
+  CustomerCertificate,
   Database,
   DatabaseGrant,
   DatabaseServer,
@@ -157,7 +160,7 @@ interface ApiWebsite {
   runtime: { imageId: string; family: string; image: string; phpVersion: string | null; version?: string | null; workerMode: boolean; extensions: string[]; phpIni: Record<string, string>; previousImageId: string | null; documentRoot?: string; digest?: string | null; signatureVerified?: boolean };
   sftp?: { enabled: boolean; host: string | null; port: number; username: string; authorizedKeys: string[] };
   limits: Limits; diskLimitApplied?: boolean | null; usage: Partial<Website["use"]> | null; bandwidthBytes?: number;
-  domains?: { name: string; kind: Website["domains"][number]["kind"]; dnsPointsHere: boolean; certificate: { state: Website["domains"][number]["certificate"]["state"]; expiresAt: string | null }; verified?: boolean; verification?: DomainVerification | null }[];
+  domains?: { name: string; kind: Website["domains"][number]["kind"]; dnsPointsHere: boolean; certificate: { state: Website["domains"][number]["certificate"]["state"]; expiresAt: string | null; source?: CertificateSource; certificateId?: string | null }; verified?: boolean; verification?: DomainVerification | null }[];
   stagingOf: string | null; managedByTerraform: boolean; createdAt: string; updatedAt: string;
 }
 interface ApiServer {
@@ -267,7 +270,8 @@ export function toWebsite(w: ApiWebsite): Website {
     use: { cpuPercent: 0, memoryBytes: 0, diskBytes: 0, processes: 0, diskIoBytesPerSecond: 0, ...(w.usage ?? {}) },
     bandwidthBytes: w.bandwidthBytes ?? 0,
     domains: (w.domains ?? []).map((d) => ({
-      name: d.name, kind: d.kind, dnsPointsHere: d.dnsPointsHere, certificate: { state: d.certificate.state, expiresAt: d.certificate.expiresAt ?? undefined },
+      name: d.name, kind: d.kind, dnsPointsHere: d.dnsPointsHere,
+      certificate: { state: d.certificate.state, expiresAt: d.certificate.expiresAt ?? undefined, source: d.certificate.source ?? "automatic", certificateId: d.certificate.certificateId ?? undefined },
       ...(d.verified === false && d.verification ? { verification: d.verification } : {}),
     })),
     sftp: w.sftp ? { ...w.sftp, host: w.sftp.host ?? location.host.replace(/:\d+$/, ""), authorizedKeys: w.sftp.authorizedKeys ?? [] } : undefined,
@@ -373,6 +377,32 @@ export const toDnsZone = (z: ApiDnsZone): DnsZone => ({
 /** The zones that the user opened. Each load reads their records again. */
 const shownZones = new Set<string>();
 
+interface ApiCertificate {
+  id: string; customerId: string; source: CustomerCertificate["source"]; names: string[]; state: CustomerCertificate["state"];
+  issuer: string | null; fingerprint: string | null; notBefore: string | null; expiresAt: string | null; trusted: boolean | null; renewAt: string | null;
+  order: { stage: CertificateOrderStage; startedAt: string | null; records: { name: string; value: string }[] } | null;
+  error: string | null; nextTryAt: string | null;
+  usedBy: { domain: string; websiteId: string | null; websiteName: string | null; serverName: string }[];
+  certificatePem?: string | null;
+  createdAt: string;
+}
+
+export const toCertificate = (c: ApiCertificate): CustomerCertificate => ({
+  id: c.id, customerId: c.customerId, source: c.source, names: c.names, state: c.state,
+  issuer: c.issuer ?? undefined, fingerprint: c.fingerprint ?? undefined, notBefore: c.notBefore ?? undefined, expiresAt: c.expiresAt ?? undefined,
+  trusted: c.trusted ?? undefined, renewAt: c.renewAt ?? undefined,
+  order: c.order ? { stage: c.order.stage, startedAt: c.order.startedAt ?? undefined, records: c.order.records ?? [] } : undefined,
+  error: c.error ?? undefined, nextTryAt: c.nextTryAt ?? undefined,
+  usedBy: (c.usedBy ?? []).map((u) => ({ domain: u.domain, websiteId: u.websiteId ?? undefined, websiteName: u.websiteName ?? undefined, serverName: u.serverName })),
+  certificatePem: c.certificatePem ?? undefined,
+  createdAt: c.createdAt,
+});
+
+/** Reads one certificate with its chain. */
+export async function certificate(id: string): Promise<CustomerCertificate> {
+  return toCertificate(await request<ApiCertificate>("GET", `/certificates/${encodeURIComponent(id)}`));
+}
+
 /** Reads one zone with its records. The next loads also read the records of the zone. */
 export async function dnsZone(id: string): Promise<DnsZone> {
   shownZones.add(id);
@@ -420,7 +450,7 @@ export async function load(previous: State): Promise<State> {
   const admin = me.role === "administrator";
   const optional = <T>(p: Promise<T>, fallback: T) => p.catch(() => fallback);
 
-  const [websites, jobs, customers, plans, tokens, policy, servers, images, rollouts, audit, users, certificate, setup, account, databaseServers, dns, dnsAccounts, mesh, networks, alerts, mailDomains, mailboxes, mailAliases, mailClusters, pluginPages, pluginActions] = await Promise.all([
+  const [websites, jobs, customers, plans, tokens, policy, servers, images, rollouts, audit, users, certificate, setup, account, databaseServers, dns, dnsAccounts, mesh, networks, alerts, mailDomains, mailboxes, mailAliases, mailClusters, pluginPages, pluginActions, certificates] = await Promise.all([
     all<ApiWebsite>("/websites"),
     request<{ data: ApiJob[] }>("GET", "/jobs?perPage=50").then((r) => r.data),
     optional(request<{ data: ApiCustomer[] }>("GET", "/customers").then((r) => r.data), []),
@@ -455,6 +485,8 @@ export async function load(previous: State): Promise<State> {
     // The pages of the plugins for the menu. A panel API of an earlier release has no plugins.
     optional(request<{ data: PluginPage[] }>("GET", "/plugin-pages").then((r) => r.data), []),
     optional(request<{ data: PluginAction[] }>("GET", "/plugin-actions").then((r) => r.data), []),
+    // The certificates of the customers. A token with no websites scope gives no list.
+    optional(request<{ data: ApiCertificate[] }>("GET", "/certificates").then((r) => r.data), []),
   ]);
   // The list has no records. The panel reads the records of the zones that the user opened.
   const zoneDetails = new Map<string, DnsZone>();
@@ -508,6 +540,12 @@ export async function load(previous: State): Promise<State> {
     nameServers: dns.nameServers ?? [],
     dnsAccounts: dnsAccounts.data.map(toDnsAccount),
     dnsProviders: dnsAccounts.providers,
+    // The chain stays from the page of the certificate, while the certificate is the same.
+    certificates: certificates.map((c) => {
+      const next = toCertificate(c);
+      const before = previous.certificates.find((x) => x.id === c.id && x.fingerprint === next.fingerprint);
+      return before?.certificatePem ? { ...next, certificatePem: before.certificatePem } : next;
+    }),
     mesh,
     networks,
     pluginPages,
@@ -637,4 +675,4 @@ export async function waitForJob(job: ApiJob | Job, onChange: (job: Job) => void
   return current;
 }
 
-export type { ApiDatabaseServer, ApiDnsAccount, ApiDnsRecord, ApiDnsZone, ApiMailDomain, ApiMailbox, ApiJob, ApiPanelCertificate, ApiUser, ApiWebsite };
+export type { ApiCertificate, ApiDatabaseServer, ApiDnsAccount, ApiDnsRecord, ApiDnsZone, ApiMailDomain, ApiMailbox, ApiJob, ApiPanelCertificate, ApiUser, ApiWebsite };

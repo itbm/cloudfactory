@@ -143,6 +143,10 @@ type Report struct {
 	DNSZones []DNSZoneState `json:"dnsZones"`
 	// SftpPort is the port that the website owners use for SFTP on this server.
 	SftpPort int `json:"sftpPort,omitempty"`
+	// Certificates are the certificates from the panel that the edge proxy of this server has
+	// (SetCertificates). The panel sends its certificates again to a server that has different
+	// ones. An agent that cannot read them sends null.
+	Certificates []CertificateState `json:"certificates"`
 	// PanelCertificate is the certificate of the panel domain. Only the panel server sends it.
 	PanelCertificate *PanelCertificate `json:"panelCertificate,omitempty"`
 	// Mesh is the tunnel key of this server and the state of its tunnels to other servers. An
@@ -242,6 +246,15 @@ type PanelCertificate struct {
 type DNSZoneState struct {
 	Name   string `json:"name"`
 	Serial int64  `json:"serial"`
+}
+
+// CertificateState is one certificate from the panel on the edge proxy of this server.
+type CertificateState struct {
+	ID string `json:"id"`
+	// SHA256 is the fingerprint of the certificate, in lower-case hex.
+	SHA256 string `json:"sha256"`
+	// Hosts are the hosts that use the certificate.
+	Hosts []string `json:"hosts"`
 }
 
 // DomainState is what the agent sees for one domain (FR-402, FR-403).

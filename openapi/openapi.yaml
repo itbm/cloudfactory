@@ -30,6 +30,10 @@ tags:
   - name: Databases
   - name: DNS
     description: DNS hosting. The zones of the customers and their records.
+  - name: Certificates
+    description: >-
+      The TLS certificates of the customers: uploads, and certificates from Let's Encrypt with
+      DNS validation. Refer to docs/certificates.md. These routes need the websites scope.
   - name: Networks
     description: The private networks of the customers, like a VPC.
   - name: Backups
@@ -1892,6 +1896,144 @@ paths:
         '204': { description: The network is removed. }
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/certificates:
+    get:
+      tags: [Certificates]
+      summary: List certificates
+      description: >-
+        The certificates of the customers that you can see. Each verified domain of a website
+        uses the best certificate of its customer that is valid for it. A domain with no such
+        certificate gets a certificate from the edge proxy.
+      parameters:
+        - { name: customerId, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: The certificates, in the order that the panel got them.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/Certificate' } }
+    post:
+      tags: [Certificates]
+      summary: Add a certificate
+      description: >-
+        With the source `upload`, send the certificate chain and its private key in PEM format.
+        The chain can have the certificates in any order. The key must not have a password.
+
+
+        With the source `acme`, the panel gets a certificate for `domain` from Let's Encrypt
+        with DNS validation. With `wildcard`, the certificate is also valid for `*.domain`. The
+        customer must have a DNS zone for the domain on the DNS page, and the registrar must
+        send the queries for the zone to the name servers of the panel. The order runs after
+        the response: read the certificate again to see its state.
+
+
+        A certificate must not be valid for a host name of the panel or of a server. Each
+        customer can have 20 certificates (`CF_CERTIFICATES_PER_CUSTOMER`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [source]
+              properties:
+                source: { type: string, enum: [upload, acme] }
+                customerId: { type: [string, 'null'], description: Default is the customer of the user. }
+                certificate: { type: string, maxLength: 65536, description: 'For "upload": the certificate chain in PEM format.' }
+                privateKey: { type: string, maxLength: 65536, description: 'For "upload": the private key in PEM format, with no password.' }
+                domain: { type: string, description: 'For "acme": the domain, for example example.com.' }
+                wildcard: { type: boolean, description: 'For "acme": the certificate is also valid for each name directly below the domain.' }
+      responses:
+        '201':
+          description: The certificate. For an order, the state is `issuing`.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Certificate' }
+        '409': { description: The customer is suspended. }
+        '422': { $ref: '#/components/responses/Invalid' }
+        '429': { description: Too many certificate changes in one hour. }
+
+  /v1/certificates/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    get:
+      tags: [Certificates]
+      summary: Get a certificate with its chain
+      responses:
+        '200':
+          description: The certificate, with the certificate chain in PEM format. The API never gives the private key.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/Certificate' }
+                  - type: object
+                    properties:
+                      certificatePem: { type: [string, 'null'] }
+        '404': { description: Not found. }
+    put:
+      tags: [Certificates]
+      summary: Replace an uploaded certificate
+      description: >-
+        Replaces the chain and the key of an uploaded certificate, for example with a renewed
+        certificate from your CA. The panel renews a certificate with the source `acme` itself.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [certificate, privateKey]
+              properties:
+                certificate: { type: string, maxLength: 65536 }
+                privateKey: { type: string, maxLength: 65536 }
+      responses:
+        '200':
+          description: The certificate. The servers get the new certificate.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Certificate' }
+        '409': { description: The customer is suspended. }
+        '422': { $ref: '#/components/responses/Invalid' }
+        '429': { description: Too many certificate changes in one hour. }
+    delete:
+      tags: [Certificates]
+      summary: Remove a certificate
+      description: The domains that used the certificate get a certificate from the edge proxy again.
+      responses:
+        '202':
+          description: The panel removed the certificate. The jobs send the new list of certificates to the servers.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  jobs: { type: integer, description: The number of jobs. }
+        '404': { description: Not found. }
+
+  /v1/certificates/{id}/renew:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    post:
+      tags: [Certificates]
+      summary: Renew a certificate now
+      description: >-
+        Starts a new order for a certificate with the source `acme`: a renewal, or a new try
+        after an order failed. An order that runs starts again. The panel also renews each
+        certificate itself after two thirds of its lifetime.
+      responses:
+        '202':
+          description: The order started.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Certificate' }
+        '409': { description: The customer is suspended. }
+        '422': { $ref: '#/components/responses/Invalid' }
+        '429': { description: Too many certificate changes in one hour. }
 
   /v1/dns-zones:
     get:
@@ -5812,6 +5954,53 @@ components:
             cannot change them. `website`: an A or AAAA record that the panel made for a domain
             of a website. The panel changes it when the server of the website gets a new
             address, and removes it with the domain. Null: a record of the user.
+    Certificate:
+      type: object
+      properties:
+        id: { type: string }
+        customerId: { type: string }
+        source: { type: string, enum: [upload, acme], description: '"upload": the customer uploaded it. "acme": the panel gets it from Let''s Encrypt with DNS validation.' }
+        names: { type: array, items: { type: string }, example: [example.com, '*.example.com'] }
+        state:
+          type: string
+          enum: [issuing, failed, renewing, expired, valid]
+          description: '"issuing": the first order runs. "failed": the first order failed. "renewing": an order for a new certificate runs, and the current certificate stays in use.'
+        issuer: { type: [string, 'null'] }
+        fingerprint: { type: [string, 'null'], description: The SHA-256 fingerprint of the certificate, in lower-case hexadecimal. }
+        notBefore: { type: [string, 'null'], format: date-time }
+        expiresAt: { type: [string, 'null'], format: date-time }
+        trusted: { type: [boolean, 'null'], description: False when browsers do not trust the certificate, for example a self-signed certificate. }
+        renewAt: { type: [string, 'null'], format: date-time, description: 'Only for "acme": the time of the next renewal.' }
+        order:
+          description: The order that runs, or null.
+          oneOf:
+            - type: 'null'
+            - type: object
+              properties:
+                stage: { type: string, enum: [new, dns, validating, finalizing] }
+                startedAt: { type: string, format: date-time }
+                records:
+                  type: array
+                  description: The TXT records of the DNS validation.
+                  items:
+                    type: object
+                    properties:
+                      name: { type: string, example: _acme-challenge.example.com }
+                      value: { type: string }
+        error: { type: [string, 'null'], description: The error of the last order. }
+        nextTryAt: { type: [string, 'null'], format: date-time, description: The time of the next try of a renewal that failed. }
+        usedBy:
+          type: array
+          description: The domains that use the certificate now, from the reports of the servers.
+          items:
+            type: object
+            properties:
+              domain: { type: string }
+              websiteId: { type: [string, 'null'] }
+              websiteName: { type: [string, 'null'] }
+              serverName: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
     DnsZone:
       type: object
       properties:
@@ -6405,6 +6594,11 @@ components:
           properties:
             state: { type: string, enum: [pending, valid, expired, failed] }
             expiresAt: { type: [string, 'null'], format: date-time }
+            source:
+              type: string
+              enum: [automatic, upload, acme]
+              description: '"automatic": the edge proxy gets the certificate. "upload" or "acme": a certificate of the customer from the panel (certificateId).'
+            certificateId: { type: [string, 'null'] }
     DatabaseLimits:
       type: object
       description: The limits of a database server. The agent applies the disk limit with a disk image of this size.
@@ -6907,6 +7101,20 @@ components:
             properties:
               slug: { type: string, maxLength: 40 }
               version: { type: string, maxLength: 40 }
+        certificates:
+          type: [array, 'null']
+          maxItems: 2000
+          description: >-
+            The certificates from the panel that the edge proxy has (SetCertificates): the ID,
+            the SHA-256 fingerprint and the hosts of each one. When they do not agree with the
+            panel, the panel sends the certificates again. Null when the agent could not read them.
+          items:
+            type: object
+            required: [id, sha256]
+            properties:
+              id: { type: string, maxLength: 64 }
+              sha256: { type: string, maxLength: 64 }
+              hosts: { type: array, maxItems: 5000, items: { type: string, maxLength: 253 } }
         features:
           type: [array, 'null']
           description: >-

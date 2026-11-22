@@ -18,6 +18,7 @@ use App\Models\Release;
 use App\Models\Rollout;
 use App\Models\Snapshot;
 use App\Models\Website;
+use App\Services\Certificates\Certificates;
 use App\Services\Deploys\Deploys;
 use App\Services\Dns\Zones;
 use App\Services\Imports\Runner;
@@ -117,6 +118,14 @@ class JobOutcome
             }
             if ($job->action === AgentAction::SetPacks && $state === JobState::Succeeded) {
                 Packs::jobFinished($job, $result);
+            }
+            if ($job->action === AgentAction::SetCertificates && $state === JobState::Succeeded) {
+                Certificates::jobFinished($job, $result);
+            }
+            // The domains of the server changed: the server gets the certificates from the
+            // panel for its domains now, not at the next report.
+            if ($state === JobState::Succeeded && in_array($job->action, [AgentAction::CreateWebsite, AgentAction::DeleteWebsite, AgentAction::AddDomain, AgentAction::RemoveDomain], true)) {
+                app(Certificates::class)->serverChanged($job->server, $job->customer_id);
             }
             // A job of an import: the next parts of the import can start.
             if ($job->import_id !== null) {

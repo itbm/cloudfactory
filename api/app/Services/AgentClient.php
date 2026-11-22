@@ -8,6 +8,7 @@ use App\Models\AgentJob;
 use App\Models\GitSource;
 use App\Models\Server;
 use App\Models\Website;
+use App\Services\Certificates\Certificates;
 use App\Services\Dns\Zones;
 use App\Services\Packs\Packs;
 use Illuminate\Http\Client\ConnectionException;
@@ -57,6 +58,9 @@ class AgentClient
                 // The packs are not in the job either: the agent gets the packs that the panel
                 // has when it sends the job, also for a job that waited in the queue.
                 ...($job->action === AgentAction::SetPacks ? ['packs' => Packs::forAgent()] : []),
+                // The certificates from the panel and their private keys are not in the job. The
+                // agent gets the certificates that the server must have when the panel sends the job.
+                ...($job->action === AgentAction::SetCertificates ? ['certificates' => app(Certificates::class)->forAgent($server)] : []),
                 ...($job->action->usesBackupRepository() ? ['credentials' => (object) [
                     ...BackupController::credentialsFor($server, $shared),
                     'RESTIC_PASSWORD' => $shared ? (string) BackupController::sharedRepositoryPassword() : $server->backupPassword(),

@@ -92,13 +92,26 @@ enum NotificationEvent: string
         return $common + match ($this) {
             self::JobFailed => ['job' => 'Create database shop_main', 'website' => 'shop.example.com', 'server' => 'web-1', 'error' => 'The database server did not answer.', 'time' => '15 Nov 2026 03:12 UTC'],
             self::BackupFailed => ['website' => 'shop.example.com', 'server' => 'web-1', 'error' => 'The object storage refused the key.', 'time' => '15 Nov 2026 03:00 UTC'],
-            self::CertificateExpiring => ['domain' => 'shop.example.com', 'website' => 'shop.example.com', 'expiresAt' => '29 Nov 2026', 'days' => '14', 'state' => 'valid'],
+            self::CertificateExpiring => ['domain' => 'shop.example.com', 'website' => 'shop.example.com', 'expiresAt' => '29 Nov 2026', 'days' => '14', 'state' => 'valid', 'advice' => self::certificateAdvice('shop.example.com', 'automatic')],
             self::AccountSuspended => ['account' => 'Acme Ltd', 'provider' => 'Cloudfactory', 'supportEmail' => 'support@example.com'],
             self::AccountRestored => ['account' => 'Acme Ltd', 'provider' => 'Cloudfactory'],
             self::NewDeviceSignIn => ['device' => 'Firefox on Linux', 'ip' => '203.0.113.7', 'time' => '15 Nov 2026 09:41 UTC'],
             self::UsageAlert => ['account' => 'Acme Ltd', 'resource' => 'Disk', 'website' => 'shop.example.com', 'used' => '9.1 GB', 'limit' => '10 GB', 'percent' => '91', 'level' => 'warning'],
             self::ServerOffline => ['server' => 'web-2', 'lastSeen' => '15 Nov 2026 02:55 UTC'],
             self::DeployNeedsAttention => ['website' => 'api.example.com', 'branch' => 'main', 'commit' => '4f9a1c2', 'message' => 'Add the invoice table', 'error' => 'the health check failed after the switch: 9 of 30 checks failed.', 'time' => '15 Nov 2026 14:20 UTC', 'websiteId' => '01jbq3z5k8n6t4w2x9y7r5p3q9'],
+        };
+    }
+
+    /**
+     * The value {{advice}} of the event certificate.expiring: what to do for the source of the
+     * certificate that the domain uses (automatic, acme or upload).
+     */
+    public static function certificateAdvice(string $domain, string $source): string
+    {
+        return match ($source) {
+            'upload' => 'You uploaded this certificate to the panel, so the panel cannot renew it. Get a new certificate from your certificate authority. Then open the certificate on the Certificates page of the panel and select "Replace":',
+            'acme' => 'The panel renews a certificate with DNS validation when two thirds of its time is gone, but it could not renew this certificate. Make sure that the name servers of the domain are the name servers of the panel. Then open the certificate on the Certificates page of the panel and select "Renew now":',
+            default => "The panel renews a certificate 30 days before it expires, but it could not renew this certificate. Make sure that the DNS record of {$domain} points to the server of the website. Then open the domains of the website in the panel and select \"Check DNS\":",
         };
     }
 
@@ -122,7 +135,7 @@ enum NotificationEvent: string
         return match ($this) {
             self::JobFailed => "Hello {{name}},\n\nThis job did not complete:\n\n{{job}}\nWebsite: {{website}}\nServer: {{server}}\nTime: {{time}}\n\nThe error: {{error}}\n\nOpen the panel to see the steps of the job, and to try again:\n{{panelUrl}}/jobs",
             self::BackupFailed => "Hello {{name}},\n\nThe backup of {{website}} did not complete at {{time}}.\n\nThe error: {{error}}\n\nThe earlier backups are not changed. Open the panel to make a backup now:\n{{panelUrl}}/backups",
-            self::CertificateExpiring => "Hello {{name}},\n\nThe panel could not renew the TLS certificate of {{domain}} (website {{website}}).\n\nExpiry: {{expiresAt}} ({{days}} days)\n\nThe panel renews a certificate 30 days before it expires. When the certificate expires, browsers show a warning for the website.\n\nMake sure that the DNS record of {{domain}} points to the server of the website. Then open the domains of the website in the panel and select \"Check DNS\":\n{{panelUrl}}",
+            self::CertificateExpiring => "Hello {{name}},\n\nThe TLS certificate of {{domain}} (website {{website}}) needs your attention.\n\nExpiry: {{expiresAt}} ({{days}} days)\n\nWhen the certificate expires, browsers show a warning for the website.\n\n{{advice}}\n{{panelUrl}}",
             self::AccountSuspended => "Hello {{name}},\n\nYour account {{account}} is suspended. Your websites are stopped, and SFTP access is off. Your files, databases and backups are not deleted.\n\nTo lift the suspension, speak to {{provider}}: {{supportEmail}}",
             self::AccountRestored => "Hello {{name}},\n\nThe suspension of your account {{account}} is lifted. The panel starts your websites again, and turns SFTP access on again.\n\n{{panelUrl}}",
             self::NewDeviceSignIn => "Hello {{name}},\n\nSomeone signed in to your user on {{brand}} from a new device.\n\nDevice: {{device}}\nIP address: {{ip}}\nTime: {{time}}\n\nIf this was you, you need not do anything. If not, change your password now, and turn on the authenticator app:\n{{panelUrl}}/settings",
