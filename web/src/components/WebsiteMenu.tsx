@@ -1,16 +1,19 @@
 import { MoreHorizontal } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useStore } from "../api/hooks";
 import { createStagingCopy, deleteWebsite, setPower, type StagingCredential } from "../api/store";
 import type { Website } from "../api/types";
 import { ENGINE_NAME } from "../lib/labels";
 import { CopyField } from "../pages/website/AccessTab";
+import { MoveWebsiteDialog } from "./MoveWebsiteDialog";
 import { Modal } from "./ui";
 
 /** The actions menu of a website (FR-204, FR-205). */
 export function WebsiteMenu({ website, bordered = false }: { website: Website; bordered?: boolean }) {
   const [open, setOpen] = useState(false);
-  const [confirm, setConfirm] = useState<null | "stop" | "delete">(null);
+  const [confirm, setConfirm] = useState<null | "stop" | "delete" | "move">(null);
+  const admin = useStore().session.user.role === "administrator";
   const [typed, setTyped] = useState("");
   const [error, setError] = useState<{ title: string; text: string } | null>(null);
   const [staging, setStaging] = useState<{ websiteId: string; credentials: StagingCredential[] } | null>(null);
@@ -57,7 +60,9 @@ export function WebsiteMenu({ website, bordered = false }: { website: Website; b
   );
 
   const running = website.status === "running";
-  const busy = website.status === "starting" || website.status === "stopping";
+  // A website that moves accepts no change until the move is complete.
+  const moving = website.status === "moving";
+  const busy = website.status === "starting" || website.status === "stopping" || moving;
 
   return (
     <div className="menu" ref={ref}>
@@ -77,14 +82,15 @@ export function WebsiteMenu({ website, bordered = false }: { website: Website; b
           {running
             ? item("Stop", () => setConfirm("stop"), busy)
             : item("Start", () => attempt("Cannot start the website", () => setPower(website.id, "start")), busy)}
-          {item("Restart", () => attempt("Cannot restart the website", () => setPower(website.id, "restart")), !running)}
+          {item("Restart", () => attempt("Cannot restart the website", () => setPower(website.id, "restart")), !running || moving)}
           {item("Make staging copy", () => attempt("Cannot make a staging copy", async () => {
             const { websiteId, credentials } = await createStagingCopy(website.id);
             // The API shows the passwords of the new database users once.
             if (credentials?.length) setStaging({ websiteId, credentials });
             else navigate(`/websites/${websiteId}`);
-          }), !!website.stagingOf)}
-          {item("Remove website", () => setConfirm("delete"), false, true)}
+          }), !!website.stagingOf || moving)}
+          {admin && item("Move to a different server", () => setConfirm("move"), website.status !== "running" && website.status !== "stopped")}
+          {item("Remove website", () => setConfirm("delete"), moving, true)}
         </ul>
       )}
       {error && (
@@ -110,6 +116,7 @@ export function WebsiteMenu({ website, bordered = false }: { website: Website; b
           ))}
         </Modal>
       )}
+      {confirm === "move" && <MoveWebsiteDialog website={website} onClose={() => setConfirm(null)} />}
       {confirm === "stop" && (
         <Modal
           title={`Stop ${website.name}?`}

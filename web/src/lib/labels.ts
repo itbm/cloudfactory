@@ -8,6 +8,7 @@ export const WEBSITE_STATUS: Record<WebsiteStatus, { label: string; tone: Tone }
   starting: { label: "Starting", tone: "info" },
   stopping: { label: "Stopping", tone: "info" },
   failed: { label: "Failed", tone: "danger" },
+  moving: { label: "Moving", tone: "info" },
 };
 
 export const JOB_STATE: Record<JobState, { label: string; tone: Tone }> = {

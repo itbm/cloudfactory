@@ -35,7 +35,8 @@ export interface Usage {
   limit: number;
 }
 
-export type WebsiteStatus = "running" | "stopped" | "starting" | "stopping" | "failed";
+/** "moving": the website goes to a different server. It accepts no change until the move is complete. */
+export type WebsiteStatus = "running" | "stopped" | "starting" | "stopping" | "failed" | "moving";
 
 /** "node" and "python": the container runs the start command of the website. */
 /** "app" is a runtime from a manifest of the agent, for example Go. It runs the start command of the website. */
@@ -129,6 +130,8 @@ export interface Website {
   application: string;
   customerId: string;
   serverId: string;
+  /** The server that receives the website, while the status is "moving". */
+  movingToServerId?: string;
   unixUser: string;
   /** The name of the website for a different website in a network with it, for example "shop-a1b2.internal". Null for a worker. */
   networkHost: string | null;
