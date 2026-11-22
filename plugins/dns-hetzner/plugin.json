@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "slug": "dns-hetzner",
+  "name": "Hetzner DNS",
+  "version": "1.0.0",
+  "publisher": "Cloudfactory",
+  "description": "Sends DNS zones to Hetzner DNS with the Hetzner Cloud API. The panel keeps the records, and the plugin makes the zone at Hetzner the same after each change.",
+  "scopes": [],
+  "dnsProviders": [
+    {
+      "id": "hetzner",
+      "name": "Hetzner",
+      "path": "/dns/hetzner",
+      "dnssec": false,
+      "credentials": [
+        {
+          "id": "apiToken",
+          "label": "API token",
+          "secret": true,
+          "hint": "An API token of the Hetzner Cloud project of your DNS zones, with the permission Read & Write. Make it in Hetzner Console, in Security > API tokens."
+        }
+      ]
+    }
+  ]
+}

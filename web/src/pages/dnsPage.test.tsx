@@ -28,7 +28,7 @@ describe("the DNS page", () => {
     expect(within(main).getByRole("link", { name: "acme.example.com" })).toBeTruthy();
     expect(within(main).getByRole("link", { name: "acme-outlet.example.com" })).toBeTruthy();
     expect(main.textContent).not.toContain("northwind.example.com");
-    expect(main.textContent).toContain("Acme Ltd has 2 of");
+    expect(main.textContent).toContain("Acme Ltd has 3 of");
     expect(main.textContent).toContain("Uses other name servers");
     expect(main.textContent).toContain("ns1.registrar.example, ns2.registrar.example");
     expect(within(page).getByLabelText("Name server 1").textContent).toBe("ns1.panel.example");
@@ -52,11 +52,26 @@ describe("the DNS page", () => {
   it("tells an administrator what to do when the panel has no DNS server", async () => {
     const api = await signedIn("administrator");
     api.change<{ data: unknown[]; nameServers: string[] }>("/dns-zones", (b) => { b.data = []; b.nameServers = []; });
+    api.change<{ data: unknown[] }>("/dns-accounts", (b) => { b.data = []; });
     const { refresh } = await import("../api/store");
     await refresh();
     render(<MemoryRouter initialEntries={["/dns"]}><App /></MemoryRouter>);
     expect(screen.getByRole("main").textContent).toContain("This panel has no DNS server.");
     expect(screen.queryByRole("button", { name: "New DNS zone" })).toBeNull();
+  });
+
+  it("lets an administrator make zones at a DNS provider when the panel has no DNS server", async () => {
+    const api = await signedIn("administrator");
+    api.change<{ data: unknown[]; nameServers: string[] }>("/dns-zones", (b) => { b.data = []; b.nameServers = []; });
+    const { refresh } = await import("../api/store");
+    await refresh();
+    render(<MemoryRouter initialEntries={["/dns"]}><App /></MemoryRouter>);
+    expect(screen.getByRole("main").textContent).not.toContain("This panel has no DNS server.");
+    fireEvent.click(screen.getByRole("button", { name: "New DNS zone" }));
+    const select = within(screen.getByRole("dialog")).getByLabelText("Name servers") as HTMLSelectElement;
+    const options = [...select.options].map((o) => o.textContent ?? "");
+    expect(options).toContain("Cloudflare: Panel Cloudflare");
+    expect(options.some((o) => o.startsWith("This panel"))).toBe(false);
   });
 
   it("makes a zone and opens it", async () => {
@@ -171,6 +186,36 @@ describe("the page of a DNS zone", () => {
     fireEvent.click(within(main).getByRole("button", { name: "Send again now" }));
     await waitFor(() => expect(main.textContent).not.toContain("A DNS server does not have the last change."));
     expect(api.changes.at(-1)).toMatchObject({ method: "POST", path: `/dns-zones/${id}/sync` });
+  });
+
+  it("shows a preview of an import, and then imports the records", async () => {
+    const api = await open("owner", () => `/dns/${zone("acme.example.com").id}`);
+    const id = zone("acme.example.com").id;
+    const file = "www 300 IN CNAME acme.example.com.\nshop 30 IN A 192.0.2.40\n10 IN PTR host.acme.example.com.";
+    const added = [
+      { line: 1, name: "www", type: "CNAME", value: "acme.example.com", ttl: 300, priority: null, note: null },
+      { line: 2, name: "shop", type: "A", value: "192.0.2.40", ttl: 60, priority: null, note: "The TTL was 30 seconds. The panel uses 60 seconds." },
+    ];
+    const skipped = [{ line: 3, text: "10 IN PTR host.acme.example.com.", code: "type", reason: "The panel does not have records of the type PTR." }];
+    const zoneBody = () => JSON.parse(JSON.stringify(zone("acme.example.com"))) as object;
+    api.on(`POST /dns-zones/${id}/import`, (body) => {
+      const dryRun = (body as { dryRun: boolean }).dryRun;
+      return [dryRun ? 200 : 202, { dryRun, added, existing: 1, skipped, zone: { ...zoneBody(), delegation: { state: "here", nameServers: [], checkedAt: null }, dnssec: { enabled: false, ds: null, dnskey: null } }, jobs: [] }];
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Import" }));
+    const dialog = screen.getByRole("dialog");
+    expect((within(dialog).getByRole("button", { name: "Preview" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(within(dialog).getByLabelText("Zone file"), { target: { value: file } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Preview" }));
+    await waitFor(() => expect(dialog.textContent).toContain("2 records to add."));
+    expect(api.changes.at(-1)).toMatchObject({ method: "POST", path: `/dns-zones/${id}/import`, body: { zoneFile: file, dryRun: true } });
+    expect(dialog.textContent).toContain("1 record is in the zone already.");
+    expect(dialog.textContent).toContain("The panel does not import 1 line.");
+    expect(dialog.textContent).toContain("The TTL was 30 seconds. The panel uses 60 seconds.");
+    expect(dialog.textContent).toContain("The panel does not have records of the type PTR.");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Import 2 records" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(api.changes.at(-1)).toMatchObject({ method: "POST", path: `/dns-zones/${id}/import`, body: { zoneFile: file, dryRun: false } });
   });
 
   it("does not show an owner the zone of a different customer", async () => {
