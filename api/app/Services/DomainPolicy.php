@@ -17,10 +17,15 @@ use App\Services\Dns\Zones;
  * - The edge proxy serves a domain only after the customer proves that they control it, with a
  *   DNS TXT record. A domain is verified at once when the user is an administrator, when it
  *   is a verified domain of the same customer or a sub-domain of one, or when it is in a DNS
- *   zone of the same customer that the public DNS delegates to the panel.
+ *   zone of the same customer that the public DNS delegates to the panel. For a zone at an
+ *   external DNS provider, the public DNS must also give the claim token of the zone, which the
+ *   panel sends to the provider with the zone (Zones::checkDelegation).
  */
 class DomainPolicy
 {
+    /** The label of the TXT record that holds a claim token or a verification token. */
+    public const CHALLENGE = '_cloudfactory-challenge';
+
     /** The domains that nobody can attach to a website, with all of their sub-domains. */
     public function reserved(): array
     {
@@ -80,7 +85,7 @@ class DomainPolicy
     /** True when the TXT record of the name holds the claim token of the customer. */
     public function proves(string $customerId, string $name): bool
     {
-        return $this->hasTxt('_cloudfactory-challenge.'.$name, $this->claimToken($customerId, $name));
+        return $this->hasTxt(self::CHALLENGE.'.'.$name, $this->claimToken($customerId, $name));
     }
 
     /** True when the user does not need to prove control of the domain. */

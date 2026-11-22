@@ -1,0 +1,31 @@
+{
+  "schema": 1,
+  "slug": "dns-cloudflare",
+  "name": "Cloudflare DNS",
+  "version": "1.0.0",
+  "publisher": "Cloudfactory",
+  "description": "Sends DNS zones to Cloudflare. The panel keeps the records, and the plugin makes the zone at Cloudflare the same after each change.",
+  "scopes": [],
+  "dnsProviders": [
+    {
+      "id": "cloudflare",
+      "name": "Cloudflare",
+      "path": "/dns/cloudflare",
+      "dnssec": true,
+      "credentials": [
+        {
+          "id": "apiToken",
+          "label": "API token",
+          "secret": true,
+          "hint": "Give the token the permissions Zone: Read and DNS: Edit. To let the panel add and remove zones, also give Zone: Edit."
+        },
+        {
+          "id": "accountId",
+          "label": "Account ID",
+          "optional": true,
+          "hint": "Necessary only to add a zone that is not at Cloudflare yet. The ID is on the overview page of a zone."
+        }
+      ]
+    }
+  ]
+}

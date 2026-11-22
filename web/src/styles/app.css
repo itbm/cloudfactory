@@ -448,6 +448,8 @@ a.cell-title:hover { text-decoration: underline; }
 .kv td { padding: 11px 0; }
 .kv tr:last-child th, .kv tr:last-child td { border-bottom: 0; }
 .kv tbody tr:hover { background: none; }
+/* A table with a copy field: the field shrinks with the screen and does not widen the table. */
+.kv-fixed { table-layout: fixed; }
 
 .toggle { display: inline-flex; align-items: center; gap: 10px; color: var(--text-muted); font-size: 14px; }
 .toggle button {
