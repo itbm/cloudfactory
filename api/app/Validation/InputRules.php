@@ -105,8 +105,8 @@ final class InputRules
     /** The part of a mail address before the @ sign, in lower case. It has no plus sign: the mail server uses the text after a plus sign as a tag of the same mailbox. */
     public const MAIL_LOCAL_PART = '/^(?![\\s\\S]*?(?:\\.\\.))(?:^[a-z0-9]([a-z0-9._-]{0,62}[a-z0-9])?$)/D';
 
-    /** The bcrypt hash of a mailbox password. The panel makes it, and the agent gives it to the mail server. The agent never gets the password. */
-    public const MAIL_PASSWORD_HASH = '/^(?:^\\$2y\\$1[0-9]\\$[.\\/A-Za-z0-9]{53}$)/D';
+    /** The hash of a mailbox password: bcrypt, which the panel makes, or SHA-512-crypt, SHA-256-crypt or MD5-crypt from the import of a different panel. The agent gives it to the mail server. The agent never gets the password. */
+    public const MAIL_PASSWORD_HASH = '/^(?:^(\\$2[aby]\\$(0[4-9]|[12][0-9]|3[01])\\$[.\\/A-Za-z0-9]{53}|\\$6\\$(rounds=[0-9]{4,9}\\$)?[.\\/A-Za-z0-9]{1,16}\\$[.\\/A-Za-z0-9]{86}|\\$5\\$(rounds=[0-9]{4,9}\\$)?[.\\/A-Za-z0-9]{1,16}\\$[.\\/A-Za-z0-9]{43}|\\$1\\$[.\\/A-Za-z0-9]{1,8}\\$[.\\/A-Za-z0-9]{22})$)/D';
 
     /** The version of the runtime in one image of a pack, for example "1.25". Customers select it. */
     public const PACK_IMAGE_VERSION = '/^(?:^[0-9A-Za-z][0-9A-Za-z.+_-]{0,15}$)/D';
@@ -227,7 +227,7 @@ final class InputRules
         'ipv6' => 'Enter an IPv6 address in lower-case letters, for example 2001:db8::10.',
         'mailAddress' => 'Enter a mail address in lower-case letters, for example sales@example.com.',
         'mailLocalPart' => 'Use 1 to 64 lower-case letters, digits, dots, hyphens and underscores. Start and end with a letter or a digit.',
-        'mailPasswordHash' => 'Enter a bcrypt hash.',
+        'mailPasswordHash' => 'Enter a bcrypt, SHA-512-crypt, SHA-256-crypt or MD5-crypt hash.',
         'packImageVersion' => 'Use up to 16 letters, digits and the characters . + _ -, for example 1.25.',
         'packSlug' => 'Use 2 to 31 lower-case letters, digits and "-". The first character is a letter.',
         'packVersion' => 'Use a version such as 1.2.0.',

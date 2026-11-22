@@ -193,6 +193,8 @@ func (d *Deps) FillReport(ctx context.Context, r *panel.Report) {
 	if d.ManageTrial {
 		r.Features = append(r.Features, "manage-trial")
 	}
+	// The import jobs of an account from a different panel (imports.go).
+	r.Features = append(r.Features, "imports")
 	r.DatabaseInstances = true
 	r.Services = append(r.Services, d.firewallService(ctx), d.helperService(), d.quotaService(sites), d.diskService())
 	r.Mail = d.mailReport(ctx)
