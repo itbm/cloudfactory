@@ -2,6 +2,7 @@
 // loads the changed data again. A change that makes a job gives a promise that resolves when
 // the agent has finished the job.
 
+import { createPasskey, getPasskey } from "../lib/webauthn";
 import type {
   Account,
   ApiToken,
@@ -365,6 +366,8 @@ export async function signInBrand(): Promise<Brand> {
 export interface SignInMethods {
   /** The panel can send an email with a link to set a new password. */
   passwordReset: boolean;
+  /** Passkeys work on this domain (FR-103). */
+  passkeys: boolean;
 }
 
 export async function signInMethods(): Promise<SignInMethods> {
@@ -572,6 +575,49 @@ export async function signIn(email: string, password: string, totp: string): Pro
   const res = await request<{ token: string }>("POST", "/auth/login", { email, password, totp: totp || undefined, deviceId: deviceId() });
   token = res.token;
   writeToken(token);
+}
+
+// Passkeys (FR-103)
+
+export interface Passkey {
+  id: string;
+  name: string;
+  /** The panel domain of the passkey. The browser uses a passkey only on its own domain. */
+  domain: string;
+  /** The passkey is in a password manager or a cloud account, so it is on more than one device. */
+  synced: boolean;
+  createdAt: string;
+  lastUsedAt: string | null;
+}
+
+type Ceremony = { ceremony: string; publicKey: Record<string, unknown> };
+
+/** Signs in with a passkey of this domain. The browser shows the passkeys. */
+export async function signInWithPasskey(): Promise<void> {
+  const start = await request<Ceremony>("POST", "/auth/passkey/options");
+  const credential = await getPasskey(start.publicKey);
+  const res = await request<{ token: string }>("POST", "/auth/passkey", { ceremony: start.ceremony, credential, deviceId: deviceId() });
+  token = res.token;
+  writeToken(token);
+}
+
+export async function listPasskeys(): Promise<Passkey[]> {
+  return (await request<{ data: Passkey[] }>("GET", "/me/passkeys")).data;
+}
+
+/** Adds a passkey. The panel asks for the password and, when TOTP is on, a code first. */
+export async function addPasskey(name: string, password: string, totp: string): Promise<Passkey> {
+  const start = await request<Ceremony>("POST", "/me/passkeys/options", { password, totp: totp || undefined });
+  const credential = await createPasskey(start.publicKey);
+  return request<Passkey>("POST", "/me/passkeys", { ceremony: start.ceremony, name, credential });
+}
+
+export async function renamePasskey(id: string, name: string): Promise<Passkey> {
+  return request<Passkey>("PATCH", `/me/passkeys/${encodeURIComponent(id)}`, { name });
+}
+
+export async function removePasskey(id: string, password: string, totp: string): Promise<void> {
+  await request<void>("DELETE", `/me/passkeys/${encodeURIComponent(id)}`, { password, totp: totp || undefined });
 }
 
 /**

@@ -132,13 +132,18 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [passwordReset]
+                required: [passwordReset, passkeys]
                 properties:
                   passwordReset:
                     type: boolean
                     description: >-
                       The panel can send an email with a link to set a new password: an SMTP server
                       is on for the reseller of this panel domain, or for the panel.
+                  passkeys:
+                    type: boolean
+                    description: >-
+                      Passkeys work on this domain (FR-103). A passkey works only on the panel
+                      domain or on the panel domain of a reseller brand.
 
   /v1/auth/password-reset:
     post:
@@ -201,6 +206,59 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ValidationError' }
         '429': { description: More than 10 requests in one minute from this address. }
+
+  /v1/auth/passkey/options:
+    post:
+      tags: [Auth]
+      summary: Start to sign in with a passkey
+      description: >-
+        The first step to sign in with a passkey (FR-103). Give `publicKey` to the browser
+        (PublicKeyCredential.parseRequestOptionsFromJSON). The browser shows the passkeys of the
+        domain, so the request has no email. The challenge works one time only, for 5 minutes.
+      security: []
+      responses:
+        '200':
+          description: The options for the browser.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PasskeyCeremony' }
+        '409': { description: Passkeys do not work on this domain. Open the panel at its own domain. }
+        '429': { description: Too many requests from this address. }
+
+  /v1/auth/passkey:
+    post:
+      tags: [Auth]
+      summary: Sign in with a passkey
+      description: >-
+        The second step to sign in with a passkey. Give the answer of the browser
+        (PublicKeyCredential.toJSON()). The passkey must verify the user, for example with a
+        fingerprint, so the panel does not ask for a TOTP code. The passkey must be for the domain
+        of the challenge. The token expires after 12 hours, as for a sign-in with a password.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ceremony, credential]
+              properties:
+                ceremony: { type: string, maxLength: 100, description: The `ceremony` of /v1/auth/passkey/options. }
+                credential: { type: object, additionalProperties: true, description: The JSON of the browser (PublicKeyCredential.toJSON()). }
+                deviceId: { type: string, maxLength: 100, description: The same as for /v1/auth/login. }
+      responses:
+        '200':
+          description: Signed in.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { type: string }
+                  expiresAt: { type: string, format: date-time }
+        '403': { description: The account is suspended, or the user cannot sign in. }
+        '422': { description: 'The challenge is too old or was used (error on `ceremony`), or the panel does not know the passkey or cannot verify it (error on `credential`).', content: { application/json: { schema: { $ref: '#/components/schemas/ValidationError' } } } }
+        '429': { description: Too many requests from this address. }
 
   /v1/auth/logout:
     post:
@@ -304,6 +362,126 @@ paths:
         '204': { description: TOTP is off. }
         '403': { $ref: '#/components/responses/Forbidden' }
         '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/me/passkeys:
+    get:
+      tags: [Auth]
+      summary: List your passkeys
+      description: The passkeys of the user of the token (FR-103). An API token can read the list, but only a sign-in session can change it.
+      responses:
+        '200':
+          description: The passkeys, the oldest first.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/Passkey' } }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+    post:
+      tags: [Auth]
+      summary: Add a passkey
+      description: >-
+        The second step to add a passkey. Needs a sign-in session token. Give the answer of the
+        browser (PublicKeyCredential.toJSON()) for the options of /v1/me/passkeys/options. The
+        passkey must verify the user.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ceremony, name, credential]
+              properties:
+                ceremony: { type: string, maxLength: 100, description: The `ceremony` of /v1/me/passkeys/options. }
+                name: { type: string, maxLength: 100, description: 'A name for the passkey, for example "iPhone".' }
+                credential: { type: object, additionalProperties: true, description: The JSON of the browser (PublicKeyCredential.toJSON()). }
+      responses:
+        '201':
+          description: The passkey.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Passkey' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/me/passkeys/options:
+    post:
+      tags: [Auth]
+      summary: Start to add a passkey
+      description: >-
+        The first step to add a passkey. Needs a sign-in session token. Give your password, and
+        your TOTP code when TOTP is on. After 5 incorrect attempts, the panel refuses for 15
+        minutes. Give `publicKey` to the browser (PublicKeyCredential.parseCreationOptionsFromJSON).
+        The passkey is for the domain of the request. A user can have 20 passkeys.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password: { type: string }
+                totp: { type: string, pattern: '^[0-9]{6}$', description: Necessary when TOTP is on for the user. }
+      responses:
+        '200':
+          description: The options for the browser.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PasskeyCeremony' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { description: Passkeys do not work on this domain. Open the panel at its own domain. }
+        '422': { $ref: '#/components/responses/Invalid' }
+        '429': { description: Too many incorrect attempts. Wait 15 minutes. }
+
+  /v1/me/passkeys/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/Id' }
+    patch:
+      tags: [Auth]
+      summary: Rename a passkey
+      description: Needs a sign-in session token.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, maxLength: 100 }
+      responses:
+        '200':
+          description: The passkey.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Passkey' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+    delete:
+      tags: [Auth]
+      summary: Remove a passkey
+      description: >-
+        Needs a sign-in session token. Give your password, and your TOTP code when TOTP is on. The
+        passkey stays on the device: remove it there also.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password: { type: string }
+                totp: { type: string, pattern: '^[0-9]{6}$' }
+      responses:
+        '204': { description: Removed. }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+        '429': { description: Too many incorrect attempts. Wait 15 minutes. }
 
   /v1/tokens:
     get:
@@ -5165,6 +5343,20 @@ components:
         - type: object
           properties:
             temporaryPassword: { type: string, description: The panel shows this value one time only. }
+    Passkey:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        domain: { type: string, description: The panel domain of the passkey. The browser uses a passkey only on its own domain. }
+        synced: { type: boolean, description: The passkey is in a password manager or a cloud account, so it is on more than one device. }
+        createdAt: { type: string, format: date-time }
+        lastUsedAt: { type: [string, 'null'], format: date-time }
+    PasskeyCeremony:
+      type: object
+      properties:
+        ceremony: { type: string, description: Give this ID with the answer of the browser. }
+        publicKey: { type: object, additionalProperties: true, description: The options for the browser, in the JSON form of WebAuthn (base64url for the binary values). }
     Token:
       type: object
       properties:

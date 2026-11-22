@@ -132,12 +132,17 @@ class UserController extends Controller
         return [$user, $password];
     }
 
-    /** Sets a new temporary password, removes all sessions and tokens, and removes the sign-in locks. */
+    /**
+     * Sets a new temporary password, removes all sessions, tokens and passkeys, and removes the
+     * sign-in locks. A passkey is a full sign-in: after a reset, only the person with the
+     * temporary password can sign in.
+     */
     public static function reset(User $user, bool $removeTotp): string
     {
         $password = self::temporaryPassword();
         $user->forceFill(['password' => $password, 'must_change_password' => true, 'temporary_password_at' => now()] + ($removeTotp ? ['totp_secret' => null, 'totp_last_step' => null] : []))->save();
         $user->tokens()->delete();
+        $user->passkeys()->delete();
         LoginThrottle::unlock($user->email);
 
         return $password;

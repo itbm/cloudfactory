@@ -12,6 +12,7 @@ use App\Services\LoginThrottle;
 use App\Services\Notifications\Devices;
 use App\Services\Notifications\Notifier;
 use App\Services\Notifications\Senders;
+use App\Services\Passkeys;
 use App\Services\Totp;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -94,11 +95,20 @@ class AuthController extends Controller
         }
         LoginThrottle::clear($data['email'], $ip);
 
+        return self::startSession($request, $user, $user->totp_secret ? 'Signed in with password and TOTP' : 'Signed in with password');
+    }
+
+    /**
+     * Makes the session token of a sign-in, records the sign-in, and sends an email when the
+     * device is new. The token expires after 12 hours.
+     */
+    public static function startSession(Request $request, User $user, string $action): JsonResponse
+    {
         $token = $user->createToken(self::SESSION, ['*'], now()->addHours(12));
         $request->setUserResolver(fn () => $user);
-        Audit::record($request, $user->totp_secret ? 'Signed in with password and TOTP' : 'Signed in with password', $user->email);
+        Audit::record($request, $action, $user->email);
         if (Devices::seen($user, $request)) {
-            app(Notifier::class)->newDevice($user, Devices::label((string) $request->userAgent()), $ip);
+            app(Notifier::class)->newDevice($user, Devices::label((string) $request->userAgent()), (string) $request->ip());
         }
 
         return response()->json(['token' => $token->plainTextToken, 'expiresAt' => $token->accessToken->expires_at?->toIso8601String()]);
@@ -116,6 +126,8 @@ class AuthController extends Controller
 
         return response()->json([
             'passwordReset' => Senders::server($reseller) !== null,
+            // FR-103: a passkey works only on a panel domain (Passkeys::rpIds).
+            'passkeys' => Passkeys::rpIdFor($request->getHost()) !== null,
         ])->header('Cache-Control', 'no-cache');
     }
 
@@ -235,7 +247,7 @@ class AuthController extends Controller
      * R-01: only a sign-in session can change how the user signs in. An API token cannot, also
      * when it has all scopes.
      */
-    private static function sessionUser(Request $request): User
+    public static function sessionUser(Request $request): User
     {
         abort_unless(self::isSession($request), 403, 'Sign in to the panel to change your sign-in settings. An API token cannot change them.');
 

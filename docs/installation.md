@@ -437,7 +437,8 @@ temporary password.
   `--administrator` in place of `--customer ID`.
 - To give a user a new temporary password, select **Reset password** in the row of the user,
   or run `cf users reset-password USER`. For a user who lost the TOTP device, also select
-  **Also remove TOTP** (`--remove-totp`).
+  **Also remove TOTP** (`--remove-totp`). A reset signs the user out, and deletes the API
+  tokens and the passkeys of the user.
 
 An administrator can change all users. A reseller can change only the users of its own
 customers. Only an administrator who is signed in with a password can make, reset or delete

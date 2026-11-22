@@ -8,6 +8,7 @@ import { Card, ConfirmButton, Field, FormError, JobRow, Modal, PageHeader, Statu
 import { auditCsv } from "../lib/csv";
 import { daysUntil, longDate, relativeTime, shortDate } from "../lib/format";
 import { EmailDelivery, NotificationSettings } from "../features/Notifications";
+import { PasskeysCard } from "../features/Passkeys";
 import { DefaultBrandSettings } from "./BrandPage";
 import { CopyField } from "./website/AccessTab";
 
@@ -49,7 +50,7 @@ export function SettingsPage() {
   );
 }
 
-/** FR-103 and R-01: the password and TOTP. */
+/** FR-103 and R-01: the password, TOTP and the passkeys. */
 function Security() {
   const state = useStore();
   const [totpMode, setTotpMode] = useState<"on" | "off" | null>(null);
@@ -66,20 +67,23 @@ function Security() {
   return (
     <div className="grid-2">
       <PasswordCard />
-      <Card title="Authenticator app (TOTP)">
-        <div className="card-body">
-          <FormError error={start.error ?? (totpMode ? null : totp.error)} />
-          <p>{state.totpEnabled ? <Status tone="success">On</Status> : <Status tone="warning">Off</Status>}</p>
-          <p className="muted" style={{ marginTop: 8 }}>
-            Ask for a code from an app on your phone each time you sign in. Then a stolen password alone does not give access to your account.
-          </p>
-          <div className="btn-group" style={{ marginTop: 14 }}>
-            {state.totpEnabled
-              ? <button type="button" className="btn btn-danger" onClick={() => setTotpMode("off")}>Turn off</button>
-              : <button type="button" className="btn btn-primary" onClick={() => void openSetup()}>Set up</button>}
+      <div className="stack">
+        <Card title="Authenticator app (TOTP)">
+          <div className="card-body">
+            <FormError error={start.error ?? (totpMode ? null : totp.error)} />
+            <p>{state.totpEnabled ? <Status tone="success">On</Status> : <Status tone="warning">Off</Status>}</p>
+            <p className="muted" style={{ marginTop: 8 }}>
+              Ask for a code from an app on your phone each time you sign in. Then a stolen password alone does not give access to your account.
+            </p>
+            <div className="btn-group" style={{ marginTop: 14 }}>
+              {state.totpEnabled
+                ? <button type="button" className="btn btn-danger" onClick={() => setTotpMode("off")}>Turn off</button>
+                : <button type="button" className="btn btn-primary" onClick={() => void openSetup()}>Set up</button>}
+            </div>
           </div>
-        </div>
-      </Card>
+        </Card>
+        <PasskeysCard />
+      </div>
       {totpMode && (
         <Modal
           title={totpMode === "on" ? "Set up an authenticator app" : "Turn off the authenticator app"}

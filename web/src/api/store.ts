@@ -244,6 +244,22 @@ export function resetPassword(email: string, token: string, password: string, co
   return call(() => live.resetPassword(email, token, password, confirmation));
 }
 
+/** FR-103: signs in with a passkey, in place of the password and the TOTP code. */
+export function signInWithPasskey() {
+  return call(async () => {
+    await live.signInWithPasskey();
+    session++;
+    loading = null;
+    replace({ ...state, session: { ...state.session, signedIn: true, loading: true } });
+    await refresh();
+  });
+}
+
+export const listPasskeys = () => call(() => live.listPasskeys());
+export const addPasskey = (name: string, password: string, totp: string) => call(() => live.addPasskey(name, password, totp));
+export const renamePasskey = (id: string, name: string) => call(() => live.renamePasskey(id, name));
+export const removePasskey = (id: string, password: string, totp: string) => call(() => live.removePasskey(id, password, totp));
+
 export function signOut() {
   live.signOut();
   session++;

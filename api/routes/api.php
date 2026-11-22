@@ -31,6 +31,7 @@ use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\NotificationTemplateController;
 use App\Http\Controllers\Api\PackController;
 use App\Http\Controllers\Api\PanelCertificateController;
+use App\Http\Controllers\Api\PasskeyController;
 use App\Http\Controllers\Api\PasswordResetController;
 use App\Http\Controllers\Api\PlanController;
 use App\Http\Controllers\Api\PluginController;
@@ -59,6 +60,9 @@ Route::prefix('v1')->group(function () {
     // A user who does not know the password asks for an email with a link to set a new one.
     Route::post('auth/password-reset', [PasswordResetController::class, 'request'])->middleware('throttle:5,1,post-auth-password-reset');
     Route::post('auth/password-reset/confirm', [PasswordResetController::class, 'reset'])->middleware('throttle:10,1,post-auth-password-reset-confirm');
+    // FR-103: sign in with a passkey, in place of the password and the TOTP code.
+    Route::post('auth/passkey/options', [PasskeyController::class, 'signInOptions'])->middleware('throttle:30,1,post-auth-passkey-options');
+    Route::post('auth/passkey', [PasskeyController::class, 'signIn'])->middleware('throttle:10,1,post-auth-passkey');
     // White label: the brand of the sign-in page, for the domain of the request.
     Route::get('brand', [BrandController::class, 'show'])->middleware('throttle:60,1,get-brand');
     // The webhook of a website: a Git host calls it after a push. The token in the address is
@@ -74,7 +78,13 @@ Route::prefix('v1')->group(function () {
             Route::post('me/totp/setup', [AuthController::class, 'setupTotp']);
             Route::post('me/totp/enable', [AuthController::class, 'enableTotp']);
             Route::post('me/totp/disable', [AuthController::class, 'disableTotp']);
+            // FR-103: the passkeys of the user.
+            Route::post('me/passkeys/options', [PasskeyController::class, 'options']);
+            Route::post('me/passkeys', [PasskeyController::class, 'store']);
+            Route::patch('me/passkeys/{id}', [PasskeyController::class, 'update']);
+            Route::delete('me/passkeys/{id}', [PasskeyController::class, 'destroy']);
         });
+        Route::get('me/passkeys', [PasskeyController::class, 'index']);
         Route::middleware('scope:tokens')->group(function () {
             Route::get('tokens', [AuthController::class, 'tokens']);
             Route::post('tokens', [AuthController::class, 'createToken'])->middleware('throttle:10,1,post-tokens');
