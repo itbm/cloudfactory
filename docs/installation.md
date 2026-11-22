@@ -859,10 +859,146 @@ cf dns records example.com
   panel gives a TXT record. Add the record at the current DNS provider of the domain to prove
   that you control the domain, and then make the zone again.
 
+#### Import the records from a different DNS provider
+
+Most DNS providers and hosting panels can export a zone as a zone file (the format of BIND).
+For example, cPanel keeps the zone of each domain in `dnszones/<domain>.db`.
+
+1. Export the zone at the current DNS provider of the domain.
+2. On the page of the zone, select **Import**.
+3. Paste the zone file, or select **Open a file**.
+4. Select **Preview**. The panel shows the records that it adds, and each line that it does
+   not import, with the reason.
+5. Select **Import**.
+
+With the CLI:
+
+```sh
+cf dns import example.com example.com.db --dry-run    # the preview
+cf dns import example.com example.com.db
+```
+
+The panel checks each record as it checks a record that you add. The import adds only the
+records that the zone does not have. It does not change or remove a record of the zone. The
+panel does not import these lines:
+
+- The SOA record and the NS records of the zone itself. The panel makes these records.
+- Records of other types than A, AAAA, CNAME, MX, TXT, SRV, CAA and NS, for example PTR.
+- Names that are not in the zone, and records of a class that is not `IN`.
+- `$INCLUDE` and `$GENERATE`. Put the records of these lines in the file.
+- The A, AAAA and CNAME records of a name that a website of the panel has. The panel makes
+  the address records of each website.
+
+A TTL that is shorter than 60 seconds becomes 60 seconds. A TTL that is longer than 7 days
+becomes 7 days.
+
+![The preview of an import: the records to add, and the lines that the panel does not import](screenshots/dns/1-import-preview.png)
+
+To get the records of a zone as a zone file, select **Export** on the page of the zone, or
+run `cf dns export example.com --file example.com.zone`.
+
+#### Use an external DNS provider
+
+A zone can use an external DNS provider, for example Cloudflare, and not the DNS servers of
+the panel. The panel keeps the records. After each change, the panel sends the full zone to
+the provider. A plugin gives each provider. Refer to [plugins.md](plugins.md#dns-providers).
+
+Install the plugin of each provider that you offer. The panel needs no DNS server for a zone
+at a provider.
+
+| Provider | Plugin | DNSSEC |
+| -------- | ------ | ------ |
+| Cloudflare | [plugins/dns-cloudflare](../plugins/dns-cloudflare/README.md) | Yes |
+| Amazon Route 53 | [plugins/dns-route53](../plugins/dns-route53/README.md) | Yes, with a KMS key |
+| PowerDNS | [plugins/dns-powerdns](../plugins/dns-powerdns/README.md) | Yes |
+| Hetzner | [plugins/dns-hetzner](../plugins/dns-hetzner/README.md) | No |
+| DigitalOcean | [plugins/dns-digitalocean](../plugins/dns-digitalocean/README.md) | No |
+
+The README of each plugin tells which credentials to make at the provider. A zone with DNSSEC
+can move only to a provider with DNSSEC.
+
+1. Make the credentials at the provider. For example, for Cloudflare, make an API token with
+   the permissions **Zone: Read** and **DNS: Edit**. To let the panel add and remove zones at
+   Cloudflare, also give **Zone: Edit**, and give the account ID in the next step.
+2. On the **DNS** page, in the card **External DNS providers**, select **Add account**.
+3. Select the provider, type a name and the credentials, and select **Add account**. The
+   plugin checks the credentials before the panel keeps them.
+
+With the CLI, give each secret field in its environment variable or on stdin:
+
+```sh
+CF_API_TOKEN=... cf dns accounts add cloudflare "Main account" --set accountId=0123abcd
+cf dns accounts list
+```
+
+An administrator can add an account of the panel. Each customer can make zones with it, but
+only an administrator sees its credentials. Use `--panel` with the CLI.
+
+![The DNS page with the accounts at external DNS providers](screenshots/dns/5-providers.png)
+
+To make a zone at the provider:
+
+1. Select **New DNS zone**.
+2. In **Name servers**, select the account.
+3. Keep **Copy the records that Cloudflare has for the domain now** selected, so that the
+   zone keeps the records that the domain uses now.
+4. Select **Create zone**.
+5. Give the name servers on the page of the zone to the registrar of the domain.
+
+With the CLI: `cf dns create example.com --account "Main account"`.
+
+![The page of a zone at Cloudflare, with the name servers for the registrar](screenshots/dns/6-zone-at-cloudflare.png)
+
+The panel sends a TXT record `_cloudfactory-challenge` with the zone. Do not remove it at the
+provider. The page of the zone shows that the domain uses the zone only when the public DNS
+gives this record. A different account at the provider can have the same name servers, so the
+name servers alone do not prove that the domain uses your zone.
+
+You change the records of the zone in the panel, as for a zone on the DNS servers of the
+panel. Do not change the records at the provider: the next change in the panel removes them.
+The panel does not change the NS records of the zone at the provider, and records of a type
+that the panel does not have, for example HTTPS.
+
+The card **Name servers** shows if the provider has the last change. When the provider could
+not take a change, the zone has the status **Failed**, and the page shows the error of the
+plugin. The provider continues to answer with the records that it had before. The panel tries
+again after 1 minute, 5 minutes, 30 minutes and 2 hours, and then each hour. To try again
+immediately, select **Send again now**, or run `cf dns sync example.com`. When the error is
+about the token, change the credentials of the account first.
+
+#### Move a zone to a different DNS provider
+
+1. On the page of the zone, select **Move**.
+2. Select the new provider, or **This panel** for the DNS servers of the panel.
+3. Select **Move zone**.
+4. Give the new name servers to the registrar of the domain.
+
+With the CLI: `cf dns move example.com "Main account"`, or `cf dns move example.com panel`.
+
+The records of the zone do not change. When the zone moves to a provider, the panel also keeps
+the records that the provider has for the domain and that the zone does not have. To use only
+the records of the panel, clear **Also keep the records** (`--no-import` with the CLI).
+
+When a zone moves from the DNS servers of the panel to a provider, the DNS servers of the panel
+continue to answer for the zone until two days after the registrar has the new name servers.
+Thus the domain continues to work during the change.
+
+When a zone moves away from a provider, the zone stays at that provider with its records.
+Remove it there after the registrar has the new name servers.
+
+Turn off DNSSEC before you move a zone, because the new provider signs the zone with a
+different key. Refer to [DNSSEC](#dnssec).
+
+![The dialog that moves a zone to Cloudflare](screenshots/dns/7-move.png)
+
 #### DNSSEC
 
 Turn on DNSSEC on the page of the zone, or with `cf dns dnssec example.com on`. The panel
 then shows a DS record. Give the DS record to the registrar of the domain.
+
+For a zone at an external DNS provider, the provider makes the key and signs the zone. The DS
+record comes some minutes after you turn on DNSSEC. Some providers cannot sign zones. Then the
+page of the zone shows that the plugin cannot turn on DNSSEC.
 
 Before you turn off DNSSEC, or remove a zone that has DNSSEC, remove the DS record at the
 registrar and wait one day. If the registrar still has the DS record, resolvers refuse all
@@ -891,6 +1027,11 @@ sudo -u cf-dns XDG_RUNTIME_DIR=/run/user/$(id -u cf-dns) journalctl --user -u cf
 - Before you remove a zone, set other name servers at the registrar of the domain. While the
   registrar has the name servers of the panel, the domain does not resolve, and a different
   customer can make a zone for it (refer to [security.md](security.md#known-limits)).
+- When you remove a zone at an external DNS provider, the panel also removes the zone at the
+  provider. To keep the zone at the provider, select **Keep the zone at Cloudflare** (with the
+  name of the provider), or run `cf dns delete example.com --keep-at-provider`. The panel then
+  forgets the zone and does not change it at the provider again.
+- To remove an account at a DNS provider, first move or remove each zone that uses it.
 - Before you turn off DNS on a server, remove its host name from the name servers at the
   registrar of each domain. The panel then removes the zones from the server and sends the
   new name server records to the other DNS servers.

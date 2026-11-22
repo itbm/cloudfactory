@@ -32,6 +32,21 @@ jobs:
       - run: npx tsc --noEmit
       - run: npx vitest run
       - run: npm run build
+      - name: Test the Cloudflare DNS plugin
+        run: node --test test/*.test.mjs
+        working-directory: plugins/dns-cloudflare
+      - name: Test the DigitalOcean DNS plugin
+        run: node --test test/*.test.mjs
+        working-directory: plugins/dns-digitalocean
+      - name: Test the Hetzner DNS plugin
+        run: node --test test/*.test.mjs
+        working-directory: plugins/dns-hetzner
+      - name: Test the PowerDNS plugin
+        run: node --test test/*.test.mjs
+        working-directory: plugins/dns-powerdns
+      - name: Test the Route 53 DNS plugin
+        run: node --test test/*.test.mjs
+        working-directory: plugins/dns-route53
 
   api:
     name: Panel API (PHP ${{ matrix.php }})

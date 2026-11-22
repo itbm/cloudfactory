@@ -4,6 +4,7 @@ namespace App\Services\Plugins;
 
 use App\Enums\Role;
 use App\Validation\Input;
+use App\Validation\InputRules;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -11,7 +12,8 @@ use Illuminate\Validation\ValidationException;
 /**
  * The manifest of a plugin (plugin.json). It gives the name of the plugin, the scopes that its
  * token gets, the events that it receives, its pages, its actions and its before hooks. A
- * manifest with an image can also run in a container that the panel operates (Hosting). The
+ * manifest with an image can also run in a container that the panel operates (Hosting). A
+ * plugin can also offer external DNS providers (App\Services\Dns\Providers). The
  * image has a digest, so the signature of the manifest also covers the image. The paths are relative to the
  * address where the administrator runs the plugin.
  *
@@ -27,6 +29,9 @@ class Manifest
 
     /** A path of the plugin: it starts with "/" and has no "..", no query and no fragment. */
     public const PATH = '#^/[A-Za-z0-9._~/-]{0,199}$#D';
+
+    /** The ID of a credential of a DNS provider: a letter, then letters and digits, up to 40 characters. */
+    public const CREDENTIAL = '/^[A-Za-z][A-Za-z0-9]{0,39}$/D';
 
     public const VERSION = '/^\d{1,6}\.\d{1,6}\.\d{1,6}([-+][0-9A-Za-z.-]{1,30})?$/D';
 
@@ -126,6 +131,19 @@ class Manifest
             'image.ref' => ['required_with:image', 'string', Input::rule('image')],
             'image.digest' => ['required_with:image', 'string', 'regex:/^sha256:[0-9a-f]{64}$/D'],
             'image.port' => ['sometimes', 'integer', 'between:1024,65535'],
+            'dnsProviders' => ['sometimes', 'array', 'max:10'],
+            'dnsProviders.*.id' => ['required', 'string', 'regex:'.self::SLUG, 'distinct'],
+            'dnsProviders.*.name' => ['required', 'string', 'max:40'],
+            'dnsProviders.*.path' => ['required', 'string', 'regex:'.self::PATH, 'not_regex:#\.\.#'],
+            'dnsProviders.*.dnssec' => ['sometimes', 'boolean'],
+            'dnsProviders.*.types' => ['sometimes', 'array', 'min:1'],
+            'dnsProviders.*.types.*' => ['string', Rule::in(InputRules::DNS_RECORD_TYPES)],
+            'dnsProviders.*.credentials' => ['sometimes', 'array', 'max:10'],
+            'dnsProviders.*.credentials.*.id' => ['required', 'string', 'regex:'.self::CREDENTIAL],
+            'dnsProviders.*.credentials.*.label' => ['required', 'string', 'max:60'],
+            'dnsProviders.*.credentials.*.secret' => ['sometimes', 'boolean'],
+            'dnsProviders.*.credentials.*.optional' => ['sometimes', 'boolean'],
+            'dnsProviders.*.credentials.*.hint' => ['nullable', 'string', 'max:200'],
             'commands' => ['sometimes', 'array', 'max:20'],
             'commands.*.name' => ['required', 'string', 'regex:'.self::SLUG, 'distinct'],
             'commands.*.description' => ['nullable', 'string', 'max:200'],
@@ -147,8 +165,19 @@ class Manifest
             'hooks.*.path.not_regex' => 'A path cannot have "..".',
             'image.digest.regex' => 'Give the digest of the image, for example sha256: and 64 hexadecimal digits. The signature of the manifest then covers the image.',
             'image.port.between' => 'The port of the image is from 1024 to 65535.',
+            'dnsProviders.*.path.regex' => 'Give a path that starts with "/", for example /dns/cloudflare.',
+            'dnsProviders.*.path.not_regex' => 'A path cannot have "..".',
+            'dnsProviders.*.types.*.in' => 'The record type ":input" is not known. Use some of: '.implode(', ', InputRules::DNS_RECORD_TYPES).'.',
+            'dnsProviders.*.credentials.*.id.regex' => 'The ID of a credential has letters and digits, and starts with a letter, for example apiToken.',
         ]);
         $v->validate();
+        foreach ($data['dnsProviders'] ?? [] as $provider) {
+            $ids = array_column($provider['credentials'] ?? [], 'id');
+            $types = $provider['types'] ?? [];
+            if (count($ids) !== count(array_unique($ids)) || count($types) !== count(array_unique($types))) {
+                throw ValidationException::withMessages(['dnsProviders' => "The DNS provider \"{$provider['id']}\" has a credential or a record type two times."]);
+            }
+        }
         foreach ([...array_map(fn ($e) => ['events', $e], $data['events'] ?? []), ...array_map(fn ($h) => ['hooks', $h['event']], $data['hooks'] ?? [])] as [$field, $event]) {
             if (! self::permits($data['scopes'], $event)) {
                 throw ValidationException::withMessages([$field => "A plugin that gets \"{$event}\" must have the scope ".self::SCOPE_OF[$event].'.']);
@@ -181,6 +210,15 @@ class Manifest
             'commands' => array_map(fn (array $c) => [
                 'name' => $c['name'], 'description' => $c['description'] ?? '',
             ], array_values($data['commands'] ?? [])),
+            'dnsProviders' => array_map(fn (array $p) => [
+                'id' => $p['id'], 'name' => $p['name'], 'path' => $p['path'], 'dnssec' => (bool) ($p['dnssec'] ?? false),
+                // The order of the panel, so that the list does not change with the order of the manifest.
+                'types' => array_values(array_intersect(InputRules::DNS_RECORD_TYPES, $p['types'] ?? InputRules::DNS_RECORD_TYPES)),
+                'credentials' => array_map(fn (array $c) => [
+                    'id' => $c['id'], 'label' => $c['label'], 'secret' => (bool) ($c['secret'] ?? false),
+                    'optional' => (bool) ($c['optional'] ?? false), 'hint' => $c['hint'] ?? '',
+                ], array_values($p['credentials'] ?? [])),
+            ], array_values($data['dnsProviders'] ?? [])),
         ];
         sort($out['scopes']);
 
