@@ -21,6 +21,7 @@ use App\Models\Snapshot;
 use App\Models\Website;
 use App\Models\WebsiteCommand;
 use App\Services\Dns\Zones;
+use App\Services\Imports\Runner;
 use App\Services\Notifications\Notifier;
 use App\Services\Packs\Packs;
 use App\Services\Plugins\Events;
@@ -116,6 +117,10 @@ class JobOutcome
             }
             if ($job->action === AgentAction::SetPacks && $state === JobState::Succeeded) {
                 Packs::jobFinished($job, $result);
+            }
+            // A job of an import: the next parts of the import can start.
+            if ($job->import_id !== null) {
+                app(Runner::class)->jobFinished($job, $state === JobState::Succeeded, $result);
             }
 
             if ($job->rollout_id && ($rollout = Rollout::find($job->rollout_id))) {
@@ -616,7 +621,7 @@ class JobOutcome
 
     private static function withoutPasswords(array $payload): array
     {
-        unset($payload['password'], $payload['passwordHash'], $payload['token']);
+        unset($payload['password'], $payload['passwordHash'], $payload['token'], $payload['wordpressValues']);
         // The token and the webhook secret of a plugin that the panel runs.
         if (is_array($payload['website'] ?? null)) {
             unset($payload['website']['environment']);
