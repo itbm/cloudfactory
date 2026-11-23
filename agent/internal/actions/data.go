@@ -759,7 +759,24 @@ func (d *Deps) forget(ctx context.Context, r repo, websiteID, kind string, keep 
 
 // forgetWebsite removes all snapshots of a website that the panel deleted (audit finding R8).
 func (d *Deps) forgetWebsite(ctx context.Context, r repo, websiteID string) error {
-	out, err := d.restic(ctx, r, "snapshots", "--tag", "website="+websiteID)
+	return d.forgetTagged(ctx, r, "website="+websiteID)
+}
+
+// forgetWebsiteFiles removes the snapshots of the files of a website that moved to a different
+// server: the kinds "scheduled" and "manual". The snapshots of the databases that this server
+// makes for the website stay, because the database servers can stay on this server.
+func (d *Deps) forgetWebsiteFiles(ctx context.Context, r repo, websiteID string) error {
+	for _, kind := range []string{"scheduled", "manual"} {
+		if err := d.forgetTagged(ctx, r, "website="+websiteID+",kind="+kind); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// forgetTagged removes all snapshots with the tags of tag.
+func (d *Deps) forgetTagged(ctx context.Context, r repo, tag string) error {
+	out, err := d.restic(ctx, r, "snapshots", "--tag", tag)
 	if err != nil {
 		return err
 	}
@@ -800,14 +817,14 @@ func (d *Deps) PruneBackups(req *agentv1.PruneBackupsRequest) (jobs.Job, error) 
 	if err != nil {
 		return jobs.Job{}, err
 	}
-	for _, id := range req.GetForgetWebsiteIds() {
+	for _, id := range append(slices.Clone(req.GetForgetWebsiteIds()), req.GetForgetMovedWebsiteIds()...) {
 		if err := validate.ID(id); err != nil {
 			return jobs.Job{}, err
 		}
 	}
 	return jobs.Job{ID: req.GetJobId(), Key: "backup-repository", Long: true, Steps: []jobs.Step{
-		{Name: "Remove backups of deleted websites", Do: func(ctx context.Context) error {
-			if len(req.GetForgetWebsiteIds()) == 0 {
+		{Name: "Remove backups of deleted and moved websites", Do: func(ctx context.Context) error {
+			if len(req.GetForgetWebsiteIds()) == 0 && len(req.GetForgetMovedWebsiteIds()) == 0 {
 				return nil
 			}
 			if err := d.ensureRepo(ctx, r); err != nil {
@@ -815,6 +832,12 @@ func (d *Deps) PruneBackups(req *agentv1.PruneBackupsRequest) (jobs.Job, error) 
 			}
 			for _, id := range req.GetForgetWebsiteIds() {
 				if err := d.forgetWebsite(ctx, r, id); err != nil {
+					return err
+				}
+			}
+			// A website that moved to a different server has its new backups there.
+			for _, id := range req.GetForgetMovedWebsiteIds() {
+				if err := d.forgetWebsiteFiles(ctx, r, id); err != nil {
 					return err
 				}
 			}

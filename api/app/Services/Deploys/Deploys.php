@@ -22,11 +22,15 @@ final class Deploys
             || AgentJob::where('website_id', $website->id)->where('action', AgentAction::ActivateRelease)->whereNull('finished_at')->exists();
     }
 
-    /** True when the website can deploy now: it operates, and its customer is not suspended. */
+    /**
+     * True when the website can deploy now: it operates, it does not move to a different
+     * server, and its customer is not suspended. A website that moves deploys when the move is
+     * complete.
+     */
     public static function allowed(?Website $website): bool
     {
         return $website !== null
-            && $website->status !== WebsiteStatus::Failed
+            && ! in_array($website->status, [WebsiteStatus::Failed, WebsiteStatus::Moving], true)
             && ! ($website->customer?->isSuspended() ?? false);
     }
 

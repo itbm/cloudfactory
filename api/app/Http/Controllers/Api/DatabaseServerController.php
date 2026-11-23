@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Enums\AgentAction;
 use App\Enums\JobState;
+use App\Enums\WebsiteStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\JobResource;
 use App\Models\AgentJob;
@@ -264,6 +265,13 @@ class DatabaseServerController extends Controller
             throw ValidationException::withMessages(['databaseServer' => "A database server with the name {$databaseServer->name} has no network name, so the websites on a different server cannot connect to it. Give it a different name first."]);
         }
         Networks::checkMove($databaseServer, $to);
+        // The check of the networks uses the server of each website. A website that moves
+        // changes its server at the end of its move.
+        $movingWebsite = Website::where('status', WebsiteStatus::Moving->value)
+            ->whereIn('id', Database::where('database_server_id', $databaseServer->id)->whereNotNull('website_id')->select('website_id'))->orderBy('name')->first();
+        if ($movingWebsite) {
+            throw ValidationException::withMessages(['databaseServer' => "The website {$movingWebsite->name} has a database in this database server, and it moves to a different server now. Wait until the move is complete."]);
+        }
         self::refuseOpenChange($databaseServer);
         $port = DatabaseServers::freePort($databaseServer->customer_id, $to->id, $databaseServer->engine);
         if ($port === null) {

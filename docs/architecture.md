@@ -1872,6 +1872,65 @@ The administrator moves a database server in the list of the database servers (*
 different server**), with `cf database-servers move DATABASE_SERVER --server SERVER`, or with
 `POST /v1/database-servers/{id}/move`.
 
+### Move a website
+
+An administrator can move a website to a different server. The website keeps its ID, its
+Unix user, its domains, its databases, its SFTP keys, its cron jobs, its network name and its
+member address. The move uses the same tunnel, port and token as the move of a database
+server:
+
+1. The panel makes a token of 32 random bytes and the tunnel between the two servers. It
+   sends `ReceiveWebsite` to the new server and then `SendWebsite` to the old server. The
+   status of the website is `moving`.
+2. The new server makes the Unix user and the disk limit of the website. Its state records
+   the website as stopped. Its firewall lets the mesh address of the old server connect to
+   TCP port 7445, only for the time of the move.
+3. The old server stops the website and turns off its SFTP access. A stopped website has a
+   unit with no `[Install]` section, so the website does not start again at a restart of the
+   server. Then the root helper connects from its mesh address, and sends the token and two
+   parts: the files of `/app`, and the known SSH hosts of the deploys. `tar` runs as the
+   website user for each part (CF-05), and each part is in frames. A frame of length 0 ends
+   a part. `tar` writes that frame only after it read all files, so an incomplete stream is
+   never complete for the new server.
+4. The root helper of the new server compares the token, and writes the files with `tar` as
+   the website user, with no owner from the stream. It answers `ok`.
+5. The new server pulls and checks the image, starts the website in gVisor, makes the route
+   of the edge proxy, sets the SFTP keys and the cron jobs, and gets the TLS certificate.
+6. The panel records the new server. The DNS zones of the panel get the addresses of the new
+   server. A zone with a DNS account also goes to its provider. The new server gets the
+   certificates from the panel for the domains of the website (`SetCertificates`). The old
+   server removes its copy with `DeleteWebsite` and `moved`: that job does not remove the
+   databases.
+
+When the move fails, the website stays on the old server. If the old server could not send
+the files, it starts the website again at once. In the other cases, the panel starts it
+again and turns on its SFTP access again. The new server removes what it received.
+
+If the old server sent all the files and got no answer, the website stays stopped on the old
+server until the panel has the result of the new server. Thus the website never operates on
+the two servers at the same time.
+
+- The website does not operate while its files move.
+- The databases stay on their database servers. After the move, the website connects to a
+  database server on a different server only with the network name. So, before the move,
+  each database server of the website must be on the new server, or in a network with the
+  website. The panel refuses the move when this is not true.
+- While the website moves, the panel refuses each change of the website with HTTP status
+  409. A suspension, a rollout and the nightly backup wait for the end of the move. A change
+  of the plan goes to the new server at the end of the move.
+- The panel does not start a move while a job of the website or of its staging copy is not
+  complete, or while an import of the customer runs on the old server.
+- The backups of the files from before the move are in the repository of the old server. The
+  panel can restore only a database from them. The weekly job of the old server removes them
+  after the time for the backups of a deleted website (`forget_moved_website_ids` of
+  `PruneBackups`). The backups of the databases on the old server stay.
+- A domain with no DNS zone in the panel points to the old server until its owner changes the
+  address records.
+
+The administrator moves a website with the menu of the website (**Move to a different
+server**), with `cf websites move WEBSITE --server SERVER`, or with
+`POST /v1/websites/{id}/move`.
+
 ### Reference size
 
 The test `api/tests/Feature/NetworkScaleTest.php` makes a panel with 20 servers, 100 websites

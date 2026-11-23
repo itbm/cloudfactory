@@ -388,6 +388,21 @@ export function createStagingCopy(websiteId: string): Promise<{ websiteId: strin
   });
 }
 
+/**
+ * Moves a website to a different server (administrators only). The new server receives the
+ * files, and the old server sends them. The panel reads the websites again when the two jobs
+ * are complete.
+ */
+export function moveWebsite(websiteId: string, serverId: string): Promise<void> {
+  return call(async () => {
+    const r = await live.request<{ website: live.ApiWebsite; jobs: live.ApiJob[] }>("POST", `/websites/${websiteId}/move`, { serverId });
+    update((d) => {
+      d.websites = d.websites.map((w) => (w.id === websiteId ? live.toWebsite(r.website) : w));
+    });
+    void Promise.all(r.jobs.map((j) => track(j))).then(() => refresh());
+  });
+}
+
 export function deleteWebsite(websiteId: string) {
   return call(() => live.request<JobAnswer>("DELETE", `/websites/${websiteId}`)).then((r) => track(r.job));
 }

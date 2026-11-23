@@ -438,7 +438,7 @@ class AuditFixesTest extends TestCase
         $this->artisan('cloudfactory:backups')->assertSuccessful();
         $prune = AgentJob::where('action', AgentAction::PruneBackups->value)->where('server_id', $server->id)->latest('id')->firstOrFail();
         $this->assertSame([$website->id], $prune->payload['forgetWebsiteIds']);
-        $this->assertSame(['Remove backups of deleted websites', 'Remove unused data'], $prune->steps);
+        $this->assertSame(['Remove backups of deleted and moved websites', 'Remove unused data'], $prune->steps);
         // The other server does not have the backups of this website.
         $this->assertSame([], AgentJob::where('action', AgentAction::PruneBackups->value)->where('server_id', $other->id)->latest('id')->firstOrFail()->payload['forgetWebsiteIds']);
         app(JobOutcome::class)->finish($prune, JobState::Failed, 'restic: exit status 1');

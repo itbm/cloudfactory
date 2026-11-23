@@ -86,7 +86,10 @@ function WebsitesTable({ sites }: { sites: Website[] }) {
                   {updateReady(state, w) && <div style={{ marginTop: 6 }}><span className="badge badge-warning">Update ready</span></div>}
                   {end && <div className="note-warning" style={{ marginTop: 6 }}>Support ends {shortDate(end)}</div>}
                 </td>
-                <td><Status tone={status.tone}>{status.label}</Status></td>
+                <td>
+                  <Status tone={status.tone}>{status.label}</Status>
+                  {w.status === "moving" && <span className="cell-sub">To {state.servers.find((s) => s.id === w.movingToServerId)?.name ?? "a different server"}</span>}
+                </td>
                 <td className="muted" style={{ minWidth: 150, maxWidth: 170 }}>{w.status === "failed" || w.domains.length === 0 ? "–" : certificateText(w.domains.find((d) => d.kind === "primary") ?? w.domains[0])}</td>
                 {/* One column for the two values: with a column for each, the table was wider than the page. */}
                 <td className="nowrap">

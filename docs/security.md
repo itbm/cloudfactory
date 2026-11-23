@@ -1137,6 +1137,14 @@ through the internet, so the design assumes that a person can read and change ea
   path outside the data directory, a hard link, a device file and a secret that is not of
   the engine. It writes each file with the owner of the database server, and it applies the
   disk limit of the database server.
+- **The move of a website.** The files of a website that moves use the same tunnel, port and
+  token. The root helpers never read or write the files as root (CF-05): `tar` runs as the
+  website user on the two servers, and the new server does not take the owners from the
+  stream. Thus a file of the stream cannot go outside the directories of the website user,
+  and the disk limit of the website applies. The new server accepts the files only for a
+  website that its state records as stopped and with the same Unix user. The old website
+  stays stopped, with no SFTP access, while its files move. A website never operates on the
+  two servers at the same time.
 - **Checks of the state.** The worker and the root helper examine each value of the state
   from the panel: the range is a private IPv4 network, each mesh address is in the range,
   each tunnel address is a public IP address, and each key has the correct form. The root
