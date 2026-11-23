@@ -134,7 +134,7 @@ const (
 // recordOf gives the record of a database server from the panel.
 func recordOf(s *agentv1.DatabaseServer) DatabaseServer {
 	l := s.GetLimits()
-	return DatabaseServer{Engine: s.GetEngine(), Port: int(s.GetPort()), VCPUs: l.GetVcpus(), MemoryBytes: l.GetMemoryBytes(), DiskBytes: l.GetDiskBytes()}
+	return DatabaseServer{Engine: s.GetEngine(), Version: s.GetVersion(), Port: int(s.GetPort()), VCPUs: l.GetVcpus(), MemoryBytes: l.GetMemoryBytes(), DiskBytes: l.GetDiskBytes()}
 }
 
 // server gives the database server for a database or a database user of a website that this
@@ -268,6 +268,9 @@ func (d *Deps) ensureServer(ctx context.Context, s *agentv1.DatabaseServer, upda
 		return dbServer{}, err
 	}
 	srv := dbServer{ID: key, Engine: s.GetEngine()}
+	if err := d.checkEngineVersion(s.GetEngine(), s.GetVersion()); err != nil {
+		return srv, err
+	}
 	// put records the limits, and makes the next step write the unit and the disk again.
 	put := func(record DatabaseServer, update bool) (bool, error) {
 		lock := d.instanceLock(key)
@@ -401,8 +404,8 @@ func (s *State) ReleaseDatabases(key, websiteID string) error {
 }
 
 // PutDatabaseServer records a database server of a customer. It reports true when the record
-// is new or changed. The engine, the port and the customer of a database server do not
-// change. With update not set, a database server that the state has keeps its limits.
+// is new or changed. The engine, its version, the port and the customer of a database server
+// do not change. With update not set, a database server that the state has keeps its limits.
 func (s *State) PutDatabaseServer(customer, key string, record DatabaseServer, update bool) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -427,6 +430,9 @@ func (s *State) PutDatabaseServer(customer, key string, record DatabaseServer, u
 			return false, fmt.Errorf("the database server %s has the engine %s, not %s", key, old.Engine, record.Engine)
 		case old.Port != record.Port:
 			return false, fmt.Errorf("the database server %s has the port %d, not %d", key, old.Port, record.Port)
+		case old.Version != record.Version:
+			// A change of the version of an engine is not in cf-database/1.
+			return false, fmt.Errorf("the database server %s has the version %q of its engine, not %q", key, old.Version, record.Version)
 		case !update || *old == record:
 			return false, nil
 		}
@@ -923,7 +929,7 @@ func accessContent(elements []accessElement) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		if !slices.ContainsFunc(Engines, func(engine string) bool { return quadlet.CheckDatabasePort(engine, e.Port) == nil }) {
+		if !slices.ContainsFunc(engines(), func(engine string) bool { return quadlet.CheckDatabasePort(engine, e.Port) == nil }) {
 			return "", fmt.Errorf("%d is not a port of a database server", e.Port)
 		}
 		lines = append(lines, fmt.Sprintf("%d . %s . %d", e.UID, address, e.Port))

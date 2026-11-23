@@ -94,7 +94,8 @@ type numberedDriver interface {
 	numbered()
 }
 
-// engineDrivers are the drivers of the engines of quadlet.Engines.
+// engineDrivers are the drivers of the built-in engines of quadlet.Engines. Each engine of a
+// database pack uses packDriver (engine_pack.go).
 var engineDrivers = map[string]engineDriver{
 	"mariadb":    mariaDriver{},
 	"postgresql": pgDriver{},
@@ -105,6 +106,9 @@ var engineDrivers = map[string]engineDriver{
 func driverOf(engine string) (engineDriver, error) {
 	if drv, ok := engineDrivers[engine]; ok {
 		return drv, nil
+	}
+	if quadlet.IsPackEngine(engine) {
+		return packDriver{}, nil
 	}
 	return nil, fmt.Errorf("the database engine %q is not valid", engine)
 }

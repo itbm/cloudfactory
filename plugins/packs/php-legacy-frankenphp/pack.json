@@ -1,0 +1,28 @@
+{
+  "contract": "cf-pack/1",
+  "kind": "runtime",
+  "slug": "php-legacy-frankenphp",
+  "name": "Older PHP for FrankenPHP",
+  "version": "0.0.0",
+  "publisher": "Cloudfactory",
+  "description": "PHP 8.2 and 8.3 for the FrankenPHP runtime, for websites that move from a server with an older PHP. These versions get only security fixes. PHP 8.2 gets no fixes after 31 December 2026.",
+  "runtime": {
+    "contract": "cf-php/1",
+    "family": "frankenphp"
+  },
+  "images": [
+    {
+      "version": "8.3",
+      "ref": "ghcr.io/itbm/frankenphp-php8.3:0.0.0",
+      "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000083",
+      "supportEndsAt": "2027-12-31"
+    },
+    {
+      "version": "8.2",
+      "ref": "ghcr.io/itbm/frankenphp-php8.2:0.0.0",
+      "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000082",
+      "supportEndsAt": "2026-12-31"
+    }
+  ],
+  "x-source": "https://github.com/itbm/cloudfactory/tree/main/images/frankenphp"
+}

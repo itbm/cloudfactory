@@ -78,17 +78,20 @@ var nameRE = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.internal$`
 
 // engineNames are the names that each website has for the database servers of its customer
 // on its own server. A member cannot have one of them.
-var engineNames = func() []string {
+// A pack engine has no such name.
+func engineNames() []string {
 	var out []string
 	for _, e := range quadlet.Engines() {
-		out = append(out, e.Host)
+		if e.Host != "" {
+			out = append(out, e.Host)
+		}
 	}
 	return out
-}()
+}
 
 // CheckName checks the name of a member.
 func CheckName(name string) error {
-	if !nameRE.MatchString(name) || slices.Contains(engineNames, name) {
+	if !nameRE.MatchString(name) || slices.Contains(engineNames(), name) {
 		return fmt.Errorf("%q is not the name of a network member", name)
 	}
 	return nil
@@ -99,18 +102,21 @@ func CheckName(name string) error {
 // leave the server.
 const WebsitePort = 80
 
-// MemberPorts are the ports that a member can answer on: the usual ports of the engines for
-// a database server, and WebsitePort for a website.
-var MemberPorts = func() []int {
+// MemberPorts gives the ports that a member can answer on: the usual ports of the engines of
+// the server for a database server, with the engines of its database packs, and WebsitePort
+// for a website.
+func MemberPorts() []int {
 	var out []int
 	for _, e := range quadlet.Engines() {
-		out = append(out, e.Port)
+		if !slices.Contains(out, e.Port) {
+			out = append(out, e.Port)
+		}
 	}
 	return append(out, WebsitePort)
-}()
+}
 
 func checkMemberPort(port int) error {
-	if !slices.Contains(MemberPorts, port) {
+	if !slices.Contains(MemberPorts(), port) {
 		return fmt.Errorf("%d is not a port of a network member", port)
 	}
 	return nil
@@ -369,7 +375,7 @@ func HostsFile(header, database string, names []HostLine, meshRange string) (str
 			return "", err
 		}
 		b.WriteString("# The database servers of the customer on this server. Each one has its own port.\n")
-		fmt.Fprintf(&b, "%s %s\n", database, strings.Join(engineNames, " "))
+		fmt.Fprintf(&b, "%s %s\n", database, strings.Join(engineNames(), " "))
 	}
 	if len(names) == 0 {
 		return b.String(), nil
