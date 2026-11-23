@@ -1521,6 +1521,107 @@ paths:
         '422': { $ref: '#/components/responses/Invalid' }
         '503': { description: The panel cannot connect to the server of the website. }
 
+  /v1/websites/{websiteId}/files/permissions:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+    put:
+      tags: [Files]
+      summary: Change the permissions of a file or a directory of a website
+      description: >-
+        Sets the permission bits. A mode has 3 octal digits, with a `0` before them or not, for
+        example `644` or `0755`. The bits setuid, setgid and sticky are not permitted. The owner
+        of a directory must keep the read and the search permission (for example `0755` or
+        `0700`). A symbolic link has no permissions of its own (422). With `recursive`, `mode`
+        is the mode of the directory and of each directory in it, and `fileMode` is the mode of
+        each file in it. The agent does not change a link and does not go through one. All
+        files of a website have the Unix user of the website as owner, so the group and the
+        other permissions do not give access to other websites.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [path, mode]
+              properties:
+                path: { type: string, example: /public }
+                mode: { type: string, example: '0755' }
+                recursive: { type: boolean, default: false }
+                fileMode: { type: string, example: '0644', description: Necessary with `recursive`. }
+      responses:
+        '200':
+          description: The file or the directory with its new mode.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  file: { $ref: '#/components/schemas/FileEntry' }
+                  changed: { type: integer, description: The number of files and directories that the agent changed. }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: The customer of the website is suspended. }
+        '422': { $ref: '#/components/responses/Invalid' }
+        '503': { description: The panel cannot connect to the server of the website. }
+
+  /v1/websites/{websiteId}/files/archives:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+    post:
+      tags: [Files]
+      summary: Make an archive of files and directories of a website
+      description: >-
+        Makes a job. The agent puts each path in the new archive with its name, at the top level.
+        The path `/` alone puts all files of the website in the archive. The end of the name of
+        the archive gives the format: `.zip`, `.tar.gz`, `.tgz` or `.tar`. The archive has the
+        links, but the agent does not go through a link. The agent does not replace a file: the
+        job fails when the archive exists. The job result has the summary of the archive
+        (`ArchiveSummary`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [paths, path]
+              properties:
+                paths: { type: array, minItems: 1, maxItems: 2000, items: { type: string }, example: [/public, /composer.json] }
+                path: { type: string, example: /site.zip, description: The path of the new archive. }
+      responses:
+        '202': { $ref: '#/components/responses/JobOnly' }
+        '409': { description: The customer of the website is suspended. }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/websites/{websiteId}/files/extract:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+    post:
+      tags: [Files]
+      summary: Extract an archive of a website
+      description: >-
+        Makes a job. The agent extracts `.zip`, `.tar`, `.tar.gz`, `.tgz`, `.tar.bz2` and
+        `.tbz2` archives. It writes only in the destination directory, and makes it when it does
+        not exist. A file that exists stays, unless `overwrite` is true. The agent skips each
+        entry with a name that goes out of the destination, each device and each FIFO. It does
+        not use the owners in the archive, and it removes the bits setuid, setgid and sticky.
+        The limits are 1,000,000 entries and 64 GiB of files, and the disk limit of the website.
+        An archive with a password is not possible. The job result has the summary of the
+        extract (`ArchiveSummary`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [path]
+              properties:
+                path: { type: string, example: /site.zip }
+                to: { type: string, example: /public, description: The destination directory. The default is the directory of the archive. }
+                overwrite: { type: boolean, default: false, description: True replaces the files and the links that exist. }
+      responses:
+        '202': { $ref: '#/components/responses/JobOnly' }
+        '409': { description: The customer of the website is suspended. }
+        '422': { $ref: '#/components/responses/Invalid' }
+
   /v1/websites/{websiteId}/logs:
     parameters:
       - { $ref: '#/components/parameters/WebsiteId' }
@@ -7702,6 +7803,16 @@ components:
     JobState:
       type: string
       enum: [queued, running, succeeded, failed]
+    ArchiveSummary:
+      type: object
+      properties:
+        files: { type: integer, description: The files in the new archive, or the files that the extract wrote. }
+        directories: { type: integer }
+        links: { type: integer }
+        sizeBytes: { type: integer, description: The size of the new archive, or the size of the files that the extract wrote. }
+        kept: { type: integer, description: The files that the extract did not replace, because they exist. }
+        skipped: { type: integer, description: 'The entries that the agent did not use: names that go out of the destination, devices, FIFOs, and names that are a directory in one place and a file in the other.' }
+        skippedNames: { type: array, items: { type: string }, description: The first 20 skipped entries. }
     WebsiteSecurity:
       type: object
       description: The protection of a website in the edge proxy.
@@ -7838,6 +7949,11 @@ components:
         steps: { type: array, items: { type: string } }
         step: { type: integer, description: The number of steps that are complete. }
         error: { type: [string, 'null'], description: An administrator gets the full error of the agent. Other users get a short text. }
+        result:
+          description: The summary of a job that succeeded, for the actions `MakeArchive` and `ExtractArchive`. Null for all other jobs.
+          oneOf:
+            - { $ref: '#/components/schemas/ArchiveSummary' }
+            - { type: 'null' }
         websiteId: { type: [string, 'null'] }
         databaseServerId: { type: [string, 'null'], description: The database server of the job. A user sees the jobs of the websites and of the database servers of its customers. }
         dnsZoneId: { type: [string, 'null'], description: The DNS zone of the job. A user sees the jobs of the DNS zones of its customers. }

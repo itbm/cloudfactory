@@ -67,6 +67,13 @@ Usage:
   cf files mkdir WEBSITE PATH
   cf files move WEBSITE PATH NEW_PATH
   cf files delete WEBSITE PATH                         A directory goes with all that it contains.
+  cf files chmod WEBSITE PATH MODE [--recursive --file-mode MODE]
+                                                       MODE has 3 octal digits, for example 644. With --recursive, MODE is
+                                                       for the directories and --file-mode for the files. Links do not change.
+  cf files archive WEBSITE NEW_ARCHIVE PATH...         Make a .zip, .tar.gz or .tar archive of the files and directories.
+  cf files extract WEBSITE ARCHIVE [--to DIR] [--overwrite]
+                                                       Extract a .zip, .tar, .tar.gz or .tar.bz2 archive. The default DIR is the
+                                                       directory of the archive. Files that exist do not change without --overwrite.
   cf logs WEBSITE [--lines N] [--type access|error]    The last lines of the output of the container.
   cf cron list WEBSITE
   cf cron add WEBSITE --schedule "M H DOM MON DOW" --command COMMAND [--off]

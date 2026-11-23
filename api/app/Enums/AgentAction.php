@@ -65,6 +65,8 @@ enum AgentAction: string
     case ImportDatabase = 'ImportDatabase';
     case ImportMail = 'ImportMail';
     case DeleteImport = 'DeleteImport';
+    case MakeArchive = 'MakeArchive';
+    case ExtractArchive = 'ExtractArchive';
     case ScanWebsite = 'ScanWebsite';
 
     /** The steps that the agent reports for this action. */
@@ -133,8 +135,19 @@ enum AgentAction: string
             self::ImportDatabase => ['Check archive', 'Load dump'],
             self::ImportMail => ['Check archive', 'Copy messages'],
             self::DeleteImport => ['Remove archive'],
+            self::MakeArchive => ['Make the archive'],
+            self::ExtractArchive => ['Extract the archive'],
             self::ScanWebsite => ['Update malware signatures', 'Scan files'],
         };
+    }
+
+    /**
+     * The actions whose result the panel keeps for the user: the summary of an archive
+     * (agent/internal/sitefiles.Summary). The API gives it with the job.
+     */
+    public function keepsResult(): bool
+    {
+        return in_array($this, [self::MakeArchive, self::ExtractArchive], true);
     }
 
     /** The actions that use the backup repository. The panel adds its credentials when it sends the job. */

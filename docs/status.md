@@ -89,7 +89,7 @@ after the item that is nearest to it in subject, not at the end of the list.
 
   Where: `api/app/Services/Uptime`, `api/app/Http/Controllers/Api/UptimeController.php`, `web/src/pages/website/UptimeTab.tsx`, `web/src/pages/UptimePage.tsx`, `cli/cmd/cf/uptime.go`
 
-- File manager, logs, cron jobs and deploys from Git for each website, in the API, the agent, the web panel and the CLI. The agent does all of this work as the Unix user of the website, and the root helper has no new operation for it
+- File manager, logs, cron jobs and deploys from Git for each website, in the API, the agent, the web panel and the CLI. The file manager makes and extracts archives (zip, tar, tar.gz and tar.bz2) as jobs, and changes permissions, also for a full directory. The agent does all of this work as the Unix user of the website, and the root helper has no new operation for it
 
   Where: `api/app/Http/Controllers/Api/FileController.php`, `LogController.php`, `CronJobController.php`, `DeployController.php`, `agent/internal/actions/files.go`, `cron.go`, `deploy.go`, `agent/internal/sitefiles`, `web/src/features/FileManager.tsx`, `web/src/pages/website/`, `cli/cmd/cf/sitetools.go`
 
@@ -209,7 +209,7 @@ after the item that is nearest to it in subject, not at the end of the list.
 
 - **Areas without an API**: The API of release 0.1 has no SSH shell and no system settings. The web panel has no pages for these areas. The web terminal and **Run a command** give a shell and commands in the container of a website. The CLI has no terminal.
 
-- **File manager**: The file manager reads files up to 2 MiB and writes files up to 5 MiB. It has no archive actions and no change of permissions. Use SFTP for large files.
+- **File manager**: The file manager reads files up to 2 MiB and writes files up to 5 MiB. Use SFTP or an archive for large files. It cannot make a `.tar.bz2` archive or extract a `.7z` or `.rar` archive, or an archive with a password. It cannot change the owner of a file.
 
 - **Logs**: The panel shows the last lines that the container of a website wrote. A website that was made before this release writes its log file after its next start. The panel has no search in old log lines and no access log of the edge proxy.
 

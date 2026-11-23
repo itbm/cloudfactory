@@ -247,6 +247,23 @@ export interface Job {
   databaseServerId?: string;
   /** The DNS zone that the job sends to a DNS server. */
   dnsZoneId?: string;
+  /** The summary of an archive job that succeeded (MakeArchive and ExtractArchive). */
+  result?: ArchiveSummary;
+}
+
+/** The summary of the agent for a new archive or for an extract. */
+export interface ArchiveSummary {
+  files: number;
+  directories: number;
+  links: number;
+  /** The size of the new archive, or the size of the files that the extract wrote. */
+  sizeBytes: number;
+  /** The files that the extract did not replace, because they exist. */
+  kept: number;
+  /** The entries that the agent did not use, for example names that go out of the folder. */
+  skipped: number;
+  /** The first 20 skipped entries. */
+  skippedNames: string[];
 }
 
 export interface ActivityItem {
