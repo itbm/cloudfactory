@@ -68,6 +68,7 @@
                     "application": "WordPress",
                     "customerId": "01m7cqzs80h56kh10000000004",
                     "serverId": "01m7cqzs807rnxfq0000000001",
+                    "movingToServerId": null,
                     "planId": "01m7cqzs80tpf66h0000000002",
                     "unixUser": "acmeexam_322a",
                     "networkHost": "acmeexam-322a.internal",
@@ -183,6 +184,7 @@
                     "application": "Laravel",
                     "customerId": "01m7cqzs80h56kh10000000004",
                     "serverId": "01m7cqzs807rnxfq0000000001",
+                    "movingToServerId": null,
                     "planId": "01m7cqzs80tpf66h0000000002",
                     "unixUser": "apiacme_97c4",
                     "networkHost": "apiacme-97c4.internal",
@@ -279,6 +281,7 @@
                     "application": "WordPress",
                     "customerId": "01m7cqzs80h56kh10000000002",
                     "serverId": "01m7cqzs807rnxfq0000000002",
+                    "movingToServerId": null,
                     "planId": "01m7cqzs80tpf66h0000000001",
                     "unixUser": "cornerba_f8cd",
                     "networkHost": "cornerba-f8cd.internal",
@@ -377,6 +380,7 @@
                     "application": "Next.js",
                     "customerId": "01m7cqzs80h56kh10000000004",
                     "serverId": "01m7cqzs807rnxfq0000000002",
+                    "movingToServerId": null,
                     "planId": "01m7cqzs80tpf66h0000000002",
                     "unixUser": "dashboar_bbf4",
                     "networkHost": "dashboar-bbf4.internal",
@@ -456,6 +460,7 @@
                     "application": "Laravel",
                     "customerId": "01m7cqzs80h56kh10000000003",
                     "serverId": "01m7cqzs807rnxfq0000000003",
+                    "movingToServerId": null,
                     "planId": "01m7cqzs80tpf66h0000000002",
                     "unixUser": "eventsha_08d5",
                     "networkHost": "eventsha-08d5.internal",
@@ -539,6 +544,7 @@
                     "application": "WooCommerce",
                     "customerId": "01m7cqzs80h56kh10000000003",
                     "serverId": "01m7cqzs807rnxfq0000000002",
+                    "movingToServerId": null,
                     "planId": "01m7cqzs80tpf66h0000000002",
                     "unixUser": "harbourb_fe76",
                     "networkHost": "harbourb-fe76.internal",
@@ -622,6 +628,7 @@
                     "application": "WordPress",
                     "customerId": "01m7cqzs80h56kh10000000005",
                     "serverId": "01m7cqzs807rnxfq0000000001",
+                    "movingToServerId": null,
                     "planId": "01m7cqzs80tpf66h0000000001",
                     "unixUser": "lawsonex_cf75",
                     "networkHost": "lawsonex-cf75.internal",
@@ -705,6 +712,7 @@
                     "application": "WordPress",
                     "customerId": "01m7cqzs80h56kh10000000001",
                     "serverId": "01m7cqzs807rnxfq0000000002",
+                    "movingToServerId": null,
                     "planId": "01m7cqzs80tpf66h0000000003",
                     "unixUser": "northwin_8223",
                     "networkHost": "northwin-8223.internal",
@@ -788,6 +796,7 @@
                     "application": "Website",
                     "customerId": "01m7cqzs80h56kh10000000004",
                     "serverId": "01m7cqzs807rnxfq0000000001",
+                    "movingToServerId": null,
                     "planId": "01m7cqzs80tpf66h0000000002",
                     "unixUser": "oldacme_ab58",
                     "networkHost": "oldacme-ab58.internal",
@@ -871,6 +880,7 @@
                     "application": "Orders API",
                     "customerId": "01m7cqzs80h56kh10000000004",
                     "serverId": "01m7cqzs807rnxfq0000000002",
+                    "movingToServerId": null,
                     "planId": "01m7cqzs80tpf66h0000000002",
                     "unixUser": "orders_1c16",
                     "networkHost": "orders-1c16.internal",
@@ -940,6 +950,7 @@
                     "application": "Preview of api.acme.example.com, pull request #42",
                     "customerId": "01m7cqzs80h56kh10000000004",
                     "serverId": "01m7cqzs807rnxfq0000000001",
+                    "movingToServerId": null,
                     "planId": "01m7cqzs80tpf66h0000000002",
                     "unixUser": "pr42prev_4448",
                     "networkHost": "pr42prev-4448.internal",
@@ -1029,6 +1040,7 @@
                     "application": "Queue worker",
                     "customerId": "01m7cqzs80h56kh10000000004",
                     "serverId": "01m7cqzs807rnxfq0000000001",
+                    "movingToServerId": null,
                     "planId": "01m7cqzs80tpf66h0000000002",
                     "unixUser": "queue_00b1",
                     "networkHost": null,
@@ -1098,6 +1110,7 @@
                     "application": "Django",
                     "customerId": "01m7cqzs80h56kh10000000001",
                     "serverId": "01m7cqzs807rnxfq0000000001",
+                    "movingToServerId": null,
                     "planId": "01m7cqzs80tpf66h0000000003",
                     "unixUser": "reportsn_bc3b",
                     "networkHost": "reportsn-bc3b.internal",
@@ -1176,6 +1189,7 @@
                     "application": "WooCommerce",
                     "customerId": "01m7cqzs80h56kh10000000004",
                     "serverId": "01m7cqzs807rnxfq0000000001",
+                    "movingToServerId": null,
                     "planId": "01m7cqzs80tpf66h0000000002",
                     "unixUser": "shopacme_9e69",
                     "networkHost": "shopacme-9e69.internal",
@@ -1259,6 +1273,7 @@
                     "application": "Node.js app",
                     "customerId": "01m7cqzs80h56kh10000000004",
                     "serverId": "01m7cqzs807rnxfq0000000002",
+                    "movingToServerId": null,
                     "planId": "01m7cqzs80tpf66h0000000002",
                     "unixUser": "storefro_a970",
                     "networkHost": "storefro-a970.internal",
@@ -2856,8 +2871,8 @@
             "method": "internal",
             "state": "valid",
             "expiresAt": "2027-02-07T10:00:00+00:00",
-            "caCertificate": "-----BEGIN CERTIFICATE-----\nMIICGTCCAcCgAwIBAgIBADAKBggqhkjOPQQDAjBsMSUwIwYDVQQDDBxDbG91ZGZh\nY3RvcnkgcGFuZWwgQ0EgKGRlbW8pMQswCQYDVQQGEwJBVTETMBEGA1UECAwKU29t\nZS1TdGF0ZTEhMB8GA1UECgwYSW50ZXJuZXQgV2lkZ2l0cyBQdHkgTHRkMB4XDTI2\nMTEyMzAwNDI0MVoXDTM2MTEyMDAwNDI0MVowbDElMCMGA1UEAwwcQ2xvdWRmYWN0\nb3J5IHBhbmVsIENBIChkZW1vKTELMAkGA1UEBhMCQVUxEzARBgNVBAgMClNvbWUt\nU3RhdGUxITAfBgNVBAoMGEludGVybmV0IFdpZGdpdHMgUHR5IEx0ZDBZMBMGByqG\nSM49AgEGCCqGSM49AwEHA0IABCqzB1r9Nbcpu4Wo9vUUtuWee/tvFT3a8GWw1YWq\nlsFCogUJZJHSdaqMdDFennp2BhPoQqkrs6EB/qpCaGKgZROjUzBRMB0GA1UdDgQW\nBBQ373iX2JOoC3zQH7fAmkWuGLmbhjAfBgNVHSMEGDAWgBQ373iX2JOoC3zQH7fA\nmkWuGLmbhjAPBgNVHRMBAf8EBTADAQH/MAoGCCqGSM49BAMCA0cAMEQCIHPn6vkP\nLh0Rvvcq3Hrrgpy7gpQSdMAKLGN2dY7/EOUZAiBua7kGyWZsle2GuDFLG+UlgQi4\nxHPVruNpqQcU7RpKIw==\n-----END CERTIFICATE-----\n",
-            "caSha256": "4483c0c237b7e54b2cdba41b65130cc06404404642a89d8cd103ca5d609c6d16",
+            "caCertificate": "-----BEGIN CERTIFICATE-----\nMIICGjCCAcCgAwIBAgIBADAKBggqhkjOPQQDAjBsMSUwIwYDVQQDDBxDbG91ZGZh\nY3RvcnkgcGFuZWwgQ0EgKGRlbW8pMQswCQYDVQQGEwJBVTETMBEGA1UECAwKU29t\nZS1TdGF0ZTEhMB8GA1UECgwYSW50ZXJuZXQgV2lkZ2l0cyBQdHkgTHRkMB4XDTI2\nMTEyMzAwNDY0MFoXDTM2MTEyMDAwNDY0MFowbDElMCMGA1UEAwwcQ2xvdWRmYWN0\nb3J5IHBhbmVsIENBIChkZW1vKTELMAkGA1UEBhMCQVUxEzARBgNVBAgMClNvbWUt\nU3RhdGUxITAfBgNVBAoMGEludGVybmV0IFdpZGdpdHMgUHR5IEx0ZDBZMBMGByqG\nSM49AgEGCCqGSM49AwEHA0IABFpkI2DZ7C/h7dY04j6qVWCiNl56o5Qu0ya0/CGC\nItJDjF7fOegx2bDF5t/LCM5lw1UkrQR3NfYnPRtmGJcbfJijUzBRMB0GA1UdDgQW\nBBRyh1MbuMo2n/fkFz/qYXW5ZRhNhzAfBgNVHSMEGDAWgBRyh1MbuMo2n/fkFz/q\nYXW5ZRhNhzAPBgNVHRMBAf8EBTADAQH/MAoGCCqGSM49BAMCA0gAMEUCIQDC84rA\nZqRpPu13FGz7jy6LYfqerCB5JApng+5Vr6J3bQIgf8xjU2Da2rHDItHy/p/7+bS5\nkOnj/66B6rZRKm0fKhg=\n-----END CERTIFICATE-----\n",
+            "caSha256": "5122e72b8ed33f030d0dac22c6c1d9f8e4e58cc24ec482feb918652d2664000f",
             "reportedAt": "2026-11-14T10:00:00+00:00",
             "letsEncryptAvailable": true,
             "serversWithoutCa": [
@@ -3417,13 +3432,13 @@
                         "enabled": true,
                         "state": "active",
                         "ds": {
-                            "keyTag": 37293,
+                            "keyTag": 19929,
                             "algorithm": 13,
                             "digestType": 2,
-                            "digest": "6B7E5857BABC04C7F730120B007459192B6AACAFA466C0750951B90C5D075800",
-                            "record": "acme.example.com. IN DS 37293 13 2 6B7E5857BABC04C7F730120B007459192B6AACAFA466C0750951B90C5D075800"
+                            "digest": "15C759E14B5564AC66FE5D1C499AED23BCC1FA1CDCC390E5CC4EC628B3399541",
+                            "record": "acme.example.com. IN DS 19929 13 2 15C759E14B5564AC66FE5D1C499AED23BCC1FA1CDCC390E5CC4EC628B3399541"
                         },
-                        "dnskey": "acme.example.com. IN DNSKEY 257 3 13 cQkBeXa54tZTn7SBIIO5fuV5Q1NoXEAGJjDJFOohvPSpoAhxCj+Z8IdE9tZ9x+833X2bS+QFrXn9QzZlS76s0Q=="
+                        "dnskey": "acme.example.com. IN DNSKEY 257 3 13 IXZDsDKWp7wz/iZf+ii4S7OzzF2idO/of4XFyHwbWLgexQGUlK1Cr2eh/GUs+PurXZJ0K3IwRbL8ggVHAEbA3A=="
                     },
                     "servers": [
                         {
@@ -4711,7 +4726,7 @@
                     "usedBytes": 3576692736,
                     "encryption": {
                         "fingerprints": [
-                            "DE7384E41EC8FD096EB5D5D921B98642CC731725"
+                            "824BC66F0D7464621FBEC46A00DA755DA9450831"
                         ],
                         "keyType": "OpenPGP v4: X25519",
                         "expiresAt": null,
@@ -8114,8 +8129,8 @@
                     "signedBy": {
                         "id": "01m7cqzs80ykv31f0000000001",
                         "name": "Example Plugins Ltd",
-                        "fingerprint": "426e58a691606c805f438a6541052d320a7dc3500d1cf2038b0b2756677d8e42",
-                        "publicKey": "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEWxJKPxNm+JyiRf10DGphyJ7L67zt\nIMgt1AsSiSsfbTulvwDY/lHEndyZ9IQSDnyNdeJIUHLqBNQC9LStMjAnHg==\n-----END PUBLIC KEY-----\n",
+                        "fingerprint": "fa13e73546772a8114321a0970f97bf8ad5db0314c967dc87023abefa0734052",
+                        "publicKey": "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE4HWjMFlrEPUlPJC+R93v/n4kRapA\nMSEpAe+CMs598/1uRgbOmkHf27cuUsG1TbWus8fdehm99RGAO5gBD8q5MA==\n-----END PUBLIC KEY-----\n",
                         "createdAt": "2026-11-14T10:00:00+00:00"
                     },
                     "tokenExpiresAt": "2027-11-14T10:00:00+00:00",
@@ -8202,8 +8217,8 @@
                     "signedBy": {
                         "id": "01m7cqzs80ykv31f0000000001",
                         "name": "Example Plugins Ltd",
-                        "fingerprint": "426e58a691606c805f438a6541052d320a7dc3500d1cf2038b0b2756677d8e42",
-                        "publicKey": "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEWxJKPxNm+JyiRf10DGphyJ7L67zt\nIMgt1AsSiSsfbTulvwDY/lHEndyZ9IQSDnyNdeJIUHLqBNQC9LStMjAnHg==\n-----END PUBLIC KEY-----\n",
+                        "fingerprint": "fa13e73546772a8114321a0970f97bf8ad5db0314c967dc87023abefa0734052",
+                        "publicKey": "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE4HWjMFlrEPUlPJC+R93v/n4kRapA\nMSEpAe+CMs598/1uRgbOmkHf27cuUsG1TbWus8fdehm99RGAO5gBD8q5MA==\n-----END PUBLIC KEY-----\n",
                         "createdAt": "2026-11-14T10:00:00+00:00"
                     },
                     "tokenExpiresAt": "2027-11-14T10:00:00+00:00",
@@ -8254,8 +8269,8 @@
                     "signedBy": {
                         "id": "01m7cqzs80ykv31f0000000001",
                         "name": "Example Plugins Ltd",
-                        "fingerprint": "426e58a691606c805f438a6541052d320a7dc3500d1cf2038b0b2756677d8e42",
-                        "publicKey": "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEWxJKPxNm+JyiRf10DGphyJ7L67zt\nIMgt1AsSiSsfbTulvwDY/lHEndyZ9IQSDnyNdeJIUHLqBNQC9LStMjAnHg==\n-----END PUBLIC KEY-----\n",
+                        "fingerprint": "fa13e73546772a8114321a0970f97bf8ad5db0314c967dc87023abefa0734052",
+                        "publicKey": "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE4HWjMFlrEPUlPJC+R93v/n4kRapA\nMSEpAe+CMs598/1uRgbOmkHf27cuUsG1TbWus8fdehm99RGAO5gBD8q5MA==\n-----END PUBLIC KEY-----\n",
                         "createdAt": "2026-11-14T10:00:00+00:00"
                     },
                     "tokenExpiresAt": "2027-11-14T10:00:00+00:00",
@@ -8337,8 +8352,8 @@
                     "signedBy": {
                         "id": "01m7cqzs80ykv31f0000000001",
                         "name": "Example Plugins Ltd",
-                        "fingerprint": "426e58a691606c805f438a6541052d320a7dc3500d1cf2038b0b2756677d8e42",
-                        "publicKey": "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEWxJKPxNm+JyiRf10DGphyJ7L67zt\nIMgt1AsSiSsfbTulvwDY/lHEndyZ9IQSDnyNdeJIUHLqBNQC9LStMjAnHg==\n-----END PUBLIC KEY-----\n",
+                        "fingerprint": "fa13e73546772a8114321a0970f97bf8ad5db0314c967dc87023abefa0734052",
+                        "publicKey": "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE4HWjMFlrEPUlPJC+R93v/n4kRapA\nMSEpAe+CMs598/1uRgbOmkHf27cuUsG1TbWus8fdehm99RGAO5gBD8q5MA==\n-----END PUBLIC KEY-----\n",
                         "createdAt": "2026-11-14T10:00:00+00:00"
                     },
                     "tokenExpiresAt": "2027-11-14T10:00:00+00:00",
@@ -8380,15 +8395,15 @@
                 {
                     "id": "01m7cqzs80ykv31f0000000002",
                     "name": "Example Packs Ltd",
-                    "fingerprint": "3d489adccd3f0024a4a3b44001b1d19a55b64de50f63022e501e52685639c30a",
-                    "publicKey": "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE+b2cT1MollG283P4hJdJDPlOylto\nbbP5xdiei/+wigJGS8/wHArRY9XtoHsfez4E3N1NNGl+0eMqAZ4kk/jVGg==\n-----END PUBLIC KEY-----\n",
+                    "fingerprint": "c0bcb346c95d68f2ff6ec79875a97af73e36b53eedb4cc4a9397a86bec048a64",
+                    "publicKey": "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE6elFaTAVAOx39VG7z4ahVJs+M7VW\nBOnRwOYJqoSt7nKh/Loy4a2UzzCsQhBMqbrGLhI/kyNIz39/d/AiGBjI/w==\n-----END PUBLIC KEY-----\n",
                     "createdAt": "2026-11-14T10:00:00+00:00"
                 },
                 {
                     "id": "01m7cqzs80ykv31f0000000001",
                     "name": "Example Plugins Ltd",
-                    "fingerprint": "426e58a691606c805f438a6541052d320a7dc3500d1cf2038b0b2756677d8e42",
-                    "publicKey": "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEWxJKPxNm+JyiRf10DGphyJ7L67zt\nIMgt1AsSiSsfbTulvwDY/lHEndyZ9IQSDnyNdeJIUHLqBNQC9LStMjAnHg==\n-----END PUBLIC KEY-----\n",
+                    "fingerprint": "fa13e73546772a8114321a0970f97bf8ad5db0314c967dc87023abefa0734052",
+                    "publicKey": "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE4HWjMFlrEPUlPJC+R93v/n4kRapA\nMSEpAe+CMs598/1uRgbOmkHf27cuUsG1TbWus8fdehm99RGAO5gBD8q5MA==\n-----END PUBLIC KEY-----\n",
                     "createdAt": "2026-11-14T10:00:00+00:00"
                 }
             ]
@@ -8414,7 +8429,7 @@
                     "signed": true,
                     "signedBy": {
                         "name": "Example Packs Ltd",
-                        "fingerprint": "3d489adccd3f0024a4a3b44001b1d19a55b64de50f63022e501e52685639c30a",
+                        "fingerprint": "c0bcb346c95d68f2ff6ec79875a97af73e36b53eedb4cc4a9397a86bec048a64",
                         "release": false
                     },
                     "runtime": {
@@ -8556,7 +8571,7 @@
                     ],
                     "state": "valid",
                     "issuer": "Example Trust Ltd (Example TLS CA 2026)",
-                    "fingerprint": "3383a72f4a053363e4b2e0998134df392de4aeea62cecd8b0a217dd3b01dd844",
+                    "fingerprint": "a425c2c95a6de06406be0a4f862caaa47d88c889342cb4c34c26bc5c9eceea1d",
                     "notBefore": "2025-11-26T10:00:00+00:00",
                     "expiresAt": "2026-11-26T10:00:00+00:00",
                     "trusted": true,
@@ -8585,7 +8600,7 @@
                     ],
                     "state": "valid",
                     "issuer": "Cloudfactory demonstration (Demo CA R1)",
-                    "fingerprint": "837af5a19193539ab6f846972f0925f2b4ee93e3166f13dc356b60e9e3422c2d",
+                    "fingerprint": "288c4be92bfb1b9b20bed5793a42e8fa3539f291bfff88869636e0852c6ec8de",
                     "notBefore": "2026-10-20T10:00:00+00:00",
                     "expiresAt": "2027-01-18T10:00:00+00:00",
                     "trusted": true,
@@ -8698,8 +8713,8 @@
                     "hasClientSecret": false,
                     "entityId": "https://sts.windows.net/0b5c1e5e-demo-4e0a-9d8e-000000000000/",
                     "ssoUrl": "https://login.microsoftonline.com/0b5c1e5e-demo-4e0a-9d8e-000000000000/saml2",
-                    "certificate": "-----BEGIN CERTIFICATE-----\nMIIDwDCCAqigAwIBAgIBADANBgkqhkiG9w0BAQUFADB5MTIwMAYDVQQDDClNaWNy\nb3NvZnQgQXp1cmUgRmVkZXJhdGVkIFNTTyBDZXJ0aWZpY2F0ZTELMAkGA1UEBhMC\nQVUxEzARBgNVBAgMClNvbWUtU3RhdGUxITAfBgNVBAoMGEludGVybmV0IFdpZGdp\ndHMgUHR5IEx0ZDAeFw0yNjExMjMwMDQyMzZaFw0yOTExMjIwMDQyMzZaMHkxMjAw\nBgNVBAMMKU1pY3Jvc29mdCBBenVyZSBGZWRlcmF0ZWQgU1NPIENlcnRpZmljYXRl\nMQswCQYDVQQGEwJBVTETMBEGA1UECAwKU29tZS1TdGF0ZTEhMB8GA1UECgwYSW50\nZXJuZXQgV2lkZ2l0cyBQdHkgTHRkMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIB\nCgKCAQEAuUFDquBORrY8ilZJXcr0AOYY7z4CoPM/IlYJtjAKIbuwdTEXRtVM83Tg\ntee0xVTJpmhqbHfYknmTYBYEEqAl9+in8RXdkxbudMN8x0mZkKVzt/2Tv0y6vZD4\n/PaqIuHyXsdu3GTVrTUxves/PQiiF3mq9CRmYGTAumU5jM9eKYZMzSNm6dvpZoJs\nvtGxgJ/Tn1fpfdkRl6skYfIRCyBm9dA+8Do/hNccNBBTSxFamWDgBjtM+S+dKOvn\nwfKljd4nqnawS4JvT2nw1FcYIBGFnXSzw2pgW3VLJQ6GpDH/2cD+TxduaE1sjKn3\nfvcfSABgI4FWkbqkDb1/j6rS6psMpQIDAQABo1MwUTAdBgNVHQ4EFgQU/1gt+Af/\n8lDHz7MpVcMaBiKvOcowHwYDVR0jBBgwFoAU/1gt+Af/8lDHz7MpVcMaBiKvOcow\nDwYDVR0TAQH/BAUwAwEB/zANBgkqhkiG9w0BAQUFAAOCAQEADJvMun7Ax/y5ZCr3\n6ezGdPBR5CQHxvek5j13yQWo+NYLV7/x2gfTjfY6RJ9ex2tPWblroAP8lzirlUJf\njwvfarxKVQ1SUHzgzb6EI5qE2XurA4yhimI1/Cl5Y+q0nnvCjJFvdrfYUikXT81k\nsswl+0yYvplFZPt+YCBoZbL8ZxOC/3LaB75v2Iqvhozy+IUtx2M0f1F3R5qU86Y/\ng0RTUjUytju5j+IYIRVWtNmcu0M68Luejybhwu87EMf/cQ9PKXBURps9uyVS7577\nJUWm3avlZ7WHCrnYAOlq0AEV6VZqrxeVgyJtFxZyYuHDZBAAL/OwyA4n0Ud3WpKn\nJGuF+w==\n-----END CERTIFICATE-----\n",
-                    "certificateExpiresAt": "2029-11-22T00:42:36+00:00",
+                    "certificate": "-----BEGIN CERTIFICATE-----\nMIIDwDCCAqigAwIBAgIBADANBgkqhkiG9w0BAQUFADB5MTIwMAYDVQQDDClNaWNy\nb3NvZnQgQXp1cmUgRmVkZXJhdGVkIFNTTyBDZXJ0aWZpY2F0ZTELMAkGA1UEBhMC\nQVUxEzARBgNVBAgMClNvbWUtU3RhdGUxITAfBgNVBAoMGEludGVybmV0IFdpZGdp\ndHMgUHR5IEx0ZDAeFw0yNjExMjMwMDQ2MzVaFw0yOTExMjIwMDQ2MzVaMHkxMjAw\nBgNVBAMMKU1pY3Jvc29mdCBBenVyZSBGZWRlcmF0ZWQgU1NPIENlcnRpZmljYXRl\nMQswCQYDVQQGEwJBVTETMBEGA1UECAwKU29tZS1TdGF0ZTEhMB8GA1UECgwYSW50\nZXJuZXQgV2lkZ2l0cyBQdHkgTHRkMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIB\nCgKCAQEAopRYPiwI2gST9toNs99bYrPKeD3Ofst90oHPNXTkZPPU/agVGgzppRwf\nb7DqbpWv8A7oeJr8Jle9Mi8AMzeUrz2gv/61wi+FqC8COl/TNJqGNtnhJdWDvdRp\nPVBprfGE1HdQDit1rwHKxwSa51/NRBXsekFprt3fPWW/uzXtszzfUmsE5vpANGA2\n7v8tb/uo3FWF2PHNegKZMparDi0BUjygr+kMssZoc77NfDiQSV9R20MZ56HTBKKh\naaxqf4jIBUVZKczOa9FD7XUlhNniHdL4rikhWgkdmg1+aXVv5H/6pLp+6zzxTnX0\nCh6xJZiSy1wa//q7EmvUQdKUqyHxQQIDAQABo1MwUTAdBgNVHQ4EFgQURkOKQ5Ey\nw09Ti4NgX5R5fpibhPQwHwYDVR0jBBgwFoAURkOKQ5Eyw09Ti4NgX5R5fpibhPQw\nDwYDVR0TAQH/BAUwAwEB/zANBgkqhkiG9w0BAQUFAAOCAQEAjXywcqvLQ0y7SdEB\nhZAQjy6/uoDacrCivHqWGoVZ3BXbBYbWIaQkZcfBJOmZ2lE+J4Wl8iXFgksHtcSz\nBW4zs9Gveq6MXbMNQMX2uESSxyLOkjDaSTI4oqOWh708hU+t5rwvmL8i0zINEZys\nkjYpTRYCaFx+LmLILhAvt5QbOvYYtzT/KUlGY4nzh7BDFyQDV7M45CLckrOX5vYj\nhyhy9epuRzePqzOmpZs018FZa4ylsUiQoGlSO77eISsR6UvYRqobd3IIl7Gb5Zqv\nwQpliwtAAL63+C876jZVtQ8wgsN9J3WxJ6e9bbd3ip87L6bXm86IwyqELLRy+14t\nRXxBTw==\n-----END CERTIFICATE-----\n",
+                    "certificateExpiresAt": "2029-11-22T00:46:35+00:00",
                     "linkByEmail": false,
                     "emailDomains": [],
                     "users": 0,
@@ -9864,7 +9879,7 @@
                     "ln -s /app/shared/.env .env"
                 ],
                 "migrationCommand": "php artisan migrate --force",
-                "deployKey": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOcuJTDHC9IAOR1hB5qGdq6Zzh4Z0SOKXJKOZEng+Nne cloudfactory-apiacme_97c4",
+                "deployKey": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGca61+L0jDPYWvlNA7G1/3CYW2Tr8wR7Wq7rz/ZsjES cloudfactory-apiacme_97c4",
                 "webhookUrl": "http://localhost/api/v1/hooks/deploy/16H7ykJdTkG5pMRXURFTceWP4rPcblfCfP2PsKTbVQSmNGHN",
                 "webhookSecret": "CWYWfUWzCKFxVe0G3chkF5xBJWYFyHB4Is7ufXoM",
                 "deployQueued": false,
@@ -14385,7 +14400,7 @@
                     "ln -s /app/shared/.env .env"
                 ],
                 "migrationCommand": "php artisan migrate --force",
-                "deployKey": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOcuJTDHC9IAOR1hB5qGdq6Zzh4Z0SOKXJKOZEng+Nne cloudfactory-apiacme_97c4",
+                "deployKey": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGca61+L0jDPYWvlNA7G1/3CYW2Tr8wR7Wq7rz/ZsjES cloudfactory-apiacme_97c4",
                 "webhookUrl": "http://localhost/api/v1/hooks/deploy/G6mt5KmRycsDBSMMYLLgnRniZtanaanOr6V5GyXkL5c3djlK",
                 "webhookSecret": "CWYWfUWzCKFxVe0G3chkF5xBJWYFyHB4Is7ufXoM",
                 "deployQueued": false,
@@ -17420,13 +17435,13 @@
                 "enabled": true,
                 "state": "active",
                 "ds": {
-                    "keyTag": 37293,
+                    "keyTag": 19929,
                     "algorithm": 13,
                     "digestType": 2,
-                    "digest": "6B7E5857BABC04C7F730120B007459192B6AACAFA466C0750951B90C5D075800",
-                    "record": "acme.example.com. IN DS 37293 13 2 6B7E5857BABC04C7F730120B007459192B6AACAFA466C0750951B90C5D075800"
+                    "digest": "15C759E14B5564AC66FE5D1C499AED23BCC1FA1CDCC390E5CC4EC628B3399541",
+                    "record": "acme.example.com. IN DS 19929 13 2 15C759E14B5564AC66FE5D1C499AED23BCC1FA1CDCC390E5CC4EC628B3399541"
                 },
-                "dnskey": "acme.example.com. IN DNSKEY 257 3 13 cQkBeXa54tZTn7SBIIO5fuV5Q1NoXEAGJjDJFOohvPSpoAhxCj+Z8IdE9tZ9x+833X2bS+QFrXn9QzZlS76s0Q=="
+                "dnskey": "acme.example.com. IN DNSKEY 257 3 13 IXZDsDKWp7wz/iZf+ii4S7OzzF2idO/of4XFyHwbWLgexQGUlK1Cr2eh/GUs+PurXZJ0K3IwRbL8ggVHAEbA3A=="
             },
             "servers": [
                 {
@@ -18178,7 +18193,7 @@
             ],
             "state": "valid",
             "issuer": "Cloudfactory demonstration (Demo CA R1)",
-            "fingerprint": "837af5a19193539ab6f846972f0925f2b4ee93e3166f13dc356b60e9e3422c2d",
+            "fingerprint": "288c4be92bfb1b9b20bed5793a42e8fa3539f291bfff88869636e0852c6ec8de",
             "notBefore": "2026-10-20T10:00:00+00:00",
             "expiresAt": "2027-01-18T10:00:00+00:00",
             "trusted": true,
@@ -18230,7 +18245,7 @@
                     "serverName": "web-1"
                 }
             ],
-            "certificatePem": "-----BEGIN CERTIFICATE-----\nMIIBnTCCAUSgAwIBAgIIaH6rI22SZbYwCgYIKoZIzj0EAwIwOjETMBEGA1UEAwwK\nRGVtbyBDQSBSMTEjMCEGA1UECgwaQ2xvdWRmYWN0b3J5IGRlbW9uc3RyYXRpb24w\nHhcNMjYxMTIzMDA0MjM2WhcNMjcwMjIxMDA0MjM2WjAbMRkwFwYDVQQDDBBhY21l\nLmV4YW1wbGUuY29tMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEujYWvqJbFJvJ\n82Zi2kVTvGf88+K1y13ztghLRagfO9ndP0SCLiiUV1gM7MNVSYtnizd32M5woGAR\nCtoGSXLpiaNTMFEwLwYDVR0RBCgwJoIQYWNtZS5leGFtcGxlLmNvbYISKi5hY21l\nLmV4YW1wbGUuY29tMAkGA1UdEwQCMAAwEwYDVR0lBAwwCgYIKwYBBQUHAwEwCgYI\nKoZIzj0EAwIDRwAwRAIgFHdMizcWY/33ZwOvTZ9qV2FkKQGuSJe9eEiHxXQBJ4wC\nIC/NHgJ+yuBccO9V+KRBCkNqXSbApBhSeiBiH+beY9V8\n-----END CERTIFICATE-----\n-----BEGIN CERTIFICATE-----\nMIIBjTCCATOgAwIBAgIIG5rhSOwAyPgwCgYIKoZIzj0EAwIwOjETMBEGA1UEAwwK\nRGVtbyBDQSBSMTEjMCEGA1UECgwaQ2xvdWRmYWN0b3J5IGRlbW9uc3RyYXRpb24w\nHhcNMjYxMTIzMDA0MjM2WhcNMzYxMTIwMDA0MjM2WjA6MRMwEQYDVQQDDApEZW1v\nIENBIFIxMSMwIQYDVQQKDBpDbG91ZGZhY3RvcnkgZGVtb25zdHJhdGlvbjBZMBMG\nByqGSM49AgEGCCqGSM49AwEHA0IABA93jFkA8GzewXoiFUy9szI3IbsrCwYE2znC\nv8gPkiJ1Z+Fym0MqOPOAtYZDTZAKZXqo/bc2Ly5D9+KJPu2Iz6ejIzAhMA8GA1Ud\nEwEB/wQFMAMBAf8wDgYDVR0PAQH/BAQDAgEGMAoGCCqGSM49BAMCA0gAMEUCIFFp\nPyd3aVIGzgelzXMigFHSrErmr/1tmQVScSWr1cfgAiEAgoc794eJNBDtCt+SbEPT\nuH/jIsp3jepxljVbLpzHJ/Y=\n-----END CERTIFICATE-----\n",
+            "certificatePem": "-----BEGIN CERTIFICATE-----\nMIIBnjCCAUSgAwIBAgIIXmk+dbwKjacwCgYIKoZIzj0EAwIwOjETMBEGA1UEAwwK\nRGVtbyBDQSBSMTEjMCEGA1UECgwaQ2xvdWRmYWN0b3J5IGRlbW9uc3RyYXRpb24w\nHhcNMjYxMTIzMDA0NjM1WhcNMjcwMjIxMDA0NjM1WjAbMRkwFwYDVQQDDBBhY21l\nLmV4YW1wbGUuY29tMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEZei/ECB2U0rz\nVIfLzavGoFjTzTuz900EHlkvDwkQyp0FzhQZSZ7EWD1i3o4OYPkXYbbu/j9QZtU1\n9J6SpUhugaNTMFEwLwYDVR0RBCgwJoIQYWNtZS5leGFtcGxlLmNvbYISKi5hY21l\nLmV4YW1wbGUuY29tMAkGA1UdEwQCMAAwEwYDVR0lBAwwCgYIKwYBBQUHAwEwCgYI\nKoZIzj0EAwIDSAAwRQIgY5WBHP2tssfisHlk3/GMxFOzZy/rsFUFYtGLK5bZWTYC\nIQDLEsxec459jjVEsz1GyM02uXZr0wApwOHmH63u/Vy6/A==\n-----END CERTIFICATE-----\n-----BEGIN CERTIFICATE-----\nMIIBjTCCATOgAwIBAgIIasftN81B32AwCgYIKoZIzj0EAwIwOjETMBEGA1UEAwwK\nRGVtbyBDQSBSMTEjMCEGA1UECgwaQ2xvdWRmYWN0b3J5IGRlbW9uc3RyYXRpb24w\nHhcNMjYxMTIzMDA0NjM1WhcNMzYxMTIwMDA0NjM1WjA6MRMwEQYDVQQDDApEZW1v\nIENBIFIxMSMwIQYDVQQKDBpDbG91ZGZhY3RvcnkgZGVtb25zdHJhdGlvbjBZMBMG\nByqGSM49AgEGCCqGSM49AwEHA0IABBL2tRfPhrjDVblntFDe8zncQBJ9cCuYHe3g\n6kCEdCv6qsYDH0OXO86LEHBL0lJbB4PoJYr5eqmnbH3n6A9qoZyjIzAhMA8GA1Ud\nEwEB/wQFMAMBAf8wDgYDVR0PAQH/BAQDAgEGMAoGCCqGSM49BAMCA0gAMEUCIFza\n6sgBK3Tjpuj1b3DpAQIAmaQPf2ckFblexj9ZrjQMAiEA0lVWRZcdyL1m2YloTC71\nmrLt1uDKTC6Ni6RlIpqioNQ=\n-----END CERTIFICATE-----\n",
             "createdAt": "2026-10-20T10:00:00+00:00",
             "updatedAt": "2026-11-14T10:00:00+00:00"
         }
@@ -18247,7 +18262,7 @@
             ],
             "state": "valid",
             "issuer": "Example Trust Ltd (Example TLS CA 2026)",
-            "fingerprint": "3383a72f4a053363e4b2e0998134df392de4aeea62cecd8b0a217dd3b01dd844",
+            "fingerprint": "a425c2c95a6de06406be0a4f862caaa47d88c889342cb4c34c26bc5c9eceea1d",
             "notBefore": "2025-11-26T10:00:00+00:00",
             "expiresAt": "2026-11-26T10:00:00+00:00",
             "trusted": true,
@@ -18263,7 +18278,7 @@
                     "serverName": "web-2"
                 }
             ],
-            "certificatePem": "-----BEGIN CERTIFICATE-----\nMIIBtzCCAV6gAwIBAgIIV5XkHtUD64gwCgYIKoZIzj0EAwIwOjEcMBoGA1UEAwwT\nRXhhbXBsZSBUTFMgQ0EgMjAyNjEaMBgGA1UECgwRRXhhbXBsZSBUcnVzdCBMdGQw\nHhcNMjYxMTIzMDA0MjM2WhcNMjcxMTIzMDA0MjM2WjAjMSEwHwYDVQQDDBhjb3Ju\nZXJiYWtlcnkuZXhhbXBsZS5vcmcwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAATG\nTnE+10SKd268CcAFIjSKOyek9vPdC5DPnUqcUp55Iz6u31zGEz5WOsFUtlrxsquc\nWn8ZgN0dYig922t5ALYUo2UwYzBBBgNVHREEOjA4ghhjb3JuZXJiYWtlcnkuZXhh\nbXBsZS5vcmeCHHd3dy5jb3JuZXJiYWtlcnkuZXhhbXBsZS5vcmcwCQYDVR0TBAIw\nADATBgNVHSUEDDAKBggrBgEFBQcDATAKBggqhkjOPQQDAgNHADBEAiB+g+BhcX4H\nWy+QmKFpVQ2S6fvNR5BRwwvl4L2vjBjAaAIgMkE+S0zV6nMPzcwb5YJcbipXfAoA\nSxp8b0ARuGv5ptc=\n-----END CERTIFICATE-----\n-----BEGIN CERTIFICATE-----\nMIIBjTCCATOgAwIBAgIIKMfbONu0oeAwCgYIKoZIzj0EAwIwOjEcMBoGA1UEAwwT\nRXhhbXBsZSBUTFMgQ0EgMjAyNjEaMBgGA1UECgwRRXhhbXBsZSBUcnVzdCBMdGQw\nHhcNMjYxMTIzMDA0MjM2WhcNMzYxMTIwMDA0MjM2WjA6MRwwGgYDVQQDDBNFeGFt\ncGxlIFRMUyBDQSAyMDI2MRowGAYDVQQKDBFFeGFtcGxlIFRydXN0IEx0ZDBZMBMG\nByqGSM49AgEGCCqGSM49AwEHA0IABFB4pkW85xFwoajdu+eVeuC/+jRe2E6++WDa\nUA+Yl1PQVCOK2B3qtSz2SRlZ2K53r5Erqf2Ez8BRx/gLy2XXQuOjIzAhMA8GA1Ud\nEwEB/wQFMAMBAf8wDgYDVR0PAQH/BAQDAgEGMAoGCCqGSM49BAMCA0gAMEUCIQDo\nL3yTqs2/rElecBLK2yN2kqW+UD9f/DeWW9gCoLgHYgIgXKLQ0nvmizB0y3g2bwEU\n9P+eKxJkv0QbOmao14s8Vpg=\n-----END CERTIFICATE-----\n",
+            "certificatePem": "-----BEGIN CERTIFICATE-----\nMIIBuTCCAV6gAwIBAgIIKn9OXHMjkLwwCgYIKoZIzj0EAwIwOjEcMBoGA1UEAwwT\nRXhhbXBsZSBUTFMgQ0EgMjAyNjEaMBgGA1UECgwRRXhhbXBsZSBUcnVzdCBMdGQw\nHhcNMjYxMTIzMDA0NjM1WhcNMjcxMTIzMDA0NjM1WjAjMSEwHwYDVQQDDBhjb3Ju\nZXJiYWtlcnkuZXhhbXBsZS5vcmcwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAARm\nOqhxpuT0CxH2HApyhMGEe8oLE6AJo3dVLxDbfQS4Qql03A/WkN5nud2d4HkD+lQO\n5Ksqdo/oBuBVlhqO2qBdo2UwYzBBBgNVHREEOjA4ghhjb3JuZXJiYWtlcnkuZXhh\nbXBsZS5vcmeCHHd3dy5jb3JuZXJiYWtlcnkuZXhhbXBsZS5vcmcwCQYDVR0TBAIw\nADATBgNVHSUEDDAKBggrBgEFBQcDATAKBggqhkjOPQQDAgNJADBGAiEA2GNJBFbl\nAfNiZIqzJadn6ls4jdtuAxY6NBtmy7ztYPQCIQD8alizad61x6xsDwjqmMGOa45F\nibIQwtGnoYPZhqWQpw==\n-----END CERTIFICATE-----\n-----BEGIN CERTIFICATE-----\nMIIBjjCCATOgAwIBAgIIBGp3lsgJ3yYwCgYIKoZIzj0EAwIwOjEcMBoGA1UEAwwT\nRXhhbXBsZSBUTFMgQ0EgMjAyNjEaMBgGA1UECgwRRXhhbXBsZSBUcnVzdCBMdGQw\nHhcNMjYxMTIzMDA0NjM1WhcNMzYxMTIwMDA0NjM1WjA6MRwwGgYDVQQDDBNFeGFt\ncGxlIFRMUyBDQSAyMDI2MRowGAYDVQQKDBFFeGFtcGxlIFRydXN0IEx0ZDBZMBMG\nByqGSM49AgEGCCqGSM49AwEHA0IABBGpEyqwM4UCXqiRTAbw69rNeKJOBU0AkJt8\n1v8Vx7NvRJIw4515wsSH8M2sLP9vT14c4DyNZo8jwAC+aCXVfSajIzAhMA8GA1Ud\nEwEB/wQFMAMBAf8wDgYDVR0PAQH/BAQDAgEGMAoGCCqGSM49BAMCA0kAMEYCIQDS\nwO1eaJIepFwaaFC/BvwXZrHVAQxg5HFlV0aXAasbgAIhAM+8bxkLg1tn6XiKls39\n+ttLeO6JQBSSMCk2z1OlI3lF\n-----END CERTIFICATE-----\n",
             "createdAt": "2025-11-26T10:00:00+00:00",
             "updatedAt": "2026-11-14T10:00:00+00:00"
         }
