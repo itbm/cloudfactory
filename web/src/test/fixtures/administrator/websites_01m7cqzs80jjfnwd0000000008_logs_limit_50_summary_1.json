@@ -1,0 +1,898 @@
+{
+    "request": "GET /websites/01m7cqzs80jjfnwd0000000008/logs?limit=50&summary=1",
+    "status": 200,
+    "body": {
+        "entries": [
+            {
+                "at": "2026-11-14T09:59:24.645Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "203.0.113.7",
+                    "method": "GET",
+                    "host": "harbourbooks.example.net",
+                    "uri": "/products",
+                    "proto": "HTTP/2.0",
+                    "status": 200,
+                    "sizeBytes": 43652,
+                    "durationMs": 40.1,
+                    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:145.0) Gecko/20100101 Firefox/145.0",
+                    "referer": ""
+                }
+            },
+            {
+                "at": "2026-11-14T09:58:40.339Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "203.0.113.7",
+                    "method": "GET",
+                    "host": "harbourbooks.example.net",
+                    "uri": "/",
+                    "proto": "HTTP/2.0",
+                    "status": 200,
+                    "sizeBytes": 12595,
+                    "durationMs": 75.1,
+                    "userAgent": "Mozilla/5.0 (iPhone; CPU iPhone OS 19_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/19.1 Mobile/15E148 Safari/604.1",
+                    "referer": ""
+                }
+            },
+            {
+                "at": "2026-11-14T09:57:58.339Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "203.0.113.88",
+                    "method": "GET",
+                    "host": "harbourbooks.example.net",
+                    "uri": "/products/17",
+                    "proto": "HTTP/2.0",
+                    "status": 200,
+                    "sizeBytes": 18403,
+                    "durationMs": 4.9,
+                    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+                    "referer": ""
+                }
+            },
+            {
+                "at": "2026-11-14T09:54:27.829Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "192.0.2.130",
+                    "method": "GET",
+                    "host": "harbourbooks.example.net",
+                    "uri": "/css/site.css",
+                    "proto": "HTTP/2.0",
+                    "status": 200,
+                    "sizeBytes": 2416,
+                    "durationMs": 25.9,
+                    "userAgent": "Mozilla/5.0 (iPhone; CPU iPhone OS 19_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/19.1 Mobile/15E148 Safari/604.1",
+                    "referer": "https://harbourbooks.example.net/products"
+                }
+            },
+            {
+                "at": "2026-11-14T09:51:31.329Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "2001:db8:4e::7a",
+                    "method": "GET",
+                    "host": "harbourbooks.example.net",
+                    "uri": "/contact",
+                    "proto": "HTTP/1.1",
+                    "status": 200,
+                    "sizeBytes": 995,
+                    "durationMs": 850,
+                    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+                    "referer": ""
+                }
+            },
+            {
+                "at": "2026-11-14T09:51:06.968Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "198.51.100.250",
+                    "method": "POST",
+                    "host": "harbourbooks.example.net",
+                    "uri": "/wp-login.php",
+                    "proto": "HTTP/1.1",
+                    "status": 404,
+                    "sizeBytes": 548,
+                    "durationMs": 20.8,
+                    "userAgent": "Mozilla/5.0 zgrab/0.x",
+                    "referer": ""
+                }
+            },
+            {
+                "at": "2026-11-14T09:50:12.865Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "198.51.100.23",
+                    "method": "GET",
+                    "host": "harbourbooks.example.net",
+                    "uri": "/css/site.css",
+                    "proto": "HTTP/2.0",
+                    "status": 200,
+                    "sizeBytes": 2416,
+                    "durationMs": 77.6,
+                    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:145.0) Gecko/20100101 Firefox/145.0",
+                    "referer": "https://harbourbooks.example.net/products"
+                }
+            },
+            {
+                "at": "2026-11-14T09:49:26.799Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "192.0.2.44",
+                    "method": "GET",
+                    "host": "harbourbooks.example.net",
+                    "uri": "/contact",
+                    "proto": "HTTP/2.0",
+                    "status": 200,
+                    "sizeBytes": 34617,
+                    "durationMs": 43.8,
+                    "userAgent": "Mozilla/5.0 (iPhone; CPU iPhone OS 19_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/19.1 Mobile/15E148 Safari/604.1",
+                    "referer": ""
+                }
+            },
+            {
+                "at": "2026-11-14T09:47:00.569Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "203.0.113.88",
+                    "method": "GET",
+                    "host": "harbourbooks.example.net",
+                    "uri": "/products/42",
+                    "proto": "HTTP/2.0",
+                    "status": 200,
+                    "sizeBytes": 47571,
+                    "durationMs": 110,
+                    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+                    "referer": ""
+                }
+            },
+            {
+                "at": "2026-11-14T09:45:59.077Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "203.0.113.7",
+                    "method": "GET",
+                    "host": "harbourbooks.example.net",
+                    "uri": "/css/site.css",
+                    "proto": "HTTP/2.0",
+                    "status": 304,
+                    "sizeBytes": 0,
+                    "durationMs": 43.5,
+                    "userAgent": "Mozilla/5.0 (iPhone; CPU iPhone OS 19_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/19.1 Mobile/15E148 Safari/604.1",
+                    "referer": "https://harbourbooks.example.net/products"
+                }
+            },
+            {
+                "at": "2026-11-14T09:42:24.132Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "2001:db8:4e::7a",
+                    "method": "GET",
+                    "host": "harbourbooks.example.net",
+                    "uri": "/",
+                    "proto": "HTTP/2.0",
+                    "status": 200,
+                    "sizeBytes": 46358,
+                    "durationMs": 94.8,
+                    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+                    "referer": ""
+                }
+            },
+            {
+                "at": "2026-11-14T09:40:21.516Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "203.0.113.7",
+                    "method": "GET",
+                    "host": "harbourbooks.example.net",
+                    "uri": "/products",
+                    "proto": "HTTP/2.0",
+                    "status": 200,
+                    "sizeBytes": 39612,
+                    "durationMs": 11.2,
+                    "userAgent": "Mozilla/5.0 (iPhone; CPU iPhone OS 19_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/19.1 Mobile/15E148 Safari/604.1",
+                    "referer": ""
+                }
+            },
+            {
+                "at": "2026-11-14T09:39:53.101Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "203.0.113.7",
+                    "method": "GET",
+                    "host": "harbourbooks.example.net",
+                    "uri": "/products/17",
+                    "proto": "HTTP/2.0",
+                    "status": 200,
+                    "sizeBytes": 25709,
+                    "durationMs": 46.5,
+                    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+                    "referer": ""
+                }
+            },
+            {
+                "at": "2026-11-14T09:39:48.740Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "192.0.2.44",
+                    "method": "GET",
+                    "host": "harbourbooks.example.net",
+                    "uri": "/api/stock?id=42",
+                    "proto": "HTTP/2.0",
+                    "status": 200,
+                    "sizeBytes": 29773,
+                    "durationMs": 50.6,
+                    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:145.0) Gecko/20100101 Firefox/145.0",
+                    "referer": ""
+                }
+            },
+            {
+                "at": "2026-11-14T09:38:32.292Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "198.51.100.23",
+                    "method": "GET",
+                    "host": "harbourbooks.example.net",
+                    "uri": "/products",
+                    "proto": "HTTP/2.0",
+                    "status": 200,
+                    "sizeBytes": 26698,
+                    "durationMs": 71.5,
+                    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+                    "referer": ""
+                }
+            },
+            {
+                "at": "2026-11-14T09:38:30.806Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "192.0.2.44",
+                    "method": "GET",
+                    "host": "harbourbooks.example.net",
+                    "uri": "/api/stock?id=42",
+                    "proto": "HTTP/2.0",
+                    "status": 200,
+                    "sizeBytes": 19550,
+                    "durationMs": 16.4,
+                    "userAgent": "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
+                    "referer": ""
+                }
+            },
+            {
+                "at": "2026-11-14T09:37:01.929Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "198.51.100.250",
+                    "method": "POST",
+                    "host": "harbourbooks.example.net",
+                    "uri": "/wp-login.php",
+                    "proto": "HTTP/2.0",
+                    "status": 404,
+                    "sizeBytes": 548,
+                    "durationMs": 38.9,
+                    "userAgent": "Mozilla/5.0 zgrab/0.x",
+                    "referer": ""
+                }
+            },
+            {
+                "at": "2026-11-14T09:37:01.924Z",
+                "source": "output",
+                "text": "Rebuilt the search index in 490 ms.",
+                "access": null
+            },
+            {
+                "at": "2026-11-14T09:31:09.631Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "192.0.2.44",
+                    "method": "GET",
+                    "host": "harbourbooks.example.net",
+                    "uri": "/",
+                    "proto": "HTTP/2.0",
+                    "status": 200,
+                    "sizeBytes": 37468,
+                    "durationMs": 57.3,
+                    "userAgent": "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
+                    "referer": ""
+                }
+            },
+            {
+                "at": "2026-11-14T09:23:42.568Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "198.51.100.23",
+                    "method": "GET",
+                    "host": "harbourbooks.example.net",
+                    "uri": "/cart",
+                    "proto": "HTTP/3.0",
+                    "status": 200,
+                    "sizeBytes": 37370,
+                    "durationMs": 42.6,
+                    "userAgent": "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
+                    "referer": "https://harbourbooks.example.net/products"
+                }
+            },
+            {
+                "at": "2026-11-14T09:22:36.295Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "2001:db8:4e::7a",
+                    "method": "GET",
+                    "host": "harbourbooks.example.net",
+                    "uri": "/css/site.css",
+                    "proto": "HTTP/2.0",
+                    "status": 304,
+                    "sizeBytes": 0,
+                    "durationMs": 39.4,
+                    "userAgent": "curl/8.11.1",
+                    "referer": "https://harbourbooks.example.net/products"
+                }
+            },
+            {
+                "at": "2026-11-14T09:21:49.600Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "203.0.113.7",
+                    "method": "GET",
+                    "host": "harbourbooks.example.net",
+                    "uri": "/",
+                    "proto": "HTTP/2.0",
+                    "status": 200,
+                    "sizeBytes": 38273,
+                    "durationMs": 785,
+                    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:145.0) Gecko/20100101 Firefox/145.0",
+                    "referer": ""
+                }
+            },
+            {
+                "at": "2026-11-14T09:21:38.041Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "2001:db8:4e::7a",
+                    "method": "GET",
+                    "host": "harbourbooks.example.net",
+                    "uri": "/",
+                    "proto": "HTTP/2.0",
+                    "status": 200,
+                    "sizeBytes": 45357,
+                    "durationMs": 64.8,
+                    "userAgent": "curl/8.11.1",
+                    "referer": ""
+                }
+            },
+            {
+                "at": "2026-11-14T09:17:40.152Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "203.0.113.88",
+                    "method": "GET",
+                    "host": "harbourbooks.example.net",
+                    "uri": "/css/site.css",
+                    "proto": "HTTP/2.0",
+                    "status": 304,
+                    "sizeBytes": 0,
+                    "durationMs": 9.7,
+                    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:145.0) Gecko/20100101 Firefox/145.0",
+                    "referer": "https://harbourbooks.example.net/products"
+                }
+            },
+            {
+                "at": "2026-11-14T09:14:51.466Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "203.0.113.7",
+                    "method": "GET",
+                    "host": "harbourbooks.example.net",
+                    "uri": "/",
+                    "proto": "HTTP/2.0",
+                    "status": 200,
+                    "sizeBytes": 24621,
+                    "durationMs": 92.3,
+                    "userAgent": "Mozilla/5.0 (iPhone; CPU iPhone OS 19_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/19.1 Mobile/15E148 Safari/604.1",
+                    "referer": ""
+                }
+            },
+            {
+                "at": "2026-11-14T09:14:51.446Z",
+                "source": "error",
+                "text": "PHP Warning:  Undefined array key \"utm_source\" in /app/src/bootstrap.php on line 14",
+                "access": null
+            },
+            {
+                "at": "2026-11-14T09:14:23.425Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "203.0.113.88",
+                    "method": "GET",
+                    "host": "harbourbooks.example.net",
+                    "uri": "/css/site.css",
+                    "proto": "HTTP/2.0",
+                    "status": 304,
+                    "sizeBytes": 0,
+                    "durationMs": 107.2,
+                    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:145.0) Gecko/20100101 Firefox/145.0",
+                    "referer": "https://harbourbooks.example.net/products"
+                }
+            },
+            {
+                "at": "2026-11-14T09:13:15.337Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "2001:db8:4e::7a",
+                    "method": "GET",
+                    "host": "harbourbooks.example.net",
+                    "uri": "/products",
+                    "proto": "HTTP/2.0",
+                    "status": 200,
+                    "sizeBytes": 23610,
+                    "durationMs": 14.5,
+                    "userAgent": "Mozilla/5.0 (iPhone; CPU iPhone OS 19_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/19.1 Mobile/15E148 Safari/604.1",
+                    "referer": ""
+                }
+            },
+            {
+                "at": "2026-11-14T09:09:21.790Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "192.0.2.44",
+                    "method": "GET",
+                    "host": "harbourbooks.example.net",
+                    "uri": "/products",
+                    "proto": "HTTP/2.0",
+                    "status": 200,
+                    "sizeBytes": 15118,
+                    "durationMs": 49.1,
+                    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:145.0) Gecko/20100101 Firefox/145.0",
+                    "referer": "https://www.google.com/"
+                }
+            },
+            {
+                "at": "2026-11-14T09:07:49.985Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "198.51.100.23",
+                    "method": "GET",
+                    "host": "harbourbooks.example.net",
+                    "uri": "/",
+                    "proto": "HTTP/1.1",
+                    "status": 200,
+                    "sizeBytes": 6479,
+                    "durationMs": 104.1,
+                    "userAgent": "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
+                    "referer": ""
+                }
+            },
+            {
+                "at": "2026-11-14T09:05:08.151Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "192.0.2.44",
+                    "method": "GET",
+                    "host": "harbourbooks.example.net",
+                    "uri": "/",
+                    "proto": "HTTP/1.1",
+                    "status": 200,
+                    "sizeBytes": 12326,
+                    "durationMs": 629,
+                    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:145.0) Gecko/20100101 Firefox/145.0",
+                    "referer": ""
+                }
+            },
+            {
+                "at": "2026-11-14T09:04:33.866Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "192.0.2.130",
+                    "method": "GET",
+                    "host": "harbourbooks.example.net",
+                    "uri": "/",
+                    "proto": "HTTP/2.0",
+                    "status": 200,
+                    "sizeBytes": 34614,
+                    "durationMs": 98.3,
+                    "userAgent": "Mozilla/5.0 (iPhone; CPU iPhone OS 19_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/19.1 Mobile/15E148 Safari/604.1",
+                    "referer": ""
+                }
+            },
+            {
+                "at": "2026-11-14T09:03:57.042Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "198.51.100.250",
+                    "method": "GET",
+                    "host": "harbourbooks.example.net",
+                    "uri": "/.env",
+                    "proto": "HTTP/2.0",
+                    "status": 404,
+                    "sizeBytes": 548,
+                    "durationMs": 68.4,
+                    "userAgent": "Mozilla/5.0 zgrab/0.x",
+                    "referer": ""
+                }
+            },
+            {
+                "at": "2026-11-14T08:59:04.462Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "2001:db8:4e::7a",
+                    "method": "HEAD",
+                    "host": "harbourbooks.example.net",
+                    "uri": "/products",
+                    "proto": "HTTP/2.0",
+                    "status": 200,
+                    "sizeBytes": 3590,
+                    "durationMs": 78.7,
+                    "userAgent": "Mozilla/5.0 (iPhone; CPU iPhone OS 19_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/19.1 Mobile/15E148 Safari/604.1",
+                    "referer": ""
+                }
+            },
+            {
+                "at": "2026-11-14T08:57:49.425Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "2001:db8:4e::7a",
+                    "method": "GET",
+                    "host": "harbourbooks.example.net",
+                    "uri": "/",
+                    "proto": "HTTP/2.0",
+                    "status": 200,
+                    "sizeBytes": 1637,
+                    "durationMs": 107.1,
+                    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+                    "referer": "https://www.google.com/"
+                }
+            },
+            {
+                "at": "2026-11-14T08:55:25.650Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "203.0.113.88",
+                    "method": "HEAD",
+                    "host": "harbourbooks.example.net",
+                    "uri": "/products/17",
+                    "proto": "HTTP/3.0",
+                    "status": 200,
+                    "sizeBytes": 18798,
+                    "durationMs": 22.2,
+                    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+                    "referer": ""
+                }
+            },
+            {
+                "at": "2026-11-14T08:52:48.230Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "198.51.100.250",
+                    "method": "GET",
+                    "host": "harbourbooks.example.net",
+                    "uri": "/wp-login.php",
+                    "proto": "HTTP/1.1",
+                    "status": 404,
+                    "sizeBytes": 548,
+                    "durationMs": 65.2,
+                    "userAgent": "Mozilla/5.0 zgrab/0.x",
+                    "referer": ""
+                }
+            },
+            {
+                "at": "2026-11-14T08:48:21.190Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "192.0.2.44",
+                    "method": "GET",
+                    "host": "harbourbooks.example.net",
+                    "uri": "/",
+                    "proto": "HTTP/2.0",
+                    "status": 200,
+                    "sizeBytes": 15543,
+                    "durationMs": 94.5,
+                    "userAgent": "Mozilla/5.0 (iPhone; CPU iPhone OS 19_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/19.1 Mobile/15E148 Safari/604.1",
+                    "referer": ""
+                }
+            },
+            {
+                "at": "2026-11-14T08:47:17.314Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "203.0.113.7",
+                    "method": "GET",
+                    "host": "harbourbooks.example.net",
+                    "uri": "/robots.txt",
+                    "proto": "HTTP/2.0",
+                    "status": 200,
+                    "sizeBytes": 38417,
+                    "durationMs": 113.9,
+                    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:145.0) Gecko/20100101 Firefox/145.0",
+                    "referer": ""
+                }
+            },
+            {
+                "at": "2026-11-14T08:45:50.404Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "2001:db8:4e::7a",
+                    "method": "GET",
+                    "host": "harbourbooks.example.net",
+                    "uri": "/search?q=tea",
+                    "proto": "HTTP/2.0",
+                    "status": 200,
+                    "sizeBytes": 16277,
+                    "durationMs": 106.6,
+                    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:145.0) Gecko/20100101 Firefox/145.0",
+                    "referer": ""
+                }
+            },
+            {
+                "at": "2026-11-14T08:40:52.777Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "192.0.2.44",
+                    "method": "GET",
+                    "host": "harbourbooks.example.net",
+                    "uri": "/",
+                    "proto": "HTTP/3.0",
+                    "status": 200,
+                    "sizeBytes": 39054,
+                    "durationMs": 100.4,
+                    "userAgent": "Mozilla/5.0 (iPhone; CPU iPhone OS 19_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/19.1 Mobile/15E148 Safari/604.1",
+                    "referer": ""
+                }
+            },
+            {
+                "at": "2026-11-14T08:40:32.367Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "203.0.113.7",
+                    "method": "GET",
+                    "host": "harbourbooks.example.net",
+                    "uri": "/cart",
+                    "proto": "HTTP/1.1",
+                    "status": 200,
+                    "sizeBytes": 27320,
+                    "durationMs": 33.1,
+                    "userAgent": "Mozilla/5.0 (iPhone; CPU iPhone OS 19_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/19.1 Mobile/15E148 Safari/604.1",
+                    "referer": "https://harbourbooks.example.net/products"
+                }
+            },
+            {
+                "at": "2026-11-14T08:39:29.251Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "2001:db8:91::12",
+                    "method": "GET",
+                    "host": "harbourbooks.example.net",
+                    "uri": "/products",
+                    "proto": "HTTP/2.0",
+                    "status": 200,
+                    "sizeBytes": 37801,
+                    "durationMs": 47.7,
+                    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+                    "referer": ""
+                }
+            },
+            {
+                "at": "2026-11-14T08:38:34.187Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "203.0.113.7",
+                    "method": "GET",
+                    "host": "harbourbooks.example.net",
+                    "uri": "/css/site.css",
+                    "proto": "HTTP/2.0",
+                    "status": 200,
+                    "sizeBytes": 2416,
+                    "durationMs": 11.5,
+                    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:145.0) Gecko/20100101 Firefox/145.0",
+                    "referer": "https://harbourbooks.example.net/products"
+                }
+            },
+            {
+                "at": "2026-11-14T08:38:12.650Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "2001:db8:4e::7a",
+                    "method": "GET",
+                    "host": "harbourbooks.example.net",
+                    "uri": "/products/42",
+                    "proto": "HTTP/2.0",
+                    "status": 200,
+                    "sizeBytes": 31211,
+                    "durationMs": 702,
+                    "userAgent": "Mozilla/5.0 (iPhone; CPU iPhone OS 19_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/19.1 Mobile/15E148 Safari/604.1",
+                    "referer": "https://www.google.com/"
+                }
+            },
+            {
+                "at": "2026-11-14T08:35:35.923Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "192.0.2.130",
+                    "method": "GET",
+                    "host": "harbourbooks.example.net",
+                    "uri": "/products/17",
+                    "proto": "HTTP/2.0",
+                    "status": 200,
+                    "sizeBytes": 14128,
+                    "durationMs": 4.8,
+                    "userAgent": "Mozilla/5.0 (iPhone; CPU iPhone OS 19_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/19.1 Mobile/15E148 Safari/604.1",
+                    "referer": ""
+                }
+            },
+            {
+                "at": "2026-11-14T08:35:35.572Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "198.51.100.23",
+                    "method": "GET",
+                    "host": "harbourbooks.example.net",
+                    "uri": "/",
+                    "proto": "HTTP/1.1",
+                    "status": 200,
+                    "sizeBytes": 16016,
+                    "durationMs": 521,
+                    "userAgent": "Mozilla/5.0 (iPhone; CPU iPhone OS 19_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/19.1 Mobile/15E148 Safari/604.1",
+                    "referer": ""
+                }
+            },
+            {
+                "at": "2026-11-14T08:34:57.085Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "198.51.100.23",
+                    "method": "GET",
+                    "host": "harbourbooks.example.net",
+                    "uri": "/css/site.css",
+                    "proto": "HTTP/2.0",
+                    "status": 200,
+                    "sizeBytes": 2416,
+                    "durationMs": 116.5,
+                    "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:145.0) Gecko/20100101 Firefox/145.0",
+                    "referer": "https://harbourbooks.example.net/products"
+                }
+            },
+            {
+                "at": "2026-11-14T08:33:00.900Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "198.51.100.23",
+                    "method": "GET",
+                    "host": "harbourbooks.example.net",
+                    "uri": "/products",
+                    "proto": "HTTP/2.0",
+                    "status": 200,
+                    "sizeBytes": 23020,
+                    "durationMs": 710,
+                    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+                    "referer": ""
+                }
+            },
+            {
+                "at": "2026-11-14T08:32:54.770Z",
+                "source": "access",
+                "text": "",
+                "access": {
+                    "client": "203.0.113.7",
+                    "method": "GET",
+                    "host": "harbourbooks.example.net",
+                    "uri": "/api/stock?id=42",
+                    "proto": "HTTP/2.0",
+                    "status": 200,
+                    "sizeBytes": 23477,
+                    "durationMs": 119,
+                    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+                    "referer": ""
+                }
+            }
+        ],
+        "next": "eyJkZW1vIjo1MH0",
+        "summary": {
+            "total": 1413,
+            "sources": {
+                "access": 1242,
+                "output": 70,
+                "error": 101
+            },
+            "statuses": {
+                "1xx": 0,
+                "2xx": 969,
+                "3xx": 124,
+                "4xx": 133,
+                "5xx": 16
+            },
+            "topPaths": [
+                {
+                    "value": "/",
+                    "count": 291
+                },
+                {
+                    "value": "/css/site.css",
+                    "count": 173
+                },
+                {
+                    "value": "/products",
+                    "count": 141
+                },
+                {
+                    "value": "/products/42",
+                    "count": 114
+                },
+                {
+                    "value": "/api/stock",
+                    "count": 102
+                }
+            ],
+            "topClients": [
+                {
+                    "value": "203.0.113.7",
+                    "count": 336
+                },
+                {
+                    "value": "198.51.100.23",
+                    "count": 234
+                },
+                {
+                    "value": "2001:db8:4e::7a",
+                    "count": 151
+                },
+                {
+                    "value": "192.0.2.44",
+                    "count": 141
+                },
+                {
+                    "value": "203.0.113.88",
+                    "count": 131
+                }
+            ],
+            "sizeBytes": 21742808,
+            "oldest": "2026-11-12T10:12:34.876Z"
+        }
+    }
+}

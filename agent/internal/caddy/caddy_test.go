@@ -99,9 +99,8 @@ func (f *fakeCaddy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		readJSON(r, &cfg)
 		f.logging, _ = cfg["logging"].(map[string]any)
 		f.loaded = true
-	case r.Method == http.MethodGet && r.URL.Path == "/config/logging/logs/firewall":
-		logs, _ := f.logging["logs"].(map[string]any)
-		json.NewEncoder(w).Encode(logs["firewall"])
+	case r.Method == http.MethodGet && r.URL.Path == "/config/logging":
+		json.NewEncoder(w).Encode(f.logging)
 	case r.Method == http.MethodPost && r.URL.Path == "/config/logging":
 		readJSON(r, &f.logging)
 	case r.Method == http.MethodPost && r.URL.Path == "/config/apps/http/servers/edge/routes":
@@ -408,7 +407,7 @@ func TestSiteRouteOfAStoppedWebsite(t *testing.T) {
 func TestSiteRouteSendsSomePathsToADifferentPort(t *testing.T) {
 	route := SiteRoute(Site{WebsiteID: "mail", Port: 19027, Hosts: []string{"mail.example.net"}, Paths: []PathRoute{{Paths: []string{"/jmap", "/jmap/*"}, Port: 19025}, {Paths: []string{"/admin/*/css"}, Methods: []string{"GET"}, Port: 19027}, {Paths: []string{"/admin"}}}}, "169.254.77.1")
 	b, _ := json.Marshal(route)
-	want := `{"@id":"cf-mail","handle":[{"handler":"subroute","routes":[` +
+	want := `{"@id":"cf-mail","handle":[{"early":true,"handler":"log_append","key":"cf_website","value":"mail"},{"handler":"subroute","routes":[` +
 		`{"handle":[{"handler":"reverse_proxy","upstreams":[{"dial":"169.254.77.1:19025"}]}],"match":[{"path":["/jmap","/jmap/*"]}],"terminal":true},` +
 		`{"handle":[{"handler":"reverse_proxy","upstreams":[{"dial":"169.254.77.1:19027"}]}],"match":[{"method":["GET"],"path":["/admin/*/css"]}],"terminal":true},` +
 		`{"handle":[{"handler":"static_response","status_code":404}],"match":[{"path":["/admin"]}],"terminal":true},` +
@@ -432,5 +431,76 @@ func TestRoutesAcceptOnlyAPlainHost(t *testing.T) {
 		if got := re.MatchString(host); got != want {
 			t.Errorf("%q: %v, want %v", host, got, want)
 		}
+	}
+}
+
+// Each route of a website adds the website ID to the entries of its requests in the access
+// log, so the agent knows the website of each entry. The field is the first handler: it is
+// also in the entry of a request that a later handler refuses.
+func TestEachRouteOfAWebsiteNamesTheWebsiteInTheAccessLog(t *testing.T) {
+	for _, route := range []map[string]any{
+		SiteRoute(Site{WebsiteID: "W1", Port: 20001, Hosts: []string{"acme.example"}}, "169.254.77.1"),
+		SiteRoute(Site{WebsiteID: "W1", Port: 20001, Hosts: []string{"acme.example"}, Stopped: true}, "169.254.77.1"),
+		RedirectRoute(Site{WebsiteID: "W1", Redirects: []string{"www.acme.example"}, Primary: "acme.example"}),
+	} {
+		b, _ := json.Marshal(route["handle"].([]any)[0])
+		if string(b) != `{"early":true,"handler":"log_append","key":"cf_website","value":"W1"}` {
+			t.Errorf("first handler of %v = %s", route["@id"], b)
+		}
+	}
+}
+
+// The edge proxy sends its access log to the agent on the private service address, as JSON
+// with times in RFC 3339. A new edge proxy that has no agent yet still starts.
+func TestTheAccessLogGoesToTheAgent(t *testing.T) {
+	b, _ := json.Marshal(BaseConfig()["logging"])
+	for _, want := range []string{
+		`"writer":{"address":"tcp/169.254.77.1:19514","dial_timeout":"2s","output":"net","soft_start":true}`,
+		`"time_format":"rfc3339_nano"`, `"include":["http.log.access"]`, `"default":{"exclude":["http.log.access","http.handlers.waf"]}`,
+	} {
+		if !strings.Contains(string(b), want) {
+			t.Errorf("logging has no %s:\n%s", want, b)
+		}
+	}
+	// The image of the edge proxy starts with the same logging configuration.
+	var image map[string]any
+	raw, err := os.ReadFile("../../../images/edge/base.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(raw, &image); err != nil {
+		t.Fatal(err)
+	}
+	want, _ := json.Marshal(LoggingConfig())
+	got, _ := json.Marshal(image["logging"])
+	if !sameJSON(got, want) {
+		t.Errorf("images/edge/base.json has the logging\n%s\nwant\n%s", got, want)
+	}
+}
+
+// An edge proxy that operates gets the logging configuration of this agent version one time.
+func TestEnsureBaseSetsTheLoggingOfThisVersion(t *testing.T) {
+	fake := &fakeCaddy{loaded: true, logging: map[string]any{"logs": map[string]any{"access": map[string]any{"encoder": map[string]any{"format": "json"}}}}}
+	srv := httptest.NewServer(fake)
+	defer srv.Close()
+	c := New(srv.URL)
+	for range 2 {
+		if err := c.EnsureBase(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, _ := json.Marshal(fake.logging)
+	want, _ := json.Marshal(LoggingConfig())
+	if !sameJSON(got, want) {
+		t.Errorf("logging = %s", got)
+	}
+	posts := 0
+	for _, call := range fake.calls {
+		if call == "POST /config/logging" {
+			posts++
+		}
+	}
+	if posts != 1 {
+		t.Errorf("the agent set the logging %d times: %v", posts, fake.calls)
 	}
 }

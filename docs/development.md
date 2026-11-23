@@ -111,8 +111,9 @@ check that expects a different status or a text that is not on the page fails.
 In the demonstration mode, the file manager shows a small set of sample files for each
 website, and keeps your changes in the cache. The sample files include the archive
 `/site-2026-10.zip`, which you can extract. An archive that you make has the selected files.
-The logs are sample lines. **Run a command** gives a sample output for some usual commands,
-for example `php -v`, `php artisan migrate` and `composer install`.
+The logs are sample entries for the last two days. The search and its filters work on these
+entries. **Run a command** gives a sample output for some usual commands, for example `php -v`,
+`php artisan migrate` and `composer install`.
 
 The demo mode does not ask the public DNS. For a DNS zone with a name that starts with
 `elsewhere.`, it answers that the domain uses the name servers of a registrar. For each other

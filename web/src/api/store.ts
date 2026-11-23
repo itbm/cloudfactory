@@ -42,7 +42,8 @@ import type {
   FileList,
   HostUpdatePolicy,
   Job,
-  LogLine,
+  LogQuery,
+  LogSearchResult,
   Mesh,
   Pack,
   PackManifest,
@@ -630,9 +631,28 @@ export async function setAlertSettings(settings: UsageAlertSettings): Promise<vo
   await refresh();
 }
 
-/** The last lines of the output of the website container. */
-export function readLogs(websiteId: string, stream: "all" | "access" | "error" = "all", lines = 200): Promise<LogLine[]> {
-  return call(() => live.request<{ lines: LogLine[] }>("GET", `/websites/${websiteId}/logs?lines=${lines}${stream === "all" ? "" : `&stream=${stream}`}`)).then((r) => r.lines);
+/**
+ * Searches the logs of a website, or the access log of a server for the requests that are not
+ * for a website (administrators only). The newest entry comes first. To read older entries,
+ * search again with the cursor "next" of the answer.
+ */
+export function searchLogs(target: { websiteId: string } | { serverId: string }, query: LogQuery): Promise<LogSearchResult> {
+  const params = new URLSearchParams();
+  const list = (key: string, values?: string[]) => { if (values?.length) params.set(key, values.join(",")); };
+  list("sources", query.sources);
+  if (query.q?.trim()) params.set("q", query.q.trim());
+  list("status", query.status);
+  list("method", query.method);
+  if (query.client?.trim()) params.set("client", query.client.trim());
+  if (query.from) params.set("from", query.from);
+  if (query.to) params.set("to", query.to);
+  if (query.cursor) params.set("cursor", query.cursor);
+  if (query.limit) params.set("limit", String(query.limit));
+  if (query.summary) params.set("summary", "1");
+  // The ID can come from the address of the page (finding W1-13).
+  const base = "websiteId" in target ? `/websites/${q(target.websiteId)}/logs` : `/servers/${q(target.serverId)}/access-log`;
+  const search = params.toString();
+  return call(() => live.request<LogSearchResult>("GET", search ? `${base}?${search}` : base));
 }
 
 export function listCronJobs(websiteId: string): Promise<CronJob[]> {
