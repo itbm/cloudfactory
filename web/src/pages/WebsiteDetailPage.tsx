@@ -23,11 +23,13 @@ import { LogsTab } from "./website/LogsTab";
 import { RuntimeTab } from "./website/RuntimeTab";
 import { SecurityTab } from "./website/SecurityTab";
 import { SettingsTab } from "./website/SettingsTab";
+import { UptimeCard, UptimeTab } from "./website/UptimeTab";
 import { PluginActionsCard } from "../components/PluginActions";
 
 const TABS = [
   ["overview", "Overview"],
   ["usage", "Usage"],
+  ["uptime", "Uptime"],
   ["domains", "Domains"],
   ["runtime", "Runtime"],
   ["files", "Files"],
@@ -43,7 +45,7 @@ const TABS = [
 ] as const;
 
 /** The tabs of a website with domains. A private website and a worker get no requests from the internet. */
-const PUBLIC_ONLY: string[] = ["domains", "security"];
+const PUBLIC_ONLY: string[] = ["domains", "uptime", "security"];
 
 function UpdateBanner({ website }: { website: Website }) {
   const state = useStore();
@@ -234,6 +236,7 @@ function Overview({ website }: { website: Website }) {
         <div className="stack">
           <JobsCard website={website} />
           <DomainsCard website={website} />
+          {website.kind === "public" && <UptimeCard website={website} />}
           <SshCard website={website} />
           <BackupsCard website={website} />
           <PluginActionsCard target="website" targetId={website.id} targetName={website.name} />
@@ -338,6 +341,11 @@ export function WebsiteDetailPage() {
           </Empty>
         ))}
         {tab === "usage" && <UsagePanel key={website.id} subject="website" id={website.id} />}
+        {tab === "uptime" && (website.kind === "public" ? <UptimeTab key={website.id} website={website} /> : (
+          <Empty title="No uptime checks">
+            <p>A {WEBSITE_KIND[website.kind].toLowerCase()} has no public address, so the panel cannot check it.</p>
+          </Empty>
+        ))}
         {tab === "runtime" && <RuntimeTab website={website} />}
         {tab === "databases" && <DatabasesTab website={website} />}
         {tab === "files" && <FilesTab website={website} />}

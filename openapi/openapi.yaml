@@ -30,6 +30,11 @@ tags:
       Run a command in the container of a website, and the command log of the website. The
       command runs as the Unix user of the website, in the gVisor sandbox, with the limits of the
       website.
+  - name: Uptime
+    description: >-
+      Uptime checks of websites. The panel requests an address of a domain of a website on a
+      schedule, and sends an email and a plugin event when the website is down and when it is up
+      again. These routes need the websites scope.
   - name: Deploys
     description: Deploys of a website from a Git repository.
   - name: Previews
@@ -1922,6 +1927,215 @@ paths:
             application/x-asciicast:
               schema: { type: string }
         '404': { description: The session does not exist, or it has no recording. }
+
+  /v1/uptime-checks:
+    get:
+      tags: [Uptime]
+      summary: List the uptime checks
+      description: >-
+        An administrator sees all checks. A reseller sees the checks of the websites of its
+        customers, and an owner the checks of their websites. The checks that are down come
+        first. `summary` counts all checks that the user can see, with no filter.
+      parameters:
+        - { name: state, in: query, schema: { $ref: '#/components/schemas/UptimeState' } }
+        - { name: websiteId, in: query, schema: { type: string } }
+        - { name: perPage, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+        - { name: page, in: query, schema: { type: integer, minimum: 1 } }
+      responses:
+        '200':
+          description: One page of checks.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/UptimeCheck' } }
+                  meta:
+                    type: object
+                    properties:
+                      current_page: { type: integer }
+                      last_page: { type: integer }
+                      per_page: { type: integer }
+                      total: { type: integer }
+                  summary:
+                    type: object
+                    properties:
+                      total: { type: integer }
+                      up: { type: integer }
+                      down: { type: integer }
+                      pending: { type: integer }
+                      paused: { type: integer }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/uptime-incidents:
+    get:
+      tags: [Uptime]
+      summary: List the incidents of the uptime checks
+      description: >-
+        An incident starts at the first failed request of a check that goes down, and ends at
+        the first request that succeeds again. The panel keeps a closed incident for 90 days.
+      parameters:
+        - { name: state, in: query, schema: { type: string, enum: [open, resolved, all], default: all } }
+        - { name: websiteId, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: The incidents, the open incidents first and then the newest. At most 200.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      allOf:
+                        - { $ref: '#/components/schemas/UptimeIncident' }
+                        - type: object
+                          properties:
+                            checkId: { type: string }
+                            websiteId: { type: string }
+                            websiteName: { type: string }
+                            url: { type: string }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/websites/{websiteId}/uptime-checks:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+    get:
+      tags: [Uptime]
+      summary: List the uptime checks of a website
+      responses:
+        '200':
+          description: The checks.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { type: array, items: { $ref: '#/components/schemas/UptimeCheck' } }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      tags: [Uptime]
+      summary: Add an uptime check to a website
+      description: >-
+        The panel sends a GET request to `scheme://domain/path` at each interval. The check
+        succeeds when the answer has the expected status (each status from 200 to 399 when
+        `expectedStatus` is null) and, when `keyword` has a value, when the first 1 MiB of the
+        answer has the text. The panel does not follow a redirect. It connects only to a public
+        address or to an address of a server of the panel. After `failuresBeforeAlert` failed
+        requests in a row the check is "down". After a failed request, the next request comes
+        after 1 minute. The panel runs a check only while the website runs. A website can have
+        5 checks. A private website and a worker have no domain, so they have no check.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - { $ref: '#/components/schemas/UptimeCheckInput' }
+                - { required: [domain] }
+      responses:
+        '201':
+          description: The check. The first request is in the next minute.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  uptimeCheck: { $ref: '#/components/schemas/UptimeCheck' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: The website is a private website or a worker. }
+        '422': { $ref: '#/components/responses/Invalid' }
+
+  /v1/websites/{websiteId}/uptime-checks/{checkId}:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+      - { name: checkId, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [Uptime]
+      summary: Show an uptime check with its history
+      responses:
+        '200':
+          description: The check, its results of the last 24 hours in parts of 30 minutes, its last 30 days (UTC) and its last 20 incidents.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/UptimeCheck' }
+                  - type: object
+                    properties:
+                      history:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            at: { type: string, format: date-time, description: The start of the part. }
+                            checks: { type: integer }
+                            failures: { type: integer }
+                            responseMs: { type: [integer, 'null'], description: The average response time. }
+                            maxResponseMs: { type: [integer, 'null'] }
+                      days:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            date: { type: string, format: date }
+                            uptime: { type: [number, 'null'], description: Percent. Null for a day before the check was made. }
+                            downSeconds: { type: integer }
+                      incidents: { type: array, items: { $ref: '#/components/schemas/UptimeIncident' } }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Uptime]
+      summary: Change an uptime check, or turn it on or off
+      description: >-
+        A change of the address, of the expected status or of the text, and a check that is
+        turned off, start the check again with no state. An open incident then ends with no
+        email. The next request is in the next minute.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UptimeCheckInput' }
+      responses:
+        '200':
+          description: The check.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  uptimeCheck: { $ref: '#/components/schemas/UptimeCheck' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Invalid' }
+    delete:
+      tags: [Uptime]
+      summary: Remove an uptime check with its results and incidents
+      responses:
+        '204': { description: The check is removed. }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/websites/{websiteId}/uptime-checks/{checkId}/run:
+    parameters:
+      - { $ref: '#/components/parameters/WebsiteId' }
+      - { name: checkId, in: path, required: true, schema: { type: string } }
+    post:
+      tags: [Uptime]
+      summary: Request the address of an uptime check now
+      description: The panel records the result as a result of the schedule. 10 requests in a minute at most.
+      responses:
+        '200':
+          description: The result and the check.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  uptimeCheck: { $ref: '#/components/schemas/UptimeCheck' }
+                  result: { $ref: '#/components/schemas/UptimeResult' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { description: The check is off, the website does not run, or the customer is suspended. }
+        '429': { description: Too many requests. }
 
   /v1/websites/{websiteId}/deploy:
     parameters:
@@ -6486,7 +6700,7 @@ components:
     PluginEvent:
       type: string
       description: An event that a plugin can receive. The named events are changes of the audit log with one action.
-      enum: [audit.recorded, job.finished, website.created, website.changed, website.removed, domain.added, domain.verified, domain.removed, database.created, database.removed, backup.started, restore.started, deploy.started, customer.created, customer.changed, user.created]
+      enum: [audit.recorded, job.finished, website.created, website.changed, website.removed, domain.added, domain.verified, domain.removed, database.created, database.removed, backup.started, restore.started, deploy.started, customer.created, customer.changed, user.created, uptime.down, uptime.up]
     PluginImage:
       type: object
       description: A container image for the panel to run. The digest is necessary, so the signature of the manifest covers the image.
@@ -6957,6 +7171,70 @@ components:
         modifiedAt: { type: [string, 'null'], format: date-time }
         mode: { type: string, example: '0640', description: The permission bits. }
         target: { type: [string, 'null'], description: The target of a link. }
+    UptimeState:
+      type: string
+      description: '"pending": no result yet. "paused": the check is off, the website does not run, or the customer is suspended.'
+      enum: [pending, up, down, paused]
+    UptimeCheckInput:
+      type: object
+      properties:
+        domain: { type: string, description: A domain of the website. }
+        scheme: { type: string, enum: [https, http], default: https }
+        path: { type: string, maxLength: 255, default: /, example: /health, description: 'The path and the query. It starts with "/".' }
+        intervalSeconds: { type: integer, enum: [60, 120, 300, 600, 900, 1800, 3600], default: 300 }
+        timeoutSeconds: { type: integer, minimum: 2, maximum: 30, default: 10 }
+        expectedStatus: { type: [integer, 'null'], minimum: 100, maximum: 599, description: Null means each status from 200 to 399. }
+        keyword: { type: [string, 'null'], maxLength: 100, description: A text that the answer must have. One line. }
+        failuresBeforeAlert: { type: integer, minimum: 1, maximum: 5, default: 2, description: The failed requests in a row that make the check down. }
+        enabled: { type: boolean, default: true }
+    UptimeResult:
+      type: object
+      properties:
+        ok: { type: boolean }
+        status: { type: [integer, 'null'], description: The HTTP status. Null when there was no answer. }
+        responseMs: { type: [integer, 'null'] }
+        error: { type: [string, 'null'] }
+    UptimeIncident:
+      type: object
+      properties:
+        id: { type: string }
+        startedAt: { type: string, format: date-time, description: The time of the first failed request. }
+        resolvedAt: { type: [string, 'null'], format: date-time, description: Null while the incident is open. }
+        durationSeconds: { type: integer, description: Until now for an open incident. }
+        error: { type: string, description: The error of the request that made the check down. }
+        endedByPause: { type: boolean, description: True when the check stopped while it was down. }
+    UptimeCheck:
+      type: object
+      properties:
+        id: { type: string }
+        websiteId: { type: string }
+        websiteName: { type: string }
+        domain: { type: string }
+        scheme: { type: string, enum: [https, http] }
+        path: { type: string }
+        url: { type: string, example: 'https://shop.example.com/health' }
+        intervalSeconds: { type: integer }
+        timeoutSeconds: { type: integer }
+        expectedStatus: { type: [integer, 'null'] }
+        keyword: { type: [string, 'null'] }
+        failuresBeforeAlert: { type: integer }
+        enabled: { type: boolean }
+        state: { $ref: '#/components/schemas/UptimeState' }
+        pausedReason: { type: [string, 'null'] }
+        since: { type: [string, 'null'], format: date-time, description: The time of the last change of the state. For "down", the time of the first failed request. }
+        failures: { type: integer, description: The failed requests in a row. }
+        lastCheckedAt: { type: [string, 'null'], format: date-time }
+        lastResult: { oneOf: [{ $ref: '#/components/schemas/UptimeResult' }, { type: 'null' }] }
+        nextCheckAt: { type: [string, 'null'], format: date-time }
+        uptime:
+          type: object
+          description: The percent of the time that the check was up. Null with no result. The time before the check was made does not count.
+          properties:
+            day: { type: [number, 'null'] }
+            week: { type: [number, 'null'] }
+            month: { type: [number, 'null'] }
+        incident: { oneOf: [{ $ref: '#/components/schemas/UptimeIncident' }, { type: 'null' }] }
+        createdAt: { type: string, format: date-time }
     CronJob:
       type: object
       properties:
@@ -8213,7 +8491,7 @@ components:
             id: { type: string }
     NotificationEvent:
       type: string
-      enum: [job.failed, backup.failed, certificate.expiring, account.suspended, account.restored, signin.new_device, usage.alert, server.offline, deploy.attention, password.reset]
+      enum: [job.failed, backup.failed, certificate.expiring, account.suspended, account.restored, signin.new_device, usage.alert, server.offline, deploy.attention, uptime.down, uptime.up, password.reset]
     NotificationPreference:
       type: object
       properties:
