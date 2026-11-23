@@ -1,0 +1,22 @@
+{
+    "request": "GET /websites/01m7cqzs80jjfnwd000000000f/security",
+    "status": 200,
+    "body": {
+        "security": {
+            "firewall": {
+                "mode": "off",
+                "excludedRules": [],
+                "skippedPaths": []
+            },
+            "ipRules": {
+                "allow": [],
+                "block": []
+            },
+            "protectedPaths": [],
+            "signInLimit": {
+                "requestsPerMinute": 0,
+                "paths": []
+            }
+        }
+    }
+}

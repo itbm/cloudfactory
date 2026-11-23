@@ -1,0 +1,67 @@
+{
+    "request": "GET /websites/01m7cqzs80jjfnwd0000000008/databases",
+    "status": 200,
+    "body": {
+        "prefix": "harbourb_fe76_",
+        "databases": [
+            {
+                "id": "01m7cqzs803h34e20000000008",
+                "engine": "mariadb",
+                "name": "harbourb_fe76_shop",
+                "databaseServerId": "01m7cqzs80df38970000000006",
+                "host": "mariadb.internal",
+                "port": 3306,
+                "sizeBytes": 796917760,
+                "number": null,
+                "keys": null
+            }
+        ],
+        "users": [
+            {
+                "id": "01m7cqzs80nsqn8g0000000008",
+                "engine": "mariadb",
+                "name": "harbourb_fe76_shop",
+                "access": "website",
+                "databaseServerId": "01m7cqzs80df38970000000006",
+                "grants": [
+                    {
+                        "databaseId": "01m7cqzs803h34e20000000008",
+                        "database": "harbourb_fe76_shop",
+                        "privileges": "readwrite"
+                    }
+                ]
+            }
+        ],
+        "servers": [
+            {
+                "id": "01m7cqzs80df38970000000006",
+                "name": "mariadb-1",
+                "engine": "mariadb",
+                "engineVersion": null,
+                "customerId": "01m7cqzs80h56kh10000000003",
+                "serverId": "01m7cqzs807rnxfq0000000002",
+                "movingToServerId": null,
+                "planId": "01m7cqzs80tpf66h0000000002",
+                "status": "running",
+                "host": "mariadb.internal",
+                "port": 3306,
+                "networkHost": "mariadb-1.internal",
+                "networkPort": 3306,
+                "limits": {
+                    "vcpus": 2,
+                    "memoryBytes": 1073741824,
+                    "diskBytes": 10737418240
+                },
+                "usage": {
+                    "memoryBytes": 341835776,
+                    "diskBytes": 864026624,
+                    "diskSizeBytes": 10737418240
+                },
+                "databases": 1,
+                "maxDatabases": 20,
+                "createdAt": "2026-11-14T10:00:00+00:00",
+                "remote": false
+            }
+        ]
+    }
+}

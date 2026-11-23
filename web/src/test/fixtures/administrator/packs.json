@@ -1,0 +1,231 @@
+{
+    "request": "GET /packs",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "id": "01m7cqzs80wzwr170000000001",
+                "slug": "golang",
+                "name": "Go",
+                "version": "1.2.0",
+                "publisher": "Example Packs Ltd",
+                "description": "Go applications. The panel builds the application with the install command, then runs the start command.",
+                "signed": true,
+                "signedBy": {
+                    "name": "Example Packs Ltd",
+                    "fingerprint": "067005014690dd7fc66989ecc7cf98cb8715565d111930631d3908ebc606bb78",
+                    "release": false
+                },
+                "kind": "runtime",
+                "runtime": {
+                    "contract": "cf-runtime/1",
+                    "type": "app",
+                    "defaultCommand": "./server",
+                    "defaultInstall": "go build -o server .",
+                    "family": ""
+                },
+                "database": null,
+                "images": [
+                    {
+                        "id": "01m7cqzs80g1zfka000000000b",
+                        "name": "Go 1.27",
+                        "version": "1.27",
+                        "reference": "ghcr.io/example-packs/cf-golang",
+                        "tag": "1.27",
+                        "digest": "sha256:ee26fa53a628adbcc1bc0be6150e8bae61aab7e76fdabf93fe08325de4b4eb42",
+                        "availableDigest": null,
+                        "supportEndsAt": "2027-08-31",
+                        "websites": 0,
+                        "databaseServers": 0
+                    },
+                    {
+                        "id": "01m7cqzs80g1zfka000000000c",
+                        "name": "Go 1.26",
+                        "version": "1.26",
+                        "reference": "ghcr.io/example-packs/cf-golang",
+                        "tag": "1.26",
+                        "digest": "sha256:2a8d00d1d4cb33cbd3740c6b69e15c33fa73c27c5a8f6ca0eaf5840feb41cccd",
+                        "availableDigest": null,
+                        "supportEndsAt": "2027-02-28",
+                        "websites": 0,
+                        "databaseServers": 0
+                    }
+                ],
+                "servers": [
+                    {
+                        "id": "01m7cqzs807rnxfq0000000001",
+                        "name": "web-1",
+                        "version": "1.2.0",
+                        "state": "installed"
+                    },
+                    {
+                        "id": "01m7cqzs807rnxfq0000000002",
+                        "name": "web-2",
+                        "version": "1.2.0",
+                        "state": "installed"
+                    },
+                    {
+                        "id": "01m7cqzs807rnxfq0000000003",
+                        "name": "web-3",
+                        "version": null,
+                        "state": "failing"
+                    }
+                ],
+                "installedBy": "Alex Admin",
+                "installedAt": "2026-11-14T10:00:00+00:00",
+                "updatedAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs80wzwr170000000003",
+                "slug": "mysql",
+                "name": "MySQL",
+                "version": "1.0.0",
+                "publisher": "Example Packs Ltd",
+                "description": "MySQL database servers. The image starts from the official MySQL image and adds the program /cf/manage of the contract cf-database/1.",
+                "signed": true,
+                "signedBy": {
+                    "name": "Example Packs Ltd",
+                    "fingerprint": "067005014690dd7fc66989ecc7cf98cb8715565d111930631d3908ebc606bb78",
+                    "release": false
+                },
+                "kind": "database",
+                "runtime": {
+                    "contract": "",
+                    "type": "",
+                    "defaultCommand": "",
+                    "defaultInstall": "",
+                    "family": ""
+                },
+                "database": {
+                    "contract": "cf-database/1",
+                    "port": 3306,
+                    "dataDir": "/var/lib/mysql",
+                    "firstPort": 20000,
+                    "lastPort": 20049,
+                    "databaseServers": 1
+                },
+                "images": [
+                    {
+                        "id": null,
+                        "name": "MySQL 8.4",
+                        "version": "8.4",
+                        "reference": "ghcr.io/example-packs/cf-mysql",
+                        "tag": "8.4",
+                        "digest": "sha256:cb2d96612e074ab892d1eed3537d48ee3942b71365f469c7657e3b7ae011a286",
+                        "availableDigest": null,
+                        "supportEndsAt": "2032-04-30",
+                        "websites": 0,
+                        "databaseServers": 1
+                    },
+                    {
+                        "id": null,
+                        "name": "MySQL 8.0",
+                        "version": "8.0",
+                        "reference": "ghcr.io/example-packs/cf-mysql",
+                        "tag": "8.0",
+                        "digest": "sha256:6598970b31005286bd429daae2434c0eef7dffc8acfd885874acb8b8e273b313",
+                        "availableDigest": null,
+                        "supportEndsAt": "2026-04-30",
+                        "websites": 0,
+                        "databaseServers": 0
+                    }
+                ],
+                "servers": [
+                    {
+                        "id": "01m7cqzs807rnxfq0000000001",
+                        "name": "web-1",
+                        "version": "1.0.0",
+                        "state": "installed"
+                    },
+                    {
+                        "id": "01m7cqzs807rnxfq0000000002",
+                        "name": "web-2",
+                        "version": "1.0.0",
+                        "state": "installed"
+                    },
+                    {
+                        "id": "01m7cqzs807rnxfq0000000003",
+                        "name": "web-3",
+                        "version": null,
+                        "state": "failing"
+                    }
+                ],
+                "installedBy": "Alex Admin",
+                "installedAt": "2026-11-14T10:00:00+00:00",
+                "updatedAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": "01m7cqzs80wzwr170000000002",
+                "slug": "php-legacy-apache",
+                "name": "Older PHP for Apache + PHP-FPM",
+                "version": "0.1.9",
+                "publisher": "Cloudfactory",
+                "description": "PHP 8.2 and 8.3 for the Apache + PHP-FPM runtime, for websites that move from a server with an older PHP, for example from cPanel. These versions get only security fixes. PHP 8.2 gets no fixes after 31 December 2026.",
+                "signed": true,
+                "signedBy": {
+                    "name": "Cloudfactory release key",
+                    "fingerprint": null,
+                    "release": true
+                },
+                "kind": "runtime",
+                "runtime": {
+                    "contract": "cf-php/1",
+                    "type": "",
+                    "defaultCommand": "",
+                    "defaultInstall": "",
+                    "family": "apache-php-fpm"
+                },
+                "database": null,
+                "images": [
+                    {
+                        "id": "01m7cqzs80g1zfka000000000d",
+                        "name": "Apache + PHP-FPM · PHP 8.3",
+                        "version": "8.3",
+                        "reference": "ghcr.io/itbm/apache-php8.3",
+                        "tag": "0.1.9",
+                        "digest": "sha256:3628ead5688cb0e87b75a79384b60a9bdc803bea56d2dc98a1b67efa6d381cb5",
+                        "availableDigest": null,
+                        "supportEndsAt": "2027-12-31",
+                        "websites": 0,
+                        "databaseServers": 0
+                    },
+                    {
+                        "id": "01m7cqzs80g1zfka000000000e",
+                        "name": "Apache + PHP-FPM · PHP 8.2",
+                        "version": "8.2",
+                        "reference": "ghcr.io/itbm/apache-php8.2",
+                        "tag": "0.1.9",
+                        "digest": "sha256:7ea2da87282fd032d5ab29fa69aa0109f1e8e7e0029a85b64f0e041cde343474",
+                        "availableDigest": null,
+                        "supportEndsAt": "2026-12-31",
+                        "websites": 0,
+                        "databaseServers": 0
+                    }
+                ],
+                "servers": [
+                    {
+                        "id": "01m7cqzs807rnxfq0000000001",
+                        "name": "web-1",
+                        "version": "0.1.9",
+                        "state": "installed"
+                    },
+                    {
+                        "id": "01m7cqzs807rnxfq0000000002",
+                        "name": "web-2",
+                        "version": "0.1.9",
+                        "state": "installed"
+                    },
+                    {
+                        "id": "01m7cqzs807rnxfq0000000003",
+                        "name": "web-3",
+                        "version": null,
+                        "state": "failing"
+                    }
+                ],
+                "installedBy": "Alex Admin",
+                "installedAt": "2026-11-14T10:00:00+00:00",
+                "updatedAt": "2026-11-14T10:00:00+00:00"
+            }
+        ]
+    }
+}

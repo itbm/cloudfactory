@@ -197,9 +197,12 @@ func goFile(s *schema) ([]byte, error) {
 		w("func %s(s string) error { return rule%s.check(s) }\n\n", name, name)
 	}
 
-	w("// rules has each rule by its name in schema/input-rules.json.\nvar rules = map[string]*rule{\n")
+	// One statement for each rule, not a map literal: gofmt aligns the values of a map literal
+	// with its longest key, so a new long name would change each line, and two pull requests
+	// that add rules would conflict.
+	w("// rules has each rule by its name in schema/input-rules.json.\nvar rules = map[string]*rule{}\n\nfunc init() {\n")
 	for _, key := range keys(s.Rules) {
-		w("%q: &rule%s,\n", key, goName(key, s.Rules[key]))
+		w("rules[%q] = &rule%s\n", key, goName(key, s.Rules[key]))
 	}
 	w("}\n\n")
 

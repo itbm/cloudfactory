@@ -1,0 +1,49 @@
+{
+    "request": "GET /websites/01m7cqzs80jjfnwd0000000004/uptime-checks",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "id": "01m7cqzs80ghhxm20000000005",
+                "websiteId": "01m7cqzs80jjfnwd0000000004",
+                "websiteName": "storefront.acme.example.com",
+                "domain": "storefront.acme.example.com",
+                "scheme": "https",
+                "path": "/",
+                "url": "https://storefront.acme.example.com/",
+                "intervalSeconds": 300,
+                "timeoutSeconds": 10,
+                "expectedStatus": null,
+                "keyword": "Order now",
+                "failuresBeforeAlert": 2,
+                "enabled": true,
+                "state": "down",
+                "pausedReason": null,
+                "since": "2026-11-14T09:35:00+00:00",
+                "failures": 6,
+                "lastCheckedAt": "2026-11-14T10:00:00+00:00",
+                "lastResult": {
+                    "ok": false,
+                    "status": 200,
+                    "responseMs": 95,
+                    "error": "The answer does not have the text \"Order now\"."
+                },
+                "nextCheckAt": "2026-11-14T10:05:00+00:00",
+                "uptime": {
+                    "day": 98.26,
+                    "week": 99.75,
+                    "month": 99.88
+                },
+                "incident": {
+                    "id": "01m7cqzs80n49e1s0000000005",
+                    "startedAt": "2026-11-14T09:35:00+00:00",
+                    "resolvedAt": null,
+                    "durationSeconds": 1500,
+                    "error": "The answer does not have the text \"Order now\".",
+                    "endedByPause": false
+                },
+                "createdAt": "2026-10-30T10:00:00+00:00"
+            }
+        ]
+    }
+}

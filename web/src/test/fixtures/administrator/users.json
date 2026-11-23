@@ -1,0 +1,88 @@
+{
+    "request": "GET /users",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "id": 1,
+                "name": "Alex Admin",
+                "email": "admin@example.com",
+                "role": "administrator",
+                "customerId": null,
+                "totpEnabled": false,
+                "mustChangePassword": false,
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": 6,
+                "name": "Bea Baker",
+                "email": "bea@cornerbakery.example.org",
+                "role": "owner",
+                "customerId": "01m7cqzs80h56kh10000000002",
+                "totpEnabled": false,
+                "mustChangePassword": true,
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": 7,
+                "name": "Hari Books",
+                "email": "hari@harbourbooks.example.net",
+                "role": "owner",
+                "customerId": "01m7cqzs80h56kh10000000003",
+                "totpEnabled": false,
+                "mustChangePassword": false,
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": 8,
+                "name": "Lee Lawson",
+                "email": "lee@lawson.example.org",
+                "role": "owner",
+                "customerId": "01m7cqzs80h56kh10000000005",
+                "totpEnabled": false,
+                "mustChangePassword": false,
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": 5,
+                "name": "Morgan Finance",
+                "email": "finance@acme.example.com",
+                "role": "owner",
+                "customerId": "01m7cqzs80h56kh10000000004",
+                "totpEnabled": false,
+                "mustChangePassword": false,
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": 4,
+                "name": "Olu Owner",
+                "email": "owner@example.com",
+                "role": "owner",
+                "customerId": "01m7cqzs80h56kh10000000004",
+                "totpEnabled": false,
+                "mustChangePassword": false,
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": 2,
+                "name": "Priya Operations",
+                "email": "operations@example.com",
+                "role": "administrator",
+                "customerId": null,
+                "totpEnabled": false,
+                "mustChangePassword": false,
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            },
+            {
+                "id": 3,
+                "name": "Sam Reseller",
+                "email": "reseller@example.com",
+                "role": "reseller",
+                "customerId": "01m7cqzs80h56kh10000000001",
+                "totpEnabled": false,
+                "mustChangePassword": false,
+                "createdAt": "2026-11-14T10:00:00+00:00"
+            }
+        ]
+    }
+}

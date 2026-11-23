@@ -1,0 +1,12 @@
+{
+    "request": "GET /websites/01m7cqzs80jjfnwd0000000009/logs?lines=200",
+    "status": 422,
+    "body": {
+        "message": "The panel could not make this website. Use \"Try again\" on the website first, or delete the website.",
+        "errors": {
+            "website": [
+                "The panel could not make this website. Use \"Try again\" on the website first, or delete the website."
+            ]
+        }
+    }
+}

@@ -1,0 +1,10 @@
+{
+    "request": "GET /websites/01m7cqzs80jjfnwd0000000006/previews",
+    "status": 200,
+    "body": {
+        "settings": null,
+        "suggestedDomain": "preview.northwind.example.com",
+        "maxLimit": 10,
+        "previews": []
+    }
+}

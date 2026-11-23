@@ -205,20 +205,29 @@ class DemoTest extends TestCase
     public function test_the_fixtures_of_the_web_panel_agree_with_the_api(): void
     {
         foreach (DemoFixtures::all() as $role => $answers) {
-            $file = base_path("../web/src/test/fixtures/{$role}.json");
-            $this->assertFileExists($file, 'Run "php artisan demo:fixtures".');
-            $saved = json_decode((string) file_get_contents($file), true);
+            $directory = base_path("../web/src/test/fixtures/{$role}");
+            $this->assertDirectoryExists($directory, 'Run "php artisan demo:fixtures".');
+            $saved = Fixtures::read($directory);
+            ksort($answers);
 
-            $now = array_map(fn (string $key) => preg_replace('/[0-9a-z]{26}/', '{id}', $key), array_keys($answers));
-            $then = array_map(fn (string $key) => preg_replace('/[0-9a-z]{26}/', '{id}', $key), array_keys($saved));
-            $this->assertSame($then, $now, "The requests of the {$role} fixtures changed. Run \"php artisan demo:fixtures\".");
-            foreach (array_values($answers) as $i => $answer) {
+            $this->assertSame(array_keys($saved), array_keys($answers), "The requests of the {$role} fixtures changed. Run \"php artisan demo:fixtures\".");
+            foreach ($answers as $request => $answer) {
                 $this->assertSame(
-                    Fixtures::structure(array_values($saved)[$i]),
+                    Fixtures::structure($saved[$request]),
                     Fixtures::structure($answer),
-                    "The answer to \"{$then[$i]}\" for the {$role} changed. Run \"php artisan demo:fixtures\".",
+                    "The answer to \"{$request}\" for the {$role} changed. Run \"php artisan demo:fixtures\".",
                 );
             }
+        }
+    }
+
+    /** One path on each line in alphabetical order: two pull requests that add paths do not conflict. */
+    public function test_the_fixture_paths_are_in_alphabetical_order(): void
+    {
+        foreach ([Fixtures::PATHS, Fixtures::WEBSITE_PATHS] as $paths) {
+            $sorted = $paths;
+            sort($sorted, SORT_STRING);
+            $this->assertSame($sorted, $paths, 'Put the paths of Fixtures in alphabetical order.');
         }
     }
 

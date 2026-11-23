@@ -1,0 +1,64 @@
+{
+    "request": "GET /websites/01m7cqzs80jjfnwd000000000a/files?path=%2F",
+    "status": 200,
+    "body": {
+        "path": "/",
+        "entries": [
+            {
+                "name": "public",
+                "path": "/public",
+                "type": "directory",
+                "sizeBytes": 0,
+                "modifiedAt": "2026-05-16T14:00:00Z",
+                "mode": "0750",
+                "target": null
+            },
+            {
+                "name": "src",
+                "path": "/src",
+                "type": "directory",
+                "sizeBytes": 0,
+                "modifiedAt": "2026-05-16T06:00:00Z",
+                "mode": "0750",
+                "target": null
+            },
+            {
+                "name": "storage",
+                "path": "/storage",
+                "type": "directory",
+                "sizeBytes": 0,
+                "modifiedAt": "2026-05-16T17:00:00Z",
+                "mode": "0750",
+                "target": null
+            },
+            {
+                "name": ".env.example",
+                "path": "/.env.example",
+                "type": "file",
+                "sizeBytes": 44,
+                "modifiedAt": "2026-05-08T20:00:00Z",
+                "mode": "0640",
+                "target": null
+            },
+            {
+                "name": "composer.json",
+                "path": "/composer.json",
+                "type": "file",
+                "sizeBytes": 80,
+                "modifiedAt": "2026-05-08T20:00:00Z",
+                "mode": "0640",
+                "target": null
+            },
+            {
+                "name": "site-2026-10.zip",
+                "path": "/site-2026-10.zip",
+                "type": "file",
+                "sizeBytes": 3240,
+                "modifiedAt": "2026-05-12T18:00:00Z",
+                "mode": "0640",
+                "target": null
+            }
+        ],
+        "truncated": false
+    }
+}

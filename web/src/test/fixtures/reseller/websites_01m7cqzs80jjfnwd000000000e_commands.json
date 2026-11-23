@@ -1,0 +1,12 @@
+{
+    "request": "GET /websites/01m7cqzs80jjfnwd000000000e/commands",
+    "status": 200,
+    "body": {
+        "data": [],
+        "meta": {
+            "currentPage": 1,
+            "lastPage": 1,
+            "total": 0
+        }
+    }
+}
