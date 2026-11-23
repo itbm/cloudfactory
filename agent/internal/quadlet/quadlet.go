@@ -485,11 +485,20 @@ func DatabasePort(engine string) int {
 // of each engine on a server. The ranges of the three engines do not have a port in common.
 const DatabasePorts = 50
 
-// CheckDatabasePort checks the port of a database server of an engine.
+// CheckDatabasePort checks the port of a database server of an engine on the address of its
+// customer. A built-in engine has DatabasePorts ports from its usual port. A pack engine has a
+// block in the range PackDatabasePortMin to PackDatabasePortMax: the panel gives the block.
 func CheckDatabasePort(engine string, port int) error {
-	first := DatabasePort(engine)
-	if port < first || port >= first+DatabasePorts {
-		return fmt.Errorf("quadlet: %d is not a port of a %s database server (%d to %d)", port, engine, first, first+DatabasePorts-1)
+	e, ok := Engine(engine)
+	if !ok {
+		return fmt.Errorf("quadlet: the database engine %q is not known", engine)
+	}
+	first, last := e.Port, e.Port+DatabasePorts-1
+	if e.Pack != "" {
+		first, last = PackDatabasePortMin, PackDatabasePortMax
+	}
+	if port < first || port > last {
+		return fmt.Errorf("quadlet: %d is not a port of a %s database server (%d to %d)", port, engine, first, last)
 	}
 	return nil
 }

@@ -5,7 +5,7 @@ import { createNetwork, deleteNetwork, saveNetwork } from "../api/store";
 import type { PrivateNetwork, State } from "../api/types";
 import { Topbar } from "../components/Layout";
 import { Card, Field, FormError, Modal, PageHeader, RowMenu, Status, TableWrap } from "../components/ui";
-import { ENGINE_NAME, WEBSITE_KIND } from "../lib/labels";
+import { engineName, WEBSITE_KIND } from "../lib/labels";
 
 /**
  * The private networks of the customers, like a VPC. Each website in a network connects to
@@ -183,7 +183,7 @@ function NetworkDialog({ network, onClose }: { network?: PrivateNetwork; onClose
           {databaseServers.map((d) => (
             <label key={d.id} className="check">
               <input type="checkbox" checked={databaseServerIds.includes(d.id)} onChange={(e) => setDatabaseServerIds(toggle(databaseServerIds, d.id, e.target.checked))} />
-              <span>{d.name}<span className="muted"> · {ENGINE_NAME[d.engine]}</span>{d.networkHost && <> · <code>{d.networkHost}:{d.networkPort}</code></>}</span>
+              <span>{d.name}<span className="muted"> · {engineName(state.databaseEngines, d.engine)}</span>{d.networkHost && <> · <code>{d.networkHost}:{d.networkPort}</code></>}</span>
             </label>
           ))}
           {databaseServers.length === 0 && <p className="muted small">The customer has no database servers.</p>}

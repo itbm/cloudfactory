@@ -1,29 +1,42 @@
 # Packs
 
-A pack adds a website runtime to Cloudfactory, for example Go, with no new agent code. A
-publisher makes the pack: a manifest (`pack.json`) and one image for each version of the
-runtime. The publisher signs the manifest and the images with one key. An administrator
-installs the pack in the panel. The panel then sends the pack to each web server, and
-customers can select the runtime on the **New website** page.
+A pack adds a website runtime to Cloudfactory, for example Go, with no new agent code. A pack
+can also add versions of PHP to a built-in PHP runtime, for example PHP 8.2 for Apache +
+PHP-FPM, or a database engine, for example MySQL. A publisher makes the pack: a manifest
+(`pack.json`) and one image for each version of the runtime or the engine. The publisher signs
+the manifest and the images with one key. An administrator installs the pack in the panel. The
+panel then sends the pack to each web server. Customers can then select the runtime on the
+**New website** page, or the engine for a new database server.
 
-This document is the contract between a publisher and Cloudfactory. The example pack is in
-[plugins/packs/golang](../plugins/packs/golang/README.md).
+This document is the contract between a publisher and Cloudfactory. The example runtime pack
+is in [plugins/packs/golang](../plugins/packs/golang/README.md). The example database pack is
+in [plugins/packs/mysql](../plugins/packs/mysql/README.md). The packs of Cloudfactory for older
+versions of PHP are in [plugins/packs](../plugins/packs/README.md). Refer to
+[The packs of Cloudfactory](#the-packs-of-cloudfactory).
 
 ![The Packs page with the Go pack, its state on each web server, its images and the trusted keys](screenshots/packs/1-packs.png)
 
 ## The stable contract
 
-A pack has two contracts:
+A pack has two contracts: the contract of the manifest, and the contract of its runtime or its
+database engine. The `runtime` object or the `database` object of the manifest names that
+contract.
 
 | Contract | What it covers |
 | --- | --- |
-| `cf-pack/1` | The format of the manifest: the keys, the values and the signature. |
-| `cf-runtime/1` | What the image of the runtime must do, and what the agent gives to it. |
+| `cf-pack/1` | The format of the manifest of a runtime pack: the keys, the values and the signature. |
+| `cf-pack/2` | `cf-pack/1` and the kind `database` with its key `database`. A runtime pack can use `cf-pack/1` or `cf-pack/2`. |
+| `cf-runtime/1` | A runtime contract. A new runtime: what its image must do, and what the agent gives to it. |
+| `cf-php/1` | A runtime contract. More versions of PHP for a built-in PHP runtime: what the images must do. |
+| `cf-database/1` | A database contract. A new database engine: what its image must do, and what the agent gives to it. |
 
-From this release, the two contracts are stable:
+From this release, the contracts are stable:
 
-- The rules of `cf-pack/1` and `cf-runtime/1` do not change. A change that adds a key, adds
-  a value or changes what a key does gets a new contract name, for example `cf-pack/2`.
+- The rules of `cf-pack/1`, `cf-pack/2`, `cf-runtime/1`, `cf-php/1` and `cf-database/1` do not
+  change. A change that adds a key, adds a value or changes what a key does gets a new
+  contract name, for example `cf-pack/3`.
+- A new runtime contract or database contract is a new contract name, for example `cf-php/1`.
+  It does not change the rules of `cf-pack/1`, `cf-pack/2` or of a different contract.
 - An agent refuses a contract name that it does not know. It also refuses a key that it does
   not know. Thus an agent never ignores a key of a later contract.
 - A later release of Cloudfactory can read more than one contract.
@@ -69,14 +82,15 @@ A manifest is one JSON object of 32 KB or less. For example:
 
 | Key | Necessary | Value |
 | --- | --- | --- |
-| `contract` | Yes | `cf-pack/1`. |
-| `kind` | Yes | `runtime`. The kind `database` is for a later release. The panel refuses it. |
-| `slug` | Yes | The name of the runtime: 2 to 31 characters. Use lower-case letters, digits and hyphens. The first character is a letter. The name cannot be a built-in name (refer to the next list). |
+| `contract` | Yes | `cf-pack/1` or `cf-pack/2`. |
+| `kind` | Yes | `runtime`, or with `cf-pack/2` also `database`. With `cf-pack/1`, the panel and the agent refuse the kind `database`. |
+| `slug` | Yes | The name of the pack. For `cf-runtime/1`, it is also the name of the runtime. For a database pack, it is the name of the engine, for example `mysql`. 2 to 31 characters. Use lower-case letters, digits and hyphens. The first character is a letter. The name cannot be a built-in name (refer to the next list). |
 | `name` | Yes | The name for people, 1 to 60 characters. |
 | `version` | Yes | The version of the pack: three numbers with a dot between them, for example `1.2.0`. A suffix with `-` or `+` is permitted, for example `2.0.0-rc.1`. |
 | `publisher` | Yes | The name of the publisher, 1 to 100 characters. |
 | `description` | No | Up to 500 characters. |
-| `runtime` | Yes | An object. Refer to [Keys of the runtime](#keys-of-the-runtime). |
+| `runtime` | For the kind `runtime` | An object. Refer to [Keys of the runtime](#keys-of-the-runtime). A database pack has no `runtime`. |
+| `database` | For the kind `database` | An object, with `cf-pack/2` only. Refer to [Keys of the database](#keys-of-the-database). A runtime pack has no `database`. |
 | `images` | Yes | A list of 1 to 10 objects. Refer to [Keys of an image](#keys-of-an-image). |
 | `x-...` | No | A key that starts with `x-` is for the publisher. Cloudfactory ignores it. |
 
@@ -88,9 +102,16 @@ The built-in names are `frankenphp`, `apache-php-fpm`, `node`, `python`, `custom
 
 ### Keys of the runtime
 
+The key `contract` selects the other keys. A key of a different runtime contract is an error.
+
 | Key | Necessary | Value |
 | --- | --- | --- |
-| `contract` | Yes | `cf-runtime/1`. |
+| `contract` | Yes | `cf-runtime/1` or `cf-php/1`. |
+
+The keys of `cf-runtime/1`:
+
+| Key | Necessary | Value |
+| --- | --- | --- |
 | `type` | Yes | `app`. It is the only type of `cf-runtime/1`. |
 | `defaultCommand` | Yes | The usual start command of a website, for example `./server`. One line. |
 | `defaultInstall` | No | The usual install command of a website, for example `go build -o server .`. One line. |
@@ -98,17 +119,73 @@ The built-in names are `frankenphp`, `apache-php-fpm`, `node`, `python`, `custom
 The two commands fill the **New website** form. Each website can change them. The agent
 does not run a command from the manifest: it runs only the commands of the website.
 
+The keys of `cf-php/1`:
+
+| Key | Necessary | Value |
+| --- | --- | --- |
+| `family` | Yes | The built-in PHP runtime: `frankenphp` or `apache-php-fpm` (`phpRuntimes` in [`schema/input-rules.json`](../schema/input-rules.json)). |
+
+For example:
+
+```json
+"runtime": {
+  "contract": "cf-php/1",
+  "family": "apache-php-fpm"
+}
+```
+
+### Keys of the database
+
+The object `database` of a database pack (`cf-pack/2`, kind `database`):
+
+| Key | Necessary | Value |
+| --- | --- | --- |
+| `contract` | Yes | `cf-database/1`. |
+| `port` | Yes | The TCP port of the engine in its container, as a string, for example `"3306"`. From 1024 to 65535. |
+| `dataDir` | Yes | The absolute path of the data directory in the container, for example `/var/lib/mysql`. 1 to 8 parts of lower-case letters, digits, `.`, `_` and `-`. The first directory cannot be `tmp`, `proc`, `sys`, `dev`, `run` or `cf` (`reservedPackDirs` in [`schema/input-rules.json`](../schema/input-rules.json)). |
+
+For example:
+
+```json
+{
+  "contract": "cf-pack/2",
+  "kind": "database",
+  "slug": "mysql",
+  "name": "MySQL",
+  "version": "1.0.0",
+  "publisher": "Example Packs Ltd",
+  "database": {
+    "contract": "cf-database/1",
+    "port": "3306",
+    "dataDir": "/var/lib/mysql"
+  },
+  "images": [
+    {
+      "version": "8.4",
+      "ref": "ghcr.io/example/cf-mysql:8.4",
+      "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000084",
+      "supportEndsAt": "2032-04-30"
+    }
+  ]
+}
+```
+
 ### Keys of an image
 
 | Key | Necessary | Value |
 | --- | --- | --- |
-| `version` | Yes | The version of the runtime, for example `1.27`. Customers select it. 1 to 16 characters: letters, digits, `.`, `+`, `_` and `-`. Each version is in the pack one time only. |
+| `version` | Yes | The version of the runtime or the engine, for example `1.27` or `8.4`. Customers select it. 1 to 16 characters: letters, digits, `.`, `+`, `_` and `-`. Each version is in the pack one time only. For `cf-php/1`, the version of PHP: two numbers with a dot between them, for example `8.2`. |
 | `ref` | Yes | The image with its registry and a tag, for example `ghcr.io/example/cf-golang:1.27`. No digest. |
 | `digest` | Yes | The `sha256:` digest of the image. The agent pulls only this digest. |
 | `supportEndsAt` | No | The last day of support, for example `2027-08-31`. The panel shows it with the image. |
 
 An image repository can be in one pack only. The panel refuses a repository that a different
-pack or an own image of the panel has.
+pack or an own image of the panel has. The first image of a database pack is the version that
+a new database server gets when the customer selects no version. Put the newest version first.
+
+A `cf-php/1` pack can add only a version of PHP that the PHP runtime does not have. For
+example, the panel refuses PHP 8.4 for Apache + PHP-FPM, because the panel has that image
+already.
 
 ## The runtime contract cf-runtime/1
 
@@ -124,6 +201,106 @@ obey these rules:
 The agent gives each container the same isolation as each other website: gVisor, a read-only
 root file system, no capabilities and its own network namespace. A pack cannot change the
 unit of the container.
+
+## The PHP contract cf-php/1
+
+A `cf-php/1` pack adds versions of PHP to a built-in PHP runtime. It adds no runtime of its
+own. A website with an image of the pack is a PHP website of that runtime. It has the
+settings of a PHP website: the extensions of its plan, the php.ini values, the document root,
+and for FrankenPHP the worker mode.
+
+Each image must do the same as the built-in image of the runtime
+([images/frankenphp](../images/frankenphp/Containerfile) or
+[images/apache-php-fpm](../images/apache-php-fpm/Containerfile)):
+
+- The image has the version of PHP that `version` gives.
+- The web server listens on port 8080. It serves the directory in `CF_DOCUMENT_ROOT`, for
+  example `/app/public`.
+- The image has all the extensions of the largest plan: `intl`, `gd`, `zip`, `exif`,
+  `bcmath`, `mysqli`, `pdo_mysql`, `pdo_pgsql`, `redis`, `imagick`, `soap` and, before PHP
+  8.5, `opcache`. The image turns none of them on.
+- The agent mounts the php.ini file of the website at
+  `/usr/local/etc/php/conf.d/zz-cloudfactory.ini`. Each extension in the file must load. Before
+  PHP 8.5, the file has the line `zend_extension=opcache`.
+- The image starts as the Unix user of the website, with a read-only root file system, `/tmp`
+  as the only writable directory outside `/app`, and no capabilities.
+- A FrankenPHP image reads `FRANKENPHP_CONFIG` for the worker mode.
+- The image has Git, an SSH client and Composer for the deploys from Git.
+
+The agent loads the pack, but it adds no runtime for it. The website uses the driver of the
+built-in runtime.
+
+## The database contract cf-database/1
+
+A database pack adds an engine. The agent runs a database server of the engine as it runs a
+built-in database server. The image must obey these rules:
+
+- The image starts the engine with its entrypoint and its command. The agent does not give a
+  command.
+- The engine listens on the port in `database.port`, on all addresses of the container.
+- The engine keeps all its data in `database.dataDir`. The agent mounts the data directory of
+  the database server there. At the first start, the directory is empty.
+- The container runs as the user 999 and the group 999. The Unix user of the database server
+  on the host owns the data files, and the disk limit is the quota of that user.
+- The root file system is read-only. `/tmp` is a temporary file system. Only `/tmp` and the
+  data directory are writable. Put sockets and PID files in `/tmp`.
+- The environment has the password of the administrator of the engine in
+  `CF_SUPERUSER_PASSWORD`: 48 hexadecimal digits. The administrator must connect only from the
+  container, not from the websites.
+- The image has the program `/cf/manage`. Refer to the next table.
+
+The agent gives each container the same isolation as each built-in database server: gVisor,
+no capabilities, `no-new-privileges` and the limits of the plan for CPU, memory and disk. A
+pack cannot change the unit of the container.
+
+The agent runs `/cf/manage` for each task:
+
+```sh
+podman exec -i <container> /cf/manage <operation>
+```
+
+The first line of stdin is one JSON object. The program writes one JSON object on stdout. An
+exit code that is not 0 is an error, and stderr has its text. The agent gives only names and
+passwords that obey the rules of the panel: a name has 2 to 63 lower-case letters, digits and
+`_`, and starts with a letter (`databaseName`). A password has 16 to 64 letters and digits
+(`databasePassword`). The program must check them again, and must refuse each other key.
+
+| Operation | Input | Answer |
+| --- | --- | --- |
+| `describe` | `{}` | `{"contract":"cf-database/1","engine":"...","version":"...","operations":[...]}` |
+| `ready` | `{}` | `{"ready":true}` when the engine accepts TCP connections, else `{"ready":false}` |
+| `sizes` | `{}` | `{"sizes":[{"name":"...","bytes":N}]}`: each database of the customer, also an empty one. No database of the engine itself. |
+| `create-database` | `{"name":"..."}` | `{}`. An error when the database exists. |
+| `drop-database` | `{"name":"..."}` | `{}`. The users lose their access to the database. A new database with the same name gives no access to them. No error when the database does not exist. |
+| `set-user` | `{"user":"...","password":"...","databases":[{"name":"...","access":"readonly"}]}` | `{}`. Makes the user when it does not exist. The user gets access to exactly these databases. With no `password`, the user keeps its password. `access` is `readonly` or `readwrite`. |
+| `drop-user` | `{"user":"..."}` | `{}`. No error when the user does not exist. |
+| `dump` | `{"name":"..."}` | The dump of the database, on stdout. The dump has no database name, so that it loads into a database of a different name. |
+| `restore` | `{"name":"..."}`, then the dump on the next lines | `{}`. Replaces all data of the database with the dump. The users keep their access. |
+
+The users connect from the website containers with their password. The host firewall lets
+only the websites of the customer connect, so a user does not need a host of its own.
+
+`readonly` lets the user read the data. `readwrite` lets the user read and change the data and
+the tables. The pack gives the permissions of each level for its engine.
+
+With these operations, the agent makes databases and users, shows the sizes, makes the backups
+and the restores, and makes the copies for a staging website. The example pack
+[plugins/packs/mysql](../plugins/packs/mysql/README.md) has a contract test that runs each
+operation against a real server (`test.sh`).
+
+### Ports and host names
+
+The panel gives each database pack a block of 50 host ports, from 20000 (the first pack gets
+20000 to 20049, the second pack 20050 to 20099). The database servers of a customer on one
+server get the ports of the block in turn. The agent publishes the port of the engine on the
+private address of the customer only.
+
+A website connects to a database server of a pack by its network name and the port of the
+engine, for example `mysql-1.internal:3306`. This is also so on the same server: a pack engine
+has no host name of its own such as `mariadb.internal`. Thus a database server of a pack needs
+a name that is not the name of an engine.
+
+![The databases of a website: the MySQL 8.4 database has the host mysql-1.internal:3306 and no Adminer button](screenshots/packs/12-mysql-database.png)
 
 ## Make and sign a pack
 
@@ -174,6 +351,40 @@ openssl ec -in pack.key -pubout -out pack.pub                     # one time
 openssl dgst -sha256 -sign pack.key pack.json | base64 -w0 > pack.json.sig
 ```
 
+## The packs of Cloudfactory
+
+Cloudfactory publishes two packs with each release. They add older versions of PHP, for
+example for websites that come from cPanel:
+
+| Pack | Adds | End of support |
+| --- | --- | --- |
+| `php-legacy-frankenphp` | PHP 8.3 and 8.2 for FrankenPHP | PHP 8.3: 2027-12-31. PHP 8.2: 2026-12-31. |
+| `php-legacy-apache` | PHP 8.3 and 8.2 for Apache + PHP-FPM | PHP 8.3: 2027-12-31. PHP 8.2: 2026-12-31. |
+
+The release key of Cloudfactory signs the manifests and the images, so the packs need no
+trusted key. Each release has the files `SLUG.pack.json` and `SLUG.pack.json.sig`. To install
+a pack:
+
+1. Download the two files of the pack from the release of your version of Cloudfactory.
+2. Install the pack. Refer to [Install a pack](#install-a-pack).
+
+![The review of the pack of older PHP versions for FrankenPHP: the release key signed it, and it adds PHP 8.3 and 8.2](screenshots/packs/6-php-pack-review.png)
+
+The **Packs** page shows the PHP runtime of the pack and its versions:
+
+![The pack of older PHP versions for Apache + PHP-FPM on the Packs page, with its state on each web server and its images](screenshots/packs/5-php-pack.png)
+
+Customers select a version of the pack in the versions of the PHP runtime:
+
+![The New website form with Apache + PHP-FPM and PHP 8.2 from the pack](screenshots/packs/8-new-website-php82.png)
+
+Each release has new images for the packs, with the security fixes of PHP and Debian. The
+panel does not install them itself. After you update Cloudfactory, install the new version of
+each pack from the new release. Refer to [Install a new version](#install-a-new-version).
+
+The panel shows the end of support of each version. Move each website to PHP 8.4 or later
+before that date. Refer to [plugins/packs](../plugins/packs/README.md).
+
 ## Publish a pack
 
 Give these files to the administrators:
@@ -223,8 +434,11 @@ When the administrator installs a pack:
 1. The panel checks the manifest with the rules of this document. It checks the signature
    with the trusted keys and the release key.
 2. The panel keeps the exact bytes of the manifest and the signature.
-3. The panel adds one runtime image for each version of the pack. The family of each image
-   is the slug of the pack.
+3. For a runtime pack, the panel adds one runtime image for each version of the pack. For
+   `cf-runtime/1`, the family of each image is the slug of the pack. For `cf-php/1`, the
+   family is the PHP runtime of the pack, for example `apache-php-fpm`. For a database pack,
+   the panel adds no image. It gives the pack a block of host ports, and the engine becomes
+   available for new database servers.
 4. The panel sends all packs to each web server in the job **Send the packs**.
 
 On each web server, the agent:
@@ -238,9 +452,11 @@ On each web server, the agent:
    key of the pack.
 4. Writes `/etc/containers/registries.d/cloudfactory-packs.yaml`, so that Podman finds the
    signatures next to the images.
-5. Removes the packs that are not in the job. It refuses to remove a pack whose runtime a
-   website of the server uses.
-6. Loads the runtimes, and reports the packs and the runtimes to the panel.
+5. Removes the packs that are not in the job. It refuses to remove a pack whose runtime or
+   image a website of the server uses. It also refuses to remove a database pack, or a version
+   of it, that a database server of the server uses.
+6. Loads the runtimes and the database engines, and reports the packs, the runtimes and the
+   engines to the panel.
 
 The agent never makes a rule of the installer weaker. When a rule of the installer already
 covers a repository, the agent adds no rule for it. The image then needs the signature that
@@ -259,8 +475,26 @@ different, the panel sends the packs again. After each failure, it waits longer:
 16, 32 and then 60 minutes. A new web server gets the packs after its first report. To send
 the packs at once, select **Send to the servers again**, or use `cf packs sync`.
 
-The panel puts a website of the runtime only on a server that reports the runtime. When no
-server has it, the panel refuses the website and tells the user why.
+The panel makes a database server of a pack engine only on a server that reports the
+engine. Each database server keeps the version that it got. The agent takes the image of that
+version from the pack that it checked, not from the panel.
+
+![The MySQL database pack on the Packs page, with its engine, its block of host ports and its state on each web server](screenshots/packs/9-database-pack.png)
+
+Administrators see the engine on the **Databases** page. A database server of a pack engine
+shows its version and its network name:
+
+![The database servers on the Databases page, with the MySQL 8.4 database server mysql-1](screenshots/packs/10-database-servers.png)
+
+The **New database server** form shows the engines of the packs next to the built-in engines,
+with one choice for each version:
+
+![The New database server form with MySQL from a pack and its versions](screenshots/packs/11-new-mysql-server.png)
+
+The panel puts a website of the runtime only on a server that reports the runtime. It puts a
+website with an image of a `cf-php/1` pack only on a server that reports the pack. When no
+server has it, the panel refuses the website and tells the user why. The panel also refuses to
+change the runtime of a website to an image that its server does not have yet.
 
 Customers see the runtime on the **Apps** page and on the **New website** page, with one
 choice for each version:
@@ -283,6 +517,10 @@ The slug must be the same, and the version must be different. Then:
   and updates** page, or with `cf rollouts start IMAGE_ID`.
 - The panel refuses a manifest that removes a version that websites use. Move the websites
   to a different version first.
+- The new version must have the same runtime contract. For `cf-php/1`, it must also have the
+  same `family`.
+- A database pack stays a database pack. The panel refuses a manifest that removes a version
+  that a database server uses. The database server keeps its block of ports.
 
 The panel does not check the registry for new tags of the images of a pack. The pack gives
 the versions and the digests.
@@ -293,8 +531,9 @@ On the **Packs** page, open the menu of the pack and select **Remove pack**. Wit
 `cf packs remove golang`.
 
 The panel refuses to remove a pack that websites use. Move or remove the websites first. The
-panel then removes the images of the pack, and each web server removes the pack and its rules
-in the image policy.
+panel also refuses to remove a database pack while it has database servers. Remove the
+database servers first. The panel then removes the images of the pack, and each web server
+removes the pack and its rules in the image policy.
 
 The panel also refuses to remove a trusted key that signed an installed pack, because each web
 server checks the images of the pack with that key.
@@ -327,9 +566,14 @@ When you change a rule of the contract, add a valid case and an invalid case.
 
 ## Limits
 
-- `cf-pack/1` has only the kind `runtime`, and `cf-runtime/1` has only the type `app`. The
-  packs for database engines come later (refer to the trial contract `cf-database/1` in
-  [plugins.md](plugins.md#the-management-contract-cf-database1-trial)).
+- `cf-pack/1` has only the kind `runtime`, and `cf-runtime/1` has only the type `app`.
+- A `cf-php/1` pack adds versions of PHP to FrankenPHP or to Apache + PHP-FPM only. It cannot
+  add an extension that the largest plan does not have.
+- A database server of a pack engine cannot move to a different server, and it has no
+  Adminer and no access from anywhere. It cannot change its version: make a new database
+  server with the new version, then move the data.
+- `cf-database/1` is for engines with databases and users, as SQL engines have. An engine
+  with numbered databases, as Valkey has, needs a later contract.
 - A panel can have up to 50 packs. A pack can have up to 10 images.
 - A pack cannot add a page, a setting or a program to the panel or to the agent. To add such
   a feature, use a [plugin](plugins.md).

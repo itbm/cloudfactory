@@ -402,8 +402,10 @@ type DatabaseInstance struct {
 
 // DatabaseServer is what the agent knows about one database server of a customer.
 type DatabaseServer struct {
-	// Engine is "mariadb", "postgresql" or "valkey".
+	// Engine is "mariadb", "postgresql", "valkey" or the slug of a database pack.
 	Engine string `json:"engine"`
+	// Version is the version of a pack engine, for example "8.4". It does not change.
+	Version string `json:"version,omitempty"`
 	// Port is the port of the database server on the address of its customer.
 	Port int `json:"port"`
 	// The limits of the container. 0 means no limit.
