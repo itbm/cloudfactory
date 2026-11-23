@@ -21,6 +21,7 @@ use App\Models\Customer;
 use App\Models\DatabaseServer;
 use App\Models\DnsAccount;
 use App\Models\DnsRecord;
+use App\Models\DnsSecondary;
 use App\Models\DnsZone;
 use App\Models\Domain;
 use App\Models\GitSource;
@@ -59,6 +60,8 @@ use App\Services\Branding;
 use App\Services\Certificates\Certificates;
 use App\Services\Certificates\Pem;
 use App\Services\Dns\Dnssec;
+use App\Services\Dns\Rollover;
+use App\Services\Dns\Secondaries;
 use App\Services\Dns\Zones;
 use App\Services\Exports\Description as ExportDescription;
 use App\Services\Imports\Description;
@@ -808,6 +811,13 @@ class DemoSeeder extends Seeder
     private function dns(): void
     {
         $servers = Zones::servers();
+        // A secondary DNS service copies all zones, and is the third name server of each zone.
+        DnsSecondary::create([
+            'name' => 'Backup DNS service', 'addresses' => ['198.51.100.53', '2001:db8:5300::53'], 'name_server' => 'ns3.backup-dns.example',
+            'tsig_name' => 'cf-backup-dns', 'tsig_algorithm' => 'hmac-sha256', 'tsig_secret' => Secondaries::newSecret('hmac-sha256'), 'notify' => true, 'catalog' => true,
+        ]);
+        Setting::put(Secondaries::VERSION, 1);
+        Setting::put(Secondaries::CATALOG, Secondaries::catalogZone());
         $elsewhere = ['ns1.registrar.example', 'ns2.registrar.example'];
         // name, customer, days since creation, name servers in the public DNS (null: the panel), DNSSEC, the DNS server that failed
         $rows = [
@@ -831,8 +841,25 @@ class DemoSeeder extends Seeder
             ]);
             $zone->created_at = now()->subDays($days);
             $zone->save();
+            // The registry has the DS record of each zone with DNSSEC.
+            if ($key) {
+                $zone->update(['dnssec_parent' => ['state' => 'ok', 'keys' => ['current'], 'keyTags' => [$key['keyTag']], 'ttl' => 86400, 'checkedAt' => now()->subMinutes(9)->toIso8601String()]]);
+            }
+            // Acme Ltd changes the DNSSEC key of its main zone. The DNS servers publish the CDS
+            // record of the new key, and the panel waits for the new DS record at the registry.
+            if ($name === 'acme.example.com') {
+                $next = Dnssec::generate(StableValues::ecKey("DNSSEC {$name} next"));
+                $zone->update(['dnssec_rollover' => Rollover::SUBMIT, 'dnssec_next_key' => $next['key'], 'dnssec_next_public_key' => $next['publicKey'],
+                    'dnssec_next_key_tag' => $next['keyTag'], 'dnssec_rollover_at' => now()->subHours(5), 'dnssec_rollover_until' => null]);
+            }
+            // Acme Ltd also sends its main zone to its own secondary DNS server.
+            if ($name === 'acme.example.com') {
+                $zone->update(['transfer_addresses' => ['192.0.2.200'], 'transfer_notify' => true, 'transfer_tsig_algorithm' => 'hmac-sha256',
+                    'transfer_tsig_secret' => Secondaries::newSecret('hmac-sha256'), 'transfer_name_servers' => ['ns.acme-backup.example']]);
+            }
             // The zones of Northwind Agency and of its customers have the name servers of its brand.
-            foreach (Branding::nameServersFor($this->customers[$customer]) as $host) {
+            // Each zone also has the name server of the secondary DNS service.
+            foreach (Zones::panelNameServersFor($zone) as $host) {
                 $zone->records()->create(['name' => '@', 'type' => 'NS', 'ttl' => Zones::NS_TTL, 'value' => $host, 'managed' => DnsRecord::NS]);
             }
             // The A and AAAA records of the domains of the websites of the customer in the zone.
@@ -1461,6 +1488,10 @@ class DemoSeeder extends Seeder
         // The DNS servers got a zone. One DNS server did not take the last change of a different zone.
         foreach (['web-1', 'web-2'] as $server) {
             $job($server, AgentAction::SetDnsZones, 'Add TXT record to acme.example.com', JobState::Succeeded, 140, null, ['ref' => 'acme.example.com', 'dns_zone_id' => $this->zones['acme.example.com']->id]);
+        }
+        // The DNS servers have the list of the secondary DNS servers.
+        foreach (['web-1', 'web-2'] as $server) {
+            $job($server, AgentAction::SetDnsSecondaries, 'Add secondary DNS server Backup DNS service', JobState::Succeeded, 400, null, ['payload' => ['version' => 1]]);
         }
         $books = ['ref' => 'harbourbooks.example.net', 'dns_zone_id' => $this->zones['harbourbooks.example.net']->id];
         $job('web-1', AgentAction::SetDnsZones, 'Add TXT record to harbourbooks.example.net', JobState::Succeeded, 33, null, $books);

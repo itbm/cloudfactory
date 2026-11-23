@@ -54,6 +54,7 @@ enum AgentAction: string
     case SetCronJobs = 'SetCronJobs';
     case SetDatabaseServer = 'SetDatabaseServer';
     case SetDatabaseUser = 'SetDatabaseUser';
+    case SetDnsSecondaries = 'SetDnsSecondaries';
     case SetDnsZones = 'SetDnsZones';
     case SetLimits = 'SetLimits';
     case SetMailAlias = 'SetMailAlias';
@@ -124,6 +125,7 @@ enum AgentAction: string
             self::SetCronJobs => ['Save the cron jobs'],
             self::SetDatabaseServer => ['Start database server'],
             self::SetDatabaseUser => ['Set user and password', 'Set access to databases'],
+            self::SetDnsSecondaries => ['Start DNS server', 'Set secondary DNS servers'],
             self::SetDnsZones => ['Start DNS server', 'Write zones', 'Load zones'],
             self::SetLimits => ['Update cgroup limits'],
             self::SetMailAlias => ['Set address'],

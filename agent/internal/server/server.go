@@ -212,6 +212,10 @@ func (s *Service) SetDatabaseUser(_ context.Context, r *connect.Request[agentv1.
 	return s.submit(s.Deps.SetDatabaseUser(r.Msg))
 }
 
+func (s *Service) SetDnsSecondaries(_ context.Context, r *connect.Request[agentv1.SetDnsSecondariesRequest]) (*connect.Response[agentv1.JobAccepted], error) {
+	return s.submit(s.Deps.SetDnsSecondaries(r.Msg))
+}
+
 func (s *Service) SetDnsZones(_ context.Context, r *connect.Request[agentv1.SetDnsZonesRequest]) (*connect.Response[agentv1.JobAccepted], error) {
 	return s.submit(s.Deps.SetDnsZones(r.Msg))
 }

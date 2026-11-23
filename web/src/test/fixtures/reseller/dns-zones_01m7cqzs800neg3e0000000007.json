@@ -42,8 +42,11 @@
             "enabled": false,
             "state": "off",
             "ds": null,
-            "dnskey": null
+            "dnskey": null,
+            "rollover": null,
+            "parent": null
         },
+        "transfers": null,
         "servers": [
             {
                 "nameServer": "ns1.northwind.example.com",
@@ -58,7 +61,7 @@
         "createdAt": "2026-11-12T10:00:00+00:00",
         "records": [
             {
-                "id": "01m7cqzs8007vyeq000000001q",
+                "id": "01m7cqzs8007vyeq000000001x",
                 "name": "@",
                 "type": "A",
                 "value": "198.51.100.90",
@@ -67,7 +70,7 @@
                 "managed": null
             },
             {
-                "id": "01m7cqzs8007vyeq000000001h",
+                "id": "01m7cqzs8007vyeq000000001q",
                 "name": "@",
                 "type": "NS",
                 "value": "ada.ns.cloudflare.com",
@@ -76,7 +79,7 @@
                 "managed": "ns"
             },
             {
-                "id": "01m7cqzs8007vyeq000000001j",
+                "id": "01m7cqzs8007vyeq000000001r",
                 "name": "@",
                 "type": "NS",
                 "value": "bob.ns.cloudflare.com",
@@ -85,7 +88,7 @@
                 "managed": "ns"
             },
             {
-                "id": "01m7cqzs8007vyeq000000001r",
+                "id": "01m7cqzs8007vyeq000000001y",
                 "name": "@",
                 "type": "TXT",
                 "value": "v=spf1 -all",

@@ -100,16 +100,27 @@ trait Hosting
         return $policy;
     }
 
-    /** A public DNS that answers NS queries from the array. The test can change the array later. */
+    /**
+     * A public DNS that answers NS queries from the array. The test can change the array later.
+     * The DS records are in the property "ds" of the answer.
+     */
     protected function fakeNameServers(array &$ns): Lookup
     {
         $lookup = new class($ns) extends Lookup
         {
+            /** @var array<string, list<array<string, mixed>>|null> The DS records of each zone. Null: the lookup fails. */
+            public array $ds = [];
+
             public function __construct(public array &$ns) {}
 
             public function nameServers(string $zone): array
             {
                 return $this->ns[$zone] ?? [];
+            }
+
+            public function ds(string $zone): ?array
+            {
+                return array_key_exists($zone, $this->ds) ? $this->ds[$zone] : [];
             }
         };
         $this->app->instance(Lookup::class, $lookup);

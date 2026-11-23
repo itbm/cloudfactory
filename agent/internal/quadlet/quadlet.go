@@ -637,8 +637,9 @@ const DnsPort = 8053
 const DnsUnitName = "cf-dns.container"
 
 // DnsUnit gives the unit of the DNS server. The DNS user runs the container, in gVisor. The
-// container opens no connection: the panel sends each zone to each DNS server, so there are
-// no zone transfers.
+// panel sends each zone to each DNS server, so the DNS servers of the panel do not copy zones
+// from other servers. The container opens a connection only to send NOTIFY to a secondary DNS
+// server outside the panel, which then copies the zones with AXFR or IXFR.
 func DnsUnit(d Dns) string {
 	return Header + strings.Join([]string{
 		"[Unit]",

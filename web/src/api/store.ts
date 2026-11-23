@@ -58,6 +58,8 @@ import type {
   ResellerBranding,
   ServerRole,
   State,
+  TsigAlgorithm,
+  TsigKey,
   PanelCertificateMethod,
   TokenScope,
   UpdatePolicy,
@@ -1627,6 +1629,98 @@ export function deleteDnsAccount(accountId: string): Promise<void> {
   });
 }
 
+/** Reads the secondary DNS servers of the panel again. */
+async function loadDnsSecondaries() {
+  const r = await live.request<live.ApiDnsSecondaries>("GET", "/dns-secondaries");
+  update((d) => {
+    d.dnsSecondaries = live.toDnsSecondaries(r);
+  });
+}
+
+export interface DnsSecondaryInput {
+  name: string;
+  /** IPv4 and IPv6 addresses. */
+  addresses: string[];
+  /** Empty: the secondary is not a name server of the zones. */
+  nameServer: string;
+  tsig: boolean;
+  algorithm: TsigAlgorithm;
+  /** Empty: the panel makes a new name, or keeps the current one. */
+  keyName: string;
+  /** Empty: the panel makes a new secret, or keeps the current one. */
+  secret: string;
+  newSecret: boolean;
+  notify: boolean;
+  catalog: boolean;
+}
+
+/**
+ * Adds a secondary DNS server of the panel, or changes one. Each DNS server of the panel gets
+ * the new list in a job. When the name servers change, the zones get new NS records.
+ */
+export function saveDnsSecondary(input: DnsSecondaryInput, id?: string): Promise<void> {
+  return call(async () => {
+    const r = await live.request<{ jobs: live.ApiJob[] }>(id ? "PATCH" : "POST", id ? `/dns-secondaries/${id}` : "/dns-secondaries", {
+      name: input.name.trim(), addresses: input.addresses, nameServer: input.nameServer.trim().toLowerCase().replace(/\.$/, "") || null,
+      tsig: input.tsig, ...(input.tsig ? { algorithm: input.algorithm, keyName: input.keyName.trim() || null, secret: input.secret.trim() || null, newSecret: input.newSecret } : {}),
+      notify: input.notify, catalog: input.catalog,
+    });
+    await loadDnsSecondaries();
+    void Promise.all(r.jobs.map((j) => track(j))).then(() => loadDnsSecondaries()).catch(() => undefined);
+  });
+}
+
+/** Removes a secondary DNS server of the panel. */
+export function deleteDnsSecondary(id: string): Promise<void> {
+  return call(async () => {
+    const r = await live.request<{ jobs: live.ApiJob[] }>("DELETE", `/dns-secondaries/${id}`);
+    await loadDnsSecondaries();
+    void Promise.all(r.jobs.map((j) => track(j))).then(() => loadDnsSecondaries()).catch(() => undefined);
+  });
+}
+
+/** The TSIG key of a secondary DNS server of the panel, with its secret. */
+export function dnsSecondarySecret(id: string): Promise<Required<TsigKey>> {
+  return call(() => live.request<Required<TsigKey>>("GET", `/dns-secondaries/${id}/secret`));
+}
+
+export interface DnsTransfersInput {
+  addresses: string[];
+  notify: boolean;
+  nameServers: string[];
+  tsig: boolean;
+  algorithm: TsigAlgorithm;
+  /** Empty: the panel makes a new secret, or keeps the current one. */
+  secret: string;
+  newSecret: boolean;
+}
+
+/** Sends a zone to the secondary DNS servers of its owner with zone transfers, or changes them. */
+export function setDnsTransfers(zoneId: string, input: DnsTransfersInput): Promise<void> {
+  return call(async () => {
+    const r = await live.request<{ zone: live.ApiDnsZone } & DnsJobs>("PUT", `/dns-zones/${zoneId}/transfers`, {
+      addresses: input.addresses, notify: input.notify, nameServers: input.nameServers.map((n) => n.trim().toLowerCase().replace(/\.$/, "")).filter(Boolean),
+      tsig: input.tsig, ...(input.tsig ? { algorithm: input.algorithm, secret: input.secret.trim() || null, newSecret: input.newSecret } : {}),
+    });
+    putDnsZone(r.zone);
+    trackZone(zoneId, r.jobs);
+  });
+}
+
+/** Stops the zone transfers to the secondary DNS servers of the owner of a zone. */
+export function stopDnsTransfers(zoneId: string): Promise<void> {
+  return call(async () => {
+    const r = await live.request<{ zone: live.ApiDnsZone } & DnsJobs>("DELETE", `/dns-zones/${zoneId}/transfers`);
+    putDnsZone(r.zone);
+    trackZone(zoneId, r.jobs);
+  });
+}
+
+/** The TSIG key of the zone transfers of a zone, with its secret. */
+export function dnsTransfersSecret(zoneId: string): Promise<Required<TsigKey>> {
+  return call(() => live.request<Required<TsigKey>>("GET", `/dns-zones/${zoneId}/transfers/secret`));
+}
+
 export interface DnsRecordInput {
   type: DnsRecordType;
   name: string;
@@ -1669,6 +1763,27 @@ export function deleteDnsRecord(zoneId: string, recordId: string): Promise<void>
 export function setDnssec(zoneId: string, enabled: boolean): Promise<void> {
   return call(async () => {
     const r = await live.request<{ zone: live.ApiDnsZone } & DnsJobs>("PUT", `/dns-zones/${zoneId}/dnssec`, { enabled });
+    putDnsZone(r.zone);
+    trackZone(zoneId, r.jobs);
+  });
+}
+
+/**
+ * Starts a change of the DNSSEC key of a zone on the DNS servers of the panel. The panel makes a
+ * new key, and moves the change to the next step when it can.
+ */
+export function startDnssecRollover(zoneId: string): Promise<void> {
+  return call(async () => {
+    const r = await live.request<{ zone: live.ApiDnsZone } & DnsJobs>("POST", `/dns-zones/${zoneId}/dnssec/rollover`);
+    putDnsZone(r.zone);
+    trackZone(zoneId, r.jobs);
+  });
+}
+
+/** Stops a change of the DNSSEC key before the registry has the new DS record. The new key goes. */
+export function cancelDnssecRollover(zoneId: string): Promise<void> {
+  return call(async () => {
+    const r = await live.request<{ zone: live.ApiDnsZone } & DnsJobs>("DELETE", `/dns-zones/${zoneId}/dnssec/rollover`);
     putDnsZone(r.zone);
     trackZone(zoneId, r.jobs);
   });

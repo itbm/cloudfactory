@@ -51,14 +51,17 @@
             "enabled": false,
             "state": "off",
             "ds": null,
-            "dnskey": null
+            "dnskey": null,
+            "rollover": null,
+            "parent": null
         },
+        "transfers": null,
         "servers": [],
         "websites": 0,
         "createdAt": "2026-10-24T10:00:00+00:00",
         "records": [
             {
-                "id": "01m7cqzs8007vyeq000000001k",
+                "id": "01m7cqzs8007vyeq000000001s",
                 "name": "@",
                 "type": "A",
                 "value": "198.51.100.40",
@@ -67,7 +70,7 @@
                 "managed": null
             },
             {
-                "id": "01m7cqzs8007vyeq000000001n",
+                "id": "01m7cqzs8007vyeq000000001v",
                 "name": "@",
                 "type": "MX",
                 "value": "mx1.mail.example",
@@ -76,7 +79,7 @@
                 "managed": null
             },
             {
-                "id": "01m7cqzs8007vyeq000000001f",
+                "id": "01m7cqzs8007vyeq000000001n",
                 "name": "@",
                 "type": "NS",
                 "value": "ada.ns.cloudflare.com",
@@ -85,7 +88,7 @@
                 "managed": "ns"
             },
             {
-                "id": "01m7cqzs8007vyeq000000001g",
+                "id": "01m7cqzs8007vyeq000000001p",
                 "name": "@",
                 "type": "NS",
                 "value": "bob.ns.cloudflare.com",
@@ -94,7 +97,7 @@
                 "managed": "ns"
             },
             {
-                "id": "01m7cqzs8007vyeq000000001p",
+                "id": "01m7cqzs8007vyeq000000001w",
                 "name": "@",
                 "type": "TXT",
                 "value": "v=spf1 include:_spf.mail.example -all",
@@ -103,7 +106,7 @@
                 "managed": null
             },
             {
-                "id": "01m7cqzs8007vyeq000000001m",
+                "id": "01m7cqzs8007vyeq000000001t",
                 "name": "www",
                 "type": "CNAME",
                 "value": "acmeshop.example.com",
